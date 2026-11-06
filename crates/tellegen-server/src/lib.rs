@@ -33,7 +33,10 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use tellegen::geo::{complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords};
+use tellegen::geo::{
+    complete_coords_and_stacks, lowered_coords, spread_stacks, synthetic_layout, Coords, Stacks,
+};
+use tellegen::substations::{group_for_display, Substation};
 use tellegen::{solve_instance_cancellable, Iterations, SolveRequest, SolveResponse};
 #[cfg(feature = "sensitivity")]
 use tellegen::{ElementId, Mode, Operand, Parameter, Power, SensRequest, SensitivityMatrix};
@@ -281,6 +284,7 @@ pub struct HealthPayload {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct NetworkPayload {
+    pub equipment: tellegen::equipment::Equipment,
     pub model_details: Option<tellegen::preparation::ModelDetails>,
     pub id: String,
     pub name: String,
@@ -288,6 +292,8 @@ pub struct NetworkPayload {
     pub synthetic_coords: bool,
     pub buses: Vec<NetworkBus>,
     pub branches: Vec<NetworkBranch>,
+    /// Substations for transmission diagrams; `NetworkBus::substation` indexes this list.
+    pub substations: Vec<Substation>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -300,6 +306,15 @@ pub struct NetworkBus {
     pub lat: f64,
     pub demand_mw: f64,
     pub gen_mw: f64,
+    /// Nominal voltage in kV (0 when the source gives none).
+    pub base_kv: f64,
+    /// Source operating voltage bounds, per unit; absent for lowered display rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vmin_pu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vmax_pu: Option<f64>,
+    /// Index into `NetworkPayload::substations`.
+    pub substation: u32,
     /// False for a display-only bus synthesized by analysis lowering.
     pub editable: bool,
 }
@@ -311,6 +326,8 @@ pub struct NetworkBranch {
     pub to: usize,
     pub rate_mw: f64,
     pub status: u8,
+    /// Joins two voltage levels (see `tellegen::substations::is_transformer`).
+    pub transformer: bool,
     /// False for a display-only branch synthesized by analysis lowering.
     pub editable: bool,
     pub path: Vec<[f64; 2]>,
@@ -330,11 +347,21 @@ pub struct FlowValue {
     pub branch: usize,
     pub mw: f64,
     pub loading: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loading_info: Option<tellegen::BranchLoading>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qf: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pt: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qt: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct DispatchValue {
     pub gen: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bus: Option<usize>,
     pub mw: f64,
 }
 
@@ -352,12 +379,18 @@ pub struct SensitivityValue {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SolutionPayload {
+    pub formulation: tellegen::Problem,
+    pub status: tellegen::SolveStatus,
     pub objective: f64,
     pub prices: Vec<PriceValue>,
     pub va: Vec<ScalarValue>,
     pub w: Vec<ScalarValue>,
     pub flows: Vec<FlowValue>,
     pub dispatch: Vec<DispatchValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraints: Option<Vec<tellegen::ConstraintResult>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_constraints: Option<Vec<tellegen::BranchConstraintResult>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1058,13 +1091,13 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
     let case_path = data_dir.join(spec.casefile);
     let (case_module, _) = parse_balanced_file(&case_path, "m")?;
     let case = case_module.value();
-    let coords = match spec.coords {
+    let (coords, stacks) = match spec.coords {
         CoordSpec::Aux(auxfile) => {
             let aux_path = data_dir.join(auxfile);
             let (aux_module, aux_text) = parse_balanced_file(&aux_path, "aux")?;
             // The substation table rides in the aux text itself. PowerIO retains
             // the source on the module rather than the network value.
-            complete_coords_for(case, aux_module.value(), Some(&aux_text), auxfile)?
+            complete_coords_and_stacks(case, aux_module.value(), Some(&aux_text), auxfile)?
         }
         CoordSpec::BusCsv(csvfile) => load_bus_csv_coords(&data_dir.join(csvfile), case)?,
     };
@@ -1084,6 +1117,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
         spec.name,
         PioModule::new(prepared),
         coords,
+        &stacks,
         branch_paths,
         false,
     )?;
@@ -1091,7 +1125,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
     Ok(entry)
 }
 
-fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, String> {
+fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<(Coords, Stacks), String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut lines = text.lines();
     let header = lines
@@ -1141,7 +1175,7 @@ fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, St
             coords.insert(bus, (lon, lat));
         }
     }
-    spread_stacks(&mut coords);
+    let stacks = spread_stacks(&mut coords);
     for bus in case.buses() {
         if !coords.contains_key(&bus.id.0) {
             return Err(format!(
@@ -1151,7 +1185,7 @@ fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, St
             ));
         }
     }
-    Ok(coords)
+    Ok((coords, stacks))
 }
 
 /// Branch geometry with one stored copy per feature: `index` maps every id or
@@ -1299,7 +1333,15 @@ fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
     let case_module = parse_balanced(spec.text, "<fallback>", "m")
         .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?;
     let coords = synthetic_layout(case_module.value(), spec.bbox);
-    build_entry(spec.id, spec.name, case_module, coords, None, true)
+    build_entry(
+        spec.id,
+        spec.name,
+        case_module,
+        coords,
+        &Stacks::new(),
+        None,
+        true,
+    )
 }
 
 fn retain_geometry(
@@ -1347,6 +1389,7 @@ fn build_entry(
     name: &str,
     module: PioModule<BalancedNetwork>,
     coords: Coords,
+    stacks: &Stacks,
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
@@ -1386,6 +1429,7 @@ fn build_entry(
         name,
         &network,
         &coords,
+        stacks,
         branch_paths.as_ref(),
         synthetic_coords,
     )?;
@@ -1408,6 +1452,7 @@ fn network_payload(
     name: &str,
     net: &BalancedNetwork,
     coords: &Coords,
+    stacks: &Stacks,
     branch_paths: Option<&BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<NetworkPayload, String> {
@@ -1439,6 +1484,7 @@ fn network_payload(
         .map(|(row, _)| row)
         .collect();
     let coords = lowered_coords(net, coords);
+    let grouping = group_for_display(analysis, stacks, Some(&coords), synthetic_coords);
     let mut demand = BTreeMap::<usize, f64>::new();
     for load in analysis.loads().iter().filter(|load| load.in_service) {
         *demand.entry(load.bus.0).or_default() += load.p * power_scale;
@@ -1464,6 +1510,10 @@ fn network_payload(
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
+                base_kv: bus.base_kv,
+                vmin_pu: (i < net.buses().len() && bus.vmin.is_finite()).then_some(bus.vmin),
+                vmax_pu: (i < net.buses().len() && bus.vmax.is_finite()).then_some(bus.vmax),
+                substation: grouping.bus_substation[i],
                 editable: i < net.buses().len() && editable_bus_ids.contains(&bus.id.0),
             })
         })
@@ -1489,6 +1539,7 @@ fn network_payload(
                 to: br.to.0,
                 rate_mw: br.rate_a * power_scale,
                 status: br.in_service as u8,
+                transformer: grouping.transformer[i],
                 editable: editable_branch_rows.contains(&i),
                 path: source_paths
                     .and_then(|paths| {
@@ -1503,6 +1554,7 @@ fn network_payload(
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(NetworkPayload {
+        equipment: tellegen::equipment::project(net)?,
         model_details: None,
         id: id.into(),
         name: name.into(),
@@ -1510,11 +1562,16 @@ fn network_payload(
         synthetic_coords,
         buses,
         branches,
+        substations: grouping.substations,
     })
 }
 
 fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
     SolutionPayload {
+        formulation: resp.formulation,
+        constraints: resp.constraints.clone(),
+        branch_constraints: resp.branch_constraints.clone(),
+        status: resp.status,
         objective: resp.objective.unwrap_or(0.0),
         prices: resp
             .lmp
@@ -1537,6 +1594,10 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
                 branch: f.branch,
                 mw: f.pf,
                 loading: f.loading,
+                loading_info: f.loading_info,
+                qf: f.qf,
+                pt: f.pt,
+                qt: f.qt,
             })
             .collect(),
         dispatch: resp
@@ -1546,6 +1607,7 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
             .iter()
             .map(|g| DispatchValue {
                 gen: g.gen,
+                bus: g.bus,
                 mw: g.pg,
             })
             .collect(),
@@ -2097,11 +2159,27 @@ mod tests {
 
         let (status, solution) = get("/api/cases/case200/solution").await;
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(solution["formulation"], "dcopf");
+        assert_eq!(solution["status"], "optimal");
         assert!(solution["objective"].as_f64().unwrap().is_finite());
         assert!(solution["prices"].as_array().unwrap().len() >= 200);
         assert!(solution["prices"][0]["value"].as_f64().unwrap().is_finite());
         assert!(solution["prices"][0].get("usd_per_mwh").is_none());
         assert!(solution.get("lmp").is_none());
+        let constraints = solution["branch_constraints"].as_array().unwrap();
+        let flows = solution["flows"].as_array().unwrap();
+        assert_eq!(constraints.len(), flows.len());
+        assert!(constraints.iter().zip(flows).all(|(row, flow)| {
+            row["branch"] == flow["branch"]
+                && row["enforced"].as_bool().is_some()
+                && row["binding"].as_bool().is_some()
+        }));
+        let dispatch = solution["dispatch"].as_array().unwrap();
+        assert!(!dispatch.is_empty());
+        let buses = network["buses"].as_array().unwrap();
+        assert!(dispatch
+            .iter()
+            .all(|gen| buses.iter().any(|bus| bus["id"] == gen["bus"])));
     }
 
     #[test]
@@ -2134,16 +2212,40 @@ mod tests {
             .into_value();
         let coords = synthetic_layout(&raw, FALLBACK_SPECS[0].bbox);
         let normalized = raw.to_normalized().expect("normalize fallback");
-        let source =
-            network_payload("raw", "raw", &raw, &coords, None, true).expect("raw network payload");
-        let derived = network_payload("normalized", "normalized", &normalized, &coords, None, true)
-            .expect("normalized network payload");
+        let source = network_payload("raw", "raw", &raw, &coords, &Stacks::new(), None, true)
+            .expect("raw network payload");
+        let derived = network_payload(
+            "normalized",
+            "normalized",
+            &normalized,
+            &coords,
+            &Stacks::new(),
+            None,
+            true,
+        )
+        .expect("normalized network payload");
 
+        assert_eq!(
+            source.equipment.shunts.len(),
+            derived.equipment.shunts.len()
+        );
+        for (left, right) in source
+            .equipment
+            .shunts
+            .iter()
+            .zip(&derived.equipment.shunts)
+        {
+            assert!((left.b_mvar - right.b_mvar).abs() < 1e-9);
+        }
         assert_eq!(source.buses.len(), derived.buses.len());
         for (left, right) in source.buses.iter().zip(&derived.buses) {
             assert!((left.demand_mw - right.demand_mw).abs() < 1e-9);
             assert!((left.gen_mw - right.gen_mw).abs() < 1e-9);
+            assert_eq!(left.vmin_pu, right.vmin_pu);
+            assert_eq!(left.vmax_pu, right.vmax_pu);
         }
+        assert_eq!(source.buses[0].vmin_pu, Some(raw.buses()[0].vmin));
+        assert_eq!(source.buses[0].vmax_pu, Some(raw.buses()[0].vmax));
         assert_eq!(source.branches.len(), derived.branches.len());
         for (left, right) in source.branches.iter().zip(&derived.branches) {
             assert!((left.rate_mw - right.rate_mw).abs() < 1e-9);
@@ -2167,14 +2269,49 @@ mod tests {
             .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64 * 0.001, 40.0)))
             .collect();
 
-        let payload =
-            network_payload("3w", "3w", &net, &coords, None, false).expect("3W network payload");
+        let payload = network_payload("3w", "3w", &net, &coords, &Stacks::new(), None, false)
+            .expect("3W network payload");
         assert_eq!(payload.buses.len(), net.buses().len() + 1);
         assert_eq!(payload.branches.len(), net.branches().len() + 3);
         assert!(!payload.buses.last().unwrap().editable);
+        assert!(payload.buses.last().unwrap().vmin_pu.is_none());
+        assert!(payload.buses.last().unwrap().vmax_pu.is_none());
         assert!(payload.branches[net.branches().len()..]
             .iter()
             .all(|branch| !branch.editable));
+        // The star bus and its three windings are transformers, so the star point and the three
+        // terminal buses (0.1 km apart) are drawn as one substation.
+        assert!(payload.branches[net.branches().len()..]
+            .iter()
+            .all(|branch| branch.transformer));
+        let star = payload.buses.last().unwrap().substation;
+        assert!(payload.buses[..3].iter().all(|bus| bus.substation == star));
+        assert_eq!(payload.substations.len(), {
+            let mut seen: Vec<u32> = payload.buses.iter().map(|b| b.substation).collect();
+            seen.sort_unstable();
+            seen.dedup();
+            seen.len()
+        });
+    }
+
+    #[test]
+    fn network_payload_groups_colocated_buses() {
+        let net = parse_balanced(FALLBACK_SPECS[0].text, "<fallback>", "m")
+            .expect("parse fallback")
+            .into_value();
+        let mut coords: Coords = net
+            .buses()
+            .iter()
+            .enumerate()
+            .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64, 40.0)))
+            .collect();
+        let (a, b) = (net.buses()[0].id.0, net.buses()[1].id.0);
+        coords.insert(b, coords[&a]);
+        let stacks = spread_stacks(&mut coords);
+        let payload = network_payload("co", "co", &net, &coords, &stacks, None, false)
+            .expect("co-located network payload");
+        assert_eq!(payload.buses[0].substation, payload.buses[1].substation);
+        assert!(payload.buses[0].base_kv > 0.0);
     }
 
     #[test]
@@ -2187,8 +2324,16 @@ mod tests {
         let self_loop_from = net.branches()[1].from;
         net.branches_mut()[1].to = self_loop_from;
         let coords = synthetic_layout(&net, FALLBACK_SPECS[0].bbox);
-        let payload = network_payload("filtered", "filtered", &net, &coords, None, true)
-            .expect("filtered payload");
+        let payload = network_payload(
+            "filtered",
+            "filtered",
+            &net,
+            &coords,
+            &Stacks::new(),
+            None,
+            true,
+        )
+        .expect("filtered payload");
         assert!(!payload.buses[0].editable);
         assert!(!payload.branches[0].editable);
         assert!(!payload.branches[1].editable);
@@ -2372,7 +2517,7 @@ mod tests {
             .enumerate()
             .map(|(i, b)| (b.id.0, (i as f64, 0.0)))
             .collect();
-        let entry = build_entry("iso", "iso", case, coords, None, true).unwrap();
+        let entry = build_entry("iso", "iso", case, coords, &Stacks::new(), None, true).unwrap();
 
         let err = validate_deltas(&entry, &HashMap::from([(201usize, 1.0)])).unwrap_err();
         assert_eq!(err.status, StatusCode::BAD_REQUEST);

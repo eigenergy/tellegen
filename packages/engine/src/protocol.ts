@@ -17,6 +17,14 @@ import type {
 
 export type EngineRequest =
   | { op: "preload" }
+  | { op: "solve_dc_grid"; input_json: string }
+  | {
+      op: "solve_ac_dc";
+      module_json: string;
+      formulation: string;
+      automatic_regulators: boolean;
+    }
+  | { op: "solve_regulated"; module_json: string }
   | { op: "study_document_create"; request: string }
   | { op: "study_document_import"; bundle: string }
   | { op: "study_document_run"; bundle: string; request: string }
@@ -38,6 +46,7 @@ export type EngineRequest =
   | { op: "apply_layout"; module_json: string; coords: string; kind: string }
   | { op: "extract_geo"; module_json: string }
   | { op: "mc_schematic_layout"; graph_json: string; options_json: string }
+  | { op: "tx_schematic_layout"; input_json: string; options_json: string }
   | { op: "apply_display_geo"; module_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
@@ -299,6 +308,18 @@ export function runRequest(
       return mod.extract_geo(req.module_json);
     case "mc_schematic_layout":
       return mod.mc_schematic_layout(req.graph_json, req.options_json);
+    case "solve_ac_dc":
+      return mod.solve_ac_dc(
+        req.module_json,
+        req.formulation,
+        req.automatic_regulators,
+      );
+    case "solve_regulated":
+      return mod.solve_regulated(req.module_json);
+    case "solve_dc_grid":
+      return mod.solve_dc_grid(req.input_json);
+    case "tx_schematic_layout":
+      return mod.tx_schematic_layout(req.input_json, req.options_json);
     case "apply_display_geo":
       return mod.apply_display_geo(req.module_json, req.bytes);
     case "capabilities":

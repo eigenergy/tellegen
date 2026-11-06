@@ -86,6 +86,8 @@ export function getNoticeCenter(): NoticeCenter {
 }
 export function errorNoticeTitle(details: string): string {
 	if (/rate limit/i.test(details)) return 'Too many requests';
+	if (/detailed DC converter\(s\).*qualified DC-grid/i.test(details))
+		return 'Open Equipment for AC/DC studies';
 	// MapLibre's WebGL failure includes "Read more"; classify our map errors
 	// before the generic file/read fallback so it does not blame a case file.
 	if (/^map failed to load:|^the map lost its graphics context/i.test(details))

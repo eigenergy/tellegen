@@ -274,9 +274,10 @@ test('the schematic layout file loads back with the case as its diagram', async 
 		timeout: 60_000
 	});
 	const circles = fresh.locator('[data-bus-id] circle');
-	await expect(circles.first()).toBeVisible();
-	const cx = await circles.evaluateAll((els) => els.map((el) => Number(el.getAttribute('cx'))));
-	expect(cx).toContain(lb.geometry.coordinates[0]);
+	// The case can render fallback positions while the attached layout is being imported.
+	await expect
+		.poll(() => circles.evaluateAll((els) => els.map((el) => Number(el.getAttribute('cx')))))
+		.toContain(lb.geometry.coordinates[0]);
 });
 
 test('a selected line shows every conductor in the multi-wire view', async ({ page }) => {
@@ -480,6 +481,7 @@ test('buses at the same point spread apart for the keyboard cursor', async ({ pa
 	await page.getByRole('button', { name: 'Show diagram' }).click();
 	const schematic = page.getByRole('application', { name: 'Schematic diagram' });
 	await expect(schematic).toBeVisible();
+	await expect(page.locator('.schematic-stage .status')).toHaveCount(0);
 	await schematic.focus();
 	await page.keyboard.press('ArrowRight');
 	await expect(schematic.locator('[aria-live]')).toContainText('One of 2 buses at this point');

@@ -1,0 +1,49 @@
+{
+  "base_commit": "8fa0c455cf9467ab045a0b2ab0507a92fa60345e",
+  "capture_date": "2026-11-06",
+  "timezone": "Australia/Brisbane",
+  "browser": "Installed Chrome, Playwright headless",
+  "desktop_viewport": [
+    1280,
+    800
+  ],
+  "phone_viewport": [
+    390,
+    844
+  ],
+  "phone_input": "Emulated touch; also checked controls at 320 x 740",
+  "test_file": "apps/web/tests/transmission-diagram.spec.ts",
+  "result": "10 passed",
+  "qualification": "DC OPF, AC power flow and SOCWR fixtures. AC OPF binary unavailable; no physical-device qualification. Temporary Vite configuration excludes only experimental-acopf asset packaging plugin.",
+  "screenshots": {
+    "phone-operating.png": {
+      "test_output": "transmission-diagram-phone-6612e-emains-amber-and-selectable/at-rating-gauge.png",
+      "sha256": "4c7b434f3249a62758f24c7f84df6c97904b1749c93bb40be3294f137c5408fc"
+    },
+    "phone-economics.png": {
+      "test_output": "transmission-diagram-phone-38484-gram-and-returns-to-the-map/mobile-economics-summary.png",
+      "sha256": "8815304ca836f98eac50bc3d974c36474764778f99b9ec93a90879cd7bcc15ec"
+    },
+    "phone-explanations.png": {
+      "test_output": "transmission-diagram-phone-38484-gram-and-returns-to-the-map/mobile-economics-explained.png",
+      "sha256": "e3aae85d5e0a6a4a1f78b7ef17e6f29a53c2ff97fa8eecb657659ef9ae7116b7"
+    },
+    "desktop-operating.png": {
+      "test_output": "transmission-diagram-deskt-13ccf-gram-and-returns-to-the-map/transmission-diagram.png",
+      "sha256": "d46cce9e88cc6db4a3d512d0ad46fa10672760c6be022cc4402c353d59d59fbc"
+    },
+    "desktop-ac.png": {
+      "test_output": "transmission-diagram-deskt-13ccf-gram-and-returns-to-the-map/transmission-ac-results.png",
+      "sha256": "09b89ab75fe071837b0dd8b7dae1c1b5c608e3e092bcb548cc040d88896a3582"
+    },
+    "unknown-thermal.png": {
+      "test_output": "transmission-diagram-partial-backend-data-preserves-unknowns/unknown-thermal-status.png",
+      "sha256": "84393dae287d52856270aa1e2dbe8d27595d204c0f719a546cbe846e86558c0c"
+    }
+  },
+  "source_sha256": {
+    "packages/svelte/src/lib/components/TransmissionCanvas.svelte": "7ab0a21509eaae3f1ad581c3f1222e3a8c232b7677491108125f57ab752317ca",
+    "packages/svelte/src/lib/diagram/transmission-explain.ts": "c221e47232b97fbbbaf47f714c961593e665d59c1ee134e4cadc2c44b159902f",
+    "apps/web/tests/transmission-diagram.spec.ts": "0587d99341fcab33b29d67c4c8f1a068ec8b26c9bf298e33f2cd19ad5afd45a4"
+  }
+}

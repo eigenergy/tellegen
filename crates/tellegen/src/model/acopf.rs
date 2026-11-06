@@ -4,6 +4,9 @@
 //! Solver status mapping and portable solution emission belong to the next
 //! layer, while all electrical semantics and stable source/index maps live here.
 
+mod hybrid;
+pub(crate) use hybrid::solve_joint_ac_dc;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -589,6 +592,18 @@ fn branch_flow(
 pub(super) fn compile_ac_opf_model(
     instance: &AcOpfInstance,
 ) -> Result<CanonicalAcOpfModel, String> {
+    compile_ac_opf_model_with(instance, |_, _, _, _| Ok(()))
+}
+
+fn compile_ac_opf_model_with(
+    instance: &AcOpfInstance,
+    augment: impl FnOnce(
+        &AcOpfPreparation,
+        &AcOpfColumns,
+        &AcOpfRows,
+        &mut NlProblemParts,
+    ) -> Result<(), String>,
+) -> Result<CanonicalAcOpfModel, String> {
     validate_supported(instance)?;
     let policy = AcOpfAssemblyPolicy::CANONICAL;
     let prep = build_ac_opf_preparation(instance, &policy.options())
@@ -876,7 +891,7 @@ pub(super) fn compile_ac_opf_model(
         piecewise_segments,
     };
 
-    let problem = NlProblem::from_expressions(NlProblemParts {
+    let mut parts = NlProblemParts {
         minimize: true,
         objective: sum(objective_terms),
         obj_constant: objective_constant,
@@ -888,7 +903,9 @@ pub(super) fn compile_ac_opf_model(
         g_u: rows_builder.upper,
         var_names,
         con_names: rows_builder.names,
-    })?;
+    };
+    augment(&prep, &columns, &rows, &mut parts)?;
+    let problem = NlProblem::from_expressions(parts)?;
     let mut hasher = Sha256::new();
     hasher.update(FORMULATION_TAG);
     hasher.update(
@@ -1186,6 +1203,15 @@ fn solve_ac_opf_with_options(
         return Err("AC OPF solve cancelled".into());
     }
     let model = compile_ac_opf_model(instance)?;
+    solve_compiled(model, cancel, options, |_, _| Ok(()))
+}
+
+fn solve_compiled(
+    mut model: CanonicalAcOpfModel,
+    cancel: Option<Arc<AtomicBool>>,
+    options: &str,
+    mut qualify: impl FnMut(&mut CanonicalAcOpfModel, &[f64]) -> Result<(), String>,
+) -> Result<AcOpfSolved, String> {
     if cancel
         .as_ref()
         .is_some_and(|flag| flag.load(Ordering::Relaxed))
@@ -1248,6 +1274,7 @@ fn solve_ac_opf_with_options(
             .collect(),
         promoted_by: outcome.promoted_by.map(str::to_owned),
     };
+    qualify(&mut model, x)?;
     let accepted = validate_primal(
         &model,
         x,
@@ -1617,14 +1644,14 @@ mpc.gencost = [
     }
 
     #[derive(Clone, Copy, Debug)]
-    struct DirectionalDerivativeErrors {
-        jacobian_absolute: f64,
-        jacobian_scaled: f64,
-        hessian_absolute: f64,
-        hessian_scaled: f64,
+    pub(super) struct DirectionalDerivativeErrors {
+        pub(super) jacobian_absolute: f64,
+        pub(super) jacobian_scaled: f64,
+        pub(super) hessian_absolute: f64,
+        pub(super) hessian_scaled: f64,
     }
 
-    fn directional_derivative_errors(
+    pub(super) fn directional_derivative_errors(
         model: &CanonicalAcOpfModel,
         tnlp: &mut NlTnlp,
     ) -> DirectionalDerivativeErrors {

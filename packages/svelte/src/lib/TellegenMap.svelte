@@ -62,6 +62,7 @@
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
 	import SchematicCanvas from './components/SchematicCanvas.svelte';
+	import TransmissionCanvas from './components/TransmissionCanvas.svelte';
 
 	const DEFAULT_CAMERA: CameraSnapshot = { center: [-85, 36], zoom: 4.5, bearing: 0, pitch: 0 };
 
@@ -157,6 +158,40 @@
 	const schematicCase = $derived(
 		!app.studyView && app.activeMulti?.schematic && app.activeMulti.graph ? app.activeMulti : null
 	);
+	/** A balanced case shown as a single-line diagram, likewise replacing the map. */
+	const txCase = $derived(ctrl.singleLineShown);
+	let shownTx: typeof txCase = null;
+	/** Open the active balanced case as a single-line diagram. */
+	function openSingleLine() {
+		const c = ctrl.singleLineCase;
+		if (!c) return;
+		c.schematic = true;
+		// On a phone, the sheet would cover the diagram it opens.
+		if (panels.compact) panels.drawer = null;
+	}
+	/** The map control that opens a balanced case as a single-line diagram. */
+	let diagramControl = $state.raw<HTMLElement | null>(null);
+	const diagramAvailable = $derived(!!ctrl.singleLineCase);
+	$effect(() => {
+		if (diagramControl) diagramControl.hidden = !diagramAvailable;
+	});
+	$effect(() => {
+		const now = txCase;
+		const before = shownTx;
+		shownTx = now;
+		untrack(() => {
+			if (
+				before &&
+				!now &&
+				ctrl.activeSolvable === before &&
+				!before.schematic &&
+				before.lastGeoView
+			) {
+				app.camera = before.lastGeoView;
+				app.cameraHandoff = true;
+			}
+		});
+	});
 	// When a case closes its own diagram (Close, Show map), the map continues from the diagram's
 	// geographic view. Switching to another case does not: the map frames the new case instead.
 	let shownSchematic: typeof schematicCase = null;
@@ -929,6 +964,36 @@
 					if (app.placingId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+				// Beside the zoom buttons, so it moves with them when a sheet opens.
+				m.addControl(
+					{
+						onAdd() {
+							const wrap = document.createElement('div');
+							wrap.className = 'maplibregl-ctrl diagram-ctrl';
+							const button = document.createElement('button');
+							button.type = 'button';
+							button.setAttribute('aria-label', 'Single-line diagram');
+							button.title =
+								'Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows';
+							const full = document.createElement('span');
+							full.className = 'full';
+							full.textContent = 'Single-line diagram';
+							const short = document.createElement('span');
+							short.className = 'short';
+							short.textContent = 'Diagram';
+							button.append(full, short);
+							button.onclick = openSingleLine;
+							wrap.append(button);
+							diagramControl = wrap;
+							return wrap;
+						},
+						onRemove() {
+							diagramControl?.remove();
+							diagramControl = null;
+						}
+					},
+					'bottom-right'
+				);
 
 				// WebGL resilience on Safari. Two failure modes seen in the wild:
 				//   1. The canvas backing store is discarded while the tab is idle or
@@ -1488,7 +1553,8 @@
 	$effect(() => {
 		const seq = app.cameraSeq;
 		const snapshot = app.cameraRequest;
-		if (diagramNetwork || schematicCase || !map || !snapshot || seq === handledCameraSeq) return;
+		if (diagramNetwork || schematicCase || txCase || !map || !snapshot || seq === handledCameraSeq)
+			return;
 		handledCameraSeq = seq;
 		handledFrameSeq = app.frameSeq;
 		map.jumpTo(snapshot);
@@ -1500,7 +1566,7 @@
 	// until its cue exists; anything unframeable settles immediately.
 	$effect(() => {
 		const seq = app.frameSeq;
-		if (diagramNetwork || schematicCase || !map || seq === handledFrameSeq) return;
+		if (diagramNetwork || schematicCase || txCase || !map || seq === handledFrameSeq) return;
 		const m = map;
 		const target = app.frameTarget;
 		const settle = () => app.settleFrame();
@@ -1546,6 +1612,23 @@
 			basemap={diagramBasemap}
 		/>
 	{/key}
+{:else if txCase?.network}
+	<!-- One canvas per network payload: a new payload (another case, edits that rebuild it, attached
+	     coordinates) starts afresh. -->
+	{#key txCase.network}
+		<TransmissionCanvas
+			network={txCase.network}
+			solution={txCase.solution}
+			caseId={txCase.id}
+			label={'label' in txCase ? txCase.label : txCase.name}
+			onselectbus={selectDiagramBus}
+			onselectbranch={selectDiagramBranch}
+			onclear={onmapclick}
+			onclose={() => (txCase.schematic = false)}
+			ongeoview={(view) => (txCase.lastGeoView = view)}
+			basemap={diagramBasemap}
+		/>
+	{/key}
 {:else if diagramNetwork}
 	<DiagramCanvas
 		network={diagramNetwork}
@@ -1554,6 +1637,7 @@
 		onbusclick={selectDiagramBus}
 		onbranchclick={selectDiagramBranch}
 		onclear={onmapclick}
+		onsingleline={diagramAvailable && !diagramMulti ? openSingleLine : undefined}
 	/>
 {:else}
 	{#key mapGen}
@@ -1808,6 +1892,44 @@
 	.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
 		float: none;
 		margin: 0;
+	}
+
+	.map :global(.diagram-ctrl) {
+		order: 1;
+	}
+	.map :global(.diagram-ctrl[hidden]) {
+		display: none;
+	}
+	.map :global(.diagram-ctrl .short) {
+		display: none;
+	}
+	@media (max-width: 760px) {
+		.map :global(.diagram-ctrl .full) {
+			display: none;
+		}
+		.map :global(.diagram-ctrl .short) {
+			display: inline;
+		}
+	}
+	.map :global(.diagram-ctrl button) {
+		white-space: nowrap;
+		padding: 7px 12px;
+		font: 11px var(--font-mono);
+		color: var(--ink);
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		box-shadow: var(--elev-tooltip);
+		cursor: pointer;
+	}
+	.map :global(.diagram-ctrl button:hover) {
+		border-color: var(--accent);
+		color: var(--text-accent);
+	}
+	@media (pointer: coarse) {
+		.map :global(.diagram-ctrl button) {
+			min-height: 44px;
+		}
 	}
 
 	.map :global(.maplibregl-ctrl-group) {

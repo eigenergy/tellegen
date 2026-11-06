@@ -90,8 +90,9 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		direction: 'asc',
 		limit: 3
 	});
+	if (!saved.ok)
+		throw new Error(`Saved voltage query failed: ${saved.error.code}: ${saved.error.message}`);
 	expect(saved).toMatchObject({ ok: true, data: { formulation: 'acpf' } });
-	if (!saved.ok) throw new Error('Saved voltage query failed');
 	expect(saved.data.state_id).toBeTruthy();
 	expect(
 		(saved.data.elements as typeof buses).map((bus) => [bus.legacy_id, bus.voltage_pu, bus.price])

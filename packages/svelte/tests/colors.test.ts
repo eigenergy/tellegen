@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	busMarkerRadius,
+	branchColor,
+	branchLoadingGradient,
 	busRadius,
 	busRadiusFor,
 	demandColor,
@@ -110,4 +112,20 @@ describe('demand encoding', () => {
 		expect(power.radiusUnits).toBe('pixels');
 		expect(power.radius(900)).toBe(busRadius(900));
 	});
+});
+
+it('the branch loading key matches the grey, amber and red thresholds', () => {
+	for (const [loading, stop] of [
+		[0, '0%'],
+		[0.6, '60%'],
+		[0.9, '90%'],
+		[1, '100%']
+	] as const) {
+		const rgb = branchColor(loading, true).slice(0, 3).join(' ');
+		expect(branchLoadingGradient).toContain(`rgb(${rgb}) ${stop}`);
+	}
+	const amber = branchColor(0.9 - Number.EPSILON, true)
+		.slice(0, 3)
+		.join(' ');
+	expect(branchLoadingGradient).toContain(`rgb(${amber}) 90%`);
 });

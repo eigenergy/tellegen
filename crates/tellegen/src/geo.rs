@@ -150,8 +150,18 @@ pub fn complete_coords_for(
     aux_text: Option<&str>,
     source: &str,
 ) -> Result<Coords, String> {
+    complete_coords_and_stacks(case, aux, aux_text, source).map(|(coords, _)| coords)
+}
+
+/// [`complete_coords_for`], also returning the co-located groups it spread.
+pub fn complete_coords_and_stacks(
+    case: &BalancedNetwork,
+    aux: &BalancedNetwork,
+    aux_text: Option<&str>,
+    source: &str,
+) -> Result<(Coords, Stacks), String> {
     let mut coords = network_coords(aux, aux_text);
-    spread_stacks(&mut coords);
+    let stacks = spread_stacks(&mut coords);
     let missing: Vec<_> = case
         .buses()
         .iter()
@@ -165,12 +175,17 @@ pub fn complete_coords_for(
             missing[0]
         ));
     }
-    Ok(coords)
+    Ok((coords, stacks))
 }
 
+/// Bus ids that shared one coordinate exactly, each group ascending.
+pub type Stacks = Vec<Vec<usize>>;
+
 /// Buses at one substation share its coordinate exactly. Place each co-located
-/// group on a small ring so every bus stays hoverable at street zoom.
-pub fn spread_stacks(coords: &mut Coords) {
+/// group on a small ring so every bus stays hoverable at street zoom. Returns
+/// the groups it spread, since the ring erases the shared coordinate that
+/// substation grouping ([`crate::substations`]) reads.
+pub fn spread_stacks(coords: &mut Coords) -> Stacks {
     const RADIUS: f64 = 0.004;
     let mut groups: BTreeMap<(u64, u64), Vec<usize>> = BTreeMap::new();
     for (&id, &(lon, lat)) in coords.iter() {
@@ -179,11 +194,13 @@ pub fn spread_stacks(coords: &mut Coords) {
             .or_default()
             .push(id);
     }
+    let mut stacks = Stacks::new();
     for ids in groups.values_mut() {
         if ids.len() < 2 {
             continue;
         }
         ids.sort_unstable();
+        stacks.push(ids.clone());
         let (lon0, lat0) = coords[&ids[0]];
         let lonscale = lat0.to_radians().cos().max(0.2);
         for (j, id) in ids.iter().enumerate() {
@@ -197,6 +214,7 @@ pub fn spread_stacks(coords: &mut Coords) {
             );
         }
     }
+    stacks
 }
 
 pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Coords {
@@ -476,7 +494,8 @@ mod tests {
     #[test]
     fn stack_spreading_is_deterministic() {
         let mut coords = BTreeMap::from([(2, (-90.0, 40.0)), (1, (-90.0, 40.0))]);
-        spread_stacks(&mut coords);
+        let stacks = spread_stacks(&mut coords);
+        assert_eq!(stacks, vec![vec![1, 2]]);
         assert_ne!(coords[&1], coords[&2]);
         assert!(coords[&1].0 > coords[&2].0);
     }

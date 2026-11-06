@@ -32,7 +32,7 @@ pub(crate) mod islands;
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
 #[cfg(feature = "acopf")]
-pub(crate) use acopf::{solve_ac_opf_cancellable, AcOpfSolved};
+pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
 pub(crate) use dc::{DcNetwork, LinearRow};
 
 #[cfg(all(test, feature = "conic"))]
@@ -371,6 +371,47 @@ pub(super) fn reject_unsupported_active_elements(
         .count();
     let active_hvdc = network.hvdc().iter().filter(|link| link.in_service).count();
     let mut unsupported = Vec::new();
+    let active_svcs = network
+        .static_var_compensators()
+        .iter()
+        .filter(|svc| svc.in_service)
+        .count();
+    if active_svcs > 0 {
+        unsupported.push(format!(
+            "{active_svcs} in-service static VAR compensator(s)"
+        ));
+    }
+    if let Some(detailed) = network.detailed_connectivity() {
+        let covered: std::collections::HashSet<_> = network
+            .hvdc()
+            .iter()
+            .filter(|h| h.in_service)
+            .flat_map(|h| [h.converter1.as_ref(), h.converter2.as_ref()])
+            .flatten()
+            .map(|c| &c.component)
+            .collect();
+        let unmapped = detailed
+            .voltage_source_converters
+            .iter()
+            .filter(|c| {
+                c.dc_terminal1.connected != Some(false)
+                    && c.dc_terminal2.connected != Some(false)
+                    && !covered.contains(&c.component)
+            })
+            .count()
+            + detailed
+                .line_commutated_converters
+                .iter()
+                .filter(|c| {
+                    c.dc_terminal1.connected != Some(false)
+                        && c.dc_terminal2.connected != Some(false)
+                        && !covered.contains(&c.component)
+                })
+                .count();
+        if unmapped > 0 {
+            unsupported.push(format!("{unmapped} detailed DC converter(s) without an explicit reduced injection equivalent; use a qualified DC-grid calculation"));
+        }
+    }
     if closed_switches > 0 {
         unsupported.push(format!("{closed_switches} closed switch(es)"));
     }

@@ -62,6 +62,28 @@ bare model JSON is now `unknown`; regenerate it as `pio-ir` from source data.
 Every API that accepts a byte buffer rejects inputs larger than
 `MAX_ENGINE_INPUT_BYTES` (128 MiB) before worker dispatch.
 
+## Result interpretation
+
+Network and ingest topology buses carry optional `vmin_pu` and `vmax_pu` source
+voltage bounds. Lowered star points and older payloads omit these fields.
+
+Branch results retain `loading` for compatibility and add optional `loading_info`:
+`basis` is `mw` for DC and `mva` for AC/conic results; `rating` uses those units;
+`rating_source` distinguishes `stated` and `synthesized` limits. An unrated AC
+branch omits the rating, even when the numerical model uses an internal fallback.
+DC synthesized bounds are effective model bounds, not equipment thermal ratings.
+`limiting_end` names the AC end with the greater apparent power.
+
+`solveResponseToSolution` preserves this metadata and AC endpoint quantities.
+`mw` is from-end active power, `pt` is to-end active power (MW), and `qf`/`qt`
+are reactive power (MVAr). Each endpoint is positive from its bus into the branch.
+DC omits reactive and receiving-end quantities. Missing metadata in legacy
+results means unknown; it does not establish zero utilization or normal operation.
+Utilization alone does not establish enforcement or economic binding.
+
+Compact solutions also retain optional `formulation` and `status` from the solver.
+Legacy display payloads can omit them; absence does not establish solve success.
+
 ## Experimental AC OPF
 
 The ordinary package contains no POUNCE WASI asset. A development host must

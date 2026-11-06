@@ -16,6 +16,7 @@ use wasm_bindgen::prelude::*;
 use tellegen::geo::{
     apply_aux_substation_locations, lowered_coords, network_coords, spread_stacks,
 };
+use tellegen::substations::{group_for_display, Substation};
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
@@ -1039,6 +1040,15 @@ struct ViewBus {
     lat: f64,
     demand_mw: f64,
     gen_mw: f64,
+    /// Nominal voltage in kV (0 when the source gives none).
+    base_kv: f64,
+    /// Source operating voltage bounds, per unit; absent for lowered display rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmin_pu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmax_pu: Option<f64>,
+    /// Index into the payload's `substations`.
+    substation: u32,
     /// False for a display-only bus synthesized by analysis lowering.
     editable: bool,
 }
@@ -1052,6 +1062,8 @@ struct ViewBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
+    /// Joins two voltage levels (see `tellegen::substations::is_transformer`).
+    transformer: bool,
     /// False for a display-only branch synthesized by analysis lowering.
     editable: bool,
     /// The rendered polyline: the branch's `route` when a geographic file
@@ -1061,10 +1073,12 @@ struct ViewBranch {
 }
 
 #[derive(Serialize)]
-struct View {
+struct View<'a> {
+    equipment: &'a tellegen::equipment::Equipment,
     coordinate_space: &'static str,
     buses: Vec<ViewBus>,
     branches: Vec<ViewBranch>,
+    substations: &'a [Substation],
 }
 
 #[derive(Serialize)]
@@ -1077,6 +1091,13 @@ struct TopologyBus {
     uid: Option<String>,
     demand_mw: f64,
     gen_mw: f64,
+    base_kv: f64,
+    /// Source operating voltage bounds, per unit; absent for lowered display rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmin_pu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmax_pu: Option<f64>,
+    substation: u32,
     editable: bool,
 }
 
@@ -1089,6 +1110,7 @@ struct TopologyBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
+    transformer: bool,
     editable: bool,
 }
 
@@ -1153,9 +1175,11 @@ fn analysis_uids(
 }
 
 #[derive(Serialize)]
-struct Topology {
+struct Topology<'a> {
+    equipment: &'a tellegen::equipment::Equipment,
     buses: Vec<TopologyBus>,
     branches: Vec<TopologyBranch>,
+    substations: &'a [Substation],
 }
 
 /// Everything the drop panel needs from one parse: counts, total load and
@@ -1377,7 +1401,31 @@ pub(crate) fn ingest_value(
         *gen.entry(g.bus.0).or_default() += g.pmax * power_scale;
     }
 
+    // Coordinates and co-located stacks first: substation grouping reads the shared coordinates
+    // that the display spread erases, and the topology and view carry the same grouping.
+    let mut cs = lowered_coords(net, &network_coords(net, source_text));
+    let space = net.geo().as_ref().map(|g| &g.space);
+    let geographic = !matches!(space, Some(powerio::CoordinateSpace::Diagram { .. }));
+    let synthetic = matches!(
+        net.geo().as_ref().and_then(|g| g.kind),
+        Some(powerio::geo::CoordsKind::Synthetic)
+    );
+    let stacks = if geographic && !cs.is_empty() {
+        spread_stacks(&mut cs)
+    } else {
+        Vec::new()
+    };
+    let grouping = group_for_display(analysis, &stacks, geographic.then_some(&cs), synthetic);
+
+    let mut equipment = tellegen::equipment::project(net)?;
+    equipment.import_notes = diagnostics
+        .iter()
+        .map(|d| format!("{}: {}", d.code(), d.message()))
+        .chain(warnings.iter().cloned())
+        .collect();
     let topology = Topology {
+        equipment: &equipment,
+        substations: &grouping.substations,
         buses: analysis
             .buses()
             .iter()
@@ -1391,6 +1439,10 @@ pub(crate) fn ingest_value(
                     uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                    base_kv: b.base_kv,
+                    vmin_pu: (i < net.buses().len() && b.vmin.is_finite()).then_some(b.vmin),
+                    vmax_pu: (i < net.buses().len() && b.vmax.is_finite()).then_some(b.vmax),
+                    substation: grouping.bus_substation[i],
                     editable: i < net.buses().len() && editable_bus_ids.contains(&b.id.0),
                 })
             })
@@ -1407,6 +1459,7 @@ pub(crate) fn ingest_value(
                     to: br.to.0,
                     rate_mw: br.rate_a * power_scale,
                     status: br.in_service as u8,
+                    transformer: grouping.transformer[i],
                     editable: editable_branch_rows.contains(&i),
                 })
             })
@@ -1414,8 +1467,6 @@ pub(crate) fn ingest_value(
     };
 
     let view = {
-        let source_coords = network_coords(net, source_text);
-        let mut cs = lowered_coords(net, &source_coords);
         if cs.is_empty() {
             None
         } else {
@@ -1425,7 +1476,7 @@ pub(crate) fn ingest_value(
                     "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
                 ));
             }
-            let coordinate_space = match net.geo().as_ref().map(|g| &g.space) {
+            let coordinate_space = match space {
                 Some(powerio::CoordinateSpace::Diagram { .. }) => "diagram",
                 Some(powerio::CoordinateSpace::Projected { .. }) => {
                     return Err(
@@ -1435,9 +1486,6 @@ pub(crate) fn ingest_value(
                 }
                 _ => "geographic",
             };
-            if coordinate_space == "geographic" {
-                spread_stacks(&mut cs);
-            }
             let buses: Vec<ViewBus> = analysis
                 .buses()
                 .iter()
@@ -1454,6 +1502,10 @@ pub(crate) fn ingest_value(
                         lat,
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                        base_kv: b.base_kv,
+                        vmin_pu: (i < net.buses().len() && b.vmin.is_finite()).then_some(b.vmin),
+                        vmax_pu: (i < net.buses().len() && b.vmax.is_finite()).then_some(b.vmax),
+                        substation: grouping.bus_substation[i],
                         editable: i < net.buses().len() && editable_bus_ids.contains(&b.id.0),
                     }))
                 })
@@ -1478,6 +1530,7 @@ pub(crate) fn ingest_value(
                         to: br.to.0,
                         rate_mw: br.rate_a * power_scale,
                         status: br.in_service as u8,
+                        transformer: grouping.transformer[i],
                         editable: editable_branch_rows.contains(&i),
                         path,
                     }))
@@ -1490,9 +1543,11 @@ pub(crate) fn ingest_value(
                 ));
             }
             Some(View {
+                equipment: &equipment,
                 coordinate_space,
                 buses,
                 branches,
+                substations: &grouping.substations,
             })
         }
     };
@@ -1769,6 +1824,53 @@ pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<Strin
     serde_json::to_string(&tellegen::schematic::schematic_layout(&graph, &options)).map_err(jserr)
 }
 
+/// Solve an explicit resistive DC network with converter voltage/power/current
+/// controls. This is independent of the AC-network DC power-flow approximation.
+#[wasm_bindgen]
+pub fn solve_dc_grid(input_json: &str) -> Result<String, JsError> {
+    ensure_input_text(input_json)?;
+    install_panic_hook();
+    let grid: tellegen::dc_grid::DcGrid = serde_json::from_str(input_json).map_err(jserr)?;
+    let result = tellegen::dc_grid::solve(&grid).map_err(jserr)?;
+    serde_json::to_string(&result).map_err(jserr)
+}
+
+/// Detailed VSC/LCC study with converter Q/voltage controls and optional source regulators.
+#[wasm_bindgen]
+pub fn solve_ac_dc(
+    module_json: &str,
+    formulation: &str,
+    automatic_regulators: bool,
+) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    let mode: tellegen::Problem =
+        serde_json::from_value(serde_json::Value::String(formulation.to_owned())).map_err(jserr)?;
+    tellegen::ac_dc::solve_module_json_with_regulators(module_json, mode, automatic_regulators)
+        .map_err(jserr)
+}
+
+/// Substation overview layout of a balanced network (`txSchematicLayout` in `@tellegen/engine`):
+/// columnar bus positions, busbars, substation boxes, routed branch segments and edge roles, in
+/// the units of the seed positions. `options_json` may be empty for the defaults.
+#[wasm_bindgen]
+pub fn tx_schematic_layout(input_json: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(input_json)?;
+    install_panic_hook();
+    let input: tellegen::tx_schematic::TxLayoutInput =
+        serde_json::from_str(input_json).map_err(jserr)?;
+    input.validate().map_err(jserr)?;
+    let options: tellegen::tx_schematic::TxLayoutOptions = if options_json.trim().is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    serde_json::to_string(&tellegen::tx_schematic::tx_schematic_layout(
+        &input, &options,
+    ))
+    .map_err(jserr)
+}
+
 /// Fill case coordinates from a PowerWorld `.pwd` sibling: substation symbols
 /// project to approximate longitude/latitude and join onto buses through the
 /// `SubNum` extras key. Returns the refreshed `ingest_case` payload plus a
@@ -1791,6 +1893,25 @@ mod tests {
         parse_case_module(text.as_bytes(), "matpower")
             .expect("parse matpower")
             .into_value()
+    }
+
+    #[test]
+    fn equipment_payload_survives_ingest_without_coordinates() {
+        let mut net = parse_matpower(CASE14_NO_COORDS);
+        let bus = net.buses()[0].id;
+        net.shunts_mut().push(powerio::Shunt::new(bus, 0.0, -20.0));
+        let mut h = powerio::Hvdc::new(bus, net.buses()[1].id);
+        h.pf = 20.0;
+        h.pt = 19.0;
+        net.hvdc_mut().push(h);
+        let value = ingest_value(&net, &[], vec![], None).unwrap();
+        assert_eq!(value["topology"]["equipment"]["hvdc"][0]["pf_mw"], 20.0);
+        let shunts = value["topology"]["equipment"]["shunts"].as_array().unwrap();
+        assert_eq!(shunts.last().unwrap()["b_mvar"], -20.0);
+        assert_eq!(
+            value["topology"]["branches"].as_array().unwrap().len(),
+            net.branches().len()
+        );
     }
 
     #[test]
@@ -1866,6 +1987,8 @@ mpc.gencost = [
             .unwrap()
             .contains("case14synthetic"));
         assert_eq!(v["topology"]["buses"].as_array().unwrap().len(), 14);
+        assert_eq!(v["topology"]["buses"][0]["vmin_pu"], 0.9);
+        assert_eq!(v["topology"]["buses"][0]["vmax_pu"], 1.1);
         assert_eq!(v["topology"]["branches"].as_array().unwrap().len(), 20);
         assert_eq!(
             v["topology"]["buses"][1]["demand_mw"].as_f64().unwrap(),
@@ -1878,6 +2001,18 @@ mpc.gencost = [
         assert_eq!(v["topology"]["buses"][0]["uid"], "1");
         assert_eq!(v["topology"]["branches"][1]["uid"], "1-5");
         assert!(!v["module_json"].as_str().unwrap().contains("buses:0"));
+
+        // Tap-changing rows 4-7, 4-9 and 5-6 are transformers; their ends are drawn as one
+        // substation each, every other bus on its own.
+        let topology = &v["topology"];
+        let sub = |row: usize| topology["buses"][row]["substation"].as_u64().unwrap();
+        assert_eq!(topology["buses"][0]["base_kv"], 230.0);
+        assert_eq!((sub(3), sub(6), sub(8)), (sub(3), sub(3), sub(3)));
+        assert_eq!(sub(4), sub(5));
+        assert_ne!(sub(3), sub(4));
+        assert_eq!(topology["substations"].as_array().unwrap().len(), 14 - 3);
+        assert_eq!(topology["branches"][7]["transformer"], true);
+        assert_eq!(topology["branches"][0]["transformer"], false);
     }
 
     #[test]
@@ -1915,6 +2050,29 @@ mpc.gencost = [
     }
 
     #[test]
+    fn voltage_limits_survive_geographic_and_normalized_ingest() {
+        let mut net = parse_matpower(CASE14_NO_COORDS);
+        for (i, bus) in net.buses_mut().iter_mut().enumerate() {
+            bus.location = Some(powerio::Location {
+                x: -81.0 + i as f64 * 0.01,
+                y: 35.0,
+                kind: None,
+            });
+        }
+        net.buses_mut()[1].vmin = 0.96;
+        net.buses_mut()[1].vmax = 1.04;
+        for source in [&net, &net.to_normalized().expect("normalize")] {
+            let value = ingest_value(source, &[], Vec::new(), None).expect("ingest geographic");
+            for key in ["view", "topology"] {
+                let bus = &value[key]["buses"][1];
+                assert_eq!(bus["id"], 2);
+                assert_eq!(bus["vmin_pu"], 0.96);
+                assert_eq!(bus["vmax_pu"], 1.04);
+            }
+        }
+    }
+
+    #[test]
     fn three_winding_transformer_topology_is_closed_but_canonical_payload_stays_typed() {
         let mut net = parse_matpower(CASE14_NO_COORDS);
         let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
@@ -1929,6 +2087,8 @@ mpc.gencost = [
         assert_eq!(value["topology"]["branches"].as_array().unwrap().len(), 23);
         let star = &value["topology"]["buses"][14];
         assert_eq!(star["editable"], false);
+        assert!(star.get("vmin_pu").is_none());
+        assert!(star.get("vmax_pu").is_none());
         assert!(star["uid"].as_str().unwrap().starts_with("analysis:buses:"));
         for branch in &value["topology"]["branches"].as_array().unwrap()[20..] {
             assert_eq!(branch["to"], 15);
@@ -2358,6 +2518,9 @@ mpc.gencost = [
             let payload = ingest_case_value(aux, format).expect("ingest PowerWorld aux");
             assert_eq!(payload["view"]["buses"][0]["lon"], -81.0);
             assert_eq!(payload["view"]["buses"][0]["lat"], 35.0);
+            assert_eq!(payload["view"]["substations"][0]["key"], "sub:12");
+            assert_eq!(payload["view"]["substations"][0]["source"], "declared");
+            assert_eq!(payload["view"]["buses"][0]["base_kv"], 138.0);
 
             let module_json = payload["module_json"]
                 .as_str()
@@ -2455,4 +2618,12 @@ mpc.gencost = [
       },
       "shunt": {}, "storage": {}, "switch": {}, "dcline": {}
     }"#;
+}
+
+/// AC power flow with bounded, explicit transformer and switched-shunt control.
+#[wasm_bindgen]
+pub fn solve_regulated(module_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    tellegen::regulation::solve_module_json(module_json).map_err(jserr)
 }
