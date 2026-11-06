@@ -28,6 +28,8 @@ import { placeSyntheticTopology } from './synthetic-layout.js';
 import { powerIoEntry, solveEntry } from './log.svelte.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
+import { CollectionImport } from './collection-import.svelte.js';
+import { captureDrop, namedFiles } from './collection-files.js';
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
 	browserWasmTransport,
@@ -310,6 +312,17 @@ export class Controller {
 	// File reads and worker messages retain whole buffers. Admit one validated
 	// batch at a time so repeated drops cannot multiply the aggregate byte cap.
 	private readonly dropBatchGate = new DropBatchGate();
+	readonly collectionImport = new CollectionImport((label, result) => {
+		if (this.disposed) return;
+		if (result.kind === 'multiconductor') {
+			this.addMultiCase(label, result.payload, label);
+		} else {
+			const local = this.localFromBalancedPayload(label, { ...result.payload, name: label });
+			local.formulation = result.payload.formulation ?? 'acpf';
+			this.placeTopologyAsDiagram(local);
+			this.addAndActivateLocal(local, { solve: false });
+		}
+	});
 	// Set by dispose(). Not $state; nothing renders it.
 	disposed = false;
 
@@ -619,6 +632,7 @@ export class Controller {
 	dispose() {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.collectionImport.close();
 		this.abort?.abort();
 		this.abort = null;
 		this.acOpfProbeAbort.abort();
@@ -1183,7 +1197,7 @@ export class Controller {
 
 	/** Add a prepared local case, make it active, frame it (unless `frame` is
 	 * false) and start its browser solve. */
-	addAndActivateLocal = (c: LocalCase, options: { frame?: boolean } = {}) => {
+	addAndActivateLocal = (c: LocalCase, options: { frame?: boolean; solve?: boolean } = {}) => {
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
@@ -1194,7 +1208,7 @@ export class Controller {
 		if (c.diagram) this.app.placingLocalId = null;
 		if ((options.frame ?? true) && (c.view || c.diagram || c.substations))
 			this.app.requestFrame(c.id);
-		this.maybeStartLocalSolve(c.id);
+		if (options.solve !== false) this.maybeStartLocalSolve(c.id);
 	};
 
 	placeLocalCase = async (lon: number, lat: number) => {
@@ -2181,6 +2195,10 @@ export class Controller {
 	 * place those networks; a PowerWorld .pwd becomes a substation point
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
+		if (this.collectionImport.open) {
+			this.app.error = 'Finish or close the current collection before opening another';
+			return;
+		}
 		const release = this.dropBatchGate.enter();
 		if (!release) {
 			this.app.error = 'another file batch is still being parsed';
@@ -2194,12 +2212,58 @@ export class Controller {
 				this.app.error = errorText(e);
 				return;
 			}
-			await this.ingestFileBatch(list);
+			if (
+				list.some((f) => /\.zip$/i.test(f.name) || !!f.webkitRelativePath) ||
+				(list.length > 1 && list.some((f) => /\.dss$/i.test(f.name)))
+			) {
+				await this.collectionImport.start(async () => namedFiles(list));
+			} else await this.ingestFileBatch(list);
 		} catch (e) {
 			this.app.error = errorText(e);
 		} finally {
 			this.app.parsingFile = false;
 			release();
+		}
+	};
+
+	/** Folder entries use collection-member limits, not the 32-upload picker cap. */
+	ingestFolder = async (files: FileList | File[]) => {
+		const release = this.dropBatchGate.enter();
+		if (!release) {
+			this.app.error = 'Another file batch is still being parsed';
+			return;
+		}
+		try {
+			await this.collectionImport.start(async () => namedFiles(files));
+		} catch (error) {
+			this.app.error = errorText(error);
+		} finally {
+			release();
+		}
+	};
+
+	ingestDrop = (data: DataTransfer) => {
+		// Capture entry handles in the drop event before its protected data expires.
+		try {
+			const entries = Array.from(data.items).filter((item) => item.kind === 'file');
+			if (!entries.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+				void this.ingestFiles(data.files);
+				return;
+			}
+			const read = captureDrop(data);
+			const release = this.dropBatchGate.enter();
+			if (!release) {
+				this.app.error = 'Another file batch is still being parsed';
+				return;
+			}
+			void this.collectionImport
+				.start(read)
+				.catch((error) => {
+					this.app.error = errorText(error);
+				})
+				.finally(release);
+		} catch (error) {
+			this.app.error = errorText(error);
 		}
 	};
 
@@ -2524,7 +2588,7 @@ export class Controller {
 	};
 
 	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
-	private addMultiCase(fileName: string, payload: IngestedDistCase) {
+	private addMultiCase(fileName: string, payload: IngestedDistCase, labelOverride?: string) {
 		const {
 			graph,
 			input,
@@ -2532,7 +2596,8 @@ export class Controller {
 		}: Pick<IngestedDistCase, 'graph' | 'input'> & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
-			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+			labelOverride ??
+			(summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, ''));
 		const view =
 			coordsKind === 'geographic'
 				? buildGeographicView(graph, payload.geo_layer)
