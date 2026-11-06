@@ -16,6 +16,16 @@ const MAX_BYTES: usize = 64 << 20;
 const MAX_FILES: usize = 4096;
 const MAX_SELECTION_BYTES: usize = 1 << 20;
 
+fn browser_limits() -> CollectionLimits {
+    // PowerIO conservatively charges the permitted project tree per parse.
+    // Allow a full 32-case batch, acquisition and inspection without confusing
+    // cumulative CPU/input work with the independent 64 MiB residency bound.
+    CollectionLimits {
+        work_bytes: 36 * MAX_BYTES as u64,
+        ..Default::default()
+    }
+}
+
 /// A bounded ZIP or named file tree, held once until explicitly freed.
 /// Neither discovery nor selection permits filesystem or network access.
 #[wasm_bindgen]
@@ -86,7 +96,7 @@ impl CaseCollection {
         if bytes.len() > MAX_BYTES {
             return Err("ZIP exceeds the 64 MiB compressed input limit".into());
         }
-        Collection::from_zip(name, Arc::from(bytes), CollectionLimits::default())
+        Collection::from_zip(name, Arc::from(bytes), browser_limits())
             .map(Self)
             .map_err(|e| e.to_string())
     }
@@ -115,7 +125,7 @@ impl CaseCollection {
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        Collection::from_files(name, files, CollectionLimits::default())
+        Collection::from_files(name, files, browser_limits())
             .map(Self)
             .map_err(|e| e.to_string())
     }
@@ -234,6 +244,33 @@ mod tests {
 
     fn select(path: &str) -> String {
         serde_json::to_string(&CollectionSelection::file(path)).unwrap()
+    }
+
+    #[test]
+    fn advertised_batch_fits_cumulative_work_budget_with_large_shared_project() {
+        let template = tree();
+        let selected = template
+            .0
+            .source(&CollectionSelection::file("comparison.m"))
+            .unwrap();
+        let case = selected.primary_buffer().unwrap();
+        let mut bytes = case.bytes().to_vec();
+        let case_len = bytes.len() as u32;
+        bytes.resize(bytes.len() + (9 << 20), b'x');
+        let session = CaseCollection::files(
+            "batch",
+            r#"["case.m","shared.bin"]"#,
+            &[0, case_len, bytes.len() as u32],
+            &bytes,
+        )
+        .unwrap();
+        session.inspect_value().unwrap();
+        for _ in 0..32 {
+            assert_eq!(
+                session.ingest_value(&select("case.m")).unwrap()["kind"],
+                "balanced"
+            );
+        }
     }
 
     #[test]
