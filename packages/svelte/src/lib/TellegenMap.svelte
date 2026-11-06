@@ -1232,10 +1232,15 @@
 		}
 		// Local cases are grey until the browser solve returns. A .pwd display
 		// file contributes substation points only, in a cooler slate so they
-		// read as diagram derived positions.
+		// read as diagram derived positions. A generated grid's line taps draw
+		// no marker, as their lines show them, unless one is the selected bus.
 		for (const c of app.localCases) {
 			if (c.view) {
 				const d = display.get(c.id);
+				const selectedTap =
+					c.id === app.activeLocalId && app.selectedBus !== null && c.tapBuses.has(app.selectedBus)
+						? c.view.buses.find((b) => b.id === app.selectedBus)
+						: undefined;
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
@@ -1274,7 +1279,7 @@
 					}),
 					new ScatterplotLayer<NetworkBus>({
 						id: `local-buses-${c.id}`,
-						data: c.view.buses,
+						data: selectedTap ? [...c.markerBuses, selectedTap] : c.markerBuses,
 						getPosition: (b) => [b.lon, b.lat],
 						getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 						radiusUnits: marker.radiusUnits,
