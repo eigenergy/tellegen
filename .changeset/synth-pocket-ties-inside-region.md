@@ -1,5 +1,0 @@
----
-'@tellegen/engine': patch
----
-
-Synthetic grids with subtransmission no longer tie pockets through ground outside the requested region. Neighbouring pockets were tied along the shortest edge of a triangulation that spans the region's convex hull, so on a concave region two pockets could be "neighbours" across land the region does not hold: on California, a 741 km 66 kV tie ran through Nevada with `boundary_role` `tie_line`, and other ties of hundreds of kilometres crossed the sea. Now two pockets are tied only by a line that stays inside the region and is no longer than the pocket reach at its voltage (60 km at 66 kV, scaled with voltage). A pocket with no such neighbour is left untied and fed through its own step-down substation, as most pockets are, so the network stays connected. A line whose straight path stays inside the region also keeps its drawn route inside it, instead of being labelled `tie_line` because of the small offset that separates lines on the map. Transmission-only grids are unchanged.
