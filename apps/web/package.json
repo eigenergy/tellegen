@@ -27,16 +27,16 @@
 		"maplibre-gl": "^6.15.0"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.64.1",
 		"@fontsource-variable/bricolage-grotesque": "^5.3.0",
 		"@fontsource/ibm-plex-mono": "^5.3.0",
+		"@playwright/test": "^1.64.1",
 		"@sveltejs/adapter-static": "^4.0.1",
 		"@sveltejs/kit": "^3.1.1",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"prettier": "^3.9.10",
 		"prettier-plugin-svelte": "^4.1.1",
 		"svelte": "^5.57.3",
-		"svelte-check": "^4.7.7",
+		"svelte-check": "^4.7.8",
 		"typescript": "^6.0.3",
 		"vite": "^8.3.1"
 	},
