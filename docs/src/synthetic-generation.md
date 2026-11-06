@@ -22,6 +22,10 @@ along a pole. Request values are bounded well outside any real system:
 voltage levels 1–1500 kV, `demand.mw` up to 10⁷, `demand.per_capita_kw` up
 to 100 and `demand.peak_factor` from 1 to 10.
 
+Generated longitudes lie in [-180, 180], and a branch route that crosses the
+seam is not split; [Routes across the antimeridian](antimeridian-routes.md)
+says how to draw one.
+
 Each generated bus, branch, load, generator, shunt and HVDC row keeps its
 annotations (kind, place, population weight, tier, island, source, corridor
 and circuit) under `extras.tellegen_synth`, and the module is named
