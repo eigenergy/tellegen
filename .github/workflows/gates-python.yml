@@ -53,8 +53,8 @@ jobs:
           jq -nr --argjson macos "$macos" '"legs=" + ([
             {os: "ubuntu-latest", target: "x86_64", native: true},
             {os: "ubuntu-latest", target: "aarch64", native: false},
-            {os: "macos-14", target: "aarch64", native: true},
-            {os: "macos-14", target: "x86_64", native: false},
+            {os: "macos-15", target: "aarch64", native: true},
+            {os: "macos-15", target: "x86_64", native: false},
             {os: "windows-latest", target: "x64", native: true}
           ] | map(select($macos or (.os | startswith("macos") | not))) | tojson)' >> "$GITHUB_OUTPUT"
 
