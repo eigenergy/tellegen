@@ -5,6 +5,26 @@ use powerio::{PioModule, PioValue};
 use powerio_dist::{CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork};
 use tellegen::ir::deserialize_module;
 
+/// Preserve the source-format restriction when a module arrives through a
+/// selected tree instead of the single-buffer entry point.
+#[cfg(feature = "sensitivity")]
+pub(crate) fn mark_raw_dss_restriction(
+    module: PioModule<PioValue>,
+) -> Result<PioModule<PioValue>, String> {
+    if !module
+        .sources()
+        .iter()
+        .any(|s| s.format().is_some_and(|f| f.as_str() == "dss"))
+    {
+        return Ok(module);
+    }
+    module.with_diagnostic(powerio::Diagnostic::new(
+        powerio::DiagnosticCode::new("PARTNER.TELLEGEN.MC_PF_UNSUPPORTED").map_err(|e| e.to_string())?,
+        powerio::DiagnosticSeverity::Warning,
+        "OpenDSS imports are view-only until their source, load and control semantics are qualified for snapshot power flow",
+    )).map_err(|e| e.to_string())
+}
+
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
 /// return the drop-panel payload JSON (see [`ingest_dist_value`]). The format
 /// token is resolved by PowerIO's universal parser; anything else, including

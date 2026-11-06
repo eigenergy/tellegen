@@ -20,6 +20,10 @@ use tellegen::geo::{
 use tellegen::SolveResponse;
 
 mod alloc_stats;
+#[cfg(feature = "sensitivity")]
+mod collection;
+#[cfg(feature = "sensitivity")]
+pub use collection::CaseCollection;
 mod dist;
 mod geo;
 #[cfg(feature = "synth")]
@@ -2019,9 +2023,8 @@ mpc.gencost = [
         assert_eq!(distribution.payload["n_bus"], 1);
         assert!(distribution.payload["diagnostics"].is_array());
 
-        let ambiguous =
-            ingest_json_drop_value(br#"{"baseMVA":100.0,"bus":{},"data_model":"ENGINEERING"}"#)
-                .expect("ambiguous JSON remains unresolved");
+        let ambiguous = ingest_json_drop_value(br#"{"baseMVA":100.0,"voltage_source":{}}"#)
+            .expect("ambiguous JSON remains unresolved");
         assert_eq!(ambiguous.kind, "ambiguous");
         assert_eq!(ambiguous.format, None);
         assert!(ambiguous.payload.is_null());
