@@ -48,9 +48,19 @@ tests passed (two existing ignores); isolated `mc-pf`; 60 WASM adapter tests and
 its integration test; optional WASI ABI test; Clippy with warnings denied; 64 engine
 and 395 Svelte tests (one existing skip); package/web type checks; production web
 build; formatting; PowerIO pin and optional-backend license-boundary guards.
-Full `just ci` was not run. One capture attempt overlapped a production rebuild and
-failed during case import; the complete nine-test capture run passed after builds
-finished. The final captures come from that stable run.
+The full, unchanged `just ci` recipe subsequently passed on **7 November 2026
+(Australia/Brisbane)** at commit `895653bf4f0771e8ee5e55efc6445ac8d97c3a23`,
+without code fixes. It included dependency/license audits, Python-extension
+Clippy, the 10,000-bus retained-session regression, crate verification, both WASM
+builds, packed-package and example builds, production-build smoke checks, all
+117 browser cases (109 passed, eight existing external-data/opt-in skips), the
+16 evidence-harness tests and npm audit at the high threshold. See
+[`full-ci.json`](full-ci.json) for the environment and machine-readable result.
+Physical-device tests and explicitly skipped external-data cases remain separate.
+
+One earlier capture attempt overlapped a production rebuild and failed during
+case import; the complete nine-test capture run passed after builds finished.
+The screenshots come from that stable capture run.
 
 Both the ordinary WASM and the optional POUNCE WASI asset were built locally.
 The ordinary Vite configuration served the separate optional asset; no packaging
