@@ -1,7 +1,12 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { getUiConfig } from '../../context.svelte.js';
+	import TxControlResults from './TxControlResults.svelte';
 	import {
 		solveDcGrid,
 		solveAcDc,
+		solveJointAcDcModule,
+		probeAcOpfWorker,
 		type NetworkEquipment,
 		type DcGridSolution
 	} from '@tellegen/engine';
@@ -10,6 +15,22 @@
 	let error = $state('');
 	let coupled = $state<Awaited<ReturnType<typeof solveAcDc>> | null>(null);
 	let busy = $state(false);
+	let automaticRegulators = $state(false);
+	let jointAvailable = $state(false);
+	const config = getUiConfig();
+	let abort: AbortController | undefined;
+	$effect(() => {
+		const probe = new AbortController();
+		if (config.acOpfWasmUrl)
+			void probeAcOpfWorker(config.acOpfWasmUrl, undefined, probe.signal).then((value) => {
+				if (!probe.signal.aborted) jointAvailable = value;
+			});
+		return () => probe.abort();
+	});
+	onDestroy(() => {
+		generation++;
+		abort?.abort();
+	});
 	let generation = 0;
 	const topology = $derived(equipment.dc_topology);
 	const positions = $derived(
@@ -22,16 +43,21 @@
 	);
 	const short = (id: string) => id.split('/').at(-1) ?? id;
 	const num = (n: number) => Number(n.toPrecision(6));
-	async function solve(mode?: 'acpf' | 'dcopf') {
+	async function solve(mode?: 'acpf' | 'dcopf' | 'acopf') {
 		if (!equipment.dc_model) return;
 		const request = ++generation;
+		abort?.abort();
+		abort = new AbortController();
 		busy = true;
 		result = null;
 		coupled = null;
 		error = '';
 		try {
 			if (mode && moduleJson) {
-				const next = await solveAcDc(moduleJson, mode);
+				const next =
+					mode === 'acopf'
+						? await solveJointAcDcModule(config.acOpfWasmUrl!, moduleJson, abort.signal)
+						: await solveAcDc(moduleJson, mode, mode === 'acpf' && automaticRegulators);
 				if (request === generation) {
 					coupled = next;
 					result = next.dc;
@@ -49,6 +75,8 @@
 	$effect(() => {
 		void equipment;
 		void moduleJson;
+		void automaticRegulators;
+		abort?.abort();
 		generation++;
 		busy = false;
 		result = null;
@@ -153,18 +181,61 @@
 				>{busy ? 'Solving DC network…' : 'Solve DC network'}</button
 			>
 			{#if moduleJson}
+				<label class="control-option"
+					><input type="checkbox" bind:checked={automaticRegulators} disabled={busy} />Include
+					automatic tap, PST and shunt regulators in AC power flow</label
+				>
 				<button onclick={() => solve('acpf')} disabled={busy}>Solve with AC power flow</button>
 				<button onclick={() => solve('dcopf')} disabled={busy}>Dispatch AC generation</button>
+				<button onclick={() => solve('acopf')} disabled={busy || !jointAvailable}
+					>Optimize joint AC/DC dispatch</button
+				>
+				{#if !jointAvailable}<p>
+						Joint dispatch needs the optional nonlinear solver, which is unavailable in this
+						session.
+					</p>{/if}
+				{#if busy && jointAvailable}<button
+						onclick={() => {
+							generation++;
+							abort?.abort();
+							busy = false;
+						}}>Cancel study</button
+					>{/if}
 				<p>
-					These studies use the original imported case and fixed converter settings. They do not
-					apply diagram edits or optimize the DC transfers.
+					Studies use the original imported case. Diagram edits are not applied, and results below
+					do not replace the main diagram result.
 				</p>
 			{/if}
-			<p>
-				“Solve DC network” calculates DC voltages, currents and losses only. The AC study buttons
-				also apply converter powers to the AC network. Neither study models converter commutation or
-				transient behavior.
-			</p>
+			<details>
+				<summary>Choose a study · controls and limits</summary>
+				<ul>
+					<li><strong>DC network:</strong> DC voltages, currents and losses only.</li>
+					<li>
+						<strong>AC power flow:</strong> applies converter P and Q to the AC network. A VSC voltage
+						regulator adjusts Q; at a Q limit, voltage can miss its target. Optional tap and shunt controls
+						use their declared ranges and steps.
+					</li>
+					<li>
+						<strong>AC generation dispatch:</strong> a DC approximation of the AC network, with converter
+						transfers fixed. It does not calculate AC voltage magnitudes or reactive power.
+					</li>
+					<li>
+						<strong>Joint AC/DC dispatch:</strong> optimizes generation and converter active-power transfers
+						together. DC voltage/current schedules and VSC AC-voltage targets are hard constraints; incompatible
+						targets and limits can prevent a solution. Taps and shunt sections remain fixed.
+					</li>
+				</ul>
+				<p>
+					LCCs use an explicitly selected fixed power factor: Q = |P| tan(acos(pf)). Both rectifier
+					and inverter absorb reactive power. This steady-state approximation does not model
+					firing-angle control, commutation failure or transients.
+				</p>
+				<p>
+					Joint dispatch finds a local nonlinear solution, not a guaranteed global optimum. It
+					requires explicit converter P, DC-voltage and VSC Q bounds. Missing line ratings remain
+					unchecked.
+				</p>
+			</details>
 		{:else}
 			<p class="notice">
 				DC-network solve unavailable: {equipment.dc_model_unavailable ??
@@ -179,6 +250,11 @@
 						.violations.length} reported limit violations.
 				</p>
 				<p>{coupled.scope}</p>
+				<TxControlResults controls={coupled.controls} />
+				<p>Positive converter Mvar is absorbed from AC; negative Mvar is supplied to AC.</p>
+				<ul>
+					{#each coupled.converter_reactive as [id, q]}<li>{short(id)}: {num(q)} Mvar</li>{/each}
+				</ul>
 				{#if coupled.ac.objective != null}<p>
 						AC generation objective: {num(coupled.ac.objective)}
 					</p>{/if}
@@ -217,6 +293,17 @@
 {/if}
 
 <style>
+	.control-option {
+		display: flex;
+		gap: 8px;
+		align-items: flex-start;
+		margin: 12px 0;
+	}
+	.control-option input {
+		flex-shrink: 0;
+		width: 18px;
+		height: 18px;
+	}
 	summary {
 		cursor: pointer;
 		padding: 10px 0;

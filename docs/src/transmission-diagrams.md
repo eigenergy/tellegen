@@ -321,8 +321,10 @@ an error. The current dense solver is limited to 512 variables.
 
 The source adapter qualifies VSC records with explicit connected terminals,
 polarity, AC-bus mapping, control targets, loss coefficients and a solid ground.
-It supports source DC-voltage and active-power controls. It refuses unsupported
-LCC models, ambiguous source droop units, valve-current relations, DC switching
+It supports source VSC DC-voltage and active-power controls, and LCC DC-voltage,
+active-power and DC-current controls. LCCs require an explicit rectifier/inverter
+mode and fixed-power-factor reactive model. It refuses calculated commutation
+models, ambiguous source droop units, valve-current relations, DC switching
 or series-device reduction and missing parameters. It never fills unknown losses
 with zero. Back-to-back connections need no artificial DC line; a shared DC
 network can have two, three or more converters and radial or meshed wiring.
@@ -333,18 +335,65 @@ with missing ratings is not an all-clear. Point-to-point tests use the analytica
 quadratic voltage solution; multi-terminal tests independently check power/loss
 balance, reverse flow, outages, control loss and finite-difference sensitivities.
 
-For imported local cases, **Solve with AC power flow** applies the solved VSC Pac
-and explicit fixed reactive targets to the original AC network. **Dispatch AC
-generation** runs AC-network DC OPF with those fixed converter injections. These
-studies use the imported case, not diagram demand edits. They reject overlapping
-reduced HVDC links, unsupported AC-voltage/reactive capability controls and AC
-islands that would omit a converter. Results appear in this inspector and do not
-replace the main diagram's result set. AC generation optimality does not mean
-that the DC transfers were optimized.
+For imported local cases, **Solve with AC power flow** applies solved converter
+Pac and Q to the original AC network. A VSC can hold fixed Q or regulate its AC
+bus voltage by varying Q within stated min/max limits or a piecewise-linear
+capability curve evaluated at the solved Pac. Positive Q is AC absorption.
+At a Q limit the controller holds that limit and reports the missed voltage
+target (PQ behavior); it does not falsely report successful voltage regulation.
+Competing generator/converter voltage controllers are rejected.
 
-The Rust APIs are `dc_grid::solve`, `dc_grid::active_power_sensitivity` and
-`ac_dc::solve_source`; browser APIs are `solveDcGrid` and `solveAcDc`. Sensitivities
-are local derivatives of fixed control equations, not derivatives through
-saturation or mode changes. Zero-current absolute-loss kinks are rejected.
-Automatic PST/OLTC/shunt regulation, converter AC-voltage control, joint nonlinear
-AC/DC OPF, LCC commutation, protection and transient studies are not implemented.
+An LCC with fixed power factor absorbs `Q = |Pac| tan(acos(pf))` at both ends.
+The rectifier/inverter mode constrains its active-power direction. Losses are
+still explicit in the DC balance. This is a steady-state load-flow approximation,
+not a valve/commutation model: firing/extinction-angle targets are rejected.
+See the [PowSyBl load-flow model](https://powsybl.readthedocs.io/projects/powsybl-open-loadflow/en/stable/loadflow/loadflow.html)
+for the same distinction between converter controls and outer regulation loops.
+
+**Dispatch AC generation** runs AC-network DC OPF with fixed converter injections;
+it does not calculate AC voltage magnitudes or Q. **Optimize joint AC/DC dispatch**
+uses the separate optional nonlinear backend. Converter active-power targets become
+bounded dispatch variables, while DC voltage/current schedules remain constraints.
+The model includes AC nodal P/Q balances, generator cost and limits, branch limits,
+DC KCL, resistive line losses and converter losses in one nonlinear problem.
+VSCs retain fixed-Q or hard AC-voltage schedules; an incompatible voltage schedule
+and Q limit can make the OPF fail. Joint OPF requires explicit converter P/DC-voltage
+bounds and min/max VSC Q capability. P-dependent Q curves are currently rejected in
+joint OPF. Taps and shunt sections stay fixed; this is not a mixed-integer OPF.
+A converged local optimum is not a global-optimality certificate. Independent AC
+power-balance checks and a separate DC power-flow solve validate the returned
+operating point. Missing line/current ratings remain visible as unchecked bounds.
+
+All these studies use the original imported case, not diagram edits. They reject
+overlapping reduced HVDC links and AC islands that would omit a converter.
+Results appear in this inspector and do not replace the main diagram's result set.
+The optional POUNCE backend stays separate from the ordinary shipping WASM package.
+
+### Automatic regulator studies
+
+Choose **Automatic regulator study** for an AC case, or enable **Include automatic
+tap, PST and shunt regulators** in a detailed AC/DC power-flow study. The source
+network is cloned; original settings and equipment metadata are preserved.
+
+Enabled uniform transformer controls adjust tap ratio to regulate voltage or
+from-terminal Q, or phase angle to regulate from-terminal P. Allowed tap positions
+are explicitly enumerated from the stated range and count. Pure-susceptance shunts
+use their declared cumulative sections or a continuous range. Controls solve AC
+power flow between bounded actions; they stop in the target band, at a setting
+limit, or when discrete steps cannot reach the band. A radial PST may have no
+useful influence on active-power sharing: drawing a regulator does not guarantee
+control authority. Cycling, incompatible targets and nonconvergence return errors.
+
+Detailed tap tables with impedance corrections, asymmetric winding controls,
+mixed-sign shunt switching sequences, partial participation and unresolved terminal
+references require additional models and are rejected. This implementation is
+steady state; it does not model switching time delays, wear, protection or transients.
+
+Rust APIs: `regulation::solve_source`, `dc_grid::solve`,
+`dc_grid::active_power_sensitivity`, `ac_dc::solve_source`, and
+`ac_dc::solve_source_with_regulators`. Select `Problem::Acopf` in a build with the
+`acopf` feature for joint optimization. Browser APIs: `solveRegulated`, `solveDcGrid`,
+`solveAcDc(moduleJson, 'acpf', true)` and `solveJointAcDcModule` (optional WASI worker).
+Sensitivities remain local derivatives of fixed control equations, not derivatives
+through saturation or mode changes. Zero-current absolute-loss kinks are rejected
+for sensitivity and smooth joint-OPF optimality qualification.

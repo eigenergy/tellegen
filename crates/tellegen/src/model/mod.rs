@@ -32,7 +32,7 @@ pub(crate) mod islands;
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
 #[cfg(feature = "acopf")]
-pub(crate) use acopf::{solve_ac_opf_cancellable, AcOpfSolved};
+pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
 pub(crate) use dc::{DcNetwork, LinearRow};
 
 #[cfg(all(test, feature = "conic"))]

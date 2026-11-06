@@ -52,6 +52,12 @@ pub enum DcControl {
         mw_per_kv: f64,
     },
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DcCurrentDirection {
+    Positive,
+    Negative,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DcConverter {
@@ -61,6 +67,9 @@ pub struct DcConverter {
     pub ac_bus: usize,
     pub in_service: bool,
     pub control: DcControl,
+    /// An explicit unidirectional converter constraint, independent of AC loss.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_direction: Option<DcCurrentDirection>,
     /// `a + b * |I| + c * I²`, with I in kA and loss in MW.
     pub loss: [f64; 3],
     pub current_limit_ka: Option<f64>,
@@ -472,6 +481,11 @@ pub fn solve(grid: &DcGrid) -> Result<DcGridSolution, String> {
             let i = x[n + k];
             let losses = loss(c, i).0;
             let pac = u * i + losses;
+            if matches!(c.current_direction, Some(DcCurrentDirection::Positive)) && i < -1e-8
+                || matches!(c.current_direction, Some(DcCurrentDirection::Negative)) && i > 1e-8
+            {
+                violations.push(format!("{} violates its converter current direction", c.id));
+            }
             if c.current_limit_ka.is_some_and(|v| i.abs() > v + 1e-8) {
                 violations.push(format!("{} exceeds its current limit", c.id));
             }
@@ -517,7 +531,11 @@ pub fn solve(grid: &DcGrid) -> Result<DcGridSolution, String> {
             .sum::<usize>();
     let limits_unspecified = p.branches.len() + 5 * p.converters.len() - limits_checked;
     Ok(DcGridSolution {
-        limits_checked,
+        limits_checked: limits_checked
+            + p.converters
+                .iter()
+                .filter(|(_, _, c)| c.current_direction.is_some())
+                .count(),
         limits_unspecified,
         iterations,
         residual,
@@ -547,6 +565,7 @@ pub(crate) mod tests {
             ac_bus: 1,
             in_service: true,
             control,
+            current_direction: None,
             loss: [0.0; 3],
             current_limit_ka: None,
             active_min_mw: None,
@@ -554,6 +573,18 @@ pub(crate) mod tests {
             voltage_min_kv: None,
             voltage_max_kv: None,
         }
+    }
+    #[test]
+    fn rectifier_direction_is_not_inferred_from_positive_ac_power() {
+        let mut grid = fixture();
+        let c = &mut grid.converters[1];
+        c.loss = [1.0, 0.0, 0.0];
+        c.control = DcControl::ActivePower { mw: 0.1 };
+        c.active_min_mw = Some(0.0);
+        c.current_direction = Some(DcCurrentDirection::Positive);
+        let r = solve(&grid).unwrap();
+        assert!(r.violations.iter().any(|v| v.contains("current direction")));
+        assert!(!r.violations.iter().any(|v| v.contains("active-power")));
     }
     fn fixture() -> DcGrid {
         DcGrid {
@@ -804,7 +835,7 @@ pub fn ac_terminal_bus(
     }
 }
 
-/// Build an explicitly qualified resistive VSC grid from detailed source data.
+/// Build an explicitly qualified resistive VSC/LCC grid from detailed source data.
 /// Import formats with insufficient terminal/control/loss data return a reason;
 /// absence of data never becomes an invented default operating model.
 pub fn from_network(net: &powerio::BalancedNetwork) -> Result<DcGrid, String> {
@@ -813,16 +844,15 @@ pub fn from_network(net: &powerio::BalancedNetwork) -> Result<DcGrid, String> {
         .detailed_connectivity()
         .as_ref()
         .ok_or("No detailed DC topology is recorded")?;
-    if !d.line_commutated_converters.is_empty() {
-        return Err("Detailed LCC commutation/reactive controls are not supported by the VSC DC-grid solver".into());
-    }
     if !d.dc_switches.is_empty() || !d.dc_series_devices.is_empty() {
         return Err(
             "Detailed DC switches/series devices require an explicit reduction before this solve"
                 .into(),
         );
     }
-    if d.dc_nodes.is_empty() || d.voltage_source_converters.is_empty() {
+    if d.dc_nodes.is_empty()
+        || (d.voltage_source_converters.is_empty() && d.line_commutated_converters.is_empty())
+    {
         return Err("Detailed DC nodes and VSC converter records are required".into());
     }
     let node_id = |t: &powerio_tx::DcTerminal| -> Result<String, String> {
@@ -938,10 +968,84 @@ pub fn from_network(net: &powerio::BalancedNetwork) -> Result<DcGrid, String> {
             ac_bus,
             in_service: true,
             control,
+            current_direction: None,
             loss: [a, b, resistance],
             current_limit_ka: None,
             active_min_mw: c.minimum_active_power_mw,
             active_max_mw: c.maximum_active_power_mw,
+            voltage_min_kv: c.minimum_dc_voltage_kv,
+            voltage_max_kv: c.maximum_dc_voltage_kv,
+        });
+    }
+    for c in &d.line_commutated_converters {
+        if c.dc_terminal1.connected == Some(false) || c.dc_terminal2.connected == Some(false) {
+            continue;
+        }
+        crate::ac_dc::lcc_power_factor(c)?;
+        if c.dc_terminal1.polarity != Some(powerio_tx::DcPolarity::Positive)
+            || !matches!(
+                c.dc_terminal2.polarity,
+                Some(powerio_tx::DcPolarity::Negative | powerio_tx::DcPolarity::Middle)
+            )
+        {
+            return Err(format!(
+                "LCC {} needs explicit terminal polarity",
+                c.component
+            ));
+        }
+        let control = match c.control_mode {
+            Some(Mode::DcVoltage) => DcControl::Voltage {
+                kv: c
+                    .target_dc_voltage_kv
+                    .ok_or("LCC DC voltage target missing")?,
+            },
+            Some(Mode::ActivePowerAtPcc) => DcControl::ActivePower {
+                mw: c
+                    .target_active_power_mw
+                    .ok_or("LCC active target missing")?,
+            },
+            Some(Mode::DcCurrent) => DcControl::Current {
+                ka: c.target_dc_current_a.ok_or("LCC current target missing")? / 1000.0,
+            },
+            _ => return Err("Unsupported LCC DC control".into()),
+        };
+        let ac_bus = c
+            .pcc_terminal
+            .as_ref()
+            .and_then(|t| ac_terminal_bus(net, t))
+            .ok_or("LCC AC mapping missing")?;
+        let rectifier =
+            c.operating_mode == Some(powerio_tx::LineCommutatedConverterOperatingMode::Rectifier);
+        converters.push(DcConverter {
+            id: c.component.to_string(),
+            positive: node_id(&c.dc_terminal1)?,
+            negative: node_id(&c.dc_terminal2)?,
+            ac_bus,
+            in_service: true,
+            control,
+            current_direction: Some(if rectifier {
+                DcCurrentDirection::Positive
+            } else {
+                DcCurrentDirection::Negative
+            }),
+            loss: [
+                c.idle_loss_mw.ok_or("LCC idle loss missing")?,
+                1000.0
+                    * c.switching_loss_mw_per_ampere
+                        .ok_or("LCC switching loss missing")?,
+                c.resistive_loss_ohm.ok_or("LCC resistive loss missing")?,
+            ],
+            current_limit_ka: None,
+            active_min_mw: if rectifier {
+                Some(c.minimum_active_power_mw.unwrap_or(0.0).max(0.0))
+            } else {
+                c.minimum_active_power_mw
+            },
+            active_max_mw: if rectifier {
+                c.maximum_active_power_mw
+            } else {
+                Some(c.maximum_active_power_mw.unwrap_or(0.0).min(0.0))
+            },
             voltage_min_kv: c.minimum_dc_voltage_kv,
             voltage_max_kv: c.maximum_dc_voltage_kv,
         });

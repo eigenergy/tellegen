@@ -1835,14 +1835,19 @@ pub fn solve_dc_grid(input_json: &str) -> Result<String, JsError> {
     serde_json::to_string(&result).map_err(jserr)
 }
 
-/// Qualified fixed-control detailed VSC study with AC power flow or AC dispatch.
+/// Detailed VSC/LCC study with converter Q/voltage controls and optional source regulators.
 #[wasm_bindgen]
-pub fn solve_ac_dc(module_json: &str, formulation: &str) -> Result<String, JsError> {
+pub fn solve_ac_dc(
+    module_json: &str,
+    formulation: &str,
+    automatic_regulators: bool,
+) -> Result<String, JsError> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     let mode: tellegen::Problem =
         serde_json::from_value(serde_json::Value::String(formulation.to_owned())).map_err(jserr)?;
-    tellegen::ac_dc::solve_module_json(module_json, mode).map_err(jserr)
+    tellegen::ac_dc::solve_module_json_with_regulators(module_json, mode, automatic_regulators)
+        .map_err(jserr)
 }
 
 /// Substation overview layout of a balanced network (`txSchematicLayout` in `@tellegen/engine`):
@@ -2613,4 +2618,12 @@ mpc.gencost = [
       },
       "shunt": {}, "storage": {}, "switch": {}, "dcline": {}
     }"#;
+}
+
+/// AC power flow with bounded, explicit transformer and switched-shunt control.
+#[wasm_bindgen]
+pub fn solve_regulated(module_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    tellegen::regulation::solve_module_json(module_json).map_err(jserr)
 }

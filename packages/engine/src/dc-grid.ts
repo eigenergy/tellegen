@@ -20,6 +20,7 @@ export interface DcGrid {
       | { kind: "active_power"; mw: number }
       | { kind: "current"; ka: number }
       | { kind: "droop"; mw: number; kv: number; mw_per_kv: number };
+    current_direction?: "positive" | "negative";
     loss: [number, number, number];
     current_limit_ka: number | null;
     active_min_mw: number | null;
@@ -44,4 +45,29 @@ export interface DcGridSolution {
     loss_mw: number;
   }[];
   violations: string[];
+}
+
+export interface ControlResult {
+  id: string;
+  setting: number;
+  units: string;
+  measured: number;
+  measured_units: string;
+  target_low: number;
+  target_high: number;
+  status: "regulated" | "at_limit" | "discrete_deadband_unreachable";
+}
+export interface RegulatedSolution {
+  solution: import("./generated/api-types.js").SolveResponse;
+  controls: ControlResult[];
+  passes: number;
+  violations: string[];
+}
+export interface AcDcSolution {
+  dc: DcGridSolution;
+  ac: import("./generated/api-types.js").SolveResponse;
+  violations: string[];
+  controls: ControlResult[];
+  converter_reactive: [string, number][];
+  scope: string;
 }

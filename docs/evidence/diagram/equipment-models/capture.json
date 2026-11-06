@@ -1,5 +1,5 @@
 {
-  "captured_utc": "2026-11-06T11:51:42.118077+00:00",
+  "captured_utc": "2026-11-06T19:37:18.731343+00:00",
   "source": "Working tree committed with this evidence",
   "viewports": [
     1280,
@@ -8,35 +8,103 @@
   ],
   "height": 844,
   "browser": "Installed Chrome; emulated touch on narrow viewports",
-  "tests": "6 equipment + 10 existing transmission browser tests passed",
+  "tests": "9 equipment studies + 10 existing transmission browser tests passed; optional joint WASI backend exercised",
   "screenshots": {
-    "equipment-desktop.png": {
-      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/equipment-models.png",
-      "sha256": "fd8d7562bac24dd6c8e23617b55f1cdcf67dbea6b9a01e564117e5291491f955"
-    },
-    "equipment-phone.png": {
-      "test_output": "transmission-equipment-equ-ba159--fixed-transfer-limitations/equipment-models.png",
-      "sha256": "808250762ae5323c1bd7a626389aca787157c9e9cc49a5b93740474bc2accc5e"
-    },
-    "equipment-320.png": {
-      "test_output": "transmission-equipment-equ-50731--fixed-transfer-limitations/equipment-models.png",
-      "sha256": "7aff48ee27d3630b4dd7074358c5698255c1be03d3f2df6dc467bc60a4c7173f"
-    },
-    "equipment-export.png": {
-      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/equipment-export.png",
-      "sha256": "73c55bffc2e80ebfd044ec1c9ffb576b56f243fd8aa2ffd76d0d6efcf06e2e88"
-    },
-    "mtdc-desktop.png": {
-      "test_output": "transmission-equipment-det-d8c1b-h-and-qualified-AC-coupling/mtdc-topology.png",
-      "sha256": "f5e24cfe8bb9ee0a9dab1214f80f82adf98b405538a91783d7d029c9847e206f"
-    },
     "mtdc-phone.png": {
       "test_output": "transmission-equipment-det-9f7cc-h-and-qualified-AC-coupling/mtdc-topology.png",
-      "sha256": "fc4b29d30aefec098a4df85ff04fff227815ccfe2805189067b65f0a69617352"
+      "width": 390,
+      "height": 844,
+      "sha256": "d0e49e539b926933d79e3d4fb84b6f61caee6ca65e6860ca9b26667f4e45b201"
     },
     "mtdc-320.png": {
       "test_output": "transmission-equipment-det-d11e6-h-and-qualified-AC-coupling/mtdc-topology.png",
-      "sha256": "c8ae943cbac5b191df442baacee39b219d6e94a8857d423f3fedcc4f209ed967"
+      "width": 320,
+      "height": 844,
+      "sha256": "9f81c6de6934411292417c5802fd9063a0b150494b9362a1077c35cf0bd5d434"
+    },
+    "mtdc-desktop.png": {
+      "test_output": "transmission-equipment-det-d8c1b-h-and-qualified-AC-coupling/mtdc-topology.png",
+      "width": 1280,
+      "height": 844,
+      "sha256": "45f8e3b0aa60ea9810ab63426d6c01884922871d2ce8a6ea3dc876acac82db6f"
+    },
+    "regulators-320.png": {
+      "test_output": "transmission-equipment-equ-50731--fixed-transfer-limitations/automatic-regulators.png",
+      "width": 320,
+      "height": 844,
+      "sha256": "9f6564049caea50b7eb82880cca293f4eae5e5fddacde6e1dbf0fcbb3c397cff"
+    },
+    "equipment-320.png": {
+      "test_output": "transmission-equipment-equ-50731--fixed-transfer-limitations/equipment-models.png",
+      "width": 320,
+      "height": 844,
+      "sha256": "3dd866352364c7b84b630e7f26c6eb43a33e33764489756827eaf2c277043e66"
+    },
+    "regulators-phone.png": {
+      "test_output": "transmission-equipment-equ-ba159--fixed-transfer-limitations/automatic-regulators.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "ac46a24c4f00b045716c9d7e5cd8c0ca0b274ef2e1f189aa8d0f249a7e2ec507"
+    },
+    "equipment-phone.png": {
+      "test_output": "transmission-equipment-equ-ba159--fixed-transfer-limitations/equipment-models.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "d7b16bd53c92fa04a59bf807b2b286cadcc30da5a971fcfbc8f4f0d7b734088e"
+    },
+    "regulators-desktop.png": {
+      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/automatic-regulators.png",
+      "width": 1280,
+      "height": 844,
+      "sha256": "8e8340ab2823cec82a94be7c8eb3d0267f0e2a1e9c246c8074edc9995414b432"
+    },
+    "equipment-export.png": {
+      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/equipment-export.png",
+      "width": 1280,
+      "height": 920,
+      "sha256": "f32874e479502569d61c3bca569936f3cdcbb9cee013f8558d62cac0a326df85"
+    },
+    "equipment-desktop.png": {
+      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/equipment-models.png",
+      "width": 1280,
+      "height": 844,
+      "sha256": "e4a8c4408da525952f2754ee539c9969312006f7776c49445739b80659d281d8"
+    },
+    "converter-voltage-desktop.png": {
+      "test_output": "transmission-equipment-joi-8dc37-dispatch-in-the-WASI-worker/converter-voltage.png",
+      "width": 1280,
+      "height": 844,
+      "sha256": "da29e1f3dacd0ae1cfd43889a1814aeb987cd9307af3fc3287f8a79929bed290"
+    },
+    "joint-acdc-desktop.png": {
+      "test_output": "transmission-equipment-joi-8dc37-dispatch-in-the-WASI-worker/joint-acdc.png",
+      "width": 1280,
+      "height": 844,
+      "sha256": "b07057267455b463fa1673650095091f2ce5a5dccc7ccb0aa41a53abbb410c40"
+    },
+    "converter-voltage-320.png": {
+      "test_output": "transmission-equipment-joi-ba3b1-dispatch-in-the-WASI-worker/converter-voltage.png",
+      "width": 320,
+      "height": 844,
+      "sha256": "fe2f1bbf8528c41b68d0c5e422c8574f12daa1a45e62cb6a286f012f551df467"
+    },
+    "joint-acdc-320.png": {
+      "test_output": "transmission-equipment-joi-ba3b1-dispatch-in-the-WASI-worker/joint-acdc.png",
+      "width": 320,
+      "height": 844,
+      "sha256": "81f6a529d5909c2b403e880359d18039b3e9659e14ae3e337688fc258ce17e93"
+    },
+    "converter-voltage-phone.png": {
+      "test_output": "transmission-equipment-joi-eb73a-dispatch-in-the-WASI-worker/converter-voltage.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "f17cb5f3c3abd36f3d35ba011c5054295e94df36a91adff67b2d05c180c44229"
+    },
+    "joint-acdc-phone.png": {
+      "test_output": "transmission-equipment-joi-eb73a-dispatch-in-the-WASI-worker/joint-acdc.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "e6b3257eaa9512743388bcbb097000fd752b028b72f40b4f64bfa195601de0db"
     }
   }
 }

@@ -41,8 +41,8 @@ export function equipmentTreatment(kind: EquipmentKind, formulation: string): st
 	if (kind === 'capacitor' || kind === 'reactor' || kind === 'shunt')
 		return formulation === 'dcopf' || formulation === 'dcpf'
 			? 'DC approximation: conductance enters active balance; reactive susceptance is omitted.'
-			: 'Fixed admittance; active/reactive contribution depends on voltage squared. No automatic switching.';
-	return 'Fixed tap ratio and phase setting; source regulator settings are not adjusted automatically.';
+			: 'Fixed admittance; active/reactive contribution depends on voltage squared. Use the separate automatic regulator study to switch declared sections.';
+	return 'Fixed tap ratio and phase setting; use the separate automatic regulator study to adjust enabled source controls.';
 }
 
 /** Infer only a pure reactive bank. Mixed conductive or mixed-step devices stay generic. */
@@ -123,7 +123,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 					...(t.controlled_bus !== null ? [`Regulated bus ${t.controlled_bus}`] : [])
 				],
 				explanation: t.phase_shifter
-					? 'A phase-shifting transformer changes phase angle to influence active-power sharing. This calculation uses the stated setting; it does not adjust the phase control automatically.'
+					? 'A phase-shifting transformer changes phase angle to influence active-power sharing. This calculation uses the stated setting; the separate automatic regulator study can adjust a declared discrete phase control.'
 					: 'A transformer changes voltage ratio and may introduce a winding phase shift. These calculations use fixed tap and phase settings. A phase shift alone does not identify a PST.'
 			};
 		}),
@@ -147,7 +147,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 					`Source switching: ${s.control_mode ?? 'not specified'}`
 				],
 				explanation:
-					'Positive B supplies reactive power; negative B absorbs it. In AC calculations the contribution varies with voltage squared. DC power flow omits reactive power. Bank settings are fixed here; automatic switching is not simulated.'
+					'Positive B supplies reactive power; negative B absorbs it. In AC calculations the contribution varies with voltage squared. DC power flow omits reactive power. Bank settings are fixed in the main calculation. The separate automatic regulator study can switch declared sections to reach a voltage band.'
 			};
 		}),
 		...e.hvdc.map((h): EquipmentItem => ({

@@ -926,17 +926,13 @@ export async function solveDcGrid(grid: DcGrid): Promise<DcGridSolution> {
   );
 }
 
-/** Detailed fixed-control VSC study. DC OPF optimizes AC generation only;
- * converter targets remain fixed. Unsupported converter controls are rejected. */
+/** Detailed AC/DC power flow with converter Q/voltage controls and optional
+ * source regulators. DC OPF optimizes AC generation with fixed DC transfers. */
 export async function solveAcDc(
   moduleJson: string,
   formulation: "acpf" | "dcpf" | "dcopf" = "acpf",
-): Promise<{
-  dc: DcGridSolution;
-  ac: Solution;
-  violations: string[];
-  scope: string;
-}> {
+  automaticRegulators = false,
+): Promise<import("./dc-grid.js").AcDcSolution> {
   assertEngineInputLength(moduleJson.length);
   return JSON.parse(
     expectText(
@@ -944,6 +940,7 @@ export async function solveAcDc(
         op: "solve_ac_dc",
         module_json: moduleJson,
         formulation,
+        automatic_regulators: automaticRegulators,
       }),
     ),
   );
@@ -3138,3 +3135,23 @@ export type {
 } from "./generated/study-types.js";
 export { studySchema } from "./generated/study-schema.js";
 export { synthSchema } from "./generated/synth-schema.js";
+
+export type {
+  AcDcSolution,
+  ControlResult,
+  RegulatedSolution,
+} from "./dc-grid.js";
+export { solveJointAcDcModule } from "./acopf.js";
+export async function solveRegulated(
+  moduleJson: string,
+): Promise<import("./dc-grid.js").RegulatedSolution> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_regulated",
+        module_json: moduleJson,
+      }),
+    ),
+  );
+}

@@ -1,5 +1,8 @@
 <script lang="ts">
 	import TxDcTopology from './TxDcTopology.svelte';
+	import TxControlResults from './TxControlResults.svelte';
+	import { solveRegulated, type RegulatedSolution } from '@tellegen/engine';
+	import { onDestroy } from 'svelte';
 	import type { Network } from '@tellegen/engine';
 	import {
 		equipmentGlyph,
@@ -23,6 +26,34 @@
 		onclose: () => void;
 	} = $props();
 	let query = $state('');
+	let regulated = $state<RegulatedSolution | null>(null);
+	let controlError = $state('');
+	let controlBusy = $state(false);
+	let controlGeneration = 0;
+	$effect(() => {
+		void moduleJson;
+		controlGeneration++;
+		regulated = null;
+		controlError = '';
+		controlBusy = false;
+	});
+	onDestroy(() => controlGeneration++);
+	async function runRegulators() {
+		if (!moduleJson) return;
+		const request = ++controlGeneration;
+		controlBusy = true;
+		controlError = '';
+		regulated = null;
+		try {
+			const next = await solveRegulated(moduleJson);
+			if (request === controlGeneration) regulated = next;
+		} catch (error) {
+			if (request === controlGeneration)
+				controlError = error instanceof Error ? error.message : String(error);
+		} finally {
+			if (request === controlGeneration) controlBusy = false;
+		}
+	}
 	const items = $derived(equipmentItems(network));
 	const filtered = $derived(
 		items.filter((i) =>
@@ -63,6 +94,36 @@
 			</details>
 		{/if}
 		<TxDcTopology equipment={network.equipment} {moduleJson} />
+		{#if moduleJson && !dc?.converters}
+			<details>
+				<summary>Automatic regulator study</summary>
+				<p>
+					Run AC power flow with enabled source tap, PST and shunt controls. Settings stay within
+					their declared ranges and discrete positions. Each control tries to reach its target band;
+					conflicting controls can fail to settle.
+				</p>
+				<p>
+					This uses the original imported case and reports a separate study. Main-diagram settings
+					and results stay at their current values.
+				</p>
+				<button onclick={runRegulators} disabled={controlBusy}
+					>{controlBusy ? 'Solving regulator study…' : 'Solve with automatic regulators'}</button
+				>
+				{#if controlError}<p role="alert">{controlError}</p>{/if}
+				{#if regulated}
+					<p role="status">
+						AC power flow completed in {regulated.passes} regulator passes · {regulated.controls
+							.length} active controls.
+					</p>
+					<TxControlResults controls={regulated.controls} />
+					<p>
+						{regulated.violations.length} reported operating-limit violations. Power-flow convergence
+						does not certify feasibility.
+					</p>
+					{#each regulated.violations as violation}<p class="notice">{violation}</p>{/each}
+				{/if}
+			</details>
+		{/if}
 		<label
 			>Find equipment <input
 				type="search"
