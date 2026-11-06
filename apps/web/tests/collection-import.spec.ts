@@ -177,3 +177,25 @@ test('a zipped four-wire snapshot runs while an unsupported neighbour stays view
 	).toBeVisible();
 	await expect(study.getByRole('button', { name: 'Save result' })).toBeEnabled();
 });
+
+test('a large collection keeps the first and last case reachable', async ({ page }) => {
+	const cases = Object.fromEntries(
+		Array.from({ length: 20 }, (_, i) => [`case-${String(i).padStart(2, '0')}.m`, comparison])
+	);
+	await page
+		.locator('input[type="file"]')
+		.setInputFiles({ name: 'many.zip', mimeType: 'application/zip', buffer: storedZip(cases) });
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.locator('.candidate')).toHaveCount(20);
+	await dialog.getByRole('button', { name: 'Select all matching' }).click();
+	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
+	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(20);
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+	for (const width of [1280, 390]) {
+		await page.setViewportSize({ width, height: 800 });
+		for (const name of ['case-00.m', 'case-19.m', 'case-00.m']) {
+			await page.getByRole('button', { name: new RegExp(`${name} Local`) }).click();
+			await expect(page.locator('.case-chip.active .cname')).toContainText(name);
+		}
+	}
+});

@@ -175,7 +175,9 @@
 		min-width: 0;
 		display: flex;
 		gap: 6px;
-		justify-content: center;
+		/* Center small collections without stranding earlier tabs to the left
+		   of the scroll origin once a ZIP imports more cases than fit. */
+		justify-content: safe center;
 		overflow-x: auto;
 		scrollbar-width: none;
 	}
