@@ -218,12 +218,12 @@ fn far_islands_kept_are_validated_separately() {
         .all(|b| b.location.unwrap().x > 40.0));
 }
 
-/// One unit feeding a 1,400 km strip at stated 500/230 kV levels, which the
+/// One unit feeding a strip from 30° E to `east` at stated levels, which the
 /// plan may raise to 765 kV: every megawatt crosses the region.
-fn strip_fed_from_one_unit(mw: f64) -> tellegen_synth::GenerationReport {
-    let region = tellegen_synth::Region::bbox(30.0, 30.0, 45.0, 32.0, "strip");
+fn strip_fed_from_one_unit(mw: f64, east: f64, levels: &[f64]) -> tellegen_synth::GenerationReport {
+    let region = tellegen_synth::Region::bbox(30.0, 30.0, east, 32.0, "strip");
     let mut req = common::request(region, 2026, Some(40));
-    req.voltage_levels_kv = vec![500.0, 230.0];
+    req.voltage_levels_kv = levels.to_vec();
     req.generator_count = Some(1);
     req.demand = DemandSpec::TotalMw { mw };
     req.validation.run_ac_pf = false;
@@ -233,7 +233,8 @@ fn strip_fed_from_one_unit(mw: f64) -> tellegen_synth::GenerationReport {
 
 #[test]
 fn a_corridor_short_of_capacity_at_the_circuit_cap_raises_its_ends_to_765_kv() {
-    let report = strip_fed_from_one_unit(35_000.0);
+    // 1,400 km at 500/230 kV.
+    let report = strip_fed_from_one_unit(35_000.0, 45.0, &[500.0, 230.0]);
     let plan = report.planning.as_ref().unwrap();
     assert_eq!(plan.circuit_cap, MAX_CIRCUITS_PER_CORRIDOR);
     assert!(plan.max_parallel_circuits <= plan.circuit_cap, "{plan:?}");
@@ -254,7 +255,10 @@ fn a_corridor_short_of_capacity_at_the_circuit_cap_raises_its_ends_to_765_kv() {
 
 #[test]
 fn stiffening_stops_at_the_branch_budget_and_says_the_plan_is_incomplete() {
-    let report = strip_fed_from_one_unit(15_000.0);
+    // 2,400 km at 230/132 kV: stiffening adds circuits until the network
+    // holds STIFFENING_BRANCH_BUDGET branches per bus, and the spread is
+    // still too wide.
+    let report = strip_fed_from_one_unit(15_000.0, 55.0, &[230.0, 132.0]);
     let plan = report.planning.as_ref().unwrap();
     let n = report.stats.as_ref().unwrap().n_buses as f64;
     assert!(!plan.converged, "{plan:?}");

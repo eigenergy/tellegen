@@ -29,7 +29,7 @@ use crate::electrical::params::{
     GENERATOR_Q_PLANNING_SHARE, GENERATOR_VG, MIN_SHUNT_BANK_MVAR, VOLTAGE_SUPPORT_KM,
     VOLTAGE_SUPPORT_Q_SHARE,
 };
-use crate::electrical::planning::dc_angles;
+use crate::electrical::planning::{dc_angles, GroundedLaplacian};
 use crate::report::BusKind;
 use crate::request::Fuel;
 use crate::site::DraftBus;
@@ -100,7 +100,12 @@ pub fn ac_angles(
         .iter()
         .map(|b| (b.from, b.to, 1.0 / b.x_pu))
         .collect();
-    let mut theta = dc_angles(n, &edges, injection, grounds);
+    let factor = GroundedLaplacian::new(n, &edges, grounds);
+    let solve = |rhs: &[f64]| match &factor {
+        Some(f) => f.solve(rhs),
+        None => dc_angles(n, &edges, rhs, grounds),
+    };
+    let mut theta = solve(injection);
     let mut slack = vec![false; n];
     for &g in grounds {
         slack[g] = true;
@@ -129,7 +134,7 @@ pub fn ac_angles(
         if !worst.is_finite() {
             break;
         }
-        let step = dc_angles(n, &edges, &mismatch, grounds);
+        let step = solve(&mismatch);
         for i in 0..n {
             theta[i] += step[i];
         }
@@ -139,7 +144,7 @@ pub fn ac_angles(
 
 /// Corridor-km from every bus to its nearest bus in `sources` (multi-source
 /// Dijkstra), and that source; `f64::INFINITY` for a bus no source reaches.
-fn distance_to_sources(
+pub(crate) fn distance_to_sources(
     n: usize,
     corridors: &[Corridor],
     sources: &[usize],
@@ -213,7 +218,7 @@ pub fn place_voltage_support(
             .filter(|&i| buses[i].load_mw > 0.0 && dist[i].is_finite())
             .max_by(|&a, &b| dist[a].total_cmp(&dist[b]).then(b.cmp(&a)));
         match farthest {
-            Some(i) if dist[i] > VOLTAGE_SUPPORT_KM => {
+            Some(i) if dist[i] > crate::tuning::tuning().voltage_support_km => {
                 sources.push(i);
                 placed.push(i);
             }
@@ -261,13 +266,17 @@ pub fn place_voltage_support(
 
 /// Plan the shunt banks that hold the planned voltage profile at the planning
 /// dispatch. `dispatch_mw` is per generator; `grounds` holds each electrical
-/// component's slack bus.
+/// component's slack bus. `mapped` marks a network taken from mapped data,
+/// whose corridors the plan could not size to the planning case: there a
+/// branch the planning dispatch loads past its rating is counted at its
+/// rating (see the loop below).
 pub fn plan_shunts(
     buses: &[DraftBus],
     branches: &[DraftBranch],
     generators: &[DraftGenerator],
     dispatch_mw: &[f64],
     grounds: &[usize],
+    mapped: bool,
 ) -> ReactivePlan {
     let n = buses.len();
     let vm = vec![GENERATOR_VG; n];
@@ -283,8 +292,22 @@ pub fn plan_shunts(
     let mut need: Vec<f64> = buses.iter().map(|b| b.load_mvar).collect();
     let mut max_angle: f64 = 0.0;
     for br in branches {
-        let delta = theta[br.from] - theta[br.to];
+        let mut delta = theta[br.from] - theta[br.to];
         max_angle = max_angle.max(delta.abs());
+        // The planning dispatch ignores the network. A designed network was
+        // built to carry it, so the OPF dispatches close to it; a mapped one
+        // was not, and where the planning dispatch loads a mapped branch past
+        // its rating (generation stranded behind a few lines, typically) the
+        // OPF moves generation until it does not. Such a branch's reactive
+        // use is read off at its rating: the angle is scaled back to where
+        // the active flow meets it.
+        if mapped {
+            let (pf, ..) = branch_flow(br, vm[br.from], vm[br.to], delta);
+            let rating = br.rate_a / BASE_MVA;
+            if rating > 0.0 && pf.abs() > rating {
+                delta *= rating / pf.abs();
+            }
+        }
         let (_, qf, _, qt) = branch_flow(br, vm[br.from], vm[br.to], delta);
         need[br.from] += qf * BASE_MVA;
         need[br.to] += qt * BASE_MVA;
@@ -317,10 +340,10 @@ mod tests {
 
     #[test]
     fn a_load_beyond_the_reach_of_any_generator_gets_a_condenser() {
-        // A radial chain of 200 km corridors: a generator at bus 0, 100 MW at
-        // every other bus. Buses 1 and 2 lie within 480 km of the machine;
-        // bus 3 (600 km) and bus 4 (800 km) do not, and one condenser at the
-        // far end brings both within reach.
+        // A radial chain of 40 km corridors: a generator at bus 0, 100 MW at
+        // every other bus. Buses 1 and 2 lie within the 100 km voltage support
+        // distance of the machine; bus 3 (120 km) and bus 4 (160 km) do not,
+        // and one condenser at the far end brings both within reach.
         let bus = |load_mw: f64| DraftBus {
             lon: 0.0,
             lat: 0.0,
@@ -337,6 +360,7 @@ mod tests {
             load_mw,
             load_mvar: 0.0,
             annotation: String::new(),
+            site: 0,
         };
         let mut buses: Vec<DraftBus> = (0..5)
             .map(|i| bus(if i == 0 { 0.0 } else { 100.0 }))
@@ -346,7 +370,7 @@ mod tests {
                 a: i,
                 b: i + 1,
                 kv: 230.0,
-                length_km: 200.0,
+                length_km: 40.0,
                 role: CorridorRole::Internal,
                 circuits: 1,
                 route: Vec::new(),
@@ -373,7 +397,7 @@ mod tests {
         let c = &condensers[0];
         assert_eq!(c.bus, 4);
         assert!(c.condenser && c.pmax_mw == 0.0 && c.pmin_mw == 0.0);
-        // It lies nearest to buses 3 and 4 (and the tie at 400 km goes to the
+        // It lies nearest to buses 3 and 4 (and the tie at 80 km goes to the
         // generator): 200 MW served, so a ±100 MVAr range.
         assert!((c.qmax_mvar - 100.0).abs() < 1e-9 && (c.qmin_mvar + 100.0).abs() < 1e-9);
         assert_eq!(buses[4].kind, BusKind::Generator);

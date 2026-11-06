@@ -23,7 +23,7 @@ For a published PowerIO release, every component crate must resolve to that one
 registry version with a Cargo.lock checksum, and `powerio-releases.json` maps
 the release tag to its commit. A candidate run
 against an unpublished PowerIO revision instead pins one Git revision for all
-seven crates in `Cargo.toml` and `Cargo.lock`. The runner
+eight crates in `Cargo.toml` and `Cargo.lock`. The runner
 creates outputs with exclusive writes, so a second run cannot replace evidence
 silently.
 

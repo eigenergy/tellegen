@@ -16,12 +16,12 @@ use powerio_matrix::{build_ac_opf_preparation, AcOpfAssemblyOptions, Units};
 use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
 
 use super::islands::{dense_islands, energize, ReferencePolicy};
+use super::{hvdc_diagnostics, normalize_for_model, reconstruct_ids, HvdcLines, Ids};
 #[cfg(feature = "conic")]
 use super::{
     normalize_angle_bounds, reject_unsupported_active_elements, stable_source_ids,
     uids_for_source_rows, validate_canonical_identity, PiecewiseCost,
 };
-use super::{normalize_for_model, reconstruct_ids, Ids};
 use crate::api::SolveDiagnostic;
 
 const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
@@ -204,8 +204,27 @@ impl AcNetwork {
     /// Build the private AC power flow workspace from the supplied PowerIO
     /// instance. Boundary specifications, not inferred generator placement,
     /// determine the PQ, PV, and reference equations.
+    ///
+    /// PowerIO states each in-service HVDC line's transfer in the bus
+    /// specifications, so this path carries HVDC lines as fixed injections. When
+    /// energizing isolates an island that holds an HVDC terminal, the instance is
+    /// rebuilt on the energized network, so its specifications leave that line out
+    /// at both ends.
     pub fn from_pf_instance(instance: &AcPfInstance) -> Result<AcNetwork, String> {
-        let mut model = Self::from_network(instance.network())?;
+        let rebuilt = if instance.network().hvdc().iter().any(|line| line.in_service) {
+            energize(instance.network(), ReferencePolicy::GeneratorHosted)
+                .into_network()
+                .map(|network| instance.clone().with_network(network))
+                .transpose()
+                .map_err(|e| e.to_string())?
+        } else {
+            None
+        };
+        let instance = rebuilt.as_ref().unwrap_or(instance);
+        let mut model = Self::from_network_with(instance.network(), HvdcLines::FixedInjection)?;
+        model
+            .diagnostics
+            .extend(hvdc_diagnostics(instance.network()));
         model
             .diagnostics
             .retain(|d| d.code != "island_extra_reference");
@@ -327,7 +346,7 @@ impl AcNetwork {
             .map_err(|e| e.to_string())?;
         let instance = adjusted.as_ref().unwrap_or(instance);
         let raw = instance.network();
-        reject_unsupported_active_elements(raw)?;
+        reject_unsupported_active_elements(raw, HvdcLines::Reject)?;
         let voltage_dependent_loads = raw
             .loads()
             .iter()
@@ -519,17 +538,24 @@ impl AcNetwork {
     /// or convex piecewise linear objective, including per-terminal charging and
     /// 3-winding star lowering. Tellegen layers only its `rate_a == 0` cone
     /// sentinel and angle-bound policy on top.
+    ///
+    /// The AC preparation has no HVDC term, so a network with an in-service HVDC
+    /// line is rejected here; [`Self::from_pf_instance`] carries such lines.
     pub fn from_network(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
+        Self::from_network_with(raw, HvdcLines::Reject)
+    }
+
+    fn from_network_with(raw: &BalancedNetwork, hvdc: HvdcLines) -> Result<AcNetwork, String> {
         // This path normalizes first, which keeps only generator-hosted references.
         let energized = energize(raw, ReferencePolicy::GeneratorHosted);
-        let mut model = Self::build(energized.network(raw))?;
+        let mut model = Self::build(energized.network(raw), hvdc)?;
         let mut diagnostics = energized.diagnostics;
         diagnostics.append(&mut model.diagnostics);
         model.diagnostics = diagnostics;
         Ok(model)
     }
 
-    fn build(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
+    fn build(raw: &BalancedNetwork, hvdc: HvdcLines) -> Result<AcNetwork, String> {
         let voltage_dependent_loads = raw
             .loads()
             .iter()
@@ -552,7 +578,7 @@ impl AcNetwork {
                     .regulated_bus
                     .is_some_and(|regulated| regulated != generator.bus)
         });
-        let input = normalize_for_model(raw)?;
+        let input = normalize_for_model(raw, hvdc)?;
         let norm = input.network;
         let source_rows = input.source_rows;
 

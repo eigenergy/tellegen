@@ -8,6 +8,8 @@ import { errorText, isPermanentWasmLoadFailure } from "./errors.js";
 export type WasmModule = typeof import("./wasm-pkg/tellegen.js");
 export type WasmStudy = InstanceType<WasmModule["Study"]>;
 export type WasmMcPfSession = InstanceType<WasmModule["McPfSession"]>;
+export type WasmMcInput = InstanceType<WasmModule["McInput"]>;
+export type WasmRetainedIngest = WasmModule["RetainedIngest"]["prototype"];
 export type WasmSynthSession = InstanceType<WasmModule["SynthSession"]>;
 
 let engineReady: Promise<WasmModule> | null = null;

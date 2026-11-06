@@ -18,7 +18,7 @@ use std::collections::HashSet;
 
 use powerio::{BalancedNetwork, BusType};
 use powerio_matrix::{AnalysisBranchSource, PiecewiseLinearCost};
-use powerio_tx::{IndexedNetwork, NormalizeOptions};
+use powerio_tx::{HvdcTreatment, IndexedNetwork, NormalizeOptions};
 
 #[cfg(feature = "sensitivity")]
 mod ac;
@@ -159,12 +159,57 @@ pub(super) struct ModelInput {
     pub(super) source_rows: ModelSourceRows,
 }
 
+/// How a model treats the network's in-service HVDC lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum HvdcLines {
+    /// The model has no term for them, so an in-service line rejects the network.
+    Reject,
+    /// Each line's stated transfer enters the bus balance as fixed injections at
+    /// its two terminal buses, PowerIO's `HvdcTreatment::FixedInjection`.
+    FixedInjection,
+}
+
+/// PowerIO's account of the HVDC lines a model carries as fixed injections: what
+/// they inject, and each in-service line left out because a terminal bus is
+/// isolated. A network with no HVDC line reports nothing.
+pub(super) fn hvdc_diagnostics(network: &BalancedNetwork) -> Vec<crate::api::SolveDiagnostic> {
+    let injections = network.calc_hvdc_injections();
+    // `to_diagnostics` states the lines with an inactive terminal last, one per
+    // row in `inactive_terminal` order.
+    let mut inactive = injections.inactive_terminal.iter();
+    injections
+        .to_diagnostics(HvdcTreatment::FixedInjection)
+        .into_iter()
+        .map(|diagnostic| {
+            let buses = if diagnostic.code() == "BUILD.HVDC.TERMINAL_INACTIVE" {
+                inactive
+                    .next()
+                    .map(|&row| {
+                        let line = &network.hvdc()[row];
+                        vec![line.from.0, line.to.0]
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            crate::api::SolveDiagnostic {
+                code: diagnostic.code().to_owned(),
+                message: diagnostic.message().to_owned(),
+                buses,
+            }
+        })
+        .collect()
+}
+
 /// Normalize a raw network exactly once, or clone an already-normalized network,
 /// while preserving source-row identity across PowerIO's 3-winding star lowering.
-pub(super) fn normalize_for_model(source: &BalancedNetwork) -> Result<ModelInput, String> {
+pub(super) fn normalize_for_model(
+    source: &BalancedNetwork,
+    hvdc: HvdcLines,
+) -> Result<ModelInput, String> {
     source.validate().map_err(|error| error.to_string())?;
     validate_canonical_identity(source)?;
-    reject_unsupported_active_elements(source)?;
+    reject_unsupported_active_elements(source, hvdc)?;
     let (network, source_rows) = if source.is_normalized() {
         source.check_base_mva().map_err(|error| error.to_string())?;
         reject_unfiltered_normalized_elements(source)?;
@@ -310,7 +355,10 @@ fn reject_unfiltered_normalized_elements(network: &BalancedNetwork) -> Result<()
     ))
 }
 
-pub(super) fn reject_unsupported_active_elements(network: &BalancedNetwork) -> Result<(), String> {
+pub(super) fn reject_unsupported_active_elements(
+    network: &BalancedNetwork,
+    hvdc: HvdcLines,
+) -> Result<(), String> {
     let closed_switches = network
         .switches()
         .iter()
@@ -329,7 +377,7 @@ pub(super) fn reject_unsupported_active_elements(network: &BalancedNetwork) -> R
     if active_storage > 0 {
         unsupported.push(format!("{active_storage} in-service storage unit(s)"));
     }
-    if active_hvdc > 0 {
+    if active_hvdc > 0 && hvdc == HvdcLines::Reject {
         unsupported.push(format!("{active_hvdc} in-service HVDC link(s)"));
     }
     if unsupported.is_empty() {
@@ -710,10 +758,18 @@ mod compatibility_tests {
             .push(powerio::Storage::new(powerio::BusId(2)));
         assert_rejected_by_every_model(&storage, "in-service storage");
 
+        // The DC model carries an HVDC line as fixed injections. The AC model
+        // built from a network has no HVDC term; its power flow instance does.
         let mut hvdc = case3();
         hvdc.hvdc_mut()
             .push(powerio::Hvdc::new(powerio::BusId(1), powerio::BusId(2)));
-        assert_rejected_by_every_model(&hvdc, "in-service HVDC");
+        crate::model::DcNetwork::from_network(&hvdc).expect("DC carries HVDC lines");
+        #[cfg(feature = "sensitivity")]
+        {
+            let ac = crate::model::AcNetwork::from_network(&hvdc)
+                .expect_err("the AC network model has no HVDC term");
+            assert!(ac.contains("in-service HVDC"), "unexpected AC error: {ac}");
+        }
     }
 
     #[test]

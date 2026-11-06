@@ -1762,7 +1762,7 @@
           "type": "array"
         },
         "code": {
-          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.",
+          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.",
           "type": "string"
         },
         "message": {
@@ -2799,5 +2799,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "0f183bfc85f4fefb746b2630bdc4c12e5a9f2f285c5a8047b4668fa378e1b83e"
+  "x-rust-source-sha256": "9bb97dca900fb263346a2fb193b0ebdbfd33f7b2c2627917b20e9d5f1690dcb2"
 }

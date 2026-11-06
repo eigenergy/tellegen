@@ -1,4 +1,14 @@
 export { getNoticeCenter, errorNoticeTitle } from './notices.svelte.js';
+export {
+	DiagnosticLog,
+	LOG_SEVERITIES,
+	errorEntry,
+	errorStage,
+	logSeverity,
+	powerIoEntry,
+	solveEntry
+} from './log.svelte.js';
+export type { LogDocument, LogEntry, LogEntryInput, LogSeverity } from './log.svelte.js';
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as PanelFrame } from './components/PanelFrame.svelte';
 export { getPanelLayout } from './panels.svelte.js';
@@ -147,3 +157,8 @@ export type {
 
 export { default as McResults } from './components/McResults.svelte';
 export { default as McWorkbench } from './components/McWorkbench.svelte';
+
+export { default as McPfSettings } from './components/McPfSettings.svelte';
+export { default as McModelQualification } from './components/McModelQualification.svelte';
+
+export { default as McNetworkScope } from './components/McNetworkScope.svelte';

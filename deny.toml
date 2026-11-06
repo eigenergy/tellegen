@@ -43,6 +43,10 @@ name = "pounce-common"
 allow = ["EPL-2.0"]
 
 [[licenses.exceptions]]
+name = "pounce-convex"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
 name = "pounce-feral"
 allow = ["EPL-2.0"]
 
@@ -84,6 +88,10 @@ allow = ["EPL-2.0"]
 
 [[licenses.exceptions]]
 name = "pounce-rs"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-sens-core"
 allow = ["EPL-2.0"]
 
 [[licenses.exceptions]]

@@ -65,7 +65,12 @@ fn generated_network_respects_the_electrical_invariants() {
     for g in net.generators() {
         let cost = g.cost.as_ref().expect("cost");
         assert_eq!(cost.model, 2);
-        assert!(cost.coeffs[0] > 0.0);
+        if g.pmax > 0.0 {
+            assert!(cost.coeffs[0] > 0.0);
+        } else {
+            // A synchronous condenser for voltage support: reactive only.
+            assert!(g.pmin == 0.0 && cost.coeffs.iter().all(|c| *c == 0.0));
+        }
         assert_eq!(g.vg, 1.02);
         assert!(g.qmax > 0.0 && g.qmin < 0.0);
     }
@@ -123,7 +128,8 @@ fn explicit_controls_and_decimal_voltages() {
     let (module, report) = generate(req, common::places(), None).expect("generate");
     let net = module.value();
     assert_eq!(net.buses().len(), 24);
-    assert_eq!(net.generators().len(), 6);
+    // The requested units; condensers for voltage support come on top.
+    assert_eq!(net.generators().iter().filter(|g| g.pmax > 0.0).count(), 6);
     // The branch factor sets the target; the corridor plan exceeds it only
     // when the planning flows need more, and then says so.
     let plan = report.planning.as_ref().unwrap();
@@ -142,7 +148,7 @@ fn explicit_controls_and_decimal_voltages() {
     let cap: f64 = net.generators().iter().map(|g| g.pmax).sum();
     assert!(cap >= 1.55 * 2400.0 - 1e-6);
     assert!(net.buses().iter().any(|b| (b.base_kv - 34.5).abs() < 1e-9));
-    assert_eq!(line_class_for(34.5).kv, 138.0);
+    assert_eq!(line_class_for(34.5).kv, 69.0);
     let stats = report.stats.as_ref().unwrap();
     assert!(stats.parallel_branches > 0 && stats.parallel_corridors > 0);
     assert_eq!(

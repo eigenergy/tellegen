@@ -18,6 +18,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Raise a range only when the new version falls outside it. Otherwise an
+    # in-range bump also raises @tellegen/svelte's peerDependencies floors and
+    # makes consumers upgrade deck.gl or MapLibre for no change of ours. The
+    # lockfile still moves, so CI tests the new version.
+    versioning-strategy: increase-if-necessary
     ignore:
       # Major maplibre upgrades need an explicit interleaved-render review.
       # Keep the @deck.gl/maplibre integration compatible when moving majors.

@@ -4,6 +4,60 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.5.0](https://github.com/eigenergy/tellegen/compare/v0.4.0...v0.5.0) - 2026-10-28
+
+Released with `@tellegen/engine` 0.4.4.
+
+### Added
+
+- Networks with several islands solve, each island against its own
+  reference, in the DC OPF, the DC and AC power flows, and SOCWR. An island
+  with no in-service generator is de-energized, an island that states no
+  reference gets one at its largest generator, and `SolveResponse.diagnostics`
+  reports each such decision. Each island clears at its own price.
+  ([#172](https://github.com/eigenergy/tellegen/pull/172))
+- DC OPF requests carry linear constraints over branch flows, bus injections
+  and generator outputs (`SolveRequest.constraints`), the textbook form of an
+  interface or transfer limit. `SolveResponse.constraints` reports each one in
+  request order, `ProblemCaps.constraints` lists the term kinds a formulation
+  accepts, and DC OPF sensitivities differentiate with them and with respect
+  to their limits.
+  ([#170](https://github.com/eigenergy/tellegen/pull/170),
+  [#175](https://github.com/eigenergy/tellegen/pull/175))
+- DC OPF limit options (`SolveRequest.limits`): drop angle difference rows,
+  enforce all, rated or listed thermal limits, or find the binding thermal
+  limits lazily. A lazy solve adds violated and near-binding limits until
+  none is violated, and `SolveResponse.limit_rounds` reports each round.
+  ([#173](https://github.com/eigenergy/tellegen/pull/173))
+- The AC power flow can start from the case's stored state
+  (`SolveRequest.start`: `flat`, the default, or `case`), falling back to the
+  flat start when that does not converge, and accepts a nonzero reference
+  angle. ([#171](https://github.com/eigenergy/tellegen/pull/171))
+- `tellegen::schematic` lays out multiconductor graphs.
+  ([#228](https://github.com/eigenergy/tellegen/pull/228))
+
+### Changed
+
+- [**breaking**] `SolveRequest`, `SolveResponse` and `ProblemCaps` gain the
+  public fields above, and the exhaustive `Iterations` enum gains `Nlp` for
+  the exact AC OPF's diagnostics. Struct literals and exhaustive matches must
+  add them.
+- DC OPF programs carry only the rows they enforce: an inactive limit gets no
+  row, and a bus that cannot shed gets no shedding variable. A solve that ends
+  in a Clarabel numerical error retries once with more regularization. PGLib's
+  78,484-bus case now solves.
+  ([#173](https://github.com/eigenergy/tellegen/pull/173))
+- The `acopf` feature uses POUNCE 0.13.0 from crates.io, with its multi-pass
+  restoration and retry ladder; a promoted recovery is validated
+  independently and reported with its provenance.
+  ([#194](https://github.com/eigenergy/tellegen/pull/194))
+- Built against PowerIO 0.11.7 (0.4.0 used 0.11.6). OpenDSS feeders carry the
+  circuit's source impedance, so the graph gains an internal source bus and
+  its impedance line. An AC power flow built from a network with HVDC lines
+  includes their scheduled transfers as fixed bus injections; the DC OPF and
+  DC power flow still leave them out.
+  ([#254](https://github.com/eigenergy/tellegen/pull/254))
+
 ## [0.4.0](https://github.com/eigenergy/tellegen/compare/v0.3.0...v0.4.0) - 2026-10-24
 
 Released with `@tellegen/engine` and `@tellegen/svelte` 0.4.0.
