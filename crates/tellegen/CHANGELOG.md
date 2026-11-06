@@ -4,6 +4,19 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.6.0](https://github.com/eigenergy/tellegen/compare/v0.5.0...v0.6.0) - 2026-11-06
+
+### Other
+
+- Keep the multiconductor result types open to new fields
+- Merge pull request #302 from eigenergy/release/crate-0.6.0
+- Version the tellegen crate and Python wheel 0.6.0
+- Merge upstream main into multiconductor solver settings
+- Hand whole-network views the multiconductor result as columns
+- Keep multiconductor case inputs parsed in the engine
+- Gate the AC model HVDC test on the sensitivity feature
+- Carry in-service HVDC lines as fixed injections in the balanced solvers
+
 ## [0.5.0](https://github.com/eigenergy/tellegen/compare/v0.4.0...v0.5.0) - 2026-10-28
 
 Released with `@tellegen/engine` 0.4.4.
