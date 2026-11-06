@@ -1083,6 +1083,12 @@
 	// Sync deck.gl layers with app state. New layer instances diff cheaply;
 	// updateTriggers tell deck.gl when accessor outputs changed. Host layers
 	// (`extraLayers`) draw after tellegen's own at both exits.
+	//
+	// Stored routes keep longitudes in [-180, 180], so a route across the
+	// antimeridian is unwrapped before drawing and each segment takes the
+	// short way. On the globe deck.gl ignores `wrapLongitude` and needs the
+	// unwrapped path itself; on the flat map `wrapLongitude` cuts the path at
+	// ±180 so both halves draw in every world copy.
 	$effect(() => {
 		if (!overlay || !layerCtors) return;
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
@@ -1114,7 +1120,7 @@
 				new PathLayer<NetworkBranch>({
 					id: 'study-branches',
 					data: study.network.branches,
-					getPath: (b) => b.path,
+					getPath: (b) => unwrapLongitudePath(b.path),
 					wrapLongitude: true,
 					getColor: (b) => branchColor(flows.get(b.id) ?? 0, b.status === 1),
 					getWidth: (b) => branchWidth(flows.get(b.id) ?? 0),
@@ -1170,7 +1176,7 @@
 				new PathLayer<NetworkBranch>({
 					id: `branches-${c.id}`,
 					data: c.network.branches,
-					getPath: (b) => b.path,
+					getPath: (b) => unwrapLongitudePath(b.path),
 					wrapLongitude: true,
 					// The selected branch draws in the selection blue of the bus halo cue,
 					// wider, so the price-rating source line reads at a glance.
@@ -1246,7 +1252,7 @@
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
 						data: c.view.branches,
-						getPath: (b) => b.path,
+						getPath: (b) => unwrapLongitudePath(b.path),
 						wrapLongitude: true,
 						getColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
@@ -1352,7 +1358,7 @@
 				new PathLayer<PlacedMultiEdge>({
 					id: `multi-edges-${c.id}`,
 					data: c.view.edges,
-					getPath: (e) => e.path,
+					getPath: (e) => unwrapLongitudePath(e.path),
 					wrapLongitude: true,
 					// The selected edge draws in the selection blue of the branch cue,
 					// wider, so its panel detail has an obvious source on the map.
