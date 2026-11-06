@@ -1243,7 +1243,7 @@
 						id: `local-branches-${c.id}`,
 						data: c.view.branches,
 						getPath: (b) => b.path,
-					wrapLongitude: true,
+						wrapLongitude: true,
 						getColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
 								? [47, 111, 187, 255]
