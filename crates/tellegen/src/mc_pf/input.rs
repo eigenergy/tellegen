@@ -785,6 +785,11 @@ pub(super) fn validate_mc_network(
     network: &powerio_dist::MulticonductorNetwork,
 ) -> Result<(), String> {
     powerio_dist::require_electrical_readiness(network).map_err(|e| e.to_string())?;
+    if !network.generators().is_empty() || !network.ibrs().is_empty() {
+        return Err(
+            "fixed-point MC PF does not yet support generator or IBR injections".to_owned(),
+        );
+    }
     for source in network.sources() {
         if source.reference_terminal.as_ref().is_some_and(|reference| {
             !network.buses().iter().any(|bus| {

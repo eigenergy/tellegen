@@ -155,7 +155,7 @@ test('closing a chooser releases it and allows re-import without adding unchecke
 	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 });
 
-test('a zipped four-wire snapshot runs while an unsupported neighbour stays view-only', async ({
+test('a zipped four-wire snapshot runs while unsupported neighbours stay view-only', async ({
 	page
 }) => {
 	const references = JSON.parse(
@@ -170,13 +170,24 @@ test('a zipped four-wire snapshot runs while an unsupported neighbour stays view
 	await page.locator('input[type="file"]').setInputFiles({
 		name: 'snapshots.zip',
 		mimeType: 'application/zip',
-		buffer: storedZip({ 'four-wire.dss': source, 'three-winding.dss': unsupported })
+		buffer: storedZip({
+			'four-wire.dss': source,
+			'three-winding.dss': unsupported,
+			'generator.dss':
+				'new circuit.qc basekv=.4\nnew generator.g phases=3 bus1=sourcebus kv=.4 kw=3 kvar=1 model=1\n'
+		})
 	});
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.locator('.candidate')).toHaveCount(2);
+	await expect(dialog.locator('.candidate')).toHaveCount(3);
 	await dialog.getByRole('button', { name: 'Select all matching' }).click();
 	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
-	await expect(dialog.locator('[data-outcome="view-only"]')).toContainText('3 windings');
+	await expect(dialog.locator('[data-outcome="view-only"]')).toHaveCount(2);
+	await expect(
+		dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'three-winding.dss' })
+	).toContainText('3 windings');
+	await expect(
+		dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'generator.dss' })
+	).toContainText('generator or IBR injections');
 	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 	await page.getByRole('button', { name: /snapshots.zip \/ four-wire.dss Multiconductor/ }).click();

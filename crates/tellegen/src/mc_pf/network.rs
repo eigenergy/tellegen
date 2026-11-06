@@ -539,11 +539,6 @@ impl PreparedNetwork {
                 yprim: primitive.y_prim,
             });
         }
-        if !network.generators().is_empty() || !network.ibrs().is_empty() {
-            return Err(
-                "fixed-point MC PF does not yet support generator or IBR injections".to_owned(),
-            );
-        }
         let inferred_nominal_voltage = infer_missing_load_voltages(instance)?;
         let loads = instance
             .loads()

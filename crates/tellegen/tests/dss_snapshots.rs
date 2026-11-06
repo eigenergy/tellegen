@@ -27,6 +27,16 @@ fn module(text: &str) -> powerio::PioModule<powerio::PioValue> {
 }
 
 #[test]
+fn generator_snapshot_is_view_only_before_solver_preparation() {
+    let input = module("new circuit.qc basekv=.4\nnew generator.g phases=3 bus1=sourcebus kv=.4 kw=3 kvar=1 model=1\n");
+    let reason = tellegen::validate_mc_module(&input).unwrap_err();
+    assert!(reason.contains("generator or IBR injections"), "{reason}");
+    let saved = tellegen::ir::serialize_module(&input).unwrap();
+    assert!(tellegen::validate_mc_module_json(&saved).is_err());
+    assert!(tellegen::solve_mc_module_json(&saved, &Default::default()).is_err());
+}
+
+#[test]
 fn capability_rejects_missing_voltage_dependent_load_base() {
     for model in [
         powerio_dist::DistLoadVoltageModel::ConstantCurrent { v_nom: vec![] },

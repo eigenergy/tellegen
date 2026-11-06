@@ -62,6 +62,7 @@ Passive definitions, profiles and monitoring records remain in the module.
 This is a fixed equipment snapshot: daily/yearly simulation, control execution,
 and an OpenDSS script's sequence of solves are not run. Active regulator/control
 objects, unresolved geometry or dependencies, floating source references,
+generator/IBR injections, voltage-dependent loads without a nominal voltage,
 general three-winding transformers, and unqualified transformer settings remain
 view-only with a reason. Convergence and operating voltage-limit compliance are
 reported separately. A runnable model can still fail to converge.
