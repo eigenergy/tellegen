@@ -7,6 +7,16 @@
 	const config = getUiConfig();
 
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
+	function openFolder() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.webkitdirectory = true;
+		input.multiple = true;
+		input.onchange = () => {
+			if (input.files) void ctrl.ingestFolder(input.files);
+		};
+		input.click();
+	}
 	let headerEl = $state.raw<HTMLElement | undefined>(undefined);
 
 	// The case tabs wrap onto their own row on a narrow viewport and unwrap on a
@@ -90,7 +100,10 @@
 					? 'Drop a case file'
 					: 'Open a case file'}</span
 			>
-			<span class="cregion mono">Case or geo files</span>
+			<span class="cregion mono">Case, ZIP or geo files</span>
+		</button>
+		<button class="ghost filedrop-ui" onclick={openFolder}>
+			<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
 		</button>
 	</nav>
 	<span class="kicker mono">
@@ -100,7 +113,7 @@
 	</span>
 	<input
 		type="file"
-		accept=".m,.raw,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson"
+		accept=".zip,.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx"
 		multiple
 		hidden
 		bind:this={fileInput}

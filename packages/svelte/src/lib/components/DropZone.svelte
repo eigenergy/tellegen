@@ -11,7 +11,7 @@
 {#if app.dragOver}
 	<div class="dropzone" aria-hidden="true">
 		<div class="dropframe">
-			<p>Drop case or geographic files</p>
+			<p>Drop case files, ZIPs, folders or geographic files</p>
 			{#if children}<div class="note">{@render children()}</div>{/if}
 		</div>
 	</div>
