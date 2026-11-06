@@ -40,6 +40,7 @@ class AcOpfReleaseTests(unittest.TestCase):
         self.assertEqual(source['tellegen_source'],
                          f'https://github.com/eigenergy/tellegen/tree/{revision}')
         self.assertIsNone(source['tellegen_worktree_dirty'])
+        self.assertFalse(source['development_only'])
         self.assertEqual(source['artifact_sha256'], hashlib.sha256(self.asset.read_bytes()).hexdigest())
         self.assertTrue(source['crates'])
 
@@ -49,6 +50,7 @@ class AcOpfReleaseTests(unittest.TestCase):
         source = json.loads((self.root / 'POUNCE-SOURCE.json').read_text())
         self.assertEqual(source['tellegen_source'], 'https://github.com/eigenergy/tellegen')
         self.assertIsNone(source['tellegen_worktree_dirty'])
+        self.assertTrue(source['development_only'])
 
     def test_invalid_revision_is_rejected(self):
         result = self.manifest('not-a-git-sha')
