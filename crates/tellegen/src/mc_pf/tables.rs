@@ -21,6 +21,7 @@ use super::{
 /// indices into `strings`, each name stored once; complex values are
 /// interleaved `[re, im]`.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct McPfResultTables {
     pub iterations: usize,
     pub load_model: Option<super::McLoadModelAssessment>,

@@ -9,6 +9,7 @@ pub(crate) const EXTENSION: &str = "tellegen.energized_network";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McExcludedEquipment {
     pub kind: String,
     pub name: String,
@@ -16,6 +17,7 @@ pub struct McExcludedEquipment {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McExcludedIsland {
     pub buses: Vec<String>,
     /// Includes open boundary switches touching this island. An open switch
@@ -25,6 +27,7 @@ pub struct McExcludedIsland {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McNetworkScope {
     pub excluded_island_count: usize,
     pub excluded_bus_count: usize,

@@ -42,8 +42,9 @@ jobs:
             # Its own command, so a failed diff fails the job instead of
             # reading as "nothing changed".
             changed=$(git diff --name-only HEAD^1 HEAD)
-            # What goes into the wheel, and the case its tests solve.
-            wheel='^(crates/|python/|Cargo\.(toml|lock)$|pyproject\.toml$|rust-toolchain\.toml$|docs/evidence/studies/case3\.m$)'
+            # What goes into the wheel, the case its tests solve, and this
+            # gate, so a change to the legs runs on the legs it changes.
+            wheel='^(crates/|python/|Cargo\.(toml|lock)$|pyproject\.toml$|rust-toolchain\.toml$|docs/evidence/studies/case3\.m$|\.github/workflows/gates-python\.yml$)'
             # `ruff check .` lints every Python file in the repository.
             gate='\.py$|^(ruff\.toml|mypy\.ini|\.github/workflows/gates-python\.yml)$'
             grep -qE "$wheel" <<<"$changed" || macos=false
