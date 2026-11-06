@@ -94,6 +94,7 @@ impl From<Complex64> for McComplex {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McTerminalResult {
     pub bus: String,
     pub terminal: String,
@@ -106,6 +107,7 @@ pub struct McTerminalResult {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McSourceReaction {
     pub source: String,
     pub terminal: String,
@@ -115,6 +117,7 @@ pub struct McSourceReaction {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McVoltageViolation {
     pub load: String,
     pub branch: usize,
@@ -127,6 +130,7 @@ pub struct McVoltageViolation {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McElementPort {
     pub element: String,
     pub kind: String,
@@ -141,6 +145,7 @@ pub struct McElementPort {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum McLoadModelStatus {
     Original,
     Modified,
@@ -150,6 +155,7 @@ pub enum McLoadModelStatus {
 /// Constant-size provenance carried by summaries and complete results.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McLoadModelAssessment {
     pub status: McLoadModelStatus,
     pub modified_branch_count: usize,
@@ -162,6 +168,7 @@ pub struct McLoadModelAssessment {
 /// A branch whose final current differs from its original load law.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McLoadModelChange {
     pub load: String,
     pub branch: usize,
@@ -175,6 +182,7 @@ pub struct McLoadModelChange {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McPfResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_scope: Option<McNetworkScope>,
@@ -220,6 +228,7 @@ pub struct McLoadPowerEdit {
 /// UI-facing identity and current/base power for one editable load branch.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McLoadBranchState {
     pub load: String,
     pub bus: String,
@@ -238,6 +247,7 @@ pub struct McLoadBranchState {
 /// so its cost and size do not depend on how the network is displayed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McPfSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_scope: Option<McNetworkScope>,
@@ -276,6 +286,7 @@ pub struct McPfSummary {
 /// duration is zero.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McPfProfile {
     pub timed: bool,
     /// Parsing the stored module (cold start from a module only).
@@ -321,6 +332,7 @@ impl McPfDetailQuery {
 /// One page of detailed values, in the same records as [`McPfResult`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct McPfDetail {
     pub solve_count: usize,
     pub terminals: Vec<McTerminalResult>,
@@ -899,6 +911,7 @@ impl McPfSession {
 /// result make it self-contained. Only a verified original-model result also
 /// carries a canonical PowerIO solution module.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct McStudySnapshot {
     pub schema: String,
     pub version: u32,
