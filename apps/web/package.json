@@ -24,12 +24,12 @@
 		"@deck.gl/maplibre": "^9.4.0",
 		"@tellegen/svelte": "^0.5.0",
 		"@tellegen/webmcp": "^0.1.0",
-		"maplibre-gl": "^6.15.0"
+		"maplibre-gl": "^6.16.0"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.64.1",
 		"@fontsource-variable/bricolage-grotesque": "^5.3.0",
 		"@fontsource/ibm-plex-mono": "^5.3.0",
+		"@playwright/test": "^1.64.1",
 		"@sveltejs/adapter-static": "^4.0.1",
 		"@sveltejs/kit": "^3.1.1",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
