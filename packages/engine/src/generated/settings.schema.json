@@ -1,0 +1,356 @@
+{
+  "catalog": {
+    "calculations": [
+      {
+        "available": true,
+        "calculation": "mc_ac_pf",
+        "defaults": {
+          "absolute_kcl_tolerance": 0.0001,
+          "damping": 1.0,
+          "max_iterations": 100,
+          "relative_kcl_tolerance": 0.00001,
+          "tolerance": 0.0001,
+          "v_low_pu": 0.5,
+          "v_max_pu": 1.15,
+          "v_min_pu": 0.85,
+          "voltage_envelope": true,
+          "zero_voltage_tolerance": 1e-9
+        },
+        "fields": [
+          {
+            "default": 0.0001,
+            "description": "Positive absolute current-mismatch floor.",
+            "exclusive_minimum": 0,
+            "group": "numerical",
+            "key": "absolute_kcl_tolerance",
+            "label": "Absolute KCL tolerance",
+            "type": "number",
+            "unit": "A"
+          },
+          {
+            "default": 1.0,
+            "description": "Voltage-update factor in (0, 1].",
+            "exclusive_minimum": 0,
+            "group": "numerical",
+            "key": "damping",
+            "label": "Damping",
+            "maximum": 1,
+            "type": "number",
+            "unit": ""
+          },
+          {
+            "default": 100,
+            "description": "Positive integer fixed-point iteration limit.",
+            "group": "numerical",
+            "key": "max_iterations",
+            "label": "Maximum iterations",
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer",
+            "unit": ""
+          },
+          {
+            "default": 0.00001,
+            "description": "Nonnegative allowance scaled by incident/load-current magnitude.",
+            "group": "numerical",
+            "key": "relative_kcl_tolerance",
+            "label": "Relative KCL tolerance",
+            "minimum": 0,
+            "type": "number",
+            "unit": ""
+          },
+          {
+            "default": 0.0001,
+            "description": "Positive maximum complex-voltage change; KCL must also pass.",
+            "exclusive_minimum": 0,
+            "group": "numerical",
+            "key": "tolerance",
+            "label": "Voltage-change tolerance",
+            "type": "number",
+            "unit": "V"
+          },
+          {
+            "default": 0.5,
+            "description": "Nominal-impedance breakpoint; 0 < Vlow < Vmin < Vmax, even with envelope disabled.",
+            "exclusive_minimum": 0,
+            "group": "model",
+            "key": "v_low_pu",
+            "label": "Vlow",
+            "type": "number",
+            "unit": "pu"
+          },
+          {
+            "default": 1.15,
+            "description": "Upper edge of original load-law band; not an engineering voltage limit.",
+            "exclusive_minimum": 0,
+            "group": "model",
+            "key": "v_max_pu",
+            "label": "Vmax",
+            "type": "number",
+            "unit": "pu"
+          },
+          {
+            "default": 0.85,
+            "description": "Lower edge of original load-law band; not an engineering voltage limit.",
+            "exclusive_minimum": 0,
+            "group": "model",
+            "key": "v_min_pu",
+            "label": "Vmin",
+            "type": "number",
+            "unit": "pu"
+          },
+          {
+            "default": true,
+            "description": "Changes load equations outside the normal band; results retain model qualification.",
+            "group": "model",
+            "key": "voltage_envelope",
+            "label": "Use load-model envelope",
+            "type": "boolean",
+            "unit": ""
+          },
+          {
+            "default": 1e-9,
+            "description": "Positive guard for load-current evaluation, not a convergence tolerance.",
+            "exclusive_minimum": 0,
+            "group": "numerical",
+            "key": "zero_voltage_tolerance",
+            "label": "Zero-voltage guard",
+            "type": "number",
+            "unit": "V"
+          }
+        ]
+      },
+      {
+        "available": true,
+        "calculation": "dcopf",
+        "defaults": {
+          "angle_difference": true,
+          "lazy": null,
+          "thermal": "all"
+        },
+        "fields": [
+          {
+            "default": true,
+            "description": "Changes the constraints included in DC OPF.",
+            "group": "model",
+            "key": "angle_difference",
+            "label": "Enforce angle-difference limits",
+            "type": "boolean",
+            "unit": ""
+          },
+          {
+            "default": null,
+            "description": "null disables; otherwise {max_rounds:20, near_binding:0.98}. Solves verify omitted limits.",
+            "group": "numerical",
+            "key": "lazy",
+            "label": "Lazy thermal enforcement",
+            "type": "json",
+            "unit": ""
+          },
+          {
+            "default": "all",
+            "description": "all, rated, or an object with branches containing element keys.",
+            "group": "model",
+            "key": "thermal",
+            "label": "Thermal limits",
+            "type": "json",
+            "unit": ""
+          }
+        ]
+      },
+      {
+        "available": true,
+        "calculation": "acpf",
+        "defaults": {
+          "start": "flat"
+        },
+        "fields": [
+          {
+            "choices": [
+              "flat",
+              "case"
+            ],
+            "default": "flat",
+            "description": "flat or case; a stored case start that fails falls back to flat.",
+            "group": "numerical",
+            "key": "start",
+            "label": "Initial voltages",
+            "type": "enum",
+            "unit": ""
+          }
+        ]
+      },
+      {
+        "available": true,
+        "calculation": "dcpf",
+        "defaults": {},
+        "fields": []
+      },
+      {
+        "available": true,
+        "calculation": "socwr",
+        "defaults": {},
+        "fields": []
+      },
+      {
+        "available": false,
+        "calculation": "acopf",
+        "fields": [],
+        "reason": "calculation \"acopf\" is unavailable in this build"
+      }
+    ],
+    "version": 1
+  },
+  "schema": {
+    "$defs": {
+      "CalculationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "edits": {
+            "$ref": "#/$defs/Edits",
+            "default": {
+              "deltas": {},
+              "rates": {}
+            }
+          },
+          "energized_only": {
+            "default": false,
+            "description": "Source-less islands are excluded only by this explicit selection.",
+            "type": "boolean"
+          },
+          "module_json": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/$defs/SettingsRequest"
+          }
+        },
+        "required": [
+          "module_json",
+          "settings"
+        ],
+        "type": "object"
+      },
+      "CalculationResult": {
+        "properties": {
+          "result": true,
+          "settings": {
+            "$ref": "#/$defs/ResolvedSettings"
+          }
+        },
+        "required": [
+          "settings",
+          "result"
+        ],
+        "type": "object"
+      },
+      "Edits": {
+        "description": "Operating-point edits applied before the model is built: demand deltas in MW\nkeyed by bus (the operating point is `base demand + delta`) and branch rating\ndeltas in MW keyed by branch (the thermal limit is `base rating + delta`). Keys\nare [`ElementKey`]s — the original numeric id or the powerio row uid. A struct\n(not a bare map) so the structural-edit vocabulary (add line, add generator,\nretune a parameter) can grow without breaking the wire format: a client that\nknows only `deltas` keeps working.",
+        "properties": {
+          "deltas": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "default": {},
+            "description": "Active-power demand delta in MW per bus key.",
+            "type": "object"
+          },
+          "rates": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "default": {},
+            "description": "Thermal rating delta in MW per branch key. Supported by the DC OPF\nand SOCWR paths; the AC power flow has no flow limits and rejects them.",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "ResolvedSettings": {
+        "properties": {
+          "baseline": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "calculation": {
+            "type": "string"
+          },
+          "effective": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "engine_defaults": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "overrides": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "version": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "calculation",
+          "engine_defaults",
+          "baseline",
+          "overrides",
+          "effective"
+        ],
+        "type": "object"
+      },
+      "SettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "additionalProperties": true,
+            "default": {},
+            "type": "object"
+          },
+          "calculation": {
+            "type": "string"
+          },
+          "overrides": {
+            "additionalProperties": true,
+            "default": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "calculation"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "calculation": {
+        "$ref": "#/$defs/CalculationRequest"
+      },
+      "resolved": {
+        "$ref": "#/$defs/ResolvedSettings"
+      },
+      "result": {
+        "$ref": "#/$defs/CalculationResult"
+      },
+      "settings": {
+        "$ref": "#/$defs/SettingsRequest"
+      }
+    },
+    "required": [
+      "settings",
+      "resolved",
+      "calculation",
+      "result"
+    ],
+    "title": "Contract",
+    "type": "object"
+  },
+  "x-rust-source-sha256": "7ccbcac3c0d65a6b0bfd0a478c370d9515580d67a2052225742ca50adc598f5d"
+}

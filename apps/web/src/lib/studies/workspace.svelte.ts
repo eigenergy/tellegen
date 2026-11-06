@@ -97,7 +97,11 @@ export class StudyWorkspace {
 		const c = this.grid.app.activeMulti;
 		if (!c || c === previous) throw new Error('Saved distribution power flow could not be opened');
 		c.mcSnapshot = snapshot;
+		c.settings.baselines = { mc_ac_pf: { ...snapshot.options } };
 		c.mcOptions = { ...snapshot.options };
+		// Ingest makes the new case visible before replay restores its options.
+		// Notify the settings panel only after the complete selection is installed.
+		c.settings.revision++;
 		c.mcEnergizedOnly = !!snapshot.result.network_scope;
 		c.mcPreparedScope = snapshot.result.network_scope ?? null;
 		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
@@ -123,7 +127,8 @@ export class StudyWorkspace {
 		if (!c?.result || c.solving) throw new Error('Run AC power flow before exporting its result');
 		const snapshot = await this.grid.snapshotMultiCase(c);
 		trackUsage('study.export', { result: 'completed' });
-		return JSON.stringify(snapshot, null, 2);
+		// Keep large distribution snapshots below the replay input limit.
+		return JSON.stringify(snapshot);
 	}
 	async importMulti(text: string) {
 		return this.#run(

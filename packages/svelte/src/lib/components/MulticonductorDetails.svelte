@@ -49,6 +49,16 @@
 	{@const mc = app.activeMulti}
 	{@const s = mc.summary}
 	<h2>{mc.label}</h2>
+	{#if mc.distribution}
+		<p class="footnote">
+			{mc.distribution.description ?? ''}
+			{#if mc.distribution.source_url}<a
+					href={mc.distribution.source_url}
+					target="_blank"
+					rel="noreferrer">Dataset and attribution</a
+				>{/if}
+		</p>
+	{/if}
 	{#if s}
 		<p class="tag">Multiconductor</p>
 		<details class="case-details">
@@ -109,8 +119,9 @@
 		/>
 		{#if !mc.mcPfSupported}<p class="footnote">{mc.mcPfReason}</p>{/if}
 		{#if validateMcPfOptions(mc.mcOptions)}<p class="footnote">
-				{validateMcPfOptions(mc.mcOptions)} Update Power flow settings in Studies before solving.
+				{validateMcPfOptions(mc.mcOptions)} Open Settings to update solver options before solving.
 			</p>{/if}
+		<button onclick={() => (app.settingsOpen = true)}>Power flow settings</button>
 		<div class="calculation-actions">
 			{#if mc.solving}
 				<span role="status">Calculating&hellip;</span>{#if mc.solveAbort}<button

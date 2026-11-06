@@ -2,6 +2,7 @@ import { tick } from 'svelte';
 import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 import {
 	FORMULATIONS,
+	recordedCalculationSettings,
 	LocalCase,
 	createStudy,
 	type BrowserStudy,
@@ -386,6 +387,17 @@ function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
 			calculation: 'balanced',
 			selected: !ctrl.app.studyView && ctrl.app.activeCaseId === c.id
 		})),
+		...ctrl.app.hostedDistributionCases
+			.filter((s) => !ctrl.app.multiCases.some((c) => c.hosted && c.id === s.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.name, 64),
+				kind: 'server',
+				availability: c.unavailable_reason ? 'unavailable' : 'load_on_selection',
+				...(c.unavailable_reason ? { reason: clip(c.unavailable_reason, 240) } : {}),
+				calculation: 'multiconductor_ac_pf',
+				selected: false
+			})),
 		...ctrl.app.localCases.map((c) => ({
 			case_id: c.id,
 			name: clip(c.label, 64),
@@ -397,7 +409,7 @@ function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
 		...ctrl.app.multiCases.map((c) => ({
 			case_id: c.id,
 			name: clip(c.label, 64),
-			kind: 'distribution',
+			kind: c.hosted ? 'server' : 'distribution',
 			availability: c.placed ? 'ready' : 'placement_required',
 			calculation: c.mcPfSupported ? 'multiconductor_ac_pf' : 'display_only',
 			selected: !ctrl.app.studyView && ctrl.app.activeMultiId === c.id
@@ -437,13 +449,17 @@ async function selectCase(
 		);
 	}
 	const backend = ctrl.app.byId(input.caseId);
+	const hosted = ctrl.app.hostedDistributionCases.find((c) => c.id === input.caseId);
 	const local = ctrl.app.localCases.find((c) => c.id === input.caseId);
 	const multi = ctrl.app.multiCases.find((c) => c.id === input.caseId);
-	if (!backend && !local && !multi)
+	if (!backend && !hosted && !local && !multi)
 		throw new TellegenToolError('CASE_NOT_FOUND', 'case ID is not in list_cases');
 	if (backend?.unavailableReason)
 		throw new TellegenToolError('CASE_UNAVAILABLE', clip(backend.unavailableReason, 240));
+	if (hosted?.unavailable_reason)
+		throw new TellegenToolError('CASE_UNAVAILABLE', clip(hosted.unavailable_reason, 240));
 	if (backend) await ctrl.activateCase(backend.id);
+	else if (hosted) await ctrl.activateHostedDistribution(hosted.id);
 	else if (local) ctrl.activateLocal(local);
 	else if (multi) ctrl.activateMulti(multi);
 	await tick();
@@ -1766,6 +1782,93 @@ export function createTellegenWebMcpAdapter(
 		};
 	}
 	return {
+		settings: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				if (input.scope === 'display') {
+					const prefs = ctrl.app.preferences;
+					if (input.action !== 'inspect' && input.settingsRevision !== prefs.revision)
+						throw new TellegenToolError(
+							'STALE_REVISION',
+							'Display preferences changed; inspect settings before retrying'
+						);
+					if (input.action === 'update') prefs.update(input.patch ?? {});
+					if (input.action === 'reset') prefs.reset();
+					const color = prefs.coloring;
+					if (input.action !== 'inspect' && ctrl.displayOptions.some((x) => x.mode === color))
+						ctrl.app.displayMode = color;
+					return {
+						scope: 'display',
+						settings_revision: prefs.revision,
+						selected: prefs.inspect(),
+						storage_error: prefs.error
+					};
+				}
+				if (ctrl.app.studyView && input.action === 'inspect') {
+					const recorded = recordedCalculationSettings(ctrl.app.studyView.inputJson);
+					return {
+						...displayedContext(ctrl),
+						editable: false,
+						calculation: ctrl.app.studyView.formulation,
+						accepted: recorded?.effective ? JSON.parse(JSON.stringify(recorded.effective)) : null,
+						provenance: recorded ? 'recorded' : 'unavailable'
+					};
+				}
+				const c = ctrl.app.studyView ? null : (ctrl.app.activeMulti ?? ctrl.activeSolvable);
+				if (!c || (input.caseId && c.id !== input.caseId))
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'Select an editable case before changing its settings'
+					);
+				if (input.action !== 'inspect' && displayedRevision(ctrl) !== input.expectedRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'Case changed; inspect_case before retrying'
+					);
+				if (input.action !== 'inspect' && c.settings.revision !== input.settingsRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'Settings changed; inspect_settings before retrying'
+					);
+				const selected = ctrl.inspectSettings(c);
+				if (input.action === 'update' || input.action === 'reset')
+					await ctrl.updateSettings(
+						c,
+						input.calculation ?? selected.calculation,
+						input.patch ?? {},
+						input.settingsRevision!,
+						input.action === 'reset'
+					);
+				if (input.action === 'run') await ctrl.runSettings(c, signal);
+				const snapshot = ctrl.inspectSettings(c);
+				if (input.field) {
+					const field = snapshot.fields.find((f) => f.key === input.field);
+					if (!field)
+						throw new TellegenToolError(
+							'INVALID_INPUT',
+							'Setting is unavailable for this calculation'
+						);
+					return JSON.parse(
+						JSON.stringify({
+							...displayedContext(ctrl),
+							settings_revision: snapshot.settings_revision,
+							calculation: snapshot.calculation,
+							field
+						})
+					);
+				}
+				return JSON.parse(
+					JSON.stringify({
+						...displayedContext(ctrl),
+						settings_revision: snapshot.settings_revision,
+						calculation: snapshot.calculation,
+						selected: snapshot.selected,
+						accepted: snapshot.accepted,
+						accepted_calculation: snapshot.accepted_calculation,
+						pending: snapshot.pending
+					})
+				);
+			}),
 		cases: {
 			listCases(input, signal) {
 				signal.throwIfAborted();
@@ -1787,10 +1890,13 @@ export function createTellegenWebMcpAdapter(
 						'STALE_REVISION',
 						'The displayed case changed; inspect_case before solving.'
 					);
+				// Same scope as the Studies and details solve actions: a case with
+				// source-less islands is solved energized-only.
 				const result = await ctrl.solveMultiCase(
 					c,
-					{ max_iterations: input.maxIterations },
-					signal
+					input.maxIterations === undefined ? {} : { max_iterations: input.maxIterations },
+					signal,
+					c.mcEnergizedOnly || c.mcRequiresEnergizedSolve
 				);
 				signal.throwIfAborted();
 				if (ctrl.app.activeMulti !== c || ctrl.app.studyView)

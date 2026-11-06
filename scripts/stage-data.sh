@@ -45,3 +45,11 @@ else
     fi
     echo "staged CATS -> $dst/CATS"
 fi
+
+# Optional prepared main island or sibling checkout for the historical pilot.
+# Requires a built browser engine; explicit configuration makes failures fatal.
+if [ -n "${TELLEGEN_TEXAS7K_MAIN_ISLAND:-}" ]; then
+    python3 "$(dirname "$0")/datasets/stage-texas7k.py" "$TELLEGEN_TEXAS7K_MAIN_ISLAND" "$dst" --main-island
+elif [ -n "${TELLEGEN_BMOPF_REPO:-}" ]; then
+    python3 "$(dirname "$0")/datasets/stage-texas7k.py" "$TELLEGEN_BMOPF_REPO" "$dst"
+fi

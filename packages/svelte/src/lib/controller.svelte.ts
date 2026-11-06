@@ -31,6 +31,10 @@ import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limi
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
 	browserWasmTransport,
+	resolveSettings,
+	settingsCatalog,
+	type ResolvedSettings,
+	type SolveResponse,
 	applyDisplayGeo,
 	applyGeo,
 	applyLayout,
@@ -74,6 +78,42 @@ import {
 } from '@tellegen/engine';
 import { browserSolveFailure, errorText, extent, formulationLabel, rgbaCss } from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
+
+function sameSettings(a: unknown, b: unknown): boolean {
+	if (a && b && typeof a === 'object' && typeof b === 'object') {
+		const x = a as Record<string, unknown>,
+			y = b as Record<string, unknown>;
+		return (
+			Object.keys(x).length === Object.keys(y).length &&
+			Object.keys(x).every((k) => sameSettings(x[k], y[k]))
+		);
+	}
+	return Object.is(a, b);
+}
+
+function acOpfSolveDetail(response: SolveResponse): string {
+	const diagnostics = response.iterations;
+	return diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
+		? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
+		: 'POUNCE WASI';
+}
+
+function defaultCalculationSettings(calculation: string): ResolvedSettings {
+	const descriptor = settingsCatalog.calculations.find((c) => c.calculation === calculation);
+	const effective = descriptor && 'defaults' in descriptor ? { ...descriptor.defaults } : {};
+	return {
+		version: 1,
+		calculation,
+		engine_defaults: effective,
+		baseline: effective,
+		overrides: {},
+		effective
+	};
+}
+function hasCustomCalculationSettings(c: SolvableCase): boolean {
+	const accepted = c.settings.accepted;
+	return !!accepted && !sameSettings(accepted.effective, accepted.engine_defaults);
+}
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
@@ -208,7 +248,11 @@ export interface ControllerOptions {
 		Partial<
 			Pick<
 				EngineTransport,
-				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'prepareMcEnergizedNetwork'
+				| 'solveMcStudy'
+				| 'applyMcStudyGeo'
+				| 'createMcPfSession'
+				| 'ingestDistCaseBytes'
+				| 'prepareMcEnergizedNetwork'
 			>
 		>;
 }
@@ -244,9 +288,15 @@ export class Controller {
 		Partial<
 			Pick<
 				EngineTransport,
-				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'prepareMcEnergizedNetwork'
+				| 'solveMcStudy'
+				| 'applyMcStudyGeo'
+				| 'createMcPfSession'
+				| 'ingestDistCaseBytes'
+				| 'prepareMcEnergizedNetwork'
 			>
 		>;
+	private hostedLoadAbort: AbortController | null = null;
+	loadingHostedDistribution = $state<string | null>(null);
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -274,6 +324,7 @@ export class Controller {
 			studyInputJson: string;
 			formulation: Formulation;
 			baseSolution: Solution;
+			settings?: ResolvedSettings;
 		}
 	>();
 	private detachedCaseCaptures = new WeakMap<
@@ -558,7 +609,26 @@ export class Controller {
 		const token = {};
 		const build = (async (): Promise<BrowserStudy | null> => {
 			try {
-				const study = await createStudy(studyInputJson, formulation);
+				const accepted =
+					(c.settings.accepted?.calculation === formulation ? c.settings.accepted : null) ??
+					(c.settings.baselines[formulation]
+						? await resolveSettings({
+								calculation: formulation,
+								baseline: c.settings.baselines[formulation]
+							})
+						: null);
+				const study = await createStudy(
+					studyInputJson,
+					formulation,
+					accepted
+						? {
+								settings: {
+									calculation: formulation,
+									overrides: accepted.effective
+								}
+							}
+						: {}
+				);
 				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
 				// list reloaded) while building; don't cache a now-unwanted Study, and free
@@ -571,7 +641,8 @@ export class Controller {
 					study,
 					studyInputJson,
 					formulation,
-					baseSolution
+					baseSolution,
+					settings: accepted ?? defaultCalculationSettings(formulation)
 				});
 				return study;
 			} catch (e) {
@@ -619,6 +690,9 @@ export class Controller {
 	dispose() {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.hostedLoadAbort?.abort();
+		this.hostedLoadAbort = null;
+		this.loadingHostedDistribution = null;
 		this.abort?.abort();
 		this.abort = null;
 		this.acOpfProbeAbort.abort();
@@ -674,6 +748,8 @@ export class Controller {
 	finishSolve(c: SolvableCase, seq: number, target: SensTarget | null) {
 		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
+		const acceptedSettings = this.caseStudies.get(c)?.settings;
+		if (acceptedSettings?.calculation === c.formulation) c.settings.accepted = acceptedSettings;
 		// Every solve of a case restates the same findings; they count once.
 		const findings = c.solution?.diagnostics ?? [];
 		if (findings.length)
@@ -1009,6 +1085,7 @@ export class Controller {
 		// so two concurrent loads can't double-fetch the case list and double-fit the map.
 		if (this.loading) return this.loading;
 		this.loading = (async () => {
+			this.hostedLoadAbort?.abort();
 			this.probeAcOpf();
 			// Learn the deploy's compute gate up front so fallback paths pick honest
 			// copy and skip doomed requests (the SSE stream cannot see a 403). On
@@ -1033,7 +1110,21 @@ export class Controller {
 					old.solveSeq++;
 					this.disposeStudy(old);
 				}
-				this.app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
+				for (const c of this.app.multiCases.filter((c) => c.hosted)) {
+					c.solveAbort?.abort();
+					if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
+					c.mcSession?.free();
+					c.mcSession = null;
+					releaseMcInput(c.mcInput);
+					c.mcInput = null;
+				}
+				this.app.multiCases = this.app.multiCases.filter((c) => !c.hosted);
+				this.leaveMulti();
+				const visible = summaries.filter((s) => !hidden.has(s.id));
+				this.app.hostedDistributionCases = visible.filter((s) => s.model === 'multiconductor');
+				this.app.cases = visible
+					.filter((s) => s.model !== 'multiconductor')
+					.map((s) => new CaseState(s));
 				this.app.activeLocalId = null;
 				this.app.placingLocalId = null;
 				this.app.activeCaseId =
@@ -1042,7 +1133,11 @@ export class Controller {
 					null;
 				const active = this.app.active;
 				if (active) await this.loadBackendCase(active, true);
-				else this.app.requestFrame('all');
+				else {
+					const distribution = this.app.hostedDistributionCases.find((s) => !s.unavailable_reason);
+					if (distribution) await this.activateHostedDistribution(distribution.id);
+					else this.app.requestFrame('all');
+				}
 				// Mark loaded only on success, so a failed first load is retried on the next
 				// mount (the page guards the call with `if (!ctrl.casesLoaded)`).
 				this.casesLoaded = true;
@@ -1107,6 +1202,7 @@ export class Controller {
 	}
 
 	activateCase = async (id: string) => {
+		this.hostedLoadAbort?.abort();
 		const candidate = this.app.byId(id);
 		if (!candidate) return;
 		if (candidate.unavailableReason) {
@@ -1135,6 +1231,9 @@ export class Controller {
 			if (c) await this.loadBackendCase(c, true);
 		} else if (t.kind === 'local') {
 			this.maybeStartLocalSolve(t.id);
+		} else if (!this.app.activeCaseId && !this.app.activeLocalId && !this.app.activeMultiId) {
+			const next = this.app.hostedDistributionCases.find((s) => !s.unavailable_reason);
+			if (next) await this.activateHostedDistribution(next.id);
 		}
 	};
 
@@ -1153,6 +1252,7 @@ export class Controller {
 	};
 
 	activateLocal = (c: LocalCase) => {
+		this.hostedLoadAbort?.abort();
 		this.app.studyView = null;
 		this.clearSelection();
 		// Mirror activateCase's reset: a local and a backend case are mutually
@@ -1690,6 +1790,13 @@ export class Controller {
 			'bus' in target
 				? () => this.selectBus(c.id, target.bus)
 				: () => this.selectBranch(c.id, target.branch);
+		if (hasCustomCalculationSettings(c)) {
+			this.fail(
+				'The legacy server sensitivity endpoint cannot apply these calculation settings. Retry the browser calculation.',
+				retryOp
+			);
+			return;
+		}
 		const api = this.api;
 		if (this.serverComputeOff || !api) {
 			this.fail(this.computeOffNotice(c), retryOp);
@@ -1947,11 +2054,7 @@ export class Controller {
 					);
 					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
 					c.solution = solveResponseToSolution(response);
-					const diagnostics = response.iterations;
-					c.solveDetail =
-						diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
-							? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
-							: 'POUNCE WASI';
+					c.solveDetail = acOpfSolveDetail(response);
 					c.solveMs = Math.round(performance.now() - t0);
 					this.finishSolve(c, seq, null);
 				} catch (error) {
@@ -2049,6 +2152,14 @@ export class Controller {
 	};
 
 	serverSolve = (c: CaseState, target: SensTarget | null, seq = c.solveSeq) => {
+		if (hasCustomCalculationSettings(c)) {
+			if (seq !== c.solveSeq) return;
+			c.solving = false;
+			this.fail(
+				'The legacy server solve stream cannot apply these calculation settings. Retry the browser calculation.'
+			);
+			return;
+		}
 		// Known-disabled server compute (or no backend at all): show the notice
 		// instead of opening a stream that answers 403 without a readable body
 		// (EventSource hides it).
@@ -2141,6 +2252,265 @@ export class Controller {
 		if (this.app.selectedBus !== null) this.setNearbyRangeAnchor(c, this.app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
 		this.runSolve(c, this.selectionTarget);
+	};
+
+	/** Read selected next-run settings without changing a result or starting work. */
+	inspectSettings = (c: SolvableCase | MulticonductorCase) => {
+		const calculation =
+			c.settings.calculation ?? (c instanceof MulticonductorCase ? 'mc_ac_pf' : c.formulation);
+		const descriptor = settingsCatalog.calculations.find((d) => d.calculation === calculation);
+		const baseline =
+			c instanceof MulticonductorCase
+				? {
+						...c.distribution?.pf_options,
+						...c.settings.baselines[calculation]
+					}
+				: { ...c.settings.baselines[calculation] };
+		const selected =
+			c instanceof MulticonductorCase
+				? { ...c.mcOptions }
+				: (c.settings.options[calculation] ?? {});
+		const defaults = descriptor && 'defaults' in descriptor ? descriptor.defaults : {};
+		const effective =
+			c instanceof MulticonductorCase
+				? { ...defaults, ...baseline, ...selected }
+				: (c.settings.resolved[calculation]?.effective ?? {
+						...defaults,
+						...baseline,
+						...selected
+					});
+		const accepted =
+			c instanceof MulticonductorCase
+				? c.result?.load_model?.options
+				: c.settings.accepted?.effective;
+		return {
+			case_id: c.id,
+			settings_revision: c.settings.revision,
+			calculation,
+			baseline,
+			selected: effective,
+			accepted: accepted ?? null,
+			accepted_calculation:
+				c instanceof MulticonductorCase
+					? c.result
+						? 'mc_ac_pf'
+						: null
+					: c.solution
+						? c.formulation
+						: null,
+			pending:
+				!!accepted &&
+				(!sameSettings(effective, accepted) ||
+					(!(c instanceof MulticonductorCase) && calculation !== c.formulation)),
+			fields: descriptor?.fields ?? []
+		};
+	};
+
+	/** Validate the complete candidate in Rust, then commit all fields atomically. */
+	updateSettings = async (
+		c: SolvableCase | MulticonductorCase,
+		calculation: string,
+		patch: Record<string, unknown>,
+		expectedRevision: number,
+		reset = false
+	) => {
+		if (c.solving) throw new Error('Settings cannot change during a calculation');
+		if (c.settings.revision !== expectedRevision)
+			throw new Error('Settings changed; inspect settings before retrying');
+		if (
+			c instanceof MulticonductorCase
+				? calculation !== 'mc_ac_pf'
+				: !this.formulationAvailable(c, calculation as Formulation)
+		)
+			throw new Error('This calculation is unavailable for the selected case');
+		if (c instanceof LocalCase && c.declaredFormulation && calculation !== c.declaredFormulation)
+			throw new Error('This PowerIO instance requires its declared calculation');
+		// An undefined value (a cleared field) removes that override, so the
+		// setting falls back to the case baseline or engine default.
+		const overrides = reset
+			? {}
+			: Object.fromEntries(
+					Object.entries({
+						...c.settings.options[calculation],
+						...patch
+					}).filter(([, value]) => value !== undefined)
+				);
+		const caseRevision = c.revisionGeneration;
+		const baseline =
+			c instanceof MulticonductorCase
+				? {
+						...c.distribution?.pf_options,
+						...c.settings.baselines[calculation]
+					}
+				: { ...c.settings.baselines[calculation] };
+		let resolved: ResolvedSettings;
+		if (calculation === 'acopf' && this.acOpfAvailable) {
+			if (Object.keys(overrides).length)
+				throw new Error('The isolated AC OPF backend has no public numerical settings');
+			resolved = {
+				version: 1,
+				calculation,
+				engine_defaults: {},
+				baseline: {},
+				overrides: {},
+				effective: {}
+			};
+		} else resolved = await resolveSettings({ calculation, baseline, overrides });
+		if (
+			c.solving ||
+			c.revisionGeneration !== caseRevision ||
+			c.settings.revision !== expectedRevision
+		)
+			throw new Error('Case or settings changed while validating; inspect before retrying');
+		c.settings.options = {
+			...c.settings.options,
+			[calculation]: { ...resolved.overrides }
+		};
+		c.settings.resolved = { ...c.settings.resolved, [calculation]: resolved };
+		c.settings.calculation = calculation;
+		c.settings.revision++;
+		if (c instanceof MulticonductorCase) c.mcOptions = { ...resolved.effective } as McPfOptions;
+		return this.inspectSettings(c);
+	};
+
+	canCancelSettings = (c: SolvableCase | MulticonductorCase) =>
+		c instanceof MulticonductorCase ? !!c.solveAbort : this.acOpfSolves.has(c);
+	cancelSettings = (c: SolvableCase | MulticonductorCase) => {
+		if (c instanceof MulticonductorCase) c.solveAbort?.abort();
+		else this.acOpfSolves.get(c)?.abort();
+	};
+
+	/** Explicit solve. A candidate Study replaces the accepted Study only after success. */
+	runSettings = async (c: SolvableCase | MulticonductorCase, signal?: AbortSignal) => {
+		signal?.throwIfAborted();
+		if (c.solving) throw new Error('A calculation is already running for this case');
+		const snapshot = this.inspectSettings(c);
+		const initialRevision = c.revisionGeneration;
+		if (c instanceof MulticonductorCase) {
+			const resolved = await resolveSettings({
+				calculation: 'mc_ac_pf',
+				baseline: snapshot.baseline,
+				overrides: snapshot.selected
+			});
+			if (
+				c.revisionGeneration !== initialRevision ||
+				c.settings.revision !== snapshot.settings_revision
+			)
+				throw new Error('Case or settings changed before calculation');
+			const result = await this.solveMultiCase(
+				c,
+				resolved.effective as McPfOptions,
+				signal,
+				c.mcRequiresEnergizedSolve
+			);
+			c.settings.accepted = resolved;
+			return result;
+		}
+		const formulation = snapshot.calculation as Formulation;
+		const resolved: ResolvedSettings =
+			formulation === 'acopf'
+				? {
+						version: 1,
+						calculation: formulation,
+						engine_defaults: {},
+						baseline: {},
+						overrides: {},
+						effective: {}
+					}
+				: await resolveSettings({
+						calculation: formulation,
+						baseline: snapshot.baseline,
+						overrides: c.settings.options[formulation] ?? {}
+					});
+		signal?.throwIfAborted();
+		if (c.solving) throw new Error('A calculation is already running for this case');
+		if (
+			c.revisionGeneration !== initialRevision ||
+			c.settings.revision !== snapshot.settings_revision
+		)
+			throw new Error('Case or settings changed before calculation');
+		const sequence = ++c.solveSeq;
+		const revision = c.revisionGeneration;
+		const settingsRevision = c.settings.revision;
+		const started = performance.now();
+		const cancellation = new AbortController();
+		const cancel = () => cancellation.abort();
+		signal?.addEventListener('abort', cancel, { once: true });
+		this.acOpfSolves.set(c, cancellation);
+		c.solving = true;
+		let study: BrowserStudy | null = null;
+		try {
+			const input = await this.ensureStudyInputJson(c);
+			if (!input) throw new Error('This case has no retained PowerIO input');
+			let solution: Solution;
+			let baseSolution: Solution | null = null;
+			let iterations: typeof c.iterations = [];
+			let solveDetail: string | null = null;
+			if (formulation === 'acopf') {
+				if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
+					throw new Error('AC OPF requires its isolated backend and the unedited base case');
+				const response = await solveAcOpfModule(this.acOpfWasmUrl, input, cancellation.signal);
+				solution = solveResponseToSolution(response);
+				solveDetail = acOpfSolveDetail(response);
+				baseSolution = solution;
+			} else {
+				study = await createStudy(input, formulation, {
+					isolated: true,
+					signal: cancellation.signal,
+					settings: { calculation: formulation, overrides: resolved.effective }
+				});
+				baseSolution = await study.currentSolution();
+				const committed = await study.commit(
+					c.id,
+					this.caseDeltas(c),
+					this.caseRatings(c),
+					null,
+					cancellation.signal
+				);
+				solution = committed.solution;
+				iterations = committed.iterations;
+			}
+			cancellation.signal.throwIfAborted();
+			if (
+				sequence !== c.solveSeq ||
+				revision !== c.revisionGeneration ||
+				settingsRevision !== c.settings.revision
+			)
+				throw new Error('Case or settings changed during calculation');
+			this.disposeStudy(c);
+			c.formulation = formulation;
+			c.settings.accepted = resolved;
+			c.settings.revision++;
+			c.settings.resolved = { ...c.settings.resolved, [formulation]: resolved };
+			c.solution = solution;
+			c.baseSolution = baseSolution;
+			c.sensitivity = null;
+			c.iterations = iterations;
+			c.solveDetail = solveDetail;
+			c.solveBackend = formulation === 'acopf' ? 'pounce-wasi' : 'clarabel-wasm';
+			c.solveMs = Math.round(performance.now() - started);
+			if (study) {
+				this.caseStudies.set(c, {
+					study,
+					studyInputJson: input,
+					formulation,
+					baseSolution: baseSolution!,
+					settings: resolved
+				});
+				study = null;
+			}
+			this.bumpRevision(c);
+			if (this.app.displayMode !== 'demand')
+				this.app.displayMode =
+					formulation === 'acpf' || formulation === 'acopf' ? 'voltage' : 'price';
+			this.finishSolve(c, sequence, null);
+			return solution;
+		} finally {
+			study?.free();
+			if (sequence === c.solveSeq) c.solving = false;
+			if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
+			signal?.removeEventListener('abort', cancel);
+		}
 	};
 
 	/** Rebuild the numerical Study for a selected calculation at the current demand. */
@@ -2524,7 +2894,16 @@ export class Controller {
 	};
 
 	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
-	private addMultiCase(fileName: string, payload: IngestedDistCase) {
+	private addMultiCase(
+		fileName: string,
+		payload: IngestedDistCase,
+		hosted?: {
+			id: string;
+			name: string;
+			distribution?: MulticonductorCase['distribution'];
+		}
+	) {
+		if (!hosted) this.hostedLoadAbort?.abort();
 		const {
 			graph,
 			input,
@@ -2539,8 +2918,9 @@ export class Controller {
 				: buildDiagramView(graph, payload.geo_layer);
 		this.logImport(fileName, summary);
 		const c = new MulticonductorCase({
-			id: `dist-${++this.localSeq}`,
-			label,
+			id: hosted?.id ?? `dist-${++this.localSeq}`,
+			label: hosted?.name ?? label,
+			hosted: !!hosted,
 			fileName,
 			summary,
 			input,
@@ -2548,6 +2928,11 @@ export class Controller {
 			coordsKind,
 			view
 		});
+		c.distribution = hosted?.distribution;
+		c.mcOptions = {
+			...DEFAULT_MC_PF_OPTIONS,
+			...hosted?.distribution?.pf_options
+		};
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.addMulti(c);
@@ -2568,13 +2953,35 @@ export class Controller {
 		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
 		const settingsError = validateMcPfOptions(options);
 		if (settingsError) throw new Error(settingsError);
-		c.mcOptions = { ...options };
-		c.mcEnergizedOnly = energizedOnly;
 		const unavailable = c.mcPfReason;
 		if (unavailable) {
 			this.app.error = unavailable;
 			throw new Error(unavailable);
 		}
+		// The retained input keeps its energized-network selection record, and
+		// there is no engine operation to remove it, so a full-network run here
+		// would still exclude the islands while claiming otherwise.
+		if (c.mcInputSelected && !energizedOnly)
+			throw new Error(
+				'This case already solves only its energized network; re-import it to solve the full network'
+			);
+		// Rejected requests change nothing. Accepted settings persist even if
+		// the solver then fails, so a retry runs with them.
+		if (!sameSettings(c.mcOptions, options)) {
+			const baseline = {
+				...DEFAULT_MC_PF_OPTIONS,
+				...c.distribution?.pf_options
+			} as Record<string, unknown>;
+			c.settings.options = {
+				...c.settings.options,
+				mc_ac_pf: Object.fromEntries(
+					Object.entries(options).filter(([key, value]) => !sameSettings(value, baseline[key]))
+				)
+			};
+			c.settings.revision++;
+		}
+		c.mcOptions = { ...options };
+		c.mcEnergizedOnly = energizedOnly;
 		const originalInput = c.mcInput!;
 		let input: McModuleInput = originalInput;
 		const retainedAtStart = c.mcSession;
@@ -2666,6 +3073,7 @@ export class Controller {
 			c.solveMs = performance.now() - started;
 			c.revisionGeneration++;
 			c.mcCompletedSolveSeq = seq;
+			if (energizedOnly) c.mcInputSelected = true;
 			return result;
 		} catch (error) {
 			nextSession?.free();
@@ -3025,6 +3433,7 @@ export class Controller {
 
 	/** Make a multiconductor case active, framing it when it is placed. */
 	activateMulti = (c: MulticonductorCase) => {
+		this.hostedLoadAbort?.abort();
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
@@ -3038,6 +3447,7 @@ export class Controller {
 	/** Select a bus in a multiconductor case: its terminal stack and incident
 	 * conductors expand. Selecting is viewing detail only — no solve. */
 	selectMultiBus = (caseId: string, busId: string) => {
+		this.hostedLoadAbort?.abort();
 		const c = this.app.multiCases.find((mc) => mc.id === caseId);
 		if (!c) return;
 		this.app.activeCaseId = null;
@@ -3051,6 +3461,7 @@ export class Controller {
 	/** Select an edge in a multiconductor case: its conductor pairing expands in
 	 * the panel. Mutually exclusive with the bus selection. */
 	selectMultiEdge = (caseId: string, edgeId: string) => {
+		this.hostedLoadAbort?.abort();
 		const c = this.app.multiCases.find((mc) => mc.id === caseId);
 		if (!c) return;
 		this.app.activeCaseId = null;
@@ -3084,6 +3495,12 @@ export class Controller {
 
 	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
 		event?.stopPropagation();
+		if (c.hosted) {
+			this.rememberHiddenDefaultCase(c.id);
+			this.app.hostedDistributionCases = this.app.hostedDistributionCases.filter(
+				(s) => s.id !== c.id
+			);
+		}
 		c.solveAbort?.abort();
 		if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
 		c.mcSession?.free();
@@ -3095,6 +3512,60 @@ export class Controller {
 			c.selectedEdgeId = null;
 		}
 		await this.hydrateFallback(this.app.removeMulti(c.id));
+	};
+
+	/** Hosted feeders use the same typed-module ingest and calculation path as local feeders. */
+	activateHostedDistribution = async (id: string) => {
+		if (this.disposed) return;
+		const summary = this.app.hostedDistributionCases.find((s) => s.id === id);
+		if (!summary || summary.unavailable_reason) return;
+		const existing = this.app.multiCases.find((c) => c.hosted && c.id === id);
+		if (existing) {
+			this.activateMulti(existing);
+			return;
+		}
+		const api = this.api;
+		if (!api) {
+			this.fail(`${summary.name}: no API configured`);
+			return;
+		}
+		this.hostedLoadAbort?.abort();
+		const abort = new AbortController();
+		this.hostedLoadAbort = abort;
+		this.loadingHostedDistribution = id;
+		let payload: IngestedDistCase | null = null;
+		try {
+			const text = await api.getCaseModuleJson(id, abort.signal);
+			abort.signal.throwIfAborted();
+			payload = await (this.mcTransport.ingestDistCaseBytes ?? ingestDistCaseBytes)(
+				new TextEncoder().encode(text),
+				'pio',
+				{ retain: true }
+			);
+			abort.signal.throwIfAborted();
+			if (!this.app.hostedDistributionCases.includes(summary)) return;
+			this.addMultiCase(`${id}.pio.json`, payload, summary);
+			payload = null; // The case now owns the retained input.
+			this.app.error = null;
+			this.app.errorRetry = null;
+		} catch (error) {
+			if (!abort.signal.aborted)
+				this.fail(`${summary.name}: ${errorText(error)}`, () =>
+					this.activateHostedDistribution(id)
+				);
+		} finally {
+			releaseMcInput(payload?.input);
+			if (this.hostedLoadAbort === abort) {
+				this.hostedLoadAbort = null;
+				this.loadingHostedDistribution = null;
+			}
+		}
+	};
+
+	removeHostedDistribution = (id: string) => {
+		this.rememberHiddenDefaultCase(id);
+		this.app.hostedDistributionCases = this.app.hostedDistributionCases.filter((s) => s.id !== id);
+		if (this.loadingHostedDistribution === id) this.hostedLoadAbort?.abort();
 	};
 
 	/** The unified map click-to-place: a pending multiconductor case takes the

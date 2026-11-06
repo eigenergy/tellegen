@@ -14,8 +14,13 @@
 			<select
 				id="formulation-select"
 				disabled={c.solving}
-				value={c.formulation}
-				onchange={(e) => ctrl.changeFormulation(c, e.currentTarget.value as Formulation)}
+				value={c.settings.calculation ?? c.formulation}
+				onchange={(e) =>
+					void ctrl
+						.updateSettings(c, e.currentTarget.value as Formulation, {}, c.settings.revision)
+						.catch((error) => {
+							ctrl.app.error = String(error);
+						})}
 			>
 				{#each FORMULATIONS as f (f.id)}
 					{@const unavailable =

@@ -873,15 +873,27 @@ pub fn solve_bmopf_json(text: &str, options: &McPfOptions) -> Result<String, Str
 /// instance. This is the portable module counterpart of the raw BMOPF entry
 /// point; the module remains typed by PowerIO throughout.
 pub fn solve_mc_module_json(text: &str, options: &McPfOptions) -> Result<String, String> {
+    solve_mc_module_json_cancellable(text, options, None)
+}
+
+pub(crate) fn solve_mc_module_json_cancellable(
+    text: &str,
+    options: &McPfOptions,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<String, String> {
     let module = crate::ir::deserialize_module(text)?;
     // Keep this established low-level entry point compatible with the raw
     // BMOPF solver: an MC OPF module has a well-defined PF projection.  The
     // stricter `validate_mc_module` gate is used by Study ingestion, where a
     // capability must never be inferred from a lossy projection.
     reject_lossy_diagnostics(&module)?;
-    let instance = super::energized::instance(&module)?;
-    let mut result = solve_mc_ac_pf_instance(&instance, options)?;
-    let (_, excluded) = super::energized::selection(&module)?;
+    // One topology walk serves both the solver subset and the reported scope.
+    let (selected, excluded) = super::energized::selection(&module)?;
+    let instance = match selected {
+        Some(network) => McAcPfInstance::from_network(network).map_err(|e| e.to_string())?,
+        None => instance_from_value(module.value())?,
+    };
+    let mut result = super::solve_mc_ac_pf_instance_cancellable(&instance, options, cancel)?;
     result.network_scope = super::energized::scope(&excluded);
     result.excluded_islands = excluded;
     serde_json::to_string(&result).map_err(|e| e.to_string())

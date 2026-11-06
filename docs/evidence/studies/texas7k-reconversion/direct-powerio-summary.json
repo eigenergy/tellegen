@@ -1,0 +1,29 @@
+{
+  "base_mva": null,
+  "domain": "distribution",
+  "elements": {
+    "branches": null,
+    "buses": 19599,
+    "generators": 0,
+    "lines": 16822,
+    "loads": 15299,
+    "shunts": null,
+    "sources": 1,
+    "transformers": 2774
+  },
+  "json_format": "bmopf-json",
+  "model": "multiconductor",
+  "name": "substation_p1uhs0_69",
+  "powerio_version": "0.11.7",
+  "schema": "powerio.summary",
+  "source_format": "dss",
+  "topology": {
+    "connected_components": null,
+    "connectivity_report": null,
+    "is_radial": null,
+    "islands": null,
+    "reference_buses": null
+  },
+  "diagnostic_counts": {},
+  "note": "Direct parse of original equipment with solved frozen taps; only the Buscoords reference was localized. This summary reports no distribution island count; the independent OpenDSS graph audit supplies it."
+}

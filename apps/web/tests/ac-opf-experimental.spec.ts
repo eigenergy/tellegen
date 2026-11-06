@@ -1,3 +1,4 @@
+import { runCalculation } from './fixtures/calculation.js';
 import { expect, test } from './fixtures/page-errors.js';
 import type { Route } from '@playwright/test';
 import { createHash } from 'node:crypto';
@@ -65,7 +66,7 @@ for (const mode of ['preview', 'development']) {
 		await expect(calculation).toBeEnabled({ timeout: 60_000 });
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
-		await calculation.selectOption('acopf');
+		await runCalculation(page, 'acopf');
 		await expect(page.locator('.solvecard')).toContainText('AC OPF');
 		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 		await expect(calculation).toBeEnabled();
@@ -85,22 +86,22 @@ for (const mode of ['preview', 'development']) {
 		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
 
 		// A second solve must use and dispose a new worker, not retain its WASI memory.
-		await calculation.selectOption('dcopf');
+		await runCalculation(page, 'dcopf');
 		await expect(calculation).toBeEnabled();
-		await calculation.selectOption('acopf');
+		await runCalculation(page, 'acopf');
 		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 		await expect.poll(() => workers.length).toBe(3);
 		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
 
 		// Hold the next real worker's fetch so removal deterministically happens
 		// while it is pending, without relying on how fast a three-bus solve runs.
-		await calculation.selectOption('dcopf');
+		await runCalculation(page, 'dcopf');
 		await expect(calculation).toBeEnabled();
 		let held: Route | undefined;
 		await page.context().route('**/experimental-acopf/tellegen_acopf_wasi.wasm', (route) => {
 			held = route;
 		});
-		await calculation.selectOption('acopf');
+		await runCalculation(page, 'acopf');
 		await expect.poll(() => !!held).toBe(true);
 		await expect.poll(() => workers.length).toBe(4);
 		await page.locator('.case-chip.local .case-remove').click();
@@ -158,7 +159,7 @@ test('a backend transmission case switches from cached DC OPF to browser AC OPF'
 	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 	await expect(calculation).toHaveValue('dcopf');
 	await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
-	await calculation.selectOption('acopf');
+	await runCalculation(page, 'acopf');
 	await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 	await expect(calculation).toBeEnabled();
 	await expect(calculation).toHaveValue('acopf');
