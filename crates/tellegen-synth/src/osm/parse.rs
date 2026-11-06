@@ -85,8 +85,13 @@ pub struct OsmLine {
     pub ids: Vec<i64>,
     /// `(lon, lat)` polyline.
     pub geometry: Vec<(f64, f64)>,
-    /// Highest tagged voltage, kV; 0 when untagged (inferred later).
+    /// Highest level the way carries circuits at, kV; 0 when untagged
+    /// (inferred later).
     pub kv: f64,
+    /// The levels the voltage tag lists, kV, highest first, with the circuits
+    /// the way carries at each ([`parse_levels`]); empty when untagged. A way
+    /// on shared towers (`"400000;220000"`) carries circuits at each of them.
+    pub levels: Vec<(f64, u32)>,
     pub circuits: u32,
     pub is_cable: bool,
     /// Tagged `frequency=0`: a DC line.
@@ -187,11 +192,14 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
                 if geometry.len() < 2 {
                     continue;
                 }
+                let (circuits, cables) = (el.tag("circuits"), el.tag("cables"));
+                let levels = parse_levels(el.tag("voltage"), circuits, cables);
                 out.lines.push(OsmLine {
                     ids: vec![el.id],
                     geometry,
-                    kv: parse_voltage(el.tag("voltage")),
-                    circuits: parse_circuits(el.tag("circuits"), el.tag("cables")),
+                    kv: levels.first().map_or(0.0, |l| l.0),
+                    levels,
+                    circuits: parse_circuits(circuits, cables),
                     is_cable: power == "cable",
                     is_dc: el.tag("frequency").trim() == "0",
                 });
@@ -268,18 +276,68 @@ pub fn parse_voltages(tag: &str) -> Vec<f64> {
 /// every circuit becomes a branch row.
 pub const MAX_OSM_CIRCUITS: u32 = 12;
 
-/// Circuits on a line: the `circuits` tag, else `cables / 3` (three
-/// conductors per AC circuit), between one and [`MAX_OSM_CIRCUITS`].
-pub fn parse_circuits(circuits: &str, cables: &str) -> u32 {
+/// The circuits a line's tags state: the `circuits` tag, else `cables / 3`
+/// (three conductors per AC circuit), between one and [`MAX_OSM_CIRCUITS`];
+/// `None` when neither parses.
+fn tagged_circuits(circuits: &str, cables: &str) -> Option<u32> {
     if let Ok(c) = circuits.trim().parse::<u32>() {
-        return c.clamp(1, MAX_OSM_CIRCUITS);
+        return Some(c.clamp(1, MAX_OSM_CIRCUITS));
     }
-    if let Ok(c) = cables.trim().parse::<f64>() {
-        if c.is_finite() {
-            return ((c / 3.0).round() as u32).clamp(1, MAX_OSM_CIRCUITS);
+    match cables.trim().parse::<f64>() {
+        Ok(c) if c.is_finite() => Some(((c / 3.0).round() as u32).clamp(1, MAX_OSM_CIRCUITS)),
+        _ => None,
+    }
+}
+
+/// Circuits on a line: the circuits its tags state, else one.
+pub fn parse_circuits(circuits: &str, cables: &str) -> u32 {
+    tagged_circuits(circuits, cables).unwrap_or(1)
+}
+
+/// The levels a line's voltage tag lists, kV, highest first, with the
+/// circuits the way carries at each. A tag that lists several levels names
+/// one voltage per circuit (`380000;110000;110000` is one 380 kV and two
+/// 110 kV circuits), so the way's circuits are shared among its levels in
+/// proportion to how often each is listed. Largest remainders round the
+/// shares, ties going to the higher level, so the levels carry exactly the
+/// way's circuits, and a level whose share rounds to none is left out.
+/// Without a `circuits` or `cables` tag the way carries one circuit per
+/// listed voltage. A tag with one level gives it [`parse_circuits`]; an
+/// untagged way has no levels.
+pub fn parse_levels(voltage: &str, circuits: &str, cables: &str) -> Vec<(f64, u32)> {
+    let mut kvs: Vec<f64> = voltage_values(voltage).map(|v| v / 1000.0).collect();
+    kvs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    // (level, times listed)
+    let mut listed: Vec<(f64, u32)> = Vec::new();
+    for kv in kvs {
+        match listed.last_mut() {
+            Some((last, times)) if (*last - kv).abs() < 1e-9 => *times += 1,
+            _ => listed.push((kv, 1)),
         }
     }
-    1
+    if listed.len() < 2 {
+        let c = parse_circuits(circuits, cables);
+        return listed.into_iter().map(|(kv, _)| (kv, c)).collect();
+    }
+    let n: u32 = listed.iter().map(|l| l.1).sum();
+    let total = tagged_circuits(circuits, cables)
+        .unwrap_or(n)
+        .min(MAX_OSM_CIRCUITS);
+    let mut shares: Vec<u32> = listed.iter().map(|&(_, m)| total * m / n).collect();
+    let left = total - shares.iter().sum::<u32>();
+    // Largest remainder first; the stable sort keeps the higher level first
+    // on a tie.
+    let mut order: Vec<usize> = (0..listed.len()).collect();
+    order.sort_by_key(|&k| std::cmp::Reverse(total * listed[k].1 % n));
+    for &k in order.iter().take(left as usize) {
+        shares[k] += 1;
+    }
+    listed
+        .iter()
+        .zip(shares)
+        .filter(|&(_, c)| c > 0)
+        .map(|(&(kv, _), c)| (kv, c))
+        .collect()
 }
 
 /// A plant or generator source tag as a fuel family; the first listed source
@@ -420,12 +478,69 @@ mod tests {
     }
 
     #[test]
+    fn levels_share_the_circuits_by_how_often_each_is_listed() {
+        // One voltage per circuit, tagged or not.
+        assert_eq!(
+            parse_levels("380000;110000;110000", "3", ""),
+            [(380.0, 1), (110.0, 2)]
+        );
+        assert_eq!(
+            parse_levels("380000;110000;110000", "", ""),
+            [(380.0, 1), (110.0, 2)]
+        );
+        // More circuits than listed voltages, from the cables.
+        assert_eq!(
+            parse_levels("380000;110000;110000", "", "18"),
+            [(380.0, 2), (110.0, 4)]
+        );
+        assert_eq!(
+            parse_levels("400000;220000", "4", ""),
+            [(400.0, 2), (220.0, 2)]
+        );
+        // An odd circuit goes to the higher level on a tie.
+        assert_eq!(
+            parse_levels("400000;220000", "3", ""),
+            [(400.0, 2), (220.0, 1)]
+        );
+        // Fewer circuits than levels: never more than tagged.
+        assert_eq!(parse_levels("400000;220000", "1", ""), [(400.0, 1)]);
+        assert_eq!(
+            parse_levels("380000;110000;110000;110000", "1", ""),
+            [(110.0, 1)]
+        );
+        // One level keeps the way's circuits; an untagged way has none.
+        assert_eq!(parse_levels("110000;110000", "", ""), [(110.0, 1)]);
+        assert_eq!(parse_levels("220000", "2", ""), [(220.0, 2)]);
+        assert!(parse_levels("", "2", "").is_empty());
+        for voltage in [
+            "400000;220000",
+            "380000;110000;110000",
+            "380000;220000;110000;110000;110000",
+        ] {
+            for c in 1..=MAX_OSM_CIRCUITS {
+                let levels = parse_levels(voltage, &c.to_string(), "");
+                assert_eq!(levels.iter().map(|l| l.1).sum::<u32>(), c, "{voltage} {c}");
+            }
+        }
+        // A line's voltage is the highest level it carries circuits at.
+        let parsed = parse_document(
+            r#"{"elements":[{"type":"way","id":1,
+                "geometry":[{"lon":8.2,"lat":50.0},{"lon":8.9,"lat":50.05}],
+                "tags":{"power":"line","voltage":"380000;110000;110000;110000","circuits":"1"}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.lines[0].kv, 110.0);
+        assert_eq!(parsed.lines[0].levels, [(110.0, 1)]);
+    }
+
+    #[test]
     fn circuits_and_fuels() {
         assert_eq!(parse_circuits("2", ""), 2);
         assert_eq!(parse_circuits("", "6"), 2);
         assert_eq!(parse_circuits("", "3"), 1);
         assert_eq!(parse_circuits("0", ""), 1);
         assert_eq!(parse_circuits("", ""), 1);
+        assert_eq!(parse_circuits("", "inf"), 1);
         assert_eq!(parse_fuel("coal;gas"), Fuel::Coal);
         assert_eq!(parse_fuel("lignite"), Fuel::Coal);
         assert_eq!(parse_fuel("photovoltaic"), Fuel::Solar);
