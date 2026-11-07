@@ -307,6 +307,100 @@ fn validate(calculation: Calculation, options: &Options) -> Result<(), String> {
     }
 }
 
+/// How a saved Study module records the settings it was given.
+#[cfg(feature = "sensitivity")]
+pub(crate) mod record {
+    use super::{defaults, Calculation, Options, SettingsRequest};
+    use serde::Deserialize;
+    use serde_json::{json, Value};
+
+    /// PowerIO module extension in which a saved Study records its calculation settings.
+    pub(crate) const EXTENSION: &str = "tellegen.calculation_settings";
+    /// The record format this engine writes and reads.
+    const VERSION: u32 = 1;
+
+    /// Diagnostic code for a saved settings record, or part of one, that a Study
+    /// could not apply.
+    pub(crate) const SETTINGS_IGNORED: &str = "settings_ignored";
+
+    /// The record a saved module carries: the calculation and only the options that
+    /// differ from this engine's defaults. An engine that later adds an option or
+    /// changes a default applies its own value to everything the user never chose.
+    pub(crate) fn write(calculation: Calculation, effective: &Options) -> Result<Value, String> {
+        let defaults = defaults(calculation)?;
+        let overrides: Options = effective
+            .iter()
+            .filter(|(key, value)| !defaults.get(*key).is_some_and(|d| same_value(d, value)))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        Ok(json!({"version": VERSION, "calculation": calculation, "overrides": overrides}))
+    }
+
+    /// JSON equality that treats `1` and `1.0` as the same number.
+    fn same_value(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+            _ => a == b,
+        }
+    }
+
+    /// A saved settings record, read for this engine.
+    pub(crate) struct Recorded {
+        /// The recorded calculation and the overrides this engine knows. None when
+        /// the record as a whole could not be read.
+        pub settings: Option<SettingsRequest>,
+        /// What was dropped and why, one sentence each.
+        pub notes: Vec<String>,
+    }
+
+    /// Read a module's settings record. A record written by another engine version
+    /// is not an error: option keys this engine does not know are dropped, and a
+    /// record it cannot read at all is ignored, each with a note. Known options keep
+    /// their full validation in [`resolve`](super::resolve).
+    pub(crate) fn read(record: &Value) -> Recorded {
+        #[derive(Deserialize)]
+        struct Record {
+            version: u32,
+            calculation: Calculation,
+            #[serde(default)]
+            overrides: Options,
+        }
+        let unreadable = |reason: String| Recorded {
+            settings: None,
+            notes: vec![format!(
+                "saved calculation settings were not applied ({reason}); engine defaults are in use"
+            )],
+        };
+        let record = match Record::deserialize(record) {
+            Ok(record) => record,
+            Err(e) => return unreadable(e.to_string()),
+        };
+        if record.version != VERSION {
+            return unreadable(format!(
+                "record version {} is not readable by this engine",
+                record.version
+            ));
+        }
+        let known = defaults(record.calculation).unwrap_or_default();
+        let mut notes = Vec::new();
+        let mut overrides = Options::new();
+        for (key, value) in record.overrides {
+            if known.contains_key(&key) {
+                overrides.insert(key, value);
+            } else {
+                notes.push(format!(
+                    "saved setting {}.{key} is not supported by this engine and was ignored",
+                    record.calculation
+                ));
+            }
+        }
+        Recorded {
+            settings: Some(SettingsRequest::new(record.calculation).with_overrides(overrides)),
+            notes,
+        }
+    }
+}
+
 /// JSON descriptors carry the same keys/defaults as the typed solver options.
 /// Availability describes this binary, not another host's build features.
 pub fn describe() -> Value {
@@ -473,6 +567,74 @@ mod tests {
         assert!(plain.settings.baseline.is_empty() && plain.settings.overrides.is_empty());
     }
 
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn saved_records_keep_only_overrides_and_read_leniently() {
+        let effective = resolve(
+            &SettingsRequest::new(Calculation::DcOpf)
+                .with_overrides(serde_json::from_value(json!({"thermal":"rated"})).unwrap()),
+        )
+        .unwrap()
+        .effective;
+        let written = record::write(Calculation::DcOpf, &effective).unwrap();
+        assert_eq!(
+            written,
+            json!({"version":1,"calculation":"dcopf","overrides":{"thermal":"rated"}})
+        );
+        // Settings equal to the defaults record no overrides.
+        let defaults = resolve(&SettingsRequest::new(Calculation::AcPf))
+            .unwrap()
+            .effective;
+        assert_eq!(
+            record::write(Calculation::AcPf, &defaults).unwrap()["overrides"],
+            json!({})
+        );
+        // An integer that equals a float default is not an override either.
+        #[cfg(feature = "mc-pf")]
+        {
+            let mut options = resolve(&SettingsRequest::new(Calculation::McAcPf))
+                .unwrap()
+                .effective;
+            assert_eq!(options["damping"], json!(1.0));
+            options.insert("damping".into(), json!(1));
+            options.insert("max_iterations".into(), json!(150));
+            assert_eq!(
+                record::write(Calculation::McAcPf, &options).unwrap()["overrides"],
+                json!({"max_iterations":150})
+            );
+        }
+
+        let read = record::read(&json!({
+            "version": 1,
+            "calculation": "dcopf",
+            "overrides": {"thermal": "rated", "future_option": true},
+            "future_field": 1
+        }));
+        let settings = read.settings.unwrap();
+        assert_eq!(settings.calculation, Calculation::DcOpf);
+        assert_eq!(
+            Value::Object(settings.overrides),
+            json!({"thermal":"rated"})
+        );
+        assert_eq!(read.notes.len(), 1);
+        assert!(
+            read.notes[0].contains("dcopf.future_option"),
+            "{:?}",
+            read.notes
+        );
+
+        for unreadable in [
+            json!({"version": 2, "calculation": "dcopf", "overrides": {}}),
+            json!({"calculation": "dcopf", "effective": {}}),
+            json!({"version": 1, "calculation": "future_calculation"}),
+            json!("dcopf"),
+        ] {
+            let read = record::read(&unreadable);
+            assert!(read.settings.is_none(), "{unreadable}");
+            assert_eq!(read.notes.len(), 1, "{unreadable}");
+        }
+    }
+
     #[test]
     fn precedence_unknown_fields_and_cross_field_validation() {
         let mut request = SettingsRequest::new(Calculation::DcOpf)
@@ -544,12 +706,69 @@ mod tests {
             panic!("expected DC instance")
         };
         assert!(!instance.constraints().angle_bounds.selects("branches:0"));
+        // The record keeps only what differs from the engine defaults.
+        assert_eq!(
+            typed.extensions()[record::EXTENSION],
+            json!({"version":1,"calculation":"dcopf","overrides":{
+                "angle_difference":false,
+                "thermal":"rated",
+                "lazy":{"max_rounds":20,"near_binding":0.98}
+            }})
+        );
         let restored = crate::Study::new(&saved, crate::Problem::DcOpf).unwrap();
         assert_eq!(restored.calculation_options(), &resolved.effective);
+        assert!(restored.solution().diagnostics.is_empty());
         assert!(
             (restored.solution().objective.unwrap() - study.solution().objective.unwrap()).abs()
                 < 1e-5
         );
         study.save_solution_module().unwrap();
+
+        // A record from another engine version opens with a notice, not an error:
+        // the setting this engine does not know is dropped, the rest still apply.
+        let mut extended: Value = serde_json::from_str(&saved).unwrap();
+        extended["extensions"][record::EXTENSION]["overrides"]["future_option"] = json!(3);
+        let extended = extended.to_string();
+        let mut reopened = crate::Study::new(&extended, crate::Problem::DcOpf).unwrap();
+        assert_eq!(reopened.calculation_options(), &resolved.effective);
+        let notices = |study: &crate::Study| -> Vec<String> {
+            study
+                .solution()
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == record::SETTINGS_IGNORED)
+                .map(|d| d.message.clone())
+                .collect()
+        };
+        assert_eq!(notices(&reopened).len(), 1);
+        assert!(notices(&reopened)[0].contains("dcopf.future_option"));
+        // Later solves keep stating it, and a save writes only known settings.
+        reopened
+            .commit(&[crate::NetworkEdit::AddLoad {
+                bus: crate::ElementKey::Id(2),
+                p_mw: 1.0,
+            }])
+            .unwrap();
+        assert_eq!(notices(&reopened).len(), 1);
+        let resaved =
+            crate::ir::deserialize_module(&reopened.save_instance_module().unwrap()).unwrap();
+        assert!(resaved.extensions()[record::EXTENSION]["overrides"]
+            .get("future_option")
+            .is_none());
+
+        // Settings recorded for another calculation do not apply to this one.
+        let other =
+            crate::Study::new(&module_with_record(&module, "acpf"), crate::Problem::DcOpf).unwrap();
+        assert!(other.calculation_options().is_empty());
+        assert!(notices(&other)[0].contains("for acpf, not dcopf"));
+    }
+
+    #[cfg(feature = "sensitivity")]
+    fn module_with_record(module: &str, calculation: &str) -> String {
+        let mut value: Value = serde_json::from_str(module).unwrap();
+        value["extensions"] = json!({
+            record::EXTENSION: {"version":1,"calculation":calculation,"overrides":{"start":"case"}}
+        });
+        value.to_string()
     }
 }

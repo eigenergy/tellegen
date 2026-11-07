@@ -103,9 +103,10 @@ it('a saved balanced network restores its recorded calculation as the initial se
 		coordsKind: 'file',
 		studyInputJson: JSON.stringify({
 			extensions: {
-				'tellegen.calculation-settings.v1': {
+				'tellegen.calculation_settings': {
+					version: 1,
 					calculation: 'acpf',
-					effective: { start: 'case' }
+					overrides: { start: 'case' }
 				}
 			}
 		})

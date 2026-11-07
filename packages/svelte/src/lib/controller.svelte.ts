@@ -26,6 +26,7 @@ import {
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { powerIoEntry, solveEntry } from './log.svelte.js';
+import { recordedCalculationSettings } from './settings.svelte.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
@@ -2711,7 +2712,7 @@ export class Controller {
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
-				this.logImport(file.name, summary);
+				this.logImport(file.name, summary, module_json);
 				const local = new LocalCase({
 					id,
 					label,
@@ -3654,11 +3655,15 @@ export class Controller {
 		return { input: base };
 	}
 
-	/** Record what PowerIO and the engine said while reading a case file. */
+	/** Record what PowerIO and the engine said while reading a case file, and
+	 * any saved calculation settings in `moduleJson` this engine cannot apply. */
 	private logImport(
 		fileName: string,
-		summary: { diagnostics?: PowerIoDiagnostic[]; warnings?: string[] }
+		summary: { diagnostics?: PowerIoDiagnostic[]; warnings?: string[] },
+		moduleJson?: string
 	) {
+		const recorded = recordedCalculationSettings(moduleJson);
+		const ignored = recorded?.ignored.map((key) => `${recorded.calculation}.${key}`) ?? [];
 		this.app.log.record([
 			...(summary.diagnostics ?? []).map((d) =>
 				powerIoEntry(d, { stage: 'Open', subject: fileName })
@@ -3669,6 +3674,14 @@ export class Controller {
 				source: 'tellegen',
 				subject: fileName,
 				message
+			})),
+			...ignored.map((setting) => ({
+				severity: 'warning' as const,
+				stage: 'Open',
+				source: 'tellegen',
+				code: 'settings_ignored',
+				subject: fileName,
+				message: `saved setting ${setting} is not supported by this engine and was ignored`
 			}))
 		]);
 	}
@@ -3693,7 +3706,7 @@ export class Controller {
 		const { module_json, topology, view, formulation, ...summary } = payload;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
-		this.logImport(fileName, summary);
+		this.logImport(fileName, summary, module_json);
 		return new LocalCase({
 			id: `local-${++this.localSeq}`,
 			label,

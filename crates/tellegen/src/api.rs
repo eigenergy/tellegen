@@ -698,6 +698,9 @@ pub struct SolveDiagnostic {
     /// HVDC lines inject as fixed transfers at their terminal buses.
     /// `BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus
     /// outside the solve, so neither end injects; `buses` are its two terminals.
+    /// `settings_ignored`: a reopened Study could not apply some or all of the
+    /// calculation settings its saved module recorded, such as an option this
+    /// engine does not know; engine defaults stand in for what was dropped.
     pub code: String,
     pub message: String,
     pub buses: Vec<usize>,

@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::api::{
     ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
     validate_canonical_edits, Edits, ElementKey, LinearConstraint, PowerFlowStart, Problem,
-    SensRequest, SolveRequest, SolveResponse,
+    SensRequest, SolveDiagnostic, SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -381,6 +381,9 @@ pub struct Study {
     /// They are analysis settings, not network data: no saved module carries them.
     constraints: Vec<LinearConstraint>,
     calculation_options: crate::settings::Options,
+    /// Findings about the Study's own setup, such as saved settings it could not
+    /// apply. Every solve response repeats them after the network's diagnostics.
+    notices: Vec<SolveDiagnostic>,
     /// The committed solved state, the sole formulation coupling.
     solved: Box<dyn SolvedState>,
     last: SolveResponse,
@@ -391,19 +394,35 @@ impl Study {
     /// instance. Bare model JSON is not a Study input.
     pub fn new(module_json: &str, formulation: Problem) -> Result<Self, String> {
         let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
-        let options = if let Some(recorded) =
-            module.extensions().get("tellegen.calculation-settings.v1")
-        {
-            let request: crate::settings::SettingsRequest = serde_json::from_value(serde_json::json!({"calculation":recorded["calculation"],"overrides":recorded["effective"]})).map_err(|e| e.to_string())?;
-            let declared = serde_json::to_value(formulation).map_err(|e| e.to_string())?;
-            if recorded["calculation"] != declared {
-                return Err("saved calculation settings disagree with formulation".into());
+        let mut notes = Vec::new();
+        let mut options = crate::settings::Options::new();
+        if let Some(record) = module.extensions().get(crate::settings::record::EXTENSION) {
+            let recorded = crate::settings::record::read(record);
+            notes = recorded.notes;
+            let requested = crate::settings::Calculation::from(formulation);
+            match recorded.settings {
+                Some(request) if request.calculation == requested => {
+                    options = crate::settings::resolve(&request)?.effective;
+                }
+                // Settings chosen for another calculation say nothing about this one.
+                Some(request) => notes.push(format!(
+                    "saved calculation settings are for {}, not {requested}; engine defaults are in use",
+                    request.calculation
+                )),
+                None => {}
             }
-            crate::settings::resolve(&request)?.effective
-        } else {
-            crate::settings::Options::new()
-        };
-        Self::from_dynamic_module(module, formulation, options)
+        }
+        let mut study = Self::from_dynamic_module(module, formulation, options)?;
+        study.notices = notes
+            .into_iter()
+            .map(|message| SolveDiagnostic {
+                code: crate::settings::record::SETTINGS_IGNORED.into(),
+                message,
+                buses: Vec::new(),
+            })
+            .collect();
+        study.last.diagnostics.extend(study.notices.iter().cloned());
+        Ok(study)
     }
 
     /// Start a retained interactive solve with the common calculation settings.
@@ -538,6 +557,7 @@ impl Study {
             commit_bounds: Vec::new(),
             constraints: Vec::new(),
             calculation_options,
+            notices: Vec::new(),
             solved,
             last,
         })
@@ -709,6 +729,7 @@ impl Study {
             commit_bounds: self.commit_bounds.clone(),
             constraints: self.constraints.clone(),
             calculation_options: self.calculation_options.clone(),
+            notices: self.notices.clone(),
             solved: self.solved.clone_box(),
             last: self.last.clone(),
         }
@@ -1010,7 +1031,8 @@ impl Study {
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the
         // response — including the requested sensitivity cells — from the committed state.
         let solved = solve_state(&self.input, &self.base, &req)?;
-        let resp = solved.assemble(&req)?;
+        let mut resp = solved.assemble(&req)?;
+        resp.diagnostics.extend(self.notices.iter().cloned());
         Ok((solved, resp))
     }
 
@@ -1337,13 +1359,26 @@ impl Study {
         crate::ir::serialize_module(&self.electrical_module(value)?)
     }
 
+    /// Record the settings this Study was given, as the overrides of its
+    /// calculation's engine defaults. A Study given no settings records none, so a
+    /// legacy input does not acquire invented provenance.
+    fn record_settings(&self, module: &mut PioModule<PioValue>) -> Result<(), String> {
+        if self.calculation_options.is_empty() {
+            return Ok(());
+        }
+        let record =
+            crate::settings::record::write(self.formulation.into(), &self.calculation_options)?;
+        module
+            .insert_extension(crate::settings::record::EXTENSION, record)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
     fn electrical_module(&self, value: PioValue) -> Result<PioModule<PioValue>, String> {
         let source = crate::ir::deserialize_module(&self.base_module_json)?;
         let mut module = source.map_value(|_| value).sever_source();
         module.sever_value_targets();
-        if !self.calculation_options.is_empty() {
-            module.insert_extension("tellegen.calculation-settings.v1", serde_json::json!({"calculation":self.formulation,"effective":self.calculation_options})).map_err(|e| e.to_string())?;
-        }
+        self.record_settings(&mut module)?;
         Ok(module)
     }
 
@@ -1372,9 +1407,7 @@ impl Study {
             crate::ir::deserialize_module(&self.base_module_json).map_err(|e| e.to_string())?;
         let mut module = source_module.map_value(|_| value).sever_source();
         module.sever_value_targets();
-        if !self.calculation_options.is_empty() {
-            module.insert_extension("tellegen.calculation-settings.v1", serde_json::json!({"calculation":self.formulation,"effective":self.calculation_options})).map_err(|e| e.to_string())?;
-        }
+        self.record_settings(&mut module)?;
         let mut used_ids: std::collections::BTreeSet<String> = module
             .history()
             .iter()

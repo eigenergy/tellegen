@@ -1,4 +1,4 @@
-import type { ResolvedSettings } from '@tellegen/engine';
+import { settingsCatalog, type ResolvedSettings } from '@tellegen/engine';
 
 /** Selected next-run settings and accepted-result provenance have separate lives. */
 export class CaseSettings {
@@ -70,23 +70,52 @@ export class UserPreferences {
 	}
 }
 
-/** Read provenance only after the containing PowerIO input has been validated. */
-export function recordedCalculationSettings(
-	input?: string
-): { calculation: string; effective: Record<string, unknown> } | null {
+/** The PowerIO module extension in which a saved Study records its settings. */
+export const RECORDED_SETTINGS_EXTENSION = 'tellegen.calculation_settings';
+
+/** Calculation settings a saved module records, read for this engine. */
+export interface RecordedCalculationSettings {
+	calculation: string;
+	/** Recorded options this engine knows; the record keeps only non-defaults. */
+	overrides: Record<string, unknown>;
+	/** This engine's defaults with the recorded overrides applied. */
+	effective: Record<string, unknown>;
+	/** Recorded option keys this engine does not know. They are dropped. */
+	ignored: string[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Read provenance only after the containing PowerIO input has been validated.
+ * A record from another engine version still opens: options this engine does not
+ * know are dropped and listed in `ignored`, as the Rust Study does. */
+export function recordedCalculationSettings(input?: string): RecordedCalculationSettings | null {
 	if (!input) return null;
+	let value: unknown;
 	try {
-		const value = JSON.parse(input)?.extensions?.['tellegen.calculation-settings.v1'];
-		if (
-			value &&
-			typeof value.calculation === 'string' &&
-			value.effective &&
-			typeof value.effective === 'object' &&
-			!Array.isArray(value.effective)
-		)
-			return value;
+		value = JSON.parse(input)?.extensions?.[RECORDED_SETTINGS_EXTENSION];
 	} catch {
 		/* Input validation remains the engine's responsibility. */
+		return null;
 	}
-	return null;
+	if (
+		!isRecord(value) ||
+		value.version !== 1 ||
+		typeof value.calculation !== 'string' ||
+		(value.overrides !== undefined && !isRecord(value.overrides))
+	)
+		return null;
+	const calculation = value.calculation;
+	const descriptor = settingsCatalog.calculations.find((c) => c.calculation === calculation);
+	const defaults: Record<string, unknown> =
+		descriptor && 'defaults' in descriptor ? { ...descriptor.defaults } : {};
+	const overrides: Record<string, unknown> = {};
+	const ignored: string[] = [];
+	for (const [key, option] of Object.entries(value.overrides ?? {})) {
+		if (Object.hasOwn(defaults, key)) overrides[key] = option;
+		else ignored.push(key);
+	}
+	return { calculation, overrides, effective: { ...defaults, ...overrides }, ignored };
 }
