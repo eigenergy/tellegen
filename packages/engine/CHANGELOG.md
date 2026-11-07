@@ -1,5 +1,11 @@
 # @tellegen/engine
 
+## 0.6.0
+
+### Minor Changes
+
+- [#325](https://github.com/eigenergy/tellegen/pull/325) [`6972d33`](https://github.com/eigenergy/tellegen/commit/6972d33b6480d57502cd702e393223ec8e41e2b3) Thanks [@samtalki](https://github.com/samtalki)! - Make incomplete OpenStreetMap models solvable with explicit synthetic reinforcement. Keep mapped routes and voltages, label added circuits and voltage support, and provide `osm.reinforce: false` to preserve original circuit counts. Plan shunts at the feasible DC dispatch instead of an unconstrained dispatch behind network bottlenecks. Add New Zealand's 220/110 kV AC ladder and correct the dropped-line-section denominator.
+
 ## 0.5.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @tellegen/svelte
 
+## 0.5.2
+
+### Patch Changes
+
+- [#331](https://github.com/eigenergy/tellegen/pull/331) [`5351e33`](https://github.com/eigenergy/tellegen/commit/5351e33af8924e5af11e3f2a1ef7840aa1cdaf7b) Thanks [@samtalki](https://github.com/samtalki)! - At low zoom the map draws one bus marker per crowded spot, so a state-sized grid no longer covers the map in overlapping markers. In each spot it keeps a generator before a substation before any other bus, as recorded in a grid made by tellegen-synth, such as one from MapToGrid, and then the bus with the most generation and demand. Zooming in shows the rest, and panning leaves the markers as they are. A selected bus always shows, with its selection ring, and every bus is still a bus of the case: the bus picker finds it by number and a line's tooltip names it. `TellegenMap` takes `declutterMarkers={false}` to draw every marker at every zoom, as before. `LocalCase` gains `busKinds`, each bus's kind in a generated grid.
+- Updated dependencies [[`6972d33`](https://github.com/eigenergy/tellegen/commit/6972d33b6480d57502cd702e393223ec8e41e2b3)]:
+  - @tellegen/engine@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes
