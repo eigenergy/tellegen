@@ -125,6 +125,25 @@ function host() {
 const signal = () => new AbortController().signal;
 
 describe('WebMCP displayed-state context', () => {
+	it('invalidates mutation tokens when next-run settings change', async () => {
+		const { ctrl, app, live } = host();
+		app.studyView = null;
+		const adapter = createTellegenWebMcpAdapter(ctrl);
+		const before = await adapter.inspectCase(signal());
+		live.settings.revision++;
+		const after = await adapter.inspectCase(signal());
+		expect(after.revision).not.toBe(before.revision);
+		await expect(
+			adapter.resetCase(
+				{
+					caseId: live.id,
+					expectedRevision: String(before.revision)
+				},
+				signal()
+			)
+		).rejects.toMatchObject({ code: 'STALE_REVISION' });
+	});
+
 	it('restricts declared AC power flow instances before changing edits or solving', async () => {
 		const { ctrl, app, live } = host();
 		app.studyView = null;
