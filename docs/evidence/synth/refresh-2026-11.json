@@ -1,0 +1,31 @@
+{
+  "schema": "tellegen.synth-evidence-refresh/1",
+  "measured_at": "2026-11-07",
+  "engine_source": "6972d33b6480d57502cd702e393223ec8e41e2b3",
+  "binary_sha256": "cc9118f49b4439f040eabc4a567474ab2e51e3b571ffe593e4a3d35d02694fa4",
+  "build": "cargo build --release -p tellegen-cli --features conic",
+  "country_seeds": [
+    1,
+    7,
+    2026
+  ],
+  "california_synthetic_seeds": [
+    1,
+    7,
+    2026
+  ],
+  "california_osm_seed": 2026,
+  "california_osm": {
+    "sha256": "3f5757e6a7b077afa46512943efac03050e6d66e1b62c042d6683d3240aaa9fd",
+    "retrieved_at": "2026-11-07",
+    "data_timestamp": "2026-10-26T01:00:03Z",
+    "source": "OpenStreetMap power features from the MapToGrid Overpass mirror, queried for cats/california.json",
+    "license": "ODbL-1.0"
+  },
+  "results": {
+    "country-sweep-110m.json": "b31956e57fddece2c74f2316a4b574d6dd34b0fb7ecc8646c496e8a7b24b6ebc",
+    "country-sweep-50m.json": "c441c934301a3f61e2094c8c93e6cffc9bdd60d08c1e88d2d77df49e5319cd50",
+    "cats/synthetic/scorecard.json": "53fb1403faddac938846822fd0b11ee531e2f494c76c871bd61737d780320909",
+    "cats/osm/scorecard.json": "77bb0c0286e740f5322f75c5b8901dac25f9f8632170bbb384e1ea155004bd61"
+  }
+}

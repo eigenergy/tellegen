@@ -13,7 +13,8 @@
 //! - **Lower levels form pockets.** Every lower-level bus belongs to the
 //!   pocket of the nearest bus fed from above (its source), by distance along
 //!   the level's Delaunay graph. Each pocket is a spanning tree with a few
-//!   extra corridors, and a share of neighbouring pockets are tied. This is
+//!   extra corridors, and a share of neighbouring pockets are tied, by a
+//!   line that stays inside the region and within the pocket reach. This is
 //!   how subtransmission is laid out: radial or lightly looped feeders hanging
 //!   off step-down substations, not a second meshed grid in parallel with the
 //!   transmission one (Birchfield et al. 2017, Section IV-B: lines per
@@ -37,7 +38,7 @@ use crate::geom::{haversine_km, Projection};
 use crate::report::{BusKind, ElementSource, RegionContext};
 use crate::rng::Stream;
 use crate::site::DraftBus;
-use crate::topology::{corridor_between, Corridor, CorridorRole, TopologyOutput};
+use crate::topology::{corridor_between, straight_route, Corridor, CorridorRole, TopologyOutput};
 use crate::tuning::{level_shares, per_level, tuning};
 
 /// Nominal voltage below which a level is subtransmission, kV. source: IEC
@@ -59,13 +60,25 @@ pub fn is_hierarchical(levels: &[f64]) -> bool {
     levels.len() >= 2 && levels.iter().any(|&kv| kv < SUBTRANSMISSION_KV)
 }
 
-/// Whether a region is built hierarchically: its ladder comes from a
-/// subdivision's entry ([`crate::voltage`]) and reaches subtransmission. A
-/// request that states its own levels keeps the transmission design, one bus
-/// per substation, whatever the levels.
+/// Whether a region modelled at `levels` is built hierarchically: the levels
+/// reach subtransmission and the region's dominant subdivision has a ladder
+/// of its own ([`crate::voltage`]), so its subtransmission is modelled. The
+/// levels are the subdivision's own or the ones the request states; stated
+/// levels that stop above subtransmission, or a region whose subdivision has
+/// no entry, keep the transmission design, one bus per substation.
+pub fn hierarchical_region(levels: &[f64], subdivision: Option<&str>) -> bool {
+    is_hierarchical(levels)
+        && subdivision.is_some_and(|code| {
+            crate::voltage::VoltageLadders::bundled()
+                .subdivision_ladder(code)
+                .is_some()
+        })
+}
+
+/// Whether a resolved region is built hierarchically
+/// ([`hierarchical_region`]).
 pub fn layered(ctx: &RegionContext) -> bool {
-    ctx.voltage_basis == crate::report::VoltageBasis::Subdivision
-        && is_hierarchical(&ctx.voltage_levels_kv)
+    hierarchical_region(&ctx.voltage_levels_kv, ctx.subdivision.as_deref())
 }
 
 /// Bus counts per level: the tuned shares of the ladder depth, summing to `n`.
@@ -1191,28 +1204,42 @@ pub fn hierarchical_topology(
                 *degree.entry(g.1).or_default() += 1;
             }
             if !meshed {
-                // Ties between neighbouring pockets: the shortest Delaunay edge
-                // of each adjacent pair, a share of them.
-                let mut tie: BTreeMap<(usize, usize), (f64, Edge)> = BTreeMap::new();
+                // Ties between neighbouring pockets, a share of them: the
+                // shortest Delaunay edge of each adjacent pair that stays
+                // inside the region and within the level's pocket reach. The
+                // triangulation spans the convex hull, so on a concave region
+                // (or across water) its edges join pockets over ground the
+                // region does not hold; a pair with no such edge stays
+                // untied, each pocket fed through its own step-down as an
+                // untied pocket always is. Every adjacent pair still takes
+                // its draw, so the pairs that are tied do not depend on which
+                // pairs were eligible.
+                let cap = t.pocket_reach_km * buses[members[0]].base_kv / 66.0;
+                let mut tie: BTreeMap<(usize, usize), Option<(f64, Edge)>> = BTreeMap::new();
                 for (kk, e) in tri.edges.iter().enumerate() {
                     let (a, b) = (owner[e.0], owner[e.1]);
                     if a == b {
                         continue;
                     }
-                    let key = (a.min(b), a.max(b));
-                    let cand = (weight[kk], Edge::new(members[e.0], members[e.1]));
-                    tie.entry(key)
-                        .and_modify(|c| {
-                            if cand.0 < c.0 {
-                                *c = cand;
-                            }
-                        })
-                        .or_insert(cand);
+                    let best = tie.entry((a.min(b), a.max(b))).or_default();
+                    let w = weight[kk];
+                    if w > cap || best.is_some_and(|(shortest, _)| w >= shortest) {
+                        continue;
+                    }
+                    let g = Edge::new(members[e.0], members[e.1]);
+                    if data
+                        .shape
+                        .polyline_inside(&straight_route(&buses[g.0], &buses[g.1]))
+                    {
+                        *best = Some((w, g));
+                    }
                 }
                 let share = per_level(&t.pocket_ties, tier - top - 1);
-                for (_, (_, g)) in tie {
+                for best in tie.into_values() {
                     if rng.uniform() < share {
-                        tree.insert(g);
+                        if let Some((_, g)) = best {
+                            tree.insert(g);
+                        }
                     }
                 }
             }
@@ -1353,6 +1380,55 @@ mod tests {
         let (again, topo2) = run(600);
         assert_eq!(buses, again);
         assert_eq!(topo.corridors, topo2.corridors);
+    }
+
+    /// California is concave, and each level's triangulation spans its convex
+    /// hull, so pockets on either side of Nevada (the northeast corner, the
+    /// Owens Valley, Death Valley) are Delaunay neighbours. Their shortest
+    /// edge used to be kept as a tie: here seven 66 and 115 kV lines of 65 to
+    /// 376 km left the state, one of 284 km through Nevada. Below the top
+    /// level, a line may now leave the region only where a pocket's own tree
+    /// crosses a bay or a strip of coast, within the level's reach. The
+    /// outline is the US-CA feature of Natural Earth's 1:50m admin-1 states
+    /// and provinces (v5.1.2, public domain), as the MapToGrid app sends it,
+    /// and the places are the bundled table, so the ladder and the bus count
+    /// are the state's own. Loads are not assigned, so the pockets differ a
+    /// little from a full run's.
+    #[test]
+    fn lines_below_the_top_level_stay_in_a_concave_region() {
+        let feature: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../tests/fixtures/us_ca_admin1_50m.geojson"))
+                .unwrap();
+        let mut req = SynthRequest::new(Region {
+            geometry: feature["geometry"].clone(),
+            label: "California, United States of America".into(),
+        });
+        req.seed = 2026;
+        let places = Places::parse(include_bytes!("../data/populated_places.json")).unwrap();
+        let (ctx, data) = resolve_context(&req, &places, &mut Vec::new()).unwrap();
+        assert!(layered(&ctx), "{:?}", ctx.voltage_levels_kv);
+        let mut rng = Stream::new(req.seed, StreamTag::Site);
+        let mut buses = site_hierarchical(&ctx, &data, &mut rng);
+        let mut rng = Stream::new(req.seed, StreamTag::Topology);
+        let topo = hierarchical_topology(&mut buses, &data, &mut rng);
+        let top = buses.iter().map(|b| b.base_kv).fold(0.0, f64::max);
+        for c in &topo.corridors {
+            let (a, b) = (&buses[c.a], &buses[c.b]);
+            if c.role != CorridorRole::TieLine || a.base_kv >= top || a.site == b.site {
+                continue;
+            }
+            let reach = tuning().pocket_reach_km * a.base_kv / 66.0;
+            assert!(
+                c.length_km <= reach,
+                "{} kV line of {:.0} km leaves the region: ({:.3}, {:.3}) to ({:.3}, {:.3})",
+                a.base_kv,
+                c.length_km,
+                a.lon,
+                a.lat,
+                b.lon,
+                b.lat
+            );
+        }
     }
 
     #[test]

@@ -16,6 +16,7 @@
 - [Local Case Files](local-case-files.md)
 - [Data Provenance](data-provenance.md)
 - [Display Data](display-data.md)
+  - [Routes across the antimeridian](antimeridian-routes.md)
 - [Synthetic Layout](synthetic-layout.md)
 - [Synthetic Grid Generation](synthetic-generation.md)
 - [Technology choices](technology-evaluation.md)

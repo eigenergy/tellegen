@@ -218,23 +218,38 @@ fn far_islands_kept_are_validated_separately() {
         .all(|b| b.location.unwrap().x > 40.0));
 }
 
-/// One unit feeding a strip from 30° E to `east` at stated levels, which the
-/// plan may raise to 765 kV: every megawatt crosses the region.
-fn strip_fed_from_one_unit(mw: f64, east: f64, levels: &[f64]) -> tellegen_synth::GenerationReport {
-    let region = tellegen_synth::Region::bbox(30.0, 30.0, east, 32.0, "strip");
+/// One unit feeding a strip of `region` at stated levels: every megawatt
+/// crosses the region.
+fn strip_fed_from_one_unit(
+    region: tellegen_synth::Region,
+    places: std::sync::Arc<tellegen_synth::Places>,
+    mw: f64,
+    levels: &[f64],
+) -> tellegen_synth::GenerationReport {
     let mut req = common::request(region, 2026, Some(40));
     req.voltage_levels_kv = levels.to_vec();
     req.generator_count = Some(1);
     req.demand = DemandSpec::TotalMw { mw };
     req.validation.run_ac_pf = false;
     req.validation.run_dc_opf = false;
-    generate(req, common::places(), None).unwrap().1
+    generate(req, places, None).unwrap().1
+}
+
+fn bundled_places() -> std::sync::Arc<tellegen_synth::Places> {
+    std::sync::Arc::new(
+        tellegen_synth::Places::parse(include_bytes!("../data/populated_places.json")).unwrap(),
+    )
 }
 
 #[test]
 fn a_corridor_short_of_capacity_at_the_circuit_cap_raises_its_ends_to_765_kv() {
-    // 1,400 km at 500/230 kV.
-    let report = strip_fed_from_one_unit(35_000.0, 45.0, &[500.0, 230.0]);
+    // 1,400 km at 500/230 kV across Texas, where 765 kV is in service.
+    let region = tellegen_synth::Region::bbox(-106.5, 31.0, -91.5, 33.0, "Texas strip");
+    let report = strip_fed_from_one_unit(region, bundled_places(), 35_000.0, &[500.0, 230.0]);
+    assert_eq!(
+        report.context.as_ref().unwrap().promotion_levels_kv,
+        vec![765.0]
+    );
     let plan = report.planning.as_ref().unwrap();
     assert_eq!(plan.circuit_cap, MAX_CIRCUITS_PER_CORRIDOR);
     assert!(plan.max_parallel_circuits <= plan.circuit_cap, "{plan:?}");
@@ -258,7 +273,8 @@ fn stiffening_stops_at_the_branch_budget_and_says_the_plan_is_incomplete() {
     // 2,400 km at 230/132 kV: stiffening adds circuits until the network
     // holds STIFFENING_BRANCH_BUDGET branches per bus, and the spread is
     // still too wide.
-    let report = strip_fed_from_one_unit(15_000.0, 55.0, &[230.0, 132.0]);
+    let region = tellegen_synth::Region::bbox(30.0, 30.0, 55.0, 32.0, "strip");
+    let report = strip_fed_from_one_unit(region, common::places(), 15_000.0, &[230.0, 132.0]);
     let plan = report.planning.as_ref().unwrap();
     let n = report.stats.as_ref().unwrap().n_buses as f64;
     assert!(!plan.converged, "{plan:?}");
@@ -294,10 +310,7 @@ fn a_country_with_no_higher_level_keeps_its_ceiling_under_heavy_load() {
     req.demand = DemandSpec::TotalMw { mw: 750_000.0 };
     req.validation.run_ac_pf = false;
     req.validation.run_dc_opf = false;
-    let places = std::sync::Arc::new(
-        tellegen_synth::Places::parse(include_bytes!("../data/populated_places.json")).unwrap(),
-    );
-    let (module, report) = generate(req, places, None).unwrap();
+    let (module, report) = generate(req, bundled_places(), None).unwrap();
     let ctx = report.context.as_ref().unwrap();
     assert_eq!(ctx.voltage_country.as_deref(), Some("DEU"));
     assert!(ctx.promotion_levels_kv.is_empty());

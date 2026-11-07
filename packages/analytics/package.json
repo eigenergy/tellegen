@@ -1,0 +1,46 @@
+{
+	"name": "@tellegen/analytics",
+	"version": "0.1.0",
+	"description": "Allowlisted, cookieless usage analytics for Tellegen sites: a vocabulary sanitizer and a first-party sender for Umami Cloud.",
+	"keywords": [
+		"analytics",
+		"umami",
+		"privacy",
+		"browser"
+	],
+	"license": "MIT",
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/eigenergy/tellegen.git",
+		"directory": "packages/analytics"
+	},
+	"bugs": {
+		"url": "https://github.com/eigenergy/tellegen/issues"
+	},
+	"homepage": "https://eigenergy.github.io/tellegen/",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
+		"test": "vitest run",
+		"pack:dry-run": "npm pack --dry-run --cache ../../node_modules/.cache/npm-pack"
+	},
+	"devDependencies": {
+		"typescript": "^7.0.2",
+		"vitest": "^5.1.0"
+	}
+}

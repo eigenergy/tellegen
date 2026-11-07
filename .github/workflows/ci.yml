@@ -50,6 +50,7 @@ jobs:
         run: |
           python3 .github/scripts/test-validate-version-changes.py
           python3 .github/scripts/test-sync-python-version.py
+          python3 .github/scripts/test-write-crate-changelog.py
       - name: Test the PowerIO pin guard
         run: python3 .github/scripts/test-powerio-pin.py
       - name: Set up Docker Buildx
