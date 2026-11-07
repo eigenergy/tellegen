@@ -313,7 +313,7 @@ it('shares a lazy AC OPF probe across embedded and shell controls', async () => 
 	ctrl.dispose();
 });
 
-it('reports a failed lazy probe without an unhandled rejection', async () => {
+it('reports a failed lazy probe and allows an explicit retry', async () => {
 	const app = new AppState();
 	const ctrl = new Controller(app, {
 		apiBase: null,
@@ -324,5 +324,8 @@ it('reports a failed lazy probe without an unhandled rejection', async () => {
 	await expect(ctrl.loadAcOpf()).resolves.toBe(false);
 	expect(ctrl.acOpfAvailable).toBe(false);
 	expect(ctrl.acOpfLoading).toBe(false);
+	vi.mocked(probeAcOpfWorker).mockResolvedValue(true);
+	await expect(ctrl.loadAcOpf()).resolves.toBe(true);
+	expect(probeAcOpfWorker).toHaveBeenCalledTimes(2);
 	ctrl.dispose();
 });
