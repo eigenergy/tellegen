@@ -110,9 +110,10 @@ or duplicate ID fails startup. All hosted modules are downloadable by clients.
 A distribution-only data directory is supported and does not require the four
 balanced demos or `TELLEGEN_ALLOW_FALLBACK`. When balanced demo files are also
 staged, their existing requirement that all configured demos load still applies.
-The public-demo deployment health assertion expects the four transmission cases
-and the Texas7k distribution pilot described below. Custom deployments can use
-their own manifest and catalogue expectations.
+The public-demo deployment health assertion requires the four transmission
+cases. It accepts the Texas7k distribution pilot described below without
+requiring it. Custom deployments can use their own manifest and catalogue
+expectations.
 
 ## Server Compute
 
@@ -269,9 +270,13 @@ ssh "$DEPLOY_HOST" docker inspect tellegen --format '{{if index .NetworkSettings
 curl -fsS "${TELLEGEN_DEMO_URL%/}/api/health"
 ```
 
-Both health checks should report `status: "ok"` and a nonempty `cases` array.
-For the full public demo, that array should contain `case200`, `case500`,
-`case7000`, and `cats`.
+Both health checks should report `status: "ok"`, an empty `unavailable` array
+and a nonempty `cases` array. For the full public demo, that array should
+contain `case200`, `case500`, `case7000`, and `cats`. It also lists
+`texas7k-p1uhs0_1247` once that case's bundle and `distribution-cases.json` are
+staged (see [Texas7k distribution demo](#texas7k-distribution-demo)). The deploy
+workflow requires the four transmission cases and allows, but does not require,
+the Texas7k case.
 
 ## Reverse Proxy
 
@@ -364,11 +369,14 @@ data. The historical full-pilot path remains available through
 The script preserves other distribution entries and atomically registers an
 immutable bundle under `data/distribution/`. Each bundle contains license and
 source notices, reduction provenance, solver options, source revision/checksums,
-and validation evidence. Copy the complete bundle and manifest to the deployment
-data directory before deploying this version: the public deployment gate expects
-the four transmission cases plus this distribution case. Data is an operator
-staging step; the image deployment workflow does not upload it. Retain the old
-manifest and bundle for data rollback. Restart the server after staging.
+and validation evidence. The case appears in the demo once the complete bundle
+and `distribution-cases.json` are staged under the deployment data directory and
+readable by the container user (uid 10001); restart the server after staging.
+Deploys do not wait for it: the public deployment gate requires only the four
+transmission cases. A manifest whose bundle is missing or unreadable makes the
+case unavailable and fails that gate, so stage the bundle before the manifest.
+Data is an operator staging step; the image deployment workflow does not upload
+it. Retain the old manifest and bundle for data rollback.
 
 The optional manifest `metadata` object supports `description`, an absolute
 HTTPS `source_url`, a built-in transmission `related_case_id`, and `pf_options`.

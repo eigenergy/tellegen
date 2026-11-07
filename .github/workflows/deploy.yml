@@ -334,9 +334,12 @@ jobs:
               sleep 10
               continue
             }
-            # Promotion requires all five public demos to load (distribution PF runs in the browser).
+            # Promotion requires the four transmission demos to load and solve.
+            # The Texas7k distribution demo appears once an operator stages its
+            # bundle; it may be listed but is not required. Anything configured
+            # that fails to load is in .unavailable and blocks promotion.
             if jq -e '.status == "ok" and (.unavailable == []) and
-              (.cases | sort == ["case200", "case500", "case7000", "cats", "texas7k-p1uhs0_1247"])' \
+              ((.cases - ["texas7k-p1uhs0_1247"]) | sort == ["case200", "case500", "case7000", "cats"])' \
               <<< "$health" >/dev/null; then
               exit 0
             fi
