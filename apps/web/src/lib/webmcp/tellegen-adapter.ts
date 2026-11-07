@@ -1,4 +1,5 @@
 import { tick } from 'svelte';
+import { resolveSettings, type ResolvedSettings } from '@tellegen/engine';
 import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 import {
 	FORMULATIONS,
@@ -49,6 +50,19 @@ function availableFormulations(c: SolvableCase): Formulation[] {
 	return FORMULATIONS.filter(
 		(entry: FormulationOption) => !entry.disabled && (!declared || entry.id === declared)
 	).map((entry: FormulationOption) => entry.id);
+}
+
+// Agent calculations follow the accepted result, not a staged next-run draft.
+async function calculationSettings(
+	c: SolvableCase,
+	formulation = c.formulation
+): Promise<ResolvedSettings> {
+	if (c.settings.accepted?.calculation === formulation) return c.settings.accepted;
+	return resolveSettings({
+		calculation: formulation,
+		baseline: c.settings.baselines[formulation] ?? {},
+		overrides: c.settings.options[formulation] ?? {}
+	});
 }
 
 type QueryRow = Record<string, string | number | boolean | null> & {
@@ -268,6 +282,7 @@ function caseFingerprint(c: SolvableCase): string {
 	return JSON.stringify([
 		c.id,
 		c.revisionGeneration,
+		c.settings.revision,
 		c.formulation,
 		sortedEdits(c.deltas),
 		sortedEdits(c.ratings)
@@ -911,9 +926,11 @@ async function sensitivity(
 	const studyInputJson = view ? view.inputJson : await ctrl.ensureStudyInputJson(c as SolvableCase);
 	if (!studyInputJson)
 		throw new TellegenToolError('CASE_DATA_UNAVAILABLE', 'the PowerIO module is unavailable');
+	const settings = view ? undefined : await calculationSettings(c as SolvableCase);
 	const study = await createStudy(studyInputJson, c.formulation, {
 		isolated: true,
-		signal
+		signal,
+		...(settings ? { settings: { calculation: c.formulation, overrides: settings.effective } } : {})
 	});
 	let column: SensitivityColumn | null;
 	try {
@@ -1126,9 +1143,11 @@ async function preview(
 	// A tool preview must not move the shared Study's committed point. Build an
 	// isolated workspace from the retained module, align that clone with the
 	// visible operating point, then discard it after the linearization.
+	const settings = await calculationSettings(c);
 	const study = await createStudy(studyInputJson, c.formulation, {
 		isolated: true,
-		signal
+		signal,
+		settings: { calculation: c.formulation, overrides: settings.effective }
 	});
 	let predicted: Awaited<ReturnType<BrowserStudy['preview']>>;
 	try {
@@ -1179,6 +1198,7 @@ async function preview(
 }
 
 interface PreparedCaseSolve {
+	settings: ResolvedSettings;
 	study: BrowserStudy;
 	studyInputJson: string;
 	formulation: Formulation;
@@ -1204,15 +1224,18 @@ async function prepareExactSolve(
 	const started = performance.now();
 	let study: BrowserStudy | null = null;
 	try {
+		const settings = await calculationSettings(c, formulation);
 		study = await createStudy(studyInputJson, formulation, {
 			isolated: true,
-			signal
+			signal,
+			settings: { calculation: formulation, overrides: settings.effective }
 		});
 		const baseSolution = await study.currentSolution();
 		signal.throwIfAborted();
 		const result = await study.commit(c.id, demand, ratings, ctrl.selectionTarget, signal);
 		signal.throwIfAborted();
 		return {
+			settings,
 			study,
 			studyInputJson,
 			formulation,
@@ -1242,6 +1265,7 @@ function publishExactSolve(
 	c.solveSeq += 1;
 	ctrl.disposeStudy(c);
 	c.formulation = prepared.formulation;
+	c.settings.accepted = prepared.settings;
 	ctrl.app.displayMode = prepared.formulation === 'acpf' ? 'voltage' : ctrl.app.displayMode;
 	c.deltas = demand;
 	c.ratings = ratings;
@@ -1263,7 +1287,8 @@ function publishExactSolve(
 		study: prepared.study,
 		studyInputJson: prepared.studyInputJson,
 		formulation: prepared.formulation,
-		baseSolution: prepared.baseSolution
+		baseSolution: prepared.baseSolution,
+		settings: prepared.settings
 	});
 	ctrl.studyUnavailable.delete(c);
 	if (prepared.sensitivity && ctrl.selectionTarget) {

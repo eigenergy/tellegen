@@ -2,6 +2,7 @@ import type { StudyWorkspace } from '../../../apps/web/src/lib/studies/workspace
 import { describe, expect, it, vi } from 'vitest';
 import type { Controller, Network, SolvableCase, StudyDisplaySnapshot } from '../src/lib/index.js';
 import { LocalCase } from '../src/lib/state.svelte.js';
+import { CaseSettings } from '../src/lib/settings.svelte.js';
 import { createTellegenWebMcpAdapter } from '../../../apps/web/src/lib/webmcp/tellegen-adapter.js';
 import type { PlanningActivityStore } from '../../../apps/web/src/lib/webmcp/planning-activity.svelte.js';
 import type { CaseSummary } from '@tellegen/engine';
@@ -47,6 +48,7 @@ function host() {
 		network,
 		formulation: 'dcopf',
 		revisionGeneration: 0,
+		settings: new CaseSettings(),
 		deltas: { 1: 9 },
 		ratings: {},
 		solving: false,
@@ -549,6 +551,7 @@ it('solves the displayed MC case through its controller and queries terminal vol
 		id: 'mc-case',
 		label: 'Feeder',
 		revisionGeneration: 0,
+		settings: new CaseSettings(),
 		moduleJson: '{}',
 		summary: { mc_pf_enabled: true, mc_pf_supported: true },
 		solveMs: 12,

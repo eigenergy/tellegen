@@ -218,7 +218,8 @@ describe('AC OPF controller boundary', () => {
 		ctrl.probeAcOpf();
 		expect(start).not.toHaveBeenCalled();
 		probe.resolve(true);
-		await probe.promise;
+		await ctrl.loadAcOpf();
+		await Promise.resolve();
 		expect(ctrl.acOpfAvailable).toBe(true);
 		expect(start).toHaveBeenCalledWith(c.id);
 	});
@@ -288,4 +289,40 @@ describe('AC OPF controller boundary', () => {
 		await input.promise;
 		expect(solveAcOpfModule).not.toHaveBeenCalled();
 	});
+});
+
+it('shares a lazy AC OPF probe across embedded and shell controls', async () => {
+	const app = new AppState();
+	const ctrl = new Controller(app, {
+		apiBase: null,
+		loadDefaultCases: false,
+		acOpfWasmUrl: '/solver.wasm'
+	});
+	const probe = pending<boolean>();
+	vi.mocked(probeAcOpfWorker).mockReturnValue(probe.promise);
+	expect(probeAcOpfWorker).not.toHaveBeenCalled();
+	const first = ctrl.loadAcOpf();
+	const second = ctrl.loadAcOpf();
+	expect(first).toBe(second);
+	expect(ctrl.acOpfLoading).toBe(true);
+	probe.resolve(true);
+	await expect(first).resolves.toBe(true);
+	expect(ctrl.acOpfLoading).toBe(false);
+	await expect(ctrl.loadAcOpf()).resolves.toBe(true);
+	expect(probeAcOpfWorker).toHaveBeenCalledOnce();
+	ctrl.dispose();
+});
+
+it('reports a failed lazy probe without an unhandled rejection', async () => {
+	const app = new AppState();
+	const ctrl = new Controller(app, {
+		apiBase: null,
+		loadDefaultCases: false,
+		acOpfWasmUrl: '/solver.wasm'
+	});
+	vi.mocked(probeAcOpfWorker).mockRejectedValue(new Error('network failed'));
+	await expect(ctrl.loadAcOpf()).resolves.toBe(false);
+	expect(ctrl.acOpfAvailable).toBe(false);
+	expect(ctrl.acOpfLoading).toBe(false);
+	ctrl.dispose();
 });
