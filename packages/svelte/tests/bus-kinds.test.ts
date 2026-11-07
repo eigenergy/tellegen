@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NetworkBus } from '../src/lib/api.js';
-import { tapBusIds, withoutTaps } from '../src/lib/bus-kinds.js';
+import { readBusKinds, tapBusIds, withoutTaps } from '../src/lib/bus-kinds.js';
 import { LocalCase } from '../src/lib/state.svelte.js';
 
 // A generated grid in the PowerIO IR layout: tellegen-synth records each
@@ -45,6 +45,29 @@ describe('tapBusIds', () => {
 	});
 });
 
+describe('readBusKinds', () => {
+	it('reads every kind a generated grid records, by bus id', () => {
+		const kinds = readBusKinds(
+			synthModule({ 1: 'generator', 2: 'tap', 3: 'substation', 4: 'load' })
+		);
+		expect([...kinds]).toEqual([
+			[1, 'generator'],
+			[2, 'tap'],
+			[3, 'substation'],
+			[4, 'load']
+		]);
+	});
+
+	it('reads none from a module without tellegen-synth kinds or from bad text', () => {
+		const plain = JSON.stringify({
+			value: { data: { buses: [{ id: 1, kind: 'PQ', extras: {} }] } }
+		});
+		expect(readBusKinds(plain).size).toBe(0);
+		expect(readBusKinds('{"tellegen_synth":').size).toBe(0);
+		expect(readBusKinds(null).size).toBe(0);
+	});
+});
+
 describe('withoutTaps', () => {
 	it('drops the taps and keeps the rest in order', () => {
 		expect(withoutTaps(buses, new Set([2])).map((b) => b.id)).toEqual([1, 3]);
@@ -65,6 +88,7 @@ describe('LocalCase markers', () => {
 			view: { buses, branches: [] }
 		});
 		expect([...c.tapBuses]).toEqual([2]);
+		expect(c.busKinds.get(1)).toBe('substation');
 		expect(c.markerBuses.map((b) => b.id)).toEqual([1, 3]);
 		expect(c.view?.buses).toHaveLength(3);
 	});
