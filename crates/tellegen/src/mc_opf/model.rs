@@ -1,0 +1,1322 @@
+//! IVR polynomial construction. Only this layer knows about POUNCE expressions.
+use super::duals::{
+    McOpfParameter as Parameter, McOpfParameterKind as ParameterKind, McOpfParameterOwner as Owner,
+    Rule,
+};
+use pounce_nl::nl_reader::{BinOp, CmpOp, Expr, NlProblem, NlProblemParts, UnaryOp};
+use powerio_matrix::{McAcOpfPreparation, McOpfDeviceKind};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct Affine {
+    pub constant: f64,
+    pub terms: BTreeMap<usize, f64>,
+}
+impl Affine {
+    pub fn constant(x: f64) -> Self {
+        Self {
+            constant: x,
+            terms: BTreeMap::new(),
+        }
+    }
+    pub fn var(i: usize) -> Self {
+        Self {
+            constant: 0.0,
+            terms: BTreeMap::from([(i, 1.0)]),
+        }
+    }
+    pub fn add(&self, other: &Self) -> Self {
+        let mut a = self.clone();
+        a.constant += other.constant;
+        for (&i, &v) in &other.terms {
+            *a.terms.entry(i).or_default() += v;
+        }
+        a.terms.retain(|_, v| *v != 0.0);
+        a
+    }
+    pub fn scale(&self, k: f64) -> Self {
+        Self {
+            constant: self.constant * k,
+            terms: self
+                .terms
+                .iter()
+                .filter_map(|(&i, &v)| (k * v != 0.0).then_some((i, k * v)))
+                .collect(),
+        }
+    }
+    pub fn sub(&self, other: &Self) -> Self {
+        self.add(&other.scale(-1.0))
+    }
+    pub fn value(&self, x: &[f64]) -> f64 {
+        self.constant + self.terms.iter().map(|(&i, &v)| v * x[i]).sum::<f64>()
+    }
+    pub fn expr(&self) -> Expr {
+        sum(std::iter::once(Expr::Const(self.constant))
+            .chain(self.terms.iter().map(|(&i, &v)| scale(v, Expr::Var(i))))
+            .collect())
+    }
+}
+pub(super) type Pair = [Affine; 2];
+fn sum(xs: Vec<Expr>) -> Expr {
+    Expr::Sum(xs)
+}
+fn bin(op: BinOp, a: Expr, b: Expr) -> Expr {
+    Expr::Binary(op, Box::new(a), Box::new(b))
+}
+fn scale(k: f64, a: Expr) -> Expr {
+    bin(BinOp::Mul, Expr::Const(k), a)
+}
+fn product(a: &Affine, b: &Affine) -> Expr {
+    // Emit explicit small local monomials: scaling a sum makes POUNCE decline
+    // its expanded-quadratic path. This is construction, not differentiation.
+    let mut terms = vec![Expr::Const(a.constant * b.constant)];
+    terms.extend(
+        a.terms
+            .iter()
+            .map(|(&i, &v)| scale(v * b.constant, Expr::Var(i))),
+    );
+    terms.extend(
+        b.terms
+            .iter()
+            .map(|(&i, &v)| scale(v * a.constant, Expr::Var(i))),
+    );
+    for (&i, &v) in &a.terms {
+        for (&j, &w) in &b.terms {
+            terms.push(scale(v * w, bin(BinOp::Mul, Expr::Var(i), Expr::Var(j))));
+        }
+    }
+    sum(terms)
+}
+fn power(v: &Pair, i: &Pair) -> [Expr; 2] {
+    [
+        sum(vec![product(&v[0], &i[0]), product(&v[1], &i[1])]),
+        bin(BinOp::Sub, product(&v[1], &i[0]), product(&v[0], &i[1])),
+    ]
+}
+pub(super) fn pair_add(a: &Pair, b: &Pair) -> Pair {
+    [a[0].add(&b[0]), a[1].add(&b[1])]
+}
+pub(super) fn pair_scale(a: &Pair, k: f64) -> Pair {
+    [a[0].scale(k), a[1].scale(k)]
+}
+pub(super) fn difference(v: &[Pair], a: usize, b: Option<usize>) -> Pair {
+    b.map_or_else(
+        || v[a].clone(),
+        |b| pair_add(&v[a], &pair_scale(&v[b], -1.0)),
+    )
+}
+pub(super) fn descriptor(
+    row: &powerio_matrix::McOpfComplexRow,
+    voltage: &[Pair],
+    currents: &[Pair],
+) -> Pair {
+    let mut out = [Affine::default(), Affine::default()];
+    for (terms, values) in [(&row.voltage, voltage), (&row.current, currents)] {
+        for &(k, [r, i]) in terms {
+            out[0] = out[0]
+                .add(&values[k][0].scale(r))
+                .sub(&values[k][1].scale(i));
+            out[1] = out[1]
+                .add(&values[k][1].scale(r))
+                .add(&values[k][0].scale(i));
+        }
+    }
+    out
+}
+fn admittance(v: &[Pair], nodes: &[usize], g: &[Vec<f64>], b: &[Vec<f64>], k: usize) -> Pair {
+    let mut out = [Affine::default(), Affine::default()];
+    for (j, &node) in nodes.iter().enumerate() {
+        out[0] = out[0]
+            .add(&v[node][0].scale(g[k][j]))
+            .sub(&v[node][1].scale(b[k][j]));
+        out[1] = out[1]
+            .add(&v[node][1].scale(g[k][j]))
+            .add(&v[node][0].scale(b[k][j]));
+    }
+    out
+}
+#[derive(Clone, Debug)]
+pub(super) struct DeviceColumns {
+    pub current: Vec<Pair>,
+    pub power: Vec<[usize; 2]>,
+}
+/// Definitions needed to rebuild lifted starting values without changing rows.
+#[derive(Clone, Debug)]
+pub(super) enum StartLift {
+    Power([usize; 2], Pair, Pair),
+    Magnitude(usize, Pair),
+    LogVoltage(usize, Pair, f64),
+    Voltage(Pair, Pair),
+}
+#[derive(Clone, Debug)]
+pub(super) struct Model {
+    pub dual_map: super::duals::CompilerMap,
+    pub start_lifts: Vec<StartLift>,
+    pub zero_columns: Vec<usize>,
+    pub prep: McAcOpfPreparation,
+    pub voltage: Vec<Pair>,
+    pub branch_current: Vec<Vec<Pair>>,
+    /// Per branch, conductor, and end: optional active/reactive lift columns.
+    pub branch_power: Vec<Vec<[Option<[usize; 2]>; 2]>>,
+    pub devices: Vec<DeviceColumns>,
+    pub transformer_tap: Vec<Option<usize>>,
+    pub transformer_current: Vec<Vec<Pair>>,
+    pub transformer_power: Vec<Vec<Option<[usize; 2]>>>,
+    pub problem: NlProblem,
+}
+#[derive(Default)]
+struct Builder {
+    dual_map: super::duals::CompilerMap,
+    start_lifts: Vec<StartLift>,
+    zero_columns: Vec<usize>,
+    start: Vec<f64>,
+    names: Vec<String>,
+    rows: Vec<Expr>,
+    row_names: Vec<String>,
+    lo: Vec<f64>,
+    hi: Vec<f64>,
+}
+impl Builder {
+    /// Substitute variables proved zero by homogeneous singleton equalities.
+    /// Keep one defining row per variable, so primal columns and physical result
+    /// maps stay unchanged. In particular, zero branch ratings propagate through
+    /// KCL and power links instead of leaving duplicate zero-flow equalities.
+    fn propagate_zeros(&mut self) {
+        use pounce_nl::nl_quadratic::recognize_expr;
+        let mut zero = std::collections::BTreeSet::new();
+        loop {
+            let previous = zero.len();
+            for row in 0..self.rows.len() {
+                let Some(q) = recognize_expr(&self.rows[row]).filter(|q| !q.lost_terms()) else {
+                    continue;
+                };
+                if q.linear().keys().any(|i| zero.contains(i))
+                    || q.quadratic()
+                        .keys()
+                        .any(|(i, j)| zero.contains(i) || zero.contains(j))
+                {
+                    self.rows[row] = sum(std::iter::once(Expr::Const(q.constant()))
+                        .chain(
+                            q.linear()
+                                .iter()
+                                .filter(|(i, _)| !zero.contains(*i))
+                                .map(|(&i, &c)| scale(c, Expr::Var(i))),
+                        )
+                        .chain(
+                            q.quadratic()
+                                .iter()
+                                .filter(|((i, j), _)| !zero.contains(i) && !zero.contains(j))
+                                .map(|(&(i, j), &c)| {
+                                    scale(c, bin(BinOp::Mul, Expr::Var(i), Expr::Var(j)))
+                                }),
+                        )
+                        .collect());
+                }
+                let Some(q) = recognize_expr(&self.rows[row]).filter(|q| !q.lost_terms()) else {
+                    continue;
+                };
+                if self.lo[row] == 0.0
+                    && self.hi[row] == 0.0
+                    && q.constant() == 0.0
+                    && q.quadratic().is_empty()
+                    && q.linear().len() == 1
+                {
+                    let (&i, &coefficient) = q.linear().first_key_value().unwrap();
+                    if coefficient.is_finite() && coefficient != 0.0 {
+                        zero.insert(i);
+                        self.rows[row] = Expr::Const(0.0);
+                    }
+                }
+            }
+            if zero.len() == previous {
+                break;
+            }
+        }
+        // Drop only identically zero rows whose original bounds include zero.
+        // Inconsistent rows remain for the solver and independent acceptance gate.
+        let rows = std::mem::take(&mut self.rows);
+        let names = std::mem::take(&mut self.row_names);
+        let lower = std::mem::take(&mut self.lo);
+        let upper = std::mem::take(&mut self.hi);
+        let origins = std::mem::take(&mut self.dual_map.rows);
+        for ((((row, name), lo), hi), origin) in rows
+            .into_iter()
+            .zip(names)
+            .zip(lower)
+            .zip(upper)
+            .zip(origins)
+        {
+            if lo <= 0.0
+                && hi >= 0.0
+                && recognize_expr(&row).is_some_and(|q| {
+                    !q.lost_terms()
+                        && q.constant() == 0.0
+                        && q.linear().is_empty()
+                        && q.quadratic().is_empty()
+                })
+            {
+                self.dual_map.omitted.push(super::duals::OmittedRow {
+                    origin,
+                    reason: super::duals::Omission::ZeroReduction,
+                });
+                continue;
+            }
+            self.rows.push(row);
+            self.row_names.push(name);
+            self.lo.push(lo);
+            self.hi.push(hi);
+            self.dual_map.rows.push(origin);
+        }
+        for i in zero {
+            self.zero_columns.push(i);
+            self.start[i] = 0.0;
+            let origin = self.row(
+                format!("{}:fixed_zero", self.names[i]),
+                Expr::Var(i),
+                0.0,
+                0.0,
+            );
+            self.dual_map.origins[origin].synthetic = true;
+        }
+    }
+    fn var(&mut self, name: String, start: f64) -> usize {
+        let i = self.start.len();
+        self.start.push(start);
+        self.names.push(name);
+        i
+    }
+    fn pair(&mut self, name: &str, start: [f64; 2]) -> Pair {
+        [
+            Affine::var(self.var(format!("{name}:r"), start[0])),
+            Affine::var(self.var(format!("{name}:i"), start[1])),
+        ]
+    }
+    fn row(&mut self, name: String, e: Expr, lo: f64, hi: f64) -> usize {
+        let origin = self.dual_map.origin(name.clone());
+        self.dual_map.rows.push(origin);
+        self.rows.push(e);
+        self.row_names.push(name);
+        self.lo.push(lo);
+        self.hi.push(hi);
+        origin
+    }
+    fn affine_row(&mut self, name: String, a: &Affine) -> Result<(), String> {
+        if a.terms.is_empty() {
+            if a.constant.abs() > 1e-12 {
+                return Err(format!("{name}: inconsistent fixed equation"));
+            }
+            let origin = self.dual_map.origin(name);
+            self.dual_map.omitted.push(super::duals::OmittedRow {
+                origin,
+                reason: super::duals::Omission::FixedEquation,
+            });
+            return Ok(());
+        }
+        self.row(name, a.expr(), 0.0, 0.0);
+        Ok(())
+    }
+    fn norm(&mut self, name: &str, v: &Pair, cap: f64) -> Result<(), String> {
+        if cap == 0.0 {
+            self.dual_map.zero_limit = true;
+            for (k, a) in v.iter().enumerate() {
+                self.affine_row(format!("{name}:{k}:zero"), a)?;
+            }
+        } else {
+            let a = v[0].scale(1.0 / cap);
+            let b = v[1].scale(1.0 / cap);
+            let origin = self.row(
+                name.into(),
+                sum(vec![product(&a, &a), product(&b, &b)]),
+                f64::NEG_INFINITY,
+                1.0,
+            );
+            self.dual_map.origins[origin].norm_divisor_pu = Some(cap);
+        }
+        Ok(())
+    }
+    fn droop(
+        &mut self,
+        name: &str,
+        voltage: &[Pair],
+        curve: &powerio_matrix::McOpfDroop,
+    ) -> (Expr, Vec<usize>) {
+        let mut magnitudes = Vec::new();
+        let mut columns = Vec::new();
+        for (j, &(p, q)) in curve.monitors.iter().enumerate() {
+            let u = difference(voltage, p, q);
+            let start = u[0].value(&self.start).hypot(u[1].value(&self.start));
+            let m = self.var(format!("{name}:magnitude:{j}"), start);
+            self.start_lifts.push(StartLift::Magnitude(m, u.clone()));
+            self.row(
+                format!("{name}:magnitude:{j}:nonnegative"),
+                Expr::Var(m),
+                0.0,
+                f64::INFINITY,
+            );
+            self.row(
+                format!("{name}:magnitude:{j}:definition"),
+                sum(vec![
+                    product(&u[0], &u[0]),
+                    product(&u[1], &u[1]),
+                    scale(-1.0, product(&Affine::var(m), &Affine::var(m))),
+                ]),
+                0.0,
+                0.0,
+            );
+            magnitudes.push(Expr::Var(m));
+            columns.push(m);
+        }
+        let mean = scale(1.0 / (magnitudes.len() as f64), sum(magnitudes));
+        let mut out = vec![Expr::Const(curve.values[0])];
+        for j in 0..curve.knots.len() - 1 {
+            let slope =
+                (curve.values[j + 1] - curve.values[j]) / (curve.knots[j + 1] - curve.knots[j]);
+            if slope == 0.0 {
+                continue;
+            }
+            for (k, sign) in [(j, 1.0), (j + 1, -1.0)] {
+                let z = scale(
+                    1.0 / curve.epsilon,
+                    bin(BinOp::Sub, mean.clone(), Expr::Const(curve.knots[k])),
+                );
+                out.push(scale(sign * slope * curve.epsilon, softplus(z)));
+            }
+        }
+        (sum(out), columns)
+    }
+    fn power_lift(&mut self, name: &str, v: &Pair, i: &Pair, start: [f64; 2]) -> [usize; 2] {
+        let ids = [
+            self.var(format!("{name}:p"), start[0]),
+            self.var(format!("{name}:q"), start[1]),
+        ];
+        self.start_lifts
+            .push(StartLift::Power(ids, v.clone(), i.clone()));
+        for (k, expr) in power(v, i).into_iter().enumerate() {
+            self.row(
+                format!("{name}:power:{k}"),
+                bin(BinOp::Sub, Expr::Var(ids[k]), expr),
+                0.0,
+                0.0,
+            );
+        }
+        ids
+    }
+}
+pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
+    // Version 1/2 reports predate canonical voltage-dependent parameter maps.
+    compile_inner(prep, None, false, false, false)
+}
+pub(super) fn compile_with_load_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    // Version 3 reports include load mappings but predate inverter mappings.
+    compile_inner(prep, Some(network), false, false, false)
+}
+pub(super) fn compile_with_inverter_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    // Version 4 predates transformer mappings.
+    compile_inner(prep, Some(network), true, false, false)
+}
+pub(super) fn compile_with_transformer_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    // Version 5 predates shared control-profile parameter mappings.
+    compile_inner(prep, Some(network), true, true, false)
+}
+pub(super) fn compile_with_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    compile_inner(prep, Some(network), true, true, true)
+}
+fn compile_inner(
+    prep: McAcOpfPreparation,
+    network: Option<&powerio::MulticonductorNetwork>,
+    inverter_parameters: bool,
+    transformer_parameters: bool,
+    control_parameters: bool,
+) -> Result<Model, String> {
+    let canonical_loads = network.map(|n| {
+        n.loads()
+            .iter()
+            .map(|load| (load.name.as_str(), load))
+            .collect::<BTreeMap<_, _>>()
+    });
+    let mut b = Builder::default();
+    let voltage: Vec<_> = prep
+        .terminals
+        .iter()
+        .map(|t| {
+            t.fixed.map_or_else(
+                || b.pair(&format!("voltage:{}:{}", t.bus, t.terminal), t.start),
+                |v| [Affine::constant(v[0]), Affine::constant(v[1])],
+            )
+        })
+        .collect();
+    let mut kcl = vec![[Affine::default(), Affine::default()]; voltage.len()];
+    let mut branch_current = Vec::new();
+    let mut branch_power = Vec::new();
+    for br in &prep.branches {
+        let mut power_columns = vec![[None; 2]; br.from.len()];
+        let currents: Vec<_> = (0..br.from.len())
+            .map(|k| {
+                if br.open {
+                    [Affine::default(), Affine::default()]
+                } else {
+                    b.pair(&format!("{}:{k}:series", br.identity), [0.0, 0.0])
+                }
+            })
+            .collect();
+        if !br.open {
+            for k in 0..br.from.len() {
+                let mut drop = difference(&voltage, br.from[k], Some(br.to[k]));
+                for (j, i) in currents.iter().enumerate() {
+                    drop[0] = drop[0]
+                        .sub(&i[0].scale(br.r[k][j]))
+                        .add(&i[1].scale(br.x[k][j]));
+                    drop[1] = drop[1]
+                        .sub(&i[1].scale(br.r[k][j]))
+                        .sub(&i[0].scale(br.x[k][j]));
+                }
+                for (p, a) in drop.iter().enumerate() {
+                    b.affine_row(format!("{}:{k}:kvl:{p}", br.identity), a)?;
+                }
+                for (end_index, (end, nodes, g, sh, sign)) in [
+                    ("from", &br.from, &br.g_from, &br.b_from, 1.0),
+                    ("to", &br.to, &br.g_to, &br.b_to, -1.0),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let i = pair_add(
+                        &pair_scale(&currents[k], sign),
+                        &admittance(&voltage, nodes, g, sh, k),
+                    );
+                    let node = nodes[k];
+                    kcl[node] = pair_add(&kcl[node], &pair_scale(&i, -1.0));
+                    if let Some(cap) = br.current_max[k] {
+                        let origin = b.dual_map.origins.len();
+                        b.norm(&format!("{}:{end}:{k}:current", br.identity), &i, cap)?;
+                        b.dual_map.term(
+                            Parameter::new(
+                                Owner::Branch,
+                                &br.identity,
+                                Some(k),
+                                ParameterKind::CurrentRating,
+                            ),
+                            (cap > 0.0).then_some(origin),
+                            Rule::Norm {
+                                physical: cap * prep.bases.power_base_va
+                                    / prep.bases.voltage_base_v,
+                            },
+                        );
+                    }
+                    if let Some(cap) = br.apparent_max[k] {
+                        let parameter = Parameter::new(
+                            Owner::Branch,
+                            &br.identity,
+                            Some(k),
+                            ParameterKind::ApparentPowerRating,
+                        );
+                        b.dual_map.ensure(parameter.clone());
+                        if cap == 0.0 {
+                            b.dual_map.zero_limit = true;
+                        }
+                        if cap == 0.0 && voltage[node].iter().all(|a| a.terms.is_empty()) {
+                            // At a prescribed nonzero phasor, S = V conj(I) = 0
+                            // is exactly I = 0, regardless of the reference angle.
+                            // At fixed zero voltage it imposes no current bound.
+                            if voltage[node].iter().any(|a| a.constant != 0.0) {
+                                b.norm(
+                                    &format!("{}:{end}:{k}:zero_power_current", br.identity),
+                                    &i,
+                                    0.0,
+                                )?;
+                            }
+                            continue;
+                        }
+                        let ids = b.power_lift(
+                            &format!("{}:{end}:{k}", br.identity),
+                            &voltage[node],
+                            &i,
+                            [0.0, 0.0],
+                        );
+                        power_columns[k][end_index] = Some(ids);
+                        let origin = b.dual_map.origins.len();
+                        b.norm(
+                            &format!("{}:{end}:{k}:apparent", br.identity),
+                            &[Affine::var(ids[0]), Affine::var(ids[1])],
+                            cap,
+                        )?;
+                        b.dual_map.term(
+                            parameter,
+                            (cap > 0.0).then_some(origin),
+                            Rule::Norm {
+                                physical: cap * prep.bases.power_base_va,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        branch_current.push(currents);
+        branch_power.push(power_columns);
+    }
+    let mut transformer_tap = Vec::new();
+    let mut transformer_current = Vec::new();
+    let mut transformer_power = Vec::new();
+    for tx in &prep.transformers {
+        let tap = tx.tap_bounds.map(|[lo, hi]| {
+            let id = b.var(
+                format!("transformer:{}:tap", tx.identity),
+                1.0_f64.clamp(lo, hi),
+            );
+            let origin = b.row(
+                format!("transformer:{}:tap_bounds", tx.identity),
+                Expr::Var(id),
+                lo,
+                hi,
+            );
+            if transformer_parameters {
+                for (bound, lower) in [(lo, true), (hi, false)] {
+                    let physical_lower = lower != tx.tap_inverse;
+                    b.dual_map.term(
+                        Parameter::new(
+                            Owner::Transformer,
+                            &tx.identity,
+                            None,
+                            if physical_lower {
+                                ParameterKind::TapLower
+                            } else {
+                                ParameterKind::TapUpper
+                            },
+                        ),
+                        Some(origin),
+                        Rule::Bound {
+                            scale: if tx.tap_inverse {
+                                -bound * bound / tx.tap_nominal
+                            } else {
+                                tx.tap_nominal.recip()
+                            },
+                            lower,
+                        },
+                    );
+                }
+            }
+            id
+        });
+        transformer_tap.push(tap);
+        let currents: Vec<_> = tx
+            .coils
+            .iter()
+            .enumerate()
+            .map(|(k, _)| b.pair(&format!("transformer:{}:{k}", tx.identity), [0.0, 0.0]))
+            .collect();
+        for (k, row) in tx.equations.iter().enumerate() {
+            let value = descriptor(row, &voltage, &currents);
+            for (j, a) in value.iter().enumerate() {
+                let name = format!("transformer:{}:equation:{k}:{j}", tx.identity);
+                if let Some(tap) = tap {
+                    let dynamic = descriptor(&tx.tap_equations[k], &voltage, &currents);
+                    b.row(
+                        name,
+                        sum(vec![a.expr(), product(&Affine::var(tap), &dynamic[j])]),
+                        0.0,
+                        0.0,
+                    );
+                } else {
+                    b.affine_row(name, a)?;
+                }
+            }
+        }
+        for (coil, i) in tx.coils.iter().zip(&currents) {
+            kcl[coil.positive] = pair_add(&kcl[coil.positive], &pair_scale(i, -1.0));
+            if let Some(n) = coil.negative {
+                kcl[n] = pair_add(&kcl[n], i);
+            }
+        }
+        let mut powers = Vec::new();
+        for (axis, port) in tx.ports.iter().enumerate() {
+            let name = format!("transformer:{}:{}", tx.identity, port.name);
+            let i = descriptor(&port.current, &voltage, &currents);
+            let u = difference(&voltage, port.positive, port.negative);
+            if let Some(cap) = port.current_max {
+                let origin = b.dual_map.origins.len();
+                b.norm(&format!("{name}:current"), &i, cap)?;
+                if transformer_parameters {
+                    b.dual_map.term(
+                        Parameter::new(
+                            Owner::Transformer,
+                            &tx.identity,
+                            Some(axis),
+                            ParameterKind::CurrentRating,
+                        ),
+                        (cap > 0.).then_some(origin),
+                        Rule::Norm {
+                            physical: cap * prep.bases.power_base_va / prep.bases.voltage_base_v,
+                        },
+                    );
+                }
+            }
+            let ids = if let Some(cap) = port.apparent_max {
+                let ids = b.power_lift(&name, &u, &i, [0.0, 0.0]);
+                let origin = b.dual_map.origins.len();
+                b.norm(
+                    &format!("{name}:apparent"),
+                    &[Affine::var(ids[0]), Affine::var(ids[1])],
+                    cap,
+                )?;
+                if transformer_parameters {
+                    b.dual_map.term(
+                        Parameter::new(
+                            Owner::Transformer,
+                            &tx.identity,
+                            Some(axis),
+                            ParameterKind::ApparentPowerRating,
+                        ),
+                        (cap > 0.).then_some(origin),
+                        Rule::Norm {
+                            physical: cap * prep.bases.power_base_va,
+                        },
+                    );
+                }
+                Some(ids)
+            } else {
+                None
+            };
+            powers.push(ids);
+        }
+        transformer_current.push(currents);
+        transformer_power.push(powers);
+    }
+    for sh in &prep.shunts {
+        for (k, &node) in sh.terminals.iter().enumerate() {
+            let i = admittance(&voltage, &sh.terminals, &sh.g, &sh.b, k);
+            kcl[node] = pair_add(&kcl[node], &pair_scale(&i, -1.0));
+        }
+    }
+    let mut devices = Vec::new();
+    let mut objective = Vec::new();
+    for dev in &prep.devices {
+        let inverter = if inverter_parameters && dev.kind == McOpfDeviceKind::Ibr {
+            let net = network.expect("canonical parameter input");
+            let inv = net
+                .ibrs()
+                .iter()
+                .find(|i| i.name == dev.identity)
+                .ok_or_else(|| format!("{}: missing canonical inverter identity", dev.identity))?;
+            Some(super::inverter_parameters::InverterParameters::new(
+                inv,
+                net,
+                dev.coils.len(),
+                prep.bases.power_base_va,
+            ))
+        } else {
+            None
+        };
+        if let Some(inv) = &inverter {
+            inv.initialize(&mut b.dual_map);
+        }
+        let controls = inverter
+            .as_ref()
+            .filter(|_| control_parameters)
+            .and_then(|inv| {
+                inv.profile().map(|p| {
+                    super::control_parameters::ControlParameters::new(
+                        inv.inv,
+                        p,
+                        dev.coils.len(),
+                        prep.bases,
+                    )
+                })
+            });
+        if let Some(c) = &controls {
+            c.initialize(&mut b.dual_map);
+        }
+        let canonical_load = if dev.kind == McOpfDeviceKind::Load {
+            canonical_loads
+                .as_ref()
+                .map(|loads| {
+                    loads.get(dev.identity.as_str()).copied().ok_or_else(|| {
+                        format!(
+                            "{}: missing canonical load parameter identity",
+                            dev.identity
+                        )
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let mut cols = DeviceColumns {
+            current: Vec::new(),
+            power: Vec::new(),
+        };
+        let mut total = [Affine::default(), Affine::default()];
+        let sign = if dev.kind == McOpfDeviceKind::Load {
+            -1.0
+        } else {
+            1.0
+        };
+        for (k, coil) in dev.coils.iter().enumerate() {
+            if dev.kind == McOpfDeviceKind::Load {
+                for kind in [
+                    ParameterKind::LoadActivePower,
+                    ParameterKind::LoadReactivePower,
+                ] {
+                    b.dual_map
+                        .ensure(Parameter::new(Owner::Load, &dev.identity, Some(k), kind));
+                }
+            }
+            let name = format!("{:?}:{}:{k}", dev.kind, dev.identity);
+            let u = difference(&voltage, coil.positive, coil.negative);
+            let p0 = coil.prescribed.unwrap_or([0.0, 0.0]);
+            let ur = u[0].value(&b.start);
+            let ui = u[1].value(&b.start);
+            let u2 = ur * ur + ui * ui;
+            let i0 = if u2 > 1e-12 {
+                [
+                    (p0[0] * ur + p0[1] * ui) / u2,
+                    (p0[0] * ui - p0[1] * ur) / u2,
+                ]
+            } else {
+                [0.0, 0.0]
+            };
+            let i = b.pair(&format!("{name}:current"), i0);
+            let pq = b.power_lift(&name, &u, &i, p0);
+            let zero_power = coil.current_max == Some(0.0) || coil.apparent_max == Some(0.0);
+            if let Some(law) = &coil.load_law {
+                let parameter_terms = canonical_load
+                    .map(|l| {
+                        super::load_parameters::terms(
+                            l,
+                            k,
+                            dev.coils.len(),
+                            prep.bases.power_base_va,
+                        )
+                    })
+                    .transpose()?;
+                let map_parameter = |b: &mut Builder, j: usize, origin: usize, coordinate| {
+                    if let Some(terms) = &parameter_terms {
+                        b.dual_map.term(
+                            Parameter::new(
+                                Owner::Load,
+                                &dev.identity,
+                                Some(k),
+                                if j == 0 {
+                                    ParameterKind::LoadActivePower
+                                } else {
+                                    ParameterKind::LoadReactivePower
+                                },
+                            ),
+                            Some(origin),
+                            Rule::Load(super::load_parameters::LoadParameter::new(
+                                terms[j].clone(),
+                                law.nominal,
+                                u.clone(),
+                                coordinate,
+                            )),
+                        );
+                    }
+                };
+                let impedance = law.terms.iter().flatten().all(|t| t[1] == 2.0);
+                if impedance {
+                    // Preserve the affine constitutive law even at U = 0.
+                    let g: f64 =
+                        law.terms[0].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
+                    let q: f64 =
+                        law.terms[1].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
+                    let real_origin = b.dual_map.origins.len();
+                    b.affine_row(
+                        format!("{name}:impedance:r"),
+                        &i[0].sub(&u[0].scale(g)).sub(&u[1].scale(q)),
+                    )?;
+                    let imaginary_origin = b.dual_map.origins.len();
+                    b.affine_row(
+                        format!("{name}:impedance:i"),
+                        &i[1].sub(&u[1].scale(g)).add(&u[0].scale(q)),
+                    )?;
+                    for (part, origin) in [real_origin, imaginary_origin].into_iter().enumerate() {
+                        for j in 0..2 {
+                            map_parameter(
+                                &mut b,
+                                j,
+                                origin,
+                                super::load_parameters::Coordinate::Current {
+                                    reactive: j == 1,
+                                    part,
+                                },
+                            );
+                        }
+                    }
+                } else if law.terms.iter().flatten().all(|t| t[1] == 0.0) {
+                    for (j, &power_column) in pq.iter().enumerate() {
+                        let target: f64 = law.terms[j].iter().map(|t| t[0]).sum();
+                        let origin = b.row(
+                            format!("{name}:constant:{j}"),
+                            Expr::Var(power_column),
+                            target,
+                            target,
+                        );
+                        map_parameter(
+                            &mut b,
+                            j,
+                            origin,
+                            super::load_parameters::Coordinate::Power { log_voltage: None },
+                        );
+                    }
+                } else {
+                    // Log-voltage lift defines the exact positive-voltage domain;
+                    // there is no artificial epsilon floor or fractional power at zero.
+                    if u.iter().all(|a| a.terms.is_empty()) && u2 == 0.0 {
+                        return Err(format!(
+                            "{name}: voltage-dependent law at fixed zero voltage"
+                        ));
+                    }
+                    let ell = b.var(
+                        format!("{name}:log_voltage"),
+                        (u2.sqrt().max(law.nominal * 0.5) / law.nominal).ln(),
+                    );
+                    b.start_lifts
+                        .push(StartLift::LogVoltage(ell, u.clone(), law.nominal));
+                    let exp = |exponent| {
+                        Expr::Unary(UnaryOp::Exp, Box::new(scale(exponent, Expr::Var(ell))))
+                    };
+                    let un = pair_scale(&u, 1.0 / law.nominal);
+                    b.row(
+                        format!("{name}:positive_voltage"),
+                        bin(
+                            BinOp::Sub,
+                            sum(vec![product(&un[0], &un[0]), product(&un[1], &un[1])]),
+                            exp(2.0),
+                        ),
+                        0.0,
+                        0.0,
+                    );
+                    for (j, &power_column) in pq.iter().enumerate() {
+                        let rhs = sum(law.terms[j]
+                            .iter()
+                            .map(|t| {
+                                if t[1] == 0.0 {
+                                    Expr::Const(t[0])
+                                } else {
+                                    scale(t[0], exp(t[1]))
+                                }
+                            })
+                            .collect());
+                        let origin = b.row(
+                            format!("{name}:voltage_law:{j}"),
+                            bin(BinOp::Sub, Expr::Var(power_column), rhs),
+                            0.0,
+                            0.0,
+                        );
+                        map_parameter(
+                            &mut b,
+                            j,
+                            origin,
+                            super::load_parameters::Coordinate::Power {
+                                log_voltage: Some(ell),
+                            },
+                        );
+                    }
+                }
+            } else if let Some(pq0) = coil.prescribed {
+                for j in 0..2 {
+                    let origin = b.row(
+                        format!("{name}:prescribed:{j}"),
+                        Expr::Var(pq[j]),
+                        pq0[j],
+                        pq0[j],
+                    );
+                    if dev.kind == McOpfDeviceKind::Load {
+                        b.dual_map.term(
+                            Parameter::new(
+                                Owner::Load,
+                                &dev.identity,
+                                Some(k),
+                                if j == 0 {
+                                    ParameterKind::LoadActivePower
+                                } else {
+                                    ParameterKind::LoadReactivePower
+                                },
+                            ),
+                            Some(origin),
+                            Rule::Equality {
+                                scale: prep.bases.power_base_va.recip(),
+                            },
+                        );
+                    }
+                }
+            } else {
+                for (j, (lo, hi)) in [(coil.p_min, coil.p_max), (coil.q_min, coil.q_max)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if zero_power {
+                        if lo.is_some_and(|v| v > 0.0) || hi.is_some_and(|v| v < 0.0) {
+                            return Err(format!("{name}: zero rating conflicts with capability"));
+                        }
+                    } else if lo.is_some() || hi.is_some() {
+                        let origin = b.row(
+                            format!("{name}:capability:{j}"),
+                            Expr::Var(pq[j]),
+                            lo.unwrap_or(f64::NEG_INFINITY),
+                            hi.unwrap_or(f64::INFINITY),
+                        );
+                        if dev.kind == McOpfDeviceKind::Generator || inverter.is_some() {
+                            for (bound, kind, lower) in [
+                                (
+                                    lo,
+                                    if j == 0 {
+                                        ParameterKind::ActivePowerLower
+                                    } else {
+                                        ParameterKind::ReactivePowerLower
+                                    },
+                                    true,
+                                ),
+                                (
+                                    hi,
+                                    if j == 0 {
+                                        ParameterKind::ActivePowerUpper
+                                    } else {
+                                        ParameterKind::ReactivePowerUpper
+                                    },
+                                    false,
+                                ),
+                            ] {
+                                if bound.is_some() {
+                                    if let Some(inv) = &inverter {
+                                        inv.bound(&mut b.dual_map, k, kind, origin, lower);
+                                        continue;
+                                    }
+                                    b.dual_map.term(
+                                        Parameter::new(
+                                            Owner::Generator,
+                                            &dev.identity,
+                                            Some(k),
+                                            kind,
+                                        ),
+                                        Some(origin),
+                                        Rule::Bound {
+                                            scale: prep.bases.power_base_va.recip(),
+                                            lower,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some([a, pf]) = coil.power_factor_coefficients.filter(|_| !zero_power) {
+                let origin = b.dual_map.origins.len();
+                b.affine_row(
+                    format!("{name}:power_factor"),
+                    &Affine::var(pq[0])
+                        .scale(a)
+                        .add(&Affine::var(pq[1]).scale(pf)),
+                )?;
+                if let Some(c) = &controls {
+                    c.power_factor(&mut b.dual_map, origin, pq);
+                }
+            }
+            for (family, curve, column, upper) in [
+                ("volt_var", coil.volt_var.as_ref(), pq[1], false),
+                ("volt_watt", coil.volt_watt.as_ref(), pq[0], true),
+            ] {
+                if let Some(curve) =
+                    curve.filter(|c| !zero_power || c.values.iter().any(|v| *v != 0.0))
+                {
+                    let (target, columns) = b.droop(&format!("{name}:{family}"), &voltage, curve);
+                    let origin = b.row(
+                        format!("{name}:{family}"),
+                        bin(BinOp::Sub, Expr::Var(column), target),
+                        if upper { f64::NEG_INFINITY } else { 0.0 },
+                        0.0,
+                    );
+                    if let Some(inv) = &inverter {
+                        inv.control(&mut b.dual_map, k, family, origin, curve, columns.clone());
+                    }
+                    if let Some(c) = &controls {
+                        c.droop(&mut b.dual_map, k, family, origin, curve, columns);
+                    }
+                }
+            }
+            if let Some(cap) = coil.current_max {
+                let origin = b.dual_map.origins.len();
+                b.norm(&format!("{name}:current_cap"), &i, cap)?;
+                if let Some(inv) = &inverter {
+                    inv.current(
+                        &mut b.dual_map,
+                        dev,
+                        Some(k),
+                        origin,
+                        cap * prep.bases.power_base_va / prep.bases.voltage_base_v,
+                    );
+                }
+            }
+            if let Some(cap) = coil.apparent_max.filter(|_| coil.current_max != Some(0.0)) {
+                let origin = b.dual_map.origins.len();
+                b.norm(
+                    &format!("{name}:apparent_cap"),
+                    &[Affine::var(pq[0]), Affine::var(pq[1])],
+                    cap,
+                )?;
+                if let Some(inv) = &inverter {
+                    inv.apparent(&mut b.dual_map, k, origin, cap);
+                }
+            }
+            objective.push(scale(coil.cost, Expr::Var(pq[0])));
+            kcl[coil.positive] = pair_add(&kcl[coil.positive], &pair_scale(&i, sign));
+            if let Some(n) = coil.negative {
+                kcl[n] = pair_add(&kcl[n], &pair_scale(&i, -sign));
+            }
+            total = pair_add(&total, &i);
+            cols.current.push(i);
+            cols.power.push(pq);
+        }
+        if let Some(cap) = dev
+            .neutral_current_max
+            .filter(|_| !dev.coils.iter().all(|c| c.current_max == Some(0.0)))
+        {
+            let origin = b.dual_map.origins.len();
+            b.norm(
+                &format!("{:?}:{}:neutral_cap", dev.kind, dev.identity),
+                &total,
+                cap,
+            )?;
+            if let Some(inv) = &inverter {
+                inv.current(
+                    &mut b.dual_map,
+                    dev,
+                    None,
+                    origin,
+                    cap * prep.bases.power_base_va / prep.bases.voltage_base_v,
+                );
+            }
+        }
+        if let Some([lo, hi]) = dev.net_active_bounds {
+            if dev
+                .coils
+                .iter()
+                .all(|c| c.current_max == Some(0.0) || c.apparent_max == Some(0.0))
+            {
+                if lo > 0.0 || hi < 0.0 {
+                    return Err(format!(
+                        "{}: zero rating conflicts with DC-link power",
+                        dev.identity
+                    ));
+                }
+            } else {
+                b.row(
+                    format!("Ibr:{}:dc_link", dev.identity),
+                    sum(cols.power.iter().map(|pq| Expr::Var(pq[0])).collect()),
+                    lo,
+                    hi,
+                );
+            }
+        }
+        devices.push(cols);
+    }
+    for limit in &prep.voltage_limits {
+        let u = if limit.combination.is_empty() {
+            difference(&voltage, limit.positive, limit.negative)
+        } else {
+            let mut row = powerio_matrix::McOpfComplexRow::default();
+            row.voltage.clone_from(&limit.combination);
+            let sequence = descriptor(&row, &voltage, &[]);
+            // Lift the sequence voltage before squaring. This avoids cancellation
+            // between expanded Fortescue cross terms in the backend's conservative
+            // quadratic recognizer and keeps the defining rows affine.
+            let lifted = b.pair(
+                &format!("sequence:{}", limit.identity),
+                [sequence[0].value(&b.start), sequence[1].value(&b.start)],
+            );
+            b.start_lifts
+                .push(StartLift::Voltage(lifted.clone(), sequence.clone()));
+            for k in 0..2 {
+                b.affine_row(
+                    format!("sequence:{}:{k}", limit.identity),
+                    &lifted[k].sub(&sequence[k]),
+                )?;
+            }
+            lifted
+        };
+        if let Some(cap) = limit.upper {
+            let origin = b.dual_map.origins.len();
+            b.norm(&format!("voltage:{}:upper", limit.identity), &u, cap)?;
+            b.dual_map.term(
+                Parameter::new(
+                    Owner::VoltageLimit,
+                    &limit.identity,
+                    None,
+                    ParameterKind::VoltageUpper,
+                ),
+                (cap > 0.0).then_some(origin),
+                Rule::Norm {
+                    physical: cap * prep.bases.voltage_base_v,
+                },
+            );
+        }
+        if limit.lower == Some(0.0) {
+            b.dual_map.ensure(Parameter::new(
+                Owner::VoltageLimit,
+                &limit.identity,
+                None,
+                ParameterKind::VoltageLower,
+            ));
+        }
+        if let Some(floor) = limit.lower.filter(|x| *x > 0.0) {
+            let a = u[0].scale(1.0 / floor);
+            let c = u[1].scale(1.0 / floor);
+            let origin = b.row(
+                format!("voltage:{}:lower", limit.identity),
+                sum(vec![product(&a, &a), product(&c, &c)]),
+                1.0,
+                f64::INFINITY,
+            );
+            b.dual_map.origins[origin].norm_divisor_pu = Some(floor);
+            b.dual_map.term(
+                Parameter::new(
+                    Owner::VoltageLimit,
+                    &limit.identity,
+                    None,
+                    ParameterKind::VoltageLower,
+                ),
+                Some(origin),
+                Rule::Norm {
+                    physical: floor * prep.bases.voltage_base_v,
+                },
+            );
+        }
+    }
+    for angle in &prep.angle_limits {
+        let first = &voltage[angle.first];
+        let second = &voltage[angle.second];
+        if [first, second]
+            .iter()
+            .any(|u| u.iter().all(|a| a.terms.is_empty() && a.constant == 0.0))
+        {
+            continue;
+        }
+        let rotate = |theta: f64| {
+            [
+                first[0]
+                    .scale(theta.cos())
+                    .add(&first[1].scale(theta.sin())),
+                first[1]
+                    .scale(theta.cos())
+                    .sub(&first[0].scale(theta.sin())),
+            ]
+        };
+        let lower = power(&rotate(angle.offset + angle.lower), second)[1].clone();
+        if angle.lower == angle.upper {
+            b.row(
+                format!("angle:{}:equality", angle.identity),
+                lower,
+                0.0,
+                0.0,
+            );
+            b.row(
+                format!("angle:{}:domain", angle.identity),
+                power(&rotate(angle.offset), second)[0].clone(),
+                0.0,
+                f64::INFINITY,
+            );
+        } else {
+            b.row(
+                format!("angle:{}:lower", angle.identity),
+                lower,
+                0.0,
+                f64::INFINITY,
+            );
+            b.row(
+                format!("angle:{}:upper", angle.identity),
+                power(&rotate(angle.offset + angle.upper), second)[1].clone(),
+                f64::NEG_INFINITY,
+                0.0,
+            );
+        }
+    }
+    for (k, t) in prep.terminals.iter().enumerate() {
+        if !t.grounded {
+            for (p, a) in kcl[k].iter().enumerate() {
+                b.affine_row(format!("kcl:{}:{}:{p}", t.bus, t.terminal), a)?;
+            }
+        }
+    }
+    let n = b.start.len();
+    if prep.branches.iter().any(|br| {
+        br.current_max
+            .iter()
+            .chain(&br.apparent_max)
+            .any(|cap| *cap == Some(0.0))
+    }) {
+        b.propagate_zeros();
+    }
+    if n == 0 {
+        return Err("IVR model has no decision variables".into());
+    }
+    let problem = NlProblem::from_expressions(NlProblemParts {
+        minimize: true,
+        objective: sum(objective),
+        obj_constant: 0.0,
+        constraints: b.rows,
+        x_l: vec![f64::NEG_INFINITY; n],
+        x_u: vec![f64::INFINITY; n],
+        x0: b.start,
+        g_l: b.lo,
+        g_u: b.hi,
+        var_names: b.names,
+        con_names: b.row_names,
+    })?;
+    Ok(Model {
+        dual_map: b.dual_map,
+        start_lifts: b.start_lifts,
+        zero_columns: b.zero_columns,
+        prep,
+        voltage,
+        branch_current,
+        branch_power,
+        transformer_tap,
+        transformer_current,
+        transformer_power,
+        devices,
+        problem,
+    })
+}
+
+pub(super) fn softplus(z: Expr) -> Expr {
+    // Stable log(1+exp(z)) = max(z,0)+log(1+exp(-abs(z))).
+    // The branch arguments remain finite even if a tape evaluates both.
+    let abs = Expr::Cond {
+        cond: Box::new(Expr::Compare(
+            CmpOp::Ge,
+            Box::new(z.clone()),
+            Box::new(Expr::Const(0.0)),
+        )),
+        then_: Box::new(z.clone()),
+        else_: Box::new(scale(-1.0, z.clone())),
+    };
+    let positive = Expr::Cond {
+        cond: Box::new(Expr::Compare(
+            CmpOp::Ge,
+            Box::new(z.clone()),
+            Box::new(Expr::Const(0.0)),
+        )),
+        then_: Box::new(z),
+        else_: Box::new(Expr::Const(0.0)),
+    };
+    let smooth = Expr::Unary(
+        UnaryOp::Log,
+        Box::new(sum(vec![
+            Expr::Const(1.0),
+            Expr::Unary(UnaryOp::Exp, Box::new(scale(-1.0, abs))),
+        ])),
+    );
+    sum(vec![positive, smooth])
+}
