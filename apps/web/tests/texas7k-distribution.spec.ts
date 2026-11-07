@@ -244,7 +244,10 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const longTasksSupported = await page.evaluate(() =>
 		PerformanceObserver.supportedEntryTypes.includes('longtask')
 	);
+	const server = new URL(testInfo.project.use.baseURL!);
+	const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(server.hostname);
 	const metrics = {
+		server_origin: server.origin,
 		browser_rss_max_at_checkpoints_bytes: memorySamples.length ? peakBrowserRssBytes : null,
 		memory_samples: memorySamples,
 		browser_engine: browserEngine,
@@ -263,7 +266,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		edit_result_revision_advanced: true,
 		result_sha256: resultHash,
 		transfer,
-		note: `Single local ${browserEngine} run; loopback network, warm server, includes UI scheduling. Viewport/device emulation does not qualify physical mobile memory or performance.`
+		note: `Single ${browserEngine} run against ${loopback ? 'a loopback server' : 'the configured public HTTPS server'}; includes network and UI scheduling, with no controlled cache or host-load conditions. Viewport/device emulation does not qualify physical mobile memory or performance.`
 	};
 	await writeFile(
 		testInfo.outputPath('texas7k-browser.json'),

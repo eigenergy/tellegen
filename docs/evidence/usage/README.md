@@ -54,6 +54,18 @@ sample of visitor outcomes. Automated headless requests were not included in
 the observed counts. Event-property requests use the Cloud API's `event` filter
 ([API changelog](https://docs.umami.is/docs/cloud/changelog)).
 
+The [November 7 transport check](2026-11-07-transport-check.json) received five
+HTTP 200 responses from the production gateway, each with Umami's explicit
+`{"beep":"boop"}` bot-filter reply. These responses confirm working transport
+and intentional headless-browser exclusion; they do not acknowledge recorded
+sessions. The aggregate readback remained unchanged after the checks. See
+Umami's [bot-check setting](https://docs.umami.is/docs/environment-variables#disable_bot_check)
+and [send handler](https://github.com/umami-software/umami/blob/master/src/app/api/send/route.ts).
+Only that test process used an independently verified public DNS address for
+the gateway because its local VPN resolver returned NXDOMAIN. System DNS was
+unchanged. The monthly snapshot below remains the original release-validation
+record, and neither check establishes organic visitor growth.
+
 <!-- usage:start -->
 
 Last pull: 2026-11 (2026-11-07).

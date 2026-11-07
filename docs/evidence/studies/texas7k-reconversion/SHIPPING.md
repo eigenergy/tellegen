@@ -183,3 +183,16 @@ and was not tested. The Pixel 7 project verifies narrow viewport and touch
 emulation on the desktop host; **physical low-memory mobile devices remain
 unqualified**. This evidence supports the tested desktop browser engines and
 the emulated layout, not an unrestricted mobile support claim.
+
+### Published immutable bundle
+
+The [v0.6.2 dataset archive](https://github.com/eigenergy/tellegen/releases/download/v0.6.2/texas7k-p1uhs0_1247-a594e609e0a0cc31.tar.gz)
+contains the immutable bundle and its distribution-case manifest. An independent
+download verified all 17 archive files, all 15 bundle checksums, the license and
+attribution files, and equality between the compressed and uncompressed module.
+The archive is 4,879,300 bytes with SHA-256
+`99f98f402511452dfc46684f791852482668dece4b3acf4aa16cb46cef26e8fd`.
+The bundle checksum manifest has SHA-256
+`a594e609e0a0cc3108b1cf58b649052d6be70e805804ff70a2b75158d2f5d8c4`.
+`release-archive-2026-11-07.json` records the public download and verification.
+The upstream CC-BY-3.0-US license and attribution remain in the bundle.
