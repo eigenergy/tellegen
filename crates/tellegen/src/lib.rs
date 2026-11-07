@@ -41,9 +41,8 @@ pub mod mc_opf;
 pub mod mc_pf;
 #[cfg(feature = "mc-opf")]
 pub use mc_opf::{
-    mc_opf_initial_point_from_pf, solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable,
-    solve_mc_ac_opf_module_json, McOpfError, McOpfErrorKind, McOpfOptions, McOpfProfile,
-    McOpfResult, McOpfStage,
+    solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable, solve_mc_ac_opf_module_json,
+    McOpfError, McOpfErrorKind, McOpfOptions, McOpfProfile, McOpfResult, McOpfStage,
 };
 mod model;
 #[cfg(feature = "acopf")]

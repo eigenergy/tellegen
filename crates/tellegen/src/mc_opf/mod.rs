@@ -5,10 +5,6 @@
 //! checked against the physical equations. Success is local, with no prices,
 //! optimality certificate, retained session, or solution sensitivities.
 mod diagnostics;
-mod initial;
-#[cfg(test)]
-mod initial_tests;
-pub use initial::mc_opf_initial_point_from_pf;
 mod model;
 mod result;
 pub use diagnostics::{McOpfDiagnostic, McOpfError, McOpfErrorKind, McOpfStage, McOpfViolation};
@@ -238,18 +234,17 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     options.validate()?;
     let mut profile = options.collect_profile.then(McOpfProfile::default);
     let mut stage = Instant::now();
-    let prep = initial::prepare(
+    let prep = build_mc_ac_opf_preparation(
         &instance,
         &McAcOpfAssemblyOptions::new(options.voltage_base_v, options.power_base_va),
-    )?;
+    )
+    .map_err(|e| McOpfError::from_powerio(McOpfStage::Preparation, e))?;
     record_stage(&mut profile, &mut stage, "preparation");
     let fingerprint = result::fingerprint(&prep)?;
     record_stage(&mut profile, &mut stage, "fingerprint");
-    let mut model = model::compile(prep)
+    let model = model::compile(prep)
         .map_err(|e| McOpfError::new(McOpfErrorKind::InvalidInput, McOpfStage::Compilation, e))?;
     record_stage(&mut profile, &mut stage, "model_compile");
-    let mut initial_diagnostics = initial::apply(&mut model, &instance)?;
-    record_stage(&mut profile, &mut stage, "initial_point");
     cancelled(cancel.as_deref(), McOpfStage::Compilation)?;
     let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
         NlTnlp::try_new(model.problem.clone()).map_err(|e| {
@@ -288,7 +283,6 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     ) {
         let mut error = McOpfError::new(McOpfErrorKind::NumericalFailure, McOpfStage::Solver, format!("multiconductor OPF stopped with {status:?}; a local NLP failure is not an infeasibility proof"));
         error.solver_status = Some(format!("{status:?}"));
-        error.diagnostics.extend(initial_diagnostics);
         return Err(error);
     }
     let t = tnlp.borrow();
@@ -299,22 +293,13 @@ pub fn solve_mc_ac_opf_instance_cancellable(
             "solver returned no primal point",
         )
     })?;
-    let checked = validate::check(&model, x, t.inner.final_obj(), options.acceptance_tolerance)
-        .map_err(|mut error| {
-            error.diagnostics.extend(initial_diagnostics.clone());
-            error
-        })?;
+    let checked = validate::check(&model, x, t.inner.final_obj(), options.acceptance_tolerance)?;
     let pf_diagnostics = validate::check_power_factors(
         instance.network(),
         &checked.devices,
         options.power_base_va,
         options.acceptance_tolerance,
-    )
-    .map_err(|mut error| {
-        error.diagnostics.extend(initial_diagnostics.clone());
-        error
-    })?;
-    initial_diagnostics.extend(pf_diagnostics);
+    )?;
     cancelled(cancel.as_deref(), McOpfStage::Validation)?;
     record_stage(&mut profile, &mut stage, "validation");
     let source = checked
@@ -330,7 +315,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         .flat_map(|d| d.terminal_power_va.iter().map(|p| p[0]))
         .collect();
     let solution = McAcOpfSolution::new(
-        initial::canonical_instance(instance)?,
+        instance,
         Termination::Converged,
         checked
             .voltage
@@ -368,7 +353,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
             .collect(),
         shunts: checked.shunts,
         options: options.clone(),
-        diagnostics: initial_diagnostics,
+        diagnostics: pf_diagnostics,
         solution,
         residuals: checked.residuals,
         branches: checked.branches,
@@ -404,7 +389,7 @@ pub fn solve_mc_ac_opf_module_json(
         })?;
     result
         .diagnostics
-        .splice(0..0, module.diagnostics().iter().map(Into::into));
+        .extend(module.diagnostics().iter().map(McOpfDiagnostic::from));
     let mut output = module
         .map_value(|_| PioValue::McAcOpfSolution(result.solution.clone()))
         .sever_source();
