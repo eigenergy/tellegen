@@ -49,12 +49,15 @@ def main():
         revision = os.environ.get('TELLEGEN_SOURCE_REVISION', '').strip()
         if revision and not re.fullmatch(r'[0-9a-f]{40}', revision):
             raise SystemExit('TELLEGEN_SOURCE_REVISION must be a full Git commit SHA')
+        # The deploy image build has no .git and names the commit it copied;
+        # that is the asset the website distributes.
+        release = bool(revision) and not (ROOT / '.git').exists()
         dirty = None
         if (ROOT / '.git').exists():
             revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
             dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
         info = {
-            'development_only': True,
+            'development_only': not release,
             'solver': 'POUNCE',
             'version': version,
             'license': 'EPL-2.0',

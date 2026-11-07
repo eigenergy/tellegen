@@ -1,11 +1,84 @@
 # AC OPF solver decision
 
-Status: accepted for feasibility work; distribution and product capability are
-not yet approved. Recorded 24 September 2026.
+Status: accepted for feasibility work. Recorded 24 September 2026. On 29 October
+2026 the release owner approved EPL-2.0 distribution of the WASI asset, and the
+website serves it as an experimental, base-case-only calculation. Release gates
+2 to 5 below remain open.
+
+## Backend update — 4 November 2026
+
+The native and dedicated WASI paths now pin the published, checksummed
+`pounce-nl = pounce-rs = 0.15.0` release, with FERAL 0.22.0. The release and
+source-manifest guard checks all 16 POUNCE crates. The two new transitive
+crates, `pounce-convex` and `pounce-sens-core`, have explicit EPL-2.0 exceptions
+alongside the existing POUNCE crates in `deny.toml`.
+
+[POUNCE 0.15.0](https://github.com/jkitchin/pounce/releases/tag/v0.15.0) adds
+complementarity support, which Tellegen does not use. Four upstream changes
+can move Tellegen's solves:
+
+- `perturb_slack_max_rows` (new in 0.15.0, default 1000) caps the inertia
+  correction's slack-block perturbation. A model with at most 1000 inequality
+  rows solves exactly as before; above that, solves that hit inertia
+  correction can take a different path.
+- Restoration's release test now uses the outer filter's own quantities
+  (0.14.0). A failed base solve can end with a different status, which
+  changes which second-opinion rungs follow.
+- The second-opinion ladder gained a saddle-escape rung after an
+  infeasibility verdict (0.14.0).
+- A stop requested from the intermediate callback is now honoured during
+  POUNCE's automatic re-solves (0.15.0). The ladder itself still runs its
+  remaining rungs after `UserRequestedStop`, so Tellegen keeps refusing
+  their initialization once cancelled.
+
+The SQP handover added in 0.14.0 is off by default and stays off. Tellegen
+continues to construct its existing polar AC OPF model through
+`NlProblemParts` and apply its independent physical validator, with unchanged
+`POUNCE_OPTIONS`. The dependency update does not add a complementarity
+formulation or change the public API. The validation results below for 0.13.0
+remain historical evidence for that release.
+
+Local validation used Rust 1.96.0 on macOS arm64: all 428 enabled engine tests
+and the WASI adapter test passed, along with strict all-target AC OPF Clippy,
+the HS071 probe, release/source-manifest checks, and the EPL isolation guard.
+The release `wasm32-wasip1` build also solved the existing three-bus planning
+fixture using the production WASI host under Node: objective
+`631.5334170921521`, 12 iterations, and active/reactive balance residuals below
+`5e-12` MW/MVAr. This was a reactor smoke test; the browser UI was not rerun.
+
+The engine tests solve only three- and four-bus cases, below the 1000-row
+threshold, so the native `acopf_benchmark` example compared 0.13.0 and 0.15.0
+on 14 PGLib v23.07 cases (`case14_ieee` to `case4661_sdet`). Both versions
+solve the same 13 cases, and every objective agrees within `1e-12` relative.
+Nine solve identically: same status, iterations and objective. The rest:
+
+| Case | 0.13.0 | 0.15.0 | Cause |
+| --- | --- | --- | --- |
+| `case793_goc` | succeeded, 210 it, 1.8 s | acceptable, 137 it, 1.3 s | slack cap |
+| `case1354_pegase` | 192 it, 3 restorations | 190 it, 2 restorations | restoration test |
+| `case1888_rte` | 605 it, 10.2 s | 788 it, 14.1 s | slack cap |
+| `case3012wp_k` | base step error, rescued by `mu_strategy=adaptive` | base restoration failure, same rescue | restoration test |
+| `case4661_sdet` | fails after 1 rung, 615 it, 123 s | fails after 3 rungs, 1824 it, 244 s | restoration test |
+
+Times are single serial runs. A third build, 0.15.0 with
+`perturb_slack_max_rows 0`, reproduced 0.13.0 exactly on `case793_goc` and
+`case1888_rte`, and matched 0.15.0's restoration behaviour on the other three.
+On `case4661_sdet` it was slower still: 2076 iterations in 360 s. Tellegen
+therefore keeps the upstream default. `case4661_sdet` fails in both versions
+with a small constraint violation and a KKT error of `1.35e4`. Under 0.15.0
+its base solve ends in `Restoration_Failed` rather than
+`Error_In_Step_Computation`, so the ladder tries three rungs instead of one
+and failure takes about twice as long. Every attempt keeps the per-attempt
+`max_iter 1000`.
+
+Two generator-free variants (`case14_ieee` and `case300_ieee` with every
+generator's real-power limits set to zero) fail identically under both
+versions: `InfeasibleProblemDetected` after the same three rungs and 114 and
+194 total iterations, in 0.1 s and 0.9 s. The saddle-escape rung did not fire.
 
 ## Released backend integration — 22 October 2026
 
-The native and dedicated WASI paths now use the published, checksummed
+The native and dedicated WASI paths were updated to the published, checksummed
 `pounce-nl = pounce-rs = 0.13.0` release (FERAL 0.21.0). Both exact dependency
 pins and every transitive POUNCE lockfile entry are checked by
 `scripts/acopf-release.py`, also invoked by the build and EPL isolation gate.
@@ -365,18 +438,32 @@ default engine and all shipping adapters while present in the opt-in probe.
 That mechanical boundary is not legal approval. Before distributing a native
 binary or WASI asset containing POUNCE, the release owner must approve the
 EPL-2.0 obligations, include its license/notices, and provide a reasonable
-corresponding-source location. Until then, this website enablement must remain
-unpublished. `Problem::Acopf` remains unavailable in the default native engine
-and shipping adapters; the website uses the separate worker reactor.
+corresponding-source location. `Problem::Acopf` remains unavailable in the
+default native engine and shipping adapters; the website uses the separate
+worker reactor.
+
+On 29 October 2026 Samuel Talkington, the release owner, approved EPL-2.0
+distribution of POUNCE in the website's WASI asset. The website build meets the
+obligations as follows:
+
+- POUNCE is used without modification. `POUNCE-EPL-2.0.txt` (the license) and
+  `POUNCE-NOTICE.txt` (the notice) are served beside the asset under
+  `/experimental-acopf/`.
+- `POUNCE-SOURCE.json`, beside the asset, gives the corresponding source: the
+  crates.io archive URL and SHA-256 of each of the 14 POUNCE crates, the
+  upstream tag, the Tellegen commit the deployed image was built from, and the
+  asset's own SHA-256 and size. The deployed asset's manifest records
+  `"development_only": false`; local builds still record `true`.
+- The `/credits` page links all three files.
 
 ## Remaining release gates
 
-The released dependency and restoration-driver gates are implemented. This
-draft is not a distribution approval. Before public enablement, the remaining
-gates are:
+The released dependency and restoration-driver gates are implemented. Gate 1
+is complete. The release owner enabled the experimental calculation on the
+public website with gates 2 to 5 still open; they are not complete:
 
-1. Release-owner approval of EPL-2.0 distribution obligations. The opt-in build
-   now includes the license, notice and checksummed source locations.
+1. Release-owner approval of EPL-2.0 distribution obligations. Approved on
+   29 October 2026; see the section above.
 2. Resolve the inherited PowerIO → ZIP advisory failures using a reviewed,
    patched PowerIO release; no advisory exception is added here.
 3. Repeat the independent corpus check on the final Tellegen release artifact

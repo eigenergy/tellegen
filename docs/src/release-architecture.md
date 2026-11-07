@@ -1,7 +1,7 @@
 # Release Architecture
 
-The public browser surfaces are `@tellegen/engine`, `@tellegen/svelte`, and
-`@tellegen/webmcp`.
+The public browser surfaces are `@tellegen/engine`, `@tellegen/svelte`,
+`@tellegen/webmcp` and `@tellegen/analytics`.
 
 Stable release surfaces:
 
@@ -13,6 +13,8 @@ Stable release surfaces:
 - `packages/svelte` Svelte component package;
 - `packages/webmcp` WebMCP tool definitions and runtime validation without a UI
   framework dependency;
+- `packages/analytics` allowlisted usage analytics with a first-party Umami
+  Cloud sender, no dependencies;
 - examples under `examples/`.
 
 The hosted demo under `apps/web` is one consumer of the packages. It keeps
@@ -24,6 +26,7 @@ The repository uses npm workspaces with one root `package-lock.json` for:
 
 - `packages/engine`;
 - `packages/webmcp`;
+- `packages/analytics`;
 - `packages/svelte`;
 - `apps/web`;
 - `examples/browser-minimal`; and
@@ -41,18 +44,20 @@ Root scripts define the package order:
   `packages/engine`;
 - `npm run build:engine` builds `@tellegen/engine`;
 - `npm run build:webmcp` builds `@tellegen/webmcp`;
+- `npm run build:analytics` builds `@tellegen/analytics`;
 - `npm run build:svelte` builds `@tellegen/svelte`;
 - `npm run build:example` builds both downstream examples;
 - `npm run check:web`, `npm run build:web`, and `npm run smoke:web` gate the
   hosted demo;
 - `npm run pack:engine` previews the engine npm package contents;
 - `npm run pack:webmcp` previews the WebMCP npm package contents;
+- `npm run pack:analytics` previews the analytics npm package contents;
 - `npm run pack:svelte` previews the Svelte npm package contents.
 
 ## Versioning
 
-`@tellegen/engine`, `@tellegen/svelte`, and `@tellegen/webmcp` use independent
-package versions.
+`@tellegen/engine`, `@tellegen/svelte`, `@tellegen/webmcp` and
+`@tellegen/analytics` use independent package versions.
 
 Before `1.0`, releases can refine public APIs while preserving the examples and
 hosted demo behavior. After `1.0`, breaking public TypeScript, Svelte prop, or
@@ -114,9 +119,9 @@ variable after you make all of these:
    branch rule limited to `main` and no required reviewers;
 2. a crates.io trusted publisher for `tellegen`, set to this repository,
    `release-crate.yml`, **and the `crates-io` environment**;
-3. an npm trusted publisher for `@tellegen/engine`, `@tellegen/svelte`, and
-   `@tellegen/webmcp`, each set to this repository, `release-npm.yml`, **and the
-   `npm` environment**. The publisher binds to the workflow filename. If you
+3. an npm trusted publisher for `@tellegen/engine`, `@tellegen/svelte`,
+   `@tellegen/webmcp` and `@tellegen/analytics`, each set to this repository,
+   `release-npm.yml`, **and the `npm` environment**. The publisher binds to the workflow filename. If you
    rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
@@ -140,8 +145,8 @@ workflows do not read long-lived registry credentials.
 
 ### Packages
 
-`@tellegen/engine`, `@tellegen/svelte`, and `@tellegen/webmcp` release through
-changesets.
+`@tellegen/engine`, `@tellegen/svelte`, `@tellegen/webmcp` and
+`@tellegen/analytics` release through changesets.
 
 A change to any of these packages needs a changeset. Run `npm run changeset`
 and commit the file it writes. See `.changeset/README.md`.
@@ -208,16 +213,16 @@ merged release commit.
 ### Inspecting an artifact
 
 `.github/workflows/package-inspect.yml` is a manual run. It builds the artifacts
-a release would upload, `cargo package` and all three `npm pack` tarballs, and
+a release would upload, `cargo package` and all four `npm pack` tarballs, and
 attaches them to the run. It publishes nothing.
 
 ### Changelogs
 
 Each surface keeps its own generated changelog:
-`crates/tellegen/CHANGELOG.md`, `packages/engine/CHANGELOG.md`, and
-`packages/svelte/CHANGELOG.md`, and `packages/webmcp/CHANGELOG.md`. The root
-`CHANGELOG.md` is the curated view across all four and the only record for
-releases before the split.
+`crates/tellegen/CHANGELOG.md`, `packages/engine/CHANGELOG.md`,
+`packages/svelte/CHANGELOG.md`, `packages/webmcp/CHANGELOG.md` and
+`packages/analytics/CHANGELOG.md`. The root `CHANGELOG.md` is the curated view
+across all of them and the only record for releases before the split.
 
 release-plz writes a draft crate changelog from commit messages, which is
 curated on the release pull request before it merges. The `commit_parsers` in
@@ -242,7 +247,8 @@ because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.
 
 The JavaScript gates install once from the root lockfile, check and pack
-`packages/webmcp`, build and check `packages/engine` before `packages/svelte`,
+`packages/webmcp` and `packages/analytics`, build and check `packages/engine`
+before `packages/svelte`,
 run the engine import smoke test, check the Svelte package through a packed
 temporary consumer, build the hosted demo, and run its browser tests. `just ci`
 runs everything locally.

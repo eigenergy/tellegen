@@ -150,6 +150,50 @@ fn the_fixture_maps_to_a_grid_that_solves() {
 }
 
 #[test]
+fn an_hvdc_transfer_shares_the_set_point_of_a_plant_at_its_converter() {
+    // A plant snapped to the receiving converter's bus: the validation copy's
+    // fixed-transfer generator must state the same set point, or the AC power
+    // flow refuses the bus as a voltage control conflict.
+    let (module, _) = generate(
+        request(OsmIslands::Connect),
+        common::places(),
+        Some(FIXTURE.to_owned()),
+    )
+    .unwrap();
+    let mut net = module.value().clone();
+    let to = net.hvdc()[0].to;
+    let mut unit = net.generators()[0].clone();
+    unit.bus = to;
+    (unit.pmin, unit.pg, unit.pmax, unit.mbase) = (0.0, 0.0, 50.0, 50.0);
+    unit.uid = Some("test-unit-at-converter".to_owned());
+    net.generators_mut().push(unit);
+    for bus in net.buses_mut().iter_mut().filter(|b| b.id == to) {
+        if bus.kind == powerio::BusType::Pq {
+            bus.kind = powerio::BusType::Pv;
+        }
+    }
+    let (copy, links) = tellegen_synth::validate::validation_copy(&net);
+    assert_eq!(links, 1);
+    let set_points: Vec<f64> = copy
+        .generators()
+        .iter()
+        .filter(|g| g.in_service && g.bus == to)
+        .map(|g| g.vg)
+        .collect();
+    assert_eq!(set_points.len(), 2);
+    assert_eq!(set_points[0], set_points[1], "{set_points:?}");
+    let ac = tellegen_synth::validate::run_ac_pf(&net, &Default::default(), None);
+    assert!(
+        !ac.message
+            .as_deref()
+            .unwrap_or("")
+            .contains("VOLTAGE_CONTROL_CONFLICT"),
+        "{:?}",
+        ac.message
+    );
+}
+
+#[test]
 fn island_policies() {
     // Cut: the converters have no plant, so their islands go, with the link.
     let (module, report) = generate(
@@ -351,4 +395,61 @@ fn absurd_circuit_counts_are_clamped() {
         .replace("\"cables\": \"6\"", "\"cables\": \"1e18\"");
     let (module, _) = generate(request(OsmIslands::Connect), common::places(), Some(doc)).unwrap();
     assert!(module.value().branches().len() < 100);
+}
+
+#[test]
+fn shared_voltage_counts_are_preserved() {
+    use tellegen_synth::osm::{build::split_levels, parse_document};
+    let json = r#"{"elements":[{
+        "type":"way","id":1,
+        "geometry":[{"lon":8.2,"lat":50.0},{"lon":8.9,"lat":50.05}],
+        "tags":{"power":"line",
+                "voltage":"380000;110000;110000","circuits":"3"}
+    }]}"#;
+    let parsed = parse_document(json).unwrap();
+    for (floor, expected) in [
+        (110.0, vec![(380.0, 1), (110.0, 2)]),
+        (220.0, vec![(380.0, 1)]),
+    ] {
+        let actual: Vec<_> = split_levels(&parsed.lines[0], floor)
+            .iter()
+            .map(|l| (l.kv, l.circuits))
+            .collect();
+        assert_eq!(actual, expected, "voltage floor: {floor}");
+    }
+}
+
+#[test]
+fn a_shared_tower_way_makes_one_branch_per_listed_circuit() {
+    // Way 304 between Sites C and A, retagged as one 380 kV and two 110 kV
+    // circuits on shared towers: three branch rows, not one more 380 kV
+    // parallel.
+    let doc = FIXTURE.replace(
+        r#""id": 304, "geometry": [{"lat": 50.40, "lon": 8.55}, {"lat": 50.20, "lon": 8.35}, {"lat": 50.00, "lon": 8.20}], "tags": {"power": "line", "voltage": "380000"}"#,
+        r#""id": 304, "geometry": [{"lat": 50.40, "lon": 8.55}, {"lat": 50.20, "lon": 8.35}, {"lat": 50.00, "lon": 8.20}], "tags": {"power": "line", "voltage": "380000;110000;110000", "circuits": "3"}"#,
+    );
+    assert_ne!(doc, FIXTURE);
+    let mut req = request(OsmIslands::Connect);
+    req.validation.run_dc_opf = false;
+    req.validation.run_ac_pf = false;
+    req.calibration.enabled = false;
+    let (module, report) = generate(req, common::places(), Some(doc)).unwrap();
+    let net = module.value();
+    let annotations = &report.elements.as_ref().unwrap().branches;
+    let mut kvs: Vec<f64> = net
+        .branches()
+        .iter()
+        .zip(annotations)
+        .filter(|(_, a)| a.osm_ids.contains(&304))
+        .map(|(row, _)| {
+            net.buses()
+                .iter()
+                .find(|b| b.id == row.from)
+                .unwrap()
+                .base_kv
+        })
+        .collect();
+    kvs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    assert_eq!(kvs, [380.0, 110.0, 110.0]);
+    assert!(common::check_circuit_annotations(net, &report) > 0);
 }

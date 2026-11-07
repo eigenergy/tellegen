@@ -1,5 +1,17 @@
 # @tellegen/svelte
 
+## 0.5.1
+
+### Patch Changes
+
+- [#313](https://github.com/eigenergy/tellegen/pull/313) [`803657c`](https://github.com/eigenergy/tellegen/commit/803657cec1ee1490fecd050aac17b94c2e341594) Thanks [@samtalki](https://github.com/samtalki)! - A source the host added to `TellegenMap`'s map counted as part of the basemap: if its tiles answered 401, 403 or 429, or kept failing to load, the map switched to the fallback basemap although the primary was fine, and the switch removed the host's own sources and layers. Now only the sources of the basemap style itself can trigger the switch, and a host source's errors are logged to the console. A real switch still replaces the whole style, so a host that adds sources and layers in `onMapReady` should add them on every `style.load`; the README shows how. `BasemapMapLike` gains an optional `getStyle`, which `attachBasemapFallback` reads to tell the basemap's sources from the host's.
+
+- [#316](https://github.com/eigenergy/tellegen/pull/316) [`827a71f`](https://github.com/eigenergy/tellegen/commit/827a71f0f86dcd0530ae2ba1325d62e27942298f) Thanks [@samtalki](https://github.com/samtalki)! - The map no longer draws a marker for a line tap in a grid made by tellegen-synth, such as one from MapToGrid. A tap is a point where a line is tapped, with no load or machine, and its line already shows it on the map. On a state-sized grid every tap used to get its own marker, so the markers overlapped and covered the network. Taps are read from the `kind` that tellegen-synth records on each bus row of the module, and other cases draw every bus as before. A tap is still a bus of the case: the bus picker finds it by number, a line's tooltip names it, and a selected tap gets its marker and the selection ring back. `LocalCase` gains `tapBuses`, the tap bus ids, and `markerBuses`, the buses the map draws as markers.
+
+- [#272](https://github.com/eigenergy/tellegen/pull/272) [`b02955a`](https://github.com/eigenergy/tellegen/commit/b02955aeec68aeef333c61910fb10483e81220f6) Thanks [@BurhanAbdullah](https://github.com/BurhanAbdullah)! - A branch route that crosses ±180 draws as one short path on the flat map and on the globe, instead of a line across the whole map. `TellegenMap` takes the short hop between consecutive route vertices in its route layers, and the selected-branch outline, the selected-bus marker and the framing of a selected branch follow a network across the seam. Stored and exported coordinates are unchanged: route longitudes stay in [-180, 180], so a host drawing routes in its own layers (`extraLayers`) takes the short hop itself.
+- Updated dependencies [[`7c8919e`](https://github.com/eigenergy/tellegen/commit/7c8919eb809868fdbeab6e6cb7513990c106087d), [`0b34030`](https://github.com/eigenergy/tellegen/commit/0b340305d141e62d16b64b195adbe857c2467d81), [`b6461f3`](https://github.com/eigenergy/tellegen/commit/b6461f3ed81dc8672fb39582583a211b02cbf453), [`a20d241`](https://github.com/eigenergy/tellegen/commit/a20d24165ed2c6e7260cbdfe075ca77588e92fb0)]:
+  - @tellegen/engine@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes

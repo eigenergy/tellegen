@@ -69,9 +69,10 @@ pub struct Tuning {
     pub pocket_feeders: f64,
     /// Farthest a pocket member may sit from its source along the level's
     /// Delaunay graph, km at 66 kV (scaled with the level's voltage); a
-    /// pocket reaching farther gets another source. Subtransmission voltage
-    /// drop grows with feeder length, so step-downs sit within a few tens of
-    /// kilometres of the loads they serve.
+    /// pocket reaching farther gets another source, and no tie between two
+    /// pockets is longer. Subtransmission voltage drop grows with feeder
+    /// length, so step-downs sit within a few tens of kilometres of the loads
+    /// they serve.
     pub pocket_reach_km: f64,
     /// Share of a hierarchical region's demand placed on the bus nearest each
     /// place; the rest follows the inverse-distance weights every bus gets.

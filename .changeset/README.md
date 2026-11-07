@@ -1,13 +1,14 @@
 # Changesets
 
-Pending release notes for `@tellegen/engine`, `@tellegen/svelte`, and
-`@tellegen/webmcp`. The `tellegen` crate releases separately through
+Pending release notes for `@tellegen/engine`, `@tellegen/svelte`,
+`@tellegen/webmcp` and `@tellegen/analytics`. The `tellegen` crate releases separately through
 release-plz (`release-plz.toml`).
 
 ## When you need one
 
-A pull request that changes `packages/engine`, `packages/svelte`, or
-`packages/webmcp` needs a changeset, or the change ships in no package release.
+A pull request that changes `packages/engine`, `packages/svelte`,
+`packages/webmcp` or `packages/analytics` needs a changeset, or the change
+ships in no package release.
 A pull request that changes only `apps/web`, `examples/`, or the crate does not
 need one.
 
