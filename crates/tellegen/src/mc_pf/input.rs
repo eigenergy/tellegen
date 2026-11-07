@@ -824,7 +824,12 @@ fn reject_lossy_diagnostics(module: &powerio::PioModule<PioValue>) -> Result<(),
         .iter()
         .filter(|diagnostic| {
             let code = diagnostic.code();
-            code.contains("UNSUPPORTED")
+            diagnostic.severity() == powerio::DiagnosticSeverity::Error
+                || matches!(
+                    code,
+                    "READ.DSS.INCLUDE_LOAD_FAILED" | "READ.DSS.INCLUDE_DEPTH_LIMIT"
+                )
+                || code.contains("UNSUPPORTED")
                 || code.contains("MALFORMED")
                 || code.contains("FIELD_DROPPED")
                 || code.contains("RECORD_DROPPED")
@@ -891,6 +896,25 @@ pub fn solve_mc_module_json(text: &str, options: &McPfOptions) -> Result<String,
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn incomplete_dss_module_is_never_a_runnable_snapshot() {
+        for code in [
+            &powerio_dist::diagnostics::codes::READ_DSS_INCLUDE_LOAD_FAILED,
+            &powerio_dist::diagnostics::codes::READ_DSS_INCLUDE_DEPTH_LIMIT,
+            &powerio_dist::diagnostics::codes::READ_DSS_GEOMETRY_UNRESOLVED,
+        ] {
+            let module = powerio::PioModule::new(PioValue::MulticonductorNetwork(
+                powerio_dist::MulticonductorNetwork::default(),
+            ))
+            .with_diagnostic(powerio::Diagnostic::of(code, "incomplete electrical model"))
+            .unwrap();
+            assert!(reject_lossy_diagnostics(&module).is_err());
+            assert!(validate_mc_module(&module).is_err());
+            let text = crate::ir::serialize_module(&module).unwrap();
+            assert!(solve_mc_module_json(&text, &McPfOptions::default()).is_err());
+        }
+    }
 
     #[test]
     fn rejects_unknown_load_model_before_powerio_fallback() {

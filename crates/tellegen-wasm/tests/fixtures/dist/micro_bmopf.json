@@ -15,6 +15,16 @@
       "latitude": 35.95
     }
   },
+  "linecode": {
+    "lc1": {
+      "R_series_1_1": 0.0005,
+      "R_series_2_2": 0.0005,
+      "R_series_3_3": 0.0005,
+      "X_series_1_1": 0.0002,
+      "X_series_2_2": 0.0002,
+      "X_series_3_3": 0.0002
+    }
+  },
   "line": {
     "l1": {
       "bus_from": "src",

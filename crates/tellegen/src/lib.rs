@@ -35,9 +35,30 @@ pub mod geo;
 #[cfg(feature = "sensitivity")]
 mod history;
 pub mod ir;
+#[cfg(feature = "mc-opf")]
+pub mod mc_opf;
 #[cfg(feature = "mc-pf")]
 pub mod mc_pf;
+#[cfg(feature = "mc-opf")]
+pub use mc_opf::{
+    mc_opf_initial_point_from_pf, solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable,
+    solve_mc_ac_opf_module_json, validate_mc_opf_input_diagnostics, McOpfActiveRank,
+    McOpfBranchEnd, McOpfBranchResult, McOpfCoilAxis, McOpfConstraintDual, McOpfConstraintId,
+    McOpfDeviceAxis, McOpfDeviceResult, McOpfDiagnostic, McOpfDualReport, McOpfEdit, McOpfError,
+    McOpfErrorKind, McOpfFlowQuantity, McOpfKktResiduals, McOpfLinearProfile,
+    McOpfLinearSolveDiagnostics, McOpfMarginalStatus, McOpfMarginalValue, McOpfOmittedConstraint,
+    McOpfOptions, McOpfOutputDerivative, McOpfOutputUnit, McOpfOutputWeight, McOpfParameter,
+    McOpfParameterDerivative, McOpfParameterDirection, McOpfParameterKind, McOpfParameterOwner,
+    McOpfParameterUnit, McOpfPortResult, McOpfProfile, McOpfRankDiagnostics, McOpfRankOutcome,
+    McOpfResiduals, McOpfResult, McOpfRowOmission, McOpfSensitivities, McOpfSensitivityDiagnostics,
+    McOpfSensitivityError, McOpfSensitivityErrorKind, McOpfSensitivityOutput, McOpfSession,
+    McOpfSessionResult, McOpfShuntResult, McOpfStage, McOpfStart, McOpfStartUsed, McOpfTerminalId,
+    McOpfTerminalVoltage, McOpfTransformerAxis, McOpfTransformerResult, McOpfViolation,
+    McOpfVoltagePart, MC_OPF_RESULT_EXTENSION,
+};
 mod model;
+#[cfg(feature = "acopf")]
+mod nlp;
 #[cfg(feature = "sensitivity")]
 pub mod objective;
 #[cfg(feature = "sensitivity")]
