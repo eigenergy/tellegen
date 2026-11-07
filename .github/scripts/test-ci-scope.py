@@ -68,7 +68,7 @@ CASES = {
         gates("docs"),
     ),
     "evidence data": (["docs/evidence/synth/README.md", "docs/evidence/synth/cats/runs.json"], gates()),
-    "evidence script": (["docs/evidence/synth/run.py"], gates("python")),
+    "evidence script": (["docs/evidence/synth/run.py"], gates()),
     "webmcp evidence harness": (["docs/evidence/webmcp/run.mjs"], gates("js")),
     "the wheel's test case": (["docs/evidence/studies/case3.m"], gates("python", "macos")),
     "python-only PR": (
@@ -90,8 +90,8 @@ CASES = {
     "deploy script": (["deploy/remote-deploy.sh"], gates("image")),
     "POUNCE notices": (["licenses/POUNCE-NOTICE.txt"], gates("js", "image")),
     "cargo-deny config": (["deny.toml"], gates("rust")),
-    "release script": ([".github/scripts/write-crate-changelog.py"], gates("python", "image")),
-    "PowerIO pin guard": ([".github/scripts/powerio-pin.py"], gates("rust", "python", "image")),
+    "release script": ([".github/scripts/write-crate-changelog.py"], gates("image")),
+    "PowerIO pin guard": ([".github/scripts/powerio-pin.py"], gates("rust", "image")),
     "npm audit script": ([".github/scripts/npm-audit.sh"], gates("js", "image")),
     "js setup action": ([".github/actions/js-setup/action.yml"], gates("js")),
     "rust gate workflow": ([".github/workflows/gates-rust.yml"], gates("rust")),
@@ -101,7 +101,7 @@ CASES = {
     "release workflow": ([".github/workflows/release-crate.yml"], gates()),
     "ci.yml": ([".github/workflows/ci.yml"], gates(*CI)),
     "the scope script": ([".github/scripts/ci-scope.py"], gates(*CI)),
-    "the scope test": ([".github/scripts/test-ci-scope.py"], gates("python", "image")),
+    "the scope test": ([".github/scripts/test-ci-scope.py"], gates("image")),
     "unknown path": (["tools/lint.sh"], gates("rust", "js", "image")),
     "unknown root file": ([".gitattributes"], gates("rust", "js", "image")),
 }

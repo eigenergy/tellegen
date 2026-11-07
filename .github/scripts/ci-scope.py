@@ -248,7 +248,9 @@ WHEEL = Rules(
 )
 
 # What the Python job lints, type-checks or tests without changing the wheel.
-PYTHON_LINT = Rules(False, run("**/*.py", "ruff.toml", "mypy.ini"))
+# ruff.toml's `include` keeps `ruff check .` to python/, and mypy and pytest read
+# only python/, so a .py file elsewhere (CI and evidence scripts) is not linted.
+PYTHON_LINT = Rules(False, run("python/**", "ruff.toml", "mypy.ini"))
 
 # Mirrors `on.pull_request.paths` in docs-pages.yml: what mdBook and
 # scripts/build-docs.sh read. Nothing under docs/src includes a file from
