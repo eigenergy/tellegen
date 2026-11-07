@@ -1,5 +1,6 @@
 //! Stateless settings and calculation HTTP adapters. No server-global preferences.
 use super::*;
+use axum::extract::FromRequest;
 use tellegen::settings::{
     CalculationRequest, CalculationResult, ResolvedSettings, SettingsRequest,
 };
@@ -25,29 +26,43 @@ impl Drop for CancelOnDrop {
     }
 }
 
-/// Largest accepted `/api/calculate` body; it carries a whole input module.
-pub(super) const CALCULATE_BODY_LIMIT: usize = 128 * 1024 * 1024;
+/// Largest accepted `/api/calculate` body; it carries a whole input module. The
+/// largest served module, Texas7k, is about 37 MB. `deploy/Caddyfile` caps the
+/// same path at the proxy.
+pub(super) const CALCULATE_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
+fn too_large(detail: impl std::fmt::Display) -> ApiError {
+    ApiError {
+        status: StatusCode::PAYLOAD_TOO_LARGE,
+        message: format!("calculation request rejected: {detail}"),
+    }
+}
+
+/// Run one stateless calculation under the same limits as the other solver
+/// endpoints, in this order:
+///
+/// 1. the per-client solve rate limit, before anything is read;
+/// 2. a declared `Content-Length` over [`CALCULATE_BODY_LIMIT`] is refused with
+///    413 before it can wait for, or hold, a solver permit;
+/// 3. one deadline, as in `run_solve_limited`, bounds the wait for a permit, the
+///    body read, the parse and the solve. Reading only once a permit is held
+///    bounds the buffered request bodies to one per permit.
 pub(super) async fn calculate(
     State(state): State<Arc<AppState>>,
     connect_info: ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    body: Request,
+    request: Request,
 ) -> ApiResult<Json<CalculationResult>> {
-    // Rate-limit before buffering: a rejected client never gets to make the
-    // server read and parse a body of up to CALCULATE_BODY_LIMIT bytes.
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Solve, &client)?;
-    let bytes = axum::body::to_bytes(body.into_body(), CALCULATE_BODY_LIMIT)
-        .await
-        .map_err(|e| ApiError {
-            status: StatusCode::PAYLOAD_TOO_LARGE,
-            message: format!("calculation request rejected: {e}"),
-        })?;
-    let request: CalculationRequest = serde_json::from_slice(&bytes)
-        .map_err(|e| ApiError::bad_request(format!("bad calculation request: {e}")))?;
-    drop(bytes);
-    tellegen::settings::resolve(&request.settings).map_err(ApiError::bad_request)?;
+    let declared = headers
+        .get(http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok()?.parse::<u64>().ok());
+    if declared.is_some_and(|length| length > CALCULATE_BODY_LIMIT as u64) {
+        return Err(too_large(format!(
+            "body exceeds {CALCULATE_BODY_LIMIT} bytes"
+        )));
+    }
     let cancel = Arc::new(AtomicBool::new(false));
     let _cancel = CancelOnDrop(cancel.clone());
     let timeout = state.solver_timeout;
@@ -58,14 +73,27 @@ pub(super) async fn calculate(
             .acquire_owned()
             .await
             .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
+        // The route's DefaultBodyLimit applies here, so an undeclared or
+        // understated body that runs over the limit is also a 413.
+        let bytes = axum::body::Bytes::from_request(request, &())
+            .await
+            .map_err(|rejection| match rejection.status() {
+                StatusCode::PAYLOAD_TOO_LARGE => too_large(rejection.body_text()),
+                _ => ApiError::bad_request(format!(
+                    "calculation request rejected: {}",
+                    rejection.body_text()
+                )),
+            })?;
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            tellegen::settings::calculate(&request, Some(cancel))
+            let request: CalculationRequest = serde_json::from_slice(&bytes)
+                .map_err(|e| ApiError::bad_request(format!("bad calculation request: {e}")))?;
+            drop(bytes);
+            tellegen::settings::calculate(&request, Some(cancel)).map_err(ApiError::bad_request)
         })
         .await
         .map_err(|e| ApiError::internal(format!("calculation task failed: {e}")))?
         .map(Json)
-        .map_err(ApiError::bad_request)
     })
     .await
     .map_err(|_| ApiError::service_unavailable("solve timed out"))?

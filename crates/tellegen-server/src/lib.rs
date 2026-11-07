@@ -2723,6 +2723,66 @@ mod tests {
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
     }
 
+    /// POST `body` to `/api/calculate`, optionally declaring a `Content-Length`.
+    async fn post_calculate(
+        state: Arc<AppState>,
+        body: Body,
+        declared_length: Option<u64>,
+    ) -> (StatusCode, serde_json::Value) {
+        let mut request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/calculate")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", next_client())
+            .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))));
+        if let Some(length) = declared_length {
+            request = request.header("content-length", length);
+        }
+        let response = router(state, None)
+            .oneshot(request.body(body).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn calculate_refuses_a_declared_oversized_body_before_waiting_for_a_permit() {
+        // Every permit is taken, so any request that waited for one would time out.
+        let mut state = AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true)
+            .unwrap()
+            .with_compute(true);
+        state.solver_permits = Arc::new(Semaphore::new(0));
+        state.solver_timeout = Duration::from_millis(50);
+        let state = Arc::new(state);
+        let (status, body) = post_calculate(
+            state.clone(),
+            Body::from("{}"),
+            Some(settings::CALCULATE_BODY_LIMIT as u64 + 1),
+        )
+        .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+        // A body within the limit is read only once a permit is held: on the
+        // saturated pool even a malformed one times out instead of being parsed.
+        let (status, body) = post_calculate(state, Body::from("not json"), None).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+        assert!(body["error"].as_str().unwrap().contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn calculate_refuses_an_undeclared_oversized_body() {
+        const CHUNK: usize = 1024 * 1024;
+        let chunks = settings::CALCULATE_BODY_LIMIT / CHUNK + 1;
+        let stream = tokio_stream::iter(
+            (0..chunks)
+                .map(|_| Ok::<_, std::io::Error>(axum::body::Bytes::from(vec![b' '; CHUNK]))),
+        );
+        let (status, body) =
+            post_calculate(fallback_state(), Body::from_stream(stream), None).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    }
+
     async fn post_settings(
         state: Arc<AppState>,
         path: &str,
