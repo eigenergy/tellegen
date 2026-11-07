@@ -134,7 +134,9 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        run: cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
+        run: >-
+          cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
+          --only-explicit-features --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
 
       # This is the build-executing half of crate publication. Verification
       # builds the packaged crate against crates.io and ignores [patch], so it
