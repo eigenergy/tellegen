@@ -125,21 +125,29 @@ variable after you make all of these:
    rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
-   its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Both release
+   its private key in the `release-bot` environment's
+   `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Restrict that environment to `main`.
+   Both release
    bots use it so their version pull requests start CI. Pull requests opened by
    `GITHUB_TOKEN` do not start workflows.
 
-The current `main` ruleset requires pull requests, merge commits, an up-to-date
-branch and CI checks; it blocks force pushes and deletion. It requires zero
+Keep deployment credentials in the main-only `demo` environment. No deployment
+or Release App credentials belong at repository scope; only the jobs bound to
+their environments receive them. The temporary migration workflow is removed
+after its environment-only aliases prove that all copied credentials match.
+
+The current `main` ruleset requires pull requests, merge commits and CI checks;
+it blocks force pushes and deletion. It does not require the branch to be
+up to date before merging. It requires zero
 approvals and does not require approval of the last push, so a sole maintainer
 can release after reviewing the final changes and checks. The version
 pull-request merge is the publication gate. If independent approval becomes
 required, set at least one approval and dismiss stale approvals or require
 approval of the last reviewable push. Do not give the Release App a ruleset bypass.
 
-If a package or crate does not yet exist at its registry, publish its first
-version manually before configuring the trusted publisher. Later releases use
-this pipeline end to end.
+For npm and crates.io, bootstrap a missing package before configuring its
+trusted publisher. PyPI supports a pending publisher that creates the project
+on the first OIDC upload; its setup is described below.
 
 Check all four npm publishers with `npm trust list @tellegen/<name>`. A package
 previously published by hand still needs its own publisher; configuring the
