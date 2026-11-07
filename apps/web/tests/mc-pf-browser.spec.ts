@@ -19,6 +19,7 @@ test('real browser worker solves raw and typed multiconductor PF', async ({ page
 		)
 		.toMatchObject({ invalid_rejected: true });
 	const result = JSON.parse(await page.locator('#result').innerText()) as {
+		common_settings_match: boolean;
 		default_settings: {
 			converged: boolean;
 			actual: Record<string, number | boolean> | null;
@@ -37,6 +38,7 @@ test('real browser worker solves raw and typed multiconductor PF', async ({ page
 		error?: string;
 	};
 	expect(result.error).toBeUndefined();
+	expect(result.common_settings_match).toBe(true);
 	expect(result.default_settings.converged).toBe(true);
 	expect(result.default_settings.actual).toEqual(result.default_settings.expected);
 	expect(result.raw.converged).toBe(true);

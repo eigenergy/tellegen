@@ -129,7 +129,7 @@
           "type": "integer"
         },
         "circuits": {
-          "description": "Parallel circuits in this branch's corridor, this branch included;\nevery branch of a corridor carries the same count. It is the corridor\nplan's count for a synthetic corridor and for the transformers and\nconnections OpenStreetMap mode adds, and the summed `circuits` tags\n(else `cables / 3`) of the joined ways for a mapped OpenStreetMap\ncorridor. An HVDC link is one row for all of its circuits.",
+          "description": "Parallel circuits in this branch's corridor, this branch included;\nevery branch of a corridor carries the same count. It is the corridor\nplan's count, including any synthetic reinforcement. In OpenStreetMap\nmode the mapped circuits keep source `osm`, added parallels have source\n`synthetic`, and `osm_ids` identifies the route for both. With\n`osm.reinforce=false`, counts are the summed `circuits` tags (else\n`cables / 3`) of the joined ways. An HVDC link is one row for all circuits.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -977,7 +977,7 @@
       "type": "object"
     },
     "Density": {
-      "description": "Bus count per unit area when `target_bus_count` is not given.",
+      "description": "How many buses a region gets when `target_bus_count` is not given: per\nunit area in a transmission-only grid, per megawatt of peak load in a\nhierarchical one.",
       "enum": [
         "low",
         "medium",
@@ -1404,6 +1404,20 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "max_osm_document_bytes": {
+          "default": 268435456,
+          "description": "Maximum raw Overpass response size, in bytes.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_osm_elements": {
+          "default": 1000000,
+          "description": "Maximum Overpass elements accepted before topology construction.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -1501,6 +1515,11 @@
           "format": "double",
           "type": "number"
         },
+        "reinforce": {
+          "default": true,
+          "description": "Add explicitly synthetic parallel circuits and voltage support to the\nmapped topology when its modelled peak demand needs them. False keeps\nthe mapped circuit counts; validation may then report infeasibility.",
+          "type": "boolean"
+        },
         "snap_km": {
           "default": 2.0,
           "description": "A line end within this distance of a site snaps to it.",
@@ -1544,6 +1563,13 @@
         "generator": {
           "type": "string"
         },
+        "licence": {
+          "description": "The SPDX identifier of the licence `copyright` names, when it is one\ntellegen recognizes (`ODbL-1.0`). The notice itself stays in `copyright`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "timestamp_osm_base": {
           "type": [
             "string",
@@ -1572,7 +1598,7 @@
           "type": "string"
         },
         "source": {
-          "description": "The dataset the table was derived from (the bundled table names\nNatural Earth's release); absent for a bare array of rows.",
+          "description": "The dataset the table was derived from (the bundled table names\nGeoNames' `cities5000` dump and its licence); absent for a bare array\nof rows.",
           "type": [
             "string",
             "null"
@@ -2142,7 +2168,7 @@
           "type": "number"
         },
         "promotion_levels_kv": {
-          "description": "Higher AC levels the corridor plan may raise buses to, kV, highest\nfirst: the country's levels in service above its ladder, or 765 kV\nabove stated levels. Empty when there is none, as in most of Europe.",
+          "description": "Higher AC levels the corridor plan may raise buses to, kV, highest\nfirst: those in service in the region above the levels modelled, from\nits own ladder, whether the levels are its own or stated. Empty when\nthere is none, as in most of Europe and in California.",
           "items": {
             "format": "double",
             "type": "number"
@@ -2513,7 +2539,9 @@
           "default": {
             "max_area_km2": 40000000.0,
             "max_branch_factor": 4.0,
-            "max_bus_count": 12000
+            "max_bus_count": 12000,
+            "max_osm_document_bytes": 268435456,
+            "max_osm_elements": 1000000
           }
         },
         "osm": {
@@ -2554,7 +2582,7 @@
         },
         "target_bus_count": {
           "default": null,
-          "description": "Exact bus count; otherwise `density` × area decides.",
+          "description": "Exact bus count. Otherwise a hierarchical region (levels down to\nsubtransmission in a subdivision with its own ladder) takes one bus\nper 10 MW of peak load at high density, 15 at medium and about 28 at\nlow; any other region takes `density` × area, kept between 30 and\n150 MW of peak load per bus.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -2578,7 +2606,7 @@
           }
         },
         "voltage_levels_kv": {
-          "description": "Nominal voltage levels, kV, highest first after resolution. Each level\nkeeps its own kV for the per-unit base and takes the per-km parameters\nof the nearest line class. Empty (the default) takes the national\nladder of the region's dominant country by demand\n([`crate::voltage::VoltageLadders`]); a stated list is used as given,\nand the corridor plan may then add 765 kV above it.",
+          "description": "Nominal voltage levels, kV, highest first after resolution. Each level\nkeeps its own kV for the per-unit base and takes the per-km parameters\nof the nearest line class. Empty (the default) takes the region's own\nladder: its dominant subdivision's where that has one, else the\nnational ladder of its dominant country by demand\n([`crate::voltage::VoltageLadders`]). A stated list is used as given.\nEither way the corridor plan may add only a higher level in service in\nthe region, from its own ladder (765 kV in the United States outside\nCalifornia, none in most of Europe), and stated levels that reach\nsubtransmission in a region with a subdivision ladder keep the\nhierarchical design.",
           "items": {
             "format": "double",
             "type": "number"
@@ -2897,5 +2925,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "0b491a48f4b8c8e79b43c27e2b23d2028d524e37bb32398d9b2c8a173cb3aac9"
+  "x-rust-source-sha256": "b232679d06323e7f164cf9baebebad1717b4b36c0077e28abc656081299ca102"
 }

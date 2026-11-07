@@ -256,6 +256,10 @@ export interface BasemapMapLike {
 	setStyle(style: BasemapStyle, options?: { diff?: boolean }): unknown;
 	/** MapLibre types this `boolean | void`; only `true` counts as loaded. */
 	isStyleLoaded(): boolean | void;
+	/** Read at every `style.load` to learn which sources the basemap style
+	 * brings, before a host adds its own. Without it, every source counts as
+	 * the basemap's. */
+	getStyle?(): StyleSpecification | undefined;
 }
 
 export interface BasemapFallbackHandlers {
@@ -311,6 +315,12 @@ function errorStatus(error: unknown): number | undefined {
  * 5. everything else is logged the way MapLibre logs an unhandled error,
  *    because registering this listener silences that default.
  *
+ * Rules 2 and 3 only count errors from the basemap style's own sources: the
+ * sources `map.getStyle()` lists when that style's `style.load` reaches this
+ * listener, so attach it before any listener that adds sources. A source the
+ * host adds later, through `onMapReady` for instance, falls under rule 5 and
+ * never switches the basemap.
+ *
  * After the switch the same rules report `onFailure` instead of switching
  * again, as they do when `spec.fallback` is `null`. Returns a detach
  * function. */
@@ -323,7 +333,14 @@ export function attachBasemapFallback(
 	const now = options.now ?? (() => Date.now());
 	const primaryProvider = spec.primaryProvider ?? 'custom';
 	const fallbackProvider = spec.fallback === null ? null : (spec.fallbackProvider ?? 'custom');
+	/** The source ids of the style on screen, or `null` while unknown, when
+	 * every source counts as the basemap's. */
+	const styleSources = (): Set<string> | null => {
+		const style = map.getStyle?.();
+		return style ? new Set(Object.keys(style.sources ?? {})) : null;
+	};
 	let styleLoaded = map.isStyleLoaded() === true;
+	let basemapSources = styleLoaded ? styleSources() : null;
 	let fellBack = false;
 	let failed = false;
 	let tileFailures = 0;
@@ -343,6 +360,7 @@ export function attachBasemapFallback(
 		}
 		fellBack = true;
 		styleLoaded = false;
+		basemapSources = null;
 		tileFailures = 0;
 		tileArrived = false;
 		handlers.onFallback?.({ ...reason, from: primaryProvider, to: fallbackProvider });
@@ -354,6 +372,7 @@ export function attachBasemapFallback(
 
 	const onStyleLoad = () => {
 		styleLoaded = true;
+		basemapSources = styleSources();
 	};
 	const onSourceData = (event: BasemapMapEvent) => {
 		if (event?.tile || event?.isSourceLoaded === true) tileArrived = true;
@@ -371,6 +390,11 @@ export function attachBasemapFallback(
 				fallBack({ kind: 'style-load', message, status });
 				return;
 			}
+			passThrough(event);
+			return;
+		}
+		// A host's own source failing says nothing about the basemap.
+		if (basemapSources !== null && !basemapSources.has(sourceId)) {
 			passThrough(event);
 			return;
 		}

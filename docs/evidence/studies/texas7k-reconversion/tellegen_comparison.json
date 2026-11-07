@@ -1,0 +1,143 @@
+{
+  "network_scope": {
+    "excluded_island_count": 2,
+    "excluded_bus_count": 5,
+    "excluded_equipment_count": 3,
+    "excluded_load_count": 0
+  },
+  "excluded_islands": [
+    {
+      "buses": [
+        "p1udt1373-p1udt3224x",
+        "p1udt1373-p1udt3224xx"
+      ],
+      "equipment": [
+        {
+          "kind": "line",
+          "name": "l(r:p1udt1373-p1udt3224)"
+        }
+      ]
+    },
+    {
+      "buses": [
+        "p1udt4106-p1umv2x",
+        "p1udt4106-p1umv2xx",
+        "p1udt4106-p1umv2xxx"
+      ],
+      "equipment": [
+        {
+          "kind": "line",
+          "name": "l(r:p1udt4106-p1umv2)_s0"
+        },
+        {
+          "kind": "line",
+          "name": "l(r:p1udt4106-p1umv2)_s1"
+        }
+      ]
+    }
+  ],
+  "converged": true,
+  "load_model": {
+    "status": "original",
+    "modified_branch_count": 0,
+    "original_kcl_residual": 5.304813385009766e-06,
+    "original_scaled_kcl_residual": 0.14570897621962436,
+    "options": {
+      "tolerance": 1e-07,
+      "max_iterations": 500,
+      "damping": 1.0,
+      "zero_voltage_tolerance": 1e-09,
+      "absolute_kcl_tolerance": 1e-05,
+      "relative_kcl_tolerance": 1e-05,
+      "voltage_envelope": false,
+      "v_low_pu": 0.5,
+      "v_min_pu": 0.85,
+      "v_max_pu": 1.15
+    }
+  },
+  "load_model_changes": [],
+  "voltage_valid": true,
+  "min_voltage_pu": 0.851977445181814,
+  "max_voltage_pu": 1.0407934752865196,
+  "voltage_violations": [],
+  "iterations": 23,
+  "factorization_count": 1,
+  "matrix_dimension": 40685,
+  "matrix_nonzeros": 227579,
+  "voltage_change": 6.237604150018879e-08,
+  "physical_kcl_residual": 5.304813385009766e-06,
+  "scaled_kcl_residual": 0.14570897621962436,
+  "compared_nodes": 38203,
+  "missing_nodes": [],
+  "worst_10": [
+    {
+      "node": "p1ulv7356.1",
+      "voltage_difference_v": 0.0002289959840170071,
+      "voltage_difference_pu": 2.2369021452857467e-06
+    },
+    {
+      "node": "p1ulv7356.2",
+      "voltage_difference_v": 0.00022793990636653532,
+      "voltage_difference_pu": 2.2265860588614834e-06
+    },
+    {
+      "node": "p1udm936.1",
+      "voltage_difference_v": 0.00022720672551936654,
+      "voltage_difference_pu": 2.2025479071005122e-06
+    },
+    {
+      "node": "p1udm936.2",
+      "voltage_difference_v": 0.00022619880831199226,
+      "voltage_difference_pu": 2.1927771314751064e-06
+    },
+    {
+      "node": "p1ulv9430.1",
+      "voltage_difference_v": 0.0002537695499782907,
+      "voltage_difference_pu": 2.1781317513000276e-06
+    },
+    {
+      "node": "p1ulv9430.2",
+      "voltage_difference_v": 0.0002527396224720928,
+      "voltage_difference_pu": 2.1692917710778974e-06
+    },
+    {
+      "node": "p1ulv10469.2",
+      "voltage_difference_v": 0.0005920285832641824,
+      "voltage_difference_pu": 2.152612754412891e-06
+    },
+    {
+      "node": "p1ulv6779.2",
+      "voltage_difference_v": 0.0005903183391985466,
+      "voltage_difference_pu": 2.1501351967392507e-06
+    },
+    {
+      "node": "p1udm8610.1",
+      "voltage_difference_v": 0.00025208673833287807,
+      "voltage_difference_pu": 2.147972487431426e-06
+    },
+    {
+      "node": "p1udm10611.2",
+      "voltage_difference_v": 0.0005896140098498773,
+      "voltage_difference_pu": 2.145826478341555e-06
+    }
+  ],
+  "excluded_reference_node_count": 15,
+  "excluded_reference_nodes": [
+    "p1udt1373-p1udt3224x.1",
+    "p1udt1373-p1udt3224x.2",
+    "p1udt1373-p1udt3224x.3",
+    "p1udt1373-p1udt3224xx.1",
+    "p1udt1373-p1udt3224xx.2",
+    "p1udt1373-p1udt3224xx.3",
+    "p1udt4106-p1umv2x.1",
+    "p1udt4106-p1umv2x.2",
+    "p1udt4106-p1umv2x.3",
+    "p1udt4106-p1umv2xx.1",
+    "p1udt4106-p1umv2xx.2",
+    "p1udt4106-p1umv2xx.3",
+    "p1udt4106-p1umv2xxx.1",
+    "p1udt4106-p1umv2xxx.2",
+    "p1udt4106-p1umv2xxx.3"
+  ],
+  "excluded_reference_voltages_exactly_zero": true
+}

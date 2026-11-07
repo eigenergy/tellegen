@@ -1,0 +1,70 @@
+{
+  "stages": [
+    {
+      "stage": "original_pretty",
+      "bytes": 44911506,
+      "gzip_bytes": 2067499,
+      "sha256": "e57d44bf318bdd7a83894b699f0bc6ab3c72dd5721045aceb36a741a2c52e409"
+    },
+    {
+      "stage": "minified_only",
+      "bytes": 29234173,
+      "gzip_bytes": 1932719,
+      "sha256": "5a2258e5fb0ab0e28d3f1f64306aa64934db25a23ee49fb75c9a3f9761078757"
+    },
+    {
+      "stage": "single_copy_of_coordinates",
+      "bytes": 25806760,
+      "gzip_bytes": 1470291,
+      "sha256": "303786d730bf9e27831b4b954dd4f6648243b6242599e68b2b33f114efd68237"
+    },
+    {
+      "stage": "unused_linecodes_removed",
+      "bytes": 25806760,
+      "gzip_bytes": 1470291,
+      "sha256": "303786d730bf9e27831b4b954dd4f6648243b6242599e68b2b33f114efd68237"
+    },
+    {
+      "stage": "linecode_source_labels_externalized",
+      "bytes": 24612149,
+      "gzip_bytes": 1389992,
+      "sha256": "26b7ea9da42f8b7547aa094fa3893b717eba1ee6a3d3b068168e83d449b0a338"
+    },
+    {
+      "stage": "identical_linecodes_shared",
+      "bytes": 14075069,
+      "gzip_bytes": 1101815,
+      "sha256": "d8526805cfa58ba85a0d3b17ca19b320d4ca607b9814d5b656bb4e251eb3b022"
+    },
+    {
+      "stage": "default_constant_power_labels_omitted",
+      "bytes": 13692594,
+      "gzip_bytes": 1096296,
+      "sha256": "3da1da20f4ff60f0ca43b3ab7a3e4760b503cabdd61fa380419f636ec8793825"
+    },
+    {
+      "stage": "final_with_reduction_provenance",
+      "bytes": 13693080,
+      "gzip_bytes": 1096525,
+      "sha256": "ab94d4741fa2ef70fe16010e301d2f46b72ce7ba74186c424574cd435682029c"
+    }
+  ],
+  "counts": {
+    "buses": 22076,
+    "lines": 16819,
+    "loads": 15299,
+    "transformers": 7756,
+    "linecodes_original": 16819,
+    "linecodes_unused": 0,
+    "linecodes_used_unique": 1510,
+    "duplicate_point_features_removed": 22076,
+    "default_load_models_omitted": 15299,
+    "derived_location_associations_in_sidecar": 2483
+  },
+  "electrical_tables_and_expanded_linecodes_equal_after_restoring_default_load_model": true,
+  "all_bus_coordinates_equal": true,
+  "numeric_rounding": false,
+  "source_unchanged": true,
+  "linecode_source_labels_in_sidecar": 16819,
+  "linecode_source_labels_restored_for_comparison": true
+}

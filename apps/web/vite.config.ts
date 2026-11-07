@@ -75,7 +75,7 @@ export default defineConfig({
 					'form-action': ['self'],
 					// The engine is wasm, which needs `wasm-unsafe-eval`. That allows
 					// wasm compilation only. Never widen it to `unsafe-eval`.
-					'script-src': ['self', 'wasm-unsafe-eval', 'https://cloud.umami.is'],
+					'script-src': ['self', 'wasm-unsafe-eval'],
 					// Svelte and maplibre both write inline style attributes.
 					'style-src': ['self', 'unsafe-inline'],
 					// Basemap: CARTO leads when the build has PUBLIC_CARTO_BASEMAP_KEY and
@@ -93,6 +93,8 @@ export default defineConfig({
 						'self',
 						'https://tiles.openfreemap.org',
 						'https://*.cartocdn.com',
+						// Usage counts go straight to Umami Cloud's collection address from this
+						// site's own code (@tellegen/analytics); no script loads from a third party.
 						'https://gateway.umami.is'
 					],
 					// The engine worker and maplibre's workers load from blob URLs.

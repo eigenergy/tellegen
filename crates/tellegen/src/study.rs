@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::api::{
     ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
     validate_canonical_edits, Edits, ElementKey, LinearConstraint, PowerFlowStart, Problem,
-    SensRequest, SolveRequest, SolveResponse,
+    SensRequest, SolveDiagnostic, SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -380,6 +380,10 @@ pub struct Study {
     /// Caller-supplied linear constraints enforced at every solve (DC OPF only).
     /// They are analysis settings, not network data: no saved module carries them.
     constraints: Vec<LinearConstraint>,
+    calculation_options: crate::settings::Options,
+    /// Findings about the Study's own setup, such as saved settings it could not
+    /// apply. Every solve response repeats them after the network's diagnostics.
+    notices: Vec<SolveDiagnostic>,
     /// The committed solved state, the sole formulation coupling.
     solved: Box<dyn SolvedState>,
     last: SolveResponse,
@@ -390,7 +394,59 @@ impl Study {
     /// instance. Bare model JSON is not a Study input.
     pub fn new(module_json: &str, formulation: Problem) -> Result<Self, String> {
         let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
-        Self::from_dynamic_module(module, formulation)
+        let mut notes = Vec::new();
+        let mut options = crate::settings::Options::new();
+        if let Some(record) = module.extensions().get(crate::settings::record::EXTENSION) {
+            let recorded = crate::settings::record::read(record);
+            notes = recorded.notes;
+            let requested = crate::settings::Calculation::from(formulation);
+            match recorded.settings {
+                Some(request) if request.calculation == requested => {
+                    options = crate::settings::resolve(&request)?.effective;
+                }
+                // Settings chosen for another calculation say nothing about this one.
+                Some(request) => notes.push(format!(
+                    "saved calculation settings are for {}, not {requested}; engine defaults are in use",
+                    request.calculation
+                )),
+                None => {}
+            }
+        }
+        let mut study = Self::from_dynamic_module(module, formulation, options)?;
+        study.notices = notes
+            .into_iter()
+            .map(|message| SolveDiagnostic {
+                code: crate::settings::record::SETTINGS_IGNORED.into(),
+                message,
+                buses: Vec::new(),
+            })
+            .collect();
+        study.last.diagnostics.extend(study.notices.iter().cloned());
+        Ok(study)
+    }
+
+    /// Start a retained interactive solve with the common calculation settings.
+    pub fn new_with_settings(
+        module_json: &str,
+        request: &crate::settings::SettingsRequest,
+    ) -> Result<Self, String> {
+        let resolved = crate::settings::resolve(request)?;
+        let formulation = resolved.calculation.problem().ok_or_else(|| {
+            format!(
+                "a Study runs a balanced formulation, not {}",
+                resolved.calculation
+            )
+        })?;
+        Self::from_dynamic_module(
+            crate::ir::deserialize_module(module_json)?,
+            formulation,
+            resolved.effective,
+        )
+    }
+
+    /// Effective non-default options used by every commit and sensitivity solve.
+    pub fn calculation_options(&self) -> &crate::settings::Options {
+        &self.calculation_options
     }
 
     /// Build a retained module from a network for crate tests. Public callers
@@ -400,7 +456,7 @@ impl Study {
         let producer = powerio::Producer::new("tellegen", env!("CARGO_PKG_VERSION"))
             .map_err(|e| e.to_string())?;
         let module = PioModule::new(PioValue::BalancedNetwork(net.clone())).with_producer(producer);
-        Self::from_dynamic_module(module, formulation)
+        Self::from_dynamic_module(module, formulation, crate::settings::Options::new())
     }
 
     /// Build from a typed PowerIO module, retaining all module records as the
@@ -412,12 +468,19 @@ impl Study {
         let net = module.value().clone();
         let dynamic = module.map_value(PioValue::BalancedNetwork);
         let module_json = crate::ir::serialize_module(&dynamic).map_err(|e| e.to_string())?;
-        Self::from_network_and_module(&net, StudyInput::BalancedNetwork, formulation, module_json)
+        Self::from_network_and_module(
+            &net,
+            StudyInput::BalancedNetwork,
+            formulation,
+            module_json,
+            crate::settings::Options::new(),
+        )
     }
 
     fn from_dynamic_module(
         module: PioModule<PioValue>,
         formulation: Problem,
+        calculation_options: crate::settings::Options,
     ) -> Result<Self, String> {
         let module_json = crate::ir::serialize_module(&module).map_err(|e| e.to_string())?;
         match module.into_value() {
@@ -426,6 +489,7 @@ impl Study {
                 StudyInput::BalancedNetwork,
                 formulation,
                 module_json,
+                calculation_options,
             ),
             PioValue::DcOpfInstance(instance) => {
                 let net = instance.network().clone();
@@ -434,6 +498,7 @@ impl Study {
                     StudyInput::DcOpf(instance),
                     formulation,
                     module_json,
+                    calculation_options,
                 )
             }
             PioValue::AcPfInstance(instance) => {
@@ -443,6 +508,7 @@ impl Study {
                     StudyInput::AcPf(instance),
                     formulation,
                     module_json,
+                    calculation_options,
                 )
             }
             #[cfg(feature = "conic")]
@@ -453,6 +519,7 @@ impl Study {
                     StudyInput::AcOpf(instance),
                     formulation,
                     module_json,
+                    calculation_options,
                 )
             }
             other => Err(format!(
@@ -467,16 +534,18 @@ impl Study {
         input: StudyInput,
         formulation: Problem,
         base_module_json: String,
+        calculation_options: crate::settings::Options,
     ) -> Result<Self, String> {
         // A base study must be safe before the first edit. Otherwise an empty
         // study could solve successfully and only discover ambiguous uid lookup
         // when its first preview, commit, save, or export is attempted.
         validate_canonical_edits(net, &Edits::default())?;
-        let req = SolveRequest {
+        let mut req = SolveRequest {
             formulation,
             edits: Edits::default(),
             ..Default::default()
         };
+        apply_calculation_options(&mut req, &calculation_options)?;
         let solved = solve_state(&input, net, &req)?;
         let last = solved.assemble(&req)?;
         Ok(Study {
@@ -487,6 +556,8 @@ impl Study {
             log: Vec::new(),
             commit_bounds: Vec::new(),
             constraints: Vec::new(),
+            calculation_options,
+            notices: Vec::new(),
             solved,
             last,
         })
@@ -657,6 +728,8 @@ impl Study {
             log: self.log.clone(),
             commit_bounds: self.commit_bounds.clone(),
             constraints: self.constraints.clone(),
+            calculation_options: self.calculation_options.clone(),
+            notices: self.notices.clone(),
             solved: self.solved.clone_box(),
             last: self.last.clone(),
         }
@@ -946,7 +1019,7 @@ impl Study {
         log: &[NetworkEdit],
         sensitivities: &[SensRequest],
     ) -> Result<(Box<dyn SolvedState>, SolveResponse), String> {
-        let req = SolveRequest {
+        let mut req = SolveRequest {
             formulation: self.formulation,
             edits: fold(log),
             start: PowerFlowStart::Flat,
@@ -954,10 +1027,12 @@ impl Study {
             limits: None,
             sensitivities: sensitivities.to_vec(),
         };
+        apply_calculation_options(&mut req, &self.calculation_options)?;
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the
         // response — including the requested sensitivity cells — from the committed state.
         let solved = solve_state(&self.input, &self.base, &req)?;
-        let resp = solved.assemble(&req)?;
+        let mut resp = solved.assemble(&req)?;
+        resp.diagnostics.extend(self.notices.iter().cloned());
         Ok((solved, resp))
     }
 
@@ -1149,7 +1224,7 @@ impl Study {
 
     pub(crate) fn materialized_instance(&self) -> Result<PioValue, String> {
         let network = self.materialized_network()?;
-        match &self.input {
+        let value = match &self.input {
             StudyInput::BalancedNetwork => match self.formulation {
                 Problem::DcOpf => DcOpfInstance::from_network(network).map(PioValue::DcOpfInstance),
                 Problem::AcPf => AcPfInstance::from_network(network).map(PioValue::AcPfInstance),
@@ -1203,7 +1278,43 @@ impl Study {
                 .with_network(network)
                 .map(PioValue::AcOpfInstance),
         }
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        match value {
+            PioValue::DcOpfInstance(instance) => self
+                .configured_dc_instance(instance)
+                .map(PioValue::DcOpfInstance),
+            other => Ok(other),
+        }
+    }
+
+    fn configured_dc_instance(&self, instance: DcOpfInstance) -> Result<DcOpfInstance, String> {
+        if self.calculation_options.is_empty() {
+            return Ok(instance);
+        }
+        let limits: crate::LimitOptions =
+            serde_json::from_value(serde_json::Value::Object(self.calculation_options.clone()))
+                .map_err(|e| e.to_string())?;
+        let mut model = DcNetwork::from_instance(&instance)?;
+        let enforceable = crate::api::apply_limit_options(&mut model, &limits)?;
+        let mut constraints = instance.constraints().clone();
+        if !limits.angle_difference {
+            constraints.angle_bounds = powerio_prob::ConstraintSelection::None;
+        }
+        if !matches!(limits.thermal, crate::ThermalLimits::All) {
+            constraints.thermal_limits = powerio_prob::ConstraintSelection::Only(
+                enforceable
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, active)| **active)
+                    .map(|(i, _)| {
+                        model.branch_uids[i]
+                            .clone()
+                            .unwrap_or_else(|| format!("branches:{}", model.branch_ids[i] - 1))
+                    })
+                    .collect(),
+            );
+        }
+        Ok(instance.with_constraints(constraints))
     }
 
     /// Serialize the exact solution without embedding application Study semantics.
@@ -1248,10 +1359,26 @@ impl Study {
         crate::ir::serialize_module(&self.electrical_module(value)?)
     }
 
+    /// Record the settings this Study was given, as the overrides of its
+    /// calculation's engine defaults. A Study given no settings records none, so a
+    /// legacy input does not acquire invented provenance.
+    fn record_settings(&self, module: &mut PioModule<PioValue>) -> Result<(), String> {
+        if self.calculation_options.is_empty() {
+            return Ok(());
+        }
+        let record =
+            crate::settings::record::write(self.formulation.into(), &self.calculation_options)?;
+        module
+            .insert_extension(crate::settings::record::EXTENSION, record)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
     fn electrical_module(&self, value: PioValue) -> Result<PioModule<PioValue>, String> {
         let source = crate::ir::deserialize_module(&self.base_module_json)?;
         let mut module = source.map_value(|_| value).sever_source();
         module.sever_value_targets();
+        self.record_settings(&mut module)?;
         Ok(module)
     }
 
@@ -1262,20 +1389,8 @@ impl Study {
         let Some((model, solution)) = self.solved.dc_exact() else {
             return self.save_exact_module();
         };
-        let network = self.materialized_network()?;
-        let instance = match &self.input {
-            StudyInput::BalancedNetwork => {
-                DcOpfInstance::from_network(network).map_err(|e| e.to_string())?
-            }
-            StudyInput::DcOpf(instance) => instance
-                .clone()
-                .with_network(network)
-                .map_err(|e| e.to_string())?,
-            _ => {
-                return Err(
-                    "the retained PowerIO input is not a DC OPF problem instance".to_owned(),
-                );
-            }
+        let PioValue::DcOpfInstance(instance) = self.materialized_instance()? else {
+            return Err("missing DC instance".into());
         };
         let exact = crate::emit::emit_dc_opf_solution(
             std::sync::Arc::new(instance),
@@ -1292,6 +1407,7 @@ impl Study {
             crate::ir::deserialize_module(&self.base_module_json).map_err(|e| e.to_string())?;
         let mut module = source_module.map_value(|_| value).sever_source();
         module.sever_value_targets();
+        self.record_settings(&mut module)?;
         let mut used_ids: std::collections::BTreeSet<String> = module
             .history()
             .iter()
@@ -1730,6 +1846,33 @@ fn operand_unit(ratio: &str) -> String {
         .and_then(|inner| inner.strip_suffix(')'))
         .unwrap_or(s)
         .to_string()
+}
+
+fn apply_calculation_options(
+    req: &mut SolveRequest,
+    options: &crate::settings::Options,
+) -> Result<(), String> {
+    if options.is_empty() {
+        return Ok(());
+    }
+    let resolved = crate::settings::resolve(
+        &crate::settings::SettingsRequest::new(req.formulation.into())
+            .with_overrides(options.clone()),
+    )?;
+    match req.formulation {
+        Problem::DcOpf => {
+            req.limits = Some(
+                serde_json::from_value(serde_json::Value::Object(resolved.effective))
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        Problem::AcPf => {
+            req.start = serde_json::from_value(resolved.effective["start"].clone())
+                .map_err(|e| e.to_string())?
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[cfg(test)]

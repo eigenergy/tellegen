@@ -27,7 +27,7 @@ export interface SelectCaseInput {
 export interface SolveMulticonductorInput {
   caseId: string;
   expectedRevision: string;
-  maxIterations: number;
+  maxIterations?: number;
 }
 
 export interface TellegenCaseAdapter {
@@ -184,6 +184,10 @@ export interface TellegenStudyAdapter {
 }
 
 export interface TellegenWebMcpAdapter {
+  settings?(
+    input: SettingsInput,
+    signal: AbortSignal,
+  ): MaybePromise<ToolPayload>;
   /** Case discovery and display selection, when supported by the host. */
   cases?: TellegenCaseAdapter;
   solveMulticonductorPowerFlow?(
@@ -291,4 +295,15 @@ export class TellegenToolError extends Error {
     this.name = "TellegenToolError";
     this.code = code;
   }
+}
+
+export interface SettingsInput {
+  action: "inspect" | "update" | "reset" | "run";
+  scope: "calculation" | "display";
+  caseId?: string;
+  expectedRevision?: string;
+  settingsRevision?: number;
+  calculation?: string;
+  field?: string;
+  patch?: Record<string, unknown>;
 }

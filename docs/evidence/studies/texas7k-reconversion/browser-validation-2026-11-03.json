@@ -1,0 +1,58 @@
+{
+  "browser_rss_max_at_checkpoints_bytes": 3926835200,
+  "memory_samples": [
+    {
+      "phase": "before_load",
+      "rss_bytes": 257212416
+    },
+    {
+      "phase": "loaded",
+      "rss_bytes": 1317814272
+    },
+    {
+      "phase": "solved",
+      "rss_bytes": 1472331776
+    },
+    {
+      "phase": "exported",
+      "rss_bytes": 2632597504
+    },
+    {
+      "phase": "reopened_and_resolved",
+      "rss_bytes": 3307732992
+    },
+    {
+      "phase": "edited",
+      "rss_bytes": 3926835200
+    }
+  ],
+  "browser": "156.0.8078.4",
+  "memory_note": "Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.",
+  "main_thread_long_task_count": 25,
+  "main_thread_longest_task_ms": 2284,
+  "load_ms": 7635,
+  "ui_solve_ms": 1807,
+  "edit_ms": 1051,
+  "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "transfer": [
+    {
+      "url": "/api/cases",
+      "encoded_bytes": 706,
+      "decoded_bytes": 706,
+      "duration_ms": 1
+    },
+    {
+      "url": "/api/cases/texas7k-p1uhs0_1247/case",
+      "encoded_bytes": 0,
+      "decoded_bytes": 0,
+      "duration_ms": 127.2999999821186
+    },
+    {
+      "url": "/api/cases/texas7k-p1uhs0_1247/case",
+      "encoded_bytes": 1369080,
+      "decoded_bytes": 36692131,
+      "duration_ms": 2359.9000000059605
+    }
+  ],
+  "note": "Single local Chromium run; loopback network, warm server, includes UI scheduling. Not a device support guarantee."
+}

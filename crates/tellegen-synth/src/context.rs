@@ -31,15 +31,21 @@ pub struct ContextData {
     pub group_count: usize,
 }
 
+/// Buses of a transmission-only grid of 62,500 km² (where the area factor of
+/// [`density_bus_count`] is 1) at each density.
+fn density_base(density: Density) -> f64 {
+    match density {
+        Density::Low => 28.0,
+        Density::Medium => 52.0,
+        Density::High => 78.0,
+    }
+}
+
 /// Bus count from density and area when the request states none. The square
 /// root law keeps a continent at a few hundred buses and a small country at a
 /// few dozen; `target_bus_count` overrides it.
 pub fn density_bus_count(density: Density, area_km2: f64) -> u32 {
-    let base = match density {
-        Density::Low => 28.0,
-        Density::Medium => 52.0,
-        Density::High => 78.0,
-    };
+    let base = density_base(density);
     let area_factor = ((area_km2.max(100.0) / 10_000.0).sqrt() / 2.5).clamp(0.8, 4.0);
     (base * area_factor).round().clamp(MIN_BUS_COUNT, 400.0) as u32
 }
@@ -84,18 +90,23 @@ pub fn demand_bus_count(density: Density, area_km2: f64, peak_mw: f64) -> u32 {
 /// a second.
 pub const TRANSMISSION_AUTO_MAX_BUSES: u32 = 3_000;
 
-/// Bus count of a region whose ladder reaches subtransmission: one sited bus
-/// per [`crate::tuning::Tuning::mw_per_bus`] of peak load (taps come on top).
+/// Bus count of a hierarchical region
+/// ([`crate::hierarchy::hierarchical_region`]): one sited bus per
+/// [`crate::tuning::Tuning::mw_per_bus`] of peak load at high density (taps
+/// come on top). Lower densities carry more load per bus, in the ratio of the
+/// transmission design's counts ([`density_base`]): 1.5 times as much at
+/// medium and 2.8 times at low, 15 and about 28 MW by default.
 /// source: per-bus load falls as a model reaches lower voltages: ACTIVSg2000
 /// carries 67 GW over 2,000 buses (34 MW per bus) at 115 kV and above, the
 /// Texas7k case about 75 GW over 6,717 buses (11 MW) down to 69 kV, and CATS
 /// 44 GW over 8,870 buses (5 MW) down to 66 kV. The default is calibrated on
 /// CATS (docs/evidence/synth/cats/).
-pub fn hierarchical_bus_count(peak_mw: f64) -> u32 {
+pub fn hierarchical_bus_count(density: Density, peak_mw: f64) -> u32 {
     if !(peak_mw.is_finite() && peak_mw > 0.0) {
         return MIN_BUS_COUNT as u32;
     }
-    let per = crate::tuning::tuning().mw_per_bus.max(0.1);
+    let per = crate::tuning::tuning().mw_per_bus.max(0.1) * density_base(Density::High)
+        / density_base(density);
     (peak_mw / per)
         .ceil()
         .clamp(MIN_BUS_COUNT, f64::from(u32::MAX)) as u32
@@ -147,10 +158,15 @@ pub fn resolve_context(
             let mut sizing = places.in_region(&shape);
             let peak = size_demand(&req.demand, places, &mut sizing, &shape).peak_mw;
             let probe = resolve_ladder(req, &sizing, &mut Vec::new());
-            if probe.basis == VoltageBasis::Subdivision
-                && crate::hierarchy::is_hierarchical(&probe.levels_kv)
-            {
-                (hierarchical_bus_count(peak), Some(peak), u32::MAX)
+            if crate::hierarchy::hierarchical_region(
+                &probe.levels_kv,
+                dominant_subdivision(&sizing).as_deref(),
+            ) {
+                (
+                    hierarchical_bus_count(req.density, peak),
+                    Some(peak),
+                    u32::MAX,
+                )
             } else {
                 (
                     demand_bus_count(req.density, shape.area_km2, peak),
@@ -320,8 +336,7 @@ pub fn resolve_context(
     // A transmission-only grid aggregates hundreds of square kilometres per
     // bus: small towns fold into the nearest larger place for siting and
     // load allocation. A hierarchical region keeps every place.
-    let layered =
-        ladder.basis == VoltageBasis::Subdivision && crate::hierarchy::is_hierarchical(&levels);
+    let layered = crate::hierarchy::hierarchical_region(&levels, subdivision.as_deref());
     if !layered {
         cities = coarsen_places(cities);
     }
@@ -382,34 +397,38 @@ struct ResolvedLadder {
     country: Option<String>,
 }
 
-/// The line class the corridor plan may add above stated levels.
-fn top_line_class_kv() -> f64 {
-    crate::electrical::params::LINE_CLASSES[crate::electrical::params::LINE_CLASSES.len() - 1].kv
-}
-
-/// The levels of the request, or else the national ladder of the region's
-/// dominant country: the one whose places carry the most demand (population
-/// under a stated total). A stated list may be promoted to 765 kV above it;
-/// a country's ladder only to the higher levels that country has in service.
+/// The levels of the request, or else the region's own ladder
+/// ([`region_ladder`]). Either may be promoted only to the higher levels in
+/// service in the region: those of its own ladder above the levels used.
 fn resolve_ladder(
     req: &SynthRequest,
     cities: &[PlacedCity],
     warnings: &mut Vec<Warning>,
 ) -> ResolvedLadder {
-    if !req.voltage_levels_kv.is_empty() {
-        let levels = req.resolved_voltage_levels();
-        let top = top_line_class_kv();
-        return ResolvedLadder {
-            above_kv: if levels[0] < top - 1e-6 {
-                vec![top]
-            } else {
-                Vec::new()
-            },
-            levels_kv: levels,
-            basis: VoltageBasis::Request,
-            country: None,
-        };
+    if req.voltage_levels_kv.is_empty() {
+        return region_ladder(cities, warnings);
     }
+    let levels = req.resolved_voltage_levels();
+    // The region's ladder only says which higher levels are in service
+    // there; its fallback warning would name levels the request replaced.
+    let region = region_ladder(cities, &mut Vec::new());
+    ResolvedLadder {
+        above_kv: region
+            .above_kv
+            .into_iter()
+            .filter(|&kv| kv > levels[0] + 1e-6)
+            .collect(),
+        levels_kv: levels,
+        basis: VoltageBasis::Request,
+        country: None,
+    }
+}
+
+/// The region's own ladder: its dominant subdivision's when that has an
+/// entry, else the national ladder of its dominant country (the one whose
+/// places carry the most demand, population under a stated total), else a
+/// fallback, with the higher levels in service there.
+fn region_ladder(cities: &[PlacedCity], warnings: &mut Vec<Warning>) -> ResolvedLadder {
     if let Some(ladder) = dominant_subdivision(cities)
         .as_deref()
         .and_then(|code| VoltageLadders::bundled().subdivision_ladder(code))
@@ -857,6 +876,58 @@ mod tests {
     }
 
     #[test]
+    fn hierarchical_counts_follow_density() {
+        // 10 MW per bus at high density, 15 at medium, 78/28 × 10 at low.
+        assert_eq!(hierarchical_bus_count(Density::High, 1_000.0), 100);
+        assert_eq!(hierarchical_bus_count(Density::Medium, 1_000.0), 67);
+        assert_eq!(hierarchical_bus_count(Density::Low, 1_000.0), 36);
+        assert_eq!(hierarchical_bus_count(Density::Low, 10.0), 14);
+        assert_eq!(hierarchical_bus_count(Density::High, f64::NAN), 14);
+    }
+
+    fn california() -> Region {
+        let feature: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../tests/fixtures/us_ca_admin1_50m.geojson"))
+                .unwrap();
+        Region {
+            geometry: feature["geometry"].clone(),
+            label: "California".into(),
+        }
+    }
+
+    #[test]
+    fn a_hierarchical_region_sizes_its_count_by_density() {
+        let places = Places::parse(include_bytes!("../data/populated_places.json")).unwrap();
+        let mut req = SynthRequest::new(california());
+        let mut counts = Vec::new();
+        for density in [Density::High, Density::Medium, Density::Low] {
+            req.density = density;
+            let (ctx, _) = resolve_context(&req, &places, &mut Vec::new()).unwrap();
+            assert!(crate::hierarchy::layered(&ctx));
+            assert_eq!(
+                ctx.target_bus_count,
+                hierarchical_bus_count(density, ctx.peak_demand_mw)
+            );
+            counts.push(ctx.target_bus_count);
+        }
+        // About 4,800, 3,200 and 1,700 for California's 48 GW peak.
+        assert!(counts[0] > 4_000, "{counts:?}");
+        let ratio = |a: u32, b: u32| f64::from(a) / f64::from(b);
+        assert!(
+            (ratio(counts[0], counts[1]) - 1.5).abs() < 0.01,
+            "{counts:?}"
+        );
+        assert!(
+            (ratio(counts[0], counts[2]) - 78.0 / 28.0).abs() < 0.01,
+            "{counts:?}"
+        );
+        // A stated count still decides.
+        req.target_bus_count = Some(500);
+        let (ctx, _) = resolve_context(&req, &places, &mut Vec::new()).unwrap();
+        assert_eq!(ctx.target_bus_count, 500);
+    }
+
+    #[test]
     fn far_islands_are_cut_by_default_and_kept_on_request() {
         // A mainland box and an island box 600 km east.
         let geom = serde_json::json!({"type":"MultiPolygon","coordinates":[
@@ -959,13 +1030,64 @@ mod tests {
         assert_eq!(ctx.voltage_country.as_deref(), Some("DEU"));
         assert_eq!(ctx.voltage_levels_kv, vec![380.0, 220.0]);
         assert!(ctx.promotion_levels_kv.is_empty());
-        // Stated levels are used as given, with 765 kV above them.
+        // Stated levels are used as given, and Germany has no level above
+        // them in service.
         req.voltage_levels_kv = vec![230.0, 500.0];
         let (ctx, _) = resolve_context(&req, &places, &mut Vec::new()).unwrap();
         assert_eq!(ctx.voltage_basis, VoltageBasis::Request);
         assert_eq!(ctx.voltage_levels_kv, vec![500.0, 230.0]);
-        assert_eq!(ctx.promotion_levels_kv, vec![765.0]);
+        assert!(ctx.promotion_levels_kv.is_empty());
         assert_eq!(ctx.voltage_country, None);
+    }
+
+    #[test]
+    fn stated_levels_follow_the_region() {
+        let places = Places::parse(include_bytes!("../data/populated_places.json")).unwrap();
+        let resolve = |region: Region, levels: &[f64]| {
+            let mut req = SynthRequest::new(region);
+            req.voltage_levels_kv = levels.to_vec();
+            let mut warnings = Vec::new();
+            let (ctx, _) = resolve_context(&req, &places, &mut warnings).unwrap();
+            assert_eq!(ctx.voltage_basis, VoltageBasis::Request);
+            assert!(!warnings.iter().any(|w| w.code == "voltage_fallback"));
+            ctx
+        };
+        // Texas: the United States has 765 kV in service above 500 kV, and
+        // none above 765 kV.
+        let texas = || Region::bbox(-104.0, 26.0, -94.0, 34.0, "Texas box");
+        let ctx = resolve(texas(), &[500.0, 230.0]);
+        assert_eq!(ctx.promotion_levels_kv, vec![765.0]);
+        assert!(!crate::hierarchy::layered(&ctx));
+        assert!(resolve(texas(), &[765.0, 345.0])
+            .promotion_levels_kv
+            .is_empty());
+        // Texas has no subdivision ladder, so even levels down to 69 kV keep
+        // the transmission design.
+        assert!(!crate::hierarchy::layered(&resolve(
+            texas(),
+            &[345.0, 138.0, 69.0]
+        )));
+        // California's ladder has nothing above 500 kV. Stated levels down to
+        // subtransmission keep the hierarchical design, sized by peak load;
+        // stated levels above it do not.
+        let ctx = resolve(california(), &[230.0, 115.0, 66.0]);
+        assert!(ctx.promotion_levels_kv.is_empty());
+        assert!(crate::hierarchy::layered(&ctx));
+        assert_eq!(
+            ctx.target_bus_count,
+            hierarchical_bus_count(Density::High, ctx.peak_demand_mw)
+        );
+        let ctx = resolve(california(), &[500.0, 230.0]);
+        assert!(ctx.promotion_levels_kv.is_empty());
+        assert!(!crate::hierarchy::layered(&ctx));
+        assert!(ctx.target_bus_count <= TRANSMISSION_AUTO_MAX_BUSES);
+        // A country without an entry has nothing above stated levels.
+        let lux =
+            Places::parse(br#"[{"n":"A","lo":10.5,"la":10.5,"p":2000000,"c":"LUX"}]"#).unwrap();
+        let mut req = SynthRequest::new(Region::bbox(10.0, 10.0, 11.0, 11.0, "box"));
+        req.voltage_levels_kv = vec![220.0];
+        let (ctx, _) = resolve_context(&req, &lux, &mut Vec::new()).unwrap();
+        assert!(ctx.promotion_levels_kv.is_empty());
     }
 
     #[test]

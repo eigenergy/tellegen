@@ -278,6 +278,29 @@ pub fn plan_shunts(
     grounds: &[usize],
     mapped: bool,
 ) -> ReactivePlan {
+    plan_shunts_with_minimum(
+        buses,
+        branches,
+        generators,
+        dispatch_mw,
+        grounds,
+        mapped,
+        MIN_SHUNT_BANK_MVAR,
+    )
+}
+
+/// Include small banks when a solved mapped-grid voltage violation calls for
+/// them. The default 5 MVAr cutoff is an equipment-size preference, not a
+/// guarantee that omitted reactive support has negligible voltage impact.
+pub(crate) fn plan_shunts_with_minimum(
+    buses: &[DraftBus],
+    branches: &[DraftBranch],
+    generators: &[DraftGenerator],
+    dispatch_mw: &[f64],
+    grounds: &[usize],
+    mapped: bool,
+    minimum_mvar: f64,
+) -> ReactivePlan {
     let n = buses.len();
     let vm = vec![GENERATOR_VG; n];
     let mut qmax = vec![0.0; n];
@@ -319,7 +342,7 @@ pub fn plan_shunts(
             // The bank's rating is stated at 1 pu; at the planned voltage it
             // supplies `rating × V²`.
             let bank = (q - q.clamp(qmin[i], qmax[i])) / (vm[i] * vm[i]);
-            (bank.abs() >= MIN_SHUNT_BANK_MVAR).then(|| DraftShunt {
+            (bank.abs() >= minimum_mvar).then(|| DraftShunt {
                 bus: i,
                 mvar: (bank * 10.0).round() / 10.0,
             })

@@ -31,3 +31,5 @@ export { default as McPfSettings } from './components/McPfSettings.svelte';
 export { default as McModelQualification } from './components/McModelQualification.svelte';
 
 export { default as McNetworkScope } from './components/McNetworkScope.svelte';
+
+export { default as SettingsPanel } from './components/SettingsPanel.svelte';

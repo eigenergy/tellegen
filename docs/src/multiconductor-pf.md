@@ -18,7 +18,8 @@ After an initial solve, select a bus to edit each attached load branch's active 
 
 ## Solver settings and OpenDSS comparison
 
-Open **Power flow settings** in Studies to edit the next explicit run. Network and
+Open **Settings** from the header, Network or Studies to edit the next explicit run.
+Choose **Apply settings**, then run explicitly. See the [common settings menu and API](settings.md). Network and
 Studies share these settings. Editing a value does not solve; use the single
 context-sensitive solve button. A successful solve scrolls Studies to the overview
 with violations, losses and voltage ranges. Failed runs retain the preceding result
@@ -139,7 +140,7 @@ For a selected branch, a multi-wire view draws every conductor between the two b
 
 Once a study is saved, the address bar records it with the selection and view (`?study=…&sel=bus:…&view=schematic`), and *Copy view link* copies that address. The link reopens the study in a browser that holds it, saved there or imported from an export; it does not carry the data itself.
 
-Search finds buses and branches by ID. The bus and branch tables sort, filter to issues, and follow the selection; arrow keys move it. CSV exports keep full precision and begin with the case and solve that produced them. Cases with more than 25,000 buses compute the overview when asked rather than after every load edit, because reading a full result of that size takes a noticeable fraction of a second ([evidence](https://github.com/eigenergy/tellegen/tree/main/evidence/diagram)).
+Search finds buses and branches by ID. The bus and branch tables sort, filter to issues, and follow the selection; arrow keys move it. CSV exports keep full precision and begin with the case and solve that produced them. Cases with more than 25,000 buses compute the overview when asked rather than after every load edit, because reading a full result of that size takes a noticeable fraction of a second ([evidence](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/diagram)).
 
 Save a result in Studies to retain its input, solver options, terminal values, and, when the original load model is verified, its canonical PowerIO solution. Import/export moves the saved result between browsers. Reopening checks that its input and results agree without solving again. A geographic attachment updates both saved modules and retains all electrical values. These versioned multiconductor snapshots do not offer the balanced-network planning objectives or sensitivities.
 
