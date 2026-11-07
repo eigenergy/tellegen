@@ -34,6 +34,8 @@ import { captureDrop, namedFiles } from './collection-files.js';
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
 	browserWasmTransport,
+	collectionSupported,
+	COLLECTION_UNAVAILABLE,
 	resolveSettings,
 	settingsCatalog,
 	type Calculation,
@@ -370,13 +372,32 @@ export class Controller {
 	// File reads and worker messages retain whole buffers. Admit one validated
 	// batch at a time so repeated drops cannot multiply the aggregate byte cap.
 	private readonly dropBatchGate = new DropBatchGate();
+	collectionsAvailable = $state(false);
+	private collectionProbe: Promise<boolean> | null = null;
+	probeCollections = (): Promise<boolean> => {
+		return (this.collectionProbe ??= collectionSupported()
+			.then((available) => {
+				if (!this.disposed) this.collectionsAvailable = available;
+				return available;
+			})
+			.catch(() => false));
+	};
+	private openCollection = async (read: Parameters<CollectionImport['start']>[0]) => {
+		if (!(await this.probeCollections())) throw new Error(COLLECTION_UNAVAILABLE);
+		if (!this.disposed) await this.collectionImport.start(read);
+	};
 	readonly collectionImport = new CollectionImport((label, result) => {
 		if (this.disposed) return;
 		if (result.kind === 'multiconductor') {
 			this.addMultiCase(label, result.payload, undefined, label);
 		} else {
-			const local = this.localFromBalancedPayload(label, { ...result.payload, name: label });
-			local.formulation = result.payload.formulation ?? 'acpf';
+			const local = this.localFromBalancedPayload(label, {
+				...result.payload,
+				name: label
+			});
+			// Saved modules restore their calculation and overrides in LocalCase.
+			// Only a raw network without recorded settings defaults to power flow.
+			if (!result.payload.formulation && !local.settings.calculation) local.formulation = 'acpf';
 			this.placeTopologyAsDiagram(local);
 			this.addAndActivateLocal(local, { solve: false });
 		}
@@ -588,7 +609,7 @@ export class Controller {
 		const c = this.app.localCases.find((lc) => lc.id === id);
 		if (!c?.studyInputJson || (!c.view && !c.diagram) || !c.summary) return;
 		c.network = this.localNetwork(c) ?? c.network ?? null;
-		if (c.network && !c.solution) this.runSolve(c, null);
+		if (c.autoSolve && c.network && !c.solution) this.runSolve(c, null);
 	}
 
 	// The case's Study, building it once for `(studyInputJson, formulation)` and rebuilding
@@ -1093,6 +1114,7 @@ export class Controller {
 	// ===== actions =====
 
 	load = (): Promise<void> => {
+		void this.probeCollections();
 		// Default cases off, or no backend at all: nothing to fetch. The shell
 		// still needs its loaded state and a framed map, and a host that opens
 		// its own cases must never see a request go out.
@@ -1305,6 +1327,7 @@ export class Controller {
 	/** Add a prepared local case, make it active, frame it (unless `frame` is
 	 * false) and start its browser solve. */
 	addAndActivateLocal = (c: LocalCase, options: { frame?: boolean; solve?: boolean } = {}) => {
+		c.autoSolve = options.solve ?? true;
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
@@ -2590,11 +2613,14 @@ export class Controller {
 				this.app.error = errorText(e);
 				return;
 			}
-			if (
-				list.some((f) => /\.zip$/i.test(f.name) || !!f.webkitRelativePath) ||
-				(list.length > 1 && list.some((f) => /\.dss$/i.test(f.name)))
+			if (list.some((f) => /\.zip$/i.test(f.name) || !!f.webkitRelativePath)) {
+				await this.openCollection(async () => namedFiles(list));
+			} else if (
+				list.length > 1 &&
+				list.some((f) => /\.dss$/i.test(f.name)) &&
+				(await this.probeCollections())
 			) {
-				await this.collectionImport.start(async () => namedFiles(list));
+				await this.openCollection(async () => namedFiles(list));
 			} else await this.ingestFileBatch(list);
 		} catch (e) {
 			this.app.error = errorText(e);
@@ -2612,7 +2638,7 @@ export class Controller {
 			return;
 		}
 		try {
-			await this.collectionImport.start(async () => namedFiles(files));
+			await this.openCollection(async () => namedFiles(files));
 		} catch (error) {
 			this.app.error = errorText(error);
 		} finally {
@@ -2634,8 +2660,7 @@ export class Controller {
 				this.app.error = 'Another file batch is still being parsed';
 				return;
 			}
-			void this.collectionImport
-				.start(read)
+			void this.openCollection(read)
 				.catch((error) => {
 					this.app.error = errorText(error);
 				})

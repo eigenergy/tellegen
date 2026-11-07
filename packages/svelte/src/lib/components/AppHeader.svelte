@@ -124,11 +124,15 @@
 					? 'Drop a case file'
 					: 'Open a case file'}</span
 			>
-			<span class="cregion mono">Case, ZIP or geo files</span>
+			<span class="cregion mono"
+				>{ctrl.collectionsAvailable ? 'Case, ZIP or geo files' : 'Case or geo files'}</span
+			>
 		</button>
-		<button class="ghost filedrop-ui" onclick={openFolder}>
-			<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
-		</button>
+		{#if ctrl.collectionsAvailable}
+			<button class="ghost filedrop-ui" onclick={openFolder}>
+				<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
+			</button>
+		{/if}
 	</nav>
 	<button
 		class="settings-button"
@@ -142,7 +146,7 @@
 	</span>
 	<input
 		type="file"
-		accept=".zip,.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx"
+		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx`}
 		multiple
 		hidden
 		bind:this={fileInput}

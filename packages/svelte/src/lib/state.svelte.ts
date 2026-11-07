@@ -110,6 +110,8 @@ export interface LocalCaseInit {
  * re-renders) and the seq tokens stay attached across overlapping async
  * callbacks, so a stale solve can neither freeze the UI nor clobber a newer one. */
 export class LocalCase {
+	/** Collection imports wait for an explicit calculation, including after tab changes. */
+	autoSolve = true;
 	settings = new CaseSettings();
 	readonly id: string;
 	readonly label: string;
