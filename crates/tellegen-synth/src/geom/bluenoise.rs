@@ -141,9 +141,9 @@ pub fn blue_noise_points(
 
 /// A population density surface on a projected grid: each place adds its
 /// population through a Gaussian kernel of bandwidth `h` km, cut at 3h. Values
-/// are relative to the densest cell, compressed by a power (`fill_gamma`, a
-/// square root by default) so a metropolis does not take every bus, and
-/// floored at `floor` so the countryside still gets substations.
+/// are relative to the densest cell, compressed by a power (`fill_gamma`) so
+/// a metropolis does not take every bus, and floored at `floor` so the
+/// countryside still gets substations.
 struct Density {
     proj: Projection,
     cell: f64,

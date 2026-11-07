@@ -181,10 +181,21 @@ On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
 open that bumps the version. Merge it to run the gates, continue the existing
 `vX.Y.Z` tag series, make the GitHub release, and publish. The configuration
 sets `release_always = false`, limiting publication to a merged release-plz pull
-request. The unprivileged gate runs `cargo package --locked`; the OIDC-enabled
+request. The unprivileged gate runs `cargo package --locked --all-features`, so every
+opt-in feature builds against crates.io; the OIDC-enabled
 release uses the ordinary verified Cargo publish path against that exact
 commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
+
+The workflow's first job decides whether the push can publish: its engine
+version has no `v<version>` tag yet, and the push writes
+`crates/tellegen/CHANGELOG.md`, which only the release pull request does. Only
+then do the Rust gates and the publish job run. Any other push, including every
+push between a version raised by hand and its release, only refreshes the
+version pull request, which runs CI itself. A manual run, or a tag list or diff
+that cannot be read, plans a publish and leaves the decision to release-plz.
+While a release publishes, the version update waits for the gates, as it always
+has.
 
 The crate update uses the same sealed-patch privilege boundary as package
 versioning. After `release-plz update`, an unprivileged step
@@ -221,28 +232,50 @@ attaches them to the run. It publishes nothing.
 Each surface keeps its own generated changelog:
 `crates/tellegen/CHANGELOG.md`, `packages/engine/CHANGELOG.md`,
 `packages/svelte/CHANGELOG.md`, `packages/webmcp/CHANGELOG.md` and
-`packages/analytics/CHANGELOG.md`. The root `CHANGELOG.md` is the curated view
-across all of them and the only record for releases before the split.
+`packages/analytics/CHANGELOG.md`. The root `CHANGELOG.md` is the archive of
+the releases before the split. Nobody edits a changelog by hand, including on a
+release pull request.
 
-release-plz writes a draft crate changelog from commit messages, which is
-curated on the release pull request before it merges. The `commit_parsers` in
-`release-plz.toml` keep merge commits: when pull request branches take `main`
-by merging it, every commit release-plz reaches can be a merge, and skipping
-them leaves a version bump with no changelog, which the crate release rejects.
-The parsers restate release-plz's default groups, because setting the list
-replaces the defaults.
+The crate changelog lists the pull requests merged since the previous release,
+one entry each, under its title. release-plz writes a section for the new
+version from commit subjects, but on this repository most of those read "Merge
+pull request #N", and it walks the history along one parent at a time, which
+can miss a pull request. So the crate release workflow then runs
+`.github/scripts/write-crate-changelog.py`, which replaces that section's body.
+It reads the first-parent merge commits since the last `v*` tag, keeps those
+that changed `crates/tellegen/` or a root `Cargo.toml` entry the crate builds
+with, and skips Dependabot, release-plz and changesets merges and version-only
+bumps. A title starting `feat:` files the entry under Added, `fix:` under Fixed,
+and `!:` under Breaking; anything else goes under Changed. Write pull request
+titles for a reader of the changelog. The section itself must stay, because
+`release-plz release` takes the GitHub release body from it, so the
+`commit_parsers` in `release-plz.toml` keep merge commits.
 
 ## CI Gates
 
 `.github/workflows/gates-rust.yml` and `.github/workflows/gates-js.yml` define
-what green means. CI calls both on every pull request. The crate release calls
-the Rust gates, and the npm release calls both before it publishes. Add a gate
-to those files, not to a caller.
+what green means. CI calls both on every pull request and every push to `main`.
+The crate release calls the Rust gates, and the npm release calls both before
+it publishes. Add a gate to those files, not to a caller.
+
+CI runs only the gates a change can affect. Its scope job runs
+`.github/scripts/ci-scope.py` on the changed paths: a pull request's against
+the branch it merges into, a push's against the last `main` commit whose CI
+passed. The Rust and JavaScript gates and the image build run unless every
+changed path is one the script names as unable to affect them; a path it does
+not name runs them. A version bump that only moves `tellegen` and `tellegen-py`
+in their manifests and `Cargo.lock` runs only the Rust gates. A missing base, a
+failed or empty diff, or a change to the scoping itself runs every gate. A gate
+that does not apply still reports its required check, as skipped. The release
+workflows call the gates without this scope, so a release always runs them in
+full. `.github/scripts/test-ci-scope.py` pins the rules, and checks them
+against the files the gates and the Dockerfile read. Change both when a gate
+starts reading a new path.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
-`conic` path, `tellegen-wasm` built with `conic` and `synth`, and `cargo package --locked`
-for the published crate. The wasm test matters
+`conic` path, `tellegen-wasm` built with `conic` and `synth`, and
+`cargo package --locked --all-features` for the published crate. The wasm test matters
 because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.
 

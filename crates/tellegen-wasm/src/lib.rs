@@ -2000,10 +2000,21 @@ mpc.gencost = [
         assert_eq!(transmission.kind, "transmission");
         assert_eq!(transmission.format, Some("powermodels-json"));
 
-        let distribution = classify_json_drop_value(br#"{"data_model":"ENGINEERING","bus":{}}"#)
-            .expect("classify PMD");
-        assert_eq!(distribution.kind, "distribution");
-        assert_eq!(distribution.format, Some("pmd-json"));
+        // PMD's explicit model marker takes precedence over the baseMVA,
+        // branch and gen fields it can share with PowerModels JSON.
+        for (model, format) in [
+            ("ENGINEERING", "pmd-json"),
+            ("MATHEMATICAL", "pmd-math-json"),
+        ] {
+            let pmd = serde_json::to_vec(&serde_json::json!({
+                "data_model": model, "baseMVA": 100.0,
+                "bus": {}, "branch": {}, "gen": {}
+            }))
+            .expect("PMD JSON bytes");
+            let distribution = classify_json_drop_value(&pmd).expect("classify PMD");
+            assert_eq!(distribution.kind, "distribution");
+            assert_eq!(distribution.format, Some(format));
+        }
 
         let net = parse_matpower(CASE14_NO_COORDS);
         let module = serialize_module(&powerio::PioModule::new(
@@ -2057,6 +2068,8 @@ mpc.gencost = [
                 .expect("classify a PMD-marked document");
         assert_eq!(pmd_marked.kind, "distribution");
 
+        // Without a PMD model marker, these strong transmission and
+        // distribution markers conflict and must leave the bytes unresolved.
         let ambiguous = ingest_json_drop_value(br#"{"baseMVA":100.0,"voltage_source":{}}"#)
             .expect("ambiguous JSON remains unresolved");
         assert_eq!(ambiguous.kind, "ambiguous");

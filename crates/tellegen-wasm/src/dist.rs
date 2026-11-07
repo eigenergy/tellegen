@@ -830,8 +830,8 @@ mod tests {
             if expected["mc_pf_supported"] != true {
                 continue;
             }
-            // Either both inputs solve to the same voltages or both refuse
-            // with the same reason (the micro BMOPF names a missing linecode).
+            // Retained and serialized inputs must make the same solver
+            // decision and, when accepted, produce identical voltages.
             let options = tellegen::McPfOptions::default();
             let kept = tellegen::McPfSession::from_module(&module, options);
             let read =
@@ -1089,6 +1089,24 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn missing_linecode_stays_viewable_but_cannot_be_a_study() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).unwrap();
+        raw.as_object_mut().unwrap().remove("linecode");
+        let imported = parse(&ingest_dist(&raw.to_string(), "bmopf").unwrap());
+        assert_eq!(imported["n_bus"], 2);
+        assert_eq!(imported["n_line"], 1);
+        assert_eq!(imported["mc_pf_supported"], false);
+        let reason = imported["mc_pf_reason"].as_str().unwrap();
+        assert!(reason.contains("linecode"), "{reason}");
+        assert!(tellegen::solve_mc_module_json(
+            imported["module_json"].as_str().unwrap(),
+            &Default::default(),
+        )
+        .is_err());
     }
 
     #[test]

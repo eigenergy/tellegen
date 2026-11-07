@@ -25,6 +25,9 @@ concurrency:
 
 jobs:
   downstream:
+    # A release-plz pull request changes Cargo.lock only to move tellegen's own
+    # version; it proposes no PowerIO candidate.
+    if: ${{ !startsWith(github.head_ref, 'release-plz-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

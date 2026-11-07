@@ -16,25 +16,94 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Which gates this change needs: .github/scripts/ci-scope.py decides from the
+  # changed paths. A pull request diffs its merge commit against the branch it
+  # merges into. A push to main diffs against the last main commit whose CI
+  # passed, so a change whose own run failed, or was replaced by a newer push
+  # while it waited, is still counted. With no base, a failed diff, or a
+  # failure of this job, every gate runs.
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # To find the last main commit whose CI passed.
+      actions: read
+    outputs:
+      rust: ${{ steps.scope.outputs.rust }}
+      js: ${{ steps.scope.outputs.js }}
+      python: ${{ steps.scope.outputs.python }}
+      macos: ${{ steps.scope.outputs.macos }}
+      image: ${{ steps.scope.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request checks out its merge commit; the first parent is the
+          # base it merges into.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Choose the gates
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base=
+          if [ "$EVENT" = pull_request ]; then
+            base=HEAD^1
+          elif [ "$EVENT" = push ]; then
+            green=$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=main -f event=push -f status=success -f per_page=1 \
+              --jq '.workflow_runs[0].head_sha // empty') || green=
+            if [[ "$green" =~ ^[0-9a-f]{40}$ ]] &&
+              git fetch --quiet --no-tags --depth=1 origin "$green"; then
+              base=$green
+            else
+              echo "::warning::no passing main commit to diff against; running every gate"
+            fi
+          fi
+          python3 .github/scripts/ci-scope.py ${base:+--base "$base"} >> "$GITHUB_OUTPUT"
+
+  # `rust / rust` and `js / js` are required checks. Only a called workflow
+  # that starts can report them, so these callers always run, even when
+  # `scope` fails, and the gate inside skips itself when `needed` is false.
+  # An empty output (a failed `scope`) counts as needed.
   rust:
+    needs: scope
+    if: ${{ !cancelled() }}
     permissions:
       contents: read
     uses: ./.github/workflows/gates-rust.yml
+    with:
+      needed: ${{ needs.scope.outputs.rust != 'false' }}
 
   js:
+    needs: scope
+    if: ${{ !cancelled() }}
     permissions:
       contents: read
     uses: ./.github/workflows/gates-js.yml
+    with:
+      needed: ${{ needs.scope.outputs.js != 'false' }}
 
+  # Not a required check, so the whole call can skip.
   python:
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.python != 'false' }}
     permissions:
       contents: read
     uses: ./.github/workflows/gates-python.yml
+    with:
+      macos: ${{ needs.scope.outputs.macos != 'false' }}
 
   # deploy.yml builds the image only on a push to main. Without this job, a
-  # Dockerfile break passes PR CI and fails after the merge.
+  # Dockerfile break passes PR CI and fails after the merge. A skipped job
+  # still satisfies the required `image` check.
   image:
-    if: github.event_name == 'pull_request'
+    needs: scope
+    if: >-
+      ${{ !cancelled() && github.event_name == 'pull_request' &&
+      needs.scope.outputs.image != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,8 +119,11 @@ jobs:
         run: |
           python3 .github/scripts/test-validate-version-changes.py
           python3 .github/scripts/test-sync-python-version.py
+          python3 .github/scripts/test-write-crate-changelog.py
       - name: Test the PowerIO pin guard
         run: python3 .github/scripts/test-powerio-pin.py
+      - name: Test the CI scope rules
+        run: python3 .github/scripts/test-ci-scope.py
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build image (load locally for the smoke test)

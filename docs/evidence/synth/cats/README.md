@@ -46,6 +46,17 @@ app's default request. Seeds 1, 7 and 2026 (2026 is the app's default).
   100–200 kV, hv above.
 - **DC OPF.** One LP for both networks, in flow form with linear costs: the generators'
   marginal cost at half output, and every branch's rate A.
+- **Siting.** MapToGrid's measure of California (tellegen#305): buses at sites against the
+  people of the bundled places table's California rows (subdivision `US-CA`), in 0.5° cells.
+  A generated grid's tap junctions and CATS's added nodes (line junctions, most of them in
+  cities) are left out, so CATS counts its 3,171 substation buses. The metrics are the
+  share of those buses in cells whose places hold fewer than 20,000 people, the share in the
+  ten most populous cells, and buses per 1,000 km² in three boxes: the Los Angeles basin
+  (118.7–117.0° W, 33.6–34.4° N), the Mojave Desert (117.5–115.5° W, 34.6–35.6° N) and
+  Modoc and Lassen counties (121.5–120.0° W, 40.5–42.0° N), with the ratio of the first to
+  the last. A generated grid sites more buses than CATS has substations (about 4,900
+  against 3,171), so its box densities run above CATS's even where the spread matches;
+  the shares and the ratio do not depend on the count.
 
 ## Scorecard
 
@@ -78,6 +89,10 @@ voltage class it does not model, say) counts as a failure.
 | Geography | Mean nearest-site distance, both ways (km) | ≤ 20 | ≤ 5 |
 | | Spearman correlation of line-km per 25 km cell | ≥ 0.60 | ≥ 0.85 |
 | | Spearman correlation of load per 50 km cell | ≥ 0.70 | ≥ 0.70 |
+| Siting | Share of sited buses in cells under 20,000 people | ±0.07 | ±0.05 |
+| | Share of sited buses in the ten most populous cells | ±0.10 | ±0.08 |
+| | Sited buses per 1,000 km², per box | ×0.5–2 | ×0.5–2 |
+| | Density ratio, Los Angeles basin over Modoc and Lassen | ×0.33–3 | ×0.5–2 |
 
 The gridded correlations use the cells where either network has a value.
 
@@ -107,21 +122,30 @@ outline; line vertices against the outline rasterised at 0.02°.
 All runs use the request in `california.json` with the engine in this repository.
 
 - `baseline/`: the generator before any California-specific data or tuning (the US
-  national ladder and demand). 7 of 47 metrics pass at every seed.
-- `synthetic/`: **passes at every seed**, 41, 42 and 42 of 47 at seeds 1, 7 and 2026, with
-  every critical check met (AC voltages 0.961–1.051 pu). It fails at every seed on
-  circuit-km at 66 and 115 kV (1.6–1.9 × CATS), the fuel mix (TVD 0.22: CATS's 2019 fleet
-  against the EIA-860 2025 shares the engine uses for California), and lines per site in the
-  lv band. Seeds 1 and 2026 also miss the DC
-  loading median, and seeds 1 and 7 the line-density correlation.
-- `osm/`: **passes**, 34 of the 40 metrics the map supports, with every critical check met
-  (DC OPF optimal; AC voltages 0.961–1.066 pu). Seven metrics are map-limited (below). It
-  fails on buses after series reduction (3,314 against at least 6,260), sites (2,834
+  national ladder and demand). 7 of 47 metrics pass at every seed. It was scored before
+  the siting group existed.
+- `synthetic/`: **passes at every seed**, 49, 47 and 47 of 53 at seeds 1, 7 and 2026, with
+  every critical check met (AC voltages 0.953–1.031 pu). It fails at every seed on the fuel
+  mix (TVD 0.22: CATS's 2019 fleet against the EIA-860 2025 shares the engine uses for
+  California), lines per site in the lv band, line length over the spanning tree in the hv
+  band (1.87–1.92 against at least 1.96) and the line-density correlation (0.575–0.598).
+  Seeds 7 and 2026 also miss the Mojave box (3.5 and 3.2 sited buses per 1,000 km² against
+  at most 2.9), seed 7 the degree distribution (L1 0.254) and seed 2026 the DC loading
+  median. With the fill's earlier floor and exponent (0.06 and 0.5) the same engine failed
+  the pass rule at every seed, 41, 41 and 40 of 53: 35% of its sited buses stood in cells
+  under 20,000 people against CATS's 18%, the Los Angeles to Modoc and Lassen ratio was
+  8–10 against 42, and circuit-km at 66 and 115 kV ran 1.5–1.6 × CATS.
+- `osm/`: **passes**, 40 of the 46 metrics the map supports, with every critical check met
+  (DC OPF optimal; AC voltages 0.960–1.024 pu). Seven metrics are map-limited (below). It
+  meets all six siting metrics: the mapped substations put 17.4% of the sited buses in
+  cells under 20,000 people (CATS 18.1%) and 37.0% in the ten most populous cells (35.0%),
+  with a Los Angeles to Modoc and Lassen ratio of 25 (42). It
+  fails on buses after series reduction (3,317 against at least 6,260), sites (2,835
   against at least 3,749, where the map has 3,948 substations of any kind), transformers per
-  site (0.38 against at most 0.20), mean degree (2.70 against at most 2.69), the degree
-  distribution (L1 0.69 against 0.20) and line density (Spearman 0.83 against 0.85, where
-  the map itself reaches 0.86). Over all 47 metrics, map-limited ones included, it passes
-  34 (72%).
+  site (0.39 against at most 0.20), mean degree (2.74 against at most 2.69), the degree
+  distribution (L1 0.70 against 0.20) and line density (Spearman 0.83 against 0.85, where
+  the map itself reaches 0.86). Over all 53 metrics, map-limited ones included, it passes
+  40 (75%).
 
 The OpenStreetMap document is MapToGrid's Overpass server's answer to the engine's query for
 California (`tellegen synth-overpass-queries`), `osm_base` 2026-10-26T01:00:03Z,
@@ -134,11 +158,11 @@ The seven map-limited metrics, with what the map holds:
 | --- | ---: | ---: | ---: |
 | Nameplate (GW) | 68.0 | at least 102.4 (1,194 plants tag no output) | 118.6 |
 | Fuel mix TVD | – | 0.18 | 0.18 |
-| Bus share at 66 kV | 0.651 | 0.451 | 0.422 |
-| Bus share at 115 kV | 0.225 | 0.298 | 0.291 |
-| Bus share at 230 kV | 0.113 | 0.224 | 0.254 |
-| Circuit-km at 66 kV | 20,391 | 11,454 | 13,871 |
-| Circuit-km at 230 kV | 13,352 | 21,979 | 23,936 |
+| Bus share at 66 kV | 0.651 | 0.451 | 0.424 |
+| Bus share at 115 kV | 0.225 | 0.298 | 0.292 |
+| Bus share at 230 kV | 0.113 | 0.224 | 0.251 |
+| Circuit-km at 66 kV | 20,391 | 11,454 | 14,092 |
+| Circuit-km at 230 kV | 13,352 | 21,979 | 23,492 |
 
 These are differences of data, not of the design:
 
@@ -155,5 +179,5 @@ These are differences of data, not of the design:
 
 `climb-log.md` records the hill climb that set the tuned constants. The country sweeps one
 directory up are the hold-out the climb never sees. Every change to the engine was checked
-against them: on the final engine, DC OPF is optimal in 54 of 54 and 51 of 51 runs, and the
-AC power flow converges inside 0.9–1.1 pu in 53 of 54 and 47 of 51.
+against them: on the current engine, DC OPF is optimal in 54 of 54 and 51 of 51 runs, and
+the AC power flow converges inside 0.9–1.1 pu in 53 of 54 and 48 of 51.

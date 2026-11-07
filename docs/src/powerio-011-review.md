@@ -1,7 +1,8 @@
 # PowerIO 0.11 consumer review
 
 Tellegen uses the published PowerIO 0.11.9 crates. All eight PowerIO components
-resolve from crates.io at 0.11.9 with registry checksums.
+resolve from crates.io at 0.11.9 with registry checksums. Since 0.11.8 they include the multiconductor IVR
+terminal-role checks and bounded power-factor coefficients.
 `docs/evidence/webmcp/powerio-releases.json` maps each release tag, such as
 [`v0.11.9`](https://github.com/eigenergy/powerio/releases/tag/v0.11.9), to its
 commit.

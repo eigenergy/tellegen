@@ -1,0 +1,88 @@
+{
+  "schema": "tellegen.usage-evidence/1",
+  "generated_at": "2026-11-07T05:08:28.652Z",
+  "month": "2026-11",
+  "range": {
+    "start": "2026-11-01T00:00:00.000Z",
+    "end": "2026-11-07T05:08:28.654Z"
+  },
+  "source": "https://api.umami.is/v1 (Umami Cloud, read with an API key; aggregate counts only)",
+  "websites": [
+    {
+      "id": "6e491a05-f119-4810-8e4e-64be7d9efb46",
+      "name": "maptogrid.com",
+      "domain": "maptogrid.com",
+      "stats": {
+        "pageviews": 1,
+        "visitors": 1,
+        "visits": 1,
+        "bounces": 0,
+        "totaltime": 0
+      },
+      "events": {
+        "engine.load": 1,
+        "generate.start": 1,
+        "generate.finish": 1,
+        "agent.availability": 1
+      },
+      "properties": {
+        "generate.finish.country_verdict": {
+          "PRT:trusted": 1
+        },
+        "generate.finish.verdict": {
+          "trusted": 1
+        },
+        "engine.load.result": {
+          "ok": 1
+        }
+      },
+      "countries": {
+        "PRT": {
+          "runs": 1,
+          "trusted": 1,
+          "rate": 1
+        }
+      }
+    },
+    {
+      "id": "41f22b57-b287-42b2-935c-037f82a80020",
+      "name": "tellegen.dev",
+      "domain": "tellegen.dev",
+      "stats": {
+        "pageviews": 216,
+        "visitors": 87,
+        "visits": 131,
+        "bounces": 2,
+        "totaltime": 34818
+      },
+      "events": {
+        "calculation.solve": 380,
+        "case.select": 333,
+        "view.change": 285,
+        "agent.availability": 212,
+        "case.import": 77,
+        "calculation.sensitivity": 26,
+        "case.edit": 17,
+        "study.save": 11,
+        "study.export": 10,
+        "study.open": 2,
+        "study.import": 2
+      },
+      "properties": {
+        "calculation.solve.result": {
+          "completed": 375,
+          "failed": 5
+        },
+        "calculation.solve.calculation": {
+          "dcopf": 254,
+          "mcpf": 86,
+          "acopf": 26,
+          "acpf": 9,
+          "socwr": 5
+        }
+      },
+      "countries": null
+    }
+  ],
+  "errors": []
+}

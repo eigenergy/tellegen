@@ -5,6 +5,6 @@
 - [ ] `just ci` passes locally (or the relevant subset, named below)
 - [ ] a changeset is added if `packages/engine`, `packages/svelte`, or `packages/webmcp` changed (`npm run changeset`); none is needed for `apps/web`, `examples/`, or the crates
 - [ ] docs under `docs/src/` are updated for any user-visible change
-- [ ] commit messages read well in a changelog (release-plz writes the crate's from them)
+- [ ] the title reads well as a changelog entry (the crate's changelog lists pull requests by title; `feat:` or `fix:` files it under Added or Fixed)
 
 This repository merges with merge commits only. See [CONTRIBUTING.md](../CONTRIBUTING.md).

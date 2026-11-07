@@ -18,9 +18,9 @@
      "label": "Peak load (MW)",
      "kind": "rel",
      "tolerance": 0.15,
-     "value": 48042.421283426476,
+     "value": 48042.421283426535,
      "reference": 44008.91585859406,
-     "error": 0.6110133740160828,
+     "error": 0.6110133740160917,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -47,9 +47,9 @@
       0.75,
       1.33
      ],
-     "value": 3314,
+     "value": 3317,
      "reference": 8347,
-     "error": 3.2109970078829284,
+     "error": 3.207851726868952,
      "pass": false,
      "map_value": null,
      "map_limited": false
@@ -63,9 +63,9 @@
       0.75,
       1.33
      ],
-     "value": 2834,
+     "value": 2835,
      "reference": 4999,
-     "error": 1.9728332263668353,
+     "error": 1.97160688678919,
      "pass": false,
      "map_value": 3948,
      "map_limited": false
@@ -76,9 +76,9 @@
      "label": "Bus share at 66 kV",
      "kind": "abs",
      "tolerance": 0.06,
-     "value": 0.42184671092335546,
+     "value": 0.42357552004823634,
      "reference": 0.6511321432850126,
-     "error": 3.821423872694285,
+     "error": 3.7926103872796038,
      "pass": false,
      "map_value": 0.4513742071881607,
      "map_limited": true
@@ -89,9 +89,9 @@
      "label": "Bus share at 115 kV",
      "kind": "abs",
      "tolerance": 0.06,
-     "value": 0.29149064574532285,
+     "value": 0.29243292131444076,
      "reference": 0.2253504253025039,
-     "error": 1.1023370073803158,
+     "error": 1.1180416001989477,
      "pass": false,
      "map_value": 0.297568710359408,
      "map_limited": true
@@ -102,9 +102,9 @@
      "label": "Bus share at 230 kV",
      "kind": "abs",
      "tolerance": 0.06,
-     "value": 0.25377187688593844,
+     "value": 0.25113053964425686,
      "reference": 0.11261531089014017,
-     "error": 2.352609433263305,
+     "error": 2.3085871459019454,
      "pass": false,
      "map_value": 0.22357293868921777,
      "map_limited": true
@@ -115,9 +115,9 @@
      "label": "Bus share at 500 kV",
      "kind": "abs",
      "tolerance": 0.06,
-     "value": 0.032890766445383225,
+     "value": 0.032861018993066024,
      "reference": 0.010902120522343357,
-     "error": 0.36647743205066446,
+     "error": 0.3659816411787111,
      "pass": true,
      "map_value": 0.02748414376321353,
      "map_limited": false
@@ -131,9 +131,9 @@
       0.8,
       1.25
      ],
-     "value": 13871.406000000014,
+     "value": 14092.261000000019,
      "reference": 20390.602148961432,
-     "error": 1.7264425272944188,
+     "error": 1.6556531976946227,
      "pass": false,
      "map_value": 11453.89646008845,
      "map_limited": true
@@ -147,9 +147,9 @@
       0.8,
       1.25
      ],
-     "value": 15461.154000000037,
+     "value": 15953.901000000036,
      "reference": 12991.27711998399,
-     "error": 0.7800025683719729,
+     "error": 0.9205967792636587,
      "pass": true,
      "map_value": 14272.661021642423,
      "map_limited": false
@@ -163,9 +163,9 @@
       0.8,
       1.25
      ],
-     "value": 23936.03099999998,
+     "value": 23491.601999999988,
      "reference": 13351.70236787615,
-     "error": 2.615988669912777,
+     "error": 2.5319983362370255,
      "pass": false,
      "map_value": 21979.115395891055,
      "map_limited": true
@@ -179,9 +179,9 @@
       0.8,
       1.25
      ],
-     "value": 6239.880999999998,
+     "value": 6306.805999999998,
      "reference": 7462.423903071246,
-     "error": 0.8018119667045011,
+     "error": 0.7540030294292407,
      "pass": true,
      "map_value": 7881.561206057938,
      "map_limited": false
@@ -195,9 +195,9 @@
       0.67,
       1.5
      ],
-     "value": 0.3796753705010586,
+     "value": 0.3932980599647266,
      "reference": 0.1322264452890578,
-     "error": 2.6014585002258768,
+     "error": 2.68839852676907,
      "pass": false,
      "map_value": null,
      "map_limited": false
@@ -224,9 +224,9 @@
      "label": "Fuel capacity mix, total variation distance",
      "kind": "atmost",
      "tolerance": 0.15,
-     "value": 0.17727642002581795,
+     "value": 0.17727642002581792,
      "reference": null,
-     "error": 1.1818428001721197,
+     "error": 1.1818428001721195,
      "pass": false,
      "map_value": 0.18347016471243144,
      "map_limited": true
@@ -237,9 +237,9 @@
      "label": "Mean degree (reduced)",
      "kind": "rel",
      "tolerance": 0.12,
-     "value": 2.702474351237176,
+     "value": 2.7428399155863734,
      "reference": 2.4032586558044806,
-     "error": 1.0375346501232583,
+     "error": 1.1775028146391902,
      "pass": false,
      "map_value": null,
      "map_limited": false
@@ -250,9 +250,9 @@
      "label": "Degree distribution, L1 distance",
      "kind": "atmost",
      "tolerance": 0.2,
-     "value": 0.6889077772441128,
+     "value": 0.6969701555592934,
      "reference": null,
-     "error": 3.4445388862205637,
+     "error": 3.484850777796467,
      "pass": false,
      "map_value": null,
      "map_limited": false
@@ -263,9 +263,9 @@
      "label": "Lines per site, lv band",
      "kind": "rel",
      "tolerance": 0.15,
-     "value": 1.17092866756393,
+     "value": 1.1777330650570088,
      "reference": 1.1771491348530623,
-     "error": 0.035228995799860094,
+     "error": 0.0033070304441891927,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -276,9 +276,9 @@
      "label": "Lines per site, mv band",
      "kind": "rel",
      "tolerance": 0.15,
-     "value": 1.0233644859813085,
+     "value": 1.0395348837209302,
      "reference": 1.109831029185868,
-     "error": 0.5193976436093954,
+     "error": 0.4222633513049553,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -289,9 +289,9 @@
      "label": "Lines per site, hv band",
      "kind": "rel",
      "tolerance": 0.15,
-     "value": 1.0780711825487945,
+     "value": 1.0834298957126303,
      "reference": 1.1715116279069768,
-     "error": 0.531737191120177,
+     "error": 0.5012426116601362,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -302,9 +302,9 @@
      "label": "Line length / MST, lv band",
      "kind": "rel",
      "tolerance": 0.2,
-     "value": 1.1738742800594233,
+     "value": 1.1761010419203237,
      "reference": 1.4350709216494837,
-     "error": 0.910047850770464,
+     "error": 0.902289482081825,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -315,9 +315,9 @@
      "label": "Line length / MST, mv band",
      "kind": "rel",
      "tolerance": 0.2,
-     "value": 1.2762261448315,
+     "value": 1.2997097859579785,
      "reference": 1.510368605719381,
-     "error": 0.7751169482775372,
+     "error": 0.6973755246358115,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -328,9 +328,9 @@
      "label": "Line length / MST, hv band",
      "kind": "rel",
      "tolerance": 0.2,
-     "value": 2.1343773575323217,
+     "value": 2.1438416989538864,
      "reference": 2.6192317122321565,
-     "error": 0.9255659826419732,
+     "error": 0.9074989644065018,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -341,9 +341,9 @@
      "label": "Lines on the Delaunay triangulation, lv band",
      "kind": "abs",
      "tolerance": 0.1,
-     "value": 0.8758620689655172,
+     "value": 0.873006833712984,
      "reference": 0.8737750816612225,
-     "error": 0.02086987304294685,
+     "error": 0.007682479482384874,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -354,9 +354,9 @@
      "label": "Lines on the Delaunay triangulation, mv band",
      "kind": "abs",
      "tolerance": 0.1,
-     "value": 0.815068493150685,
+     "value": 0.8154362416107382,
      "reference": 0.829757785467128,
-     "error": 0.14689292316443003,
+     "error": 0.1432154385638973,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -367,9 +367,9 @@
      "label": "Lines on the Delaunay triangulation, hv band",
      "kind": "abs",
      "tolerance": 0.1,
-     "value": 0.7273695420660277,
+     "value": 0.7262032085561497,
      "reference": 0.7096774193548387,
-     "error": 0.17692122711188918,
+     "error": 0.1652578920131098,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -380,9 +380,9 @@
      "label": "Mean clustering coefficient",
      "kind": "abs",
      "tolerance": 0.05,
-     "value": 0.0690149437338303,
+     "value": 0.07341565239403658,
      "reference": 0.03329636100092551,
-     "error": 0.7143716546580956,
+     "error": 0.8023858278622212,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -396,9 +396,9 @@
       0.67,
       1.5
      ],
-     "value": 19.634047978273987,
+     "value": 19.476771178776,
      "reference": 25.585241404097278,
-     "error": 0.6610869091587747,
+     "error": 0.6811695996020555,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -409,9 +409,9 @@
      "label": "x per km inside CATS p10-p90 at 66 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.8119961302805546,
+     "value": 0.8123791102514507,
      "reference": null,
-     "error": 0.6266795657314845,
+     "error": 0.6254029658284975,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -435,9 +435,9 @@
      "label": "Rating inside CATS p10-p90 at 66 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9993550467591099,
+     "value": 0.9993552546744036,
      "reference": null,
-     "error": 0.0021498441363002976,
+     "error": 0.0021491510853214693,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -448,9 +448,9 @@
      "label": "x per km inside CATS p10-p90 at 115 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9358582773365913,
+     "value": 0.9345057610673135,
      "reference": null,
-     "error": 0.21380574221136223,
+     "error": 0.21831412977562153,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -474,9 +474,9 @@
      "label": "Rating inside CATS p10-p90 at 115 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9926695174098962,
+     "value": 0.9902971497877502,
      "reference": null,
-     "error": 0.02443494196701275,
+     "error": 0.032342834040832706,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -487,9 +487,9 @@
      "label": "x per km inside CATS p10-p90 at 230 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9569517161140197,
+     "value": 0.9590989922940131,
      "reference": null,
-     "error": 0.14349427961993416,
+     "error": 0.13633669235328974,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -513,9 +513,9 @@
      "label": "Rating inside CATS p10-p90 at 230 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9883653286794648,
+     "value": 0.990515708358032,
      "reference": null,
-     "error": 0.03878223773511731,
+     "error": 0.031614305473226516,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -526,9 +526,9 @@
      "label": "x per km inside CATS p10-p90 at 500 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.7070063694267515,
+     "value": 0.7278481012658228,
      "reference": null,
-     "error": 0.9766454352441614,
+     "error": 0.9071729957805906,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -539,9 +539,9 @@
      "label": "X/R inside CATS p10-p90 at 500 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9808917197452229,
+     "value": 0.9810126582278481,
      "reference": null,
-     "error": 0.06369426751592354,
+     "error": 0.06329113924050629,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -552,9 +552,9 @@
      "label": "Rating inside CATS p10-p90 at 500 kV",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.9617834394904459,
+     "value": 0.9620253164556962,
      "reference": null,
-     "error": 0.12738853503184708,
+     "error": 0.12658227848101258,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -565,9 +565,9 @@
      "label": "Transformer x on own base inside CATS p10-p90",
      "kind": "atleast",
      "tolerance": 0.8,
-     "value": 0.9024163568773235,
+     "value": 0.8968609865470852,
      "reference": null,
-     "error": 0.4879182156133828,
+     "error": 0.5156950672645739,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -578,9 +578,9 @@
      "label": "DC OPF branch loading, median",
      "kind": "abs",
      "tolerance": 0.15,
-     "value": 0.2559884258154699,
+     "value": 0.2741487522174758,
      "reference": 0.2848482542338192,
-     "error": 0.19239885612232888,
+     "error": 0.07133001344228933,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -591,9 +591,9 @@
      "label": "DC OPF branch loading, p90",
      "kind": "abs",
      "tolerance": 0.15,
-     "value": 0.699780396320307,
+     "value": 0.6980360582718651,
      "reference": 0.71063331167245,
-     "error": 0.07235276901428704,
+     "error": 0.08398168933723286,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -604,9 +604,9 @@
      "label": "DC OPF binding fraction",
      "kind": "abs",
      "tolerance": 0.05,
-     "value": 0.004811443433029909,
+     "value": 0.006484243288808196,
      "reference": 0.003603437124641966,
-     "error": 0.02416012616775886,
+     "error": 0.05761612328332459,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -617,9 +617,9 @@
      "label": "Site distance to CATS sites, symmetric mean (km)",
      "kind": "atmost",
      "tolerance": 5.0,
-     "value": 2.149810712767599,
+     "value": 2.151438840776318,
      "reference": null,
-     "error": 0.42996214255351983,
+     "error": 0.4302877681552636,
      "pass": true,
      "map_value": null,
      "map_limited": false
@@ -630,9 +630,9 @@
      "label": "Line-km per 25 km cell, Spearman",
      "kind": "atleast",
      "tolerance": 0.85,
-     "value": 0.8309725575169747,
+     "value": 0.8295066020647994,
      "reference": null,
-     "error": 1.1268496165535016,
+     "error": 1.136622652901337,
      "pass": false,
      "map_value": 0.8628630941932961,
      "map_limited": false
@@ -643,16 +643,106 @@
      "label": "Load per 50 km cell, Spearman",
      "kind": "atleast",
      "tolerance": 0.7,
-     "value": 0.7886954157488637,
+     "value": 0.791977994744233,
      "reference": null,
-     "error": 0.7043486141704542,
+     "error": 0.6934066841858898,
+     "pass": true,
+     "map_value": null,
+     "map_limited": false
+    },
+    {
+     "id": "siting.sparse_share",
+     "group": "siting",
+     "label": "Sited buses in 0.5\u00b0 cells under 20,000 people, share",
+     "kind": "abs",
+     "tolerance": 0.05,
+     "value": 0.1735617323852618,
+     "reference": 0.18101545253863136,
+     "error": 0.14907440306739128,
+     "pass": true,
+     "map_value": null,
+     "map_limited": false
+    },
+    {
+     "id": "siting.top_share",
+     "group": "siting",
+     "label": "Sited buses in the 10 most populous 0.5\u00b0 cells, share",
+     "kind": "abs",
+     "tolerance": 0.08,
+     "value": 0.3703943115707822,
+     "reference": 0.3497319457584358,
+     "error": 0.25827957265432966,
+     "pass": true,
+     "map_value": null,
+     "map_limited": false
+    },
+    {
+     "id": "siting.per_1000km2.la",
+     "group": "siting",
+     "label": "Sited buses per 1,000 km\u00b2, Los Angeles basin",
+     "kind": "ratio",
+     "tolerance": [
+      0.5,
+      2.0
+     ],
+     "value": 44.81947401878948,
+     "reference": 46.26061466248046,
+     "error": 0.04565871699170059,
+     "pass": true,
+     "map_value": null,
+     "map_limited": false
+    },
+    {
+     "id": "siting.per_1000km2.mojave",
+     "group": "siting",
+     "label": "Sited buses per 1,000 km\u00b2, Mojave Desert",
+     "kind": "ratio",
+     "tolerance": [
+      0.5,
+      2.0
+     ],
+     "value": 1.5888272897670825,
+     "reference": 1.4398747313514184,
+     "error": 0.14201900487242816,
+     "pass": true,
+     "map_value": null,
+     "map_limited": false
+    },
+    {
+     "id": "siting.per_1000km2.ne",
+     "group": "siting",
+     "label": "Sited buses per 1,000 km\u00b2, Modoc and Lassen",
+     "kind": "ratio",
+     "tolerance": [
+      0.5,
+      2.0
+     ],
+     "value": 1.8250100264678295,
+     "reference": 1.1046113318094757,
+     "error": 0.7243655573865727,
+     "pass": true,
+     "map_value": null,
+     "map_limited": false
+    },
+    {
+     "id": "siting.la_over_ne",
+     "group": "siting",
+     "label": "Sited bus density, Los Angeles basin over Modoc and Lassen",
+     "kind": "ratio",
+     "tolerance": [
+      0.5,
+      2.0
+     ],
+     "value": 24.558480977517817,
+     "reference": 41.879540187859966,
+     "error": 0.7700242743782733,
      "pass": true,
      "map_value": null,
      "map_limited": false
     }
    ],
-   "passed": 34,
-   "scored": 40,
+   "passed": 40,
+   "scored": 46,
    "map_limited": [
     "nameplate_mw",
     "bus_share.66",
@@ -662,9 +752,9 @@
     "circuit_km.230",
     "fuel_tvd"
    ],
-   "pass_share": 0.85,
+   "pass_share": 0.8695652173913043,
    "pass": true,
-   "score": 25.588121953367686,
+   "score": 27.689047120886315,
    "context": {
     "peak_demand_mw": 48042.421283426556,
     "target_bus_count": 4805,
@@ -680,22 +770,22 @@
    },
    "ac_pf": {
     "status": "converged",
-    "vm_min": 0.9606015851326539,
-    "vm_max": 1.0655670990413981,
-    "losses_mw": 2124.694475791148,
+    "vm_min": 0.9596167225813687,
+    "vm_max": 1.0243490477249448,
+    "losses_mw": 2043.5426565598568,
     "buses_outside_emergency_band": 0
    },
    "summary": {
-    "raw_buses": 3342,
-    "raw_branches": 7690,
-    "reduced_buses": 3314,
-    "sites": 2834,
-    "peak_load_mw": 48042.421283426476,
+    "raw_buses": 3344,
+    "raw_branches": 7711,
+    "reduced_buses": 3317,
+    "sites": 2835,
+    "peak_load_mw": 48042.421283426535,
     "nameplate_mw": 118641.444,
-    "mean_degree": 2.702474351237176,
+    "mean_degree": 2.7428399155863734,
     "max_degree": 25,
-    "clustering": 0.0690149437338303,
-    "transformers": 1076
+    "clustering": 0.07341565239403658,
+    "transformers": 1115
    }
   }
  },
@@ -783,6 +873,17 @@
   "dc_loading_p50": 0.2848482542338192,
   "dc_loading_p90": 0.71063331167245,
   "dc_binding": 0.003603437124641966,
+  "siting": {
+   "buses": 3171,
+   "sparse_share": 0.18101545253863136,
+   "top_share": 0.3497319457584358,
+   "per_1000km2": {
+    "la": 46.26061466248046,
+    "mojave": 1.4398747313514184,
+    "ne": 1.1046113318094757
+   },
+   "la_over_ne": 41.879540187859966
+  },
   "line_params": {
    "115": {
     "x_ohm_km": {
