@@ -42,7 +42,6 @@ pounce-nl = { workspace = true, optional = true }
 pounce-rs = { workspace = true, optional = true }
 
 [features]
-powerio-012 = []
 default = ["sensitivity", "mc-pf"]
 # Compatibility with the next PowerIO series, enabled only when dependency
 # resolution selects 0.12. The default release remains on published 0.11.9.
