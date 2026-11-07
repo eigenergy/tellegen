@@ -2710,7 +2710,7 @@ mod tests {
         let text = s.save_module().unwrap();
         let value: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["schema"], "pio-ir");
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["version"], serde_json::json!(powerio::IR_VERSION));
         assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert_eq!(value["producer"]["name"], "powerio");
         let history = value["history"].as_array().unwrap();

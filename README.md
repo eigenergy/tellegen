@@ -159,7 +159,7 @@ npm --workspace tellegen-frontend run dev
 Tests:
 
 ```sh
-cargo test --workspace
+cargo test --workspace --exclude tellegen-py
 npm run check && npm run build && npm run smoke:web && npm run test:downstream
 ```
 

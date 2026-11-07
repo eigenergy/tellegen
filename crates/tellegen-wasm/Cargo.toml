@@ -30,6 +30,7 @@ tellegen-synth = { path = "../tellegen-synth", optional = true }
 
 [features]
 default = []
+powerio-012 = ["tellegen/powerio-012"]
 # The multiconductor fixed-point PF and its raw BMOPF entry point.
 mc-pf = ["tellegen/mc-pf"]
 # Gates the `#[wasm_bindgen] Study` export and the dLMP/dd column in `solve_dc`.

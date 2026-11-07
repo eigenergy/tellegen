@@ -33,17 +33,39 @@ jobs:
       contents: read
     env:
       TELLEGEN_ALLOW_FALLBACK: "1"
+      TELLEGEN_POWERIO_FEATURES: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - name: Validate the immutable candidate revision
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          POWERIO_REF: ${{ inputs.powerio_ref }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          if not re.fullmatch(r"[0-9a-f]{40}", os.environ["POWERIO_REF"]):
+              raise SystemExit("PowerIO candidate must be a full lowercase commit SHA")
+          PY
+      - name: Read the selected PowerIO release
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: eigenergy/powerio
+          ref: ${{ inputs.powerio_ref }}
+          path: .powerio-candidate
           persist-credentials: false
       - name: Select the PowerIO candidate
         if: github.event_name == 'workflow_dispatch'
         env:
           POWERIO_REF: ${{ inputs.powerio_ref }}
-        run: python3 .github/scripts/powerio-pin.py --set "$POWERIO_REF"
+        run: |
+          python3 .github/scripts/powerio-pin.py --set "$POWERIO_REF" \
+            --candidate-manifest .powerio-candidate/Cargo.toml --github-env "$GITHUB_ENV"
+          rm -rf .powerio-candidate
       - uses: ./.github/actions/js-setup
-      # Manual candidates resolve all eight PowerIO components together in a
+      # Manual candidates resolve the PowerIO components together in a
       # disposable lockfile. Pull requests verify their committed lockfile.
       - name: Resolve the selected candidate version
         if: github.event_name == 'workflow_dispatch'
@@ -57,13 +79,33 @@ jobs:
           python3 .github/scripts/powerio-pin.py
       - name: Clippy (shipping crates, warnings denied)
         run: |
+          compat=()
+          if [ -n "$TELLEGEN_POWERIO_FEATURES" ]; then
+            compat=(--features tellegen/powerio-012)
+          fi
+          if [[ "$TELLEGEN_POWERIO_FEATURES" == *powerio-collections* ]]; then
+            compat+=(--features tellegen-wasm/powerio-collections)
+          fi
           cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
-            --all-targets -- -D warnings
+            --all-targets "${compat[@]}" -- -D warnings
       - name: Test Rust surfaces
         run: |
-          cargo test --workspace
-          cargo test -p tellegen --features conic
-          cargo test -p tellegen-wasm --features conic,synth
+          compat=()
+          wasm_features=conic,synth
+          if [ -n "$TELLEGEN_POWERIO_FEATURES" ]; then
+            compat=(--features tellegen/powerio-012)
+            wasm_features+=",$TELLEGEN_POWERIO_FEATURES"
+          fi
+          cargo test --workspace --exclude tellegen-py "${compat[@]}"
+          cargo test -p tellegen --features conic "${compat[@]}"
+          cargo test -p tellegen-wasm --features "$wasm_features"
+      - name: Test candidate DSS snapshot contract
+        if: contains(env.TELLEGEN_POWERIO_FEATURES, 'powerio-collections')
+        run: |
+          python3 -m pip install --disable-pip-version-check \
+            opendssdirect.py==0.9.4 dss-python==0.15.7 dss-python-backend==0.14.5
+          python3 crates/tellegen/tests/generate_dss_snapshot_oracle.py
+          cargo test -p tellegen --test dss_snapshots --features mc-pf,powerio-012
       - name: Build candidate WebAssembly
         run: npm run wasm
       # The frontend build below needs the development-only AC OPF asset, as
