@@ -6,7 +6,7 @@ pub mod build;
 pub mod parse;
 
 pub use build::{OsmBuild, OsmCounts};
-pub use parse::{parse_document, ParsedDocument};
+pub use parse::{parse_document, parse_document_with_limits, ParsedDocument};
 
 use crate::error::SynthError;
 use crate::geom::region::RegionShape;
