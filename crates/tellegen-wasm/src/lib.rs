@@ -840,6 +840,16 @@ impl Study {
             .map_err(jserr)
     }
 
+    /// Build with validated common settings, retained by later commits.
+    pub fn with_settings(module_json: &str, request: &str) -> Result<Study, JsError> {
+        ensure_input_text(module_json)?;
+        ensure_input_text(request)?;
+        let request = serde_json::from_str(request).map_err(jserr)?;
+        tellegen::Study::new_with_settings(module_json, &request)
+            .map(Study)
+            .map_err(jserr)
+    }
+
     /// Apply `edits_json` (a `NetworkEdit[]`) at the committed point and exact-re-solve,
     /// attaching the `sensitivities_json` cells (a `SensRequest[]`, or empty/blank for
     /// none) in the same solve. Advances the committed point. Returns
@@ -1779,6 +1789,27 @@ pub fn apply_display_geo(module_json: &str, bytes: &[u8]) -> Result<String, JsEr
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     geo::apply_display_geo_impl(module_json, bytes).map_err(jserr)
+}
+
+/// Discover calculation settings supported by this WASM build.
+#[wasm_bindgen]
+pub fn describe_settings() -> String {
+    tellegen::settings::describe().to_string()
+}
+
+#[wasm_bindgen]
+pub fn resolve_settings(request: &str) -> Result<String, JsError> {
+    ensure_input_text(request)?;
+    let request = serde_json::from_str(request).map_err(jserr)?;
+    serde_json::to_string(&tellegen::settings::resolve(&request).map_err(jserr)?).map_err(jserr)
+}
+
+#[wasm_bindgen]
+pub fn calculate_with_settings(request: &str) -> Result<String, JsError> {
+    ensure_input_text(request)?;
+    let request = serde_json::from_str(request).map_err(jserr)?;
+    serde_json::to_string(&tellegen::settings::calculate(&request, None).map_err(jserr)?)
+        .map_err(jserr)
 }
 
 #[cfg(test)]

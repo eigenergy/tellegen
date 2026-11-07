@@ -22,10 +22,17 @@ tellegen.example.org {
 	encode zstd gzip
 	import secure_headers
 
+	# /api/calculate carries a whole input module (Texas7k is about 37 MB). The
+	# server refuses bodies over 64 MiB itself; refuse them here first.
+	@calculate path /api/calculate
+	request_body @calculate {
+		max_size 64MB
+	}
+
 	rate_limit {
 		zone tellegen_solve {
 			match {
-				path /api/cases/*/solve
+				path /api/cases/*/solve /api/calculate
 			}
 			key {remote_host}
 			window 10s

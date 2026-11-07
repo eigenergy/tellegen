@@ -1,3 +1,4 @@
+import { CaseSettings, UserPreferences, recordedCalculationSettings } from './settings.svelte.js';
 import { DEFAULT_MC_PF_OPTIONS, summarizeMcExcludedIslands } from '@tellegen/engine';
 import type {
 	CaseSummary,
@@ -20,10 +21,10 @@ import {
 	type Formulation,
 	type IngestedDistCase,
 	type McPfCallTiming,
-	type McPfOptions,
 	type McPfResult,
 	type McPfResultTables,
 	type McPfSummary,
+	type McPfOptions,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
 	type McModuleInput,
@@ -109,6 +110,7 @@ export interface LocalCaseInit {
  * re-renders) and the seq tokens stay attached across overlapping async
  * callbacks, so a stale solve can neither freeze the UI nor clobber a newer one. */
 export class LocalCase {
+	settings = new CaseSettings();
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
@@ -177,6 +179,14 @@ export class LocalCase {
 		this.declaredFormulation = init.declaredFormulation;
 		this.summary = init.summary ?? null;
 		this.studyInputJson = init.studyInputJson;
+		const recorded = recordedCalculationSettings(init.studyInputJson);
+		if (recorded) {
+			if (!init.formulation && ['dcopf', 'acpf', 'socwr', 'acopf'].includes(recorded.calculation))
+				this.formulation = recorded.calculation as Formulation;
+			this.settings.baselines = { [recorded.calculation]: recorded.effective };
+			this.settings.options = { [recorded.calculation]: {} };
+			this.settings.calculation = recorded.calculation;
+		}
 		this.topology = init.topology;
 		this.coordsKind = init.coordsKind;
 		this.view = init.view ?? null;
@@ -191,6 +201,7 @@ export class LocalCase {
 /** One islanded network with its own solver state on the server. API
  * payloads are reassigned wholesale, so $state.raw throughout. */
 export class CaseState {
+	settings = new CaseSettings();
 	readonly id: string;
 	readonly name: string;
 	readonly unavailableReason: string | null;
@@ -260,6 +271,9 @@ export interface McEditTiming extends McPfCallTiming {
 
 /** A conductor-resolved case with retained electrical inputs and terminal results. */
 export class MulticonductorCase {
+	settings = new CaseSettings();
+	readonly hosted: boolean;
+	distribution: CaseSummary['distribution'] = $state.raw(undefined);
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
@@ -279,6 +293,9 @@ export class MulticonductorCase {
 	mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
 	/** Explicit selection for the next solve. The graph and module retain every bus. */
 	mcEnergizedOnly = $state(false);
+	/** The retained input carries the energized-network selection record. It
+	 * cannot be removed, so every later solve of this input is energized-only. */
+	mcInputSelected = false;
 	/** Successful explicit solve to reveal in Studies; load edits do not advance it. */
 	mcCompletedSolveSeq = $state(0);
 	/** Detected on import, revalidated when preparing a solve; never removed from the graph. */
@@ -354,6 +371,7 @@ export class MulticonductorCase {
 	lastGeoView: CameraSnapshot | null = null;
 
 	constructor(init: {
+		hosted?: boolean;
 		id: string;
 		label: string;
 		fileName: string;
@@ -365,12 +383,14 @@ export class MulticonductorCase {
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
 	}) {
+		this.hosted = init.hosted ?? false;
 		this.id = init.id;
 		this.label = init.label;
 		this.fileName = init.fileName;
 		this.summary = init.summary;
 		this.mcInput = init.input ?? init.summary.module_json ?? null;
 		this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
+		this.mcInputSelected = this.mcEnergizedOnly;
 		this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
 		this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
 		this.geoLayer = init.summary.geo_layer ?? null;
@@ -431,6 +451,8 @@ export interface StudyDisplaySnapshot {
 }
 
 export class AppState {
+	preferences = new UserPreferences();
+	settingsOpen = $state(false);
 	camera: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
 	/** Set when a view hands its camera to the map it returns to (the diagram closing from
 	 * geographic positions): the re-created map starts at `camera` instead of framing the case. */
@@ -484,6 +506,7 @@ export class AppState {
 	/** Saved Study inspection is independent of the editable case and its solution. */
 	studyView: StudyDisplaySnapshot | null = $state.raw<StudyDisplaySnapshot | null>(null);
 	cases: CaseState[] = $state.raw<CaseState[]>([]);
+	hostedDistributionCases: CaseSummary[] = $state.raw<CaseSummary[]>([]);
 	activeCaseId = $state<string | null>(null);
 	/** Selected bus in the active case. */
 	selectedBus = $state<number | null>(null);
@@ -507,7 +530,12 @@ export class AppState {
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
 	displayMode = $state<DisplayMode>('price');
-	busSizing = $state<BusSizing>('power');
+	get busSizing(): BusSizing {
+		return this.preferences.busSizing;
+	}
+	set busSizing(value: BusSizing) {
+		this.preferences.update({ busSizing: value });
+	}
 	sensitivityLoading = $state(false);
 	#error = $state<string | null>(null);
 	errorRevision = $state(0);

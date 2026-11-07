@@ -104,6 +104,33 @@ citation:
 > Regulation, vol. 2, no. 1, pp. 107-118, 2024.
 > doi:10.1109/TEMPR.2023.3338568.
 
+The Texas7k distribution example, `texas7k-p1uhs0_1247`, is derived from the
+SMART-DS synthetic distribution substation `p1uhs0_1247` that the
+[Texas7k combined transmission and distribution dataset page](https://electricgrids.engr.tamu.edu/texas7k-td/)
+identifies. The Open Energy Data Initiative publishes it under the
+[Creative Commons Attribution 3.0 United States](https://creativecommons.org/licenses/by/3.0/us/)
+license (CC BY 3.0 US). The source page requests this citation:
+
+> C. Mateo, F. Postigo, T. Elgindy, A. Birchfield, P. Duenas, B. Palmintier,
+> N. Panossian, T. Gomez, F. de Cuadra, T. Overbye, F. Safdarian, and D.
+> Wallison, "Building and validating a large-scale combined transmission &
+> distribution synthetic electricity system of Texas," International Journal
+> of Electrical Power and Energy Systems, vol. 159, Aug. 2024.
+
+The demo uses a modified version. Frederik Geth converted the OpenDSS source
+to a fixed nominal-load power-flow snapshot in
+[BMOPFDraftData](https://github.com/frederikgeth/BMOPFDraftData): regulator
+taps are solved and frozen, disabled switches are excluded, and transformers
+and tap-dependent impedances use equivalent conventions. The hosted bundle
+then keeps only the main energized island, removing two unsupplied line
+sections (five buses, three lines, three line codes and five coordinate
+features). For storage it shares identical line-code records, keeps their
+source labels in a provenance sidecar, and drops duplicate GeoJSON bus points
+and default constant-power load labels. No electrical value or coordinate is
+rounded. The staged bundle carries `License.md` and `SOURCE_NOTICE.md` with the
+full attribution and list of changes. No endorsement by the original authors
+is implied.
+
 Embedded fallback cases are from PGLib OPF and are used only when
 `TELLEGEN_ALLOW_FALLBACK=1` is set. PGLib OPF data is CC BY 4.0; the PGLib
 software is MIT licensed.

@@ -56,6 +56,30 @@
 				>
 			</div>
 		{/each}
+		{#each app.hostedDistributionCases.filter((s) => !app.multiCases.some((c) => c.hosted && c.id === s.id)) as c (c.id)}
+			<div class="case-chip">
+				<button
+					class="case-activate"
+					disabled={!!c.unavailable_reason}
+					title={c.unavailable_reason ?? undefined}
+					onclick={() => ctrl.activateHostedDistribution(c.id)}
+				>
+					<span class="cname">{c.name}</span>
+					<span class="cregion mono"
+						>{c.unavailable_reason
+							? 'Unavailable'
+							: ctrl.loadingHostedDistribution === c.id
+								? 'Loading…'
+								: 'Distribution'}</span
+					>
+				</button>
+				<button
+					class="case-remove mono"
+					aria-label="Remove {c.name} from this browser"
+					onclick={() => ctrl.removeHostedDistribution(c.id)}>&#10005;</button
+				>
+			</div>
+		{/each}
 		{#each app.localCases as c (c.id)}
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
@@ -71,7 +95,7 @@
 			</div>
 		{/each}
 		{#each app.multiCases as c (c.id)}
-			<div class="case-chip local" class:active={app.activeMultiId === c.id}>
+			<div class="case-chip" class:local={!c.hosted} class:active={app.activeMultiId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
 					<span class="cregion mono">Multiconductor</span>
@@ -93,6 +117,11 @@
 			<span class="cregion mono">Case or geo files</span>
 		</button>
 	</nav>
+	<button
+		class="settings-button"
+		onclick={() => (app.settingsOpen = !app.settingsOpen)}
+		aria-expanded={app.settingsOpen}>Settings</button
+	>
 	<span class="kicker mono">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
@@ -115,6 +144,17 @@
 </header>
 
 <style>
+	.settings-button {
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		padding: 7px 12px;
+		color: var(--ink);
+		background: var(--surface-control);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
+	}
+
 	header {
 		position: absolute;
 		top: 0;
