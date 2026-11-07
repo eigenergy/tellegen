@@ -31,6 +31,7 @@
 		type MapTheme
 	} from './basemap.js';
 	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
+	import { declutterBuses, declutterZoom, withBus } from './declutter.js';
 	import {
 		type CaseState,
 		type CameraSnapshot,
@@ -84,6 +85,7 @@
 		cartoApiKey,
 		extraLayers = [],
 		attribution = 'compact',
+		declutterMarkers = true,
 		onMapReady,
 		onBasemapFallback,
 		onBasemapError
@@ -125,6 +127,11 @@
 		/** Attribution control mode. There is no off switch: tile licences
 		 * require the credit on screen. */
 		attribution?: 'compact' | 'full';
+		/** At low zoom, draw one bus marker per crowded spot: a generator before
+		 * a substation before any other bus, then the larger bus. Zooming in
+		 * shows the rest, and a selected bus always draws. `false` draws every
+		 * marker at every zoom. */
+		declutterMarkers?: boolean;
 		/** Called once the map and overlay exist, with an optional cleanup. It
 		 * fires again after a context-loss or basemap remount, after the previous
 		 * cleanup ran. It runs before the first style loads, and a switch to the
@@ -232,6 +239,11 @@
 	let mapGen = $state(0);
 	// Cap automatic remounts so sustained GPU pressure cannot loop forever.
 	let glRebuilds = 0;
+	// The zoom the bus markers are thinned at, in quarter steps, so panning
+	// never thins them again. A zoom gesture reads it at most every
+	// MARKER_ZOOM_SAMPLE_MS, and the end of every zoom reads it at once.
+	let markerZoom = $state(declutterZoom(DEFAULT_CAMERA.zoom));
+	const MARKER_ZOOM_SAMPLE_MS = 150;
 
 	type LayerCtors = {
 		PathLayer: typeof PathLayer;
@@ -440,6 +452,52 @@
 		const primary = b.attachmentKinds[0];
 		return primary ? attachmentColor(primary) : busNeutral;
 	}
+
+	// The buses each bus layer could draw at the current zoom: with
+	// `declutterMarkers`, one per crowded spot (see declutterBuses). A generated
+	// grid's line taps are left out before thinning, and its bus kinds rank the
+	// buses. Selection is not read here, so selecting a bus thins nothing again.
+	const thinnedMarkers = $derived.by(() => {
+		const zoom = markerZoom;
+		const thin = (buses: NetworkBus[], kinds?: ReadonlyMap<number, string>) =>
+			declutterMarkers ? declutterBuses(buses, { zoom, kinds }) : buses;
+		const sets = new Map<string, NetworkBus[]>();
+		if (app.studyView) {
+			sets.set('study-buses', thin(app.studyView.network.buses));
+			return sets;
+		}
+		for (const c of app.cases) if (c.network) sets.set(`buses-${c.id}`, thin(c.network.buses));
+		for (const c of app.localCases) {
+			if (c.view) sets.set(`local-buses-${c.id}`, thin(c.markerBuses, c.busKinds));
+		}
+		return sets;
+	});
+	// The data of each bus layer: its thinned buses, plus the selected bus when
+	// thinning (or a line tap's missing marker) left it out, so it keeps its
+	// marker and selection ring. The arrays keep their identity until the zoom
+	// bucket or the selection changes them, so deck.gl does not rebuild the
+	// layer's attributes on every redraw.
+	const busMarkers = $derived.by(() => {
+		const selected = app.selectedBus;
+		const sets = new Map<string, NetworkBus[]>();
+		const add = (id: string, all: NetworkBus[], pinned: number | null) => {
+			const shown = thinnedMarkers.get(id);
+			if (shown) sets.set(id, withBus(shown, all, pinned));
+		};
+		if (app.studyView) {
+			add('study-buses', app.studyView.network.buses, selected);
+			return sets;
+		}
+		for (const c of app.cases) {
+			if (c.network)
+				add(`buses-${c.id}`, c.network.buses, c.id === app.activeCaseId ? selected : null);
+		}
+		for (const c of app.localCases) {
+			if (c.view)
+				add(`local-buses-${c.id}`, c.view.buses, c.id === app.activeLocalId ? selected : null);
+		}
+		return sets;
+	});
 
 	// Layers whose click selects something (a bus or a branch); the overlay-level
 	// click handler must not treat those clicks as "empty map" and clear the selection.
@@ -967,6 +1025,18 @@
 					if (document.visibilityState === 'visible') repaint();
 				};
 				const syncCues = () => scheduleCueSync();
+				let zoomTimer: ReturnType<typeof setTimeout> | null = null;
+				const readZoom = () => {
+					if (zoomTimer !== null) {
+						clearTimeout(zoomTimer);
+						zoomTimer = null;
+					}
+					markerZoom = declutterZoom(m.getZoom());
+				};
+				const sampleZoom = () => {
+					zoomTimer ??= setTimeout(readZoom, MARKER_ZOOM_SAMPLE_MS);
+				};
+				readZoom();
 				const saveCamera = () => {
 					const center = m.getCenter();
 					app.camera = {
@@ -1024,6 +1094,9 @@
 				m.on('load', syncCues);
 				m.on('move', syncCues);
 				m.on('resize', syncCues);
+				// 'zoom' does not fire while the camera only pans.
+				m.on('zoom', sampleZoom);
+				m.on('zoomend', readZoom);
 
 				map = m;
 				overlay = o;
@@ -1039,6 +1112,9 @@
 					m.off('load', syncCues);
 					m.off('move', syncCues);
 					m.off('resize', syncCues);
+					m.off('zoom', sampleZoom);
+					m.off('zoomend', readZoom);
+					if (zoomTimer !== null) clearTimeout(zoomTimer);
 					m.off('style.load', applyStyleExtras);
 					detachFallback();
 					detachReady?.();
@@ -1151,7 +1227,7 @@
 				}),
 				new ScatterplotLayer<NetworkBus>({
 					id: 'study-buses',
-					data: study.network.buses,
+					data: busMarkers.get('study-buses') ?? study.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 					radiusUnits: marker.radiusUnits,
@@ -1222,7 +1298,7 @@
 				}),
 				new ScatterplotLayer<NetworkBus>({
 					id: `buses-${c.id}`,
-					data: c.network.buses,
+					data: busMarkers.get(`buses-${c.id}`) ?? c.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 					radiusUnits: marker.radiusUnits,
@@ -1258,14 +1334,11 @@
 		// Local cases are grey until the browser solve returns. A .pwd display
 		// file contributes substation points only, in a cooler slate so they
 		// read as diagram derived positions. A generated grid's line taps draw
-		// no marker, as their lines show them, unless one is the selected bus.
+		// no marker, as their lines show them, unless one is the selected bus
+		// (see busMarkers).
 		for (const c of app.localCases) {
 			if (c.view) {
 				const d = display.get(c.id);
-				const selectedTap =
-					c.id === app.activeLocalId && app.selectedBus !== null && c.tapBuses.has(app.selectedBus)
-						? c.view.buses.find((b) => b.id === app.selectedBus)
-						: undefined;
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
@@ -1305,7 +1378,7 @@
 					}),
 					new ScatterplotLayer<NetworkBus>({
 						id: `local-buses-${c.id}`,
-						data: selectedTap ? [...c.markerBuses, selectedTap] : c.markerBuses,
+						data: busMarkers.get(`local-buses-${c.id}`) ?? c.markerBuses,
 						getPosition: (b) => [b.lon, b.lat],
 						getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 						radiusUnits: marker.radiusUnits,
