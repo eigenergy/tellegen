@@ -8,6 +8,7 @@
 	} from '@deck.gl/core';
 	import { untrack } from 'svelte';
 	import { mcSchematicLayout, type SchematicStrategy } from '@tellegen/engine';
+	import { fitBounds, openingCamera, showsAnyPosition } from '../diagram/camera.js';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import type { RGBA } from '../colors.js';
 	import { priceGradient, sensGradient } from '../colors.js';
@@ -659,21 +660,6 @@
 		})
 	);
 
-	/** Whether `view` shows at least one bus of `g`. */
-	function showsAny(
-		g: SchematicGeometry,
-		view: { target: [number, number, number]; zoom: number }
-	) {
-		const scale = 2 ** view.zoom;
-		const [hw, hh] = [width / 2 / scale, height / 2 / scale];
-		for (let i = 0; i < g.positions.length; i += 3) {
-			const dx = g.positions[i] - view.target[0];
-			const dy = g.positions[i + 1] - view.target[1];
-			if (Math.abs(dx) <= hw && Math.abs(dy) <= hh) return true;
-		}
-		return false;
-	}
-
 	// Record the geographic view on the case, so the map can continue from it when this diagram is
 	// closed (TellegenMap applies it). A plain field, written here rather than on teardown: writing
 	// app state while a component is torn down left the map's deriveds stale.
@@ -696,18 +682,8 @@
 	}
 
 	function fitCamera(g: SchematicGeometry) {
-		const [x0, y0, x1, y1] = g.bounds;
-		const { left, right, top, bottom } = freeArea();
-		const w = Math.max(80, width - left - right);
-		const h = Math.max(80, height - top - bottom);
-		const zoom = Math.log2(Math.min(w / Math.max(1, x1 - x0), h / Math.max(1, y1 - y0)));
-		const scale = 2 ** zoom;
-		// Centre the drawing in the free area between the docked panels.
-		const cx = (x0 + x1) / 2 - (left - right) / 2 / scale;
-		const cy = (y0 + y1) / 2 - (top - bottom) / 2 / scale;
 		// Schematic units are sized for about 1:1 to 2:1; closer, a small network's symbols balloon.
-		const max = g.attachmentGap ? 1 : 4;
-		return { target: [cx, cy, 0] as [number, number, number], zoom: Math.min(zoom, max) };
+		return fitBounds(g.bounds, { width, height }, freeArea(), g.attachmentGap ? 1 : 4);
 	}
 
 	let morph: {
@@ -1246,12 +1222,14 @@
 		strategy = nextStrategy;
 		shown = next;
 		// Opening on geographic positions, continue from the main map's view when it shows part of
-		// this feeder; otherwise fit the drawing.
+		// this feeder at a useful zoom outside the panels; otherwise fit the drawing.
 		const fromMap =
 			!previous && nextLayout === 'source' && next.mercatorOrigin && app.camera
 				? cameraFromMap(app.camera, next.mercatorOrigin)
 				: null;
-		const to = fromMap && showsAny(next, fromMap) ? fromMap : fitCamera(next);
+		const to = openingCamera(fromMap, fitCamera(next), (view) =>
+			showsAnyPosition(next.positions, view, { width, height }, freeArea())
+		);
 		setCamera(to);
 		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (!previous || !deck || reduced || graph.buses.length > MORPH_MAX_BUSES) return;
