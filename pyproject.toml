@@ -51,3 +51,6 @@ features = ["extension-module"]
 profile = "release-py"
 strip = true
 include = [{ path = "LICENSE", format = "sdist" }]
+# These are validation fixtures, not inputs required by the installed solver.
+# Keep their independent data licences out of the Python source distribution.
+exclude = ["**/tests/data/**", "**/tests/fixtures/**"]

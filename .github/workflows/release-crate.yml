@@ -31,6 +31,7 @@ jobs:
       contents: read
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,6 +71,7 @@ jobs:
             publish=false
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   gates:
     needs: plan
@@ -168,6 +170,7 @@ jobs:
     name: update version pull request
     needs: version-patch
     runs-on: ubuntu-latest
+    environment: release-bot
     permissions:
       contents: read
     steps:
@@ -282,3 +285,26 @@ jobs:
           version: "0.3.160"
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+  acopf-asset:
+    needs: [plan, publish]
+    if: needs.publish.result == 'success'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-acopf.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+
+  python:
+    needs: [plan, publish]
+    if: needs.publish.result == 'success'
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start the Python release for the published crate tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: gh workflow run release-python.yml --ref main --field tag="$TAG"

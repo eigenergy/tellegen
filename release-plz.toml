@@ -45,6 +45,9 @@ name = "tellegen"
 changelog_path = "crates/tellegen/CHANGELOG.md"
 release = true
 publish = true
+# The unprivileged Rust gate already compiles the packaged crate with every
+# feature. Do not run dependency build scripts after exchanging the OIDC token.
+publish_no_verify = true
 # API comparison runs in read-only pull-request CI, without the Release App
 # token that release-plz needs to update its version branch.
 semver_check = false

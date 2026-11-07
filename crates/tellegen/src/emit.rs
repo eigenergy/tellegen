@@ -401,10 +401,22 @@ pub(crate) fn emit_socwr_solution(
     values.branch_voltage_product_imaginary = scatter(&sol.wi, &model.branch_ids, m, 1.0)?;
     values.generator_active_power = scatter(&sol.pg, &model.gen_ids, k, base)?;
     values.generator_reactive_power = scatter(&sol.qg, &model.gen_ids, k, base)?;
-    values.branch_from_active_power = scatter(&sol.pf, &model.branch_ids, m, base)?;
-    values.branch_from_reactive_power = scatter(&sol.qf, &model.branch_ids, m, base)?;
-    values.branch_to_active_power = scatter(&sol.pt, &model.branch_ids, m, base)?;
-    values.branch_to_reactive_power = scatter(&sol.qt, &model.branch_ids, m, base)?;
+    // PowerIO 0.12 makes these names consistent with its other solutions.
+    // Keep the data and row mapping identical across both supported series.
+    #[cfg(not(feature = "powerio-012"))]
+    {
+        values.branch_from_active_power = scatter(&sol.pf, &model.branch_ids, m, base)?;
+        values.branch_from_reactive_power = scatter(&sol.qf, &model.branch_ids, m, base)?;
+        values.branch_to_active_power = scatter(&sol.pt, &model.branch_ids, m, base)?;
+        values.branch_to_reactive_power = scatter(&sol.qt, &model.branch_ids, m, base)?;
+    }
+    #[cfg(feature = "powerio-012")]
+    {
+        values.branch_from_active_flow = scatter(&sol.pf, &model.branch_ids, m, base)?;
+        values.branch_from_reactive_flow = scatter(&sol.qf, &model.branch_ids, m, base)?;
+        values.branch_to_active_flow = scatter(&sol.pt, &model.branch_ids, m, base)?;
+        values.branch_to_reactive_flow = scatter(&sol.qt, &model.branch_ids, m, base)?;
+    }
     values.three_winding_transformer_terminal_powers = vec![
             powerio::ThreeWindingTransformerTerminalPower::default();
             instance.network().transformers_3w().len()

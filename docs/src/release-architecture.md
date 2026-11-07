@@ -125,20 +125,54 @@ variable after you make all of these:
    rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
-   its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Both release
+   its private key in the `release-bot` environment's
+   `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Restrict that environment to `main`.
+   Both release
    bots use it so their version pull requests start CI. Pull requests opened by
    `GITHUB_TOKEN` do not start workflows.
 
-Protect `main` with a repository ruleset that requires pull requests, at least
-one approval, approval of the most recent reviewable push (or dismissal of
-stale approvals), an up-to-date branch, and the CI checks before merge. Block
-force pushes and deletion. Do not give the Release App a ruleset bypass. Those
-protections ensure an approval cannot survive a bot refresh with different
-release contents and make the version pull-request merge the publication gate.
+Keep deployment credentials in the main-only `demo` environment. No deployment
+or Release App credentials belong at repository scope; only the jobs bound to
+their environments receive them. The temporary migration workflow is removed
+after its environment-only aliases prove that all copied credentials match.
 
-If a package or crate does not yet exist at its registry, publish its first
-version manually before configuring the trusted publisher. Later releases use
-this pipeline end to end.
+The current `main` ruleset requires pull requests, merge commits and CI checks;
+it blocks force pushes and deletion. It does not require the branch to be
+up to date before merging. It requires zero
+approvals and does not require approval of the last push, so a sole maintainer
+can release after reviewing the final changes and checks. The version
+pull-request merge is the publication gate. If independent approval becomes
+required, set at least one approval and dismiss stale approvals or require
+approval of the last reviewable push. Do not give the Release App a ruleset bypass.
+
+For npm and crates.io, bootstrap a missing package before configuring its
+trusted publisher. PyPI supports a pending publisher that creates the project
+on the first OIDC upload; its setup is described below.
+
+Check all four npm publishers with `npm trust list @tellegen/<name>`. A package
+previously published by hand still needs its own publisher; configuring the
+engine does not configure WebMCP. After `npm login`, the command is
+`npm trust github @tellegen/<name> --file release-npm.yml --repo eigenergy/tellegen --env npm --allow-publish`.
+It requires npm's interactive two-factor confirmation. A partial publish can
+be retried: already published versions are retained, and remaining packages
+publish through the same workflow.
+
+### Separate AC OPF download
+
+Each stable crate release also builds the isolated POUNCE WASI reactor from
+that exact tag and attaches it to the existing GitHub release. The download
+contains `tellegen_acopf_wasi.wasm`, `POUNCE-EPL-2.0.txt`, `POUNCE-NOTICE.txt`,
+`POUNCE-SOURCE.json` and `ACOPF-SHA256SUMS.txt`. It remains separate from the MIT
+engine packages. The manifest records the reactor ABI, engine version, full
+source revision, source archive and POUNCE crate checksums. This preserves the
+license and corresponding-source information distributed with the website.
+
+Consumers pin a release URL and reactor hash, rather than the changing demo
+URL. The publisher never replaces existing release assets: a retry verifies
+identical bytes and uploads only missing files. A source or toolchain change
+needs a new release. To backfill an existing stable tag, dispatch
+`release-acopf.yml` on `main` with `tag=vX.Y.Z`; it accepts only an existing
+release whose tagged commit is part of `main`.
 
 Delete any `NPM_TOKEN` or `CARGO_REGISTRY_TOKEN` repository secrets. The
 workflows do not read long-lived registry credentials.
@@ -181,11 +215,18 @@ On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
 open that bumps the version. Merge it to run the gates, continue the existing
 `vX.Y.Z` tag series, make the GitHub release, and publish. The configuration
 sets `release_always = false`, limiting publication to a merged release-plz pull
-request. The unprivileged gate runs `cargo package --locked --all-features`, so every
-opt-in feature builds against crates.io; the OIDC-enabled
+request. The unprivileged gate runs `cargo package --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema`, so every
+shipping numerical feature builds against crates.io; the OIDC-enabled
 release uses the ordinary verified Cargo publish path against that exact
 commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
+
+The explicit feature list excludes `powerio-012`, which requires selecting
+matching 0.12 dependencies and belongs to the separate PowerIO Candidate gate.
+The release API comparison also uses `--only-explicit-features` with that list:
+`cargo-semver-checks` otherwise enables non-default features heuristically.
+`release-plz` itself has `semver_check = false` because this read-only gate owns
+API comparison. Ordinary Cargo publication and docs builds use default features.
 
 The workflow's first job decides whether the push can publish: its engine
 version has no `v<version>` tag yet, and the push writes
@@ -209,7 +250,29 @@ package version may differ from the checkout. In every case the validator
 requires both manifests and both lock entries to carry the engine's version,
 before the patch is sealed and again after it is applied, before the App token
 is minted. A wheel already on the new version needs no edit, and an update with
-no release stays a no-op. Nothing here publishes a wheel to PyPI.
+no release stays a no-op.
+
+After a crate release succeeds, `release-crate.yml` dispatches
+`release-python.yml` on main with the published tag. It resolves the tag to an
+immutable commit, confirms it belongs to main and has a published GitHub
+release, and runs the Python gates against that source. The gates check the
+installed extension's type stubs, test Python 3.11 and 3.13, build five platform
+wheels, and build and solve a case from the source archive. Test fixtures are
+excluded from the source archive; the package includes its MIT licence and
+all solver build inputs.
+
+Only the final, checkout-free job has `id-token: write`. Its `pypi` environment
+is restricted to main, and its trusted publisher is `eigenergy/tellegen`,
+workflow `release-python.yml`, environment `pypi`. PyPI does not support a
+reusable publishing workflow, so the crate workflow dispatches this standalone
+workflow instead of calling it. A pending publisher configured at
+<https://pypi.org/manage/account/publishing/> creates the project on its first
+OIDC upload; no bootstrap API token or manual first upload is necessary.
+
+To retry an interrupted publication, dispatch `release-python.yml` on main
+with the same stable tag. Existing distributions are skipped; published
+versions and their source commits are never replaced. Add the public install
+command to the README and Python guide only after the first upload is verified.
 
 Its fixed `release-plz-main` branch is intentional: with
 `release_always = false`, release-plz recognizes a release commit by the
@@ -275,7 +338,7 @@ starts reading a new path.
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
 `conic` path, `tellegen-wasm` built with `conic` and `synth`, and
-`cargo package --locked --all-features` for the published crate. The wasm test matters
+`cargo package --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema` for the published crate. The wasm test matters
 because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.
 

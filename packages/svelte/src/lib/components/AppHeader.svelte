@@ -1,12 +1,26 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+	onMount(() => {
+		void ctrl.probeCollections();
+	});
 
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
+	function openFolder() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.webkitdirectory = true;
+		input.multiple = true;
+		input.onchange = () => {
+			if (input.files) void ctrl.ingestFolder(input.files);
+		};
+		input.click();
+	}
 	let headerEl = $state.raw<HTMLElement | undefined>(undefined);
 
 	// The case tabs wrap onto their own row on a narrow viewport and unwrap on a
@@ -114,8 +128,15 @@
 					? 'Drop a case file'
 					: 'Open a case file'}</span
 			>
-			<span class="cregion mono">Case or geo files</span>
+			<span class="cregion mono"
+				>{ctrl.collectionsAvailable ? 'Case, ZIP or geo files' : 'Case or geo files'}</span
+			>
 		</button>
+		{#if ctrl.collectionsAvailable}
+			<button class="ghost filedrop-ui" onclick={openFolder}>
+				<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
+			</button>
+		{/if}
 	</nav>
 	<button
 		class="settings-button"
@@ -129,7 +150,7 @@
 	</span>
 	<input
 		type="file"
-		accept=".m,.raw,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson"
+		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx`}
 		multiple
 		hidden
 		bind:this={fileInput}
@@ -202,7 +223,9 @@
 		min-width: 0;
 		display: flex;
 		gap: 6px;
-		justify-content: center;
+		/* Center small collections without stranding earlier tabs to the left
+		   of the scroll origin once a ZIP imports more cases than fit. */
+		justify-content: safe center;
 		overflow-x: auto;
 		scrollbar-width: none;
 	}

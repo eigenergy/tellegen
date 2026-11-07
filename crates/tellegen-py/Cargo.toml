@@ -20,6 +20,7 @@ crate-type = ["cdylib"]
 # never link libpython. maturin turns it on through pyproject's
 # `[tool.maturin] features`.
 default = []
+powerio-012 = ["tellegen/powerio-012"]
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]

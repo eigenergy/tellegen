@@ -94,6 +94,7 @@ jobs:
     name: update version pull request
     needs: version-patch
     runs-on: ubuntu-latest
+    environment: release-bot
     permissions:
       contents: read
     steps:

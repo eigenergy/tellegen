@@ -174,6 +174,24 @@ pub fn build_transformer_yprim(
 pub fn prepare_transformer(
     transformer: &DistTransformer,
 ) -> Result<TransformerPrimitive, TransformerError> {
+    // These raw DSS settings are not represented by the typed winding model.
+    // In particular LeadLag must not silently use our default delta orientation.
+    for key in ["leadlag", "xrconst", "core"] {
+        if transformer.extras.contains_key(key) {
+            return Err(TransformerError::Unsupported {
+                transformer: transformer.name.clone(),
+                reason: format!("raw OpenDSS property `{key}` requires normalization"),
+            });
+        }
+    }
+    if value_number(&transformer.extras, "ppm_antifloat")
+        .is_some_and(|value| value != 0.0 && value != 1.0)
+    {
+        return Err(TransformerError::Unsupported {
+            transformer: transformer.name.clone(),
+            reason: "nondefault OpenDSS anti-float admittance is not supported".into(),
+        });
+    }
     if transformer
         .extras
         .get("bmopf_subtype")
@@ -765,7 +783,15 @@ fn neutral_ref(
 }
 
 fn value_number(extras: &std::collections::BTreeMap<String, Value>, key: &str) -> Option<f64> {
-    extras.get(key).and_then(Value::as_f64)
+    // DSS retains written extras as text, while typed producers use numbers.
+    // A present malformed value must reach the existing finite-value guards,
+    // rather than silently becoming an omitted zero excitation.
+    extras.get(key).map(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_str()?.trim().parse().ok())
+            .unwrap_or(f64::NAN)
+    })
 }
 
 fn add_excitation(

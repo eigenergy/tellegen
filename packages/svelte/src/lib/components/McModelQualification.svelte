@@ -33,7 +33,8 @@
 			<p>
 				Load-model envelope {model.options.voltage_envelope ? 'enabled' : 'disabled'}; Vlow {model
 					.options.v_low_pu}, Vmin {model.options.v_min_pu}, Vmax {model.options.v_max_pu} pu. These thresholds
-				change load equations; they are not operating voltage limits.
+				change load equations; they are not operating voltage limits. Explicit source load bounds take
+				precedence over this optional envelope.
 			</p>
 			<p>
 				Maximum iterations {model.options.max_iterations}; damping {model.options.damping};

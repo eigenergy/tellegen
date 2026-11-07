@@ -54,6 +54,16 @@ sample of visitor outcomes. Automated headless requests were not included in
 the observed counts. Event-property requests use the Cloud API's `event` filter
 ([API changelog](https://docs.umami.is/docs/cloud/changelog)).
 
+A subsequent production check on 7 November completed Portugal generation
+with DC OPF optimal and AC power flow converged. All five collector requests
+(page view, engine load, generation start/finish and agent availability)
+returned HTTP 200. The aggregate totals below did not increase after the
+automated check, so it proves transport only and is not counted as new visitor
+evidence. A separate normal browser session also completed without collector
+errors. The test machine's VPN DNS returned NXDOMAIN for the Umami hosts;
+the isolated transport test used their verified public DNS address without
+changing the machine's network settings or the site's privacy behavior.
+
 <!-- usage:start -->
 
 Last pull: 2026-11 (2026-11-07).
@@ -61,7 +71,7 @@ Last pull: 2026-11 (2026-11-07).
 | Site | Visitors | Page views | Top events |
 | --- | ---: | ---: | --- |
 | maptogrid.com | 1 | 1 | engine.load 1, generate.start 1, generate.finish 1, agent.availability 1 |
-| tellegen.dev | 87 | 216 | calculation.solve 380, case.select 333, view.change 285, agent.availability 212, case.import 77 |
+| tellegen.dev | 90 | 222 | calculation.solve 386, case.select 339, view.change 291, agent.availability 218, case.import 77 |
 
 Grids generated on maptogrid.com, by country (trusted = every check and published range met):
 
