@@ -713,10 +713,11 @@ pub struct BranchAnnotation {
     pub source: ElementSource,
     /// Parallel circuits in this branch's corridor, this branch included;
     /// every branch of a corridor carries the same count. It is the corridor
-    /// plan's count for a synthetic corridor and for the transformers and
-    /// connections OpenStreetMap mode adds, and the summed `circuits` tags
-    /// (else `cables / 3`) of the joined ways for a mapped OpenStreetMap
-    /// corridor. An HVDC link is one row for all of its circuits.
+    /// plan's count, including any synthetic reinforcement. In OpenStreetMap
+    /// mode the mapped circuits keep source `osm`, added parallels have source
+    /// `synthetic`, and `osm_ids` identifies the route for both. With
+    /// `osm.reinforce=false`, counts are the summed `circuits` tags (else
+    /// `cables / 3`) of the joined ways. An HVDC link is one row for all circuits.
     pub circuits: u32,
     /// 1-based position of this branch among its corridor's circuits
     /// (`1..=circuits`); 1 for an HVDC link.

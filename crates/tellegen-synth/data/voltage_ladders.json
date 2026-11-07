@@ -1,6 +1,6 @@
 {
  "schema": "tellegen.synth-voltage-ladders/1",
- "version": "2026-11-03",
+ "version": "2026-11-06",
  "note": "National AC transmission ladders, highest first: the levels a national model uses (levels_kv) and any higher AC level in service (above_kv), which the corridor plan may raise buses to. Lines built for a higher voltage but operated lower do not count. Gathered for tellegen-synth; quotes are transliterated to ASCII.",
  "regional": {
   "name": "ENTSO-E",
@@ -247,6 +247,18 @@
    "sources": [
     "TCN, Transmission News, December 2023, p. 28, https://www.tcn.org.ng/repository/newsletters/Oiplr_15_02_2024-Newsletter.pdf: \"TCN has about 8,937.59KM of 330kV lines nationwide and 7908.37KM of 132kV transmission lines\""
    ]
+  },
+  "NZL": {
+   "levels_kv": [
+    220,
+    110
+   ],
+   "above_kv": [],
+   "sources": [
+    "Transpower Geospatial, TransmissionLines: https://services3.arcgis.com/AkUq3zcWf7TVqyR9/ArcGIS/rest/services/TransmissionLines/FeatureServer (read 2026-11-06): AC lines at 33, 66, 110 and 220 kV; 350 kV is DC.",
+    "Electricity Authority, Transmission: https://www.ea.govt.nz/industry/transmission/ (read 2026-11-06): AC transmission operates up to 220 kV; the North and South Islands exchange power through the HVDC link."
+   ],
+   "note": "National transmission model at 220/110 kV; 66 and 33 kV are omitted. The 350 kV inter-island link is HVDC, not an AC promotion level."
   },
   "PRT": {
    "levels_kv": [

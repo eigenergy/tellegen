@@ -129,7 +129,7 @@
           "type": "integer"
         },
         "circuits": {
-          "description": "Parallel circuits in this branch's corridor, this branch included;\nevery branch of a corridor carries the same count. It is the corridor\nplan's count for a synthetic corridor and for the transformers and\nconnections OpenStreetMap mode adds, and the summed `circuits` tags\n(else `cables / 3`) of the joined ways for a mapped OpenStreetMap\ncorridor. An HVDC link is one row for all of its circuits.",
+          "description": "Parallel circuits in this branch's corridor, this branch included;\nevery branch of a corridor carries the same count. It is the corridor\nplan's count, including any synthetic reinforcement. In OpenStreetMap\nmode the mapped circuits keep source `osm`, added parallels have source\n`synthetic`, and `osm_ids` identifies the route for both. With\n`osm.reinforce=false`, counts are the summed `circuits` tags (else\n`cables / 3`) of the joined ways. An HVDC link is one row for all circuits.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -1500,6 +1500,11 @@
           "description": "A plant within this distance of a site connects there.",
           "format": "double",
           "type": "number"
+        },
+        "reinforce": {
+          "default": true,
+          "description": "Add explicitly synthetic parallel circuits and voltage support to the\nmapped topology when its modelled peak demand needs them. False keeps\nthe mapped circuit counts; validation may then report infeasibility.",
+          "type": "boolean"
         },
         "snap_km": {
           "default": 2.0,
@@ -2897,5 +2902,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "93e5dd9a1a061de6170028057ec998f526495e1b026232a93f4d19e46dd766a4"
+  "x-rust-source-sha256": "571b2d87324975dc251fbec5be0ce35429fea5d3df0df67ebeb905806b9b3e4f"
 }

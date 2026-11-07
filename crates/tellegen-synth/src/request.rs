@@ -225,6 +225,11 @@ pub enum OsmIslands {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OsmOptions {
+    /// Add explicitly synthetic parallel circuits and voltage support to the
+    /// mapped topology when its modelled peak demand needs them. False keeps
+    /// the mapped circuit counts; validation may then report infeasibility.
+    #[serde(default = "default_osm_reinforce")]
+    pub reinforce: bool,
     /// Lines and substations below this nominal voltage are distribution and
     /// are dropped.
     #[serde(default = "default_osm_voltage_floor_kv")]
@@ -252,6 +257,10 @@ pub struct OsmOptions {
     /// Fewer branches than this is `OsmInsufficient`.
     #[serde(default = "default_osm_min_branches")]
     pub min_branches: usize,
+}
+
+fn default_osm_reinforce() -> bool {
+    true
 }
 
 fn default_osm_voltage_floor_kv() -> f64 {
@@ -282,6 +291,7 @@ fn default_osm_min_branches() -> usize {
 impl Default for OsmOptions {
     fn default() -> Self {
         Self {
+            reinforce: default_osm_reinforce(),
             voltage_floor_kv: default_osm_voltage_floor_kv(),
             cluster_radius_m: default_osm_cluster_radius_m(),
             snap_km: default_osm_snap_km(),

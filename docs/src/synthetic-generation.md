@@ -249,7 +249,8 @@ a solve.
   over long lines has nothing to hold its voltage, and its AC power flow can
   stall while the lines are well inside their ratings. Condensers are
   flagged in the generator annotations (`condenser`) and counted in the
-  `electrify` stage (`condensers`); a mapped OSM network gets none.
+  `electrify` stage (`condensers`). OpenStreetMap mode also adds explicitly
+  synthetic condensers when `osm.reinforce` is enabled (the default).
 
 The plan is recorded in `GenerationReport.planning`: rounds, promoted
 buses, the added level, the most circuits on one corridor
@@ -306,8 +307,27 @@ is left out, one at a time, until they fit, and its lines with it;
 alone exceeds the cap is refused as `invalid_request`: choose a smaller region
 or raise the cap.
 
-Mapped circuits are real, so the corridor plan only measures them; the
-reactive plan still applies. A way's circuit count, and a corridor's, is
+Mapped routes and voltages are retained. By default, `osm.reinforce: true`
+allows the corridor plan to add synthetic parallel circuits, enlarge modelled
+transformer banks, and add synchronous condensers for the modelled demand.
+The existing equipment first receives a constrained DC dispatch; circuits
+are added only if that draft is infeasible.
+This does not assert that the added equipment exists. Added branches have
+`source: "synthetic"` in the report and `synthetic_reinforcement: true` in
+their exported extras; their OSM way ids identify the route only. The report
+warns with `osm_synthetic_reinforcement`. Set `osm.reinforce: false` to keep
+the original circuit counts and observe their feasibility without additions.
+Density never adds filler circuits in OSM mode, and demand is not reduced to
+make a failed case pass.
+
+Reactive support is sized after calibration from the feasible, constrained DC
+dispatch, rather than the unconstrained economic dispatch. Otherwise cheap
+generation behind mapped bottlenecks can produce an impossible angle profile
+and excessive shunt banks. Shunts are labelled synthetic, with basis
+`dc_dispatch_reactive_balance`. A failed angle solve installs no banks from
+its divergent iterate, and validation still reports any remaining failure.
+
+A way's circuit count, and a corridor's mapped count, is
 capped at 12: a larger `circuits` or `cables` tag is a tagging error, and each
 circuit becomes a branch row. A network too thin to use is the typed
 `osm_insufficient` refusal. The caller decides whether to rerun
