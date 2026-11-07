@@ -59,7 +59,15 @@ struct State {
     calibrator: Option<Calibrator>,
     module: Option<PioModule<BalancedNetwork>>,
     osm: Option<crate::osm::OsmBuild>,
+    /// The ladder reaches subtransmission and the network is built
+    /// level by level ([`crate::hierarchy`]).
+    hierarchical: bool,
+    /// The region's ladder reaches subtransmission, synthetic or mapped.
+    layered: bool,
 }
+
+/// Rounds of new step-downs a mapped network may get after its plan.
+const MAPPED_RELIEF_ROUNDS: usize = 16;
 
 /// A generation session.
 pub struct Generator {
@@ -334,24 +342,56 @@ impl Generator {
     ) -> Result<(), SynthError> {
         let ctx = self.report.context.as_ref().expect("context ran");
         let data = self.state.context.as_ref().expect("context ran");
+        let layered = crate::hierarchy::layered(ctx);
+        let hierarchical = self.state.osm.is_none() && layered;
         if let Some(osm) = self.state.osm.as_mut() {
             let mut rng = Stream::new(self.request.seed, StreamTag::Osm);
             let sited = osm.site(&self.request, ctx, data, &mut rng, warnings)?;
             self.state.buses = sited;
+        } else if hierarchical {
+            let mut rng = Stream::new(self.request.seed, StreamTag::Site);
+            self.state.buses = crate::hierarchy::site_hierarchical(ctx, data, &mut rng);
         } else {
             let mut rng = Stream::new(self.request.seed, StreamTag::Site);
             self.state.buses = site_buses(ctx, data, &mut rng);
         }
+        for (i, bus) in self.state.buses.iter_mut().enumerate() {
+            if bus.site == usize::MAX {
+                bus.site = i;
+            }
+        }
         let mut rng = Stream::new(self.request.seed, StreamTag::Loads);
-        let loads = assign_loads(
+        let mut loads = assign_loads(
             &mut self.state.buses,
             ctx,
             data,
             self.request.fidelity,
             self.request.power_factor,
-            self.state.osm.is_none(),
+            self.state.osm.is_none() && !hierarchical,
+            // Each place shared among the buses around it, except for a
+            // synthetic hierarchical network, which places it on its nearest
+            // bus below.
+            !hierarchical,
             &mut rng,
         );
+        if layered {
+            if hierarchical {
+                crate::hierarchy::blend_place_loads(&mut self.state.buses, ctx, data);
+            }
+            crate::hierarchy::settle_site_loads(&mut self.state.buses);
+            let (capped, spilled) =
+                crate::electrical::loads::spill_loads_by_level(&mut self.state.buses);
+            loads.capped = capped;
+            loads.spilled_mw = spilled;
+            let tan_phi = self.request.power_factor.clamp(1e-6, 1.0).acos().tan();
+            let peak = ctx.peak_demand_mw.max(1e-9);
+            for bus in self.state.buses.iter_mut() {
+                bus.load_mvar = bus.load_mw * tan_phi;
+                bus.population_weight = bus.load_mw / peak;
+            }
+        }
+        self.state.hierarchical = hierarchical;
+        self.state.layered = layered;
         counts.insert("buses_promoted".into(), loads.promoted as u64);
         counts.insert("buses_load_capped".into(), loads.capped as u64);
         counts.insert("load_spilled_mw".into(), loads.spilled_mw.round() as u64);
@@ -387,9 +427,19 @@ impl Generator {
         let mut rng = Stream::new(self.request.seed, StreamTag::Topology);
         let out = if let Some(osm) = self.state.osm.as_mut() {
             osm.topology(&mut self.state.buses, data, warnings)?
+        } else if self.state.hierarchical {
+            crate::hierarchy::hierarchical_topology(&mut self.state.buses, data, &mut rng)
         } else {
             build_topology(&self.state.buses, data, ctx.branch_factor, &mut rng)
         };
+        counts.insert(
+            "taps".into(),
+            self.state
+                .buses
+                .iter()
+                .filter(|b| b.kind == crate::report::BusKind::Tap)
+                .count() as u64,
+        );
         counts.insert("corridors".into(), out.corridors.len() as u64);
         counts.insert(
             "branches".into(),
@@ -429,14 +479,19 @@ impl Generator {
             )
         };
         let mut rng = Stream::new(self.request.seed, StreamTag::Electrical);
-        let draws = draw_corridors(&self.state.corridors, self.request.fidelity, &mut rng);
+        let mut draws = draw_corridors(&self.state.corridors, self.request.fidelity, &mut rng);
         let branch_target = (ctx.branch_factor * self.state.buses.len() as f64).round() as usize;
-        let mode = if self.state.osm.is_some() {
+        // A mapped network down to subtransmission carries modelled ratings
+        // on thousands of real lines; the plan reinforces it where the
+        // planning case overloads them, as for a synthetic one.
+        let mode = if self.state.osm.is_some() && !self.state.layered {
             PlanMode::Observe
+        } else if self.state.layered {
+            PlanMode::Reinforce
         } else {
             PlanMode::Expand
         };
-        let (designs, plan) = plan_corridors(
+        let (mut designs, mut plan) = plan_corridors(
             &mut self.state.buses,
             &ctx.voltage_levels_kv,
             &ctx.promotion_levels_kv,
@@ -446,13 +501,54 @@ impl Generator {
             branch_target,
             mode,
         );
+        // A mapped network down to subtransmission gets step-downs where its
+        // planning case still overloads it, and is planned again.
+        if self.state.osm.is_some() && self.state.layered {
+            let mut relief = 0usize;
+            for _ in 0..MAPPED_RELIEF_ROUNDS {
+                let added = crate::hierarchy::relieve_mapped(
+                    &self.state.buses,
+                    &mut self.state.corridors,
+                    &designs,
+                    &plan,
+                );
+                if added == 0 {
+                    break;
+                }
+                relief += added;
+                let fresh = draw_corridors(
+                    &self.state.corridors[draws.len()..],
+                    self.request.fidelity,
+                    &mut rng,
+                );
+                draws.extend(fresh);
+                (designs, plan) = plan_corridors(
+                    &mut self.state.buses,
+                    &ctx.voltage_levels_kv,
+                    &ctx.promotion_levels_kv,
+                    &mut self.state.corridors,
+                    &draws,
+                    &generators,
+                    branch_target,
+                    mode,
+                );
+            }
+            counts.insert("step_downs_added".into(), relief as u64);
+        }
         // Mapped (OSM) networks keep their real equipment; only a synthetic
         // plan adds condensers.
-        let condensers = if mode == PlanMode::Expand {
+        let mut condensers = if mode != PlanMode::Observe {
             place_voltage_support(&mut self.state.buses, &self.state.corridors, &generators)
         } else {
             Vec::new()
         };
+        if self.state.layered {
+            condensers.extend(crate::hierarchy::regulate_secondaries(
+                &mut self.state.buses,
+                &self.state.corridors,
+                self.state.osm.is_some(),
+            ));
+        }
         counts.insert("condensers".into(), condensers.len() as u64);
         let mut generators = generators;
         let mut dispatch = plan.dispatch.clone();
@@ -465,6 +561,7 @@ impl Generator {
             &generators,
             &dispatch,
             &plan.grounds,
+            self.state.osm.is_some(),
         );
         if !reactive.angles_converged {
             warnings.push(Warning::new(
@@ -493,7 +590,7 @@ impl Generator {
                 ),
             ));
         }
-        if mode == PlanMode::Expand && (!plan.converged || plan.overloaded_corridors > 0) {
+        if mode != PlanMode::Observe && (!plan.converged || plan.overloaded_corridors > 0) {
             warnings.push(Warning::new(
                 "planning_incomplete",
                 format!(

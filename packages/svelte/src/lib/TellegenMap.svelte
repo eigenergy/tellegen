@@ -1,7 +1,7 @@
 <script lang="ts">
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { tick, untrack } from 'svelte';
-	import type { Layer, PickingInfo } from '@deck.gl/core';
+	import type { Layer, LayerExtension, PickingInfo } from '@deck.gl/core';
 	import type { IconLayer, IconLayerProps, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapLibreOverlay } from '@deck.gl/maplibre';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
@@ -54,7 +54,9 @@
 		transformerIconAtlas,
 		transformerIconMapping
 	} from './transformer-icon.js';
+	import { createGlobeHorizon, withGlobeHorizon } from './globe-horizon.js';
 	import { foldMapBounds } from './map-bounds.js';
+	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
@@ -125,7 +127,9 @@
 		attribution?: 'compact' | 'full';
 		/** Called once the map and overlay exist, with an optional cleanup. It
 		 * fires again after a context-loss or basemap remount, after the previous
-		 * cleanup ran. */
+		 * cleanup ran. It runs before the first style loads, and a switch to the
+		 * fallback basemap does not call it again: the new style drops every
+		 * source and layer the host added, so add those on each `style.load`. */
 		onMapReady?: (map: MapLibreMap, overlay: MapLibreOverlay) => void | (() => void);
 		/** The primary basemap failed and the fallback was requested. The
 		 * reason's `from` and `to` name the providers (`'carto'`,
@@ -239,6 +243,8 @@
 		isHovering: boolean;
 	};
 	let layerCtors = $state.raw<LayerCtors | null>(null);
+	// Hides the far side of the globe; built with the deck modules.
+	let globeHorizon: LayerExtension | null = null;
 
 	interface CaseDisplay {
 		prices: Map<number, number>;
@@ -470,7 +476,12 @@
 		const branch = displayedGeometry(caseId)?.branches.find((b) => b.id === branchId);
 		const path = branch?.path.filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
 		return branch && path && path.length >= 2
-			? { key: `${app.studyView?.id ?? caseId}-${branch.id}`, caseId, branchId: branch.id, path }
+			? {
+					key: `${app.studyView?.id ?? caseId}-${branch.id}`,
+					caseId,
+					branchId: branch.id,
+					path: unwrapLongitudePath(path)
+				}
 			: null;
 	});
 	let selectedCueEl = $state.raw<HTMLDivElement | null>(null);
@@ -493,9 +504,16 @@
 	});
 	let multiDetailEl = $state.raw<SVGSVGElement | null>(null);
 
+	/** The screen point of a coordinate in the world copy nearest the camera.
+	 * MapLibre projects a longitude in the copy it names, so a point across the
+	 * antimeridian from the camera would land a whole world width away. */
+	function projectNear(m: MapLibreMap, [lon, lat]: [number, number]) {
+		return m.project([nearestLongitude(lon, m.getCenter().lng), lat]);
+	}
+
 	function syncSelectedCue() {
 		if (!map || !selectedCueEl || !selectedBusCue) return;
-		const point = map.project([selectedBusCue.lon, selectedBusCue.lat]);
+		const point = projectNear(map, [selectedBusCue.lon, selectedBusCue.lat]);
 		const { clientWidth, clientHeight } = map.getContainer();
 		const inRange =
 			point.x >= -40 &&
@@ -519,8 +537,12 @@
 		}
 		const activeMap = map;
 		const { clientWidth, clientHeight } = activeMap.getContainer();
+		// The path is unwrapped, so one shift by whole turns moves all of it to
+		// the world copy nearest the camera without breaking it at the seam.
+		const [lon0] = selectedBranchCue.path[0];
+		const shift = nearestLongitude(lon0, activeMap.getCenter().lng) - lon0;
 		const points = selectedBranchCue.path
-			.map(([lon, lat]) => activeMap.project([lon, lat]))
+			.map(([lon, lat]) => activeMap.project([lon + shift, lat]))
 			.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
 		if (clientWidth === 0 || clientHeight === 0 || points.length < 2) {
 			selectedBranchCueEl.style.display = 'none';
@@ -586,14 +608,14 @@
 			return;
 		}
 		const { bus, edges } = detail;
-		const busPt = m.project([bus.lon, bus.lat]);
+		const busPt = projectNear(m, [bus.lon, bus.lat]);
 
 		const STRAND_SPACING = 5;
 		let strands = '';
 		for (const e of edges) {
 			const selectedIsFrom = e.from === bus.id;
 			const other = selectedIsFrom ? e.path[e.path.length - 1] : e.path[0];
-			const b = m.project(other);
+			const b = projectNear(m, other);
 			const dx = b.x - busPt.x;
 			const dy = b.y - busPt.y;
 			const len = Math.hypot(dx, dy) || 1;
@@ -674,7 +696,7 @@
 	}
 
 	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
-		return foldMapBounds(path);
+		return routeBounds(path);
 	}
 
 	function prefersReducedMotion(): boolean {
@@ -818,9 +840,10 @@
 	}
 
 	async function loadMapModules() {
-		const [maplibre, deckMap, layers, workerUrl] = await Promise.all([
+		const [maplibre, deckMap, deckCore, layers, workerUrl] = await Promise.all([
 			import('maplibre-gl'),
 			import('@deck.gl/maplibre'),
+			import('@deck.gl/core'),
 			import('@deck.gl/layers'),
 			// A package export, not a relative import: its `development`
 			// condition keeps the worker's `?worker&url` import out of the dev
@@ -832,6 +855,7 @@
 		return {
 			maplibregl: maplibre,
 			MapLibreOverlay: deckMap.MapLibreOverlay,
+			horizon: createGlobeHorizon(deckCore.LayerExtension),
 			PathLayer: layers.PathLayer,
 			ScatterplotLayer: layers.ScatterplotLayer,
 			IconLayer: layers.IconLayer
@@ -844,8 +868,10 @@
 	// maplibre's own WebGL2 context instead of a second canvas, so the page
 	// holds one GL context rather than two. Safari evicts WebGL contexts under
 	// memory and tab pressure, and one context survives that far better; the
-	// deck layers also inherit maplibre's 4096 canvas clamp. The flat positron
-	// basemap writes no depth, so the overlay always draws on top.
+	// deck layers also inherit maplibre's 4096 canvas clamp. The basemap
+	// writes no depth we can trust (on the globe, deck's sphere and maplibre's
+	// disagree near the surface), so the overlay always draws on top, and on
+	// the globe the horizon extension hides what lies on the far side.
 	function buildOverlay(MapLibreOverlay: MapModules['MapLibreOverlay']): MapLibreOverlay {
 		const touch = coarsePointer();
 		return new MapLibreOverlay({
@@ -885,9 +911,10 @@
 		let cleanup = () => {};
 		let cancelled = false;
 		void loadMapModules()
-			.then(({ maplibregl, MapLibreOverlay, PathLayer, ScatterplotLayer, IconLayer }) => {
+			.then(({ maplibregl, MapLibreOverlay, horizon, PathLayer, ScatterplotLayer, IconLayer }) => {
 				if (cancelled) return;
 				layerCtors = { PathLayer, ScatterplotLayer, IconLayer };
+				globeHorizon = horizon;
 				const m = new maplibregl.Map({
 					container,
 					style: spec.primary,
@@ -1069,6 +1096,12 @@
 	// Sync deck.gl layers with app state. New layer instances diff cheaply;
 	// updateTriggers tell deck.gl when accessor outputs changed. Host layers
 	// (`extraLayers`) draw after tellegen's own at both exits.
+	//
+	// Stored routes keep longitudes in [-180, 180], so a route across the
+	// antimeridian is unwrapped before drawing and each segment takes the
+	// short way. On the globe deck.gl ignores `wrapLongitude` and needs the
+	// unwrapped path itself; on the flat map `wrapLongitude` cuts the path at
+	// ±180 so both halves draw in every world copy.
 	$effect(() => {
 		if (!overlay || !layerCtors) return;
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
@@ -1100,7 +1133,8 @@
 				new PathLayer<NetworkBranch>({
 					id: 'study-branches',
 					data: study.network.branches,
-					getPath: (b) => b.path,
+					getPath: (b) => unwrapLongitudePath(b.path),
+					wrapLongitude: true,
 					getColor: (b) => branchColor(flows.get(b.id) ?? 0, b.status === 1),
 					getWidth: (b) => branchWidth(flows.get(b.id) ?? 0),
 					widthUnits: 'pixels',
@@ -1145,7 +1179,7 @@
 					updateTriggers: { getFillColor: [study, mode, theme], getRadius: [app.busSizing] }
 				})
 			);
-			overlay.setProps({ layers: [...layers, ...extraLayers] });
+			overlay.setProps({ layers: withGlobeHorizon([...layers, ...extraLayers], globeHorizon) });
 			return;
 		}
 		for (const c of app.cases) {
@@ -1155,7 +1189,8 @@
 				new PathLayer<NetworkBranch>({
 					id: `branches-${c.id}`,
 					data: c.network.branches,
-					getPath: (b) => b.path,
+					getPath: (b) => unwrapLongitudePath(b.path),
+					wrapLongitude: true,
 					// The selected branch draws in the selection blue of the bus halo cue,
 					// wider, so the price-rating source line reads at a glance.
 					getColor: (b) =>
@@ -1222,15 +1257,21 @@
 		}
 		// Local cases are grey until the browser solve returns. A .pwd display
 		// file contributes substation points only, in a cooler slate so they
-		// read as diagram derived positions.
+		// read as diagram derived positions. A generated grid's line taps draw
+		// no marker, as their lines show them, unless one is the selected bus.
 		for (const c of app.localCases) {
 			if (c.view) {
 				const d = display.get(c.id);
+				const selectedTap =
+					c.id === app.activeLocalId && app.selectedBus !== null && c.tapBuses.has(app.selectedBus)
+						? c.view.buses.find((b) => b.id === app.selectedBus)
+						: undefined;
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
 						data: c.view.branches,
-						getPath: (b) => b.path,
+						getPath: (b) => unwrapLongitudePath(b.path),
+						wrapLongitude: true,
 						getColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
 								? [47, 111, 187, 255]
@@ -1264,7 +1305,7 @@
 					}),
 					new ScatterplotLayer<NetworkBus>({
 						id: `local-buses-${c.id}`,
-						data: c.view.buses,
+						data: selectedTap ? [...c.markerBuses, selectedTap] : c.markerBuses,
 						getPosition: (b) => [b.lon, b.lat],
 						getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 						radiusUnits: marker.radiusUnits,
@@ -1335,7 +1376,8 @@
 				new PathLayer<PlacedMultiEdge>({
 					id: `multi-edges-${c.id}`,
 					data: c.view.edges,
-					getPath: (e) => e.path,
+					getPath: (e) => unwrapLongitudePath(e.path),
+					wrapLongitude: true,
 					// The selected edge draws in the selection blue of the branch cue,
 					// wider, so its panel detail has an obvious source on the map.
 					getColor: (e) =>
@@ -1418,7 +1460,7 @@
 				})
 			);
 		}
-		overlay.setProps({ layers: [...layers, ...extraLayers] });
+		overlay.setProps({ layers: withGlobeHorizon([...layers, ...extraLayers], globeHorizon) });
 	});
 
 	$effect(() => {

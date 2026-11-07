@@ -341,6 +341,9 @@ export interface Solution {
 \tw: { bus: number; value: number }[];
 \tflows: { branch: number; mw: number; loading: number }[];
 \tdispatch: { gen: number; bus?: number; mw: number }[];
+\t/** How the solve treated the network: islands, HVDC transfers. Absent when it
+\t * solved the case as stated. */
+\tdiagnostics?: SolveDiagnostic[];
 }
 
 export interface SensitivityColumn {

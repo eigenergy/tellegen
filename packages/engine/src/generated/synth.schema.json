@@ -253,13 +253,22 @@
     },
     "BusKind": {
       "description": "What a bus is for, as the map shows it.",
-      "enum": [
-        "load",
-        "substation",
-        "generator",
-        "converter"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "load",
+            "substation",
+            "generator",
+            "converter"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "tap",
+          "description": "A junction where a line branches, with no load or machine.",
+          "type": "string"
+        }
+      ]
     },
     "CalibrationOptions": {
       "additionalProperties": false,
@@ -1142,6 +1151,26 @@
       ],
       "type": "string"
     },
+    "FuelMixBasis": {
+      "description": "Where a region's capacity mix came from.",
+      "oneOf": [
+        {
+          "const": "request",
+          "description": "The request stated it.",
+          "type": "string"
+        },
+        {
+          "const": "subdivision",
+          "description": "The nameplate mix of the region's dominant subdivision\n(`RegionContext::subdivision`).",
+          "type": "string"
+        },
+        {
+          "const": "default",
+          "description": "The default (US) mix.",
+          "type": "string"
+        }
+      ]
+    },
     "GenerationReport": {
       "description": "The full report. Blocks are `None` until their stage has run, so a report\nread mid-session is partial but never invented.",
       "properties": {
@@ -1298,7 +1327,7 @@
           "default": "cut"
         },
         "max_interconnect_km": {
-          "default": 250,
+          "default": 250.0,
           "description": "Landmasses whose nearest buses are closer than this are joined by an\ninterconnect corridor (submarine or overhead), like Sicily or the Danish\nislands. source: typical AC/HVDC interconnector lengths, ENTSO-E grid map.",
           "format": "double",
           "type": "number"
@@ -1358,20 +1387,20 @@
       "description": "Caps that keep a request inside what a browser session can afford.",
       "properties": {
         "max_area_km2": {
-          "default": 40000000,
+          "default": 40000000.0,
           "description": "Spherical area cap of the region, km²; positive and finite.",
           "format": "double",
           "type": "number"
         },
         "max_branch_factor": {
-          "default": 4,
+          "default": 4.0,
           "description": "Upper bound of `branch_factor`; finite and at least 1.",
           "format": "double",
           "type": "number"
         },
         "max_bus_count": {
-          "default": 3000,
-          "description": "Bus cap. A synthetic grid's count is held at it (`bus_count_capped`);\nan OpenStreetMap grid drops its lowest voltage levels until it fits\n(`osm_bus_count_capped`) and is refused when its highest level alone\nexceeds it.",
+          "default": 12000,
+          "description": "Bus cap. A synthetic grid's count is held at it (`bus_count_capped`);\nan OpenStreetMap grid drops its lowest voltage levels until it fits\n(`osm_bus_count_capped`) and is refused when its highest level alone\nexceeds it. A transmission-only synthetic grid sized from demand also\nstops at 3,000 buses (`context::TRANSMISSION_AUTO_MAX_BUSES`); one that\nreaches subtransmission is sized up to this cap.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -1431,19 +1460,19 @@
       "description": "Thresholds for mapping an Overpass document onto a grid.",
       "properties": {
         "clip_buffer_km": {
-          "default": 5,
+          "default": 5.0,
           "description": "Infrastructure this far outside the region polygon is still kept.",
           "format": "double",
           "type": "number"
         },
         "cluster_radius_m": {
-          "default": 500,
+          "default": 500.0,
           "description": "Substation and converter elements within this radius collapse into one site.",
           "format": "double",
           "type": "number"
         },
         "hvdc_snap_km": {
-          "default": 25,
+          "default": 25.0,
           "description": "A DC line end within this distance of a converter snaps to it.",
           "format": "double",
           "type": "number"
@@ -1467,19 +1496,19 @@
           "type": "integer"
         },
         "plant_snap_km": {
-          "default": 10,
+          "default": 10.0,
           "description": "A plant within this distance of a site connects there.",
           "format": "double",
           "type": "number"
         },
         "snap_km": {
-          "default": 2,
+          "default": 2.0,
           "description": "A line end within this distance of a site snaps to it.",
           "format": "double",
           "type": "number"
         },
         "voltage_floor_kv": {
-          "default": 110,
+          "default": 110.0,
           "description": "Lines and substations below this nominal voltage are distribution and\nare dropped.",
           "format": "double",
           "type": "number"
@@ -1550,7 +1579,7 @@
           "type": "string"
         },
         "source": {
-          "description": "The dataset the table was derived from (the bundled table names\nNatural Earth's release); absent for a bare array of rows.",
+          "description": "The dataset the table was derived from (the bundled table names\nGeoNames' `cities5000` dump and its licence); absent for a bare array\nof rows.",
           "type": [
             "string",
             "null"
@@ -2038,6 +2067,13 @@
           },
           "type": "array"
         },
+        "demand_by_subdivision": {
+          "description": "Places of subdivisions with their own demand table draw it instead of\ntheir country's.",
+          "items": {
+            "$ref": "#/$defs/SubdivisionDemand"
+          },
+          "type": "array"
+        },
         "frame": {
           "$ref": "#/$defs/BBox",
           "description": "Continuous longitude frame of the region."
@@ -2080,6 +2116,9 @@
           },
           "type": "object"
         },
+        "fuel_mix_basis": {
+          "$ref": "#/$defs/FuelMixBasis"
+        },
         "label": {
           "type": "string"
         },
@@ -2116,6 +2155,13 @@
             "type": "number"
           },
           "type": "array"
+        },
+        "subdivision": {
+          "description": "The subdivision whose places carry the most demand, when the places\nname one (ISO 3166-2).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "target_bus_count": {
           "format": "uint32",
@@ -2165,6 +2211,7 @@
         "peak_demand_mw",
         "demand_basis",
         "fuel_mix",
+        "fuel_mix_basis",
         "branch_factor",
         "voltage_levels_kv",
         "voltage_classes_kv",
@@ -2311,6 +2358,59 @@
       ],
       "type": "object"
     },
+    "SubdivisionDemand": {
+      "description": "One subdivision's part of a region's demand (a US state from the\nsubdivision table, [`crate::subnational`]).",
+      "properties": {
+        "code": {
+          "description": "ISO 3166-2 code.",
+          "type": "string"
+        },
+        "peak_factor": {
+          "format": "double",
+          "type": "number"
+        },
+        "peak_factor_basis": {
+          "description": "`measured` (EIA-930, the table's), `request` (stated), or `default`.",
+          "type": "string"
+        },
+        "peak_mw": {
+          "description": "Peak demand of those places, MW: the subdivision's peak times the\nshare of its listed population inside the region.",
+          "format": "double",
+          "type": "number"
+        },
+        "places": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "population": {
+          "description": "Population of those places.",
+          "format": "double",
+          "type": "number"
+        },
+        "subdivision_peak_mw": {
+          "description": "The subdivision's peak (average load × peak factor), MW.",
+          "format": "double",
+          "type": "number"
+        },
+        "year": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "year",
+        "places",
+        "population",
+        "peak_mw",
+        "subdivision_peak_mw",
+        "peak_factor",
+        "peak_factor_basis"
+      ],
+      "type": "object"
+    },
     "SynthRequest": {
       "additionalProperties": false,
       "description": "The one generation request. Unknown keys are refused here and in every\nnested option, so a misspelt option fails instead of taking its default.",
@@ -2412,15 +2512,15 @@
           "$ref": "#/$defs/IslandOptions",
           "default": {
             "beyond": "cut",
-            "max_interconnect_km": 250
+            "max_interconnect_km": 250.0
           }
         },
         "limits": {
           "$ref": "#/$defs/Limits",
           "default": {
-            "max_area_km2": 40000000,
-            "max_branch_factor": 4,
-            "max_bus_count": 3000
+            "max_area_km2": 40000000.0,
+            "max_branch_factor": 4.0,
+            "max_bus_count": 12000
           }
         },
         "osm": {
@@ -2728,6 +2828,11 @@
           "type": "string"
         },
         {
+          "const": "subdivision",
+          "description": "The ladder of the region's dominant subdivision\n(`RegionContext::subdivision`), down to subtransmission.",
+          "type": "string"
+        },
+        {
           "const": "fallback",
           "description": "The dominant country has no ladder in the table: the ENTSO-E members'\nladder for a member, else IEC 60038's standard levels (warning\n`voltage_fallback`).",
           "type": "string"
@@ -2799,5 +2904,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "f7c93124f3e15db0e3b61df9ea5779c4aec7292adf42248b0b451438e0f79ed3"
+  "x-rust-source-sha256": "e12869516190d718f7560f679810c7c5fc7ef0be299469b11e53f86454d61a40"
 }

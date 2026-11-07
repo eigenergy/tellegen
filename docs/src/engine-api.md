@@ -37,7 +37,11 @@ The facade has the same methods as the direct exports:
 - `isDisplayFile(name)`: returns true for PowerWorld `.pwd` display files.
 - `classifyJson(bytes)`: asynchronously classifies JSON bytes and returns
   `{ kind, format }`.
-- `ingestJsonDrop(bytes)`: classifies and parses a JSON drop in one call.
+- `ingestJsonDrop(bytes, { retain })`: classifies and parses a JSON drop in one
+  call. With `retain: true`, a multiconductor module stays parsed in the engine
+  and the payload's `input` holds a `BrowserMcInput` in place of `module_json`
+  (see [Multiconductor PF](multiconductor-pf.md)). `ingestDistCaseBytes(bytes,
+  format, { retain })` takes the same option.
 - `ingestCase(bytes, format)`: parses case bytes and returns a retained PowerIO
   module plus derived display data, summary, and topology.
 - `parseDisplay(bytes)`: parses PowerWorld display data for diagram overlays.
@@ -128,13 +132,14 @@ invalidate the retained interactive Study.
   per bounding box. Pass the fetched documents as the `osm` option with
   `source: "osm"`.
 - `loadSyntheticPlaces(bytes)`, `fetchSyntheticPlaces()`, `syntheticPlacesUrl()`:
-  the Natural Earth places table shipped as `data/populated_places.json`;
-  sessions load it on first use.
+  the GeoNames places table (CC BY 4.0) shipped as
+  `data/populated_places.json`; sessions load it on first use.
 - Refusals reject with `SynthEngineError`, whose `code` is one of
   `invalid_request`, `region`, `places`, `osm`, `osm_insufficient` (with bus
   and branch counts), `build`, `engine`, `state`, `cancelled`.
-- `@tellegen/engine/synth` exports the generated request and report types,
-  and `synthSchema` validates a pasted request at run time.
+- `@tellegen/engine/synth` exports the generated request and report types;
+  `synthSchema`, exported from the package root, validates a pasted request
+  at run time.
 
 See [Synthetic Grid Generation](synthetic-generation.md) for the pipeline.
 

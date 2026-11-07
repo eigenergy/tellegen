@@ -23,6 +23,26 @@ pub(crate) fn ingest_dist_bytes_value(
     bytes: &[u8],
     format: &str,
 ) -> Result<serde_json::Value, String> {
+    let (payload, module) = parse_dist_bytes(bytes, format)?;
+    attach_mc_study_metadata(payload, module)
+}
+
+/// [`ingest_dist_bytes_value`] that keeps the parsed module instead of
+/// serializing it: the payload carries no `module_json`.
+pub(crate) fn ingest_dist_bytes_retained(
+    bytes: &[u8],
+    format: &str,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
+    let (payload, module) = parse_dist_bytes(bytes, format)?;
+    retain_mc_study_metadata(payload, module)
+}
+
+/// Parse a distribution case and build its drop-panel payload, without the
+/// retained-module fields.
+fn parse_dist_bytes(
+    bytes: &[u8],
+    format: &str,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
     let format = crate::source_format_id(format)?;
     // The angle bracketed name marks an anonymous in-memory source; the
     // readers take the case's own name (e.g. the OpenDSS circuit name).
@@ -69,7 +89,7 @@ pub(crate) fn ingest_dist_bytes_value(
         ));
     };
     let payload = ingest_dist_value(network, module.diagnostics())?;
-    attach_mc_study_metadata(payload, module)
+    Ok((payload, module))
 }
 
 /// Parse `text` as a `.pio.json` stored module and, when it holds a
@@ -92,14 +112,26 @@ pub fn ingest_dist_module_bytes(bytes: &[u8]) -> Result<String, String> {
 pub(crate) fn ingest_dist_module_value(
     module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
+    let payload = dist_module_payload(&module)?;
+    attach_mc_study_metadata(payload, module)
+}
+
+/// [`ingest_dist_module_value`] that keeps the module instead of serializing it.
+pub(crate) fn ingest_dist_module_retained(
+    module: PioModule<PioValue>,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
+    let payload = dist_module_payload(&module)?;
+    retain_mc_study_metadata(payload, module)
+}
+
+fn dist_module_payload(module: &PioModule<PioValue>) -> Result<serde_json::Value, String> {
     let Some(network) = multiconductor_network(module.value()) else {
         return Err(format!(
             "stored module holds {}, expected a multiconductor network or calculation",
             module.value().type_name()
         ));
     };
-    let payload = ingest_dist_value(network, module.diagnostics())?;
-    attach_mc_study_metadata(payload, module)
+    ingest_dist_value(network, module.diagnostics())
 }
 
 /// Retain the electrical module and report whether its physics can be calculated.
@@ -108,16 +140,56 @@ fn attach_mc_study_metadata(
     payload: serde_json::Value,
     module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    let mut payload = crate::with_module_json(payload, module)?;
+    let mut payload = set_mc_study_capability(payload, &module)?;
+    payload = crate::with_module_json(payload, module)?;
+    Ok(payload)
+}
+
+/// The retained path shares capability and island inspection with the text path.
+fn retain_mc_study_metadata(
+    payload: serde_json::Value,
+    module: PioModule<PioValue>,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
+    let payload = crate::with_module_metadata(payload, &module);
+    let mut payload = set_mc_study_capability(payload, &module)?;
+    payload["input_retained"] = true.into();
+    Ok((payload, module))
+}
+
+fn set_mc_study_capability(
+    mut payload: serde_json::Value,
+    module: &PioModule<PioValue>,
+) -> Result<serde_json::Value, String> {
     #[cfg(feature = "mc-pf")]
-    let reason = tellegen::validate_mc_module_json(
-        payload["module_json"]
-            .as_str()
-            .ok_or("missing multiconductor module")?,
-    )
-    .err();
+    let mut reason = tellegen::validate_mc_module(module).err();
     #[cfg(not(feature = "mc-pf"))]
-    let reason = Some("Multiconductor AC power flow is disabled in this build".to_owned());
+    let reason = {
+        let _ = module;
+        Some("Multiconductor AC power flow is disabled in this build".to_owned())
+    };
+    #[cfg(feature = "mc-pf")]
+    if reason.is_none() {
+        if let Some(network) = multiconductor_network(module.value()) {
+            match tellegen::mc_unpowered_islands(network) {
+                Ok(islands) => {
+                    let excluded = islands
+                        .iter()
+                        .map(|island| island.buses.len())
+                        .sum::<usize>();
+                    payload["mc_energized_only"] = module
+                        .extensions()
+                        .contains_key("tellegen.energized_network")
+                        .into();
+                    payload["mc_excluded_islands"] =
+                        serde_json::to_value(islands).map_err(|e| e.to_string())?;
+                    if excluded == network.buses().len() {
+                        reason = Some("No energized network: no bus island has a voltage source. The full network remains available for inspection.".to_owned());
+                    }
+                }
+                Err(error) => reason = Some(error),
+            }
+        }
+    }
     payload["mc_pf_supported"] = reason.is_none().into();
     payload["mc_pf_reason"] = serde_json::to_value(&reason).map_err(|e| e.to_string())?;
     payload["mc_pf_unavailable_reason"] = payload["mc_pf_reason"].clone();
@@ -736,6 +808,51 @@ mod tests {
 
     #[test]
     #[cfg(feature = "mc-pf")]
+    fn retained_ingest_reports_the_serialized_payload_and_solves_identically() {
+        for (text, format) in [
+            (PF_BMOPF, "bmopf-json"),
+            (MICRO_BMOPF, "bmopf"),
+            (MICRO_DSS, "dss"),
+        ] {
+            let mut expected = parse(&ingest_dist(text, format).unwrap());
+            let module_json = expected
+                .as_object_mut()
+                .unwrap()
+                .remove("module_json")
+                .expect("serialized payload carries module_json");
+            let (mut retained, module) =
+                ingest_dist_bytes_retained(text.as_bytes(), format).unwrap();
+            assert!(retained.get("module_json").is_none(), "{format}");
+            assert_eq!(retained["input_retained"], true, "{format}");
+            retained.as_object_mut().unwrap().remove("input_retained");
+            // Counts, graph, diagnostics, and the capability decision agree.
+            assert_eq!(retained, expected, "{format}");
+            if expected["mc_pf_supported"] != true {
+                continue;
+            }
+            // Either both inputs solve to the same voltages or both refuse
+            // with the same reason (the micro BMOPF names a missing linecode).
+            let options = tellegen::McPfOptions::default();
+            let kept = tellegen::McPfSession::from_module(&module, options);
+            let read =
+                tellegen::McPfSession::from_module_json(module_json.as_str().unwrap(), options);
+            match (kept, read) {
+                (Ok(kept), Ok(read)) => {
+                    assert_eq!(kept.terminal_ids(), read.terminal_ids(), "{format}");
+                    assert_eq!(
+                        kept.terminal_voltages(),
+                        read.terminal_voltages(),
+                        "{format}"
+                    );
+                }
+                (Err(kept), Err(read)) => assert_eq!(kept, read, "{format}"),
+                (kept, read) => panic!("{format}: {:?} vs {:?}", kept.err(), read.err()),
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "mc-pf")]
     fn imported_case_solves_after_geographic_attachment_and_ir_reload() {
         let payload = parse(&ingest_dist(PF_BMOPF, "bmopf-json").unwrap());
         let module = payload["module_json"].as_str().unwrap();
@@ -801,9 +918,11 @@ mod tests {
 
         assert_eq!(v["model"], "multiconductor");
         assert_eq!(v["name"], "micro");
-        // sourcebus, loadbus, secondary.
-        assert_eq!(v["n_bus"].as_u64().unwrap(), 3);
-        assert_eq!(v["n_line"].as_u64().unwrap(), 1);
+        // sourcebus, loadbus, secondary, and the internal bus behind the
+        // circuit's source impedance. PowerIO reads the Vsource as an EMF on
+        // that bus and a series impedance line to sourcebus.
+        assert_eq!(v["n_bus"].as_u64().unwrap(), 4);
+        assert_eq!(v["n_line"].as_u64().unwrap(), 2);
         assert_eq!(v["n_transformer"].as_u64().unwrap(), 1);
         assert_eq!(v["n_load"].as_u64().unwrap(), 2);
         assert_eq!(v["n_source"].as_u64().unwrap(), 1);
@@ -816,11 +935,16 @@ mod tests {
 
         // The graph carries buses with terminals and edges with endpoints.
         let buses = v["graph"]["buses"].as_array().unwrap();
-        assert_eq!(buses.len(), 3);
+        assert_eq!(buses.len(), 4);
         assert!(buses
             .iter()
             .all(|b| !b["terminals"].as_array().unwrap().is_empty()));
+        let source_bus = buses.iter().find(|b| b["has_source"] == true).unwrap();
+        assert_ne!(source_bus["id"], "sourcebus");
         let edges = v["graph"]["edges"].as_array().unwrap();
+        assert!(edges.iter().any(|e| e["kind"] == "line"
+            && e["from"] == source_bus["id"]
+            && e["to"] == "sourcebus"));
         assert!(edges.iter().any(|e| e["kind"] == "line"));
         assert!(edges.iter().any(|e| e["kind"] == "transformer"));
         // Every edge names two buses that exist in the graph.
@@ -839,6 +963,132 @@ mod tests {
             assert!(tellegen::validate_mc_module_json(v["module_json"].as_str().unwrap()).is_err());
             assert!(v["mc_pf_reason"].as_str().unwrap().contains("view-only"));
         }
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn retained_energized_input_preserves_full_network_edits_and_result_provenance() {
+        let mut raw: Value = serde_json::from_str(PF_BMOPF).unwrap();
+        raw["bus"]["unpowered"] = raw["bus"]["lb"].clone();
+        let text = raw.to_string();
+        let (payload, module) = ingest_dist_bytes_retained(text.as_bytes(), "bmopf").unwrap();
+        assert!(payload.get("module_json").is_none());
+        assert_eq!(payload["mc_energized_only"], false);
+        assert_eq!(payload["mc_excluded_islands"][0]["buses"][0], "unpowered");
+        let original = crate::McInput::retain(module);
+        let mut prepared = original.prepare_energized().ok().unwrap();
+        let metadata: Value = serde_json::from_str(&prepared.take_payload()).unwrap();
+        assert!(metadata.get("module_json").is_none());
+        assert_eq!(metadata["network_scope"]["excluded_bus_count"], 1);
+        let input = prepared.take_input().unwrap();
+        assert!(!original
+            .0
+            .extensions()
+            .contains_key("tellegen.energized_network"));
+        let mut session = tellegen::McPfSession::from_module(&input.0, Default::default()).unwrap();
+        let mut edit = session.load_branches()[0].clone();
+        edit.p_w *= 0.9;
+        session
+            .replace_load_powers(&[tellegen::McLoadPowerEdit {
+                load: edit.load,
+                branch: edit.branch,
+                p_w: edit.p_w,
+                q_var: edit.q_var,
+            }])
+            .unwrap();
+        let kept = session.input_module().unwrap();
+        let PioValue::MulticonductorNetwork(full) = kept.value() else {
+            panic!("full input required")
+        };
+        assert_eq!(full.buses().len(), 3);
+        let rerun = tellegen::McPfSession::from_module(&kept, Default::default()).unwrap();
+        let result = rerun.build_result().unwrap();
+        let tables = rerun.result_tables().unwrap();
+        assert_eq!(tables, tellegen::McPfResultTables::from_result(&result));
+        assert_eq!(tables.network_scope.as_ref().unwrap().excluded_bus_count, 1);
+        assert!(result.terminals.iter().all(|t| t.bus != "unpowered"));
+        let mut buffers = crate::McPfResultBuffers::pack(tables);
+        let packed: Value = serde_json::from_str(&buffers.metadata()).unwrap();
+        assert_eq!(packed["network_scope"], metadata["network_scope"]);
+        assert_eq!(packed["excluded_islands"], metadata["excluded_islands"]);
+        let saved = rerun
+            .snapshot("retained", "Retained energized study")
+            .unwrap();
+        let replay =
+            tellegen::replay_mc_study_json(&serde_json::to_string(&saved).unwrap()).unwrap();
+        let replay: Value = serde_json::from_str(&replay).unwrap();
+        assert_eq!(replay["result"]["network_scope"], metadata["network_scope"]);
+        assert!(!buffers.take_indices().is_empty());
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn energized_import_retains_full_graph_and_rejects_malformed_selection_metadata() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).unwrap();
+        raw["bus"]["unpowered"] = raw["bus"]["load_bus"].clone();
+        let imported = parse(&ingest_dist(&raw.to_string(), "bmopf").unwrap());
+        assert_eq!(imported["mc_pf_supported"], true);
+        assert_eq!(imported["mc_energized_only"], false);
+        assert_eq!(imported["mc_excluded_islands"][0]["buses"][0], "unpowered");
+        assert_eq!(imported["graph"]["buses"].as_array().unwrap().len(), 3);
+        let original = deserialize_module(imported["module_json"].as_str().unwrap()).unwrap();
+        assert!(!original
+            .extensions()
+            .contains_key("tellegen.energized_network"));
+        let prepared: Value = serde_json::from_str(
+            &tellegen::prepare_mc_energized_network_json(imported["module_json"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let text = prepared["module_json"].as_str().unwrap();
+        let reimported = parse(&ingest_dist_module(text).unwrap());
+        assert_eq!(reimported["n_bus"], 3);
+        assert_eq!(reimported["mc_energized_only"], true);
+        assert_eq!(
+            reimported["mc_excluded_islands"][0]["buses"][0],
+            "unpowered"
+        );
+        let mut module = deserialize_module(text).unwrap();
+        module
+            .insert_extension(
+                "tellegen.energized_network",
+                serde_json::json!({"invalid": true}),
+            )
+            .unwrap();
+        let invalid = ingest_dist_module_value(module).unwrap();
+        assert_eq!(invalid["mc_pf_supported"], false);
+        assert!(invalid["mc_excluded_islands"].is_null());
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn import_detects_source_coverage_without_selecting_or_solving() {
+        let covered = parse(&ingest_dist(MICRO_BMOPF, "bmopf").unwrap());
+        assert_eq!(covered["mc_pf_supported"], true);
+        assert_eq!(covered["mc_excluded_islands"], serde_json::json!([]));
+        assert_eq!(covered["mc_energized_only"], false);
+
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).unwrap();
+        raw["voltage_source"] = serde_json::json!({});
+        let unpowered = parse(&ingest_dist(&raw.to_string(), "bmopf").unwrap());
+        assert_eq!(unpowered["n_bus"], 2);
+        assert_eq!(unpowered["mc_pf_supported"], false);
+        assert_eq!(unpowered["mc_energized_only"], false);
+        assert!(unpowered["mc_pf_reason"]
+            .as_str()
+            .unwrap()
+            .contains("No energized network"));
+        assert_eq!(
+            unpowered["mc_excluded_islands"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            unpowered["mc_excluded_islands"][0]["buses"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]

@@ -128,8 +128,10 @@ pub fn build_topology(
     out
 }
 
-/// Wire one island's buses (indices into `buses`).
-fn island_topology(
+/// Wire one island's buses (indices into `buses`): a spanning tree, a
+/// second tree over the highest voltage buses, the Gabriel mesh up to
+/// `unique_ratio` corridors per bus, and a few loops.
+pub(crate) fn island_topology(
     buses: &[DraftBus],
     points: &[(f64, f64)],
     idxs: &[usize],
@@ -281,6 +283,72 @@ fn island_topology(
 
     for e in local {
         edges.insert(Edge::new(idxs[e.0], idxs[e.1]));
+    }
+}
+
+/// The route of a corridor between two buses with no jitter: the two ends
+/// and their midpoint.
+pub(crate) fn straight_route(a: &DraftBus, b: &DraftBus) -> [(f64, f64); 3] {
+    [
+        (a.lon, a.lat),
+        ((a.lon + b.lon) / 2.0, (a.lat + b.lat) / 2.0),
+        (b.lon, b.lat),
+    ]
+}
+
+/// The corridor between buses `a` and `b`: haversine length (at least
+/// `min_km`), a three-point route whose midpoint is jittered by up to
+/// `jitter` of the length, and its role relative to the selection. The
+/// jitter only separates lines on the map, so a line whose straight route
+/// stays inside the region keeps the straight midpoint where the jittered
+/// one would leave it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn corridor_between(
+    buses: &[DraftBus],
+    a: usize,
+    b: usize,
+    data: &ContextData,
+    rng: &mut Stream,
+    min_km: f64,
+    jitter: f64,
+    is_delaunay: bool,
+) -> Corridor {
+    let (ba, bb) = (&buses[a], &buses[b]);
+    let length = haversine_km(ba.lon, ba.lat, bb.lon, bb.lat);
+    let reach = jitter * length / 111.0;
+    let frame = &data.shape.frame;
+    let straight = straight_route(ba, bb);
+    let mid_lon = straight[1].0 + 2.0 * reach * (rng.uniform() - 0.5);
+    let mid_lat = straight[1].1 + 2.0 * reach * (rng.uniform() - 0.5);
+    let mut route = vec![
+        straight[0],
+        (
+            mid_lon.clamp(frame.west, frame.east),
+            mid_lat.clamp(frame.south, frame.north),
+        ),
+        straight[2],
+    ];
+    let mut inside = data.shape.polyline_inside(&route);
+    if !inside && data.shape.polyline_inside(&straight) {
+        route[1] = straight[1];
+        inside = true;
+    }
+    let role = if ba.polygon != bb.polygon {
+        CorridorRole::Interconnect
+    } else if inside {
+        CorridorRole::Internal
+    } else {
+        CorridorRole::TieLine
+    };
+    Corridor {
+        a,
+        b,
+        kv: ba.base_kv.max(bb.base_kv),
+        length_km: length.max(min_km),
+        role,
+        circuits: 1,
+        route,
+        is_delaunay,
     }
 }
 

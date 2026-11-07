@@ -74,6 +74,7 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     if (fatal) {
       handles.studies.clear();
       handles.mcPfSessions.clear();
+      handles.mcInputs.clear();
       handles.synthSessions.clear();
       wasmReady = null;
       scope.close();

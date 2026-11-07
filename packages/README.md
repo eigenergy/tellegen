@@ -7,6 +7,9 @@
   panels, local file flow, and solve card.
 - `webmcp/` is `@tellegen/webmcp`, the WebMCP tool definitions,
   registration lifecycle, and test surface without a UI framework dependency.
+- `analytics/` is `@tellegen/analytics`, the allowlisted vocabulary sanitiser
+  and first-party Umami Cloud sender the hosted demo and MapToGrid share, with
+  no dependencies.
 
 `apps/web`, `examples/browser-minimal`, and `examples/svelte-minimal` are npm
 workspaces, but they are not published packages. `apps/web` is the hosted demo.

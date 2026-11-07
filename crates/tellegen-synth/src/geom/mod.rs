@@ -114,11 +114,27 @@ impl Projection {
         let y = lat * k;
         (x, y)
     }
+
+    /// The inverse of [`Projection::project`].
+    pub fn unproject(&self, x: f64, y: f64) -> (f64, f64) {
+        let k = EARTH_RADIUS_KM.to_radians();
+        let lat = y / k;
+        let lon = self.lon0 + x / (lat.to_radians().cos().abs().max(1e-9) * k);
+        (lon, lat)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unproject_inverts_project() {
+        let p = Projection { lon0: -120.0 };
+        let (x, y) = p.project(-118.25, 34.05);
+        let (lon, lat) = p.unproject(x, y);
+        assert!((lon + 118.25).abs() < 1e-9 && (lat - 34.05).abs() < 1e-9);
+    }
 
     #[test]
     fn haversine_known_distances() {

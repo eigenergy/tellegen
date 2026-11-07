@@ -115,6 +115,8 @@ def validate_npm(entries: list[tuple[str, str]]) -> None:
         "packages/svelte/package.json",
         "packages/webmcp/CHANGELOG.md",
         "packages/webmcp/package.json",
+        "packages/analytics/CHANGELOG.md",
+        "packages/analytics/package.json",
         "apps/web/package.json",
         "examples/browser-minimal/package.json",
         "examples/svelte-minimal/package.json",
@@ -123,6 +125,7 @@ def validate_npm(entries: list[tuple[str, str]]) -> None:
         "packages/engine/package.json",
         "packages/svelte/package.json",
         "packages/webmcp/package.json",
+        "packages/analytics/package.json",
     }
     # In pre mode, Changesets 3 leaves pre.json alone and moves each consumed
     # changeset into .changeset/pre/ unchanged, so that exiting can still

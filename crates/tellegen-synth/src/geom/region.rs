@@ -16,6 +16,76 @@ pub struct Polygon {
     pub ring_bboxes: Vec<BBox>,
     /// Spherical area of the outer ring minus its holes, km².
     pub area_km2: f64,
+    /// Each ring's edges binned by latitude, so the ray cast reads only the
+    /// edges that span the point's latitude.
+    ring_bands: Vec<RingBands>,
+}
+
+/// The edges of one ring binned into equal latitude bands: edge `i` joins
+/// vertex `i - 1` (the last vertex for `i = 0`) to vertex `i`, as in
+/// [`point_in_ring`], and sits in every band its latitude range touches.
+#[derive(Clone, Debug)]
+struct RingBands {
+    south: f64,
+    step: f64,
+    bands: Vec<Vec<u32>>,
+}
+
+impl RingBands {
+    fn new(ring: &[(f64, f64)], bb: &BBox) -> Self {
+        let count = (ring.len() / 4).clamp(1, 4096);
+        let step = ((bb.north - bb.south) / count as f64).max(1e-12);
+        let mut out = Self {
+            south: bb.south,
+            step,
+            bands: vec![Vec::new(); count],
+        };
+        let n = ring.len();
+        for i in 0..n {
+            let j = if i == 0 { n - 1 } else { i - 1 };
+            let (yi, yj) = (ring[i].1, ring[j].1);
+            if yi == yj {
+                continue; // never crosses a parallel
+            }
+            let (lo, hi) = (out.band(yi.min(yj)), out.band(yi.max(yj)));
+            for b in lo..=hi {
+                out.bands[b].push(i as u32);
+            }
+        }
+        out
+    }
+
+    fn band(&self, lat: f64) -> usize {
+        let b = ((lat - self.south) / self.step).floor();
+        if b <= 0.0 {
+            0
+        } else {
+            (b as usize).min(self.bands.len() - 1)
+        }
+    }
+
+    /// [`point_in_ring`] over the edges of the point's band only: the same
+    /// crossing test on the same edges that can cross, so the same answer.
+    fn contains(&self, lon: f64, lat: f64, ring: &[(f64, f64)], bb: &BBox) -> bool {
+        if ring.len() < 3 || lon < bb.west || lon > bb.east || lat < bb.south || lat > bb.north {
+            return false;
+        }
+        let n = ring.len();
+        let mut inside = false;
+        for &i in &self.bands[self.band(lat)] {
+            let i = i as usize;
+            let j = if i == 0 { n - 1 } else { i - 1 };
+            let (xi, yi) = ring[i];
+            let (xj, yj) = ring[j];
+            if (yi > lat) != (yj > lat) {
+                let edge_lon = (xj - xi) * (lat - yi) / (yj - yi) + xi;
+                if lon < edge_lon {
+                    inside = !inside;
+                }
+            }
+        }
+        inside
+    }
 }
 
 impl Polygon {
@@ -23,7 +93,12 @@ impl Polygon {
         if rings.is_empty() || rings[0].len() < 3 {
             return None;
         }
-        let ring_bboxes = rings.iter().map(|r| ring_bbox(r)).collect();
+        let ring_bboxes: Vec<BBox> = rings.iter().map(|r| ring_bbox(r)).collect();
+        let ring_bands = rings
+            .iter()
+            .zip(&ring_bboxes)
+            .map(|(r, bb)| RingBands::new(r, bb))
+            .collect();
         let mut area = ring_area_km2(&rings[0]);
         for hole in &rings[1..] {
             area -= ring_area_km2(hole);
@@ -32,6 +107,7 @@ impl Polygon {
             rings,
             ring_bboxes,
             area_km2: area.max(0.0),
+            ring_bands,
         })
     }
 
@@ -41,11 +117,15 @@ impl Polygon {
 
     /// Inside the outer ring and outside every hole.
     pub fn contains(&self, lon: f64, lat: f64) -> bool {
-        if !point_in_ring(lon, lat, &self.rings[0], &self.ring_bboxes[0]) {
+        if !self.ring_bands[0].contains(lon, lat, &self.rings[0], &self.ring_bboxes[0]) {
             return false;
         }
-        for (hole, bb) in self.rings[1..].iter().zip(&self.ring_bboxes[1..]) {
-            if point_in_ring(lon, lat, hole, bb) {
+        for ((hole, bb), bands) in self.rings[1..]
+            .iter()
+            .zip(&self.ring_bboxes[1..])
+            .zip(&self.ring_bands[1..])
+        {
+            if bands.contains(lon, lat, hole, bb) {
                 return false;
             }
         }
@@ -437,6 +517,42 @@ pub fn frame_distance_km(a: (f64, f64), b: (f64, f64)) -> f64 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn banded_containment_matches_the_full_ray_cast() {
+        // A jagged star with a hole, and points over and around its bbox.
+        let star: Ring = (0..=360)
+            .map(|k| {
+                let a = (k % 360) as f64 * std::f64::consts::PI / 180.0;
+                let r = 1.0 + 0.4 * ((k * 7 % 11) as f64 / 10.0);
+                (10.0 + r * a.cos(), 40.0 + r * a.sin())
+            })
+            .collect();
+        let hole: Ring = (0..=40)
+            .map(|k| {
+                let a = (k % 40) as f64 * std::f64::consts::PI / 20.0;
+                (10.0 + 0.3 * a.cos(), 40.0 + 0.3 * a.sin())
+            })
+            .collect();
+        let poly = Polygon::new(vec![star.clone(), hole.clone()]).unwrap();
+        let (bo, bh) = (ring_bbox(&star), ring_bbox(&hole));
+        let mut hits = 0;
+        for a in 0..300 {
+            for b in 0..300 {
+                let (lon, lat) = (8.0 + 4.0 * a as f64 / 299.0, 38.0 + 4.0 * b as f64 / 299.0);
+                let full =
+                    point_in_ring(lon, lat, &star, &bo) && !point_in_ring(lon, lat, &hole, &bh);
+                assert_eq!(poly.contains(lon, lat), full, "{lon} {lat}");
+                hits += full as usize;
+            }
+        }
+        assert!(hits > 10_000);
+        // Vertices themselves, where the crossing test is most delicate.
+        for &(lon, lat) in star.iter().chain(&hole) {
+            let full = point_in_ring(lon, lat, &star, &bo) && !point_in_ring(lon, lat, &hole, &bh);
+            assert_eq!(poly.contains(lon, lat), full);
+        }
+    }
     use super::*;
     use crate::rng::{Stream, StreamTag};
 

@@ -9,6 +9,7 @@
 	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
 	import SolveCard from './components/SolveCard.svelte';
 	import PanelHost from './components/PanelHost.svelte';
+	import LogPanel from './components/LogPanel.svelte';
 	import ShellEnvironment from './components/ShellEnvironment.svelte';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
@@ -120,6 +121,7 @@
 	<NotificationCenter />
 	<ControlPanel />
 	<SolveCard />
+	<LogPanel />
 	{#if !app.studyView}
 		<DropZone />
 		<PlacementCue />
