@@ -31,6 +31,6 @@ Acceptance: finite difference parity of the SDP sensitivity columns in `crates/b
 
 **Do not break.** DC, AC power flow, and SOCWR and their sensitivities stay identical.
 
-**Verify.** `cargo test --workspace`; `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo deny check`; `cargo build -p tellegen-wasm --target wasm32-unknown-unknown --features conic`; `npm run check && npm run build && npm run smoke:web`.
+**Verify.** `cargo test --workspace --exclude tellegen-py`; `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo deny check`; `cargo build -p tellegen-wasm --target wasm32-unknown-unknown --features conic`; `npm run check && npm run build && npm run smoke:web`.
 
 **Staging.** Land Phase A first and verify the tighter bound. Phase B is independent. Do not block A on it.

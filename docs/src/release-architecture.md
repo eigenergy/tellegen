@@ -181,11 +181,18 @@ On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
 open that bumps the version. Merge it to run the gates, continue the existing
 `vX.Y.Z` tag series, make the GitHub release, and publish. The configuration
 sets `release_always = false`, limiting publication to a merged release-plz pull
-request. The unprivileged gate runs `cargo package --locked --all-features`, so every
-opt-in feature builds against crates.io; the OIDC-enabled
+request. The unprivileged gate runs `cargo package --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema`, so every
+shipping numerical feature builds against crates.io; the OIDC-enabled
 release uses the ordinary verified Cargo publish path against that exact
 commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
+
+The explicit feature list excludes `powerio-012`, which requires selecting
+matching 0.12 dependencies and belongs to the separate PowerIO Candidate gate.
+The release API comparison also uses `--only-explicit-features` with that list:
+`cargo-semver-checks` otherwise enables non-default features heuristically.
+`release-plz` itself has `semver_check = false` because this read-only gate owns
+API comparison. Ordinary Cargo publication and docs builds use default features.
 
 The workflow's first job decides whether the push can publish: its engine
 version has no `v<version>` tag yet, and the push writes
@@ -275,7 +282,7 @@ starts reading a new path.
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
 `conic` path, `tellegen-wasm` built with `conic` and `synth`, and
-`cargo package --locked --all-features` for the published crate. The wasm test matters
+`cargo package --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema` for the published crate. The wasm test matters
 because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.
 

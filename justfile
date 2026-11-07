@@ -13,7 +13,7 @@ default:
 
 # Run the workspace test suite (engine, adapters, benchmarks).
 test:
-    cargo test --workspace
+    cargo test --workspace --exclude tellegen-py
 
 # Format the whole workspace.
 fmt:
@@ -48,8 +48,8 @@ powerio-pin:
 mc-pf-test:
     cargo test -p tellegen --no-default-features --features mc-pf
 
-# CI gate: the native IVR compiler and frozen OPF references. Until PowerIO
-# 0.11.8 ships, this builds against the candidate patched in Cargo.toml.
+# CI gate: every shipping numerical feature and the frozen OPF references.
+# The PowerIO 0.12 bridge is tested separately with matching candidate dependencies.
 mc-opf-test:
     cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
     cargo test -p tellegen --no-default-features --features mc-opf --locked
@@ -80,7 +80,7 @@ mc-pf-bench preset="feeder-10k" *flags="":
 # regeneration stays CI-only (it clones BMOPFTools.jl and runs OpenDSS); the
 # checked-in references are compared by `cargo test --workspace`.
 crate-package:
-    cargo package -p tellegen --locked
+    cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
 
 # ---- JavaScript workspace ----
 

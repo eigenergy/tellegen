@@ -64,6 +64,22 @@ is historical and must be rerun before it is cited for this release.
 
 ## Cargo features
 
+`powerio-012` selects a dependency-version bridge, so it is deliberately absent
+from the shipping 0.11 feature set. In a published 0.11 build, run the complete
+numerical checks with this explicit list:
+
+```sh
+cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
+```
+
+Do not substitute `--all-features`: that also enables the 0.12 bridge against
+0.11 dependencies. The Rust gate, `just mc-opf-test`, `just crate-package`,
+package inspection, and release API comparison use the shipping list. The API
+comparison disables cargo-semver-checks' feature heuristic with
+`--only-explicit-features`. Add new shipping features to those lists together.
+Only the candidate workflow selects and tests the 0.12 bridge and collection
+capabilities against their matching dependency versions.
+
 The `powerio` facade enables a `sincal` feature by default. It reads SINCAL
 projects through `powerio-tnd` and a bundled SQLite, which the wasm engine
 could only link with a C compiler that targets WebAssembly. Tellegen reads no

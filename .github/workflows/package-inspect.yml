@@ -26,7 +26,7 @@ jobs:
       - name: Package and verify
         run: |
           rm -rf target/package
-          cargo package -p tellegen --locked
+          cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
       - name: List the packaged contents
         run: cargo package -p tellegen --locked --list
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
