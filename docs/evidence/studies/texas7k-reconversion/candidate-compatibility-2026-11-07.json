@@ -1,0 +1,61 @@
+{
+  "stable": {
+    "input_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+    "options": {
+      "voltage_envelope": false,
+      "max_iterations": 500,
+      "tolerance": 1e-07,
+      "absolute_kcl_tolerance": 1e-05
+    },
+    "settings_sha256": "88f8d68ac9e62d4d8bea4fb47d5b5599e00962a060512f459cdc2f0ec93f7786",
+    "wasm_sha256": "a854d9053db24f0c9bb34af25b6bba7b2e357f0be6f9bc2395918116010d6128",
+    "wasm_loader_sha256": "03a20107d9dc5ec7b9a098285d2104e20e440aa03a2871e7b2509b51a97268fd",
+    "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+    "converged": true,
+    "iterations": 23,
+    "terminal_count": 55972,
+    "element_port_count": 128426,
+    "physical_kcl_residual": 4.76837158203125e-06,
+    "solve_seconds": 1.365337208,
+    "input_ir_schema": "pio-ir",
+    "input_ir_version": 2,
+    "input_producer_version": "0.11.9"
+  },
+  "candidate": {
+    "input_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+    "options": {
+      "voltage_envelope": false,
+      "max_iterations": 500,
+      "tolerance": 1e-07,
+      "absolute_kcl_tolerance": 1e-05
+    },
+    "settings_sha256": "88f8d68ac9e62d4d8bea4fb47d5b5599e00962a060512f459cdc2f0ec93f7786",
+    "wasm_sha256": "acac3030759911ab95eb68941184e5b24291add2de5c571f0fcbbeb881459886",
+    "wasm_loader_sha256": "b651b8cd047a2b1f26e9170fb176a1e8196b348ff34b13cdd420ce8f330ce1b0",
+    "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+    "converged": true,
+    "iterations": 23,
+    "terminal_count": 55972,
+    "element_port_count": 128426,
+    "physical_kcl_residual": 4.76837158203125e-06,
+    "solve_seconds": 1.4013503340000002,
+    "input_ir_schema": "pio-ir",
+    "input_ir_version": 2,
+    "input_producer_version": "0.11.9"
+  },
+  "stable_powerio_version": "0.11.9",
+  "candidate_powerio_version": "0.12.0-rc.1",
+  "candidate_powerio_revision": "16f466a03a474fddfd6c317c685dc168fcb1ea2e",
+  "candidate_tellegen_revision": "739e5ff21314e6c129fa9470d975d52d9bdbc0ef",
+  "candidate_features": [
+    "conic",
+    "synth",
+    "powerio-012",
+    "powerio-collections"
+  ],
+  "same_unmodified_stable_ir": true,
+  "all_power_flow_result_fields_exactly_equal": true,
+  "settings_schema_exactly_equal": true,
+  "explicit_options_exactly_equal": true,
+  "note": "Separate Node processes using existing browser WASM artifacts. No candidate module emitted or staged."
+}

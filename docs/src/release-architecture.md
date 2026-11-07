@@ -209,9 +209,9 @@ open that bumps the version. Merge it to run the gates, continue the existing
 sets `release_always = false`, limiting publication to a merged release-plz pull
 request. The unprivileged gate runs `cargo package --locked --all-features`, so every
 opt-in feature builds against crates.io; the OIDC-enabled
-release uses the ordinary verified Cargo publish path against that exact
-commit. release-plz obtains its short-lived crates.io credential directly from
-OIDC.
+release skips build verification because those unprivileged gates have already
+verified the package against that exact commit. release-plz obtains its
+short-lived crates.io credential directly from OIDC.
 
 The workflow's first job decides whether the push can publish: its engine
 version has no `v<version>` tag yet, and the push writes

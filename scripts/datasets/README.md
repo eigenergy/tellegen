@@ -53,3 +53,43 @@ should own a destination directory at a time. See `docs/src/deployment.md` for
 host preparation and the full-pilot browser check.
 
 Test failure handling with `python3 scripts/datasets/test_stage_texas7k.py`.
+
+## Recover missing prepared inputs
+
+The main-island derivative is operator data, not a tracked repository file.
+`prepare-texas7k.py` reconstructs its six checksum-pinned inputs from the public
+BMOPFDraftData source. It uses the published PowerIO 0.11.7 Python wheel instead
+of rebuilding historical CLI binaries. The deployed Tellegen dependency stays
+on its normal stable release.
+
+Use a clean checkout at the `workflow_revision` in
+`texas7k-main-island-source.json`. Only `scripts/Texas7k`, `test/data/Texas7k`
+and the pilot's `License.md`, `SOURCE_NOTICE.md`, and `tellegen_options.json`
+are needed; a sparse checkout avoids the other generated datasets. Obtain
+`powerio-dist/schemas/bmopf/0.2.0/bmopf.schema.json` from the PowerIO release
+commit recorded in that same lock. The extraction checks its hash against the
+converted document's schema provenance.
+
+```sh
+uv venv --python 3.12 /tmp/texas7k-python
+uv pip install --python /tmp/texas7k-python/bin/python \
+  -r /path/to/BMOPFDraftData/scripts/Texas7k/requirements.txt 'powerio==0.11.7'
+/tmp/texas7k-python/bin/python scripts/datasets/prepare-texas7k.py \
+  /path/to/BMOPFDraftData data/prototypes/texas7k-main-island \
+  --schema /path/to/powerio-0.11.7/bmopf.schema.json \
+  --wasm /path/to/current-stable/wasm-pkg
+```
+
+The helper verifies the clean source revision, all 62 original file hashes,
+exact Python dependency versions, the full conversion hash, and every prepared
+input hash. It reruns extraction's paired result comparison with the current
+browser WASM and explicitly labels that evidence as WASM, not a fresh native
+run. Output is installed atomically into a new directory only after these
+checks pass. It never downloads data or deploys it. Then run the staging
+command above to reduce and validate the hosted representation.
+
+The prepared directory includes `reconstruction-provenance.json`, with the
+source, dependency, schema and actual WASM hashes. Keep it with the operator
+inputs. The hosted bundle retains its existing six-file source lock, license,
+attribution, options and immutable checksums. Run
+`python3 scripts/datasets/test_prepare_texas7k.py` for the source rejection tests.

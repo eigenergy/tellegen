@@ -98,3 +98,42 @@ rerun and a load edit. The result hash matches the paired WASM report exactly.
 loopback measurements, not device support guarantees. The memory figure sums
 Chromium process RSS at checkpoints and can count shared pages more than once;
 it is not a continuously measured peak or a WASM heap measurement.
+
+## Reconstructed and checked — 7 November 2026
+
+The previously local prepared inputs were reconstructed from the public pinned
+BMOPFDraftData revision. All 62 source files, the full conversion, and all six
+prepared main-island input hashes match their existing locks exactly. The new
+`scripts/datasets/prepare-texas7k.py` uses the published PowerIO 0.11.7 Python
+binding and the original OpenDSS dependencies, avoiding historical native
+builds. It verifies the current browser WASM results before installing the
+prepared inputs. The shipping engine remains on PowerIO 0.11.9.
+
+`reconstruction-2026-11-07.json` records the complete source and binary proof.
+The locally staged immutable bundle is
+`distribution/texas7k-p1uhs0_1247-a594e609e0a0cc31/`. Its hosted module is still
+36,692,131 bytes, or 1,260,618 bytes in the staged gzip companion. All 15 bundle
+file checksums were verified. `shipping-wasm-validation-2026-11-07.json` confirms
+exact graph, coordinate and PF result preservation through reduction, zero
+diagnostics, and the same result hash as the prior accepted browser run.
+
+The actual native server served the production frontend and this staged case
+for a fresh Chromium acceptance run. Hosted load, UI and WebMCP solves, export,
+saved reopen, rerun with unchanged options, and a load edit all passed. The
+screenshot was inspected. `browser-validation-2026-11-07.json` records a
+7.849-second load, 1.044-second UI solve and 1.057-second edit on loopback.
+The largest sampled browser process RSS sum was 3.60 GB; shared pages may be
+counted more than once. The longest observed main-thread task was 3.317 seconds.
+These are desktop measurements, not a mobile performance qualification.
+
+The exact same unmodified PowerIO 0.11.9 hosted IR was also solved with the
+already-built PowerIO 0.12.0-rc.1 candidate at the revision recorded in
+`candidate-compatibility-2026-11-07.json`. Every PF result field, the settings
+schema, and explicit solver options match the stable build exactly. Both
+actual WASM binary hashes are retained. No candidate-generated module was
+staged, and this check does not imply that a 0.11 reader accepts new 0.12 IR.
+
+Production promotion is separate: copy the immutable bundle, preserve existing
+distribution manifest entries, replace only this case's entry atomically, and
+retain the previous manifest for rollback. These records describe local
+preparation and acceptance, not a production deployment.
