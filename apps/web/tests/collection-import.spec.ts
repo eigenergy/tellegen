@@ -24,6 +24,15 @@ test('the baseline build hides collection controls and explains unsupported ZIP 
 		mimeType: 'application/zip',
 		buffer: storedZip({ 'case.m': comparison })
 	});
+	const notices = page.getByRole('region', { name: 'Notifications' });
+	await expect(
+		notices.getByText('ZIP and folder imports unavailable', { exact: true })
+	).toBeVisible();
+	await notices.getByRole('button', { name: 'Details', exact: true }).click();
+	await notices
+		.locator('summary')
+		.filter({ hasText: 'ZIP and folder imports unavailable' })
+		.click();
 	await expect(
 		page.getByText(
 			'ZIP and folder imports are unavailable in this build. Open a single case file instead.'
