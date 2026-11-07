@@ -260,6 +260,13 @@ besides its click callbacks:
 - `extraLayers`: deck.gl layers drawn after tellegen's own, in the same
   overlay.
 - `attribution`: `'compact'` (default) or `'full'`. There is no off switch.
+- `declutterMarkers`: default `true`. At low zoom the map draws one bus
+  marker per crowded spot, about 16 pixels across. It keeps a generator
+  before a substation before any other bus, as recorded in a grid made by
+  tellegen-synth, then the bus with the most generation and demand. Zooming
+  in shows the rest. The selected bus always draws, and every bus is still
+  in the case: the bus picker finds it and a line's tooltip names it.
+  `false` draws every marker at every zoom.
 - `onMapReady(map, overlay)`: called with the MapLibre map and the deck
   overlay once they exist. It may return a cleanup, and it fires again after
   a context-loss or basemap rebuild. If it throws, the map and its window

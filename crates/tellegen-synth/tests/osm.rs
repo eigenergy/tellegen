@@ -17,10 +17,59 @@ fn request(islands: OsmIslands) -> SynthRequest {
     req.source = Source::Osm;
     req.demand = DemandSpec::TotalMw { mw: 1500.0 };
     req.osm = Some(OsmOptions {
+        reinforce: false,
         islands,
         ..OsmOptions::default()
     });
     req
+}
+
+#[test]
+fn reinforcement_is_synthetic_conserves_demand_and_plans_reactive_support_at_dispatch() {
+    let mut req = request(OsmIslands::Connect);
+    req.demand = DemandSpec::TotalMw { mw: 3000.0 };
+    req.osm.as_mut().unwrap().reinforce = true;
+    // Concentrate ample generation at one plant: feasibility must come from
+    // modelling the intervening circuits, not from adding active generation.
+    let document = FIXTURE.replace("600 MW", "3000 MW");
+    let (module, report) = generate(req, common::places(), Some(document)).unwrap();
+    let net = module.value();
+    assert!((net.loads().iter().map(|l| l.p).sum::<f64>() - 3000.0).abs() < 1e-6);
+    assert_eq!(
+        report.dc_opf.as_ref().unwrap().status,
+        SolveOutcome::Optimal
+    );
+    assert_eq!(
+        report.ac_pf.as_ref().unwrap().status,
+        AcPfOutcome::Converged,
+        "{:?}",
+        report.ac_pf
+    );
+    let elements = report.elements.as_ref().unwrap();
+    let added: Vec<_> = net
+        .branches()
+        .iter()
+        .zip(&elements.branches)
+        .filter(|(b, _)| b.extras["tellegen_synth"]["synthetic_reinforcement"] == true)
+        .collect();
+    assert!(!added.is_empty());
+    assert!(added
+        .iter()
+        .all(|(_, a)| a.source == tellegen_synth::report::ElementSource::Synthetic));
+    assert!(elements
+        .branches
+        .iter()
+        .any(|a| a.source == tellegen_synth::report::ElementSource::Osm));
+    assert!(net
+        .shunts()
+        .iter()
+        .all(|s| s.extras["tellegen_synth"]["basis"] == "dc_dispatch_reactive_balance"));
+    assert!(report
+        .warnings
+        .iter()
+        .any(|w| w.code == "osm_synthetic_reinforcement"));
+    assert_eq!(report.planning.as_ref().unwrap().promoted_buses, 0);
+    assert_eq!(report.planning.as_ref().unwrap().filler_circuits, 0);
 }
 
 fn count(report: &tellegen_synth::GenerationReport, key: &str) -> u64 {

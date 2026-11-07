@@ -73,6 +73,10 @@ class Net:
     # Optional: line routes as lists of (lon, lat), one per branch, for the
     # line density metric. None falls back to the straight segment.
     routes: list | None = None
+    # Optional: which buses stand at a site, for the siting metrics: not a
+    # generated grid's tap junctions, nor CATS's added nodes. None counts
+    # every bus.
+    sited: np.ndarray | None = None
     notes: dict = field(default_factory=dict)
 
 
@@ -203,13 +207,15 @@ def _assemble(case, coords, fuels, lengths, routes=None, notes=None):
 
 def load_cats(directory):
     """CATS as staged by scripts/stage-data.sh: CaliforniaTestSystem.m,
-    CATS_buses.csv, CATS_gens.csv and CATS_lines.json."""
+    CATS_buses.csv (locations, and Type: Substation or AddedNode),
+    CATS_gens.csv and CATS_lines.json."""
     d = Path(directory)
     case = parse_matpower(d / 'CaliforniaTestSystem.m')
-    coords = {}
+    coords, kinds = {}, {}
     with open(d / 'CATS_buses.csv', newline='') as fh:
         for row in csv.DictReader(fh):
             coords[int(row['bus_i'])] = (float(row['Lat']), float(row['Lon']))
+            kinds[int(row['bus_i'])] = row['Type'].strip("' ")
     fuels = []
     with open(d / 'CATS_gens.csv', newline='') as fh:
         for row in csv.DictReader(fh):
@@ -234,13 +240,16 @@ def load_cats(directory):
         if rt is None:
             a, b = coords[int(case['branch'][i][0])], coords[int(case['branch'][i][1])]
             routes[i] = [(a[1], a[0]), (b[1], b[0])]
-    return _assemble(case, coords, fuels, lengths, routes, notes={'source': 'CATS'})
+    net = _assemble(case, coords, fuels, lengths, routes, notes={'source': 'CATS'})
+    # Its substations stand at sites; its added nodes are line junctions.
+    net.sited = np.array([kinds[int(b)] == 'Substation' for b in net.bus_id], dtype=bool)
+    return net
 
 
 def load_generated(directory):
     """A `tellegen generate` output directory: network.pio.json (buses with
-    locations, branches with routes) and report.json (per-element fuel,
-    condenser flag, route length and transformer flag)."""
+    locations and kind, branches with routes) and report.json (per-element
+    fuel, condenser flag, route length and transformer flag)."""
     d = Path(directory)
     data = json.loads((d / 'network.pio.json').read_text())['value']['data']
     report = json.loads((d / 'report.json').read_text())
@@ -252,6 +261,9 @@ def load_generated(directory):
     lat = np.array([float(p.get('y', p.get('lat', 0.0))) for p in loc])
     lon = np.array([float(p.get('x', p.get('lon', 0.0))) for p in loc])
     kv = np.array([float(b['base_kv']) for b in buses])
+    rep_bus = {e['uid']: e for e in report['elements']['buses']}
+    kind = [((b.get('extras') or {}).get('tellegen_synth') or rep_bus.get(b.get('uid')) or {}).get('kind')
+            for b in buses]
     pd = np.zeros(len(ids))
     qd = np.zeros(len(ids))
     for ld in data.get('loads') or []:
@@ -303,6 +315,7 @@ def load_generated(directory):
         g_bus=arr(g_bus, dtype=int), g_pmax=arr(g_pmax), g_pmin=arr(g_pmin), g_qmax=arr(g_qmax),
         g_cost=arr(g_cost), g_fuel=g_fuel, g_is_condenser=arr(g_cond, dtype=bool),
         g_is_import=np.zeros(len(g_bus), dtype=bool), routes=routes,
+        sited=np.array([k != 'tap' for k in kind], dtype=bool),
         notes={'source': str(d), 'dc_opf': report.get('dc_opf', {}).get('status'),
                'ac_pf': {k: report.get('ac_pf', {}).get(k) for k in
                          ('status', 'vm_min', 'vm_max', 'losses_mw', 'buses_outside_emergency_band')},
@@ -525,10 +538,12 @@ def _route_samples(net, keep, lat0, lon0, step_km=1.0):
     return np.vstack(pts), np.concatenate(w)
 
 
-def measure(net, frame=None, with_dc=True):
+def measure(net, frame=None, with_dc=True, places=None):
     """Every metric of the scorecard, as a flat dict. `frame` is the
     projection centre (lat0, lon0) the geographic metrics use, so that two
-    networks compared share one projection; None takes this network's mean."""
+    networks compared share one projection; None takes this network's mean.
+    `places` ((lon, lat, population) rows, `load_places`) adds the siting
+    metrics."""
     keep, ncomp, load_share = main_component(net)
     alive, redges = reduce_series(net, keep)
     m = {'components': int(ncomp), 'main_load_share': load_share,
@@ -643,7 +658,60 @@ def measure(net, frame=None, with_dc=True):
     m['_route_samples'] = (pts, w)
     m['_load_xy'] = (xy_bus[keep], net.pd[keep])
     m['_frame'] = frame
+    if places is not None:
+        m['siting'] = siting(net, places)
     return m
+
+
+# --------------------------------------------------------------------------
+# Siting: where the buses stand against where people live
+# --------------------------------------------------------------------------
+
+# MapToGrid's California measure (tellegen#305): 0.5° cells, a sparse cell
+# being one whose listed places hold fewer than 20,000 people, the ten most
+# populous cells, and three boxes (west, south, east, north) running from
+# dense to empty. Box areas are MapToGrid's: a flat box at its mid latitude.
+SITING_CELL_DEG = 0.5
+SITING_SPARSE_PEOPLE = 20_000.0
+SITING_TOP_CELLS = 10
+SITING_BOXES = {
+    'la': (-118.7, 33.6, -117.0, 34.4),      # the Los Angeles basin
+    'mojave': (-117.5, 34.6, -115.5, 35.6),  # the Mojave Desert
+    'ne': (-121.5, 40.5, -120.0, 42.0),      # Modoc and Lassen counties
+}
+
+
+def load_places(path, subdivision):
+    """(lon, lat, population) rows of the bundled places table whose ISO
+    3166-2 subdivision (the row's sixth field) is `subdivision`."""
+    rows = json.loads(Path(path).read_text())['places']
+    pts = [(r[1], r[2], r[3]) for r in rows if len(r) > 5 and r[5] == subdivision]
+    return np.array(pts, dtype=float).reshape(-1, 3)
+
+
+def siting(net, places):
+    """Where the sited buses stand against the places' population: the
+    share in sparse cells, the share in the most populous cells, buses per
+    1,000 km² in each box, and the ratio of the densest box to the emptiest."""
+    on = net.sited if net.sited is not None else np.ones(len(net.kv), dtype=bool)
+    lon, lat = net.lon[on], net.lat[on]
+    cells = defaultdict(lambda: [0, 0.0])
+    for key in zip(np.floor(lon / SITING_CELL_DEG).astype(int), np.floor(lat / SITING_CELL_DEG).astype(int),
+                   strict=True):
+        cells[key][0] += 1
+    for x, y, p in places:
+        cells[(math.floor(x / SITING_CELL_DEG), math.floor(y / SITING_CELL_DEG))][1] += p
+    total = max(len(lon), 1)
+    sparse = sum(b for b, p in cells.values() if p < SITING_SPARSE_PEOPLE)
+    top = sorted(cells.values(), key=lambda c: -c[1])[:SITING_TOP_CELLS]
+    density = {}
+    for name, (w, s, e, n) in SITING_BOXES.items():
+        count = int(np.sum((lon > w) & (lon < e) & (lat > s) & (lat < n)))
+        area = (e - w) * 111.32 * math.cos(math.radians((s + n) / 2)) * (n - s) * 110.57
+        density[name] = 1000.0 * count / area
+    return {'buses': int(on.sum()), 'sparse_share': sparse / total,
+            'top_share': sum(b for b, _ in top) / total, 'per_1000km2': density,
+            'la_over_ne': density['la'] / density['ne'] if density['ne'] > 0 else None}
 
 
 def gridded(m, origin, shape, cell_km, which):

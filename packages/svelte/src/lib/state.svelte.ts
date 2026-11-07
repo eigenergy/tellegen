@@ -9,7 +9,7 @@ import type {
 	Solution,
 	SolveIteration
 } from './api.js';
-import { tapBusIds, withoutTaps } from './bus-kinds.js';
+import { readBusKinds, tapsOf, withoutTaps } from './bus-kinds.js';
 import {
 	DEFAULT_FORMULATION,
 	type StudyView,
@@ -122,9 +122,13 @@ export class LocalCase {
 	coordsKind: CoordsKind | undefined = $state.raw<CoordsKind | undefined>(undefined);
 	/** Map geometry when the file carried or received coordinates. */
 	view: LocalView | null = $state.raw<LocalView | null>(null);
+	/** Each bus's kind in a generated grid, by bus id (`generator`,
+	 * `substation`, `converter`, `load`, `tap`); empty for any other case. At
+	 * low zoom the map keeps generators and substations over other buses. */
+	readonly busKinds: ReadonlyMap<number, string> = $derived(readBusKinds(this.studyInputJson));
 	/** Buses a generated grid marks as line taps. The map draws no marker for
 	 * them; the bus picker and the selection still reach them. */
-	readonly tapBuses: ReadonlySet<number> = $derived(tapBusIds(this.studyInputJson));
+	readonly tapBuses: ReadonlySet<number> = $derived(tapsOf(this.busKinds));
 	/** `view.buses` less the line taps: the buses the map draws as markers. */
 	readonly markerBuses: NetworkBus[] = $derived(withoutTaps(this.view?.buses ?? [], this.tapBuses));
 	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<

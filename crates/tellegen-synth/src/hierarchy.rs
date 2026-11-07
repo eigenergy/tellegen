@@ -60,13 +60,25 @@ pub fn is_hierarchical(levels: &[f64]) -> bool {
     levels.len() >= 2 && levels.iter().any(|&kv| kv < SUBTRANSMISSION_KV)
 }
 
-/// Whether a region is built hierarchically: its ladder comes from a
-/// subdivision's entry ([`crate::voltage`]) and reaches subtransmission. A
-/// request that states its own levels keeps the transmission design, one bus
-/// per substation, whatever the levels.
+/// Whether a region modelled at `levels` is built hierarchically: the levels
+/// reach subtransmission and the region's dominant subdivision has a ladder
+/// of its own ([`crate::voltage`]), so its subtransmission is modelled. The
+/// levels are the subdivision's own or the ones the request states; stated
+/// levels that stop above subtransmission, or a region whose subdivision has
+/// no entry, keep the transmission design, one bus per substation.
+pub fn hierarchical_region(levels: &[f64], subdivision: Option<&str>) -> bool {
+    is_hierarchical(levels)
+        && subdivision.is_some_and(|code| {
+            crate::voltage::VoltageLadders::bundled()
+                .subdivision_ladder(code)
+                .is_some()
+        })
+}
+
+/// Whether a resolved region is built hierarchically
+/// ([`hierarchical_region`]).
 pub fn layered(ctx: &RegionContext) -> bool {
-    ctx.voltage_basis == crate::report::VoltageBasis::Subdivision
-        && is_hierarchical(&ctx.voltage_levels_kv)
+    hierarchical_region(&ctx.voltage_levels_kv, ctx.subdivision.as_deref())
 }
 
 /// Bus counts per level: the tuned shares of the ladder depth, summing to `n`.

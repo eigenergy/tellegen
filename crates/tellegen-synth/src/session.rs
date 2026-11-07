@@ -484,11 +484,16 @@ impl Generator {
         };
         let mut rng = Stream::new(self.request.seed, StreamTag::Electrical);
         let mut draws = draw_corridors(&self.state.corridors, self.request.fidelity, &mut rng);
-        let branch_target = (ctx.branch_factor * self.state.buses.len() as f64).round() as usize;
-        // A mapped network down to subtransmission carries modelled ratings
-        // on thousands of real lines; the plan reinforces it where the
-        // planning case overloads them, as for a synthetic one.
-        let mode = if self.state.osm.is_some() && !self.state.layered {
+        let mapped_circuits: Vec<u32> = self.state.corridors.iter().map(|c| c.circuits).collect();
+        // Density must not add filler circuits to mapped data. Reinforcement
+        // adds only capacity or voltage support; mapped voltages stay fixed.
+        let branch_target = if self.state.osm.is_some() {
+            mapped_circuits.iter().map(|&c| c as usize).sum()
+        } else {
+            (ctx.branch_factor * self.state.buses.len() as f64).round() as usize
+        };
+        let reinforce = self.request.osm.clone().unwrap_or_default().reinforce;
+        let mut mode = if self.state.osm.is_some() {
             PlanMode::Observe
         } else if self.state.layered {
             PlanMode::Reinforce
@@ -505,9 +510,48 @@ impl Generator {
             branch_target,
             mode,
         );
+        if let Some(osm) = self.state.osm.as_ref().filter(|_| reinforce) {
+            // Redispatch existing equipment before adding anything. An
+            // unconstrained cheap dispatch alone is not evidence that the
+            // topology needs reinforcement.
+            let probe = build_network(
+                "mapped_dispatch_probe",
+                &self.state.buses,
+                &expand_circuits(&self.state.corridors, &designs),
+                &generators,
+                &[],
+                &osm.hvdc_links(),
+                CoordsKind::Source,
+                None,
+                None,
+            )?;
+            let dispatch = run_dc_opf(
+                &probe.net,
+                &probe.gen_fuels,
+                Some(self.cancel.clone()),
+                self.clock,
+            )?;
+            counts.insert(
+                "mapped_dispatch_feasible".into(),
+                u64::from(dispatch.feasible()),
+            );
+            if !dispatch.feasible() {
+                mode = PlanMode::Reinforce;
+                (designs, plan) = plan_corridors(
+                    &mut self.state.buses,
+                    &ctx.voltage_levels_kv,
+                    &ctx.promotion_levels_kv,
+                    &mut self.state.corridors,
+                    &draws,
+                    &generators,
+                    branch_target,
+                    mode,
+                );
+            }
+        }
         // A mapped network down to subtransmission gets step-downs where its
         // planning case still overloads it, and is planned again.
-        if self.state.osm.is_some() && self.state.layered {
+        if self.state.osm.is_some() && self.state.layered && mode == PlanMode::Reinforce {
             let mut relief = 0usize;
             for _ in 0..MAPPED_RELIEF_ROUNDS {
                 let added = crate::hierarchy::relieve_mapped(
@@ -539,14 +583,14 @@ impl Generator {
             }
             counts.insert("step_downs_added".into(), relief as u64);
         }
-        // Mapped (OSM) networks keep their real equipment; only a synthetic
-        // plan adds condensers.
+        // Added condensers have no active generation and are modelled support,
+        // never evidence of equipment mapped in OpenStreetMap.
         let mut condensers = if mode != PlanMode::Observe {
             place_voltage_support(&mut self.state.buses, &self.state.corridors, &generators)
         } else {
             Vec::new()
         };
-        if self.state.layered {
+        if self.state.layered && mode != PlanMode::Observe {
             condensers.extend(crate::hierarchy::regulate_secondaries(
                 &mut self.state.buses,
                 &self.state.corridors,
@@ -559,14 +603,25 @@ impl Generator {
         dispatch.extend(std::iter::repeat_n(0.0, condensers.len()));
         generators.extend(condensers);
         let branches = expand_circuits(&self.state.corridors, &designs);
-        let reactive = plan_shunts(
-            &self.state.buses,
-            &branches,
-            &generators,
-            &dispatch,
-            &plan.grounds,
-            self.state.osm.is_some(),
-        );
+        // An unconstrained economic dispatch can strand generation behind
+        // mapped bottlenecks. Its reactive balance is not an operating point.
+        // Size mapped-grid shunts after the constrained DC dispatch is known.
+        let reactive = if self.state.osm.is_some() {
+            crate::electrical::reactive::ReactivePlan {
+                shunts: Vec::new(),
+                angles_converged: true,
+                max_angle_difference_deg: 0.0,
+            }
+        } else {
+            plan_shunts(
+                &self.state.buses,
+                &branches,
+                &generators,
+                &dispatch,
+                &plan.grounds,
+                false,
+            )
+        };
         if !reactive.angles_converged {
             warnings.push(Warning::new(
                 "reactive_plan_unconverged",
@@ -637,7 +692,7 @@ impl Generator {
             ),
             None => (Vec::new(), CoordsKind::Synthetic, None, None),
         };
-        let built = build_network(
+        let mut built = build_network(
             &name,
             &self.state.buses,
             &branches,
@@ -648,6 +703,39 @@ impl Generator {
             osm_ids.as_deref(),
             makeup.as_deref(),
         )?;
+        if self.state.osm.is_some() {
+            let mut added = 0usize;
+            for (k, branch) in branches.iter().enumerate() {
+                let original = mapped_circuits.get(branch.corridor).copied().unwrap_or(0);
+                let synthetic = branch.circuit_index > original;
+                added += usize::from(synthetic);
+                let annotation = &mut built.annotations.branches[k];
+                annotation.source =
+                    if synthetic || (branch.is_transformer && annotation.osm_ids.is_empty()) {
+                        crate::report::ElementSource::Synthetic
+                    } else if branch.role == crate::topology::CorridorRole::Interconnect {
+                        crate::report::ElementSource::Interconnect
+                    } else {
+                        crate::report::ElementSource::Osm
+                    };
+                // Keep the way ids as route provenance, even for a synthetic
+                // parallel circuit. The source and observed count distinguish it.
+                let extra = built.net.branches_mut()[k]
+                    .extras
+                    .get_mut(crate::build::EXTRAS_KEY)
+                    .expect("branch extras");
+                extra["source"] = serde_json::json!(annotation.source);
+                extra["original_circuits"] = serde_json::json!(original);
+                extra["synthetic_reinforcement"] = serde_json::json!(synthetic);
+            }
+            counts.insert("synthetic_circuits".into(), added as u64);
+            if added > 0 || generators.iter().any(|g| g.condenser) {
+                warnings.push(Warning::new(
+                    "osm_synthetic_reinforcement",
+                    format!("the model adds {added} synthetic parallel circuit(s) and {} synchronous condenser(s) to serve the modelled demand; mapped routes and voltages are retained, added equipment is labelled synthetic, and osm.reinforce=false preserves the original circuit counts", generators.iter().filter(|g| g.condenser).count()),
+                ));
+            }
+        }
         let capacitors: Vec<f64> = shunts.iter().map(|s| s.mvar).filter(|q| *q > 0.0).collect();
         let reactors: Vec<f64> = shunts
             .iter()
@@ -841,6 +929,7 @@ impl Generator {
         warnings: &mut Vec<Warning>,
         counts: &mut BTreeMap<String, u64>,
     ) -> Result<(), SynthError> {
+        self.plan_mapped_reactive(warnings, counts);
         if !self.request.validation.run_ac_pf {
             self.report.ac_pf = Some(crate::validate::skipped_ac());
             return Ok(());
@@ -862,6 +951,91 @@ impl Generator {
         );
         self.report.ac_pf = Some(report);
         Ok(())
+    }
+
+    /// Model reactive support at the dispatch that respects the mapped-grid
+    /// bottlenecks, after calibration. This changes neither active demand nor
+    /// ratings. A failed angle solve must never manufacture shunts from a
+    /// divergent iterate.
+    fn plan_mapped_reactive(
+        &mut self,
+        warnings: &mut Vec<Warning>,
+        counts: &mut BTreeMap<String, u64>,
+    ) {
+        if self.state.osm.is_none() || !self.state.dc.as_ref().is_some_and(DcOpfRun::feasible) {
+            return;
+        }
+        let built = self.state.built.as_mut().expect("electrify ran");
+        let mut buses = self.state.buses.clone();
+        for bus in &mut buses {
+            bus.load_mw = 0.0;
+            bus.load_mvar = 0.0;
+        }
+        for load in built.net.loads().iter().filter(|l| l.in_service) {
+            buses[load.bus.0 - 1].load_mw += load.p;
+            buses[load.bus.0 - 1].load_mvar += load.q;
+        }
+        // Account for the same fixed transfers the validation copy uses.
+        for link in built.net.hvdc().iter().filter(|h| h.in_service) {
+            buses[link.from.0 - 1].load_mw += link.pf;
+            buses[link.to.0 - 1].load_mw -= link.pt;
+        }
+        let mut generators = self.state.generators.clone();
+        let dispatch: Vec<f64> = built.net.generators().iter().map(|g| g.pg).collect();
+        for (draft, row) in generators.iter_mut().zip(built.net.generators()) {
+            draft.qmin_mvar = row.qmin;
+            draft.qmax_mvar = row.qmax;
+        }
+        let mut branches = self.state.branches.clone();
+        for (draft, row) in branches.iter_mut().zip(built.net.branches()) {
+            draft.r_pu = row.r;
+            draft.x_pu = row.x;
+            draft.b_pu = row.b;
+            draft.rate_a = row.rate_a;
+        }
+        let grounds: Vec<usize> = crate::validate::islands(&built.net)
+            .iter()
+            .filter_map(|members| crate::validate::island_network(&built.net, members))
+            .filter_map(|island| {
+                island
+                    .net
+                    .buses()
+                    .iter()
+                    .find(|b| b.kind == powerio::BusType::Ref)
+                    .map(|b| b.id.0 - 1)
+            })
+            .collect();
+        let reactive = plan_shunts(&buses, &branches, &generators, &dispatch, &grounds, false);
+        if !reactive.angles_converged {
+            warnings.push(Warning::new("reactive_plan_unconverged", "the AC angle solve at the feasible DC dispatch did not converge; no shunt banks were inferred from the failed iterate"));
+            return;
+        }
+        built.net.shunts_mut().clear();
+        for shunt in &reactive.shunts {
+            let mut row = powerio::Shunt::new(powerio::BusId(shunt.bus + 1), 0.0, shunt.mvar);
+            row.uid = Some(format!("synthetic-shunt:{}", shunt.bus + 1));
+            row.extras.insert(crate::build::EXTRAS_KEY.to_owned(), serde_json::json!({
+                "kind": shunt.kind(), "basis": "dc_dispatch_reactive_balance", "source": "synthetic"
+            }));
+            built.net.shunts_mut().push(row);
+        }
+        counts.insert("shunts".into(), reactive.shunts.len() as u64);
+        if let Some(plan) = self.report.planning.as_mut() {
+            plan.capacitor_banks = reactive.shunts.iter().filter(|s| s.mvar > 0.0).count();
+            plan.reactor_banks = reactive.shunts.iter().filter(|s| s.mvar < 0.0).count();
+            plan.capacitor_mvar =
+                (reactive.shunts.iter().map(|s| s.mvar.max(0.0)).sum::<f64>() * 10.0).round()
+                    / 10.0;
+            plan.reactor_mvar = (reactive
+                .shunts
+                .iter()
+                .map(|s| (-s.mvar).max(0.0))
+                .sum::<f64>()
+                * 10.0)
+                .round()
+                / 10.0;
+            plan.max_angle_difference_deg = reactive.max_angle_difference_deg;
+        }
     }
 
     fn run_finalize(&mut self, counts: &mut BTreeMap<String, u64>) -> Result<(), SynthError> {
