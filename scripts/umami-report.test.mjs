@@ -11,9 +11,27 @@ test('account-wide credentials cannot put unrelated websites in public evidence'
 	const directory = await mkdtemp(join(tmpdir(), 'umami-report-'));
 	const requests = [];
 	const server = createServer((req, res) => {
-		const path = new URL(req.url, 'http://localhost').pathname;
-		requests.push(path);
+		const url = new URL(req.url, 'http://localhost');
+		const path = url.pathname;
+		requests.push(url.pathname + url.search);
 		res.setHeader('content-type', 'application/json');
+		if (path.endsWith('/event-data/values')) {
+			const event = url.searchParams.get('event');
+			const property = url.searchParams.get('propertyName');
+			const values = event === 'generate.finish' && property === 'country_verdict'
+				? [{ value: 'PRT:trusted', total: 1 }, { value: 'PRT:failed', total: 1 }]
+				: event === 'engine.load' && property === 'result'
+					? [{ value: 'ok', total: 2 }]
+					: event === 'generate.finish' && property === 'verdict'
+						? [{ value: 'trusted', total: 1 }, { value: 'failed', total: 1 }]
+						: [{ value: 'unrelated-event', total: 999 }];
+			res.end(JSON.stringify(values));
+			return;
+		}
+		if (path.includes('6e491a05-f119-4810-8e4e-64be7d9efb46') && path.endsWith('/metrics')) {
+			res.end(JSON.stringify([{ x: 'generate.finish', y: 2 }, { x: 'engine.load', y: 2 }]));
+			return;
+		}
 		res.end(JSON.stringify(path === '/websites' ? { data: [
 			{ id: '6e491a05-f119-4810-8e4e-64be7d9efb46', domain: 'maptogrid.com', name: 'MapToGrid' },
 			{ id: '41f22b57-b287-42b2-935c-037f82a80020', domain: 'tellegen.dev', name: 'tellegen' },
@@ -42,6 +60,11 @@ test('account-wide credentials cannot put unrelated websites in public evidence'
 		assert.ok(!requests.some((path) => path.includes('private-id')));
 		assert.ok(!raw.includes('confidential.example'));
 		assert.ok(!raw.includes('fixture-only'));
+		const map = report.websites.find((site) => site.domain === 'maptogrid.com');
+		assert.deepEqual(map.countries, { PRT: { runs: 2, trusted: 1, rate: 0.5 } });
+		assert.deepEqual(map.properties['engine.load.result'], { ok: 2 });
+		assert.ok(!requests.some((url) => url.includes('eventName=')));
+		assert.ok(!raw.includes('unrelated-event'));
 	} finally {
 		server.close();
 		await rm(directory, { recursive: true, force: true });

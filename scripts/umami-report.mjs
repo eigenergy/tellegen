@@ -139,7 +139,7 @@ async function main() {
 			const values = await attempt(`${site.domain} ${event}.${property}`, () =>
 				get(`/websites/${id}/event-data/values`, {
 					...range,
-					eventName: event,
+					event,
 					propertyName: property
 				})
 			);
