@@ -63,11 +63,11 @@
 		Each selection becomes an independent case. Importing does not run a calculation. Unsupported
 		snapshots remain view-only with an explanation.
 	</p>
-	{#each model.errors as error}<p class="error" role="alert">{error}</p>{/each}
+	{#each model.errors as error, index (index)}<p class="error" role="alert">{error}</p>{/each}
 	{#if model.collections.length}
 		<details>
 			<summary>Source collections and downloads</summary>
-			{#each model.collections as collection}
+			{#each model.collections as collection (collection.id)}
 				<p>
 					{collection.label}: {collection.inspection.entries.length} files
 					{#if collection.inspection.original_zip}<button
@@ -155,7 +155,7 @@
 			>
 		</div>{/if}
 	<datalist id="collection-formats"
-		>{#each ['dss', 'matpower', 'psse', 'psse-rawx', 'aux', 'pslf', 'pwb', 'pmd-json', 'bmopf-json', 'xiidm', 'jiidm', 'cgmes', 'goc3', 'pypsa-csv', 'gridlabd'] as format}<option
+		>{#each ['dss', 'matpower', 'psse', 'psse-rawx', 'aux', 'pslf', 'pwb', 'pmd-json', 'bmopf-json', 'xiidm', 'jiidm', 'cgmes', 'goc3', 'pypsa-csv', 'gridlabd'] as format (format)}<option
 				value={format}
 			></option>{/each}</datalist
 	>
@@ -173,14 +173,14 @@
 						explicitPath = '';
 					}}
 					><option value="">Choose a collection</option
-					>{#each model.collections as collection}<option value={collection.id}
+					>{#each model.collections as collection (collection.id)}<option value={collection.id}
 							>{collection.label}</option
 						>{/each}</select
 				></label
 			>
 			<label
 				>Entry <select bind:value={explicitPath}
-					><option value="">Choose an entry</option>{#each inventory as entry}<option
+					><option value="">Choose an entry</option>{#each inventory as entry (entry.path)}<option
 							value={entry.path}>{entry.path} ({entry.bytes} bytes)</option
 						>{/each}</select
 				></label
@@ -205,7 +205,8 @@
 		applied to every case: import first, then select a case and attach its sidecar.
 	</p>
 	<div class="footer">
-		<span>{selected.length} selected; {importable.length} to import (up to 32 per import)</span><button
+		<span>{selected.length} selected; {importable.length} to import (up to 32 per import)</span
+		><button
 			class="primary"
 			disabled={model.busy || !importable.length || importable.length > 32}
 			onclick={() => model.importSelected()}>Import selected cases</button
