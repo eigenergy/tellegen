@@ -378,6 +378,42 @@ The engine package resolves its wasm files relative to the package module. Apps
 must serve package asset files from `node_modules`; Vite and SvelteKit handle
 that path.
 
+## Analytics Package
+
+Install:
+
+```sh
+npm install @tellegen/analytics
+```
+
+`@tellegen/analytics` is the usage analytics the hosted demo and MapToGrid
+share: a `Vocabulary` of the page paths, event names, property keys and
+property values a site may report, a sanitiser that rebuilds every payload
+from it, and a sender that posts the result to Umami Cloud's collection
+address from the site's own code. No third-party script is loaded, no cookie
+is set, and nothing is sent from a host the site did not list, over plain
+http, under Do Not Track or Global Privacy Control, or after the visitor opted
+out. The package has no dependencies.
+
+```ts
+import { createAnalytics, localStorageOptOut } from "@tellegen/analytics";
+
+const analytics = createAnalytics({
+  website: "your-umami-website-id",
+  hosts: ["example.org"],
+  pages: { "/": "Site" },
+  events: { "calculation.solve": ["calculation", "result", "duration_ms"] },
+  enums: { calculation: new Set(["dcopf"]), result: new Set(["completed", "failed"]) },
+  numbers: new Set(["duration_ms"]),
+  optOut: localStorageOptOut("umami.disabled"),
+});
+analytics.page(location.pathname);
+analytics.track("calculation.solve", { calculation: "dcopf", result: "completed", duration_ms: 812 });
+```
+
+A site keeps its vocabulary in one file and asserts `checkVocabulary` in a
+unit test; `apps/web/src/lib/analytics/client.ts` is the hosted demo's.
+
 ## Examples
 
 - `examples/svelte-minimal` imports `@tellegen/svelte` and runs with
