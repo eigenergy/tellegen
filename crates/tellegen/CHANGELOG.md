@@ -4,6 +4,20 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.6.1](https://github.com/eigenergy/tellegen/compare/v0.6.0...v0.6.1) - 2026-11-07
+
+### Added
+
+- Add experimental native multiconductor IVR OPF (mc-opf feature) ([#337](https://github.com/eigenergy/tellegen/pull/337))
+
+### Changed
+
+- Add common calculation settings across interfaces and hosted distribution cases ([#341](https://github.com/eigenergy/tellegen/pull/341))
+
+### Fixed
+
+- Reject incomplete imports and resolve bus identities consistently ([#336](https://github.com/eigenergy/tellegen/pull/336))
+
 ## [0.6.0](https://github.com/eigenergy/tellegen/compare/v0.5.0...v0.6.0) - 2026-11-06
 
 ### Other
