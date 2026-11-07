@@ -231,6 +231,9 @@ The map switches to the fallback in three cases:
 - its tiles answer 401, 403 or 429;
 - tile fetches keep failing with nothing arriving.
 
+Only the basemap style's own sources count. A source the host adds to the map
+never triggers the switch, and its errors are logged to the console.
+
 Whenever an OpenFreeMap style renders, as primary or as fallback,
 `openFreeMapEdits` tunes it towards CARTO's look. Road lines start at zoom 8.
 In the dark theme, water and waterways take Dark Matter's colours and land
@@ -257,15 +260,43 @@ besides its click callbacks:
 - `extraLayers`: deck.gl layers drawn after tellegen's own, in the same
   overlay.
 - `attribution`: `'compact'` (default) or `'full'`. There is no off switch.
+- `declutterMarkers`: default `true`. At low zoom the map draws one bus
+  marker per crowded spot, about 16 pixels across. It keeps a generator
+  before a substation before any other bus, as recorded in a grid made by
+  tellegen-synth, then the bus with the most generation and demand. Zooming
+  in shows the rest. The selected bus always draws, and every bus is still
+  in the case: the bus picker finds it and a line's tooltip names it.
+  `false` draws every marker at every zoom.
 - `onMapReady(map, overlay)`: called with the MapLibre map and the deck
   overlay once they exist. It may return a cleanup, and it fires again after
   a context-loss or basemap rebuild. If it throws, the map and its window
-  and document listeners are still released when the map is torn down.
+  and document listeners are still released when the map is torn down. A
+  switch to the fallback does not call it again (see below).
 - `onBasemapFallback(reason)`: the switch to the fallback happened.
   `reason.from` and `reason.to` name the two providers.
 - `onBasemapError(reason)`: no basemap can be shown. The network layers
   still draw. `reason.from` names the provider that failed last, and
   `reason.to` is `null`.
+
+The switch to the fallback replaces the whole MapLibre style, so sources and
+layers the host added to the map are gone after it. The network,
+`extraLayers` and `projection` carry over. A host that adds its own sources
+and layers adds them on every `style.load`, not once in `onMapReady`, which
+runs before the first style loads, so one listener covers the primary and the
+fallback:
+
+```ts
+import type { Map as MapLibreMap } from "maplibre-gl";
+
+function onMapReady(map: MapLibreMap) {
+  const addFeeders = () => {
+    map.addSource("feeders", { type: "geojson", data: "/feeders.geojson" });
+    map.addLayer({ id: "feeders", type: "line", source: "feeders" });
+  };
+  map.on("style.load", addFeeders);
+  return () => map.off("style.load", addFeeders);
+}
+```
 
 `TellegenProvider` and `TellegenViewer` also take `cartoApiKey`, and pass it,
 together with `theme`, to the default shell's map. Both follow their props:

@@ -1,0 +1,68 @@
+{
+  "source_sha256": "1e78fc25de0d6d95e6c61e5ad7f6ff38e28b8057fb1fef8c1108805d5744df37",
+  "output_sha256": "e57d44bf318bdd7a83894b699f0bc6ab3c72dd5721045aceb36a741a2c52e409",
+  "component_count": 1,
+  "bus_count": 22076,
+  "line_count": 16819,
+  "linecode_count": 16819,
+  "load_count": 15299,
+  "transformer_count": 7756,
+  "source_count": 1,
+  "removal": {
+    "source_file": "p1uhs0_1247.bmopf.json",
+    "source_sha256": "1e78fc25de0d6d95e6c61e5ad7f6ff38e28b8057fb1fef8c1108805d5744df37",
+    "method": "Retain the unique source-connected bus component; remove only unsupplied buses, their lines, newly unused line codes and bus Point features.",
+    "removed_buses": [
+      "p1udt1373-p1udt3224x",
+      "p1udt1373-p1udt3224xx",
+      "p1udt4106-p1umv2x",
+      "p1udt4106-p1umv2xx",
+      "p1udt4106-p1umv2xxx"
+    ],
+    "removed_lines": [
+      "l(r:p1udt1373-p1udt3224)",
+      "l(r:p1udt4106-p1umv2)_s0",
+      "l(r:p1udt4106-p1umv2)_s1"
+    ],
+    "removed_linecodes": [
+      "_pio_line_l(r:p1udt1373-p1udt3224)",
+      "_pio_line_l(r:p1udt4106-p1umv2)_s0",
+      "_pio_line_l(r:p1udt4106-p1umv2)_s1"
+    ],
+    "removed_load_count": 0,
+    "original_component_bus_counts": [
+      22076,
+      3,
+      2
+    ],
+    "remaining_component_count": 1,
+    "remaining_bus_count": 22076,
+    "removed_records_sidecar": "island-removal.json"
+  },
+  "electrical_schema_projection_valid": true,
+  "schema_sha256": "74d6c6de3637d52e42a26c4cb0584f51df70d69f360b236cf5e23afaf7669462",
+  "coordinates_checked": 22076,
+  "surviving_electrical_records_exactly_equal": true,
+  "powerio_diagnostics": [],
+  "portable_module_requires_island_selection": false,
+  "all_native_result_fields_exactly_equal_except_selection_metadata": true,
+  "maximum_terminal_complex_voltage_difference_v": 0.0,
+  "converged": true,
+  "iterations": 23,
+  "factorization_count": 1,
+  "matrix_dimension": 40685,
+  "physical_kcl_residual": 5.304813385009766e-06,
+  "solved_terminal_count": 55972,
+  "element_port_count": 128426,
+  "executables": {
+    "powerio": {
+      "sha256": "a426b9a956492ed7fcd6942a665ad78a4498cc033c8a7797f0c0371e90a6e295"
+    },
+    "mc_pf": {
+      "sha256": "a47b726b62356679462b1e9b356dc86984daf5fa7f144fc4b95b8efcee72de24"
+    },
+    "full_island_selection_runner": {
+      "sha256": "45647cfaa64e0cf39bca2d6207c90415a7302df35f2c644f8b1f3760ccdeb350"
+    }
+  }
+}

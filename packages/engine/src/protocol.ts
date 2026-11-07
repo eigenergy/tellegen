@@ -24,6 +24,9 @@ export type EngineRequest =
   | { op: "collection_source"; collection: number; selection: string; scope: "selected" | "project" }
   | { op: "collection_free"; collection: number }
   | { op: "preload" }
+  | { op: "settings_describe" }
+  | { op: "settings_resolve"; request: string }
+  | { op: "settings_calculate"; request: string }
   | { op: "study_document_create"; request: string }
   | { op: "study_document_import"; bundle: string }
   | { op: "study_document_run"; bundle: string; request: string }
@@ -99,6 +102,7 @@ export type EngineRequest =
   | { op: "reset_peak_memory" }
   | {
       op: "study_new";
+      settings?: string;
       study: number;
       module_json: string;
       formulation: string;
@@ -340,6 +344,12 @@ export function runRequest(
       return mod.mc_schematic_layout(req.graph_json, req.options_json);
     case "apply_display_geo":
       return mod.apply_display_geo(req.module_json, req.bytes);
+    case "settings_describe":
+      return mod.describe_settings();
+    case "settings_resolve":
+      return mod.resolve_settings(req.request);
+    case "settings_calculate":
+      return mod.calculate_with_settings(req.request);
     case "capabilities":
       return mod.capabilities_json();
     case "solve_module":
@@ -438,7 +448,9 @@ export function runRequest(
     case "study_new":
       handles.studies.set(
         req.study,
-        new mod.Study(req.module_json, req.formulation),
+        req.settings
+          ? mod.Study.with_settings(req.module_json, req.settings)
+          : new mod.Study(req.module_json, req.formulation),
       );
       return null;
     case "study_replace_edits":

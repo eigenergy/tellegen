@@ -19,6 +19,7 @@ export {
   type PredictionCheck,
 } from "./journal.js";
 export type {
+  SettingsInput,
   AnalyzeSensitivityInput,
   ApplyCapacityPlanInput,
   CapacityPlanBusWeight,

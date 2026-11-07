@@ -43,6 +43,14 @@ class FakeMap implements BasemapMapLike {
 	isStyleLoaded() {
 		return this.loaded;
 	}
+	/** The sources `getStyle` lists while a style is loaded. A test adds its own
+	 * here the way a host would. */
+	sources: StyleSpecification['sources'] = {
+		openmaptiles: { type: 'vector' },
+		carto: { type: 'vector' }
+	};
+	getStyle?: () => StyleSpecification | undefined = () =>
+		this.loaded ? { version: 8, sources: { ...this.sources }, layers: [] } : undefined;
 	emit(type: string, event: BasemapMapEvent = {}) {
 		if (type === 'style.load') this.loaded = true;
 		for (const listener of [...(this.listeners.get(type) ?? [])]) listener(event);
@@ -574,6 +582,86 @@ describe('attachBasemapFallback', () => {
 		expect(onFailure).not.toHaveBeenCalled();
 		expect(consoleError).toHaveBeenNthCalledWith(1, error);
 		expect(consoleError).toHaveBeenNthCalledWith(2, {});
+	});
+
+	/** A host source, added on every `style.load` after the fallback's own
+	 * listener, as a host does from `onMapReady`. */
+	function addHostSource(map: FakeMap) {
+		map.on('style.load', () => {
+			map.sources = { ...map.sources, feeders: { type: 'geojson', data: '/feeders.geojson' } };
+		});
+	}
+
+	it('rules 2 and 3 ignore a source the host added, and log its errors', () => {
+		const map = new FakeMap();
+		const { onFallback, onFailure } = attach(map);
+		addHostSource(map);
+		map.emit('style.load');
+		const forbidden = ajaxError(403, 'Forbidden');
+		map.emit('error', { sourceId: 'feeders', tile: {}, error: forbidden });
+		for (let i = 0; i < 10; i++) {
+			map.emit('error', { sourceId: 'feeders', tile: {}, error: ajaxError(0, 'Failed to fetch') });
+		}
+		expect(map.styles).toHaveLength(0);
+		expect(onFallback).not.toHaveBeenCalled();
+		expect(onFailure).not.toHaveBeenCalled();
+		expect(consoleError).toHaveBeenCalledTimes(11);
+		expect(consoleError).toHaveBeenNthCalledWith(1, forbidden);
+		// The host's failures did not count towards the basemap's: six more stay
+		// under the limit, and the seventh switches.
+		for (let i = 0; i < 6; i++) {
+			map.emit('error', {
+				sourceId: 'openmaptiles',
+				tile: {},
+				error: ajaxError(0, 'Failed to fetch')
+			});
+		}
+		expect(onFallback).not.toHaveBeenCalled();
+		map.emit('error', {
+			sourceId: 'openmaptiles',
+			tile: {},
+			error: ajaxError(0, 'Failed to fetch')
+		});
+		expect(map.styles).toEqual([{ style: spec.fallback, options: { diff: false } }]);
+		expect(onFallback.mock.calls[0][0]).toMatchObject({
+			kind: 'tiles-unavailable',
+			sourceId: 'openmaptiles'
+		});
+	});
+
+	it('after the switch, a source the host adds again never reports failure', () => {
+		const map = new FakeMap();
+		const { onFallback, onFailure } = attach(map);
+		addHostSource(map);
+		map.emit('style.load');
+		map.emit('error', {
+			sourceId: 'openmaptiles',
+			tile: {},
+			error: ajaxError(401, 'Unauthorized')
+		});
+		expect(onFallback).toHaveBeenCalledTimes(1);
+		// `setStyle` drops every source; the fallback style brings its own.
+		map.sources = { carto: { type: 'vector' } };
+		map.emit('style.load');
+		map.emit('error', { sourceId: 'feeders', tile: {}, error: ajaxError(403, 'Forbidden') });
+		expect(onFailure).not.toHaveBeenCalled();
+		map.emit('error', { sourceId: 'carto', tile: {}, error: ajaxError(403, 'Forbidden') });
+		expect(onFailure.mock.calls[0][0]).toMatchObject({
+			kind: 'source-forbidden',
+			sourceId: 'carto',
+			from: 'carto',
+			to: null
+		});
+		expect(map.styles).toHaveLength(1);
+	});
+
+	it('without getStyle, every source counts as the basemap', () => {
+		const map = new FakeMap();
+		map.getStyle = undefined;
+		const { onFallback } = attach(map);
+		map.emit('style.load');
+		map.emit('error', { sourceId: 'feeders', tile: {}, error: ajaxError(403, 'Forbidden') });
+		expect(onFallback).toHaveBeenCalledTimes(1);
 	});
 
 	it('reports failure directly when no fallback is configured', () => {

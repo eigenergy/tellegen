@@ -13,8 +13,9 @@
 	<a class="back mono" href="/">back to tellegen</a>
 	<h1>Credits</h1>
 	<p>
-		Tellegen uses synthetic public test cases and open source software. ACTIVSg and CATS data are
-		staged by the operator. The small distribution example is included with the app.
+		Tellegen uses synthetic public test cases and open source software. ACTIVSg, CATS and Texas7k
+		distribution data are staged by the operator. The small distribution example is included with
+		the app.
 	</p>
 
 	<section>
@@ -60,6 +61,36 @@
 			</li>
 			<li>CATS is distributed under the BSD 3 Clause license in its repository.</li>
 		</ul>
+
+		<h3>Texas7k Distribution Example</h3>
+		<p>
+			The <code>texas7k-p1uhs0_1247</code> example, when a deployment stages it, is derived from the
+			SMART-DS synthetic distribution substation that the
+			<a href="https://electricgrids.engr.tamu.edu/texas7k-td/" target="_blank" rel="noreferrer"
+				>Texas7k combined transmission and distribution dataset page</a
+			>
+			identifies. It is published under the
+			<a href="https://creativecommons.org/licenses/by/3.0/us/" target="_blank" rel="noreferrer"
+				>Creative Commons Attribution 3.0 United States</a
+			>
+			license. The source page requests this citation:
+		</p>
+		<p class="citation">
+			C. Mateo, F. Postigo, T. Elgindy, A. Birchfield, P. Duenas, B. Palmintier, N. Panossian, T.
+			Gomez, F. de Cuadra, T. Overbye, F. Safdarian, and D. Wallison, "Building and validating a
+			large-scale combined transmission &amp; distribution synthetic electricity system of Texas,"
+			International Journal of Electrical Power and Energy Systems, vol. 159, Aug. 2024.
+		</p>
+		<p>
+			The demo uses a modified version. Frederik Geth converted it to a fixed nominal-load
+			power-flow snapshot in
+			<a href="https://github.com/frederikgeth/BMOPFDraftData" target="_blank" rel="noreferrer"
+				>BMOPFDraftData</a
+			>, with regulator taps frozen and disabled switches excluded. The hosted bundle keeps only the
+			main energized island, removing two unsupplied line sections, and shares identical line-code
+			records. No electrical value is rounded, and no endorsement by the original authors is
+			implied.
+		</p>
 	</section>
 
 	<section>

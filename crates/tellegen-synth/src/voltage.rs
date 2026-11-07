@@ -237,6 +237,13 @@ mod tests {
         assert_eq!(deu.levels_kv, vec![380.0, 220.0]);
         assert!(deu.above_kv.is_empty());
         assert_eq!(deu.source, LadderSource::Country);
+        let nzl = table.ladder(Some("NZL"));
+        assert_eq!(nzl.levels_kv, vec![220.0, 110.0]);
+        assert!(
+            nzl.above_kv.is_empty(),
+            "the 350 kV inter-island link is DC"
+        );
+        assert_eq!(nzl.source, LadderSource::Country);
         let usa = table.ladder(Some("USA"));
         assert_eq!(usa.above_kv, vec![765.0]);
         assert!(usa.levels_kv[0] < usa.above_kv[0]);

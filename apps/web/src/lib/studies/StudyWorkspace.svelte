@@ -8,7 +8,6 @@
 		PanelFrame,
 		ModelDetails,
 		McResults,
-		McPfSettings,
 		McNetworkScope,
 		McModelQualification,
 		McWorkbench,
@@ -519,7 +518,7 @@
 				/></label
 			>
 			{#if multi ? multi.result : doc}<button
-					disabled={workspace.busy}
+					disabled={workspace.busy || !!multi?.solving}
 					onclick={() => {
 						if (multi) {
 							void attempt(async () =>
@@ -548,10 +547,7 @@
 			{#if multi}
 				<h3>{multi.label}</h3>
 				<p class="hint">Distribution power flow</p>
-				{#key multi.id}<McPfSettings
-						bind:options={multi.mcOptions}
-						disabled={multi.solving || workspace.busy || !multi.mcPfSupported}
-					/>{/key}
+				<button onclick={() => (ctrl.app.settingsOpen = true)}>Power flow settings</button>
 				<McNetworkScope scope={multi.mcPreparedScope} islands={multi.mcExcludedIslands} preview />
 				{#if !multi.mcPfSupported}<p class="hint">{multi.mcPfReason}</p>{/if}
 				{#if multi.result}<McModelQualification model={multi.result.load_model} compact />{/if}

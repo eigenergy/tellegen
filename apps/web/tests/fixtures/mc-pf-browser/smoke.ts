@@ -1,5 +1,7 @@
 import {
 	createMcPfSession,
+	calculateWithSettings,
+	resolveSettings,
 	DEFAULT_MC_PF_OPTIONS,
 	mcPfResultTables,
 	solveMcBmopf,
@@ -26,6 +28,11 @@ async function main() {
 	// Omit options so Rust supplies every default; passing the TypeScript
 	// defaults here would hide drift between the two implementations.
 	const defaultResult = await solveMcModule(moduleJson);
+	const resolved = await resolveSettings({ calculation: 'mc_ac_pf' });
+	const common = await calculateWithSettings({
+		module_json: moduleJson,
+		settings: { calculation: 'mc_ac_pf' }
+	});
 	const oracleTerminals = oracle.terminals as Terminal[];
 	const actual = new Map(
 		rawResult.terminals.map((terminal) => [`${terminal.bus}:${terminal.terminal}`, terminal])
@@ -72,6 +79,10 @@ async function main() {
 	}
 	if (!invalidRejected) throw new Error('unsupported load model was accepted');
 	const payload = {
+		common_settings_match:
+			equalValue(resolved.effective, DEFAULT_MC_PF_OPTIONS) &&
+			equalValue(common.settings.effective, resolved.effective) &&
+			equalValue(common.result, defaultResult),
 		default_settings: {
 			converged: defaultResult.converged,
 			actual: defaultResult.load_model?.options ?? null,
