@@ -32,6 +32,13 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		}
 	});
 	await installWebMcpHarness(page);
+	const engineWasmUrls = new Set<string>();
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (url.pathname.includes('tellegen_bg') && url.pathname.endsWith('.wasm')) {
+			engineWasmUrls.add(url.href);
+		}
+	});
 	const browserEngine = browser.browserType().name();
 	const cdp = browserEngine === 'chromium' ? await browser.newBrowserCDPSession() : null;
 	let peakBrowserRssBytes = 0;
@@ -138,7 +145,38 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 			'utf8'
 		)
 	);
-	expect(resultHash).toBe(reference.reduced.result_sha256);
+	const qualification = JSON.parse(
+		await readFile(
+			new URL(
+				'../../../docs/evidence/studies/texas7k-reconversion/production-artifact-comparison-2026-11-07.json',
+				import.meta.url
+			),
+			'utf8'
+		)
+	);
+	expect(qualification.original_reference_result_sha256).toBe(reference.reduced.result_sha256);
+	expect(engineWasmUrls.size).toBeGreaterThan(0);
+	let wasmHash = '';
+	for (const url of engineWasmUrls) {
+		expect(new URL(url).origin).toBe(new URL(testInfo.project.use.baseURL!).origin);
+		const response = await request.get(url);
+		expect(response.ok()).toBe(true);
+		const hash = createHash('sha256')
+			.update(await response.body())
+			.digest('hex');
+		if (wasmHash) expect(hash).toBe(wasmHash);
+		wasmHash = hash;
+	}
+	const artifact = qualification.artifacts.find(
+		(item: { wasm_sha256: string; result_sha256: string }) => item.wasm_sha256 === wasmHash
+	);
+	expect(artifact, `Unqualified WASM artifact ${wasmHash}`).toBeDefined();
+	if (resultHash !== artifact.result_sha256) {
+		await writeFile(testInfo.outputPath('texas7k-unmatched-study.json'), exportText);
+	}
+	// Compiler builds are qualified individually; retain the original scientific
+	// reference and require an exact full result for the identified artifact.
+	expect(resultHash).toBe(artifact.result_sha256);
 	const originalOptions = snapshot.options;
 	console.info('Texas7k: importing');
 	await page.locator('label.file-button input[type="file"]').setInputFiles(exported);
@@ -264,7 +302,10 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		ui_solve_ms: solveMs,
 		edit_ms: editMs,
 		edit_result_revision_advanced: true,
+		wasm_sha256: wasmHash,
 		result_sha256: resultHash,
+		original_reference_result_sha256: reference.reduced.result_sha256,
+		original_reference_match: resultHash === reference.reduced.result_sha256,
 		transfer,
 		note: `Single ${browserEngine} run against ${loopback ? 'a loopback server' : 'the configured public HTTPS server'}; includes network and UI scheduling, with no controlled cache or host-load conditions. Viewport/device emulation does not qualify physical mobile memory or performance.`
 	};

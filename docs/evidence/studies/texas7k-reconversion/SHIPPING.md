@@ -196,3 +196,46 @@ The bundle checksum manifest has SHA-256
 `a594e609e0a0cc3108b1cf58b649052d6be70e805804ff70a2b75158d2f5d8c4`.
 `release-archive-2026-11-07.json` records the public download and verification.
 The upstream CC-BY-3.0-US license and attribution remain in the bundle.
+
+### Production acceptance and compiler alignment
+
+The immutable bundle is now active at `https://tellegen.dev`, with the previous
+manifest state retained for rollback. Activation held the deployment lock,
+preserved every existing catalogue entry and verified that the running image
+did not change. All five cases are healthy and none is unavailable. The
+distribution manifest has SHA-256
+`385ba178594cf1b774ea4338f97b9df89fced0444dddc48a0c335da68f1b5552`.
+
+After deployment of the shared frontend at `b85c50f3`, the public Chromium
+acceptance passed transmission association, hosted load, UI and WebMCP solves,
+export, saved reopen, an exact-result rerun with identical settings, and a
+completed converged load edit. Normal HTTPS certificate validation remained
+enabled. `production-browser-validation-2026-11-07.json` records the exact
+tested image, source revision, deployment workflow, health and measurements.
+The source comes from the workflow's tested-source fields; a workflow-run
+metadata revision alone is not deployment provenance.
+
+This single public run loaded in 9.503 seconds, solved through the UI in
+2.178 seconds and completed an edit in 0.695 seconds. The largest sampled
+browser process RSS sum was 4.04 GB; this is not a continuous peak or a
+physical mobile qualification, and shared pages can be counted repeatedly.
+The screenshot was inspected.
+
+The original full-result hash did not match the first production binary.
+`production-artifact-comparison-2026-11-07.json` retains the original reference
+and records the isolation: each exact binary reproduces its own full result
+on both the immutable hosted input and the exported retained input, through
+both the direct and browser paths. All topology, identifiers, options,
+qualification fields and 23 iterations are unchanged. The maximum complex
+voltage difference is about 10 nanovolts; microampere current differences
+concentrate in cancellation around existing one-microohm switch/fuse
+primitives. Both results satisfy the unchanged convergence criteria.
+
+WASM producer metadata identifies the build difference: the floating Docker
+image used Rust 1.99.1 while local and CI builds pin Rust 1.96.0. Both Docker
+Rust stages now select `rust:1.96.0-slim-trixie`, aligning the compiler while
+retaining the runtime's Debian release. The browser test first hashes the
+actual downloaded WASM and then requires its independently qualified exact
+result hash. Unknown artifacts fail; neither the old reference nor a general
+numerical tolerance is replaced. The pinned-compiler image still requires its
+own post-merge production check.
