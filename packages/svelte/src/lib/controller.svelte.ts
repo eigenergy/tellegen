@@ -1337,7 +1337,9 @@ export class Controller {
 		if (c.diagram) this.app.placingLocalId = null;
 		if ((options.frame ?? true) && (c.view || c.diagram || c.substations))
 			this.app.requestFrame(c.id);
-		if (options.solve !== false) this.maybeStartLocalSolve(c.id);
+		// Prepare the visible network even for import-only cases so settings and
+		// explicit calculations are available immediately. autoSolve gates work.
+		this.maybeStartLocalSolve(c.id);
 	};
 
 	placeLocalCase = async (lon: number, lat: number) => {
