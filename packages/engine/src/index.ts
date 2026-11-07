@@ -13,6 +13,19 @@ import {
 } from "./host.js";
 import type { EngineRequest, EngineValue } from "./protocol.js";
 export {
+  BrowserCaseCollection,
+  collectionSupported,
+  COLLECTION_UNAVAILABLE,
+  MAX_COLLECTION_BYTES,
+  MAX_COLLECTION_FILES,
+  type CollectionCandidate,
+  type CollectionEntry,
+  type CollectionFile,
+  type CollectionInspection,
+  type CollectionSelection,
+  type ImportedCollectionCase,
+} from "./collection.js";
+export {
   probeAcOpfWorker,
   solveAcOpfModule,
   type AcOpfWorkerFactory,
@@ -1315,6 +1328,7 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
     value === null ||
     typeof value !== "object" ||
     value instanceof Float64Array ||
+    value instanceof Uint8Array ||
     value.kind !== "mc_pf_result_buffers"
   ) {
     throw new Error("engine returned no result tables");
@@ -2563,6 +2577,7 @@ function expectSynthPreview(value: EngineValue): SynthPreview {
     value === null ||
     typeof value !== "object" ||
     value instanceof Float64Array ||
+    value instanceof Uint8Array ||
     value.kind !== "synth_preview"
   ) {
     throw new Error("engine returned no synthetic preview");

@@ -20,6 +20,20 @@ use tellegen::geo::{
 use tellegen::SolveResponse;
 
 mod alloc_stats;
+#[cfg(feature = "sensitivity")]
+#[cfg_attr(
+    not(feature = "powerio-collections"),
+    path = "collection_unavailable.rs"
+)]
+mod collection;
+#[cfg(feature = "sensitivity")]
+pub use collection::CaseCollection;
+
+/// Whether this build includes the bounded ZIP/folder acquisition backend.
+#[wasm_bindgen]
+pub fn collection_supported() -> bool {
+    cfg!(feature = "powerio-collections")
+}
 mod dist;
 mod geo;
 #[cfg(feature = "synth")]
@@ -2070,6 +2084,7 @@ mpc.gencost = [
 
         // Without a PMD model marker, these strong transmission and
         // distribution markers conflict and must leave the bytes unresolved.
+
         let ambiguous = ingest_json_drop_value(br#"{"baseMVA":100.0,"voltage_source":{}}"#)
             .expect("ambiguous JSON remains unresolved");
         assert_eq!(ambiguous.kind, "ambiguous");
