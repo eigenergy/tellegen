@@ -115,4 +115,51 @@ with tempfile.TemporaryDirectory() as directory:
     rejects(lambda: pin.set_manifest_revision(manifest_path, NEW))
     assert manifest_path.read_text() == partial
 
+    # 0.12 git patches cannot satisfy the published ^0.11 constraints. Read
+    # the selected checkout's release and update only disposable constraints.
+    candidate = root / "candidate.toml"
+    version = "0.12.0-rc.1"
+    candidate.write_text(
+        f'[workspace.package]\nversion = "{version}"\n[workspace.dependencies]\n'
+        + ''.join(f'{crate} = {{ version = "{version}" }}\n'
+                  for crate in pin.POWERIO_CRATES + pin.OPTIONAL_POWERIO_CRATES)
+    )
+    selected_version, selected_crates = pin.candidate_configuration(candidate)
+    assert selected_version == version
+    assert "powerio-archive" in selected_crates
+    published = (
+        '[workspace.dependencies]\npowerio = { version = "0.11.9", default-features = false }\n'
+        'powerio-prob = "0.11.9"\nserde = "1"\n'
+    )
+    manifest_path.write_text(published)
+    pin.set_manifest_revision(manifest_path, NEW, version=selected_version, crates=selected_crates)
+    resolved = pin.read_toml(manifest_path)
+    assert resolved['workspace']['dependencies']['powerio'] == {
+        'version': '=0.12.0-rc.1', 'default-features': False,
+    }
+    assert resolved['workspace']['dependencies']['powerio-prob'] == '=0.12.0-rc.1'
+    assert resolved['workspace']['dependencies']['serde'] == '1'
+    assert pin.manifest_revision(manifest_path) == NEW
+    pin.set_manifest_revision(manifest_path, OLD, version=version, crates=selected_crates)
+    assert pin.manifest_revision(manifest_path) == OLD
+
+    # Check a newly introduced component too; otherwise the candidate could
+    # accidentally mix its archive acquisition with a registry implementation.
+    extended_lock = lock() + (
+        '[[package]]\nname = "powerio-archive"\nversion = "0.11.0"\n'
+        f'source = "git+{pin.POWERIO_REPOSITORY}?rev={OLD}#{OLD}"\n'
+    )
+    lock_path.write_text(extended_lock)
+    pin.check_lock(lock_path, OLD)
+    lock_path.write_text(extended_lock.rsplit('source = ', 1)[0]
+                         + 'source = "registry+https://github.com/rust-lang/crates.io-index"\n')
+    rejects(lambda: pin.check_lock(lock_path, OLD))
+
+    before = manifest_path.read_text()
+    rejects(lambda: pin.set_manifest_revision(manifest_path, NEW, version='0.13.0'))
+    assert manifest_path.read_text() == before
+    candidate.write_text(candidate.read_text().replace('version = "0.12.0-rc.1"',
+                                                      'version = "0.13.0"', 1))
+    rejects(lambda: pin.candidate_configuration(candidate))
+
 print("PowerIO pin tests passed")

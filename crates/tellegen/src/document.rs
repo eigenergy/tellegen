@@ -786,16 +786,9 @@ fn validate_artifact(artifact: &StudyArtifact) -> Result<Option<(Problem, bool, 
             .map_err(|e| format!("invalid Study artifact: {e}"))?;
         return Ok(None);
     }
-    #[derive(Deserialize)]
-    struct Header {
-        schema: String,
-        version: u32,
-    }
-    let header: Header =
-        serde_json::from_str(&artifact.text).map_err(|e| format!("invalid Study artifact: {e}"))?;
-    if header.schema != "pio-ir" || header.version != 2 {
-        return Err("electrical Study artifacts require PowerIO IR generation 2".into());
-    }
+    // PowerIO owns the IR compatibility window. In 0.11 its version is an
+    // integer; 0.12 uses a release string and still reads the legacy integer.
+    // Do not reject a document the linked PowerIO reader can interpret.
     let module = crate::ir::deserialize_module(&artifact.text)?;
     use powerio::PioValue as V;
     let (formulation, solution, instance) = match module.value() {
@@ -817,6 +810,41 @@ fn validate_artifact(artifact: &StudyArtifact) -> Result<Option<(Problem, bool, 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn electrical_artifacts_follow_the_linked_powerio_reader() {
+        let network = crate::model::parse_matpower(crate::model::CASE3).expect("network");
+        let instance = powerio::DcOpfInstance::from_network(network).expect("instance");
+        let module = powerio::PioModule::new(powerio::PioValue::DcOpfInstance(instance));
+        let mut artifact = super::StudyArtifact {
+            kind: super::ArtifactKind::PowerioIr,
+            text: crate::ir::serialize_module(&module).expect("serialize"),
+        };
+        let validated = super::validate_artifact(&artifact).expect("current PowerIO IR");
+        assert!(matches!(validated, Some((crate::Problem::DcOpf, false, _))));
+
+        let mut value: serde_json::Value = serde_json::from_str(&artifact.text).unwrap();
+        value["version"] = serde_json::json!(2);
+        artifact.text = value.to_string();
+        assert!(
+            super::validate_artifact(&artifact).is_ok(),
+            "legacy 0.11 IR"
+        );
+
+        value["version"] = serde_json::json!("9.0.0");
+        artifact.text = value.to_string();
+        assert!(
+            super::validate_artifact(&artifact).is_err(),
+            "unknown series"
+        );
+        value["version"] = serde_json::json!(powerio::IR_VERSION);
+        value["schema"] = serde_json::json!("unrelated");
+        artifact.text = value.to_string();
+        assert!(
+            super::validate_artifact(&artifact).is_err(),
+            "unknown schema"
+        );
+    }
+
     #[test]
     fn content_ids_keep_the_sha256_wire_format() {
         assert_eq!(

@@ -38,6 +38,7 @@ tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = ["sensitivity", "conic"]
+powerio-012 = ["tellegen/powerio-012"]
 sensitivity = ["tellegen/sensitivity"]
 conic = ["tellegen/conic"]
 

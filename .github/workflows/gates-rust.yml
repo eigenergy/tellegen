@@ -87,10 +87,10 @@ jobs:
       - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
           python3 scripts/test_enwl_ivr_study.py
-          cargo test -p tellegen --all-features --locked
+          cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
           cargo test -p tellegen --no-default-features --features mc-opf --locked
           cargo test -p tellegen-acopf-wasi --features acopf --locked
-          cargo clippy -p tellegen --all-targets --all-features -- -D warnings
+          cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema -- -D warnings
           cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Run the exact-derivative POUNCE feasibility probe
         run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
@@ -143,8 +143,9 @@ jobs:
       # builds the packaged crate against crates.io and ignores [patch], so it
       # stays red while a packaged dependency, or an API that an opt-in feature
       # uses, is unavailable from crates.io. That keeps Tellegen behind the
-      # PowerIO release in the publication order. All features are verified:
+      # PowerIO release in the publication order. All shipping numerical features are verified; the explicit
+      # powerio-012 adapter is verified separately against a 0.12 candidate:
       # with defaults only, an opt-in feature such as mc-opf could need an
       # unpublished PowerIO while this gate stays green.
       - name: Package and verify the published crate
-        run: cargo package -p tellegen --locked --all-features
+        run: cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema

@@ -10,9 +10,32 @@ commit.
 Pull requests that change the dependency manifests, lockfile, or pin scripts
 run the `PowerIO Candidate` workflow against the committed dependency set.
 Manual dispatch can test a full PowerIO commit SHA using temporary Git patches
-and a disposable lockfile. Both paths verify one common version and source for
-all eight components before exercising Rust, WebAssembly, WebMCP, and browser
-integration.
+and a disposable lockfile. It reads the exact selected checkout's version and
+temporarily updates the dependency requirements too: a 0.12 git patch cannot
+satisfy a 0.11 requirement. Both paths verify one common version and source for
+every PowerIO component, including the optional archive crate, before exercising
+Rust, WebAssembly, WebMCP, and browser integration. The committed manifest and
+lockfile remain on the published 0.11.9 baseline.
+
+## Testing PowerIO 0.12 without changing the shipping baseline
+
+PowerIO 0.12 renames the SOCWR result's branch power columns to `*_flow`.
+Tellegen's opt-in `powerio-012` Cargo feature adapts those four field names,
+with identical row order, units and numerical values. Enable it only in a build
+whose PowerIO dependencies resolve to 0.12; enabling it against 0.11 is not a
+supported combination. The native adapters and WASM crate forward this feature.
+The candidate workflow selects it for a 0.12 checkout. Candidate-only collection
+support, when present, is tested through `powerio-collections`; default released
+builds do not enable capabilities absent from their PowerIO dependency.
+
+PowerIO owns document-version validation. The 0.12 reader accepts both the
+legacy integer `2` and its own release-string header, such as `"0.12.0"`.
+The 0.11 reader still refuses a 0.12 document. Tellegen does not rewrite that
+header or pretend the newer document is compatible; use a 0.12-backed build
+to read it, or preserve an export written by 0.11 when sharing with older
+installations. Study artifacts pass through the same PowerIO reader as ordinary
+imports, so a reader-compatible document is not rejected by an independent
+Tellegen version check.
 
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem
@@ -24,7 +47,8 @@ text is written and read through `tellegen::ir`, which calls
 
 ## Release, IR, and ABI versions
 
-The PowerIO release, stored IR generation, and C ABI are independent:
+For the shipping PowerIO 0.11 baseline, the release, stored IR generation,
+and C ABI are independent:
 
 | Concern            | Current value                        | Tellegen integration                             |
 | ------------------ | ------------------------------------ | ------------------------------------------------ |
