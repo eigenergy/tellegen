@@ -22,6 +22,11 @@ const USAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'e
 const README = join(USAGE_DIR, 'README.md');
 const START_MARK = '<!-- usage:start -->';
 const END_MARK = '<!-- usage:end -->';
+// Only the two sites this repository documents may enter public evidence.
+const WEBSITE_IDS = new Set([
+	'41f22b57-b287-42b2-935c-037f82a80020',
+	'6e491a05-f119-4810-8e4e-64be7d9efb46'
+]);
 
 // MapToGrid reports one composite property, `country_verdict` (`PRT:trusted`),
 // so one call yields pass rates per country; the hosted demo reports the
@@ -90,7 +95,9 @@ async function main() {
 	}
 
 	const listing = await get('/websites');
-	const websites = Array.isArray(listing) ? listing : (listing.data ?? []);
+	const websites = (Array.isArray(listing) ? listing : (listing.data ?? []))
+		.filter((site) => WEBSITE_IDS.has(site.id));
+	if (!websites.length) throw new Error('The API key cannot read either configured website.');
 	const report = {
 		schema: 'tellegen.usage-evidence/1',
 		generated_at: now.toISOString(),
