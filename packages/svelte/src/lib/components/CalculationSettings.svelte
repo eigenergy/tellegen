@@ -431,7 +431,7 @@
 	select,
 	input:not([type='checkbox']) {
 		padding: 4px 6px;
-		border: 1px solid var(--line);
+		border: 1px solid var(--border-strong);
 		border-radius: 4px;
 		background: var(--surface-control);
 		color: var(--ink);
@@ -440,6 +440,44 @@
 	select,
 	input {
 		max-width: 55%;
+	}
+	button {
+		min-height: 28px;
+		padding: 6px 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm, 3px);
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+		line-height: 1.25;
+		cursor: pointer;
+	}
+	button:not(.primary):hover:not(:disabled) {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+	}
+	button.primary {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--on-accent, var(--paper));
+		font-weight: 600;
+	}
+	button:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+	button:focus-visible,
+	select:focus-visible,
+	input:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
+	@media (pointer: coarse) {
+		button,
+		select,
+		input:not([type='checkbox']) {
+			min-height: 44px;
+		}
 	}
 	.actions {
 		display: flex;
