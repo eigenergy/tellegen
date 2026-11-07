@@ -462,6 +462,7 @@ export class Controller {
 			.catch(() => false)
 			.finally(() => {
 				this.acOpfLoading = false;
+				if (!this.acOpfAvailable) this.acOpfProbe = null;
 			});
 		return this.acOpfProbe;
 	};
