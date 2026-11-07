@@ -167,6 +167,36 @@ it is set, `app.error` is a message written for people, and the detail holds
 the technical text behind it. `NotificationCenter` shows that text in a
 collapsed disclosure.
 
+### Optional WebMCP adapter
+
+Hosts that expose browser tools can install the optional `@tellegen/webmcp`
+peer and import the shared controller adapter from its own entry point:
+
+```sh
+npm install @tellegen/webmcp
+```
+
+```ts
+import { createTellegenWebMcpAdapter } from '@tellegen/svelte/webmcp';
+
+const adapter = createTellegenWebMcpAdapter(controller);
+```
+
+Pass this adapter to `registerTellegenWebMcp` from `@tellegen/webmcp`, with the
+host's model context and lifecycle signal. Registration remains the host's
+responsibility. A host can select only the adapter methods it exposes;
+MapToGrid uses the same inspection, query, sensitivity, focus, preview,
+update, and reset operations as the demo. The shared implementation owns
+revision guards, serialized mutations, validation bounds, and output budgets.
+Agent calculations retain the displayed result's accepted settings.
+
+The entry point also exports `caseRevision` and structural host interfaces
+for planning activities and saved-study evidence. Optional host arguments
+connect these features to the host's own persistence and approval workflow.
+Importing the ordinary viewer entry point does not load this adapter or
+require the optional WebMCP peer. See the package README for the full host
+integration contract.
+
 ### Basemap
 
 CARTO's vector styles suit a network overlay best: quiet roads, flat land and
