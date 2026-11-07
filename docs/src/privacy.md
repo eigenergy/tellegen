@@ -10,15 +10,23 @@ does not upload those files to the tellegen backend.
 - The browser uses local file contents to draw the map and run DC solves.
 - The tellegen backend receives ordinary page and API requests for the bundled
   demo cases.
-- The public site (tellegen.dev and www.tellegen.dev) loads
-  [Umami Cloud](https://umami.is/privacy) for aggregate usage analytics: page
-  visits, actions, completion status, counts, calculation timings and page
-  speed. Analytics exclude uploaded filenames and contents, study names and
-  goals, equipment identities, coordinates, electrical values, agent prompts
-  and error text, and page addresses are reduced to fixed public pages. Do
-  Not Track and Global Privacy Control are respected, local and preview
-  addresses load no analytics, and the in-app privacy page has a switch to
-  turn them off in your browser.
+- The public site (tellegen.dev and www.tellegen.dev) sends aggregate usage
+  counts to [Umami Cloud](https://umami.is/privacy), a service of Umami
+  Software, Inc.: page visits, actions, completion status, counts and
+  calculation timings. The site's own code (`@tellegen/analytics`) posts each
+  count to Umami's collection address; no third-party script runs on the page
+  and no cookie is set. Each count carries a fixed event name, values from a
+  fixed list and one of the public page addresses. Analytics exclude uploaded
+  filenames and contents, study names and goals, equipment identities,
+  coordinates, electrical values, agent prompts, error text, search
+  parameters, fragments and referring addresses. The request carries the
+  browser's IP address and identification, which Umami turns into a visitor
+  hash with a monthly salt and an approximate country, keeps neither as a
+  field of the record, and may hold in its operational logs; records are kept
+  for two years in the region configured for the account. Do Not Track and
+  Global Privacy Control are respected, local and preview addresses send
+  nothing, and the in-app privacy page has a switch to turn the counts off in
+  your browser.
 - The map basemap comes from CARTO (`*.basemaps.cartocdn.com`) when the
   deployment has a CARTO basemap key, with OpenFreeMap
   (`tiles.openfreemap.org`) as the fallback. Without a key, OpenFreeMap leads

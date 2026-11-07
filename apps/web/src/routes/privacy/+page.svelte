@@ -42,19 +42,24 @@
 	<section>
 		<h2>Usage analytics</h2>
 		<p>
-			Tellegen uses <a href="https://umami.is/privacy" rel="noreferrer">Umami Cloud</a> to understand
-			page visits, use of public demos, actions, completion status, counts, calculation timings, and page
-			speed.
+			Tellegen counts page visits, use of the public demos, actions, completion status, counts and
+			calculation timings with
+			<a href="https://umami.is/privacy" rel="noreferrer">Umami Cloud</a>, a service of Umami
+			Software, Inc. This site's own code sends each count straight to Umami's collection address.
+			No third-party script runs on the page, and no cookie is set.
 		</p>
 		<p>
-			Analytics exclude uploaded filenames and contents, study names and goals, equipment
-			identities, coordinates, electrical values, agent prompts, and error text. There is no screen
-			recording or replay, and Tellegen does not assign persistent visitor IDs.
+			Each count carries a fixed event name, values from a fixed list, and the address of one of the
+			public pages. Analytics exclude uploaded filenames and contents, study names and goals,
+			equipment identities, coordinates, electrical values, agent prompts, error text, search
+			parameters, fragments and referring addresses. There is no screen recording or replay, and
+			Tellegen does not assign persistent visitor IDs.
 		</p>
 		<p>
-			Page addresses are reduced to fixed public pages. Search parameters, fragments, and referring
-			addresses are excluded. Umami receives the browser's network request; its privacy policy
-			describes the service's processing.
+			The request itself carries your IP address and browser identification. Umami turns them into a
+			visitor hash with a salt that changes monthly and into an approximate country, keeps neither
+			as a field of the record, and may hold them in its operational logs. Records are kept for two
+			years in the region configured for the account.
 		</p>
 		<label class="analytics-choice"
 			><input
