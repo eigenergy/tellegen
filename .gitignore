@@ -14,6 +14,7 @@ packages/engine/dist/
 packages/svelte/.svelte-kit/
 packages/svelte/dist/
 packages/webmcp/dist/
+packages/analytics/dist/
 *.tgz
 
 # Rust

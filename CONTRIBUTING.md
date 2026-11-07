@@ -26,8 +26,9 @@ it changes what goes into the wheel. A push to `main` runs all of it.
 
 ## Changesets
 
-A pull request that changes `packages/engine`, `packages/svelte`, or
-`packages/webmcp` needs a changeset, or the change ships in no package release:
+A pull request that changes `packages/engine`, `packages/svelte`,
+`packages/webmcp` or `packages/analytics` needs a changeset, or the change
+ships in no package release:
 
 ```sh
 npm run changeset

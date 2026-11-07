@@ -16,6 +16,8 @@ packages/svelte/.svelte-kit
 packages/svelte/dist
 packages/webmcp/node_modules
 packages/webmcp/dist
+packages/analytics/node_modules
+packages/analytics/dist
 
 # Rust build artifacts (the workspace target/ lives at the repo root now)
 target

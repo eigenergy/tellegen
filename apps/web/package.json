@@ -22,6 +22,7 @@
 		"@deck.gl/core": "^9.4.1",
 		"@deck.gl/layers": "^9.4.1",
 		"@deck.gl/maplibre": "^9.4.1",
+		"@tellegen/analytics": "^0.0.0",
 		"@tellegen/svelte": "^0.5.1",
 		"@tellegen/webmcp": "^0.1.0",
 		"maplibre-gl": "^6.16.0"

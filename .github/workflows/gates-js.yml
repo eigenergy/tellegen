@@ -24,6 +24,8 @@ jobs:
       - run: npm run lint:web
       - run: npm run check:webmcp
       - run: npm run pack:webmcp
+      - run: npm run check:analytics
+      - run: npm run pack:analytics
       - run: python3 scripts/test-acopf-release.py
       - run: npm run wasm
       - run: rustup target add wasm32-wasip1
