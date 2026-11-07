@@ -228,11 +228,65 @@ impl ExpensiveEndpoint {
     }
 }
 
+/// A case's PowerIO module text with a gzip copy made once at load, so serving
+/// `/api/cases/{id}/case` neither copies nor recompresses a large module (the
+/// Texas7k distribution module is about 37 MB).
+#[derive(Clone)]
+pub(crate) struct ModulePayload {
+    json: axum::body::Bytes,
+    gzip: axum::body::Bytes,
+}
+
+impl ModulePayload {
+    pub(crate) fn new(json: String) -> Result<Self, String> {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        encoder
+            .write_all(json.as_bytes())
+            .and_then(|()| encoder.finish())
+            .map(|gzip| Self {
+                json: json.into(),
+                gzip: gzip.into(),
+            })
+            .map_err(|e| format!("could not compress case module: {e}"))
+    }
+}
+
+/// Whether the request's `Accept-Encoding` admits gzip. An explicit `gzip`
+/// (or `x-gzip`) entry decides; otherwise `*` does; `q=0` refuses.
+fn accepts_gzip(headers: &HeaderMap) -> bool {
+    let mut gzip = None;
+    let mut any = None;
+    let items = headers
+        .get_all(http::header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','));
+    for item in items {
+        let mut parts = item.split(';');
+        let coding = parts.next().unwrap_or_default().trim();
+        let quality = parts
+            .find_map(|param| {
+                let (name, value) = param.split_once('=')?;
+                name.trim()
+                    .eq_ignore_ascii_case("q")
+                    .then(|| value.trim().parse::<f32>().unwrap_or(0.0))
+            })
+            .unwrap_or(1.0);
+        if coding.eq_ignore_ascii_case("gzip") || coding.eq_ignore_ascii_case("x-gzip") {
+            gzip = Some(quality > 0.0);
+        } else if coding == "*" {
+            any = Some(quality > 0.0);
+        }
+    }
+    gzip.or(any).unwrap_or(false)
+}
+
 struct CaseEntry {
     id: String,
     name: String,
     network: BalancedNetwork,
-    module_json: String,
+    module: ModulePayload,
     /// The declared problem supplied to Tellegen. Dense solver workspaces stay
     /// behind the engine boundary.
     dc_instance: Arc<DcOpfInstance>,
@@ -655,10 +709,7 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/settings/resolve", post(settings::resolve))
         .route("/api/compute", get(compute_status))
         .route("/api/cases", get(cases))
-        .route(
-            "/api/cases/{id}/case",
-            get(case_module_json).layer(tower_http::compression::CompressionLayer::new()),
-        )
+        .route("/api/cases/{id}/case", get(case_module_json))
         .route("/api/cases/{id}/network", get(network))
         .route("/api/cases/{id}/solution", get(solution))
         .route("/api/cases/{id}/snapshot", get(saved_case))
@@ -802,16 +853,33 @@ async fn saved_case(
 async fn case_module_json(
     State(state): State<Arc<AppState>>,
     AxumPath(id): AxumPath<String>,
-) -> ApiResult<impl IntoResponse> {
-    let module_json = if let Some(entry) = state.distribution_cases.get(&id) {
-        entry.module_json.clone()
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let module = if let Some(entry) = state.distribution_cases.get(&id) {
+        entry.module.clone()
     } else {
-        state.case(&id)?.module_json.clone()
+        state.case(&id)?.module.clone()
     };
-    Ok((
-        [(CONTENT_TYPE, HeaderValue::from_static("application/json"))],
-        module_json,
-    ))
+    let json = HeaderValue::from_static("application/json");
+    let vary = HeaderValue::from_static("accept-encoding");
+    Ok(if accepts_gzip(&headers) {
+        let gzip = HeaderValue::from_static("gzip");
+        (
+            [
+                (CONTENT_TYPE, json),
+                (http::header::CONTENT_ENCODING, gzip),
+                (http::header::VARY, vary),
+            ],
+            module.gzip,
+        )
+            .into_response()
+    } else {
+        (
+            [(CONTENT_TYPE, json), (http::header::VARY, vary)],
+            module.json,
+        )
+            .into_response()
+    })
 }
 
 async fn network(
@@ -1450,7 +1518,7 @@ fn build_entry(
         id: id.into(),
         name: name.into(),
         network,
-        module_json,
+        module: ModulePayload::new(module_json)?,
         dc_instance,
         dc_bus_ids,
         dc_branch_ids,
@@ -2049,12 +2117,55 @@ mod tests {
         assert_eq!(response.headers()["vary"], "accept-encoding");
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
-        assert!(
-            bytes.len()
-                < fs::metadata(fixture.0.join("feeder.pio.json"))
-                    .unwrap()
-                    .len() as usize
-        );
+        let original = fs::read_to_string(fixture.0.join("feeder.pio.json")).unwrap();
+        assert!(bytes.len() < original.len());
+        let mut inflated = String::new();
+        std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&bytes[..]), &mut inflated)
+            .unwrap();
+        assert_eq!(inflated, original);
+    }
+
+    #[tokio::test]
+    async fn hosted_module_is_plain_json_unless_gzip_is_accepted() {
+        let fixture = DistributionFixture::new();
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let original = fs::read_to_string(fixture.0.join("feeder.pio.json")).unwrap();
+        for accept in [None, Some("gzip;q=0, br"), Some("identity"), Some("*;q=0")] {
+            let mut request = axum::http::Request::builder().uri("/api/cases/feeder/case");
+            if let Some(accept) = accept {
+                request = request.header("accept-encoding", accept);
+            }
+            let response = router(state.clone(), None)
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(
+                response.headers().get("content-encoding").is_none(),
+                "{accept:?}"
+            );
+            assert_eq!(response.headers()["vary"], "accept-encoding");
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(bytes, original.as_bytes(), "{accept:?}");
+        }
+    }
+
+    #[test]
+    fn gzip_negotiation_follows_quality_values() {
+        let accepts = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(http::header::ACCEPT_ENCODING, value.parse().unwrap());
+            accepts_gzip(&headers)
+        };
+        assert!(accepts("gzip, deflate, br, zstd"));
+        assert!(accepts("br;q=1.0, GZIP;q=0.5"));
+        assert!(accepts("*"));
+        assert!(accepts("x-gzip"));
+        assert!(!accepts("gzip;q=0"));
+        assert!(!accepts("gzip; q=0.000, *"));
+        assert!(!accepts("br, zstd"));
+        assert!(!accepts(""));
+        assert!(!accepts_gzip(&HeaderMap::new()));
     }
 
     #[tokio::test]

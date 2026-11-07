@@ -393,7 +393,8 @@ frozen regulator taps and nominal loads; it has voltage drops and overloads.
 The association is case-level, not a coupled transmission/distribution solve.
 The catalogue link does not assert a specific transmission bus mapping.
 
-The case endpoint negotiates gzip. Measure the served PowerIO payload, not the
+The case endpoint negotiates gzip, serving a copy compressed once when the
+server loads the case. Measure the served PowerIO payload, not the
 reduced BMOPF file, when estimating downloads. The current hosted module is
 36.69 MB uncompressed and 1.26 MB gzipped; its BMOPF companion is 13.69 MB and
 1.10 MB respectively. See `docs/evidence/studies/texas7k-reconversion/SHIPPING.md`.

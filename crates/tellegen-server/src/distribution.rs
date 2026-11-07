@@ -14,7 +14,7 @@ use crate::{CaseModel, CaseSummary, UnavailableCase};
 
 pub(crate) struct DistributionCase {
     pub summary: CaseSummary,
-    pub module_json: String,
+    pub module: crate::ModulePayload,
 }
 
 #[derive(Deserialize)]
@@ -161,7 +161,7 @@ fn load_case(data: &Path, spec: &Spec) -> Result<DistributionCase, String> {
             n_analysis_branch: graph.edges.len(),
             n_gen: net.generators().len() + net.ibrs().len(),
         },
-        module_json,
+        module: crate::ModulePayload::new(module_json)?,
     })
 }
 
