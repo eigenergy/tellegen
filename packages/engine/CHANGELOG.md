@@ -1,5 +1,17 @@
 # @tellegen/engine
 
+## 0.8.0
+
+### Minor Changes
+
+- [#317](https://github.com/eigenergy/tellegen/pull/317) [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add qualified OpenDSS snapshot support for PowerIO 0.12 candidate builds; the ordinary PowerIO 0.11.9 build keeps raw OpenDSS imports view-only. Preserve explicit bounded load laws and transformer excitation, retain passive source definitions, and report unsupported controls, floating sources and transformer profiles before solving.
+
+- [#312](https://github.com/eigenergy/tellegen/pull/312) [`721f515`](https://github.com/eigenergy/tellegen/commit/721f51522e6c89f5b0b87ee16f9b6ca3dd2eb243) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add optional discovery and import of independent cases from bounded ZIPs and named file trees using PowerIO 0.12 collection sessions. The ordinary build retains published PowerIO 0.11 compatibility and reports collection availability explicitly. Imports preserve diagnostics and solver restrictions; cancellation and source downloads do not invalidate completed imports.
+
+### Patch Changes
+
+- [#347](https://github.com/eigenergy/tellegen/pull/347) [`9e5e0b5`](https://github.com/eigenergy/tellegen/commit/9e5e0b5f07e4438ebd393707e71dbedb2dd2f138) Thanks [@samtalki](https://github.com/samtalki)! - Validate electrical artifacts with the linked PowerIO reader and support candidate builds against PowerIO 0.12 without changing the shipping PowerIO 0.11.9 dependency.
+
 ## 0.7.0
 
 ### Minor Changes

@@ -4,6 +4,12 @@ import { expect, test } from './fixtures/page-errors.js';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
 
+// The candidate reader writes the new IR version; shipping builds retain generation 2.
+const powerio012 = (process.env.TELLEGEN_POWERIO_FEATURES ?? '')
+	.split(',')
+	.some((feature) => feature === 'powerio-012' || feature === 'powerio-collections');
+const expectedIrVersion = powerio012 ? '0.12.0' : 2;
+
 test('a materialized PowerIO module downloads and loads as a fresh case', async ({ page }) => {
 	await page.route('**/api/cases', (route) => {
 		void route.fulfill({ json: [] });
@@ -24,7 +30,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 	const text = readFileSync(await download.path(), 'utf8');
 	const saved = JSON.parse(text) as { schema?: unknown; version?: unknown; value?: unknown };
 	expect(saved.schema).toBe('pio-ir');
-	expect(saved.version).toBe(2);
+	expect(saved.version).toBe(expectedIrVersion);
 	expect(saved.value).toBeTruthy();
 	expect(text).not.toContain('tellegen.study');
 
@@ -39,7 +45,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		value?: { type?: unknown; data?: { instance?: { network?: unknown } } };
 	};
 	expect(exact.schema).toBe('pio-ir');
-	expect(exact.version).toBe(2);
+	expect(exact.version).toBe(expectedIrVersion);
 	expect(exact.value?.type).toBe('powerio.DcOpfSolution');
 	expect(exact.value?.data?.instance?.network).toBeTruthy();
 
