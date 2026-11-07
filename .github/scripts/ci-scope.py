@@ -244,6 +244,8 @@ WHEEL = Rules(
         "rust-toolchain.toml",
         "docs/evidence/studies/case3.m",
         ".github/workflows/gates-python.yml",
+        ".github/workflows/release-python.yml",
+        "scripts/check-python-sdist.py",
     ),
 )
 

@@ -235,7 +235,29 @@ package version may differ from the checkout. In every case the validator
 requires both manifests and both lock entries to carry the engine's version,
 before the patch is sealed and again after it is applied, before the App token
 is minted. A wheel already on the new version needs no edit, and an update with
-no release stays a no-op. Nothing here publishes a wheel to PyPI.
+no release stays a no-op.
+
+After a crate release succeeds, `release-crate.yml` dispatches
+`release-python.yml` on main with the published tag. It resolves the tag to an
+immutable commit, confirms it belongs to main and has a published GitHub
+release, and runs the Python gates against that source. The gates check the
+installed extension's type stubs, test Python 3.11 and 3.13, build five platform
+wheels, and build and solve a case from the source archive. Test fixtures are
+excluded from the source archive; the package includes its MIT licence and
+all solver build inputs.
+
+Only the final, checkout-free job has `id-token: write`. Its `pypi` environment
+is restricted to main, and its trusted publisher is `eigenergy/tellegen`,
+workflow `release-python.yml`, environment `pypi`. PyPI does not support a
+reusable publishing workflow, so the crate workflow dispatches this standalone
+workflow instead of calling it. A pending publisher configured at
+<https://pypi.org/manage/account/publishing/> creates the project on its first
+OIDC upload; no bootstrap API token or manual first upload is necessary.
+
+To retry an interrupted publication, dispatch `release-python.yml` on main
+with the same stable tag. Existing distributions are skipped; published
+versions and their source commits are never replaced. Add the public install
+command to the README and Python guide only after the first upload is verified.
 
 Its fixed `release-plz-main` branch is intentional: with
 `release_always = false`, release-plz recognizes a release commit by the
