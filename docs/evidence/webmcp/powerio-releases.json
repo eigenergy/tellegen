@@ -20,6 +20,16 @@
       "version": "0.11.6",
       "tag": "v0.11.6",
       "revision": "96099b53f525027678754e83fb6ca3d41d64bf8e"
+    },
+    {
+      "version": "0.11.7",
+      "tag": "v0.11.7",
+      "revision": "d104aa5b47fa436b0eb8cf833c2c32ab43b2f704"
+    },
+    {
+      "version": "0.11.9",
+      "tag": "v0.11.9",
+      "revision": "e8472dd0d3b80af8642b3232ea41b4e0768f44c1"
     }
   ]
 }

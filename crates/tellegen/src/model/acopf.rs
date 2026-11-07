@@ -30,7 +30,9 @@ use powerio_matrix::{
 use powerio_prob::AcOpfInstance;
 use sha2::{Digest, Sha256};
 
-use super::{reject_unsupported_active_elements, validate_canonical_identity, PiecewiseCost};
+use super::{
+    reject_unsupported_active_elements, validate_canonical_identity, HvdcLines, PiecewiseCost,
+};
 
 const INF: f64 = 1.0e19;
 const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v2";
@@ -154,9 +156,10 @@ impl CancellableNlTnlp {
 
 impl TNLP for CancellableNlTnlp {
     fn get_nlp_info(&mut self) -> Option<NlpInfo> {
-        // POUNCE 0.13's ladder continues to the next rung even after a
-        // UserRequestedStop. Refuse its next initialization before it can
-        // rebuild/evaluate the NLP; the caller maps the flag to cancellation.
+        // POUNCE's ladder (0.13 through at least 0.15) continues to the next
+        // rung even after a UserRequestedStop; it breaks only on a promoted
+        // retry. Refuse its next initialization before it can rebuild or
+        // evaluate the NLP; the caller maps the flag to cancellation.
         if self
             .cancel
             .as_ref()
@@ -508,7 +511,7 @@ fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
         ));
     }
 
-    reject_unsupported_active_elements(network)
+    reject_unsupported_active_elements(network, HvdcLines::Reject)
 }
 
 fn validate_bounds(name: &str, lower: f64, upper: f64) -> Result<(), String> {

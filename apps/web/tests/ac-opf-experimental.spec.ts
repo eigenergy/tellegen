@@ -4,73 +4,168 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CASE3_COORDS, CASE3_PLANNING } from './fixtures/planning-case.js';
+import { mockDataRoutes } from './fixtures/backend-case.js';
 
-test.skip(!process.env.TELLEGEN_TEST_ACOPF, 'requires the explicit development AC OPF asset');
-
-test('the capability-gated selector runs AC OPF in the isolated WASI worker', async ({ page }) => {
-	test.setTimeout(180_000);
-	const workers: { closed: boolean }[] = [];
-	page.on('worker', (worker) => {
-		if (!worker.url().includes('acopf-worker')) return;
-		const state = { closed: false };
-		workers.push(state);
-		worker.on('close', () => {
-			state.closed = true;
+for (const status of [404, 200]) {
+	test(`AC OPF stays unavailable when its asset is ${status === 404 ? 'missing' : 'invalid'}`, async ({
+		page
+	}) => {
+		let probeClosed = false;
+		page.on('worker', (worker) => {
+			if (worker.url().includes('acopf-worker'))
+				worker.on('close', () => {
+					probeClosed = true;
+				});
 		});
+		await page
+			.context()
+			.route('**/experimental-acopf/tellegen_acopf_wasi.wasm', (route) =>
+				route.fulfill({ status, contentType: 'application/wasm', body: 'invalid WASM' })
+			);
+		await mockDataRoutes(page);
+		await page.goto('/');
+		await expect.poll(() => probeClosed).toBe(true);
+		const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
+		await expect(calculation).toHaveValue('dcopf');
+		await expect(calculation).toBeEnabled();
+		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', true);
+		await expect(page.getByRole('complementary', { name: 'Network', exact: true })).toContainText(
+			'1,234.5'
+		);
+		await expect(page.locator('.error')).toHaveCount(0);
 	});
+}
+
+for (const mode of ['preview', 'development']) {
+	test(`the default ${mode} app runs AC OPF in the isolated WASI worker`, async ({
+		page
+	}, testInfo) => {
+		test.setTimeout(180_000);
+		const workers: { closed: boolean }[] = [];
+		page.on('worker', (worker) => {
+			if (!worker.url().includes('acopf-worker')) return;
+			const state = { closed: false };
+			workers.push(state);
+			worker.on('close', () => {
+				state.closed = true;
+			});
+		});
+		await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
+		await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+		const keyedPort = Number(
+			process.env.TELLEGEN_KEYED_PORT ?? Number(process.env.TELLEGEN_PREVIEW_PORT ?? 4173) + 2
+		);
+		await page.goto(mode === 'preview' ? '/' : `http://127.0.0.1:${keyedPort}/`);
+		await expect(page.getByText('no default cases loaded')).toBeVisible();
+		await page.locator('input[type="file"][multiple]').setInputFiles([
+			{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
+			{ name: 'case3opf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
+		]);
+		const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
+		await expect(calculation).toBeEnabled({ timeout: 60_000 });
+		await expect(calculation).toHaveValue('dcopf');
+		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
+		await calculation.selectOption('acopf');
+		await expect(page.locator('.solvecard')).toContainText('AC OPF');
+		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
+		await expect(calculation).toBeEnabled();
+		await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		await expect(page.getByRole('button', { name: 'LMP', exact: true })).toHaveCount(0);
+		await expect(page.locator('.error')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Save case', exact: true })).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'Export as', exact: true })).toBeDisabled();
+		await expect(
+			page.getByText('Saving and exporting AC OPF cases is not supported yet.', { exact: true })
+		).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath('transmission-acopf.png') });
+		await expect.poll(() => workers.length).toBe(2); // probe plus first solve
+		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
+
+		// A second solve must use and dispose a new worker, not retain its WASI memory.
+		await calculation.selectOption('dcopf');
+		await expect(calculation).toBeEnabled();
+		await calculation.selectOption('acopf');
+		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
+		await expect.poll(() => workers.length).toBe(3);
+		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
+
+		// Hold the next real worker's fetch so removal deterministically happens
+		// while it is pending, without relying on how fast a three-bus solve runs.
+		await calculation.selectOption('dcopf');
+		await expect(calculation).toBeEnabled();
+		let held: Route | undefined;
+		await page.context().route('**/experimental-acopf/tellegen_acopf_wasi.wasm', (route) => {
+			held = route;
+		});
+		await calculation.selectOption('acopf');
+		await expect.poll(() => !!held).toBe(true);
+		await expect.poll(() => workers.length).toBe(4);
+		await page.locator('.case-chip.local .case-remove').click();
+		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
+		await held!.abort();
+		await expect(page.locator('.solvecard')).toHaveCount(0);
+		await expect(page.locator('.error')).toHaveCount(0);
+	});
+}
+
+test('a backend transmission case switches from cached DC OPF to browser AC OPF', async ({
+	page
+}, testInfo) => {
+	const port = Number(
+		process.env.TELLEGEN_MC_PREVIEW_PORT ?? Number(process.env.TELLEGEN_PREVIEW_PORT ?? 4173) + 1
+	);
+	await page.goto(`http://127.0.0.1:${port}/acopf.html`);
+	await page.waitForFunction(() => typeof window.prepareBackendTransmissionCase === 'function');
+	const fixture = await page.evaluate(
+		(text) => window.prepareBackendTransmissionCase(text),
+		CASE3_PLANNING
+	);
+	const { network, solution, moduleJson, nGen } = fixture;
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
-	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/cases', (route) =>
+		route.fulfill({
+			json: [
+				{
+					id: network.id,
+					name: network.name,
+					n_bus: network.buses.length,
+					n_branch: network.branches.length,
+					n_gen: nGen
+				}
+			]
+		})
+	);
+	await page.route('**/api/cases/transmission/network', (route) =>
+		route.fulfill({ json: network })
+	);
+	await page.route('**/api/cases/transmission/solution', (route) =>
+		route.fulfill({ json: solution })
+	);
+	let moduleLoads = 0;
+	await page.route('**/api/cases/transmission/case', (route) => {
+		moduleLoads++;
+		return route.fulfill({ contentType: 'application/json', body: moduleJson });
+	});
+	let serverSolves = 0;
+	await page.route('**/api/cases/transmission/solve**', (route) => {
+		serverSolves++;
+		return route.abort();
+	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
-	await page.locator('input[type="file"][multiple]').setInputFiles([
-		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
-		{ name: 'case3opf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
-	]);
 	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
-	await expect(calculation).toBeEnabled({ timeout: 60_000 });
+	await expect(calculation).toHaveValue('dcopf');
 	await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
 	await calculation.selectOption('acopf');
-	await expect(page.locator('.solvecard')).toContainText('AC OPF');
 	await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 	await expect(calculation).toBeEnabled();
-	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
-		'aria-pressed',
-		'true'
-	);
-	await expect(page.getByRole('button', { name: 'LMP', exact: true })).toHaveCount(0);
+	await expect(calculation).toHaveValue('acopf');
+	expect(moduleLoads).toBeGreaterThan(0);
+	expect(serverSolves).toBe(0);
 	await expect(page.locator('.error')).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Save case', exact: true })).toBeDisabled();
-	await expect(page.getByRole('button', { name: 'Export as', exact: true })).toBeDisabled();
-	await expect(
-		page.getByText('Saving and exporting AC OPF cases is not supported yet.', { exact: true })
-	).toBeVisible();
-	await expect.poll(() => workers.length).toBe(2); // probe plus first solve
-	await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
-
-	// A second solve must use and dispose a new worker, not retain its WASI memory.
-	await calculation.selectOption('dcopf');
-	await expect(calculation).toBeEnabled();
-	await calculation.selectOption('acopf');
-	await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
-	await expect.poll(() => workers.length).toBe(3);
-	await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
-
-	// Hold the next real worker's fetch so removal deterministically happens
-	// while it is pending, without relying on how fast a three-bus solve runs.
-	await calculation.selectOption('dcopf');
-	await expect(calculation).toBeEnabled();
-	let held: Route | undefined;
-	await page.context().route('**/experimental-acopf/tellegen_acopf_wasi.wasm', (route) => {
-		held = route;
-	});
-	await calculation.selectOption('acopf');
-	await expect.poll(() => !!held).toBe(true);
-	await expect.poll(() => workers.length).toBe(4);
-	await page.locator('.case-chip.local .case-remove').click();
-	await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
-	await held!.abort();
-	await expect(page.locator('.solvecard')).toHaveCount(0);
-	await expect(page.locator('.error')).toHaveCount(0);
+	await page.screenshot({ path: testInfo.outputPath('backend-transmission-acopf.png') });
 });
 
 test('imports and solves a retained canonical AC OPF instance', async ({ page }) => {

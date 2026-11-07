@@ -1,6 +1,9 @@
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as AppFooter } from './components/AppFooter.svelte';
 export { default as NotificationCenter } from './components/NotificationCenter.svelte';
+export { default as DiagnosticLogView } from './components/DiagnosticLogView.svelte';
+export { default as LogEntryView } from './components/LogEntryView.svelte';
+export { default as LogPanel } from './components/LogPanel.svelte';
 export { default as PanelHost } from './components/PanelHost.svelte';
 export { default as ShellEnvironment } from './components/ShellEnvironment.svelte';
 export { default as AppHeader } from './components/AppHeader.svelte';
@@ -23,3 +26,8 @@ export { default as Sparkline } from './Sparkline.svelte';
 
 export { default as McResults } from './components/McResults.svelte';
 export { default as McWorkbench } from './components/McWorkbench.svelte';
+
+export { default as McPfSettings } from './components/McPfSettings.svelte';
+export { default as McModelQualification } from './components/McModelQualification.svelte';
+
+export { default as McNetworkScope } from './components/McNetworkScope.svelte';

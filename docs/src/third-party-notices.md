@@ -32,13 +32,15 @@ archives.
 
 The non-default native `tellegen/acopf` feature depends on
 [POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
-licensed under EPL-2.0. It is pinned to revision
-`925e75fbd036de309929e398159f946d42d0d94b`. The default engine and the
+licensed under EPL-2.0. It is pinned to the checksummed crates.io release
+`0.15.0`. The default engine and the
 published WASM, server, CLI, and Python adapters do not enable this feature.
 `scripts/epl-guard.sh` checks that boundary from Cargo's resolved dependency
-trees. The unpublished `tellegen-acopf-wasi` development adapter deliberately
-does enable it; its generated asset is gitignored and ordinary builds and
-deployments do not copy it.
+trees. The separate `tellegen-acopf-wasi` adapter deliberately enables it.
+The website bundles that generated asset, its EPL-2.0 license, notices, and
+`POUNCE-SOURCE.json` under `/experimental-acopf/`. The manifest records exact
+source archive URLs and checksums. The native server and ordinary npm packages
+do not contain the solver asset.
 
 Before any binary containing POUNCE is distributed, the release owner must
 approve the EPL-2.0 obligations, ship the POUNCE license and notices, and state
@@ -50,11 +52,15 @@ it is not release approval.
 
 The synthetic grid generator ships `crates/tellegen-synth/data/populated_places.json`
 (copied into `@tellegen/engine` as `data/populated_places.json`): name,
-longitude, latitude, `pop_max` and country of the Natural Earth v5.1.2 1:10m
-populated places, derived by `scripts/derive-populated-places.py` from
-`ne_10m_populated_places_simple.geojson`, whose SHA-256 the table records.
-Natural Earth data is in the public domain
-([naturalearthdata.com](https://www.naturalearthdata.com/about/terms-of-use/)).
+longitude, latitude, population and country of every place of 5,000 people
+or more in GeoNames' `cities5000` dump, derived by
+`scripts/derive-populated-places.py` from `cities5000.txt` and
+`countryInfo.txt`, whose SHA-256 the table records. GeoNames data is
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+([geonames.org](https://www.geonames.org/)): the table was trimmed to those
+five fields and rounded to three decimals, so changes were made, and
+anything that redistributes a generated grid or the table must credit
+GeoNames. Earlier releases shipped Natural Earth's populated places instead.
 
 It also ships `crates/tellegen-synth/data/national_demand.json`, compiled
 into the engine: each country's annual electricity demand and population,

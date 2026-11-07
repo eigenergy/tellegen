@@ -68,6 +68,8 @@ with tempfile.TemporaryDirectory() as directory:
         (" M", "packages/engine/CHANGELOG.md"),
         (" M", "packages/webmcp/package.json"),
         (" M", "packages/webmcp/CHANGELOG.md"),
+        (" M", "packages/analytics/package.json"),
+        (" M", "packages/analytics/CHANGELOG.md"),
         (" D", ".changeset/safe-change.md"),
     ]
     for status, path in npm_entries:

@@ -425,7 +425,9 @@ pub struct Limits {
     /// Bus cap. A synthetic grid's count is held at it (`bus_count_capped`);
     /// an OpenStreetMap grid drops its lowest voltage levels until it fits
     /// (`osm_bus_count_capped`) and is refused when its highest level alone
-    /// exceeds it.
+    /// exceeds it. A transmission-only synthetic grid sized from demand also
+    /// stops at 3,000 buses (`context::TRANSMISSION_AUTO_MAX_BUSES`); one that
+    /// reaches subtransmission is sized up to this cap.
     #[serde(default = "default_max_bus_count")]
     pub max_bus_count: u32,
     /// Spherical area cap of the region, km²; positive and finite.
@@ -443,7 +445,7 @@ pub struct Limits {
 }
 
 fn default_max_bus_count() -> u32 {
-    3000
+    12_000
 }
 
 fn default_max_area_km2() -> f64 {

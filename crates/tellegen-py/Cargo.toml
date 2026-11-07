@@ -4,7 +4,7 @@ name = "tellegen-py"
 # mean the same solver. release-plz does not touch this crate; the crate release
 # workflow sets this version and its Cargo.lock entry to the engine's after
 # release-plz updates it (.github/scripts/sync_python_version.py).
-version = "0.4.0"
+version = "0.6.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -36,9 +36,9 @@ tellegen = { path = "../tellegen", default-features = false, features = ["conic"
 # text. Binding it here keeps the wheel self-contained, so the base package has
 # no runtime dependency on the powerio Python wheel.
 powerio.workspace = true
-# abi3 gives one wheel per platform for CPython 3.9 and newer, which is what
+# abi3 gives one wheel per platform for CPython 3.11 and newer, which is what
 # keeps PowerMCP from needing a per-version support gate (as surge-py does).
-pyo3 = { version = "0.30", features = ["abi3-py39"] }
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
 serde_json.workspace = true
 
 [lints]

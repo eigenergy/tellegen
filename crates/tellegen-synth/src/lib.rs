@@ -29,6 +29,7 @@ pub mod electrical;
 pub mod error;
 pub mod export;
 pub mod geom;
+pub mod hierarchy;
 pub mod osm;
 pub mod places;
 pub mod report;
@@ -37,7 +38,9 @@ pub mod rng;
 pub mod session;
 pub mod site;
 pub mod stats;
+pub mod subnational;
 pub mod topology;
+pub mod tuning;
 pub mod validate;
 pub mod voltage;
 

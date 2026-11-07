@@ -5,13 +5,17 @@
 
 use std::collections::BTreeMap;
 
-use crate::demand::{CountryAreas, NationalDemand, COUNTRY_AREA_COVERAGE};
+use crate::demand::{CountryAreas, NationalDemand, COUNTRY_AREA_COVERAGE, DEFAULT_PEAK_FACTOR};
 use crate::error::SynthError;
 use crate::geom::region::RegionShape;
 use crate::geom::{haversine_km, wrap_lon};
 use crate::places::{PlacedCity, Places};
-use crate::report::{CountryDemand, DemandBasis, RegionContext, VoltageBasis, Warning};
+use crate::report::{
+    CountryDemand, DemandBasis, FuelMixBasis, RegionContext, SubdivisionDemand, VoltageBasis,
+    Warning,
+};
 use crate::request::{DemandSpec, Density, FarIslandPolicy, SynthRequest};
+use crate::subnational::{Subnational, UNMEASURED_PEAK_FACTOR};
 use crate::voltage::{LadderSource, VoltageLadders};
 
 /// Everything later stages need from the context stage that is not in the
@@ -73,6 +77,30 @@ pub fn demand_bus_count(density: Density, area_km2: f64, peak_mw: f64) -> u32 {
         .min(f64::from(u32::MAX)) as u32
 }
 
+/// Most buses a transmission-only grid sized from demand gets; larger
+/// regions aggregate further. Modelling choice: national transmission models
+/// of the largest systems stay at a few thousand buses (PyPSA-Eur 4,977 for
+/// Europe at 220 kV and above), and a browser session solves 3,000 in about
+/// a second.
+pub const TRANSMISSION_AUTO_MAX_BUSES: u32 = 3_000;
+
+/// Bus count of a region whose ladder reaches subtransmission: one sited bus
+/// per [`crate::tuning::Tuning::mw_per_bus`] of peak load (taps come on top).
+/// source: per-bus load falls as a model reaches lower voltages: ACTIVSg2000
+/// carries 67 GW over 2,000 buses (34 MW per bus) at 115 kV and above, the
+/// Texas7k case about 75 GW over 6,717 buses (11 MW) down to 69 kV, and CATS
+/// 44 GW over 8,870 buses (5 MW) down to 66 kV. The default is calibrated on
+/// CATS (docs/evidence/synth/cats/).
+pub fn hierarchical_bus_count(peak_mw: f64) -> u32 {
+    if !(peak_mw.is_finite() && peak_mw > 0.0) {
+        return MIN_BUS_COUNT as u32;
+    }
+    let per = crate::tuning::tuning().mw_per_bus.max(0.1);
+    (peak_mw / per)
+        .ceil()
+        .clamp(MIN_BUS_COUNT, f64::from(u32::MAX)) as u32
+}
+
 /// Branches per bus by density when the request states none. source:
 /// Birchfield et al. 2017 report branch/bus ratios of 1.2–1.5 for North
 /// American transmission systems.
@@ -113,18 +141,26 @@ pub fn resolve_context(
     // Bus count: the request's, else area and demand. Demand for sizing counts
     // every place inside the region; the participation rules below may drop
     // a few polygons, which only lowers the demand the count was sized for.
-    let (wanted, sizing_peak) = match req.target_bus_count {
-        Some(count) => (count, None),
+    let (wanted, sizing_peak, auto_cap) = match req.target_bus_count {
+        Some(count) => (count, None, u32::MAX),
         None => {
             let mut sizing = places.in_region(&shape);
             let peak = size_demand(&req.demand, places, &mut sizing, &shape).peak_mw;
-            (
-                demand_bus_count(req.density, shape.area_km2, peak),
-                Some(peak),
-            )
+            let probe = resolve_ladder(req, &sizing, &mut Vec::new());
+            if probe.basis == VoltageBasis::Subdivision
+                && crate::hierarchy::is_hierarchical(&probe.levels_kv)
+            {
+                (hierarchical_bus_count(peak), Some(peak), u32::MAX)
+            } else {
+                (
+                    demand_bus_count(req.density, shape.area_km2, peak),
+                    Some(peak),
+                    TRANSMISSION_AUTO_MAX_BUSES,
+                )
+            }
         }
     };
-    let n = wanted.min(req.limits.max_bus_count).max(1);
+    let n = wanted.min(req.limits.max_bus_count).min(auto_cap).max(1);
     if let Some(peak) = sizing_peak.filter(|_| wanted > n) {
         warnings.push(Warning::new(
             "bus_count_capped",
@@ -266,8 +302,29 @@ pub fn resolve_context(
         ));
     }
 
+    let subdivision = dominant_subdivision(&cities);
+    // The request's mix, else the dominant subdivision's nameplate mix, else
+    // the default.
+    let (fuel_mix, fuel_mix_basis) = if req.fuel_mix.values().sum::<f64>() > 0.0 {
+        (req.resolved_fuel_mix(), FuelMixBasis::Request)
+    } else if let Some(mix) = subdivision
+        .as_deref()
+        .and_then(|code| Subnational::bundled().fuel_mix(code))
+    {
+        (mix.clone(), FuelMixBasis::Subdivision)
+    } else {
+        (req.resolved_fuel_mix(), FuelMixBasis::Default)
+    };
     let ladder = resolve_ladder(req, &cities, warnings);
     let levels = ladder.levels_kv.clone();
+    // A transmission-only grid aggregates hundreds of square kilometres per
+    // bus: small towns fold into the nearest larger place for siting and
+    // load allocation. A hierarchical region keeps every place.
+    let layered =
+        ladder.basis == VoltageBasis::Subdivision && crate::hierarchy::is_hierarchical(&levels);
+    if !layered {
+        cities = coarsen_places(cities);
+    }
     let classes: Vec<f64> = levels
         .iter()
         .map(|&kv| crate::electrical::params::line_class_for(kv).kv)
@@ -292,7 +349,10 @@ pub fn resolve_context(
         peak_demand_mw,
         demand_basis,
         demand_by_country: sized.by_country,
-        fuel_mix: req.resolved_fuel_mix(),
+        demand_by_subdivision: sized.by_subdivision,
+        subdivision: subdivision.clone(),
+        fuel_mix,
+        fuel_mix_basis,
         branch_factor: req
             .branch_factor
             .unwrap_or_else(|| density_branch_factor(req.density)),
@@ -350,6 +410,20 @@ fn resolve_ladder(
             country: None,
         };
     }
+    if let Some(ladder) = dominant_subdivision(cities)
+        .as_deref()
+        .and_then(|code| VoltageLadders::bundled().subdivision_ladder(code))
+    {
+        return ResolvedLadder {
+            levels_kv: ladder.levels_kv,
+            above_kv: ladder.above_kv,
+            basis: VoltageBasis::Subdivision,
+            country: cities
+                .iter()
+                .find(|c| c.place.subdivision.is_some())
+                .map(|c| c.place.iso_a3.clone()),
+        };
+    }
     let demand = NationalDemand::bundled();
     let mut weight: BTreeMap<&str, f64> = BTreeMap::new();
     for city in cities {
@@ -365,7 +439,7 @@ fn resolve_ladder(
     let table = VoltageLadders::bundled();
     let ladder = table.ladder(dominant.as_deref());
     let basis = match ladder.source {
-        LadderSource::Country => VoltageBasis::Country,
+        LadderSource::Country | LadderSource::Subdivision => VoltageBasis::Country,
         LadderSource::Regional | LadderSource::Standard => {
             let levels = ladder
                 .levels_kv
@@ -405,6 +479,7 @@ struct DemandSizing {
     peak_mw: f64,
     basis: DemandBasis,
     by_country: Vec<CountryDemand>,
+    by_subdivision: Vec<SubdivisionDemand>,
 }
 
 /// Samples a region's area is split into when it is shared among the
@@ -511,6 +586,7 @@ fn size_demand(
                 peak_mw: *mw,
                 basis: DemandBasis::TotalMw,
                 by_country: Vec::new(),
+                by_subdivision: Vec::new(),
             }
         }
         DemandSpec::Population {
@@ -526,6 +602,7 @@ fn size_demand(
             peak_mw: cities.iter().map(|c| c.demand_weight).sum(),
             basis: DemandBasis::Population,
             by_country: Vec::new(),
+            by_subdivision: Vec::new(),
         };
     }
     let table = NationalDemand::bundled();
@@ -533,8 +610,58 @@ fn size_demand(
     let listed = table.listed_population(places);
     let world = table.world_intensity(peak_factor);
     let covered = area_by_country(shape, cities, table);
-    let mut by_country: BTreeMap<String, CountryDemand> = BTreeMap::new();
+    // Places of a subdivision with its own demand entry draw that
+    // subdivision's peak per head of its listed places: the region takes the
+    // share of its listed population it holds.
+    let subnational = Subnational::bundled();
+    let sub_entry = |c: &PlacedCity| {
+        c.place
+            .subdivision
+            .as_deref()
+            .and_then(|code| subnational.demand(code).map(|e| (code.to_owned(), *e)))
+    };
+    let stated_factor = (peak_factor - DEFAULT_PEAK_FACTOR).abs() > 1e-12;
+    let mut by_subdivision: BTreeMap<String, SubdivisionDemand> = BTreeMap::new();
+    let mut sub_intensity: BTreeMap<String, f64> = BTreeMap::new();
     for city in cities.iter() {
+        if let Some((code, entry)) = sub_entry(city) {
+            let (factor, basis) = match (stated_factor, entry.peak_factor) {
+                (true, _) => (peak_factor, "request"),
+                (false, Some(f)) => (f, "measured"),
+                (false, None) => (UNMEASURED_PEAK_FACTOR, "default"),
+            };
+            let d = by_subdivision
+                .entry(code.clone())
+                .or_insert_with(|| SubdivisionDemand {
+                    code: code.clone(),
+                    year: entry.year,
+                    places: 0,
+                    population: 0.0,
+                    peak_mw: 0.0,
+                    subdivision_peak_mw: entry.average_mw() * factor,
+                    peak_factor: factor,
+                    peak_factor_basis: basis.to_owned(),
+                });
+            d.places += 1;
+            d.population += city.place.population;
+        }
+    }
+    for (code, d) in by_subdivision.iter_mut() {
+        let listed_sub = places
+            .subdivision_population()
+            .get(code)
+            .copied()
+            .unwrap_or(0.0);
+        let intensity = if listed_sub > 0.0 {
+            d.subdivision_peak_mw / listed_sub
+        } else {
+            0.0
+        };
+        d.peak_mw = d.population * intensity;
+        sub_intensity.insert(code.clone(), intensity);
+    }
+    let mut by_country: BTreeMap<String, CountryDemand> = BTreeMap::new();
+    for city in cities.iter().filter(|c| sub_entry(c).is_none()) {
         let code = table.canonical(&city.place.iso_a3);
         let share = by_country
             .entry(code.to_owned())
@@ -584,10 +711,22 @@ fn size_demand(
         intensity.insert(code.clone(), share.peak_mw / share.population);
     }
     for city in cities.iter_mut() {
-        city.demand_weight = city.place.population * intensity[table.canonical(&city.place.iso_a3)];
+        let sub = city
+            .place
+            .subdivision
+            .as_deref()
+            .and_then(|code| sub_intensity.get(code).copied());
+        city.demand_weight = city.place.population
+            * sub.unwrap_or_else(|| intensity[table.canonical(&city.place.iso_a3)]);
     }
     let mut by_country: Vec<CountryDemand> = by_country.into_values().collect();
     by_country.sort_by(|a, b| {
+        b.peak_mw
+            .total_cmp(&a.peak_mw)
+            .then_with(|| a.code.cmp(&b.code))
+    });
+    let mut by_subdivision: Vec<SubdivisionDemand> = by_subdivision.into_values().collect();
+    by_subdivision.sort_by(|a, b| {
         b.peak_mw
             .total_cmp(&a.peak_mw)
             .then_with(|| a.code.cmp(&b.code))
@@ -596,7 +735,58 @@ fn size_demand(
         peak_mw: cities.iter().map(|c| c.demand_weight).sum(),
         basis: DemandBasis::National,
         by_country,
+        by_subdivision,
     }
+}
+
+/// Smallest place a transmission-only grid sites buses on and allocates load
+/// to, people. source: the populated places table these models were first
+/// built on (Natural Earth 1:10m, about 7,300 places, mostly above 50,000
+/// people); GeoNames lists about 12,400 places of 50,000 or more. A country's
+/// transmission substations serve its cities and districts, not each town;
+/// folding small towns into their nearest city instead was tried and
+/// concentrates load further.
+const COARSE_MIN_POPULATION: f64 = 50_000.0;
+
+/// The places of [`COARSE_MIN_POPULATION`] or more, or every place when the
+/// region has none that large. Demand sizing has already used them all; the
+/// allocation spreads the region's peak over the places kept.
+fn coarsen_places(cities: Vec<PlacedCity>) -> Vec<PlacedCity> {
+    if !cities
+        .iter()
+        .any(|c| c.place.population >= COARSE_MIN_POPULATION)
+    {
+        return cities;
+    }
+    cities
+        .into_iter()
+        .filter(|c| c.place.population >= COARSE_MIN_POPULATION)
+        .collect()
+}
+
+/// Share of a region's demand one subdivision must carry before its ladder
+/// and capacity mix stand for the whole region. Modelling choice: a state
+/// selection is all one state; a box across several takes the national
+/// ladder.
+const DOMINANT_SUBDIVISION_SHARE: f64 = 0.5;
+
+/// The subdivision whose places carry most of the region's demand, when one
+/// carries at least [`DOMINANT_SUBDIVISION_SHARE`].
+fn dominant_subdivision(cities: &[PlacedCity]) -> Option<String> {
+    let mut weight: BTreeMap<&str, f64> = BTreeMap::new();
+    let mut total = 0.0;
+    for c in cities {
+        let w = c.demand_weight.max(0.0);
+        total += w;
+        if let Some(code) = c.place.subdivision.as_deref() {
+            *weight.entry(code).or_default() += w;
+        }
+    }
+    weight
+        .into_iter()
+        .max_by(|a, b| a.1.total_cmp(&b.1).then_with(|| b.0.cmp(a.0)))
+        .filter(|(_, w)| total > 0.0 && *w >= DOMINANT_SUBDIVISION_SHARE * total)
+        .map(|(code, _)| code.to_owned())
 }
 
 /// Single-linkage groups of the kept polygons: two polygons join when some

@@ -8,16 +8,16 @@
     "build": "svelte-check --tsconfig ./tsconfig.json && vite build"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.4.0",
-    "@deck.gl/layers": "^9.4.0",
-    "@deck.gl/maplibre": "^9.4.0",
-    "@tellegen/svelte": "^0.4.4",
-    "maplibre-gl": "^6.15.0"
+    "@deck.gl/core": "^9.4.1",
+    "@deck.gl/layers": "^9.4.1",
+    "@deck.gl/maplibre": "^9.4.1",
+    "@tellegen/svelte": "^0.5.1",
+    "maplibre-gl": "^6.16.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "svelte": "^5.57.2",
-    "svelte-check": "^4.7.7",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.8",
     "typescript": "^6.0.3",
     "vite": "^8.3.1"
   }

@@ -17,7 +17,7 @@ Only the latest published release of each surface receives fixes:
 | Surface | Where |
 | --- | --- |
 | `tellegen` crate | crates.io |
-| `@tellegen/engine`, `@tellegen/svelte`, `@tellegen/webmcp` | npm |
+| `@tellegen/engine`, `@tellegen/svelte`, `@tellegen/webmcp`, `@tellegen/analytics` | npm |
 | the hosted demo | tellegen.dev, deployed from `main` |
 
 ## Scope

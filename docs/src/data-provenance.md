@@ -65,11 +65,33 @@ to pass. Unavailable cases remain in the catalogue with an explanation.
 
 ## Synthetic generation inputs
 
-Generated grids read the Natural Earth populated places table shipped with
-`tellegen-synth`: 7342 places with name, position, `pop_max` and country. Bus
-anchors come from the most populous places in a region, and peak demand from
-their population. Generated buses are labelled with coordinate provenance
-`synthetic`. OpenStreetMap mode reads the Overpass answer the caller fetched
-and labels its buses `source`. Its electrical parameters and loads are
-modelled, so its buses and lines are mapped, not surveyed. See
+Generated grids read the populated places table shipped with
+`tellegen-synth`: GeoNames `cities5000` (CC BY 4.0), 69,999 places of 5,000
+people or more with name, position, population and country, derived by
+`scripts/derive-populated-places.py`. Every place sizes and spreads demand; a
+transmission-only grid sites its buses on the places of 50,000 people or more,
+or on every place when a region has none that large. Generated buses are
+labelled with coordinate provenance `synthetic`. OpenStreetMap mode reads the
+Overpass answer the caller fetched and labels its buses `source`. Its
+electrical parameters and loads are modelled, so its buses and lines are
+mapped, not surveyed. See
 [Synthetic Grid Generation](synthetic-generation.md).
+
+### Data sources
+
+Every table the generator ships names its source and the SHA-256 of the file
+it was derived from, and the generation report repeats them under
+`provenance`, so a host can show where each figure came from without a table
+of its own.
+
+| Table | Source | Licence | Report field |
+| --- | --- | --- | --- |
+| `data/populated_places.json` | GeoNames `cities5000` and `countryInfo` ([geonames.org](https://www.geonames.org/)) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), attribution required | `provenance.places` (`source`, `source_sha256`, `count`, `sha256`) |
+| `data/national_demand.json` | Ember, *Yearly Electricity Data*, through Our World in Data's energy dataset (demand and population) | CC BY 4.0 | `provenance.demand_table` (`source`, `licence`, `year`, `sha256`, `source_sha256`, `peak_factor`) |
+| `data/country_areas.json` | Natural Earth v5.1.2, 1:50m admin-0 countries | Public domain | `provenance.demand_table` (`areas_sha256`, `areas_source_sha256`) |
+| `data/voltage_ladders.json` | National transmission operators' and regulators' documents, the ENTSO-E members list and IEC 60038, cited per entry; copies no dataset | Compiled for tellegen | `provenance.voltage_table` (`version`, `sha256`) |
+| `data/subnational_demand.json`, `data/subnational_fuel_mix.json` | EIA-861, EIA-860 and the US Census Bureau's state population estimates | Public domain (US government works) | `context.demand_by_subdivision`, `context.fuel_mix_basis` |
+| OpenStreetMap mode | The Overpass answer the caller fetched (`power=*` features) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/), © OpenStreetMap contributors | `provenance.osm` (`document_sha256`, `elements`, `timestamp_osm_base`, `copyright`) |
+
+The `country_areas.json` keys are Natural Earth's `ADM0_A3`, and the places
+table carries the same code, so every lookup across the tables agrees.

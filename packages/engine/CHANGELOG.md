@@ -1,5 +1,101 @@
 # @tellegen/engine
 
+## 0.5.1
+
+### Patch Changes
+
+- [#271](https://github.com/eigenergy/tellegen/pull/271) [`7c8919e`](https://github.com/eigenergy/tellegen/commit/7c8919eb809868fdbeab6e6cb7513990c106087d) Thanks [@BurhanAbdullah](https://github.com/BurhanAbdullah)! - Generating a grid over a long, thin region takes less memory. The fill that spaces out the generated buses kept a bucket for every cell of the region's bounding box, most of them empty and outside the region. It now keeps buckets only for occupied cells. The same request and seed generate the same grid as before.
+
+- [#276](https://github.com/eigenergy/tellegen/pull/276) [`0b34030`](https://github.com/eigenergy/tellegen/commit/0b340305d141e62d16b64b195adbe857c2467d81) Thanks [@samtalki](https://github.com/samtalki)! - OpenStreetMap lines on shared towers (`voltage=400000;220000`) belong to the line of each level they carry. Before, such a way counted only at its highest level, so the lower-voltage line running on the same towers broke where it reached them, and its pieces ended away from any substation. Now each level gets its own copy of the way, carrying the circuits the tag lists at that level: `voltage=380000;110000;110000` with `circuits=3` is one 380 kV and two 110 kV circuits, and the levels never carry more circuits than the way. A substation that states no voltage takes every level of the shared-tower ways that end at it.
+
+- [#314](https://github.com/eigenergy/tellegen/pull/314) [`b6461f3`](https://github.com/eigenergy/tellegen/commit/b6461f3ed81dc8672fb39582583a211b02cbf453) Thanks [@samtalki](https://github.com/samtalki)! - The engine reads cases with PowerIO 0.11.9, up from 0.11.7. A dropped JSON document that carries PowerModelsDistribution's `data_model` marker now opens as a distribution case even when its tables are shaped like PowerModels', where it used to be reported as ambiguous. PSS/E two-winding transformers stated with CZ=2 or CZ=3 keep the impedance 0.11.7 read; 0.11.8, which this release skips, rescaled it. Two-winding transformers record `psse_magnetizing_referral` and `psse_winding2_ratio` in their extras where they apply, and splitting a three-winding transformer into its star legs keeps each winding's impedance correction table.
+
+- [#318](https://github.com/eigenergy/tellegen/pull/318) [`a20d241`](https://github.com/eigenergy/tellegen/commit/a20d24165ed2c6e7260cbdfe075ca77588e92fb0) Thanks [@samtalki](https://github.com/samtalki)! - Synthetic grids with subtransmission no longer tie pockets through ground outside the requested region. Neighbouring pockets were tied along the shortest edge of a triangulation that spans the region's convex hull, so on a concave region two pockets could be "neighbours" across land the region does not hold: on California, a 741 km 66 kV tie ran through Nevada with `boundary_role` `tie_line`, and other ties of hundreds of kilometres crossed the sea. Now two pockets are tied only by a line that stays inside the region and is no longer than the pocket reach at its voltage (60 km at 66 kV, scaled with voltage). A pocket with no such neighbour is left untied and fed through its own step-down substation, as most pockets are, so the network stays connected. A line whose straight path stays inside the region also keeps its drawn route inside it, instead of being labelled `tie_line` because of the small offset that separates lines on the map. Transmission-only grids are unchanged.
+
+## 0.5.0
+
+### Minor Changes
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Detect source-less islands on import and show one context-sensitive solve button
+  in Network and Studies, with exclusions visible before solving and shared solver
+  settings. Scroll Studies to the operating-point overview after successful explicit
+  solves. Add explicit energized-network preparation for multiconductor power flow. Retain
+  the full input for inspection, identify excluded source-less islands and unsupplied
+  loads, and preserve and validate network scope in saved studies, solution modules,
+  and CSV exports. Use default voltage-change tolerance 1e-4 V, absolute KCL tolerance 1e-4 A,
+  and relative KCL tolerance 1e-5; other solver settings remain unchanged.
+
+  Prepare energized networks directly from retained inputs without an IR text round trip.
+  Columnar operating-point results retain load-model qualification and excluded-island provenance.
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Expose multiconductor power flow settings and distinguish convergence from original load-model fidelity. Results and CSV exports retain qualification and effective settings. Simulation snapshots use version 2, with no canonical PowerIO solution for modified or unverified load equations; version 1 snapshots are reassessed on replay. Load-envelope defaults are unchanged and failed reruns retain the previous result.
+
+- [#286](https://github.com/eigenergy/tellegen/pull/286) [`888859b`](https://github.com/eigenergy/tellegen/commit/888859b6ab4b11d63dabaadd6389e56d3227cd73) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor session can hand over its complete result as columns. `BrowserMcPfSession.resultTables()` returns `McPfResultTables`: the terminals, equipment ports, and source reactions of `result()`, row for row, with each name stored once and every value in a typed array. The worker transfers the arrays rather than copying them, and `mcPfResultTables(result)` gives a stored `McPfResult` the same form.
+
+  The overview and the diagram now read a live session's operating point this way, so analysing a whole-city model no longer parses a 166 MiB JSON result into an object per terminal and port. `MulticonductorCase.overviewResult` holds either form.
+
+- [#284](https://github.com/eigenergy/tellegen/pull/284) [`ef7e448`](https://github.com/eigenergy/tellegen/commit/ef7e448abf5959b489ac94b728283ea50bd67707) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor case can stay parsed in the engine instead of crossing the worker boundary as PowerIO IR text. `ingestJsonDrop` and `ingestDistCaseBytes` take `{ retain: true }` and then return the parsed module as `payload.input`, a `BrowserMcInput`, in place of `module_json`. `createMcPfSession` accepts that input, `BrowserMcPfSession.input()` returns the edited input in the same form, and `BrowserMcInput.moduleJson()` writes the IR text only when it is asked for. Without `retain`, both ingest calls return `module_json` as before.
+
+  The Svelte controller imports multiconductor cases this way, so AC power flow on a whole-city model no longer fails with "input exceeds 128 MiB limit". For a 57,757-bus model, the pretty-printed IR was 187.6 MB. `MulticonductorCase.moduleJson` is now `MulticonductorCase.mcInput`, which holds either a `BrowserMcInput` or IR text.
+
+- [#291](https://github.com/eigenergy/tellegen/pull/291) [`01184dd`](https://github.com/eigenergy/tellegen/commit/01184dd88035cfeb8c0186e8075685a3b6b6ec55) Thanks [@samtalki](https://github.com/samtalki)! - Generate state-level grids down to subtransmission, in Synthetic and
+  OpenStreetMap mode. A region whose places lie mostly in one US state takes
+  that state's demand (EIA-861 sales with an EIA-930 peak factor), capacity mix
+  (EIA-860) and voltage ladder; California's is 500/230/115/66 kV. A ladder that
+  reaches below 100 kV is built level by level: a meshed top level,
+  subtransmission pockets fed from step-downs with tap junctions, regulated
+  secondaries and nameplate sized by firm capacity credit. Synthetic California
+  is held to the California Test System at three seeds, and OpenStreetMap
+  California at its own run, in `docs/evidence/synth/cats/`.
+
+  OpenStreetMap mode keeps 60–70 kV lines where the ladder reaches them, splits
+  mapped lines at their junctions into tap buses, prunes spurs that end nowhere,
+  leaves out junctions beyond the clip buffer, adds step-downs where the mapped
+  network cannot carry its load, and regulates subtransmission buses beyond the
+  pocket reach of any step-down. Generation is faster in both modes: angle
+  solves use a sparse Cholesky factorisation, line ends snap through a grid
+  index, and containment tests read only the polygon edges that can cross the
+  point's latitude. OpenStreetMap California takes 1.1 s natively, from 5.1 s,
+  and 1.8 s in the wasm engine; Synthetic California, 7,361 buses, 1.3 s in the
+  wasm engine.
+
+  The report gains `BusKind` `"tap"`, `context.subdivision`,
+  `context.demand_by_subdivision`, `context.fuel_mix_basis`, and the
+  `"subdivision"` voltage basis. `limits.max_bus_count` defaults to 12,000,
+  from 3,000. A transmission-only synthetic grid sized from demand still stops at
+  3,000 buses; one that reaches subtransmission is sized up to the cap.
+
+### Patch Changes
+
+- [#285](https://github.com/eigenergy/tellegen/pull/285) [`3aa86e6`](https://github.com/eigenergy/tellegen/commit/3aa86e6ca4c79d485cf452c6806065644ec5f7ce) Thanks [@samtalki](https://github.com/samtalki)! - Grow the engine's wasm memory in larger steps. The allocator used to grow
+  linear memory one 64 KiB page at a time, and on a 57,757-bus distribution case
+  those tens of thousands of grows took most of the ingest. Ingesting that case
+  in the worker is now about three times faster. Linear memory, which never
+  shrinks, can end a few percent higher than before after a large ingest.
+
+## 0.4.6
+
+### Patch Changes
+
+- [#273](https://github.com/eigenergy/tellegen/pull/273) [`5e9b3a8`](https://github.com/eigenergy/tellegen/commit/5e9b3a8a5b1ef616091366e53ce7059d97162d79) Thanks [@samtalki](https://github.com/samtalki)! - Add a structured log of errors and engine findings. `app.log` records what PowerIO reported while reading a case or a geographic layer, what each solve reported, what each export's writer reported, and every `app.error`, with severity, step, source, code, file, element and buses. `DiagnosticLogView` shows it grouped by step and file with filters, Copy and Download; the default shell adds a "Log" panel, and case import notes now list their findings as rows. `Solution` carries the solve's `diagnostics` (islands, HVDC transfers), which the browser Study already returned.
+
+## 0.4.5
+
+### Patch Changes
+
+- [#264](https://github.com/eigenergy/tellegen/pull/264) [`75edb80`](https://github.com/eigenergy/tellegen/commit/75edb800137d908d56f17aa38221fa62f96e0615) Thanks [@samtalki](https://github.com/samtalki)! - The DC OPF, DC power flow and AC power flow solve networks with in-service HVDC lines. Each line's stated transfer enters the bus balance as fixed injections at its two terminal buses, as PowerIO 0.11.7 prepares them, and the solve reports PowerIO's `BUILD.HVDC.FIXED_INJECTION` diagnostic. A line with a terminal bus outside the solve injects at neither end and reports `BUILD.HVDC.TERMINAL_INACTIVE`. Generated OpenStreetMap grids with HVDC links now open, solve and export. The AC OPF and the SOC relaxation still refuse in-service HVDC lines.
+
+## 0.4.4
+
+### Patch Changes
+
+- [#254](https://github.com/eigenergy/tellegen/pull/254) [`020ca51`](https://github.com/eigenergy/tellegen/commit/020ca5140035f294dbb7b14c3747cf6de4b97092) Thanks [@samtalki](https://github.com/samtalki)! - Build against PowerIO 0.11.7. AC power flow on a case with HVDC lines now
+  includes their scheduled transfers as fixed bus injections; DC OPF and DC power
+  flow still leave them out. OpenDSS feeders read the circuit's source
+  impedance, so the distribution graph gains an internal source bus and its
+  impedance line, and a `switch=y` line reads as a closed 1 mOhm line. PSS/E
+  VSC DC lines are read instead of skipped.
+
 ## 0.4.3
 
 ### Patch Changes

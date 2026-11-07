@@ -25,6 +25,7 @@ import {
 	type SolvableCase
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
+import { powerIoEntry, solveEntry } from './log.svelte.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
@@ -51,11 +52,15 @@ import {
 	type EngineTransport,
 	mcPfResultDetail,
 	summarizeMcPfResult,
+	validateMcPfOptions,
+	DEFAULT_MC_PF_OPTIONS,
 	type McLoadPowerEdit,
+	type McModuleInput,
 	type McPfDetail,
 	type McPfDetailQuery,
 	type McPfOptions,
 	type McPfResult,
+	type McPfResultTables,
 	type McPfSummary,
 	type McStudySnapshot,
 	type AppliedGeoCase,
@@ -77,7 +82,11 @@ const DEFAULT_CASE_ID = 'case500';
 /** A parsed geographic sidecar awaiting application: the canonical `.geo.json`
  * layer document from the engine's tolerant reader, its source file name, and
  * the reader's notes on records it could not use. */
-type GeoLayerFile = { name: string; layer: string; diagnostics: PowerIoDiagnostic[] };
+type GeoLayerFile = {
+	name: string;
+	layer: string;
+	diagnostics: PowerIoDiagnostic[];
+};
 
 /** Whether a local case renders or will render a bus with this id. */
 function localHasBus(c: LocalCase, busId: number): boolean {
@@ -110,6 +119,16 @@ type JsonDropRoute =
 	| { outcome: 'multiconductor'; payload: IngestedDistCase }
 	| { outcome: 'failed' }
 	| { outcome: 'unrouted'; bytes: Uint8Array | null };
+
+/** Free a case input the engine keeps; text needs no release. */
+function releaseMcInput(input: McModuleInput | null | undefined) {
+	if (input && typeof input !== 'string') input.free();
+}
+
+/** PowerIO IR text for a case input, built by the engine for a kept module. */
+function mcInputJson(input: McModuleInput): Promise<string> {
+	return typeof input === 'string' ? Promise.resolve(input) : input.moduleJson();
+}
 
 /** Terminal copy when nothing can solve. Two facts decide the wording: whether
  * this browser's engine failure is known permanent, and that the server
@@ -153,7 +172,7 @@ function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> 
 
 /** Trigger a browser download of in-memory text. Case files never leave the machine:
  * a save is a local Blob download. */
-function downloadText(text: string, filename: string, mime: string) {
+export function downloadText(text: string, filename: string, mime: string) {
 	const url = URL.createObjectURL(new Blob([text], { type: mime }));
 	const anchor = document.createElement('a');
 	anchor.href = url;
@@ -186,7 +205,12 @@ export interface ControllerOptions {
 	loadDefaultCases?: boolean;
 	acOpfWasmUrl?: string;
 	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
+		Partial<
+			Pick<
+				EngineTransport,
+				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'prepareMcEnergizedNetwork'
+			>
+		>;
 }
 
 /** Input to `Controller.openBalancedModule` and `replaceLocalCase`: a
@@ -217,7 +241,12 @@ export class Controller {
 	api: TellegenApiClient | null;
 	readonly loadDefaultCases: boolean;
 	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
+		Partial<
+			Pick<
+				EngineTransport,
+				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'prepareMcEnergizedNetwork'
+			>
+		>;
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -605,6 +634,8 @@ export class Controller {
 			c.mcEditTimer = null;
 			c.mcSession?.free();
 			c.mcSession = null;
+			releaseMcInput(c.mcInput);
+			c.mcInput = null;
 		}
 	}
 
@@ -643,6 +674,13 @@ export class Controller {
 	finishSolve(c: SolvableCase, seq: number, target: SensTarget | null) {
 		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
+		// Every solve of a case restates the same findings; they count once.
+		const findings = c.solution?.diagnostics ?? [];
+		if (findings.length)
+			this.app.log.record(
+				findings.map((d) => solveEntry(d, { subject: this.caseName(c) })),
+				{ repeat: false }
+			);
 		const selectionLive =
 			target !== null &&
 			this.isActiveSolveCase(c) &&
@@ -1262,6 +1300,7 @@ export class Controller {
 				...l.diagnostics.map((d) => `${l.name}: ${formatPowerIoDiagnostic(d)}`),
 				...payload.report.notes.map((n) => `${l.name}: ${n}`)
 			);
+			this.logCoordinates(l.name, l.diagnostics, payload.report.notes);
 		}
 		if (!payload) return;
 		const sourceLabel = layers.map((l) => l.name).join(' + ');
@@ -2295,6 +2334,7 @@ export class Controller {
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
+				this.logImport(file.name, summary);
 				const local = new LocalCase({
 					id,
 					label,
@@ -2433,7 +2473,9 @@ export class Controller {
 		}
 		this.app.parsingFile = true;
 		try {
-			const result = await ingestJsonDrop(bytes);
+			// A multiconductor module stays in the engine; only its handle
+			// comes back, never its IR text.
+			const result = await ingestJsonDrop(bytes, { retain: true });
 			if (result.kind === 'unknown') return { outcome: 'unrouted', bytes };
 			if (result.kind === 'ambiguous') {
 				this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
@@ -2470,7 +2512,7 @@ export class Controller {
 		this.app.parsingFile = true;
 		try {
 			const bytes = new Uint8Array(await file.arrayBuffer());
-			this.addMultiCase(file.name, await ingestDistCaseBytes(bytes, format));
+			this.addMultiCase(file.name, await ingestDistCaseBytes(bytes, format, { retain: true }));
 			this.app.error = null;
 			return true;
 		} catch (e) {
@@ -2483,7 +2525,11 @@ export class Controller {
 
 	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
 	private addMultiCase(fileName: string, payload: IngestedDistCase) {
-		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
+		const {
+			graph,
+			input,
+			...summary
+		}: Pick<IngestedDistCase, 'graph' | 'input'> & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
@@ -2491,11 +2537,13 @@ export class Controller {
 			coordsKind === 'geographic'
 				? buildGeographicView(graph, payload.geo_layer)
 				: buildDiagramView(graph, payload.geo_layer);
+		this.logImport(fileName, summary);
 		const c = new MulticonductorCase({
 			id: `dist-${++this.localSeq}`,
 			label,
 			fileName,
 			summary,
+			input,
 			graph,
 			coordsKind,
 			view
@@ -2510,18 +2558,25 @@ export class Controller {
 	/** Compute terminal quantities only for the retained input and current case revision. */
 	solveMultiCase = async (
 		c: MulticonductorCase,
-		options: McPfOptions = {},
-		signal?: AbortSignal
+		options: McPfOptions = c.mcOptions,
+		signal?: AbortSignal,
+		energizedOnly = c.mcEnergizedOnly
 	): Promise<McPfSummary> => {
 		if (signal?.aborted || this.disposed)
 			throw new DOMException('Calculation cancelled', 'AbortError');
 		if (c.solving) throw new Error('A calculation is already running for this case');
+		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
+		const settingsError = validateMcPfOptions(options);
+		if (settingsError) throw new Error(settingsError);
+		c.mcOptions = { ...options };
+		c.mcEnergizedOnly = energizedOnly;
 		const unavailable = c.mcPfReason;
 		if (unavailable) {
 			this.app.error = unavailable;
 			throw new Error(unavailable);
 		}
-		let input = c.moduleJson!;
+		const originalInput = c.mcInput!;
+		let input: McModuleInput = originalInput;
 		const retainedAtStart = c.mcSession;
 		const revision = c.revisionGeneration;
 		const seq = ++c.solveSeq;
@@ -2534,8 +2589,25 @@ export class Controller {
 		const started = performance.now();
 		let nextSession: Awaited<ReturnType<NonNullable<EngineTransport['createMcPfSession']>>> | null =
 			null;
+		// An input this call took from the live session; freed unless it
+		// becomes the case's input.
+		let editedInput: McModuleInput | null = null;
 		try {
-			if (retainedAtStart) input = await retainedAtStart.inputModule();
+			// The edited operating point stays in the engine; it is never
+			// written out as IR text to be read back.
+			if (retainedAtStart) input = editedInput = await retainedAtStart.input();
+			if (energizedOnly) {
+				if (!this.mcTransport.prepareMcEnergizedNetwork)
+					throw new Error('Energized-network preparation is unavailable');
+				const prepared = await this.mcTransport.prepareMcEnergizedNetwork(input);
+				const selectedInput = 'input' in prepared ? prepared.input : prepared.module_json;
+				if (editedInput !== selectedInput) releaseMcInput(editedInput);
+				input = editedInput = selectedInput;
+				if (abort.signal.aborted || seq !== c.solveSeq || revision !== c.revisionGeneration)
+					throw new DOMException('Calculation cancelled', 'AbortError');
+				c.mcExcludedIslands = prepared.excluded_islands;
+				c.mcPreparedScope = prepared.network_scope;
+			}
 			let snapshot = null;
 			let result: McPfSummary;
 			let fullResult: McPfResult | null = null;
@@ -2547,9 +2619,10 @@ export class Controller {
 				result = nextSession.initialSummary;
 				loadBranches = await nextSession.loadBranches();
 			} else {
+				const text = typeof input === 'string' ? input : await input.moduleJson();
 				snapshot = this.mcTransport.solveMcStudy
 					? await this.mcTransport.solveMcStudy(
-							input,
+							text,
 							crypto.randomUUID(),
 							c.label,
 							options,
@@ -2557,7 +2630,7 @@ export class Controller {
 						)
 					: null;
 				fullResult =
-					snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
+					snapshot?.result ?? (await this.mcTransport.solveMcModule(text, options, abort.signal));
 				result = summarizeMcPfResult(fullResult);
 			}
 			// dispose() aborts too; a session that arrives after it is freed below.
@@ -2565,7 +2638,7 @@ export class Controller {
 				throw new DOMException('Calculation cancelled', 'AbortError');
 			if (
 				seq !== c.solveSeq ||
-				(retainedAtStart ? retainedAtStart !== c.mcSession : input !== c.moduleJson) ||
+				(retainedAtStart ? retainedAtStart !== c.mcSession : originalInput !== c.mcInput) ||
 				revision !== c.revisionGeneration ||
 				!this.app.multiCases.includes(c)
 			)
@@ -2582,7 +2655,9 @@ export class Controller {
 			nextSession = null;
 			c.mcLoadBranches = loadBranches;
 			c.mcLoadEdits = [];
-			c.moduleJson = input;
+			if (c.mcInput !== input) releaseMcInput(c.mcInput);
+			c.mcInput = input;
+			editedInput = null;
 			c.result = result;
 			c.mcFullResult = fullResult;
 			c.mcTiming = null;
@@ -2590,9 +2665,11 @@ export class Controller {
 			c.mcSavedAt = null;
 			c.solveMs = performance.now() - started;
 			c.revisionGeneration++;
+			c.mcCompletedSolveSeq = seq;
 			return result;
 		} catch (error) {
 			nextSession?.free();
+			releaseMcInput(editedInput);
 			if (
 				!abort.signal.aborted &&
 				!(error instanceof DOMException && error.name === 'AbortError')
@@ -2652,7 +2729,7 @@ export class Controller {
 	};
 
 	/** Above this many buses, reading and indexing the whole operating point takes a noticeable
-	 * fraction of a second (evidence/diagram), so the overview is computed on request instead of
+	 * fraction of a second (docs/evidence/diagram), so the overview is computed on request instead of
 	 * after every solve. */
 	static readonly AUTO_OVERVIEW_MAX_BUSES = 25_000;
 	private overviewSeq = 0;
@@ -2667,7 +2744,7 @@ export class Controller {
 
 	private startOverviewRead(c: MulticonductorCase, seq: number) {
 		c.overviewLoading = true;
-		this.multiFullResult(c).then(
+		this.multiOverviewResult(c).then(
 			(full) => {
 				if (seq !== this.overviewSeq) return;
 				if (full) c.overviewResult = full;
@@ -2697,6 +2774,22 @@ export class Controller {
 			// A read still in flight is superseded by the next one, so this case is no longer loading.
 			c.overviewLoading = false;
 		};
+	};
+
+	/** The complete operating point in the form whole-network views read: the stored result, or
+	 * the live session's as columns, which hold no object per terminal or port. Null when there is
+	 * no result or it changed before the read finished. */
+	multiOverviewResult = async (
+		c: MulticonductorCase
+	): Promise<McPfResult | McPfResultTables | null> => {
+		if (!c.result) return null;
+		const stored = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
+		const session = c.mcSession;
+		if (stored || !session) return stored;
+		if (c.mcEditRunning) return null;
+		const solve = c.result.solve_count;
+		const tables = await session.resultTables();
+		return session === c.mcSession && c.result?.solve_count === solve ? tables : null;
 	};
 
 	/** The complete operating point for whole-network views: the stored result, or one read from
@@ -2759,13 +2852,14 @@ export class Controller {
 		if (this.app.studyView || this.app.activeMulti !== c)
 			throw new Error('Select the matching case before attaching coordinates');
 		if (c.solving) throw new Error('Wait for the calculation before attaching coordinates');
-		if (!c.moduleJson || !this.mcTransport.applyMcGeo)
+		if (!c.mcInput || !this.mcTransport.applyMcGeo)
 			throw new Error('Coordinate attachment is unavailable for this case');
-		const baseInput = c.moduleJson;
+		const baseInput = c.mcInput;
 		const retainedAtStart = c.mcSession;
 		let snapshot = c.mcSnapshot;
 		if (!snapshot && c.mcSession && c.result) snapshot = await this.snapshotMultiCase(c);
-		const input = snapshot?.input_module ?? c.moduleJson;
+		// Coordinates attach to IR text, so a kept module is written out here.
+		const input = snapshot?.input_module ?? (await mcInputJson(baseInput));
 		const revision = c.revisionGeneration;
 		let next = input;
 		let payload: Awaited<ReturnType<NonNullable<EngineTransport['applyMcGeo']>>> | undefined;
@@ -2787,12 +2881,13 @@ export class Controller {
 				...payload.report.notes,
 				...layer.diagnostics.map(formatPowerIoDiagnostic)
 			);
+			this.logCoordinates(layer.name, layer.diagnostics, payload.report.notes);
 		}
 		if (!payload || !matched) throw new Error('No coordinates matched the selected case');
 		if (
 			this.app.studyView ||
 			this.app.activeMulti !== c ||
-			c.moduleJson !== baseInput ||
+			c.mcInput !== baseInput ||
 			c.mcSession !== retainedAtStart ||
 			c.revisionGeneration !== revision ||
 			c.solving
@@ -2809,7 +2904,8 @@ export class Controller {
 		c.mcFullResult = snapshot?.result ?? c.mcFullResult;
 		c.mcLoadBranches = [];
 		c.mcLoadEdits = [];
-		c.moduleJson = next;
+		releaseMcInput(c.mcInput);
+		c.mcInput = next;
 		c.mcSnapshot = snapshot ? { ...snapshot, id: crypto.randomUUID() } : null;
 		c.mcSavedAt = null;
 		c.geoLayer = payload.geo_layer ?? null;
@@ -2992,6 +3088,8 @@ export class Controller {
 		if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
 		c.mcSession?.free();
 		c.mcSession = null;
+		releaseMcInput(c.mcInput);
+		c.mcInput = null;
 		if (this.app.activeMultiId === c.id) {
 			c.selectedBusId = null;
 			c.selectedEdgeId = null;
@@ -3017,7 +3115,13 @@ export class Controller {
 			...placeSyntheticTopology(c.topology, { lon: 0, lat: 0 }),
 			coordinate_space: 'diagram' as const
 		};
-		return { id: 'study', name: c.name, base_mva: c.base_mva, synthetic_coords: !c.view, ...view };
+		return {
+			id: 'study',
+			name: c.name,
+			base_mva: c.base_mva,
+			synthetic_coords: !c.view,
+			...view
+		};
 	}
 
 	async caseGeographyLayers(c: LocalCase): Promise<string[]> {
@@ -3063,9 +3167,46 @@ export class Controller {
 				JSON.stringify(snapshot.display_solution) !== JSON.stringify(c.solution)
 			)
 				throw new Error('The server case changed. Reload it before saving.');
-			return { input: snapshot.input, solution: snapshot.solution, view: snapshot.view };
+			return {
+				input: snapshot.input,
+				solution: snapshot.solution,
+				view: snapshot.view
+			};
 		}
 		return { input: base };
+	}
+
+	/** Record what PowerIO and the engine said while reading a case file. */
+	private logImport(
+		fileName: string,
+		summary: { diagnostics?: PowerIoDiagnostic[]; warnings?: string[] }
+	) {
+		this.app.log.record([
+			...(summary.diagnostics ?? []).map((d) =>
+				powerIoEntry(d, { stage: 'Open', subject: fileName })
+			),
+			...(summary.warnings ?? []).map((message) => ({
+				severity: 'note' as const,
+				stage: 'Open',
+				source: 'tellegen',
+				subject: fileName,
+				message
+			}))
+		]);
+	}
+
+	/** Record a geographic layer's reader findings and placement notes. */
+	private logCoordinates(layer: string, diagnostics?: PowerIoDiagnostic[], notes?: string[]) {
+		this.app.log.record([
+			...(diagnostics ?? []).map((d) => powerIoEntry(d, { stage: 'Coordinates', subject: layer })),
+			...(notes ?? []).map((message) => ({
+				severity: 'note' as const,
+				stage: 'Coordinates',
+				source: 'tellegen',
+				subject: layer,
+				message
+			}))
+		]);
 	}
 
 	/** Build a local case from a balanced PowerIO ingest payload without activating
@@ -3074,6 +3215,7 @@ export class Controller {
 		const { module_json, topology, view, formulation, ...summary } = payload;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+		this.logImport(fileName, summary);
 		return new LocalCase({
 			id: `local-${++this.localSeq}`,
 			label,
@@ -3116,7 +3258,11 @@ export class Controller {
 			if (input.formulation) local.formulation = input.formulation;
 			if (input.geoLayer) {
 				await this.applyGeoLayers(local, [
-					{ name: `${input.name}.geo.json`, layer: input.geoLayer, diagnostics: [] }
+					{
+						name: `${input.name}.geo.json`,
+						layer: input.geoLayer,
+						diagnostics: []
+					}
 				]);
 			}
 			this.placeTopologyAsDiagram(local);
@@ -3230,8 +3376,15 @@ export class Controller {
 		if (!study) return [];
 		try {
 			const exported = await study.export(format);
-			downloadText(exported.text, `${this.caseFileStem(c)}.${exported.extension}`, 'text/plain');
+			const fileName = `${this.caseFileStem(c)}.${exported.extension}`;
+			downloadText(exported.text, fileName, 'text/plain');
 			this.app.error = null;
+			this.app.log.record(
+				(exported.diagnostics ?? []).map((d) =>
+					powerIoEntry(d, { stage: 'Export', subject: fileName })
+				),
+				{ repeat: false }
+			);
 			return exported.diagnostics;
 		} catch (e) {
 			this.app.error = `${this.caseName(c)}: could not export study: ${errorText(e)}`;

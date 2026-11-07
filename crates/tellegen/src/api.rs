@@ -694,6 +694,10 @@ pub struct SolveDiagnostic {
     /// `island_extra_reference`: the AC power flow found several reference
     /// buses in one island and kept the first as its slack; the others hold
     /// their voltage magnitude as PV (or PQ) buses.
+    /// `BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service
+    /// HVDC lines inject as fixed transfers at their terminal buses.
+    /// `BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus
+    /// outside the solve, so neither end injects; `buses` are its two terminals.
     pub code: String,
     pub message: String,
     pub buses: Vec<usize>,
@@ -1425,7 +1429,16 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
 
 #[cfg(feature = "sensitivity")]
 fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
-    let (acnet, sol) = ac_pf_solved(super::model::AcNetwork::from_network(net)?, req)?;
+    // The network's own AC model has no HVDC term. With in-service HVDC lines,
+    // solve PowerIO's power flow instance, whose bus specifications state each
+    // line's transfer as fixed injections.
+    let acnet = if net.hvdc().iter().any(|line| line.in_service) {
+        let instance = AcPfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
+        super::model::AcNetwork::from_pf_instance(&instance)?
+    } else {
+        super::model::AcNetwork::from_network(net)?
+    };
+    let (acnet, sol) = ac_pf_solved(acnet, req)?;
     ac_pf_assemble(&acnet, &sol, req)
 }
 
@@ -4532,5 +4545,189 @@ mod tests {
                 va[&bus]
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod hvdc_tests {
+    //! An in-service HVDC line enters every balanced power flow and the DC OPF
+    //! as fixed injections at its terminal buses: the same answer as the
+    //! network with the transfer written as two fixed loads.
+
+    use super::*;
+    use crate::model::CASE3;
+
+    /// case3 with an HVDC line taking 10 MW from bus 3 and delivering 9.5 MW to
+    /// bus 2.
+    fn with_hvdc(case: &str) -> BalancedNetwork {
+        let mut net = crate::model::parse_matpower(case).expect("parse");
+        let mut line = powerio::Hvdc::new(powerio::BusId(3), powerio::BusId(2));
+        line.pf = 10.0;
+        line.pt = 9.5;
+        line.loss0 = 0.5;
+        net.hvdc_mut().push(line);
+        net
+    }
+
+    /// The same transfer as a 10 MW load at bus 3 and a 9.5 MW negative load at bus 2.
+    fn with_loads() -> BalancedNetwork {
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+        net.loads_mut()
+            .push(powerio::Load::new(powerio::BusId(3), 10.0, 0.0));
+        net.loads_mut()
+            .push(powerio::Load::new(powerio::BusId(2), -9.5, 0.0));
+        net
+    }
+
+    fn solve(net: &BalancedNetwork, formulation: Problem) -> SolveResponse {
+        let request = SolveRequest {
+            formulation,
+            ..SolveRequest::default()
+        };
+        solve_network(net, &request).expect("solve")
+    }
+
+    fn by_bus(rows: &Option<Vec<BusScalar>>) -> BTreeMap<usize, f64> {
+        rows.iter()
+            .flatten()
+            .map(|row| (row.bus, row.value))
+            .collect()
+    }
+
+    fn by_branch(rows: &Option<Vec<BranchFlow>>) -> BTreeMap<usize, f64> {
+        rows.iter()
+            .flatten()
+            .map(|row| (row.branch, row.pf))
+            .collect()
+    }
+
+    fn assert_close(a: &BTreeMap<usize, f64>, b: &BTreeMap<usize, f64>, what: &str) {
+        assert_eq!(
+            a.keys().collect::<Vec<_>>(),
+            b.keys().collect::<Vec<_>>(),
+            "{what}"
+        );
+        for (key, value) in a {
+            assert!(
+                (value - b[key]).abs() < 1e-7,
+                "{what} {key}: {value} vs {}",
+                b[key]
+            );
+        }
+    }
+
+    fn codes(response: &SolveResponse) -> Vec<&str> {
+        response
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn dc_opf_carries_the_transfer() {
+        let hvdc = solve(&with_hvdc(CASE3), Problem::DcOpf);
+        let loads = solve(&with_loads(), Problem::DcOpf);
+        assert!(matches!(hvdc.status, SolveStatus::Optimal));
+        assert!(matches!(loads.status, SolveStatus::Optimal));
+        let (a, b) = (hvdc.objective.unwrap(), loads.objective.unwrap());
+        assert!((a - b).abs() < 1e-6 * b.abs(), "objective {a} vs {b}");
+        assert_close(&by_bus(&hvdc.va), &by_bus(&loads.va), "angle");
+        assert_close(&by_branch(&hvdc.flows), &by_branch(&loads.flows), "flow");
+        // Generation covers the load and the line's 0.5 MW loss.
+        let generation: f64 = hvdc.dispatch.iter().flatten().map(|g| g.pg).sum();
+        assert!((generation - 90.5).abs() < 1e-6, "{generation}");
+        assert!(
+            codes(&hvdc).contains(&"BUILD.HVDC.FIXED_INJECTION"),
+            "{:?}",
+            codes(&hvdc)
+        );
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn dc_and_ac_power_flows_carry_the_transfer() {
+        for formulation in [Problem::DcPf, Problem::AcPf] {
+            let hvdc = solve(&with_hvdc(CASE3), formulation);
+            let loads = solve(&with_loads(), formulation);
+            assert_close(&by_bus(&hvdc.va), &by_bus(&loads.va), "angle");
+            assert_close(&by_branch(&hvdc.flows), &by_branch(&loads.flows), "flow");
+            assert!(
+                codes(&hvdc).contains(&"BUILD.HVDC.FIXED_INJECTION"),
+                "{formulation:?}: {:?}",
+                codes(&hvdc)
+            );
+        }
+        // The AC power flow reports net bus injections, which include the transfer.
+        let hvdc = solve(&with_hvdc(CASE3), Problem::AcPf);
+        let loads = solve(&with_loads(), Problem::AcPf);
+        let injection = |response: &SolveResponse| -> BTreeMap<usize, f64> {
+            response
+                .injections
+                .iter()
+                .flatten()
+                .map(|i| (i.bus, i.p))
+                .collect()
+        };
+        assert_close(&injection(&hvdc), &injection(&loads), "injection");
+    }
+
+    #[test]
+    fn a_line_into_a_dead_island_injects_nothing() {
+        // Bus 4 has load and no generator, so its island is de-energized and the
+        // line from bus 3 has no live terminal there: neither end injects.
+        let case = CASE3.replace(
+            " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n",
+            " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n 4 1 5 0  0 0 1 1 0 230 1 1.1 0.9;\n",
+        );
+        let mut net = crate::model::parse_matpower(&case).expect("parse");
+        let mut line = powerio::Hvdc::new(powerio::BusId(3), powerio::BusId(4));
+        line.pf = 10.0;
+        line.pt = 10.0;
+        net.hvdc_mut().push(line);
+        let plain = crate::model::parse_matpower(CASE3).expect("parse");
+        let mut formulations = vec![Problem::DcOpf];
+        if cfg!(feature = "sensitivity") {
+            formulations.extend([Problem::DcPf, Problem::AcPf]);
+        }
+        for formulation in formulations {
+            let isolated = solve(&net, formulation);
+            let reference = solve(&plain, formulation);
+            assert_close(
+                &by_branch(&isolated.flows),
+                &by_branch(&reference.flows),
+                "flow",
+            );
+            let inactive = isolated
+                .diagnostics
+                .iter()
+                .find(|d| d.code == "BUILD.HVDC.TERMINAL_INACTIVE")
+                .unwrap_or_else(|| panic!("{formulation:?}: {:?}", codes(&isolated)));
+            assert_eq!(inactive.buses, vec![3, 4]);
+        }
+    }
+
+    #[test]
+    fn the_emitted_dc_opf_solution_restates_the_transfer() {
+        let instance = Arc::new(DcOpfInstance::from_network(with_hvdc(CASE3)).expect("instance"));
+        let solution = crate::emit::solve_dc_opf_instance(instance, "test").expect("solve");
+        let injection = |bus| {
+            solution
+                .bus_active_injection(powerio::BusId(bus))
+                .expect("bus")
+        };
+        // Bus 2 serves 90 MW, 9.5 MW of it from the line; the injections sum to
+        // zero on the lossless AC network.
+        assert!((injection(2) + 80.5).abs() < 1e-6, "{}", injection(2));
+        let total: f64 = (1..=3).map(injection).sum();
+        assert!(total.abs() < 1e-6, "{total}");
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn the_ac_network_model_still_refuses_hvdc() {
+        let error = crate::model::AcNetwork::from_network(&with_hvdc(CASE3))
+            .expect_err("the AC model has no HVDC term");
+        assert!(error.contains("in-service HVDC"), "{error}");
     }
 }

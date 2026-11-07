@@ -56,6 +56,26 @@ solves locally.
 
 ## Server Compute
 
+The website build includes the experimental nonlinear AC OPF solver at
+`/experimental-acopf/tellegen_acopf_wasi.wasm`, with its EPL-2.0 license,
+notice, and checksummed source manifest alongside it. The Docker build compiles
+this separate WASI reactor and copies it into the frontend. It does not enable
+AC OPF in the native server. Pass `--build-arg TELLEGEN_SOURCE_REVISION=$(git rev-parse HEAD)`
+when manually building an image to record the source commit; CI and deployment
+workflows supply it automatically.
+
+DC OPF remains the default calculation. The AC OPF dropdown option enables
+only after the browser successfully probes the solver, and only for an
+unedited balanced case. The browser runs each AC OPF solve in a dedicated,
+terminable worker. There is no server fallback, and AC OPF edits, LMPs,
+sensitivities, and saving/exporting results remain unavailable.
+
+Local website builds require `npm run wasm:acopf` before `npm run build:web`
+or the Vite development server. `PUBLIC_TELLEGEN_ACOPF_WASM_URL` can override
+the bundled solver URL; an unset or empty value uses the bundled asset.
+Public distribution still requires the release review recorded in
+[the POUNCE decision](acopf-pounce-decision.md#remaining-release-gates).
+
 The compute endpoints (`/api/cases/{id}/solve` over SSE and the
 `/api/cases/{id}/sensitivity/...` routes) ship disabled and answer 403
 `server compute is disabled`. Set `TELLEGEN_SERVER_COMPUTE=1` to enable them as

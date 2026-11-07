@@ -1,5 +1,69 @@
 # @tellegen/svelte
 
+## 0.5.1
+
+### Patch Changes
+
+- [#313](https://github.com/eigenergy/tellegen/pull/313) [`803657c`](https://github.com/eigenergy/tellegen/commit/803657cec1ee1490fecd050aac17b94c2e341594) Thanks [@samtalki](https://github.com/samtalki)! - A source the host added to `TellegenMap`'s map counted as part of the basemap: if its tiles answered 401, 403 or 429, or kept failing to load, the map switched to the fallback basemap although the primary was fine, and the switch removed the host's own sources and layers. Now only the sources of the basemap style itself can trigger the switch, and a host source's errors are logged to the console. A real switch still replaces the whole style, so a host that adds sources and layers in `onMapReady` should add them on every `style.load`; the README shows how. `BasemapMapLike` gains an optional `getStyle`, which `attachBasemapFallback` reads to tell the basemap's sources from the host's.
+
+- [#316](https://github.com/eigenergy/tellegen/pull/316) [`827a71f`](https://github.com/eigenergy/tellegen/commit/827a71f0f86dcd0530ae2ba1325d62e27942298f) Thanks [@samtalki](https://github.com/samtalki)! - The map no longer draws a marker for a line tap in a grid made by tellegen-synth, such as one from MapToGrid. A tap is a point where a line is tapped, with no load or machine, and its line already shows it on the map. On a state-sized grid every tap used to get its own marker, so the markers overlapped and covered the network. Taps are read from the `kind` that tellegen-synth records on each bus row of the module, and other cases draw every bus as before. A tap is still a bus of the case: the bus picker finds it by number, a line's tooltip names it, and a selected tap gets its marker and the selection ring back. `LocalCase` gains `tapBuses`, the tap bus ids, and `markerBuses`, the buses the map draws as markers.
+
+- [#272](https://github.com/eigenergy/tellegen/pull/272) [`b02955a`](https://github.com/eigenergy/tellegen/commit/b02955aeec68aeef333c61910fb10483e81220f6) Thanks [@BurhanAbdullah](https://github.com/BurhanAbdullah)! - A branch route that crosses ±180 draws as one short path on the flat map and on the globe, instead of a line across the whole map. `TellegenMap` takes the short hop between consecutive route vertices in its route layers, and the selected-branch outline, the selected-bus marker and the framing of a selected branch follow a network across the seam. Stored and exported coordinates are unchanged: route longitudes stay in [-180, 180], so a host drawing routes in its own layers (`extraLayers`) takes the short hop itself.
+- Updated dependencies [[`7c8919e`](https://github.com/eigenergy/tellegen/commit/7c8919eb809868fdbeab6e6cb7513990c106087d), [`0b34030`](https://github.com/eigenergy/tellegen/commit/0b340305d141e62d16b64b195adbe857c2467d81), [`b6461f3`](https://github.com/eigenergy/tellegen/commit/b6461f3ed81dc8672fb39582583a211b02cbf453), [`a20d241`](https://github.com/eigenergy/tellegen/commit/a20d24165ed2c6e7260cbdfe075ca77588e92fb0)]:
+  - @tellegen/engine@0.5.1
+
+## 0.5.0
+
+### Minor Changes
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Detect source-less islands on import and show one context-sensitive solve button
+  in Network and Studies, with exclusions visible before solving and shared solver
+  settings. Scroll Studies to the operating-point overview after successful explicit
+  solves. Add explicit energized-network preparation for multiconductor power flow. Retain
+  the full input for inspection, identify excluded source-less islands and unsupplied
+  loads, and preserve and validate network scope in saved studies, solution modules,
+  and CSV exports. Use default voltage-change tolerance 1e-4 V, absolute KCL tolerance 1e-4 A,
+  and relative KCL tolerance 1e-5; other solver settings remain unchanged.
+
+  Prepare energized networks directly from retained inputs without an IR text round trip.
+  Columnar operating-point results retain load-model qualification and excluded-island provenance.
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Expose multiconductor power flow settings and distinguish convergence from original load-model fidelity. Results and CSV exports retain qualification and effective settings. Simulation snapshots use version 2, with no canonical PowerIO solution for modified or unverified load equations; version 1 snapshots are reassessed on replay. Load-envelope defaults are unchanged and failed reruns retain the previous result.
+
+- [#286](https://github.com/eigenergy/tellegen/pull/286) [`888859b`](https://github.com/eigenergy/tellegen/commit/888859b6ab4b11d63dabaadd6389e56d3227cd73) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor session can hand over its complete result as columns. `BrowserMcPfSession.resultTables()` returns `McPfResultTables`: the terminals, equipment ports, and source reactions of `result()`, row for row, with each name stored once and every value in a typed array. The worker transfers the arrays rather than copying them, and `mcPfResultTables(result)` gives a stored `McPfResult` the same form.
+
+  The overview and the diagram now read a live session's operating point this way, so analysing a whole-city model no longer parses a 166 MiB JSON result into an object per terminal and port. `MulticonductorCase.overviewResult` holds either form.
+
+- [#284](https://github.com/eigenergy/tellegen/pull/284) [`ef7e448`](https://github.com/eigenergy/tellegen/commit/ef7e448abf5959b489ac94b728283ea50bd67707) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor case can stay parsed in the engine instead of crossing the worker boundary as PowerIO IR text. `ingestJsonDrop` and `ingestDistCaseBytes` take `{ retain: true }` and then return the parsed module as `payload.input`, a `BrowserMcInput`, in place of `module_json`. `createMcPfSession` accepts that input, `BrowserMcPfSession.input()` returns the edited input in the same form, and `BrowserMcInput.moduleJson()` writes the IR text only when it is asked for. Without `retain`, both ingest calls return `module_json` as before.
+
+  The Svelte controller imports multiconductor cases this way, so AC power flow on a whole-city model no longer fails with "input exceeds 128 MiB limit". For a 57,757-bus model, the pretty-printed IR was 187.6 MB. `MulticonductorCase.moduleJson` is now `MulticonductorCase.mcInput`, which holds either a `BrowserMcInput` or IR text.
+
+### Patch Changes
+
+- [#283](https://github.com/eigenergy/tellegen/pull/283) [`6e9b9d4`](https://github.com/eigenergy/tellegen/commit/6e9b9d4a2a7538f46f2a74e4d2dd087fe65ab4a4) Thanks [@samtalki](https://github.com/samtalki)! - Match a multiconductor case's routed lines to its edges through an index built once, instead of scanning every edge for every route. On a 57,757-bus city case the scan took over a minute of the load. Which route lands on which edge does not change.
+- Updated dependencies [[`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114), [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114), [`888859b`](https://github.com/eigenergy/tellegen/commit/888859b6ab4b11d63dabaadd6389e56d3227cd73), [`ef7e448`](https://github.com/eigenergy/tellegen/commit/ef7e448abf5959b489ac94b728283ea50bd67707), [`01184dd`](https://github.com/eigenergy/tellegen/commit/01184dd88035cfeb8c0186e8075685a3b6b6ec55), [`3aa86e6`](https://github.com/eigenergy/tellegen/commit/3aa86e6ca4c79d485cf452c6806065644ec5f7ce)]:
+  - @tellegen/engine@0.5.0
+
+## 0.4.7
+
+### Patch Changes
+
+- [#280](https://github.com/eigenergy/tellegen/pull/280) [`962eaec`](https://github.com/eigenergy/tellegen/commit/962eaec2d51a8487758c878cf2bdf0d274dcfdc5) Thanks [@samtalki](https://github.com/samtalki)! - Hide the far side of the globe by culling past the horizon in the shader, and draw the overlay on top again. 0.4.6's depth test against maplibre's globe also cut away parts of a network facing the camera. `TellegenMap` adds the horizon extension to its own layers and to `extraLayers`.
+
+## 0.4.6
+
+### Patch Changes
+
+- [#277](https://github.com/eigenergy/tellegen/pull/277) [`fa48812`](https://github.com/eigenergy/tellegen/commit/fa48812d3a8c883e779108cffd132f57008febe7) Thanks [@samtalki](https://github.com/samtalki)! - On the globe, a network on the far hemisphere no longer draws through the earth. `TellegenMap`'s overlay depth-tests against the globe in globe projection and still draws on top of the flat map.
+
+## 0.4.5
+
+### Patch Changes
+
+- [#273](https://github.com/eigenergy/tellegen/pull/273) [`5e9b3a8`](https://github.com/eigenergy/tellegen/commit/5e9b3a8a5b1ef616091366e53ce7059d97162d79) Thanks [@samtalki](https://github.com/samtalki)! - Add a structured log of errors and engine findings. `app.log` records what PowerIO reported while reading a case or a geographic layer, what each solve reported, what each export's writer reported, and every `app.error`, with severity, step, source, code, file, element and buses. `DiagnosticLogView` shows it grouped by step and file with filters, Copy and Download; the default shell adds a "Log" panel, and case import notes now list their findings as rows. `Solution` carries the solve's `diagnostics` (islands, HVDC transfers), which the browser Study already returned.
+- Updated dependencies [[`5e9b3a8`](https://github.com/eigenergy/tellegen/commit/5e9b3a8a5b1ef616091366e53ce7059d97162d79)]:
+  - @tellegen/engine@0.4.6
+
 ## 0.4.4
 
 ### Patch Changes

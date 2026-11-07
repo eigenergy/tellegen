@@ -28,6 +28,17 @@ RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm
     && mkdir -p /out/data \
     && cp /build/crates/tellegen-synth/data/populated_places.json /out/data/
 
+# Separate reactor: keep POUNCE out of the ordinary wasm-bindgen module and
+# native server. The website runs nonlinear AC OPF in a terminable worker.
+FROM wasm AS acopf
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+RUN rustup target add wasm32-wasip1
+COPY scripts/build-acopf-wasi.sh scripts/acopf-release.py /build/scripts/
+COPY licenses /build/licenses
+ARG TELLEGEN_SOURCE_REVISION=""
+RUN bash /build/scripts/build-acopf-wasi.sh
+
 # ---- frontend build ----
 FROM node:22-slim AS frontend
 WORKDIR /app
@@ -36,6 +47,7 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/engine/package.json packages/engine/package.json
 COPY packages/svelte/package.json packages/svelte/package.json
 COPY packages/webmcp/package.json packages/webmcp/package.json
+COPY packages/analytics/package.json packages/analytics/package.json
 COPY examples/browser-minimal/package.json examples/browser-minimal/package.json
 COPY examples/svelte-minimal/package.json examples/svelte-minimal/package.json
 RUN npm ci --ignore-scripts
@@ -43,6 +55,7 @@ COPY apps/web apps/web
 COPY packages/engine packages/engine
 COPY packages/svelte packages/svelte
 COPY packages/webmcp packages/webmcp
+COPY packages/analytics packages/analytics
 COPY examples/browser-minimal examples/browser-minimal
 COPY examples/svelte-minimal examples/svelte-minimal
 # `types:check` (run by build:engine) reads the Rust records the generated
@@ -51,6 +64,7 @@ COPY crates/tellegen/src crates/tellegen/src
 COPY crates/tellegen-synth/src crates/tellegen-synth/src
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
 COPY --from=wasm /out/data ./packages/engine/src/data
+COPY --from=acopf /build/target/experimental-acopf ./target/experimental-acopf
 # Optional CARTO basemap key. It is public by design, because the browser
 # sends it with every tile request, so restrict it to the deployment's hosts
 # on CARTO's side. Empty leaves OpenFreeMap as the primary basemap.
