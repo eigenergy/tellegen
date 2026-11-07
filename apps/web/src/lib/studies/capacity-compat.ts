@@ -2,14 +2,7 @@ import type { CapacityPlanOutcomeJson, CapacityPlanSpecJson } from '@tellegen/sv
 import type { StudyBundle, StudyView } from '@tellegen/engine';
 import type { GoalDraft } from './workspace.svelte.js';
 
-export interface CapacityStudyBinding {
-	studyId: string;
-	revision: number;
-	proposal: string;
-	goal: string;
-	base: string;
-	state: string;
-}
+export type { CapacityStudyBinding } from '@tellegen/svelte/webmcp';
 
 export function capacityGoal(
 	spec: CapacityPlanSpecJson,

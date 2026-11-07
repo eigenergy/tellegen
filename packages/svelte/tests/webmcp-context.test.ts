@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Controller, Network, SolvableCase, StudyDisplaySnapshot } from '../src/lib/index.js';
 import { LocalCase } from '../src/lib/state.svelte.js';
 import { CaseSettings } from '../src/lib/settings.svelte.js';
-import { createTellegenWebMcpAdapter } from '../../../apps/web/src/lib/webmcp/tellegen-adapter.js';
+import { createTellegenWebMcpAdapter } from '../src/lib/webmcp.js';
 import type { PlanningActivityStore } from '../../../apps/web/src/lib/webmcp/planning-activity.svelte.js';
 import type { CaseSummary } from '@tellegen/engine';
 
-vi.mock('@tellegen/svelte', async () => ({
-	LocalCase: (await import('../src/lib/state.svelte.js')).LocalCase,
+vi.mock('@tellegen/engine', async (original) => ({
+	...(await original<typeof import('@tellegen/engine')>()),
 	FORMULATIONS: [{ id: 'dcopf' }, { id: 'acpf' }, { id: 'socwr', disabled: true }],
 	createStudy: vi.fn(() => {
 		throw new Error('Unexpected solve');
