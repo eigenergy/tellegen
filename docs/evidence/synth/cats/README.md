@@ -135,15 +135,17 @@ All runs use the request in `california.json` with the engine in this repository
   the pass rule at every seed, 41, 41 and 40 of 53: 35% of its sited buses stood in cells
   under 20,000 people against CATS's 18%, the Los Angeles to Modoc and Lassen ratio was
   8–10 against 42, and circuit-km at 66 and 115 kV ran 1.5–1.6 × CATS.
-- `osm/`: scored before the siting group existed, and not rescored, since its Overpass
-  document is not committed. **Passes**, 34 of the 40 metrics the map supports, with every critical check met
-  (DC OPF optimal; AC voltages 0.961–1.066 pu). Seven metrics are map-limited (below). It
-  fails on buses after series reduction (3,314 against at least 6,260), sites (2,834
+- `osm/`: **passes**, 40 of the 46 metrics the map supports, with every critical check met
+  (DC OPF optimal; AC voltages 0.960–1.024 pu). Seven metrics are map-limited (below). It
+  meets all six siting metrics: the mapped substations put 17.4% of the sited buses in
+  cells under 20,000 people (CATS 18.1%) and 37.0% in the ten most populous cells (35.0%),
+  with a Los Angeles to Modoc and Lassen ratio of 25 (42). It
+  fails on buses after series reduction (3,317 against at least 6,260), sites (2,835
   against at least 3,749, where the map has 3,948 substations of any kind), transformers per
-  site (0.38 against at most 0.20), mean degree (2.70 against at most 2.69), the degree
-  distribution (L1 0.69 against 0.20) and line density (Spearman 0.83 against 0.85, where
-  the map itself reaches 0.86). Over all 47 metrics, map-limited ones included, it passes
-  34 (72%).
+  site (0.39 against at most 0.20), mean degree (2.74 against at most 2.69), the degree
+  distribution (L1 0.70 against 0.20) and line density (Spearman 0.83 against 0.85, where
+  the map itself reaches 0.86). Over all 53 metrics, map-limited ones included, it passes
+  40 (75%).
 
 The OpenStreetMap document is MapToGrid's Overpass server's answer to the engine's query for
 California (`tellegen synth-overpass-queries`), `osm_base` 2026-10-26T01:00:03Z,
@@ -156,11 +158,11 @@ The seven map-limited metrics, with what the map holds:
 | --- | ---: | ---: | ---: |
 | Nameplate (GW) | 68.0 | at least 102.4 (1,194 plants tag no output) | 118.6 |
 | Fuel mix TVD | – | 0.18 | 0.18 |
-| Bus share at 66 kV | 0.651 | 0.451 | 0.422 |
-| Bus share at 115 kV | 0.225 | 0.298 | 0.291 |
-| Bus share at 230 kV | 0.113 | 0.224 | 0.254 |
-| Circuit-km at 66 kV | 20,391 | 11,454 | 13,871 |
-| Circuit-km at 230 kV | 13,352 | 21,979 | 23,936 |
+| Bus share at 66 kV | 0.651 | 0.451 | 0.424 |
+| Bus share at 115 kV | 0.225 | 0.298 | 0.292 |
+| Bus share at 230 kV | 0.113 | 0.224 | 0.251 |
+| Circuit-km at 66 kV | 20,391 | 11,454 | 14,092 |
+| Circuit-km at 230 kV | 13,352 | 21,979 | 23,492 |
 
 These are differences of data, not of the design:
 

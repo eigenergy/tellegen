@@ -11,8 +11,10 @@ all critical checks pass. The siting fill's floor and exponent then changed
 California scorecard were regenerated again; each sweep record names the
 executable it ran. 101 of the 105 country runs converge in band, and
 California, now scored on 53 metrics with the siting group, passes 49, 47
-and 47 of them. The prose below also preserves earlier experiments and
-their limitations.
+and 47 of them. OpenStreetMap California, rescored on the Overpass document
+`cats/README.md` names, keeps its 47 earlier values and passes 40 of the 46
+metrics its map supports. The prose below also preserves earlier
+experiments and their limitations.
 
 Generated grids, measured the same way as reference cases. `run.py` drives the
 native CLI (`tellegen generate`, `tellegen stats`), records the hashes of
