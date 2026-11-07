@@ -4,6 +4,13 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.6.2](https://github.com/eigenergy/tellegen/compare/v0.6.1...v0.6.2) - 2026-11-07
+
+### Changed
+
+- Preserve stable PowerIO builds and verify candidate compatibility (#347)
+- Qualify multiconductor OpenDSS snapshots behind the candidate feature (#317)
+
 ## [0.6.1](https://github.com/eigenergy/tellegen/compare/v0.6.0...v0.6.1) - 2026-11-07
 
 ### Added
