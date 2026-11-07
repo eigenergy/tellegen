@@ -1,12 +1,20 @@
 /** Collection acquisition has its own worker. Cancellation cannot destroy an
  * existing Study, and completed imports own independent portable modules. */
-import { isolatedEngineHost, type EngineHost } from "./host.js";
+import { engineHost, isolatedEngineHost, type EngineHost } from "./host.js";
 import type { EngineRequest, EngineValue } from "./protocol.js";
 import type { IngestedCase, IngestedDistCase } from "./index.js";
 
 export const MAX_COLLECTION_BYTES = 64 * 1024 * 1024;
 export const MAX_COLLECTION_FILES = 4096;
 const MAX_METADATA_BYTES = 1024 * 1024;
+
+export const COLLECTION_UNAVAILABLE =
+  "ZIP and folder imports are unavailable in this build. Open a single case file instead.";
+
+/** Query the compiled backend, rather than inferring support from package versions. */
+export async function collectionSupported(): Promise<boolean> {
+  return await engineHost().call({ op: "collection_supported" }) === "true";
+}
 
 export interface CollectionSelection {
   root?: string | null;

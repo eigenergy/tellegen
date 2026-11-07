@@ -42,6 +42,7 @@ pounce-nl = { workspace = true, optional = true }
 pounce-rs = { workspace = true, optional = true }
 
 [features]
+powerio-012 = []
 default = ["sensitivity", "mc-pf"]
 # The multiconductor fixed-point solver is deliberately independent of the
 # sensitivity feature, including in browser builds.

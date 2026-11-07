@@ -14,6 +14,8 @@ import {
 import type { EngineRequest, EngineValue } from "./protocol.js";
 export {
   BrowserCaseCollection,
+  collectionSupported,
+  COLLECTION_UNAVAILABLE,
   MAX_COLLECTION_BYTES,
   MAX_COLLECTION_FILES,
   type CollectionCandidate,

@@ -21,9 +21,19 @@ use tellegen::SolveResponse;
 
 mod alloc_stats;
 #[cfg(feature = "sensitivity")]
+#[cfg_attr(
+    not(feature = "powerio-collections"),
+    path = "collection_unavailable.rs"
+)]
 mod collection;
 #[cfg(feature = "sensitivity")]
 pub use collection::CaseCollection;
+
+/// Whether this build includes the bounded ZIP/folder acquisition backend.
+#[wasm_bindgen]
+pub fn collection_supported() -> bool {
+    cfg!(feature = "powerio-collections")
+}
 mod dist;
 mod geo;
 #[cfg(feature = "synth")]

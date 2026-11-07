@@ -7,7 +7,7 @@ use tellegen::ir::deserialize_module;
 
 /// Preserve the source-format restriction when a module arrives through a
 /// selected tree instead of the single-buffer entry point.
-#[cfg(feature = "sensitivity")]
+#[cfg(feature = "powerio-collections")]
 pub(crate) fn mark_raw_dss_restriction(
     module: PioModule<PioValue>,
 ) -> Result<PioModule<PioValue>, String> {

@@ -58,7 +58,7 @@
     "types": "node scripts/generate-types.mjs",
     "types:check": "node scripts/generate-types.mjs --check",
     "build": "npm run types:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
-    "wasm": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic,synth && node scripts/copy-synth-places.mjs",
+    "wasm": "node scripts/build-wasm.mjs",
     "check": "npm run types:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
     "test": "vitest run",
     "test:import": "node scripts/import-smoke.mjs",

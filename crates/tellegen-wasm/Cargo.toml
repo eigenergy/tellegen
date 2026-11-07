@@ -30,6 +30,7 @@ tellegen-synth = { path = "../tellegen-synth", optional = true }
 
 [features]
 default = []
+powerio-012 = ["tellegen/powerio-012"]
 # The multiconductor fixed-point PF and its raw BMOPF entry point.
 mc-pf = ["tellegen/mc-pf"]
 # Gates the `#[wasm_bindgen] Study` export and the dLMP/dd column in `solve_dc`.
@@ -40,6 +41,9 @@ conic = ["sensitivity", "mc-pf", "tellegen/conic"]
 # Synthetic grid generation sessions. The generator validates with the DC OPF
 # and the AC power flow, so it needs `sensitivity`.
 synth = ["sensitivity", "dep:tellegen-synth"]
+# Collection acquisition is a PowerIO 0.12 capability. Published 0.11 builds
+# retain standalone imports and expose an explicit unavailable capability.
+powerio-collections = ["sensitivity", "powerio-012"]
 
 [lints]
 workspace = true
