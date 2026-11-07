@@ -412,9 +412,12 @@ impl Study {
         request: &crate::settings::SettingsRequest,
     ) -> Result<Self, String> {
         let resolved = crate::settings::resolve(request)?;
-        let formulation: Problem =
-            serde_json::from_value(serde_json::Value::String(resolved.calculation))
-                .map_err(|e| e.to_string())?;
+        let formulation = resolved.calculation.problem().ok_or_else(|| {
+            format!(
+                "a Study runs a balanced formulation, not {}",
+                resolved.calculation
+            )
+        })?;
         Self::from_dynamic_module(
             crate::ir::deserialize_module(module_json)?,
             formulation,
@@ -1819,16 +1822,10 @@ fn apply_calculation_options(
     if options.is_empty() {
         return Ok(());
     }
-    let calculation = serde_json::to_value(req.formulation)
-        .map_err(|e| e.to_string())?
-        .as_str()
-        .ok_or("invalid calculation")?
-        .to_owned();
-    let resolved = crate::settings::resolve(&crate::settings::SettingsRequest {
-        calculation,
-        baseline: crate::settings::Options::new(),
-        overrides: options.clone(),
-    })?;
+    let resolved = crate::settings::resolve(
+        &crate::settings::SettingsRequest::new(req.formulation.into())
+            .with_overrides(options.clone()),
+    )?;
     match req.formulation {
         Problem::DcOpf => {
             req.limits = Some(

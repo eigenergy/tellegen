@@ -33,6 +33,7 @@ import {
 	browserWasmTransport,
 	resolveSettings,
 	settingsCatalog,
+	type Calculation,
 	type ResolvedSettings,
 	type SolveResponse,
 	applyDisplayGeo,
@@ -98,7 +99,12 @@ function acOpfSolveDetail(response: SolveResponse): string {
 		: 'POUNCE WASI';
 }
 
-function defaultCalculationSettings(calculation: string): ResolvedSettings {
+/** Whether this engine build knows `name` as a calculation. */
+function isCalculation(name: string): name is Calculation {
+	return settingsCatalog.calculations.some((c) => c.calculation === name);
+}
+
+function defaultCalculationSettings(calculation: Calculation): ResolvedSettings {
 	const descriptor = settingsCatalog.calculations.find((c) => c.calculation === calculation);
 	const effective = descriptor && 'defaults' in descriptor ? { ...descriptor.defaults } : {};
 	return {
@@ -2318,9 +2324,10 @@ export class Controller {
 		if (c.settings.revision !== expectedRevision)
 			throw new Error('Settings changed; inspect settings before retrying');
 		if (
-			c instanceof MulticonductorCase
+			!isCalculation(calculation) ||
+			(c instanceof MulticonductorCase
 				? calculation !== 'mc_ac_pf'
-				: !this.formulationAvailable(c, calculation as Formulation)
+				: !this.formulationAvailable(c, calculation as Formulation))
 		)
 			throw new Error('This calculation is unavailable for the selected case');
 		if (c instanceof LocalCase && c.declaredFormulation && calculation !== c.declaredFormulation)

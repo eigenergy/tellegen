@@ -9,31 +9,151 @@ use std::sync::{
 
 pub type Options = Map<String, Value>;
 
+/// A calculation the common settings API resolves and runs. Each variant's
+/// JSON name is the wire value every interface accepts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub enum Calculation {
+    #[serde(rename = "mc_ac_pf")]
+    McAcPf,
+    #[serde(rename = "dcopf")]
+    DcOpf,
+    #[serde(rename = "acpf")]
+    AcPf,
+    #[serde(rename = "dcpf")]
+    DcPf,
+    #[serde(rename = "socwr")]
+    Socwr,
+    #[serde(rename = "acopf")]
+    AcOpf,
+}
+
+impl Calculation {
+    /// Every calculation, in the order [`describe`] lists them.
+    const ALL: [Calculation; 6] = [
+        Calculation::McAcPf,
+        Calculation::DcOpf,
+        Calculation::AcPf,
+        Calculation::DcPf,
+        Calculation::Socwr,
+        Calculation::AcOpf,
+    ];
+
+    /// The wire name, e.g. `"mc_ac_pf"` or `"dcopf"`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Calculation::McAcPf => "mc_ac_pf",
+            Calculation::DcOpf => "dcopf",
+            Calculation::AcPf => "acpf",
+            Calculation::DcPf => "dcpf",
+            Calculation::Socwr => "socwr",
+            Calculation::AcOpf => "acopf",
+        }
+    }
+
+    /// The balanced formulation this calculation runs, if it is one.
+    #[cfg(feature = "sensitivity")]
+    pub(crate) fn problem(self) -> Option<crate::Problem> {
+        match self {
+            Calculation::McAcPf => None,
+            Calculation::DcOpf => Some(crate::Problem::DcOpf),
+            Calculation::AcPf => Some(crate::Problem::AcPf),
+            Calculation::DcPf => Some(crate::Problem::DcPf),
+            Calculation::Socwr => Some(crate::Problem::Socwr),
+            Calculation::AcOpf => Some(crate::Problem::Acopf),
+        }
+    }
+}
+
+impl std::fmt::Display for Calculation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for Calculation {
+    type Err = String;
+
+    fn from_str(name: &str) -> Result<Self, String> {
+        Calculation::ALL
+            .into_iter()
+            .find(|calculation| calculation.as_str() == name)
+            .ok_or_else(|| format!("unknown calculation {name:?}"))
+    }
+}
+
+impl From<crate::Problem> for Calculation {
+    fn from(problem: crate::Problem) -> Self {
+        match problem {
+            crate::Problem::DcPf => Calculation::DcPf,
+            crate::Problem::DcOpf => Calculation::DcOpf,
+            crate::Problem::AcPf => Calculation::AcPf,
+            crate::Problem::Socwr => Calculation::Socwr,
+            crate::Problem::Acopf => Calculation::AcOpf,
+        }
+    }
+}
+
+/// Which calculation to configure, and the option layers over its defaults.
+/// Build one with [`SettingsRequest::new`] and the `with_*` methods.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct SettingsRequest {
-    pub calculation: String,
+    pub calculation: Calculation,
+    /// Case or study defaults, applied over the engine defaults.
     #[serde(default)]
     pub baseline: Options,
+    /// The caller's explicit choices, applied last.
     #[serde(default)]
     pub overrides: Options,
 }
 
+impl SettingsRequest {
+    /// Engine defaults for `calculation`, with no baseline or overrides.
+    pub fn new(calculation: Calculation) -> Self {
+        Self {
+            calculation,
+            baseline: Options::new(),
+            overrides: Options::new(),
+        }
+    }
+
+    /// Replace the case or study baseline.
+    #[must_use]
+    pub fn with_baseline(mut self, baseline: Options) -> Self {
+        self.baseline = baseline;
+        self
+    }
+
+    /// Replace the explicit overrides.
+    #[must_use]
+    pub fn with_overrides(mut self, overrides: Options) -> Self {
+        self.overrides = overrides;
+        self
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct ResolvedSettings {
     pub version: u32,
-    pub calculation: String,
+    pub calculation: Calculation,
     pub engine_defaults: Options,
     pub baseline: Options,
     pub overrides: Options,
     pub effective: Options,
 }
 
+/// A stateless calculation over one input module. Build one with
+/// [`CalculationRequest::new`] and the `with_*` methods.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct CalculationRequest {
     pub module_json: String,
     pub settings: SettingsRequest,
@@ -44,29 +164,57 @@ pub struct CalculationRequest {
     pub edits: crate::Edits,
 }
 
+impl CalculationRequest {
+    /// Calculate `module_json` with `settings`, over every island and with no edits.
+    pub fn new(module_json: impl Into<String>, settings: SettingsRequest) -> Self {
+        Self {
+            module_json: module_json.into(),
+            settings,
+            energized_only: false,
+            edits: crate::Edits::default(),
+        }
+    }
+
+    /// Leave out islands with no source (multiconductor AC power flow only).
+    #[must_use]
+    pub fn with_energized_only(mut self, energized_only: bool) -> Self {
+        self.energized_only = energized_only;
+        self
+    }
+
+    /// Apply demand and rating edits before solving (balanced calculations only).
+    #[must_use]
+    pub fn with_edits(mut self, edits: crate::Edits) -> Self {
+        self.edits = edits;
+        self
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
 pub struct CalculationResult {
     pub settings: ResolvedSettings,
     pub result: Value,
 }
 
-fn defaults(calculation: &str) -> Result<Options, String> {
+fn defaults(calculation: Calculation) -> Result<Options, String> {
     let value = match calculation {
         #[cfg(feature = "mc-pf")]
-        "mc_ac_pf" => {
+        Calculation::McAcPf => {
             serde_json::to_value(crate::McPfOptions::default()).map_err(|e| e.to_string())?
         }
-        "dcopf" => {
+        Calculation::DcOpf => {
             serde_json::to_value(crate::LimitOptions::default()).map_err(|e| e.to_string())?
         }
-        "acpf" if cfg!(feature = "sensitivity") => json!({"start":"flat"}),
-        "dcpf" if cfg!(feature = "sensitivity") => json!({}),
-        "socwr" if cfg!(feature = "conic") => json!({}),
-        "acopf" if cfg!(feature = "acopf") => json!({}),
+        Calculation::AcPf if cfg!(feature = "sensitivity") => json!({"start":"flat"}),
+        Calculation::DcPf if cfg!(feature = "sensitivity") => json!({}),
+        Calculation::Socwr if cfg!(feature = "conic") => json!({}),
+        Calculation::AcOpf if cfg!(feature = "acopf") => json!({}),
         _ => {
             return Err(format!(
-                "calculation {calculation:?} is unavailable in this build"
+                "calculation {:?} is unavailable in this build",
+                calculation.as_str()
             ))
         }
     };
@@ -75,7 +223,7 @@ fn defaults(calculation: &str) -> Result<Options, String> {
         .cloned()
         .ok_or("settings defaults must be an object")?;
     // A disabled optional algorithm has an explicit value in the common API.
-    if calculation == "dcopf" {
+    if calculation == Calculation::DcOpf {
         options.insert("lazy".into(), Value::Null);
     }
     Ok(options)
@@ -84,7 +232,7 @@ fn defaults(calculation: &str) -> Result<Options, String> {
 /// Resolve defaults, case/study baseline, then explicit overrides. Each layer
 /// must itself be valid, so a later override cannot conceal corrupt saved data.
 pub fn resolve(request: &SettingsRequest) -> Result<ResolvedSettings, String> {
-    let engine_defaults = defaults(&request.calculation)?;
+    let engine_defaults = defaults(request.calculation)?;
     let merge = |base: &Options, layer: &Options| -> Result<Options, String> {
         let mut value = base.clone();
         for (key, item) in layer {
@@ -93,9 +241,9 @@ pub fn resolve(request: &SettingsRequest) -> Result<ResolvedSettings, String> {
             }
             value.insert(key.clone(), item.clone());
         }
-        validate(&request.calculation, &value)?;
+        validate(request.calculation, &value)?;
         // Materialize nested defaults too, e.g. a partial lazy-enforcement object.
-        if request.calculation == "dcopf" {
+        if request.calculation == Calculation::DcOpf {
             let typed: crate::LimitOptions =
                 serde_json::from_value(Value::Object(value)).map_err(|e| e.to_string())?;
             let mut normalized = serde_json::to_value(typed)
@@ -113,7 +261,7 @@ pub fn resolve(request: &SettingsRequest) -> Result<ResolvedSettings, String> {
     let effective = merge(&baseline, &request.overrides)?;
     Ok(ResolvedSettings {
         version: 1,
-        calculation: request.calculation.clone(),
+        calculation: request.calculation,
         engine_defaults,
         baseline,
         overrides: request.overrides.clone(),
@@ -121,11 +269,11 @@ pub fn resolve(request: &SettingsRequest) -> Result<ResolvedSettings, String> {
     })
 }
 
-fn validate(calculation: &str, options: &Options) -> Result<(), String> {
+fn validate(calculation: Calculation, options: &Options) -> Result<(), String> {
     let value = Value::Object(options.clone());
     match calculation {
         #[cfg(feature = "mc-pf")]
-        "mc_ac_pf" => {
+        Calculation::McAcPf => {
             let options: crate::McPfOptions =
                 serde_json::from_value(value).map_err(|e| e.to_string())?;
             if options.max_iterations > u32::MAX as usize {
@@ -133,7 +281,7 @@ fn validate(calculation: &str, options: &Options) -> Result<(), String> {
             }
             crate::mc_pf::validate_options(&options)
         }
-        "dcopf" => {
+        Calculation::DcOpf => {
             let options: crate::LimitOptions =
                 serde_json::from_value(value).map_err(|e| e.to_string())?;
             if let Some(lazy) = options.lazy {
@@ -150,9 +298,11 @@ fn validate(calculation: &str, options: &Options) -> Result<(), String> {
             }
             Ok(())
         }
-        "acpf" => serde_json::from_value::<crate::PowerFlowStart>(options["start"].clone())
-            .map(|_| ())
-            .map_err(|e| e.to_string()),
+        Calculation::AcPf => {
+            serde_json::from_value::<crate::PowerFlowStart>(options["start"].clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
         _ => Ok(()),
     }
 }
@@ -160,7 +310,7 @@ fn validate(calculation: &str, options: &Options) -> Result<(), String> {
 /// JSON descriptors carry the same keys/defaults as the typed solver options.
 /// Availability describes this binary, not another host's build features.
 pub fn describe() -> Value {
-    let calculations: Vec<Value> = ["mc_ac_pf", "dcopf", "acpf", "dcpf", "socwr", "acopf"].into_iter().map(|name| {
+    let calculations: Vec<Value> = Calculation::ALL.into_iter().map(|name| {
         match defaults(name) {
             Ok(options) => {
                 let fields: Vec<Value> = options.iter().map(|(key, default)| {
@@ -217,7 +367,7 @@ pub fn calculate(
     };
     check()?;
     let settings = resolve(&request.settings)?;
-    let result = if settings.calculation == "mc_ac_pf" {
+    let result = if settings.calculation == Calculation::McAcPf {
         #[cfg(feature = "mc-pf")]
         {
             if !request.edits.deltas.is_empty() || !request.edits.rates.is_empty() {
@@ -246,10 +396,10 @@ pub fn calculate(
             return Err("energized_only is supported only by mc_ac_pf".into());
         }
         let mut req = json!({"formulation":settings.calculation,"edits":request.edits});
-        if settings.calculation == "dcopf" {
+        if settings.calculation == Calculation::DcOpf {
             req["limits"] = Value::Object(settings.effective.clone());
         }
-        if settings.calculation == "acpf" {
+        if settings.calculation == Calculation::AcPf {
             req["start"] = settings.effective["start"].clone();
         }
         crate::api::solve_module_json_cancellable(
@@ -268,13 +418,66 @@ pub fn calculate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calculation_wire_names_are_unchanged() {
+        let names = ["mc_ac_pf", "dcopf", "acpf", "dcpf", "socwr", "acopf"];
+        assert_eq!(Calculation::ALL.len(), names.len());
+        for (calculation, name) in Calculation::ALL.into_iter().zip(names) {
+            assert_eq!(calculation.as_str(), name);
+            assert_eq!(calculation.to_string(), name);
+            assert_eq!(name.parse::<Calculation>().unwrap(), calculation);
+            assert_eq!(serde_json::to_value(calculation).unwrap(), json!(name));
+            assert_eq!(
+                serde_json::from_value::<Calculation>(json!(name)).unwrap(),
+                calculation
+            );
+        }
+        assert!("DCOPF".parse::<Calculation>().is_err());
+        assert!(serde_json::from_value::<SettingsRequest>(json!({"calculation":"opf"})).is_err());
+        // Requests still refuse fields they do not define.
+        assert!(serde_json::from_value::<SettingsRequest>(
+            json!({"calculation":"dcopf","overides":{}})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<CalculationRequest>(
+            json!({"module_json":"{}","settings":{"calculation":"dcopf"},"extra":1})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn builders_match_the_wire_form() {
+        let options: Options = serde_json::from_value(json!({"thermal":"rated"})).unwrap();
+        let built = CalculationRequest::new(
+            "{}",
+            SettingsRequest::new(Calculation::DcOpf)
+                .with_baseline(options.clone())
+                .with_overrides(options),
+        )
+        .with_energized_only(true)
+        .with_edits(serde_json::from_value(json!({"deltas":{"2":1.5}})).unwrap());
+        let parsed: CalculationRequest = serde_json::from_value(json!({
+            "module_json": "{}",
+            "settings": {"calculation":"dcopf","baseline":{"thermal":"rated"},"overrides":{"thermal":"rated"}},
+            "energized_only": true,
+            "edits": {"deltas":{"2":1.5}}
+        }))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&built).unwrap(),
+            serde_json::to_value(&parsed).unwrap()
+        );
+        let plain = CalculationRequest::new("{}", SettingsRequest::new(Calculation::AcPf));
+        assert!(!plain.energized_only);
+        assert!(plain.settings.baseline.is_empty() && plain.settings.overrides.is_empty());
+    }
+
     #[test]
     fn precedence_unknown_fields_and_cross_field_validation() {
-        let mut request = SettingsRequest {
-            calculation: "dcopf".into(),
-            baseline: serde_json::from_value(json!({"angle_difference":false})).unwrap(),
-            overrides: serde_json::from_value(json!({"thermal":"rated"})).unwrap(),
-        };
+        let mut request = SettingsRequest::new(Calculation::DcOpf)
+            .with_baseline(serde_json::from_value(json!({"angle_difference":false})).unwrap())
+            .with_overrides(serde_json::from_value(json!({"thermal":"rated"})).unwrap());
         let resolved = resolve(&request).unwrap();
         assert_eq!(resolved.effective["angle_difference"], false);
         assert_eq!(resolved.effective["thermal"], "rated");

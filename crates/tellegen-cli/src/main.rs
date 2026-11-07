@@ -140,11 +140,12 @@ fn main() -> ExitCode {
                     })
                     .transpose()?
                     .unwrap_or_default();
-                let resolved = tellegen::settings::resolve(&tellegen::settings::SettingsRequest {
-                    calculation: "mc_ac_pf".into(),
-                    baseline: Default::default(),
-                    overrides,
-                })?;
+                let resolved = tellegen::settings::resolve(
+                    &tellegen::settings::SettingsRequest::new(
+                        tellegen::settings::Calculation::McAcPf,
+                    )
+                    .with_overrides(overrides),
+                )?;
                 let options = serde_json::from_value(serde_json::Value::Object(resolved.effective))
                     .map_err(|e| e.to_string())?;
                 let input = read_stdin()?;

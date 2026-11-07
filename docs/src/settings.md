@@ -51,10 +51,16 @@ For an interactive Svelte host, `controller.inspectSettings(case)` reads next-ru
 ## Native and CLI
 
 ```rust,ignore
-let resolved = tellegen::settings::resolve(&settings_request)?;
-let result = tellegen::settings::calculate(&calculation_request, cancel_flag)?;
+use tellegen::settings::{Calculation, CalculationRequest, SettingsRequest};
+
+let settings = SettingsRequest::new(Calculation::McAcPf).with_overrides(overrides);
+let resolved = tellegen::settings::resolve(&settings)?;
+let request = CalculationRequest::new(module_json, settings).with_energized_only(true);
+let result = tellegen::settings::calculate(&request, cancel_flag)?;
 let catalog = tellegen::settings::describe();
 ```
+
+`Calculation` names a calculation; its JSON form is the wire name (`"mc_ac_pf"`, `"dcopf"`, `"acpf"`, `"dcpf"`, `"socwr"`, `"acopf"`), which `as_str`, `Display` and `FromStr` also use. The request and result types are `#[non_exhaustive]`, so build requests with `new` and the `with_*` methods.
 
 ```sh
 tellegen settings describe
@@ -62,6 +68,8 @@ printf '%s' '{"calculation":"mc_ac_pf","overrides":{"damping":0.8}}' | tellegen 
 tellegen calculate < calculation-request.json
 tellegen solve-mc '@pf-options.json' < case.pio.json
 ```
+
+`tellegen solve-mc` resolves its options through the same resolver, so an unknown option key is an error rather than being ignored.
 
 `tellegen describe` includes the settings catalog and calculation request schema. Existing solve commands remain available. A calculation request contains a `module_json` string, `settings`, optional balanced-network `edits`, and optional `energized_only` (multiconductor PF only). Multiconductor load edits belong in the input module.
 

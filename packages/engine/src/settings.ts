@@ -1,12 +1,14 @@
 import { engineHost, isolatedEngineHost } from "./host.js";
 import { assertEngineInputLength } from "./input-limit.js";
 import type {
+  Calculation,
   SettingsRequest,
   ResolvedSettings,
   CalculationRequest,
   CalculationResult,
 } from "./generated/settings-types.js";
 export type {
+  Calculation,
   SettingsRequest,
   ResolvedSettings,
   CalculationRequest,

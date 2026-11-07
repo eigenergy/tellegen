@@ -43,11 +43,10 @@ pub type PfOptions = tellegen::settings::Options;
 
 impl Metadata {
     fn validate(&self) -> Result<(), String> {
-        tellegen::settings::resolve(&tellegen::settings::SettingsRequest {
-            calculation: "mc_ac_pf".into(),
-            baseline: self.pf_options.clone(),
-            overrides: Default::default(),
-        })?;
+        tellegen::settings::resolve(
+            &tellegen::settings::SettingsRequest::new(tellegen::settings::Calculation::McAcPf)
+                .with_baseline(self.pf_options.clone()),
+        )?;
         if let Some(url) = &self.source_url {
             let uri: axum::http::Uri = url.parse().map_err(|_| "invalid source URL")?;
             if uri.scheme_str() != Some("https") || uri.host().is_none() {

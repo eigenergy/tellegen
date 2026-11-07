@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { createSettingsHttpClient } from "./settings.js";
+import { createSettingsHttpClient, type SettingsRequest } from "./settings.js";
 it("HTTP settings client sends explicit per-request settings and propagates cancellation and errors", async () => {
   const signal = new AbortController().signal;
   const fetcher = vi
@@ -15,7 +15,10 @@ it("HTTP settings client sends explicit per-request settings and propagates canc
       }),
     );
   const client = createSettingsHttpClient("/prefix/api/", fetcher);
-  const request = { calculation: "mc_ac_pf", overrides: { damping: 0.8 } };
+  const request: SettingsRequest = {
+    calculation: "mc_ac_pf",
+    overrides: { damping: 0.8 },
+  };
   expect(await client.resolve(request, signal)).toEqual({
     effective: { damping: 0.8 },
   });

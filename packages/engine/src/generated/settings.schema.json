@@ -203,8 +203,21 @@
   },
   "schema": {
     "$defs": {
+      "Calculation": {
+        "description": "A calculation the common settings API resolves and runs. Each variant's\nJSON name is the wire value every interface accepts.",
+        "enum": [
+          "mc_ac_pf",
+          "dcopf",
+          "acpf",
+          "dcpf",
+          "socwr",
+          "acopf"
+        ],
+        "type": "string"
+      },
       "CalculationRequest": {
         "additionalProperties": false,
+        "description": "A stateless calculation over one input module. Build one with\n[`CalculationRequest::new`] and the `with_*` methods.",
         "properties": {
           "edits": {
             "$ref": "#/$defs/Edits",
@@ -275,7 +288,7 @@
             "type": "object"
           },
           "calculation": {
-            "type": "string"
+            "$ref": "#/$defs/Calculation"
           },
           "effective": {
             "additionalProperties": true,
@@ -307,18 +320,21 @@
       },
       "SettingsRequest": {
         "additionalProperties": false,
+        "description": "Which calculation to configure, and the option layers over its defaults.\nBuild one with [`SettingsRequest::new`] and the `with_*` methods.",
         "properties": {
           "baseline": {
             "additionalProperties": true,
             "default": {},
+            "description": "Case or study defaults, applied over the engine defaults.",
             "type": "object"
           },
           "calculation": {
-            "type": "string"
+            "$ref": "#/$defs/Calculation"
           },
           "overrides": {
             "additionalProperties": true,
             "default": {},
+            "description": "The caller's explicit choices, applied last.",
             "type": "object"
           }
         },
@@ -352,5 +368,5 @@
     "title": "Contract",
     "type": "object"
   },
-  "x-rust-source-sha256": "abde09bad63f87bb9ef3623dfa80188a03d510898c1ce94eb5cb5206ef1dc3f5"
+  "x-rust-source-sha256": "aaf507ae8d7ab1065c575d7c0a2f01e313c87f2a91802772e488f448104a2733"
 }
