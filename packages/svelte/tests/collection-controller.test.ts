@@ -83,6 +83,8 @@ it('selecting or revealing an imported collection case does not start a calculat
 	try {
 		const [first, last] = app.localCases;
 		expect(first.formulation).toBe('acpf');
+		expect(ctrl.activeSolvable).toBe(last);
+		expect(last.network).not.toBeNull();
 		ctrl.activateLocal(first);
 		ctrl.activateLocal(last);
 		await ctrl.removeLocalCase(last);
