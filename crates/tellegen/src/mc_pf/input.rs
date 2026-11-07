@@ -781,10 +781,59 @@ pub fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), S
     }
 }
 
-fn validate_mc_network(network: &powerio_dist::MulticonductorNetwork) -> Result<(), String> {
-    if !network.untyped_objects().is_empty() {
-        let names = network
-            .untyped_objects()
+pub(super) fn validate_mc_network(
+    network: &powerio_dist::MulticonductorNetwork,
+) -> Result<(), String> {
+    #[cfg(feature = "powerio-012")]
+    powerio_dist::require_electrical_readiness(network).map_err(|e| e.to_string())?;
+    if !network.generators().is_empty() || !network.ibrs().is_empty() {
+        return Err(
+            "fixed-point MC PF does not yet support generator or IBR injections".to_owned(),
+        );
+    }
+    #[cfg(feature = "powerio-012")]
+    for source in network.sources() {
+        if source.reference_terminal.as_ref().is_some_and(|reference| {
+            !network.buses().iter().any(|bus| {
+                bus.id.eq_ignore_ascii_case(&source.bus) && bus.grounded.contains(reference)
+            })
+        }) {
+            return Err(format!(
+                "source `{}` has an unsupported floating reference-terminal voltage constraint",
+                source.name
+            ));
+        }
+    }
+    // These source-only definitions do not operate equipment in a fixed
+    // snapshot. Keep them and their diagnostics in the module. Active controls
+    // and unknown classes remain blocked, including relay/recloser actions.
+    const PASSIVE_DEFINITIONS: &[&str] = &[
+        "linecode",
+        "loadshape",
+        "tshape",
+        "priceshape",
+        "growthshape",
+        "spectrum",
+        "monitor",
+        "energymeter",
+        "sensor",
+        "wiredata",
+        "cndata",
+        "tsdata",
+        "linegeometry",
+        "linespacing",
+        "xfmrcode",
+    ];
+    let unsupported: Vec<_> = network
+        .untyped_objects()
+        .iter()
+        .filter(|object| {
+            !cfg!(feature = "powerio-012")
+                || !PASSIVE_DEFINITIONS.contains(&object.class.to_ascii_lowercase().as_str())
+        })
+        .collect();
+    if !unsupported.is_empty() {
+        let names = unsupported
             .iter()
             .map(|object| format!("{}.{}", object.class, object.name))
             .collect::<Vec<_>>();
@@ -802,6 +851,9 @@ fn validate_mc_network(network: &powerio_dist::MulticonductorNetwork) -> Result<
     // The DSS reader preserves source properties outside the typed ideal source
     // fields in extras. Permit only provenance values that do not change the
     // prescribed ideal voltage; finite source data must be normalized explicitly.
+    #[cfg(feature = "powerio-012")]
+    const SOURCE_METADATA: &[&str] = &["basekv", "angle", "pu", "basemva", "nominal_phase_kv"];
+    #[cfg(not(feature = "powerio-012"))]
     const SOURCE_METADATA: &[&str] = &["basekv", "angle", "pu"];
     for source in network.sources() {
         if let Some(key) = source
@@ -813,6 +865,23 @@ fn validate_mc_network(network: &powerio_dist::MulticonductorNetwork) -> Result<
                 "source {} retains unsupported property {}; finite source data must be normalized before MC Study mode",
                 source.name, key
             ));
+        }
+    }
+    for transformer in network.transformers() {
+        super::transformer::prepare_transformer(transformer).map_err(|e| e.to_string())?;
+    }
+    let index = super::network::NetworkIndex::new(network)?;
+    for load in network.loads() {
+        // The only legacy law that may infer its nominal voltage is constant
+        // power. Its inference stays in preparation; all explicit load laws
+        // can be checked without assembling or factoring a network matrix.
+        if !load.voltage_model.v_nom().is_empty()
+            || !matches!(
+                load.voltage_model,
+                powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
+            )
+        {
+            super::loads::prepare_load(load, &index, None)?;
         }
     }
     Ok(())
@@ -833,6 +902,9 @@ fn reject_lossy_diagnostics(module: &powerio::PioModule<PioValue>) -> Result<(),
                 || code.contains("MALFORMED")
                 || code.contains("FIELD_DROPPED")
                 || code.contains("RECORD_DROPPED")
+                || code.contains("REFERENCE_DROPPED")
+                || code.contains("UNRESOLVED")
+                || code == "READ.DSS.VALUE_DEFAULTED"
         })
         .map(|diagnostic| format!("{}: {}", diagnostic.code(), diagnostic.message()))
         .collect();

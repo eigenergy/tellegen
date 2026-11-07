@@ -142,7 +142,7 @@ async function writeConsumer(engineTarball, svelteTarball) {
   // `--legacy-peer-deps`, so nothing else would bring them in.
   const mapPeers = Object.fromEntries(
     Object.entries(sveltePackage.peerDependencies).filter(
-      ([name]) => name !== "svelte",
+      ([name]) => name !== "svelte" && !sveltePackage.peerDependenciesMeta?.[name]?.optional,
     ),
   );
 
@@ -460,9 +460,25 @@ try {
   await assertSveltePeer();
   await assertTypeScriptSupported();
   await assertTarballInstall();
+  if (await lstat(join(consumerDir, "node_modules/@tellegen/webmcp")).catch(() => null)) {
+    throw new Error("the normal viewer must install without the optional WebMCP peer");
+  }
   run("npm", ["run", "build"], { cwd: consumerDir });
   await assertBuildOutput();
   await assertDevServer();
+  // The opt-in entry point must also survive packing and resolve the host's one protocol copy.
+  const webmcpTarball = await packWorkspace("@tellegen/webmcp");
+  run("npm", ["install", webmcpTarball, "--no-save", "--ignore-scripts", "--legacy-peer-deps",
+    "--package-lock=false", "--no-audit", "--no-fund"], { cwd: consumerDir });
+  const mainPath = join(consumerDir, "src/main.ts");
+  await writeFile(mainPath, (await readFile(mainPath, "utf8")) + `
+import { createTellegenWebMcpAdapter } from "@tellegen/svelte/webmcp";
+import type { Controller } from "@tellegen/svelte";
+import type { TellegenWebMcpAdapter } from "@tellegen/webmcp";
+const adapterFactory: (controller: Controller) => TellegenWebMcpAdapter = createTellegenWebMcpAdapter;
+if (typeof adapterFactory !== "function") throw new Error("WebMCP adapter export is unavailable");
+`);
+  run("npm", ["run", "build"], { cwd: consumerDir });
 } finally {
   if (keepTmp) {
     console.log(`kept smoke test workspace at ${tmpRoot}`);

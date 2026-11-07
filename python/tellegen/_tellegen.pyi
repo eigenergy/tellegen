@@ -8,6 +8,15 @@ stale stub.
 
 from typing import Optional
 
+__all__ = [
+    "ENGINE_VERSION", "PANIC_CODE", "TellegenError", "TellegenInputError",
+    "TellegenSolveError", "__version__", "_classify", "capabilities_json",
+    "parse_case", "plan_capacity", "resolve_format", "solve_module",
+    "solve_module_to_solution", "study_create", "study_export", "study_import",
+    "study_inspect", "study_run",
+]
+"""Public names registered by the PyO3 module."""
+
 __version__: str
 """The binding crate's version, from CARGO_PKG_VERSION."""
 

@@ -29,9 +29,13 @@ import { powerIoEntry, solveEntry } from './log.svelte.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
+import { CollectionImport } from './collection-import.svelte.js';
+import { captureDrop, namedFiles } from './collection-files.js';
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
 	browserWasmTransport,
+	collectionSupported,
+	COLLECTION_UNAVAILABLE,
 	resolveSettings,
 	settingsCatalog,
 	type Calculation,
@@ -315,7 +319,8 @@ export class Controller {
 	serverComputeOff = false;
 	/** The optional EPL-bearing WASI asset is never inferred or bundled. */
 	private readonly acOpfWasmUrl: string | null;
-	private acOpfProbeStarted = false;
+	private acOpfProbe: Promise<boolean> | null = null;
+	acOpfLoading = $state(false);
 	private readonly acOpfProbeAbort = new AbortController();
 	private readonly acOpfSolves = new Map<SolvableCase, AbortController>();
 	acOpfAvailable = $state(false);
@@ -368,6 +373,36 @@ export class Controller {
 	// File reads and worker messages retain whole buffers. Admit one validated
 	// batch at a time so repeated drops cannot multiply the aggregate byte cap.
 	private readonly dropBatchGate = new DropBatchGate();
+	collectionsAvailable = $state(false);
+	private collectionProbe: Promise<boolean> | null = null;
+	probeCollections = (): Promise<boolean> => {
+		return (this.collectionProbe ??= collectionSupported()
+			.then((available) => {
+				if (!this.disposed) this.collectionsAvailable = available;
+				return available;
+			})
+			.catch(() => false));
+	};
+	private openCollection = async (read: Parameters<CollectionImport['start']>[0]) => {
+		if (!(await this.probeCollections())) throw new Error(COLLECTION_UNAVAILABLE);
+		if (!this.disposed) await this.collectionImport.start(read);
+	};
+	readonly collectionImport = new CollectionImport((label, result) => {
+		if (this.disposed) return;
+		if (result.kind === 'multiconductor') {
+			this.addMultiCase(label, result.payload, undefined, label);
+		} else {
+			const local = this.localFromBalancedPayload(label, {
+				...result.payload,
+				name: label
+			});
+			// Saved modules restore their calculation and overrides in LocalCase.
+			// Only a raw network without recorded settings defaults to power flow.
+			if (!result.payload.formulation && !local.settings.calculation) local.formulation = 'acpf';
+			this.placeTopologyAsDiagram(local);
+			this.addAndActivateLocal(local, { solve: false });
+		}
+	});
 	// Set by dispose(). Not $state; nothing renders it.
 	disposed = false;
 
@@ -441,20 +476,40 @@ export class Controller {
 		return !FORMULATIONS.find((entry) => entry.id === formulation)?.disabled;
 	}
 
-	probeAcOpf = () => {
-		if (this.disposed || this.acOpfProbeStarted || !this.acOpfWasmUrl) return;
-		this.acOpfProbeStarted = true;
-		void probeAcOpfWorker(this.acOpfWasmUrl, undefined, this.acOpfProbeAbort.signal).then(
-			(available) => {
-				if (this.disposed) return;
+	/** Whether this host supplied the optional solver asset. It loads only on request. */
+	get acOpfConfigured(): boolean {
+		return Boolean(this.acOpfWasmUrl);
+	}
+
+	/** Share one probe across the shell and embedded controls, and cancel it on disposal. */
+	loadAcOpf = (): Promise<boolean> => {
+		if (this.disposed || !this.acOpfWasmUrl) return Promise.resolve(false);
+		if (this.acOpfAvailable) return Promise.resolve(true);
+		if (this.acOpfProbe) return this.acOpfProbe;
+		this.acOpfLoading = true;
+		this.acOpfProbe = probeAcOpfWorker(this.acOpfWasmUrl, undefined, this.acOpfProbeAbort.signal)
+			.then((available) => {
+				if (this.disposed) return false;
 				this.acOpfAvailable = available;
-				// A declared instance can be dropped while the optional asset is probing.
-				const c = this.app.activeLocal;
-				if (available && c?.formulation === 'acopf' && !c.solving) {
-					this.maybeStartLocalSolve(c.id);
-				}
+				return available;
+			})
+			.catch(() => false)
+			.finally(() => {
+				this.acOpfLoading = false;
+				if (!this.acOpfAvailable) this.acOpfProbe = null;
+			});
+		return this.acOpfProbe;
+	};
+
+	probeAcOpf = () => {
+		void this.loadAcOpf().then((available) => {
+			if (this.disposed) return;
+			// A declared instance can be dropped while the optional asset is probing.
+			const c = this.app.activeLocal;
+			if (available && c?.formulation === 'acopf' && !c.solving) {
+				this.maybeStartLocalSolve(c.id);
 			}
-		);
+		});
 	};
 
 	caseExportUnavailableReason(c: SolvableCase): string | null {
@@ -575,7 +630,7 @@ export class Controller {
 		const c = this.app.localCases.find((lc) => lc.id === id);
 		if (!c?.studyInputJson || (!c.view && !c.diagram) || !c.summary) return;
 		c.network = this.localNetwork(c) ?? c.network ?? null;
-		if (c.network && !c.solution) this.runSolve(c, null);
+		if (c.autoSolve && c.network && !c.solution) this.runSolve(c, null);
 	}
 
 	// The case's Study, building it once for `(studyInputJson, formulation)` and rebuilding
@@ -697,6 +752,7 @@ export class Controller {
 	dispose() {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.collectionImport.close();
 		this.hostedLoadAbort?.abort();
 		this.hostedLoadAbort = null;
 		this.loadingHostedDistribution = null;
@@ -1290,7 +1346,8 @@ export class Controller {
 
 	/** Add a prepared local case, make it active, frame it (unless `frame` is
 	 * false) and start its browser solve. */
-	addAndActivateLocal = (c: LocalCase, options: { frame?: boolean } = {}) => {
+	addAndActivateLocal = (c: LocalCase, options: { frame?: boolean; solve?: boolean } = {}) => {
+		c.autoSolve = options.solve ?? true;
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
@@ -1301,6 +1358,8 @@ export class Controller {
 		if (c.diagram) this.app.placingLocalId = null;
 		if ((options.frame ?? true) && (c.view || c.diagram || c.substations))
 			this.app.requestFrame(c.id);
+		// Prepare the visible network even for import-only cases so settings and
+		// explicit calculations are available immediately. autoSolve gates work.
 		this.maybeStartLocalSolve(c.id);
 	};
 
@@ -2559,6 +2618,10 @@ export class Controller {
 	 * place those networks; a PowerWorld .pwd becomes a substation point
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
+		if (this.collectionImport.open) {
+			this.app.error = 'Finish or close the current collection before opening another';
+			return;
+		}
 		const release = this.dropBatchGate.enter();
 		if (!release) {
 			this.app.error = 'another file batch is still being parsed';
@@ -2572,12 +2635,60 @@ export class Controller {
 				this.app.error = errorText(e);
 				return;
 			}
-			await this.ingestFileBatch(list);
+			if (list.some((f) => /\.zip$/i.test(f.name) || !!f.webkitRelativePath)) {
+				await this.openCollection(async () => namedFiles(list));
+			} else if (
+				list.length > 1 &&
+				list.some((f) => /\.dss$/i.test(f.name)) &&
+				(await this.probeCollections())
+			) {
+				await this.openCollection(async () => namedFiles(list));
+			} else await this.ingestFileBatch(list);
 		} catch (e) {
 			this.app.error = errorText(e);
 		} finally {
 			this.app.parsingFile = false;
 			release();
+		}
+	};
+
+	/** Folder entries use collection-member limits, not the 32-upload picker cap. */
+	ingestFolder = async (files: FileList | File[]) => {
+		const release = this.dropBatchGate.enter();
+		if (!release) {
+			this.app.error = 'Another file batch is still being parsed';
+			return;
+		}
+		try {
+			await this.openCollection(async () => namedFiles(files));
+		} catch (error) {
+			this.app.error = errorText(error);
+		} finally {
+			release();
+		}
+	};
+
+	ingestDrop = (data: DataTransfer) => {
+		// Capture entry handles in the drop event before its protected data expires.
+		try {
+			const entries = Array.from(data.items).filter((item) => item.kind === 'file');
+			if (!entries.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+				void this.ingestFiles(data.files);
+				return;
+			}
+			const read = captureDrop(data);
+			const release = this.dropBatchGate.enter();
+			if (!release) {
+				this.app.error = 'Another file batch is still being parsed';
+				return;
+			}
+			void this.openCollection(read)
+				.catch((error) => {
+					this.app.error = errorText(error);
+				})
+				.finally(release);
+		} catch (error) {
+			this.app.error = errorText(error);
 		}
 	};
 
@@ -2909,9 +3020,11 @@ export class Controller {
 			id: string;
 			name: string;
 			distribution?: MulticonductorCase['distribution'];
-		}
+		},
+		labelOverride?: string
 	) {
 		if (!hosted) this.hostedLoadAbort?.abort();
+
 		const {
 			graph,
 			input,
@@ -2919,7 +3032,8 @@ export class Controller {
 		}: Pick<IngestedDistCase, 'graph' | 'input'> & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
-			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+			labelOverride ??
+			(summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, ''));
 		const view =
 			coordsKind === 'geographic'
 				? buildGeographicView(graph, payload.geo_layer)

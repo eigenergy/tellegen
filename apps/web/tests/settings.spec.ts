@@ -65,7 +65,7 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await panel.getByLabel('Maximum iterations', { exact: true }).fill('150');
-	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeDisabled();
+	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await panel.getByRole('button', { name: 'Apply settings', exact: true }).click();
 	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await expect(page.getByRole('region', { name: 'AC power flow results' })).toHaveCount(0);
@@ -113,7 +113,7 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
-test('changing formulation applies without solving and an explicit run accepts the new retained Study', async ({
+test('an explicit run applies the calculation draft and agent edits retain its options', async ({
 	page
 }) => {
 	await page.locator('header input[type=file]').setInputFiles([
@@ -126,7 +126,6 @@ test('changing formulation applies without solving and an explicit run accepts t
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
 	await panel.getByRole('combobox', { name: 'Initial voltages', exact: true }).selectOption('case');
-	await panel.getByRole('button', { name: 'Apply settings', exact: true }).click();
 	await expect(result).toContainText('DC OPF');
 	await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
 	await expect(result).toContainText('AC power flow', { timeout: 60000 });
@@ -134,6 +133,21 @@ test('changing formulation applies without solving and an explicit run accepts t
 	expect(inspected.ok).toBe(true);
 	expect(inspected.data.accepted_calculation).toBe('acpf');
 	expect(inspected.data.accepted).toEqual({ start: 'case' });
+	const current = await tool(page, 'inspect_case');
+	const updated = await tool(page, 'update_case', {
+		case_id: current.data.case_id,
+		expected_revision: current.data.revision,
+		demand: [{ bus_id: 'bus:2', delta_mw: 1 }]
+	});
+	expect(updated.ok).toBe(true);
+	expect((await tool(page, 'inspect_settings')).data.accepted).toEqual({ start: 'case' });
+	const edited = await tool(page, 'inspect_case');
+	const reset = await tool(page, 'reset_case', {
+		case_id: edited.data.case_id,
+		expected_revision: edited.data.revision
+	});
+	expect(reset.ok).toBe(true);
+	expect((await tool(page, 'inspect_settings')).data.accepted).toEqual({ start: 'case' });
 });
 
 test('partial lazy options agree with accepted settings and remain clean when switching drafts', async ({

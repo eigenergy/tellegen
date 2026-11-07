@@ -368,6 +368,9 @@ test('pending formulation settings preserve displayed-case inspection until an e
 		}
 	]);
 	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	// The card names the calculation while its import solve is still running.
+	// Race a permitted settings change with inspection, not a synthetic event on a disabled control.
+	await expect(page.locator('#formulation-select')).toBeEnabled();
 
 	const raced = await page.evaluate(async () => {
 		const harness = (

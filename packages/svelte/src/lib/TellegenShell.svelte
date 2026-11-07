@@ -5,6 +5,7 @@
 	import AppHeader from './components/AppHeader.svelte';
 	import ControlPanel from './components/ControlPanel.svelte';
 	import DropZone from './components/DropZone.svelte';
+	import CollectionChooser from './components/CollectionChooser.svelte';
 	import PlacementCue from './components/PlacementCue.svelte';
 	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
 	import SolveCard from './components/SolveCard.svelte';
@@ -87,7 +88,7 @@
 		e.preventDefault();
 		dragDepth = 0;
 		app.dragOver = false;
-		if (e.dataTransfer) ctrl.ingestFiles(e.dataTransfer.files);
+		if (e.dataTransfer) ctrl.ingestDrop(e.dataTransfer);
 	}
 </script>
 
@@ -102,6 +103,7 @@
 />
 
 <ShellEnvironment />
+<CollectionChooser />
 
 <main>
 	<TellegenMap

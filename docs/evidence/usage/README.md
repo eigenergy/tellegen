@@ -54,17 +54,20 @@ sample of visitor outcomes. Automated headless requests were not included in
 the observed counts. Event-property requests use the Cloud API's `event` filter
 ([API changelog](https://docs.umami.is/docs/cloud/changelog)).
 
-The [November 7 transport check](2026-11-07-transport-check.json) received five
-HTTP 200 responses from the production gateway, each with Umami's explicit
-`{"beep":"boop"}` bot-filter reply. These responses confirm working transport
-and intentional headless-browser exclusion; they do not acknowledge recorded
-sessions. The aggregate readback remained unchanged after the checks. See
-Umami's [bot-check setting](https://docs.umami.is/docs/environment-variables#disable_bot_check)
+Production checks on 7 November completed Portugal generation with DC OPF
+optimal and AC power flow converged. A separate normal browser session also
+completed without collector errors. The [later transport check](2026-11-07-transport-check.json)
+received five HTTP 200 responses from the production gateway, each with
+Umami's explicit `{"beep":"boop"}` bot-filter reply. These responses confirm
+working transport and intentional headless-browser exclusion; they do not
+acknowledge recorded sessions. The aggregate readback remained unchanged after
+the checks. See Umami's [bot-check setting](https://docs.umami.is/docs/environment-variables#disable_bot_check)
 and [send handler](https://github.com/umami-software/umami/blob/master/src/app/api/send/route.ts).
 Only that test process used an independently verified public DNS address for
-the gateway because its local VPN resolver returned NXDOMAIN. System DNS was
-unchanged. The monthly snapshot below remains the original release-validation
-record, and neither check establishes organic visitor growth.
+the gateway because its local VPN resolver returned NXDOMAIN. System DNS and
+the site's privacy behavior were unchanged. The monthly snapshot below is
+retained unchanged by this transport check. These checks do not establish
+organic visitor growth.
 
 <!-- usage:start -->
 
@@ -73,7 +76,7 @@ Last pull: 2026-11 (2026-11-07).
 | Site | Visitors | Page views | Top events |
 | --- | ---: | ---: | --- |
 | maptogrid.com | 1 | 1 | engine.load 1, generate.start 1, generate.finish 1, agent.availability 1 |
-| tellegen.dev | 87 | 216 | calculation.solve 380, case.select 333, view.change 285, agent.availability 212, case.import 77 |
+| tellegen.dev | 90 | 222 | calculation.solve 386, case.select 339, view.change 291, agent.availability 218, case.import 77 |
 
 Grids generated on maptogrid.com, by country (trusted = every check and published range met):
 

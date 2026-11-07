@@ -58,7 +58,12 @@
       "development": "./dist/maplibre-worker.dev.js",
       "default": "./dist/maplibre-worker.js"
     },
-    "./styles.css": "./dist/styles.css"
+    "./styles.css": "./dist/styles.css",
+    "./webmcp": {
+      "types": "./dist/webmcp.d.ts",
+      "svelte": "./dist/webmcp.js",
+      "default": "./dist/webmcp.js"
+    }
   },
   "scripts": {
     "build": "svelte-package",
@@ -74,7 +79,8 @@
     "@deck.gl/layers": "^9.4.0",
     "@deck.gl/maplibre": "^9.4.0",
     "maplibre-gl": "^6.15.0",
-    "svelte": ">=5.30 <6"
+    "svelte": ">=5.30 <6",
+    "@tellegen/webmcp": "^0.2.0"
   },
   "devDependencies": {
     "@deck.gl/core": "^9.4.1",
@@ -88,5 +94,10 @@
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "^5.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@tellegen/webmcp": {
+      "optional": true
+    }
   }
 }

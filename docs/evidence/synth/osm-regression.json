@@ -1,0 +1,130 @@
+{
+  "engine_revision": "9e5e0b5f07e4438ebd393707e71dbedb2dd2f138",
+  "wasm_sha256": "b78cb2438d6aada612fd072bb07ad2c51822d05719dd16320f502a593faf40c2",
+  "node": "v26.13.0",
+  "platform": "darwin/arm64",
+  "measured_at": "2026-11-07T19:30:24.580Z",
+  "note": "Single measurements under concurrent workstation load; timings are provenance, not a speed comparison. Mapped routes/voltages are retained; reinforcement is explicitly synthetic.",
+  "fixtures": [
+    {
+      "country": "new-zealand",
+      "request_sha256": "27ee7c2766b958a0bc438b50c46a8418155a2ee518ae20196d9efeae4902dcdc",
+      "compressed_osm_sha256": "01d54e90ccd126ee36d3ab6409506a9349e0522603e73051be595e3f794f9530",
+      "osm_base": "2026-10-26T01:00:03Z"
+    },
+    {
+      "country": "portugal",
+      "request_sha256": "1230f237138e9d78c914cd5c25492a96266efd7d583516260890b3f606ee3451",
+      "compressed_osm_sha256": "2177d133d44ef71feaaaf10b938c681df0e435d309731fe87e6c2bd1135e862d",
+      "osm_base": "2026-11-02T00:59:53Z"
+    }
+  ],
+  "mapped_only": [
+    {
+      "country": "new-zealand",
+      "seed": 2026,
+      "demand_mw": 6531.028789632986,
+      "dc_opf": "infeasible",
+      "ac_pf": "not_converged"
+    },
+    {
+      "country": "portugal",
+      "seed": 2026,
+      "demand_mw": 8250.982518396087,
+      "dc_opf": "infeasible",
+      "ac_pf": "not_converged"
+    }
+  ],
+  "runs": [
+    {
+      "country": "new-zealand",
+      "seed": 1,
+      "demand_mw": 6531.028789632992,
+      "buses": 417,
+      "branches": 832,
+      "dc_opf": "optimal",
+      "ac_pf": "converged",
+      "exported_ac_pf": "feasible",
+      "vm_min": 1.01245788754566,
+      "vm_max": 1.0219840242347187,
+      "longest_inferred_connection_km": 67.25,
+      "generation_ms": 572,
+      "synthetic_reinforcement": true
+    },
+    {
+      "country": "new-zealand",
+      "seed": 7,
+      "demand_mw": 6531.028789632995,
+      "buses": 417,
+      "branches": 842,
+      "dc_opf": "optimal",
+      "ac_pf": "converged",
+      "exported_ac_pf": "feasible",
+      "vm_min": 1.012457831415849,
+      "vm_max": 1.0219870433154021,
+      "longest_inferred_connection_km": 67.25,
+      "generation_ms": 664,
+      "synthetic_reinforcement": true
+    },
+    {
+      "country": "new-zealand",
+      "seed": 2026,
+      "demand_mw": 6531.028789632986,
+      "buses": 417,
+      "branches": 842,
+      "dc_opf": "optimal",
+      "ac_pf": "converged",
+      "exported_ac_pf": "feasible",
+      "vm_min": 1.012890916112729,
+      "vm_max": 1.0220971486453223,
+      "longest_inferred_connection_km": 67.25,
+      "generation_ms": 620,
+      "synthetic_reinforcement": true
+    },
+    {
+      "country": "portugal",
+      "seed": 1,
+      "demand_mw": 8250.982518396095,
+      "buses": 2660,
+      "branches": 3078,
+      "dc_opf": "optimal",
+      "ac_pf": "converged",
+      "exported_ac_pf": "feasible",
+      "vm_min": 0.990874509760373,
+      "vm_max": 1.0387702463385269,
+      "longest_inferred_connection_km": 21.317,
+      "generation_ms": 2457,
+      "synthetic_reinforcement": true
+    },
+    {
+      "country": "portugal",
+      "seed": 7,
+      "demand_mw": 8250.982518396082,
+      "buses": 2660,
+      "branches": 3075,
+      "dc_opf": "optimal",
+      "ac_pf": "converged",
+      "exported_ac_pf": "feasible",
+      "vm_min": 0.9917391816900738,
+      "vm_max": 1.0399568861791493,
+      "longest_inferred_connection_km": 21.317,
+      "generation_ms": 2274,
+      "synthetic_reinforcement": true
+    },
+    {
+      "country": "portugal",
+      "seed": 2026,
+      "demand_mw": 8250.982518396087,
+      "buses": 2660,
+      "branches": 3079,
+      "dc_opf": "optimal",
+      "ac_pf": "converged",
+      "exported_ac_pf": "feasible",
+      "vm_min": 0.9898802706440338,
+      "vm_max": 1.0388943615148345,
+      "longest_inferred_connection_km": 21.317,
+      "generation_ms": 2290,
+      "synthetic_reinforcement": true
+    }
+  ]
+}

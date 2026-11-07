@@ -1,17 +1,22 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { getAppState } from '../context.svelte.js';
+	import { getAppState, getController } from '../context.svelte.js';
 
 	/** Optional host content rendered under the drop prompt. */
 	let { children }: { children?: Snippet } = $props();
 
 	const app = getAppState();
+	const ctrl = getController();
 </script>
 
 {#if app.dragOver}
 	<div class="dropzone" aria-hidden="true">
 		<div class="dropframe">
-			<p>Drop case or geographic files</p>
+			<p>
+				{ctrl.collectionsAvailable
+					? 'Drop case files, ZIPs, folders or geographic files'
+					: 'Drop case or geographic files'}
+			</p>
 			{#if children}<div class="note">{@render children()}</div>{/if}
 		</div>
 	</div>

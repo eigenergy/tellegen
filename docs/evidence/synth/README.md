@@ -309,3 +309,38 @@ it solves; dropping restarts belongs with the AC warm start in tellegen
   plan still sizes fixed shunts at the planning dispatch, while validation
   runs at the DC OPF's, so a run whose two dispatches differ widely can fail
   to converge rather than leave the band.
+
+
+## Offline OpenStreetMap country regressions
+
+The [country evidence](osm-regression.json) reruns the committed public New
+Zealand and Portugal Overpass fixtures at seeds 1, 7, and 2026. Every run keeps
+the full modelled demand, reaches an optimal DC OPF, and independently solves
+the exported module's AC power flow within 0.95–1.05 pu. These complement the
+[California OSM scorecard](cats/osm/scorecard.md).
+
+| Country | Buses | Demand (MW) | Seeds | Exported AC voltage range (pu) |
+| --- | ---: | ---: | --- | --- |
+| New Zealand | 417 | 6,531.0 | 1, 7, 2026 | 1.012–1.022 |
+| Portugal | 2,660 | 8,251.0 | 1, 7, 2026 | 0.990–1.040 |
+
+The mapped-only mode remains available with `osm.reinforce: false`; its seed
+2026 outcomes are recorded alongside the reinforced runs. A feasible reinforced
+model includes explicitly synthetic circuits, condensers, and shunts. It does
+not establish that the surveyed grid has those additions or that every country
+will pass. Untagged plant estimates use the region's tagged median for the same
+fuel when enough examples exist, with the documented bounded demand-based
+fallback otherwise. They remain estimates, not observed capacities.
+
+To reproduce after `npm run wasm`:
+
+```sh
+node docs/evidence/synth/osm-regression.mjs
+```
+
+The script accepts an alternative engine checkout and its build revision as
+positional arguments when reusing a verified WASM build. It records the binary
+and fixture SHA-256 hashes, OpenStreetMap timestamps, runtime, and full demand
+checks. The recorded build uses published PowerIO 0.11.9. Durations are single
+measurements under concurrent workstation load; they are not a speed comparison
+or the generated-grid hand-off benchmark tracked separately.

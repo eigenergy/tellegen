@@ -4,7 +4,7 @@ name = "tellegen-py"
 # mean the same solver. release-plz does not touch this crate; the crate release
 # workflow sets this version and its Cargo.lock entry to the engine's after
 # release-plz updates it (.github/scripts/sync_python_version.py).
-version = "0.6.1"
+version = "0.6.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -20,6 +20,7 @@ crate-type = ["cdylib"]
 # never link libpython. maturin turns it on through pyproject's
 # `[tool.maturin] features`.
 default = []
+powerio-012 = ["tellegen/powerio-012"]
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]

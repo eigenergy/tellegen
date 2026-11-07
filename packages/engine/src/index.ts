@@ -13,6 +13,19 @@ import {
 } from "./host.js";
 import type { EngineRequest, EngineValue } from "./protocol.js";
 export {
+  BrowserCaseCollection,
+  collectionSupported,
+  COLLECTION_UNAVAILABLE,
+  MAX_COLLECTION_BYTES,
+  MAX_COLLECTION_FILES,
+  type CollectionCandidate,
+  type CollectionEntry,
+  type CollectionFile,
+  type CollectionInspection,
+  type CollectionSelection,
+  type ImportedCollectionCase,
+} from "./collection.js";
+export {
   probeAcOpfWorker,
   solveAcOpfModule,
   type AcOpfWorkerFactory,
@@ -897,7 +910,8 @@ export interface McPfOptions {
   /** Nonnegative dimensionless KCL tolerance; default 1e-5. I_scale is the
    * larger of summed incident-current magnitudes and net load-current magnitude. */
   relative_kcl_tolerance?: number;
-  /** Apply the OpenDSS-style bounded-voltage load envelope; default true.
+  /** Apply the legacy OpenDSS-style envelope to unbounded laws; default true.
+   * Explicit source bounds, cutoff and current limits always take precedence.
    * False uses original load equations at every voltage. Thresholds must still
    * satisfy 0 < v_low_pu < v_min_pu < v_max_pu when the envelope is disabled. */
   voltage_envelope?: boolean;
@@ -1315,6 +1329,7 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
     value === null ||
     typeof value !== "object" ||
     value instanceof Float64Array ||
+    value instanceof Uint8Array ||
     value.kind !== "mc_pf_result_buffers"
   ) {
     throw new Error("engine returned no result tables");
@@ -2563,6 +2578,7 @@ function expectSynthPreview(value: EngineValue): SynthPreview {
     value === null ||
     typeof value !== "object" ||
     value instanceof Float64Array ||
+    value instanceof Uint8Array ||
     value.kind !== "synth_preview"
   ) {
     throw new Error("engine returned no synthetic preview");

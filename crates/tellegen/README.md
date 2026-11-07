@@ -111,6 +111,16 @@ cargo test                          # native, with sensitivities (default featur
 cargo build --no-default-features   # solve only, no faer (smaller wasm core)
 ```
 
+For all shipping numerical paths on PowerIO 0.11.9:
+
+```sh
+cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
+```
+
+The `powerio-012` feature is a version bridge for builds explicitly selecting
+PowerIO 0.12 dependencies. It is not part of a published 0.11 build; use the
+shipping feature list above instead of `--all-features`.
+
 ## Citing
 
 If you use this crate in published work, please cite the tellegen paper:

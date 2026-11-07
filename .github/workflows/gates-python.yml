@@ -16,6 +16,10 @@ on:
         description: Build the macOS wheel legs.
         type: boolean
         default: true
+      source_ref:
+        description: Immutable source revision selected by a release caller.
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -52,6 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
       # The wheel's version is read from crates/tellegen-py/Cargo.toml, which
@@ -99,6 +104,12 @@ jobs:
 
       - name: Type-check
         run: python -m mypy python/tellegen
+
+      - name: Check installed extension against its type stubs
+        run: |
+          cd "${RUNNER_TEMP}"
+          python -m mypy.stubtest tellegen._tellegen \
+            --mypy-config-file "${GITHUB_WORKSPACE}/mypy.ini"
 
       # From a directory the repo tree cannot shadow. `python/tellegen` has no
       # compiled extension in it, so importing from the checkout root would fail
@@ -163,6 +174,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -204,10 +216,8 @@ jobs:
           name: wheel-${{ matrix.leg.os }}-${{ matrix.leg.target }}
           path: dist/*.whl
 
-  # Built for inspection, not for release. maturin's sdist carries path
-  # dependencies, so this one contains the whole workspace including
-  # crates/tellegen/tests/data — whose BSD-3 fixtures are an open licensing
-  # question before anything is published (see the design doc, Q7).
+  # Validate the exact source distribution users will receive, then build a
+  # wheel from it to prove the fixture exclusions preserve the build inputs.
   sdist:
     runs-on: ubuntu-latest
     permissions:
@@ -215,14 +225,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_ref }}
           persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Build sdist
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           command: sdist
           args: --out dist
-      - name: List what the sdist carries
-        run: tar -tzf dist/*.tar.gz | sed 's|^[^/]*/||' | sort | head -60
+      - name: Verify the source distribution
+        run: python3 scripts/check-python-sdist.py dist/*.tar.gz
+      - name: Build and smoke-test the source distribution
+        run: |
+          python -m pip install dist/*.tar.gz
+          cp docs/evidence/studies/case3.m "${RUNNER_TEMP}/case3.m"
+          cd "${RUNNER_TEMP}"
+          python - <<'PY'
+          import tellegen
+          solution = tellegen.load("case3.m").solve()
+          assert solution["status"] == "optimal", solution
+          assert abs(solution["objective"] - 626.9487) < 1e-3, solution
+          print("source distribution solves case3", tellegen.versions())
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdist

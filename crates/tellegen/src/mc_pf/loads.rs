@@ -5,6 +5,9 @@ use powerio_dist::{Configuration, DistLoad, DistLoadVoltageModel};
 
 #[derive(Clone, Debug)]
 pub(crate) enum BranchVoltageModel {
+    /// The typed law owns its bounds; legacy solver envelope options do not replace them.
+    #[cfg(feature = "powerio-012")]
+    Bounded(DistLoadVoltageModel),
     ConstantPower,
     ConstantCurrent,
     ConstantImpedance,
@@ -88,10 +91,11 @@ impl BranchLoad {
         // Evaluate the radial current equations. Dividing by |U| and
         // multiplying by the unit phasor avoids forming U*conjugate(U), which
         // underflows for a perfectly valid tiny nonzero voltage.
-        let current = if options.voltage_envelope {
-            self.enveloped_current(branch, u, magnitude, options)
-        } else {
-            self.current_at_voltage(branch, u, magnitude)
+        let current = match &self.model {
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => self.bounded_current(branch, u, magnitude)?,
+            _ if options.voltage_envelope => self.enveloped_current(branch, u, magnitude, options),
+            _ => self.current_at_voltage(branch, u, magnitude),
         };
         if !current.re.is_finite() || !current.im.is_finite() {
             return Err(format!(
@@ -152,6 +156,8 @@ impl BranchLoad {
         let s = self.power[branch];
         let ratio = magnitude / self.nominal_voltage(branch);
         match &self.model {
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => unreachable!("bounded laws use bounded_current"),
             BranchVoltageModel::ConstantPower => s.conj() * (phase / magnitude),
             BranchVoltageModel::ConstantCurrent => {
                 s.conj() * (phase / self.nominal_voltage(branch))
@@ -209,6 +215,44 @@ impl BranchLoad {
         }
     }
 
+    #[cfg(feature = "powerio-012")]
+    fn bounded_current(
+        &self,
+        branch: usize,
+        u: Complex64,
+        magnitude: f64,
+    ) -> Result<Complex64, String> {
+        let BranchVoltageModel::Bounded(model) = &self.model else {
+            unreachable!()
+        };
+        let ratio = magnitude / self.nominal_voltage(branch);
+        // The low-voltage continuation is linear in U. Evaluate it directly
+        // so squaring a subnormal voltage cannot erase a representable current.
+        match model {
+            DistLoadVoltageModel::BoundedZip { v_low_pu, .. }
+            | DistLoadVoltageModel::BoundedExponential { v_low_pu, .. }
+                if ratio <= *v_low_pu =>
+            {
+                return Ok(self.nominal_admittance[branch] * u)
+            }
+            DistLoadVoltageModel::BoundedConstantPower {
+                v_min_pu,
+                current_limit_pu,
+                ..
+            } if ratio <= *v_min_pu
+                && current_limit_pu.is_none_or(|limit| ratio / v_min_pu.powi(2) <= limit) =>
+            {
+                return Ok(self.nominal_admittance[branch] / v_min_pu.powi(2) * u);
+            }
+            _ => {}
+        }
+        let [p, q] = model
+            .power_scale(branch, magnitude)
+            .map_err(|error| format!("load `{}` branch {branch}: {error}", self.name))?;
+        let power = self.power[branch];
+        Ok((u / magnitude) * Complex64::new(power.re * p / magnitude, -power.im * q / magnitude))
+    }
+
     fn nominal_voltage(&self, branch: usize) -> f64 {
         self.nominal_voltage[branch]
     }
@@ -219,6 +263,8 @@ impl BranchLoad {
         }
         let s = self.power[branch];
         match &self.model {
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => true,
             BranchVoltageModel::ConstantImpedance => true,
             BranchVoltageModel::ConstantPower | BranchVoltageModel::ConstantCurrent => {
                 s.norm() == 0.0
@@ -247,6 +293,8 @@ impl BranchLoad {
     fn near_zero_law_is_safe(&self, branch: usize) -> bool {
         let s = self.power[branch];
         match &self.model {
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => true,
             BranchVoltageModel::ConstantImpedance => true,
             BranchVoltageModel::ConstantCurrent => true,
             BranchVoltageModel::Zip {
@@ -443,6 +491,12 @@ pub(crate) fn prepare_load(
             gamma_p: coefficients(&load.name, "gamma_p", gamma_p, load.p_nom.len())?,
             gamma_q: coefficients(&load.name, "gamma_q", gamma_q, load.p_nom.len())?,
         },
+        #[cfg(feature = "powerio-012")]
+        DistLoadVoltageModel::BoundedZip { .. }
+        | DistLoadVoltageModel::BoundedExponential { .. }
+        | DistLoadVoltageModel::BoundedConstantPower { .. } => {
+            BranchVoltageModel::Bounded(prepare_bounded_model(load, &vnom)?)
+        }
         _ => {
             return Err(format!(
                 "load `{}` uses an unsupported voltage model",
@@ -460,6 +514,83 @@ pub(crate) fn prepare_load(
         nominal_voltage: vnom,
         model,
     })
+}
+
+/// Expand the public one-or-per-branch convention before calling PowerIO's
+/// per-branch evaluator. Validation is independent of the operating voltage.
+#[cfg(feature = "powerio-012")]
+fn prepare_bounded_model(load: &DistLoad, vnom: &[f64]) -> Result<DistLoadVoltageModel, String> {
+    let mut model = load.voltage_model.clone();
+    match &mut model {
+        DistLoadVoltageModel::BoundedZip {
+            v_nom,
+            alpha_z,
+            alpha_i,
+            alpha_p,
+            beta_z,
+            beta_i,
+            beta_p,
+            v_low_pu,
+            v_min_pu,
+            v_max_pu,
+            cutoff_pu,
+        } => {
+            *v_nom = vnom.to_vec();
+            for (name, values) in [
+                ("alpha_z", alpha_z),
+                ("alpha_i", alpha_i),
+                ("alpha_p", alpha_p),
+                ("beta_z", beta_z),
+                ("beta_i", beta_i),
+                ("beta_p", beta_p),
+            ] {
+                *values = coefficients(&load.name, name, values, vnom.len())?;
+            }
+            validate_bounds(&load.name, *v_low_pu, *v_min_pu, *v_max_pu)?;
+            if !cutoff_pu.is_finite() || *cutoff_pu < 0.0 {
+                return Err(format!("load `{}` has invalid cutoff", load.name));
+            }
+        }
+        DistLoadVoltageModel::BoundedExponential {
+            v_nom,
+            gamma_p,
+            gamma_q,
+            v_low_pu,
+            v_min_pu,
+            v_max_pu,
+        } => {
+            *v_nom = vnom.to_vec();
+            *gamma_p = coefficients(&load.name, "gamma_p", gamma_p, vnom.len())?;
+            *gamma_q = coefficients(&load.name, "gamma_q", gamma_q, vnom.len())?;
+            validate_bounds(&load.name, *v_low_pu, *v_min_pu, *v_max_pu)?;
+        }
+        DistLoadVoltageModel::BoundedConstantPower { v_nom, .. } => *v_nom = vnom.to_vec(),
+        _ => unreachable!(),
+    }
+    for (branch, &voltage) in vnom.iter().enumerate() {
+        model
+            .power_scale(branch, voltage)
+            .map_err(|e| format!("load `{}`: {e}", load.name))?;
+    }
+    Ok(model)
+}
+
+#[cfg(feature = "powerio-012")]
+fn validate_bounds(name: &str, low: f64, min: f64, max: f64) -> Result<(), String> {
+    // A positive low threshold guarantees a finite zero-voltage continuation.
+    // Zero/reversed thresholds are left outside this bounded snapshot profile.
+    if !low.is_finite()
+        || !min.is_finite()
+        || !max.is_finite()
+        || low <= 0.0
+        || low >= min
+        || min > max
+    {
+        return Err(format!(
+            "load `{name}` requires finite bounds 0 < vlow < vmin <= vmax"
+        ));
+    }
+    Ok(())
 }
 
 fn coefficients(
@@ -574,5 +705,48 @@ fn connection_incidence(
             "load `{}` uses an unsupported connection configuration",
             load.name
         )),
+    }
+}
+
+#[cfg(all(test, feature = "powerio-012"))]
+mod bounded_tests {
+    use super::*;
+    #[test]
+    fn bounded_constant_power_preserves_its_limit_and_tiny_voltage_continuation() {
+        let load = BranchLoad {
+            name: "bounded".into(),
+            bus: "bus".into(),
+            incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
+            power: vec![Complex64::new(2.0, 1.0)],
+            nominal_admittance: vec![Complex64::new(2.0, -1.0)],
+            reference_admittance: vec![Complex64::new(2.0, -1.0)],
+            nominal_voltage: vec![1.0],
+            model: BranchVoltageModel::Bounded(DistLoadVoltageModel::BoundedConstantPower {
+                v_nom: vec![1.0],
+                v_min_pu: 0.8,
+                v_max_pu: 1.1,
+                current_limit_pu: Some(0.5),
+            }),
+        };
+        for envelope in [false, true] {
+            let options = McPfOptions {
+                voltage_envelope: envelope,
+                ..Default::default()
+            };
+            for (voltage, expected) in [
+                (0.0_f64, 0.0_f64),
+                (0.1, 0.1 / 0.64),
+                (1.0, 0.5),
+                (2.0, 0.5),
+                (1e-200, 1e-200 / 0.64),
+            ] {
+                let current = load
+                    .branch_current(0, &[Complex64::new(voltage, 0.0)], &options)
+                    .unwrap();
+                let scale = expected.max(1e-300);
+                assert!((current.re - 2.0 * expected).abs() / scale < 1e-12);
+                assert!((current.im + expected).abs() / scale < 1e-12);
+            }
+        }
     }
 }

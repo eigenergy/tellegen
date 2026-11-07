@@ -508,12 +508,14 @@ test('settings reruns qualify modified results and preserve provenance through e
 	await study.getByText('Power flow settings', { exact: true }).click();
 	await expect(settings.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('0.85');
 	await expect(settings.getByLabel('Vmax (pu)', { exact: true })).toHaveValue('1.15');
+	const initialSettings = await callTool(page, 'inspect_settings', {});
+	expect(initialSettings).toMatchObject({ ok: true });
 	await settings.getByLabel('Vmin (pu)', { exact: true }).fill('0.4');
-	await expect(
-		settings.getByRole('button', { name: 'Run power flow', exact: true })
-	).toBeDisabled();
-	await settings.getByRole('button', { name: 'Apply settings', exact: true }).click();
+	// Run validates and applies the draft. Invalid input must leave the selected
+	// settings, their revision and the accepted operating point unchanged.
+	await settings.getByRole('button', { name: 'Run power flow', exact: true }).click();
 	await expect(settings.getByRole('alert')).toBeVisible();
+	expect(await callTool(page, 'inspect_settings', {})).toEqual(initialSettings);
 	// Put every non-impedance load outside the normal band without changing the fixture.
 	await settings.getByLabel('Vmin (pu)', { exact: true }).fill('1.01');
 	await settings.getByLabel('Maximum iterations', { exact: true }).fill('200');
@@ -622,6 +624,7 @@ test('energized-network selection retains excluded islands through solve, CSV an
 	page
 }) => {
 	test.setTimeout(120_000);
+	await installWebMcpHarness(page);
 	const fixture = JSON.parse(await readFile(loadModelsCase, 'utf8'));
 	fixture.name = 'Explicit island selection';
 	fixture.bus.unpowered = structuredClone(fixture.bus.src);
@@ -653,10 +656,13 @@ test('energized-network selection retains excluded islands through solve, CSV an
 	await study.getByText('Power flow settings', { exact: true }).click();
 	const settings = page.getByRole('region', { name: 'Common settings' });
 	await expect(settings.getByLabel('Maximum iterations', { exact: true })).toHaveValue('100');
+	const initialSettings = await callTool(page, 'inspect_settings', {});
+	expect(initialSettings).toMatchObject({ ok: true });
 	await settings.getByLabel('Maximum iterations', { exact: true }).fill('0');
-	await expect(
-		settings.getByRole('button', { name: 'Solve energized network', exact: true })
-	).toBeDisabled();
+	await settings.getByRole('button', { name: 'Solve energized network', exact: true }).click();
+	await expect(settings.getByRole('alert')).toBeVisible();
+	expect(await callTool(page, 'inspect_settings', {})).toEqual(initialSettings);
+	await expect(study.getByRole('button', { name: 'Save result', exact: true })).toBeDisabled();
 	await expect(study.getByRole('button', { name: 'Apply settings and run' })).toHaveCount(0);
 	await settings.getByLabel('Maximum iterations', { exact: true }).fill('500');
 	await settings.getByText('Advanced tolerances', { exact: true }).click();
