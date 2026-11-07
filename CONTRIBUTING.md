@@ -20,9 +20,15 @@ browser tests, and `npm audit`. Individual recipes are listed by `just`.
 
 The Python binding has its own gate (`gates-python.yml`); see
 [docs/src/python.md](docs/src/python.md) for how to build and test the wheel.
-A pull request runs that gate only when it changes the crates, the binding, a
-Python file, or the gate's configuration, and builds the macOS wheels only when
-it changes what goes into the wheel. A push to `main` runs all of it.
+
+CI runs a gate only when the change can affect it
+(`.github/scripts/ci-scope.py`), on pull requests and pushes to `main` alike.
+The Python gate runs for a change to the engine, the binding, the workspace
+manifests, a Python file, or the gate's configuration, and builds the macOS
+wheels only when the change reaches the wheel itself. The Rust and JavaScript
+gates and the image build skip only changes known not to reach them, such as
+documentation for all three, or the web app for the Rust gates. The release
+workflows always run every gate.
 
 ## Changesets
 

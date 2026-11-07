@@ -6,11 +6,22 @@ name: Gates (rust)
 
 on:
   workflow_call:
+    inputs:
+      needed:
+        description: >-
+          False when CI's scope job (.github/scripts/ci-scope.py) found that the
+          change cannot affect these gates. The release workflows leave it
+          unset, so a release always runs every gate.
+        type: boolean
+        default: true
 
 permissions: {}
 
 jobs:
   rust:
+    # Skip here, not in the caller: a skipped job still reports the required
+    # `rust / rust` check, and a skipped caller reports nothing.
+    if: inputs.needed
     runs-on: ubuntu-latest
     permissions:
       contents: read

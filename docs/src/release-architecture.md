@@ -187,6 +187,16 @@ release uses the ordinary verified Cargo publish path against that exact
 commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
 
+The workflow's first job decides whether the push can publish: its engine
+version has no `v<version>` tag yet, and the push writes
+`crates/tellegen/CHANGELOG.md`, which only the release pull request does. Only
+then do the Rust gates and the publish job run. Any other push, including every
+push between a version raised by hand and its release, only refreshes the
+version pull request, which runs CI itself. A manual run, or a tag list or diff
+that cannot be read, plans a publish and leaves the decision to release-plz.
+While a release publishes, the version update waits for the gates, as it always
+has.
+
 The crate update uses the same sealed-patch privilege boundary as package
 versioning. After `release-plz update`, an unprivileged step
 (`.github/scripts/sync_python_version.py`) sets the Python wheel's package
@@ -244,9 +254,23 @@ titles for a reader of the changelog. The section itself must stay, because
 ## CI Gates
 
 `.github/workflows/gates-rust.yml` and `.github/workflows/gates-js.yml` define
-what green means. CI calls both on every pull request. The crate release calls
-the Rust gates, and the npm release calls both before it publishes. Add a gate
-to those files, not to a caller.
+what green means. CI calls both on every pull request and every push to `main`.
+The crate release calls the Rust gates, and the npm release calls both before
+it publishes. Add a gate to those files, not to a caller.
+
+CI runs only the gates a change can affect. Its scope job runs
+`.github/scripts/ci-scope.py` on the changed paths: a pull request's against
+the branch it merges into, a push's against the last `main` commit whose CI
+passed. The Rust and JavaScript gates and the image build run unless every
+changed path is one the script names as unable to affect them; a path it does
+not name runs them. A version bump that only moves `tellegen` and `tellegen-py`
+in their manifests and `Cargo.lock` runs only the Rust gates. A missing base, a
+failed or empty diff, or a change to the scoping itself runs every gate. A gate
+that does not apply still reports its required check, as skipped. The release
+workflows call the gates without this scope, so a release always runs them in
+full. `.github/scripts/test-ci-scope.py` pins the rules, and checks them
+against the files the gates and the Dockerfile read. Change both when a gate
+starts reading a new path.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's

@@ -15,16 +15,80 @@ concurrency:
   queue: max
 
 jobs:
-  gates:
+  # Whether this push can publish. release-plz publishes only the commit that
+  # merges its own pull request (release_always = false). That pull request
+  # always writes crates/tellegen/CHANGELOG.md, which nothing else edits, and
+  # merges a version with no `v<version>` tag yet. Only such a push runs the
+  # gates and the publish job; any other push only refreshes the version pull
+  # request, which runs CI itself. A version raised by hand on main stays
+  # untagged until its release pull request merges, so the tag alone would
+  # gate every push in between. When the tags or the diff cannot be read, or
+  # on a manual run, plan a publish and let release-plz decide.
+  plan:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge commit and its first parent: what this push merged.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Decide whether this push publishes
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/tellegen/Cargo.toml | head -1)
+          tag="v$version"
+          status=0
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || status=$?
+          if [ -z "$version" ]; then
+            echo "::warning::cannot read the crate version; planning a publish"
+            publish=true
+          elif [ "$status" = 0 ]; then
+            echo "$tag is tagged; nothing to publish"
+            publish=false
+          elif [ "$status" != 2 ]; then
+            echo "::warning::cannot list tags (git exit $status); planning a publish of $tag"
+            publish=true
+          elif [ "$EVENT" != push ]; then
+            echo "$tag has no tag; a manual run leaves the decision to release-plz"
+            publish=true
+          elif ! changed=$(git diff --name-only --no-renames HEAD^1 HEAD); then
+            echo "::warning::cannot diff this push; planning a publish of $tag"
+            publish=true
+          elif grep -qx 'crates/tellegen/CHANGELOG.md' <<<"$changed"; then
+            echo "$tag has no tag and this push writes its changelog: a release merge"
+            publish=true
+          else
+            echo "$tag has no tag, but this push leaves the crate changelog alone:"
+            echo "not a release merge, so release-plz would not publish it"
+            publish=false
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  gates:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/gates-rust.yml
 
+  # Not gated: the version pull request this opens runs CI itself. When this
+  # push publishes, wait for the gates as before, so the version update starts
+  # alongside the publication rather than ahead of it.
   version-patch:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    if: >-
+      ${{ !cancelled() &&
+      vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+      needs.plan.result == 'success' &&
+      (needs.gates.result == 'success' || needs.gates.result == 'skipped') }}
     name: generate version patch
-    needs: gates
+    needs: [plan, gates]
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.patch.outputs.changed }}
@@ -188,9 +252,11 @@ jobs:
           fi
 
   publish:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    if: >-
+      vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+      needs.plan.outputs.publish == 'true'
     name: publish to crates.io
-    needs: gates
+    needs: [plan, gates]
     runs-on: ubuntu-latest
     # The merged release PR is the human gate. This environment binds the OIDC
     # publisher to main; it should not add a second reviewer pause.
