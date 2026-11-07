@@ -51,9 +51,9 @@ mc-pf-test:
 # CI gate: the native IVR compiler and frozen OPF references. Until PowerIO
 # 0.11.8 ships, this builds against the candidate patched in Cargo.toml.
 mc-opf-test:
-    cargo test -p tellegen --all-features --locked
+    cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
     cargo test -p tellegen --no-default-features --features mc-opf --locked
-    cargo clippy -p tellegen --all-targets --all-features --locked -- -D warnings
+    cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked -- -D warnings
 
 # CI gate: the engine's conic path.
 conic-test:

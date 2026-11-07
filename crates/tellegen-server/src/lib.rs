@@ -2447,7 +2447,7 @@ mod tests {
         let (status, case) = get("/api/cases/case200/case").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(case["schema"], "pio-ir");
-        assert_eq!(case["version"], 2);
+        assert_eq!(case["version"], serde_json::json!(powerio::IR_VERSION));
         assert_eq!(case["value"]["type"], "powerio.BalancedNetwork");
 
         let (status, solution) = get("/api/cases/case200/solution").await;

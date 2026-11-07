@@ -2172,7 +2172,7 @@ mpc.gencost = [
 
         let value: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["schema"], "pio-ir");
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["version"], serde_json::json!(powerio::IR_VERSION));
         assert_eq!(value["history"][0]["name"], "tellegen.add_load");
 
         let restored = ingest_json_drop_value(text.as_bytes()).expect("ingest saved module");
