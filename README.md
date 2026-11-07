@@ -44,6 +44,30 @@ Start with the
 `examples/browser-minimal/` and `examples/svelte-minimal/` are working
 integrations of each package.
 
+### Python
+
+Python 3.11 and newer can install the native engine from PyPI:
+
+```sh
+python -m pip install tellegen
+```
+
+```python
+import tellegen
+
+solution = tellegen.load("case30.m").solve()
+```
+
+The optional MCP server runs the engine in process over stdio:
+
+```sh
+python -m pip install "tellegen[mcp]"
+tellegen-mcp
+```
+
+See the [Python guide](docs/src/python.md) for calculations, source builds,
+and the MCP filesystem policy.
+
 ### Rust
 
 The solver itself is the [tellegen](https://crates.io/crates/tellegen) crate.
