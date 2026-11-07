@@ -1,5 +1,5 @@
 // Generated from Rust by synth_schema and generate-synth-types.mjs.
-// Source SHA256: 93e5dd9a1a061de6170028057ec998f526495e1b026232a93f4d19e46dd766a4
+// Source SHA256: 8717dd609376f388be70e4ea09b35e730b068cfd87d19057bafb48cf51542fa2
 
 export type AcPfOutcome = "converged" | "not_converged" | "skipped";
 
@@ -65,7 +65,7 @@ export type IslandOptions = { "beyond"?: FarIslandPolicy; /** Landmasses whose n
 
 export type IslandOutcome = { "branches": number; "buses": number; "generators": number; "index": number; "load_mw": number; "message"?: string | null; "status": string; };
 
-export type Limits = { /** Spherical area cap of the region, km²; positive and finite. */ "max_area_km2"?: number; /** Upper bound of `branch_factor`; finite and at least 1. */ "max_branch_factor"?: number; /** Bus cap. A synthetic grid's count is held at it (`bus_count_capped`); an OpenStreetMap grid drops its lowest voltage levels until it fits (`osm_bus_count_capped`) and is refused when its highest level alone exceeds it. A transmission-only synthetic grid sized from demand also stops at 3,000 buses (`context::TRANSMISSION_AUTO_MAX_BUSES`); one that reaches subtransmission is sized up to this cap. */ "max_bus_count"?: number; };
+export type Limits = { /** Spherical area cap of the region, km²; positive and finite. */ "max_area_km2"?: number; /** Upper bound of `branch_factor`; finite and at least 1. */ "max_branch_factor"?: number; /** Bus cap. A synthetic grid's count is held at it (`bus_count_capped`); an OpenStreetMap grid drops its lowest voltage levels until it fits (`osm_bus_count_capped`) and is refused when its highest level alone exceeds it. A transmission-only synthetic grid sized from demand also stops at 3,000 buses (`context::TRANSMISSION_AUTO_MAX_BUSES`); one that reaches subtransmission is sized up to this cap. */ "max_bus_count"?: number; /** Maximum raw Overpass response size, in bytes. */ "max_osm_document_bytes"?: number; /** Maximum Overpass elements accepted before topology construction. */ "max_osm_elements"?: number; };
 
 export type LmpSummary = { "max": number; "mean": number; "min": number; "spread": number; };
 
