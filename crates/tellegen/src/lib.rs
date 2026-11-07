@@ -24,6 +24,8 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 mod api;
+mod dc_formula;
+pub use dc_formula::{DcFormula, StudyOptions};
 mod content_id;
 #[cfg(feature = "sensitivity")]
 pub mod document;

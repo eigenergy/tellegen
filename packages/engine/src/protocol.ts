@@ -92,6 +92,7 @@ export type EngineRequest =
   | { op: "reset_peak_memory" }
   | {
       op: "study_new";
+      options?: string;
       study: number;
       module_json: string;
       formulation: string;
@@ -399,7 +400,7 @@ export function runRequest(
     case "study_new":
       handles.studies.set(
         req.study,
-        new mod.Study(req.module_json, req.formulation),
+        new mod.Study(req.module_json, req.formulation, req.options),
       );
       return null;
     case "study_replace_edits":

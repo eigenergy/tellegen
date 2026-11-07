@@ -78,3 +78,13 @@ lto = true
 inherits = "release"
 opt-level = 3
 lto = "thin"
+
+[patch.crates-io]
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-synth = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-tnd = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "c25eeb54557ab9017ea5a05a3ff38df6108cda4f" }

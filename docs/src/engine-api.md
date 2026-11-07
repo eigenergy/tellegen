@@ -60,6 +60,10 @@ reader selected for transmission and distribution documents.
 
 ## Solves And Studies
 
+DC requests and Study options accept `branch_susceptance_formula`. See the
+[DC optimality compatibility matrix](dc-compatibility.md) for tokens, equations,
+benchmark assumptions and persistence semantics.
+
 - `capabilities()`: returns available formulations, operands, and parameters.
 - `solveModule(moduleJson, request)`: stateless solve from a PowerIO module. A
   `dcopf` request may carry `constraints`, linear limits on branch flows, bus
@@ -68,7 +72,7 @@ reader selected for transmission and distribution documents.
   [Formulations](formulations.md#linear-constraints).
   An `acpf` request may set `start: "case"` to start Newton from the case's
   stored bus voltages (see [Formulations](formulations.md#ac-power-flow-polar)).
-- `createStudy(moduleJson, formulation)`: builds a browser `Study` from a
+- `createStudy(moduleJson, formulation, options?)`: builds a browser `Study` from a
   PowerIO module and solves its declared problem instance.
 - `Study` / `BrowserStudy`: browser handle with:
   - `currentSolution()`

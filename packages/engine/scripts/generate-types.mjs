@@ -15,7 +15,8 @@ const packageJson = JSON.parse(
   readFileSync(join(packageDir, "package.json"), "utf8"),
 );
 const source = readFileSync(apiPath, "utf8");
-const hash = createHash("sha256").update(source).digest("hex");
+const dcSource = readFileSync(join(repoRoot, "crates/tellegen/src/dc_formula.rs"), "utf8");
+const hash = createHash("sha256").update(source).update(dcSource).digest("hex");
 
 function rustEnumVariants(name) {
   const match = source.match(
@@ -129,7 +130,10 @@ export interface LimitOptions {
 \tlazy?: LazyLimits;
 }
 
+export type DcFormula = 'series_susceptance' | 'tap_adjusted_reactance' | 'reactance_only' | 'tap_adjusted_series_susceptance' | 'series_susceptance_no_phase_shift';
+export interface StudyOptions { branch_susceptance_formula?: DcFormula; }
 export interface SolveRequest {
+    branch_susceptance_formula?: DcFormula;
 \tformulation?: FormulationId;
 \tedits?: Edits;
 \t/** \`acpf\` only; other formulations refuse \`'case'\`. Defaults to \`'flat'\`. */
@@ -266,6 +270,7 @@ export interface SolveDiagnostic {
 }
 
 export interface SolveResponse {
+    branch_susceptance_formula?: DcFormula;
 \tformulation: FormulationId;
 \tstatus: SolveStatus;
 \tobjective?: number;
@@ -334,6 +339,7 @@ export interface Network {
 }
 
 export interface Solution {
+    branch_susceptance_formula?: DcFormula;
 \tobjective: number | null;
 \tprices: { bus: number; value: number }[];
 \tvm?: { bus: number; value: number }[];
