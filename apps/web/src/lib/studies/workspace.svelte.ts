@@ -123,7 +123,8 @@ export class StudyWorkspace {
 		if (!c?.result || c.solving) throw new Error('Run AC power flow before exporting its result');
 		const snapshot = await this.grid.snapshotMultiCase(c);
 		trackUsage('study.export', { result: 'completed' });
-		return JSON.stringify(snapshot, null, 2);
+		// Keep large distribution snapshots below the replay input limit.
+		return JSON.stringify(snapshot);
 	}
 	async importMulti(text: string) {
 		return this.#run(

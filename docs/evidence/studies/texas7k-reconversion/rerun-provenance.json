@@ -1,0 +1,35 @@
+{
+  "original_workflow_sha256": {
+    "check_antifloat.py": "479929b2cd8443d834b0f80775eabbff6eec171d02f99e9fabbcebccd468dec5",
+    "summarize_pf.py": "1e17f5ef723dfe1aba2645b35fbc4a7a846b3857696d8cff0dd298fd174b031c",
+    "audit.py": "7eed3b69e3bca1edbc45af478dfefbfb5afe20a42c7c209ac263aa1d584ac2c8",
+    "normalize.py": "61ba4e52858bdc177eb2c4f045c0ab21582f32e4237d8534b26872792fdeb728",
+    "compare_tellegen.py": "d85dc79a2bb0ffd728aefe294166df2d90db1ea2f8e575b3c6a55076203ceb8d",
+    "extract_feeders.py": "e59ecbf28eff1964501dda68a6022efd4aabd7bea034d72f4b2e38d2fb66f5c3",
+    "prepare_snapshot.py": "2746c24a19727167ae2be9ecc0aae2261d91f30f0c972967e264532174efa8be",
+    "patch_bmopf.py": "f93fd8c9d14a79234b14ff3403ffd93870d5933de717ca0429a3392b5584d8e8",
+    "plot_pf.py": "4a4eebca1ce1cdc8f58f1b09efd4595d4820661b3cb76fdfd2dc4c0a52e38b2e",
+    "convert_substation.py": "6abf3b8c1f16ff8c57a5c64f47ec6a70d293e98578721cf4a5f85bfeb8e6edc7",
+    "download_substation.py": "88ce0a82cd2768b812d6b378a8cc09848b9b790bbcefdad1d6e2c0abc57639e4",
+    "coordinates.py": "8349d096d047d6a8ddb4b713ffa638de7070ad6a72b0ff153eb565cd04c07da5"
+  },
+  "command": [
+    "/private/tmp/texas7k-reconversion-venv/bin/python",
+    "/private/tmp/texas7k-powerio-0.11.7-validated/workflow/convert_substation.py",
+    "--source",
+    "/Users/uqfgeth/Documents/GitHub/BMOPFDraftData/test/data/Texas7k/p1uhs0_1247",
+    "--manifest",
+    "/Users/uqfgeth/Documents/GitHub/BMOPFDraftData/test/data/Texas7k/source_manifest.json",
+    "--workdir",
+    "/private/tmp/texas7k-powerio-0.11.7-validated",
+    "--powerio",
+    "/private/tmp/texas7k-powerio-target/release/powerio",
+    "--schema",
+    "/private/tmp/texas7k-powerio-0.11.7/powerio-dist/schemas/bmopf/0.2.0/bmopf.schema.json",
+    "--tellegen",
+    "/private/tmp/texas7k-tellegen-target/release/texas7k-energized-runner"
+  ],
+  "workflow_revision": "01986ddd858e6836f063faf403e36ab012fc0ae2",
+  "source_change": "Remove obsolete manual source-impedance branch; let PowerIO 0.11.7 retain the original finite source impedance and assign its internal bus the source location.",
+  "comparison_change": "Explicitly exclude only the 15 zero-voltage source nodes on the two recorded unsupplied islands; retain all original equipment in BMOPF."
+}

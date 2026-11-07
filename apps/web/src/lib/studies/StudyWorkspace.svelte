@@ -519,7 +519,7 @@
 				/></label
 			>
 			{#if multi ? multi.result : doc}<button
-					disabled={workspace.busy}
+					disabled={workspace.busy || !!multi?.solving}
 					onclick={() => {
 						if (multi) {
 							void attempt(async () =>

@@ -438,7 +438,7 @@ export function createTellegenTools(
                 type: "integer",
                 minimum: 1,
                 maximum: 10000,
-                description: "Iteration limit, default 100.",
+                description: "Iteration limit; omitted uses the selected case defaults (engine default 100).",
               },
             },
             ["case_id", "expected_revision"],
