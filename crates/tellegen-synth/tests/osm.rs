@@ -252,7 +252,10 @@ fn osm_nested_options_reject_unknown_fields_and_invalid_bounds() {
         .unwrap()
         .insert("snap_kmm".into(), serde_json::json!(2.0));
     let err = serde_json::from_value::<SynthRequest>(misspelt).unwrap_err();
-    assert!(err.to_string().contains("unknown field `snap_kmm`"), "{err}");
+    assert!(
+        err.to_string().contains("unknown field `snap_kmm`"),
+        "{err}"
+    );
 
     for value in [0.0, -1.0, f64::NAN, f64::INFINITY] {
         let mut req = request(OsmIslands::Connect);
