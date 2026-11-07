@@ -87,7 +87,9 @@ def main():
                '--manifest', str(args.bmopf_root / 'test/data/Texas7k/source_manifest.json'),
                '--workdir', str(args.workdir), '--powerio', str(args.powerio),
                '--schema', str(args.schema), '--tellegen', str(args.runner)]
-    metadata = {'original_workflow_sha256': hashes, 'command': command,
+    # Record the checkout as a placeholder, not a machine-specific path.
+    recorded = [part.replace(str(args.bmopf_root), '<BMOPFDraftData>') for part in command]
+    metadata = {'original_workflow_sha256': hashes, 'command': recorded,
                 'workflow_revision': subprocess.check_output(
                     ['git', '-C', str(args.bmopf_root), 'rev-parse', 'HEAD'], text=True).strip(),
                 'source_change': 'Remove obsolete manual source-impedance branch; let PowerIO 0.11.7 retain the original finite source impedance and assign its internal bus the source location.',
