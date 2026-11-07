@@ -14,7 +14,7 @@ The panel groups load-model and constraint behavior separately from numerical co
 | Display preferences | This browser | Theme, bus sizing, preferred coloring |
 | View state | Existing view controls | Camera, selection, map/diagram mode and panel positions |
 
-Hosted-case manifests accept all ten multiconductor options and validate them through the common Rust resolver.
+Hosted-case manifests (`pf_options` in `distribution-cases.json`, see [Deployment](deployment.md)) accept any of the ten multiconductor options and validate them through the common Rust resolver; an unknown or invalid option makes that case unavailable.
 
 Calculation settings resolve in this order: engine defaults, hosted-case or restored-study baseline, explicit overrides. **Restore case defaults** removes the overrides and restores that baseline, including hosted-case overrides. It does not reset every case. Display defaults are restored separately. If browser preference storage is unavailable, changes remain usable for the current visit and a message identifies the persistence failure.
 

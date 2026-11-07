@@ -380,13 +380,13 @@ it. Retain the old manifest and bundle for data rollback.
 
 The optional manifest `metadata` object supports `description`, an absolute
 HTTPS `source_url`, a built-in transmission `related_case_id`, and `pf_options`.
-Supported option overrides are positive `tolerance`, positive
-`absolute_kcl_tolerance`, positive integer `max_iterations`, and boolean
-`voltage_envelope`. Unknown fields fail manifest parsing; invalid values make
-the case unavailable. Missing values retain engine defaults. Explicit solve
-options override case defaults, and successful solves retain their effective
-options for later runs and Study export/reopen. Hosted distribution cases appear
-in WebMCP with the same solver defaults as the UI.
+`pf_options` accepts any of the ten multiconductor power-flow options listed in
+[Settings](settings.md), checked by the same Rust resolver as every other
+caller. Unknown `metadata` fields fail manifest parsing; an unknown or invalid
+`pf_options` entry makes the case unavailable. Missing values retain engine
+defaults. Explicit solve options override case defaults, and successful solves
+retain their effective options for later runs and Study export/reopen. Hosted
+distribution cases appear in WebMCP with the same solver defaults as the UI.
 
 The pilot uses constant-power loads without the bounded-voltage envelope,
 frozen regulator taps and nominal loads; it has voltage drops and overloads.
