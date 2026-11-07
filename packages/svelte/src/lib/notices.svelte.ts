@@ -85,6 +85,8 @@ export function getNoticeCenter(): NoticeCenter {
 	return value;
 }
 export function errorNoticeTitle(details: string): string {
+	if (/^ZIP and folder imports are unavailable in this build/.test(details))
+		return 'ZIP and folder imports unavailable';
 	if (/rate limit/i.test(details)) return 'Too many requests';
 	// MapLibre's WebGL failure includes "Read more"; classify our map errors
 	// before the generic file/read fallback so it does not blame a case file.
