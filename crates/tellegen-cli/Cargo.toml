@@ -27,6 +27,7 @@ ctrlc = { version = "3.4", features = ["termination"] }
 
 [features]
 default = []
+powerio-012 = ["tellegen/powerio-012", "tellegen-synth/powerio-012"]
 conic = ["tellegen/conic"]
 
 [lints]

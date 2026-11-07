@@ -32,6 +32,6 @@ if [[ $# == 1 ]]; then
         -p powerio-matrix -p powerio-synth -p powerio-tx -p powerio-tnd "${cargo_args[@]}"
     cargo_args+=(--locked)
 fi
-cargo test -p tellegen --all-features "${cargo_args[@]}"
+cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema "${cargo_args[@]}"
 cargo test -p tellegen --no-default-features --features mc-opf "${cargo_args[@]}"
-cargo clippy -p tellegen --all-features --all-targets "${cargo_args[@]}" -- -D warnings
+cargo clippy -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --all-targets "${cargo_args[@]}" -- -D warnings
