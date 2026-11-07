@@ -10,7 +10,7 @@
 
 - [#349](https://github.com/eigenergy/tellegen/pull/349) [`a2e7786`](https://github.com/eigenergy/tellegen/commit/a2e7786d49707d2c576f6a88bf7803ea81c8be6b) Thanks [@samtalki](https://github.com/samtalki)! - Expose the controller WebMCP adapter through the optional `@tellegen/svelte/webmcp` entry point. Hosts share case inspection, bounded queries, settings, revision checks, and serialized updates; planning approval and Study evidence remain explicit host-provided capabilities. Normal Svelte imports do not require the WebMCP peer.
 
-- [#317](https://github.com/eigenergy/tellegen/pull/317) [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Enable qualified OpenDSS snapshots from files and collections. Preserve explicit bounded load laws and transformer excitation, retain passive source definitions, and report unsupported controls, floating sources and transformer profiles before solving.
+- [#317](https://github.com/eigenergy/tellegen/pull/317) [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add qualified OpenDSS snapshot support for PowerIO 0.12 candidate builds; the ordinary PowerIO 0.11.9 build keeps raw OpenDSS imports view-only. Preserve explicit bounded load laws and transformer excitation, retain passive source definitions, and report unsupported controls, floating sources and transformer profiles before solving.
 
 ### Patch Changes
 
