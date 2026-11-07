@@ -78,15 +78,3 @@ lto = true
 inherits = "release"
 opt-level = 3
 lto = "thin"
-
-# Draft integration pin for PowerIO #774/#814. Replace with a published
-# release containing collection APIs before merging or publishing this stack.
-[patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-synth = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-tnd = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "439c8219d4696bb4098cdb6459be79734d12088c" }

@@ -17,6 +17,7 @@ import type {
 } from "./module.js";
 
 export type EngineRequest =
+  | { op: "collection_supported" }
   | { op: "collection_zip"; collection: number; name: string; bytes: Uint8Array }
   | { op: "collection_files"; collection: number; name: string; names: string; offsets: Uint32Array; bytes: Uint8Array }
   | { op: "collection_ingest"; collection: number; selection: string }
@@ -291,6 +292,8 @@ export function runRequest(
     return session;
   };
   switch (req.op) {
+    case "collection_supported":
+      return JSON.stringify(mod.collection_supported());
     case "collection_zip":
       return acquireCollection(req.collection, mod.CaseCollection.from_zip(req.name, req.bytes));
     case "collection_files":
