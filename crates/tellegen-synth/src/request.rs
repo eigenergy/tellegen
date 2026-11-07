@@ -62,7 +62,9 @@ pub enum Source {
     Osm,
 }
 
-/// Bus count per unit area when `target_bus_count` is not given.
+/// How many buses a region gets when `target_bus_count` is not given: per
+/// unit area in a transmission-only grid, per megawatt of peak load in a
+/// hierarchical one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -518,7 +520,11 @@ pub struct SynthRequest {
     /// and the corridor plan may then add 765 kV above it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub voltage_levels_kv: Vec<f64>,
-    /// Exact bus count; otherwise `density` × area decides.
+    /// Exact bus count. Otherwise a region whose own ladder reaches
+    /// subtransmission (a subdivision's, [`crate::voltage::VoltageLadders`])
+    /// takes one bus per 10 MW of peak load at high density, 15 at medium and
+    /// about 28 at low; any other region takes `density` × area, kept between
+    /// 30 and 150 MW of peak load per bus.
     #[serde(default)]
     pub target_bus_count: Option<u32>,
     /// Branches per bus, `1.0..=limits.max_branch_factor`; otherwise by density.

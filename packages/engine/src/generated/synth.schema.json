@@ -977,7 +977,7 @@
       "type": "object"
     },
     "Density": {
-      "description": "Bus count per unit area when `target_bus_count` is not given.",
+      "description": "How many buses a region gets when `target_bus_count` is not given: per\nunit area in a transmission-only grid, per megawatt of peak load in a\nhierarchical one.",
       "enum": [
         "low",
         "medium",
@@ -2559,7 +2559,7 @@
         },
         "target_bus_count": {
           "default": null,
-          "description": "Exact bus count; otherwise `density` × area decides.",
+          "description": "Exact bus count. Otherwise a region whose own ladder reaches\nsubtransmission (a subdivision's, [`crate::voltage::VoltageLadders`])\ntakes one bus per 10 MW of peak load at high density, 15 at medium and\nabout 28 at low; any other region takes `density` × area, kept between\n30 and 150 MW of peak load per bus.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -2902,5 +2902,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "571b2d87324975dc251fbec5be0ce35429fea5d3df0df67ebeb905806b9b3e4f"
+  "x-rust-source-sha256": "cbe7b73cac853a44ba19fce1ca3c1627220e32c2fd0ee4cb311787b7405f5335"
 }

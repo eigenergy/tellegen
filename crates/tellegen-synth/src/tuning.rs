@@ -77,7 +77,8 @@ pub struct Tuning {
     /// Share of a hierarchical region's demand placed on the bus nearest each
     /// place; the rest follows the inverse-distance weights every bus gets.
     pub nearest_load_share: f64,
-    /// Peak load per sited bus a hierarchical region is sized to, MW.
+    /// Peak load per sited bus a hierarchical region is sized to at high
+    /// density, MW; lower densities scale it (`context::hierarchical_bus_count`).
     pub mw_per_bus: f64,
     /// Fill density: kernel bandwidth around places, km, and the floor
     /// relative to the densest cell, in (0, 1]. The floor is the share of the

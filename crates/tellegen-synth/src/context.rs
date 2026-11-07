@@ -31,15 +31,21 @@ pub struct ContextData {
     pub group_count: usize,
 }
 
+/// Buses of a transmission-only grid of 62,500 km² (where the area factor of
+/// [`density_bus_count`] is 1) at each density.
+fn density_base(density: Density) -> f64 {
+    match density {
+        Density::Low => 28.0,
+        Density::Medium => 52.0,
+        Density::High => 78.0,
+    }
+}
+
 /// Bus count from density and area when the request states none. The square
 /// root law keeps a continent at a few hundred buses and a small country at a
 /// few dozen; `target_bus_count` overrides it.
 pub fn density_bus_count(density: Density, area_km2: f64) -> u32 {
-    let base = match density {
-        Density::Low => 28.0,
-        Density::Medium => 52.0,
-        Density::High => 78.0,
-    };
+    let base = density_base(density);
     let area_factor = ((area_km2.max(100.0) / 10_000.0).sqrt() / 2.5).clamp(0.8, 4.0);
     (base * area_factor).round().clamp(MIN_BUS_COUNT, 400.0) as u32
 }
@@ -85,17 +91,21 @@ pub fn demand_bus_count(density: Density, area_km2: f64, peak_mw: f64) -> u32 {
 pub const TRANSMISSION_AUTO_MAX_BUSES: u32 = 3_000;
 
 /// Bus count of a region whose ladder reaches subtransmission: one sited bus
-/// per [`crate::tuning::Tuning::mw_per_bus`] of peak load (taps come on top).
+/// per [`crate::tuning::Tuning::mw_per_bus`] of peak load at high density
+/// (taps come on top). Lower densities carry more load per bus, in the ratio
+/// of the transmission design's counts ([`density_base`]): 1.5 times as much
+/// at medium and 2.8 times at low, 15 and about 28 MW by default.
 /// source: per-bus load falls as a model reaches lower voltages: ACTIVSg2000
 /// carries 67 GW over 2,000 buses (34 MW per bus) at 115 kV and above, the
 /// Texas7k case about 75 GW over 6,717 buses (11 MW) down to 69 kV, and CATS
 /// 44 GW over 8,870 buses (5 MW) down to 66 kV. The default is calibrated on
 /// CATS (docs/evidence/synth/cats/).
-pub fn hierarchical_bus_count(peak_mw: f64) -> u32 {
+pub fn hierarchical_bus_count(density: Density, peak_mw: f64) -> u32 {
     if !(peak_mw.is_finite() && peak_mw > 0.0) {
         return MIN_BUS_COUNT as u32;
     }
-    let per = crate::tuning::tuning().mw_per_bus.max(0.1);
+    let per = crate::tuning::tuning().mw_per_bus.max(0.1) * density_base(Density::High)
+        / density_base(density);
     (peak_mw / per)
         .ceil()
         .clamp(MIN_BUS_COUNT, f64::from(u32::MAX)) as u32
@@ -150,7 +160,11 @@ pub fn resolve_context(
             if probe.basis == VoltageBasis::Subdivision
                 && crate::hierarchy::is_hierarchical(&probe.levels_kv)
             {
-                (hierarchical_bus_count(peak), Some(peak), u32::MAX)
+                (
+                    hierarchical_bus_count(req.density, peak),
+                    Some(peak),
+                    u32::MAX,
+                )
             } else {
                 (
                     demand_bus_count(req.density, shape.area_km2, peak),
@@ -854,6 +868,58 @@ mod tests {
             density_bus_count(Density::Medium, 50_000.0)
                 < density_bus_count(Density::High, 50_000.0)
         );
+    }
+
+    #[test]
+    fn hierarchical_counts_follow_density() {
+        // 10 MW per bus at high density, 15 at medium, 78/28 × 10 at low.
+        assert_eq!(hierarchical_bus_count(Density::High, 1_000.0), 100);
+        assert_eq!(hierarchical_bus_count(Density::Medium, 1_000.0), 67);
+        assert_eq!(hierarchical_bus_count(Density::Low, 1_000.0), 36);
+        assert_eq!(hierarchical_bus_count(Density::Low, 10.0), 14);
+        assert_eq!(hierarchical_bus_count(Density::High, f64::NAN), 14);
+    }
+
+    fn california() -> Region {
+        let feature: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../tests/fixtures/us_ca_admin1_50m.geojson"))
+                .unwrap();
+        Region {
+            geometry: feature["geometry"].clone(),
+            label: "California".into(),
+        }
+    }
+
+    #[test]
+    fn a_hierarchical_region_sizes_its_count_by_density() {
+        let places = Places::parse(include_bytes!("../data/populated_places.json")).unwrap();
+        let mut req = SynthRequest::new(california());
+        let mut counts = Vec::new();
+        for density in [Density::High, Density::Medium, Density::Low] {
+            req.density = density;
+            let (ctx, _) = resolve_context(&req, &places, &mut Vec::new()).unwrap();
+            assert!(crate::hierarchy::layered(&ctx));
+            assert_eq!(
+                ctx.target_bus_count,
+                hierarchical_bus_count(density, ctx.peak_demand_mw)
+            );
+            counts.push(ctx.target_bus_count);
+        }
+        // About 4,800, 3,200 and 1,700 for California's 48 GW peak.
+        assert!(counts[0] > 4_000, "{counts:?}");
+        let ratio = |a: u32, b: u32| f64::from(a) / f64::from(b);
+        assert!(
+            (ratio(counts[0], counts[1]) - 1.5).abs() < 0.01,
+            "{counts:?}"
+        );
+        assert!(
+            (ratio(counts[0], counts[2]) - 78.0 / 28.0).abs() < 0.01,
+            "{counts:?}"
+        );
+        // A stated count still decides.
+        req.target_bus_count = Some(500);
+        let (ctx, _) = resolve_context(&req, &places, &mut Vec::new()).unwrap();
+        assert_eq!(ctx.target_bus_count, 500);
     }
 
     #[test]

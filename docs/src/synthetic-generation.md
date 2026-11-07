@@ -100,15 +100,19 @@ by module hash.
   that country's place population counting such places
   (`context.places_snapped`). A drawn box around one city never snaps the
   cities beyond its edges.
-- **Bus count.** Without `target_bus_count`, the count follows the region's
-  area and density and is then moved into the range that keeps peak load
-  per bus between 30 and 150 MW. Those are the scales of transmission
-  models down to 110–220 kV (PEGASE, RTE) and of substation-level models at
-  220 kV and above (PyPSA-Eur, SciGRID). A transmission-only count stops
-  at 3,000 buses, the scale national transmission models keep; a ladder
-  that reaches subtransmission sizes one bus per `mw_per_bus` of peak
-  load instead, up to `limits.max_bus_count` (12,000 by default).
-  `bus_count_capped` says by how much either cap bit.
+- **Bus count.** Without `target_bus_count`, a transmission-only grid's
+  count follows the region's area and `density` and is then moved into the
+  range that keeps peak load per bus between 30 and 150 MW. Those are the
+  scales of transmission models down to 110–220 kV (PEGASE, RTE) and of
+  substation-level models at 220 kV and above (PyPSA-Eur, SciGRID). It
+  stops at 3,000 buses, the scale national transmission models keep. A
+  ladder that reaches subtransmission sizes its count by peak load instead:
+  one sited bus per `mw_per_bus` (10 MW) at high density, and 1.5 and 2.8
+  times that load per bus at medium and low density (15 and about 28 MW),
+  the ratios of the transmission design's counts. Tap junctions come on
+  top.
+  Either count stops at `limits.max_bus_count` (12,000 by default), and
+  `bus_count_capped` says by how much a cap bit.
 - **Siting.** Buses stand on the most populous places first, and the rest
   fill the region by blue noise drawn from a population density surface:
   each place spreads its people over a 24 km kernel, and a point's density
