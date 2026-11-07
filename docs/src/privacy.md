@@ -23,7 +23,7 @@ does not upload those files to the tellegen backend.
   browser's IP address and identification, which Umami turns into a visitor
   hash with a monthly salt and an approximate country, keeps neither as a
   field of the record, and may hold in its operational logs; records are kept
-  for two years in the region configured for the account. Do Not Track and
+  for two years in the United States. Do Not Track and
   Global Privacy Control are respected, local and preview addresses send
   nothing, and the in-app privacy page has a switch to turn the counts off in
   your browser.

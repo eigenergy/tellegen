@@ -59,7 +59,7 @@
 			The request itself carries your IP address and browser identification. Umami turns them into a
 			visitor hash with a salt that changes monthly and into an approximate country, keeps neither
 			as a field of the record, and may hold them in its operational logs. Records are kept for two
-			years in the region configured for the account.
+			years in the United States.
 		</p>
 		<label class="analytics-choice"
 			><input
