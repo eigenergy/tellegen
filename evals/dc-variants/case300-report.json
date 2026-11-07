@@ -1,0 +1,187 @@
+{
+  "reference_reversed_branch_count": 0,
+  "reactance_only": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 3.552713678800501e-15,
+      "balance_pu": 4.348521542851813e-12,
+      "flow_pu": 4.355626970209414e-12,
+      "angle_rad": 6.812328479099961e-13
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 1.9308998844280723e-11,
+      "balance_pu": 5.013964521349834e-10,
+      "flow_pu": 1.2857913844754876e-08,
+      "angle_rad": 2.291357437123054e-09,
+      "dispatch_pu": 1.6620651077658977e-08,
+      "objective_relative": 2.3912044493233632e-11,
+      "lmp_per_mw": 2.4586107372215338e-08
+    },
+    "ac_fixed_dispatch": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "series_susceptance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 1.2212453270876722e-15,
+      "balance_pu": 1.5624168625549828e-12,
+      "flow_pu": 2.1280754936015e-12,
+      "angle_rad": 2.3447910280083306e-13
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 5.524469770534779e-13,
+      "balance_pu": 8.348877145181177e-13,
+      "flow_pu": 4.8981121381075354e-09,
+      "angle_rad": 3.926069053195036e-10,
+      "dispatch_pu": 8.167741150089114e-09,
+      "objective_relative": 4.628715235564589e-13,
+      "lmp_per_mw": 2.9623375041865074e-07
+    },
+    "ac_fixed_dispatch": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "series_susceptance_no_phase_shift": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 3.552713678800501e-15,
+      "balance_pu": 3.367972567502875e-12,
+      "flow_pu": 3.375077994860476e-12,
+      "angle_rad": 3.7969627442180354e-13
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 7.535083668130937e-13,
+      "balance_pu": 6.110667527536862e-13,
+      "flow_pu": 2.2097554008837506e-08,
+      "angle_rad": 1.8464060280720673e-09,
+      "dispatch_pu": 2.206650506764163e-08,
+      "objective_relative": 9.405825918846004e-13,
+      "lmp_per_mw": 8.971542087010675e-08
+    },
+    "ac_fixed_dispatch": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "tap_adjusted_reactance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 1.7763568394002505e-15,
+      "balance_pu": 2.355671213649657e-12,
+      "flow_pu": 2.8705926524708048e-12,
+      "angle_rad": 3.765876499528531e-13
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 9.57012247226885e-14,
+      "balance_pu": 5.586642259913788e-13,
+      "flow_pu": 4.8927692120059874e-08,
+      "angle_rad": 4.015485111086292e-09,
+      "dispatch_pu": 8.908389803607974e-08,
+      "objective_relative": 6.156059518332533e-13,
+      "lmp_per_mw": 3.2246894932086434e-08
+    },
+    "ac_fixed_dispatch": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "tap_adjusted_series_susceptance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 3.552713678800501e-15,
+      "balance_pu": 2.9842794901924208e-12,
+      "flow_pu": 2.9771740628348198e-12,
+      "angle_rad": 4.871658632055187e-13
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 4.0607517348689726e-12,
+      "balance_pu": 4.77476946869615e-10,
+      "flow_pu": 6.79555145488564e-09,
+      "angle_rad": 1.3869398407528877e-09,
+      "dispatch_pu": 6.7957395266660114e-09,
+      "objective_relative": 1.5225234753746187e-11,
+      "lmp_per_mw": 6.92698165494221e-09
+    },
+    "ac_fixed_dispatch": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "ac_flat_slope_max_error": 1.779062586138025e-08,
+  "ac_pf": {
+    "status": "LOCALLY_INFEASIBLE",
+    "converged": false,
+    "error": null,
+    "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+  },
+  "ac_opf_local": {
+    "status": "LOCALLY_SOLVED",
+    "converged": true,
+    "loss_mw": 423.8784646105332,
+    "violation_counts": {
+      "voltage": 0,
+      "reactive_generation": 0,
+      "apparent_power": 0
+    },
+    "violation_examples": {
+      "voltage": [],
+      "reactive_generation": [],
+      "apparent_power": []
+    },
+    "objective": 565219.9908886984
+  },
+  "case_sha256": "7ecf056d5942135765200ad7ae8791c28f0d35fb1dc888ba2c32dfc950f3c2f5",
+  "versions": {
+    "julia": "1.12.6",
+    "PowerModels": "0.19.9",
+    "Ipopt": "1.4.1"
+  }
+}
