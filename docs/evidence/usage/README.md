@@ -47,13 +47,26 @@ Then ask, for example, how many `generate.finish` events carried
 
 ## Latest pull
 
+The first MapToGrid observation in the November 2026 snapshot is the production
+release check: Portugal completed with every check and published range met.
+That one observation is verification of the reporting path, not an independent
+sample of visitor outcomes. Automated headless requests were not included in
+the observed counts. Event-property requests use the Cloud API's `event` filter
+([API changelog](https://docs.umami.is/docs/cloud/changelog)).
+
 <!-- usage:start -->
 
 Last pull: 2026-11 (2026-11-07).
 
 | Site | Visitors | Page views | Top events |
 | --- | ---: | ---: | --- |
-| maptogrid.com | 0 | 0 | – |
+| maptogrid.com | 1 | 1 | engine.load 1, generate.start 1, generate.finish 1, agent.availability 1 |
 | tellegen.dev | 87 | 216 | calculation.solve 380, case.select 333, view.change 285, agent.availability 212, case.import 77 |
+
+Grids generated on maptogrid.com, by country (trusted = every check and published range met):
+
+| Country | Runs | Trusted |
+| --- | ---: | ---: |
+| PRT | 1 | 100% |
 
 <!-- usage:end -->
