@@ -2147,7 +2147,7 @@
           "type": "number"
         },
         "promotion_levels_kv": {
-          "description": "Higher AC levels the corridor plan may raise buses to, kV, highest\nfirst: the country's levels in service above its ladder, or 765 kV\nabove stated levels. Empty when there is none, as in most of Europe.",
+          "description": "Higher AC levels the corridor plan may raise buses to, kV, highest\nfirst: those in service in the region above the levels modelled, from\nits own ladder, whether the levels are its own or stated. Empty when\nthere is none, as in most of Europe and in California.",
           "items": {
             "format": "double",
             "type": "number"
@@ -2559,7 +2559,7 @@
         },
         "target_bus_count": {
           "default": null,
-          "description": "Exact bus count. Otherwise a region whose own ladder reaches\nsubtransmission (a subdivision's, [`crate::voltage::VoltageLadders`])\ntakes one bus per 10 MW of peak load at high density, 15 at medium and\nabout 28 at low; any other region takes `density` × area, kept between\n30 and 150 MW of peak load per bus.",
+          "description": "Exact bus count. Otherwise a hierarchical region (levels down to\nsubtransmission in a subdivision with its own ladder) takes one bus\nper 10 MW of peak load at high density, 15 at medium and about 28 at\nlow; any other region takes `density` × area, kept between 30 and\n150 MW of peak load per bus.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -2583,7 +2583,7 @@
           }
         },
         "voltage_levels_kv": {
-          "description": "Nominal voltage levels, kV, highest first after resolution. Each level\nkeeps its own kV for the per-unit base and takes the per-km parameters\nof the nearest line class. Empty (the default) takes the national\nladder of the region's dominant country by demand\n([`crate::voltage::VoltageLadders`]); a stated list is used as given,\nand the corridor plan may then add 765 kV above it.",
+          "description": "Nominal voltage levels, kV, highest first after resolution. Each level\nkeeps its own kV for the per-unit base and takes the per-km parameters\nof the nearest line class. Empty (the default) takes the region's own\nladder: its dominant subdivision's where that has one, else the\nnational ladder of its dominant country by demand\n([`crate::voltage::VoltageLadders`]). A stated list is used as given.\nEither way the corridor plan may add only a higher level in service in\nthe region, from its own ladder (765 kV in the United States outside\nCalifornia, none in most of Europe), and stated levels that reach\nsubtransmission in a region with a subdivision ladder keep the\nhierarchical design.",
           "items": {
             "format": "double",
             "type": "number"
@@ -2902,5 +2902,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "cbe7b73cac853a44ba19fce1ca3c1627220e32c2fd0ee4cb311787b7405f5335"
+  "x-rust-source-sha256": "8c4984c9ff51f0b8cbaaf745ae7888109b04670ae7794054b9412d3c12d77b62"
 }

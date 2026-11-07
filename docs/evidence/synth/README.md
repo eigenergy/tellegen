@@ -68,26 +68,30 @@ and a highest-voltage share of 0.08–0.35.
 
 ## What the last run showed
 
-On 2026-10-23, 11 of 12 runs (4 specs × 3 seeds, bundled places table) were
+On 2026-11-06, 12 of 12 runs (4 specs × 3 seeds, bundled places table) were
 valid, at national voltage ladders except for the Rhine spec, which states
-500/230 kV. Every DC OPF was optimal and every corridor plan converged. The
-twelfth run, Portugal seed 3 at Portugal's 400/220/150 kV, has an AC power
-flow that does not converge. Newton stalls at a 2 MW mismatch in an inland
-220 kV pocket (Guarda and Covilhã, voltages down to 0.76 pu), from both a
-flat and a DC start: a load pocket at the limit of what its corridors carry.
+500/230 kV. Every DC OPF was optimal, every AC power flow converged inside
+0.989–1.028 pu, and every corridor plan converged. The engine before that
+day's changes, run on the same specs, was also valid at all 12.
+
+Stated levels now follow the region: Germany has no AC level above 380 kV in
+service, so the Rhine spec's corridor plan no longer adds 765 kV above the
+stated 500 kV. Before, it did at seeds 1 and 2 (two buses each). Now every
+seed stays at 500/230 kV, with up to four circuits per corridor and no
+corridor left short of capacity.
 
 The structural comparison is mixed, and the table says so plainly:
 
 - Mean degree (2.36–2.90) sits inside the published range but outside the
   narrow band of the two references (2.45–2.60).
-- The clustering coefficient (0.09–0.30, and 0.46–0.57 on the 14-bus Fiji
+- The clustering coefficient (0.07–0.25, and 0.22–0.55 on the 14-bus Fiji
   spec) is well above the references (0.06–0.08): a Gabriel mesh is rich in
   triangles.
 - The highest degree (4–7) is below the references (10–11), because the mesh
   caps nodal degree at 8.
-- The highest-voltage share falls below the published 0.08 on one Rhine run
-  (0.008), where the corridor plan adds 765 kV above the stated 500 kV for a
-  few corridors, and the share counts only the buses at that added level.
+- The highest-voltage share (0.12–0.21) is inside the published 0.08–0.35.
+  On the Rhine spec it was 0.005 at the two seeds where the plan added
+  765 kV, because the share counts only the buses at that added level.
 - The branch-to-bus ratio follows the request (1.32 at medium density, 1.45
   at high) except where the corridor plan needed more circuits, which each
   run's warnings name.

@@ -514,17 +514,22 @@ pub struct SynthRequest {
     pub fidelity: Fidelity,
     /// Nominal voltage levels, kV, highest first after resolution. Each level
     /// keeps its own kV for the per-unit base and takes the per-km parameters
-    /// of the nearest line class. Empty (the default) takes the national
-    /// ladder of the region's dominant country by demand
-    /// ([`crate::voltage::VoltageLadders`]); a stated list is used as given,
-    /// and the corridor plan may then add 765 kV above it.
+    /// of the nearest line class. Empty (the default) takes the region's own
+    /// ladder: its dominant subdivision's where that has one, else the
+    /// national ladder of its dominant country by demand
+    /// ([`crate::voltage::VoltageLadders`]). A stated list is used as given.
+    /// Either way the corridor plan may add only a higher level in service in
+    /// the region, from its own ladder (765 kV in the United States outside
+    /// California, none in most of Europe), and stated levels that reach
+    /// subtransmission in a region with a subdivision ladder keep the
+    /// hierarchical design.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub voltage_levels_kv: Vec<f64>,
-    /// Exact bus count. Otherwise a region whose own ladder reaches
-    /// subtransmission (a subdivision's, [`crate::voltage::VoltageLadders`])
-    /// takes one bus per 10 MW of peak load at high density, 15 at medium and
-    /// about 28 at low; any other region takes `density` × area, kept between
-    /// 30 and 150 MW of peak load per bus.
+    /// Exact bus count. Otherwise a hierarchical region (levels down to
+    /// subtransmission in a subdivision with its own ladder) takes one bus
+    /// per 10 MW of peak load at high density, 15 at medium and about 28 at
+    /// low; any other region takes `density` × area, kept between 30 and
+    /// 150 MW of peak load per bus.
     #[serde(default)]
     pub target_bus_count: Option<u32>,
     /// Branches per bus, `1.0..=limits.max_branch_factor`; otherwise by density.
