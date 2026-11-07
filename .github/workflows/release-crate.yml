@@ -158,8 +158,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The status check is explicit because `gates` is skipped on every push that
+  # doesn't publish; without one, this job inherits that skip through
+  # `version-patch` even when the patch is ready.
   version-pr:
-    if: needs.version-patch.outputs.changed == 'true'
+    if: >-
+      ${{ !cancelled() && needs.version-patch.result == 'success' &&
+      needs.version-patch.outputs.changed == 'true' }}
     name: update version pull request
     needs: version-patch
     runs-on: ubuntu-latest
