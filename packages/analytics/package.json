@@ -1,6 +1,6 @@
 {
 	"name": "@tellegen/analytics",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Allowlisted, cookieless usage analytics for Tellegen sites: a vocabulary sanitizer and a first-party sender for Umami Cloud.",
 	"keywords": [
 		"analytics",
