@@ -419,6 +419,16 @@ pub fn run_dc_opf(
 /// Run the AC power flow on every island of `net` (generator `pg` set points
 /// as stored) and aggregate.
 pub fn run_ac_pf(net: &BalancedNetwork, options: &ValidationOptions, clock: Clock) -> AcPfReport {
+    run_ac_pf_with_voltages(net, options, clock).0
+}
+
+/// Keep the solved voltages for targeted reactive support in the generator.
+/// The ordinary report remains a summary; bus ids are the original ids.
+pub(crate) fn run_ac_pf_with_voltages(
+    net: &BalancedNetwork,
+    options: &ValidationOptions,
+    clock: Clock,
+) -> (AcPfReport, Vec<tellegen::BusScalar>) {
     let started = now(clock);
     let (copy, _) = validation_copy(net);
     let mut outcomes = Vec::new();
@@ -432,6 +442,7 @@ pub fn run_ac_pf(net: &BalancedNetwork, options: &ValidationOptions, clock: Cloc
     let mut any_failed = false;
     let mut first_message = None;
     let mut any_solved = false;
+    let mut voltages = Vec::new();
     for (idx, members) in islands(&copy).iter().enumerate() {
         let Some(island) = island_network(&copy, members) else {
             outcomes.push(IslandOutcome {
@@ -461,6 +472,7 @@ pub fn run_ac_pf(net: &BalancedNetwork, options: &ValidationOptions, clock: Cloc
         match result {
             Ok(resp) => {
                 any_solved = true;
+                voltages.extend(resp.vm.iter().flatten().cloned());
                 summarise_ac(
                     &resp,
                     options,
@@ -504,19 +516,22 @@ pub fn run_ac_pf(net: &BalancedNetwork, options: &ValidationOptions, clock: Cloc
     } else {
         AcPfOutcome::Converged
     };
-    AcPfReport {
-        status,
-        message: first_message,
-        newton_iterations: any_solved.then_some(newton),
-        residual: any_solved.then_some(residual),
-        vm_min: any_solved.then_some(vm_min),
-        vm_max: any_solved.then_some(vm_max),
-        buses_outside_planning_band: outside_planning,
-        buses_outside_emergency_band: outside_emergency,
-        losses_mw: any_solved.then_some(losses),
-        islands: outcomes,
-        solve_ms: started.and_then(|s| now(clock).map(|e| e - s)),
-    }
+    (
+        AcPfReport {
+            status,
+            message: first_message,
+            newton_iterations: any_solved.then_some(newton),
+            residual: any_solved.then_some(residual),
+            vm_min: any_solved.then_some(vm_min),
+            vm_max: any_solved.then_some(vm_max),
+            buses_outside_planning_band: outside_planning,
+            buses_outside_emergency_band: outside_emergency,
+            losses_mw: any_solved.then_some(losses),
+            islands: outcomes,
+            solve_ms: started.and_then(|s| now(clock).map(|e| e - s)),
+        },
+        voltages,
+    )
 }
 
 fn summarise_ac(

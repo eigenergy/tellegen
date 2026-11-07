@@ -22,7 +22,9 @@ use crate::electrical::params::{
     MAX_ANGLE_SPREAD_RAD, MAX_CIRCUITS_PER_CORRIDOR, PLANNING_UTILISATION, UPGRADE_CIRCUITS,
 };
 use crate::electrical::planning::{plan_corridors, PlanMode};
-use crate::electrical::reactive::{place_voltage_support, plan_shunts};
+use crate::electrical::reactive::{
+    place_voltage_support, plan_shunts, plan_shunts_with_minimum, DraftShunt,
+};
 use crate::error::SynthError;
 use crate::geom::wrap_lon;
 use crate::places::Places;
@@ -35,7 +37,7 @@ use crate::request::{DemandSpec, Source, SynthRequest};
 use crate::rng::{Stream, StreamTag};
 use crate::site::{site_buses, DraftBus};
 use crate::topology::{build_topology, Corridor};
-use crate::validate::{apply_dispatch, run_ac_pf, run_dc_opf, Clock, DcOpfRun};
+use crate::validate::{apply_dispatch, run_ac_pf_with_voltages, run_dc_opf, Clock, DcOpfRun};
 use crate::voltage::VoltageLadders;
 
 /// Producer name written into generated modules.
@@ -925,13 +927,65 @@ impl Generator {
         warnings: &mut Vec<Warning>,
         counts: &mut BTreeMap<String, u64>,
     ) -> Result<(), SynthError> {
-        self.plan_mapped_reactive(warnings, counts);
+        let small_banks = self.plan_mapped_reactive(warnings, counts);
         if !self.request.validation.run_ac_pf {
             self.report.ac_pf = Some(crate::validate::skipped_ac());
             return Ok(());
         }
         let built = self.state.built.as_ref().expect("electrify ran");
-        let report = run_ac_pf(&built.net, &self.request.validation, self.clock);
+        let (mut report, mut voltages) =
+            run_ac_pf_with_voltages(&built.net, &self.request.validation, self.clock);
+        // Small banks omitted by the equipment-size cutoff can matter on weak
+        // mapped feeders. Add them only at buses whose solved voltage needs
+        // support, then solve again with the same demand and active dispatch.
+        // With no converged iterate, use the planned 1 MVAr banks first, then
+        // the remaining 0.1 MVAr banks. Never change voltage acceptance bands.
+        if self.request.osm.clone().unwrap_or_default().reinforce {
+            for round in 0..3 {
+                if report.status == AcPfOutcome::Converged
+                    && report.buses_outside_planning_band == 0
+                {
+                    break;
+                }
+                let built = self.state.built.as_ref().expect("electrify ran");
+                let existing: std::collections::HashSet<usize> =
+                    built.net.shunts().iter().map(|s| s.bus.0).collect();
+                let outside: std::collections::HashSet<usize> = voltages
+                    .iter()
+                    .filter(|v| {
+                        v.value < self.request.validation.voltage_band[0]
+                            || v.value > self.request.validation.voltage_band[1]
+                    })
+                    .map(|v| v.bus)
+                    .collect();
+                let additions: Vec<DraftShunt> = small_banks
+                    .iter()
+                    .filter(|s| {
+                        !existing.contains(&(s.bus + 1))
+                            && if report.status == AcPfOutcome::NotConverged {
+                                round > 0 || s.mvar.abs() >= 1.0
+                            } else {
+                                outside.contains(&(s.bus + 1))
+                            }
+                    })
+                    .cloned()
+                    .collect();
+                if additions.is_empty() {
+                    if round == 0 && report.status == AcPfOutcome::NotConverged {
+                        continue;
+                    }
+                    break;
+                }
+                self.add_mapped_shunts(&additions, counts);
+                counts
+                    .entry("voltage_support_banks_added".into())
+                    .and_modify(|n| *n += additions.len() as u64)
+                    .or_insert(additions.len() as u64);
+                let built = self.state.built.as_ref().expect("electrify ran");
+                (report, voltages) =
+                    run_ac_pf_with_voltages(&built.net, &self.request.validation, self.clock);
+            }
+        }
         if report.status == AcPfOutcome::NotConverged {
             warnings.push(Warning::new(
                 "ac_pf_not_converged",
@@ -957,9 +1011,9 @@ impl Generator {
         &mut self,
         warnings: &mut Vec<Warning>,
         counts: &mut BTreeMap<String, u64>,
-    ) {
+    ) -> Vec<DraftShunt> {
         if self.state.osm.is_none() || !self.state.dc.as_ref().is_some_and(DcOpfRun::feasible) {
-            return;
+            return Vec::new();
         }
         let built = self.state.built.as_mut().expect("electrify ran");
         let mut buses = self.state.buses.clone();
@@ -1001,13 +1055,36 @@ impl Generator {
                     .map(|b| b.id.0 - 1)
             })
             .collect();
-        let reactive = plan_shunts(&buses, &branches, &generators, &dispatch, &grounds, false);
+        let reactive = plan_shunts_with_minimum(
+            &buses,
+            &branches,
+            &generators,
+            &dispatch,
+            &grounds,
+            false,
+            0.1,
+        );
         if !reactive.angles_converged {
             warnings.push(Warning::new("reactive_plan_unconverged", "the AC angle solve at the feasible DC dispatch did not converge; no shunt banks were inferred from the failed iterate"));
-            return;
+            return Vec::new();
         }
         built.net.shunts_mut().clear();
-        for shunt in &reactive.shunts {
+        let initial: Vec<DraftShunt> = reactive
+            .shunts
+            .iter()
+            .filter(|s| s.mvar.abs() >= crate::electrical::params::MIN_SHUNT_BANK_MVAR)
+            .cloned()
+            .collect();
+        self.add_mapped_shunts(&initial, counts);
+        if let Some(plan) = self.report.planning.as_mut() {
+            plan.max_angle_difference_deg = reactive.max_angle_difference_deg;
+        }
+        reactive.shunts
+    }
+
+    fn add_mapped_shunts(&mut self, shunts: &[DraftShunt], counts: &mut BTreeMap<String, u64>) {
+        let built = self.state.built.as_mut().expect("electrify ran");
+        for shunt in shunts {
             let mut row = powerio::Shunt::new(powerio::BusId(shunt.bus + 1), 0.0, shunt.mvar);
             row.uid = Some(format!("synthetic-shunt:{}", shunt.bus + 1));
             row.extras.insert(crate::build::EXTRAS_KEY.to_owned(), serde_json::json!({
@@ -1015,22 +1092,15 @@ impl Generator {
             }));
             built.net.shunts_mut().push(row);
         }
-        counts.insert("shunts".into(), reactive.shunts.len() as u64);
+        let installed = built.net.shunts();
+        counts.insert("shunts".into(), installed.len() as u64);
         if let Some(plan) = self.report.planning.as_mut() {
-            plan.capacitor_banks = reactive.shunts.iter().filter(|s| s.mvar > 0.0).count();
-            plan.reactor_banks = reactive.shunts.iter().filter(|s| s.mvar < 0.0).count();
+            plan.capacitor_banks = installed.iter().filter(|s| s.b > 0.0).count();
+            plan.reactor_banks = installed.iter().filter(|s| s.b < 0.0).count();
             plan.capacitor_mvar =
-                (reactive.shunts.iter().map(|s| s.mvar.max(0.0)).sum::<f64>() * 10.0).round()
-                    / 10.0;
-            plan.reactor_mvar = (reactive
-                .shunts
-                .iter()
-                .map(|s| (-s.mvar).max(0.0))
-                .sum::<f64>()
-                * 10.0)
-                .round()
-                / 10.0;
-            plan.max_angle_difference_deg = reactive.max_angle_difference_deg;
+                (installed.iter().map(|s| s.b.max(0.0)).sum::<f64>() * 10.0).round() / 10.0;
+            plan.reactor_mvar =
+                (installed.iter().map(|s| (-s.b).max(0.0)).sum::<f64>() * 10.0).round() / 10.0;
         }
     }
 

@@ -12,3 +12,13 @@ mapped-circuit mode and the explicitly synthetic reinforced model, offline.
 OpenStreetMap data © OpenStreetMap contributors, licensed under the
 [Open Database License 1.0](https://www.openstreetmap.org/copyright).
 Natural Earth country outline: public domain.
+
+## Portugal
+
+`portugal-overpass.json.gz` was retrieved on 2026-11-07 with
+`portugal-request.json`. Its OpenStreetMap base timestamp is
+2026-11-02T00:59:53Z. It reproduced a 490 km inferred connection between
+two 132 kV substations and 45 buses outside 0.9–1.1 pu after AC convergence.
+The regression retains the full demand, checks that inferred connections
+stay local, and requires converged AC voltages inside the planning band.
+The same OpenStreetMap and Natural Earth licences above apply.
