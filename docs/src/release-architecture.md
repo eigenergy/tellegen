@@ -129,16 +129,42 @@ variable after you make all of these:
    bots use it so their version pull requests start CI. Pull requests opened by
    `GITHUB_TOKEN` do not start workflows.
 
-Protect `main` with a repository ruleset that requires pull requests, at least
-one approval, approval of the most recent reviewable push (or dismissal of
-stale approvals), an up-to-date branch, and the CI checks before merge. Block
-force pushes and deletion. Do not give the Release App a ruleset bypass. Those
-protections ensure an approval cannot survive a bot refresh with different
-release contents and make the version pull-request merge the publication gate.
+The current `main` ruleset requires pull requests, merge commits, an up-to-date
+branch and CI checks; it blocks force pushes and deletion. It requires zero
+approvals and does not require approval of the last push, so a sole maintainer
+can release after reviewing the final changes and checks. The version
+pull-request merge is the publication gate. If independent approval becomes
+required, set at least one approval and dismiss stale approvals or require
+approval of the last reviewable push. Do not give the Release App a ruleset bypass.
 
 If a package or crate does not yet exist at its registry, publish its first
 version manually before configuring the trusted publisher. Later releases use
 this pipeline end to end.
+
+Check all four npm publishers with `npm trust list @tellegen/<name>`. A package
+previously published by hand still needs its own publisher; configuring the
+engine does not configure WebMCP. After `npm login`, the command is
+`npm trust github @tellegen/<name> --file release-npm.yml --repo eigenergy/tellegen --env npm --allow-publish`.
+It requires npm's interactive two-factor confirmation. A partial publish can
+be retried: already published versions are retained, and remaining packages
+publish through the same workflow.
+
+### Separate AC OPF download
+
+Each stable crate release also builds the isolated POUNCE WASI reactor from
+that exact tag and attaches it to the existing GitHub release. The download
+contains `tellegen_acopf_wasi.wasm`, `POUNCE-EPL-2.0.txt`, `POUNCE-NOTICE.txt`,
+`POUNCE-SOURCE.json` and `ACOPF-SHA256SUMS.txt`. It remains separate from the MIT
+engine packages. The manifest records the reactor ABI, engine version, full
+source revision, source archive and POUNCE crate checksums. This preserves the
+license and corresponding-source information distributed with the website.
+
+Consumers pin a release URL and reactor hash, rather than the changing demo
+URL. The publisher never replaces existing release assets: a retry verifies
+identical bytes and uploads only missing files. A source or toolchain change
+needs a new release. To backfill an existing stable tag, dispatch
+`release-acopf.yml` on `main` with `tag=vX.Y.Z`; it accepts only an existing
+release whose tagged commit is part of `main`.
 
 Delete any `NPM_TOKEN` or `CARGO_REGISTRY_TOKEN` repository secrets. The
 workflows do not read long-lived registry credentials.

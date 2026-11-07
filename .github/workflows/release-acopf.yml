@@ -1,0 +1,109 @@
+name: Release AC OPF asset
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing stable crate release tag
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable crate release tag (for example v0.6.1)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-acopf-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the released source
+        id: source
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          revision=$(git rev-parse "refs/tags/$TAG^{commit}")
+          git merge-base --is-ancestor "$revision" origin/main
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = false
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          mkdir release-source
+          git archive "$revision" | tar -x -C release-source
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: release-source
+          shared-key: acopf-release
+      - name: Build the isolated reactor
+        working-directory: release-source
+        env:
+          TELLEGEN_SOURCE_REVISION: ${{ steps.source.outputs.revision }}
+        run: |
+          rustup target add wasm32-wasip1
+          bash scripts/build-acopf-wasi.sh
+      - name: Verify and package the release files
+        env:
+          TAG: ${{ inputs.tag }}
+          REVISION: ${{ steps.source.outputs.revision }}
+        run: |
+          python3 scripts/pack-acopf-release.py --source release-source \
+            --output acopf-release --tag "$TAG" --revision "$REVISION"
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          const module = await WebAssembly.compile(readFileSync('acopf-release/tellegen_acopf_wasi.wasm'));
+          const exports = new Map(WebAssembly.Module.exports(module).map(x => [x.name, x.kind]));
+          for (const name of ['tellegen_acopf_alloc', 'tellegen_acopf_dealloc', 'tellegen_acopf_free_payload', 'tellegen_acopf_solve']) {
+            if (exports.get(name) !== 'function') throw new Error(`Missing reactor export: ${name}`);
+          }
+          if (exports.get('memory') !== 'memory') throw new Error('Missing reactor memory');
+          JS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acopf-release-${{ inputs.tag }}
+          path: acopf-release/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: acopf-release-${{ inputs.tag }}
+          path: acopf-release
+      - name: Attach without replacing published bytes
+        working-directory: acopf-release
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha256sum --check --strict ACOPF-SHA256SUMS.txt
+          existing=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          for name in tellegen_acopf_wasi.wasm POUNCE-EPL-2.0.txt POUNCE-NOTICE.txt POUNCE-SOURCE.json ACOPF-SHA256SUMS.txt; do
+            if grep -Fxq "$name" <<< "$existing"; then
+              mkdir -p "$RUNNER_TEMP/published-acopf"
+              gh release download "$TAG" --pattern "$name" --dir "$RUNNER_TEMP/published-acopf"
+              cmp "$name" "$RUNNER_TEMP/published-acopf/$name"
+            else
+              gh release upload "$TAG" "$name"
+            fi
+          done
