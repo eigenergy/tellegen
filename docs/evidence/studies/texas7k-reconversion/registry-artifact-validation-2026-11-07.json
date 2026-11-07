@@ -1,0 +1,45 @@
+{
+  "schema": "tellegen.texas7k-registry-artifact-qualification/1",
+  "checked_at": "2026-11-07T22:29:34.710Z",
+  "package": "0.8.0",
+  "wasm_sha256": "59ef6ab60302a4a202b7fa8b0e56d1ea9eefb6ce602289514f4b5e7cfab672fc",
+  "wasm_bytes": 15509910,
+  "producers": [
+    {
+      "language": {
+        "Rust": ""
+      },
+      "processed-by": {
+        "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+        "walrus": "0.27.3",
+        "wasm-bindgen": "0.2.130 (c93b8ae84)"
+      }
+    }
+  ],
+  "input_module_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+  "options_sha256": "17c91dff45141b48c298f9b35273de6891e21353df19880ef6084cb59cdcf9e9",
+  "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "original_reference_result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "exact_reference_match": true,
+  "converged": true,
+  "iterations": 23,
+  "terminal_count": 55972,
+  "physical_kcl_residual": 4.76837158203125e-06,
+  "scaled_kcl_residual": 0.16871847863930675,
+  "registry": {
+    "package": "@tellegen/engine@0.8.0",
+    "tarball": "https://registry.npmjs.org/@tellegen/engine/-/engine-0.8.0.tgz",
+    "archive_bytes": 6788317,
+    "integrity": "sha512-TKvcMfCF5yePe+Y67BgXdNUfL1Nlo+YpJNayH/W76lhyl46d43S/beD8k7kAAlfs9f2RznwZDiS1IMmKmky3Dw==",
+    "provenance_url": "https://registry.npmjs.org/-/npm/v1/attestations/@tellegen%2fengine@0.8.0",
+    "provenance_subject_matches_archive": true,
+    "source_revision": "dc73b7a58494efa276e1fe7c56752e3d58047996",
+    "workflow": {
+      "ref": "refs/heads/main",
+      "repository": "https://github.com/eigenergy/tellegen",
+      "path": ".github/workflows/release-npm.yml"
+    },
+    "invocation": "https://github.com/eigenergy/tellegen/actions/runs/42418691256/attempts/1"
+  },
+  "note": "Independent execution of the published archive's own JavaScript glue and WASM on the unchanged checksum-pinned hosted IR and solver options. The complete result hash equals the original scientific reference exactly. Provenance fields and archive digest were cross-checked; this report does not claim an independent signature-verifier run."
+}

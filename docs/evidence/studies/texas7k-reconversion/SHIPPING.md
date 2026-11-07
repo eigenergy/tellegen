@@ -239,3 +239,12 @@ actual downloaded WASM and then requires its independently qualified exact
 result hash. Unknown artifacts fail; neither the old reference nor a general
 numerical tolerance is replaced. The pinned-compiler image still requires its
 own post-merge production check.
+
+The published `@tellegen/engine@0.8.0` archive was then downloaded independently,
+checked against its registry integrity, and executed using its own glue and
+WASM on the unchanged hosted input and options. Its Rust 1.96.0 artifact
+produces the original full-result hash exactly (23 iterations, 55,972
+terminals). `registry-artifact-validation-2026-11-07.json` records the package
+archive digest, source/workflow provenance fields, WASM producer metadata and
+result. That actual artifact was added to the exact-result qualification map;
+a different final Docker artifact still requires independent qualification.

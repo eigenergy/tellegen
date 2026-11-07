@@ -52,6 +52,26 @@
           }
         }
       ]
+    },
+    {
+      "label": "Published @tellegen/engine@0.8.0, Rust 1.96.0",
+      "wasm_sha256": "59ef6ab60302a4a202b7fa8b0e56d1ea9eefb6ce602289514f4b5e7cfab672fc",
+      "wasm_bytes": 15509910,
+      "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+      "producers": [
+        {
+          "language": {
+            "Rust": ""
+          },
+          "processed-by": {
+            "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+            "walrus": "0.27.3",
+            "wasm-bindgen": "0.2.130 (c93b8ae84)"
+          }
+        }
+      ],
+      "source_revision": "dc73b7a58494efa276e1fe7c56752e3d58047996",
+      "qualification": "registry-artifact-validation-2026-11-07.json"
     }
   ],
   "isolation": {
