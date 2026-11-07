@@ -38,6 +38,7 @@ jobs:
       - run: npm run check:analytics
       - run: npm run pack:analytics
       - run: python3 scripts/test-acopf-release.py
+      - run: python3 scripts/test-pack-acopf-release.py
       - run: npm run wasm
       - run: rustup target add wasm32-wasip1
       # The website bundles this separate reactor and its EPL/source notices.
