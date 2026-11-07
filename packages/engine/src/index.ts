@@ -2470,8 +2470,8 @@ async function callSynth(
   }
 }
 
-/** URL of the places table shipped beside this module (Natural Earth
- * populated places, public domain). Resolved on use, like the wasm asset. */
+/** URL of the places table shipped beside this module (GeoNames cities5000
+ * populated places, CC BY 4.0). Resolved on use, like the wasm asset. */
 export function syntheticPlacesUrl(): string {
   return new URL("./data/populated_places.json", import.meta.url).href;
 }

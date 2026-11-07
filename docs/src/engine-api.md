@@ -132,13 +132,14 @@ invalidate the retained interactive Study.
   per bounding box. Pass the fetched documents as the `osm` option with
   `source: "osm"`.
 - `loadSyntheticPlaces(bytes)`, `fetchSyntheticPlaces()`, `syntheticPlacesUrl()`:
-  the Natural Earth places table shipped as `data/populated_places.json`;
-  sessions load it on first use.
+  the GeoNames places table (CC BY 4.0) shipped as
+  `data/populated_places.json`; sessions load it on first use.
 - Refusals reject with `SynthEngineError`, whose `code` is one of
   `invalid_request`, `region`, `places`, `osm`, `osm_insufficient` (with bus
   and branch counts), `build`, `engine`, `state`, `cancelled`.
-- `@tellegen/engine/synth` exports the generated request and report types,
-  and `synthSchema` validates a pasted request at run time.
+- `@tellegen/engine/synth` exports the generated request and report types;
+  `synthSchema`, exported from the package root, validates a pasted request
+  at run time.
 
 See [Synthetic Grid Generation](synthetic-generation.md) for the pipeline.
 
