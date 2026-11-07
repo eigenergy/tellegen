@@ -64,7 +64,8 @@
 			// Browsers may deny access to the storage object itself.
 		}
 		app.preferences.initialize(storage);
-		app.displayMode = app.preferences.coloring;
+		// An absent preference record must not overwrite a host's initial display.
+		if (app.preferences.revision > 0) app.displayMode = app.preferences.coloring;
 	});
 	const ctrl = createController(app, {
 		apiBase: config.apiBase,
