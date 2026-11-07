@@ -821,6 +821,10 @@ pub struct OsmProvenance {
     /// data was served under.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copyright: Option<String>,
+    /// The SPDX identifier of the licence `copyright` names, when it is one
+    /// tellegen recognizes (`ODbL-1.0`). The notice itself stays in `copyright`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub licence: Option<String>,
     pub document_sha256: String,
     pub elements: usize,
     pub counts: BTreeMap<String, u64>,

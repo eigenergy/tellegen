@@ -1,5 +1,5 @@
 // Generated from Rust by synth_schema and generate-synth-types.mjs.
-// Source SHA256: 8c4984c9ff51f0b8cbaaf745ae7888109b04670ae7794054b9412d3c12d77b62
+// Source SHA256: fffddb708e8e9fa64856e4f68d670d9fe6f5c828c9579d9da4790a387e0a2bb9
 
 export type AcPfOutcome = "converged" | "not_converged" | "skipped";
 
@@ -73,7 +73,7 @@ export type OsmIslands = ("connect") | ("cut") | ("keep");
 
 export type OsmOptions = { /** Infrastructure this far outside the region polygon is still kept. */ "clip_buffer_km"?: number; /** Substation and converter elements within this radius collapse into one site. */ "cluster_radius_m"?: number; /** A DC line end within this distance of a converter snaps to it. */ "hvdc_snap_km"?: number; "islands"?: OsmIslands; /** Fewer branches than this is `OsmInsufficient`. */ "min_branches"?: number; /** Fewer buses than this is `OsmInsufficient`. */ "min_buses"?: number; /** A plant within this distance of a site connects there. */ "plant_snap_km"?: number; /** Add explicitly synthetic parallel circuits and voltage support to the mapped topology when its modelled peak demand needs them. False keeps the mapped circuit counts; validation may then report infeasibility. */ "reinforce"?: boolean; /** A line end within this distance of a site snaps to it. */ "snap_km"?: number; /** Lines and substations below this nominal voltage are distribution and are dropped. */ "voltage_floor_kv"?: number; };
 
-export type OsmProvenance = { /** The Overpass answer's `osm3s.copyright` notice: the licence (ODbL) the data was served under. */ "copyright"?: string | null; "counts": { [key: string]: number; }; "document_sha256": string; "elements": number; "generator": string; "timestamp_osm_base"?: string | null; };
+export type OsmProvenance = { /** The Overpass answer's `osm3s.copyright` notice: the licence (ODbL) the data was served under. */ "copyright"?: string | null; "counts": { [key: string]: number; }; "document_sha256": string; "elements": number; "generator": string; /** The SPDX identifier of the licence `copyright` names, when it is one tellegen recognizes (`ODbL-1.0`). The notice itself stays in `copyright`. */ "licence"?: string | null; "timestamp_osm_base"?: string | null; };
 
 export type PlacesProvenance = { "count": number; /** SHA-256 of the table as loaded. */ "sha256": string; /** The dataset the table was derived from (the bundled table names GeoNames' `cities5000` dump and its licence); absent for a bare array of rows. */ "source"?: string | null; /** SHA-256 of that dataset. */ "source_sha256"?: string | null; };
 

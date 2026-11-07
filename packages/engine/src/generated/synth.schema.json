@@ -1549,6 +1549,13 @@
         "generator": {
           "type": "string"
         },
+        "licence": {
+          "description": "The SPDX identifier of the licence `copyright` names, when it is one\ntellegen recognizes (`ODbL-1.0`). The notice itself stays in `copyright`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "timestamp_osm_base": {
           "type": [
             "string",
@@ -2902,5 +2909,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "8c4984c9ff51f0b8cbaaf745ae7888109b04670ae7794054b9412d3c12d77b62"
+  "x-rust-source-sha256": "fffddb708e8e9fa64856e4f68d670d9fe6f5c828c9579d9da4790a387e0a2bb9"
 }
