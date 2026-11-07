@@ -19,14 +19,7 @@ import { McStudyStore } from './mc-study-store.js';
 import { caseRevision } from '../webmcp/tellegen-adapter.js';
 import { trackUsage, type EventData } from '../analytics/client.js';
 
-type CaseEvidenceContext = {
-	studyId: string;
-	revision: number;
-	state: string;
-	goal: string | null;
-	caseId: string;
-	caseRevision: string;
-};
+import type { CaseEvidenceContext } from '@tellegen/svelte/webmcp';
 
 export type GoalDraft = Omit<
 	CreateStudy,

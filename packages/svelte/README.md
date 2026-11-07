@@ -439,6 +439,21 @@ geographic edits without keeping a second serialized network.
 Drawing layers use a plain canvas with their own x/y coordinates. Saved Studies
 retain the drawing center and scale separately from the geographic map camera.
 
+## Optional WebMCP controller adapter
+
+Install `@tellegen/webmcp` only when the host exposes browser tools, then use
+`createTellegenWebMcpAdapter(controller)` from `@tellegen/svelte/webmcp` with
+`registerTellegenWebMcp`. The adapter shares the viewer's case inspection,
+queries, settings, revision checks, previews, edits, and resets. Its factories
+perform no registration or network request; the host controls tool registration.
+Normal viewer imports do not load or require the optional peer.
+
+The second and third factory arguments optionally provide `WebMcpPlanningHost`
+and `WebMcpStudyHost`. They keep approval, activity state, and persisted evidence
+under the host's control. Omitting them leaves planning disabled. Hosts exposing
+only a subset can select those methods from the returned adapter. `caseRevision`
+and `webMcpSessionId` let host evidence use the same concurrency tokens.
+
 ## Release
 
 Build and inspect the package from the repository root:

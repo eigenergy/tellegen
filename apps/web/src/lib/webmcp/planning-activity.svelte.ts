@@ -1,48 +1,9 @@
-import type { CapacityPlanOutcomeJson, CapacityPlanSpecJson } from '@tellegen/svelte';
-import type { CapacityStudyBinding } from '../studies/capacity-compat.js';
+import type { CapacityPlanActivity, StagedCapacityProposal } from '@tellegen/svelte/webmcp';
 import type { StudyWorkspace } from '../studies/workspace.svelte.js';
-
-export type ProposalDecision = 'pending' | 'applied' | 'rejected' | 'expired' | 'no_change';
-
-export interface CapacityPlanActivity {
-	id: string;
-	proposalId: string | null;
-	caseId: string;
-	sessionId: string;
-	sourceDigest: string;
-	revision: string;
-	formulation: string;
-	spec: CapacityPlanSpecJson;
-	outcome: CapacityPlanOutcomeJson;
-	/** Proposal identities in the public WebMCP namespace. The raw outcome is
-	 * retained above with canonical PowerIO identities for traceability. */
-	displayProposal: CapacityPlanDisplayChange[];
-	decision: ProposalDecision;
-	startedAt: number;
-	durationMs: number;
-}
-
-export interface CapacityPlanDisplayChange {
-	branchId: string;
-	deltaMw: number;
-}
-
-export interface StagedProposalChange {
-	branchId: string;
-	legacyId: number;
-	deltaMw: number;
-}
-
-export interface StagedCapacityProposal {
-	study?: CapacityStudyBinding;
-	proposalId: string;
-	activityId: string;
-	caseId: string;
-	sessionId: string;
-	revision: string;
-	changes: StagedProposalChange[];
-	createdAt: number;
-}
+export type { CapacityPlanActivity, StagedCapacityProposal } from '@tellegen/svelte/webmcp';
+export type ProposalDecision = CapacityPlanActivity['decision'];
+export type CapacityPlanDisplayChange = CapacityPlanActivity['displayProposal'][number];
+export type StagedProposalChange = StagedCapacityProposal['changes'][number];
 
 interface ProposalApproval {
 	proposalId: string;
