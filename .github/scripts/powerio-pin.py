@@ -159,6 +159,15 @@ def set_manifest_revision(
 
     assert section_match is not None
     body = section_match.group("body")
+    # Re-selecting a published-series candidate must remove components that
+    # exist only in the newer checkout. Plain --set retains the current set.
+    if version is not None:
+        for crate in OPTIONAL_POWERIO_CRATES:
+            if crate not in crates:
+                body = re.sub(rf"(?m)^{re.escape(crate)}\s*=.*\n?", "", body)
+    else:
+        crates += tuple(crate for crate in OPTIONAL_POWERIO_CRATES
+                        if crate in read_toml(manifest_path).get("patch", {}).get("crates-io", {}))
     for crate in crates:
         if crate in OPTIONAL_POWERIO_CRATES and crate not in read_toml(manifest_path).get("patch", {}).get("crates-io", {}):
             body = body.rstrip() + f'\n{crate} = {{ git = "{POWERIO_REPOSITORY}", rev = "{revision}" }}\n'
