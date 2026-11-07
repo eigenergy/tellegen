@@ -1,5 +1,25 @@
 # @tellegen/svelte
 
+## 0.7.0
+
+### Minor Changes
+
+- [#315](https://github.com/eigenergy/tellegen/pull/315) [`b3ad0bd`](https://github.com/eigenergy/tellegen/commit/b3ad0bd210d1b0d7e12bbc1d23ef187c140b8e64) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Discover and select independent cases from ZIP uploads and folders when the engine includes collection support. Hide unavailable controls in the ordinary PowerIO 0.11 build. Preserve successful imports and saved calculation settings, wait for an explicit calculation, and support cancellation, explicit document groups and source downloads.
+
+- [#346](https://github.com/eigenergy/tellegen/pull/346) [`ab5f9a3`](https://github.com/eigenergy/tellegen/commit/ab5f9a3fb0f8c7c2c4107616dc0603fdce373537) Thanks [@samtalki](https://github.com/samtalki)! - Export embeddable calculation controls shared with the Settings panel. A run validates draft options and updates the accepted Study, map and exports together; failed or cancelled calculations keep the prior result. Hosts can load the optional AC OPF backend on demand through one cancellable controller probe.
+
+- [#349](https://github.com/eigenergy/tellegen/pull/349) [`a2e7786`](https://github.com/eigenergy/tellegen/commit/a2e7786d49707d2c576f6a88bf7803ea81c8be6b) Thanks [@samtalki](https://github.com/samtalki)! - Expose the controller WebMCP adapter through the optional `@tellegen/svelte/webmcp` entry point. Hosts share case inspection, bounded queries, settings, revision checks, and serialized updates; planning approval and Study evidence remain explicit host-provided capabilities. Normal Svelte imports do not require the WebMCP peer.
+
+- [#317](https://github.com/eigenergy/tellegen/pull/317) [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Enable qualified OpenDSS snapshots from files and collections. Preserve explicit bounded load laws and transformer excitation, retain passive source definitions, and report unsupported controls, floating sources and transformer profiles before solving.
+
+### Patch Changes
+
+- [#351](https://github.com/eigenergy/tellegen/pull/351) [`eee66d9`](https://github.com/eigenergy/tellegen/commit/eee66d9e268b34b2d4aa17aade20f1b83459ad65) Thanks [@samtalki](https://github.com/samtalki)! - Fit newly opened multiconductor schematics when the map is too far away or the feeder is hidden behind panels. Preserve a useful close map view, and center small drawings using the capped zoom.
+
+- [#315](https://github.com/eigenergy/tellegen/pull/315) [`90e1add`](https://github.com/eigenergy/tellegen/commit/90e1addf7525871c37a94bb12db9254e65e96c4d) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Keep imported collection rows selectable for source ZIP export and discard stale export failures after cancellation.
+- Updated dependencies [[`9e5e0b5`](https://github.com/eigenergy/tellegen/commit/9e5e0b5f07e4438ebd393707e71dbedb2dd2f138), [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069), [`721f515`](https://github.com/eigenergy/tellegen/commit/721f51522e6c89f5b0b87ee16f9b6ca3dd2eb243)]:
+  - @tellegen/engine@0.8.0
+
 ## 0.6.0
 
 ### Minor Changes
