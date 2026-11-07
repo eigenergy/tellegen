@@ -1544,8 +1544,8 @@
         "generator": {
           "type": "string"
         },
-        "license": {
-          "description": "Licence identifier inferred from the Overpass attribution notice (when recognizable).",
+        "licence": {
+          "description": "The SPDX identifier of the licence `copyright` names, when it is one\ntellegen recognizes (`ODbL-1.0`). The notice itself stays in `copyright`.",
           "type": [
             "string",
             "null"
@@ -2904,5 +2904,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "e12869516190d718f7560f679810c7c5fc7ef0be299469b11e53f86454d61a40"
+  "x-rust-source-sha256": "5b9c1be0bcd3bfc237cc3d3927b624367869eaef9e9d3d8d1ba6014d749f28ad"
 }

@@ -144,9 +144,9 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
     let copyright = documents
         .iter()
         .find_map(|d| d.osm3s.as_ref().and_then(|o| o.copyright.clone()));
-    let license = copyright
+    let licence = copyright
         .as_deref()
-        .and_then(osm_license_from_copyright)
+        .and_then(osm_licence_from_copyright)
         .map(str::to_owned);
     let mut out = ParsedDocument {
         provenance: OsmProvenance {
@@ -155,7 +155,7 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
                 .iter()
                 .find_map(|d| d.osm3s.as_ref().and_then(|o| o.timestamp_osm_base.clone())),
             copyright,
-            license,
+            licence,
             document_sha256: Sha256::digest(text.as_bytes())
                 .iter()
                 .map(|b| format!("{b:02x}"))
@@ -259,11 +259,9 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
 /// Return the recognized licence identifier in an Overpass attribution notice.
 ///
 /// Keep the source notice verbatim as well; this field is only a machine-readable hint.
-fn osm_license_from_copyright(copyright: &str) -> Option<&'static str> {
+fn osm_licence_from_copyright(copyright: &str) -> Option<&'static str> {
     let notice = copyright.to_ascii_lowercase();
-    if notice.contains("opendatacommons.org/licenses/odbl")
-        || notice.contains("under odbl")
-    {
+    if notice.contains("opendatacommons.org/licenses/odbl") || notice.contains("under odbl") {
         Some("ODbL-1.0")
     } else {
         None
@@ -593,10 +591,11 @@ mod tests {
     }
 
     #[test]
-    fn osm_license_is_extracted_without_replacing_the_original_notice() {
-        let doc = r#"{"osm3s":{"copyright":"The data is made available under ODbL."},"elements":[]}"#;
+    fn osm_licence_is_extracted_without_replacing_the_original_notice() {
+        let doc =
+            r#"{"osm3s":{"copyright":"The data is made available under ODbL."},"elements":[]}"#;
         let parsed = parse_document(doc).unwrap();
-        assert_eq!(parsed.provenance.license.as_deref(), Some("ODbL-1.0"));
+        assert_eq!(parsed.provenance.licence.as_deref(), Some("ODbL-1.0"));
         assert_eq!(
             parsed.provenance.copyright.as_deref(),
             Some("The data is made available under ODbL.")
@@ -604,7 +603,7 @@ mod tests {
 
         let unknown = r#"{"osm3s":{"copyright":"Attribution notice with no known licence identifier."},"elements":[]}"#;
         let parsed = parse_document(unknown).unwrap();
-        assert_eq!(parsed.provenance.license, None);
+        assert_eq!(parsed.provenance.licence, None);
         assert_eq!(
             parsed.provenance.copyright.as_deref(),
             Some("Attribution notice with no known licence identifier.")
