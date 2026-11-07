@@ -319,7 +319,8 @@ export class Controller {
 	serverComputeOff = false;
 	/** The optional EPL-bearing WASI asset is never inferred or bundled. */
 	private readonly acOpfWasmUrl: string | null;
-	private acOpfProbeStarted = false;
+	private acOpfProbe: Promise<boolean> | null = null;
+	acOpfLoading = $state(false);
 	private readonly acOpfProbeAbort = new AbortController();
 	private readonly acOpfSolves = new Map<SolvableCase, AbortController>();
 	acOpfAvailable = $state(false);
@@ -475,20 +476,40 @@ export class Controller {
 		return !FORMULATIONS.find((entry) => entry.id === formulation)?.disabled;
 	}
 
-	probeAcOpf = () => {
-		if (this.disposed || this.acOpfProbeStarted || !this.acOpfWasmUrl) return;
-		this.acOpfProbeStarted = true;
-		void probeAcOpfWorker(this.acOpfWasmUrl, undefined, this.acOpfProbeAbort.signal).then(
-			(available) => {
-				if (this.disposed) return;
+	/** Whether this host supplied the optional solver asset. It loads only on request. */
+	get acOpfConfigured(): boolean {
+		return Boolean(this.acOpfWasmUrl);
+	}
+
+	/** Share one probe across the shell and embedded controls, and cancel it on disposal. */
+	loadAcOpf = (): Promise<boolean> => {
+		if (this.disposed || !this.acOpfWasmUrl) return Promise.resolve(false);
+		if (this.acOpfAvailable) return Promise.resolve(true);
+		if (this.acOpfProbe) return this.acOpfProbe;
+		this.acOpfLoading = true;
+		this.acOpfProbe = probeAcOpfWorker(this.acOpfWasmUrl, undefined, this.acOpfProbeAbort.signal)
+			.then((available) => {
+				if (this.disposed) return false;
 				this.acOpfAvailable = available;
-				// A declared instance can be dropped while the optional asset is probing.
-				const c = this.app.activeLocal;
-				if (available && c?.formulation === 'acopf' && !c.solving) {
-					this.maybeStartLocalSolve(c.id);
-				}
+				return available;
+			})
+			.catch(() => false)
+			.finally(() => {
+				this.acOpfLoading = false;
+				if (!this.acOpfAvailable) this.acOpfProbe = null;
+			});
+		return this.acOpfProbe;
+	};
+
+	probeAcOpf = () => {
+		void this.loadAcOpf().then((available) => {
+			if (this.disposed) return;
+			// A declared instance can be dropped while the optional asset is probing.
+			const c = this.app.activeLocal;
+			if (available && c?.formulation === 'acopf' && !c.solving) {
+				this.maybeStartLocalSolve(c.id);
 			}
-		);
+		});
 	};
 
 	caseExportUnavailableReason(c: SolvableCase): string | null {

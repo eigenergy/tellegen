@@ -83,6 +83,27 @@ are unavailable. Geographic sidecars and layout downloads remain available.
 Without the optional worker, imported AC OPF instances remain viewable but
 cannot be solved. No server solve is substituted for AC OPF.
 
+## Embedded calculation controls
+
+`CalculationSettings` from `@tellegen/svelte/components` renders the same controls
+as the shell's Settings panel, without creating a panel or adding display preferences.
+Mount it inside `TellegenProvider`; pass `currentCase` to bind it to a host's case,
+or omit the prop to follow the active case. Pass `null` to show the empty state.
+
+```svelte
+<CalculationSettings currentCase={localCase} />
+```
+
+Option names, defaults, limits, and validation come from the engine's settings
+contract. **Run calculation** applies the draft and accepts the new result only
+after success. **Apply settings** can stage options without solving. Map colors,
+subsequent edits, and exports use that accepted Study; failures and cancellation
+preserve the previous result. Regenerating a case resets its draft controls.
+
+A supplied `acOpfWasmUrl` enables on-demand AC OPF loading on its first run.
+Custom controls can await `controller.loadAcOpf()` and inspect `acOpfLoading` and
+`acOpfAvailable`; concurrent callers share the same cancellable worker probe.
+
 ## Panel layout
 
 The shell docks Network and Studies on the left, and Solver and Agent on the
