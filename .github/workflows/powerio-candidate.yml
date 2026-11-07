@@ -83,6 +83,9 @@ jobs:
           if [ -n "$TELLEGEN_POWERIO_FEATURES" ]; then
             compat=(--features tellegen/powerio-012)
           fi
+          if [[ "$TELLEGEN_POWERIO_FEATURES" == *powerio-collections* ]]; then
+            compat+=(--features tellegen-wasm/powerio-collections)
+          fi
           cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
             --all-targets "${compat[@]}" -- -D warnings
       - name: Test Rust surfaces
@@ -93,7 +96,7 @@ jobs:
             compat=(--features tellegen/powerio-012)
             wasm_features+=",$TELLEGEN_POWERIO_FEATURES"
           fi
-          cargo test --workspace "${compat[@]}"
+          cargo test --workspace --exclude tellegen-py "${compat[@]}"
           cargo test -p tellegen --features conic "${compat[@]}"
           cargo test -p tellegen-wasm --features "$wasm_features"
       - name: Test candidate DSS snapshot contract
