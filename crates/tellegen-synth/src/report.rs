@@ -768,7 +768,8 @@ pub struct PlacesProvenance {
     /// SHA-256 of the table as loaded.
     pub sha256: String,
     /// The dataset the table was derived from (the bundled table names
-    /// Natural Earth's release); absent for a bare array of rows.
+    /// GeoNames' `cities5000` dump and its licence); absent for a bare array
+    /// of rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// SHA-256 of that dataset.

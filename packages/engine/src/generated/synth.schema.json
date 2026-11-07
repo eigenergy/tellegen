@@ -1572,7 +1572,7 @@
           "type": "string"
         },
         "source": {
-          "description": "The dataset the table was derived from (the bundled table names\nNatural Earth's release); absent for a bare array of rows.",
+          "description": "The dataset the table was derived from (the bundled table names\nGeoNames' `cities5000` dump and its licence); absent for a bare array\nof rows.",
           "type": [
             "string",
             "null"
@@ -2897,5 +2897,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "0b491a48f4b8c8e79b43c27e2b23d2028d524e37bb32398d9b2c8a173cb3aac9"
+  "x-rust-source-sha256": "93e5dd9a1a061de6170028057ec998f526495e1b026232a93f4d19e46dd766a4"
 }
