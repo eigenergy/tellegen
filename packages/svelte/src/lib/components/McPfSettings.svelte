@@ -43,7 +43,9 @@
 		>
 		<p>
 			Outside the normal band, the envelope changes the load equations to help convergence. Modified
-			results are labelled explicitly. These thresholds are not operating voltage limits.
+			results are labelled explicitly. These thresholds are not operating voltage limits. Loads with
+			explicit source voltage bounds always use those bounds and their original cutoff or current
+			limit; this setting does not replace them.
 		</p>
 		<label>Vlow (pu)<input type="number" step="any" bind:value={options.v_low_pu} /></label>
 		<label>Vmin (pu)<input type="number" step="any" bind:value={options.v_min_pu} /></label>

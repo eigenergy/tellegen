@@ -105,6 +105,9 @@ jobs:
           cargo test -p tellegen --test mc_pf_oracle
           python3 crates/tellegen/tests/generate_mc_load_oracle.py
           cargo test -p tellegen --test mc_load_oracle
+          python3 crates/tellegen/tests/generate_dss_snapshot_oracle.py
+          git diff --exit-code -- crates/tellegen/tests/data/dss_snapshots.json
+          cargo test -p tellegen --test dss_snapshots
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic,synth
       # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,

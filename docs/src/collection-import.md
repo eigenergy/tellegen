@@ -1,5 +1,10 @@
 # ZIP and folder case collections
 
+These controls require the optional PowerIO 0.12 collection build. The ordinary
+build uses published PowerIO 0.11.9, hides collection controls, and continues to
+accept individual case files. Hosts can query `collectionSupported()` from
+`@tellegen/engine` before offering ZIP or folder acquisition.
+
 Drop a ZIP onto Tellegen, choose it with **Open a case file**, or use **Open
 folder**. Folder drops preserve relative paths. Each ZIP has its own namespace:
 a missing OpenDSS include cannot be supplied by another uploaded archive.
@@ -47,3 +52,25 @@ other cases). A single master by itself need not be a complete project. Closing
 the chooser releases source collections. Imported PowerIO modules retain
 structured source origin and diagnostics but do not embed the archive; saving
 and restoring a module does not restore an original-ZIP download.
+
+## OpenDSS snapshot power flow
+
+Qualified OpenDSS imports can run **Studies → Run power flow** after import.
+Snapshot qualification also requires the `powerio-012` build feature. PowerIO
+0.11 OpenDSS imports remain view-only; existing typed module and BMOPF solving
+remain available under the same validation rules.
+The initial profile covers normalized finite sources with grounded references,
+explicit conductor impedances, bounded ZIP and exponential loads (including
+OpenDSS voltage bands and ZIP dropout), and supported finite-leakage transformers.
+An explicit fourth neutral conductor is supported. Source-defined load bounds
+always take precedence over the optional solver envelope; disabling that option
+does not remove the source model's own voltage bounds.
+
+Passive definitions, profiles and monitoring records remain in the module.
+This is a fixed equipment snapshot: daily/yearly simulation, control execution,
+and an OpenDSS script's sequence of solves are not run. Active regulator/control
+objects, unresolved geometry or dependencies, floating source references,
+generator/IBR injections, voltage-dependent loads without a nominal voltage,
+general three-winding transformers, and unqualified transformer settings remain
+view-only with a reason. Convergence and operating voltage-limit compliance are
+reported separately. A runnable model can still fail to converge.

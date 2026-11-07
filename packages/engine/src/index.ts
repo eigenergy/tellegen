@@ -910,7 +910,8 @@ export interface McPfOptions {
   /** Nonnegative dimensionless KCL tolerance; default 1e-5. I_scale is the
    * larger of summed incident-current magnitudes and net load-current magnitude. */
   relative_kcl_tolerance?: number;
-  /** Apply the OpenDSS-style bounded-voltage load envelope; default true.
+  /** Apply the legacy OpenDSS-style envelope to unbounded laws; default true.
+   * Explicit source bounds, cutoff and current limits always take precedence.
    * False uses original load equations at every voltage. Thresholds must still
    * satisfy 0 < v_low_pu < v_min_pu < v_max_pu when the envelope is disabled. */
   voltage_envelope?: boolean;

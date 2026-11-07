@@ -1,0 +1,929 @@
+{
+  "backend": "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5",
+  "cases": [
+    {
+      "name": "model1_0.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          44.18422217,
+          18.75503756
+        ],
+        "lb.1": [
+          44.04093842,
+          18.70141373
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.094780958,
+            0.1675458718
+          ]
+        }
+      }
+    },
+    {
+      "name": "model1_0.6",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          132.5526616,
+          56.26508686
+        ],
+        "lb.1": [
+          132.0574598,
+          56.07974617
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            7.239800149,
+            0.5792097642
+          ]
+        }
+      }
+    },
+    {
+      "name": "model1_0.7",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          154.6447677,
+          65.64257939
+        ],
+        "lb.1": [
+          154.0115132,
+          65.40555833
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.258157385,
+            0.740827312
+          ]
+        }
+      }
+    },
+    {
+      "name": "model1_0.9",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          198.828988,
+          84.397607
+        ],
+        "lb.1": [
+          198.0272587,
+          84.09752986
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            11.721244,
+            0.9378894027
+          ]
+        }
+      }
+    },
+    {
+      "name": "model1_1",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          220.9211105,
+          93.77518599
+        ],
+        "lb.1": [
+          220.2000918,
+          93.50534458
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.54115809,
+            0.8431178102
+          ]
+        }
+      }
+    },
+    {
+      "name": "model1_1.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          265.1053488,
+          112.530308
+        ],
+        "lb.1": [
+          264.4547768,
+          112.2868568
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.511144581,
+            0.7604053087
+          ]
+        }
+      }
+    },
+    {
+      "name": "model2_0.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          44.18422217,
+          18.75503756
+        ],
+        "lb.1": [
+          44.04093842,
+          18.70141373
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.094780958,
+            0.1675458718
+          ]
+        }
+      }
+    },
+    {
+      "name": "model2_0.6",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          132.5526665,
+          56.26511268
+        ],
+        "lb.1": [
+          132.1228153,
+          56.10424119
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            6.284342875,
+            0.5026376154
+          ]
+        }
+      }
+    },
+    {
+      "name": "model2_0.7",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          154.6447776,
+          65.64263146
+        ],
+        "lb.1": [
+          154.1432845,
+          65.45494806
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            7.331733354,
+            0.5864105513
+          ]
+        }
+      }
+    },
+    {
+      "name": "model2_0.9",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          198.8289998,
+          84.39766902
+        ],
+        "lb.1": [
+          198.1842229,
+          84.15636179
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.426514313,
+            0.753956423
+          ]
+        }
+      }
+    },
+    {
+      "name": "model2_1",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          220.9211109,
+          93.77518781
+        ],
+        "lb.1": [
+          220.2046921,
+          93.50706865
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.47390479,
+            0.8377293589
+          ]
+        }
+      }
+    },
+    {
+      "name": "model2_1.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          265.105333,
+          112.5302254
+        ],
+        "lb.1": [
+          264.2456305,
+          112.2084824
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            12.56868575,
+            1.005275231
+          ]
+        }
+      }
+    },
+    {
+      "name": "model3_0.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          44.18422217,
+          18.75503756
+        ],
+        "lb.1": [
+          44.04093842,
+          18.70141373
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.094780958,
+            0.1675458718
+          ]
+        }
+      }
+    },
+    {
+      "name": "model3_0.6",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          132.5526616,
+          56.26508686
+        ],
+        "lb.1": [
+          132.0574598,
+          56.07974617
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            7.239800149,
+            0.5792097642
+          ]
+        }
+      }
+    },
+    {
+      "name": "model3_0.7",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          154.6447677,
+          65.64257939
+        ],
+        "lb.1": [
+          154.0115132,
+          65.40555833
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.258157385,
+            0.740827312
+          ]
+        }
+      }
+    },
+    {
+      "name": "model3_0.9",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          198.8290077,
+          84.39760969
+        ],
+        "lb.1": [
+          198.0606585,
+          84.05641568
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            11.43553374,
+            1.606904804
+          ]
+        }
+      }
+    },
+    {
+      "name": "model3_1",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          220.9211111,
+          93.77518607
+        ],
+        "lb.1": [
+          220.2010711,
+          93.50413856
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.5327834,
+            0.8627405762
+          ]
+        }
+      }
+    },
+    {
+      "name": "model3_1.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          265.1053488,
+          112.530308
+        ],
+        "lb.1": [
+          264.4547768,
+          112.2868568
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.511144581,
+            0.7604053087
+          ]
+        }
+      }
+    },
+    {
+      "name": "model4_0.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
+      "voltages": {
+        "src.1": [
+          44.18422217,
+          18.75503756
+        ],
+        "lb.1": [
+          44.04093842,
+          18.70141373
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.094780958,
+            0.1675458718
+          ]
+        }
+      }
+    },
+    {
+      "name": "model4_0.6",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
+      "voltages": {
+        "src.1": [
+          132.5526616,
+          56.26508686
+        ],
+        "lb.1": [
+          132.0574598,
+          56.07974617
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            7.239800149,
+            0.5792097642
+          ]
+        }
+      }
+    },
+    {
+      "name": "model4_0.7",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
+      "voltages": {
+        "src.1": [
+          154.6447677,
+          65.64257939
+        ],
+        "lb.1": [
+          154.0115132,
+          65.40555833
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.258157385,
+            0.740827312
+          ]
+        }
+      }
+    },
+    {
+      "name": "model4_0.9",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
+      "voltages": {
+        "src.1": [
+          198.8290074,
+          84.39763239
+        ],
+        "lb.1": [
+          198.1115884,
+          84.08862882
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.64139622,
+            1.37393774
+          ]
+        }
+      }
+    },
+    {
+      "name": "model4_1",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
+      "voltages": {
+        "src.1": [
+          220.9211111,
+          93.77518669
+        ],
+        "lb.1": [
+          220.2024918,
+          93.50499029
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.51080796,
+            0.8568605914
+          ]
+        }
+      }
+    },
+    {
+      "name": "model4_1.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
+      "voltages": {
+        "src.1": [
+          265.1053488,
+          112.530308
+        ],
+        "lb.1": [
+          264.4547768,
+          112.2868568
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            9.511144581,
+            0.7604053087
+          ]
+        }
+      }
+    },
+    {
+      "name": "model5_0.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          44.18422217,
+          18.75503756
+        ],
+        "lb.1": [
+          44.04093842,
+          18.70141373
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.094780958,
+            0.1675458718
+          ]
+        }
+      }
+    },
+    {
+      "name": "model5_0.6",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          132.5526643,
+          56.2651008
+        ],
+        "lb.1": [
+          132.0927388,
+          56.09296901
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            6.724041158,
+            0.5378708735
+          ]
+        }
+      }
+    },
+    {
+      "name": "model5_0.7",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          154.644773,
+          65.6426075
+        ],
+        "lb.1": [
+          154.0826434,
+          65.43222027
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            8.218267917,
+            0.6574552874
+          ]
+        }
+      }
+    },
+    {
+      "name": "model5_0.9",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          198.8289942,
+          84.39763981
+        ],
+        "lb.1": [
+          198.1102907,
+          84.12865266
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.50735697,
+            0.8405716044
+          ]
+        }
+      }
+    },
+    {
+      "name": "model5_1",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          220.9211107,
+          93.7751869
+        ],
+        "lb.1": [
+          220.202403,
+          93.50621076
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.50736985,
+            0.8404106225
+          ]
+        }
+      }
+    },
+    {
+      "name": "model5_1.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
+      "voltages": {
+        "src.1": [
+          265.1053415,
+          112.5302696
+        ],
+        "lb.1": [
+          264.3574584,
+          112.2503901
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.93384982,
+            0.8743201941
+          ]
+        }
+      }
+    },
+    {
+      "name": "model8_0.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
+      "voltages": {
+        "src.1": [
+          44.18422217,
+          18.75503756
+        ],
+        "lb.1": [
+          44.04093842,
+          18.70141373
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.094780958,
+            0.1675458718
+          ]
+        }
+      }
+    },
+    {
+      "name": "model8_0.6",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
+      "voltages": {
+        "src.1": [
+          132.5526989,
+          56.26528255
+        ],
+        "lb.1": [
+          132.5526989,
+          56.26528255
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "name": "model8_0.7",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
+      "voltages": {
+        "src.1": [
+          154.6448027,
+          65.642758
+        ],
+        "lb.1": [
+          154.4648353,
+          65.57271777
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            2.641230364,
+            0.2459374337
+          ]
+        }
+      }
+    },
+    {
+      "name": "model8_0.9",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
+      "voltages": {
+        "src.1": [
+          198.8289961,
+          84.39762984
+        ],
+        "lb.1": [
+          198.0902173,
+          84.1107136
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.84015855,
+            1.001615198
+          ]
+        }
+      }
+    },
+    {
+      "name": "model8_1",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
+      "voltages": {
+        "src.1": [
+          220.9211108,
+          93.77518664
+        ],
+        "lb.1": [
+          220.2019049,
+          93.50571029
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.5158371,
+            0.8451372602
+          ]
+        }
+      }
+    },
+    {
+      "name": "model8_1.2",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
+      "voltages": {
+        "src.1": [
+          265.105338,
+          112.5302792
+        ],
+        "lb.1": [
+          264.3745294,
+          112.2716005
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            10.62833534,
+            0.6587427236
+          ]
+        }
+      }
+    },
+    {
+      "name": "four_wire",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.wires phases=3 bus1=src.1.2.3 basekv=.4 frequency=50\nnew line.l phases=4 bus1=src.1.2.3.0 bus2=lb.1.2.3.4 length=1 units=m rmatrix=[.05 | .01 .05 | .01 .01 .05 | .01 .01 .01 .08] xmatrix=[.02 | .005 .02 | .005 .005 .02 | .005 .005 .005 .03] cmatrix=[0 | 0 0 | 0 0 0 | 0 0 0 0]\nnew load.a phases=1 bus1=lb.1.4 kv=.23094 kw=3 kvar=1 model=1\nnew load.b phases=1 bus1=lb.2.4 kv=.23094 kw=2 kvar=.5 model=5\nnew load.c phases=1 bus1=lb.3.4 kv=.23094 kw=1 kvar=.2 model=4 cvrwatts=.8 cvrvars=2\n",
+      "voltages": {
+        "src.1": [
+          230.9395408,
+          -0.0009019058869
+        ],
+        "src.2": [
+          -115.4704068,
+          -199.9993653
+        ],
+        "src.3": [
+          -115.4696789,
+          200.0000565
+        ],
+        "lb.1": [
+          230.352126,
+          -0.02342549104
+        ],
+        "lb.2": [
+          -115.3174406,
+          -199.6500357
+        ],
+        "lb.3": [
+          -115.3502381,
+          199.8540972
+        ],
+        "lb.4": [
+          0.5430726105,
+          -0.323254119
+        ]
+      },
+      "currents": {
+        "a": {
+          "terminal": "1",
+          "value": [
+            13.05997102,
+            -4.334399503
+          ]
+        },
+        "b": {
+          "terminal": "2",
+          "value": [
+            -6.223885255,
+            -6.399283291
+          ]
+        },
+        "c": {
+          "terminal": "3",
+          "value": [
+            -1.418216125,
+            4.180813366
+          ]
+        }
+      }
+    },
+    {
+      "name": "delta_wye",
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.tx phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=2 buses=[src.1.2.3 lv.1.2.3.0] conns=[delta wye] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4 %noloadloss=.2 %imag=1\nnew load.ld phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.79449,
+          -0.08456301818
+        ],
+        "src.2": [
+          -3175.470479,
+          -5499.907081
+        ],
+        "src.3": [
+          -3175.32401,
+          5499.991645
+        ],
+        "lv.1": [
+          197.2102992,
+          -116.7910489
+        ],
+        "lv.2": [
+          -199.7491649,
+          -112.3936045
+        ],
+        "lv.3": [
+          2.538865696,
+          229.1846534
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            30.13016738,
+            -34.74599052
+          ]
+        }
+      }
+    }
+  ]
+}
