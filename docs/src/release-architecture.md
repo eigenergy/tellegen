@@ -221,16 +221,24 @@ attaches them to the run. It publishes nothing.
 Each surface keeps its own generated changelog:
 `crates/tellegen/CHANGELOG.md`, `packages/engine/CHANGELOG.md`,
 `packages/svelte/CHANGELOG.md`, `packages/webmcp/CHANGELOG.md` and
-`packages/analytics/CHANGELOG.md`. The root `CHANGELOG.md` is the curated view
-across all of them and the only record for releases before the split.
+`packages/analytics/CHANGELOG.md`. The root `CHANGELOG.md` is the archive of
+the releases before the split. Nobody edits a changelog by hand, including on a
+release pull request.
 
-release-plz writes a draft crate changelog from commit messages, which is
-curated on the release pull request before it merges. The `commit_parsers` in
-`release-plz.toml` keep merge commits: when pull request branches take `main`
-by merging it, every commit release-plz reaches can be a merge, and skipping
-them leaves a version bump with no changelog, which the crate release rejects.
-The parsers restate release-plz's default groups, because setting the list
-replaces the defaults.
+The crate changelog lists the pull requests merged since the previous release,
+one entry each, under its title. release-plz writes a section for the new
+version from commit subjects, but on this repository most of those read "Merge
+pull request #N", and it walks the history along one parent at a time, which
+can miss a pull request. So the crate release workflow then runs
+`.github/scripts/write-crate-changelog.py`, which replaces that section's body.
+It reads the first-parent merge commits since the last `v*` tag, keeps those
+that changed `crates/tellegen/` or a root `Cargo.toml` entry the crate builds
+with, and skips Dependabot, release-plz and changesets merges and version-only
+bumps. A title starting `feat:` files the entry under Added, `fix:` under Fixed,
+and `!:` under Breaking; anything else goes under Changed. Write pull request
+titles for a reader of the changelog. The section itself must stay, because
+`release-plz release` takes the GitHub release body from it, so the
+`commit_parsers` in `release-plz.toml` keep merge commits.
 
 ## CI Gates
 
