@@ -1,5 +1,5 @@
 //! Synthetic raw OpenDSS snapshots, independently solved by the pinned backend.
-#![cfg(feature = "mc-pf")]
+#![cfg(all(feature = "mc-pf", feature = "powerio-012"))]
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use tellegen::{McPfOptions, McPfResult};

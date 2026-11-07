@@ -6,6 +6,7 @@ use powerio_dist::{Configuration, DistLoad, DistLoadVoltageModel};
 #[derive(Clone, Debug)]
 pub(crate) enum BranchVoltageModel {
     /// The typed law owns its bounds; legacy solver envelope options do not replace them.
+    #[cfg(feature = "powerio-012")]
     Bounded(DistLoadVoltageModel),
     ConstantPower,
     ConstantCurrent,
@@ -90,12 +91,11 @@ impl BranchLoad {
         // Evaluate the radial current equations. Dividing by |U| and
         // multiplying by the unit phasor avoids forming U*conjugate(U), which
         // underflows for a perfectly valid tiny nonzero voltage.
-        let current = if matches!(self.model, BranchVoltageModel::Bounded(_)) {
-            self.bounded_current(branch, u, magnitude)?
-        } else if options.voltage_envelope {
-            self.enveloped_current(branch, u, magnitude, options)
-        } else {
-            self.current_at_voltage(branch, u, magnitude)
+        let current = match &self.model {
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => self.bounded_current(branch, u, magnitude)?,
+            _ if options.voltage_envelope => self.enveloped_current(branch, u, magnitude, options),
+            _ => self.current_at_voltage(branch, u, magnitude),
         };
         if !current.re.is_finite() || !current.im.is_finite() {
             return Err(format!(
@@ -156,6 +156,7 @@ impl BranchLoad {
         let s = self.power[branch];
         let ratio = magnitude / self.nominal_voltage(branch);
         match &self.model {
+            #[cfg(feature = "powerio-012")]
             BranchVoltageModel::Bounded(_) => unreachable!("bounded laws use bounded_current"),
             BranchVoltageModel::ConstantPower => s.conj() * (phase / magnitude),
             BranchVoltageModel::ConstantCurrent => {
@@ -214,6 +215,7 @@ impl BranchLoad {
         }
     }
 
+    #[cfg(feature = "powerio-012")]
     fn bounded_current(
         &self,
         branch: usize,
@@ -261,7 +263,9 @@ impl BranchLoad {
         }
         let s = self.power[branch];
         match &self.model {
-            BranchVoltageModel::Bounded(_) | BranchVoltageModel::ConstantImpedance => true,
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => true,
+            BranchVoltageModel::ConstantImpedance => true,
             BranchVoltageModel::ConstantPower | BranchVoltageModel::ConstantCurrent => {
                 s.norm() == 0.0
             }
@@ -289,7 +293,9 @@ impl BranchLoad {
     fn near_zero_law_is_safe(&self, branch: usize) -> bool {
         let s = self.power[branch];
         match &self.model {
-            BranchVoltageModel::Bounded(_) | BranchVoltageModel::ConstantImpedance => true,
+            #[cfg(feature = "powerio-012")]
+            BranchVoltageModel::Bounded(_) => true,
+            BranchVoltageModel::ConstantImpedance => true,
             BranchVoltageModel::ConstantCurrent => true,
             BranchVoltageModel::Zip {
                 alpha_p, beta_p, ..
@@ -485,6 +491,7 @@ pub(crate) fn prepare_load(
             gamma_p: coefficients(&load.name, "gamma_p", gamma_p, load.p_nom.len())?,
             gamma_q: coefficients(&load.name, "gamma_q", gamma_q, load.p_nom.len())?,
         },
+        #[cfg(feature = "powerio-012")]
         DistLoadVoltageModel::BoundedZip { .. }
         | DistLoadVoltageModel::BoundedExponential { .. }
         | DistLoadVoltageModel::BoundedConstantPower { .. } => {
@@ -511,6 +518,7 @@ pub(crate) fn prepare_load(
 
 /// Expand the public one-or-per-branch convention before calling PowerIO's
 /// per-branch evaluator. Validation is independent of the operating voltage.
+#[cfg(feature = "powerio-012")]
 fn prepare_bounded_model(load: &DistLoad, vnom: &[f64]) -> Result<DistLoadVoltageModel, String> {
     let mut model = load.voltage_model.clone();
     match &mut model {
@@ -567,6 +575,7 @@ fn prepare_bounded_model(load: &DistLoad, vnom: &[f64]) -> Result<DistLoadVoltag
     Ok(model)
 }
 
+#[cfg(feature = "powerio-012")]
 fn validate_bounds(name: &str, low: f64, min: f64, max: f64) -> Result<(), String> {
     // A positive low threshold guarantees a finite zero-voltage continuation.
     // Zero/reversed thresholds are left outside this bounded snapshot profile.
@@ -699,7 +708,7 @@ fn connection_incidence(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "powerio-012"))]
 mod bounded_tests {
     use super::*;
     #[test]
