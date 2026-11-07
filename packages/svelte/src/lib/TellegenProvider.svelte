@@ -57,7 +57,13 @@
 	};
 	const app = createAppState();
 	onMount(() => {
-		app.preferences.initialize(typeof localStorage === 'undefined' ? undefined : localStorage);
+		let storage: Storage | undefined;
+		try {
+			storage = globalThis.localStorage;
+		} catch {
+			// Browsers may deny access to the storage object itself.
+		}
+		app.preferences.initialize(storage);
 		app.displayMode = app.preferences.coloring;
 	});
 	const ctrl = createController(app, {
