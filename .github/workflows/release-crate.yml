@@ -170,6 +170,7 @@ jobs:
     name: update version pull request
     needs: version-patch
     runs-on: ubuntu-latest
+    environment: release-bot
     permissions:
       contents: read
     steps:
@@ -293,3 +294,17 @@ jobs:
     uses: ./.github/workflows/release-acopf.yml
     with:
       tag: ${{ needs.plan.outputs.tag }}
+
+  python:
+    needs: [plan, publish]
+    if: needs.publish.result == 'success'
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start the Python release for the published crate tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: gh workflow run release-python.yml --ref main --field tag="$TAG"

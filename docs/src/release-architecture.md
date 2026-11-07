@@ -125,21 +125,29 @@ variable after you make all of these:
    rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
-   its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Both release
+   its private key in the `release-bot` environment's
+   `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Restrict that environment to `main`.
+   Both release
    bots use it so their version pull requests start CI. Pull requests opened by
    `GITHUB_TOKEN` do not start workflows.
 
-The current `main` ruleset requires pull requests, merge commits, an up-to-date
-branch and CI checks; it blocks force pushes and deletion. It requires zero
+Keep deployment credentials in the main-only `demo` environment. No deployment
+or Release App credentials belong at repository scope; only the jobs bound to
+their environments receive them. The temporary migration workflow is removed
+after its environment-only aliases prove that all copied credentials match.
+
+The current `main` ruleset requires pull requests, merge commits and CI checks;
+it blocks force pushes and deletion. It does not require the branch to be
+up to date before merging. It requires zero
 approvals and does not require approval of the last push, so a sole maintainer
 can release after reviewing the final changes and checks. The version
 pull-request merge is the publication gate. If independent approval becomes
 required, set at least one approval and dismiss stale approvals or require
 approval of the last reviewable push. Do not give the Release App a ruleset bypass.
 
-If a package or crate does not yet exist at its registry, publish its first
-version manually before configuring the trusted publisher. Later releases use
-this pipeline end to end.
+For npm and crates.io, bootstrap a missing package before configuring its
+trusted publisher. PyPI supports a pending publisher that creates the project
+on the first OIDC upload; its setup is described below.
 
 Check all four npm publishers with `npm trust list @tellegen/<name>`. A package
 previously published by hand still needs its own publisher; configuring the
@@ -235,7 +243,29 @@ package version may differ from the checkout. In every case the validator
 requires both manifests and both lock entries to carry the engine's version,
 before the patch is sealed and again after it is applied, before the App token
 is minted. A wheel already on the new version needs no edit, and an update with
-no release stays a no-op. Nothing here publishes a wheel to PyPI.
+no release stays a no-op.
+
+After a crate release succeeds, `release-crate.yml` dispatches
+`release-python.yml` on main with the published tag. It resolves the tag to an
+immutable commit, confirms it belongs to main and has a published GitHub
+release, and runs the Python gates against that source. The gates check the
+installed extension's type stubs, test Python 3.11 and 3.13, build five platform
+wheels, and build and solve a case from the source archive. Test fixtures are
+excluded from the source archive; the package includes its MIT licence and
+all solver build inputs.
+
+Only the final, checkout-free job has `id-token: write`. Its `pypi` environment
+is restricted to main, and its trusted publisher is `eigenergy/tellegen`,
+workflow `release-python.yml`, environment `pypi`. PyPI does not support a
+reusable publishing workflow, so the crate workflow dispatches this standalone
+workflow instead of calling it. A pending publisher configured at
+<https://pypi.org/manage/account/publishing/> creates the project on its first
+OIDC upload; no bootstrap API token or manual first upload is necessary.
+
+To retry an interrupted publication, dispatch `release-python.yml` on main
+with the same stable tag. Existing distributions are skipped; published
+versions and their source commits are never replaced. Add the public install
+command to the README and Python guide only after the first upload is verified.
 
 Its fixed `release-plz-main` branch is intentional: with
 `release_always = false`, release-plz recognizes a release commit by the
