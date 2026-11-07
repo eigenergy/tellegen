@@ -1,10 +1,10 @@
 {
   "schema": "tellegen.usage-evidence/1",
-  "generated_at": "2026-11-07T05:08:28.652Z",
+  "generated_at": "2026-11-07T19:31:28.549Z",
   "month": "2026-11",
   "range": {
     "start": "2026-11-01T00:00:00.000Z",
-    "end": "2026-11-07T05:08:28.654Z"
+    "end": "2026-11-07T19:31:28.550Z"
   },
   "source": "https://api.umami.is/v1 (Umami Cloud, read with an API key; aggregate counts only)",
   "websites": [
@@ -49,17 +49,17 @@
       "name": "tellegen.dev",
       "domain": "tellegen.dev",
       "stats": {
-        "pageviews": 216,
-        "visitors": 87,
-        "visits": 131,
+        "pageviews": 222,
+        "visitors": 90,
+        "visits": 134,
         "bounces": 2,
-        "totaltime": 34818
+        "totaltime": 34857
       },
       "events": {
-        "calculation.solve": 380,
-        "case.select": 333,
-        "view.change": 285,
-        "agent.availability": 212,
+        "calculation.solve": 386,
+        "case.select": 339,
+        "view.change": 291,
+        "agent.availability": 218,
         "case.import": 77,
         "calculation.sensitivity": 26,
         "case.edit": 17,
@@ -70,11 +70,11 @@
       },
       "properties": {
         "calculation.solve.result": {
-          "completed": 375,
+          "completed": 381,
           "failed": 5
         },
         "calculation.solve.calculation": {
-          "dcopf": 254,
+          "dcopf": 260,
           "mcpf": 86,
           "acopf": 26,
           "acpf": 9,
