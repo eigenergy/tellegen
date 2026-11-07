@@ -404,6 +404,7 @@
 		line-height: 1.5;
 	}
 	small {
+		font-size: inherit;
 		display: block;
 		opacity: 0.75;
 		margin-bottom: 10px;
