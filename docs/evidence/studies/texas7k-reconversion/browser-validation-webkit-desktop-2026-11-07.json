@@ -1,0 +1,39 @@
+{
+  "browser_rss_max_at_checkpoints_bytes": null,
+  "memory_samples": [],
+  "browser_engine": "webkit",
+  "browser": "27.2",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "mobile_emulation": false,
+  "memory_note": "Browser process RSS is unavailable through this browser engine; no memory qualification is claimed.",
+  "long_task_observation_supported": false,
+  "main_thread_long_task_count": null,
+  "main_thread_longest_task_ms": null,
+  "load_ms": 1357,
+  "ui_solve_ms": 1299,
+  "edit_ms": 565,
+  "edit_result_revision_advanced": true,
+  "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "transfer": [
+    {
+      "url": "/api/cases",
+      "encoded_bytes": 706,
+      "decoded_bytes": 706,
+      "duration_ms": 2
+    },
+    {
+      "url": "/api/cases/texas7k-p1uhs0_1247/case",
+      "encoded_bytes": 1307660,
+      "decoded_bytes": 36692131,
+      "duration_ms": 33
+    }
+  ],
+  "note": "Single local webkit run; loopback network, warm server, includes UI scheduling. Viewport/device emulation does not qualify physical mobile memory or performance.",
+  "transport": "Loopback HTTPS proxy to the actual Tellegen server; production CSP unchanged; self-signed certificate accepted only by the test browser.",
+  "tellegen_source_revision": "339326cd513587cf2bfdade255f93dabe02f8f3f",
+  "stable_powerio_version": "0.11.9",
+  "qualification_scope": "Desktop browser-engine workflow and viewport usability. Physical low-memory mobile performance is not qualified."
+}

@@ -32,11 +32,12 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		}
 	});
 	await installWebMcpHarness(page);
-	const cdp = await browser.newBrowserCDPSession();
+	const browserEngine = browser.browserType().name();
+	const cdp = browserEngine === 'chromium' ? await browser.newBrowserCDPSession() : null;
 	let peakBrowserRssBytes = 0;
 	const memorySamples: Array<{ phase: string; rss_bytes: number }> = [];
 	const sampleMemory = async (phase: string) => {
-		if (process.platform === 'win32') return;
+		if (!cdp || process.platform === 'win32') return;
 		const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
 		const { stdout } = await promisify(execFile)('ps', [
 			'-o',
@@ -56,9 +57,11 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	await page.addInitScript(() => {
 		const durations: number[] = [];
 		Object.defineProperty(window, '__texasLongTasks', { value: durations });
-		new PerformanceObserver((list) =>
-			durations.push(...list.getEntries().map((e) => e.duration))
-		).observe({ type: 'longtask', buffered: true });
+		if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+			new PerformanceObserver((list) =>
+				durations.push(...list.getEntries().map((e) => e.duration))
+			).observe({ type: 'longtask', buffered: true });
+		}
 	});
 	const started = Date.now();
 	await page.goto('/');
@@ -190,12 +193,33 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		await page.getByRole('button', { name: 'Network', exact: true }).click();
 	await expect(power).toBeVisible();
 	const base = Number(await power.inputValue());
+	const beforeEdit = await callTool(page, 'inspect_case', {});
+	if (!beforeEdit.ok) throw new Error(beforeEdit.error.message);
 	const editStart = Date.now();
 	await power.fill(String(base * 1.01));
 	await power.press('Tab');
-	await expect(page.getByText('Calculating...', { exact: true })).toHaveCount(0, {
-		timeout: 90_000
-	});
+	// A zero-count check can pass before the debounced edit starts. Wait for
+	// the accepted result's revision to advance and the calculation to finish.
+	await expect
+		.poll(
+			async () => {
+				const value = await callTool(page, 'inspect_case', {});
+				if (!value.ok) return null;
+				return {
+					case_id: value.data.case_id,
+					revision_changed: value.data.revision !== beforeEdit.data.revision,
+					solving: value.data.solving,
+					converged: (value.data.solution as { converged?: boolean } | null)?.converged
+				};
+			},
+			{ timeout: 90_000 }
+		)
+		.toEqual({
+			case_id: beforeEdit.data.case_id,
+			revision_changed: true,
+			solving: false,
+			converged: true
+		});
 	await expect(power).toHaveValue(String(base * 1.01));
 	const editMs = Date.now() - editStart;
 	const transfer = await page.evaluate(() =>
@@ -217,20 +241,29 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const longTasks = await page.evaluate(
 		() => (window as unknown as { __texasLongTasks: number[] }).__texasLongTasks
 	);
+	const longTasksSupported = await page.evaluate(() =>
+		PerformanceObserver.supportedEntryTypes.includes('longtask')
+	);
 	const metrics = {
-		browser_rss_max_at_checkpoints_bytes: peakBrowserRssBytes,
+		browser_rss_max_at_checkpoints_bytes: memorySamples.length ? peakBrowserRssBytes : null,
 		memory_samples: memorySamples,
+		browser_engine: browserEngine,
 		browser: browser.version(),
-		memory_note:
-			'Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.',
-		main_thread_long_task_count: longTasks.length,
-		main_thread_longest_task_ms: Math.max(0, ...longTasks),
+		viewport: page.viewportSize(),
+		mobile_emulation: Boolean(testInfo.project.use.isMobile),
+		memory_note: memorySamples.length
+			? 'Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.'
+			: 'Browser process RSS is unavailable through this browser engine; no memory qualification is claimed.',
+		long_task_observation_supported: longTasksSupported,
+		main_thread_long_task_count: longTasksSupported ? longTasks.length : null,
+		main_thread_longest_task_ms: longTasksSupported ? Math.max(0, ...longTasks) : null,
 		load_ms: loadMs,
 		ui_solve_ms: solveMs,
 		edit_ms: editMs,
+		edit_result_revision_advanced: true,
 		result_sha256: resultHash,
 		transfer,
-		note: 'Single local Chromium run; loopback network, warm server, includes UI scheduling. Not a device support guarantee.'
+		note: `Single local ${browserEngine} run; loopback network, warm server, includes UI scheduling. Viewport/device emulation does not qualify physical mobile memory or performance.`
 	};
 	await writeFile(
 		testInfo.outputPath('texas7k-browser.json'),

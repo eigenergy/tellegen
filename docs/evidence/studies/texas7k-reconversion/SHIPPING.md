@@ -137,3 +137,49 @@ Production promotion is separate: copy the immutable bundle, preserve existing
 distribution manifest entries, replace only this case's entry atomically, and
 retain the previous manifest for rollback. These records describe local
 preparation and acceptance, not a production deployment.
+
+### Browser engines and narrow viewport qualification
+
+The final serial matrix uses the same stable bundle, server and production
+frontend. All three projects pass hosted loading, UI/WebMCP solves, export,
+reopen, rerun with identical options/results, and a completed load edit. The
+edit assertion now waits for an advanced accepted-result revision, a converged
+result and `solving=false`; it cannot finish before the debounced edit starts.
+All final screenshots were inspected.
+
+| Browser / viewport | Load | UI solve | Completed edit | Sampled RSS sum |
+| --- | ---: | ---: | ---: | ---: |
+| Chromium 156, 1280 × 800 | 8.559 s | 4.102 s | 0.738 s | 3.21 GB |
+| Playwright WebKit 27.2, 1280 × 800 | 1.357 s | 1.299 s | 0.565 s | Unavailable |
+| Chromium Pixel 7 emulation, 412 × 839 | 6.729 s | 2.448 s | 0.374 s | 3.63 GB |
+
+These are single local measurements with a warm server, not controlled
+cross-engine benchmarks. The memory figure is the sum of process RSS at
+checkpoints and can count shared pages repeatedly. WebKit exposes neither the
+Chromium process-memory protocol nor long-task observations here; those
+metrics are recorded as `null`, not zero. Reports are
+`browser-validation-chromium-desktop-2026-11-07.json`,
+`browser-validation-webkit-desktop-2026-11-07.json`, and
+`browser-validation-mobile-emulation-2026-11-07.json`.
+
+The first WebKit attempt over plain loopback HTTP stopped before hydration:
+the unchanged production CSP upgraded asset requests to HTTPS. The final
+matrix therefore uses a loopback TLS proxy to the actual native server and
+accepts its local self-signed certificate only in the test browser. No
+production policy or solver behavior was changed for qualification.
+
+Run this optional matrix against an existing staged HTTPS server:
+
+```sh
+TELLEGEN_TEXAS7K=1 TELLEGEN_TEXAS7K_URL=https://your-staged-server \
+  npm --workspace tellegen-frontend exec -- playwright test \
+  --config playwright.texas7k.config.ts
+```
+
+For a local self-signed TLS endpoint only, also set
+`TELLEGEN_TEST_SELF_SIGNED_TLS=1`. The configuration runs one browser at a time
+and needs installed Chromium and WebKit engines. Firefox was not installed
+and was not tested. The Pixel 7 project verifies narrow viewport and touch
+emulation on the desktop host; **physical low-memory mobile devices remain
+unqualified**. This evidence supports the tested desktop browser engines and
+the emulated layout, not an unrestricted mobile support claim.

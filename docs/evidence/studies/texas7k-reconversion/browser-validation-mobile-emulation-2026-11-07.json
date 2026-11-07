@@ -1,0 +1,70 @@
+{
+  "browser_rss_max_at_checkpoints_bytes": 3633594368,
+  "memory_samples": [
+    {
+      "phase": "before_load",
+      "rss_bytes": 255623168
+    },
+    {
+      "phase": "loaded",
+      "rss_bytes": 1570799616
+    },
+    {
+      "phase": "solved",
+      "rss_bytes": 1661222912
+    },
+    {
+      "phase": "exported",
+      "rss_bytes": 2859139072
+    },
+    {
+      "phase": "reopened_and_resolved",
+      "rss_bytes": 3633594368
+    },
+    {
+      "phase": "edited",
+      "rss_bytes": 3042656256
+    }
+  ],
+  "browser_engine": "chromium",
+  "browser": "156.0.8078.4",
+  "viewport": {
+    "width": 412,
+    "height": 839
+  },
+  "mobile_emulation": true,
+  "memory_note": "Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.",
+  "long_task_observation_supported": true,
+  "main_thread_long_task_count": 25,
+  "main_thread_longest_task_ms": 2987,
+  "load_ms": 6729,
+  "ui_solve_ms": 2448,
+  "edit_ms": 374,
+  "edit_result_revision_advanced": true,
+  "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "transfer": [
+    {
+      "url": "/api/cases",
+      "encoded_bytes": 706,
+      "decoded_bytes": 706,
+      "duration_ms": 0.8999999761581421
+    },
+    {
+      "url": "/api/cases/texas7k-p1uhs0_1247/case",
+      "encoded_bytes": 0,
+      "decoded_bytes": 0,
+      "duration_ms": 139.10000002384186
+    },
+    {
+      "url": "/api/cases/texas7k-p1uhs0_1247/case",
+      "encoded_bytes": 1307660,
+      "decoded_bytes": 36692131,
+      "duration_ms": 64.69999992847443
+    }
+  ],
+  "note": "Single local chromium run; loopback network, warm server, includes UI scheduling. Viewport/device emulation does not qualify physical mobile memory or performance.",
+  "transport": "Loopback HTTPS proxy to the actual Tellegen server; production CSP unchanged; self-signed certificate accepted only by the test browser.",
+  "tellegen_source_revision": "339326cd513587cf2bfdade255f93dabe02f8f3f",
+  "stable_powerio_version": "0.11.9",
+  "qualification_scope": "Desktop browser-engine workflow and viewport usability. Physical low-memory mobile performance is not qualified."
+}
