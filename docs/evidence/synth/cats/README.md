@@ -46,6 +46,17 @@ app's default request. Seeds 1, 7 and 2026 (2026 is the app's default).
   100–200 kV, hv above.
 - **DC OPF.** One LP for both networks, in flow form with linear costs: the generators'
   marginal cost at half output, and every branch's rate A.
+- **Siting.** MapToGrid's measure of California (tellegen#305): buses at sites against the
+  people of the bundled places table's California rows (subdivision `US-CA`), in 0.5° cells.
+  A generated grid's tap junctions and CATS's added nodes (line junctions, most of them in
+  cities) are left out, so CATS counts its 3,171 substation buses. The metrics are the
+  share of those buses in cells whose places hold fewer than 20,000 people, the share in the
+  ten most populous cells, and buses per 1,000 km² in three boxes: the Los Angeles basin
+  (118.7–117.0° W, 33.6–34.4° N), the Mojave Desert (117.5–115.5° W, 34.6–35.6° N) and
+  Modoc and Lassen counties (121.5–120.0° W, 40.5–42.0° N), with the ratio of the first to
+  the last. A generated grid sites more buses than CATS has substations (about 4,900
+  against 3,171), so its box densities run above CATS's even where the spread matches;
+  the shares and the ratio do not depend on the count.
 
 ## Scorecard
 
@@ -78,6 +89,10 @@ voltage class it does not model, say) counts as a failure.
 | Geography | Mean nearest-site distance, both ways (km) | ≤ 20 | ≤ 5 |
 | | Spearman correlation of line-km per 25 km cell | ≥ 0.60 | ≥ 0.85 |
 | | Spearman correlation of load per 50 km cell | ≥ 0.70 | ≥ 0.70 |
+| Siting | Share of sited buses in cells under 20,000 people | ±0.07 | ±0.05 |
+| | Share of sited buses in the ten most populous cells | ±0.10 | ±0.08 |
+| | Sited buses per 1,000 km², per box | ×0.5–2 | ×0.5–2 |
+| | Density ratio, Los Angeles basin over Modoc and Lassen | ×0.33–3 | ×0.5–2 |
 
 The gridded correlations use the cells where either network has a value.
 
