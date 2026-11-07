@@ -93,6 +93,12 @@ Regression coverage combines:
   transformer rating ports, mixed windings, shunts and optimized taps. Tests
   reconstruct KCL and complex power from public result identities, preserve
   diagnostic/provenance records, and reject incomplete or mismatched reports.
+- Explicit initial-point identity/order and base conversion, partial and poor
+  voltage starts, PF-to-OPF seeding, delta terminal power mapping, physical tap
+  conventions, auxiliary consistency, and zero/singular equipment. Regressions
+  check that seeds preserve objective/constraint evaluations, bounds and the
+  physical fingerprint, survive canonical JSON round trips, and reject invalid
+  or unsupported fields with structured diagnostics.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

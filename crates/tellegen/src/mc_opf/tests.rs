@@ -9,7 +9,7 @@ use powerio_prob::ConstraintSelection;
 fn names(xs: &[&str]) -> Vec<String> {
     xs.iter().map(|s| (*s).into()).collect()
 }
-fn network() -> MulticonductorNetwork {
+pub(super) fn network() -> MulticonductorNetwork {
     let mut n = MulticonductorNetwork::new();
     let mut source = DistBus::new("s", names(&["a", "n"]));
     source.grounded = names(&["n"]);
@@ -64,7 +64,7 @@ fn solve(n: MulticonductorNetwork) -> McOpfResult {
 fn near(a: f64, b: f64, tol: f64) {
     assert!((a - b).abs() <= tol, "{a} != {b} (tol {tol})");
 }
-fn rich_network() -> MulticonductorNetwork {
+pub(super) fn rich_network() -> MulticonductorNetwork {
     let mut n = network();
     let c = &mut n.line_codes_mut()[0];
     c.r_series[0][1] = 0.02;

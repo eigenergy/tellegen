@@ -187,11 +187,14 @@ impl Report {
         if self.version != 1 {
             return Err(invalid("unsupported MC OPF report version"));
         }
-        let prep = build_mc_ac_opf_preparation(
+        let prep = initial::prepare(
             solution.instance(),
             &McAcOpfAssemblyOptions::new(self.options.voltage_base_v, self.options.power_base_va),
         )
-        .map_err(|e| McOpfError::from_powerio(McOpfStage::Import, e))?;
+        .map_err(|mut e| {
+            e.stage = McOpfStage::Import;
+            e
+        })?;
         if self.fingerprint != fingerprint(&prep)? {
             return Err(invalid(
                 "MC OPF report fingerprint does not match its instance and bases",
