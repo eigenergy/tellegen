@@ -1,5 +1,14 @@
 # Synthetic Generation Evidence
 
+The country sweeps and California scorecards were refreshed on 7 November 2026
+with the mapped-grid reinforcement repair. `refresh-2026-11.json` records the
+engine source, executable hash and California OpenStreetMap input hash. The
+105 country runs retain the same pass counts as before: all DC dispatches
+are optimal, and 100 AC solutions converge in band. California retains its
+40/47, 40/47 and 39/47 synthetic metric counts and 34/40 scored OSM metrics;
+all critical checks pass. The prose below also preserves earlier experiments
+and their limitations.
+
 Generated grids, measured the same way as reference cases. `run.py` drives the
 native CLI (`tellegen generate`, `tellegen stats`), records the hashes of
 everything it ran (CLI binary, places table, specs, reference table), and
