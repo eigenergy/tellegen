@@ -54,6 +54,13 @@ jobs:
         run: release-plz update
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # release-plz sees a merged pull request as "Merge pull request #N" and
+      # can miss one entirely. Replace the body of the section it wrote with one
+      # entry per pull request that changed the crate, read from the merge
+      # commits (whose messages are the pull request titles) since the last
+      # release tag. The checkout above has the full history and the tags.
+      - name: Write the changelog from merged pull requests
+        run: python3 .github/scripts/write-crate-changelog.py
       # release-plz leaves the unpublished Python adapter alone. Move the wheel
       # onto the engine's version without resolving or updating any dependency.
       - name: Synchronize the Python wheel version
