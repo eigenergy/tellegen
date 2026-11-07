@@ -363,8 +363,9 @@ pub struct RegionContext {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voltage_country: Option<String>,
     /// Higher AC levels the corridor plan may raise buses to, kV, highest
-    /// first: the country's levels in service above its ladder, or 765 kV
-    /// above stated levels. Empty when there is none, as in most of Europe.
+    /// first: those in service in the region above the levels modelled, from
+    /// its own ladder, whether the levels are its own or stated. Empty when
+    /// there is none, as in most of Europe and in California.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub promotion_levels_kv: Vec<f64>,
 }

@@ -4,7 +4,7 @@ Pass rule: every critical check, and at least 80% of the scored metrics, in ever
 
 | Run | Verdict | Passed | Score | Critical failures |
 | --- | --- | --- | --- | --- |
-| seed 2026 | pass | 34/40 (85%) | 25.60 | none |
+| seed 2026 | pass | 40/46 (87%) | 27.69 | none |
 
 | Metric | CATS | Map | seed 2026 | Tolerance |
 | --- | --- | --- | --- | --- |
@@ -55,5 +55,11 @@ Pass rule: every critical check, and at least 80% of the scored metrics, in ever
 | Site distance to CATS sites, symmetric mean (km) | – | – | 2.151 ✓ | ≤ 5.0 |
 | Line-km per 25 km cell, Spearman | – | 0.863 | 0.830 ✗ | ≥ 0.85 |
 | Load per 50 km cell, Spearman | – | – | 0.792 ✓ | ≥ 0.7 |
+| Sited buses in 0.5° cells under 20,000 people, share | 0.181 | – | 0.174 ✓ | ±0.05 |
+| Sited buses in the 10 most populous 0.5° cells, share | 0.350 | – | 0.370 ✓ | ±0.08 |
+| Sited buses per 1,000 km², Los Angeles basin | 46.3 | – | 44.8 ✓ | ×0.5–2.0 |
+| Sited buses per 1,000 km², Mojave Desert | 1.440 | – | 1.589 ✓ | ×0.5–2.0 |
+| Sited buses per 1,000 km², Modoc and Lassen | 1.105 | – | 1.825 ✓ | ×0.5–2.0 |
+| Sited bus density, Los Angeles basin over Modoc and Lassen | 41.9 | – | 24.6 ✓ | ×0.5–2.0 |
 
 Map: 1,194 power=plant features inside the region tag no output and are not in its nameplate (the engine estimates them); its sites are every power=substation inside the region, an upper bound.

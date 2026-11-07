@@ -100,15 +100,27 @@ by module hash.
   that country's place population counting such places
   (`context.places_snapped`). A drawn box around one city never snaps the
   cities beyond its edges.
-- **Bus count.** Without `target_bus_count`, the count follows the region's
-  area and density and is then moved into the range that keeps peak load
-  per bus between 30 and 150 MW. Those are the scales of transmission
-  models down to 110–220 kV (PEGASE, RTE) and of substation-level models at
-  220 kV and above (PyPSA-Eur, SciGRID). A transmission-only count stops
-  at 3,000 buses, the scale national transmission models keep; a ladder
-  that reaches subtransmission sizes one bus per `mw_per_bus` of peak
-  load instead, up to `limits.max_bus_count` (12,000 by default).
-  `bus_count_capped` says by how much either cap bit.
+- **Bus count.** Without `target_bus_count`, a transmission-only grid's
+  count follows the region's area and `density` and is then moved into the
+  range that keeps peak load per bus between 30 and 150 MW. Those are the
+  scales of transmission models down to 110–220 kV (PEGASE, RTE) and of
+  substation-level models at 220 kV and above (PyPSA-Eur, SciGRID). It
+  stops at 3,000 buses, the scale national transmission models keep. A
+  hierarchical region (below) sizes its count by peak load instead: one
+  sited bus per `mw_per_bus` (10 MW) at high density, and 1.5 and 2.8
+  times that load per bus at medium and low density (15 and about 28 MW),
+  the ratios of the transmission design's counts. Tap junctions come on
+  top.
+  Either count stops at `limits.max_bus_count` (12,000 by default), and
+  `bus_count_capped` says by how much a cap bit.
+- **Siting.** Buses stand on the most populous places first, and the rest
+  fill the region by blue noise drawn from a population density surface:
+  each place spreads its people over a 24 km kernel, and a point's density
+  is its share of the densest cell's raised to the power 0.75, with a floor
+  of 0.005 of the densest cell's on land with no place near it. These are
+  the `fill_*` constants of `crates/tellegen-synth/src/tuning.rs`,
+  calibrated on California
+  ([CATS comparison](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/synth/cats)).
 - **Load cap.** No bus carries more than the load cap of the highest
   modelled level (7 GW at 500 kV, 2.9 GW at 400 kV). The excess of a metropolitan bus moves
   to the nearest buses of its island with room, and
@@ -136,9 +148,19 @@ by module hash.
   400/220 kV when it is a member, else IEC 60038's standard 400/220 kV, with
   no higher level, and raises `voltage_fallback` (`context.voltage_basis`
   `fallback`).
-- **Stated levels.** A request that names its levels is modelled at them,
-  and the plan may add 765 kV above them, as before (`voltage_basis`
-  `request`).
+- **Stated levels.** A request that names its levels is modelled at them
+  (`voltage_basis` `request`), and they follow the region in two ways.
+  The plan may add above them only a higher level in service in the
+  region, from its own ladder: 765 kV in the United States outside
+  California, none in Germany, California or a country on the fallback
+  ladder. And stated levels that reach below 100 kV in a region whose
+  dominant subdivision has its own ladder keep the hierarchical design
+  below.
+- **Hierarchical regions.** A region whose dominant subdivision has its own
+  ladder down to subtransmission (California's 500/230/115/66 kV, from
+  `data/voltage_ladders.json`; `context.voltage_basis` `subdivision`) is
+  built in layers: meshed top-level sites, subtransmission pockets fed from
+  step-downs, and tap junctions.
 - **Line parameters.** A level between the line classes takes the nearest
   class's conductors at its own voltage (below), so 380 and 400 kV use the
   345 kV class scaled by 1.10 and 1.16, and 1000 kV the 765 kV class scaled
