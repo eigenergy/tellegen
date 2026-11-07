@@ -1176,12 +1176,12 @@ impl OsmBuild {
         self.counts.hvdc_links = self.hvdc.len();
         self.counts.lines_dropped = dropped;
         self.counts.voltage_inferred = inferred;
-        let considered = stitched.len();
+        let considered = sections.len() + stitched.iter().filter(|l| l.is_dc).count();
         if considered > 0 && dropped * 2 >= considered {
             warnings.push(Warning::new(
                 "osm_lines_dropped",
                 format!(
-                    "{dropped} of {considered} OpenStreetMap line(s) were dropped (below {} kV, or an end farther than {} km from any substation); the topology leans on the island policy",
+                    "{dropped} of {considered} OpenStreetMap line section(s) were dropped (below {} kV, without usable endpoints within {} km, or collapsed to one bus); the topology leans on the island policy",
                     opts.voltage_floor_kv, opts.snap_km
                 ),
             ));

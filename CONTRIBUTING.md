@@ -37,8 +37,10 @@ npm run changeset
 Commit the file it writes. Use a `minor` changeset for a new or incompatible
 public API while a package is on `0.x`, and `patch` for compatible fixes. A
 pull request that changes only `apps/web`, `examples/`, or the Rust crates
-needs none: the `tellegen` crate's changelog is written by release-plz from
-commit messages, so write those for a reader of the changelog.
+needs none: the `tellegen` crate's changelog lists each merged pull request
+under its title, so write the title for a reader of the changelog. Start it
+with `feat:` for something new or `fix:` for a fix to file it under Added or
+Fixed; anything else goes under Changed.
 
 ## Merging
 

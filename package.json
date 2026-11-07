@@ -42,7 +42,7 @@
     "build:web": "npm run build:analytics && npm run build:webmcp && npm run build:svelte && npm --workspace tellegen-frontend run build",
     "smoke:web": "npm --workspace tellegen-frontend run smoke:build",
     "test:browser": "npm --workspace tellegen-frontend run test:browser",
-    "test:evidence": "node --test docs/evidence/webmcp/run.test.mjs",
+    "test:evidence": "node --test docs/evidence/webmcp/run.test.mjs scripts/umami-report.test.mjs",
     "lint": "npm run lint:web",
     "check": "npm run check:engine && npm run check:webmcp && npm run check:analytics && npm run check:svelte && npm run check:web",
     "build": "npm run build:engine && npm run build:webmcp && npm run build:analytics && npm run build:svelte && npm run build:example && npm --workspace tellegen-frontend run build",

@@ -62,7 +62,9 @@ pub enum Source {
     Osm,
 }
 
-/// Bus count per unit area when `target_bus_count` is not given.
+/// How many buses a region gets when `target_bus_count` is not given: per
+/// unit area in a transmission-only grid, per megawatt of peak load in a
+/// hierarchical one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -225,6 +227,11 @@ pub enum OsmIslands {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OsmOptions {
+    /// Add explicitly synthetic parallel circuits and voltage support to the
+    /// mapped topology when its modelled peak demand needs them. False keeps
+    /// the mapped circuit counts; validation may then report infeasibility.
+    #[serde(default = "default_osm_reinforce")]
+    pub reinforce: bool,
     /// Lines and substations below this nominal voltage are distribution and
     /// are dropped.
     #[serde(default = "default_osm_voltage_floor_kv")]
@@ -252,6 +259,10 @@ pub struct OsmOptions {
     /// Fewer branches than this is `OsmInsufficient`.
     #[serde(default = "default_osm_min_branches")]
     pub min_branches: usize,
+}
+
+fn default_osm_reinforce() -> bool {
+    true
 }
 
 fn default_osm_voltage_floor_kv() -> f64 {
@@ -282,6 +293,7 @@ fn default_osm_min_branches() -> usize {
 impl Default for OsmOptions {
     fn default() -> Self {
         Self {
+            reinforce: default_osm_reinforce(),
             voltage_floor_kv: default_osm_voltage_floor_kv(),
             cluster_radius_m: default_osm_cluster_radius_m(),
             snap_km: default_osm_snap_km(),
@@ -502,13 +514,22 @@ pub struct SynthRequest {
     pub fidelity: Fidelity,
     /// Nominal voltage levels, kV, highest first after resolution. Each level
     /// keeps its own kV for the per-unit base and takes the per-km parameters
-    /// of the nearest line class. Empty (the default) takes the national
-    /// ladder of the region's dominant country by demand
-    /// ([`crate::voltage::VoltageLadders`]); a stated list is used as given,
-    /// and the corridor plan may then add 765 kV above it.
+    /// of the nearest line class. Empty (the default) takes the region's own
+    /// ladder: its dominant subdivision's where that has one, else the
+    /// national ladder of its dominant country by demand
+    /// ([`crate::voltage::VoltageLadders`]). A stated list is used as given.
+    /// Either way the corridor plan may add only a higher level in service in
+    /// the region, from its own ladder (765 kV in the United States outside
+    /// California, none in most of Europe), and stated levels that reach
+    /// subtransmission in a region with a subdivision ladder keep the
+    /// hierarchical design.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub voltage_levels_kv: Vec<f64>,
-    /// Exact bus count; otherwise `density` × area decides.
+    /// Exact bus count. Otherwise a hierarchical region (levels down to
+    /// subtransmission in a subdivision with its own ladder) takes one bus
+    /// per 10 MW of peak load at high density, 15 at medium and about 28 at
+    /// low; any other region takes `density` × area, kept between 30 and
+    /// 150 MW of peak load per bus.
     #[serde(default)]
     pub target_bus_count: Option<u32>,
     /// Branches per bus, `1.0..=limits.max_branch_factor`; otherwise by density.

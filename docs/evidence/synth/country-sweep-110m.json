@@ -1,7 +1,7 @@
 {
   "schema": "tellegen.synth-sweep/2",
   "outline": "the MapToGrid app's 1:110m layer (regions.py --outline app-110m), the app's default request",
-  "tellegen_sha256": "sha256:05e67feb1a0d0516d976c525e0815b094db3318005eb3e1821cd8bf3a12e135d",
+  "tellegen_sha256": "sha256:1ab571bc03b56068a2b78f2228690e278cd5df9786add53349b1135466d76a0b",
   "peak_references_sha256": "sha256:8aec1e501fbb3e25ee8973b8a4eaae259e9dfdae5bb4ea3c1191c25abd1fd2b2",
   "seeds": [
     1,
@@ -10,23 +10,23 @@
   ],
   "tolerance": 0.25,
   "specs": {
-    "aus": "sha256:cb6629d2b03f7105815889132dbc87e222bd596f518c823c9c7351e5316cd170",
-    "bra": "sha256:b355d9e8782bb87a4b0fb5474b1e8d21b484013ee081cf9a04f58f40ff4408c0",
-    "chl": "sha256:31c99bf210a885add4fd16880259e253005a8860605fb06269f852d2fc50f5be",
-    "chn": "sha256:def8b9fbe231f56a0cae2ea03ccee9bbe61d651081daba5c749d39bfa39563d5",
-    "deu": "sha256:19b61be4a50e35a21fe93143b09401c5a3e7415fb5b416a89c65d8a84beb958c",
-    "egy": "sha256:2388442eb408a19c1ec71f1870ef3ea896624977b82e9afc364bd6ef2f7c5519",
-    "esp": "sha256:fd84ba35115a32450f5020d639a7d34f928e8976adc1a23fc728f0f12152404c",
-    "gbr": "sha256:245d1455ed142cd45f22b85225d2ddfb12ea2e247bb8d15ec8406106834aa818",
-    "idn": "sha256:d95e8eab2f8809ecb51355019b0a8242c9c6179f745de527977c26a71074ef1b",
-    "ind": "sha256:fd4c5b2e8bf78bf6af8b5ed366d8705aa01aea6022f1d4847a38ce45f7c0538f",
-    "jpn": "sha256:651632dbad55c9a0977124a7d56359de1e6b6712fc35d6dba619bc6b00db57c3",
-    "nga": "sha256:06799185edffe4548513811e7fff8e72f8fd772e1ef572dbaf8c6cd0fce3a243",
-    "prt": "sha256:1607d2a07a1a5cf31c5e055630df6bf1689ad279693a1981f667f07622f9d2b4",
-    "rus": "sha256:d882de2b7172c33b4eb3d4195a06996c3640d32d698fd034fbd1f1c25d802eac",
+    "aus": "sha256:03d7b8cc32972cba63417f4edbb39353e74bed616882b13913bc77f39f44ab3d",
+    "bra": "sha256:79ea098d70d3a18646a6b03c7bd89fab49ee9fc96641694895a43a01ad1469fb",
+    "chl": "sha256:149e848d006a07f9751d0d1c1794d7fc2c998d85d1c835b04c0dc20428508b29",
+    "chn": "sha256:0ab06ab133e8741c98e206cd9cda665b40e5382d74d508ef436543ba94b3d4a6",
+    "deu": "sha256:490119cc6d6aee6061249e734033186c55f26e4adc95d3f2625ba16deee61fde",
+    "egy": "sha256:338b7ddc06c979a48b5d1a989aba5037c10a558d4bfa6ab3c9d923e3d827bbe1",
+    "esp": "sha256:892d9483b87c6eea237535e4a7e207a6952b1b9aa5df652f1459a8387caad8ab",
+    "gbr": "sha256:16d8304caec6f1f6f6879d4df95be7a39a68a6bab82f5fbcc8dc9249c791e3f7",
+    "idn": "sha256:86bf56274248d70ddccaf297d72e09c133defc5a5093a82b857a297238690454",
+    "ind": "sha256:b0162d09e0877e3780773692495ef0c5633cc61e03342d5fb840bd44051c0f21",
+    "jpn": "sha256:f1033c20e184354c9d441d76cec7fd50d287c68fa249a5fe50bea7423a5849c5",
+    "nga": "sha256:3c6c224f448f5ab6166c13ead6048a38a01f7efa2e56a0cd06326405d6c78d27",
+    "prt": "sha256:2c9cf72b575dcdd8c67177d925af6bbf5da22c2997908beef96731d44454bb25",
+    "rus": "sha256:1db91adf1209bdc396a12ead5b52af6de727b01afa62fd1777eed970783d225e",
     "texas-box": "sha256:f9806c8fd9fb5a9a6ca98ac04f81253ae49624244bb2a87ced157facd1722dce",
-    "usa": "sha256:50f06c51a157e00213663fca58967a3bd500f012f23dd5c01582e93d58626084",
-    "zaf": "sha256:3a575a5c1ae099633b6e5b68623118bf031cf60d6af3e966dcd564d434480ced"
+    "usa": "sha256:10342ca41e771655acf2d7f12b5e5755d30f7e6cd636fe7c6abeaef63f390954",
+    "zaf": "sha256:df47bb7ad6a64cb2d8792c4031d6d1c9ebd3d54a566c47083371bba4e2e5a536"
   },
   "missing": [
     "fra"
@@ -37,151 +37,14 @@
       "label": "Australia",
       "request_sha256": "ac07ddaf96becc7560a1663dabf75cd692d84f5bf6a4ef1763e877b313baa4e0",
       "buses": 312,
-      "branches": 506,
-      "branch_bus_ratio": 1.6217948717948718,
-      "max_parallel_circuits": 3,
-      "capped_corridors": 0,
-      "added_level_kv": 500.0,
-      "plan_converged": false,
-      "angle_spread_deg": 101.24718734680994,
-      "max_angle_difference_deg": 56.05148740467902,
-      "voltage_basis": "country",
-      "voltage_country": "AUS",
-      "voltage_levels_kv": [
-        500.0,
-        330.0,
-        275.0,
-        220.0
-      ],
-      "peak_mw": 41780.982446808295,
-      "demand_basis": "national",
-      "places_in_region": 44,
-      "places_snapped": 3,
-      "landmasses": 2,
-      "reference": {
-        "reference_mw": 37949,
-        "year": 2024,
-        "comparable": "flag",
-        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
-        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
-        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
-        "urls": [
-          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
-          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
-        ]
-      },
-      "peak_ratio": 1.1009771653220979,
-      "peak_verdict": "flagged",
-      "dc_opf": "optimal",
-      "dc_message": null,
-      "ac_pf": "converged",
-      "ac_message": null,
-      "vm": [
-        1.017961199876136,
-        1.022351790874277
-      ],
-      "valid": true,
-      "engine_ms": 34.81700000000001,
-      "generation_ms": 24.105916,
-      "stage_ms": {
-        "context": 12.951,
-        "site_buses": 1.6593330000000002,
-        "topology": 0.48983300000000085,
-        "electrify": 9.00575,
-        "dc_opf": 7.112375000000004,
-        "calibrate": 0.10833399999999571,
-        "ac_pf": 3.481792000000002,
-        "finalize": 0.008583000000001562
-      },
-      "warnings": [
-        "generation_spread",
-        "branch_target_exceeded",
-        "planning_incomplete",
-        "voltage_level_added"
-      ],
-      "seed": 1
-    },
-    {
-      "region": "aus",
-      "label": "Australia",
-      "request_sha256": "3146c65024046ce80567d9001aa8671b450f29e2b6a966f638821b6a0660371d",
-      "buses": 312,
-      "branches": 510,
-      "branch_bus_ratio": 1.6346153846153846,
-      "max_parallel_circuits": 4,
-      "capped_corridors": 0,
-      "added_level_kv": 500.0,
-      "plan_converged": false,
-      "angle_spread_deg": 243.27100456553762,
-      "max_angle_difference_deg": 26.30253047573336,
-      "voltage_basis": "country",
-      "voltage_country": "AUS",
-      "voltage_levels_kv": [
-        500.0,
-        330.0,
-        275.0,
-        220.0
-      ],
-      "peak_mw": 41780.982446808295,
-      "demand_basis": "national",
-      "places_in_region": 44,
-      "places_snapped": 3,
-      "landmasses": 2,
-      "reference": {
-        "reference_mw": 37949,
-        "year": 2024,
-        "comparable": "flag",
-        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
-        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
-        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
-        "urls": [
-          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
-          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
-        ]
-      },
-      "peak_ratio": 1.1009771653220979,
-      "peak_verdict": "flagged",
-      "dc_opf": "optimal",
-      "dc_message": null,
-      "ac_pf": "converged",
-      "ac_message": null,
-      "vm": [
-        1.0195528876182056,
-        1.021428973847956
-      ],
-      "valid": true,
-      "engine_ms": 33.99912500000001,
-      "generation_ms": 24.112959,
-      "stage_ms": {
-        "context": 13.404917000000001,
-        "site_buses": 1.6232089999999992,
-        "topology": 0.4917080000000009,
-        "electrify": 8.593124999999999,
-        "dc_opf": 7.025208000000003,
-        "calibrate": 0.0710000000000015,
-        "ac_pf": 2.781625000000002,
-        "finalize": 0.008333000000000368
-      },
-      "warnings": [
-        "branch_target_exceeded",
-        "planning_incomplete",
-        "voltage_level_added"
-      ],
-      "seed": 7
-    },
-    {
-      "region": "aus",
-      "label": "Australia",
-      "request_sha256": "279cb44865cf51f919a9a79b9718a71b4d7bf4d194b842d99698fb9430eb1b05",
-      "buses": 312,
-      "branches": 532,
-      "branch_bus_ratio": 1.705128205128205,
+      "branches": 507,
+      "branch_bus_ratio": 1.625,
       "max_parallel_circuits": 4,
       "capped_corridors": 1,
       "added_level_kv": 500.0,
       "plan_converged": false,
-      "angle_spread_deg": 259.00778472601235,
-      "max_angle_difference_deg": 444.2450562994872,
+      "angle_spread_deg": 147.27756923266617,
+      "max_angle_difference_deg": 400.5360436211126,
       "voltage_basis": "country",
       "voltage_country": "AUS",
       "voltage_levels_kv": [
@@ -212,26 +75,164 @@
       "dc_opf": "optimal",
       "dc_message": null,
       "ac_pf": "not_converged",
-      "ac_message": "AC power flow did not converge: best mismatch 2.307e-1 over 5 starts",
+      "ac_message": "AC power flow did not converge: best mismatch 1.113e0 over 5 starts",
       "vm": [
         null,
         null
       ],
       "valid": false,
-      "engine_ms": 56.92741599999999,
-      "generation_ms": 23.821790999999997,
+      "engine_ms": 97.92612499999998,
+      "generation_ms": 42.130458000000004,
       "stage_ms": {
-        "context": 13.178917,
-        "site_buses": 1.5950000000000006,
-        "topology": 0.4944159999999993,
-        "electrify": 8.553458,
-        "dc_opf": 7.523208,
-        "calibrate": 6.990666999999998,
-        "ac_pf": 18.583291999999993,
-        "finalize": 0.008457999999997412
+        "context": 20.054665999999997,
+        "site_buses": 7.941792000000003,
+        "topology": 0.7689999999999984,
+        "electrify": 13.365000000000002,
+        "dc_opf": 11.346208000000004,
+        "calibrate": 10.899249999999995,
+        "ac_pf": 33.53649999999999,
+        "finalize": 0.013708999999991534
       },
       "warnings": [
-        "reactive_plan_unconverged",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added",
+        "ac_pf_not_converged"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "aus",
+      "label": "Australia",
+      "request_sha256": "3146c65024046ce80567d9001aa8671b450f29e2b6a966f638821b6a0660371d",
+      "buses": 312,
+      "branches": 511,
+      "branch_bus_ratio": 1.6378205128205128,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": 500.0,
+      "plan_converged": false,
+      "angle_spread_deg": 218.8718445479475,
+      "max_angle_difference_deg": 72.93186169947415,
+      "voltage_basis": "country",
+      "voltage_country": "AUS",
+      "voltage_levels_kv": [
+        500.0,
+        330.0,
+        275.0,
+        220.0
+      ],
+      "peak_mw": 41780.982446808295,
+      "demand_basis": "national",
+      "places_in_region": 44,
+      "places_snapped": 3,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 37949,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+        "urls": [
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
+        ]
+      },
+      "peak_ratio": 1.1009771653220979,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0184669563964277,
+        1.0238249409337834
+      ],
+      "valid": true,
+      "engine_ms": 59.91783299999999,
+      "generation_ms": 42.45299999999999,
+      "stage_ms": {
+        "context": 20.375249999999998,
+        "site_buses": 8.409207999999996,
+        "topology": 0.7834169999999965,
+        "electrify": 12.885124999999999,
+        "dc_opf": 11.810125,
+        "calibrate": 0.17625000000000313,
+        "ac_pf": 5.468374999999995,
+        "finalize": 0.010083000000001618
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "aus",
+      "label": "Australia",
+      "request_sha256": "279cb44865cf51f919a9a79b9718a71b4d7bf4d194b842d99698fb9430eb1b05",
+      "buses": 312,
+      "branches": 512,
+      "branch_bus_ratio": 1.641025641025641,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 1,
+      "added_level_kv": 500.0,
+      "plan_converged": false,
+      "angle_spread_deg": 164.17438494027797,
+      "max_angle_difference_deg": 384.11884077950776,
+      "voltage_basis": "country",
+      "voltage_country": "AUS",
+      "voltage_levels_kv": [
+        500.0,
+        330.0,
+        275.0,
+        220.0
+      ],
+      "peak_mw": 41780.982446808295,
+      "demand_basis": "national",
+      "places_in_region": 44,
+      "places_snapped": 3,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 37949,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+        "urls": [
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
+        ]
+      },
+      "peak_ratio": 1.1009771653220979,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "not_converged",
+      "ac_message": "AC power flow did not converge: best mismatch 1.458e0 over 5 starts",
+      "vm": [
+        null,
+        null
+      ],
+      "valid": false,
+      "engine_ms": 98.04229000000001,
+      "generation_ms": 42.150957000000005,
+      "stage_ms": {
+        "context": 20.387124999999997,
+        "site_buses": 7.9317910000000005,
+        "topology": 0.7696660000000008,
+        "electrify": 13.062375000000003,
+        "dc_opf": 12.362583999999998,
+        "calibrate": 12.178583000000003,
+        "ac_pf": 31.338833000000008,
+        "finalize": 0.011332999999993376
+      },
+      "warnings": [
+        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete",
         "voltage_level_added",
@@ -244,14 +245,14 @@
       "label": "Brazil",
       "request_sha256": "4fa96a1a37c794974e8f95fbbbabd7c0fb33206ae7a6791b8dd5555df02eba6c",
       "buses": 750,
-      "branches": 1201,
-      "branch_bus_ratio": 1.6013333333333333,
-      "max_parallel_circuits": 4,
+      "branches": 1200,
+      "branch_bus_ratio": 1.6,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 65.70519962650388,
-      "max_angle_difference_deg": 14.214163918540613,
+      "angle_spread_deg": 89.76849017986312,
+      "max_angle_difference_deg": 21.931029549760957,
       "voltage_basis": "country",
       "voltage_country": "BRA",
       "voltage_levels_kv": [
@@ -282,21 +283,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0191880842964944,
-        1.0219662987347085
+        1.0191653126290856,
+        1.0219233718688154
       ],
       "valid": true,
-      "engine_ms": 98.07103999999998,
-      "generation_ms": 71.831208,
+      "engine_ms": 160.910623,
+      "generation_ms": 117.44937400000003,
       "stage_ms": {
-        "context": 38.049334,
-        "site_buses": 3.8884159999999994,
-        "topology": 0.9852500000000006,
-        "electrify": 28.908207999999995,
-        "dc_opf": 17.686915999999997,
-        "calibrate": 0.276457999999991,
-        "ac_pf": 8.26641699999999,
-        "finalize": 0.010041000000001077
+        "context": 61.220917,
+        "site_buses": 15.100041000000019,
+        "topology": 1.588583000000014,
+        "electrify": 39.539833,
+        "dc_opf": 30.367542000000014,
+        "calibrate": 0.42679099999998016,
+        "ac_pf": 12.65433299999998,
+        "finalize": 0.012582999999978028
       },
       "warnings": [
         "branch_target_exceeded",
@@ -310,14 +311,14 @@
       "label": "Brazil",
       "request_sha256": "8fd7e523044c9a59364181b5f0f7cf9311b0c9d0b32cddcf351018dc31c5e3bd",
       "buses": 750,
-      "branches": 1204,
-      "branch_bus_ratio": 1.6053333333333333,
-      "max_parallel_circuits": 4,
+      "branches": 1211,
+      "branch_bus_ratio": 1.6146666666666667,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 78.58878897002546,
-      "max_angle_difference_deg": 17.73379484076464,
+      "angle_spread_deg": 115.3970645835,
+      "max_angle_difference_deg": 17.862665387297398,
       "voltage_basis": "country",
       "voltage_country": "BRA",
       "voltage_levels_kv": [
@@ -348,24 +349,23 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0174567665425795,
-        1.021347289275728
+        1.0184060040619651,
+        1.0217628286256473
       ],
       "valid": true,
-      "engine_ms": 97.11279100000002,
-      "generation_ms": 71.41300000000001,
+      "engine_ms": 163.81504100000006,
+      "generation_ms": 117.08887500000002,
       "stage_ms": {
-        "context": 39.052834,
-        "site_buses": 4.067333000000005,
-        "topology": 1.0399160000000052,
-        "electrify": 27.252917000000004,
-        "dc_opf": 17.93195800000001,
-        "calibrate": 0.25320899999999824,
-        "ac_pf": 7.503833,
-        "finalize": 0.010790999999997553
+        "context": 60.60275,
+        "site_buses": 14.801416000000003,
+        "topology": 1.6088340000000017,
+        "electrify": 40.07587500000001,
+        "dc_opf": 33.394208000000006,
+        "calibrate": 0.39841600000002586,
+        "ac_pf": 12.920000000000016,
+        "finalize": 0.013542000000001053
       },
       "warnings": [
-        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete",
         "voltage_level_added"
@@ -377,14 +377,14 @@
       "label": "Brazil",
       "request_sha256": "3e1b7d778c3ed65757e60e661cbc66964d93f3933f6b75e12d485383598cb07f",
       "buses": 750,
-      "branches": 1204,
-      "branch_bus_ratio": 1.6053333333333333,
-      "max_parallel_circuits": 4,
+      "branches": 1203,
+      "branch_bus_ratio": 1.604,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 115.72236651389926,
-      "max_angle_difference_deg": 19.918648693386512,
+      "angle_spread_deg": 81.71113836895823,
+      "max_angle_difference_deg": 23.566148648433902,
       "voltage_basis": "country",
       "voltage_country": "BRA",
       "voltage_levels_kv": [
@@ -415,21 +415,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0185885688590575,
-        1.0212157528819594
+        1.019209150466169,
+        1.0214943167299262
       ],
       "valid": true,
-      "engine_ms": 102.07537499999995,
-      "generation_ms": 71.39512399999998,
+      "engine_ms": 160.469375,
+      "generation_ms": 117.20787500000002,
       "stage_ms": {
-        "context": 38.9775,
-        "site_buses": 3.810292000000004,
-        "topology": 0.9976659999999882,
-        "electrify": 27.60966599999999,
-        "dc_opf": 22.40433399999999,
-        "calibrate": 0.3046250000000015,
-        "ac_pf": 7.961208999999997,
-        "finalize": 0.010082999999980302
+        "context": 61.715666,
+        "site_buses": 15.083292,
+        "topology": 1.5820420000000013,
+        "electrify": 38.826875000000015,
+        "dc_opf": 29.6815,
+        "calibrate": 0.39449999999999363,
+        "ac_pf": 13.168999999999983,
+        "finalize": 0.01650000000000773
       },
       "warnings": [
         "branch_target_exceeded",
@@ -449,8 +449,8 @@
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 90.12322100476966,
-      "max_angle_difference_deg": 14.498661226631963,
+      "angle_spread_deg": 63.26508683075723,
+      "max_angle_difference_deg": 32.310372792242276,
       "voltage_basis": "country",
       "voltage_country": "CHL",
       "voltage_levels_kv": [
@@ -480,21 +480,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.017634368688817,
-        1.0233981181748648
+        1.0161347230426734,
+        1.024789669722899
       ],
       "valid": true,
-      "engine_ms": 19.522501,
-      "generation_ms": 9.585708,
+      "engine_ms": 33.440749,
+      "generation_ms": 17.108416999999996,
       "stage_ms": {
-        "context": 2.7443329999999997,
-        "site_buses": 1.6866250000000003,
-        "topology": 0.3810419999999999,
-        "electrify": 4.773707999999999,
-        "dc_opf": 5.8902090000000005,
-        "calibrate": 0.09079200000000043,
-        "ac_pf": 3.9445419999999984,
-        "finalize": 0.011249999999996874
+        "context": 4.3574589999999995,
+        "site_buses": 5.315833,
+        "topology": 0.571457999999998,
+        "electrify": 6.863666999999998,
+        "dc_opf": 9.797333000000002,
+        "calibrate": 0.1436250000000001,
+        "ac_pf": 6.379540999999996,
+        "finalize": 0.011833000000002869
       },
       "warnings": [
         "branch_target_exceeded",
@@ -507,14 +507,14 @@
       "label": "Chile",
       "request_sha256": "6224cb9ba3361847dfa09564c54cc3d961c09477ea443c56f79cd71c647a3a8c",
       "buses": 282,
-      "branches": 429,
-      "branch_bus_ratio": 1.5212765957446808,
+      "branches": 446,
+      "branch_bus_ratio": 1.5815602836879432,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 43.558853278353894,
-      "max_angle_difference_deg": 16.21895501031639,
+      "angle_spread_deg": 44.14209335161294,
+      "max_angle_difference_deg": 10.435405778882895,
       "voltage_basis": "country",
       "voltage_country": "CHL",
       "voltage_levels_kv": [
@@ -544,21 +544,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0193169703610598,
-        1.0233310727003782
+        1.0141297432558833,
+        1.0252257898311625
       ],
       "valid": true,
-      "engine_ms": 18.712374999999998,
-      "generation_ms": 9.081458000000001,
+      "engine_ms": 34.466708,
+      "generation_ms": 18.605166,
       "stage_ms": {
-        "context": 2.7694170000000002,
-        "site_buses": 1.614792,
-        "topology": 0.373958,
-        "electrify": 4.323291,
-        "dc_opf": 5.42975,
-        "calibrate": 0.07279199999999797,
-        "ac_pf": 4.121,
-        "finalize": 0.007374999999999687
+        "context": 4.28825,
+        "site_buses": 5.952082999999999,
+        "topology": 0.5782500000000006,
+        "electrify": 7.786583,
+        "dc_opf": 9.478083999999999,
+        "calibrate": 0.11608299999999971,
+        "ac_pf": 6.2556670000000025,
+        "finalize": 0.01170799999999872
       },
       "warnings": [
         "branch_target_exceeded"
@@ -570,14 +570,14 @@
       "label": "Chile",
       "request_sha256": "babb8e355ff647b586d956c09a7c2a34ae0f498812096d15c0b8dfeb47d2552c",
       "buses": 282,
-      "branches": 430,
-      "branch_bus_ratio": 1.524822695035461,
-      "max_parallel_circuits": 4,
+      "branches": 421,
+      "branch_bus_ratio": 1.4929078014184398,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 43.64961031558954,
-      "max_angle_difference_deg": 8.507049574893,
+      "angle_spread_deg": 43.82769620283342,
+      "max_angle_difference_deg": 12.265680567557505,
       "voltage_basis": "country",
       "voltage_country": "CHL",
       "voltage_levels_kv": [
@@ -607,21 +607,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0142149573747326,
-        1.0247146060991286
+        1.0179720757530766,
+        1.0407222694978056
       ],
       "valid": true,
-      "engine_ms": 18.521168000000003,
-      "generation_ms": 9.607208,
+      "engine_ms": 31.643583999999993,
+      "generation_ms": 17.589833999999996,
       "stage_ms": {
-        "context": 2.711125,
-        "site_buses": 1.6775410000000002,
-        "topology": 0.37291700000000017,
-        "electrify": 4.845625,
-        "dc_opf": 5.695667,
-        "calibrate": 0.06795899999999833,
-        "ac_pf": 3.141917000000003,
-        "finalize": 0.008417000000001451
+        "context": 4.433042,
+        "site_buses": 6.135749999999999,
+        "topology": 0.6141670000000001,
+        "electrify": 6.406874999999998,
+        "dc_opf": 9.038291999999998,
+        "calibrate": 0.1267499999999977,
+        "ac_pf": 4.875291000000001,
+        "finalize": 0.013417000000000456
       },
       "warnings": [
         "branch_target_exceeded"
@@ -633,14 +633,14 @@
       "label": "People's Republic of China",
       "request_sha256": "dc5e67e710200627a8d1518bf7b822eb28bd8c7d9738661f8c988fc5c230df00",
       "buses": 3000,
-      "branches": 4994,
-      "branch_bus_ratio": 1.6646666666666667,
+      "branches": 4907,
+      "branch_bus_ratio": 1.6356666666666666,
       "max_parallel_circuits": 4,
-      "capped_corridors": 0,
+      "capped_corridors": 1,
       "added_level_kv": 1000.0,
       "plan_converged": false,
-      "angle_spread_deg": 261.1882106365622,
-      "max_angle_difference_deg": 22.70514629669876,
+      "angle_spread_deg": 173.00408367005144,
+      "max_angle_difference_deg": 19.56610211561545,
       "voltage_basis": "country",
       "voltage_country": "CHN",
       "voltage_levels_kv": [
@@ -672,21 +672,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.014765854771002,
-        1.025119595528291
+        1.0140122050156095,
+        1.0262673637224762
       ],
       "valid": true,
-      "engine_ms": 324.1378330000001,
-      "generation_ms": 182.25579100000002,
+      "engine_ms": 485.4513350000001,
+      "generation_ms": 273.149251,
       "stage_ms": {
-        "context": 30.431707999999997,
-        "site_buses": 13.295541999999998,
-        "topology": 4.429458000000011,
-        "electrify": 134.099083,
-        "dc_opf": 100.32445799999999,
-        "calibrate": 1.2247090000000753,
-        "ac_pf": 40.31570800000003,
-        "finalize": 0.01716700000002902
+        "context": 47.884875,
+        "site_buses": 40.201167,
+        "topology": 6.905041999999995,
+        "electrify": 178.158167,
+        "dc_opf": 149.601042,
+        "calibrate": 1.5410000000000537,
+        "ac_pf": 61.13937499999997,
+        "finalize": 0.020667000000059943
       },
       "warnings": [
         "bus_count_capped",
@@ -702,14 +702,14 @@
       "label": "People's Republic of China",
       "request_sha256": "c3f826f22ab43f2c738a46b52a363c719de7d58c67cc84623f2b2af1b9e728e5",
       "buses": 3000,
-      "branches": 4968,
-      "branch_bus_ratio": 1.656,
+      "branches": 4969,
+      "branch_bus_ratio": 1.6563333333333334,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 1000.0,
       "plan_converged": false,
-      "angle_spread_deg": 163.50571952734208,
-      "max_angle_difference_deg": 22.664489009556146,
+      "angle_spread_deg": 189.53255027983047,
+      "max_angle_difference_deg": 19.46988515633566,
       "voltage_basis": "country",
       "voltage_country": "CHN",
       "voltage_levels_kv": [
@@ -741,21 +741,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0179723154560691,
-        1.0264562078511987
+        1.0139132768607195,
+        1.024895827669527
       ],
       "valid": true,
-      "engine_ms": 324.2051659999999,
-      "generation_ms": 181.277625,
+      "engine_ms": 489.311833,
+      "generation_ms": 275.254417,
       "stage_ms": {
-        "context": 30.318208,
-        "site_buses": 13.201165999999997,
-        "topology": 4.382542000000001,
-        "electrify": 133.375709,
-        "dc_opf": 102.76237499999999,
-        "calibrate": 0.8741669999999431,
-        "ac_pf": 39.275458000000015,
-        "finalize": 0.015540999999984706
+        "context": 46.59395799999999,
+        "site_buses": 42.399417,
+        "topology": 6.888166999999996,
+        "electrify": 179.37287500000002,
+        "dc_opf": 151.77095799999995,
+        "calibrate": 1.215332999999987,
+        "ac_pf": 61.049667,
+        "finalize": 0.02145800000005238
       },
       "warnings": [
         "bus_count_capped",
@@ -771,14 +771,14 @@
       "label": "People's Republic of China",
       "request_sha256": "77e515eaa962deb7809e779b65d5910238325cb9bf8d2eba8451e8ae9bbc8ce8",
       "buses": 3000,
-      "branches": 4926,
-      "branch_bus_ratio": 1.642,
+      "branches": 4984,
+      "branch_bus_ratio": 1.6613333333333333,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 1000.0,
       "plan_converged": false,
-      "angle_spread_deg": 160.23593058127258,
-      "max_angle_difference_deg": 22.96454218861862,
+      "angle_spread_deg": 230.96227287105907,
+      "max_angle_difference_deg": 19.995805456160653,
       "voltage_basis": "country",
       "voltage_country": "CHN",
       "voltage_levels_kv": [
@@ -810,21 +810,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0110155194364543,
-        1.0267203486910472
+        1.0146677486597153,
+        1.0253822518924591
       ],
       "valid": true,
-      "engine_ms": 321.84716700000007,
-      "generation_ms": 184.349084,
+      "engine_ms": 482.55366599999996,
+      "generation_ms": 269.924083,
       "stage_ms": {
-        "context": 30.318666999999998,
-        "site_buses": 12.778291999999997,
-        "topology": 4.390082999999997,
-        "electrify": 136.862042,
-        "dc_opf": 97.59762500000002,
-        "calibrate": 1.05600000000004,
-        "ac_pf": 38.82183299999997,
-        "finalize": 0.022625000000005002
+        "context": 47.442166,
+        "site_buses": 40.054875,
+        "topology": 6.843499999999992,
+        "electrify": 175.58354200000002,
+        "dc_opf": 155.886458,
+        "calibrate": 1.50162499999999,
+        "ac_pf": 55.21825000000001,
+        "finalize": 0.0232499999999618
       },
       "warnings": [
         "bus_count_capped",
@@ -840,14 +840,14 @@
       "label": "Germany",
       "request_sha256": "67db93a9cbb09bd79a1e7b376dc12bbb9fb8611b2ccd7c28e30e2aedd586f8de",
       "buses": 525,
-      "branches": 826,
-      "branch_bus_ratio": 1.5733333333333333,
+      "branches": 915,
+      "branch_bus_ratio": 1.7428571428571429,
       "max_parallel_circuits": 4,
-      "capped_corridors": 0,
+      "capped_corridors": 1,
       "added_level_kv": null,
-      "plan_converged": true,
-      "angle_spread_deg": 43.64216597434101,
-      "max_angle_difference_deg": 14.02688290187285,
+      "plan_converged": false,
+      "angle_spread_deg": 122.00290503821581,
+      "max_angle_difference_deg": 20.71954694281201,
       "voltage_basis": "country",
       "voltage_country": "DEU",
       "voltage_levels_kv": [
@@ -877,25 +877,26 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0144231208853816,
-        1.023684344328875
+        1.0167940828109798,
+        1.0253780293611579
       ],
       "valid": true,
-      "engine_ms": 57.267999999999994,
-      "generation_ms": 38.46825,
+      "engine_ms": 91.01541599999999,
+      "generation_ms": 57.939459,
       "stage_ms": {
-        "context": 27.309292000000003,
-        "site_buses": 0.9961249999999993,
-        "topology": 0.6494999999999997,
-        "electrify": 9.513333,
-        "dc_opf": 13.272874999999999,
-        "calibrate": 0.1514579999999981,
-        "ac_pf": 5.366834000000004,
-        "finalize": 0.008582999999994456
+        "context": 42.262167,
+        "site_buses": 1.866458999999999,
+        "topology": 1.043333000000004,
+        "electrify": 12.767499999999998,
+        "dc_opf": 22.827083000000002,
+        "calibrate": 0.28095799999999826,
+        "ac_pf": 9.956874999999997,
+        "finalize": 0.01104099999999164
       },
       "warnings": [
         "generation_spread",
-        "branch_target_exceeded"
+        "branch_target_exceeded",
+        "planning_incomplete"
       ],
       "seed": 1
     },
@@ -910,8 +911,8 @@
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 45.0962086172462,
-      "max_angle_difference_deg": 12.43901017817273,
+      "angle_spread_deg": 100.13160463488765,
+      "max_angle_difference_deg": 13.628838760367536,
       "voltage_basis": "country",
       "voltage_country": "DEU",
       "voltage_levels_kv": [
@@ -941,21 +942,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0147962171670548,
-        1.0239711459698495
+        1.0141110537885976,
+        1.025838086966282
       ],
       "valid": true,
-      "engine_ms": 56.57329100000001,
-      "generation_ms": 38.23504200000001,
+      "engine_ms": 88.33145799999998,
+      "generation_ms": 59.168791999999996,
       "stage_ms": {
-        "context": 27.699125000000002,
-        "site_buses": 0.902041999999998,
-        "topology": 0.6578750000000042,
-        "electrify": 8.976000000000006,
-        "dc_opf": 12.457665999999996,
-        "calibrate": 0.15174999999999983,
-        "ac_pf": 5.719583,
-        "finalize": 0.00925000000000864
+        "context": 42.98275,
+        "site_buses": 1.829041999999994,
+        "topology": 1.041374999999995,
+        "electrify": 13.315625000000004,
+        "dc_opf": 20.726041999999993,
+        "calibrate": 0.17837500000000261,
+        "ac_pf": 8.246707999999998,
+        "finalize": 0.011540999999994028
       },
       "warnings": [
         "generation_spread",
@@ -969,14 +970,14 @@
       "label": "Germany",
       "request_sha256": "ab6dc7b4a0460f55a20dab7cbe1e9397049a214682c11d6f1ac572009c79dcbf",
       "buses": 525,
-      "branches": 844,
-      "branch_bus_ratio": 1.6076190476190477,
+      "branches": 853,
+      "branch_bus_ratio": 1.6247619047619049,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 61.799521672666515,
-      "max_angle_difference_deg": 11.707349670681715,
+      "angle_spread_deg": 58.68675939201504,
+      "max_angle_difference_deg": 15.180136266309201,
       "voltage_basis": "country",
       "voltage_country": "DEU",
       "voltage_levels_kv": [
@@ -1006,21 +1007,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0164509953562544,
-        1.025084469951327
+        1.013890268899538,
+        1.0248372018351495
       ],
       "valid": true,
-      "engine_ms": 54.12483399999999,
-      "generation_ms": 36.21062500000001,
+      "engine_ms": 88.348833,
+      "generation_ms": 59.23979199999999,
       "stage_ms": {
-        "context": 26.706958,
-        "site_buses": 0.9332080000000005,
-        "topology": 0.673917000000003,
-        "electrify": 7.896542,
-        "dc_opf": 11.827917,
-        "calibrate": 0.1263749999999959,
-        "ac_pf": 5.951374999999992,
-        "finalize": 0.008541999999998495
+        "context": 44.076083,
+        "site_buses": 1.838124999999991,
+        "topology": 1.030541999999997,
+        "electrify": 12.295042000000002,
+        "dc_opf": 20.464250000000014,
+        "calibrate": 0.2084159999999997,
+        "ac_pf": 8.425792000000001,
+        "finalize": 0.0105829999999969
       },
       "warnings": [
         "generation_spread",
@@ -1034,14 +1035,14 @@
       "label": "Egypt",
       "request_sha256": "b11119d9f60ca58c8d8b9a2e4a707f2c1add4c3a371139291dd1f2a3233ef7d4",
       "buses": 312,
-      "branches": 499,
-      "branch_bus_ratio": 1.5993589743589745,
-      "max_parallel_circuits": 3,
+      "branches": 484,
+      "branch_bus_ratio": 1.5512820512820513,
+      "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
-      "plan_converged": false,
-      "angle_spread_deg": 114.29508198614263,
-      "max_angle_difference_deg": 15.347367310419193,
+      "plan_converged": true,
+      "angle_spread_deg": 44.346192047151874,
+      "max_angle_difference_deg": 11.128503063406916,
       "voltage_basis": "country",
       "voltage_country": "EGY",
       "voltage_levels_kv": [
@@ -1071,25 +1072,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0142613839191554,
-        1.0234861326440927
+        1.0159155736584218,
+        1.0211631615371402
       ],
       "valid": true,
-      "engine_ms": 18.798124000000005,
-      "generation_ms": 9.069999000000001,
+      "engine_ms": 34.127082,
+      "generation_ms": 16.163874,
       "stage_ms": {
-        "context": 2.515625,
-        "site_buses": 0.7697910000000001,
-        "topology": 0.41195800000000027,
-        "electrify": 5.372625,
-        "dc_opf": 6.6845,
-        "calibrate": 0.0846669999999996,
-        "ac_pf": 2.9520000000000017,
-        "finalize": 0.006958000000000908
+        "context": 3.9604579999999996,
+        "site_buses": 2.378125,
+        "topology": 0.6778329999999997,
+        "electrify": 9.147458,
+        "dc_opf": 12.227708,
+        "calibrate": 0.14004199999999756,
+        "ac_pf": 5.581291999999998,
+        "finalize": 0.01416600000000301
       },
       "warnings": [
-        "branch_target_exceeded",
-        "planning_incomplete"
+        "branch_target_exceeded"
       ],
       "seed": 1
     },
@@ -1100,12 +1100,12 @@
       "buses": 312,
       "branches": 499,
       "branch_bus_ratio": 1.5993589743589745,
-      "max_parallel_circuits": 4,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 60.41954993179565,
-      "max_angle_difference_deg": 9.686937394591384,
+      "angle_spread_deg": 69.40351708572611,
+      "max_angle_difference_deg": 7.204278221029354,
       "voltage_basis": "country",
       "voltage_country": "EGY",
       "voltage_levels_kv": [
@@ -1135,24 +1135,23 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0170492943517762,
-        1.0214213566862052
+        1.0156640544664364,
+        1.0215265213284788
       ],
       "valid": true,
-      "engine_ms": 18.603042,
-      "generation_ms": 9.101792,
+      "engine_ms": 29.813541999999995,
+      "generation_ms": 14.742626000000001,
       "stage_ms": {
-        "context": 2.551958,
-        "site_buses": 0.746,
-        "topology": 0.42179199999999994,
-        "electrify": 5.382042,
-        "dc_opf": 6.525499999999997,
-        "calibrate": 0.0920000000000023,
-        "ac_pf": 2.8766250000000007,
-        "finalize": 0.007124999999998494
+        "context": 3.8557499999999996,
+        "site_buses": 2.4043750000000004,
+        "topology": 0.6711670000000005,
+        "electrify": 7.811334000000001,
+        "dc_opf": 10.209166999999997,
+        "calibrate": 0.13470799999999983,
+        "ac_pf": 4.718457999999998,
+        "finalize": 0.008582999999998009
       },
       "warnings": [
-        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete"
       ],
@@ -1163,14 +1162,14 @@
       "label": "Egypt",
       "request_sha256": "c3b2ddf8ba3bb40307bd92bda91272907d1adb31356c419f9b952874fbd17bdd",
       "buses": 312,
-      "branches": 501,
-      "branch_bus_ratio": 1.6057692307692308,
-      "max_parallel_circuits": 2,
+      "branches": 486,
+      "branch_bus_ratio": 1.5576923076923077,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
-      "plan_converged": false,
-      "angle_spread_deg": 166.59192989344513,
-      "max_angle_difference_deg": 12.575755369498678,
+      "plan_converged": true,
+      "angle_spread_deg": 44.22361420433586,
+      "max_angle_difference_deg": 6.613784830583119,
       "voltage_basis": "country",
       "voltage_country": "EGY",
       "voltage_levels_kv": [
@@ -1200,25 +1199,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0168326987610763,
-        1.021614682016556
+        1.0145602550514854,
+        1.022739352777328
       ],
       "valid": true,
-      "engine_ms": 19.520835,
-      "generation_ms": 9.285709,
+      "engine_ms": 29.522252,
+      "generation_ms": 14.649293,
       "stage_ms": {
-        "context": 2.516625,
-        "site_buses": 0.7450830000000002,
-        "topology": 0.4164589999999997,
-        "electrify": 5.6075420000000005,
-        "dc_opf": 7.056583,
-        "calibrate": 0.08566700000000083,
-        "ac_pf": 3.0861669999999997,
-        "finalize": 0.006709000000000742
+        "context": 3.826959,
+        "site_buses": 2.3416669999999993,
+        "topology": 0.6905839999999994,
+        "electrify": 7.790083,
+        "dc_opf": 10.008625,
+        "calibrate": 0.12225000000000108,
+        "ac_pf": 4.731833999999999,
+        "finalize": 0.010249999999999204
       },
       "warnings": [
-        "branch_target_exceeded",
-        "planning_incomplete"
+        "branch_target_exceeded"
       ],
       "seed": 2026
     },
@@ -1227,14 +1225,14 @@
       "label": "Spain",
       "request_sha256": "6013238b343dd2112cb0f74fc1a34578d4f10c6b5d5b659aba3e499e6475efc9",
       "buses": 250,
-      "branches": 415,
-      "branch_bus_ratio": 1.66,
+      "branches": 424,
+      "branch_bus_ratio": 1.696,
       "max_parallel_circuits": 4,
-      "capped_corridors": 2,
+      "capped_corridors": 1,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 92.91309660040676,
-      "max_angle_difference_deg": 28.569373653161023,
+      "angle_spread_deg": 121.49077314356248,
+      "max_angle_difference_deg": 30.841345870323117,
       "voltage_basis": "country",
       "voltage_country": "ESP",
       "voltage_levels_kv": [
@@ -1264,21 +1262,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0165276931675258,
-        1.0247218518317924
+        0.9894359990464406,
+        1.0511506451453623
       ],
       "valid": true,
-      "engine_ms": 32.730624999999996,
-      "generation_ms": 17.176666000000004,
+      "engine_ms": 50.153334,
+      "generation_ms": 26.796667000000006,
       "stage_ms": {
-        "context": 12.363416,
-        "site_buses": 0.760250000000001,
-        "topology": 0.3257499999999993,
-        "electrify": 3.7272500000000015,
-        "dc_opf": 6.125834000000001,
-        "calibrate": 6.2053749999999965,
-        "ac_pf": 3.2134169999999926,
-        "finalize": 0.009333000000005143
+        "context": 18.821542,
+        "site_buses": 1.6855840000000022,
+        "topology": 0.5125000000000028,
+        "electrify": 5.7770410000000005,
+        "dc_opf": 9.531208,
+        "calibrate": 9.036499999999997,
+        "ac_pf": 4.779333999999999,
+        "finalize": 0.009624999999999773
       },
       "warnings": [
         "demand_fallback",
@@ -1298,8 +1296,8 @@
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 79.31068869898164,
-      "max_angle_difference_deg": 13.230759519459465,
+      "angle_spread_deg": 63.715396965030614,
+      "max_angle_difference_deg": 14.474387781331032,
       "voltage_basis": "country",
       "voltage_country": "ESP",
       "voltage_levels_kv": [
@@ -1329,24 +1327,25 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0154523770319905,
-        1.020913429502336
+        1.017331363643412,
+        1.0218298492538662
       ],
       "valid": true,
-      "engine_ms": 25.137999999999995,
-      "generation_ms": 17.242208,
+      "engine_ms": 40.482208,
+      "generation_ms": 26.727125,
       "stage_ms": {
-        "context": 12.263292,
-        "site_buses": 0.7163750000000011,
-        "topology": 0.31791599999999853,
-        "electrify": 3.944625000000002,
-        "dc_opf": 5.404999999999998,
-        "calibrate": 0.07774999999999821,
-        "ac_pf": 2.4059589999999993,
-        "finalize": 0.007082999999997952
+        "context": 18.790209,
+        "site_buses": 1.6885000000000012,
+        "topology": 0.49983299999999886,
+        "electrify": 5.748583,
+        "dc_opf": 9.928208000000001,
+        "calibrate": 0.10300000000000864,
+        "ac_pf": 3.7141249999999957,
+        "finalize": 0.009749999999996817
       },
       "warnings": [
         "demand_fallback",
+        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete"
       ],
@@ -1357,14 +1356,14 @@
       "label": "Spain",
       "request_sha256": "5a0ba8043d1164fcbfb8b8ccdc72aba71399acaeb9c1f3f9adf6c39dfd911191",
       "buses": 250,
-      "branches": 412,
-      "branch_bus_ratio": 1.648,
+      "branches": 419,
+      "branch_bus_ratio": 1.676,
       "max_parallel_circuits": 4,
-      "capped_corridors": 0,
+      "capped_corridors": 1,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 66.77063278898245,
-      "max_angle_difference_deg": 20.445102863532156,
+      "angle_spread_deg": 109.24373662655502,
+      "max_angle_difference_deg": 25.861555753935548,
       "voltage_basis": "country",
       "voltage_country": "ESP",
       "voltage_levels_kv": [
@@ -1394,21 +1393,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0139430227415414,
-        1.021358928788847
+        1.014574028074375,
+        1.0262024294965557
       ],
       "valid": true,
-      "engine_ms": 25.002003000000002,
-      "generation_ms": 16.652085,
+      "engine_ms": 49.315623,
+      "generation_ms": 27.321124,
       "stage_ms": {
-        "context": 11.853167,
-        "site_buses": 0.7328340000000004,
-        "topology": 0.3429169999999999,
-        "electrify": 3.7231669999999983,
-        "dc_opf": 5.627708999999996,
-        "calibrate": 0.07295900000000088,
-        "ac_pf": 2.6417920000000024,
-        "finalize": 0.007458000000003295
+        "context": 19.135625,
+        "site_buses": 1.6064159999999994,
+        "topology": 0.515708,
+        "electrify": 6.063375000000001,
+        "dc_opf": 8.996915999999995,
+        "calibrate": 8.749958,
+        "ac_pf": 4.236208000000005,
+        "finalize": 0.011417000000001565
       },
       "warnings": [
         "demand_fallback",
@@ -1422,14 +1421,14 @@
       "label": "United Kingdom",
       "request_sha256": "079b4a123e24a3a9d3e1cd998d7bf43428ecfc82a72c3cf74d8d90f023bab7d4",
       "buses": 315,
-      "branches": 502,
-      "branch_bus_ratio": 1.5936507936507935,
+      "branches": 528,
+      "branch_bus_ratio": 1.6761904761904762,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
-      "plan_converged": true,
-      "angle_spread_deg": 43.84778152675647,
-      "max_angle_difference_deg": 17.858794748345655,
+      "plan_converged": false,
+      "angle_spread_deg": 76.08439306143048,
+      "max_angle_difference_deg": 10.628381616601132,
       "voltage_basis": "country",
       "voltage_country": "GBR",
       "voltage_levels_kv": [
@@ -1459,25 +1458,25 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0189293552409153,
-        1.0238775354344678
+        1.0179406289437312,
+        1.0256923687686397
       ],
       "valid": true,
-      "engine_ms": 32.949958,
-      "generation_ms": 22.693542000000004,
+      "engine_ms": 56.144124999999995,
+      "generation_ms": 36.74125099999999,
       "stage_ms": {
-        "context": 16.422875,
-        "site_buses": 0.9867500000000007,
-        "topology": 0.4315420000000003,
-        "electrify": 4.852375000000002,
-        "dc_opf": 7.202290999999999,
-        "calibrate": 0.0849999999999973,
-        "ac_pf": 2.9621250000000003,
-        "finalize": 0.006999999999997897
+        "context": 26.183249999999997,
+        "site_buses": 1.9677919999999993,
+        "topology": 0.6949170000000002,
+        "electrify": 7.895291999999998,
+        "dc_opf": 13.022292,
+        "calibrate": 0.18520800000000293,
+        "ac_pf": 6.179833000000002,
+        "finalize": 0.015540999999998917
       },
       "warnings": [
-        "generation_spread",
-        "branch_target_exceeded"
+        "branch_target_exceeded",
+        "planning_incomplete"
       ],
       "seed": 1
     },
@@ -1486,14 +1485,14 @@
       "label": "United Kingdom",
       "request_sha256": "581e5154d797d2c2b7976feadf28f78d29f003e6d30a1b2c1157b8e7087956a4",
       "buses": 315,
-      "branches": 504,
-      "branch_bus_ratio": 1.6,
-      "max_parallel_circuits": 4,
+      "branches": 495,
+      "branch_bus_ratio": 1.5714285714285714,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 41.72906854851261,
-      "max_angle_difference_deg": 9.41562204451136,
+      "angle_spread_deg": 44.20582574406543,
+      "max_angle_difference_deg": 7.702653907092535,
       "voltage_basis": "country",
       "voltage_country": "GBR",
       "voltage_levels_kv": [
@@ -1523,21 +1522,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0152291445391666,
-        1.022492045959415
+        1.011395536492723,
+        1.0237205225451271
       ],
       "valid": true,
-      "engine_ms": 32.23341599999999,
-      "generation_ms": 22.661332999999996,
+      "engine_ms": 53.660250999999995,
+      "generation_ms": 37.276709,
       "stage_ms": {
-        "context": 16.072458,
-        "site_buses": 0.9117089999999948,
-        "topology": 0.42137500000000117,
-        "electrify": 5.2557909999999985,
-        "dc_opf": 6.323542,
-        "calibrate": 0.08174999999999955,
-        "ac_pf": 3.159290999999996,
-        "finalize": 0.007500000000000284
+        "context": 26.06625,
+        "site_buses": 1.9015419999999992,
+        "topology": 0.669709000000001,
+        "electrify": 8.639207999999996,
+        "dc_opf": 11.031875000000007,
+        "calibrate": 0.19608300000000156,
+        "ac_pf": 5.14224999999999,
+        "finalize": 0.013334000000000401
       },
       "warnings": [
         "branch_target_exceeded"
@@ -1549,14 +1548,14 @@
       "label": "United Kingdom",
       "request_sha256": "e79885fdfba61343649db5e6db4cacea8d1ca319ba72f1747f180fb781f51505",
       "buses": 315,
-      "branches": 511,
-      "branch_bus_ratio": 1.6222222222222222,
-      "max_parallel_circuits": 3,
+      "branches": 532,
+      "branch_bus_ratio": 1.6888888888888889,
+      "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
-      "plan_converged": true,
-      "angle_spread_deg": 43.777225054026246,
-      "max_angle_difference_deg": 15.134589530966226,
+      "plan_converged": false,
+      "angle_spread_deg": 83.82568836254069,
+      "max_angle_difference_deg": 16.1913076007273,
       "voltage_basis": "country",
       "voltage_country": "GBR",
       "voltage_levels_kv": [
@@ -1586,24 +1585,25 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.016511471234572,
-        1.023138394533621
+        1.0166449215964026,
+        1.023810466350871
       ],
       "valid": true,
-      "engine_ms": 35.196791,
-      "generation_ms": 22.998375000000006,
+      "engine_ms": 54.427457999999994,
+      "generation_ms": 36.739498999999995,
       "stage_ms": {
-        "context": 17.101625000000002,
-        "site_buses": 0.9182920000000045,
-        "topology": 0.4418749999999996,
-        "electrify": 4.536583,
-        "dc_opf": 8.080124999999995,
-        "calibrate": 0.08870800000000045,
-        "ac_pf": 4.019333000000003,
-        "finalize": 0.010249999999992099
+        "context": 26.1425,
+        "site_buses": 1.9300420000000003,
+        "topology": 0.6607909999999997,
+        "electrify": 8.006166,
+        "dc_opf": 11.542000000000002,
+        "calibrate": 0.16320900000000194,
+        "ac_pf": 5.971167000000001,
+        "finalize": 0.01158299999999457
       },
       "warnings": [
-        "branch_target_exceeded"
+        "branch_target_exceeded",
+        "planning_incomplete"
       ],
       "seed": 2026
     },
@@ -1612,14 +1612,14 @@
       "label": "Indonesia",
       "request_sha256": "df661f061731f4a55d280a20240f8bdb9183ba1ec180afdd3ba29c9b540c663d",
       "buses": 351,
-      "branches": 589,
-      "branch_bus_ratio": 1.6780626780626782,
+      "branches": 582,
+      "branch_bus_ratio": 1.6581196581196582,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 191.51200195462238,
-      "max_angle_difference_deg": 21.6759759529553,
+      "angle_spread_deg": 246.68505975306283,
+      "max_angle_difference_deg": 23.034649319314273,
       "voltage_basis": "country",
       "voltage_country": "IDN",
       "voltage_levels_kv": [
@@ -1649,21 +1649,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0133006033983607,
-        1.0210629256043606
+        1.013958275568674,
+        1.0208207159970957
       ],
       "valid": true,
-      "engine_ms": 24.523874999999993,
-      "generation_ms": 12.170083000000002,
+      "engine_ms": 39.680289,
+      "generation_ms": 20.138457000000002,
       "stage_ms": {
-        "context": 4.126041000000001,
-        "site_buses": 1.8340420000000002,
-        "topology": 0.6621250000000005,
-        "electrify": 5.547875,
-        "dc_opf": 8.232333,
-        "calibrate": 0.0953749999999971,
-        "ac_pf": 4.0163749999999965,
-        "finalize": 0.009708999999997303
+        "context": 6.268833,
+        "site_buses": 4.375416000000001,
+        "topology": 1.004417000000002,
+        "electrify": 8.489790999999999,
+        "dc_opf": 12.927541000000002,
+        "calibrate": 0.18845799999999713,
+        "ac_pf": 6.414332999999999,
+        "finalize": 0.011499999999998067
       },
       "warnings": [
         "islands_cut",
@@ -1677,14 +1677,14 @@
       "label": "Indonesia",
       "request_sha256": "14805b32e786c6829bbf123b261bddfc4d4d2084f0362ba490e7a1b54dd15a53",
       "buses": 351,
-      "branches": 574,
-      "branch_bus_ratio": 1.6353276353276354,
-      "max_parallel_circuits": 4,
+      "branches": 592,
+      "branch_bus_ratio": 1.6866096866096867,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 241.32808989175348,
-      "max_angle_difference_deg": 24.1090192385035,
+      "angle_spread_deg": 268.78481851298477,
+      "max_angle_difference_deg": 27.80148756520476,
       "voltage_basis": "country",
       "voltage_country": "IDN",
       "voltage_levels_kv": [
@@ -1714,21 +1714,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0103957148528806,
-        1.0222591248907
+        1.0161218675663821,
+        1.0216597342327445
       ],
       "valid": true,
-      "engine_ms": 23.69416600000001,
-      "generation_ms": 12.204041,
+      "engine_ms": 40.13266699999999,
+      "generation_ms": 19.489458,
       "stage_ms": {
-        "context": 4.053624999999999,
-        "site_buses": 1.841957999999999,
-        "topology": 0.6472500000000005,
-        "electrify": 5.661208,
-        "dc_opf": 7.902125000000002,
-        "calibrate": 0.08733300000000455,
-        "ac_pf": 3.4931670000000032,
-        "finalize": 0.007500000000000284
+        "context": 6.2095,
+        "site_buses": 4.202042,
+        "topology": 1.027208,
+        "electrify": 8.050708,
+        "dc_opf": 13.990958000000003,
+        "calibrate": 0.18737499999999585,
+        "ac_pf": 6.453583999999992,
+        "finalize": 0.011291999999997415
       },
       "warnings": [
         "islands_cut",
@@ -1742,14 +1742,14 @@
       "label": "Indonesia",
       "request_sha256": "dc7eca0020db25179a3eb581a36a7cd64f3e2647d74f36d3cb2bb69448899aeb",
       "buses": 351,
-      "branches": 562,
-      "branch_bus_ratio": 1.601139601139601,
-      "max_parallel_circuits": 3,
+      "branches": 561,
+      "branch_bus_ratio": 1.5982905982905984,
+      "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 118.47796102492926,
-      "max_angle_difference_deg": 26.276646703615132,
+      "angle_spread_deg": 116.56803577066928,
+      "max_angle_difference_deg": 17.286056791531095,
       "voltage_basis": "country",
       "voltage_country": "IDN",
       "voltage_levels_kv": [
@@ -1779,21 +1779,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0125436492638578,
-        1.0227797441820994
+        1.0134151986749507,
+        1.0232445743212935
       ],
       "valid": true,
-      "engine_ms": 24.453667,
-      "generation_ms": 11.935833999999998,
+      "engine_ms": 37.939791,
+      "generation_ms": 20.074833,
       "stage_ms": {
-        "context": 4.068625,
-        "site_buses": 1.7660419999999997,
-        "topology": 0.6465829999999997,
-        "electrify": 5.454583999999999,
-        "dc_opf": 8.425082999999999,
-        "calibrate": 0.08308299999999846,
-        "ac_pf": 4.001167000000002,
-        "finalize": 0.008500000000001506
+        "context": 6.205666,
+        "site_buses": 4.158792000000002,
+        "topology": 1.0327920000000006,
+        "electrify": 8.677582999999998,
+        "dc_opf": 11.509417,
+        "calibrate": 0.1309160000000027,
+        "ac_pf": 6.212125,
+        "finalize": 0.012499999999995737
       },
       "warnings": [
         "islands_cut",
@@ -1807,14 +1807,14 @@
       "label": "India",
       "request_sha256": "6c6912257b4a0fe08680ef6eb70358d57d067df05f55b1aea7a110580a881e6a",
       "buses": 2012,
-      "branches": 3223,
-      "branch_bus_ratio": 1.6018886679920477,
+      "branches": 3229,
+      "branch_bus_ratio": 1.6048707753479126,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 66.51478144534738,
-      "max_angle_difference_deg": 16.053255343167056,
+      "angle_spread_deg": 78.58307785199166,
+      "max_angle_difference_deg": 13.872707511378227,
       "voltage_basis": "country",
       "voltage_country": "IND",
       "voltage_levels_kv": [
@@ -1845,23 +1845,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0136576204236223,
-        1.0257637924587615
+        1.0109157816293812,
+        1.025168232744925
       ],
       "valid": true,
-      "engine_ms": 212.53991599999992,
-      "generation_ms": 130.45916599999998,
+      "engine_ms": 344.59012399999995,
+      "generation_ms": 216.83166599999998,
       "stage_ms": {
-        "context": 59.123625,
-        "site_buses": 8.965915999999993,
-        "topology": 2.7884580000000057,
-        "electrify": 59.58116699999999,
-        "dc_opf": 56.00449999999998,
-        "calibrate": 0.772625000000005,
-        "ac_pf": 25.290332999999976,
-        "finalize": 0.013291999999978543
+        "context": 94.331791,
+        "site_buses": 20.97399999999999,
+        "topology": 4.348249999999993,
+        "electrify": 97.177625,
+        "dc_opf": 88.135208,
+        "calibrate": 1.060624999999959,
+        "ac_pf": 38.537125,
+        "finalize": 0.025500000000022283
       },
       "warnings": [
+        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete",
         "voltage_level_added"
@@ -1873,14 +1874,14 @@
       "label": "India",
       "request_sha256": "da837eb29a74c19cfffe54b7aa6fe830422b2228a5eb7e1fa07667359d6fdea6",
       "buses": 2012,
-      "branches": 3225,
-      "branch_bus_ratio": 1.6028827037773359,
-      "max_parallel_circuits": 4,
+      "branches": 3221,
+      "branch_bus_ratio": 1.6008946322067594,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 73.05084032484946,
-      "max_angle_difference_deg": 11.717756434771422,
+      "angle_spread_deg": 92.11225211776774,
+      "max_angle_difference_deg": 12.588456183968685,
       "voltage_basis": "country",
       "voltage_country": "IND",
       "voltage_levels_kv": [
@@ -1911,21 +1912,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0032467082903784,
-        1.0270817316154275
+        1.006345145387428,
+        1.0244491208019284
       ],
       "valid": true,
-      "engine_ms": 209.94354200000004,
-      "generation_ms": 128.321375,
+      "engine_ms": 330.15012399999995,
+      "generation_ms": 201.666583,
       "stage_ms": {
-        "context": 58.762166,
-        "site_buses": 9.006417000000006,
-        "topology": 2.825583999999992,
-        "electrify": 57.727208000000005,
-        "dc_opf": 54.75608300000002,
-        "calibrate": 0.7812500000000284,
-        "ac_pf": 26.066333999999983,
-        "finalize": 0.01850000000001728
+        "context": 90.822125,
+        "site_buses": 22.042083000000005,
+        "topology": 4.468292000000005,
+        "electrify": 84.33408299999998,
+        "dc_opf": 86.34720899999999,
+        "calibrate": 0.927833000000021,
+        "ac_pf": 41.19004100000001,
+        "finalize": 0.01845799999995279
       },
       "warnings": [
         "generation_spread",
@@ -1940,14 +1941,14 @@
       "label": "India",
       "request_sha256": "10be2ba99ebc8ff7602fb545f6b52b9f0a41df68050a51f691ed4c75bae0301c",
       "buses": 2012,
-      "branches": 3222,
-      "branch_bus_ratio": 1.6013916500994037,
-      "max_parallel_circuits": 4,
+      "branches": 3231,
+      "branch_bus_ratio": 1.6058648111332008,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 76.28228912704697,
-      "max_angle_difference_deg": 11.733103579344588,
+      "angle_spread_deg": 81.95715977803594,
+      "max_angle_difference_deg": 28.20141381355931,
       "voltage_basis": "country",
       "voltage_country": "IND",
       "voltage_levels_kv": [
@@ -1978,23 +1979,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0053228864366386,
-        1.0229944976085024
+        1.0151481900575636,
+        1.025301503841254
       ],
       "valid": true,
-      "engine_ms": 205.20583399999998,
-      "generation_ms": 125.949458,
+      "engine_ms": 345.134291,
+      "generation_ms": 202.47620799999999,
       "stage_ms": {
-        "context": 56.490625,
-        "site_buses": 8.474083000000007,
-        "topology": 2.7879999999999967,
-        "electrify": 58.19675000000001,
-        "dc_opf": 53.093957999999986,
-        "calibrate": 0.7690839999999639,
-        "ac_pf": 25.379875,
-        "finalize": 0.013459000000040078
+        "context": 91.42204100000001,
+        "site_buses": 21.237624999999994,
+        "topology": 4.3596669999999875,
+        "electrify": 85.456875,
+        "dc_opf": 97.803875,
+        "calibrate": 0.8161660000000097,
+        "ac_pf": 44.020417000000066,
+        "finalize": 0.017624999999952706
       },
       "warnings": [
+        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete",
         "voltage_level_added"
@@ -2008,12 +2010,12 @@
       "buses": 990,
       "branches": 1588,
       "branch_bus_ratio": 1.604040404040404,
-      "max_parallel_circuits": 4,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 143.42944803676107,
-      "max_angle_difference_deg": 11.21420015703789,
+      "angle_spread_deg": 47.32097478165056,
+      "max_angle_difference_deg": 10.296544379054819,
       "voltage_basis": "country",
       "voltage_country": "JPN",
       "voltage_levels_kv": [
@@ -2043,21 +2045,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.012070495232899,
-        1.0260428582142442
+        1.0140095793189887,
+        1.0231331220871673
       ],
       "valid": true,
-      "engine_ms": 75.789834,
-      "generation_ms": 37.009415999999995,
+      "engine_ms": 127.53216700000003,
+      "generation_ms": 71.715834,
       "stage_ms": {
-        "context": 15.112208,
-        "site_buses": 3.0295830000000006,
-        "topology": 1.2924579999999999,
-        "electrify": 17.575166999999993,
-        "dc_opf": 27.003583999999996,
-        "calibrate": 0.34695800000000077,
-        "ac_pf": 11.418959000000001,
-        "finalize": 0.010917000000006283
+        "context": 23.692166999999998,
+        "site_buses": 6.728583,
+        "topology": 2.115166999999996,
+        "electrify": 39.17991700000001,
+        "dc_opf": 39.670917,
+        "calibrate": 0.5492080000000072,
+        "ac_pf": 15.568750000000009,
+        "finalize": 0.027458000000009974
       },
       "warnings": [
         "generation_spread",
@@ -2071,14 +2073,14 @@
       "label": "Japan",
       "request_sha256": "931b1629210d5a7e9839290f80410d12b16e4a9a72c5dfb63bdaac9fbac7f68b",
       "buses": 990,
-      "branches": 1588,
-      "branch_bus_ratio": 1.604040404040404,
+      "branches": 1590,
+      "branch_bus_ratio": 1.606060606060606,
       "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 89.00967440192885,
-      "max_angle_difference_deg": 13.728486580637707,
+      "angle_spread_deg": 57.68323227323153,
+      "max_angle_difference_deg": 12.413634821127228,
       "voltage_basis": "country",
       "voltage_country": "JPN",
       "voltage_levels_kv": [
@@ -2108,21 +2110,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0137749015489885,
-        1.0249283870526402
+        1.015743080347623,
+        1.0266619943417665
       ],
       "valid": true,
-      "engine_ms": 74.86870900000001,
-      "generation_ms": 37.874625,
+      "engine_ms": 124.53071000000001,
+      "generation_ms": 64.41996,
       "stage_ms": {
-        "context": 15.092457999999999,
-        "site_buses": 2.976541000000001,
-        "topology": 1.3196670000000026,
-        "electrify": 18.485959,
-        "dc_opf": 25.619917000000008,
-        "calibrate": 0.29983400000000415,
-        "ac_pf": 11.063958000000007,
-        "finalize": 0.010374999999996248
+        "context": 24.229875,
+        "site_buses": 6.6889590000000005,
+        "topology": 2.0632920000000006,
+        "electrify": 31.437834000000002,
+        "dc_opf": 41.81062499999999,
+        "calibrate": 0.4900830000000127,
+        "ac_pf": 17.793791999999996,
+        "finalize": 0.016250000000013642
       },
       "warnings": [
         "generation_spread",
@@ -2136,14 +2138,14 @@
       "label": "Japan",
       "request_sha256": "a3b2cfa934ec0cd0e6c311ee72b2436bcc4e860b9f620a53fc7a0e845573de52",
       "buses": 990,
-      "branches": 1589,
-      "branch_bus_ratio": 1.605050505050505,
-      "max_parallel_circuits": 3,
+      "branches": 1591,
+      "branch_bus_ratio": 1.607070707070707,
+      "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": false,
-      "angle_spread_deg": 117.5020069632853,
-      "max_angle_difference_deg": 10.788996972739893,
+      "angle_spread_deg": 71.79579893220156,
+      "max_angle_difference_deg": 13.944256763722878,
       "voltage_basis": "country",
       "voltage_country": "JPN",
       "voltage_levels_kv": [
@@ -2173,21 +2175,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0136301203932327,
-        1.0262409614082546
+        1.0168028714698274,
+        1.0264234001037933
       ],
       "valid": true,
-      "engine_ms": 77.78349899999998,
-      "generation_ms": 36.718874,
+      "engine_ms": 122.06070899999997,
+      "generation_ms": 61.806416,
       "stage_ms": {
-        "context": 15.013458,
-        "site_buses": 3.0455830000000024,
-        "topology": 1.320249999999998,
-        "electrify": 17.339582999999998,
-        "dc_opf": 29.617707999999993,
-        "calibrate": 0.2887499999999932,
-        "ac_pf": 11.148374999999987,
-        "finalize": 0.009792000000004464
+        "context": 24.207833,
+        "site_buses": 6.605041999999997,
+        "topology": 2.1061249999999987,
+        "electrify": 28.887416,
+        "dc_opf": 41.890541999999996,
+        "calibrate": 0.4924999999999926,
+        "ac_pf": 17.854666999999992,
+        "finalize": 0.016583999999994603
       },
       "warnings": [
         "generation_spread",
@@ -2201,14 +2203,14 @@
       "label": "Nigeria",
       "request_sha256": "16e0bfb2cec16517e3b4f2b8ad920a183f9e86fa796219e351159562960df38a",
       "buses": 174,
-      "branches": 263,
-      "branch_bus_ratio": 1.5114942528735633,
+      "branches": 274,
+      "branch_bus_ratio": 1.5747126436781609,
       "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 43.72571507288713,
-      "max_angle_difference_deg": 8.759529258856771,
+      "angle_spread_deg": 44.21887587248694,
+      "max_angle_difference_deg": 13.669086834971397,
       "voltage_basis": "country",
       "voltage_country": "NGA",
       "voltage_levels_kv": [
@@ -2238,21 +2240,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0103880601266553,
-        1.0241996184871056
+        1.0116321332465963,
+        1.0243798720687485
       ],
       "valid": true,
-      "engine_ms": 13.992834000000002,
-      "generation_ms": 8.040000000000001,
+      "engine_ms": 21.363082,
+      "generation_ms": 12.656958,
       "stage_ms": {
-        "context": 4.548958000000001,
-        "site_buses": 0.6281249999999998,
-        "topology": 0.27816699999999983,
-        "electrify": 2.5847500000000005,
-        "dc_opf": 3.745583,
-        "calibrate": 0.06987499999999969,
-        "ac_pf": 2.1289170000000013,
-        "finalize": 0.008459000000000216
+        "context": 6.917833,
+        "site_buses": 1.4530829999999995,
+        "topology": 0.3541249999999998,
+        "electrify": 3.9319170000000003,
+        "dc_opf": 5.716875000000002,
+        "calibrate": 0.07424999999999571,
+        "ac_pf": 2.902583,
+        "finalize": 0.012416000000001759
       },
       "warnings": [
         "branch_target_exceeded"
@@ -2264,14 +2266,14 @@
       "label": "Nigeria",
       "request_sha256": "1fd6341da067df01ce9a3b6706105220a73a5a756b7c85f2341bd6ef8e6b6cdc",
       "buses": 174,
-      "branches": 278,
-      "branch_bus_ratio": 1.5977011494252873,
-      "max_parallel_circuits": 4,
+      "branches": 256,
+      "branch_bus_ratio": 1.471264367816092,
+      "max_parallel_circuits": 2,
       "capped_corridors": 0,
       "added_level_kv": null,
-      "plan_converged": false,
-      "angle_spread_deg": 52.01558986588114,
-      "max_angle_difference_deg": 11.705441620659386,
+      "plan_converged": true,
+      "angle_spread_deg": 43.40146896380787,
+      "max_angle_difference_deg": 13.70982369686042,
       "voltage_basis": "country",
       "voltage_country": "NGA",
       "voltage_levels_kv": [
@@ -2301,25 +2303,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0173612058165182,
-        1.0284802055612186
+        1.0163959477911504,
+        1.025479004546814
       ],
       "valid": true,
-      "engine_ms": 13.434541000000001,
-      "generation_ms": 8.065832999999998,
+      "engine_ms": 20.640749999999997,
+      "generation_ms": 12.658418000000003,
       "stage_ms": {
-        "context": 4.639875,
-        "site_buses": 0.6222499999999993,
-        "topology": 0.23849999999999927,
-        "electrify": 2.565208,
-        "dc_opf": 3.555250000000001,
-        "calibrate": 0.04995800000000017,
-        "ac_pf": 1.755917000000002,
-        "finalize": 0.0075830000000003395
+        "context": 7.4059170000000005,
+        "site_buses": 1.412167000000001,
+        "topology": 0.379624999999999,
+        "electrify": 3.4607090000000014,
+        "dc_opf": 4.991958,
+        "calibrate": 0.0849999999999973,
+        "ac_pf": 2.8955829999999985,
+        "finalize": 0.009790999999999883
       },
       "warnings": [
-        "branch_target_exceeded",
-        "planning_incomplete"
+        "branch_target_exceeded"
       ],
       "seed": 7
     },
@@ -2328,14 +2329,14 @@
       "label": "Nigeria",
       "request_sha256": "0a98eb1f3d585bd96b178c8994e44dabc59a85510e2a526e6a3732562b00e9c7",
       "buses": 174,
-      "branches": 266,
-      "branch_bus_ratio": 1.528735632183908,
-      "max_parallel_circuits": 3,
+      "branches": 257,
+      "branch_bus_ratio": 1.4770114942528736,
+      "max_parallel_circuits": 2,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 44.29070530963705,
-      "max_angle_difference_deg": 10.935518227019045,
+      "angle_spread_deg": 38.00095078899699,
+      "max_angle_difference_deg": 13.514364434056395,
       "voltage_basis": "country",
       "voltage_country": "NGA",
       "voltage_levels_kv": [
@@ -2365,21 +2366,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0130403214388404,
-        1.029038856299736
+        1.0092722245100436,
+        1.0238806743837088
       ],
       "valid": true,
-      "engine_ms": 12.439167,
-      "generation_ms": 7.559708999999999,
+      "engine_ms": 20.012374,
+      "generation_ms": 12.193832999999998,
       "stage_ms": {
-        "context": 4.511417,
-        "site_buses": 0.6092499999999994,
-        "topology": 0.24654199999999982,
-        "electrify": 2.1925,
-        "dc_opf": 3.036875,
-        "calibrate": 0.04679200000000172,
-        "ac_pf": 1.7885410000000004,
-        "finalize": 0.007249999999997314
+        "context": 6.922583,
+        "site_buses": 1.4762500000000003,
+        "topology": 0.35633299999999934,
+        "electrify": 3.438666999999999,
+        "dc_opf": 5.286875,
+        "calibrate": 0.07225000000000037,
+        "ac_pf": 2.4500829999999993,
+        "finalize": 0.00933300000000159
       },
       "warnings": [
         "branch_target_exceeded"
@@ -2393,12 +2394,12 @@
       "buses": 95,
       "branches": 152,
       "branch_bus_ratio": 1.6,
-      "max_parallel_circuits": 2,
+      "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 40.49805497472166,
-      "max_angle_difference_deg": 7.439449364632276,
+      "angle_spread_deg": 40.96293875837144,
+      "max_angle_difference_deg": 6.8903747210928055,
       "voltage_basis": "country",
       "voltage_country": "PRT",
       "voltage_levels_kv": [
@@ -2429,21 +2430,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0012221289292684,
-        1.0260655258994038
+        1.0055881026021554,
+        1.0253608099081304
       ],
       "valid": true,
-      "engine_ms": 9.377375,
-      "generation_ms": 6.454167,
+      "engine_ms": 14.680456999999995,
+      "generation_ms": 10.257541,
       "stage_ms": {
-        "context": 4.767042,
-        "site_buses": 0.3287089999999999,
-        "topology": 0.1313329999999997,
-        "electrify": 1.2270830000000004,
-        "dc_opf": 2.0528329999999997,
-        "calibrate": 0.03379100000000079,
-        "ac_pf": 0.8300420000000006,
-        "finalize": 0.006541999999999604
+        "context": 7.7238750000000005,
+        "site_buses": 0.5834579999999985,
+        "topology": 0.2120829999999998,
+        "electrify": 1.7381250000000001,
+        "dc_opf": 2.9641249999999992,
+        "calibrate": 0.047874999999999446,
+        "ac_pf": 1.3995409999999975,
+        "finalize": 0.011374999999999247
       },
       "warnings": [
         "branch_target_exceeded"
@@ -2455,14 +2456,14 @@
       "label": "Portugal",
       "request_sha256": "94c93b2174741dd03073e88ae06693c9ba701a456d927305c3822db286fbc2b8",
       "buses": 95,
-      "branches": 154,
-      "branch_bus_ratio": 1.6210526315789473,
-      "max_parallel_circuits": 3,
+      "branches": 146,
+      "branch_bus_ratio": 1.5368421052631578,
+      "max_parallel_circuits": 2,
       "capped_corridors": 0,
       "added_level_kv": null,
-      "plan_converged": false,
-      "angle_spread_deg": 46.83735051170285,
-      "max_angle_difference_deg": 12.955832992880923,
+      "plan_converged": true,
+      "angle_spread_deg": 43.374641342963216,
+      "max_angle_difference_deg": 14.105857572545247,
       "voltage_basis": "country",
       "voltage_country": "PRT",
       "voltage_levels_kv": [
@@ -2493,25 +2494,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0158348978911809,
-        1.0224574129830606
+        1.0033882312143965,
+        1.0207088327819234
       ],
       "valid": true,
-      "engine_ms": 9.426624000000002,
-      "generation_ms": 6.598499,
+      "engine_ms": 14.170540999999995,
+      "generation_ms": 9.951416999999998,
       "stage_ms": {
-        "context": 4.778666,
-        "site_buses": 0.30991700000000044,
-        "topology": 0.12829099999999993,
-        "electrify": 1.3816249999999997,
-        "dc_opf": 1.896250000000001,
-        "calibrate": 0.02833299999999994,
-        "ac_pf": 0.8962500000000002,
-        "finalize": 0.007291999999999632
+        "context": 7.584083,
+        "site_buses": 0.5473340000000002,
+        "topology": 0.2224170000000001,
+        "electrify": 1.5975829999999984,
+        "dc_opf": 2.755832999999999,
+        "calibrate": 0.04516599999999826,
+        "ac_pf": 1.406540999999999,
+        "finalize": 0.011584000000000927
       },
       "warnings": [
-        "branch_target_exceeded",
-        "planning_incomplete"
+        "branch_target_exceeded"
       ],
       "seed": 7
     },
@@ -2520,14 +2520,14 @@
       "label": "Portugal",
       "request_sha256": "eb1630f3c3121caeb30278f07a51c0f48688259b4b091e96a3076acdf53c1fe3",
       "buses": 95,
-      "branches": 143,
-      "branch_bus_ratio": 1.5052631578947369,
+      "branches": 142,
+      "branch_bus_ratio": 1.4947368421052631,
       "max_parallel_circuits": 2,
       "capped_corridors": 0,
       "added_level_kv": null,
       "plan_converged": true,
-      "angle_spread_deg": 37.32705265288708,
-      "max_angle_difference_deg": 8.883572060343145,
+      "angle_spread_deg": 37.78889513513739,
+      "max_angle_difference_deg": 9.002919288726615,
       "voltage_basis": "country",
       "voltage_country": "PRT",
       "voltage_levels_kv": [
@@ -2558,21 +2558,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0151641329027132,
-        1.0237726881738156
+        0.9939395600974754,
+        1.0200116515979538
       ],
       "valid": true,
-      "engine_ms": 9.318919000000003,
-      "generation_ms": 6.437585,
+      "engine_ms": 14.333959999999998,
+      "generation_ms": 10.156251,
       "stage_ms": {
-        "context": 4.782459,
-        "site_buses": 0.3221670000000003,
-        "topology": 0.13054200000000016,
-        "electrify": 1.2024169999999996,
-        "dc_opf": 1.8837920000000006,
-        "calibrate": 0.025249999999999773,
-        "ac_pf": 0.9656250000000011,
-        "finalize": 0.0066670000000002005
+        "context": 7.577875000000001,
+        "site_buses": 0.5734589999999997,
+        "topology": 0.2267089999999996,
+        "electrify": 1.7782079999999993,
+        "dc_opf": 2.7998329999999996,
+        "calibrate": 0.044458999999999804,
+        "ac_pf": 1.3212080000000004,
+        "finalize": 0.012208999999998582
       },
       "warnings": [
         "branch_target_exceeded"
@@ -2584,14 +2584,14 @@
       "label": "Russia",
       "request_sha256": "d4ec360387777451e3bf7a5d3fa5d15548a5219670f7cfc6ca4e5aff9c263a98",
       "buses": 1187,
-      "branches": 1900,
-      "branch_bus_ratio": 1.6006739679865207,
+      "branches": 1901,
+      "branch_bus_ratio": 1.6015164279696714,
       "max_parallel_circuits": 3,
       "capped_corridors": 0,
       "added_level_kv": 750.0,
       "plan_converged": false,
-      "angle_spread_deg": 119.65499044684587,
-      "max_angle_difference_deg": 17.091082020150285,
+      "angle_spread_deg": 93.08156738653899,
+      "max_angle_difference_deg": 24.75446778538458,
       "voltage_basis": "country",
       "voltage_country": "RUS",
       "voltage_levels_kv": [
@@ -2622,21 +2622,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.017539144368615,
-        1.0215355054457662
+        1.013887898444956,
+        1.021253547473365
       ],
       "valid": true,
-      "engine_ms": 146.14204099999995,
-      "generation_ms": 100.64058399999999,
+      "engine_ms": 250.987501,
+      "generation_ms": 177.44666700000002,
       "stage_ms": {
-        "context": 34.621209,
-        "site_buses": 7.186999999999998,
-        "topology": 2.009416999999999,
-        "electrify": 56.82295799999999,
-        "dc_opf": 32.68875,
-        "calibrate": 0.4663749999999993,
-        "ac_pf": 12.335665999999975,
-        "finalize": 0.010665999999986298
+        "context": 55.989042000000005,
+        "site_buses": 34.71666700000001,
+        "topology": 3.129166000000012,
+        "electrify": 83.611792,
+        "dc_opf": 52.73245799999998,
+        "calibrate": 0.6670000000000016,
+        "ac_pf": 20.126791999999966,
+        "finalize": 0.014584000000041897
       },
       "warnings": [
         "small_islands_skipped",
@@ -2653,14 +2653,14 @@
       "label": "Russia",
       "request_sha256": "4bfcc0e52eff6232de63919a3dfe82095b0262fe8c7766829537ef0077de4418",
       "buses": 1187,
-      "branches": 1901,
-      "branch_bus_ratio": 1.6015164279696714,
+      "branches": 1903,
+      "branch_bus_ratio": 1.603201347935973,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 750.0,
       "plan_converged": false,
-      "angle_spread_deg": 126.97297291112227,
-      "max_angle_difference_deg": 21.242764547756877,
+      "angle_spread_deg": 182.480275900213,
+      "max_angle_difference_deg": 26.303790484111296,
       "voltage_basis": "country",
       "voltage_country": "RUS",
       "voltage_levels_kv": [
@@ -2691,21 +2691,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.017157416187562,
-        1.0214461865925117
+        1.0188262712351976,
+        1.0227596704771036
       ],
       "valid": true,
-      "engine_ms": 149.21400099999997,
-      "generation_ms": 100.770709,
+      "engine_ms": 250.66499899999994,
+      "generation_ms": 180.88220800000002,
       "stage_ms": {
-        "context": 34.43725,
-        "site_buses": 7.523125,
-        "topology": 2.023291999999998,
-        "electrify": 56.787042,
-        "dc_opf": 34.283666999999994,
-        "calibrate": 0.43591699999998923,
-        "ac_pf": 13.712999999999994,
-        "finalize": 0.010707999999993945
+        "context": 56.028333,
+        "site_buses": 37.302583,
+        "topology": 3.1142090000000024,
+        "electrify": 84.43708300000002,
+        "dc_opf": 47.35495799999998,
+        "calibrate": 0.6206669999999974,
+        "ac_pf": 21.792915999999963,
+        "finalize": 0.014249999999975671
       },
       "warnings": [
         "small_islands_skipped",
@@ -2722,14 +2722,14 @@
       "label": "Russia",
       "request_sha256": "88be9789040def1e1f523b2f1cf203d13a0ab155a7f2aba2169ca7876437d285",
       "buses": 1187,
-      "branches": 1903,
-      "branch_bus_ratio": 1.603201347935973,
+      "branches": 1900,
+      "branch_bus_ratio": 1.6006739679865207,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 750.0,
       "plan_converged": false,
-      "angle_spread_deg": 135.24434945603662,
-      "max_angle_difference_deg": 32.423568528571366,
+      "angle_spread_deg": 120.47628392745318,
+      "max_angle_difference_deg": 19.821461567991694,
       "voltage_basis": "country",
       "voltage_country": "RUS",
       "voltage_levels_kv": [
@@ -2760,21 +2760,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0184513919981693,
-        1.0225631535967068
+        1.017961762803982,
+        1.0234963269170572
       ],
       "valid": true,
-      "engine_ms": 147.65195899999995,
-      "generation_ms": 100.42575099999996,
+      "engine_ms": 251.82812500000006,
+      "generation_ms": 179.129458,
       "stage_ms": {
-        "context": 34.895917,
-        "site_buses": 7.050208999999995,
-        "topology": 1.9820419999999928,
-        "electrify": 56.497582999999985,
-        "dc_opf": 34.69779199999998,
-        "calibrate": 0.45000000000001705,
-        "ac_pf": 12.061083000000025,
-        "finalize": 0.017332999999979393
+        "context": 54.426,
+        "site_buses": 37.492083,
+        "topology": 3.108292000000006,
+        "electrify": 84.10308300000001,
+        "dc_opf": 52.435584000000006,
+        "calibrate": 0.42954199999999787,
+        "ac_pf": 19.81774999999999,
+        "finalize": 0.01579100000006406
       },
       "warnings": [
         "small_islands_skipped",
@@ -2791,14 +2791,14 @@
       "label": "Texas box",
       "request_sha256": "cbc08c5b167960010fc32388f33eb0aa6b5211394d9953cbd75116d9c7de4603",
       "buses": 759,
-      "branches": 1215,
-      "branch_bus_ratio": 1.6007905138339922,
+      "branches": 1214,
+      "branch_bus_ratio": 1.5994729907773386,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 52.25953819181403,
-      "max_angle_difference_deg": 11.22135407457215,
+      "angle_spread_deg": 53.895727689396075,
+      "max_angle_difference_deg": 14.666570424952148,
       "voltage_basis": "country",
       "voltage_country": "USA",
       "voltage_levels_kv": [
@@ -2830,21 +2830,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0087127523671955,
-        1.0374369341208907
+        0.9906568814399301,
+        1.0283235427691497
       ],
       "valid": true,
-      "engine_ms": 53.48037399999998,
-      "generation_ms": 26.530666000000004,
+      "engine_ms": 83.67079000000001,
+      "generation_ms": 39.484875,
       "stage_ms": {
-        "context": 5.3935830000000005,
-        "site_buses": 0.7797919999999996,
-        "topology": 0.8233750000000004,
-        "electrify": 19.533916,
-        "dc_opf": 18.207166999999995,
-        "calibrate": 0.27104200000000134,
-        "ac_pf": 8.462457999999998,
-        "finalize": 0.009040999999989197
+        "context": 8.447542,
+        "site_buses": 1.9622910000000005,
+        "topology": 1.3251669999999987,
+        "electrify": 27.749875000000003,
+        "dc_opf": 31.103416000000003,
+        "calibrate": 0.3916250000000048,
+        "ac_pf": 12.678083000000015,
+        "finalize": 0.012790999999992891
       },
       "warnings": [
         "branch_target_exceeded",
@@ -2858,14 +2858,14 @@
       "label": "Texas box",
       "request_sha256": "b6e9c72d35718f52c6b4545b276d8343fdd2a54487cc607fcbd274a662c709b9",
       "buses": 759,
-      "branches": 1214,
-      "branch_bus_ratio": 1.5994729907773386,
+      "branches": 1216,
+      "branch_bus_ratio": 1.6021080368906455,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 58.901117029795195,
-      "max_angle_difference_deg": 14.245465498804712,
+      "angle_spread_deg": 52.70783954614181,
+      "max_angle_difference_deg": 13.173422072456152,
       "voltage_basis": "country",
       "voltage_country": "USA",
       "voltage_levels_kv": [
@@ -2897,24 +2897,23 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0105982421554978,
-        1.0293682414407386
+        0.9962785577508025,
+        1.033390568118264
       ],
       "valid": true,
-      "engine_ms": 52.366875,
-      "generation_ms": 26.668417000000005,
+      "engine_ms": 81.336166,
+      "generation_ms": 39.47241600000001,
       "stage_ms": {
-        "context": 5.426792000000001,
-        "site_buses": 0.7952919999999999,
-        "topology": 0.8263750000000005,
-        "electrify": 19.619958000000004,
-        "dc_opf": 17.519333999999997,
-        "calibrate": 0.21783299999999883,
-        "ac_pf": 7.949332999999996,
-        "finalize": 0.011957999999999913
+        "context": 8.535665999999999,
+        "site_buses": 1.939207999999999,
+        "topology": 1.3013340000000024,
+        "electrify": 27.696208000000006,
+        "dc_opf": 29.086999999999996,
+        "calibrate": 0.27037500000000136,
+        "ac_pf": 12.493875000000003,
+        "finalize": 0.012500000000002842
       },
       "warnings": [
-        "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete",
         "voltage_level_added"
@@ -2926,14 +2925,14 @@
       "label": "Texas box",
       "request_sha256": "037568fc23f1a0c7ce3ddd3036990893d7e3fa49b0dfcd3788735d809428d8fc",
       "buses": 759,
-      "branches": 1214,
-      "branch_bus_ratio": 1.5994729907773386,
+      "branches": 1215,
+      "branch_bus_ratio": 1.6007905138339922,
       "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
-      "plan_converged": false,
-      "angle_spread_deg": 49.77471116069612,
-      "max_angle_difference_deg": 13.614749261833653,
+      "plan_converged": true,
+      "angle_spread_deg": 44.42610252998896,
+      "max_angle_difference_deg": 10.16756930374117,
       "voltage_basis": "country",
       "voltage_country": "USA",
       "voltage_levels_kv": [
@@ -2965,25 +2964,24 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0130987753955645,
-        1.0368936810393747
+        1.0075247364447966,
+        1.0319981298013725
       ],
       "valid": true,
-      "engine_ms": 53.57162599999999,
-      "generation_ms": 27.199124999999995,
+      "engine_ms": 83.90654199999999,
+      "generation_ms": 41.181084,
       "stage_ms": {
-        "context": 5.399,
-        "site_buses": 0.8142079999999998,
-        "topology": 0.8209999999999988,
-        "electrify": 20.164916999999996,
-        "dc_opf": 18.190125,
-        "calibrate": 0.21879200000000054,
-        "ac_pf": 7.953958999999998,
-        "finalize": 0.009624999999999773
+        "context": 8.469541999999999,
+        "site_buses": 1.9761659999999992,
+        "topology": 1.3027919999999984,
+        "electrify": 29.432584,
+        "dc_opf": 29.825375000000008,
+        "calibrate": 0.3724160000000012,
+        "ac_pf": 12.514624999999995,
+        "finalize": 0.013041999999984455
       },
       "warnings": [
         "branch_target_exceeded",
-        "planning_incomplete",
         "voltage_level_added"
       ],
       "seed": 2026
@@ -2993,14 +2991,14 @@
       "label": "United States of America",
       "request_sha256": "91a8a3a04ce296e916e004a087a65611a6834be089eb8f2955353140c4498689",
       "buses": 3000,
-      "branches": 4991,
-      "branch_bus_ratio": 1.6636666666666666,
+      "branches": 4819,
+      "branch_bus_ratio": 1.6063333333333334,
       "max_parallel_circuits": 4,
-      "capped_corridors": 5,
+      "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 315.47369845762154,
-      "max_angle_difference_deg": 436.6352708332221,
+      "angle_spread_deg": 190.80528127734507,
+      "max_angle_difference_deg": 23.035717062374854,
       "voltage_basis": "country",
       "voltage_country": "USA",
       "voltage_levels_kv": [
@@ -3029,35 +3027,33 @@
       "peak_verdict": "within",
       "dc_opf": "optimal",
       "dc_message": null,
-      "ac_pf": "not_converged",
-      "ac_message": "AC power flow did not converge: best mismatch 8.305e-1 over 5 starts",
+      "ac_pf": "converged",
+      "ac_message": null,
       "vm": [
-        null,
-        null
+        1.0116931004777363,
+        1.0261315089060157
       ],
-      "valid": false,
-      "engine_ms": 879.7255400000001,
-      "generation_ms": 241.310541,
+      "valid": true,
+      "engine_ms": 584.651208,
+      "generation_ms": 364.572624,
       "stage_ms": {
-        "context": 71.88670800000001,
-        "site_buses": 14.361458000000013,
-        "topology": 4.435375000000008,
-        "electrify": 150.62699999999998,
-        "dc_opf": 101.39558300000004,
-        "calibrate": 103.40300000000002,
-        "ac_pf": 433.59920800000003,
-        "finalize": 0.01720799999998235
+        "context": 113.48720800000001,
+        "site_buses": 41.842208,
+        "topology": 6.832832999999994,
+        "electrify": 202.41037500000002,
+        "dc_opf": 149.1002919999999,
+        "calibrate": 1.4344169999999394,
+        "ac_pf": 69.52283299999999,
+        "finalize": 0.021042000000079497
       },
       "warnings": [
         "bus_count_capped",
         "small_islands_skipped",
         "islands_cut",
         "generation_spread",
-        "reactive_plan_unconverged",
         "branch_target_exceeded",
         "planning_incomplete",
-        "voltage_level_added",
-        "ac_pf_not_converged"
+        "voltage_level_added"
       ],
       "seed": 1
     },
@@ -3066,14 +3062,14 @@
       "label": "United States of America",
       "request_sha256": "d9ae99c741a53c28c7854e6e6152fee7bfebe95d4772cf7df78f587f94116436",
       "buses": 3000,
-      "branches": 4975,
-      "branch_bus_ratio": 1.6583333333333334,
+      "branches": 4829,
+      "branch_bus_ratio": 1.6096666666666666,
       "max_parallel_circuits": 4,
-      "capped_corridors": 5,
+      "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 339.25468581298435,
-      "max_angle_difference_deg": 46.17198895958839,
+      "angle_spread_deg": 307.8962130981783,
+      "max_angle_difference_deg": 410.24170015505655,
       "voltage_basis": "country",
       "voltage_country": "USA",
       "voltage_levels_kv": [
@@ -3103,23 +3099,23 @@
       "dc_opf": "optimal",
       "dc_message": null,
       "ac_pf": "not_converged",
-      "ac_message": "AC power flow did not converge: best mismatch 1.080e0 over 5 starts",
+      "ac_message": "AC power flow did not converge: best mismatch 8.339e0 over 5 starts",
       "vm": [
         null,
         null
       ],
       "valid": false,
-      "engine_ms": 848.738917,
-      "generation_ms": 238.18237499999998,
+      "engine_ms": 987.09846,
+      "generation_ms": 373.47225000000003,
       "stage_ms": {
-        "context": 71.63058300000002,
-        "site_buses": 14.644207999999992,
-        "topology": 4.358083999999991,
-        "electrify": 147.54949999999997,
-        "dc_opf": 106.707875,
-        "calibrate": 106.66004199999998,
-        "ac_pf": 397.17175000000003,
-        "finalize": 0.016875000000027285
+        "context": 118.188,
+        "site_buses": 41.868916999999996,
+        "topology": 6.821875000000006,
+        "electrify": 206.593458,
+        "dc_opf": 161.34995899999996,
+        "calibrate": 1.3918750000000273,
+        "ac_pf": 450.861709,
+        "finalize": 0.022667000000069493
       },
       "warnings": [
         "bus_count_capped",
@@ -3138,14 +3134,14 @@
       "label": "United States of America",
       "request_sha256": "5b79d83def09555b56a7b071ba4eab4b8bcfe7182b46b8f7ac3f217df962af05",
       "buses": 3000,
-      "branches": 5017,
-      "branch_bus_ratio": 1.6723333333333332,
+      "branches": 4815,
+      "branch_bus_ratio": 1.605,
       "max_parallel_circuits": 4,
-      "capped_corridors": 4,
+      "capped_corridors": 2,
       "added_level_kv": 765.0,
       "plan_converged": false,
-      "angle_spread_deg": 421.5904644046677,
-      "max_angle_difference_deg": 67.89466801677573,
+      "angle_spread_deg": 217.16472914924566,
+      "max_angle_difference_deg": 53.98325219668898,
       "voltage_basis": "country",
       "voltage_country": "USA",
       "voltage_levels_kv": [
@@ -3174,24 +3170,24 @@
       "peak_verdict": "within",
       "dc_opf": "optimal",
       "dc_message": null,
-      "ac_pf": "not_converged",
-      "ac_message": "AC power flow did not converge: best mismatch 1.253e1 over 5 starts",
+      "ac_pf": "converged",
+      "ac_message": null,
       "vm": [
-        null,
-        null
+        1.009496227700065,
+        1.052323231789385
       ],
-      "valid": false,
-      "engine_ms": 802.758916,
-      "generation_ms": 235.56999999999996,
+      "valid": true,
+      "engine_ms": 814.242459,
+      "generation_ms": 375.6429579999999,
       "stage_ms": {
-        "context": 72.90875,
-        "site_buses": 14.769833000000006,
-        "topology": 4.55974999999998,
-        "electrify": 143.33166699999998,
-        "dc_opf": 109.69483299999996,
-        "calibrate": 108.59687500000001,
-        "ac_pf": 348.872708,
-        "finalize": 0.024499999999989086
+        "context": 112.75966600000001,
+        "site_buses": 41.043375,
+        "topology": 6.769832999999977,
+        "electrify": 215.07008399999995,
+        "dc_opf": 160.783209,
+        "calibrate": 155.93604200000004,
+        "ac_pf": 121.85679200000004,
+        "finalize": 0.023458000000118773
       },
       "warnings": [
         "bus_count_capped",
@@ -3200,8 +3196,7 @@
         "generation_spread",
         "branch_target_exceeded",
         "planning_incomplete",
-        "voltage_level_added",
-        "ac_pf_not_converged"
+        "voltage_level_added"
       ],
       "seed": 2026
     },
@@ -3216,8 +3211,8 @@
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": true,
-      "angle_spread_deg": 43.69812551561158,
-      "max_angle_difference_deg": 11.69031803900219,
+      "angle_spread_deg": 42.98662152747523,
+      "max_angle_difference_deg": 11.72072137602378,
       "voltage_basis": "country",
       "voltage_country": "ZAF",
       "voltage_levels_kv": [
@@ -3248,21 +3243,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0186131619799506,
-        1.021329605117693
+        1.017928605940628,
+        1.0210459508954155
       ],
       "valid": true,
-      "engine_ms": 23.610788999999997,
-      "generation_ms": 13.429831000000002,
+      "engine_ms": 38.946415,
+      "generation_ms": 23.223416,
       "stage_ms": {
-        "context": 5.352041,
-        "site_buses": 1.1052080000000002,
-        "topology": 0.45704100000000025,
-        "electrify": 6.515541000000002,
-        "dc_opf": 6.636166999999999,
-        "calibrate": 0.07508299999999934,
-        "ac_pf": 3.4610829999999986,
-        "finalize": 0.00862499999999855
+        "context": 9.018375,
+        "site_buses": 3.492375000000001,
+        "topology": 0.710582999999998,
+        "electrify": 10.002083,
+        "dc_opf": 10.549250000000008,
+        "calibrate": 0.15358299999999758,
+        "ac_pf": 5.009249999999994,
+        "finalize": 0.010916000000001702
       },
       "warnings": [
         "branch_target_exceeded",
@@ -3281,8 +3276,8 @@
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": true,
-      "angle_spread_deg": 43.58640987966207,
-      "max_angle_difference_deg": 7.01064146258542,
+      "angle_spread_deg": 44.11145152178779,
+      "max_angle_difference_deg": 7.699748313328522,
       "voltage_basis": "country",
       "voltage_country": "ZAF",
       "voltage_levels_kv": [
@@ -3313,21 +3308,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0132978005011068,
-        1.0210876265730235
+        1.0109576198973307,
+        1.0216005968204729
       ],
       "valid": true,
-      "engine_ms": 24.703790999999995,
-      "generation_ms": 14.239791,
+      "engine_ms": 43.217958,
+      "generation_ms": 25.817875,
       "stage_ms": {
-        "context": 5.615875,
-        "site_buses": 1.0879579999999995,
-        "topology": 0.44387499999999935,
-        "electrify": 7.0920830000000015,
-        "dc_opf": 6.859875000000001,
-        "calibrate": 0.08304199999999895,
-        "ac_pf": 3.513832999999998,
-        "finalize": 0.0072499999999990905
+        "context": 9.000333000000001,
+        "site_buses": 3.4727499999999996,
+        "topology": 0.7162919999999993,
+        "electrify": 12.628499999999999,
+        "dc_opf": 11.293916000000003,
+        "calibrate": 0.1712920000000011,
+        "ac_pf": 5.924124999999989,
+        "finalize": 0.010750000000008697
       },
       "warnings": [
         "branch_target_exceeded",
@@ -3340,14 +3335,14 @@
       "label": "South Africa",
       "request_sha256": "a703f96dfa882588c9b0629c25039b5666cd992a4c04f5aea5d3bde4862342b9",
       "buses": 312,
-      "branches": 499,
-      "branch_bus_ratio": 1.5993589743589745,
-      "max_parallel_circuits": 3,
+      "branches": 502,
+      "branch_bus_ratio": 1.608974358974359,
+      "max_parallel_circuits": 4,
       "capped_corridors": 0,
       "added_level_kv": 765.0,
       "plan_converged": true,
-      "angle_spread_deg": 39.0462238035289,
-      "max_angle_difference_deg": 7.432143212327892,
+      "angle_spread_deg": 43.74743507352826,
+      "max_angle_difference_deg": 9.667635033328056,
       "voltage_basis": "country",
       "voltage_country": "ZAF",
       "voltage_levels_kv": [
@@ -3378,21 +3373,21 @@
       "ac_pf": "converged",
       "ac_message": null,
       "vm": [
-        1.0142460531116746,
-        1.027418552484536
+        1.0161573267753456,
+        1.0257608767878548
       ],
       "valid": true,
-      "engine_ms": 23.000877999999997,
-      "generation_ms": 13.271585,
+      "engine_ms": 40.991083,
+      "generation_ms": 23.035916,
       "stage_ms": {
-        "context": 5.597041999999999,
-        "site_buses": 1.1080000000000005,
-        "topology": 0.44158399999999975,
-        "electrify": 6.1249590000000005,
-        "dc_opf": 6.687374999999999,
-        "calibrate": 0.08933400000000091,
-        "ac_pf": 2.9445419999999984,
-        "finalize": 0.00804199999999966
+        "context": 8.64625,
+        "site_buses": 3.4590829999999997,
+        "topology": 0.713874999999998,
+        "electrify": 10.216708,
+        "dc_opf": 11.881917000000005,
+        "calibrate": 0.1624169999999978,
+        "ac_pf": 5.898000000000003,
+        "finalize": 0.012833000000000538
       },
       "warnings": [
         "branch_target_exceeded",
@@ -3435,21 +3430,31 @@
       "peak_ratio": 1.1009771653220979,
       "peak_verdict": "flagged",
       "branch_bus_ratio": [
-        1.6217948717948718,
-        1.705128205128205
+        1.625,
+        1.641025641025641
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
-      "ac_converged": 2,
-      "ac_pass": 2,
+      "ac_converged": 1,
+      "ac_pass": 1,
       "vm": [
-        1.017961199876136,
-        1.022351790874277
+        1.0184669563964277,
+        1.0238249409337834
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 34.81700000000001,
-      "engine_ms_max": 56.92741599999999,
+      "engine_ms_median": 97.92612499999998,
+      "engine_ms_max": 98.04229000000001,
       "failures": [
+        {
+          "seed": 1,
+          "dc_opf": "optimal",
+          "ac_pf": "not_converged",
+          "vm": [
+            null,
+            null
+          ],
+          "message": "AC power flow did not converge: best mismatch 1.113e0 over 5 starts"
+        },
         {
           "seed": 2026,
           "dc_opf": "optimal",
@@ -3458,7 +3463,7 @@
             null,
             null
           ],
-          "message": "AC power flow did not converge: best mismatch 2.307e-1 over 5 starts"
+          "message": "AC power flow did not converge: best mismatch 1.458e0 over 5 starts"
         }
       ]
     },
@@ -3493,20 +3498,20 @@
       "peak_ratio": 1.0557484790769698,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.6013333333333333,
-        1.6053333333333333
+        1.6,
+        1.6146666666666667
       ],
-      "max_parallel_circuits": 4,
+      "max_parallel_circuits": 3,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0174567665425795,
-        1.0219662987347085
+        1.0184060040619651,
+        1.0219233718688154
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 98.07103999999998,
-      "engine_ms_max": 102.07537499999995,
+      "engine_ms_median": 160.910623,
+      "engine_ms_max": 163.81504100000006,
       "failures": []
     },
     {
@@ -3539,7 +3544,7 @@
       "peak_ratio": 1.0048455986768596,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.5212765957446808,
+        1.4929078014184398,
         1.599290780141844
       ],
       "max_parallel_circuits": 4,
@@ -3547,12 +3552,12 @@
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0142149573747326,
-        1.0247146060991286
+        1.0141297432558833,
+        1.0407222694978056
       ],
       "plans_incomplete": 1,
-      "engine_ms_median": 18.712374999999998,
-      "engine_ms_max": 19.522501,
+      "engine_ms_median": 33.440749,
+      "engine_ms_max": 34.466708,
       "failures": []
     },
     {
@@ -3587,20 +3592,20 @@
       "peak_ratio": 0.9946350398111659,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.642,
-        1.6646666666666667
+        1.6356666666666666,
+        1.6613333333333333
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0110155194364543,
-        1.0267203486910472
+        1.0139132768607195,
+        1.0262673637224762
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 324.1378330000001,
-      "engine_ms_max": 324.2051659999999,
+      "engine_ms_median": 485.4513350000001,
+      "engine_ms_max": 489.311833,
       "failures": []
     },
     {
@@ -3633,20 +3638,20 @@
       "peak_ratio": 1.0406919691681753,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.5733333333333333,
-        1.6076190476190477
+        1.601904761904762,
+        1.7428571428571429
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0144231208853816,
-        1.025084469951327
+        1.013890268899538,
+        1.025838086966282
       ],
-      "plans_incomplete": 2,
-      "engine_ms_median": 56.57329100000001,
-      "engine_ms_max": 57.267999999999994,
+      "plans_incomplete": 3,
+      "engine_ms_median": 88.348833,
+      "engine_ms_max": 91.01541599999999,
       "failures": []
     },
     {
@@ -3679,20 +3684,20 @@
       "peak_ratio": 0.8740878539726727,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.5993589743589745,
-        1.6057692307692308
+        1.5512820512820513,
+        1.5993589743589745
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0142613839191554,
-        1.0234861326440927
+        1.0145602550514854,
+        1.022739352777328
       ],
-      "plans_incomplete": 3,
-      "engine_ms_median": 18.798124000000005,
-      "engine_ms_max": 19.520835,
+      "plans_incomplete": 1,
+      "engine_ms_median": 29.813541999999995,
+      "engine_ms_max": 34.127082,
       "failures": []
     },
     {
@@ -3726,19 +3731,19 @@
       "peak_verdict": "within",
       "branch_bus_ratio": [
         1.604,
-        1.66
+        1.696
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0139430227415414,
-        1.0247218518317924
+        0.9894359990464406,
+        1.0511506451453623
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 25.137999999999995,
-      "engine_ms_max": 32.730624999999996,
+      "engine_ms_median": 49.315623,
+      "engine_ms_max": 50.153334,
       "failures": []
     },
     {
@@ -3771,20 +3776,20 @@
       "peak_ratio": 0.97896560274147,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.5936507936507935,
-        1.6222222222222222
+        1.5714285714285714,
+        1.6888888888888889
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0152291445391666,
-        1.0238775354344678
+        1.011395536492723,
+        1.0256923687686397
       ],
-      "plans_incomplete": 0,
-      "engine_ms_median": 32.949958,
-      "engine_ms_max": 35.196791,
+      "plans_incomplete": 2,
+      "engine_ms_median": 54.427457999999994,
+      "engine_ms_max": 56.144124999999995,
       "failures": []
     },
     {
@@ -3817,20 +3822,20 @@
       "peak_ratio": 0.7273433918098771,
       "peak_verdict": "flagged",
       "branch_bus_ratio": [
-        1.601139601139601,
-        1.6780626780626782
+        1.5982905982905984,
+        1.6866096866096867
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0103957148528806,
-        1.0227797441820994
+        1.0134151986749507,
+        1.0232445743212935
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 24.453667,
-      "engine_ms_max": 24.523874999999993,
+      "engine_ms_median": 39.680289,
+      "engine_ms_max": 40.13266699999999,
       "failures": []
     },
     {
@@ -3864,20 +3869,20 @@
       "peak_ratio": 1.2078072590057376,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.6013916500994037,
-        1.6028827037773359
+        1.6008946322067594,
+        1.6058648111332008
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0032467082903784,
-        1.0270817316154275
+        1.006345145387428,
+        1.025301503841254
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 209.94354200000004,
-      "engine_ms_max": 212.53991599999992,
+      "engine_ms_median": 344.59012399999995,
+      "engine_ms_max": 345.134291,
       "failures": []
     },
     {
@@ -3911,19 +3916,19 @@
       "peak_verdict": "within",
       "branch_bus_ratio": [
         1.604040404040404,
-        1.605050505050505
+        1.607070707070707
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.012070495232899,
-        1.0262409614082546
+        1.0140095793189887,
+        1.0266619943417665
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 75.789834,
-      "engine_ms_max": 77.78349899999998,
+      "engine_ms_median": 124.53071000000001,
+      "engine_ms_max": 127.53216700000003,
       "failures": []
     },
     {
@@ -3956,20 +3961,20 @@
       "peak_ratio": 0.9022840931802653,
       "peak_verdict": "not comparable",
       "branch_bus_ratio": [
-        1.5114942528735633,
-        1.5977011494252873
+        1.471264367816092,
+        1.5747126436781609
       ],
-      "max_parallel_circuits": 4,
+      "max_parallel_circuits": 3,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0103880601266553,
-        1.029038856299736
+        1.0092722245100436,
+        1.025479004546814
       ],
-      "plans_incomplete": 1,
-      "engine_ms_median": 13.434541000000001,
-      "engine_ms_max": 13.992834000000002,
+      "plans_incomplete": 0,
+      "engine_ms_median": 20.640749999999997,
+      "engine_ms_max": 21.363082,
       "failures": []
     },
     {
@@ -4003,20 +4008,20 @@
       "peak_ratio": 0.8782312419793592,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.5052631578947369,
-        1.6210526315789473
+        1.4947368421052631,
+        1.6
       ],
       "max_parallel_circuits": 3,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0012221289292684,
-        1.0260655258994038
+        0.9939395600974754,
+        1.0253608099081304
       ],
-      "plans_incomplete": 1,
-      "engine_ms_median": 9.377375,
-      "engine_ms_max": 9.426624000000002,
+      "plans_incomplete": 0,
+      "engine_ms_median": 14.333959999999998,
+      "engine_ms_max": 14.680456999999995,
       "failures": []
     },
     {
@@ -4058,12 +4063,12 @@
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.017157416187562,
-        1.0225631535967068
+        1.013887898444956,
+        1.0234963269170572
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 147.65195899999995,
-      "engine_ms_max": 149.21400099999997,
+      "engine_ms_median": 250.987501,
+      "engine_ms_max": 251.82812500000006,
       "failures": []
     },
     {
@@ -4099,19 +4104,19 @@
       "peak_verdict": "not comparable",
       "branch_bus_ratio": [
         1.5994729907773386,
-        1.6007905138339922
+        1.6021080368906455
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0087127523671955,
-        1.0374369341208907
+        0.9906568814399301,
+        1.033390568118264
       ],
-      "plans_incomplete": 3,
-      "engine_ms_median": 53.48037399999998,
-      "engine_ms_max": 53.57162599999999,
+      "plans_incomplete": 2,
+      "engine_ms_median": 83.67079000000001,
+      "engine_ms_max": 83.90654199999999,
       "failures": []
     },
     {
@@ -4146,31 +4151,21 @@
       "peak_ratio": 0.9766774167641724,
       "peak_verdict": "within",
       "branch_bus_ratio": [
-        1.6583333333333334,
-        1.6723333333333332
+        1.605,
+        1.6096666666666666
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
-      "ac_converged": 0,
-      "ac_pass": 0,
+      "ac_converged": 2,
+      "ac_pass": 2,
       "vm": [
-        null,
-        null
+        1.009496227700065,
+        1.052323231789385
       ],
       "plans_incomplete": 3,
-      "engine_ms_median": 848.738917,
-      "engine_ms_max": 879.7255400000001,
+      "engine_ms_median": 814.242459,
+      "engine_ms_max": 987.09846,
       "failures": [
-        {
-          "seed": 1,
-          "dc_opf": "optimal",
-          "ac_pf": "not_converged",
-          "vm": [
-            null,
-            null
-          ],
-          "message": "AC power flow did not converge: best mismatch 8.305e-1 over 5 starts"
-        },
         {
           "seed": 7,
           "dc_opf": "optimal",
@@ -4179,17 +4174,7 @@
             null,
             null
           ],
-          "message": "AC power flow did not converge: best mismatch 1.080e0 over 5 starts"
-        },
-        {
-          "seed": 2026,
-          "dc_opf": "optimal",
-          "ac_pf": "not_converged",
-          "vm": [
-            null,
-            null
-          ],
-          "message": "AC power flow did not converge: best mismatch 1.253e1 over 5 starts"
+          "message": "AC power flow did not converge: best mismatch 8.339e0 over 5 starts"
         }
       ]
     },
@@ -4225,19 +4210,19 @@
       "peak_verdict": "within",
       "branch_bus_ratio": [
         1.5993589743589745,
-        1.5993589743589745
+        1.608974358974359
       ],
       "max_parallel_circuits": 4,
       "dc_pass": 3,
       "ac_converged": 3,
       "ac_pass": 3,
       "vm": [
-        1.0132978005011068,
-        1.027418552484536
+        1.0109576198973307,
+        1.0257608767878548
       ],
       "plans_incomplete": 0,
-      "engine_ms_median": 23.610788999999997,
-      "engine_ms_max": 24.703790999999995,
+      "engine_ms_median": 40.991083,
+      "engine_ms_max": 43.217958,
       "failures": []
     }
   ],
@@ -4245,8 +4230,8 @@
     "regions": 17,
     "runs": 51,
     "dc_pass": 51,
-    "ac_converged": 47,
-    "ac_pass": 47,
+    "ac_converged": 48,
+    "ac_pass": 48,
     "regions_all_valid": 15,
     "peak_within": 13,
     "peak_scored": 13
