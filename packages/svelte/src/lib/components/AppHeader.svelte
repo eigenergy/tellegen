@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+	onMount(() => {
+		void ctrl.probeCollections();
+	});
 
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 	function openFolder() {

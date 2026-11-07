@@ -1114,7 +1114,6 @@ export class Controller {
 	// ===== actions =====
 
 	load = (): Promise<void> => {
-		void this.probeCollections();
 		// Default cases off, or no backend at all: nothing to fetch. The shell
 		// still needs its loaded state and a framed map, and a host that opens
 		// its own cases must never see a request go out.
