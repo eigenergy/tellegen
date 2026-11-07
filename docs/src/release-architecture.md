@@ -186,6 +186,16 @@ release uses the ordinary verified Cargo publish path against that exact
 commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
 
+The workflow's first job decides whether the push can publish: its engine
+version has no `v<version>` tag yet, and the push writes
+`crates/tellegen/CHANGELOG.md`, which only the release pull request does. Only
+then do the Rust gates and the publish job run. Any other push, including every
+push between a version raised by hand and its release, only refreshes the
+version pull request, which runs CI itself. A manual run, or a tag list or diff
+that cannot be read, plans a publish and leaves the decision to release-plz.
+While a release publishes, the version update waits for the gates, as it always
+has.
+
 The crate update uses the same sealed-patch privilege boundary as package
 versioning. After `release-plz update`, an unprivileged step
 (`.github/scripts/sync_python_version.py`) sets the Python wheel's package
