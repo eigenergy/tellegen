@@ -11,6 +11,8 @@ workflow, with lazy loading, browser-local removal, and restore support.
 Hosted cases can supply source/association metadata and PF defaults. Preserve
 those defaults across UI/WebMCP solves and saved-study reopen; compact
 multiconductor exports keep large studies within the replay input limit.
+The public demo lists the Texas7k distribution case once an operator stages
+its bundle; deploys do not require it.
 
 Cancel hosted requests on controller disposal, discard late ingest completions,
 and report missing backends without starting a request.
