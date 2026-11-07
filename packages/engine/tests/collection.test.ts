@@ -1,18 +1,27 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { BrowserCaseCollection } from "../src/collection.js";
+import { BrowserCaseCollection, collectionSupported } from "../src/collection.js";
 import type { EngineHost } from "../src/host.js";
 import type { EngineRequest, EngineValue } from "../src/protocol.js";
 import { emptyHandles, runRequest, transferables } from "../src/protocol.js";
 import type { WasmModule } from "../src/module.js";
 
 const mock = vi.hoisted(() => ({ host: null as EngineHost | null }));
-vi.mock("../src/host.js", () => ({ isolatedEngineHost: () => mock.host }));
+vi.mock("../src/host.js", () => ({ isolatedEngineHost: () => mock.host, engineHost: () => mock.host }));
 const inspection = { name: "study", entries: [], candidates: [], original_zip: true };
 const imported = { kind: "balanced", payload: { module_json: "independent IR" }, dependencies: [], incomplete: false };
 let call: ReturnType<typeof vi.fn<EngineHost["call"]>>;
 beforeEach(() => {
   call = vi.fn<EngineHost["call"]>(async req => req.op === "collection_ingest" ? JSON.stringify(imported) : req.op === "collection_free" ? null : JSON.stringify(inspection));
   mock.host = { kind: "worker", call, cancel: vi.fn(() => true) };
+});
+
+it("reports the compiled collection capability without acquiring a collection", async () => {
+  call.mockResolvedValueOnce("false").mockResolvedValueOnce("true");
+  await expect(collectionSupported()).resolves.toBe(false);
+  await expect(collectionSupported()).resolves.toBe(true);
+  expect(call.mock.calls.every(([request]) => request.op === "collection_supported")).toBe(true);
+  const mod = { collection_supported: () => false } as unknown as WasmModule;
+  expect(runRequest(mod, emptyHandles(), { op: "collection_supported" })).toBe("false");
 });
 
 it("acquires a binary tree once and sends only selections for multiple imports", async () => {

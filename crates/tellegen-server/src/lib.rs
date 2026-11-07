@@ -11,6 +11,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod distribution;
+mod settings;
+
 use axum::{
     extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
     http::{self, header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
@@ -19,7 +22,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse, Response,
     },
-    routing::{any, get},
+    routing::{any, get, post},
     Json, Router,
 };
 use powerio::{BalancedNetwork, DcOpfInstance, PioModule};
@@ -178,6 +181,7 @@ struct FallbackSpec {
 #[derive(Clone)]
 pub struct AppState {
     cases: Arc<BTreeMap<String, Arc<CaseEntry>>>,
+    distribution_cases: Arc<BTreeMap<String, distribution::DistributionCase>>,
     unavailable: Arc<Vec<UnavailableCase>>,
     solver_permits: Arc<Semaphore>,
     solver_timeout: Duration,
@@ -224,11 +228,65 @@ impl ExpensiveEndpoint {
     }
 }
 
+/// A case's PowerIO module text with a gzip copy made once at load, so serving
+/// `/api/cases/{id}/case` neither copies nor recompresses a large module (the
+/// Texas7k distribution module is about 37 MB).
+#[derive(Clone)]
+pub(crate) struct ModulePayload {
+    json: axum::body::Bytes,
+    gzip: axum::body::Bytes,
+}
+
+impl ModulePayload {
+    pub(crate) fn new(json: String) -> Result<Self, String> {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        encoder
+            .write_all(json.as_bytes())
+            .and_then(|()| encoder.finish())
+            .map(|gzip| Self {
+                json: json.into(),
+                gzip: gzip.into(),
+            })
+            .map_err(|e| format!("could not compress case module: {e}"))
+    }
+}
+
+/// Whether the request's `Accept-Encoding` admits gzip. An explicit `gzip`
+/// (or `x-gzip`) entry decides; otherwise `*` does; `q=0` refuses.
+fn accepts_gzip(headers: &HeaderMap) -> bool {
+    let mut gzip = None;
+    let mut any = None;
+    let items = headers
+        .get_all(http::header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','));
+    for item in items {
+        let mut parts = item.split(';');
+        let coding = parts.next().unwrap_or_default().trim();
+        let quality = parts
+            .find_map(|param| {
+                let (name, value) = param.split_once('=')?;
+                name.trim()
+                    .eq_ignore_ascii_case("q")
+                    .then(|| value.trim().parse::<f32>().unwrap_or(0.0))
+            })
+            .unwrap_or(1.0);
+        if coding.eq_ignore_ascii_case("gzip") || coding.eq_ignore_ascii_case("x-gzip") {
+            gzip = Some(quality > 0.0);
+        } else if coding == "*" {
+            any = Some(quality > 0.0);
+        }
+    }
+    gzip.or(any).unwrap_or(false)
+}
+
 struct CaseEntry {
     id: String,
     name: String,
     network: BalancedNetwork,
-    module_json: String,
+    module: ModulePayload,
     /// The declared problem supplied to Tellegen. Dense solver workspaces stay
     /// behind the engine boundary.
     dc_instance: Arc<DcOpfInstance>,
@@ -253,6 +311,9 @@ struct SavedCase {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CaseSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<distribution::Metadata>,
+    pub model: CaseModel,
     pub unavailable_reason: Option<String>,
     pub id: String,
     pub name: String,
@@ -265,8 +326,16 @@ pub struct CaseSummary {
     pub n_gen: usize,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaseModel {
+    Balanced,
+    Multiconductor,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct UnavailableCase {
+    pub model: CaseModel,
     pub id: String,
     pub name: String,
     pub reason: String,
@@ -454,6 +523,7 @@ impl AppState {
     }
 
     pub fn load(data_dir: PathBuf, allow_fallback: bool) -> Result<Self, String> {
+        let (distribution_cases, distribution_unavailable) = distribution::load(&data_dir)?;
         let staged_specs: Vec<_> = CASE_SPECS
             .iter()
             .copied()
@@ -476,6 +546,7 @@ impl AppState {
                     Err(reason) => {
                         tracing::error!(case = spec.id, %reason, "case unavailable");
                         unavailable.push(UnavailableCase {
+                            model: CaseModel::Balanced,
                             id: spec.id.into(),
                             name: spec.name.into(),
                             reason,
@@ -483,7 +554,10 @@ impl AppState {
                     }
                 }
             }
-        } else if allow_fallback {
+        } else if distribution_cases.is_empty()
+            && distribution_unavailable.is_empty()
+            && allow_fallback
+        {
             tracing::warn!(
                 data_dir = %data_dir.display(),
                 "no staged case data; serving embedded pglib fallback cases"
@@ -492,18 +566,20 @@ impl AppState {
                 let entry = build_fallback_entry(spec)?;
                 cases.insert(entry.id.clone(), Arc::new(entry));
             }
-        } else {
+        } else if distribution_cases.is_empty() && distribution_unavailable.is_empty() {
             return Err(format!(
                 "no staged case data under {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
                 data_dir.display()
             ));
         }
 
-        if cases.is_empty() {
+        unavailable.extend(distribution_unavailable);
+        if cases.is_empty() && distribution_cases.is_empty() {
             return Err(format!("no cases loaded from {}", data_dir.display()));
         }
         Ok(Self {
             cases: Arc::new(cases),
+            distribution_cases: Arc::new(distribution_cases),
             unavailable: Arc::new(unavailable),
             solver_permits: Arc::new(Semaphore::new(solver_concurrency())),
             solver_timeout: solver_timeout(),
@@ -520,6 +596,9 @@ impl AppState {
     }
 
     fn case(&self, id: &str) -> ApiResult<Arc<CaseEntry>> {
+        if self.distribution_cases.contains_key(id) {
+            return Err(ApiError::bad_request("distribution cases expose /case; use the browser distribution viewer and AC power flow"));
+        }
         self.cases
             .get(id)
             .cloned()
@@ -527,7 +606,14 @@ impl AppState {
     }
 
     fn case_ids(&self) -> Vec<String> {
-        self.cases.keys().cloned().collect()
+        let mut ids: Vec<_> = self
+            .cases
+            .keys()
+            .chain(self.distribution_cases.keys())
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
     }
 
     fn check_expensive_rate_limit(
@@ -606,6 +692,12 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
             get(sensitivity_line_limit),
         )
         .route("/api/cases/{id}/solve", get(solve_stream))
+        .route(
+            "/api/calculate",
+            post(settings::calculate).layer(axum::extract::DefaultBodyLimit::max(
+                settings::CALCULATE_BODY_LIMIT,
+            )),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_compute,
@@ -613,6 +705,8 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
 
     let app = Router::new()
         .route("/api/health", get(health))
+        .route("/api/settings", get(settings::describe))
+        .route("/api/settings/resolve", post(settings::resolve))
         .route("/api/compute", get(compute_status))
         .route("/api/cases", get(cases))
         .route("/api/cases/{id}/case", get(case_module_json))
@@ -711,6 +805,8 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
             .cases
             .values()
             .map(|entry| CaseSummary {
+                distribution: None,
+                model: CaseModel::Balanced,
                 unavailable_reason: None,
                 id: entry.id.clone(),
                 name: entry.name.clone(),
@@ -725,7 +821,15 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
                     .filter(|gen| gen.in_service)
                     .count(),
             })
+            .chain(
+                state
+                    .distribution_cases
+                    .values()
+                    .map(|case| case.summary.clone()),
+            )
             .chain(state.unavailable.iter().map(|case| CaseSummary {
+                distribution: None,
+                model: case.model,
                 id: case.id.clone(),
                 name: case.name.clone(),
                 unavailable_reason: Some(case.reason.clone()),
@@ -749,12 +853,33 @@ async fn saved_case(
 async fn case_module_json(
     State(state): State<Arc<AppState>>,
     AxumPath(id): AxumPath<String>,
-) -> ApiResult<impl IntoResponse> {
-    let entry = state.case(&id)?;
-    Ok((
-        [(CONTENT_TYPE, HeaderValue::from_static("application/json"))],
-        entry.module_json.clone(),
-    ))
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let module = if let Some(entry) = state.distribution_cases.get(&id) {
+        entry.module.clone()
+    } else {
+        state.case(&id)?.module.clone()
+    };
+    let json = HeaderValue::from_static("application/json");
+    let vary = HeaderValue::from_static("accept-encoding");
+    Ok(if accepts_gzip(&headers) {
+        let gzip = HeaderValue::from_static("gzip");
+        (
+            [
+                (CONTENT_TYPE, json),
+                (http::header::CONTENT_ENCODING, gzip),
+                (http::header::VARY, vary),
+            ],
+            module.gzip,
+        )
+            .into_response()
+    } else {
+        (
+            [(CONTENT_TYPE, json), (http::header::VARY, vary)],
+            module.json,
+        )
+            .into_response()
+    })
 }
 
 async fn network(
@@ -1393,7 +1518,7 @@ fn build_entry(
         id: id.into(),
         name: name.into(),
         network,
-        module_json,
+        module: ModulePayload::new(module_json)?,
         dc_instance,
         dc_bus_ids,
         dc_branch_ids,
@@ -1865,6 +1990,235 @@ mod tests {
         }))
     }
 
+    struct DistributionFixture(PathBuf);
+
+    impl DistributionFixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let path = env::temp_dir().join(format!(
+                "tellegen-distribution-{}-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            let source = powerio::Source::from_memory("feeder.dss", b"New Circuit.feeder basekv=12.47 pu=1 phases=3 bus1=source\nNew Line.branch bus1=source.1.2.3 bus2=load.1.2.3 phases=3 r1=0.1 x1=0.2 length=1\nNew Load.customer bus1=load.1.2.3 phases=3 kv=12.47 kw=10 kvar=2\n".to_vec()).unwrap();
+            let module = powerio::parse(source).unwrap();
+            fs::write(
+                path.join("feeder.pio.json"),
+                tellegen::ir::serialize_module(&module).unwrap(),
+            )
+            .unwrap();
+            let fixture = Self(path);
+            fixture.manifest(serde_json::json!([{"id":"feeder", "name":"Hosted feeder", "file":"feeder.pio.json"}]));
+            fixture
+        }
+
+        fn manifest(&self, value: serde_json::Value) {
+            fs::write(self.0.join("distribution-cases.json"), value.to_string()).unwrap();
+        }
+    }
+
+    impl Drop for DistributionFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn hosted_distribution_catalogue_and_module_without_balanced_fallback() {
+        let fixture = DistributionFixture::new();
+        let state = Arc::new(
+            AppState::load(fixture.0.clone(), true)
+                .unwrap()
+                .with_compute(true),
+        );
+        let (status, _, text) =
+            get_raw_with_state(Arc::clone(&state), "/api/health", &next_client()).await;
+        assert_eq!(status, StatusCode::OK);
+        let health: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(health["cases"], serde_json::json!(["feeder"]));
+        let (_, _, text) =
+            get_raw_with_state(Arc::clone(&state), "/api/cases", &next_client()).await;
+        let catalogue: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(catalogue[0]["model"], "multiconductor");
+        assert_eq!(catalogue[0]["name"], "Hosted feeder");
+        // PowerIO 0.11.7 adds an internal EMF bus for the finite source impedance.
+        assert_eq!(catalogue[0]["n_bus"], 3);
+        let (status, _, text) =
+            get_raw_with_state(Arc::clone(&state), "/api/cases/feeder/case", &next_client()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            text,
+            fs::read_to_string(fixture.0.join("feeder.pio.json")).unwrap()
+        );
+        for endpoint in ["network", "solution", "snapshot", "solve"] {
+            let (status, _, _) = get_raw_with_state(
+                Arc::clone(&state),
+                &format!("/api/cases/feeder/{endpoint}"),
+                &next_client(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{endpoint}");
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_distribution_files_remain_listed_and_degrade_health() {
+        let fixture = DistributionFixture::new();
+        let balanced = parse_balanced(FALLBACK_SPECS[0].text, "case.m", "m").unwrap();
+        fs::write(
+            fixture.0.join("balanced.pio.json"),
+            tellegen::ir::serialize_module(&balanced).unwrap(),
+        )
+        .unwrap();
+        fixture.manifest(serde_json::json!([
+            {"id":"feeder", "name":"Hosted feeder", "file":"feeder.pio.json"},
+            {"id":"missing", "name":"Missing", "file":"missing.pio.json"},
+            {"id":"escape", "name":"Escape", "file":"../feeder.pio.json"},
+            {"id":"balanced", "name":"Wrong family", "file":"balanced.pio.json"}
+        ]));
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let (status, _, _) =
+            get_raw_with_state(Arc::clone(&state), "/api/health", &next_client()).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let (_, _, text) = get_raw_with_state(state, "/api/cases", &next_client()).await;
+        let cases: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(cases.len(), 4);
+        assert!(cases.iter().all(|c| c["model"] == "multiconductor"));
+        assert_eq!(
+            cases
+                .iter()
+                .filter(|c| c["unavailable_reason"].is_string())
+                .count(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn hosted_module_negotiates_gzip() {
+        let fixture = DistributionFixture::new();
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let response = router(state, None)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/cases/feeder/case")
+                    .header("accept-encoding", "gzip")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-encoding"], "gzip");
+        assert_eq!(response.headers()["vary"], "accept-encoding");
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
+        let original = fs::read_to_string(fixture.0.join("feeder.pio.json")).unwrap();
+        assert!(bytes.len() < original.len());
+        let mut inflated = String::new();
+        std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&bytes[..]), &mut inflated)
+            .unwrap();
+        assert_eq!(inflated, original);
+    }
+
+    #[tokio::test]
+    async fn hosted_module_is_plain_json_unless_gzip_is_accepted() {
+        let fixture = DistributionFixture::new();
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let original = fs::read_to_string(fixture.0.join("feeder.pio.json")).unwrap();
+        for accept in [None, Some("gzip;q=0, br"), Some("identity"), Some("*;q=0")] {
+            let mut request = axum::http::Request::builder().uri("/api/cases/feeder/case");
+            if let Some(accept) = accept {
+                request = request.header("accept-encoding", accept);
+            }
+            let response = router(state.clone(), None)
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(
+                response.headers().get("content-encoding").is_none(),
+                "{accept:?}"
+            );
+            assert_eq!(response.headers()["vary"], "accept-encoding");
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(bytes, original.as_bytes(), "{accept:?}");
+        }
+    }
+
+    #[test]
+    fn gzip_negotiation_follows_quality_values() {
+        let accepts = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(http::header::ACCEPT_ENCODING, value.parse().unwrap());
+            accepts_gzip(&headers)
+        };
+        assert!(accepts("gzip, deflate, br, zstd"));
+        assert!(accepts("br;q=1.0, GZIP;q=0.5"));
+        assert!(accepts("*"));
+        assert!(accepts("x-gzip"));
+        assert!(!accepts("gzip;q=0"));
+        assert!(!accepts("gzip; q=0.000, *"));
+        assert!(!accepts("br, zstd"));
+        assert!(!accepts(""));
+        assert!(!accepts_gzip(&HeaderMap::new()));
+    }
+
+    #[tokio::test]
+    async fn distribution_metadata_is_validated_and_exposed() {
+        let fixture = DistributionFixture::new();
+        let metadata = serde_json::json!({
+            "description": "Nominal snapshot", "source_url": "https://example.org/source",
+            "related_case_id": "case7000",
+            "pf_options": {"voltage_envelope": false, "max_iterations": 500, "tolerance": 1e-7}
+        });
+        fixture.manifest(serde_json::json!([{"id":"feeder", "name":"Feeder", "file":"feeder.pio.json", "metadata":metadata}]));
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let (_, _, body) = get_raw_with_state(state, "/api/cases", &next_client()).await;
+        let cases: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            cases[0]["distribution"]["pf_options"],
+            metadata["pf_options"]
+        );
+        assert_eq!(cases[0]["distribution"]["related_case_id"], "case7000");
+        for invalid in [
+            serde_json::json!({"pf_options":{"tolerance":0}}),
+            serde_json::json!({"pf_options":{"max_iterations":0}}),
+            serde_json::json!({"pf_options":{"absolute_kcl_tolerance":-1}}),
+            serde_json::json!({"pf_options":{"typo":1}}),
+            serde_json::json!({"source_url":"javascript:alert(1)"}),
+            serde_json::json!({"related_case_id":"unknown"}),
+        ] {
+            fixture.manifest(serde_json::json!([{"id":"feeder", "name":"Feeder", "file":"feeder.pio.json", "metadata":invalid}]));
+            assert!(
+                AppState::load(fixture.0.clone(), false).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn distribution_manifest_rejects_ambiguous_ids_and_malformed_json() {
+        let fixture = DistributionFixture::new();
+        for id in ["case200", "local-1", "dist-1", "a/b", ""] {
+            fixture.manifest(
+                serde_json::json!([{"id":id, "name":"Feeder", "file":"feeder.pio.json"}]),
+            );
+            assert!(AppState::load(fixture.0.clone(), false).is_err(), "{id}");
+        }
+        fixture.manifest(serde_json::json!([
+            {"id":"feeder", "name":"One", "file":"feeder.pio.json"},
+            {"id":"feeder", "name":"Two", "file":"feeder.pio.json"}
+        ]));
+        assert!(AppState::load(fixture.0.clone(), false).is_err());
+        fs::write(fixture.0.join("distribution-cases.json"), "{").unwrap();
+        assert!(AppState::load(fixture.0.clone(), false).is_err());
+    }
+
     /// The default state: compute disabled, as a public deploy ships it.
     fn compute_disabled_state() -> Arc<AppState> {
         static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
@@ -1975,6 +2329,7 @@ mod tests {
     async fn unavailable_cases_remain_listed_and_fail_health() {
         let mut state = (*fallback_state()).clone();
         state.unavailable = Arc::new(vec![UnavailableCase {
+            model: CaseModel::Balanced,
             id: "case7000".into(),
             name: "Texas7k".into(),
             reason: "Case data is not staged on the server".into(),
@@ -2445,5 +2800,156 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("TELLEGEN_ALLOW_FALLBACK=1"));
+    }
+    #[tokio::test]
+    async fn calculate_rate_limits_before_reading_the_body() {
+        let state = fallback_state();
+        let post = |state: Arc<AppState>| async move {
+            let response = router(state, None)
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/api/calculate")
+                        .header("content-type", "application/json")
+                        .header("x-forwarded-for", "198.51.100.20")
+                        .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
+                        .body(Body::from("not json"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (
+                status,
+                serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            )
+        };
+        for _ in 0..DEFAULT_SOLVE_RATE_LIMIT_EVENTS {
+            let (status, body) = post(state.clone()).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        }
+        // The malformed body is never parsed once the client is over its limit.
+        let (status, body) = post(state).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    }
+
+    /// POST `body` to `/api/calculate`, optionally declaring a `Content-Length`.
+    async fn post_calculate(
+        state: Arc<AppState>,
+        body: Body,
+        declared_length: Option<u64>,
+    ) -> (StatusCode, serde_json::Value) {
+        let mut request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/calculate")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", next_client())
+            .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))));
+        if let Some(length) = declared_length {
+            request = request.header("content-length", length);
+        }
+        let response = router(state, None)
+            .oneshot(request.body(body).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn calculate_refuses_a_declared_oversized_body_before_waiting_for_a_permit() {
+        // Every permit is taken, so any request that waited for one would time out.
+        let mut state = AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true)
+            .unwrap()
+            .with_compute(true);
+        state.solver_permits = Arc::new(Semaphore::new(0));
+        state.solver_timeout = Duration::from_millis(50);
+        let state = Arc::new(state);
+        let (status, body) = post_calculate(
+            state.clone(),
+            Body::from("{}"),
+            Some(settings::CALCULATE_BODY_LIMIT as u64 + 1),
+        )
+        .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+        // A body within the limit is read only once a permit is held: on the
+        // saturated pool even a malformed one times out instead of being parsed.
+        let (status, body) = post_calculate(state, Body::from("not json"), None).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+        assert!(body["error"].as_str().unwrap().contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn calculate_refuses_an_undeclared_oversized_body() {
+        const CHUNK: usize = 1024 * 1024;
+        let chunks = settings::CALCULATE_BODY_LIMIT / CHUNK + 1;
+        let stream = tokio_stream::iter(
+            (0..chunks)
+                .map(|_| Ok::<_, std::io::Error>(axum::body::Bytes::from(vec![b' '; CHUNK]))),
+        );
+        let (status, body) =
+            post_calculate(fallback_state(), Body::from_stream(stream), None).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    }
+
+    async fn post_settings(
+        state: Arc<AppState>,
+        path: &str,
+        value: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let response = router(state, None)
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("content-type", "application/json")
+                    .header("x-forwarded-for", next_client())
+                    .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
+                    .body(Body::from(value.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn common_settings_resolve_and_calculate_match_native_and_obey_compute_gate() {
+        let request = serde_json::json!({"calculation":"mc_ac_pf","baseline":{"max_iterations":150},"overrides":{"damping":0.8}});
+        let (status, resolved) = post_settings(
+            compute_disabled_state(),
+            "/api/settings/resolve",
+            request.clone(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let native =
+            tellegen::settings::resolve(&serde_json::from_value(request.clone()).unwrap()).unwrap();
+        assert_eq!(resolved, serde_json::to_value(native).unwrap());
+        let payload = serde_json::json!({"settings":request,"module_json":include_str!("../../../apps/web/tests/fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json")});
+        let (status, _) =
+            post_settings(compute_disabled_state(), "/api/calculate", payload.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, result) =
+            post_settings(fallback_state(), "/api/calculate", payload.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{result}");
+        let native =
+            tellegen::settings::calculate(&serde_json::from_value(payload).unwrap(), None).unwrap();
+        assert_eq!(result, serde_json::to_value(native).unwrap());
+        let (status, error) = post_settings(
+            fallback_state(),
+            "/api/settings/resolve",
+            serde_json::json!({"calculation":"dcopf","overrides":{"not_a_setting":1}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(error["error"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported setting"));
     }
 }

@@ -168,7 +168,7 @@ export function validateSolveMulticonductor(
     expectedRevision: string(value.expected_revision, "expected_revision"),
     maxIterations:
       value.max_iterations === undefined
-        ? 100
+        ? undefined
         : integer(value.max_iterations, "max_iterations", 1, 10000),
   };
 }
@@ -525,5 +525,112 @@ export function validateApplyCapacityPlan(
     caseId: string(value.case_id, "case_id"),
     expectedRevision: string(value.expected_revision, "expected_revision"),
     proposalId: string(value.proposal_id, "proposal_id"),
+  };
+}
+
+export function validateSettings(
+  input: unknown,
+  action: import("./types.js").SettingsInput["action"],
+): import("./types.js").SettingsInput {
+  const value = object(input, "input");
+  exactKeys(
+    value,
+    [
+      "scope",
+      "case_id",
+      "expected_revision",
+      "settings_revision",
+      "calculation",
+      "field",
+      "patch",
+    ],
+    "input",
+  );
+  if (action !== "inspect" && value.field !== undefined)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "field is only supported by inspection",
+    );
+  if (action !== "update" && value.patch !== undefined)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "patch is only supported by update_settings",
+    );
+  if (
+    (action === "inspect" || action === "run") &&
+    value.calculation !== undefined
+  )
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "calculation can be selected by update_settings or reset_settings",
+    );
+  const scope = value.scope ?? "calculation";
+  if (scope !== "calculation" && scope !== "display")
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "scope must be calculation or display",
+    );
+  if (
+    scope === "display" &&
+    (value.calculation !== undefined || value.field !== undefined)
+  )
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "display scope has no calculation fields",
+    );
+  if (
+    action !== "inspect" &&
+    scope === "calculation" &&
+    (value.case_id === undefined || value.expected_revision === undefined)
+  )
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "case_id and expected_revision are required",
+    );
+  if (action !== "inspect" && value.settings_revision === undefined)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "settings_revision is required",
+    );
+  const patch =
+    value.patch === undefined ? undefined : object(value.patch, "patch");
+  if (
+    patch &&
+    (Object.keys(patch).length > 24 || JSON.stringify(patch).length > 4096)
+  )
+    throw new TellegenToolError("INVALID_INPUT", "patch is too large");
+  if (action === "update" && !patch)
+    throw new TellegenToolError("INVALID_INPUT", "patch is required");
+  if (action === "run" && scope === "display")
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "display preferences do not run calculations",
+    );
+  return {
+    action,
+    scope,
+    caseId:
+      value.case_id === undefined
+        ? undefined
+        : string(value.case_id, "case_id"),
+    expectedRevision:
+      value.expected_revision === undefined
+        ? undefined
+        : string(value.expected_revision, "expected_revision"),
+    settingsRevision:
+      value.settings_revision === undefined
+        ? undefined
+        : integer(
+            value.settings_revision,
+            "settings_revision",
+            0,
+            Number.MAX_SAFE_INTEGER,
+          ),
+    calculation:
+      value.calculation === undefined
+        ? undefined
+        : string(value.calculation, "calculation"),
+    field: value.field === undefined ? undefined : string(value.field, "field"),
+    patch,
   };
 }

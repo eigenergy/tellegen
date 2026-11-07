@@ -1176,12 +1176,12 @@ impl OsmBuild {
         self.counts.hvdc_links = self.hvdc.len();
         self.counts.lines_dropped = dropped;
         self.counts.voltage_inferred = inferred;
-        let considered = stitched.len();
+        let considered = sections.len() + stitched.iter().filter(|l| l.is_dc).count();
         if considered > 0 && dropped * 2 >= considered {
             warnings.push(Warning::new(
                 "osm_lines_dropped",
                 format!(
-                    "{dropped} of {considered} OpenStreetMap line(s) were dropped (below {} kV, or an end farther than {} km from any substation); the topology leans on the island policy",
+                    "{dropped} of {considered} OpenStreetMap line section(s) were dropped (below {} kV, without usable endpoints within {} km, or collapsed to one bus); the topology leans on the island policy",
                     opts.voltage_floor_kv, opts.snap_km
                 ),
             ));
@@ -1690,7 +1690,8 @@ fn prune_dead_ends(
 type VoltageGrid = BTreeMap<(i64, i64), Vec<(f64, f64, f64)>>;
 
 /// Join every component to the one holding bus 0 with the shortest tie,
-/// preferring a tie between buses of one voltage, Prim style: O(n·k) for k
+/// preferring a tie between buses of one voltage only when it is local,
+/// Prim style: O(n·k) for k
 /// components. Ties are tagged `interconnect`. Returns how many were added.
 pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> usize {
     let n = buses.len();
@@ -1706,11 +1707,14 @@ pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> 
     }
     let original: Vec<usize> = (0..n).map(|i| uf.find(i)).collect();
     let weight = |i: usize, j: usize| {
+        // A voltage change needs a modelled transformer, but avoiding one
+        // must not create a country-spanning line between rare voltage levels.
+        // Bound the voltage preference to twice the geographic distance.
         haversine_km(buses[i].lon, buses[i].lat, buses[j].lon, buses[j].lat)
-            + if (buses[i].base_kv - buses[j].base_kv).abs() < 1e-6 {
-                0.0
+            * if (buses[i].base_kv - buses[j].base_kv).abs() < 1e-6 {
+                1.0
             } else {
-                1e6
+                2.0
             }
     };
     let root0 = uf.find(0);
@@ -1841,6 +1845,49 @@ const PARALLEL_TIE_KM: f64 = 50.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rare_voltage_connects_locally_instead_of_crossing_the_country() {
+        let bus = |lon, kv| DraftBus {
+            lon,
+            lat: 0.0,
+            name: String::new(),
+            place: None,
+            tier: 0,
+            base_kv: kv,
+            kind: BusKind::Load,
+            confidence: 1.0,
+            polygon: 0,
+            island: 0,
+            source: ElementSource::Osm,
+            population_weight: 0.0,
+            load_mw: 1.0,
+            load_mvar: 0.3,
+            annotation: String::new(),
+            site: 0,
+        };
+        // The mapped backbone already connects the distant substations.
+        // A nearby orphan happens to share the remote station's rare voltage.
+        let buses = [bus(0.0, 132.0), bus(4.0, 400.0), bus(4.01, 132.0)];
+        let mut corridors = vec![Corridor {
+            a: 0,
+            b: 1,
+            kv: 400.0,
+            length_km: 445.0,
+            role: CorridorRole::Internal,
+            circuits: 1,
+            route: vec![(0.0, 0.0), (4.0, 0.0)],
+            is_delaunay: false,
+        }];
+        assert_eq!(connect_components(&buses, &mut corridors), 1);
+        let tie = &corridors[1];
+        assert_eq!((tie.a, tie.b), (1, 2));
+        assert!(tie.length_km < 2.0);
+        assert_eq!(tie.role, CorridorRole::Interconnect);
+        // The mixed-voltage corridor becomes a local line and step-down in
+        // electrical design; neither mapped bus voltage is rewritten.
+        assert_eq!((buses[1].base_kv, buses[2].base_kv), (400.0, 132.0));
+    }
 
     fn line(id: i64, pts: &[(f64, f64)]) -> OsmLine {
         OsmLine {

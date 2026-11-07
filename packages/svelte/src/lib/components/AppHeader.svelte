@@ -66,6 +66,30 @@
 				>
 			</div>
 		{/each}
+		{#each app.hostedDistributionCases.filter((s) => !app.multiCases.some((c) => c.hosted && c.id === s.id)) as c (c.id)}
+			<div class="case-chip">
+				<button
+					class="case-activate"
+					disabled={!!c.unavailable_reason}
+					title={c.unavailable_reason ?? undefined}
+					onclick={() => ctrl.activateHostedDistribution(c.id)}
+				>
+					<span class="cname">{c.name}</span>
+					<span class="cregion mono"
+						>{c.unavailable_reason
+							? 'Unavailable'
+							: ctrl.loadingHostedDistribution === c.id
+								? 'Loading…'
+								: 'Distribution'}</span
+					>
+				</button>
+				<button
+					class="case-remove mono"
+					aria-label="Remove {c.name} from this browser"
+					onclick={() => ctrl.removeHostedDistribution(c.id)}>&#10005;</button
+				>
+			</div>
+		{/each}
 		{#each app.localCases as c (c.id)}
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
@@ -81,7 +105,7 @@
 			</div>
 		{/each}
 		{#each app.multiCases as c (c.id)}
-			<div class="case-chip local" class:active={app.activeMultiId === c.id}>
+			<div class="case-chip" class:local={!c.hosted} class:active={app.activeMultiId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
 					<span class="cregion mono">Multiconductor</span>
@@ -100,12 +124,21 @@
 					? 'Drop a case file'
 					: 'Open a case file'}</span
 			>
-			<span class="cregion mono">Case, ZIP or geo files</span>
+			<span class="cregion mono"
+				>{ctrl.collectionsAvailable ? 'Case, ZIP or geo files' : 'Case or geo files'}</span
+			>
 		</button>
-		<button class="ghost filedrop-ui" onclick={openFolder}>
-			<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
-		</button>
+		{#if ctrl.collectionsAvailable}
+			<button class="ghost filedrop-ui" onclick={openFolder}>
+				<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
+			</button>
+		{/if}
 	</nav>
+	<button
+		class="settings-button"
+		onclick={() => (app.settingsOpen = !app.settingsOpen)}
+		aria-expanded={app.settingsOpen}>Settings</button
+	>
 	<span class="kicker mono">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
@@ -113,7 +146,7 @@
 	</span>
 	<input
 		type="file"
-		accept=".zip,.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx"
+		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx`}
 		multiple
 		hidden
 		bind:this={fileInput}
@@ -128,6 +161,17 @@
 </header>
 
 <style>
+	.settings-button {
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		padding: 7px 12px;
+		color: var(--ink);
+		background: var(--surface-control);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
+	}
+
 	header {
 		position: absolute;
 		top: 0;

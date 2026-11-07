@@ -62,6 +62,23 @@ bare model JSON is now `unknown`; regenerate it as `pio-ir` from source data.
 Every API that accepts a byte buffer rejects inputs larger than
 `MAX_ENGINE_INPUT_BYTES` (128 MiB) before worker dispatch.
 
+ZIP and folder acquisition is optional. Call `await collectionSupported()` before
+offering collection controls. The ordinary build uses published PowerIO 0.11.9
+and reports `false`; individual case imports remain available. A compatible
+PowerIO 0.12 build enables `powerio-collections` (which includes `powerio-012`)
+and provides `BrowserCaseCollection`. Its unsupported-build methods reject with
+an actionable error rather than failing on a missing WASM export.
+
+For candidate verification, select the PowerIO candidate with the repository's
+pin script, then run:
+
+```sh
+TELLEGEN_POWERIO_FEATURES=powerio-012,powerio-collections npm run wasm
+```
+
+The released manifest and lockfile must continue to reference
+published dependencies; a local candidate patch must never be published.
+
 ## Experimental AC OPF
 
 The ordinary package contains no POUNCE WASI asset. A development host must
@@ -107,9 +124,13 @@ describes the stages, the demand model and the evidence.
 
 The package ships data from third parties:
 
-- **Natural Earth** v5.1.2 populated places (`dist/data/populated_places.json`,
-  which names the release and its source file's SHA-256) and country areas
-  (compiled into the wasm): public domain,
+- **GeoNames** `cities5000` populated places (`dist/data/populated_places.json`,
+  which names the dump and its SHA-256): licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  [geonames.org](https://www.geonames.org/); credit GeoNames when you
+  redistribute a generated grid.
+- **Natural Earth** v5.1.2 country areas (compiled into the wasm): public
+  domain,
   [naturalearthdata.com](https://www.naturalearthdata.com/about/terms-of-use/).
 - **Ember**, *Yearly Electricity Data*, through **Our World in Data**,
   *Energy dataset*: national electricity demand, compiled into the wasm.

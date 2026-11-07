@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/engine",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "Browser engine for case parsing, solves, Study previews and commits, and sensitivities.",
   "keywords": [
     "power-flow",
@@ -58,13 +58,14 @@
     "types": "node scripts/generate-types.mjs",
     "types:check": "node scripts/generate-types.mjs --check",
     "build": "npm run types:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
-    "wasm": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic,synth && node scripts/copy-synth-places.mjs",
+    "wasm": "node scripts/build-wasm.mjs",
     "check": "npm run types:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
     "test": "vitest run",
     "test:import": "node scripts/import-smoke.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   }

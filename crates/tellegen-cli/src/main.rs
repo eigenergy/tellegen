@@ -43,6 +43,8 @@ const USAGE: &str =
                    request may carry linear constraints (`describe`: solve_request).\n\
                    '@PATH' reads the request from a file, for requests larger\n\
                    than the operating system's argument limit.\n\
+     settings [describe|resolve]  describe settings or resolve JSON from stdin.\n\
+     calculate     calculate with settings; CalculationRequest JSON on stdin.\n\
      capabilities  print the formulation/operand/parameter capability matrix.\n\
      describe      print supported commands and generated JSON schemas.\n\
      prepare-model\n\
@@ -74,6 +76,25 @@ fn main() -> ExitCode {
     let arg = std::env::args().nth(1).unwrap_or_default();
 
     match arg.as_str() {
+        "settings" => {
+            return run(|| match std::env::args().nth(2).as_deref() {
+                None | Some("describe") => Ok(tellegen::settings::describe().to_string()),
+                Some("resolve") => {
+                    let request =
+                        serde_json::from_str(&read_stdin()?).map_err(|e| e.to_string())?;
+                    serde_json::to_string(&tellegen::settings::resolve(&request)?)
+                        .map_err(|e| e.to_string())
+                }
+                _ => Err("usage: tellegen settings [describe|resolve]".into()),
+            })
+        }
+        "calculate" => {
+            return run(|| {
+                let request = serde_json::from_str(&read_stdin()?).map_err(|e| e.to_string())?;
+                serde_json::to_string(&tellegen::settings::calculate(&request, None)?)
+                    .map_err(|e| e.to_string())
+            })
+        }
         "capabilities" => {
             println!("{}", tellegen::capabilities_json());
             return ExitCode::SUCCESS;
@@ -112,14 +133,21 @@ fn main() -> ExitCode {
                             .to_owned(),
                     );
                 }
-                let options = std::env::args()
+                let overrides = std::env::args()
                     .nth(2)
                     .map(|text| {
-                        serde_json::from_str::<tellegen::McPfOptions>(&text)
-                            .map_err(|e| e.to_string())
+                        serde_json::from_str(&request_text(&text)?).map_err(|e| e.to_string())
                     })
                     .transpose()?
                     .unwrap_or_default();
+                let resolved = tellegen::settings::resolve(
+                    &tellegen::settings::SettingsRequest::new(
+                        tellegen::settings::Calculation::McAcPf,
+                    )
+                    .with_overrides(overrides),
+                )?;
+                let options = serde_json::from_value(serde_json::Value::Object(resolved.effective))
+                    .map_err(|e| e.to_string())?;
                 let input = read_stdin()?;
                 if arg == "solve-mc-bmopf" {
                     tellegen::solve_bmopf_json(&input, &options)
@@ -379,6 +407,8 @@ fn describe_value() -> Result<serde_json::Value, String> {
         "format": DESCRIBE_FORMAT,
         "tellegen_version": tellegen::VERSION,
         "powerio_version": env!("TELLEGEN_POWERIO_VERSION"),
+        "settings": tellegen::settings::describe(),
+        "calculation_request": schemars::schema_for!(tellegen::settings::CalculationRequest),
         "schemas": {
             "mc_pf_options": schemars::schema_for!(tellegen::McPfOptions),
             "mc_pf_result": schemars::schema_for!(tellegen::McPfResult),

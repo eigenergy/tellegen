@@ -186,6 +186,13 @@ pub fn build_network(
         row.pg = g.pmax_mw * dispatch_share;
         row.qg = 0.0;
         row.cost = Some(GenCost::new(2, 0.0, 0.0, vec![g.c2, g.c1, g.c0]));
+        if g.condenser {
+            row.uid = Some(format!(
+                "synthetic-condenser:{}:{}",
+                g.bus + 1,
+                gen_rows.len() + 1
+            ));
+        }
         gen_rows.push(row);
     }
 

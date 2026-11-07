@@ -11,6 +11,7 @@
 	import SolveCard from './components/SolveCard.svelte';
 	import PanelHost from './components/PanelHost.svelte';
 	import LogPanel from './components/LogPanel.svelte';
+	import SettingsPanel from './components/SettingsPanel.svelte';
 	import ShellEnvironment from './components/ShellEnvironment.svelte';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
@@ -124,6 +125,7 @@
 	<ControlPanel />
 	<SolveCard />
 	<LogPanel />
+	<SettingsPanel />
 	{#if !app.studyView}
 		<DropZone />
 		<PlacementCue />

@@ -6,11 +6,22 @@ name: Gates (js)
 
 on:
   workflow_call:
+    inputs:
+      needed:
+        description: >-
+          False when CI's scope job (.github/scripts/ci-scope.py) found that the
+          change cannot affect these gates. The release workflows leave it
+          unset, so a release always runs every gate.
+        type: boolean
+        default: true
 
 permissions: {}
 
 jobs:
   js:
+    # Skip here, not in the caller: a skipped job still reports the required
+    # `js / js` check, and a skipped caller reports nothing.
+    if: inputs.needed
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,6 +35,8 @@ jobs:
       - run: npm run lint:web
       - run: npm run check:webmcp
       - run: npm run pack:webmcp
+      - run: npm run check:analytics
+      - run: npm run pack:analytics
       - run: python3 scripts/test-acopf-release.py
       - run: npm run wasm
       - run: rustup target add wasm32-wasip1

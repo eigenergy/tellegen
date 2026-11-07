@@ -3,7 +3,7 @@ name: Release (packages)
 # Setup for this workflow is in docs/src/release-architecture.md.
 #
 # The npm trusted publisher binds to this filename. If you rename this file,
-# update the publisher on npmjs.com for both packages first.
+# update the publisher on npmjs.com for every package first.
 
 on:
   push:
@@ -215,7 +215,7 @@ jobs:
           node-version: 24
           npm-cache: "false"
       - name: Build packages
-        run: npm run wasm && npm run build:engine && npm run build:webmcp && npm run build:svelte
+        run: npm run wasm && npm run build:engine && npm run build:webmcp && npm run build:analytics && npm run build:svelte
       - name: Pack packages
         id: pack
         uses: changesets/action/pack@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2

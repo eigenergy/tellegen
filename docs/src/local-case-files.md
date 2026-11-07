@@ -26,6 +26,13 @@ After a parsed local case has coordinates, either from the file, a geographic
 file, or manual placement, tellegen solves the selected formulation in browser
 WebAssembly. Local case files do not call the tellegen backend solve endpoints.
 
+Builds with PowerIO collection support also offer ZIP and folder imports. The
+chooser preserves shared paths, lets you select independent cases, and retains
+completed imports if another selection fails. Imported collection cases keep
+their saved calculation settings and wait for an explicit calculation. Switching
+tabs does not start a solve. The standard PowerIO 0.11 build hides these optional
+controls; individual case files continue to open normally.
+
 ## Manual Placement
 
 For case files with no coordinates, such as a plain `case14.m`, tellegen

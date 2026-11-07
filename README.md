@@ -25,6 +25,7 @@ Live demo: [tellegen.dev](https://tellegen.dev). Documentation:
 ```sh
 npm install @tellegen/engine   # case parsing and wasm solves, framework agnostic
 npm install @tellegen/webmcp   # WebMCP tools and host adapter
+npm install @tellegen/analytics # allowlisted, cookieless usage analytics
 # map, panels, and solve card as Svelte components, with the map libraries
 # they take as peer dependencies
 npm install @tellegen/svelte maplibre-gl @deck.gl/core @deck.gl/layers @deck.gl/maplibre
@@ -109,6 +110,11 @@ surveyed infrastructure:
 | ACTIVSg7000 | Texas            |  6717 |     9140 |
 | CATS        | California       |  8870 |    10823 |
 
+Self-hosted deployments can also register distribution feeders through an
+optional [`distribution-cases.json` manifest](docs/src/deployment.md#hosted-distribution-cases).
+Portable PowerIO multiconductor modules open in the distribution viewer and
+can run supported AC power flow in the browser.
+
 Bus color is locational marginal price. Selecting a bus shows ∂LMP/∂demand at
 that bus; selecting a binding line shows ∂LMP/∂rating. Dragging a slider
 applies the sensitivity column live; releasing it re-solves exactly in
@@ -145,6 +151,7 @@ rustup target add wasm32-wasip1
 npm run wasm:acopf
 npm run build:engine
 npm run build:webmcp
+npm run build:analytics
 npm run build:svelte
 npm --workspace tellegen-frontend run dev
 ```
@@ -166,6 +173,7 @@ stages the complete cases into `data/`; the server serves whatever is staged.
 - `packages/engine/`: `@tellegen/engine` browser package
 - `packages/svelte/`: `@tellegen/svelte` component package
 - `packages/webmcp/`: reusable WebMCP tools, validation, and registration
+- `packages/analytics/`: `@tellegen/analytics`, the allowlisted usage analytics shared with MapToGrid
 - `apps/web/`: the hosted demo, a SvelteKit consumer of the Svelte package
 - `examples/`: minimal Vite and Svelte integrations of each package
 - `docs/src/`: mdBook source; `scripts/build-docs.sh` builds it

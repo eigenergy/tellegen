@@ -31,6 +31,7 @@
 		type MapTheme
 	} from './basemap.js';
 	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
+	import { declutterBuses, declutterZoom, withBus } from './declutter.js';
 	import {
 		type CaseState,
 		type CameraSnapshot,
@@ -56,6 +57,7 @@
 	} from './transformer-icon.js';
 	import { createGlobeHorizon, withGlobeHorizon } from './globe-horizon.js';
 	import { foldMapBounds } from './map-bounds.js';
+	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
@@ -83,6 +85,7 @@
 		cartoApiKey,
 		extraLayers = [],
 		attribution = 'compact',
+		declutterMarkers = true,
 		onMapReady,
 		onBasemapFallback,
 		onBasemapError
@@ -124,9 +127,16 @@
 		/** Attribution control mode. There is no off switch: tile licences
 		 * require the credit on screen. */
 		attribution?: 'compact' | 'full';
+		/** At low zoom, draw one bus marker per crowded spot: a generator before
+		 * a substation before any other bus, then the larger bus. Zooming in
+		 * shows the rest, and a selected bus always draws. `false` draws every
+		 * marker at every zoom. */
+		declutterMarkers?: boolean;
 		/** Called once the map and overlay exist, with an optional cleanup. It
 		 * fires again after a context-loss or basemap remount, after the previous
-		 * cleanup ran. */
+		 * cleanup ran. It runs before the first style loads, and a switch to the
+		 * fallback basemap does not call it again: the new style drops every
+		 * source and layer the host added, so add those on each `style.load`. */
 		onMapReady?: (map: MapLibreMap, overlay: MapLibreOverlay) => void | (() => void);
 		/** The primary basemap failed and the fallback was requested. The
 		 * reason's `from` and `to` name the providers (`'carto'`,
@@ -229,6 +239,11 @@
 	let mapGen = $state(0);
 	// Cap automatic remounts so sustained GPU pressure cannot loop forever.
 	let glRebuilds = 0;
+	// The zoom the bus markers are thinned at, in quarter steps, so panning
+	// never thins them again. A zoom gesture reads it at most every
+	// MARKER_ZOOM_SAMPLE_MS, and the end of every zoom reads it at once.
+	let markerZoom = $state(declutterZoom(DEFAULT_CAMERA.zoom));
+	const MARKER_ZOOM_SAMPLE_MS = 150;
 
 	type LayerCtors = {
 		PathLayer: typeof PathLayer;
@@ -438,6 +453,52 @@
 		return primary ? attachmentColor(primary) : busNeutral;
 	}
 
+	// The buses each bus layer could draw at the current zoom: with
+	// `declutterMarkers`, one per crowded spot (see declutterBuses). A generated
+	// grid's line taps are left out before thinning, and its bus kinds rank the
+	// buses. Selection is not read here, so selecting a bus thins nothing again.
+	const thinnedMarkers = $derived.by(() => {
+		const zoom = markerZoom;
+		const thin = (buses: NetworkBus[], kinds?: ReadonlyMap<number, string>) =>
+			declutterMarkers ? declutterBuses(buses, { zoom, kinds }) : buses;
+		const sets = new Map<string, NetworkBus[]>();
+		if (app.studyView) {
+			sets.set('study-buses', thin(app.studyView.network.buses));
+			return sets;
+		}
+		for (const c of app.cases) if (c.network) sets.set(`buses-${c.id}`, thin(c.network.buses));
+		for (const c of app.localCases) {
+			if (c.view) sets.set(`local-buses-${c.id}`, thin(c.markerBuses, c.busKinds));
+		}
+		return sets;
+	});
+	// The data of each bus layer: its thinned buses, plus the selected bus when
+	// thinning (or a line tap's missing marker) left it out, so it keeps its
+	// marker and selection ring. The arrays keep their identity until the zoom
+	// bucket or the selection changes them, so deck.gl does not rebuild the
+	// layer's attributes on every redraw.
+	const busMarkers = $derived.by(() => {
+		const selected = app.selectedBus;
+		const sets = new Map<string, NetworkBus[]>();
+		const add = (id: string, all: NetworkBus[], pinned: number | null) => {
+			const shown = thinnedMarkers.get(id);
+			if (shown) sets.set(id, withBus(shown, all, pinned));
+		};
+		if (app.studyView) {
+			add('study-buses', app.studyView.network.buses, selected);
+			return sets;
+		}
+		for (const c of app.cases) {
+			if (c.network)
+				add(`buses-${c.id}`, c.network.buses, c.id === app.activeCaseId ? selected : null);
+		}
+		for (const c of app.localCases) {
+			if (c.view)
+				add(`local-buses-${c.id}`, c.view.buses, c.id === app.activeLocalId ? selected : null);
+		}
+		return sets;
+	});
+
 	// Layers whose click selects something (a bus or a branch); the overlay-level
 	// click handler must not treat those clicks as "empty map" and clear the selection.
 	function isSelectableLayer(layerId: string | undefined): boolean {
@@ -473,7 +534,12 @@
 		const branch = displayedGeometry(caseId)?.branches.find((b) => b.id === branchId);
 		const path = branch?.path.filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
 		return branch && path && path.length >= 2
-			? { key: `${app.studyView?.id ?? caseId}-${branch.id}`, caseId, branchId: branch.id, path }
+			? {
+					key: `${app.studyView?.id ?? caseId}-${branch.id}`,
+					caseId,
+					branchId: branch.id,
+					path: unwrapLongitudePath(path)
+				}
 			: null;
 	});
 	let selectedCueEl = $state.raw<HTMLDivElement | null>(null);
@@ -496,9 +562,16 @@
 	});
 	let multiDetailEl = $state.raw<SVGSVGElement | null>(null);
 
+	/** The screen point of a coordinate in the world copy nearest the camera.
+	 * MapLibre projects a longitude in the copy it names, so a point across the
+	 * antimeridian from the camera would land a whole world width away. */
+	function projectNear(m: MapLibreMap, [lon, lat]: [number, number]) {
+		return m.project([nearestLongitude(lon, m.getCenter().lng), lat]);
+	}
+
 	function syncSelectedCue() {
 		if (!map || !selectedCueEl || !selectedBusCue) return;
-		const point = map.project([selectedBusCue.lon, selectedBusCue.lat]);
+		const point = projectNear(map, [selectedBusCue.lon, selectedBusCue.lat]);
 		const { clientWidth, clientHeight } = map.getContainer();
 		const inRange =
 			point.x >= -40 &&
@@ -522,8 +595,12 @@
 		}
 		const activeMap = map;
 		const { clientWidth, clientHeight } = activeMap.getContainer();
+		// The path is unwrapped, so one shift by whole turns moves all of it to
+		// the world copy nearest the camera without breaking it at the seam.
+		const [lon0] = selectedBranchCue.path[0];
+		const shift = nearestLongitude(lon0, activeMap.getCenter().lng) - lon0;
 		const points = selectedBranchCue.path
-			.map(([lon, lat]) => activeMap.project([lon, lat]))
+			.map(([lon, lat]) => activeMap.project([lon + shift, lat]))
 			.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
 		if (clientWidth === 0 || clientHeight === 0 || points.length < 2) {
 			selectedBranchCueEl.style.display = 'none';
@@ -589,14 +666,14 @@
 			return;
 		}
 		const { bus, edges } = detail;
-		const busPt = m.project([bus.lon, bus.lat]);
+		const busPt = projectNear(m, [bus.lon, bus.lat]);
 
 		const STRAND_SPACING = 5;
 		let strands = '';
 		for (const e of edges) {
 			const selectedIsFrom = e.from === bus.id;
 			const other = selectedIsFrom ? e.path[e.path.length - 1] : e.path[0];
-			const b = m.project(other);
+			const b = projectNear(m, other);
 			const dx = b.x - busPt.x;
 			const dy = b.y - busPt.y;
 			const len = Math.hypot(dx, dy) || 1;
@@ -677,7 +754,7 @@
 	}
 
 	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
-		return foldMapBounds(path);
+		return routeBounds(path);
 	}
 
 	function prefersReducedMotion(): boolean {
@@ -948,6 +1025,18 @@
 					if (document.visibilityState === 'visible') repaint();
 				};
 				const syncCues = () => scheduleCueSync();
+				let zoomTimer: ReturnType<typeof setTimeout> | null = null;
+				const readZoom = () => {
+					if (zoomTimer !== null) {
+						clearTimeout(zoomTimer);
+						zoomTimer = null;
+					}
+					markerZoom = declutterZoom(m.getZoom());
+				};
+				const sampleZoom = () => {
+					zoomTimer ??= setTimeout(readZoom, MARKER_ZOOM_SAMPLE_MS);
+				};
+				readZoom();
 				const saveCamera = () => {
 					const center = m.getCenter();
 					app.camera = {
@@ -1005,6 +1094,9 @@
 				m.on('load', syncCues);
 				m.on('move', syncCues);
 				m.on('resize', syncCues);
+				// 'zoom' does not fire while the camera only pans.
+				m.on('zoom', sampleZoom);
+				m.on('zoomend', readZoom);
 
 				map = m;
 				overlay = o;
@@ -1020,6 +1112,9 @@
 					m.off('load', syncCues);
 					m.off('move', syncCues);
 					m.off('resize', syncCues);
+					m.off('zoom', sampleZoom);
+					m.off('zoomend', readZoom);
+					if (zoomTimer !== null) clearTimeout(zoomTimer);
 					m.off('style.load', applyStyleExtras);
 					detachFallback();
 					detachReady?.();
@@ -1077,6 +1172,12 @@
 	// Sync deck.gl layers with app state. New layer instances diff cheaply;
 	// updateTriggers tell deck.gl when accessor outputs changed. Host layers
 	// (`extraLayers`) draw after tellegen's own at both exits.
+	//
+	// Stored routes keep longitudes in [-180, 180], so a route across the
+	// antimeridian is unwrapped before drawing and each segment takes the
+	// short way. On the globe deck.gl ignores `wrapLongitude` and needs the
+	// unwrapped path itself; on the flat map `wrapLongitude` cuts the path at
+	// ±180 so both halves draw in every world copy.
 	$effect(() => {
 		if (!overlay || !layerCtors) return;
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
@@ -1108,7 +1209,8 @@
 				new PathLayer<NetworkBranch>({
 					id: 'study-branches',
 					data: study.network.branches,
-					getPath: (b) => b.path,
+					getPath: (b) => unwrapLongitudePath(b.path),
+					wrapLongitude: true,
 					getColor: (b) => branchColor(flows.get(b.id) ?? 0, b.status === 1),
 					getWidth: (b) => branchWidth(flows.get(b.id) ?? 0),
 					widthUnits: 'pixels',
@@ -1125,7 +1227,7 @@
 				}),
 				new ScatterplotLayer<NetworkBus>({
 					id: 'study-buses',
-					data: study.network.buses,
+					data: busMarkers.get('study-buses') ?? study.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 					radiusUnits: marker.radiusUnits,
@@ -1163,7 +1265,8 @@
 				new PathLayer<NetworkBranch>({
 					id: `branches-${c.id}`,
 					data: c.network.branches,
-					getPath: (b) => b.path,
+					getPath: (b) => unwrapLongitudePath(b.path),
+					wrapLongitude: true,
 					// The selected branch draws in the selection blue of the bus halo cue,
 					// wider, so the price-rating source line reads at a glance.
 					getColor: (b) =>
@@ -1195,7 +1298,7 @@
 				}),
 				new ScatterplotLayer<NetworkBus>({
 					id: `buses-${c.id}`,
-					data: c.network.buses,
+					data: busMarkers.get(`buses-${c.id}`) ?? c.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 					radiusUnits: marker.radiusUnits,
@@ -1230,7 +1333,9 @@
 		}
 		// Local cases are grey until the browser solve returns. A .pwd display
 		// file contributes substation points only, in a cooler slate so they
-		// read as diagram derived positions.
+		// read as diagram derived positions. A generated grid's line taps draw
+		// no marker, as their lines show them, unless one is the selected bus
+		// (see busMarkers).
 		for (const c of app.localCases) {
 			if (c.view) {
 				const d = display.get(c.id);
@@ -1238,7 +1343,8 @@
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
 						data: c.view.branches,
-						getPath: (b) => b.path,
+						getPath: (b) => unwrapLongitudePath(b.path),
+						wrapLongitude: true,
 						getColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
 								? [47, 111, 187, 255]
@@ -1272,7 +1378,7 @@
 					}),
 					new ScatterplotLayer<NetworkBus>({
 						id: `local-buses-${c.id}`,
-						data: c.view.buses,
+						data: busMarkers.get(`local-buses-${c.id}`) ?? c.markerBuses,
 						getPosition: (b) => [b.lon, b.lat],
 						getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
 						radiusUnits: marker.radiusUnits,
@@ -1343,7 +1449,8 @@
 				new PathLayer<PlacedMultiEdge>({
 					id: `multi-edges-${c.id}`,
 					data: c.view.edges,
-					getPath: (e) => e.path,
+					getPath: (e) => unwrapLongitudePath(e.path),
+					wrapLongitude: true,
 					// The selected edge draws in the selection blue of the branch cue,
 					// wider, so its panel detail has an obvious source on the map.
 					getColor: (e) =>

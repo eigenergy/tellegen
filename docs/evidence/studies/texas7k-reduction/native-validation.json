@@ -1,0 +1,47 @@
+{
+  "binary": "mc_pf",
+  "binary_sha256": "a697ee38c9f2adfe69e0d108b37cb041ae935f7eb5580c5ef215787f094aa0e1",
+  "options": {
+    "voltage_envelope": false,
+    "max_iterations": 500,
+    "tolerance": 1e-07,
+    "absolute_kcl_tolerance": 1e-05
+  },
+  "runs": [
+    {
+      "case": "original",
+      "input_sha256": "9d6ed48d0734522bc69a62e98f2d5bfc8c79a25f872ac998b7b8b769504c01b5",
+      "output_sha256": "fd4b1e1b24a0aa6b912a1bde65ab5c7d9a50918760ddaf2bbbf10e10e9c44b09",
+      "seconds_including_parse_solve_and_result_write": 1.4789709160104394,
+      "converged": true,
+      "iterations": 23,
+      "factorization_count": 1,
+      "matrix_dimension": 40700,
+      "matrix_nonzeros": 227678,
+      "voltage_change": 9.724756594655505e-08,
+      "physical_kcl_residual": 4.792154131470151e-06,
+      "scaled_kcl_residual": 0.4707186748873389,
+      "terminal_count": 55986,
+      "element_port_count": 128444
+    },
+    {
+      "case": "reduced",
+      "input_sha256": "9debb24cfcd0d5f1533d0dc0240f206ff769a8603c1fc5500cb5ede1f2cd312a",
+      "output_sha256": "fd4b1e1b24a0aa6b912a1bde65ab5c7d9a50918760ddaf2bbbf10e10e9c44b09",
+      "seconds_including_parse_solve_and_result_write": 0.6882814159616828,
+      "converged": true,
+      "iterations": 23,
+      "factorization_count": 1,
+      "matrix_dimension": 40700,
+      "matrix_nonzeros": 227678,
+      "voltage_change": 9.724756594655505e-08,
+      "physical_kcl_residual": 4.792154131470151e-06,
+      "scaled_kcl_residual": 0.4707186748873389,
+      "terminal_count": 55986,
+      "element_port_count": 128444
+    }
+  ],
+  "all_result_fields_exactly_equal": true,
+  "max_complex_terminal_voltage_difference_v": 0.0,
+  "timing_note": "One run per case, original first; includes parsing and full result serialization. Not a controlled speed benchmark."
+}

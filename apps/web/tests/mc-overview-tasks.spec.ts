@@ -275,8 +275,10 @@ test('the schematic layout file loads back with the case as its diagram', async 
 	});
 	const circles = fresh.locator('[data-bus-id] circle');
 	await expect(circles.first()).toBeVisible();
-	const cx = await circles.evaluateAll((els) => els.map((el) => Number(el.getAttribute('cx'))));
-	expect(cx).toContain(lb.geometry.coordinates[0]);
+	// The imported layer replaces the drawn positions after the first paint; poll until it lands.
+	await expect
+		.poll(() => circles.evaluateAll((els) => els.map((el) => Number(el.getAttribute('cx')))))
+		.toContain(lb.geometry.coordinates[0]);
 });
 
 test('a selected line shows every conductor in the multi-wire view', async ({ page }) => {

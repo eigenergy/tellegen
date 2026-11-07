@@ -48,6 +48,13 @@ powerio-pin:
 mc-pf-test:
     cargo test -p tellegen --no-default-features --features mc-pf
 
+# CI gate: the native IVR compiler and frozen OPF references. Until PowerIO
+# 0.11.8 ships, this builds against the candidate patched in Cargo.toml.
+mc-opf-test:
+    cargo test -p tellegen --all-features --locked
+    cargo test -p tellegen --no-default-features --features mc-opf --locked
+    cargo clippy -p tellegen --all-targets --all-features --locked -- -D warnings
+
 # CI gate: the engine's conic path.
 conic-test:
     cargo test -p tellegen --features conic
@@ -101,6 +108,14 @@ webmcp-check:
 # CI gate: the WebMCP package packs as it would publish.
 webmcp-pack:
     npm run pack:webmcp
+
+# Type-check and test the analytics package.
+analytics-check:
+    npm run check:analytics
+
+# CI gate: the analytics package packs as it would publish.
+analytics-pack:
+    npm run pack:analytics
 
 # Build the engine package.
 engine-build:
@@ -184,4 +199,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test mc-opf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack analytics-check analytics-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

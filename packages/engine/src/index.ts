@@ -1,3 +1,5 @@
+export * from "./settings.js";
+import { settingsCatalog } from "./generated/settings-types.js";
 /** The browser engine API. Requests run in a dedicated Web Worker when the
  * browser allows one — a solve never blocks the page — and on the calling
  * thread otherwise (see host.ts). Nothing downloads until the first engine
@@ -12,6 +14,8 @@ import {
 import type { EngineRequest, EngineValue } from "./protocol.js";
 export {
   BrowserCaseCollection,
+  collectionSupported,
+  COLLECTION_UNAVAILABLE,
   MAX_COLLECTION_BYTES,
   MAX_COLLECTION_FILES,
   type CollectionCandidate,
@@ -925,17 +929,9 @@ export interface McPfOptions {
 /** Effective defaults shared by settings controls and programmatic reruns. */
 export const DEFAULT_MC_PF_OPTIONS: Readonly<Required<McPfOptions>> =
   Object.freeze({
-    tolerance: 1e-4,
-    max_iterations: 100,
-    damping: 1,
-    zero_voltage_tolerance: 1e-9,
-    absolute_kcl_tolerance: 1e-4,
-    relative_kcl_tolerance: 1e-5,
-    voltage_envelope: true,
-    v_low_pu: 0.5,
-    v_min_pu: 0.85,
-    v_max_pu: 1.15,
-  });
+    ...settingsCatalog.calculations.find((c) => c.calculation === "mc_ac_pf")!
+      .defaults,
+  } as Required<McPfOptions>);
 
 export function validateMcPfOptions(options: McPfOptions): string | null {
   const o = { ...DEFAULT_MC_PF_OPTIONS, ...options };
@@ -2071,6 +2067,7 @@ export class BrowserStudy {
     handle: number,
     formulation: Formulation = DEFAULT_FORMULATION,
     planningHost: () => EngineHost = isolatedEngineHost,
+    private ownedHost = false,
   ) {
     this.#host = host;
     this.#handle = handle;
@@ -2351,7 +2348,10 @@ export class BrowserStudy {
   free() {
     void this.#host
       .call({ op: "study_free", study: this.#handle })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (this.ownedHost) this.#host.cancel?.(new Error("Study released"));
+      });
   }
 }
 
@@ -2366,10 +2366,23 @@ let studySeq = 0;
 export async function createStudy(
   moduleJson: string,
   formulation: Formulation = DEFAULT_FORMULATION,
-  options: { isolated?: boolean; signal?: AbortSignal } = {},
+  options: {
+    isolated?: boolean;
+    signal?: AbortSignal;
+    settings?: import("./settings.js").SettingsRequest;
+  } = {},
 ): Promise<BrowserStudy> {
+  if (options.settings && options.settings.calculation !== formulation)
+    throw new Error("Settings calculation must match the Study formulation");
   const host = options.isolated ? isolatedEngineHost() : engineHost();
-  return createStudyOnHost(moduleJson, formulation, host, options.signal);
+  return createStudyOnHost(
+    moduleJson,
+    formulation,
+    host,
+    options.signal,
+    options.settings,
+    !!options.isolated,
+  );
 }
 
 async function createStudyOnHost(
@@ -2377,6 +2390,8 @@ async function createStudyOnHost(
   formulation: Formulation,
   host: EngineHost,
   signal?: AbortSignal,
+  settings?: import("./settings.js").SettingsRequest,
+  ownedHost = false,
 ): Promise<BrowserStudy> {
   // Handles are allocated here, not by the host, so a pending build replayed
   // onto the fallback host keeps naming the same study.
@@ -2389,18 +2404,26 @@ async function createStudyOnHost(
   try {
     await host.call({
       op: "study_new",
+      ...(settings ? { settings: JSON.stringify(settings) } : {}),
       study: handle,
       module_json: moduleJson,
       formulation,
     });
     signal?.throwIfAborted();
   } catch (error) {
+    // A late cancellation on the direct fallback can leave an allocated handle;
+    // an isolated worker that rejects construction otherwise has no owner to free it.
+    void host.call({ op: "study_free", study: handle }).catch(() => {});
+    if (ownedHost)
+      host.cancel?.(
+        error instanceof Error ? error : new Error("Study creation failed"),
+      );
     signal?.throwIfAborted();
     throw error;
   } finally {
     signal?.removeEventListener("abort", cancel);
   }
-  return new BrowserStudy(host, handle, formulation);
+  return new BrowserStudy(host, handle, formulation, undefined, ownedHost);
 }
 
 // ---- Synthetic grid generation --------------------------------------------
@@ -2483,8 +2506,8 @@ async function callSynth(
   }
 }
 
-/** URL of the places table shipped beside this module (Natural Earth
- * populated places, public domain). Resolved on use, like the wasm asset. */
+/** URL of the places table shipped beside this module (GeoNames cities5000
+ * populated places, CC BY 4.0). Resolved on use, like the wasm asset. */
 export function syntheticPlacesUrl(): string {
   return new URL("./data/populated_places.json", import.meta.url).href;
 }

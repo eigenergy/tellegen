@@ -429,6 +429,75 @@ A single wasm-bindgen module can be reconsidered after POUNCE has a portable
 clock. That reconsideration must measure artifact size, memory growth, and hard
 worker cancellation in real browsers.
 
+## Experimental native multiconductor IVR OPF
+
+The separate `mc-opf` feature adds native unbalanced current–voltage rectangular
+OPF with explicit terminals and neutrals. The entry points are
+`solve_mc_ac_opf_instance`, `solve_mc_ac_opf_instance_cancellable`, and
+`solve_mc_ac_opf_module_json`; the JSON entry point requires an explicitly
+declared `McAcOpfInstance`. This feature is not enabled by shipping adapters or
+forwarded by the balanced browser worker described above.
+
+PowerIO owns the canonical electrical semantics and solver-independent IVR
+preparation. Tellegen constructs the expressions and independently checks the
+accepted solution's physical equations, limits and objective. Polynomial rows
+use POUNCE's existing exact sparse quadratic evaluator; general load laws and
+smooth inverter controls use its existing sparse AD. No new differentiation
+package is introduced. `McOpfResult` includes terminal voltages and physical
+branch/device/winding/shunt ledgers with explicit terminal and coil identities.
+Canonical JSON exports retain the full report in a versioned PowerIO module
+extension; the MC APIs expose typed `McOpfError` diagnostics.
+Explicit canonical initial points and the `mc_opf_initial_point_from_pf` helper
+seed numerical variables without changing the declared physical problem; see
+[initial points](formulations.md#explicit-initial-points) for supported fields
+and projection rules.
+`McOpfOptions.collect_profile` enables optional
+stage and KKT diagnostics. Native `McOpfSession` retains a compiled model and
+accepted primal for [repeated solves and atomic edits](formulations.md#retained-sessions-and-edits).
+`McOpfOptions.collect_duals` separately enables original-scale multipliers, KKT
+residuals, and [conditional local marginal values](formulations.md#dual-diagnostics-and-local-marginal-values)
+for supported load and limit parameters. Raw IVR KCL multipliers are not nodal
+prices. `McOpfResult::sensitivities()` and `McOpfSession::sensitivities()` provide
+[conditional local forward and adjoint derivatives](sensitivity-interface.md#native-multiconductor-opf)
+from a verified current dual point, reusing one sparse active-KKT factorization.
+Nominal load P/Q mappings include constant-current, constant-impedance, ZIP and
+exponential laws, including coefficients hidden by zero nominal powers. Their
+voltage-law coefficients and nominal voltages remain fixed. Inverter mappings
+cover per-coil availability, P/Q bounds, apparent-power and conductor-current
+ratings, including neutral returns and their effects on existing volt-var and
+volt-watt references. Transformer mappings cover effective port ratings and
+physical continuous tap bounds; outputs include winding/port flows and optimized
+tap ratios, including inverse regulator conventions. Shared control-profile
+mappings cover volt-var/volt-watt breakpoints and fractions and interior signed
+power factors, including all assigned coils and smoothing-width derivatives.
+Control modes, references and electrical coefficients remain fixed. Sparse rank
+qualification uses explicit fill/work budgets, with reusable KKT structure and
+per-query residual diagnostics exposed by sensitivity views. Version 7 reports
+retain these claims; version 2–6 reports are verified with their original maps
+and dense rank audit before upgrade.
+
+The feature builds against published POUNCE 0.13.0 and PowerIO 0.11.8.
+Build and test the native feature from the repository root:
+
+```sh
+cargo build -p tellegen --no-default-features --features mc-opf --locked
+cargo test -p tellegen --no-default-features --features mc-opf --locked
+```
+
+`bash scripts/check-mc-opf.sh` tests a temporary archive of committed source with
+all features, MC OPF alone, and strict all-target Clippy using the locked
+dependencies. Its optional PowerIO checkout argument is for companion development:
+it patches all eight PowerIO crates only in the temporary archive and does not
+rewrite either checkout's lockfile. A companion checkout is not required.
+
+See [Formulations](formulations.md#experimental-native-multiconductor-ivr-opf)
+for the electrical profile and derivative strategy,
+[Validation](validation.md#multiconductor-ivr-opf) for acceptance and regression
+coverage, and [Methodology](methodology.md#external-multiconductor-ivr-studies)
+for optional external studies. Ordinary frozen-reference tests need neither
+Julia nor the large ENWL dataset.
+The existing solver release and distribution gates below also apply to MC OPF.
+
 ## License and release gate
 
 POUNCE is EPL-2.0 while Tellegen is MIT. `deny.toml` admits EPL-2.0 only for the
