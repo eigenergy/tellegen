@@ -122,14 +122,21 @@ outline; line vertices against the outline rasterised at 0.02°.
 All runs use the request in `california.json` with the engine in this repository.
 
 - `baseline/`: the generator before any California-specific data or tuning (the US
-  national ladder and demand). 7 of 47 metrics pass at every seed.
-- `synthetic/`: **passes at every seed**, 41, 42 and 42 of 47 at seeds 1, 7 and 2026, with
-  every critical check met (AC voltages 0.961–1.051 pu). It fails at every seed on
-  circuit-km at 66 and 115 kV (1.6–1.9 × CATS), the fuel mix (TVD 0.22: CATS's 2019 fleet
-  against the EIA-860 2025 shares the engine uses for California), and lines per site in the
-  lv band. Seeds 1 and 2026 also miss the DC
-  loading median, and seeds 1 and 7 the line-density correlation.
-- `osm/`: **passes**, 34 of the 40 metrics the map supports, with every critical check met
+  national ladder and demand). 7 of 47 metrics pass at every seed. It was scored before
+  the siting group existed.
+- `synthetic/`: **passes at every seed**, 49, 47 and 47 of 53 at seeds 1, 7 and 2026, with
+  every critical check met (AC voltages 0.953–1.031 pu). It fails at every seed on the fuel
+  mix (TVD 0.22: CATS's 2019 fleet against the EIA-860 2025 shares the engine uses for
+  California), lines per site in the lv band, line length over the spanning tree in the hv
+  band (1.87–1.92 against at least 1.96) and the line-density correlation (0.575–0.598).
+  Seeds 7 and 2026 also miss the Mojave box (3.5 and 3.2 sited buses per 1,000 km² against
+  at most 2.9), seed 7 the degree distribution (L1 0.254) and seed 2026 the DC loading
+  median. With the fill's earlier floor and exponent (0.06 and 0.5) the same engine failed
+  the pass rule at every seed, 41, 41 and 40 of 53: 35% of its sited buses stood in cells
+  under 20,000 people against CATS's 18%, the Los Angeles to Modoc and Lassen ratio was
+  8–10 against 42, and circuit-km at 66 and 115 kV ran 1.5–1.6 × CATS.
+- `osm/`: scored before the siting group existed, and not rescored, since its Overpass
+  document is not committed. **Passes**, 34 of the 40 metrics the map supports, with every critical check met
   (DC OPF optimal; AC voltages 0.961–1.066 pu). Seven metrics are map-limited (below). It
   fails on buses after series reduction (3,314 against at least 6,260), sites (2,834
   against at least 3,749, where the map has 3,948 substations of any kind), transformers per
@@ -170,5 +177,5 @@ These are differences of data, not of the design:
 
 `climb-log.md` records the hill climb that set the tuned constants. The country sweeps one
 directory up are the hold-out the climb never sees. Every change to the engine was checked
-against them: on the final engine, DC OPF is optimal in 54 of 54 and 51 of 51 runs, and the
-AC power flow converges inside 0.9–1.1 pu in 53 of 54 and 47 of 51.
+against them: on the current engine, DC OPF is optimal in 54 of 54 and 51 of 51 runs, and
+the AC power flow converges inside 0.9–1.1 pu in 53 of 54 and 48 of 51.

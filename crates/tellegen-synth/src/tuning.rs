@@ -80,7 +80,8 @@ pub struct Tuning {
     /// Peak load per sited bus a hierarchical region is sized to, MW.
     pub mw_per_bus: f64,
     /// Fill density: kernel bandwidth around places, km, and the floor
-    /// relative to the densest cell, in (0, 1].
+    /// relative to the densest cell, in (0, 1]. The floor is the share of the
+    /// densest cell's fill that land with no place near it still gets.
     pub fill_bandwidth_km: f64,
     pub fill_floor: f64,
     /// Offset between the buses of one site, km.
@@ -121,13 +122,13 @@ impl Default for Tuning {
             tap_spur_km: 0.15,
             tap_straight_share: 0.6,
             route_noise: 0.35,
-            fill_gamma: 0.5,
+            fill_gamma: 0.75,
             pocket_feeders: 1.5,
             pocket_reach_km: 60.0,
             nearest_load_share: 0.75,
             mw_per_bus: 10.0,
             fill_bandwidth_km: 24.0,
-            fill_floor: 0.06,
+            fill_floor: 0.005,
             site_offset_km: 0.08,
             route_jitter: 0.06,
             capacity_credit: [0.95, 0.95, 0.95, 0.8, 0.2, 0.35, 0.9, 0.9],

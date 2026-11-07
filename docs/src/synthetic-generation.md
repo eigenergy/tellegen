@@ -109,6 +109,14 @@ by module hash.
   that reaches subtransmission sizes one bus per `mw_per_bus` of peak
   load instead, up to `limits.max_bus_count` (12,000 by default).
   `bus_count_capped` says by how much either cap bit.
+- **Siting.** Buses stand on the most populous places first, and the rest
+  fill the region by blue noise drawn from a population density surface:
+  each place spreads its people over a 24 km kernel, and a point's density
+  is its share of the densest cell's raised to the power 0.75, with a floor
+  of 0.005 of the densest cell's on land with no place near it. These are
+  the `fill_*` constants of `crates/tellegen-synth/src/tuning.rs`,
+  calibrated on California
+  ([CATS comparison](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/synth/cats)).
 - **Load cap.** No bus carries more than the load cap of the highest
   modelled level (7 GW at 500 kV, 2.9 GW at 400 kV). The excess of a metropolitan bus moves
   to the nearest buses of its island with room, and
