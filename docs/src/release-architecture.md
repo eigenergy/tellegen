@@ -243,9 +243,23 @@ titles for a reader of the changelog. The section itself must stay, because
 ## CI Gates
 
 `.github/workflows/gates-rust.yml` and `.github/workflows/gates-js.yml` define
-what green means. CI calls both on every pull request. The crate release calls
-the Rust gates, and the npm release calls both before it publishes. Add a gate
-to those files, not to a caller.
+what green means. CI calls both on every pull request and every push to `main`.
+The crate release calls the Rust gates, and the npm release calls both before
+it publishes. Add a gate to those files, not to a caller.
+
+CI runs only the gates a change can affect. Its scope job runs
+`.github/scripts/ci-scope.py` on the changed paths: a pull request's against
+the branch it merges into, a push's against the last `main` commit whose CI
+passed. The Rust and JavaScript gates and the image build run unless every
+changed path is one the script names as unable to affect them; a path it does
+not name runs them. A version bump that only moves `tellegen` and `tellegen-py`
+in their manifests and `Cargo.lock` runs only the Rust gates. A missing base, a
+failed or empty diff, or a change to the scoping itself runs every gate. A gate
+that does not apply still reports its required check, as skipped. The release
+workflows call the gates without this scope, so a release always runs them in
+full. `.github/scripts/test-ci-scope.py` pins the rules, and checks them
+against the files the gates and the Dockerfile read. Change both when a gate
+starts reading a new path.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
