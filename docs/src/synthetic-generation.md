@@ -392,7 +392,10 @@ session.free();
 - **Strict requests.** An unknown key at any level of the request, such as
   a misspelt `limits` or `islands` option, is refused as `invalid_request`
   rather than ignored. `limits.max_area_km2` must be positive and finite,
-  and `limits.max_branch_factor` finite and at least 1.
+  `limits.max_branch_factor` finite and at least 1, and the two OSM limits
+  at least 1. The `osm` distances (`voltage_floor_kv`, `cluster_radius_m`,
+  `snap_km`, `hvdc_snap_km`, `plant_snap_km`) must be finite and positive,
+  and `clip_buffer_km` finite and not negative.
 - **Coordinates.** The ingest payload has `coords_kind: "synthetic"` and
   `coords_method: "generated"`: the buses are sites chosen on real
   geography, not a topology layout, and the case panel says so.
@@ -411,6 +414,17 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
 
 ## Limits
 
+- An Overpass answer over `limits.max_osm_document_bytes` (256 MiB by
+  default) is refused before it is parsed, and one with more than
+  `limits.max_osm_elements` elements across its documents (1,000,000) before
+  the network is built. The byte cap is the memory bound; the element count
+  is known only after parsing. In the browser the engine's 128 MiB input cap
+  applies first. Measured in November 2026 on the default query with a
+  longer server timeout: Germany's answer is 115 MiB with 264,653 elements
+  and generates natively in about 9 s with a peak of about 1 GB; Spain's is
+  69 MiB with 114,401 elements. Neither country's query finishes within the
+  60 s timeout every tellegen query states on the public Overpass server, so
+  a country that size needs its own Overpass instance or a smaller region.
 - Requests are capped at 12,000 buses (`limits.max_bus_count`), and a
   transmission-only automatic count stops at 3,000, which the largest
   countries reach. OpenStreetMap mode keeps to the request cap by leaving
