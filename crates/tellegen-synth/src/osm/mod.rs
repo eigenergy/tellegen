@@ -13,11 +13,19 @@ use crate::geom::region::RegionShape;
 use crate::report::BBox;
 use crate::request::SynthRequest;
 
-/// Maximum raw response size. Applied before JSON parsing to reject global extracts.
-pub const MAX_OSM_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
+/// Largest Overpass answer `parse_document` reads, in bytes, checked before
+/// any JSON parsing. This is the memory bound: the element count below is
+/// checked only once the answer is deserialized. Germany's answer to the
+/// default query (November 2026, run with a longer server timeout) was
+/// 115 MiB with 264,653 elements and Spain's 69 MiB with 114,401, so the cap
+/// leaves about 2.2 times Germany. In the browser the engine's 128 MiB input
+/// cap applies first.
+pub const MAX_OSM_DOCUMENT_BYTES: usize = 256 * 1024 * 1024;
 
-/// Maximum element count accepted from Overpass.
-pub const MAX_OSM_ELEMENTS: usize = 500_000;
+/// Most elements accepted across an answer's documents, checked after
+/// deserializing and before the network is built, so it bounds topology work
+/// rather than parse memory. About 3.8 times Germany's 264,653.
+pub const MAX_OSM_ELEMENTS: usize = 1_000_000;
 
 /// Server-side time limit stated in every query, seconds. A regional query
 /// that needs longer is better split than waited on.
