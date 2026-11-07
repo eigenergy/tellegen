@@ -1,5 +1,23 @@
 # @tellegen/engine
 
+## 0.6.0
+
+### Minor Changes
+
+- [#325](https://github.com/eigenergy/tellegen/pull/325) [`6972d33`](https://github.com/eigenergy/tellegen/commit/6972d33b6480d57502cd702e393223ec8e41e2b3) Thanks [@samtalki](https://github.com/samtalki)! - Make incomplete OpenStreetMap models solvable with explicit synthetic reinforcement. Keep mapped routes and voltages, label added circuits and voltage support, and provide `osm.reinforce: false` to preserve original circuit counts. Plan shunts at the feasible DC dispatch instead of an unconstrained dispatch behind network bottlenecks. Add New Zealand's 220/110 kV AC ladder and correct the dropped-line-section denominator.
+
+## 0.5.1
+
+### Patch Changes
+
+- [#271](https://github.com/eigenergy/tellegen/pull/271) [`7c8919e`](https://github.com/eigenergy/tellegen/commit/7c8919eb809868fdbeab6e6cb7513990c106087d) Thanks [@BurhanAbdullah](https://github.com/BurhanAbdullah)! - Generating a grid over a long, thin region takes less memory. The fill that spaces out the generated buses kept a bucket for every cell of the region's bounding box, most of them empty and outside the region. It now keeps buckets only for occupied cells. The same request and seed generate the same grid as before.
+
+- [#276](https://github.com/eigenergy/tellegen/pull/276) [`0b34030`](https://github.com/eigenergy/tellegen/commit/0b340305d141e62d16b64b195adbe857c2467d81) Thanks [@samtalki](https://github.com/samtalki)! - OpenStreetMap lines on shared towers (`voltage=400000;220000`) belong to the line of each level they carry. Before, such a way counted only at its highest level, so the lower-voltage line running on the same towers broke where it reached them, and its pieces ended away from any substation. Now each level gets its own copy of the way, carrying the circuits the tag lists at that level: `voltage=380000;110000;110000` with `circuits=3` is one 380 kV and two 110 kV circuits, and the levels never carry more circuits than the way. A substation that states no voltage takes every level of the shared-tower ways that end at it.
+
+- [#314](https://github.com/eigenergy/tellegen/pull/314) [`b6461f3`](https://github.com/eigenergy/tellegen/commit/b6461f3ed81dc8672fb39582583a211b02cbf453) Thanks [@samtalki](https://github.com/samtalki)! - The engine reads cases with PowerIO 0.11.9, up from 0.11.7. A dropped JSON document that carries PowerModelsDistribution's `data_model` marker now opens as a distribution case even when its tables are shaped like PowerModels', where it used to be reported as ambiguous. PSS/E two-winding transformers stated with CZ=2 or CZ=3 keep the impedance 0.11.7 read; 0.11.8, which this release skips, rescaled it. Two-winding transformers record `psse_magnetizing_referral` and `psse_winding2_ratio` in their extras where they apply, and splitting a three-winding transformer into its star legs keeps each winding's impedance correction table.
+
+- [#318](https://github.com/eigenergy/tellegen/pull/318) [`a20d241`](https://github.com/eigenergy/tellegen/commit/a20d24165ed2c6e7260cbdfe075ca77588e92fb0) Thanks [@samtalki](https://github.com/samtalki)! - Synthetic grids with subtransmission no longer tie pockets through ground outside the requested region. Neighbouring pockets were tied along the shortest edge of a triangulation that spans the region's convex hull, so on a concave region two pockets could be "neighbours" across land the region does not hold: on California, a 741 km 66 kV tie ran through Nevada with `boundary_role` `tie_line`, and other ties of hundreds of kilometres crossed the sea. Now two pockets are tied only by a line that stays inside the region and is no longer than the pocket reach at its voltage (60 km at 66 kV, scaled with voltage). A pocket with no such neighbour is left untied and fed through its own step-down substation, as most pockets are, so the network stays connected. A line whose straight path stays inside the region also keeps its drawn route inside it, instead of being labelled `tie_line` because of the small offset that separates lines on the map. Transmission-only grids are unchanged.
+
 ## 0.5.0
 
 ### Minor Changes

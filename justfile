@@ -109,6 +109,14 @@ webmcp-check:
 webmcp-pack:
     npm run pack:webmcp
 
+# Type-check and test the analytics package.
+analytics-check:
+    npm run check:analytics
+
+# CI gate: the analytics package packs as it would publish.
+analytics-pack:
+    npm run pack:analytics
+
 # Build the engine package.
 engine-build:
     npm run build:engine
@@ -191,4 +199,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test mc-opf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test mc-opf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack analytics-check analytics-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

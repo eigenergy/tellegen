@@ -286,9 +286,22 @@ pub(crate) fn island_topology(
     }
 }
 
+/// The route of a corridor between two buses with no jitter: the two ends
+/// and their midpoint.
+pub(crate) fn straight_route(a: &DraftBus, b: &DraftBus) -> [(f64, f64); 3] {
+    [
+        (a.lon, a.lat),
+        ((a.lon + b.lon) / 2.0, (a.lat + b.lat) / 2.0),
+        (b.lon, b.lat),
+    ]
+}
+
 /// The corridor between buses `a` and `b`: haversine length (at least
 /// `min_km`), a three-point route whose midpoint is jittered by up to
-/// `jitter` of the length, and its role relative to the selection.
+/// `jitter` of the length, and its role relative to the selection. The
+/// jitter only separates lines on the map, so a line whose straight route
+/// stays inside the region keeps the straight midpoint where the jittered
+/// one would leave it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn corridor_between(
     buses: &[DraftBus],
@@ -304,19 +317,25 @@ pub(crate) fn corridor_between(
     let length = haversine_km(ba.lon, ba.lat, bb.lon, bb.lat);
     let reach = jitter * length / 111.0;
     let frame = &data.shape.frame;
-    let mid_lon = (ba.lon + bb.lon) / 2.0 + 2.0 * reach * (rng.uniform() - 0.5);
-    let mid_lat = (ba.lat + bb.lat) / 2.0 + 2.0 * reach * (rng.uniform() - 0.5);
-    let route = vec![
-        (ba.lon, ba.lat),
+    let straight = straight_route(ba, bb);
+    let mid_lon = straight[1].0 + 2.0 * reach * (rng.uniform() - 0.5);
+    let mid_lat = straight[1].1 + 2.0 * reach * (rng.uniform() - 0.5);
+    let mut route = vec![
+        straight[0],
         (
             mid_lon.clamp(frame.west, frame.east),
             mid_lat.clamp(frame.south, frame.north),
         ),
-        (bb.lon, bb.lat),
+        straight[2],
     ];
+    let mut inside = data.shape.polyline_inside(&route);
+    if !inside && data.shape.polyline_inside(&straight) {
+        route[1] = straight[1];
+        inside = true;
+    }
     let role = if ba.polygon != bb.polygon {
         CorridorRole::Interconnect
-    } else if data.shape.polyline_inside(&route) {
+    } else if inside {
         CorridorRole::Internal
     } else {
         CorridorRole::TieLine

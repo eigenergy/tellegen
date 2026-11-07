@@ -2030,6 +2030,13 @@ mpc.gencost = [
         assert_eq!(distribution.payload["n_bus"], 1);
         assert!(distribution.payload["diagnostics"].is_array());
 
+        // Since PowerIO 0.11.8, PMD's `data_model` marker decides the family
+        // even when the tables are shaped like PowerModels'.
+        let pmd_marked =
+            classify_json_drop_value(br#"{"baseMVA":100.0,"bus":{},"data_model":"ENGINEERING"}"#)
+                .expect("classify a PMD-marked document");
+        assert_eq!(pmd_marked.kind, "distribution");
+
         // Without a PMD model marker, these strong transmission and
         // distribution markers conflict and must leave the bytes unresolved.
         let ambiguous = ingest_json_drop_value(br#"{"baseMVA":100.0,"voltage_source":{}}"#)

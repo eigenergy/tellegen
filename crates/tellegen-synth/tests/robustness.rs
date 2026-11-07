@@ -1,9 +1,11 @@
 //! A wider sweep than the seed matrix: four regions × ten seeds × three
 //! densities, plus low fidelity on the first three seeds (156 runs), twice.
 //!
-//! - At stated 500/230 kV levels, where the corridor plan may climb to
-//!   765 kV, every run must give a converged corridor plan, an optimal DC
-//!   OPF and an AC power flow inside the emergency band.
+//! - At stated 500/230 kV levels every run must give an optimal DC OPF and
+//!   an AC power flow inside the emergency band. None of these regions has
+//!   a level above 500 kV in service, so the corridor plan may not climb to
+//!   765 kV, and a plan that cannot meet the angle spread ends
+//!   `planning_incomplete`; those are counted and printed.
 //! - At each region's national ladder (the default), where a country with no
 //!   level above its ladder keeps its ceiling and may end the plan
 //!   `planning_incomplete`, every run must still give an optimal DC OPF. The
@@ -33,8 +35,8 @@ struct Sweep {
 }
 
 /// The sweep's runs, each with `levels` stated (or the national ladders when
-/// empty). Every run needs an optimal DC OPF; `strict` also needs a
-/// converged plan and an AC power flow inside the band.
+/// empty). Every run needs an optimal DC OPF; `strict` also needs an AC
+/// power flow inside the band.
 fn sweep(levels: &[f64], strict: bool) -> Sweep {
     let regions = vec![
         ("iraq", common::iraq_box()),
@@ -84,7 +86,7 @@ fn sweep(levels: &[f64], strict: bool) -> Sweep {
                     if bad_ac {
                         ac_outside.push(line.clone());
                     }
-                    if bad_dc || (strict && (bad_ac || !plan.converged)) {
+                    if bad_dc || (strict && bad_ac) {
                         fails.push(line);
                     }
                 }
@@ -106,9 +108,10 @@ fn sweep(levels: &[f64], strict: bool) -> Sweep {
 
 #[test]
 #[ignore = "a few seconds in release mode; run with --ignored"]
-fn wide_sweep_plans_solve_and_converge() {
+fn wide_sweep_at_stated_levels_solves_inside_the_band() {
     let found = sweep(&[500.0, 230.0], true);
     assert_eq!(found.total, 156);
+    println!("{} incomplete plans", found.incomplete);
     assert!(found.fails.is_empty(), "{}", found.fails.join("\n"));
 }
 

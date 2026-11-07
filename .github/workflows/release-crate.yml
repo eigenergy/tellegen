@@ -47,13 +47,20 @@ jobs:
       # `update` writes the version bump and changelog locally and nothing else,
       # which is exactly what the sealed patch below needs.
       - name: Install release-plz
-        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
         with:
           tool: release-plz@0.3.160
       - name: Generate release-plz update
         run: release-plz update
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # release-plz sees a merged pull request as "Merge pull request #N" and
+      # can miss one entirely. Replace the body of the section it wrote with one
+      # entry per pull request that changed the crate, read from the merge
+      # commits (whose messages are the pull request titles) since the last
+      # release tag. The checkout above has the full history and the tags.
+      - name: Write the changelog from merged pull requests
+        run: python3 .github/scripts/write-crate-changelog.py
       # release-plz leaves the unpublished Python adapter alone. Move the wheel
       # onto the engine's version without resolving or updating any dependency.
       - name: Synchronize the Python wheel version
@@ -198,7 +205,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: release-plz release
-        uses: MarcoIeni/release-plz-action@f67a7e724bdad4a0f6875f186060a0ca2770d76c # v0.5.147
+        uses: MarcoIeni/release-plz-action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         with:
           command: release
           version: "0.3.160"

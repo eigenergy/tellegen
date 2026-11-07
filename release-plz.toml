@@ -11,14 +11,16 @@ dependencies_update = false
 
 [changelog]
 protect_breaking_commits = true
-# Merge commits are not skipped. release-plz follows the package's history one
-# commit at a time, and when pull request branches take main by merging it,
-# every commit it reaches can be a merge. Skipping them then leaves a version
-# bump with an empty changelog, which the crate release workflow rejects. The
-# generated entries are a draft: the changelog is curated on the release pull
-# request before it merges. Setting `commit_parsers` replaces release-plz's
-# defaults rather than adding to them, so its Keep a Changelog groups are
-# restated; a lone catch-all would file every `feat:` under Other.
+# release-plz writes the section for a new version from commit subjects. The
+# crate release workflow then replaces that section's body with one entry per
+# merged pull request, titled as the pull request is
+# (.github/scripts/write-crate-changelog.py), and nobody edits it by hand.
+# The section must still exist, because `release-plz release` takes the
+# GitHub release body from it, so merge commits are not skipped: release-plz
+# follows the package's history one commit at a time, and when pull request
+# branches take main by merging it, every commit it reaches can be a merge.
+# Setting `commit_parsers` replaces release-plz's defaults rather than adding
+# to them, so its Keep a Changelog groups are restated.
 commit_parsers = [
   { message = "^feat", group = "added" },
   { message = "^changed", group = "changed" },
@@ -33,9 +35,9 @@ commit_parsers = [
 # pushed under the newest release and sink further with each one.
 header = """# Changelog
 
-Written by release-plz from the commits between tags. Releases through 0.1.1,
-when all three surfaces moved together, are in the
-[root `CHANGELOG.md`](../../CHANGELOG.md).
+Written at each release from the titles of the pull requests merged since the
+previous one. Releases through 0.1.1, when all three surfaces moved together,
+are in the [root `CHANGELOG.md`](../../CHANGELOG.md).
 """
 
 [[package]]

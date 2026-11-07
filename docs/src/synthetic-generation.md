@@ -22,6 +22,10 @@ along a pole. Request values are bounded well outside any real system:
 voltage levels 1–1500 kV, `demand.mw` up to 10⁷, `demand.per_capita_kw` up
 to 100 and `demand.peak_factor` from 1 to 10.
 
+Generated longitudes lie in [-180, 180], and a branch route that crosses the
+seam is not split; [Routes across the antimeridian](antimeridian-routes.md)
+says how to draw one.
+
 Each generated bus, branch, load, generator, shunt and HVDC row keeps its
 annotations (kind, place, population weight, tier, island, source, corridor
 and circuit) under `extras.tellegen_synth`, and the module is named
@@ -96,12 +100,27 @@ by module hash.
   that country's place population counting such places
   (`context.places_snapped`). A drawn box around one city never snaps the
   cities beyond its edges.
-- **Bus count.** Without `target_bus_count`, the count follows the region's
-  area and density and is then moved into the range that keeps peak load
-  per bus between 30 and 150 MW. Those are the scales of transmission
-  models down to 110–220 kV (PEGASE, RTE) and of substation-level models at
-  220 kV and above (PyPSA-Eur, SciGRID). `limits.max_bus_count` (3000)
-  still caps it, and `bus_count_capped` says by how much.
+- **Bus count.** Without `target_bus_count`, a transmission-only grid's
+  count follows the region's area and `density` and is then moved into the
+  range that keeps peak load per bus between 30 and 150 MW. Those are the
+  scales of transmission models down to 110–220 kV (PEGASE, RTE) and of
+  substation-level models at 220 kV and above (PyPSA-Eur, SciGRID). It
+  stops at 3,000 buses, the scale national transmission models keep. A
+  hierarchical region (below) sizes its count by peak load instead: one
+  sited bus per `mw_per_bus` (10 MW) at high density, and 1.5 and 2.8
+  times that load per bus at medium and low density (15 and about 28 MW),
+  the ratios of the transmission design's counts. Tap junctions come on
+  top.
+  Either count stops at `limits.max_bus_count` (12,000 by default), and
+  `bus_count_capped` says by how much a cap bit.
+- **Siting.** Buses stand on the most populous places first, and the rest
+  fill the region by blue noise drawn from a population density surface:
+  each place spreads its people over a 24 km kernel, and a point's density
+  is its share of the densest cell's raised to the power 0.75, with a floor
+  of 0.005 of the densest cell's on land with no place near it. These are
+  the `fill_*` constants of `crates/tellegen-synth/src/tuning.rs`,
+  calibrated on California
+  ([CATS comparison](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/synth/cats)).
 - **Load cap.** No bus carries more than the load cap of the highest
   modelled level (7 GW at 500 kV, 2.9 GW at 400 kV). The excess of a metropolitan bus moves
   to the nearest buses of its island with room, and
@@ -129,9 +148,19 @@ by module hash.
   400/220 kV when it is a member, else IEC 60038's standard 400/220 kV, with
   no higher level, and raises `voltage_fallback` (`context.voltage_basis`
   `fallback`).
-- **Stated levels.** A request that names its levels is modelled at them,
-  and the plan may add 765 kV above them, as before (`voltage_basis`
-  `request`).
+- **Stated levels.** A request that names its levels is modelled at them
+  (`voltage_basis` `request`), and they follow the region in two ways.
+  The plan may add above them only a higher level in service in the
+  region, from its own ladder: 765 kV in the United States outside
+  California, none in Germany, California or a country on the fallback
+  ladder. And stated levels that reach below 100 kV in a region whose
+  dominant subdivision has its own ladder keep the hierarchical design
+  below.
+- **Hierarchical regions.** A region whose dominant subdivision has its own
+  ladder down to subtransmission (California's 500/230/115/66 kV, from
+  `data/voltage_ladders.json`; `context.voltage_basis` `subdivision`) is
+  built in layers: meshed top-level sites, subtransmission pockets fed from
+  step-downs, and tap junctions.
 - **Line parameters.** A level between the line classes takes the nearest
   class's conductors at its own voltage (below), so 380 and 400 kV use the
   345 kV class scaled by 1.10 and 1.16, and 1000 kV the 765 kV class scaled
@@ -229,15 +258,21 @@ a solve.
   Reactive power does not travel far (Kundur §11.2), so it is supplied where
   it is used. This plan covers line charging, series absorption and the
   share resistance moves to the receiving end.
-- **Voltage support.** A loaded bus farther than 480 km of corridor from
+- **Voltage support.** A loaded bus farther than 100 km of corridor from
   any generator gets a synchronous condenser, farthest first: no active
   power, and a reactive range of 0.5 MVAr per MW of the load nearest it.
-  480 km is where the St. Clair curve falls to 1.0 SIL and voltage-drop and
-  stability limits replace the thermal one. Without one, a remote pocket fed
+  Reactive power is supplied close to where it is used, because carrying it
+  over long lines costs voltage and losses that grow with the distance
+  (Kundur §11.2), and voltage control areas span tens to a little over a
+  hundred kilometres. The 480 km of the St. Clair curve's 1.0 SIL point is a
+  stability limit for transfer paths, not a voltage control distance: at
+  100 km the country sweep's AC power flow converges inside the band in 53
+  of 54 runs, against 49 at 480 km. Without a condenser, a remote pocket fed
   over long lines has nothing to hold its voltage, and its AC power flow can
   stall while the lines are well inside their ratings. Condensers are
   flagged in the generator annotations (`condenser`) and counted in the
-  `electrify` stage (`condensers`); a mapped OSM network gets none.
+  `electrify` stage (`condensers`). OpenStreetMap mode also adds explicitly
+  synthetic condensers when `osm.reinforce` is enabled (the default).
 
 The plan is recorded in `GenerationReport.planning`: rounds, promoted
 buses, the added level, the most circuits on one corridor
@@ -287,15 +322,34 @@ antimeridian-crossing region), the grid is built as follows:
    reserve margin.
 6. The island policy applies: `connect` (default), `cut` or `keep`.
 
-`limits.max_bus_count` (3000) caps this mode too. When the mapped substation
-levels and converters make more buses than that, the lowest substation level
+`limits.max_bus_count` (12,000 by default) caps this mode too. When the
+mapped substation levels and converters make more buses than that, the lowest substation level
 is left out, one at a time, until they fit, and its lines with it;
 `osm_bus_count_capped` names the levels kept. A region whose highest level
 alone exceeds the cap is refused as `invalid_request`: choose a smaller region
 or raise the cap.
 
-Mapped circuits are real, so the corridor plan only measures them; the
-reactive plan still applies. A way's circuit count, and a corridor's, is
+Mapped routes and voltages are retained. By default, `osm.reinforce: true`
+allows the corridor plan to add synthetic parallel circuits, enlarge modelled
+transformer banks, and add synchronous condensers for the modelled demand.
+The existing equipment first receives a constrained DC dispatch; circuits
+are added only if that draft is infeasible.
+This does not assert that the added equipment exists. Added branches have
+`source: "synthetic"` in the report and `synthetic_reinforcement: true` in
+their exported extras; their OSM way ids identify the route only. The report
+warns with `osm_synthetic_reinforcement`. Set `osm.reinforce: false` to keep
+the original circuit counts and observe their feasibility without additions.
+Density never adds filler circuits in OSM mode, and demand is not reduced to
+make a failed case pass.
+
+Reactive support is sized after calibration from the feasible, constrained DC
+dispatch, rather than the unconstrained economic dispatch. Otherwise cheap
+generation behind mapped bottlenecks can produce an impossible angle profile
+and excessive shunt banks. Shunts are labelled synthetic, with basis
+`dc_dispatch_reactive_balance`. A failed angle solve installs no banks from
+its divergent iterate, and validation still reports any remaining failure.
+
+A way's circuit count, and a corridor's mapped count, is
 capped at 12: a larger `circuits` or `cables` tag is a tagging error, and each
 circuit becomes a branch row. A network too thin to use is the typed
 `osm_insufficient` refusal. The caller decides whether to rerun
@@ -325,19 +379,23 @@ session.free();
 
 - **Host.** Sessions run on a dedicated worker. Cancelling one terminates
   only that worker, so interactive studies are untouched.
-- **Places table.** The Natural Earth table (public domain) ships in the
-  package and loads once per worker. It is derived from Natural Earth
-  v5.1.2's 1:10m populated places by `scripts/derive-populated-places.py`,
-  names that release and its file's SHA-256, and the report repeats both
-  (`provenance.places`). A host may load its own bare array of
-  `{n, lo, la, p, c}` rows instead; its provenance then names no source. The
-  national demand table is compiled into the module.
+- **Places table.** The GeoNames table (`cities5000`, CC BY 4.0: 69,999
+  places of 5,000 people or more) ships in the package and loads once per
+  worker. It is derived by `scripts/derive-populated-places.py`, names
+  GeoNames and the dump's SHA-256, and the report repeats both
+  (`provenance.places`). Grids built from it carry GeoNames' attribution. A
+  host may load its own bare array of `{n, lo, la, p, c}` rows instead; its
+  provenance then names no source. The national demand table is compiled
+  into the module.
 - **Types.** Request and report types are generated from Rust under
   `@tellegen/engine/synth`.
 - **Strict requests.** An unknown key at any level of the request, such as
   a misspelt `limits` or `islands` option, is refused as `invalid_request`
   rather than ignored. `limits.max_area_km2` must be positive and finite,
-  and `limits.max_branch_factor` finite and at least 1.
+  `limits.max_branch_factor` finite and at least 1, and the two OSM limits
+  at least 1. The `osm` distances (`voltage_floor_kv`, `cluster_radius_m`,
+  `snap_km`, `hvdc_snap_km`, `plant_snap_km`) must be finite and positive,
+  and `clip_buffer_km` finite and not negative.
 - **Coordinates.** The ingest payload has `coords_kind: "synthetic"` and
   `coords_method: "generated"`: the buses are sites chosen on real
   geography, not a topology layout, and the case panel says so.
@@ -356,9 +414,21 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
 
 ## Limits
 
-- Requests are capped at 3000 buses (`limits.max_bus_count`), which the
-  automatic count reaches for the largest countries. OpenStreetMap mode
-  keeps to the same cap by leaving out its lowest voltage levels. China at
+- An Overpass answer over `limits.max_osm_document_bytes` (256 MiB by
+  default) is refused before it is parsed, and one with more than
+  `limits.max_osm_elements` elements across its documents (1,000,000) before
+  the network is built. The byte cap is the memory bound; the element count
+  is known only after parsing. In the browser the engine's 128 MiB input cap
+  applies first. Measured in November 2026 on the default query with a
+  longer server timeout: Germany's answer is 115 MiB with 264,653 elements
+  and generates natively in about 9 s with a peak of about 1 GB; Spain's is
+  69 MiB with 114,401 elements. Neither country's query finishes within the
+  60 s timeout every tellegen query states on the public Overpass server, so
+  a country that size needs its own Overpass instance or a smaller region.
+- Requests are capped at 12,000 buses (`limits.max_bus_count`), and a
+  transmission-only automatic count stops at 3,000, which the largest
+  countries reach. OpenStreetMap mode keeps to the request cap by leaving
+  out its lowest voltage levels. China at
   3000 buses takes about 1.0–1.2 s natively
   and 1.5 s in wasm (Node, Apple M5 Pro), end to end with both validations;
   the United States takes 1.4–1.5 s and 2.0 s, about 0.9 s of it an AC power
@@ -367,8 +437,9 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
 - Whether the AC power flow converges inside the band depends on the seed
   for several countries. `docs/evidence/synth` sweeps three seeds on two
   outlines (Natural Earth 1:50m and the MapToGrid app's 1:110m layer):
-  91% and 92% of the runs pass AC, every run passes DC, and the United
-  States fails at every seed.
+  every run passes DC, 53 of 54 and 47 of 51 runs pass AC inside the band,
+  and the United States passes at every seed on the 1:50m outline and fails
+  at every seed on the app's 1:110m one.
 - Clustering in generated grids runs higher than in the ACTIVSg200 and
   GOC500 references, because the Gabriel mesh is rich in triangles. Their
   highest nodal degree is also lower, since the mesh caps it at 8.
