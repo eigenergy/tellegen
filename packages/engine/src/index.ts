@@ -1,3 +1,5 @@
+import type { DcFormula } from "./generated/api-types.js";
+export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 /** The browser engine API. Requests run in a dedicated Web Worker when the
  * browser allows one — a solve never blocks the page — and on the calling
  * thread otherwise (see host.ts). Nothing downloads until the first engine
@@ -1998,6 +2000,7 @@ function sensitivityColumn(
 }
 
 export interface SolutionResponseProjection {
+  branch_susceptance_formula?: DcFormula | null;
   objective?: number | null;
   lmp?: { bus: number; value: number }[] | null;
   vm?: { bus: number; value: number }[] | null;
@@ -2013,6 +2016,7 @@ export function solveResponseToSolution(
   out: SolutionResponseProjection,
 ): Solution {
   return {
+    branch_susceptance_formula: out.branch_susceptance_formula ?? undefined,
     objective: out.objective ?? null,
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
     vm: out.vm ?? undefined,
@@ -2353,10 +2357,20 @@ let studySeq = 0;
 export async function createStudy(
   moduleJson: string,
   formulation: Formulation = DEFAULT_FORMULATION,
-  options: { isolated?: boolean; signal?: AbortSignal } = {},
+  options: {
+    isolated?: boolean;
+    signal?: AbortSignal;
+    branch_susceptance_formula?: DcFormula;
+  } = {},
 ): Promise<BrowserStudy> {
   const host = options.isolated ? isolatedEngineHost() : engineHost();
-  return createStudyOnHost(moduleJson, formulation, host, options.signal);
+  return createStudyOnHost(
+    moduleJson,
+    formulation,
+    host,
+    options.signal,
+    options.branch_susceptance_formula,
+  );
 }
 
 async function createStudyOnHost(
@@ -2364,6 +2378,7 @@ async function createStudyOnHost(
   formulation: Formulation,
   host: EngineHost,
   signal?: AbortSignal,
+  branch_susceptance_formula?: DcFormula,
 ): Promise<BrowserStudy> {
   // Handles are allocated here, not by the host, so a pending build replayed
   // onto the fallback host keeps naming the same study.
@@ -2376,6 +2391,7 @@ async function createStudyOnHost(
   try {
     await host.call({
       op: "study_new",
+      options: JSON.stringify({ branch_susceptance_formula }),
       study: handle,
       module_json: moduleJson,
       formulation,

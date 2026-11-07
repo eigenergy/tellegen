@@ -118,7 +118,7 @@ export function webMcpSessionId(): string {
 
 type ReadCase = Pick<
 	SolvableCase,
-	'id' | 'network' | 'solution' | 'formulation' | 'deltas' | 'ratings'
+	'id' | 'network' | 'solution' | 'formulation' | 'branchSusceptanceFormula' | 'deltas' | 'ratings'
 >;
 
 interface CaseLookup {
@@ -268,6 +268,7 @@ function caseFingerprint(c: SolvableCase): string {
 		c.id,
 		c.revisionGeneration,
 		c.formulation,
+		c.branchSusceptanceFormula,
 		sortedEdits(c.deltas),
 		sortedEdits(c.ratings)
 	]);
@@ -349,10 +350,12 @@ function displayedCase(ctrl: Controller, expectedCaseId?: string): ReadCase {
 		id: view.caseId,
 		network: view.network,
 		formulation: view.formulation,
+		branchSusceptanceFormula: undefined, // The saved typed input owns its convention.
 		deltas: {},
 		ratings: {},
 		solution: result
 			? {
+					branch_susceptance_formula: result.branch_susceptance_formula ?? undefined,
 					objective: result.objective ?? null,
 					prices: result.lmp ?? [],
 					va: result.va ?? [],
@@ -486,6 +489,9 @@ function requireRevision(c: SolvableCase, expected: string): void {
 
 function solutionPayload(c: SolvableCase): ToolPayload {
 	return {
+		...(c.solution?.branch_susceptance_formula
+			? { branch_susceptance_formula: c.solution.branch_susceptance_formula }
+			: {}),
 		objective: finite(c.solution?.objective),
 		base_objective: finite(c.baseSolution?.objective),
 		objective_delta: finite(
@@ -896,6 +902,7 @@ async function sensitivity(
 	if (!studyInputJson)
 		throw new TellegenToolError('CASE_DATA_UNAVAILABLE', 'the PowerIO module is unavailable');
 	const study = await createStudy(studyInputJson, c.formulation, {
+		branch_susceptance_formula: c.formulation === 'dcopf' ? c.branchSusceptanceFormula : undefined,
 		isolated: true,
 		signal
 	});
@@ -1111,6 +1118,7 @@ async function preview(
 	// isolated workspace from the retained module, align that clone with the
 	// visible operating point, then discard it after the linearization.
 	const study = await createStudy(studyInputJson, c.formulation, {
+		branch_susceptance_formula: c.formulation === 'dcopf' ? c.branchSusceptanceFormula : undefined,
 		isolated: true,
 		signal
 	});
@@ -1189,6 +1197,7 @@ async function prepareExactSolve(
 	let study: BrowserStudy | null = null;
 	try {
 		study = await createStudy(studyInputJson, formulation, {
+			branch_susceptance_formula: formulation === 'dcopf' ? c.branchSusceptanceFormula : undefined,
 			isolated: true,
 			signal
 		});

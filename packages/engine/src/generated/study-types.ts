@@ -1,5 +1,5 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: 9bb97dca900fb263346a2fb193b0ebdbfd33f7b2c2627917b20e9d5f1690dcb2
+// Source SHA256: 248a7161a210d097624d5b953ac75b07843657c1c8da5d1a94c6e710abb23117
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
@@ -31,7 +31,9 @@ export type CostTerm = "Quadratic" | "Linear";
 
 export type CreateDisplay = { "camera"?: (Camera) | (null); "case_id": string; "diagram_camera"?: (DiagramCamera) | (null); "geo_layer": string; "layers"?: Array<string>; };
 
-export type CreateStudy = { "base_input"?: string | null; "decisions"?: (DecisionSpace) | (null); "display"?: (CreateDisplay) | (null); "formulation": "dcopf" | "acpf" | "socwr"; "id": string; "input": string; "interpretation"?: string; "model_details"?: (ModelDetails) | (null); "objective"?: (StudyObjective) | (null); "request"?: string; "solution"?: string | null; "success_value"?: number | null; "title": string; "view"?: (SolveResponse) | (null); };
+export type CreateStudy = { "base_input"?: string | null; "branch_susceptance_formula"?: (DcFormula) | (null); "decisions"?: (DecisionSpace) | (null); "display"?: (CreateDisplay) | (null); "formulation": "dcopf" | "acpf" | "socwr"; "id": string; "input": string; "interpretation"?: string; "model_details"?: (ModelDetails) | (null); "objective"?: (StudyObjective) | (null); "request"?: string; "solution"?: string | null; "success_value"?: number | null; "title": string; "view"?: (SolveResponse) | (null); };
+
+export type DcFormula = ("series_susceptance") | ("tap_adjusted_reactance") | ("reactance_only") | ("tap_adjusted_series_susceptance") | ("series_susceptance_no_phase_shift");
 
 export type DecisionKind = "retain" | "reject" | "recommend" | "apply";
 
@@ -99,7 +101,7 @@ export type SolveDiagnostic = { "buses": Array<number>; "code": string; "message
 
 export type SolveIteration = { "inf_du": number; "inf_pr": number; "iter": number; "objective": number; };
 
-export type SolveResponse = { "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
+export type SolveResponse = { "branch_susceptance_formula"?: (DcFormula) | (null); "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
 
 export type SolveStatus = ("optimal") | ("feasible");
 

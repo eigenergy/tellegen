@@ -1,0 +1,459 @@
+{
+  "reference_reversed_branch_count": 0,
+  "reactance_only": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 0.0,
+      "balance_pu": 1.6653345369377348e-16,
+      "flow_pu": 9.020562075079397e-17,
+      "angle_rad": 2.0816681711721685e-17
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 1.1213252548714081e-14,
+      "balance_pu": 3.042011087472929e-14,
+      "flow_pu": 3.070432796903333e-11,
+      "angle_rad": 3.991553615412258e-12,
+      "dispatch_pu": 5.2895798852148346e-11,
+      "objective_relative": 5.100577168989282e-11,
+      "lmp_per_mw": 7.956373337947298e-10
+    },
+    "ac_fixed_dispatch": {
+      "max_symmetric_error_mw": 19.482385900036114,
+      "worst_branches": [
+        {
+          "branch": "2",
+          "dc_from_mw": -5.806451612903224,
+          "ac_from_mw": 13.685341933014733,
+          "ac_to_mw": -13.666526641251048,
+          "symmetric_ac_mw": 13.67593428713289,
+          "from_error_mw": -19.491793545917957,
+          "to_error_mw": 19.47297825415427,
+          "symmetric_error_mw": 19.482385900036114,
+          "rating_fraction": 0.07792954360014445,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "3",
+          "dc_from_mw": -54.19354838709678,
+          "ac_from_mw": -71.85157924973404,
+          "ac_to_mw": 73.66652664125104,
+          "symmetric_ac_mw": -72.75905294549254,
+          "from_error_mw": 17.65803086263726,
+          "to_error_mw": -19.472978254154256,
+          "symmetric_error_mw": 18.56550455839576,
+          "rating_fraction": 0.07426201823358304,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "1",
+          "dc_from_mw": 35.80645161290323,
+          "ac_from_mw": 18.63504523845131,
+          "ac_to_mw": -18.14842075026596,
+          "symmetric_ac_mw": 18.391732994358634,
+          "from_error_mw": 17.171406374451923,
+          "to_error_mw": -17.658030862637272,
+          "symmetric_error_mw": 17.414718618544597,
+          "rating_fraction": 0.5442099568295187,
+          "dc_overload": true,
+          "ac_overload": true
+        }
+      ]
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_SOLVED",
+      "converged": true,
+      "loss_mw": 2.3325760509861073,
+      "violation_counts": {
+        "voltage": 0,
+        "reactive_generation": 0,
+        "apparent_power": 1
+      },
+      "violation_examples": {
+        "voltage": [],
+        "reactive_generation": [],
+        "apparent_power": [
+          "1"
+        ]
+      },
+      "objective": 0.0
+    }
+  },
+  "series_susceptance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 5.551115123125783e-17,
+      "balance_pu": 1.1102230246251565e-16,
+      "flow_pu": 5.551115123125783e-17,
+      "angle_rad": 6.938893903907228e-18
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 6.106226635438361e-16,
+      "balance_pu": 1.887379141862766e-15,
+      "flow_pu": 1.4155343563970746e-13,
+      "angle_rad": 1.8509499488672532e-14,
+      "dispatch_pu": 2.389199948993337e-13,
+      "objective_relative": 1.9889525373181998e-13,
+      "lmp_per_mw": 9.013234603116871e-11
+    },
+    "ac_fixed_dispatch": {
+      "max_symmetric_error_mw": 8.562585032786004,
+      "worst_branches": [
+        {
+          "branch": "2",
+          "dc_from_mw": 5.113349254346887,
+          "ac_from_mw": 13.685341933014733,
+          "ac_to_mw": -13.666526641251048,
+          "symmetric_ac_mw": 13.67593428713289,
+          "from_error_mw": -8.571992678667847,
+          "to_error_mw": 8.55317738690416,
+          "symmetric_error_mw": 8.562585032786004,
+          "rating_fraction": 0.034250340131144016,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "3",
+          "dc_from_mw": -65.11334925434689,
+          "ac_from_mw": -71.85157924973404,
+          "ac_to_mw": 73.66652664125104,
+          "symmetric_ac_mw": -72.75905294549254,
+          "from_error_mw": 6.738229995387158,
+          "to_error_mw": -8.553177386904153,
+          "symmetric_error_mw": 7.6457036911456555,
+          "rating_fraction": 0.030582814764582623,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "1",
+          "dc_from_mw": 24.8866507456531,
+          "ac_from_mw": 18.63504523845131,
+          "ac_to_mw": -18.14842075026596,
+          "symmetric_ac_mw": 18.391732994358634,
+          "from_error_mw": 6.251605507201791,
+          "to_error_mw": -6.73822999538714,
+          "symmetric_error_mw": 6.494917751294466,
+          "rating_fraction": 0.20296617972795206,
+          "dc_overload": false,
+          "ac_overload": true
+        }
+      ]
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_SOLVED",
+      "converged": true,
+      "loss_mw": 2.3560741051136036,
+      "violation_counts": {
+        "voltage": 0,
+        "reactive_generation": 0,
+        "apparent_power": 1
+      },
+      "violation_examples": {
+        "voltage": [],
+        "reactive_generation": [],
+        "apparent_power": [
+          "1"
+        ]
+      },
+      "objective": 0.0
+    }
+  },
+  "series_susceptance_no_phase_shift": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 0.0,
+      "balance_pu": 1.1102230246251565e-16,
+      "flow_pu": 3.469446951953614e-17,
+      "angle_rad": 4.336808689942018e-18
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 1.2378986724570495e-14,
+      "balance_pu": 3.5416114485542494e-14,
+      "flow_pu": 3.7947894826473316e-11,
+      "angle_rad": 4.962405486530486e-12,
+      "dispatch_pu": 6.354761161730949e-11,
+      "objective_relative": 6.126992343737433e-11,
+      "lmp_per_mw": 1.0301519637323509e-09
+    },
+    "ac_fixed_dispatch": {
+      "max_symmetric_error_mw": 19.310704538198735,
+      "worst_branches": [
+        {
+          "branch": "2",
+          "dc_from_mw": -5.634770251065845,
+          "ac_from_mw": 13.685341933014733,
+          "ac_to_mw": -13.666526641251048,
+          "symmetric_ac_mw": 13.67593428713289,
+          "from_error_mw": -19.32011218408058,
+          "to_error_mw": 19.30129689231689,
+          "symmetric_error_mw": 19.310704538198735,
+          "rating_fraction": 0.07724281815279493,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "3",
+          "dc_from_mw": -54.365229748934155,
+          "ac_from_mw": -71.85157924973404,
+          "ac_to_mw": 73.66652664125104,
+          "symmetric_ac_mw": -72.75905294549254,
+          "from_error_mw": 17.48634950079989,
+          "to_error_mw": -19.301296892316884,
+          "symmetric_error_mw": 18.393823196558387,
+          "rating_fraction": 0.07357529278623355,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "1",
+          "dc_from_mw": 35.634770251065845,
+          "ac_from_mw": 18.63504523845131,
+          "ac_to_mw": -18.14842075026596,
+          "symmetric_ac_mw": 18.391732994358634,
+          "from_error_mw": 16.999725012614537,
+          "to_error_mw": -17.486349500799886,
+          "symmetric_error_mw": 17.24303725670721,
+          "rating_fraction": 0.5388449142721004,
+          "dc_overload": true,
+          "ac_overload": true
+        }
+      ]
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_SOLVED",
+      "converged": true,
+      "loss_mw": 2.3324526905585063,
+      "violation_counts": {
+        "voltage": 0,
+        "reactive_generation": 0,
+        "apparent_power": 1
+      },
+      "violation_examples": {
+        "voltage": [],
+        "reactive_generation": [],
+        "apparent_power": [
+          "1"
+        ]
+      },
+      "objective": 0.0
+    }
+  },
+  "tap_adjusted_reactance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 2.7755575615628914e-17,
+      "balance_pu": 1.1102230246251565e-16,
+      "flow_pu": 1.1102230246251565e-16,
+      "angle_rad": 6.938893903907228e-18
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 7.216449660063518e-16,
+      "balance_pu": 2.55351295663786e-15,
+      "flow_pu": 3.398392678377604e-13,
+      "angle_rad": 4.417646803922537e-14,
+      "dispatch_pu": 5.733191699164308e-13,
+      "objective_relative": 4.5192708905726026e-13,
+      "lmp_per_mw": 9.349676588499278e-11
+    },
+    "ac_fixed_dispatch": {
+      "max_symmetric_error_mw": 7.455126462168325,
+      "worst_branches": [
+        {
+          "branch": "2",
+          "dc_from_mw": 6.220807824964565,
+          "ac_from_mw": 13.685341933014733,
+          "ac_to_mw": -13.666526641251048,
+          "symmetric_ac_mw": 13.67593428713289,
+          "from_error_mw": -7.464534108050168,
+          "to_error_mw": 7.445718816286483,
+          "symmetric_error_mw": 7.455126462168325,
+          "rating_fraction": 0.0298205058486733,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "3",
+          "dc_from_mw": -66.22080782496457,
+          "ac_from_mw": -71.85157924973404,
+          "ac_to_mw": 73.66652664125104,
+          "symmetric_ac_mw": -72.75905294549254,
+          "from_error_mw": 5.630771424769478,
+          "to_error_mw": -7.4457188162864725,
+          "symmetric_error_mw": 6.538245120527975,
+          "rating_fraction": 0.026152980482111902,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "1",
+          "dc_from_mw": 23.77919217503545,
+          "ac_from_mw": 18.63504523845131,
+          "ac_to_mw": -18.14842075026596,
+          "symmetric_ac_mw": 18.391732994358634,
+          "from_error_mw": 5.144146936584143,
+          "to_error_mw": -5.630771424769492,
+          "symmetric_error_mw": 5.387459180676817,
+          "rating_fraction": 0.16835809939615054,
+          "dc_overload": false,
+          "ac_overload": true
+        }
+      ]
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_SOLVED",
+      "converged": true,
+      "loss_mw": 2.367830381142577,
+      "violation_counts": {
+        "voltage": 0,
+        "reactive_generation": 0,
+        "apparent_power": 1
+      },
+      "violation_examples": {
+        "voltage": [],
+        "reactive_generation": [],
+        "apparent_power": [
+          "1"
+        ]
+      },
+      "objective": 0.0
+    }
+  },
+  "tap_adjusted_series_susceptance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 2.7755575615628914e-17,
+      "balance_pu": 3.3306690738754696e-16,
+      "flow_pu": 2.220446049250313e-16,
+      "angle_rad": 1.3877787807814457e-17
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 6.106226635438361e-16,
+      "balance_pu": 3.1086244689504383e-15,
+      "flow_pu": 2.958744360626042e-14,
+      "angle_rad": 3.864963904476326e-15,
+      "dispatch_pu": 5.10702591327572e-14,
+      "objective_relative": 4.4035043360449004e-14,
+      "lmp_per_mw": 1.0578204978628492e-10
+    },
+    "ac_fixed_dispatch": {
+      "max_symmetric_error_mw": 7.754454682244249,
+      "worst_branches": [
+        {
+          "branch": "2",
+          "dc_from_mw": 5.921479604888641,
+          "ac_from_mw": 13.685341933014733,
+          "ac_to_mw": -13.666526641251048,
+          "symmetric_ac_mw": 13.67593428713289,
+          "from_error_mw": -7.763862328126092,
+          "to_error_mw": 7.745047036362407,
+          "symmetric_error_mw": 7.754454682244249,
+          "rating_fraction": 0.031017818728976996,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "3",
+          "dc_from_mw": -65.92147960488862,
+          "ac_from_mw": -71.85157924973404,
+          "ac_to_mw": 73.66652664125104,
+          "symmetric_ac_mw": -72.75905294549254,
+          "from_error_mw": 5.930099644845427,
+          "to_error_mw": -7.745047036362422,
+          "symmetric_error_mw": 6.8375733406039245,
+          "rating_fraction": 0.0273502933624157,
+          "dc_overload": false,
+          "ac_overload": false
+        },
+        {
+          "branch": "1",
+          "dc_from_mw": 24.078520395111347,
+          "ac_from_mw": 18.63504523845131,
+          "ac_to_mw": -18.14842075026596,
+          "symmetric_ac_mw": 18.391732994358634,
+          "from_error_mw": 5.443475156660039,
+          "to_error_mw": -5.930099644845388,
+          "symmetric_error_mw": 5.6867874007527135,
+          "rating_fraction": 0.1777121062735223,
+          "dc_overload": false,
+          "ac_overload": true
+        }
+      ]
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_SOLVED",
+      "converged": true,
+      "loss_mw": 2.3683102286707114,
+      "violation_counts": {
+        "voltage": 0,
+        "reactive_generation": 0,
+        "apparent_power": 1
+      },
+      "violation_examples": {
+        "voltage": [],
+        "reactive_generation": [],
+        "apparent_power": [
+          "1"
+        ]
+      },
+      "objective": 0.0
+    }
+  },
+  "ac_flat_slope_max_error": 4.4989079128754383e-10,
+  "ac_pf": {
+    "status": "LOCALLY_SOLVED",
+    "converged": true,
+    "loss_mw": 2.320387171466032,
+    "violation_counts": {
+      "voltage": 0,
+      "reactive_generation": 0,
+      "apparent_power": 1
+    },
+    "violation_examples": {
+      "voltage": [],
+      "reactive_generation": [],
+      "apparent_power": [
+        "1"
+      ]
+    },
+    "objective": 0.0
+  },
+  "ac_opf_local": {
+    "status": "LOCALLY_SOLVED",
+    "converged": true,
+    "loss_mw": 1.4794516702468452,
+    "violation_counts": {
+      "voltage": 0,
+      "reactive_generation": 0,
+      "apparent_power": 0
+    },
+    "violation_examples": {
+      "voltage": [],
+      "reactive_generation": [],
+      "apparent_power": []
+    },
+    "objective": 736.7495518130046
+  },
+  "case_sha256": "841633dba17c09b97b941e6bb8f92543a2cf01bfa29709f1067fb3688cc188b6",
+  "versions": {
+    "julia": "1.12.6",
+    "PowerModels": "0.19.9",
+    "Ipopt": "1.4.1"
+  }
+}

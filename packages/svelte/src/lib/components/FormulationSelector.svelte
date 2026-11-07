@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
 	import { formulationHint } from '../format.js';
-	import { FORMULATIONS, type Formulation } from '@tellegen/engine';
+	import { FORMULATIONS, type Formulation, type DcFormula } from '@tellegen/engine';
 
 	const ctrl = getController();
 </script>
@@ -29,10 +29,42 @@
 				{/each}
 			</select>
 		</label>
+		{#if c.formulation === 'dcopf'}
+			<label class="formulation-row" for="dc-variant-select">
+				<span>DC variant</span>
+				<select
+					id="dc-variant-select"
+					disabled={c.solving || ('declaredFormulation' in c && !!c.declaredFormulation)}
+					value={c.solution?.branch_susceptance_formula ??
+						c.branchSusceptanceFormula ??
+						'series_susceptance'}
+					onchange={(e) => ctrl.changeDcFormula(c, e.currentTarget.value as DcFormula)}
+				>
+					<option value="series_susceptance">Legacy Tellegen (default)</option>
+					<option value="series_susceptance_no_phase_shift">PowerModels DCP / PGLib DC</option>
+					<option value="tap_adjusted_reactance">MATPOWER / PowerModels DCMP</option>
+					<option value="tap_adjusted_series_susceptance">Tap-adjusted series susceptance</option>
+					<option value="reactance_only">Reactance only (1/x)</option>
+				</select>
+			</label>
+			<p class="variant-hint">
+				Compatibility requires matching costs and limits. DC and AC optimal costs differ.
+				<a
+					href="https://eigenergy.github.io/tellegen/dc-compatibility.html"
+					target="_blank"
+					rel="noreferrer">Compatibility matrix</a
+				>
+			</p>
+		{/if}
 	</div>
 {/if}
 
 <style>
+	.variant-hint {
+		font-size: 11px;
+		color: var(--ink-dim);
+		margin: 6px 0;
+	}
 	.formulation {
 		margin-top: 10px;
 	}

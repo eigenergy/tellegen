@@ -1,3 +1,4 @@
+import type { DcFormula } from '@tellegen/engine';
 import { DEFAULT_MC_PF_OPTIONS, summarizeMcExcludedIslands } from '@tellegen/engine';
 import type {
 	CaseSummary,
@@ -148,6 +149,7 @@ export class LocalCase {
 	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
 	/** The selected calculation. Changing it rebuilds the numerical Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
+	branchSusceptanceFormula = $state<DcFormula | undefined>(undefined);
 	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
@@ -205,6 +207,7 @@ export class CaseState {
 	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
 	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
+	branchSusceptanceFormula = $state<DcFormula | undefined>(undefined);
 	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);

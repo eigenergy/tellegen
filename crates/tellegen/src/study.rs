@@ -393,6 +393,43 @@ impl Study {
         Self::from_dynamic_module(module, formulation)
     }
 
+    /// Start with explicit DC options. A typed instance remains authoritative.
+    pub fn new_with_options(
+        module_json: &str,
+        formulation: Problem,
+        options: crate::StudyOptions,
+    ) -> Result<Self, String> {
+        crate::dc_formula::validate(formulation, options.branch_susceptance_formula)?;
+        let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
+        Self::from_dynamic_module_with_options(module, formulation, options)
+    }
+
+    fn from_dynamic_module_with_options(
+        module: PioModule<PioValue>,
+        formulation: Problem,
+        options: crate::StudyOptions,
+    ) -> Result<Self, String> {
+        let module = crate::dc_formula::apply_study_options(
+            module,
+            formulation,
+            options.branch_susceptance_formula,
+        )?;
+        Self::from_dynamic_module(module, formulation)
+    }
+
+    /// Typed network-module constructor with explicit analysis options.
+    pub fn from_module_with_options(
+        module: PioModule<BalancedNetwork>,
+        formulation: Problem,
+        options: crate::StudyOptions,
+    ) -> Result<Self, String> {
+        Self::from_dynamic_module_with_options(
+            module.map_value(PioValue::BalancedNetwork),
+            formulation,
+            options,
+        )
+    }
+
     /// Build a retained module from a network for crate tests. Public callers
     /// use [`Study::new`] or [`Study::from_module`].
     #[cfg(test)]
@@ -948,6 +985,7 @@ impl Study {
     ) -> Result<(Box<dyn SolvedState>, SolveResponse), String> {
         let req = SolveRequest {
             formulation: self.formulation,
+            branch_susceptance_formula: None,
             edits: fold(log),
             start: PowerFlowStart::Flat,
             constraints: self.constraints.clone(),

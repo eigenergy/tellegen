@@ -360,6 +360,9 @@ pub enum PowerFlowStart {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SolveRequest {
+    /// DC branch convention. Omitted: inherit the instance, or use the legacy default.
+    #[serde(default)]
+    pub branch_susceptance_formula: Option<crate::DcFormula>,
     #[serde(default)]
     pub formulation: Problem,
     #[serde(default)]
@@ -712,6 +715,9 @@ pub struct SolveDiagnostic {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SolveResponse {
+    /// Resolved DC convention; absent for AC results and older saved responses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_susceptance_formula: Option<crate::DcFormula>,
     /// The formulation that produced this, echoed for the client.
     pub formulation: Problem,
     pub status: SolveStatus,
@@ -802,7 +808,11 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
     let response = match module.into_value() {
         powerio::PioValue::BalancedNetwork(network) => match req.formulation {
             Problem::DcOpf => {
-                let instance = DcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+                let instance = DcOpfInstance::from_network(network)
+                    .map_err(|e| e.to_string())?
+                    .with_branch_susceptance_formula(
+                        req.branch_susceptance_formula.unwrap_or_default().into(),
+                    );
                 solve_instance(&instance, &req)?
             }
             #[cfg(feature = "sensitivity")]
@@ -856,6 +866,7 @@ pub(crate) fn solve_network(
     net: &BalancedNetwork,
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
     validate_canonical_edits(net, &req.edits)?;
     match req.formulation {
         Problem::DcOpf => solve_dc_opf(net, req),
@@ -903,7 +914,9 @@ pub fn solve_instance_cancellable(
             req.formulation
         ));
     }
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
+    crate::dc_formula::validate_instance(instance, req.branch_susceptance_formula)?;
     dc_opf_response(DcNetwork::from_instance(instance)?, req, cancel)
 }
 
@@ -921,6 +934,7 @@ pub fn solve_ac_pf_instance(
             req.formulation
         ));
     }
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
     let (model, solution) =
         ac_pf_solved(super::model::AcNetwork::from_pf_instance(instance)?, req)?;
@@ -941,6 +955,7 @@ pub fn solve_ac_instance(
             req.formulation
         ));
     }
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
     let (model, solution) = socwr_solved(super::model::AcNetwork::from_instance(instance)?, req)?;
     socwr_assemble(&model, &solution, req)
@@ -974,6 +989,7 @@ pub fn solve_ac_opf_instance_cancellable(
     reject_case_start(req, "acopf")?;
     reject_linear_constraints(&req.constraints, "acopf")?;
     reject_limit_options(req, "acopf")?;
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
     if !req.edits.deltas.is_empty() || !req.edits.rates.is_empty() {
         return Err(
@@ -1060,6 +1076,7 @@ fn ac_opf_assemble(
         })
         .collect();
     Ok(SolveResponse {
+        branch_susceptance_formula: None,
         formulation: Problem::Acopf,
         // A locally converged nonconvex NLP is independently feasible, but
         // does not establish global optimality.
@@ -1129,7 +1146,10 @@ fn ac_opf_assemble(
 }
 
 fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
-    let dc = DcNetwork::from_network(net)?;
+    let dc = DcNetwork::from_network_with_formula(
+        net,
+        req.branch_susceptance_formula.unwrap_or_default().into(),
+    )?;
     dc_opf_response(dc, req, None)
 }
 
@@ -1337,6 +1357,7 @@ pub(crate) fn dc_opf_assemble(
     });
 
     Ok(SolveResponse {
+        branch_susceptance_formula: Some(dc.formula),
         formulation: Problem::DcOpf,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
@@ -1384,7 +1405,10 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     reject_case_start(req, "dcpf")?;
     reject_linear_constraints(&req.constraints, "dcpf")?;
     reject_limit_options(req, "dcpf")?;
-    let mut dc = DcNetwork::from_network(net)?;
+    let mut dc = DcNetwork::from_network_with_formula(
+        net,
+        req.branch_susceptance_formula.unwrap_or_default().into(),
+    )?;
     let base = dc.base_mva;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
 
@@ -1400,6 +1424,7 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     let sol = super::problem::dc_pf(&dc, &injection)?;
 
     Ok(SolveResponse {
+        branch_susceptance_formula: Some(dc.formula),
         formulation: Problem::DcPf,
         status: SolveStatus::Feasible,
         objective: None,
@@ -1477,6 +1502,7 @@ pub(crate) fn ac_pf_assemble(
     let sensitivities = run_cells(&super::sens::AcNewton::new(acnet, sol), &req.sensitivities)?;
 
     Ok(SolveResponse {
+        branch_susceptance_formula: None,
         formulation: Problem::AcPf,
         status: SolveStatus::Feasible,
         objective: None,
@@ -1566,6 +1592,7 @@ pub(crate) fn socwr_assemble(
     };
 
     Ok(SolveResponse {
+        branch_susceptance_formula: None,
         formulation: Problem::Socwr,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),

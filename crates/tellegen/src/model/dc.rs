@@ -79,6 +79,10 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 // major bump.
 #[non_exhaustive]
 pub(crate) struct DcNetwork {
+    pub formula: crate::DcFormula,
+    /// d(effective signed DC coefficient)/d(raw series susceptance), holding g fixed.
+    #[cfg(feature = "sensitivity")]
+    pub db_dseries_b: Vec<f64>,
     /// Buses, branches, generators after filtering (in-service, non-isolated).
     pub n: usize,
     pub m: usize,
@@ -238,13 +242,18 @@ impl DcNetwork {
     /// before the instance synthesizes an unrated limit, and again to rows
     /// created by three-winding lowering. PowerIO preserves quadratic and
     /// piecewise linear costs as distinct preparation columns.
+    #[cfg(test)]
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
+        Self::from_network_with_formula(raw, BranchSusceptanceFormula::default())
+    }
+
+    pub fn from_network_with_formula(
+        raw: &BalancedNetwork,
+        formula: BranchSusceptanceFormula,
+    ) -> Result<DcNetwork, String> {
         // This path normalizes first, which keeps only generator-hosted references.
         let energized = energize(raw, ReferencePolicy::GeneratorHosted);
-        let mut model = Self::build(
-            energized.network(raw),
-            BranchSusceptanceFormula::SeriesSusceptance,
-        )?;
+        let mut model = Self::build(energized.network(raw), formula)?;
         let mut diagnostics = energized.diagnostics;
         diagnostics.append(&mut model.diagnostics);
         model.diagnostics = diagnostics;
@@ -514,7 +523,32 @@ impl DcNetwork {
             .max(1.0);
         let c_shed = vec![DEFAULT_SHED_COST_MULTIPLIER * marginal_cost_ub; n];
 
+        let formula = crate::DcFormula::try_from(instance.branch_susceptance_formula())?;
+        #[cfg(feature = "sensitivity")]
+        let db_dseries_b = {
+            let view = powerio_tx::IndexedNetwork::new(instance.network());
+            prep.branches
+                .analysis_rows
+                .iter()
+                .map(|&row| {
+                    let branch = &view.network().branches()[row];
+                    let tap = branch.calc_effective_tap();
+                    match formula {
+                        crate::DcFormula::SeriesSusceptance
+                        | crate::DcFormula::SeriesSusceptanceNoPhaseShift => 1.0,
+                        crate::DcFormula::TapAdjustedSeriesSusceptance => 1.0 / tap,
+                        crate::DcFormula::TapAdjustedReactance => {
+                            (1.0 - (branch.r / branch.x).powi(2)) / tap
+                        }
+                        crate::DcFormula::ReactanceOnly => 1.0 - (branch.r / branch.x).powi(2),
+                    }
+                })
+                .collect()
+        };
         Ok(DcNetwork {
+            formula,
+            #[cfg(feature = "sensitivity")]
+            db_dseries_b,
             n,
             m,
             k,
