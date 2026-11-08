@@ -32,11 +32,19 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		}
 	});
 	await installWebMcpHarness(page);
-	const cdp = await browser.newBrowserCDPSession();
+	const engineWasmUrls = new Set<string>();
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (url.pathname.includes('tellegen_bg') && url.pathname.endsWith('.wasm')) {
+			engineWasmUrls.add(url.href);
+		}
+	});
+	const browserEngine = browser.browserType().name();
+	const cdp = browserEngine === 'chromium' ? await browser.newBrowserCDPSession() : null;
 	let peakBrowserRssBytes = 0;
 	const memorySamples: Array<{ phase: string; rss_bytes: number }> = [];
 	const sampleMemory = async (phase: string) => {
-		if (process.platform === 'win32') return;
+		if (!cdp || process.platform === 'win32') return;
 		const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
 		const { stdout } = await promisify(execFile)('ps', [
 			'-o',
@@ -56,9 +64,11 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	await page.addInitScript(() => {
 		const durations: number[] = [];
 		Object.defineProperty(window, '__texasLongTasks', { value: durations });
-		new PerformanceObserver((list) =>
-			durations.push(...list.getEntries().map((e) => e.duration))
-		).observe({ type: 'longtask', buffered: true });
+		if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+			new PerformanceObserver((list) =>
+				durations.push(...list.getEntries().map((e) => e.duration))
+			).observe({ type: 'longtask', buffered: true });
+		}
 	});
 	const started = Date.now();
 	await page.goto('/');
@@ -135,7 +145,38 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 			'utf8'
 		)
 	);
-	expect(resultHash).toBe(reference.reduced.result_sha256);
+	const qualification = JSON.parse(
+		await readFile(
+			new URL(
+				'../../../docs/evidence/studies/texas7k-reconversion/production-artifact-comparison-2026-11-07.json',
+				import.meta.url
+			),
+			'utf8'
+		)
+	);
+	expect(qualification.original_reference_result_sha256).toBe(reference.reduced.result_sha256);
+	expect(engineWasmUrls.size).toBeGreaterThan(0);
+	let wasmHash = '';
+	for (const url of engineWasmUrls) {
+		expect(new URL(url).origin).toBe(new URL(testInfo.project.use.baseURL!).origin);
+		const response = await request.get(url);
+		expect(response.ok()).toBe(true);
+		const hash = createHash('sha256')
+			.update(await response.body())
+			.digest('hex');
+		if (wasmHash) expect(hash).toBe(wasmHash);
+		wasmHash = hash;
+	}
+	const artifact = qualification.artifacts.find(
+		(item: { wasm_sha256: string; result_sha256: string }) => item.wasm_sha256 === wasmHash
+	);
+	expect(artifact, `Unqualified WASM artifact ${wasmHash}`).toBeDefined();
+	if (resultHash !== artifact.result_sha256) {
+		await writeFile(testInfo.outputPath('texas7k-unmatched-study.json'), exportText);
+	}
+	// Compiler builds are qualified individually; retain the original scientific
+	// reference and require an exact full result for the identified artifact.
+	expect(resultHash).toBe(artifact.result_sha256);
 	const originalOptions = snapshot.options;
 	console.info('Texas7k: importing');
 	await page.locator('label.file-button input[type="file"]').setInputFiles(exported);
@@ -190,12 +231,33 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		await page.getByRole('button', { name: 'Network', exact: true }).click();
 	await expect(power).toBeVisible();
 	const base = Number(await power.inputValue());
+	const beforeEdit = await callTool(page, 'inspect_case', {});
+	if (!beforeEdit.ok) throw new Error(beforeEdit.error.message);
 	const editStart = Date.now();
 	await power.fill(String(base * 1.01));
 	await power.press('Tab');
-	await expect(page.getByText('Calculating...', { exact: true })).toHaveCount(0, {
-		timeout: 90_000
-	});
+	// A zero-count check can pass before the debounced edit starts. Wait for
+	// the accepted result's revision to advance and the calculation to finish.
+	await expect
+		.poll(
+			async () => {
+				const value = await callTool(page, 'inspect_case', {});
+				if (!value.ok) return null;
+				return {
+					case_id: value.data.case_id,
+					revision_changed: value.data.revision !== beforeEdit.data.revision,
+					solving: value.data.solving,
+					converged: (value.data.solution as { converged?: boolean } | null)?.converged
+				};
+			},
+			{ timeout: 90_000 }
+		)
+		.toEqual({
+			case_id: beforeEdit.data.case_id,
+			revision_changed: true,
+			solving: false,
+			converged: true
+		});
 	await expect(power).toHaveValue(String(base * 1.01));
 	const editMs = Date.now() - editStart;
 	const transfer = await page.evaluate(() =>
@@ -217,20 +279,35 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const longTasks = await page.evaluate(
 		() => (window as unknown as { __texasLongTasks: number[] }).__texasLongTasks
 	);
+	const longTasksSupported = await page.evaluate(() =>
+		PerformanceObserver.supportedEntryTypes.includes('longtask')
+	);
+	const server = new URL(testInfo.project.use.baseURL!);
+	const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(server.hostname);
 	const metrics = {
-		browser_rss_max_at_checkpoints_bytes: peakBrowserRssBytes,
+		server_origin: server.origin,
+		browser_rss_max_at_checkpoints_bytes: memorySamples.length ? peakBrowserRssBytes : null,
 		memory_samples: memorySamples,
+		browser_engine: browserEngine,
 		browser: browser.version(),
-		memory_note:
-			'Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.',
-		main_thread_long_task_count: longTasks.length,
-		main_thread_longest_task_ms: Math.max(0, ...longTasks),
+		viewport: page.viewportSize(),
+		mobile_emulation: Boolean(testInfo.project.use.isMobile),
+		memory_note: memorySamples.length
+			? 'Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.'
+			: 'Browser process RSS is unavailable through this browser engine; no memory qualification is claimed.',
+		long_task_observation_supported: longTasksSupported,
+		main_thread_long_task_count: longTasksSupported ? longTasks.length : null,
+		main_thread_longest_task_ms: longTasksSupported ? Math.max(0, ...longTasks) : null,
 		load_ms: loadMs,
 		ui_solve_ms: solveMs,
 		edit_ms: editMs,
+		edit_result_revision_advanced: true,
+		wasm_sha256: wasmHash,
 		result_sha256: resultHash,
+		original_reference_result_sha256: reference.reduced.result_sha256,
+		original_reference_match: resultHash === reference.reduced.result_sha256,
 		transfer,
-		note: 'Single local Chromium run; loopback network, warm server, includes UI scheduling. Not a device support guarantee.'
+		note: `Single ${browserEngine} run against ${loopback ? 'a loopback server' : 'the configured public HTTPS server'}; includes network and UI scheduling, with no controlled cache or host-load conditions. Viewport/device emulation does not qualify physical mobile memory or performance.`
 	};
 	await writeFile(
 		testInfo.outputPath('texas7k-browser.json'),

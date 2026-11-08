@@ -217,9 +217,9 @@ open that bumps the version. Merge it to run the gates, continue the existing
 sets `release_always = false`, limiting publication to a merged release-plz pull
 request. The unprivileged gate runs `cargo package --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema`, so every
 shipping numerical feature builds against crates.io; the OIDC-enabled
-release uses the ordinary verified Cargo publish path against that exact
-commit. release-plz obtains its short-lived crates.io credential directly from
-OIDC.
+release skips build verification because those unprivileged gates have already
+verified the package against that exact commit. release-plz obtains its
+short-lived crates.io credential directly from OIDC.
 
 The explicit feature list excludes `powerio-012`, which requires selecting
 matching 0.12 dependencies and belongs to the separate PowerIO Candidate gate.

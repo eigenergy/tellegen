@@ -54,15 +54,20 @@ sample of visitor outcomes. Automated headless requests were not included in
 the observed counts. Event-property requests use the Cloud API's `event` filter
 ([API changelog](https://docs.umami.is/docs/cloud/changelog)).
 
-A subsequent production check on 7 November completed Portugal generation
-with DC OPF optimal and AC power flow converged. All five collector requests
-(page view, engine load, generation start/finish and agent availability)
-returned HTTP 200. The aggregate totals below did not increase after the
-automated check, so it proves transport only and is not counted as new visitor
-evidence. A separate normal browser session also completed without collector
-errors. The test machine's VPN DNS returned NXDOMAIN for the Umami hosts;
-the isolated transport test used their verified public DNS address without
-changing the machine's network settings or the site's privacy behavior.
+Production checks on 7 November completed Portugal generation with DC OPF
+optimal and AC power flow converged. A separate normal browser session also
+completed without collector errors. The [later transport check](2026-11-07-transport-check.json)
+received five HTTP 200 responses from the production gateway, each with
+Umami's explicit `{"beep":"boop"}` bot-filter reply. These responses confirm
+working transport and intentional headless-browser exclusion; they do not
+acknowledge recorded sessions. The aggregate readback remained unchanged after
+the checks. See Umami's [bot-check setting](https://docs.umami.is/docs/environment-variables#disable_bot_check)
+and [send handler](https://github.com/umami-software/umami/blob/master/src/app/api/send/route.ts).
+Only that test process used an independently verified public DNS address for
+the gateway because its local VPN resolver returned NXDOMAIN. System DNS and
+the site's privacy behavior were unchanged. The monthly snapshot below is
+retained unchanged by this transport check. These checks do not establish
+organic visitor growth.
 
 <!-- usage:start -->
 

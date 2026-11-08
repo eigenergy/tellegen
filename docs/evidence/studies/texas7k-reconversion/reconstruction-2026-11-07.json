@@ -1,0 +1,37 @@
+{
+  "revision": "01986ddd858e6836f063faf403e36ab012fc0ae2",
+  "source_manifest_sha256": "b255ef098cc00f82bbc6cf2a99f4174c59423d9961c09d189cb361cfd6d63802",
+  "source_file_count": 62,
+  "source_bytes": 10639318,
+  "full_conversion_sha256": "1e78fc25de0d6d95e6c61e5ad7f6ff38e28b8057fb1fef8c1108805d5744df37",
+  "prepared_input_sha256": {
+    "p1uhs0_1247.main-island.bmopf.json": "e57d44bf318bdd7a83894b699f0bc6ab3c72dd5721045aceb36a741a2c52e409",
+    "License.md": "f1dc639fcbd6466b5820f91f6b6262b90652cd856e2535a2d94f48597a0e45fa",
+    "SOURCE_NOTICE.md": "9ae057ead57034e4e6c51798702116d9aa1f5213f23e98dfb832bd363109d31d",
+    "tellegen_options.json": "17c91dff45141b48c298f9b35273de6891e21353df19880ef6084cb59cdcf9e9",
+    "README.md": "c4fcf99bea8e540340e5c798a342cd841b90adbbd08cc769d60d21a108a66bee",
+    "island-removal.json": "d8ed1597cd8987d6808c079f19a5f35c91fe133d44efa9bef330e98fe58a63f8"
+  },
+  "python_dependencies": {
+    "powerio": "0.11.7",
+    "OpenDSSDirect.py": "0.9.4",
+    "dss-python": "0.15.7",
+    "dss-python-backend": "0.14.5",
+    "jsonschema": "4.26.0",
+    "numpy": "2.5.3",
+    "matplotlib": "3.11.2"
+  },
+  "schema_sha256": "74d6c6de3637d52e42a26c4cb0584f51df70d69f360b236cf5e23afaf7669462",
+  "wasm_sha256": "a854d9053db24f0c9bb34af25b6bba7b2e357f0be6f9bc2395918116010d6128",
+  "wasm_loader_sha256": "03a20107d9dc5ec7b9a098285d2104e20e440aa03a2871e7b2509b51a97268fd",
+  "source_lock_sha256": "1151c3207cc0fafc8f947f831945d5a16bd894fb313f97d1d6faf05ed847879b",
+  "validation": "Exact historical input hashes and paired current browser WASM results; no new native run.",
+  "tellegen_source_revision": "339326cd513587cf2bfdade255f93dabe02f8f3f",
+  "tellegen_powerio_dependency": "0.11.9",
+  "bundle_directory": "distribution/texas7k-p1uhs0_1247-a594e609e0a0cc31",
+  "bundle_checksums_sha256": "a594e609e0a0cc3108b1cf58b649052d6be70e805804ff70a2b75158d2f5d8c4",
+  "hosted_module_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+  "hosted_module_bytes": 36692131,
+  "hosted_module_gzip_bytes": 1260618,
+  "production_deployed": false
+}

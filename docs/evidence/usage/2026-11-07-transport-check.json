@@ -1,0 +1,44 @@
+{
+  "schema": "tellegen.analytics-transport-check/1",
+  "checked_at": "2026-11-07T20:27:26.910024Z",
+  "site": "https://maptogrid.com",
+  "browser_family": "HeadlessChrome",
+  "transport": "Real production requests; only this test process mapped gateway.umami.is to its independently verified public DNS address because the local VPN resolver returns NXDOMAIN. System DNS was unchanged.",
+  "responses": [
+    {
+      "event": "agent.availability",
+      "status": 200,
+      "bot_filtered": true,
+      "session_acknowledged": false
+    },
+    {
+      "event": "generate.start",
+      "status": 200,
+      "bot_filtered": true,
+      "session_acknowledged": false
+    },
+    {
+      "event": "pageview",
+      "status": 200,
+      "bot_filtered": true,
+      "session_acknowledged": false
+    },
+    {
+      "event": "engine.load",
+      "status": 200,
+      "bot_filtered": true,
+      "session_acknowledged": false
+    },
+    {
+      "event": "generate.finish",
+      "status": 200,
+      "bot_filtered": true,
+      "session_acknowledged": false
+    }
+  ],
+  "request_failures": [],
+  "interpretation": "Every HTTP 200 response was the explicit Umami bot-filter reply. None acknowledged a recorded session. These checks establish transport and intentional bot exclusion, not new visitor counts.",
+  "aggregate_readback_at": "2026-11-07T20:26:16.696Z",
+  "aggregate_readback": "Unchanged: MapToGrid 1 pageview/1 visitor/1 generation; Tellegen 222 pageviews/90 visitors/134 visits. The MapToGrid observation is release-validation traffic, not organic growth.",
+  "reference": "https://docs.umami.is/docs/environment-variables#disable_bot_check"
+}

@@ -1,0 +1,592 @@
+{
+  "schema": "tellegen.texas7k-artifact-result-qualification/1",
+  "checked_at": "2026-11-07T20:55:54.738939+00:00",
+  "source_revision": "2e1d4172456a4349b1b9baf2a76f88bc501ea937",
+  "deployment_run": "https://github.com/eigenergy/tellegen/actions/runs/42411279998",
+  "production_image": "ghcr.io/eigenergy/tellegen@sha256:3124554da9a688912b3ad96e0bd377339edd4280ad751c7e7c0e73859a538d41",
+  "input_module_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+  "original_reference_result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "artifacts": [
+    {
+      "label": "original November 3 reference",
+      "wasm_sha256": "4c0960b98f4dd0bc61334a25b78c15953c4e9e7dc600e5e845ae382d92f47f79",
+      "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1"
+    },
+    {
+      "label": "November 7 local stable PowerIO 0.11.9",
+      "wasm_sha256": "a854d9053db24f0c9bb34af25b6bba7b2e357f0be6f9bc2395918116010d6128",
+      "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+      "producers": [
+        {
+          "language": {
+            "Rust": ""
+          },
+          "processed-by": {
+            "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+            "walrus": "0.27.3",
+            "wasm-bindgen": "0.2.130 (c93b8ae84)"
+          }
+        }
+      ]
+    },
+    {
+      "label": "PowerIO 0.12.0-rc.1 at 16f466a03a474fddfd6c317c685dc168fcb1ea2e",
+      "wasm_sha256": "acac3030759911ab95eb68941184e5b24291add2de5c571f0fcbbeb881459886",
+      "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1"
+    },
+    {
+      "label": "November 7 production PowerIO 0.11.9",
+      "wasm_sha256": "e52fa21db52f646adfdfbf468f3a4f51648157c4263efa2504c7d44c9bd650b2",
+      "wasm_bytes": 15267152,
+      "download_url": "https://tellegen.dev/_app/immutable/workers/assets/tellegen_bg-B844Tya4.wasm",
+      "result_sha256": "e036f916145e2188a5ace26a2f7c0dff9cf43501b2d3d1148f7df46931f38e05",
+      "producers": [
+        {
+          "language": {
+            "Rust": ""
+          },
+          "processed-by": {
+            "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+            "walrus": "0.27.3",
+            "wasm-bindgen": "0.2.130 (c93b8ae84)"
+          }
+        }
+      ]
+    },
+    {
+      "label": "Published @tellegen/engine@0.8.0, Rust 1.96.0",
+      "wasm_sha256": "59ef6ab60302a4a202b7fa8b0e56d1ea9eefb6ce602289514f4b5e7cfab672fc",
+      "wasm_bytes": 15509910,
+      "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+      "producers": [
+        {
+          "language": {
+            "Rust": ""
+          },
+          "processed-by": {
+            "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+            "walrus": "0.27.3",
+            "wasm-bindgen": "0.2.130 (c93b8ae84)"
+          }
+        }
+      ],
+      "source_revision": "dc73b7a58494efa276e1fe7c56752e3d58047996",
+      "qualification": "registry-artifact-validation-2026-11-07.json"
+    }
+  ],
+  "isolation": {
+    "reference_raw_input_result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+    "reference_exported_input_result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+    "production_raw_input_result_sha256": "e036f916145e2188a5ace26a2f7c0dff9cf43501b2d3d1148f7df46931f38e05",
+    "production_exported_input_result_sha256": "e036f916145e2188a5ace26a2f7c0dff9cf43501b2d3d1148f7df46931f38e05",
+    "production_browser_result_sha256": "e036f916145e2188a5ace26a2f7c0dff9cf43501b2d3d1148f7df46931f38e05",
+    "numeric_input_differences": 0,
+    "input_metadata_difference": "Exported retained input omits source_map.",
+    "browser_and_direct_production_results_exactly_equal": true
+  },
+  "comparison": {
+    "different_numeric_leaves": 664523,
+    "different_nonnumeric_leaves": 0,
+    "scalar_maxima": {
+      "$.load_model.original_kcl_residual": {
+        "path": "$.load_model.original_kcl_residual",
+        "expected": 4.76837158203125e-6,
+        "actual": 4.046097457045827e-6,
+        "absolute_delta": 7.222741249854233e-7,
+        "relative_delta": 0.15147186257614303
+      },
+      "$.load_model.original_scaled_kcl_residual": {
+        "path": "$.load_model.original_scaled_kcl_residual",
+        "expected": 0.16871847863930675,
+        "actual": 0.16874584911511412,
+        "absolute_delta": 2.7370475807364514e-5,
+        "relative_delta": 0.0001621994019461366
+      },
+      "$.min_voltage_pu": {
+        "path": "$.min_voltage_pu",
+        "expected": 0.8519774451816381,
+        "actual": 0.8519774451817638,
+        "absolute_delta": 1.2567724638756772e-13,
+        "relative_delta": 1.4751241021498558e-13
+      },
+      "$.max_voltage_pu": {
+        "path": "$.max_voltage_pu",
+        "expected": 1.0407934752865224,
+        "actual": 1.0407934752864683,
+        "absolute_delta": 5.417888360170764e-14,
+        "relative_delta": 5.205536438128862e-14
+      },
+      "$.voltage_change": {
+        "path": "$.voltage_change",
+        "expected": 6.239119494831749e-8,
+        "actual": 6.237830306417835e-8,
+        "absolute_delta": 1.2891884139134489e-11,
+        "relative_delta": 0.000206629864194998
+      },
+      "$.physical_kcl_residual": {
+        "path": "$.physical_kcl_residual",
+        "expected": 4.76837158203125e-6,
+        "actual": 4.046097457045827e-6,
+        "absolute_delta": 7.222741249854233e-7,
+        "relative_delta": 0.15147186257614303
+      },
+      "$.scaled_kcl_residual": {
+        "path": "$.scaled_kcl_residual",
+        "expected": 0.16871847863930675,
+        "actual": 0.16874584911511412,
+        "absolute_delta": 2.7370475807364514e-5,
+        "relative_delta": 0.0001621994019461366
+      },
+      "$.terminals.*.voltage.re": {
+        "path": "$.terminals.14171.voltage.re",
+        "expected": -6849.55674829786,
+        "actual": -6849.556748307976,
+        "absolute_delta": 1.0115400073118508e-8,
+        "relative_delta": 1.4767963015442252e-12
+      },
+      "$.terminals.*.voltage.im": {
+        "path": "$.terminals.23834.voltage.im",
+        "expected": 7172.004070826206,
+        "actual": 7172.00407083122,
+        "absolute_delta": 5.014044290874153e-9,
+        "relative_delta": 6.991134195344979e-13
+      },
+      "$.terminals.*.current_into_network.re": {
+        "path": "$.terminals.17759.current_into_network.re",
+        "expected": -3.814697265625e-6,
+        "actual": 1.9073486328125e-6,
+        "absolute_delta": 5.7220458984375e-6,
+        "relative_delta": 1.5
+      },
+      "$.terminals.*.current_into_network.im": {
+        "path": "$.terminals.25329.current_into_network.im",
+        "expected": 3.814697265625e-6,
+        "actual": -1.9073486328125e-6,
+        "absolute_delta": 5.7220458984375e-6,
+        "relative_delta": 1.5
+      },
+      "$.terminals.*.power_into_network.re": {
+        "path": "$.terminals.17759.power_into_network.re",
+        "expected": 0.026680917260914844,
+        "actual": -0.0090786880710487,
+        "absolute_delta": 0.03575960533196354,
+        "relative_delta": 1.3402689638541085
+      },
+      "$.terminals.*.power_into_network.im": {
+        "path": "$.terminals.30772.power_into_network.im",
+        "expected": -0.02248923655509809,
+        "actual": 0.015932830154311454,
+        "absolute_delta": 0.03842206670940954,
+        "relative_delta": 1.7084646966683998
+      },
+      "$.element_ports.*.current_into_element.re": {
+        "path": "$.element_ports.90571.current_into_element.re",
+        "expected": 7.78986930847168,
+        "actual": 7.789872169494629,
+        "absolute_delta": 2.86102294921875e-6,
+        "relative_delta": 3.672746980910163e-7
+      },
+      "$.element_ports.*.current_into_element.im": {
+        "path": "$.element_ports.31906.current_into_element.im",
+        "expected": -75.68937587738037,
+        "actual": -75.68937301635742,
+        "absolute_delta": 2.86102294921875e-6,
+        "relative_delta": 3.779953152016625e-8
+      },
+      "$.element_ports.*.power_into_element.re": {
+        "path": "$.element_ports.93272.power_into_element.re",
+        "expected": 237215.80905444466,
+        "actual": 237215.82769552193,
+        "absolute_delta": 0.018641077273059636,
+        "relative_delta": 7.858277187551906e-8
+      },
+      "$.element_ports.*.power_into_element.im": {
+        "path": "$.element_ports.93788.power_into_element.im",
+        "expected": 56062.61474334882,
+        "actual": 56062.59472159889,
+        "absolute_delta": 0.020021749929583166,
+        "relative_delta": 3.571319322375793e-7
+      }
+    },
+    "independent_complex_vector_maxima": {
+      "terminals.voltage": {
+        "maximum_absolute_vector": {
+          "index": 14171,
+          "absolute_vector_delta": 1.0364020162162505e-8,
+          "relative_vector_delta": 1.4394150279497397e-12,
+          "scale": 7200.1611494390945,
+          "identity": {
+            "bus": "p1udt1310-p1udt173x",
+            "terminal": "2"
+          },
+          "reference": {
+            "re": -6849.55674829786,
+            "im": -2219.435272674279
+          },
+          "actual": {
+            "re": -6849.556748307976,
+            "im": -2219.4352726765355
+          }
+        },
+        "maximum_relative_vector": {
+          "index": 43647,
+          "absolute_vector_delta": 1.7619478066102007e-10,
+          "relative_vector_delta": 1.5034600711222233e-12,
+          "scale": 117.19285669456025,
+          "identity": {
+            "bus": "p1ulv4047",
+            "terminal": "1"
+          },
+          "reference": {
+            "re": -111.98831267220177,
+            "im": -34.5366976566043
+          },
+          "actual": {
+            "re": -111.98831267237321,
+            "im": -34.536697656644954
+          }
+        },
+        "descriptive_magnitude_floor": 1,
+        "maximum_relative_above_floor": {
+          "index": 43647,
+          "absolute_vector_delta": 1.7619478066102007e-10,
+          "relative_vector_delta": 1.5034600711222233e-12,
+          "scale": 117.19285669456025,
+          "identity": {
+            "bus": "p1ulv4047",
+            "terminal": "1"
+          },
+          "reference": {
+            "re": -111.98831267220177,
+            "im": -34.5366976566043
+          },
+          "actual": {
+            "re": -111.98831267237321,
+            "im": -34.536697656644954
+          }
+        }
+      },
+      "terminals.current_into_network": {
+        "maximum_absolute_vector": {
+          "index": 30772,
+          "absolute_vector_delta": 6.03156597169567e-6,
+          "relative_vector_delta": 1.5540573797716228,
+          "scale": 3.881173275971343e-6,
+          "identity": {
+            "bus": "p1udt483",
+            "terminal": "1"
+          },
+          "reference": {
+            "re": 7.152557373046875e-7,
+            "im": 3.814697265625e-6
+          },
+          "actual": {
+            "re": -1.1920928955078125e-6,
+            "im": -1.9073486328125e-6
+          }
+        },
+        "maximum_relative_vector": {
+          "index": 112,
+          "absolute_vector_delta": 4.3655745685100555e-11,
+          "relative_vector_delta": 2.0,
+          "scale": 2.1827872842550278e-11,
+          "identity": {
+            "bus": "__star_tr_r_p1udt107_p1udt107lv_",
+            "terminal": "1"
+          },
+          "reference": {
+            "re": 0,
+            "im": 2.1827872842550278e-11
+          },
+          "actual": {
+            "re": 0,
+            "im": -2.1827872842550278e-11
+          }
+        },
+        "descriptive_magnitude_floor": 0.001,
+        "maximum_relative_above_floor": {
+          "index": 19820,
+          "absolute_vector_delta": 2.1121288883671488e-11,
+          "relative_vector_delta": 4.313130197557338e-10,
+          "scale": 0.048969745674807455,
+          "identity": {
+            "bus": "p1udt2399lv",
+            "terminal": "4"
+          },
+          "reference": {
+            "re": -0.023511156943641254,
+            "im": 0.042956506958944374
+          },
+          "actual": {
+            "re": -0.023511156964104885,
+            "im": 0.04295650695371478
+          }
+        }
+      },
+      "terminals.power_into_network": {
+        "maximum_absolute_vector": {
+          "index": 30772,
+          "absolute_vector_delta": 0.04473512238220845,
+          "relative_vector_delta": 1.554057379771632,
+          "scale": 0.028786017147437795,
+          "identity": {
+            "bus": "p1udt483",
+            "terminal": "1"
+          },
+          "reference": {
+            "re": -0.01796855649131067,
+            "im": -0.02248923655509809
+          },
+          "actual": {
+            "re": 0.00494379747612031,
+            "im": 0.015932830154311454
+          }
+        },
+        "maximum_relative_vector": {
+          "index": 15229,
+          "absolute_vector_delta": 3.560947132545047e-9,
+          "relative_vector_delta": 1.9999999999999991,
+          "scale": 1.7804735662725243e-9,
+          "identity": {
+            "bus": "p1udt1504lv",
+            "terminal": "2"
+          },
+          "reference": {
+            "re": -1.463346749832633e-9,
+            "im": 1.0142496783087834e-9
+          },
+          "actual": {
+            "re": 1.4633467498326342e-9,
+            "im": -1.0142496783087785e-9
+          }
+        },
+        "descriptive_magnitude_floor": 1,
+        "maximum_relative_above_floor": {
+          "index": 55858,
+          "absolute_vector_delta": 1.9246323546361583e-5,
+          "relative_vector_delta": 2.1469901429839727e-10,
+          "scale": 89643.27856490423,
+          "identity": {
+            "bus": "p1umv2",
+            "terminal": "3"
+          },
+          "reference": {
+            "re": -88166.04250951792,
+            "im": -16206.984299211708
+          },
+          "actual": {
+            "re": -88166.04250130586,
+            "im": -16206.984316618113
+          }
+        }
+      },
+      "element_ports.current_into_element": {
+        "maximum_absolute_vector": {
+          "index": 31906,
+          "absolute_vector_delta": 2.9004871989718525e-6,
+          "relative_vector_delta": 3.150779859570777e-8,
+          "scale": 92.05616794081509,
+          "identity": {
+            "bus": "p1udt2631",
+            "terminal": "1",
+            "element": "fuse(r:p1udt1301-p1udt2631)p1u_28127",
+            "kind": "line",
+            "branch": 0
+          },
+          "reference": {
+            "re": 52.39710330963135,
+            "im": -75.68937587738037
+          },
+          "actual": {
+            "re": 52.397103786468506,
+            "im": -75.68937301635742
+          }
+        },
+        "maximum_relative_vector": {
+          "index": 76274,
+          "absolute_vector_delta": 1.3015628661377063e-10,
+          "relative_vector_delta": 1.788854381999832,
+          "scale": 7.275957614183426e-11,
+          "identity": {
+            "bus": "p1udt2580-p1udt4366x",
+            "terminal": "3",
+            "element": "l(r:p1udt2580-p1udt4366)",
+            "kind": "line",
+            "branch": 0
+          },
+          "reference": {
+            "re": 5.820766091346741e-11,
+            "im": -4.3655745685100555e-11
+          },
+          "actual": {
+            "re": -5.820766091346741e-11,
+            "im": 1.4551915228366852e-11
+          }
+        },
+        "descriptive_magnitude_floor": 0.001,
+        "maximum_relative_above_floor": {
+          "index": 93448,
+          "absolute_vector_delta": 1.922192036699903e-6,
+          "relative_vector_delta": 3.1226078264879843e-6,
+          "scale": 0.6155726698673537,
+          "identity": {
+            "bus": "p1udt2749",
+            "terminal": "2",
+            "element": "padswitch(r:p1udt2749-p1udt671)p1u_25722",
+            "kind": "line",
+            "branch": 0
+          },
+          "reference": {
+            "re": -0.5514297485351562,
+            "im": -0.2735922336578369
+          },
+          "actual": {
+            "re": -0.5514316558837891,
+            "im": -0.273592472076416
+          }
+        }
+      },
+      "element_ports.power_into_element": {
+        "maximum_absolute_vector": {
+          "index": 90343,
+          "absolute_vector_delta": 0.021515883719898713,
+          "relative_vector_delta": 1.1176946451329254e-6,
+          "scale": 19250.23423310744,
+          "identity": {
+            "bus": "p1udt1570",
+            "terminal": "1",
+            "element": "padswitch(r:p1udt1570-p1udt481)p1u_24949",
+            "kind": "line",
+            "branch": 0
+          },
+          "reference": {
+            "re": -18807.414358923186,
+            "im": -4105.122361753967
+          },
+          "actual": {
+            "re": -18807.428124522987,
+            "im": -4105.138897821044
+          }
+        },
+        "maximum_relative_vector": {
+          "index": 76274,
+          "absolute_vector_delta": 9.640548665894369e-7,
+          "relative_vector_delta": 1.788854381999797,
+          "scale": 5.389230539333783e-7,
+          "identity": {
+            "bus": "p1udt2580-p1udt4366x",
+            "terminal": "3",
+            "element": "l(r:p1udt2580-p1udt4366)",
+            "kind": "line",
+            "branch": 0
+          },
+          "reference": {
+            "re": -2.492522672728463e-7,
+            "im": 4.778193856680834e-7
+          },
+          "actual": {
+            "re": 3.6529519713563913e-8,
+            "im": -4.4290345863503847e-7
+          }
+        },
+        "descriptive_magnitude_floor": 1,
+        "maximum_relative_above_floor": {
+          "index": 93448,
+          "absolute_vector_delta": 0.01422275573044936,
+          "relative_vector_delta": 3.1226078494592684e-6,
+          "scale": 4554.768455127104,
+          "identity": {
+            "bus": "p1udt2749",
+            "terminal": "2",
+            "element": "padswitch(r:p1udt2749-p1udt671)p1u_25722",
+            "kind": "line",
+            "branch": 0
+          },
+          "reference": {
+            "re": 4552.030970819102,
+            "im": -157.50368845842922
+          },
+          "actual": {
+            "re": 4552.044551503703,
+            "im": -157.49946332099535
+          }
+        }
+      }
+    }
+  },
+  "unchanged_acceptance": {
+    "converged": true,
+    "iterations": 23,
+    "terminal_count": 55972,
+    "element_port_count": 128426,
+    "absolute_kcl_tolerance_a": 1e-5,
+    "reference_physical_kcl_residual_a": 4.76837158203125e-6,
+    "production_physical_kcl_residual_a": 4.046097457045827e-6
+  },
+  "interpretation": "Differences follow the WASM artifact on identical inputs. Producer metadata confirms the floating Docker Rust image used rustc 1.99.1 while the local and CI toolchain was pinned to 1.96.0. Small complex-vector differences concentrate in low-impedance switch/fuse current cancellation and near-zero KCL residuals. Exact artifact/result pairs are qualified separately; the original reference remains unchanged and no general numerical tolerance is relaxed.",
+  "build_correction": {
+    "image": "docker.io/library/rust:1.96.0-slim-trixie",
+    "status": 200,
+    "digest": "sha256:c37af730be4fd8104cbf9aedbd6ab259e51ca2d5437817a0f8680edf66ac6c28",
+    "platforms": [
+      {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      {
+        "architecture": "arm",
+        "os": "linux",
+        "variant": "v7"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      {
+        "architecture": "arm64",
+        "os": "linux",
+        "variant": "v8"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      {
+        "architecture": "386",
+        "os": "linux"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      {
+        "architecture": "ppc64le",
+        "os": "linux"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      {
+        "architecture": "riscv64",
+        "os": "linux"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      {
+        "architecture": "s390x",
+        "os": "linux"
+      },
+      {
+        "architecture": "unknown",
+        "os": "unknown"
+      }
+    ]
+  }
+}
