@@ -72,6 +72,26 @@
       ],
       "source_revision": "dc73b7a58494efa276e1fe7c56752e3d58047996",
       "qualification": "registry-artifact-validation-2026-11-07.json"
+    },
+    {
+      "label": "Production Docker Rust 1.96.0",
+      "wasm_sha256": "55eca580cea7b5b3856fe7ec9a2c7ae7a65a207923c7a9e83218627f8e5f9887",
+      "wasm_bytes": 15508556,
+      "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+      "producers": [
+        {
+          "language": {
+            "Rust": ""
+          },
+          "processed-by": {
+            "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+            "walrus": "0.27.3",
+            "wasm-bindgen": "0.2.130 (c93b8ae84)"
+          }
+        }
+      ],
+      "source_revision": "96c83317e1612e85e03e0edcc6ed4949966f158f",
+      "qualification": "production-compiler-validation-2026-11-07.json"
     }
   ],
   "isolation": {
