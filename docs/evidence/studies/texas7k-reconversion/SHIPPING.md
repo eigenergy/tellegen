@@ -248,3 +248,11 @@ terminals). `registry-artifact-validation-2026-11-07.json` records the package
 archive digest, source/workflow provenance fields, WASM producer metadata and
 result. That actual artifact was added to the exact-result qualification map;
 a different final Docker artifact still requires independent qualification.
+
+The final Docker-built production core was independently qualified after the
+pinned-compiler deployment. It has a distinct fingerprint from the registry
+archive but the same Rust 1.96.0 producer version and exactly the original
+complete scientific result on the unchanged input/options. The actual public
+WASM, host checksum, source revision and image are recorded in
+`production-compiler-validation-2026-11-07.json`; its exact artifact/result
+pair is now included in the strict browser acceptance map.
