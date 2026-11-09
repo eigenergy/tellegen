@@ -1679,7 +1679,7 @@ fn network_payload(
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(NetworkPayload {
-        equipment: tellegen::equipment::project(net)?,
+        equipment: tellegen::equipment::project_with_analysis(net, analysis)?,
         model_details: None,
         id: id.into(),
         name: name.into(),

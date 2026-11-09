@@ -324,6 +324,7 @@ fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
         ));
     }
 
+    super::reject_active_svcs(network)?;
     reject_unsupported_active_elements(network, HvdcLines::Reject)
 }
 

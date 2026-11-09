@@ -283,7 +283,8 @@ inside the screen, including at 320 CSS pixels.
 | Capacitor bank / reactor | Separate capacitor plates / coil | Individual source shunts, including zero-output and out-of-service banks; fixed admittance |
 | Mixed admittance | Generic shunt symbol | Conductance and susceptance remain distinct |
 | Three-winding transformer | Three winding circles | One source device mapped to three analysis branches and an internal star bus |
-| SVC, storage | Distinct device symbols and explicit labels | Active devices rejected by the ordinary formulations |
+| SVC | Distinct symbol and explicit label | DC omits reactive controls with a diagnostic; AC rejects active SVCs |
+| Storage | Distinct symbol and explicit label | Active devices rejected by the ordinary formulations |
 | Switch | Open or closed contact and state label | Open contacts disconnect; closed contacts require topology reduction |
 | Reduced HVDC | Two converter boxes and a labeled DC connection | Fixed terminal injections in DC PF/DC OPF/AC PF; rejected in AC OPF/SOCWR |
 | Detailed DC | Separate node/branch/converter graph | Source connectivity, with a qualified solver when sufficient data exists |
@@ -339,6 +340,13 @@ For imported local cases, **Solve with AC power flow** applies solved converter
 Pac and Q to the original AC network. A VSC can hold fixed Q or regulate its AC
 bus voltage by varying Q within stated min/max limits or a piecewise-linear
 capability curve evaluated at the solved Pac. Positive Q is AC absorption.
+These are PowerIO's **detailed** `VoltageSourceConverter` records. The IIDM
+`VscConverterStation` reduced-HVDC model has a different setpoint convention and
+must not be used to infer a sign flip for this record. The pinned PowerIO reader
+preserves detailed XIIDM setpoints and curves, and CGMES `targetQpcc` and
+`VsCapabilityCurve`; Tellegen evaluates P coordinates and Q bounds consistently
+in PCC withdrawal convention. See the [detailed IIDM converter API](https://powsybl.readthedocs.io/projects/pypowsybl/en/latest/reference/api/pypowsybl.network.Network.get_voltage_source_converters.html).
+Asymmetric Q bounds and nonzero P coordinates are covered by regression tests.
 At a Q limit the controller holds that limit and reports the missed voltage
 target (PQ behavior); it does not falsely report successful voltage regulation.
 Competing generator/converter voltage controllers are rejected.
@@ -383,6 +391,11 @@ power flow between bounded actions; they stop in the target band, at a setting
 limit, or when discrete steps cannot reach the band. A radial PST may have no
 useful influence on active-power sharing: drawing a regulator does not guarantee
 control authority. Cycling, incompatible targets and nonconvergence return errors.
+The pass budget is 60 plus the sum of declared discrete moves across controls,
+so a 1000-section bank can traverse its full range and perform a final target
+check. Candidate flows warm-start from the last accepted voltage state, with the
+normal flat-start fallback; numerical Jacobians are rebuilt after control changes.
+At most 64 simultaneous controls are supported.
 
 Detailed tap tables with impedance corrections, asymmetric winding controls,
 mixed-sign shunt switching sequences, partial participation and unresolved terminal
@@ -397,3 +410,9 @@ Rust APIs: `regulation::solve_source`, `dc_grid::solve`,
 Sensitivities remain local derivatives of fixed control equations, not derivatives
 through saturation or mode changes. Zero-current absolute-loss kinks are rejected
 for sensitivity and smooth joint-OPF optimality qualification.
+
+Independent DC operating-limit checks allow an absolute numerical floor of
+1e-7 MW/kV (1e-8 kA) plus 2e-8 times the limit magnitude, consistent with the
+nonlinear solver's bound relaxation. This accommodates binding 150 MW limits
+without accepting physically meaningful excesses. Numerical convergence remains
+separate from operating-limit diagnostics.

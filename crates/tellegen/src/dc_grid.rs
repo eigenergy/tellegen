@@ -407,7 +407,18 @@ fn norm(x: &[f64]) -> f64 {
     x.iter().map(|v| v.abs()).fold(0.0, f64::max)
 }
 
+/// Independent physical-unit checks allow the solver's 1e-8 relative bound
+/// relaxation plus numerical evaluation error. The absolute floors are MW/kV
+/// or kA, respectively; the relative allowance is only 0.02 parts per million.
+fn limit_tolerance(bound: f64, absolute: f64) -> f64 {
+    absolute + 2e-8 * bound.abs()
+}
+
 pub fn solve(grid: &DcGrid) -> Result<DcGridSolution, String> {
+    solve_with_iterations(grid, 60)
+}
+
+fn solve_with_iterations(grid: &DcGrid, max_iterations: usize) -> Result<DcGridSolution, String> {
     let p = Prepared::new(grid)?;
     let n = grid.nodes.len();
     let mut x: Vec<_> = grid
@@ -427,12 +438,15 @@ pub fn solve(grid: &DcGrid) -> Result<DcGridSolution, String> {
         }
     }));
     let mut converged = None;
-    for iteration in 0..60 {
+    for iteration in 0..=max_iterations {
         let (f, j) = p.equations(&x);
         let residual = norm(&f);
         if residual < 1e-9 {
             linear(j, vec![0.0; x.len()])?;
             converged = Some((iteration, residual));
+            break;
+        }
+        if iteration == max_iterations {
             break;
         }
         let step = linear(j, f.iter().map(|v| -v).collect())?;
@@ -452,8 +466,8 @@ pub fn solve(grid: &DcGrid) -> Result<DcGridSolution, String> {
             "DC grid Newton line search failed; no acceptable positive converter-voltage step",
         )?;
     }
-    let (iterations, residual) =
-        converged.ok_or("DC grid did not converge within 60 iterations")?;
+    let (iterations, residual) = converged
+        .ok_or_else(|| format!("DC grid did not converge within {max_iterations} iterations"))?;
     let mut violations = Vec::new();
     let branches = p
         .branches
@@ -486,16 +500,22 @@ pub fn solve(grid: &DcGrid) -> Result<DcGridSolution, String> {
             {
                 violations.push(format!("{} violates its converter current direction", c.id));
             }
-            if c.current_limit_ka.is_some_and(|v| i.abs() > v + 1e-8) {
+            if c.current_limit_ka
+                .is_some_and(|v| i.abs() > v + limit_tolerance(v, 1e-8))
+            {
                 violations.push(format!("{} exceeds its current limit", c.id));
             }
-            if c.active_min_mw.is_some_and(|v| pac < v - 1e-7)
-                || c.active_max_mw.is_some_and(|v| pac > v + 1e-7)
+            if c.active_min_mw
+                .is_some_and(|v| pac < v - limit_tolerance(v, 1e-7))
+                || c.active_max_mw
+                    .is_some_and(|v| pac > v + limit_tolerance(v, 1e-7))
             {
                 violations.push(format!("{} exceeds its active-power range", c.id));
             }
-            if c.voltage_min_kv.is_some_and(|v| u < v - 1e-7)
-                || c.voltage_max_kv.is_some_and(|v| u > v + 1e-7)
+            if c.voltage_min_kv
+                .is_some_and(|v| u < v - limit_tolerance(v, 1e-7))
+                || c.voltage_max_kv
+                    .is_some_and(|v| u > v + limit_tolerance(v, 1e-7))
             {
                 violations.push(format!("{} exceeds its DC-voltage range", c.id));
             }
@@ -586,6 +606,63 @@ pub(crate) mod tests {
         assert!(r.violations.iter().any(|v| v.contains("current direction")));
         assert!(!r.violations.iter().any(|v| v.contains("active-power")));
     }
+    #[test]
+    fn limit_checks_accept_roundoff_but_report_physical_violations() {
+        let mut grid = fixture();
+        // Bind a 150 MW withdrawal with a small allowed NLP relaxation.
+        grid.converters[1].control = DcControl::ActivePower {
+            mw: -150.0 - 1.5e-6,
+        };
+        grid.converters[1].active_min_mw = Some(-150.0);
+        assert!(!solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v.contains("active-power")));
+        grid.converters[1].control = DcControl::ActivePower { mw: -150.001 };
+        assert!(solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v.contains("active-power")));
+        grid.converters[0].voltage_min_kv = Some(320.0 + 3e-6);
+        assert!(!solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v.contains("DC-voltage")));
+        grid.converters[0].voltage_min_kv = Some(320.001);
+        assert!(solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v.contains("DC-voltage")));
+        let current = solve(&grid).unwrap().converters[0].current_ka.abs();
+        grid.converters[0].current_limit_ka = Some(current - 1e-9);
+        assert!(!solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v.contains("current limit")));
+        grid.converters[0].current_limit_ka = Some(current - 1e-4);
+        assert!(solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v.contains("current limit")));
+    }
+
+    #[test]
+    fn final_newton_step_is_checked() {
+        let grid = fixture();
+        let expected = solve(&grid).unwrap();
+        assert!(expected.iterations > 0);
+        let last = solve_with_iterations(&grid, expected.iterations).unwrap();
+        assert_eq!(last.iterations, expected.iterations);
+        assert!(last.residual < 1e-9);
+        assert!(solve_with_iterations(&grid, expected.iterations - 1).is_err());
+    }
+
     fn fixture() -> DcGrid {
         DcGrid {
             nodes: vec![

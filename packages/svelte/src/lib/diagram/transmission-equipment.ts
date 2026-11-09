@@ -32,8 +32,11 @@ export function equipmentTreatment(kind: EquipmentKind, formulation: string): st
 		return formulation === 'acopf' || formulation === 'socwr'
 			? 'Active links are unsupported in this formulation.'
 			: 'Fixed terminal injections; DC voltages, currents and controls are not solved in this formulation.';
-	if (kind === 'svc' || kind === 'storage')
-		return 'Active devices are unsupported; the solve must reject them.';
+	if (kind === 'svc')
+		return formulation === 'dcopf' || formulation === 'dcpf'
+			? 'DC approximation: static VAR compensator reactive controls are omitted and reported in diagnostics.'
+			: 'Active static VAR compensator controls are unsupported in AC calculations.';
+	if (kind === 'storage') return 'Active devices are unsupported; the solve must reject them.';
 	if (kind === 'switch')
 		return 'Open switches isolate their terminals; closed switches require topology reduction.';
 	if (kind === 'three_winding')
@@ -84,13 +87,15 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 						? 'Closed · topology reduction required'
 						: 'Open'
 					: d.in_service
-						? 'In service · unsupported by this solver'
+						? d.kind === 'svc'
+							? 'In service · formulation-dependent treatment'
+							: 'In service · unsupported by this solver'
 						: 'Out of service',
 			bus: d.buses[0],
 			facts: [`Terminal buses: ${d.buses.join(', ')}`, `Calculation treatment: ${d.treatment}`],
 			explanation:
 				d.kind === 'svc'
-					? 'A controllable reactive-power device. Its voltage/reactive controller is not represented by these solvers; active devices are rejected.'
+					? 'A controllable reactive-power device. DC calculations omit its reactive controls and report that approximation; AC calculations reject active SVCs.'
 					: d.kind === 'storage'
 						? 'Storage can charge and discharge. Its energy balance and operating limits are not represented by these solvers; active devices are rejected.'
 						: 'A switch connects or isolates its terminals. Closed switches require an explicit topology reduction before calculation.'
@@ -173,7 +178,11 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 /** Compact diagram symbols; exact standard variants remain subject to symbol-library review. */
 export function equipmentGlyph(kind: EquipmentKind, closed = false): Glyph {
 	if (kind === 'switch') return branchGlyph('switch', closed)!;
-	if (kind === 'svc' || kind === 'storage')
+	if (kind === 'svc')
+		return formulation === 'dcopf' || formulation === 'dcpf'
+			? 'DC approximation: static VAR compensator reactive controls are omitted and reported in diagnostics.'
+			: 'Active static VAR compensator controls are unsupported in AC calculations.';
+	if (kind === 'storage')
 		return [
 			[
 				[0, 0],

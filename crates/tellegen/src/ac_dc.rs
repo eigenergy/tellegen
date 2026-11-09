@@ -46,6 +46,47 @@ pub(crate) fn lcc_power_factor(c: &powerio_tx::LineCommutatedConverter) -> Resul
     Ok(pf)
 }
 
+/// Validate the AC voltage-controller identity and target shared by PF and OPF.
+/// Capability evaluation remains formulation-specific: PF has a fixed P, while
+/// joint OPF would need curve constraints depending on its decision variable P.
+pub(crate) fn voltage_target(
+    net: &BalancedNetwork,
+    source: &powerio_tx::VoltageSourceConverter,
+    ac_bus: usize,
+    regulated_buses: &mut std::collections::HashSet<usize>,
+) -> Result<f64, String> {
+    if !regulated_buses.insert(ac_bus) {
+        return Err("Multiple converter voltage controllers at one AC bus require an explicit reactive-sharing model".into());
+    }
+    let bus = net
+        .buses()
+        .iter()
+        .find(|b| b.id.0 == ac_bus)
+        .ok_or("Converter AC bus missing")?;
+    if bus.kind != powerio::BusType::Pq
+        || net
+            .generators()
+            .iter()
+            .any(|g| g.in_service && g.bus == bus.id && g.voltage_regulation_on)
+    {
+        return Err(
+            "Converter voltage control conflicts with an existing bus voltage controller".into(),
+        );
+    }
+    let target = source
+        .voltage_setpoint_kv
+        .ok_or("Converter AC voltage target missing")?
+        / bus.base_kv;
+    if !bus.base_kv.is_finite() || bus.base_kv <= 0.0 || !target.is_finite() || target <= 0.0 {
+        return Err("Invalid converter AC voltage target".into());
+    }
+    Ok(target)
+}
+
+/// Detailed converter P/Q are positive for withdrawal at the AC PCC. These
+/// are not the injection-positive setpoints of reduced VscConverterStation.
+/// Keep the capability curve's P coordinate and both Q bounds in that same
+/// source convention; in particular, do not negate only the setpoint.
 pub(crate) fn reactive_bounds(
     limits: &powerio_tx::ReactiveLimits,
     p: f64,
@@ -156,32 +197,10 @@ pub fn solve_source_with_regulators(
             }
             match source.voltage_regulator_on {
                 Some(true) => {
-                    if !regulated_buses.insert(c.ac_bus) {
-                        return Err("Multiple converter voltage controllers at one AC bus require an explicit reactive-sharing model".into());
-                    }
                     if formulation != Problem::AcPf {
                         return Err("Converter AC voltage control requires AC power flow or joint AC/DC OPF".into());
                     }
-                    let bus = net
-                        .buses()
-                        .iter()
-                        .find(|b| b.id.0 == c.ac_bus)
-                        .ok_or("Converter AC bus missing")?;
-                    if bus.kind != powerio::BusType::Pq
-                        || net
-                            .generators()
-                            .iter()
-                            .any(|g| g.in_service && g.bus == bus.id && g.voltage_regulation_on)
-                    {
-                        return Err("Converter voltage control conflicts with an existing bus voltage controller".into());
-                    }
-                    let target = source
-                        .voltage_setpoint_kv
-                        .ok_or("Converter AC voltage target missing")?
-                        / bus.base_kv;
-                    if !target.is_finite() || target <= 0.0 {
-                        return Err("Invalid converter AC voltage target".into());
-                    }
+                    let target = voltage_target(net, source, c.ac_bus, &mut regulated_buses)?;
                     let bounds = reactive_bounds(
                         source
                             .reactive_limits
@@ -367,12 +386,43 @@ mod tests {
         }
     }
     #[test]
+    fn detailed_converter_q_uses_withdrawal_convention() {
+        for q in [-7.0, 13.0] {
+            let mut n = dc_grid::tests::imported_fixture();
+            let d = std::sync::Arc::make_mut(n.detailed_connectivity_mut().as_mut().unwrap());
+            let c = &mut d.voltage_source_converters[1];
+            c.reactive_power_setpoint_mvar = Some(q);
+            c.reactive_limits = Some(serde_json::from_value(serde_json::json!({"kind":"min_max","limits":{"minimum_reactive_power_mvar":-8.0,"maximum_reactive_power_mvar":14.0}})).unwrap());
+            let r = solve_source(&n, Problem::AcPf).unwrap();
+            let converter = r.dc.converters.iter().find(|c| c.ac_bus == 2).unwrap();
+            assert_eq!(
+                r.converter_reactive
+                    .iter()
+                    .find(|(id, _)| id == &converter.id)
+                    .unwrap()
+                    .1,
+                q
+            );
+            let injection =
+                r.ac.injections
+                    .unwrap()
+                    .into_iter()
+                    .find(|b| b.bus == 2)
+                    .unwrap();
+            assert!((injection.q + q).abs() < 1e-6);
+            assert!(!r.violations.iter().any(|v| v.contains("reactive target")));
+        }
+    }
+
+    #[test]
     fn reactive_capability_interpolates_without_extrapolation() {
         let limits=serde_json::from_value(serde_json::json!({"kind":"capability_curve","limits":{"curve_style":"straight_line_y_values","points":[
             {"active_power_mw":-100.0,"minimum_reactive_power_mvar":-20.0,"maximum_reactive_power_mvar":40.0},
             {"active_power_mw":100.0,"minimum_reactive_power_mvar":-10.0,"maximum_reactive_power_mvar":20.0}
         ]}})).unwrap();
         assert_eq!(reactive_bounds(&limits, 0.0).unwrap(), (-15.0, 30.0));
+        assert_eq!(reactive_bounds(&limits, 50.0).unwrap(), (-12.5, 25.0));
+        assert_eq!(reactive_bounds(&limits, -50.0).unwrap(), (-17.5, 35.0));
         assert!(reactive_bounds(&limits, 101.0).is_err());
     }
     #[test]

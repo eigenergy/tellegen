@@ -181,24 +181,8 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                 };
                 match vsc.voltage_regulator_on {
                     Some(true) => {
-                        if !regulated_buses.insert(c.ac_bus) {
-                            return Err("Multiple converter voltage controllers at one AC bus require an explicit reactive-sharing model".into());
-                        }
-                        let source_bus = net.buses().iter().find(|b| b.id.0 == c.ac_bus).unwrap();
-                        if source_bus.kind != powerio::BusType::Pq
-                            || net.generators().iter().any(|g| {
-                                g.in_service && g.bus == source_bus.id && g.voltage_regulation_on
-                            })
-                        {
-                            return Err("Converter voltage control conflicts with an existing bus voltage controller".into());
-                        }
-                        let target = vsc
-                            .voltage_setpoint_kv
-                            .ok_or("Converter AC voltage target missing")?
-                            / source_bus.base_kv;
-                        if !target.is_finite() || target <= 0.0 {
-                            return Err("Invalid converter AC voltage target".into());
-                        }
+                        let target =
+                            ac_dc::voltage_target(net, vsc, c.ac_bus, &mut regulated_buses)?;
                         row(
                             p,
                             format!("ac_voltage_schedule[{}]", c.id),
@@ -428,6 +412,30 @@ mod tests {
         assert!((pac - loss).abs() < 1e-6);
         assert_eq!(serde_json::to_string(&n).unwrap(), before);
     }
+    #[test]
+    fn binding_150_mw_converter_limit_is_accepted() {
+        let mut n = bounded_fixture();
+        n.loads_mut()[0].p = 300.0;
+        for (i, g) in n.generators_mut().iter_mut().enumerate() {
+            g.pmax = 1000.0;
+            g.cost.as_mut().unwrap().coeffs = vec![0.0, if i == 0 { 1.0 } else { 100.0 }, 0.0];
+        }
+        for b in &mut n.branches_mut()[1..] {
+            b.rate_a = 1000.0;
+        }
+        let result = solve_joint_ac_dc(&n).unwrap();
+        assert!(
+            result
+                .dc
+                .converters
+                .iter()
+                .any(|c| (c.ac_power_mw.abs() - 150.0).abs() < 1e-4),
+            "{:?}",
+            result.dc.converters
+        );
+        assert!(result.violations.is_empty());
+    }
+
     #[test]
     fn missing_dispatch_limits_are_rejected() {
         assert!(solve_joint_ac_dc(&dc_grid::tests::imported_fixture())

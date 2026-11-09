@@ -139,3 +139,14 @@ describe('transmission equipment semantics', () => {
 		expect(equipmentItems(missing).some((i) => i.kind === 'hvdc')).toBe(true);
 	});
 });
+
+it('explains the formulation-specific SVC approximation', () => {
+	for (const mode of ['dcpf', 'dcopf']) {
+		expect(equipmentTreatment('svc', mode)).toContain('omitted');
+		expect(equipmentTreatment('svc', mode)).toContain('diagnostics');
+	}
+	for (const mode of ['acpf', 'acopf', 'socwr']) {
+		expect(equipmentTreatment('svc', mode)).toContain('unsupported');
+	}
+	expect(equipmentTreatment('storage', 'dcopf')).toContain('reject');
+});

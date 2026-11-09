@@ -98,6 +98,40 @@ fn solve(n: &BalancedNetwork) -> Result<SolveResponse, String> {
     )
 }
 
+/// Seed candidate power flows with the last accepted operating point. Numerical
+/// Jacobians are rebuilt because tap/shunt actions change the admittance matrix.
+fn solve_from(n: &mut BalancedNetwork, previous: &SolveResponse) -> Result<SolveResponse, String> {
+    let normalized = n.is_normalized();
+    let vm: std::collections::HashMap<_, _> = previous
+        .vm
+        .iter()
+        .flatten()
+        .map(|v| (v.bus, v.value))
+        .collect();
+    let va: std::collections::HashMap<_, _> = previous
+        .va
+        .iter()
+        .flatten()
+        .map(|v| (v.bus, v.value))
+        .collect();
+    for b in n.buses_mut() {
+        if let Some(&v) = vm.get(&b.id.0) {
+            b.vm = v;
+        }
+        if let Some(&v) = va.get(&b.id.0) {
+            b.va = if normalized { v } else { v.to_degrees() };
+        }
+    }
+    crate::api::solve_network(
+        n,
+        &SolveRequest {
+            formulation: Problem::AcPf,
+            start: crate::api::PowerFlowStart::Case,
+            ..Default::default()
+        },
+    )
+}
+
 pub(crate) fn source_controls(n: &BalancedNetwork) -> Result<Vec<Control>, String> {
     let mut out = Vec::new();
     if n.detailed_connectivity()
@@ -269,7 +303,15 @@ pub(crate) fn run(
     }
     let mut s = solve(&n)?;
     let mut seen = std::collections::HashSet::new();
-    for pass in 0..60 {
+    // A monotone traversal of every declared setting needs at most the sum
+    // of discrete moves, plus the final no-action pass. Continuous controls
+    // receive the original 60-pass allowance. Cycling is still rejected.
+    let max_passes = 60
+        + controls
+            .iter()
+            .map(|c| c.positions.len().saturating_sub(1))
+            .sum::<usize>();
+    for pass in 0..max_passes {
         let signature: Vec<_> = controls.iter().map(|c| setting(c, &n).to_bits()).collect();
         if !seen.insert(signature) {
             return Err("Automatic regulators cycle; check competing targets and deadbands".into());
@@ -302,7 +344,7 @@ pub(crate) fn run(
                 let probe = if old + h <= c.max { old + h } else { old - h };
                 let mut test = n.clone();
                 assign(c, &mut test, probe);
-                let ys = reading(c, &solve(&test)?)?;
+                let ys = reading(c, &solve_from(&mut test, &s)?)?;
                 let slope = (ys - y) / (probe - old);
                 if !slope.is_finite() || slope.abs() < 1e-12 {
                     return Err(format!("{} has no usable control response", c.id));
@@ -317,7 +359,7 @@ pub(crate) fn run(
             for value in candidates {
                 let mut test = n.clone();
                 assign(c, &mut test, value);
-                if let Ok(next) = solve(&test) {
+                if let Ok(next) = solve_from(&mut test, &s) {
                     let e = error(c, reading(c, &next)?);
                     if e < best_error - 1e-10 {
                         best_error = e;
@@ -379,7 +421,9 @@ pub(crate) fn run(
             });
         }
     }
-    Err("Automatic regulation did not stabilize within 60 passes".into())
+    Err(format!(
+        "Automatic regulation exhausted its {max_passes}-pass budget"
+    ))
 }
 
 /// Numerical convergence is separate from the stated operating limits.
@@ -443,6 +487,105 @@ mod tests {
         *n.detailed_connectivity_mut() = None;
         n
     }
+    #[test]
+    fn large_shunt_reaches_a_target_more_than_sixty_steps_away() {
+        let mut n = fixture();
+        for b in n.branches_mut() {
+            b.control = None;
+        }
+        for s in n.shunts_mut() {
+            s.control = None;
+        }
+        let row = n.shunts().len();
+        n.shunts_mut()
+            .push(powerio::Shunt::new(powerio::BusId(2), 0.0, 0.0));
+        let mut target = n.clone();
+        target.shunts_mut()[row].b = 20.0;
+        let y = solve(&target)
+            .unwrap()
+            .vm
+            .unwrap()
+            .into_iter()
+            .find(|b| b.bus == 2)
+            .unwrap()
+            .value;
+        let c = Control {
+            id: "large-bank".into(),
+            setting: Setting::Shunt(row),
+            measurement: Measurement::Voltage(2),
+            low: y - 1e-7,
+            high: y + 1e-7,
+            min: 0.0,
+            max: 25.0,
+            positions: (0..=1000).map(|i| f64::from(i) * 0.025).collect(),
+            units: "Mvar at 1 pu",
+        };
+        let before = serde_json::to_string(&n).unwrap();
+        let start = std::time::Instant::now();
+        let r = run(n.clone(), vec![c]).unwrap();
+        eprintln!("large-bank: {} passes in {:?}", r.passes, start.elapsed());
+        assert!(r.passes > 60);
+        assert_eq!(r.controls[0].status, "regulated");
+        assert_eq!(serde_json::to_string(&n).unwrap(), before);
+    }
+
+    #[test]
+    fn conflicting_discrete_controls_still_report_a_cycle() {
+        let mut n = fixture();
+        let row = n.shunts().len();
+        n.shunts_mut()
+            .push(powerio::Shunt::new(powerio::BusId(2), 0.0, 0.0));
+        let low = solve(&n)
+            .unwrap()
+            .vm
+            .unwrap()
+            .into_iter()
+            .find(|v| v.bus == 2)
+            .unwrap()
+            .value;
+        let mut target = n.clone();
+        target.shunts_mut()[row].b = 20.0;
+        let high = solve(&target)
+            .unwrap()
+            .vm
+            .unwrap()
+            .into_iter()
+            .find(|v| v.bus == 2)
+            .unwrap()
+            .value;
+        let c = Control {
+            id: "raise".into(),
+            setting: Setting::Shunt(row),
+            measurement: Measurement::Voltage(2),
+            low: high - 1e-6,
+            high: high + 1e-6,
+            min: 0.0,
+            max: 20.0,
+            positions: vec![0.0, 20.0],
+            units: "Mvar at 1 pu",
+        };
+        let mut other = c.clone();
+        other.id = "lower".into();
+        other.low = low - 1e-6;
+        other.high = low + 1e-6;
+        assert!(run(n, vec![c, other]).unwrap_err().contains("cycle"));
+    }
+
+    #[test]
+    fn warm_start_preserves_native_and_normalized_solutions() {
+        let raw = fixture();
+        for mut n in [raw.clone(), raw.to_normalized().unwrap()] {
+            let cold = solve(&n).unwrap();
+            let warm = solve_from(&mut n, &cold).unwrap();
+            for (a, b) in cold.vm.unwrap().iter().zip(warm.vm.unwrap()) {
+                assert!((a.value - b.value).abs() < 1e-7);
+            }
+            for (a, b) in cold.va.unwrap().iter().zip(warm.va.unwrap()) {
+                assert!((a.value - b.value).abs() < 1e-7);
+            }
+        }
+    }
+
     #[test]
     fn discrete_tap_reaches_band_and_preserves_source() {
         let mut n = fixture();

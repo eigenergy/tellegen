@@ -1441,7 +1441,7 @@ pub(crate) fn ingest_value(
     };
     let grouping = group_for_display(analysis, &stacks, geographic.then_some(&cs), synthetic);
 
-    let mut equipment = tellegen::equipment::project(net)?;
+    let mut equipment = tellegen::equipment::project_with_analysis(net, analysis)?;
     equipment.import_notes = diagnostics
         .iter()
         .map(|d| format!("{}: {}", d.code(), d.message()))

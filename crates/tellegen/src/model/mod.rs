@@ -355,6 +355,39 @@ fn reject_unfiltered_normalized_elements(network: &BalancedNetwork) -> Result<()
     ))
 }
 
+/// Reactive-only SVC controls are outside the supported AC formulations.
+/// DC models omit reactive quantities and report that approximation separately.
+pub(super) fn reject_active_svcs(network: &BalancedNetwork) -> Result<(), String> {
+    let count = network
+        .static_var_compensators()
+        .iter()
+        .filter(|s| s.in_service)
+        .count();
+    if count == 0 {
+        Ok(())
+    } else {
+        Err(format!("network contains {count} in-service static VAR compensator(s); AC SVC controls are not supported"))
+    }
+}
+
+pub(super) fn dc_diagnostics(network: &BalancedNetwork) -> Vec<crate::api::SolveDiagnostic> {
+    let mut diagnostics = hvdc_diagnostics(network);
+    let buses: std::collections::BTreeSet<_> = network
+        .static_var_compensators()
+        .iter()
+        .filter(|s| s.in_service)
+        .map(|s| s.bus.0)
+        .collect();
+    if !buses.is_empty() {
+        diagnostics.push(crate::api::SolveDiagnostic {
+            code: "dc_svc_reactive_omitted".into(),
+            message: "DC formulation omits static VAR compensator reactive controls, as it omits all reactive quantities".into(),
+            buses: buses.into_iter().collect(),
+        });
+    }
+    diagnostics
+}
+
 pub(super) fn reject_unsupported_active_elements(
     network: &BalancedNetwork,
     hvdc: HvdcLines,
@@ -371,16 +404,6 @@ pub(super) fn reject_unsupported_active_elements(
         .count();
     let active_hvdc = network.hvdc().iter().filter(|link| link.in_service).count();
     let mut unsupported = Vec::new();
-    let active_svcs = network
-        .static_var_compensators()
-        .iter()
-        .filter(|svc| svc.in_service)
-        .count();
-    if active_svcs > 0 {
-        unsupported.push(format!(
-            "{active_svcs} in-service static VAR compensator(s)"
-        ));
-    }
     if let Some(detailed) = network.detailed_connectivity() {
         let covered: std::collections::HashSet<_> = network
             .hvdc()

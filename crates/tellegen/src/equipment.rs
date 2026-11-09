@@ -241,6 +241,15 @@ pub struct Hvdc {
 /// Project source rows before analysis lowering/filtering. Normalize only the
 /// displayed units, not identity, state or the number of physical devices.
 pub fn project(net: &BalancedNetwork) -> Result<Equipment, String> {
+    let indexed = powerio_tx::IndexedNetwork::new(net);
+    project_with_analysis(net, indexed.network())
+}
+
+/// Project source equipment using the caller's already-lowered analysis view.
+pub fn project_with_analysis(
+    net: &BalancedNetwork,
+    analysis: &BalancedNetwork,
+) -> Result<Equipment, String> {
     let normalized = net.is_normalized();
     let power = if normalized {
         net.check_base_mva().map_err(|e| e.to_string())?;
@@ -377,7 +386,6 @@ pub fn project(net: &BalancedNetwork) -> Result<Equipment, String> {
             to_converter: h.converter2.as_ref().map(|c| c.kind),
         })
         .collect();
-    let analysis = powerio_tx::IndexedNetwork::new(net);
     let mut expanded = 0;
     let three_winding = net
         .transformers_3w()
@@ -385,9 +393,7 @@ pub fn project(net: &BalancedNetwork) -> Result<Equipment, String> {
         .enumerate()
         .map(|(row, t)| {
             let (star_bus, branches) = if t.in_service {
-                let bus = analysis.network().buses()[net.buses().len() + expanded]
-                    .id
-                    .0;
+                let bus = analysis.buses()[net.buses().len() + expanded].id.0;
                 let first = net.branches().len() + expanded * 3 + 1;
                 expanded += 1;
                 (Some(bus), (first..first + 3).collect())
@@ -415,7 +421,7 @@ pub fn project(net: &BalancedNetwork) -> Result<Equipment, String> {
             kind: "svc",
             buses: vec![d.bus.0],
             in_service: d.in_service,
-            treatment: "unsupported",
+            treatment: "DC reactive controls omitted; AC unsupported",
         })
         .chain(net.storage().iter().enumerate().map(|(row, d)| Device {
             key: format!("storage:{}", row + 1),
@@ -533,15 +539,66 @@ mod tests {
         assert_eq!(e.three_winding[1].star_bus, Some(4));
         assert_eq!(e.three_winding[1].branches, vec![3, 4, 5]);
         assert_eq!(e.three_winding[1].id, 2);
+        let indexed = powerio_tx::IndexedNetwork::new(&net);
+        let reused = project_with_analysis(&net, indexed.network()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            serde_json::to_value(reused).unwrap()
+        );
     }
+    #[cfg(feature = "sensitivity")]
     #[test]
-    fn active_svc_is_visible_and_rejected_instead_of_omitted() {
-        let mut net = fixture();
+    fn svc_is_reported_in_dc_and_refused_in_ac() {
+        use crate::api::{Problem, SolveRequest};
+        let mut net = crate::dc_grid::tests::imported_fixture();
+        *net.detailed_connectivity_mut() = None;
         net.static_var_compensators_mut()
             .push(powerio_tx::StaticVarCompensator::new(BusId(2), -0.1, 0.1));
         assert_eq!(project(&net).unwrap().devices[0].kind, "svc");
-        let error = crate::api::solve_network(&net, &Default::default()).unwrap_err();
-        assert!(error.contains("static VAR"), "{error}");
+        for n in [&net, &net.to_normalized().unwrap()] {
+            for formulation in [Problem::DcPf, Problem::DcOpf] {
+                let r = crate::api::solve_network(
+                    n,
+                    &SolveRequest {
+                        formulation,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                assert!(r
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "dc_svc_reactive_omitted"));
+            }
+            let e = crate::api::solve_network(
+                n,
+                &SolveRequest {
+                    formulation: Problem::AcPf,
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+            assert!(e.contains("static VAR"), "{e}");
+            let instance = powerio_prob::DcOpfInstance::from_network(n.clone()).unwrap();
+            assert!(crate::model::DcNetwork::from_instance(&instance)
+                .unwrap()
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "dc_svc_reactive_omitted"));
+        }
+        net.static_var_compensators_mut()[0].in_service = false;
+        let r = crate::api::solve_network(
+            &net,
+            &SolveRequest {
+                formulation: Problem::AcPf,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(!r
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "dc_svc_reactive_omitted"));
     }
 
     #[test]
