@@ -178,11 +178,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 /** Compact diagram symbols; exact standard variants remain subject to symbol-library review. */
 export function equipmentGlyph(kind: EquipmentKind, closed = false): Glyph {
 	if (kind === 'switch') return branchGlyph('switch', closed)!;
-	if (kind === 'svc')
-		return formulation === 'dcopf' || formulation === 'dcpf'
-			? 'DC approximation: static VAR compensator reactive controls are omitted and reported in diagnostics.'
-			: 'Active static VAR compensator controls are unsupported in AC calculations.';
-	if (kind === 'storage')
+	if (kind === 'svc' || kind === 'storage')
 		return [
 			[
 				[0, 0],
