@@ -2,11 +2,13 @@ import type { StudyWorkspace } from '../../../apps/web/src/lib/studies/workspace
 import { describe, expect, it, vi } from 'vitest';
 import type { Controller, Network, SolvableCase, StudyDisplaySnapshot } from '../src/lib/index.js';
 import { LocalCase } from '../src/lib/state.svelte.js';
-import { createTellegenWebMcpAdapter } from '../../../apps/web/src/lib/webmcp/tellegen-adapter.js';
+import { CaseSettings } from '../src/lib/settings.svelte.js';
+import { createTellegenWebMcpAdapter } from '../src/lib/webmcp.js';
 import type { PlanningActivityStore } from '../../../apps/web/src/lib/webmcp/planning-activity.svelte.js';
+import type { CaseSummary } from '@tellegen/engine';
 
-vi.mock('@tellegen/svelte', async () => ({
-	LocalCase: (await import('../src/lib/state.svelte.js')).LocalCase,
+vi.mock('@tellegen/engine', async (original) => ({
+	...(await original<typeof import('@tellegen/engine')>()),
 	FORMULATIONS: [{ id: 'dcopf' }, { id: 'acpf' }, { id: 'socwr', disabled: true }],
 	createStudy: vi.fn(() => {
 		throw new Error('Unexpected solve');
@@ -46,6 +48,7 @@ function host() {
 		network,
 		formulation: 'dcopf',
 		revisionGeneration: 0,
+		settings: new CaseSettings(),
 		deltas: { 1: 9 },
 		ratings: {},
 		solving: false,
@@ -87,6 +90,7 @@ function host() {
 	const app = {
 		studyView: saved as StudyDisplaySnapshot | null,
 		cases: [live, second],
+		hostedDistributionCases: [] as CaseSummary[],
 		localCases: [],
 		multiCases: [],
 		activeCaseId: live.id,
@@ -121,6 +125,25 @@ function host() {
 const signal = () => new AbortController().signal;
 
 describe('WebMCP displayed-state context', () => {
+	it('invalidates mutation tokens when next-run settings change', async () => {
+		const { ctrl, app, live } = host();
+		app.studyView = null;
+		const adapter = createTellegenWebMcpAdapter(ctrl);
+		const before = await adapter.inspectCase(signal());
+		live.settings.revision++;
+		const after = await adapter.inspectCase(signal());
+		expect(after.revision).not.toBe(before.revision);
+		await expect(
+			adapter.resetCase(
+				{
+					caseId: live.id,
+					expectedRevision: String(before.revision)
+				},
+				signal()
+			)
+		).rejects.toMatchObject({ code: 'STALE_REVISION' });
+	});
+
 	it('restricts declared AC power flow instances before changing edits or solving', async () => {
 		const { ctrl, app, live } = host();
 		app.studyView = null;
@@ -547,6 +570,7 @@ it('solves the displayed MC case through its controller and queries terminal vol
 		id: 'mc-case',
 		label: 'Feeder',
 		revisionGeneration: 0,
+		settings: new CaseSettings(),
 		moduleJson: '{}',
 		summary: { mc_pf_enabled: true, mc_pf_supported: true },
 		solveMs: 12,

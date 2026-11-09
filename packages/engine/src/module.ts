@@ -11,6 +11,7 @@ export type WasmMcPfSession = InstanceType<WasmModule["McPfSession"]>;
 export type WasmMcInput = InstanceType<WasmModule["McInput"]>;
 export type WasmRetainedIngest = WasmModule["RetainedIngest"]["prototype"];
 export type WasmSynthSession = InstanceType<WasmModule["SynthSession"]>;
+export type WasmCaseCollection = WasmModule["CaseCollection"]["prototype"];
 
 let engineReady: Promise<WasmModule> | null = null;
 let engineUnsupported: string | null = null;

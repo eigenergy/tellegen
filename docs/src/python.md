@@ -25,9 +25,15 @@ same state as once. `reset()` returns to the base case. Engine errors arrive as
 
 ## Installing
 
-The wheel is not on PyPI yet; publishing it is tracked in
-[#139](https://github.com/eigenergy/tellegen/issues/139). Until then, build it
-from a checkout:
+Install the published package from PyPI:
+
+```sh
+python -m pip install tellegen
+```
+
+Wheels are provided for Linux x86_64/aarch64, macOS arm64/x86_64, and Windows
+x64. A wheel installation needs no Rust toolchain. To build from a checkout
+instead:
 
 ```sh
 python -m pip install "maturin>=1.7,<2.0"
@@ -45,14 +51,18 @@ wrong trade for a native solver.
 
 ## MCP server
 
-`pip install "tellegen[mcp]"` adds the `mcp` SDK and the `powerio` wheel. It
-exposes the same capability, solve, plan, and Study tools as the CLI interface
-in [Persistent Studies](studies.md), in
-process:
+The optional `mcp` extra adds the `mcp` SDK and the `powerio` wheel. It runs
+capability, solve, plan, and Study tools in process; see
+[Persistent Studies](studies.md).
 
 ```sh
+python -m pip install "tellegen[mcp]"
 tellegen-mcp                 # or: python -m tellegen.mcp
 ```
+
+The MCP extra uses PowerIO 0.11.x so its serialized cases match the stable
+compiled engine. Installing the base package does not install or require
+the Python PowerIO package.
 
 Study paths are confined to `POWERIO_MCP_ALLOWED_ROOTS`, the policy shared
 with PowerMCP. Proposals stay unapplied; applying one is a human action, and
@@ -62,8 +72,10 @@ there is no tool for it.
 
 `crates/tellegen-py/Cargo.toml` carries the same version as the `tellegen`
 crate so that `pip install tellegen==X` and `cargo add tellegen@X` name the
-same solver. release-plz does not bump the binding crate; the Python CI gate
-fails when the two versions differ, so a crate release must bump both.
+same solver. The release version job updates both manifests together, and
+CI checks their parity. After a crate release, the crate workflow dispatches
+Python publishing for the same tag. The publisher uploads only the wheels
+and source archive that passed the Python gates.
 
 ## Source layout
 

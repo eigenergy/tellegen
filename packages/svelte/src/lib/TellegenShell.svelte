@@ -5,11 +5,13 @@
 	import AppHeader from './components/AppHeader.svelte';
 	import ControlPanel from './components/ControlPanel.svelte';
 	import DropZone from './components/DropZone.svelte';
+	import CollectionChooser from './components/CollectionChooser.svelte';
 	import PlacementCue from './components/PlacementCue.svelte';
 	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
 	import SolveCard from './components/SolveCard.svelte';
 	import PanelHost from './components/PanelHost.svelte';
 	import LogPanel from './components/LogPanel.svelte';
+	import SettingsPanel from './components/SettingsPanel.svelte';
 	import ShellEnvironment from './components/ShellEnvironment.svelte';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
@@ -86,7 +88,7 @@
 		e.preventDefault();
 		dragDepth = 0;
 		app.dragOver = false;
-		if (e.dataTransfer) ctrl.ingestFiles(e.dataTransfer.files);
+		if (e.dataTransfer) ctrl.ingestDrop(e.dataTransfer);
 	}
 </script>
 
@@ -101,6 +103,7 @@
 />
 
 <ShellEnvironment />
+<CollectionChooser />
 
 <main>
 	<TellegenMap
@@ -122,6 +125,7 @@
 	<ControlPanel />
 	<SolveCard />
 	<LogPanel />
+	<SettingsPanel />
 	{#if !app.studyView}
 		<DropZone />
 		<PlacementCue />

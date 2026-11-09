@@ -152,7 +152,7 @@ impl<'de> Deserialize<'de> for ElementKey {
 /// (not a bare map) so the structural-edit vocabulary (add line, add generator,
 /// retune a parameter) can grow without breaking the wire format: a client that
 /// knows only `deltas` keeps working.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Edits {
     /// Active-power demand delta in MW per bus key.
@@ -701,6 +701,9 @@ pub struct SolveDiagnostic {
     /// HVDC lines inject as fixed transfers at their terminal buses.
     /// `BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus
     /// outside the solve, so neither end injects; `buses` are its two terminals.
+    /// `settings_ignored`: a reopened Study could not apply some or all of the
+    /// calculation settings its saved module recorded, such as an option this
+    /// engine does not know; engine defaults stand in for what was dropped.
     pub code: String,
     pub message: String,
     pub buses: Vec<usize>,
@@ -799,6 +802,20 @@ pub(crate) fn solve_test_network_json(
 /// default problem instance for the requested formulation; a stored DC or AC
 /// OPF instance keeps its declared objective and constraint selections.
 pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String, String> {
+    solve_module_json_cancellable(module_json, request_json, None)
+}
+
+pub(crate) fn solve_module_json_cancellable(
+    module_json: &str,
+    request_json: &str,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<String, String> {
+    if cancel
+        .as_ref()
+        .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+    {
+        return Err("calculation cancelled".into());
+    }
     let module = crate::ir::deserialize_module(module_json)?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
@@ -813,7 +830,7 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
                     .with_branch_susceptance_formula(
                         req.branch_susceptance_formula.unwrap_or_default().into(),
                     );
-                solve_instance(&instance, &req)?
+                solve_instance_cancellable(&instance, &req, cancel.clone())?
             }
             #[cfg(feature = "sensitivity")]
             Problem::AcPf => {
@@ -828,11 +845,13 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
             #[cfg(feature = "acopf")]
             Problem::Acopf => {
                 let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
-                solve_ac_opf_instance(&instance, &req)?
+                solve_ac_opf_instance_cancellable(&instance, &req, cancel.clone())?
             }
             _ => solve_network(&network, &req)?,
         },
-        powerio::PioValue::DcOpfInstance(instance) => solve_instance(&instance, &req)?,
+        powerio::PioValue::DcOpfInstance(instance) => {
+            solve_instance_cancellable(&instance, &req, cancel.clone())?
+        }
         #[cfg(feature = "sensitivity")]
         powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance(&instance, &req)?,
         #[cfg(any(feature = "conic", feature = "acopf"))]
@@ -840,7 +859,7 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
             #[cfg(feature = "conic")]
             Problem::Socwr => solve_ac_instance(&instance, &req)?,
             #[cfg(feature = "acopf")]
-            Problem::Acopf => solve_ac_opf_instance(&instance, &req)?,
+            Problem::Acopf => solve_ac_opf_instance_cancellable(&instance, &req, cancel.clone())?,
             _ => {
                 return Err(format!(
                     "an ac_opf_instance cannot be solved as {:?}",
@@ -1187,7 +1206,10 @@ pub(crate) fn dc_opf_solved(
 
 /// Apply a request's [`LimitOptions`] to the model's constraint masks, and
 /// return the thermal limits it allows the program to enforce.
-fn apply_limit_options(dc: &mut DcNetwork, limits: &LimitOptions) -> Result<Vec<bool>, String> {
+pub(crate) fn apply_limit_options(
+    dc: &mut DcNetwork,
+    limits: &LimitOptions,
+) -> Result<Vec<bool>, String> {
     if !limits.angle_difference {
         dc.angle_bound_active.fill(false);
     }

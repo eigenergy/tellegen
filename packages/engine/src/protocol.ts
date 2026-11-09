@@ -7,6 +7,7 @@
  * valid when pending requests replay against the other host. */
 
 import type {
+  WasmCaseCollection,
   WasmMcInput,
   WasmMcPfSession,
   WasmModule,
@@ -16,7 +17,17 @@ import type {
 } from "./module.js";
 
 export type EngineRequest =
+  | { op: "collection_supported" }
+  | { op: "collection_zip"; collection: number; name: string; bytes: Uint8Array }
+  | { op: "collection_files"; collection: number; name: string; names: string; offsets: Uint32Array; bytes: Uint8Array }
+  | { op: "collection_ingest"; collection: number; selection: string }
+  | { op: "collection_original"; collection: number }
+  | { op: "collection_source"; collection: number; selection: string; scope: "selected" | "project" }
+  | { op: "collection_free"; collection: number }
   | { op: "preload" }
+  | { op: "settings_describe" }
+  | { op: "settings_resolve"; request: string }
+  | { op: "settings_calculate"; request: string }
   | { op: "study_document_create"; request: string }
   | { op: "study_document_import"; bundle: string }
   | { op: "study_document_run"; bundle: string; request: string }
@@ -92,7 +103,7 @@ export type EngineRequest =
   | { op: "reset_peak_memory" }
   | {
       op: "study_new";
-      options?: string;
+      settings?: string;
       study: number;
       module_json: string;
       formulation: string;
@@ -164,11 +175,11 @@ export interface McPfResultBuffersValue {
 /** One engine answer: wasm JSON text, nothing, a numeric array, a synthetic
  * preview, or packed result columns. */
 export type EngineValue =
-  string | null | Float64Array | SynthPreviewValue | McPfResultBuffersValue;
+  string | null | Float64Array | Uint8Array | SynthPreviewValue | McPfResultBuffersValue;
 
 /** The buffers an answer moves to the caller instead of copying. */
 export function transferables(value: EngineValue): Transferable[] {
-  if (value instanceof Float64Array) return [value.buffer];
+  if (value instanceof Float64Array || value instanceof Uint8Array) return [value.buffer];
   if (
     value !== null &&
     typeof value === "object" &&
@@ -203,6 +214,7 @@ export type WorkerResponse =
   | { id: number; ok: false; error: string; fatal?: boolean };
 
 export interface EngineHandles {
+  collections: Map<number, WasmCaseCollection>;
   studies: Map<number, WasmStudy>;
   mcPfSessions: Map<number, WasmMcPfSession>;
   /** Parsed multiconductor modules kept for calculations. */
@@ -213,6 +225,7 @@ export interface EngineHandles {
 /** An empty handle table for one side of the boundary. */
 export function emptyHandles(): EngineHandles {
   return {
+    collections: new Map(),
     studies: new Map(),
     mcPfSessions: new Map(),
     mcInputs: new Map(),
@@ -233,6 +246,22 @@ export function runRequest(
     const s = handles.studies.get(handle);
     if (!s) throw new Error(`unknown study handle ${handle}`);
     return s;
+  };
+  const collection = (handle: number): WasmCaseCollection => {
+    const value = handles.collections.get(handle);
+    if (!value) throw new Error(`unknown collection handle ${handle}`);
+    return value;
+  };
+  const acquireCollection = (handle: number, value: WasmCaseCollection): string => {
+    try {
+      if (handles.collections.has(handle)) throw new Error("collection handle already exists");
+      const inspection = value.inspect();
+      handles.collections.set(handle, value);
+      return inspection;
+    } catch (error) {
+      value.free();
+      throw error;
+    }
   };
   const mcPfSession = (handle: number): WasmMcPfSession => {
     const session = handles.mcPfSessions.get(handle);
@@ -263,6 +292,22 @@ export function runRequest(
     return session;
   };
   switch (req.op) {
+    case "collection_supported":
+      return JSON.stringify(mod.collection_supported());
+    case "collection_zip":
+      return acquireCollection(req.collection, mod.CaseCollection.from_zip(req.name, req.bytes));
+    case "collection_files":
+      return acquireCollection(req.collection, mod.CaseCollection.from_files(req.name, req.names, req.offsets, req.bytes));
+    case "collection_ingest":
+      return collection(req.collection).ingest(req.selection);
+    case "collection_original":
+      return collection(req.collection).original_zip();
+    case "collection_source":
+      return collection(req.collection).source_zip(req.selection, req.scope);
+    case "collection_free":
+      handles.collections.get(req.collection)?.free();
+      handles.collections.delete(req.collection);
+      return null;
     case "study_document_create":
       return mod.study_document_create(req.request);
     case "study_document_import":
@@ -302,6 +347,12 @@ export function runRequest(
       return mod.mc_schematic_layout(req.graph_json, req.options_json);
     case "apply_display_geo":
       return mod.apply_display_geo(req.module_json, req.bytes);
+    case "settings_describe":
+      return mod.describe_settings();
+    case "settings_resolve":
+      return mod.resolve_settings(req.request);
+    case "settings_calculate":
+      return mod.calculate_with_settings(req.request);
     case "capabilities":
       return mod.capabilities_json();
     case "solve_module":
@@ -400,7 +451,9 @@ export function runRequest(
     case "study_new":
       handles.studies.set(
         req.study,
-        new mod.Study(req.module_json, req.formulation, req.options),
+        req.settings
+          ? mod.Study.with_settings(req.module_json, req.settings)
+          : new mod.Study(req.module_json, req.formulation),
       );
       return null;
     case "study_replace_edits":

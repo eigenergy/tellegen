@@ -1,0 +1,18 @@
+{
+  "schema": "tellegen.texas7k-release-archive/1",
+  "checked_at": "2026-11-07T20:36:09.036631+00:00",
+  "release": "v0.6.2",
+  "download_url": "https://github.com/eigenergy/tellegen/releases/download/v0.6.2/texas7k-p1uhs0_1247-a594e609e0a0cc31.tar.gz",
+  "archive_sha256": "99f98f402511452dfc46684f791852482668dece4b3acf4aa16cb46cef26e8fd",
+  "archive_bytes": 4879300,
+  "bundle": "distribution/texas7k-p1uhs0_1247-a594e609e0a0cc31",
+  "bundle_checksums_sha256": "a594e609e0a0cc3108b1cf58b649052d6be70e805804ff70a2b75158d2f5d8c4",
+  "archive_file_count": 17,
+  "verified_bundle_file_count": 15,
+  "module_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+  "gzip_matches_module": true,
+  "license": "CC-BY-3.0-US",
+  "license_sha256": "f1dc639fcbd6466b5820f91f6b6262b90652cd856e2535a2d94f48597a0e45fa",
+  "source_notice_sha256": "cf271aac662498b77dbe95c3ea93d56eff26c65c9bc91789be0d71fe22950632",
+  "note": "Public release archive independently downloaded and checked against the prepared immutable bundle. This verifies publication and integrity; live deployment is recorded separately."
+}

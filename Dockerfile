@@ -2,7 +2,7 @@
 # Pin the build and runtime to the same Debian release (trixie) so the server
 # binary's glibc matches the runtime image; an unpinned rust:slim floats to the
 # latest Debian and broke against debian:bookworm-slim (glibc 2.41 vs 2.36).
-FROM rust:1-slim-trixie AS wasm
+FROM rust:1.96.0-slim-trixie AS wasm
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -72,7 +72,7 @@ ARG PUBLIC_CARTO_BASEMAP_KEY=""
 RUN npm run build:engine && npm run build:web && npm run smoke:web
 
 # ---- tellegen backend (cargo-chef: dependency compile is a cacheable layer) ----
-FROM rust:1-slim-trixie AS chef
+FROM rust:1.96.0-slim-trixie AS chef
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && cargo install cargo-chef --locked

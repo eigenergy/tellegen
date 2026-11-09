@@ -61,8 +61,9 @@ reference, not a certified global optimum.
 
 ## Selecting and retaining a variant
 
-The browser's **Calculation → DC variant** control rebuilds the study and
-invalidates previous results and sensitivities. An imported typed instance owns
+The browser's **Calculation → DC variant** control validates the common
+calculation settings and builds a replacement study. A successful solve replaces
+the displayed result and sensitivities; a failed solve retains the accepted result. An imported typed instance owns
 its convention; its selector is read-only. A nondefault variant cannot fall
 back silently to the legacy-only HTTP calculation service.
 
@@ -78,6 +79,12 @@ The same stable token works in CLI/Python JSON requests and `solveModule`:
 It also applies to `dcpf`. Other formulations reject this option. Omission on a
 network preserves the legacy default; omission on a typed instance inherits
 its convention. A matching explicit request is accepted; a conflict is an error.
+The common settings API accepts the same token in
+`overrides.branch_susceptance_formula` for `dcopf` and `dcpf`. Its default is
+`null`, meaning inherit the input convention. The shared `@tellegen/svelte/webmcp`
+adapter uses accepted settings for previews, sensitivities and exact updates.
+Saved studies retain the convention together with their other calculation settings.
+
 Every new DC result reports the resolved `branch_susceptance_formula`.
 
 ```ts

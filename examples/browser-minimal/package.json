@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
-    "@tellegen/engine": "^0.5.1"
+    "@tellegen/engine": "^0.8.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

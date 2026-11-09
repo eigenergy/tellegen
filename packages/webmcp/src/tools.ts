@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 import { TellegenToolError } from "./types.js";
 import {
+  validateSettings,
   validateAnalyzeSensitivity,
   validateApplyCapacityPlan,
   validateEmpty,
@@ -173,6 +174,14 @@ function committedSuccess(
   } else if (toolName === "update_case" || toolName === "reset_case") {
     copyPrimitive(summary, result, "revision");
     copyPrimitive(summary, result, "formulation");
+  } else if (toolName.includes("settings") || toolName === "run_calculation") {
+    for (const key of [
+      "settings_revision",
+      "revision",
+      "case_id",
+      "calculation",
+    ])
+      copyPrimitive(summary, result, key);
   } else if (toolName === "focus_network" || toolName === "select_case") {
     copyPrimitive(summary, result, "revision");
     copyPrimitive(summary, result, "case_id");
@@ -438,7 +447,8 @@ export function createTellegenTools(
                 type: "integer",
                 minimum: 1,
                 maximum: 10000,
-                description: "Iteration limit, default 100.",
+                description:
+                  "Iteration limit; omitted uses the selected case defaults (engine default 100).",
               },
             },
             ["case_id", "expected_revision"],
@@ -455,7 +465,76 @@ export function createTellegenTools(
         },
       ]
     : [];
+  const settingsTools: TellegenToolDefinition[] = adapter.settings
+    ? (["inspect", "update", "reset", "run"] as const).map((action) => ({
+        name: action === "run" ? "run_calculation" : `${action}_settings`,
+        title:
+          action === "run" ? "Run selected calculation" : `${action} settings`,
+        description:
+          action === "inspect"
+            ? "Inspect selected and accepted calculation settings or browser display preferences. Use field to inspect one setting descriptor. Returns settings_revision."
+            : action === "run"
+              ? "Explicitly calculate with the selected settings. Requires current case and settings revisions. Failed calculations retain the preceding result."
+              : "Validate and atomically update or reset selected settings. Does not solve. Calculation settings belong to the case; display preferences belong to this browser.",
+        inputSchema: objectSchema(
+          {
+            scope: {
+              type: "string",
+              enum: ["calculation", "display"],
+              description:
+                "Calculation settings for the selected case, or preferences for this browser. Defaults to calculation.",
+            },
+            case_id: {
+              type: "string",
+              description:
+                "Case ID from inspect_settings; required for calculation mutations.",
+            },
+            expected_revision: {
+              type: "string",
+              description:
+                "Current displayed case revision; required for calculation mutations.",
+            },
+            settings_revision: {
+              type: "integer",
+              minimum: 0,
+              description:
+                "Revision returned by inspect_settings; required for all mutations.",
+            },
+            calculation: {
+              type: "string",
+              description:
+                "Calculation to select when updating or resetting. Other actions use the selected calculation.",
+            },
+            field: {
+              type: "string",
+              description:
+                "Inspect one calculation setting descriptor, including its units, default and constraints.",
+            },
+            patch: {
+              type: "object",
+              maxProperties: 24,
+              description:
+                "Setting overrides for update_settings. The complete candidate is validated atomically.",
+            },
+          },
+          action === "inspect"
+            ? []
+            : action === "update"
+              ? ["settings_revision", "patch"]
+              : ["settings_revision"],
+        ),
+        execute: tracked(
+          action === "run" ? "run_calculation" : `${action}_settings`,
+          `${action} settings`,
+          (input) => validateSettings(input, action),
+          (input, signal) => adapter.settings!(input, signal),
+          action === "inspect" ? "abortable" : "commit-aware",
+        ),
+        annotations: annotations(action === "inspect"),
+      }))
+    : [];
   return [
+    ...settingsTools,
     ...caseTools,
     ...mcTools,
     {

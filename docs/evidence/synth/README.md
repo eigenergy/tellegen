@@ -1,5 +1,21 @@
 # Synthetic Generation Evidence
 
+The country sweeps and California scorecards were refreshed on 7 November 2026
+with the mapped-grid reinforcement repair. `refresh-2026-11.json` records the
+engine source, executable hash and California OpenStreetMap input hash. The
+105 country runs retain the same pass counts as before: all DC dispatches
+are optimal, and 100 AC solutions converge in band. California retains its
+40/47, 40/47 and 39/47 synthetic metric counts and 34/40 scored OSM metrics;
+all critical checks pass. The siting fill's floor and exponent then changed
+(below, and `cats/climb-log.md`), and the country sweeps and the synthetic
+California scorecard were regenerated again; each sweep record names the
+executable it ran. 101 of the 105 country runs converge in band, and
+California, now scored on 53 metrics with the siting group, passes 49, 47
+and 47 of them. OpenStreetMap California, rescored on the Overpass document
+`cats/README.md` names, keeps its 47 earlier values and passes 40 of the 46
+metrics its map supports. The prose below also preserves earlier
+experiments and their limitations.
+
 Generated grids, measured the same way as reference cases. `run.py` drives the
 native CLI (`tellegen generate`, `tellegen stats`), records the hashes of
 everything it ran (CLI binary, places table, specs, reference table), and
@@ -54,26 +70,30 @@ and a highest-voltage share of 0.08–0.35.
 
 ## What the last run showed
 
-On 2026-10-23, 11 of 12 runs (4 specs × 3 seeds, bundled places table) were
+On 2026-11-06, 12 of 12 runs (4 specs × 3 seeds, bundled places table) were
 valid, at national voltage ladders except for the Rhine spec, which states
-500/230 kV. Every DC OPF was optimal and every corridor plan converged. The
-twelfth run, Portugal seed 3 at Portugal's 400/220/150 kV, has an AC power
-flow that does not converge. Newton stalls at a 2 MW mismatch in an inland
-220 kV pocket (Guarda and Covilhã, voltages down to 0.76 pu), from both a
-flat and a DC start: a load pocket at the limit of what its corridors carry.
+500/230 kV. Every DC OPF was optimal, every AC power flow converged inside
+0.989–1.028 pu, and every corridor plan converged. The engine before that
+day's changes, run on the same specs, was also valid at all 12.
+
+Stated levels now follow the region: Germany has no AC level above 380 kV in
+service, so the Rhine spec's corridor plan no longer adds 765 kV above the
+stated 500 kV. Before, it did at seeds 1 and 2 (two buses each). Now every
+seed stays at 500/230 kV, with up to four circuits per corridor and no
+corridor left short of capacity.
 
 The structural comparison is mixed, and the table says so plainly:
 
 - Mean degree (2.36–2.90) sits inside the published range but outside the
   narrow band of the two references (2.45–2.60).
-- The clustering coefficient (0.09–0.30, and 0.46–0.57 on the 14-bus Fiji
+- The clustering coefficient (0.07–0.25, and 0.22–0.55 on the 14-bus Fiji
   spec) is well above the references (0.06–0.08): a Gabriel mesh is rich in
   triangles.
 - The highest degree (4–7) is below the references (10–11), because the mesh
   caps nodal degree at 8.
-- The highest-voltage share falls below the published 0.08 on one Rhine run
-  (0.008), where the corridor plan adds 765 kV above the stated 500 kV for a
-  few corridors, and the share counts only the buses at that added level.
+- The highest-voltage share (0.12–0.21) is inside the published 0.08–0.35.
+  On the Rhine spec it was 0.005 at the two seeds where the plan added
+  765 kV, because the share counts only the buses at that added level.
 - The branch-to-bus ratio follows the request (1.32 at medium density, 1.45
   at high) except where the corridor plan needed more circuits, which each
   run's warnings name.
@@ -153,7 +173,7 @@ Egypt, Chile and Indonesia have no higher AC level, and the plan adds none.
 | Outline | Runs | DC OPF optimal | AC converged | AC in band | Regions valid at every seed | Peaks within ±25% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Natural Earth 1:50m | 54 | 54 | 53 | 53 | 17 of 18 | 14 of 14 |
-| App 1:110m, app request | 51 | 51 | 47 | 47 | 15 of 17 | 13 of 13 |
+| App 1:110m, app request | 51 | 51 | 48 | 48 | 15 of 17 | 13 of 13 |
 
 Each region's DC, AC converged, AC in band, voltage range, incomplete plans
 and median time are in the two `country-sweep-*.md` tables. Demand, the bus
@@ -193,12 +213,23 @@ That change came with three in how places are used:
 Together they took the 1:50m sweep from 49 to 53 runs in band, and the United
 States now passes at every seed on that outline.
 
+**The fill's floor.** On 2026-11-06 the blue-noise fill's floor fell from
+0.06 to 0.005 of the densest cell's density and its exponent rose from 0.5
+to 0.75, calibrated on California (`cats/climb-log.md`). The fill is shared
+with the transmission design, so both sweeps were rerun with the old and
+the new values. The old runs reproduce the earlier verdicts and voltages
+exactly. With the new ones, Australia converges at 1:50m seed 1 and no
+longer at seed 2026 or at 1:110m seed 1, and the United States on the app's
+outline converges at seeds 1 and 2026: 53 of 54 runs valid at 1:50m, as
+before, and 48 of 51 at 1:110m, from 47. Incomplete corridor plans fell from
+43 to 35 and from 38 to 36. Peak demand and bus counts do not change.
+
 **What still fails** (AC in band, out of 3):
 
 | Region | 1:50m | App 1:110m | What fails |
 | --- | ---: | ---: | --- |
-| United States | 3 | 0 | On the app's outline, not converged at every seed (best mismatch 0.8–12.5 pu) |
-| Australia | 2 | 2 | 1:50m seed 1 and 1:110m seed 2026 not converged |
+| United States | 3 | 2 | On the app's outline, seed 7 not converged (best mismatch 8.3 pu) |
+| Australia | 2 | 1 | 1:50m seed 2026 and 1:110m seeds 1 and 2026 not converged |
 
 Every run that converged stays inside 0.9–1.1 pu.
 
@@ -233,7 +264,8 @@ was the only difference between the outlines with a cause in the model. The
 AC outcomes that differ between outlines come from bus sites drawn on
 different polygons, the same kind of variation as between seeds.
 
-**Time**, end to end with both validations (Apple M5 Pro):
+**Time**, end to end with both validations (Apple M5 Pro), measured before
+the fill change of 2026-11-06:
 
 | Region | Buses | Native CLI, median of 3 seeds (1:50m / 1:110m) | wasm in Node 26, app outline, seed 2026 |
 | --- | ---: | ---: | ---: |
@@ -248,8 +280,9 @@ Cholesky factorisation of the grounded Laplacian, one per network (the
 reactive plan reuses its factor across its iterations), where they used
 Jacobi-preconditioned conjugate gradients. That more than halved the times
 of the earlier table, which this one replaces. The United States on the
-app's outline still spends 0.47 s of its wasm run on an AC power flow that
-does not converge. The engine tries a flat start and four perturbed
+app's outline then spent 0.47 s of its wasm run on an AC power flow that
+did not converge; since the fill change it converges at that seed. The
+engine tries a flat start and four perturbed
 restarts. Over all 105 runs of both sweeps, every AC power flow that
 converged did so from the flat start; the restarts never converged, and in
 the 14 failing solves before the condensers they cost 4.7 s in total, about
@@ -266,8 +299,8 @@ it solves; dropping restarts belongs with the AC warm start in tellegen
   above, over three seeds and two outlines, are the measure to quote, and
   three seeds are still few.
 - **The United States.** It passes at every seed on the 1:50m outline and
-  fails at every seed on the app's 1:110m one, so its outcome still turns on
-  where the buses fall.
+  at two of three on the app's 1:110m one (none before the fill change), so
+  its outcome still turns on where the buses fall.
 - **One AC island per region.** Continental regions and archipelagos are
   solved as one synchronous system, and the generator has no HVDC of its
   own. Partitioning into synchronous areas joined by HVDC, and an AC warm
@@ -276,3 +309,38 @@ it solves; dropping restarts belongs with the AC warm start in tellegen
   plan still sizes fixed shunts at the planning dispatch, while validation
   runs at the DC OPF's, so a run whose two dispatches differ widely can fail
   to converge rather than leave the band.
+
+
+## Offline OpenStreetMap country regressions
+
+The [country evidence](osm-regression.json) reruns the committed public New
+Zealand and Portugal Overpass fixtures at seeds 1, 7, and 2026. Every run keeps
+the full modelled demand, reaches an optimal DC OPF, and independently solves
+the exported module's AC power flow within 0.95–1.05 pu. These complement the
+[California OSM scorecard](cats/osm/scorecard.md).
+
+| Country | Buses | Demand (MW) | Seeds | Exported AC voltage range (pu) |
+| --- | ---: | ---: | --- | --- |
+| New Zealand | 417 | 6,531.0 | 1, 7, 2026 | 1.012–1.022 |
+| Portugal | 2,660 | 8,251.0 | 1, 7, 2026 | 0.990–1.040 |
+
+The mapped-only mode remains available with `osm.reinforce: false`; its seed
+2026 outcomes are recorded alongside the reinforced runs. A feasible reinforced
+model includes explicitly synthetic circuits, condensers, and shunts. It does
+not establish that the surveyed grid has those additions or that every country
+will pass. Untagged plant estimates use the region's tagged median for the same
+fuel when enough examples exist, with the documented bounded demand-based
+fallback otherwise. They remain estimates, not observed capacities.
+
+To reproduce after `npm run wasm`:
+
+```sh
+node docs/evidence/synth/osm-regression.mjs
+```
+
+The script accepts an alternative engine checkout and its build revision as
+positional arguments when reusing a verified WASM build. It records the binary
+and fixture SHA-256 hashes, OpenStreetMap timestamps, runtime, and full demand
+checks. The recorded build uses published PowerIO 0.11.9. Durations are single
+measurements under concurrent workstation load; they are not a speed comparison
+or the generated-grid hand-off benchmark tracked separately.

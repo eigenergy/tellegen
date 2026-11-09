@@ -140,6 +140,31 @@ describe('AC OPF controller boundary', () => {
 		expect(c.solution?.objective).toBe(42);
 	});
 
+	it('an explicit settings run retains AC OPF diagnostics and a failed rerun preserves them', async () => {
+		const { ctrl, c } = host();
+		vi.mocked(solveAcOpfModule).mockResolvedValue({
+			...response,
+			iterations: {
+				nlp_iterations: 12,
+				total_nlp_iterations: 46,
+				recovered_by: 'feral-scaling',
+				primal_residual: 1e-9,
+				solver_status: 'Solve_Succeeded',
+				solver_constraint_violation: 1e-9,
+				solver_kkt_error: 1e-9,
+				model_fingerprint: 'canonical-model'
+			}
+		});
+		await ctrl.runSettings(c);
+		expect(c.solveDetail).toBe('46 NLP iterations (recovered)');
+		const accepted = c.solution;
+		vi.mocked(solveAcOpfModule).mockRejectedValue(new Error('candidate failed'));
+		await expect(ctrl.runSettings(c)).rejects.toThrow('candidate failed');
+		expect(c.solution).toBe(accepted);
+		expect(c.solveDetail).toBe('46 NLP iterations (recovered)');
+		ctrl.dispose();
+	});
+
 	it('aborts a superseded solve and ignores its late result', async () => {
 		const { ctrl, c } = host();
 		const first = pending<SolveResponse>();
@@ -193,7 +218,8 @@ describe('AC OPF controller boundary', () => {
 		ctrl.probeAcOpf();
 		expect(start).not.toHaveBeenCalled();
 		probe.resolve(true);
-		await probe.promise;
+		await ctrl.loadAcOpf();
+		await Promise.resolve();
 		expect(ctrl.acOpfAvailable).toBe(true);
 		expect(start).toHaveBeenCalledWith(c.id);
 	});
@@ -263,4 +289,43 @@ describe('AC OPF controller boundary', () => {
 		await input.promise;
 		expect(solveAcOpfModule).not.toHaveBeenCalled();
 	});
+});
+
+it('shares a lazy AC OPF probe across embedded and shell controls', async () => {
+	const app = new AppState();
+	const ctrl = new Controller(app, {
+		apiBase: null,
+		loadDefaultCases: false,
+		acOpfWasmUrl: '/solver.wasm'
+	});
+	const probe = pending<boolean>();
+	vi.mocked(probeAcOpfWorker).mockReturnValue(probe.promise);
+	expect(probeAcOpfWorker).not.toHaveBeenCalled();
+	const first = ctrl.loadAcOpf();
+	const second = ctrl.loadAcOpf();
+	expect(first).toBe(second);
+	expect(ctrl.acOpfLoading).toBe(true);
+	probe.resolve(true);
+	await expect(first).resolves.toBe(true);
+	expect(ctrl.acOpfLoading).toBe(false);
+	await expect(ctrl.loadAcOpf()).resolves.toBe(true);
+	expect(probeAcOpfWorker).toHaveBeenCalledOnce();
+	ctrl.dispose();
+});
+
+it('reports a failed lazy probe and allows an explicit retry', async () => {
+	const app = new AppState();
+	const ctrl = new Controller(app, {
+		apiBase: null,
+		loadDefaultCases: false,
+		acOpfWasmUrl: '/solver.wasm'
+	});
+	vi.mocked(probeAcOpfWorker).mockRejectedValue(new Error('network failed'));
+	await expect(ctrl.loadAcOpf()).resolves.toBe(false);
+	expect(ctrl.acOpfAvailable).toBe(false);
+	expect(ctrl.acOpfLoading).toBe(false);
+	vi.mocked(probeAcOpfWorker).mockResolvedValue(true);
+	await expect(ctrl.loadAcOpf()).resolves.toBe(true);
+	expect(probeAcOpfWorker).toHaveBeenCalledTimes(2);
+	ctrl.dispose();
 });

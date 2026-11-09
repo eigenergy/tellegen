@@ -44,6 +44,30 @@ Start with the
 `examples/browser-minimal/` and `examples/svelte-minimal/` are working
 integrations of each package.
 
+### Python
+
+Python 3.11 and newer can install the native engine from PyPI:
+
+```sh
+python -m pip install tellegen
+```
+
+```python
+import tellegen
+
+solution = tellegen.load("case30.m").solve()
+```
+
+The optional MCP server runs the engine in process over stdio:
+
+```sh
+python -m pip install "tellegen[mcp]"
+tellegen-mcp
+```
+
+See the [Python guide](docs/src/python.md) for calculations, source builds,
+and the MCP filesystem policy.
+
 ### Rust
 
 The solver itself is the [tellegen](https://crates.io/crates/tellegen) crate.
@@ -110,6 +134,11 @@ surveyed infrastructure:
 | ACTIVSg7000 | Texas            |  6717 |     9140 |
 | CATS        | California       |  8870 |    10823 |
 
+Self-hosted deployments can also register distribution feeders through an
+optional [`distribution-cases.json` manifest](docs/src/deployment.md#hosted-distribution-cases).
+Portable PowerIO multiconductor modules open in the distribution viewer and
+can run supported AC power flow in the browser.
+
 Bus color is locational marginal price. Selecting a bus shows ∂LMP/∂demand at
 that bus; selecting a binding line shows ∂LMP/∂rating. Dragging a slider
 applies the sensitivity column live; releasing it re-solves exactly in
@@ -154,7 +183,7 @@ npm --workspace tellegen-frontend run dev
 Tests:
 
 ```sh
-cargo test --workspace
+cargo test --workspace --exclude tellegen-py
 npm run check && npm run build && npm run smoke:web && npm run test:downstream
 ```
 

@@ -41,6 +41,7 @@ schemars = { workspace = true, optional = true }
 
 [features]
 default = []
+powerio-012 = ["tellegen/powerio-012"]
 # JSON Schema derives for the generated `@tellegen/engine/synth` types.
 schema = ["dep:schemars", "tellegen/schema", "powerio/schema"]
 # `include_bytes!` of data/populated_places.json for the CLI and offline tests.

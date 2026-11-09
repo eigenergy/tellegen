@@ -1,7 +1,15 @@
 # Review plan for Tellegen #206
 
-Status: implementation branches prepared; PR creation awaits the user's
-approval. No remote merge is authorized. The legacy default remains unchanged.
+Status: [PowerIO #820](https://github.com/eigenergy/powerio/pull/820) and
+[Tellegen #322](https://github.com/eigenergy/tellegen/pull/322) are open.
+Tellegen remains a draft pending its dependency/publication gates. No remote
+merge is authorized. The legacy default remains unchanged.
+
+The preparation-stage test packet below is historical. The current validation
+results and remaining gates are maintained in Tellegen #322's description.
+The November 9 refresh merges main `112f0cac1225845fff2515c4220bd351d084fb83`,
+uses the shared `@tellegen/svelte/webmcp` adapter and calculation-settings API,
+and raises the compatibility note to the existing 12 px minimum.
 
 ## PowerIO PR
 
@@ -77,10 +85,9 @@ explicitly reported and are excluded from accuracy metrics.
 
 ## Approval and dependency order
 
-1. User reviews both branch diffs and approves opening the two PRs. Until then,
-   only development branches are pushed; no PRs are created.
-2. Open the PowerIO PR first. Open the dependent Tellegen PR with the immutable
-   PowerIO candidate pin and the numerical/CI limitations above visible.
+1. Both PRs have been opened with user authorization.
+2. Review PowerIO #820 and the dependent Tellegen #322, keeping the immutable
+   PowerIO candidate pin and the numerical/CI limitations visible.
 3. After upstream review and a separately authorized PowerIO release, update
    Tellegen's minimum PowerIO version to that release, remove all eight git
    patches together, regenerate the lockfile, and run the pin guard.

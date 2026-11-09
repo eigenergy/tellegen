@@ -20,6 +20,20 @@ use tellegen::geo::{
 use tellegen::SolveResponse;
 
 mod alloc_stats;
+#[cfg(feature = "sensitivity")]
+#[cfg_attr(
+    not(feature = "powerio-collections"),
+    path = "collection_unavailable.rs"
+)]
+mod collection;
+#[cfg(feature = "sensitivity")]
+pub use collection::CaseCollection;
+
+/// Whether this build includes the bounded ZIP/folder acquisition backend.
+#[wasm_bindgen]
+pub fn collection_supported() -> bool {
+    cfg!(feature = "powerio-collections")
+}
 mod dist;
 mod geo;
 #[cfg(feature = "synth")]
@@ -838,6 +852,10 @@ impl Study {
         options_json: Option<String>,
     ) -> Result<Study, JsError> {
         install_panic_hook();
+        ensure_input_text(module_json)?;
+        if let Some(options) = &options_json {
+            ensure_input_text(options)?;
+        }
         let problem = parse_problem(formulation)?;
         let options = options_json
             .as_deref()
@@ -846,6 +864,16 @@ impl Study {
             .map_err(jserr)?
             .unwrap_or_default();
         tellegen::Study::new_with_options(module_json, problem, options)
+            .map(Study)
+            .map_err(jserr)
+    }
+
+    /// Build with validated common settings, retained by later commits.
+    pub fn with_settings(module_json: &str, request: &str) -> Result<Study, JsError> {
+        ensure_input_text(module_json)?;
+        ensure_input_text(request)?;
+        let request = serde_json::from_str(request).map_err(jserr)?;
+        tellegen::Study::new_with_settings(module_json, &request)
             .map(Study)
             .map_err(jserr)
     }
@@ -1791,6 +1819,27 @@ pub fn apply_display_geo(module_json: &str, bytes: &[u8]) -> Result<String, JsEr
     geo::apply_display_geo_impl(module_json, bytes).map_err(jserr)
 }
 
+/// Discover calculation settings supported by this WASM build.
+#[wasm_bindgen]
+pub fn describe_settings() -> String {
+    tellegen::settings::describe().to_string()
+}
+
+#[wasm_bindgen]
+pub fn resolve_settings(request: &str) -> Result<String, JsError> {
+    ensure_input_text(request)?;
+    let request = serde_json::from_str(request).map_err(jserr)?;
+    serde_json::to_string(&tellegen::settings::resolve(&request).map_err(jserr)?).map_err(jserr)
+}
+
+#[wasm_bindgen]
+pub fn calculate_with_settings(request: &str) -> Result<String, JsError> {
+    ensure_input_text(request)?;
+    let request = serde_json::from_str(request).map_err(jserr)?;
+    serde_json::to_string(&tellegen::settings::calculate(&request, None).map_err(jserr)?)
+        .map_err(jserr)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1979,10 +2028,21 @@ mpc.gencost = [
         assert_eq!(transmission.kind, "transmission");
         assert_eq!(transmission.format, Some("powermodels-json"));
 
-        let distribution = classify_json_drop_value(br#"{"data_model":"ENGINEERING","bus":{}}"#)
-            .expect("classify PMD");
-        assert_eq!(distribution.kind, "distribution");
-        assert_eq!(distribution.format, Some("pmd-json"));
+        // PMD's explicit model marker takes precedence over the baseMVA,
+        // branch and gen fields it can share with PowerModels JSON.
+        for (model, format) in [
+            ("ENGINEERING", "pmd-json"),
+            ("MATHEMATICAL", "pmd-math-json"),
+        ] {
+            let pmd = serde_json::to_vec(&serde_json::json!({
+                "data_model": model, "baseMVA": 100.0,
+                "bus": {}, "branch": {}, "gen": {}
+            }))
+            .expect("PMD JSON bytes");
+            let distribution = classify_json_drop_value(&pmd).expect("classify PMD");
+            assert_eq!(distribution.kind, "distribution");
+            assert_eq!(distribution.format, Some(format));
+        }
 
         let net = parse_matpower(CASE14_NO_COORDS);
         let module = serialize_module(&powerio::PioModule::new(
@@ -2035,6 +2095,9 @@ mpc.gencost = [
             classify_json_drop_value(br#"{"baseMVA":100.0,"bus":{},"data_model":"ENGINEERING"}"#)
                 .expect("classify a PMD-marked document");
         assert_eq!(pmd_marked.kind, "distribution");
+
+        // Without a PMD model marker, these strong transmission and
+        // distribution markers conflict and must leave the bytes unresolved.
 
         let ambiguous = ingest_json_drop_value(br#"{"baseMVA":100.0,"voltage_source":{}}"#)
             .expect("ambiguous JSON remains unresolved");
@@ -2138,7 +2201,7 @@ mpc.gencost = [
 
         let value: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["schema"], "pio-ir");
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["version"], serde_json::json!(powerio::IR_VERSION));
         assert_eq!(value["history"][0]["name"], "tellegen.add_load");
 
         let restored = ingest_json_drop_value(text.as_bytes()).expect("ingest saved module");

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, untrack, type Snippet } from 'svelte';
+	import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
 	import {
 		resolveCartoApiKey,
 		resolveTellegenUiConfig,
@@ -49,13 +49,26 @@
 			})
 		),
 		get theme() {
-			return resolveTheme(theme);
+			return app.preferences.theme ?? resolveTheme(theme);
 		},
 		get cartoApiKey() {
 			return resolveCartoApiKey(cartoApiKey);
 		}
 	};
 	const app = createAppState();
+	onMount(() => {
+		let storage: Storage | undefined;
+		try {
+			storage = globalThis.localStorage;
+		} catch {
+			// Browsers may deny access to the storage object itself.
+		}
+		const previousRevision = app.preferences.revision;
+		app.preferences.initialize(storage);
+		// Host initialization may already have changed preferences. Only a restored
+		// record advances this revision and should replace the host's display mode.
+		if (app.preferences.revision > previousRevision) app.displayMode = app.preferences.coloring;
+	});
 	const ctrl = createController(app, {
 		apiBase: config.apiBase,
 		acOpfWasmUrl: config.acOpfWasmUrl ?? undefined,
@@ -74,15 +87,14 @@
 	// worker; release them with the provider.
 	onDestroy(() => ctrl.dispose());
 
-	// The dark tokens in styles.css hang off `:root[data-theme='dark']`. Set it
-	// only for dark, and only while mounted, so a light host is untouched. A
-	// server-rendered host that wants no light flash can also put the
-	// attribute in its app template.
+	// Hosts may own the root theme themselves. Only manage the attribute when
+	// the host supplied a theme or the user explicitly saved a viewer preference.
+	// A server-rendered host can set it before first paint in its app template.
 	$effect(() => {
-		if (config.theme !== 'dark') return;
+		if (theme === undefined && app.preferences.theme === null) return;
 		const root = document.documentElement;
 		const previous = root.dataset.theme;
-		root.dataset.theme = 'dark';
+		root.dataset.theme = config.theme;
 		return () => {
 			if (previous === undefined) delete root.dataset.theme;
 			else root.dataset.theme = previous;

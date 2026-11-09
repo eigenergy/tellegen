@@ -1,3 +1,4 @@
+import { runCalculation } from './fixtures/calculation.js';
 import { readFile } from 'node:fs/promises';
 import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
@@ -25,7 +26,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 	await expect(calculation).toBeEnabled();
 	await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
-	await calculation.selectOption('acpf');
+	await runCalculation(page, 'acpf');
 	await expect(page.locator('.solvecard')).toContainText('AC power flow');
 	await expect(calculation).toBeEnabled();
 	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
@@ -97,7 +98,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		(saved.data.elements as typeof buses).map((bus) => [bus.legacy_id, bus.voltage_pu, bus.price])
 	).toEqual(buses.map((bus) => [bus.legacy_id, bus.voltage_pu, bus.price]));
 	await page.getByRole('button', { name: 'Return to live case', exact: true }).click();
-	await calculation.selectOption('dcopf');
+	await runCalculation(page, 'dcopf');
 	await expect(calculation).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'LMP', exact: true })).toBeVisible();
 	await expect(page.locator('.solvecard')).toContainText('DC OPF');
@@ -149,15 +150,13 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 	await expect(calculation).toBeEnabled();
 	const network = page.getByRole('complementary', { name: 'Network', exact: true });
 	for (let attempt = 0; attempt < 2; attempt++) {
-		await calculation.selectOption('acpf');
-		await expect(calculation).toBeEnabled();
-		await expect(page.getByTestId('notification-toast')).toContainText(
-			'Calculation did not complete'
-		);
-		await expect(network).toContainText('No AC power flow results available.');
+		const panel = await runCalculation(page, 'acpf', { closeSettings: false });
+		await expect(panel.getByRole('alert')).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
+		await expect(page.locator('.solvecard')).toContainText('DC OPF');
 		await expect(network).not.toContainText('Solving AC power flow');
-		await expect(page.locator('.solvecard')).toHaveCount(0);
-		await calculation.selectOption('dcopf');
+		await page.getByRole('button', { name: 'Close settings panel', exact: true }).click();
+		await runCalculation(page, 'dcopf');
 		await expect(calculation).toBeEnabled();
 		await expect(page.locator('.solvecard')).toContainText('DC OPF');
 		await expect(network).not.toContainText('results available.');

@@ -1,5 +1,7 @@
 import type { DcFormula } from "./generated/api-types.js";
 export type { DcFormula, StudyOptions } from "./generated/api-types.js";
+export * from "./settings.js";
+import { settingsCatalog } from "./generated/settings-types.js";
 /** The browser engine API. Requests run in a dedicated Web Worker when the
  * browser allows one — a solve never blocks the page — and on the calling
  * thread otherwise (see host.ts). Nothing downloads until the first engine
@@ -12,6 +14,19 @@ import {
   type EngineHost,
 } from "./host.js";
 import type { EngineRequest, EngineValue } from "./protocol.js";
+export {
+  BrowserCaseCollection,
+  collectionSupported,
+  COLLECTION_UNAVAILABLE,
+  MAX_COLLECTION_BYTES,
+  MAX_COLLECTION_FILES,
+  type CollectionCandidate,
+  type CollectionEntry,
+  type CollectionFile,
+  type CollectionInspection,
+  type CollectionSelection,
+  type ImportedCollectionCase,
+} from "./collection.js";
 export {
   probeAcOpfWorker,
   solveAcOpfModule,
@@ -897,7 +912,8 @@ export interface McPfOptions {
   /** Nonnegative dimensionless KCL tolerance; default 1e-5. I_scale is the
    * larger of summed incident-current magnitudes and net load-current magnitude. */
   relative_kcl_tolerance?: number;
-  /** Apply the OpenDSS-style bounded-voltage load envelope; default true.
+  /** Apply the legacy OpenDSS-style envelope to unbounded laws; default true.
+   * Explicit source bounds, cutoff and current limits always take precedence.
    * False uses original load equations at every voltage. Thresholds must still
    * satisfy 0 < v_low_pu < v_min_pu < v_max_pu when the envelope is disabled. */
   voltage_envelope?: boolean;
@@ -915,17 +931,9 @@ export interface McPfOptions {
 /** Effective defaults shared by settings controls and programmatic reruns. */
 export const DEFAULT_MC_PF_OPTIONS: Readonly<Required<McPfOptions>> =
   Object.freeze({
-    tolerance: 1e-4,
-    max_iterations: 100,
-    damping: 1,
-    zero_voltage_tolerance: 1e-9,
-    absolute_kcl_tolerance: 1e-4,
-    relative_kcl_tolerance: 1e-5,
-    voltage_envelope: true,
-    v_low_pu: 0.5,
-    v_min_pu: 0.85,
-    v_max_pu: 1.15,
-  });
+    ...settingsCatalog.calculations.find((c) => c.calculation === "mc_ac_pf")!
+      .defaults,
+  } as Required<McPfOptions>);
 
 export function validateMcPfOptions(options: McPfOptions): string | null {
   const o = { ...DEFAULT_MC_PF_OPTIONS, ...options };
@@ -1323,6 +1331,7 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
     value === null ||
     typeof value !== "object" ||
     value instanceof Float64Array ||
+    value instanceof Uint8Array ||
     value.kind !== "mc_pf_result_buffers"
   ) {
     throw new Error("engine returned no result tables");
@@ -2062,6 +2071,7 @@ export class BrowserStudy {
     handle: number,
     formulation: Formulation = DEFAULT_FORMULATION,
     planningHost: () => EngineHost = isolatedEngineHost,
+    private ownedHost = false,
   ) {
     this.#host = host;
     this.#handle = handle;
@@ -2342,7 +2352,10 @@ export class BrowserStudy {
   free() {
     void this.#host
       .call({ op: "study_free", study: this.#handle })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (this.ownedHost) this.#host.cancel?.(new Error("Study released"));
+      });
   }
 }
 
@@ -2361,15 +2374,35 @@ export async function createStudy(
     isolated?: boolean;
     signal?: AbortSignal;
     branch_susceptance_formula?: DcFormula;
+    settings?: import("./settings.js").SettingsRequest;
   } = {},
 ): Promise<BrowserStudy> {
+  if (options.settings && options.settings.calculation !== formulation)
+    throw new Error("Settings calculation must match the Study formulation");
+  let settings = options.settings;
+  if (options.branch_susceptance_formula !== undefined) {
+    const explicit = settings?.overrides?.branch_susceptance_formula;
+    if (explicit != null && explicit !== options.branch_susceptance_formula)
+      throw new Error(
+        "Conflicting DC conventions in Study options and settings",
+      );
+    settings = {
+      ...settings,
+      calculation: formulation,
+      overrides: {
+        ...settings?.overrides,
+        branch_susceptance_formula: options.branch_susceptance_formula,
+      },
+    };
+  }
   const host = options.isolated ? isolatedEngineHost() : engineHost();
   return createStudyOnHost(
     moduleJson,
     formulation,
     host,
     options.signal,
-    options.branch_susceptance_formula,
+    settings,
+    !!options.isolated,
   );
 }
 
@@ -2378,7 +2411,8 @@ async function createStudyOnHost(
   formulation: Formulation,
   host: EngineHost,
   signal?: AbortSignal,
-  branch_susceptance_formula?: DcFormula,
+  settings?: import("./settings.js").SettingsRequest,
+  ownedHost = false,
 ): Promise<BrowserStudy> {
   // Handles are allocated here, not by the host, so a pending build replayed
   // onto the fallback host keeps naming the same study.
@@ -2391,19 +2425,26 @@ async function createStudyOnHost(
   try {
     await host.call({
       op: "study_new",
-      options: JSON.stringify({ branch_susceptance_formula }),
+      ...(settings ? { settings: JSON.stringify(settings) } : {}),
       study: handle,
       module_json: moduleJson,
       formulation,
     });
     signal?.throwIfAborted();
   } catch (error) {
+    // A late cancellation on the direct fallback can leave an allocated handle;
+    // an isolated worker that rejects construction otherwise has no owner to free it.
+    void host.call({ op: "study_free", study: handle }).catch(() => {});
+    if (ownedHost)
+      host.cancel?.(
+        error instanceof Error ? error : new Error("Study creation failed"),
+      );
     signal?.throwIfAborted();
     throw error;
   } finally {
     signal?.removeEventListener("abort", cancel);
   }
-  return new BrowserStudy(host, handle, formulation);
+  return new BrowserStudy(host, handle, formulation, undefined, ownedHost);
 }
 
 // ---- Synthetic grid generation --------------------------------------------
@@ -2558,6 +2599,7 @@ function expectSynthPreview(value: EngineValue): SynthPreview {
     value === null ||
     typeof value !== "object" ||
     value instanceof Float64Array ||
+    value instanceof Uint8Array ||
     value.kind !== "synth_preview"
   ) {
     throw new Error("engine returned no synthetic preview");

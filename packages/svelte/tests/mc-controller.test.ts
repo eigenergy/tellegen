@@ -15,6 +15,7 @@ import {
 } from '@tellegen/engine';
 import { AppState, MulticonductorCase } from '../src/lib/state.svelte.js';
 import { Controller } from '../src/lib/controller.svelte.js';
+import { createApiClient } from '../src/lib/api.js';
 import { buildDiagramView, buildGeographicView } from '../src/lib/multiconductor.js';
 
 const graph: DistGraph = {
@@ -127,6 +128,221 @@ function host(metadata: Partial<IngestedDistCase> = {}) {
 	app.addMulti(c);
 	return { app, ctrl, c, solve, apply };
 }
+
+function hosted() {
+	const { app, ctrl, c: local, solve } = host();
+	const summary = {
+		id: 'feeder',
+		name: 'Hosted feeder',
+		model: 'multiconductor' as const,
+		distribution: {
+			pf_options: {
+				voltage_envelope: false,
+				max_iterations: 500,
+				tolerance: 1e-7,
+				absolute_kcl_tolerance: 1e-5
+			}
+		},
+		n_bus: 2,
+		n_branch: 1,
+		n_gen: 0
+	};
+	const getCases = vi.fn(async () => [summary]);
+	const getCaseModuleJson = vi.fn(async () => 'hosted-input');
+	const ingest = vi.fn(async () => payload('hosted-input'));
+	const getNetwork = vi.fn(async () => {
+		throw new Error('Distribution must not fetch balanced endpoints');
+	});
+	ctrl.api = {
+		...createApiClient(),
+		getCases,
+		getCaseModuleJson,
+		getNetwork,
+		getComputeStatus: async () => ({ enabled: false })
+	};
+	ctrl.mcTransport.ingestDistCaseBytes = ingest;
+	return {
+		app,
+		ctrl,
+		local,
+		solve,
+		summary,
+		getCases,
+		getCaseModuleJson,
+		ingest,
+		getNetwork
+	};
+}
+
+describe('hosted distribution catalogue', () => {
+	it('opens a distribution-only catalogue and calculates through the existing browser path', async () => {
+		const { app, ctrl, solve, getCaseModuleJson, ingest, getNetwork } = hosted();
+		await ctrl.load();
+		expect(app.cases).toHaveLength(0);
+		expect(app.activeMulti).toMatchObject({
+			id: 'feeder',
+			label: 'Hosted feeder',
+			hosted: true,
+			mcInput: 'hosted-input'
+		});
+		expect(ingest).toHaveBeenCalledWith(new TextEncoder().encode('hosted-input'), 'pio', {
+			retain: true
+		});
+		expect(app.activeMulti?.mcOptions).toMatchObject({
+			voltage_envelope: false,
+			max_iterations: 500,
+			tolerance: 1e-7,
+			absolute_kcl_tolerance: 1e-5
+		});
+		expect(getNetwork).not.toHaveBeenCalled();
+		expect(solve).not.toHaveBeenCalled();
+		const feeder = app.activeMulti!;
+		await ctrl.solveMultiCase(feeder);
+		expect(feeder.result).toEqual(summary);
+		expect(solve).toHaveBeenLastCalledWith(
+			'hosted-input',
+			{
+				...DEFAULT_MC_PF_OPTIONS,
+				voltage_envelope: false,
+				max_iterations: 500,
+				tolerance: 1e-7,
+				absolute_kcl_tolerance: 1e-5
+			},
+			expect.any(AbortSignal)
+		);
+		await ctrl.solveMultiCase(feeder, { max_iterations: 600 });
+		expect(feeder.mcOptions).toMatchObject({
+			voltage_envelope: false,
+			max_iterations: 600
+		});
+		await ctrl.solveMultiCase(feeder);
+		expect(solve).toHaveBeenLastCalledWith(
+			'hosted-input',
+			feeder.mcOptions,
+			expect.any(AbortSignal)
+		);
+		await ctrl.activateHostedDistribution('feeder');
+		expect(app.activeMulti).toBe(feeder);
+		expect(getCaseModuleJson).toHaveBeenCalledTimes(1);
+	});
+
+	it('removes hosted feeders from the browser and restores them without duplicating local cases', async () => {
+		const { app, ctrl, local } = hosted();
+		await ctrl.load();
+		await ctrl.removeMultiCase(app.activeMulti!);
+		expect(app.hostedDistributionCases).toHaveLength(0);
+		expect(ctrl.hiddenDefaults.has('feeder')).toBe(true);
+		expect(app.multiCases).toEqual([local]);
+		ctrl.restoreDefaultCases();
+		await ctrl.load();
+		expect(app.multiCases).toHaveLength(2);
+		expect(app.multiCases.filter((c) => c.hosted)).toHaveLength(1);
+		expect(app.multiCases).toContain(local);
+		await ctrl.load();
+		expect(app.multiCases).toHaveLength(2);
+	});
+
+	it('does not steal selection after another case is selected during ingestion', async () => {
+		const { app, ctrl, local, summary, ingest } = hosted();
+		app.hostedDistributionCases = [summary];
+		let complete!: (value: IngestedDistCase) => void;
+		ingest.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					complete = resolve;
+				})
+		);
+		const pending = ctrl.activateHostedDistribution(summary.id);
+		await vi.waitFor(() => expect(ingest).toHaveBeenCalled());
+		ctrl.activateMulti(local);
+		const input = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		complete({ ...payload(), module_json: undefined, input_retained: true, input });
+		await pending;
+		expect(input.free).toHaveBeenCalledOnce();
+		expect(app.activeMulti).toBe(local);
+		expect(app.multiCases).toEqual([local]);
+		expect(app.error).toBeNull();
+	});
+
+	it('keeps unavailable entries visible and reports browser ingestion failures with retry', async () => {
+		const { app, ctrl, summary, getCases, ingest, getCaseModuleJson } = hosted();
+		getCases.mockResolvedValue([
+			{ ...summary, unavailable_reason: 'Missing file' } as typeof summary
+		]);
+		await ctrl.load();
+		expect(app.hostedDistributionCases[0].unavailable_reason).toBe('Missing file');
+		expect(getCaseModuleJson).not.toHaveBeenCalled();
+		app.hostedDistributionCases = [summary];
+		ingest.mockRejectedValueOnce(new Error('Cannot parse module'));
+		await ctrl.activateHostedDistribution(summary.id);
+		expect(app.error).toContain('Cannot parse module');
+		expect(app.errorRetry).toBeTypeOf('function');
+		await app.errorRetry!();
+		expect(app.activeMulti?.id).toBe(summary.id);
+	});
+
+	it('discards an in-flight hosted ingest when its controller is disposed', async () => {
+		const { app, ctrl, local, summary, ingest, getCaseModuleJson } = hosted();
+		app.hostedDistributionCases = [summary];
+		let complete!: (value: IngestedDistCase) => void;
+		ingest.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					complete = resolve;
+				})
+		);
+		const pending = ctrl.activateHostedDistribution(summary.id);
+		await vi.waitFor(() => expect(ingest).toHaveBeenCalled());
+		ctrl.dispose();
+		const input = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		complete({ ...payload(), module_json: undefined, input_retained: true, input });
+		await pending;
+		expect(input.free).toHaveBeenCalledOnce();
+		expect(app.multiCases).toEqual([local]);
+		expect(ctrl.loadingHostedDistribution).toBeNull();
+		expect(app.error).toBeNull();
+		await ctrl.activateHostedDistribution(summary.id);
+		expect(getCaseModuleJson).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases retained hosted inputs when the catalogue reloads', async () => {
+		const { app, ctrl, ingest } = hosted();
+		const first = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		const second = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		ingest.mockResolvedValueOnce({
+			...payload(),
+			module_json: undefined,
+			input: first,
+			input_retained: true
+		});
+		await ctrl.load();
+		expect(app.activeMulti?.mcInput).toBe(first);
+		expect(first.free).not.toHaveBeenCalled();
+		ingest.mockResolvedValueOnce({
+			...payload(),
+			module_json: undefined,
+			input: second,
+			input_retained: true
+		});
+		ctrl.restoreDefaultCases();
+		await ctrl.load();
+		expect(first.free).toHaveBeenCalledOnce();
+		expect(app.activeMulti?.mcInput).toBe(second);
+		ctrl.dispose();
+		expect(second.free).toHaveBeenCalledOnce();
+	});
+
+	it('reports a missing backend without starting a hosted request', async () => {
+		const { app, ctrl, local, summary, ingest, getCaseModuleJson } = hosted();
+		app.hostedDistributionCases = [summary];
+		ctrl.api = null;
+		await ctrl.activateHostedDistribution(summary.id);
+		expect(app.error).toContain('no API configured');
+		expect(app.multiCases).toEqual([local]);
+		expect(getCaseModuleJson).not.toHaveBeenCalled();
+		expect(ingest).not.toHaveBeenCalled();
+	});
+});
 describe('multiconductor calculation and coordinates', () => {
 	it('retains a fixed-point session and automatically warm-solves load edits', async () => {
 		vi.useFakeTimers();
@@ -457,6 +673,49 @@ describe('multiconductor calculation and coordinates', () => {
 		await expect(ctrl.solveMultiCase(c, { v_min_pu: 0.2 })).rejects.toThrow('Vlow');
 		expect(solve.mock.calls.length).toBe(count);
 		expect(c.mcOptions.v_min_pu).toBe(0.7);
+		ctrl.dispose();
+	});
+
+	it('an unavailable case rejects a solve without changing its selected settings', async () => {
+		const { ctrl, c, solve } = host({
+			mc_pf_supported: false,
+			mc_pf_unavailable_reason: 'unsupported equipment'
+		});
+		const revision = c.settings.revision;
+		await expect(ctrl.solveMultiCase(c, { damping: 0.5 })).rejects.toThrow('unsupported equipment');
+		expect(solve).not.toHaveBeenCalled();
+		expect(c.mcOptions).toEqual(DEFAULT_MC_PF_OPTIONS);
+		expect(c.settings.revision).toBe(revision);
+		ctrl.dispose();
+	});
+
+	it('refuses a full-network solve once the retained input carries the island selection', async () => {
+		const exclusions = [
+			{ buses: ['unpowered'], equipment: [{ kind: 'load', name: 'unsupplied' }] }
+		];
+		const { ctrl, c, solve } = host({ mc_excluded_islands: exclusions });
+		ctrl.mcTransport.prepareMcEnergizedNetwork = vi.fn(async () => ({
+			module_json: 'full-with-selection',
+			network_scope: c.mcPreparedScope,
+			excluded_islands: exclusions
+		}));
+		await ctrl.solveMultiCase(c, c.mcOptions, undefined, true);
+		expect(c.mcInput).toBe('full-with-selection');
+		const count = solve.mock.calls.length;
+		await expect(ctrl.solveMultiCase(c, {}, undefined, false)).rejects.toThrow(
+			'already solves only its energized network'
+		);
+		expect(solve.mock.calls.length).toBe(count);
+		expect(c.mcEnergizedOnly).toBe(true);
+		ctrl.dispose();
+	});
+
+	it('an imported input that carries the selection cannot be solved as the full network', async () => {
+		const { ctrl, c, solve } = host({ mc_energized_only: true });
+		await expect(ctrl.solveMultiCase(c, {}, undefined, false)).rejects.toThrow(
+			'already solves only its energized network'
+		);
+		expect(solve).not.toHaveBeenCalled();
 		ctrl.dispose();
 	});
 

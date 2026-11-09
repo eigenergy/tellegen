@@ -25,6 +25,8 @@ powerio-tx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 axum = "0.8.4"
+# Case modules are gzipped once at load rather than per request.
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-stream = "0.1"
 tower-http = { version = "0.7", features = ["fs", "set-header", "trace"] }
@@ -36,6 +38,7 @@ tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = ["sensitivity", "conic"]
+powerio-012 = ["tellegen/powerio-012"]
 sensitivity = ["tellegen/sensitivity"]
 conic = ["tellegen/conic"]
 

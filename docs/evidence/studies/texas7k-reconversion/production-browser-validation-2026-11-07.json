@@ -1,0 +1,125 @@
+{
+  "schema": "tellegen.texas7k-production-acceptance/1",
+  "checked_at": "2026-11-07T21:31:17.226614+00:00",
+  "source_revision": "b85c50f31367693dfdc0d29cff8c655bbaad60b4",
+  "deployment_run": "https://github.com/eigenergy/tellegen/actions/runs/42413615797",
+  "image": "ghcr.io/eigenergy/tellegen@sha256:3a84e6da3ce5f3fd152e593dea07e774225d0ba092fe54282138901912ae89aa",
+  "image_unchanged_during_acceptance": true,
+  "manifest_sha256": "385ba178594cf1b774ea4338f97b9df89fced0444dddc48a0c335da68f1b5552",
+  "bundle_checksums_sha256": "a594e609e0a0cc3108b1cf58b649052d6be70e805804ff70a2b75158d2f5d8c4",
+  "health": {
+    "status": "ok",
+    "unavailable": [],
+    "cases": [
+      "case200",
+      "case500",
+      "case7000",
+      "cats",
+      "texas7k-p1uhs0_1247"
+    ]
+  },
+  "activation": {
+    "previous_distribution_manifest": "absent",
+    "existing_cases_retained": true,
+    "atomic_manifest_swap": true,
+    "rollback_state_retained": true,
+    "deployment_lock_used": true
+  },
+  "phases_passed": [
+    "transmission association",
+    "hosted load",
+    "UI power flow",
+    "WebMCP power flow",
+    "export",
+    "saved reopen",
+    "identical settings and exact artifact result rerun",
+    "completed converged load edit"
+  ],
+  "screenshot_inspected": true,
+  "server_origin": "https://tellegen.dev",
+  "browser_rss_max_at_checkpoints_bytes": 4035215360,
+  "memory_samples": [
+    {
+      "phase": "before_load",
+      "rss_bytes": 257916928
+    },
+    {
+      "phase": "loaded",
+      "rss_bytes": 1456750592
+    },
+    {
+      "phase": "solved",
+      "rss_bytes": 1690681344
+    },
+    {
+      "phase": "exported",
+      "rss_bytes": 2980380672
+    },
+    {
+      "phase": "reopened_and_resolved",
+      "rss_bytes": 3803004928
+    },
+    {
+      "phase": "edited",
+      "rss_bytes": 4035215360
+    }
+  ],
+  "browser_engine": "chromium",
+  "browser": "156.0.8078.4",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "mobile_emulation": false,
+  "memory_note": "Sum of Chromium process RSS at workflow checkpoints, not a continuously sampled peak; shared pages may be counted more than once.",
+  "long_task_observation_supported": true,
+  "main_thread_long_task_count": 30,
+  "main_thread_longest_task_ms": 2463,
+  "load_ms": 9503,
+  "ui_solve_ms": 2178,
+  "edit_ms": 695,
+  "edit_result_revision_advanced": true,
+  "wasm_sha256": "e52fa21db52f646adfdfbf468f3a4f51648157c4263efa2504c7d44c9bd650b2",
+  "result_sha256": "e036f916145e2188a5ace26a2f7c0dff9cf43501b2d3d1148f7df46931f38e05",
+  "original_reference_result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "original_reference_match": false,
+  "transfer": [
+    {
+      "url": "/api/cases",
+      "encoded_bytes": 660,
+      "decoded_bytes": 1417,
+      "duration_ms": 162.80000007152557
+    },
+    {
+      "url": "/api/cases/case500/network",
+      "encoded_bytes": 22393,
+      "decoded_bytes": 150524,
+      "duration_ms": 54.39999997615814
+    },
+    {
+      "url": "/api/cases/case500/solution",
+      "encoded_bytes": 24144,
+      "decoded_bytes": 82375,
+      "duration_ms": 71.39999997615814
+    },
+    {
+      "url": "/api/cases/case7000/solution",
+      "encoded_bytes": 361514,
+      "decoded_bytes": 1229265,
+      "duration_ms": 268.60000002384186
+    },
+    {
+      "url": "/api/cases/case7000/network",
+      "encoded_bytes": 401354,
+      "decoded_bytes": 2449185,
+      "duration_ms": 305.2000000476837
+    },
+    {
+      "url": "/api/cases/texas7k-p1uhs0_1247/case",
+      "encoded_bytes": 1307660,
+      "decoded_bytes": 36692131,
+      "duration_ms": 199.89999997615814
+    }
+  ],
+  "note": "Single chromium run against the configured public HTTPS server; includes network and UI scheduling, with no controlled cache or host-load conditions. Viewport/device emulation does not qualify physical mobile memory or performance."
+}

@@ -2332,7 +2332,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tellegen"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "clarabel",
  "faer",
@@ -2373,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "tellegen-py"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "powerio",
  "pyo3",
@@ -2386,6 +2386,7 @@ name = "tellegen-server"
 version = "0.1.1"
 dependencies = [
  "axum",
+ "flate2",
  "powerio",
  "powerio-tx",
  "serde",

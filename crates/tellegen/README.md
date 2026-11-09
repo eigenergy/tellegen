@@ -15,6 +15,11 @@ DC OPF and AC power flow are included by default. The `conic` feature adds
 SOCWR. The `sensitivity` feature supplies the
 implicit derivative API and the retained `Study` runtime.
 
+The opt-in native `mc-opf` feature adds experimental unbalanced IVR AC OPF,
+retained `McOpfSession` edits and warm starts, complete physical reports, and
+qualified local forward/adjoint sensitivities. These use separate Rust APIs;
+the generic `SolveRequest` and `Study` interfaces do not expose MC OPF.
+
 Active three winding transformers are lowered to an equivalent star network for
 solving and display. Tellegen currently rejects closed transmission switches,
 in-service storage, and in-service HVDC links instead of silently omitting them;
@@ -62,6 +67,22 @@ let response = study.commit(&[NetworkEdit::AddLoad {
 `capabilities_json` reports the formulations and sensitivity cells compiled
 into the current build.
 
+For a complete native MC OPF workflow, run from the repository root:
+
+```sh
+cargo run -p tellegen --no-default-features --features mc-opf --locked \
+  --example mc_opf_workflow
+```
+
+The example solves the bundled four-bus feeder, edits load power, warm-starts,
+round-trips the result and reuses one sensitivity factorization. It writes a
+summary to stdout without creating files. To use a declared PowerIO
+`McAcOpfInstance` module and a JSON array of `McOpfEdit` values, append
+`-- instance.module.json edits.json [result.module.json]`. The optional result
+path saves the complete report. See the repository book's
+[public native workflow](../../docs/src/formulations.md#public-native-workflow)
+for units, input semantics and qualification/error handling.
+
 ## API compatibility
 
 The 0.3 release uses PowerIO 0.11 typed problem instances and generation-2
@@ -89,6 +110,16 @@ the crate version and PowerIO IR generation.
 cargo test                          # native, with sensitivities (default features)
 cargo build --no-default-features   # solve only, no faer (smaller wasm core)
 ```
+
+For all shipping numerical paths on PowerIO 0.11.9:
+
+```sh
+cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
+```
+
+The `powerio-012` feature is a version bridge for builds explicitly selecting
+PowerIO 0.12 dependencies. It is not part of a published 0.11 build; use the
+shipping feature list above instead of `--all-features`.
 
 ## Citing
 

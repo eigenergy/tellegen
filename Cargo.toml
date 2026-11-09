@@ -31,9 +31,9 @@ repository = "https://github.com/eigenergy/tellegen"
 powerio = { version = "0.11.9", default-features = false }
 # The multiconductor distribution model and its lossless readers for OpenDSS,
 # PMD JSON, and BMOPF JSON. The wasm ingest path views distribution cases
-# through `MulticonductorNetwork::to_graph()` (no solve). Browser ingestion
-# remains filesystem free, so OpenDSS include commands are refused because
-# there is no base directory to confine them to.
+# through `MulticonductorNetwork::to_graph()`. Collection ingestion supplies
+# a confined named tree; includes never acquire host files or network data.
+
 powerio-dist = { version = "0.11.9", default-features = false }
 # Lower level analysis views used only inside Tellegen's private solver and
 # display workspaces. Portable inputs and outputs still cross the `powerio`

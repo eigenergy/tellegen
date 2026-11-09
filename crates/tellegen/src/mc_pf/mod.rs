@@ -9,7 +9,7 @@ pub use energized::{
     mc_unpowered_islands, prepare_mc_energized_network, prepare_mc_energized_network_json,
     McExcludedEquipment, McExcludedIsland, McNetworkScope,
 };
-mod input;
+pub(crate) mod input;
 mod linear;
 mod loads;
 mod network;
@@ -46,7 +46,9 @@ pub struct McPfOptions {
     pub zero_voltage_tolerance: f64,
     pub absolute_kcl_tolerance: f64,
     pub relative_kcl_tolerance: f64,
-    /// Apply the OpenDSS-style bounded-voltage load envelope.
+    /// Apply the legacy OpenDSS-style envelope to unbounded load laws.
+    /// Explicit PowerIO bounded laws always retain their own thresholds,
+    /// coefficients, cutoff and current limit regardless of this option.
     pub voltage_envelope: bool,
     /// Below this per-unit voltage, loads use their nominal impedance.
     pub v_low_pu: f64,
@@ -1816,9 +1818,29 @@ pub fn solve_mc_ac_pf_instance(
     instance: &McAcPfInstance,
     options: &McPfOptions,
 ) -> Result<McPfResult, String> {
+    solve_mc_ac_pf_instance_cancellable(instance, options, None)
+}
+
+pub(crate) fn solve_mc_ac_pf_instance_cancellable(
+    instance: &McAcPfInstance,
+    options: &McPfOptions,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<McPfResult, String> {
     validate_options(options)?;
+    if cancel
+        .as_ref()
+        .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+    {
+        return Err("calculation cancelled".into());
+    }
     let prepared = PreparedNetwork::prepare(instance)?;
-    let state = iterate(&prepared, options, None, &mut McPfProfile::default())?;
+    let state = iterate_cancellable(
+        &prepared,
+        options,
+        None,
+        &mut McPfProfile::default(),
+        cancel,
+    )?;
     build_result(&prepared, options, &state)
 }
 
@@ -1844,6 +1866,16 @@ fn iterate(
     options: &McPfOptions,
     initial_voltage: Option<&[Complex64]>,
     profile: &mut McPfProfile,
+) -> Result<FixedPoint, String> {
+    iterate_cancellable(prepared, options, initial_voltage, profile, None)
+}
+
+fn iterate_cancellable(
+    prepared: &PreparedNetwork,
+    options: &McPfOptions,
+    initial_voltage: Option<&[Complex64]>,
+    profile: &mut McPfProfile,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<FixedPoint, String> {
     validate_options(options)?;
     let n = prepared.index.terminal_ids.len();
@@ -1890,6 +1922,12 @@ fn iterate(
     let mut final_change = f64::INFINITY;
     let mut iterations = 0;
     for k in 0..options.max_iterations {
+        if cancel
+            .as_ref()
+            .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+        {
+            return Err("calculation cancelled".into());
+        }
         iterations = k + 1;
         if evaluated.is_none() {
             let started = profile_now();
@@ -2331,7 +2369,7 @@ fn complex_finite(value: McComplex) -> bool {
     value.re.is_finite() && value.im.is_finite()
 }
 
-fn validate_options(options: &McPfOptions) -> Result<(), String> {
+pub(crate) fn validate_options(options: &McPfOptions) -> Result<(), String> {
     if !options.tolerance.is_finite()
         || options.tolerance <= 0.0
         || options.max_iterations == 0
@@ -3561,7 +3599,7 @@ mod tests {
         assert!(
             prepare_mc_energized_network_json(&crate::ir::serialize_module(&module).unwrap())
                 .unwrap_err()
-                .contains("unknown bus")
+                .contains("missing")
         );
     }
 

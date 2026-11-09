@@ -34,6 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metrics as M  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
+PLACES = HERE.parents[3] / 'crates' / 'tellegen-synth' / 'data' / 'populated_places.json'
+SUBDIVISION = 'US-CA'
 CELL_LINES_KM = 25.0
 CELL_LOAD_KM = 50.0
 PASS_SHARE = 0.80
@@ -80,7 +82,23 @@ GEOGRAPHY = [
     ('line_density_rho', 'geography', 'Line-km per 25 km cell, Spearman', 'atleast', 0.60, 0.85),
     ('load_density_rho', 'geography', 'Load per 50 km cell, Spearman', 'atleast', 0.70, 0.70),
 ]
-METRICS = SCALE + TOPOLOGY + PARAMETERS + OPERATION + GEOGRAPHY
+# Where buses stand against where people live (metrics.siting), counting the
+# buses at sites: a generated grid's without its tap junctions, CATS's
+# substations without its added nodes (line junctions, most of them in
+# cities). Box densities depend on the bus count as well as its spread (a
+# generated grid sites about 4,900 buses, CATS has 3,171 substation buses), so
+# they get the widest ratio window of the scorecard; the shares and the
+# density ratio do not depend on the count.
+SITING = [
+    ('siting.sparse_share', 'siting', 'Sited buses in 0.5° cells under 20,000 people, share', 'abs', 0.07, 0.05),
+    ('siting.top_share', 'siting', 'Sited buses in the 10 most populous 0.5° cells, share', 'abs', 0.10, 0.08),
+    *[(f'siting.per_1000km2.{box}', 'siting', f'Sited buses per 1,000 km², {label}', 'ratio', (0.5, 2.0),
+       (0.5, 2.0))
+      for box, label in (('la', 'Los Angeles basin'), ('mojave', 'Mojave Desert'), ('ne', 'Modoc and Lassen'))],
+    ('siting.la_over_ne', 'siting', 'Sited bus density, Los Angeles basin over Modoc and Lassen', 'ratio',
+     (0.33, 3.0), (0.5, 2.0)),
+]
+METRICS = SCALE + TOPOLOGY + PARAMETERS + OPERATION + GEOGRAPHY + SITING
 
 # OpenStreetMap mode: the metrics the mapped data itself can be measured on
 # (metrics.measure_map), and what that measure is. A 'lower' value is a floor
@@ -214,8 +232,13 @@ def map_limits(mid, kind, tol, ref, mapm):
     return v, True
 
 
+def places():
+    """The bundled places table's California rows, for the siting metrics."""
+    return M.load_places(PLACES, SUBDIVISION)
+
+
 def score_one(ref, gen_net, mode, mapm=None):
-    gen = M.measure(gen_net, frame=ref['_frame'])
+    gen = M.measure(gen_net, frame=ref['_frame'], places=places())
     gen.update(derived(ref, gen))
     rows = []
     for mid, group, label, kind, tol_s, tol_o in METRICS:
@@ -355,7 +378,7 @@ def summary_line(results):
 
 def load_reference(cats_dir):
     net = M.load_cats(cats_dir)
-    return M.measure(net)
+    return M.measure(net, places=places())
 
 
 def cmd_reference(args):

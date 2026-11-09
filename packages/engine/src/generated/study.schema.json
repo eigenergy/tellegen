@@ -1803,7 +1803,7 @@
           "type": "array"
         },
         "code": {
-          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.",
+          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.\n`settings_ignored`: a reopened Study could not apply some or all of the\ncalculation settings its saved module recorded, such as an option this\nengine does not know; engine defaults stand in for what was dropped.",
           "type": "string"
         },
         "message": {
@@ -2851,5 +2851,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "248a7161a210d097624d5b953ac75b07843657c1c8da5d1a94c6e710abb23117"
+  "x-rust-source-sha256": "bc6334d6158d282433b81bbab5317b7f90e4f6c70d99a2267e9d4653e7b3ab39"
 }

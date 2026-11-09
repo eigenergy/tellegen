@@ -1,3 +1,4 @@
+import "./generate-settings-types.mjs";
 import "./generate-study-types.mjs";
 import "./generate-synth-types.mjs";
 import { createHash } from "node:crypto";
@@ -365,6 +366,14 @@ export interface SensitivityColumn {
 }
 
 export interface CaseSummary {
+\tdistribution?: {
+\t\tdescription?: string | null;
+\t\tsource_url?: string | null;
+\t\trelated_case_id?: string | null;
+\t\tpf_options?: { tolerance?: number; absolute_kcl_tolerance?: number; relative_kcl_tolerance?: number; max_iterations?: number; damping?: number; zero_voltage_tolerance?: number; voltage_envelope?: boolean; v_low_pu?: number; v_min_pu?: number; v_max_pu?: number };
+\t};
+\t/** Missing on older servers, whose cases are all balanced. */
+\tmodel?: 'balanced' | 'multiconductor';
 \t/** Configured cases remain listed when loading or solving fails. */
 \tunavailable_reason?: string | null;
 \tid: string;

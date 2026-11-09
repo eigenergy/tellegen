@@ -3,7 +3,18 @@ name: Docs Pages
 on:
   push:
     branches: [main]
+  # Only what mdBook and scripts/build-docs.sh read: book.toml names docs/src
+  # and docs/theme, and the script copies docs/assets. No page includes a file
+  # from outside docs/src. A push to main builds unfiltered. Keep this list
+  # equal to DOCS_PATHS in .github/scripts/ci-scope.py; test-ci-scope.py checks.
   pull_request:
+    paths:
+      - book.toml
+      - docs/src/**
+      - docs/theme/**
+      - docs/assets/**
+      - scripts/build-docs.sh
+      - .github/workflows/docs-pages.yml
   workflow_dispatch:
 
 permissions: {}

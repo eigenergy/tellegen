@@ -6,17 +6,33 @@ name: Gates (rust)
 
 on:
   workflow_call:
+    inputs:
+      needed:
+        description: >-
+          False when CI's scope job (.github/scripts/ci-scope.py) found that the
+          change cannot affect these gates. The release workflows leave it
+          unset, so a release always runs every gate.
+        type: boolean
+        default: true
 
 permissions: {}
 
 jobs:
   rust:
+    # Skip here, not in the caller: a skipped job still reports the required
+    # `rust / rust` check, and a skipped caller reports nothing.
+    if: inputs.needed
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       # A bare runner has no external solver. Let the tests use the bundled one.
       TELLEGEN_ALLOW_FALLBACK: "1"
+      # The feature matrix links many native test binaries. Keep source-line
+      # backtraces without duplicating full debug information in every binary
+      # and exhausting the hosted runner's disk.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -66,12 +82,16 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
-      # Do not rely on feature unification in the default workspace test.
-      - name: Test and lint the opt-in AC OPF path
+      # PowerIO 0.11.8 supplies the MC preparation fixes from crates.io.
+      # Exercise the native feature explicitly; shipping adapters still exclude it.
+      - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
-          cargo test -p tellegen --all-features --locked
+          python3 scripts/test_enwl_ivr_study.py
+          cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
+          cargo test -p tellegen --no-default-features --features mc-opf --locked
           cargo test -p tellegen-acopf-wasi --features acopf --locked
-          cargo clippy -p tellegen -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
+          cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema -- -D warnings
+          cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Run the exact-derivative POUNCE feasibility probe
         run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
       - name: Reproduce the pinned multiconductor OpenDSS oracle
@@ -85,6 +105,9 @@ jobs:
           cargo test -p tellegen --test mc_pf_oracle
           python3 crates/tellegen/tests/generate_mc_load_oracle.py
           cargo test -p tellegen --test mc_load_oracle
+          python3 crates/tellegen/tests/generate_dss_snapshot_oracle.py
+          git diff --exit-code -- crates/tellegen/tests/data/dss_snapshots.json
+          cargo test -p tellegen --test dss_snapshots
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic,synth
       # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,
@@ -114,10 +137,17 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        run: cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
+        run: >-
+          cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
+          --only-explicit-features --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
 
-      # This is the build-executing half of crate publication. It remains red
-      # while a packaged dependency is unavailable from crates.io, which keeps
-      # Tellegen behind the PowerIO release in the publication order.
+      # This is the build-executing half of crate publication. Verification
+      # builds the packaged crate against crates.io and ignores [patch], so it
+      # stays red while a packaged dependency, or an API that an opt-in feature
+      # uses, is unavailable from crates.io. That keeps Tellegen behind the
+      # PowerIO release in the publication order. All shipping numerical features are verified; the explicit
+      # powerio-012 adapter is verified separately against a 0.12 candidate:
+      # with defaults only, an opt-in feature such as mc-opf could need an
+      # unpublished PowerIO while this gate stays green.
       - name: Package and verify the published crate
-        run: cargo package -p tellegen --locked
+        run: cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema

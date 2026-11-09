@@ -1,0 +1,36 @@
+{
+  "schema": "tellegen.texas7k-production-artifact-qualification/1",
+  "checked_at": "2026-11-08T03:03:49.006Z",
+  "wasm_sha256": "55eca580cea7b5b3856fe7ec9a2c7ae7a65a207923c7a9e83218627f8e5f9887",
+  "wasm_bytes": 15508556,
+  "producers": [
+    {
+      "language": {
+        "Rust": ""
+      },
+      "processed-by": {
+        "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+        "walrus": "0.27.3",
+        "wasm-bindgen": "0.2.130 (c93b8ae84)"
+      }
+    }
+  ],
+  "input_module_sha256": "c7277f32bfdd14f819340f4d988f73248ab4a629040c53b91f5d6a6d747a6baa",
+  "options_sha256": "17c91dff45141b48c298f9b35273de6891e21353df19880ef6084cb59cdcf9e9",
+  "result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "original_reference_result_sha256": "b36590f620e8851226aa5617ecda0b635d3bbd9ef8f0c975531305f59930d6a1",
+  "exact_reference_match": true,
+  "converged": true,
+  "iterations": 23,
+  "terminal_count": 55972,
+  "physical_kcl_residual": 4.76837158203125e-06,
+  "scaled_kcl_residual": 0.16871847863930675,
+  "glue_package": "@tellegen/engine@0.8.0",
+  "source_revision": "96c83317e1612e85e03e0edcc6ed4949966f158f",
+  "deployment_run": "https://github.com/eigenergy/tellegen/actions/runs/42439350090",
+  "production_image": "ghcr.io/eigenergy/tellegen@sha256:8a0c39f1e3071f1990e8d1c96fe35a702cc0ac1fbef4b752d09109aa474d6f06",
+  "download_url": "https://tellegen.dev/_app/immutable/workers/assets/tellegen_bg-ChKL3kgi.wasm",
+  "content_type": "application/wasm",
+  "host_and_public_wasm_hash_match": true,
+  "note": "Actual Docker-built production WASM was downloaded from its immutable public URL and independently executed with the published 0.8.0 JavaScript glue on the unchanged checksum-pinned hosted IR/options. The Docker and registry binaries have distinct fingerprints but identical Rust 1.96.0 producer versions. The complete result hash equals the original scientific reference exactly; no tolerance is widened and unknown artifacts still fail closed."
+}

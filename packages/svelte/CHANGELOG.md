@@ -1,5 +1,61 @@
 # @tellegen/svelte
 
+## 0.7.0
+
+### Minor Changes
+
+- [#315](https://github.com/eigenergy/tellegen/pull/315) [`b3ad0bd`](https://github.com/eigenergy/tellegen/commit/b3ad0bd210d1b0d7e12bbc1d23ef187c140b8e64) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Discover and select independent cases from ZIP uploads and folders when the engine includes collection support. Hide unavailable controls in the ordinary PowerIO 0.11 build. Preserve successful imports and saved calculation settings, wait for an explicit calculation, and support cancellation, explicit document groups and source downloads.
+
+- [#346](https://github.com/eigenergy/tellegen/pull/346) [`ab5f9a3`](https://github.com/eigenergy/tellegen/commit/ab5f9a3fb0f8c7c2c4107616dc0603fdce373537) Thanks [@samtalki](https://github.com/samtalki)! - Export embeddable calculation controls shared with the Settings panel. A run validates draft options and updates the accepted Study, map and exports together; failed or cancelled calculations keep the prior result. Hosts can load the optional AC OPF backend on demand through one cancellable controller probe.
+
+- [#349](https://github.com/eigenergy/tellegen/pull/349) [`a2e7786`](https://github.com/eigenergy/tellegen/commit/a2e7786d49707d2c576f6a88bf7803ea81c8be6b) Thanks [@samtalki](https://github.com/samtalki)! - Expose the controller WebMCP adapter through the optional `@tellegen/svelte/webmcp` entry point. Hosts share case inspection, bounded queries, settings, revision checks, and serialized updates; planning approval and Study evidence remain explicit host-provided capabilities. Normal Svelte imports do not require the WebMCP peer.
+
+- [#317](https://github.com/eigenergy/tellegen/pull/317) [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add qualified OpenDSS snapshot support for PowerIO 0.12 candidate builds; the ordinary PowerIO 0.11.9 build keeps raw OpenDSS imports view-only. Preserve explicit bounded load laws and transformer excitation, retain passive source definitions, and report unsupported controls, floating sources and transformer profiles before solving.
+
+### Patch Changes
+
+- [#351](https://github.com/eigenergy/tellegen/pull/351) [`eee66d9`](https://github.com/eigenergy/tellegen/commit/eee66d9e268b34b2d4aa17aade20f1b83459ad65) Thanks [@samtalki](https://github.com/samtalki)! - Fit newly opened multiconductor schematics when the map is too far away or the feeder is hidden behind panels. Preserve a useful close map view, and center small drawings using the capped zoom.
+
+- [#315](https://github.com/eigenergy/tellegen/pull/315) [`90e1add`](https://github.com/eigenergy/tellegen/commit/90e1addf7525871c37a94bb12db9254e65e96c4d) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Keep imported collection rows selectable for source ZIP export and discard stale export failures after cancellation.
+- Updated dependencies [[`9e5e0b5`](https://github.com/eigenergy/tellegen/commit/9e5e0b5f07e4438ebd393707e71dbedb2dd2f138), [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069), [`721f515`](https://github.com/eigenergy/tellegen/commit/721f51522e6c89f5b0b87ee16f9b6ca3dd2eb243)]:
+  - @tellegen/engine@0.8.0
+
+## 0.6.0
+
+### Minor Changes
+
+- [#341](https://github.com/eigenergy/tellegen/pull/341) [`4ed2a0b`](https://github.com/eigenergy/tellegen/commit/4ed2a0b2282551535bcc5dee4d1b9cf992ffb351) Thanks [@samtalki](https://github.com/samtalki)! - Add a common Settings panel and a Rust-owned calculation settings contract across TypeScript, WebMCP, native, CLI and HTTP interfaces. Applying settings stages the next explicit solve without replacing the accepted result. Retained balanced Studies keep their effective options and active constraint selections. Saved PowerIO modules record the calculation and only the options that differ from the engine defaults; reopening a file written by another engine version drops options this engine does not know and logs a warning instead of refusing the file. The generated settings types name calculations with the `Calculation` union. Browser display preferences persist separately, and API mutations check case and settings revisions. `tellegen solve-mc` now resolves its options through the same contract, so an unknown option key is an error rather than being silently ignored.
+
+- [#341](https://github.com/eigenergy/tellegen/pull/341) [`425fb53`](https://github.com/eigenergy/tellegen/commit/425fb5345735eded7ef179bb1dbe45482591a5b5) Thanks [@samtalki](https://github.com/samtalki)! - Recognize multiconductor entries in the hosted case catalogue and load their
+  portable PowerIO modules into the distribution viewer and browser AC power-flow
+  workflow, with lazy loading, browser-local removal, and restore support.
+
+  Hosted cases can supply source/association metadata and PF defaults. Preserve
+  those defaults across UI/WebMCP solves and saved-study reopen; compact
+  multiconductor exports keep large studies within the replay input limit.
+  The public demo lists the Texas7k distribution case once an operator stages
+  its bundle; deploys do not require it.
+
+  Cancel hosted requests on controller disposal, discard late ingest completions,
+  and report missing backends without starting a request.
+
+  Keep hosted inputs parsed in the engine and initialize the shared solver settings
+  from catalogue defaults, including saved-study replay. Free retained inputs when
+  hosted requests are superseded or the catalogue is reloaded.
+
+### Patch Changes
+
+- Updated dependencies [[`4ed2a0b`](https://github.com/eigenergy/tellegen/commit/4ed2a0b2282551535bcc5dee4d1b9cf992ffb351), [`425fb53`](https://github.com/eigenergy/tellegen/commit/425fb5345735eded7ef179bb1dbe45482591a5b5)]:
+  - @tellegen/engine@0.7.0
+
+## 0.5.2
+
+### Patch Changes
+
+- [#331](https://github.com/eigenergy/tellegen/pull/331) [`5351e33`](https://github.com/eigenergy/tellegen/commit/5351e33af8924e5af11e3f2a1ef7840aa1cdaf7b) Thanks [@samtalki](https://github.com/samtalki)! - At low zoom the map draws one bus marker per crowded spot, so a state-sized grid no longer covers the map in overlapping markers. In each spot it keeps a generator before a substation before any other bus, as recorded in a grid made by tellegen-synth, such as one from MapToGrid, and then the bus with the most generation and demand. Zooming in shows the rest, and panning leaves the markers as they are. A selected bus always shows, with its selection ring, and every bus is still a bus of the case: the bus picker finds it by number and a line's tooltip names it. `TellegenMap` takes `declutterMarkers={false}` to draw every marker at every zoom, as before. `LocalCase` gains `busKinds`, each bus's kind in a generated grid.
+- Updated dependencies [[`6972d33`](https://github.com/eigenergy/tellegen/commit/6972d33b6480d57502cd702e393223ec8e41e2b3)]:
+  - @tellegen/engine@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes

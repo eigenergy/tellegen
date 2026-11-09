@@ -1,5 +1,64 @@
 # @tellegen/engine
 
+## 0.8.0
+
+### Minor Changes
+
+- [#317](https://github.com/eigenergy/tellegen/pull/317) [`c62e577`](https://github.com/eigenergy/tellegen/commit/c62e577cad5048e2588cc2157d0e36f28f258069) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add qualified OpenDSS snapshot support for PowerIO 0.12 candidate builds; the ordinary PowerIO 0.11.9 build keeps raw OpenDSS imports view-only. Preserve explicit bounded load laws and transformer excitation, retain passive source definitions, and report unsupported controls, floating sources and transformer profiles before solving.
+
+- [#312](https://github.com/eigenergy/tellegen/pull/312) [`721f515`](https://github.com/eigenergy/tellegen/commit/721f51522e6c89f5b0b87ee16f9b6ca3dd2eb243) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add optional discovery and import of independent cases from bounded ZIPs and named file trees using PowerIO 0.12 collection sessions. The ordinary build retains published PowerIO 0.11 compatibility and reports collection availability explicitly. Imports preserve diagnostics and solver restrictions; cancellation and source downloads do not invalidate completed imports.
+
+### Patch Changes
+
+- [#347](https://github.com/eigenergy/tellegen/pull/347) [`9e5e0b5`](https://github.com/eigenergy/tellegen/commit/9e5e0b5f07e4438ebd393707e71dbedb2dd2f138) Thanks [@samtalki](https://github.com/samtalki)! - Validate electrical artifacts with the linked PowerIO reader and support candidate builds against PowerIO 0.12 without changing the shipping PowerIO 0.11.9 dependency.
+
+## 0.7.0
+
+### Minor Changes
+
+- [#341](https://github.com/eigenergy/tellegen/pull/341) [`4ed2a0b`](https://github.com/eigenergy/tellegen/commit/4ed2a0b2282551535bcc5dee4d1b9cf992ffb351) Thanks [@samtalki](https://github.com/samtalki)! - Add a common Settings panel and a Rust-owned calculation settings contract across TypeScript, WebMCP, native, CLI and HTTP interfaces. Applying settings stages the next explicit solve without replacing the accepted result. Retained balanced Studies keep their effective options and active constraint selections. Saved PowerIO modules record the calculation and only the options that differ from the engine defaults; reopening a file written by another engine version drops options this engine does not know and logs a warning instead of refusing the file. The generated settings types name calculations with the `Calculation` union. Browser display preferences persist separately, and API mutations check case and settings revisions. `tellegen solve-mc` now resolves its options through the same contract, so an unknown option key is an error rather than being silently ignored.
+
+- [#341](https://github.com/eigenergy/tellegen/pull/341) [`425fb53`](https://github.com/eigenergy/tellegen/commit/425fb5345735eded7ef179bb1dbe45482591a5b5) Thanks [@samtalki](https://github.com/samtalki)! - Recognize multiconductor entries in the hosted case catalogue and load their
+  portable PowerIO modules into the distribution viewer and browser AC power-flow
+  workflow, with lazy loading, browser-local removal, and restore support.
+
+  Hosted cases can supply source/association metadata and PF defaults. Preserve
+  those defaults across UI/WebMCP solves and saved-study reopen; compact
+  multiconductor exports keep large studies within the replay input limit.
+  The public demo lists the Texas7k distribution case once an operator stages
+  its bundle; deploys do not require it.
+
+  Cancel hosted requests on controller disposal, discard late ingest completions,
+  and report missing backends without starting a request.
+
+  Keep hosted inputs parsed in the engine and initialize the shared solver settings
+  from catalogue defaults, including saved-study replay. Free retained inputs when
+  hosted requests are superseded or the catalogue is reloaded.
+
+## 0.6.1
+
+### Patch Changes
+
+- [#335](https://github.com/eigenergy/tellegen/pull/335) [`30b2d0d`](https://github.com/eigenergy/tellegen/commit/30b2d0db87ca9db57368216be3cbd41e69cf1035) Thanks [@samtalki](https://github.com/samtalki)! - Connect mapped grid fragments locally instead of creating long lines to match rare voltage levels. Retain small synthetic reactive-support banks where the AC solution shows voltage violations, then solve again without reducing demand or widening voltage limits.
+
+- [#336](https://github.com/eigenergy/tellegen/pull/336) [`508c61b`](https://github.com/eigenergy/tellegen/commit/508c61bbba2df7e2ed5784e06a94c42b00d4b528) Thanks [@samtalki](https://github.com/samtalki)! - Multiconductor power flow refuses a feeder whose import is incomplete. If an OpenDSS include was missing or nested too deeply, or the import reported an error or an unsupported element, the case still opens for viewing, but it can't become a study or be solved, and `mc_pf_reason` says why. Before, such a partial feeder could reach the solver. Bus names are matched without regard to letter case, as PowerIO matches them, so a line written to `SOURCEBUS` finds the bus `SourceBus`, and the display spelling and exact terminal names are kept. Two buses whose names differ only in case are refused as duplicates.
+
+- [#252](https://github.com/eigenergy/tellegen/pull/252) [`fd146ed`](https://github.com/eigenergy/tellegen/commit/fd146ed53674148e4492beabaa00579f3c523341) Thanks [@BurhanAbdullah](https://github.com/BurhanAbdullah)! - A synthetic grid built from OpenStreetMap data refuses an Overpass answer that is too large before it parses it. `limits.max_osm_document_bytes` caps the answer's size (256 MiB by default; in the browser the engine's 128 MiB input cap applies first) and `limits.max_osm_elements` caps the elements across its documents (1,000,000 by default); either one over its cap fails as an OSM error naming the limit. The request also refuses `osm` distances that are not finite and positive (`voltage_floor_kv`, `cluster_radius_m`, `snap_km`, `hvdc_snap_km`, `plant_snap_km`), and a negative or non-finite `clip_buffer_km`, as `invalid_request`.
+
+- [#253](https://github.com/eigenergy/tellegen/pull/253) [`264dad8`](https://github.com/eigenergy/tellegen/commit/264dad8df0b926d7a61ca0c6a4ccd629ae5f4172) Thanks [@BurhanAbdullah](https://github.com/BurhanAbdullah)! - A synthetic grid built from OpenStreetMap data records the data's licence as an identifier. `OsmProvenance` in the generation report gains `licence`, the SPDX identifier of the licence that the Overpass attribution notice names, when tellegen recognizes it: `ODbL-1.0` for OpenStreetMap's usual notice. The notice itself stays in `copyright`, word for word.
+
+- [#332](https://github.com/eigenergy/tellegen/pull/332) [`305b3a8`](https://github.com/eigenergy/tellegen/commit/305b3a8d93df249f79ab54a1e0e56a242fcc9ed2) Thanks [@samtalki](https://github.com/samtalki)! - Synthetic grids put their buses where people live. Beyond the populated places, buses fill the region by population density, and that density had a floor of 6% of the densest area's, so empty land still drew many buses. Generated California put about 35% of its buses in 0.5° cells whose listed places hold under 20,000 people, 0.6% of the state's listed population; the California Test System (CATS) puts 13% of its buses there. The floor is now 0.5%, and density counts with an exponent of 0.75 instead of a square root, calibrated against CATS. Generated California now puts 15% of its buses in those cells. The Los Angeles basin holds 55 to 75 times as many buses per square kilometre as Modoc and Lassen counties, where it held 7 to 9 times as many (CATS: about 100). Less subtransmission crosses empty land: about a quarter fewer circuit-km at 66 and 115 kV. Every region with populated places gets a different grid for the same request and seed. Peak demand does not change, nor does the bus count of a transmission-only grid.
+
+  `density` now sets the size of a grid built down to subtransmission, which is a region whose places lie mostly in California. Before, such a grid had one bus per 10 MW of peak load at every density, with line taps on top. `high`, the default, keeps that. `medium` gives one bus per 15 MW and `low` one per about 28 MW, so California has about 7,200 buses at `high`, 4,800 at `medium` and 2,600 at `low`. A `target_bus_count` still sets the count exactly.
+
+  Stated voltage levels follow the region. When a request stated `voltage_levels_kv`, the corridor plan could add 765 kV above them anywhere. Now it may add only a level in service in the region above the stated ones, from the region's own voltage ladder (`context.promotion_levels_kv` lists it). That is 765 kV in the rest of the United States, and nothing in California, Germany, most of Europe, or a region on the standard fallback ladder. Where a corridor needs more than the stated levels carry, the plan adds circuits up to the per-corridor cap and reports `planning_incomplete`, as it does for a region's own ladder. Stated levels that reach below 100 kV in California now get the layered subtransmission design (pockets, step-downs and taps) that California's own ladder gets, and are sized by peak load. Before, they got the transmission-only design.
+
+## 0.6.0
+
+### Minor Changes
+
+- [#325](https://github.com/eigenergy/tellegen/pull/325) [`6972d33`](https://github.com/eigenergy/tellegen/commit/6972d33b6480d57502cd702e393223ec8e41e2b3) Thanks [@samtalki](https://github.com/samtalki)! - Make incomplete OpenStreetMap models solvable with explicit synthetic reinforcement. Keep mapped routes and voltages, label added circuits and voltage support, and provide `osm.reinforce: false` to preserve original circuit counts. Plan shunts at the feasible DC dispatch instead of an unconstrained dispatch behind network bottlenecks. Add New Zealand's 220/110 kV AC ladder and correct the dropped-line-section denominator.
+
 ## 0.5.1
 
 ### Patch Changes

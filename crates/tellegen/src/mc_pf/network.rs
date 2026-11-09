@@ -42,8 +42,8 @@ impl BusComponents {
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkIndex {
     pub terminal_ids: Vec<(String, String)>,
-    /// Terminal positions by bus and then terminal name, so a lookup borrows
-    /// both names instead of allocating an owned key.
+    /// Terminal positions by ASCII-folded bus name and exact terminal name.
+    /// PowerIO bus identities are case insensitive; display spelling is retained.
     positions: BTreeMap<String, BTreeMap<String, usize>>,
 }
 
@@ -55,7 +55,11 @@ impl NetworkIndex {
             if bus.terminals.is_empty() {
                 return Err(format!("bus `{}` has no terminals", bus.id));
             }
-            let terminals = positions.entry(bus.id.clone()).or_default();
+            let bus_key = bus.id.to_ascii_lowercase();
+            if positions.contains_key(&bus_key) {
+                return Err(format!("duplicate bus identity {}", bus.id));
+            }
+            let terminals = positions.entry(bus_key).or_default();
             for terminal in &bus.terminals {
                 if terminals
                     .insert(terminal.clone(), terminal_ids.len())
@@ -83,6 +87,7 @@ impl NetworkIndex {
     pub(crate) fn resolve(&self, identity: (&str, &str)) -> Result<usize, String> {
         self.positions
             .get(identity.0)
+            .or_else(|| self.positions.get(&identity.0.to_ascii_lowercase()))
             .and_then(|terminals| terminals.get(identity.1))
             .copied()
             .ok_or_else(|| format!("unknown terminal identity {}:{}", identity.0, identity.1))
@@ -93,6 +98,7 @@ impl NetworkIndex {
         let mut positions: Vec<usize> = self
             .positions
             .get(bus)
+            .or_else(|| self.positions.get(&bus.to_ascii_lowercase()))
             .map(|terminals| terminals.values().copied().collect())
             .unwrap_or_default();
         positions.sort_unstable();
@@ -270,16 +276,7 @@ impl PreparedNetwork {
         if !instance.control_modes().is_empty() {
             return Err("active regulator/capacitor controls are unsupported; solve a fixed operating snapshot".to_owned());
         }
-        if !network.untyped_objects().is_empty() {
-            let names = network
-                .untyped_objects()
-                .iter()
-                .map(|o| format!("{}.{},", o.class, o.name))
-                .collect::<String>();
-            return Err(format!(
-                "network retains unsupported untyped active objects: {names}"
-            ));
-        }
+        super::input::validate_mc_network(network)?;
         let index = NetworkIndex::new(network)?;
         let n = index.terminal_ids.len();
         // Name lookups keep the first matching row, exactly as the linear
@@ -542,11 +539,6 @@ impl PreparedNetwork {
                 yprim: primitive.y_prim,
             });
         }
-        if !network.generators().is_empty() || !network.ibrs().is_empty() {
-            return Err(
-                "fixed-point MC PF does not yet support generator or IBR injections".to_owned(),
-            );
-        }
         let inferred_nominal_voltage = infer_missing_load_voltages(instance)?;
         let loads = instance
             .loads()
@@ -686,24 +678,24 @@ fn infer_missing_load_voltages(
         .buses()
         .iter()
         .enumerate()
-        .map(|(index, bus)| (bus.id.as_str(), index))
+        .map(|(index, bus)| (bus.id.to_ascii_lowercase(), index))
         .collect();
     let mut components = BusComponents::new(network.buses().len());
     for line in network.lines() {
         let from = *bus_position
-            .get(line.bus_from.as_str())
+            .get(&line.bus_from.to_ascii_lowercase())
             .ok_or_else(|| format!("line `{}` references an unknown from bus", line.name))?;
         let to = *bus_position
-            .get(line.bus_to.as_str())
+            .get(&line.bus_to.to_ascii_lowercase())
             .ok_or_else(|| format!("line `{}` references an unknown to bus", line.name))?;
         components.union(from, to);
     }
     for switch in network.switches().iter().filter(|switch| !switch.open) {
         let from = *bus_position
-            .get(switch.bus_from.as_str())
+            .get(&switch.bus_from.to_ascii_lowercase())
             .ok_or_else(|| format!("switch `{}` references an unknown from bus", switch.name))?;
         let to = *bus_position
-            .get(switch.bus_to.as_str())
+            .get(&switch.bus_to.to_ascii_lowercase())
             .ok_or_else(|| format!("switch `{}` references an unknown to bus", switch.name))?;
         components.union(from, to);
     }
@@ -720,7 +712,7 @@ fn infer_missing_load_voltages(
             return Err(format!("{label} provides an invalid nominal voltage"));
         }
         let position = *bus_position
-            .get(bus)
+            .get(&bus.to_ascii_lowercase())
             .ok_or_else(|| format!("{label} references unknown bus `{bus}`"))?;
         target
             .entry(components.root(position))
@@ -746,7 +738,7 @@ fn infer_missing_load_voltages(
     }
     for capacitor in network.capacitors() {
         let bus = &network.buses()[*bus_position
-            .get(capacitor.bus.as_str())
+            .get(&capacitor.bus.to_ascii_lowercase())
             .expect("capacitor bus validated by the network")];
         let phase_to_phase =
             terminals_are_phase_to_phase(bus, &capacitor.terminal_map, conventions);
@@ -765,7 +757,7 @@ fn infer_missing_load_voltages(
             continue;
         }
         let bus = &network.buses()[*bus_position
-            .get(load.bus.as_str())
+            .get(&load.bus.to_ascii_lowercase())
             .expect("load bus validated by the network")];
         let phase_to_phase = terminals_are_phase_to_phase(bus, &load.terminal_map, conventions);
         for (branch, value) in values.iter().copied().enumerate() {
@@ -847,7 +839,7 @@ fn infer_missing_load_voltages(
             continue;
         }
         let position = *bus_position
-            .get(load.bus.as_str())
+            .get(&load.bus.to_ascii_lowercase())
             .ok_or_else(|| format!("load `{}` references an unknown bus", load.name))?;
         let root = components.root(position);
         let line_neutral = *bases.get(&root).ok_or_else(|| {
@@ -1048,4 +1040,30 @@ fn invert_dense(a: &DenseMatrix) -> Result<DenseMatrix, String> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn bus_lookup_folds_case_but_preserves_terminal_identity_and_display() {
+        let mut network = MulticonductorNetwork::default();
+        let mut bus = powerio_dist::DistBus::default();
+        bus.id = "SourceBus".into();
+        bus.terminals = vec!["a".into(), "A".into()];
+        network.buses_mut().push(bus);
+        let index = NetworkIndex::new(&network).unwrap();
+        assert_eq!(index.resolve(("sourcebus", "a")).unwrap(), 0);
+        assert_eq!(index.resolve(("SOURCEBUS", "A")).unwrap(), 1);
+        assert_eq!(index.bus_terminals("sOuRcEbUs"), vec![0, 1]);
+        assert_eq!(index.terminal_ids[0].0, "SourceBus");
+        let mut duplicate = powerio_dist::DistBus::default();
+        duplicate.id = "sourcebus".into();
+        duplicate.terminals = vec!["other".into()];
+        network.buses_mut().push(duplicate);
+        assert!(NetworkIndex::new(&network)
+            .unwrap_err()
+            .contains("duplicate bus"));
+    }
 }

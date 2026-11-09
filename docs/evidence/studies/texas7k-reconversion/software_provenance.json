@@ -1,0 +1,26 @@
+{
+  "powerio": {
+    "sha256": "a426b9a956492ed7fcd6942a665ad78a4498cc033c8a7797f0c0371e90a6e295",
+    "version": "powerio 0.11.7",
+    "release_url": "https://github.com/eigenergy/powerio/releases/tag/v0.11.7",
+    "release_commit": "d104aa5b47fa436b0eb8cf833c2c32ab43b2f704",
+    "build_command": "cargo build --release --locked -p powerio-cli"
+  },
+  "tellegen_mc_pf": {
+    "sha256": "45647cfaa64e0cf39bca2d6207c90415a7302df35f2c644f8b1f3760ccdeb350",
+    "checkout_commit": "7f1852cc9de537c3abf72a44b916c975c37f6114",
+    "checkout_branch": "codex/236-mc-pf-settings",
+    "runner_source": "energized-runner.rs",
+    "powerio_dependency": "0.11.7",
+    "note": "Fresh custom runner using explicit energized-network selection. This validation checkout is newer than PR #169; its shipping code is unchanged."
+  },
+  "python_dependencies": {
+    "OpenDSSDirect.py": "0.9.4",
+    "dss-python": "0.15.7",
+    "dss-python-backend": "0.14.5",
+    "jsonschema": "4.26.0",
+    "numpy": "2.5.3",
+    "matplotlib": "3.11.2"
+  },
+  "note": "Executable hashes identify the actual binaries. Build checkout revisions must be recorded by the builder."
+}

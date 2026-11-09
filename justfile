@@ -13,7 +13,7 @@ default:
 
 # Run the workspace test suite (engine, adapters, benchmarks).
 test:
-    cargo test --workspace
+    cargo test --workspace --exclude tellegen-py
 
 # Format the whole workspace.
 fmt:
@@ -48,6 +48,13 @@ powerio-pin:
 mc-pf-test:
     cargo test -p tellegen --no-default-features --features mc-pf
 
+# CI gate: every shipping numerical feature and the frozen OPF references.
+# The PowerIO 0.12 bridge is tested separately with matching candidate dependencies.
+mc-opf-test:
+    cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
+    cargo test -p tellegen --no-default-features --features mc-opf --locked
+    cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked -- -D warnings
+
 # CI gate: the engine's conic path.
 conic-test:
     cargo test -p tellegen --features conic
@@ -73,7 +80,7 @@ mc-pf-bench preset="feeder-10k" *flags="":
 # regeneration stays CI-only (it clones BMOPFTools.jl and runs OpenDSS); the
 # checked-in references are compared by `cargo test --workspace`.
 crate-package:
-    cargo package -p tellegen --locked
+    cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
 
 # ---- JavaScript workspace ----
 
@@ -192,4 +199,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack analytics-check analytics-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test mc-opf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack analytics-check analytics-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

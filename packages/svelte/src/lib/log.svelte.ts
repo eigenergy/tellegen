@@ -166,7 +166,11 @@ export function powerIoEntry(d: PowerIoDiagnostic, context: EntryContext): LogEn
 
 // Solve findings that change what the numbers mean; the rest say how the
 // solver read the case.
-const SOLVE_WARNINGS = new Set(['island_deenergized', 'BUILD.HVDC.TERMINAL_INACTIVE']);
+const SOLVE_WARNINGS = new Set([
+	'island_deenergized',
+	'BUILD.HVDC.TERMINAL_INACTIVE',
+	'settings_ignored'
+]);
 
 /** A solver finding (islands, HVDC transfers) as a log entry. */
 export function solveEntry(d: SolveDiagnostic, context: { subject?: string }): LogEntryInput {

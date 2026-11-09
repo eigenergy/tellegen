@@ -83,6 +83,27 @@ are unavailable. Geographic sidecars and layout downloads remain available.
 Without the optional worker, imported AC OPF instances remain viewable but
 cannot be solved. No server solve is substituted for AC OPF.
 
+## Embedded calculation controls
+
+`CalculationSettings` from `@tellegen/svelte/components` renders the same controls
+as the shell's Settings panel, without creating a panel or adding display preferences.
+Mount it inside `TellegenProvider`; pass `currentCase` to bind it to a host's case,
+or omit the prop to follow the active case. Pass `null` to show the empty state.
+
+```svelte
+<CalculationSettings currentCase={localCase} />
+```
+
+Option names, defaults, limits, and validation come from the engine's settings
+contract. **Run calculation** applies the draft and accepts the new result only
+after success. **Apply settings** can stage options without solving. Map colors,
+subsequent edits, and exports use that accepted Study; failures and cancellation
+preserve the previous result. Regenerating a case resets its draft controls.
+
+A supplied `acOpfWasmUrl` enables on-demand AC OPF loading on its first run.
+Custom controls can await `controller.loadAcOpf()` and inspect `acOpfLoading` and
+`acOpfAvailable`; concurrent callers share the same cancellable worker probe.
+
 ## Panel layout
 
 The shell docks Network and Studies on the left, and Solver and Agent on the
@@ -260,6 +281,13 @@ besides its click callbacks:
 - `extraLayers`: deck.gl layers drawn after tellegen's own, in the same
   overlay.
 - `attribution`: `'compact'` (default) or `'full'`. There is no off switch.
+- `declutterMarkers`: default `true`. At low zoom the map draws one bus
+  marker per crowded spot, about 16 pixels across. It keeps a generator
+  before a substation before any other bus, as recorded in a grid made by
+  tellegen-synth, then the bus with the most generation and demand. Zooming
+  in shows the rest. The selected bus always draws, and every bus is still
+  in the case: the bus picker finds it and a line's tooltip names it.
+  `false` draws every marker at every zoom.
 - `onMapReady(map, overlay)`: called with the MapLibre map and the deck
   overlay once they exist. It may return a cleanup, and it fires again after
   a context-loss or basemap rebuild. If it throws, the map and its window
@@ -410,6 +438,21 @@ geographic edits without keeping a second serialized network.
 
 Drawing layers use a plain canvas with their own x/y coordinates. Saved Studies
 retain the drawing center and scale separately from the geographic map camera.
+
+## Optional WebMCP controller adapter
+
+Install `@tellegen/webmcp` only when the host exposes browser tools, then use
+`createTellegenWebMcpAdapter(controller)` from `@tellegen/svelte/webmcp` with
+`registerTellegenWebMcp`. The adapter shares the viewer's case inspection,
+queries, settings, revision checks, previews, edits, and resets. Its factories
+perform no registration or network request; the host controls tool registration.
+Normal viewer imports do not load or require the optional peer.
+
+The second and third factory arguments optionally provide `WebMcpPlanningHost`
+and `WebMcpStudyHost`. They keep approval, activity state, and persisted evidence
+under the host's control. Omitting them leaves planning disabled. Hosts exposing
+only a subset can select those methods from the returned adapter. `caseRevision`
+and `webMcpSessionId` let host evidence use the same concurrency tokens.
 
 ## Release
 

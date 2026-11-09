@@ -239,3 +239,67 @@ fn durable_create_study_retains_the_formula_before_first_solve() {
         Some(F::TapAdjustedSeriesSusceptance)
     );
 }
+
+#[test]
+fn common_settings_calculate_and_retained_studies_keep_dc_conventions() {
+    use tellegen::settings::{self, CalculationRequest, SettingsRequest};
+    let text = module(network());
+    for formula in FORMULAS {
+        for calculation in ["dcpf", "dcopf"] {
+            let request: CalculationRequest = serde_json::from_value(serde_json::json!({
+                "module_json": text,
+                "settings": {"calculation": calculation,
+                    "overrides": {"branch_susceptance_formula": formula}}
+            }))
+            .unwrap();
+            let actual = settings::calculate(&request, None).unwrap();
+            let expected = solve(network(), formula, calculation);
+            assert_eq!(actual.result["flows"], expected["flows"]);
+            assert_eq!(
+                actual.result["branch_susceptance_formula"],
+                serde_json::json!(formula)
+            );
+        }
+        let request: SettingsRequest = serde_json::from_value(serde_json::json!({
+            "calculation": "dcopf", "overrides": {
+                "branch_susceptance_formula": formula, "angle_difference": false
+            }
+        }))
+        .unwrap();
+        let study = Study::new_with_settings(&text, &request).unwrap();
+        let saved = study.save_instance_module().unwrap();
+        let mut restored =
+            Study::new_with_options(&saved, Problem::DcOpf, StudyOptions::default()).unwrap();
+        assert_eq!(
+            restored.solution().branch_susceptance_formula,
+            Some(formula)
+        );
+        assert_eq!(restored.calculation_options()["angle_difference"], false);
+        let result = restored
+            .commit(&[tellegen::NetworkEdit::AddLoad {
+                bus: tellegen::ElementKey::Id(2),
+                p_mw: 0.01,
+            }])
+            .unwrap();
+        assert_eq!(result.branch_susceptance_formula, Some(formula));
+        let other = if formula == F::ReactanceOnly {
+            F::SeriesSusceptance
+        } else {
+            F::ReactanceOnly
+        };
+        let conflict: SettingsRequest = serde_json::from_value(serde_json::json!({
+            "calculation": "dcopf", "overrides": {"branch_susceptance_formula": other}
+        }))
+        .unwrap();
+        assert!(Study::new_with_settings(&saved, &conflict)
+            .unwrap_err()
+            .contains("conflicts"));
+    }
+    for calculation in ["dcopf", "dcpf", "acpf"] {
+        let request: SettingsRequest = serde_json::from_value(serde_json::json!({
+            "calculation": calculation, "overrides": {"branch_susceptance_formula": "unknown"}
+        }))
+        .unwrap();
+        assert!(settings::resolve(&request).is_err());
+    }
+}
