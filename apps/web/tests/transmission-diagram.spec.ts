@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/page-errors.js';
+import { runCalculation } from './fixtures/calculation.js';
 import { readFile } from 'node:fs/promises';
 
 // Two voltage levels: buses 1 (345 kV) and 2 (138 kV) share a substation and a transformer;
@@ -287,7 +288,7 @@ for (const touch of [false, true]) {
 					if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 					const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 					await expect(calculation).toBeEnabled({ timeout: 60000 });
-					await calculation.selectOption('acpf');
+					await runCalculation(page, 'acpf');
 					await expect(calculation).toBeEnabled();
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 					if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
@@ -333,7 +334,7 @@ for (const touch of [false, true]) {
 						await exportPng(toolbar);
 						await (await pending).saveAs(testInfo.outputPath('station-limits-export.png'));
 						await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
-						await calculation.selectOption('socwr');
+						await runCalculation(page, 'socwr');
 						await expect(calculation).toBeEnabled();
 						await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 						await expect(
@@ -512,7 +513,7 @@ for (const touch of [false, true]) {
 
 			// AC results retain a fixed per-unit key rather than an autoscaled or uniform-grey key.
 			const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
-			await calculation.selectOption('acpf');
+			await runCalculation(page, 'acpf');
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
