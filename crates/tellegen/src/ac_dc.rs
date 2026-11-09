@@ -386,6 +386,38 @@ mod tests {
         }
     }
     #[test]
+    fn xiidm_detailed_converter_keeps_setpoint_and_curve_coordinates() {
+        let xml = r#"<iidm:network xmlns:iidm="http://www.powsybl.org/schema/iidm/1_17" id="signs" caseDate="2026-01-01T00:00:00Z" forecastDistance="0" sourceFormat="test" minimumValidationLevel="STEADY_STATE_HYPOTHESIS">
+  <iidm:dcNode id="N1" nominalV="500"/><iidm:dcNode id="N2" nominalV="500"/>
+  <iidm:substation id="S"><iidm:voltageLevel id="VL" nominalV="400" topologyKind="BUS_BREAKER">
+    <iidm:busBreakerTopology><iidm:bus id="B1"/><iidm:bus id="B2"/></iidm:busBreakerTopology>
+    <iidm:voltageSourceConverter id="VSC" dcNode1="N1" dcConnected1="true" dcNode2="N2" dcConnected2="false" idleLoss="0" switchingLoss="0" resistiveLoss="0" controlMode="P_PCC_DROOP" targetP="50" targetVdc="500" bus1="B1" connectableBus1="B1" bus2="B2" connectableBus2="B2" voltageRegulatorOn="false" reactivePowerSetpoint="13">
+      <iidm:pccTerminal id="VSC" number="ONE"/>
+      <iidm:droopCurve><iidm:segment minV="-100" maxV="100" k="-5"/></iidm:droopCurve>
+      <iidm:reactiveCapabilityCurve><iidm:point p="-100" minQ="-20" maxQ="40"/><iidm:point p="100" minQ="-10" maxQ="20"/></iidm:reactiveCapabilityCurve>
+    </iidm:voltageSourceConverter>
+  </iidm:voltageLevel></iidm:substation>
+</iidm:network>"#;
+        let source = powerio::Source::from_memory("signs.xiidm", xml.as_bytes().to_vec()).unwrap();
+        let module = powerio_tx::format::parse(source).unwrap();
+        let c = &module
+            .value()
+            .detailed_connectivity()
+            .as_ref()
+            .unwrap()
+            .voltage_source_converters[0];
+        assert_eq!(c.reactive_power_setpoint_mvar, Some(13.0));
+        assert_eq!(
+            reactive_bounds(
+                c.reactive_limits.as_ref().unwrap(),
+                c.target_active_power_mw.unwrap()
+            )
+            .unwrap(),
+            (-12.5, 25.0)
+        );
+    }
+
+    #[test]
     fn detailed_converter_q_uses_withdrawal_convention() {
         for q in [-7.0, 13.0] {
             let mut n = dc_grid::tests::imported_fixture();
