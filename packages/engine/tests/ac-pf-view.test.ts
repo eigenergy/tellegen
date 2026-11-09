@@ -6,6 +6,7 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
   const solution = {
     formulation: "acpf",
     status: "feasible",
+    initialization: { requested: "case", used: "flat", attempts: 2 },
     objective: null,
     vm: [{ bus: 10, value: 0.98 }],
     va: [{ bus: 10, value: -0.02 }],
@@ -25,10 +26,11 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
     prices: [],
     vm: solution.vm,
     va: solution.va,
+    initialization: solution.initialization,
   });
   await expect(study.commit("case", {}, {}, { branch: 42 })).resolves.toMatchObject({
     sensitivity: null,
-    solution: { objective: null, vm: solution.vm },
+    solution: { objective: null, vm: solution.vm, initialization: solution.initialization },
   });
   call.mockClear();
   await expect(study.sensitivity("case", {}, {}, { bus: 10 })).resolves.toBeNull();

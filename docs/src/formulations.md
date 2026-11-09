@@ -203,6 +203,14 @@ the flat start. A case saved from a converged solve needs no Newton steps. The
 default is `"start": "flat"`; other formulations refuse `"case"`, since none of
 them iterates from a start.
 
+The response reports the successful start in `initialization`. For example,
+`{"requested":"case","used":"flat","attempts":2}` means the stored-case
+attempt failed and the flat fallback converged. A perturbed success includes
+`restart` (1 through 4); `attempts` counts every attempted start. Unsuccessful
+solves still return an error with the best mismatch and the number of starts.
+The Newton iteration count describes the successful attempt's final Q-limit
+round, so it does not measure all work spent on failed attempts.
+
 ## Conic SOCWR (Jabr)
 
 The Jabr second-order cone relaxation lifts the voltage product to W-space

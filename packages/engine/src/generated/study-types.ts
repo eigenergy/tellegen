@@ -1,7 +1,11 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: 1275348f664a43e6b0134f717eb97671b097d36227768de411d778c9cef76cd1
+// Source SHA256: 9564171ecd81e5a5d8f94c39aad1bc42b3907bb8d63c2f68f1bd3aab80e964f2
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
+
+export type AcPfInitialization = { "attempts": number; "requested": PowerFlowStart; "restart"?: number | null; "used": AcPfStartStrategy; };
+
+export type AcPfStartStrategy = "case" | "flat" | "perturbed";
 
 export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
@@ -87,6 +91,8 @@ export type Parameter = ({ "Demand": Power; }) | ({ "Cost": CostTerm; }) | ("Lin
 
 export type Power = "Active" | "Reactive";
 
+export type PowerFlowStart = ("flat") | ("case");
+
 export type Problem = ("dcpf") | ("dcopf") | ("acpf") | ("socwr") | ("acopf");
 
 export type RowMeta = { "element": ElementId; "index": number; "operand": Operand; };
@@ -99,7 +105,7 @@ export type SolveDiagnostic = { "buses": Array<number>; "code": string; "message
 
 export type SolveIteration = { "inf_du": number; "inf_pr": number; "iter": number; "objective": number; };
 
-export type SolveResponse = { "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
+export type SolveResponse = { "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "initialization"?: (AcPfInitialization) | (null); "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
 
 export type SolveStatus = ("optimal") | ("feasible");
 

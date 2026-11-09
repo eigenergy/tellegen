@@ -422,6 +422,8 @@ pub struct SensitivityValue {
 #[derive(Clone, Debug, Serialize)]
 pub struct SolutionPayload {
     pub objective: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initialization: Option<tellegen::AcPfInitialization>,
     pub prices: Vec<PriceValue>,
     pub va: Vec<ScalarValue>,
     pub w: Vec<ScalarValue>,
@@ -1640,6 +1642,7 @@ fn network_payload(
 
 fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
     SolutionPayload {
+        initialization: resp.initialization,
         objective: resp.objective.unwrap_or(0.0),
         prices: resp
             .lmp

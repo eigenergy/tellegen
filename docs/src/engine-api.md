@@ -68,6 +68,11 @@ reader selected for transmission and distribution documents.
   [Formulations](formulations.md#linear-constraints).
   An `acpf` request may set `start: "case"` to start Newton from the case's
   stored bus voltages (see [Formulations](formulations.md#ac-power-flow-polar)).
+  AC responses include `initialization`: the requested start, the strategy
+  that converged (`used: "case" | "flat" | "perturbed"`), and `attempts`
+  including failed starts. A perturbed success also gives its one-based
+  `restart` number. Compact browser and server solutions retain this block;
+  older saved results may omit it.
 - `createStudy(moduleJson, formulation)`: builds a browser `Study` from a
   PowerIO module and solves its declared problem instance.
 - `Study` / `BrowserStudy`: browser handle with:
