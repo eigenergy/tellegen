@@ -1084,7 +1084,7 @@ fn bound_violation(values: &[f64], lower: &[f64], upper: &[f64], active: &[bool]
 }
 
 #[cfg(feature = "acopf")]
-fn ac_opf_assemble(
+pub(crate) fn ac_opf_assemble(
     network: &BalancedNetwork,
     solved: &super::model::AcOpfSolved,
 ) -> Result<SolveResponse, String> {

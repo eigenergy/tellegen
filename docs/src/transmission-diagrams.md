@@ -268,3 +268,132 @@ branch's role (line, inside a substation, or out of service), in the units of th
 `seeding: "stress"` lays substations out by their connections rather than their positions;
 `route_iterations: 0` draws lines straight. `txGraph` and `txLayoutInput` in `@tellegen/svelte`
 build the input from a `Network`.
+
+## Equipment models and DC networks
+
+**Equipment** opens a searchable, keyboard- and touch-accessible inventory. It is
+available in every diagram view. The panel distinguishes a device's source state,
+input settings and the selected formulation's treatment. Its scroll area stays
+inside the screen, including at 320 CSS pixels.
+
+| Equipment | Visual language | Calculation treatment |
+| --- | --- | --- |
+| Transformer | Two winding circles | Fixed ratio and phase shift |
+| PST | Winding circles with a regulation arrow | Identified by explicit phase-control metadata, including at zero angle; setting remains fixed |
+| Capacitor bank / reactor | Separate capacitor plates / coil | Individual source shunts, including zero-output and out-of-service banks; fixed admittance |
+| Mixed admittance | Generic shunt symbol | Conductance and susceptance remain distinct |
+| Three-winding transformer | Three winding circles | One source device mapped to three analysis branches and an internal star bus |
+| SVC, storage | Distinct device symbols and explicit labels | Active devices rejected by the ordinary formulations |
+| Switch | Open or closed contact and state label | Open contacts disconnect; closed contacts require topology reduction |
+| Reduced HVDC | Two converter boxes and a labeled DC connection | Fixed terminal injections in DC PF/DC OPF/AC PF; rejected in AC OPF/SOCWR |
+| Detailed DC | Separate node/branch/converter graph | Source connectivity, with a qualified solver when sufficient data exists |
+
+A nonzero transformer phase angle alone does not identify a PST. A fixed winding
+connection can introduce phase shift too. Tap positions, step tables and source
+regulation settings are retained as input metadata; their presence does not mean
+an automatic regulator is running. Shunt B is shown in Mvar at 1 pu: positive B
+supplies reactive power and negative B absorbs it. At voltage V pu, the reactive
+contribution is B V². The AC-network DC approximation omits reactive power.
+
+The symbols use familiar single-line conventions and redundant text/state
+labels. They are not a claim of compliance with a particular IEC 60617 symbol
+variant. No breaker arrangement, pole arrangement or earth return is inferred
+from a reduced two-terminal HVDC link. Equipment strokes are included in the
+main diagram's PNG export; the separate detailed-DC inspector is not part of that
+canvas export.
+
+### Detailed DC calculation
+
+Expand **Detailed DC network** for actual source connections. Node dots denote
+junctions; crossings without dots do not. Unknown or disconnected terminal state
+is explicit. AC synchronous islands are never joined by introducing an AC branch
+for a DC connection. Source import diagnostics remain available under **Import
+coverage**, including omissions reported by readers.
+
+**Solve DC network** uses explicit positive/return converter terminals, resistive
+DC lines, nodal current balance and `Pac = Udc Idc + a + b |Idc| + c Idc²`.
+Units are kV, kA and MW. Positive Pac is withdrawal from the AC bus; negative Pac
+supplies the AC bus. The explicit engine API also accepts power, current, voltage
+and linear MW/kV droop controls. Every connected component needs a potential
+reference and appropriate voltage regulation. Missing references, singular or
+conflicting controls, nonpositive resistance and nonfinite parameters fail with
+an error. The current dense solver is limited to 512 variables.
+
+The source adapter qualifies VSC records with explicit connected terminals,
+polarity, AC-bus mapping, control targets, loss coefficients and a solid ground.
+It supports source VSC DC-voltage and active-power controls, and LCC DC-voltage,
+active-power and DC-current controls. LCCs require an explicit rectifier/inverter
+mode and fixed-power-factor reactive model. It refuses calculated commutation
+models, ambiguous source droop units, valve-current relations, DC switching
+or series-device reduction and missing parameters. It never fills unknown losses
+with zero. Back-to-back connections need no artificial DC line; a shared DC
+network can have two, three or more converters and radial or meshed wiring.
+
+Numerical convergence and equipment feasibility are separate. Results list the
+bounds actually checked, unspecified bounds and violations. A converged point
+with missing ratings is not an all-clear. Point-to-point tests use the analytical
+quadratic voltage solution; multi-terminal tests independently check power/loss
+balance, reverse flow, outages, control loss and finite-difference sensitivities.
+
+For imported local cases, **Solve with AC power flow** applies solved converter
+Pac and Q to the original AC network. A VSC can hold fixed Q or regulate its AC
+bus voltage by varying Q within stated min/max limits or a piecewise-linear
+capability curve evaluated at the solved Pac. Positive Q is AC absorption.
+At a Q limit the controller holds that limit and reports the missed voltage
+target (PQ behavior); it does not falsely report successful voltage regulation.
+Competing generator/converter voltage controllers are rejected.
+
+An LCC with fixed power factor absorbs `Q = |Pac| tan(acos(pf))` at both ends.
+The rectifier/inverter mode constrains its active-power direction. Losses are
+still explicit in the DC balance. This is a steady-state load-flow approximation,
+not a valve/commutation model: firing/extinction-angle targets are rejected.
+See the [PowSyBl load-flow model](https://powsybl.readthedocs.io/projects/powsybl-open-loadflow/en/stable/loadflow/loadflow.html)
+for the same distinction between converter controls and outer regulation loops.
+
+**Dispatch AC generation** runs AC-network DC OPF with fixed converter injections;
+it does not calculate AC voltage magnitudes or Q. **Optimize joint AC/DC dispatch**
+uses the separate optional nonlinear backend. Converter active-power targets become
+bounded dispatch variables, while DC voltage/current schedules remain constraints.
+The model includes AC nodal P/Q balances, generator cost and limits, branch limits,
+DC KCL, resistive line losses and converter losses in one nonlinear problem.
+VSCs retain fixed-Q or hard AC-voltage schedules; an incompatible voltage schedule
+and Q limit can make the OPF fail. Joint OPF requires explicit converter P/DC-voltage
+bounds and min/max VSC Q capability. P-dependent Q curves are currently rejected in
+joint OPF. Taps and shunt sections stay fixed; this is not a mixed-integer OPF.
+A converged local optimum is not a global-optimality certificate. Independent AC
+power-balance checks and a separate DC power-flow solve validate the returned
+operating point. Missing line/current ratings remain visible as unchecked bounds.
+
+All these studies use the original imported case, not diagram edits. They reject
+overlapping reduced HVDC links and AC islands that would omit a converter.
+Results appear in this inspector and do not replace the main diagram's result set.
+The optional POUNCE backend stays separate from the ordinary shipping WASM package.
+
+### Automatic regulator studies
+
+Choose **Automatic regulator study** for an AC case, or enable **Include automatic
+tap, PST and shunt regulators** in a detailed AC/DC power-flow study. The source
+network is cloned; original settings and equipment metadata are preserved.
+
+Enabled uniform transformer controls adjust tap ratio to regulate voltage or
+from-terminal Q, or phase angle to regulate from-terminal P. Allowed tap positions
+are explicitly enumerated from the stated range and count. Pure-susceptance shunts
+use their declared cumulative sections or a continuous range. Controls solve AC
+power flow between bounded actions; they stop in the target band, at a setting
+limit, or when discrete steps cannot reach the band. A radial PST may have no
+useful influence on active-power sharing: drawing a regulator does not guarantee
+control authority. Cycling, incompatible targets and nonconvergence return errors.
+
+Detailed tap tables with impedance corrections, asymmetric winding controls,
+mixed-sign shunt switching sequences, partial participation and unresolved terminal
+references require additional models and are rejected. This implementation is
+steady state; it does not model switching time delays, wear, protection or transients.
+
+Rust APIs: `regulation::solve_source`, `dc_grid::solve`,
+`dc_grid::active_power_sensitivity`, `ac_dc::solve_source`, and
+`ac_dc::solve_source_with_regulators`. Select `Problem::Acopf` in a build with the
+`acopf` feature for joint optimization. Browser APIs: `solveRegulated`, `solveDcGrid`,
+`solveAcDc(moduleJson, 'acpf', true)` and `solveJointAcDcModule` (optional WASI worker).
+Sensitivities remain local derivatives of fixed control equations, not derivatives
+through saturation or mode changes. Zero-current absolute-loss kinks are rejected
+for sensitivity and smooth joint-OPF optimality qualification.

@@ -638,6 +638,7 @@ export class Controller {
 			coordinate_space: view.coordinate_space,
 			buses: view.buses,
 			branches: view.branches,
+			equipment: view.equipment,
 			...(view.substations ? { substations: view.substations } : {})
 		};
 	}
