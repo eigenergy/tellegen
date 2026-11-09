@@ -475,7 +475,7 @@ fn solve_with_iterations(grid: &DcGrid, max_iterations: usize) -> Result<DcGridS
         .map(|&(a, b, l)| {
             let i = (x[a] - x[b]) / l.resistance_ohm;
             if l.current_limit_ka
-                .is_some_and(|limit| i.abs() > limit + 1e-8)
+                .is_some_and(|limit| i.abs() > limit + limit_tolerance(limit, 1e-8))
             {
                 violations.push(format!("{} exceeds its current limit", l.id));
             }
@@ -637,6 +637,20 @@ pub(crate) mod tests {
             .violations
             .iter()
             .any(|v| v.contains("DC-voltage")));
+        let branch_current = solve(&grid).unwrap().branches[0].current_ka.abs();
+        grid.branches[0].current_limit_ka = Some(branch_current - 1e-9);
+        assert!(!solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v == "ab exceeds its current limit"));
+        grid.branches[0].current_limit_ka = Some(branch_current - 1e-4);
+        assert!(solve(&grid)
+            .unwrap()
+            .violations
+            .iter()
+            .any(|v| v == "ab exceeds its current limit"));
+        grid.branches[0].current_limit_ka = None;
         let current = solve(&grid).unwrap().converters[0].current_ka.abs();
         grid.converters[0].current_limit_ka = Some(current - 1e-9);
         assert!(!solve(&grid)
