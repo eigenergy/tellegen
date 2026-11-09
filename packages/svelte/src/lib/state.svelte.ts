@@ -6,6 +6,7 @@ import type {
 	Network,
 	NetworkBranch,
 	NetworkBus,
+	NetworkSubstation,
 	SensitivityColumn,
 	Solution,
 	SolveIteration
@@ -80,6 +81,7 @@ type LocalView = {
 	coordinate_space?: 'geographic' | 'diagram';
 	buses: NetworkBus[];
 	branches: NetworkBranch[];
+	substations?: NetworkSubstation[];
 };
 
 /** A case is perturbed when any committed demand or rating delta is nonzero. Shared
@@ -172,6 +174,11 @@ export class LocalCase {
 	predictedObjective = $state<number | null>(null);
 	/** Present for a PowerWorld .pwd display only entry. */
 	substations: LocalSubstations | undefined = $state.raw<LocalSubstations | undefined>(undefined);
+	/** Show this case as a single-line diagram instead of the map. */
+	schematic = $state(false);
+	/** The diagram's last geographic view as a map camera, for the map to continue from when the
+	 * diagram closes. Plain, not reactive: it is read once, on close. */
+	lastGeoView: CameraSnapshot | null = null;
 
 	constructor(init: LocalCaseInit) {
 		this.id = init.id;
@@ -241,6 +248,11 @@ export class CaseState {
 	/** Objective change the gradient predicted for the last commit, to score
 	 * the preview once the exact solve lands. */
 	predictedObjective = $state<number | null>(null);
+	/** Show this case as a single-line diagram instead of the map. */
+	schematic = $state(false);
+	/** The diagram's last geographic view as a map camera, for the map to continue from when the
+	 * diagram closes. Plain, not reactive: it is read once, on close. */
+	lastGeoView: CameraSnapshot | null = null;
 
 	constructor(summary: CaseSummary) {
 		this.id = summary.id;

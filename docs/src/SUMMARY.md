@@ -19,6 +19,7 @@
 - [Data Provenance](data-provenance.md)
 - [Display Data](display-data.md)
   - [Routes across the antimeridian](antimeridian-routes.md)
+- [Transmission Diagrams](transmission-diagrams.md)
 - [Synthetic Layout](synthetic-layout.md)
 - [Synthetic Grid Generation](synthetic-generation.md)
 - [Technology choices](technology-evaluation.md)

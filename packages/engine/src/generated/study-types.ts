@@ -1,5 +1,5 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: 1275348f664a43e6b0134f717eb97671b097d36227768de411d778c9cef76cd1
+// Source SHA256: 5ce39538b65f6d0b4953e2d64836d10931c9c2c0b008a5a5aa25096e4701e82f
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
@@ -7,7 +7,11 @@ export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
 export type Bound = "Min" | "Max";
 
-export type BranchFlow = { "branch": number; "loading": number; "pf": number; "pt"?: number | null; "qf"?: number | null; "qt"?: number | null; "uid"?: string | null; };
+export type BranchConstraintResult = { "binding": boolean; "branch": number; "enforced": boolean; "relief_per_mw"?: number | null; };
+
+export type BranchFlow = { "branch": number; "loading": number; "loading_info"?: (BranchLoading) | (null); "pf": number; "pt"?: number | null; "qf"?: number | null; "qt"?: number | null; "uid"?: string | null; };
+
+export type BranchLoading = { "basis": LoadingBasis; "limiting_end"?: (LoadingEnd) | (null); "rating"?: number | null; "rating_source"?: (RatingSource) | (null); };
 
 export type BranchScalar = { "branch": number; "value": number; };
 
@@ -21,7 +25,7 @@ export type ColMeta = { "element": ElementId; "index": number; "parameter": Para
 
 export type Comparison = { "goal"?: string | null; "improvement"?: number | null; "left": string; "left_value"?: number | null; "left_view"?: (SolveResponse) | (null); "right": string; "right_value"?: number | null; "right_view"?: (SolveResponse) | (null); };
 
-export type ConstraintResult = { "binding": boolean; "id": string; "lower"?: number | null; "shadow_price"?: number | null; "upper"?: number | null; "value": number; };
+export type ConstraintResult = { "binding": boolean; "branches"?: Array<number>; "id": string; "lower"?: number | null; "shadow_price"?: number | null; "upper"?: number | null; "value": number; };
 
 export type CostApproximation = { "bus": number; "generator": number; "max_breakpoint_error": number; "model_cost": GenCost; "rms_breakpoint_error": number; "source_cost": GenCost; };
 
@@ -77,6 +81,10 @@ export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual
 
 export type LimitRound = { "added": number; "enforced": number; "ipm_iterations": number; "max_loading": number; "rows": number; "variables": number; "violated": number; };
 
+export type LoadingBasis = "mw" | "mva";
+
+export type LoadingEnd = "from" | "to" | "both";
+
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 
 export type ObservableWeight = { "element": ElementKey; "weight": number; };
@@ -89,6 +97,8 @@ export type Power = "Active" | "Reactive";
 
 export type Problem = ("dcpf") | ("dcopf") | ("acpf") | ("socwr") | ("acopf");
 
+export type RatingSource = "stated" | "synthesized";
+
 export type RowMeta = { "element": ElementId; "index": number; "operand": Operand; };
 
 export type SearchOptions = { "beam_width": number; "max_iterations": number; "max_solves": number; "min_improvement": number; };
@@ -99,7 +109,7 @@ export type SolveDiagnostic = { "buses": Array<number>; "code": string; "message
 
 export type SolveIteration = { "inf_du": number; "inf_pr": number; "iter": number; "objective": number; };
 
-export type SolveResponse = { "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
+export type SolveResponse = { "branch_constraints"?: Array<BranchConstraintResult> | null; "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
 
 export type SolveStatus = ("optimal") | ("feasible");
 

@@ -4,20 +4,17 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// The active case's binding branches (loading at the thermal limit), joined to
-	// the network for identity. Renders nothing when none bind. Each row is a
-	// button: the keyboard path for branch selection, mirroring what clicking the
-	// line on the map does.
+	// The active result's binding lines (see `ctrl.bindingRule`), joined to the network for
+	// identity. Each row is a button: the keyboard path for branch selection.
 	const bindingLines = $derived.by(() => {
 		const c = ctrl.activeSolvable;
-		if (!c?.network || !c.solution) return [];
+		const rule = ctrl.bindingRule;
+		if (!c?.network || !c.solution || !rule) return [];
 		const byId = new Map(c.network.branches.map((b) => [b.id, b]));
-		return c.solution.flows
-			.filter((f) => f.loading >= 0.999)
-			.flatMap((f) => {
-				const branch = byId.get(f.branch);
-				return branch ? [{ branch, loading: f.loading }] : [];
-			});
+		return c.solution.flows.filter(rule.binds).flatMap((f) => {
+			const branch = byId.get(f.branch);
+			return branch ? [{ branch, loading: f.loading }] : [];
+		});
 	});
 
 	function select(branchId: number) {
@@ -30,7 +27,7 @@
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<p class="dim head" title="Lines loaded to their thermal rating">Binding lines</p>
+		<p class="dim head">{ctrl.bindingRule?.label}</p>
 		<ul>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>

@@ -31,6 +31,19 @@ function path(n: number): [number, number][] {
 // aspect assertions read directly off the coordinate ranges.
 const CENTER = { lon: 0, lat: 0 };
 
+it('preserves voltage bounds by identity during synthetic placement', () => {
+	const input: Topology = {
+		buses: [
+			{ id: 91, uid: 'b91', demand_mw: 0, gen_mw: 0, vmin_pu: 0.96, vmax_pu: 1.04 },
+			{ id: 10, uid: 'b10', demand_mw: 0, gen_mw: 0 }
+		],
+		branches: []
+	};
+	const placed = placeSyntheticTopology(input, CENTER);
+	expect(placed.buses.find((b) => b.id === 91)).toMatchObject({ vmin_pu: 0.96, vmax_pu: 1.04 });
+	expect(placed.buses.find((b) => b.id === 10)).not.toHaveProperty('vmin_pu');
+});
+
 function lonsById(placed: ReturnType<typeof placeSyntheticTopology>): Map<number, number> {
 	return new Map(placed.buses.map((b) => [b.id, b.lon]));
 }

@@ -197,12 +197,24 @@ export interface BusInjection {
 \tq: number;
 }
 
+/** Meaning of a branch's dimensionless loading; not an economic binding flag. */
+export interface BranchLoading {
+\tbasis: 'mw' | 'mva';
+\t/** Effective MW/MVA rating. Absent for unknown/unrated AC equipment. */
+\trating?: number;
+\trating_source?: 'stated' | 'synthesized';
+\t/** End with the greater apparent power; omitted for DC. */
+\tlimiting_end?: 'from' | 'to' | 'both';
+}
+
 export interface BranchFlow {
 \tbranch: number;
 \t/** powerio row uid, present when the solved network carried uids. */
 \tuid?: string;
 \tpf: number;
 \tloading: number;
+\t/** Absent in legacy responses. */
+\tloading_info?: BranchLoading;
 \tqf?: number;
 \tpt?: number;
 \tqt?: number;
@@ -245,11 +257,20 @@ export interface LimitRound {
 \tipm_iterations: number;
 }
 
+/** Thermal constraint from the final DC OPF program. */
+export interface BranchConstraintResult {
+\tbranch: number;
+\tenforced: boolean;
+\tbinding: boolean;
+\trelief_per_mw?: number;
+}
+
 /** The solved state of one LinearConstraint. \`shadow_price\` is
  * \`-d objective / d limit\` in objective units per MW: positive when the upper
  * limit binds, negative when the lower limit binds. */
 export interface ConstraintResult {
 \tid: string;
+\tbranches?: number[];
 \tvalue: number;
 \tlower?: number;
 \tupper?: number;
@@ -280,6 +301,7 @@ export interface SolveResponse {
 \tflows?: BranchFlow[];
 \tdispatch?: GenDispatch[];
 \tconstraints?: ConstraintResult[];
+\tbranch_constraints?: BranchConstraintResult[];
 \tdiagnostics?: SolveDiagnostic[];
 \tlimit_rounds?: LimitRound[];
 \tsensitivities?: SensitivityMatrix[];
@@ -308,6 +330,27 @@ export interface NetworkBus {
 \tlat: number;
 \tdemand_mw: number;
 \tgen_mw: number;
+\t/** Nominal voltage in kV; 0 when the source gives none. Older payloads omit the field. */
+\tbase_kv?: number;
+\t/** Source operating voltage bounds in per unit; absent for lowered/legacy rows. */
+\tvmin_pu?: number;
+\tvmax_pu?: number;
+\t/** Index into \`Network.substations\`. Older payloads omit the field. */
+\tsubstation?: number;
+}
+
+/** How a substation's buses were grouped, strongest first: declared by the source data, sharing
+ * one coordinate, joined by transformers, joined by bus-splitting jumpers, or a bus on its own. */
+export type SubstationSource = 'declared' | 'colocated' | 'transformer' | 'jumper' | 'single';
+
+/** One substation of a transmission diagram: the buses that \`NetworkBus.substation\` points at. */
+export interface NetworkSubstation {
+\t/** \`sub:<declared id>\` when declared, else \`bus:<lowest bus id>\`. */
+\tkey: string;
+\tname: string | null;
+\tsource: SubstationSource;
+\t/** Distinct nominal voltages of the members in kV, highest first. */
+\tkv: number[];
 }
 
 export interface NetworkBranch {
@@ -320,6 +363,8 @@ export interface NetworkBranch {
 \tto: number;
 \trate_mw: number;
 \tstatus: number;
+\t/** Joins two voltage levels. Older payloads omit the field. */
+\ttransformer?: boolean;
 \tpath: [number, number][];
 }
 
@@ -332,16 +377,29 @@ export interface Network {
 \tsynthetic_coords: boolean;
 \tbuses: NetworkBus[];
 \tbranches: NetworkBranch[];
+\t/** Substations for transmission diagrams. Older payloads omit the field. */
+\tsubstations?: NetworkSubstation[];
+}
+
+/** Compact result retaining source endpoint conventions: mw/pf and pt in MW,
+ * qf and qt in MVAr, each positive from its bus into the branch. */
+export interface SolutionFlow extends Omit<BranchFlow, 'pf'> {
+\tmw: number;
 }
 
 export interface Solution {
+\t/** Solver context, absent in legacy display payloads. */
+\tformulation?: string;
+\tstatus?: string;
 \tobjective: number | null;
 \tprices: { bus: number; value: number }[];
 \tvm?: { bus: number; value: number }[];
 \tva: { bus: number; value: number }[];
 \tw: { bus: number; value: number }[];
-\tflows: { branch: number; mw: number; loading: number }[];
+\tflows: SolutionFlow[];
 \tdispatch: { gen: number; bus?: number; mw: number }[];
+\tconstraints?: ConstraintResult[];
+\tbranch_constraints?: BranchConstraintResult[];
 \t/** How the solve treated the network: islands, HVDC transfers. Absent when it
 \t * solved the case as stated. */
 \tdiagnostics?: SolveDiagnostic[];
