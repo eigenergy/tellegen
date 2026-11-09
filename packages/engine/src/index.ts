@@ -2028,7 +2028,20 @@ export function solveResponseToSolution(
 ): Solution {
   return {
     objective: out.objective ?? null,
-    ...(out.initialization ? { initialization: out.initialization } : {}),
+    // Keep serialized compact results equal across direct struct responses
+    // and commit envelopes, whose nested JSON keys arrive in sorted order.
+    ...(out.initialization
+      ? {
+          initialization: {
+            requested: out.initialization.requested,
+            used: out.initialization.used,
+            attempts: out.initialization.attempts,
+            ...(out.initialization.restart == null
+              ? {}
+              : { restart: out.initialization.restart }),
+          },
+        }
+      : {}),
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
     vm: out.vm ?? undefined,
     va: out.va ?? [],

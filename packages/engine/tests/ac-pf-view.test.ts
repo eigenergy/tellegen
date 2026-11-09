@@ -16,7 +16,14 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
     if (request.op === "study_solution") return JSON.stringify(solution);
     if (request.op === "study_replace_edits") {
       expect(request.sensitivities).toBe("[]");
-      return JSON.stringify({ solution, iterations: [], sensitivities: [] });
+      // Rust's commit envelope goes through serde_json::Value, which sorts
+      // object keys; study_solution serializes the response struct directly.
+      const initialization = { attempts: 2, requested: "case", used: "flat" };
+      return JSON.stringify({
+        solution: { ...solution, initialization },
+        iterations: [],
+        sensitivities: [],
+      });
     }
     throw new Error(`unexpected operation ${request.op}`);
   });
@@ -28,14 +35,29 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
     va: solution.va,
     initialization: solution.initialization,
   });
-  await expect(study.commit("case", {}, {}, { branch: 42 })).resolves.toMatchObject({
+  await expect(
+    study.commit("case", {}, {}, { branch: 42 }),
+  ).resolves.toMatchObject({
     sensitivity: null,
-    solution: { objective: null, vm: solution.vm, initialization: solution.initialization },
+    solution: {
+      objective: null,
+      vm: solution.vm,
+      initialization: solution.initialization,
+    },
   });
+  // Saved-case capture compares these serialized compact results before
+  // retaining the matching solved view.
+  const current = await study.currentSolution();
+  const committed = await study.commit("case", {}, {}, null);
+  expect(JSON.stringify(current)).toBe(JSON.stringify(committed.solution));
   call.mockClear();
-  await expect(study.sensitivity("case", {}, {}, { bus: 10 })).resolves.toBeNull();
+  await expect(
+    study.sensitivity("case", {}, {}, { bus: 10 }),
+  ).resolves.toBeNull();
   await expect(study.preview({ 10: 1 })).resolves.toEqual({
-    prices: [], objectiveDelta: null, units: null,
+    prices: [],
+    objectiveDelta: null,
+    units: null,
   });
   expect(call).not.toHaveBeenCalled();
 });

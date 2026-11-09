@@ -24,6 +24,8 @@ def solve(binary, module, start):
         input=module.read_text(), text=True, capture_output=True, check=False,
         timeout=120,
     )
+    if result.returncode and 'AC power flow did not converge' not in result.stderr:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return json.loads(result.stdout) if result.returncode == 0 else {'error': result.stderr.strip()}
 
 
@@ -48,7 +50,8 @@ def summarize(rows, side):
         'failed_ac_total_ms': sum(r['ac_solve_ms'] for r in failed),
         'failed_ac_mean_ms': statistics.mean(r['ac_solve_ms'] for r in failed) if failed else None,
         'starts': dict(Counter(i['used'] if i else 'unreported'
-                              for r in records for i in r['ac_initializations'])),
+                              for r in records if r['ac_pf'] == 'converged'
+                              for i in r['ac_initializations'])),
     }
 
 
@@ -70,6 +73,8 @@ def main():
     rows = []
     for (region, seed), before in lookups[0].items():
         after = lookups[1][region, seed]
+        if before['valid'] and not after['valid']:
+            raise ValueError(f'voltage-band regression: {region} {seed}')
         if before['request_sha256'] != after['request_sha256']:
             raise ValueError('request mismatch')
         files = [d / f'{region}-s{seed}' / 'network.pio.json' for d in [args.before, args.after]]
@@ -84,7 +89,12 @@ def main():
             raise ValueError(f'physical network changed: {region} {seed}')
         solutions = [solve(args.before_binary, files[0], args.before_start),
                      solve(args.after_binary, files[1], 'case')]
-        record = {'region': region, 'seed': seed, 'before': before, 'after': after}
+        fields = ('request_sha256', 'buses', 'branches', 'dc_opf', 'ac_pf', 'valid',
+                  'ac_message', 'ac_solve_ms', 'ac_iterations', 'ac_residual',
+                  'ac_initializations', 'vm', 'engine_ms')
+        record = {'region': region, 'seed': seed,
+                  'before': {k: before[k] for k in fields},
+                  'after': {k: after[k] for k in fields}}
         for side, response, row in zip(['before', 'after'], solutions, [before, after]):
             if ('error' not in response) != (row['ac_pf'] == 'converged'):
                 raise ValueError(f'{region} {seed}: {side} re-solve disagrees with validation')
@@ -93,8 +103,15 @@ def main():
             record['max_vm_difference_pu'] = maximum_difference(a, b, 'vm', 'bus', ['value'])
             record['max_va_difference_rad'] = maximum_difference(a, b, 'va', 'bus', ['value'])
             record['max_flow_difference_mw_mvar'] = maximum_difference(a, b, 'flows', 'branch', ['pf', 'qf', 'pt', 'qt'])
+            for field, tolerance in [('max_vm_difference_pu', 1e-6),
+                                     ('max_va_difference_rad', 1e-6),
+                                     ('max_flow_difference_mw_mvar', 1e-3)]:
+                if record[field] > tolerance:
+                    raise ValueError(f'{region} {seed}: {field} exceeds {tolerance}')
         elif 'error' in solutions[0] and 'error' not in solutions[1]:
             record['newly_converged_residual'] = solutions[1]['iterations']['residual']
+            if record['newly_converged_residual'] >= 1e-8:
+                raise ValueError('newly converged result exceeds the solver tolerance')
         elif 'error' not in solutions[0]:
             raise ValueError(f'convergence regression: {region} {seed}')
         rows.append(record)
