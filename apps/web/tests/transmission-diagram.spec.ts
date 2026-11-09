@@ -289,6 +289,7 @@ for (const touch of [false, true]) {
 					const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 					await expect(calculation).toBeEnabled({ timeout: 60000 });
 					await runCalculation(page, 'acpf');
+					if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 					await expect(calculation).toBeEnabled();
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 					if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
@@ -514,6 +515,7 @@ for (const touch of [false, true]) {
 			// AC results retain a fixed per-unit key rather than an autoscaled or uniform-grey key.
 			const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 			await runCalculation(page, 'acpf');
+			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
