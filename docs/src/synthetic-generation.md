@@ -287,6 +287,14 @@ count (`circuits`) and the branch's 1-based place among them
 
 - **Islands.** The DC OPF and the AC power flow run per electrical island,
   each with its own reference bus.
+- **AC initialization.** Emitted buses retain the planned 1.02 pu profile
+  and the converged reactive-plan angles (stored in degrees). An unconverged
+  reactive plan uses the final DC planning angles and retains its warning.
+  Mapped grids refresh the angles when reactive planning succeeds at the
+  constrained dispatch. Validation requests `start: "case"`; each island's
+  `initialization` records which strategy converged and how many starts ran.
+  Modules with AC validation enabled record that calculation setting so the
+  viewer and a reopened Study use it. Explicit settings can request `flat`.
 - **HVDC.** Links are replaced by fixed transfers on a validation copy,
   because the engine's models do not read HVDC rows.
 - **Failures.** An infeasible DC OPF is reported as infeasible with the
@@ -437,9 +445,10 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
 - Whether the AC power flow converges inside the band depends on the seed
   for several countries. `docs/evidence/synth` sweeps three seeds on two
   outlines (Natural Earth 1:50m and the MapToGrid app's 1:110m layer):
-  every run passes DC, 53 of 54 and 47 of 51 runs pass AC inside the band,
-  and the United States passes at every seed on the 1:50m outline and fails
-  at every seed on the app's 1:110m one.
+  every run passes DC. The warm-start evaluation passes AC inside the band
+  in 53 of 54 and 49 of 51 runs. The United States passes all six runs;
+  Australia's three remaining failures depend on seed and outline. See
+  `docs/evidence/synth/warm-start-262` for timings and numerical comparisons.
 - Clustering in generated grids runs higher than in the ACTIVSg200 and
   GOC500 references, because the Gabriel mesh is rich in triangles. Their
   highest nodal degree is also lower, since the mesh caps it at 8.
@@ -450,8 +459,8 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
   size split into synchronous areas joined by HVDC, which the generator does
   not model yet; very long corridors, such as across the Nullarbor or
   between Indonesian islands, stay AC.
-- The engine's AC power flow starts from a flat profile. On long, weakly
-  coupled systems it can fail to converge, or settle on a second solution
-  outside the voltage band, even when the planned operating point is valid.
-  A warm start from the stored case state, once the engine offers it,
-  removes this.
+- AC validation starts from the stored planning state and falls back to a
+  flat start and deterministic perturbations if necessary. Long, weakly
+  coupled systems can still fail or reach another solution outside the
+  voltage band. The planning dispatch can also differ from the final DC
+  OPF dispatch. Convergence and voltage-band acceptance remain separate checks.

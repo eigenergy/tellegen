@@ -1,5 +1,37 @@
 {
   "$defs": {
+    "AcPfInitialization": {
+      "description": "Successful AC initialization, including any fallback from the requested start.",
+      "properties": {
+        "attempts": {
+          "description": "Starts attempted, including the successful one (one-based).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requested": {
+          "$ref": "#/$defs/PowerFlowStart"
+        },
+        "restart": {
+          "description": "Deterministic perturbation number (one-based), only for `perturbed`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "used": {
+          "$ref": "#/$defs/AcPfStartStrategy"
+        }
+      },
+      "required": [
+        "requested",
+        "used",
+        "attempts"
+      ],
+      "type": "object"
+    },
     "AcPfOutcome": {
       "enum": [
         "converged",
@@ -87,6 +119,15 @@
         "islands"
       ],
       "type": "object"
+    },
+    "AcPfStartStrategy": {
+      "description": "Initialization that produced a converged AC power flow.",
+      "enum": [
+        "case",
+        "flat",
+        "perturbed"
+      ],
+      "type": "string"
     },
     "BBox": {
       "description": "A longitude/latitude box; `east` may exceed 180 for a seam-crossing frame.",
@@ -1358,6 +1399,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "initialization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AcPfInitialization"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Successful AC start for this island, including fallback attempts."
+        },
         "load_mw": {
           "format": "double",
           "type": "number"
@@ -1775,6 +1827,21 @@
         "max_angle_difference_deg"
       ],
       "type": "object"
+    },
+    "PowerFlowStart": {
+      "description": "Where the AC power flow's Newton iteration starts, as the lowercase JSON tags\n`\"flat\"` and `\"case\"`. Only `acpf` iterates from a start; every other\nformulation refuses `\"case\"`.",
+      "oneOf": [
+        {
+          "const": "flat",
+          "description": "Voltage setpoint magnitudes and every angle at its island's reference angle.",
+          "type": "string"
+        },
+        {
+          "const": "case",
+          "description": "The case's stored bus voltages: each bus's magnitude and its angle\nrelative to its island's reference bus (star buses of three-winding transformers\nwhere the source carries them), or a typed instance's initial point. A\nstored state that does not converge falls back to the flat start.",
+          "type": "string"
+        }
+      ]
     },
     "Preview": {
       "description": "The map preview: valid from `SiteBuses` on, branches from `Topology` on.",
@@ -2925,5 +2992,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "b232679d06323e7f164cf9baebebad1717b4b36c0077e28abc656081299ca102"
+  "x-rust-source-sha256": "2c65f388a0b2ff3171b0f70cf20d6bb23b6aaa16e440193ac60d8676a12f86fc"
 }
