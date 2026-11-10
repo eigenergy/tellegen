@@ -353,6 +353,7 @@ pub struct HealthPayload {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct NetworkPayload {
+    pub equipment: tellegen::equipment::Equipment,
     pub model_details: Option<tellegen::preparation::ModelDetails>,
     pub id: String,
     pub name: String,
@@ -1680,6 +1681,7 @@ fn network_payload(
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(NetworkPayload {
+        equipment: tellegen::equipment::project_with_analysis(net, analysis)?,
         model_details: None,
         id: id.into(),
         name: name.into(),
@@ -2581,6 +2583,18 @@ mod tests {
         )
         .expect("normalized network payload");
 
+        assert_eq!(
+            source.equipment.shunts.len(),
+            derived.equipment.shunts.len()
+        );
+        for (left, right) in source
+            .equipment
+            .shunts
+            .iter()
+            .zip(&derived.equipment.shunts)
+        {
+            assert!((left.b_mvar - right.b_mvar).abs() < 1e-9);
+        }
         assert_eq!(source.buses.len(), derived.buses.len());
         for (left, right) in source.buses.iter().zip(&derived.buses) {
             assert!((left.demand_mw - right.demand_mw).abs() < 1e-9);

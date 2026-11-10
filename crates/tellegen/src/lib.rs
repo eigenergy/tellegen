@@ -23,11 +23,14 @@
 /// Tellegen engine package version embedded by Cargo.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod ac_dc;
 mod api;
 mod content_id;
+pub mod dc_grid;
 #[cfg(feature = "sensitivity")]
 pub mod document;
 mod emit;
+pub mod equipment;
 #[cfg(feature = "sensitivity")]
 pub mod exploration;
 mod formulation;
@@ -64,6 +67,7 @@ pub mod objective;
 #[cfg(feature = "sensitivity")]
 pub mod plan;
 mod problem;
+pub mod regulation;
 /// Schematic layouts for multiconductor graphs.
 pub mod schematic;
 #[cfg(feature = "sensitivity")]

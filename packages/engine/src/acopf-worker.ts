@@ -101,10 +101,14 @@ scope.onmessage = async ({ data }: MessageEvent<AcOpfWorkerRequest>) => {
         exports.tellegen_acopf_solve(...moduleInput, ...requestInput),
       ) as { error?: unknown };
       if (typeof value?.error === "string") throw new Error(value.error);
-      scope.postMessage({
-        type: "result",
-        response: value as SolveResponse,
-      });
+      if (JSON.parse(data.requestJson).ac_dc === true) {
+        scope.postMessage({
+          type: "joint_result",
+          response: value as import("./dc-grid.js").AcDcSolution,
+        });
+      } else {
+        scope.postMessage({ type: "result", response: value as SolveResponse });
+      }
     } finally {
       exports.tellegen_acopf_dealloc(...moduleInput);
       exports.tellegen_acopf_dealloc(...requestInput);

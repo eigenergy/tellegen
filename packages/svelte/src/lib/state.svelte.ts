@@ -15,6 +15,7 @@ import { readBusKinds, tapsOf, withoutTaps } from './bus-kinds.js';
 import {
 	DEFAULT_FORMULATION,
 	type StudyView,
+	type NetworkEquipment,
 	type BranchRatingDeltas,
 	type BrowserMcPfSession,
 	type CaseFileSummary,
@@ -82,6 +83,7 @@ type LocalView = {
 	buses: NetworkBus[];
 	branches: NetworkBranch[];
 	substations?: NetworkSubstation[];
+	equipment?: NetworkEquipment;
 };
 
 /** A case is perturbed when any committed demand or rating delta is nonzero. Shared

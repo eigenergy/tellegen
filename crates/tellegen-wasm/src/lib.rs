@@ -1098,6 +1098,7 @@ struct ViewBranch {
 
 #[derive(Serialize)]
 struct View<'a> {
+    equipment: &'a tellegen::equipment::Equipment,
     coordinate_space: &'static str,
     buses: Vec<ViewBus>,
     branches: Vec<ViewBranch>,
@@ -1199,6 +1200,7 @@ fn analysis_uids(
 
 #[derive(Serialize)]
 struct Topology<'a> {
+    equipment: &'a tellegen::equipment::Equipment,
     buses: Vec<TopologyBus>,
     branches: Vec<TopologyBranch>,
     substations: &'a [Substation],
@@ -1439,7 +1441,14 @@ pub(crate) fn ingest_value(
     };
     let grouping = group_for_display(analysis, &stacks, geographic.then_some(&cs), synthetic);
 
+    let mut equipment = tellegen::equipment::project_with_analysis(net, analysis)?;
+    equipment.import_notes = diagnostics
+        .iter()
+        .map(|d| format!("{}: {}", d.code(), d.message()))
+        .chain(warnings.iter().cloned())
+        .collect();
     let topology = Topology {
+        equipment: &equipment,
         substations: &grouping.substations,
         buses: analysis
             .buses()
@@ -1558,6 +1567,7 @@ pub(crate) fn ingest_value(
                 ));
             }
             Some(View {
+                equipment: &equipment,
                 coordinate_space,
                 buses,
                 branches,
@@ -1838,6 +1848,32 @@ pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<Strin
     serde_json::to_string(&tellegen::schematic::schematic_layout(&graph, &options)).map_err(jserr)
 }
 
+/// Solve an explicit resistive DC network with converter voltage/power/current
+/// controls. This is independent of the AC-network DC power-flow approximation.
+#[wasm_bindgen]
+pub fn solve_dc_grid(input_json: &str) -> Result<String, JsError> {
+    ensure_input_text(input_json)?;
+    install_panic_hook();
+    let grid: tellegen::dc_grid::DcGrid = serde_json::from_str(input_json).map_err(jserr)?;
+    let result = tellegen::dc_grid::solve(&grid).map_err(jserr)?;
+    serde_json::to_string(&result).map_err(jserr)
+}
+
+/// Detailed VSC/LCC study with converter Q/voltage controls and optional source regulators.
+#[wasm_bindgen]
+pub fn solve_ac_dc(
+    module_json: &str,
+    formulation: &str,
+    automatic_regulators: bool,
+) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    let mode: tellegen::Problem =
+        serde_json::from_value(serde_json::Value::String(formulation.to_owned())).map_err(jserr)?;
+    tellegen::ac_dc::solve_module_json_with_regulators(module_json, mode, automatic_regulators)
+        .map_err(jserr)
+}
+
 /// Substation overview layout of a balanced network (`txSchematicLayout` in `@tellegen/engine`):
 /// columnar bus positions, busbars, substation boxes, routed branch segments and edge roles, in
 /// the units of the seed positions. `options_json` may be empty for the defaults.
@@ -1902,6 +1938,25 @@ mod tests {
         parse_case_module(text.as_bytes(), "matpower")
             .expect("parse matpower")
             .into_value()
+    }
+
+    #[test]
+    fn equipment_payload_survives_ingest_without_coordinates() {
+        let mut net = parse_matpower(CASE14_NO_COORDS);
+        let bus = net.buses()[0].id;
+        net.shunts_mut().push(powerio::Shunt::new(bus, 0.0, -20.0));
+        let mut h = powerio::Hvdc::new(bus, net.buses()[1].id);
+        h.pf = 20.0;
+        h.pt = 19.0;
+        net.hvdc_mut().push(h);
+        let value = ingest_value(&net, &[], vec![], None).unwrap();
+        assert_eq!(value["topology"]["equipment"]["hvdc"][0]["pf_mw"], 20.0);
+        let shunts = value["topology"]["equipment"]["shunts"].as_array().unwrap();
+        assert_eq!(shunts.last().unwrap()["b_mvar"], -20.0);
+        assert_eq!(
+            value["topology"]["branches"].as_array().unwrap().len(),
+            net.branches().len()
+        );
     }
 
     #[test]
@@ -2628,4 +2683,12 @@ mpc.gencost = [
       },
       "shunt": {}, "storage": {}, "switch": {}, "dcline": {}
     }"#;
+}
+
+/// AC power flow with bounded, explicit transformer and switched-shunt control.
+#[wasm_bindgen]
+pub fn solve_regulated(module_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    tellegen::regulation::solve_module_json(module_json).map_err(jserr)
 }

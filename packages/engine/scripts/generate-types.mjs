@@ -379,7 +379,62 @@ export interface NetworkBranch {
 \tpath: [number, number][];
 }
 
+/** Source equipment settings, independent of the AC solver branch arrays. */
+export interface NetworkEquipment {
+  transformers: NetworkTransformer[];
+  shunts: NetworkShunt[];
+  hvdc: NetworkHvdc[];
+  three_winding?: { id: number; uid: string | null; name: string | null; buses: number[]; in_service: boolean; star_bus: number | null; branches: number[] }[];
+  devices?: { key: string; uid: string | null; kind: 'svc' | 'storage' | 'switch'; buses: number[]; in_service: boolean; treatment: 'unsupported' | 'open' }[];
+  /** Counts of retained detailed DC records. See dc_topology and dc_model for qualified support. */
+  detailed_dc: { nodes: number; lines: number; converters: number };
+  dc_topology?: { nodes: string[]; links: { id: string; kind: 'line' | 'switch' | 'series' | 'ground'; from: string | null; to: string | null; connected: boolean | null; resistance_ohm: number | null }[]; converters: { id: string; kind: 'vsc' | 'lcc'; terminal1: string | null; terminal2: string | null; connected1: boolean | null; connected2: boolean | null; ac_bus: number | null; control: string | null }[] };
+  dc_model?: import('../dc-grid.js').DcGrid | null;
+  dc_model_unavailable?: string | null;
+  import_notes?: string[];
+}
+export interface NetworkTransformer {
+  branch: number;
+  uid: string | null;
+  phase_shifter: boolean;
+  tap_changers?: { kind: 'ratio' | 'phase'; winding: number; tap_position?: number | null; solved_tap_position?: number | null; low_tap_position: number; regulating: boolean; regulation_mode?: string | null; regulation_value?: number | null; target_deadband?: number | null; steps: { position: number; rho: number; alpha_degrees: number; resistance_deviation_percent: number; reactance_deviation_percent: number; conductance_deviation_percent: number; susceptance_deviation_percent: number }[] }[];
+  tap_ratio: number;
+  phase_shift_deg: number;
+  control_mode: 'fixed' | 'voltage' | 'reactive_flow' | 'active_flow' | 'dc_line_quantity' | 'asymmetric_active_flow' | null;
+  control_enabled: boolean | null;
+  controlled_bus: number | null;
+  setting_min: number | null;
+  setting_max: number | null;
+}
+export interface NetworkShunt {
+  id: number;
+  uid: string | null;
+  bus: number;
+  in_service: boolean;
+  /** Conductance MW and capacitive-positive susceptance Mvar at 1 pu voltage. */
+  g_mw: number;
+  b_mvar: number;
+  section_count: number | null;
+  control_mode: 'locked' | 'continuous' | 'discrete' | null;
+  blocks: { steps: number; g_mw: number; b_mvar: number }[];
+}
+export interface NetworkHvdc {
+  id: number;
+  uid: string | null;
+  from: number;
+  to: number;
+  in_service: boolean;
+  /** Input withdrawal at from and injection at to, signed MW; not solved DC results. */
+  pf_mw: number;
+  pt_mw: number;
+  nominal_kv: number | null;
+  from_converter: 'vsc' | 'lcc' | null;
+  to_converter: 'vsc' | 'lcc' | null;
+}
+
 export interface Network {
+  /** Absent in older payloads: equipment coverage is unknown, not empty. */
+  equipment?: NetworkEquipment;
 \tcoordinate_space?: 'geographic' | 'diagram';
 \tmodel_details?: import('./study-types.js').ModelDetails | null;
 \tid: string;

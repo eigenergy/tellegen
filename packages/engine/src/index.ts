@@ -1,3 +1,5 @@
+import type { DcGrid, DcGridSolution } from "./dc-grid.js";
+export type { DcGrid, DcGridSolution } from "./dc-grid.js";
 export * from "./settings.js";
 import { settingsCatalog } from "./generated/settings-types.js";
 /** The browser engine API. Requests run in a dedicated Web Worker when the
@@ -44,6 +46,7 @@ import type {
   NetworkBranch,
   NetworkBus,
   NetworkSubstation,
+  NetworkEquipment,
   ProblemCaps,
   SensitivityColumn,
   Solution,
@@ -86,9 +89,13 @@ export type {
   LimitRound,
   LinearConstraint,
   Network,
+  NetworkTransformer,
+  NetworkShunt,
+  NetworkHvdc,
   NetworkBranch,
   NetworkBus,
   NetworkSubstation,
+  NetworkEquipment,
   PowerFlowStart,
   ProblemCaps,
   SensRequest,
@@ -187,6 +194,7 @@ export interface Topology {
   branches: TopologyBranch[];
   /** Substations for transmission diagrams, grouped without coordinates. */
   substations?: NetworkSubstation[];
+  equipment?: NetworkEquipment;
 }
 
 /** One parse per dropped file: summary stats, plus map geometry when the
@@ -203,6 +211,7 @@ export interface IngestedCase extends CaseFileSummary {
     branches: NetworkBranch[];
     /** Substations for transmission diagrams; `NetworkBus.substation` indexes this list. */
     substations?: NetworkSubstation[];
+    equipment?: NetworkEquipment;
   } | null;
 }
 
@@ -921,6 +930,38 @@ export interface TxLayout {
   /** Tier scale per substation. */
   scale: number[];
   bounds: [number, number, number, number];
+}
+
+/** Solve the explicit DC grid only. AC converter powers are outputs for a subsequent
+ * AC calculation; this call does not claim a coupled AC/DC solution. */
+export async function solveDcGrid(grid: DcGrid): Promise<DcGridSolution> {
+  const input = JSON.stringify(grid);
+  assertEngineInputLength(input.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "solve_dc_grid", input_json: input }),
+    ),
+  );
+}
+
+/** Detailed AC/DC power flow with converter Q/voltage controls and optional
+ * source regulators. DC OPF optimizes AC generation with fixed DC transfers. */
+export async function solveAcDc(
+  moduleJson: string,
+  formulation: "acpf" | "dcpf" | "dcopf" = "acpf",
+  automaticRegulators = false,
+): Promise<import("./dc-grid.js").AcDcSolution> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_ac_dc",
+        module_json: moduleJson,
+        formulation,
+        automatic_regulators: automaticRegulators,
+      }),
+    ),
+  );
 }
 
 /** Lay out a balanced network as a substation overview in the engine: substations placed greedily
@@ -3150,3 +3191,23 @@ export type {
 } from "./generated/study-types.js";
 export { studySchema } from "./generated/study-schema.js";
 export { synthSchema } from "./generated/synth-schema.js";
+
+export type {
+  AcDcSolution,
+  ControlResult,
+  RegulatedSolution,
+} from "./dc-grid.js";
+export { solveJointAcDcModule } from "./acopf.js";
+export async function solveRegulated(
+  moduleJson: string,
+): Promise<import("./dc-grid.js").RegulatedSolution> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_regulated",
+        module_json: moduleJson,
+      }),
+    ),
+  );
+}

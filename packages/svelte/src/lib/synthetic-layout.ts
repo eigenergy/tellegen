@@ -1,11 +1,12 @@
 import type { NetworkBranch, NetworkBus, NetworkSubstation } from './api.js';
 import { extent } from './format.js';
-import type { Topology } from '@tellegen/engine';
+import type { NetworkEquipment, Topology } from '@tellegen/engine';
 
 export interface PlacedNetwork {
 	buses: NetworkBus[];
 	branches: NetworkBranch[];
 	substations?: NetworkSubstation[];
+	equipment?: NetworkEquipment;
 }
 
 export interface PlacementCenter {
@@ -75,6 +76,7 @@ export function placeSyntheticTopology(
 				...(branch.transformer === undefined ? {} : { transformer: branch.transformer }),
 				path: [coords.get(branch.from)!, coords.get(branch.to)!]
 			})),
+		equipment: topology.equipment,
 		...(topology.substations ? { substations: topology.substations } : {})
 	};
 }

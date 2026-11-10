@@ -348,6 +348,7 @@ impl AcNetwork {
             .map_err(|e| e.to_string())?;
         let instance = adjusted.as_ref().unwrap_or(instance);
         let raw = instance.network();
+        super::reject_active_svcs(raw)?;
         reject_unsupported_active_elements(raw, HvdcLines::Reject)?;
         let voltage_dependent_loads = raw
             .loads()
@@ -586,6 +587,7 @@ impl AcNetwork {
                     .regulated_bus
                     .is_some_and(|regulated| regulated != generator.bus)
         });
+        super::reject_active_svcs(raw)?;
         let input = normalize_for_model(raw, hvdc)?;
         let norm = input.network;
         let source_rows = input.source_rows;
