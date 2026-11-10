@@ -480,6 +480,9 @@ pub struct IslandOutcome {
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Successful AC start for this island, including fallback attempts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initialization: Option<tellegen::AcPfInitialization>,
 }
 
 /// The corridor and reactive plan the electrify stage made before any

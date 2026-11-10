@@ -287,11 +287,22 @@ export interface SolveDiagnostic {
 \tbuses: number[];
 }
 
+export type AcPfStartStrategy = "case" | "flat" | "perturbed";
+
+/** Successful AC start, including fallback attempts (one-based). */
+export interface AcPfInitialization {
+\trequested: PowerFlowStart;
+\tused: AcPfStartStrategy;
+\tattempts: number;
+\trestart?: number;
+}
+
 export interface SolveResponse {
 \tformulation: FormulationId;
 \tstatus: SolveStatus;
 \tobjective?: number;
 \titerations?: Iterations;
+\tinitialization?: AcPfInitialization;
 \tlmp?: BusScalar[];
 \tlmp_q?: BusScalar[];
 \tvm?: BusScalar[];
@@ -446,6 +457,7 @@ export interface Solution {
 \t/** Solver context, absent in legacy display payloads. */
 \tformulation?: string;
 \tstatus?: string;
+\tinitialization?: AcPfInitialization;
 \tobjective: number | null;
 \tprices: { bus: number; value: number }[];
 \tvm?: { bus: number; value: number }[];

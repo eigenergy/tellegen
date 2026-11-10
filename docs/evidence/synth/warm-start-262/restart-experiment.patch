@@ -1,0 +1,56 @@
+--- a/crates/tellegen/src/problem/pf_ac.rs
++++ b/crates/tellegen/src/problem/pf_ac.rs
+@@ -434,6 +434,7 @@
+     qg: &[f64],
+     mut vm: Vec<f64>,
+     mut va: Vec<f64>,
++    stop_on_stall: bool,
+ ) -> (Vec<f64>, Vec<f64>, usize, f64) {
+     // `r` / `residual` / `i_bus` track the *current* iterate: measured once up front and
+     // refreshed from the accepted trial each step, so the returned residual always reflects
+@@ -443,6 +444,7 @@
+     let (p0, q0, mut i_bus) = f.injections(ybus, &vm, &va);
+     let mut r = layout.residual(net, pg, qg, &p0, &q0);
+     let mut residual = inf_norm(&r);
++    let mut window_start = residual;
+     for it in 0..MAX_ITERS {
+         iters = it;
+         if residual < TOL {
+@@ -481,6 +483,12 @@
+         }
+         if !accepted {
+             break; // no descent direction reduced the mismatch: stop
++        }
++        if stop_on_stall && (it + 1) % 8 == 0 {
++            if residual >= 0.99 * window_start {
++                break;
++            }
++            window_start = residual;
+         }
+     }
+     (vm, va, iters, residual)
+@@ -529,6 +537,7 @@
+     vm_hold: &[f64],
+     mut vm: Vec<f64>,
+     mut va: Vec<f64>,
++    stop_on_stall: bool,
+ ) -> QlimSolve {
+     // Tolerance on a reactive-limit violation (per unit) and on the back-switch voltage test.
+     const Q_TOL: f64 = 1e-6;
+@@ -567,6 +576,7 @@
+             &qsched,
+             vm.clone(),
+             va.clone(),
++            stop_on_stall,
+         );
+         vm = nvm;
+         va = nva;
+@@ -747,7 +757,7 @@
+     let mut initialization = None;
+     for (attempt, (used, restart, (vm0, va0))) in starts.into_iter().enumerate() {
+         let res = solve_qlim(
+-            f, net, &ybus, &net.pg, &net.qg, &qmin_bus, &qmax_bus, &has_gen, &vm_hold, vm0, va0,
++            f, net, &ybus, &net.pg, &net.qg, &qmin_bus, &qmax_bus, &has_gen, &vm_hold, vm0, va0, restart.is_some(),
+         );
+         // Keep the smallest-residual restart. A non-finite (NaN) residual must never
+         // displace a finite one nor mask a later converging start: replace only when

@@ -39,6 +39,7 @@ import {
 } from "./input-limit.js";
 import type {
   BranchFlow,
+  AcPfInitialization,
   BranchRatingDeltas,
   BrowserFormulation,
   DemandDeltas,
@@ -74,6 +75,8 @@ export type {
   BranchFlow,
   BranchLoading,
   SolutionFlow,
+  AcPfInitialization,
+  AcPfStartStrategy,
   BranchRatingDeltas,
   BrowserFormulation,
   CaseSummary,
@@ -2068,6 +2071,7 @@ function sensitivitiesJson(
 /** The SolveResponse JSON the Study returns from commit/solution. A superset of
  * formulations; DC fills objective/lmp/flows/dispatch/iterations. */
 interface StudySolveResponse {
+  initialization?: AcPfInitialization;
   formulation: string;
   status: string;
   objective: number | null;
@@ -2142,6 +2146,7 @@ function sensitivityColumn(
 export interface SolutionResponseProjection {
   formulation?: string;
   status?: string;
+  initialization?: AcPfInitialization | null;
   objective?: number | null;
   lmp?: { bus: number; value: number }[] | null;
   vm?: { bus: number; value: number }[] | null;
@@ -2162,6 +2167,20 @@ export function solveResponseToSolution(
     ...(out.formulation !== undefined ? { formulation: out.formulation } : {}),
     ...(out.status !== undefined ? { status: out.status } : {}),
     objective: out.objective ?? null,
+    // Keep serialized compact results equal across direct struct responses
+    // and commit envelopes, whose nested JSON keys arrive in sorted order.
+    ...(out.initialization
+      ? {
+          initialization: {
+            requested: out.initialization.requested,
+            used: out.initialization.used,
+            attempts: out.initialization.attempts,
+            ...(out.initialization.restart == null
+              ? {}
+              : { restart: out.initialization.restart }),
+          },
+        }
+      : {}),
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
     vm: out.vm ?? undefined,
     va: out.va ?? [],

@@ -1,0 +1,18 @@
+{
+  "recorded_utc": "2026-11-09T13:21:08.074919+00:00",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "logical_cpus_available": 9,
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-unknown-linux-gnu\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "baseline_commit": "112f0cac1225845fff2515c4220bd351d084fb83",
+  "warm_commit": "78e27688f0ce715488e738a46dc438d1273ee0f6",
+  "experiment": "warm commit plus restart-experiment.patch; not applied to shipping source",
+  "build": "TELLEGEN_ALLOW_FALLBACK=1 CARGO_BUILD_JOBS=2 cargo build --release --locked -p tellegen-cli --features conic",
+  "sha256": {
+    "Cargo.lock": "ee7343b2a27eda0fe01d412cc566a180122a4120026f8e559f006ea12ecc8f55",
+    "eval-inputs/ne50.geojson": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+    "eval-inputs/app110.geojson": "04be4d555283ceb888758d01e2a359e17db86918794357e72b16bb50fc4686bd",
+    "crates/tellegen-synth/data/populated_places.json": "9982b3fa120c6330f7fc8f64d1b66551749c6b010b9d24eca782d9196015f477"
+  },
+  "timing_scope": "AcPfReport.solve_ms; one sequential full sweep per variant; paired failure timings in restart-timing.json"
+}
