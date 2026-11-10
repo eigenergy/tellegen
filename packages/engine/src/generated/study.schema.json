@@ -115,6 +115,37 @@
       ],
       "type": "string"
     },
+    "BranchConstraintResult": {
+      "description": "A DC OPF branch's thermal constraint in the final solved program.",
+      "properties": {
+        "binding": {
+          "description": "An enforced bound is met to the solver's reporting tolerance.",
+          "type": "boolean"
+        },
+        "branch": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "enforced": {
+          "type": "boolean"
+        },
+        "relief_per_mw": {
+          "description": "Objective decrease per additional MW of symmetric rating. Only present\nfor an enforced row with an economic objective.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch",
+        "enforced",
+        "binding"
+      ],
+      "type": "object"
+    },
     "BranchFlow": {
       "description": "Branch flows, keyed by original branch id (plus the row uid when carried, as in\n[`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,\ndimensionless) are present on every formulation that has flows; the reactive\nand to-end legs are `None` on the DC paths.",
       "properties": {
@@ -126,6 +157,16 @@
         "loading": {
           "format": "double",
           "type": "number"
+        },
+        "loading_info": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BranchLoading"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "pf": {
           "format": "double",
@@ -163,6 +204,45 @@
         "branch",
         "pf",
         "loading"
+      ],
+      "type": "object"
+    },
+    "BranchLoading": {
+      "description": "Interpretation of `loading`, independent of economic binding or enforcement.\nAn absent rating means no known equipment limit, even if a numerical solver\nfallback produced a finite utilization. Older responses omit this object.",
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/LoadingBasis"
+        },
+        "limiting_end": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadingEnd"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rating": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rating_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RatingSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "basis"
       ],
       "type": "object"
     },
@@ -365,6 +445,15 @@
         "binding": {
           "description": "`value` sits at a limit, within solver tolerance. Always true for an\nequality.",
           "type": "boolean"
+        },
+        "branches": {
+          "description": "Branches in the resolved row, including flows implied by injection terms.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -1413,6 +1502,22 @@
       ],
       "type": "object"
     },
+    "LoadingBasis": {
+      "description": "Basis of the dimensionless branch utilization, with the rating in MW or MVA.",
+      "enum": [
+        "mw",
+        "mva"
+      ],
+      "type": "string"
+    },
+    "LoadingEnd": {
+      "enum": [
+        "from",
+        "to",
+        "both"
+      ],
+      "type": "string"
+    },
     "ModelDetails": {
       "properties": {
         "approximations": {
@@ -1710,6 +1815,13 @@
         }
       ]
     },
+    "RatingSource": {
+      "enum": [
+        "stated",
+        "synthesized"
+      ],
+      "type": "string"
+    },
     "RowMeta": {
       "description": "Identity and quantity metadata for one row of a [`SensitivityMatrix`].",
       "properties": {
@@ -1864,6 +1976,16 @@
     "SolveResponse": {
       "description": "The formulation-agnostic solve result. A superset: every block is optional, and\neach formulation fills what it produces. Powers are MW/MVAr, nodal values are\nin objective units per selected power unit, angles radians, `vm` per unit, and\n`w = |V|^2` per unit squared. Element ids\nare the original bus/branch/generator ids, so the frontend joins straight onto\nits case.",
       "properties": {
+        "branch_constraints": {
+          "description": "Thermal constraint state and marginal relief, when exposed by the formulation.",
+          "items": {
+            "$ref": "#/$defs/BranchConstraintResult"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "constraints": {
           "description": "The request's linear constraints, in request order (dcopf). Absent when\nthe request stated none.",
           "items": {
@@ -2866,5 +2988,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "9564171ecd81e5a5d8f94c39aad1bc42b3907bb8d63c2f68f1bd3aab80e964f2"
+  "x-rust-source-sha256": "c2be84fd657b98c7e1da5173eeab5cf6ab2a70fbe158de25fdcae9c0364b31df"
 }

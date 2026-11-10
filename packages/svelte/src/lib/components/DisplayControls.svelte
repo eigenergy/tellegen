@@ -4,6 +4,9 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	/** The single-line diagram replaces the map: these colours then apply only to its Map display
+	 * view, and the diagram carries its own key. */
+	const diagramOpen = $derived(!!ctrl.singleLineShown);
 </script>
 
 <div class="mode display-mode">
@@ -22,7 +25,12 @@
 		<span class="dim blink">Loading&hellip;</span>
 	{/if}
 </div>
-{#if ctrl.activeDisplay && ctrl.displayStats}
+{#if diagramOpen}
+	<p class="dim small diagram-note">
+		Map colours. The diagram uses them only in its <strong>Map display</strong> view; its key shows what
+		each view's colours mean.
+	</p>
+{:else if ctrl.activeDisplay && ctrl.displayStats}
 	<p class="legend-title">{ctrl.activeDisplay.copy}</p>
 	<div class="legend" style:background={ctrl.activeDisplay.gradient}></div>
 	<div class="legend-labels mono">
@@ -59,6 +67,10 @@
 {/if}
 
 <style>
+	.diagram-note {
+		margin: 8px 0 0;
+		line-height: 1.4;
+	}
 	.legend-title {
 		margin: 10px 0 0;
 		font-size: 12px;

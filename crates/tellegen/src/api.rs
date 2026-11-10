@@ -622,6 +622,47 @@ pub struct BranchScalar {
     pub value: f64,
 }
 
+/// Basis of the dimensionless branch utilization, with the rating in MW or MVA.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LoadingBasis {
+    Mw,
+    Mva,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum RatingSource {
+    Stated,
+    Synthesized,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LoadingEnd {
+    From,
+    To,
+    Both,
+}
+
+/// Interpretation of `loading`, independent of economic binding or enforcement.
+/// An absent rating means no known equipment limit, even if a numerical solver
+/// fallback produced a finite utilization. Older responses omit this object.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BranchLoading {
+    pub basis: LoadingBasis,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating_source: Option<RatingSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limiting_end: Option<LoadingEnd>,
+}
+
 /// Branch flows, keyed by original branch id (plus the row uid when carried, as in
 /// [`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,
 /// dimensionless) are present on every formulation that has flows; the reactive
@@ -634,6 +675,8 @@ pub struct BranchFlow {
     pub uid: Option<String>,
     pub pf: f64,
     pub loading: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loading_info: Option<BranchLoading>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qf: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -677,6 +720,20 @@ pub struct LimitRound {
     pub ipm_iterations: usize,
 }
 
+/// A DC OPF branch's thermal constraint in the final solved program.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BranchConstraintResult {
+    pub branch: usize,
+    pub enforced: bool,
+    /// An enforced bound is met to the solver's reporting tolerance.
+    pub binding: bool,
+    /// Objective decrease per additional MW of symmetric rating. Only present
+    /// for an enforced row with an economic objective.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relief_per_mw: Option<f64>,
+}
+
 /// The solved state of one [`LinearConstraint`], in request order. `value`,
 /// `lower`, and `upper` are MW; `shadow_price` is in objective units per MW, the
 /// same units as `lmp`.
@@ -684,6 +741,9 @@ pub struct LimitRound {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ConstraintResult {
     pub id: String,
+    /// Branches in the resolved row, including flows implied by injection terms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branches: Vec<usize>,
     /// `sum(coefficient * quantity)` at the solution.
     pub value: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -782,6 +842,9 @@ pub struct SolveResponse {
     /// the request stated none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constraints: Option<Vec<ConstraintResult>>,
+    /// Thermal constraint state and marginal relief, when exposed by the formulation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_constraints: Option<Vec<BranchConstraintResult>>,
     /// How the solve treated the network's islands. Empty, and omitted, when
     /// every island is supplied and referenced as stated.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -1088,6 +1151,12 @@ fn ac_opf_assemble(
         &solved.p_to,
         &solved.q_to,
         &prep.branches.s_max,
+        &prep
+            .branches
+            .s_max
+            .iter()
+            .map(|rate| rate.is_finite() && *rate > 0.0)
+            .collect::<Vec<_>>(),
         base,
     );
     let dispatch = prep
@@ -1168,6 +1237,7 @@ fn ac_opf_assemble(
         dispatch: Some(dispatch),
         diagnostics: Vec::new(),
         constraints: None,
+        branch_constraints: None,
         limit_rounds: None,
         #[cfg(feature = "sensitivity")]
         sensitivities: Vec::new(),
@@ -1404,11 +1474,13 @@ pub(crate) fn dc_opf_assemble(
             &dc.branch_uids,
             &sol.f,
             &dc.fmax,
+            &dc.thermal_rated,
             base,
         )),
         dispatch: Some(zip_gen_pg(dc, &sol.pg, base)),
         constraints: (!dc.linear_rows.is_empty())
             .then(|| linear_constraint_results(dc, sol, lmp_is_economic)),
+        branch_constraints: Some(branch_constraint_results(dc, sol, lmp_is_economic)),
         diagnostics: dc.diagnostics.clone(),
         limit_rounds: sol.limit_rounds.clone(),
         #[cfg(feature = "sensitivity")]
@@ -1468,10 +1540,12 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
             &dc.branch_uids,
             &sol.f,
             &dc.fmax,
+            &dc.thermal_rated,
             base,
         )),
         dispatch: None,
         constraints: None,
+        branch_constraints: None,
         diagnostics: dc.diagnostics.clone(),
         limit_rounds: None,
         sensitivities: Vec::new(),
@@ -1558,10 +1632,12 @@ pub(crate) fn ac_pf_assemble(
             &pt,
             &qt,
             &acnet.rate_a,
+            &acnet.thermal_rated,
             base,
         )),
         dispatch: None,
         constraints: None,
+        branch_constraints: None,
         diagnostics: acnet.diagnostics.clone(),
         limit_rounds: None,
         sensitivities,
@@ -1659,10 +1735,12 @@ pub(crate) fn socwr_assemble(
             &sol.pt,
             &sol.qt,
             &acnet.rate_a,
+            &acnet.thermal_rated,
             base,
         )),
         dispatch: Some(zip_gen_pq(acnet, &sol.pg, &sol.qg, base)),
         constraints: None,
+        branch_constraints: None,
         diagnostics: acnet.diagnostics.clone(),
         limit_rounds: None,
         sensitivities,
@@ -2266,6 +2344,30 @@ fn apply_linear_constraints(
     Ok(())
 }
 
+fn branch_constraint_results(
+    dc: &DcNetwork,
+    sol: &super::problem::DcOpfSolution,
+    economic: bool,
+) -> Vec<BranchConstraintResult> {
+    dc.branch_ids
+        .iter()
+        .enumerate()
+        .map(|(edge, &branch)| {
+            let enforced = dc.thermal_limit_active[edge];
+            let limit = dc.fmax[edge];
+            let binding =
+                enforced && (sol.f[edge].abs() - limit).abs() <= LIMIT_VIOLATION_TOL * limit;
+            BranchConstraintResult {
+                branch,
+                enforced,
+                binding,
+                relief_per_mw: (economic && enforced)
+                    .then(|| (sol.lam_ub[edge] + sol.lam_lb[edge]) / dc.base_mva),
+            }
+        })
+        .collect()
+}
+
 /// The response block for the solved model's linear constraints. `economic`
 /// gates the shadow price exactly as it gates `lmp`.
 fn linear_constraint_results(
@@ -2286,6 +2388,11 @@ fn linear_constraint_results(
             };
             ConstraintResult {
                 id: row.id.clone(),
+                branches: row
+                    .flow
+                    .iter()
+                    .map(|&(edge, _)| dc.branch_ids[edge])
+                    .collect(),
                 value,
                 lower: row.lower_mw,
                 upper: row.upper_mw,
@@ -2427,6 +2534,7 @@ fn dc_branch_flows(
     branch_uids: &[Option<String>],
     f: &[f64],
     fmax: &[f64],
+    thermal_rated: &[bool],
     base: f64,
 ) -> Vec<BranchFlow> {
     branch_ids
@@ -2438,11 +2546,25 @@ fn dc_branch_flows(
             } else {
                 0.0
             };
+            let rating = (fmax[e].is_finite() && fmax[e] > 0.0).then_some(fmax[e] * base);
             BranchFlow {
                 branch,
                 uid: uid_at(branch_uids, e),
                 pf: f[e] * base,
                 loading,
+                loading_info: Some(BranchLoading {
+                    basis: LoadingBasis::Mw,
+                    rating,
+                    // As in AC: no source when there is no rating.
+                    rating_source: rating.map(|_| {
+                        if thermal_rated[e] {
+                            RatingSource::Stated
+                        } else {
+                            RatingSource::Synthesized
+                        }
+                    }),
+                    limiting_end: None,
+                }),
                 qf: None,
                 pt: None,
                 qt: None,
@@ -2463,6 +2585,7 @@ fn ac_branch_flows(
     pt: &[f64],
     qt: &[f64],
     rate_a: &[f64],
+    thermal_rated: &[bool],
     base: f64,
 ) -> Vec<BranchFlow> {
     branch_ids
@@ -2481,6 +2604,21 @@ fn ac_branch_flows(
                 uid: uid_at(branch_uids, e),
                 pf: pf[e] * base,
                 loading,
+                loading_info: Some(BranchLoading {
+                    basis: LoadingBasis::Mva,
+                    rating: (thermal_rated[e] && rate_a[e].is_finite() && rate_a[e] > 0.0)
+                        .then_some(rate_a[e] * base),
+                    rating_source: thermal_rated[e].then_some(RatingSource::Stated),
+                    limiting_end: (s_from.is_finite() && s_to.is_finite()).then_some(
+                        if s_from > s_to {
+                            LoadingEnd::From
+                        } else if s_to > s_from {
+                            LoadingEnd::To
+                        } else {
+                            LoadingEnd::Both
+                        },
+                    ),
+                }),
                 qf: Some(qf[e] * base),
                 pt: Some(pt[e] * base),
                 qt: Some(qt[e] * base),
@@ -2494,6 +2632,64 @@ mod tests {
     use super::super::model::CASE3;
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn loading_metadata_distinguishes_effective_dc_bounds_from_equipment_ratings() {
+        let flows = dc_branch_flows(
+            &[42, 91, 120],
+            &[],
+            &[0.5, -0.3, 0.0],
+            &[1.0, 2.0, f64::INFINITY],
+            &[true, false, false],
+            100.0,
+        );
+        assert_eq!(flows[0].branch, 42);
+        assert_eq!(flows[0].pf, 50.0);
+        assert_eq!(flows[0].loading, 0.5);
+        let stated = flows[0].loading_info.unwrap();
+        assert_eq!(stated.basis, LoadingBasis::Mw);
+        assert_eq!(stated.rating, Some(100.0));
+        assert_eq!(stated.rating_source, Some(RatingSource::Stated));
+        let synthesized = flows[1].loading_info.unwrap();
+        assert_eq!(synthesized.rating, Some(200.0));
+        assert_eq!(synthesized.rating_source, Some(RatingSource::Synthesized));
+        assert_eq!(flows[2].loading_info.unwrap().rating, None);
+        assert!(flows[0].qf.is_none());
+        assert!(flows[0].pt.is_none());
+        // Saved responses from before the additive metadata field still deserialize.
+        let legacy: BranchFlow = serde_json::from_value(serde_json::json!({
+            "branch": 42, "pf": 50.0, "loading": 0.5
+        }))
+        .unwrap();
+        assert!(legacy.loading_info.is_none());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn loading_metadata_uses_the_larger_ac_end_and_hides_unrated_sentinels() {
+        let flows = ac_branch_flows(
+            &[42, 91],
+            &[],
+            &[0.3, 0.0],
+            &[0.4, 0.0],
+            &[-0.6, 0.0],
+            &[-0.8, 0.0],
+            &[2.0, 1.0e3],
+            &[true, false],
+            100.0,
+        );
+        assert_eq!(flows[0].pf, 30.0);
+        assert_eq!(flows[0].qf, Some(40.0));
+        assert_eq!(flows[0].pt, Some(-60.0));
+        assert_eq!(flows[0].qt, Some(-80.0));
+        assert_eq!(flows[0].loading, 0.5);
+        let info = flows[0].loading_info.unwrap();
+        assert_eq!(info.basis, LoadingBasis::Mva);
+        assert_eq!(info.rating, Some(200.0));
+        assert_eq!(info.limiting_end, Some(LoadingEnd::To));
+        assert_eq!(flows[1].loading_info.unwrap().rating, None);
+        assert_eq!(flows[1].loading_info.unwrap().rating_source, None);
+    }
 
     fn case3_json() -> String {
         serde_json::to_string(&crate::model::parse_matpower(CASE3).expect("parse"))
@@ -3230,7 +3426,7 @@ mod tests {
 
     /// The linear-cost CASE3 of [`congested_case3_json`] with line 1-2 rated
     /// `rating` MW.
-    fn case3_line_1_2_rated_json(rating: u32) -> String {
+    fn case3_line_1_2_rated_json(rating: impl std::fmt::Display) -> String {
         let text = CASE3
             .replace(" 1 100 1 250 10 ", " 1 100 1 250 0 ")
             .replace(" 1 100 1 270 10 ", " 1 100 1 270 0 ")
@@ -3248,6 +3444,37 @@ mod tests {
         let request = serde_json::json!({ "formulation": "dcopf", "limits": limits });
         let out = solve_test_network_json(network, &request.to_string())?;
         Ok(serde_json::from_str(&out).expect("response"))
+    }
+
+    #[test]
+    fn thermal_constraint_relief_matches_dispatch_and_final_enforcement() {
+        let network = congested_case3_json();
+        let full = solve_limits(&network, serde_json::json!({})).unwrap();
+        let row = full.branch_constraints.as_ref().unwrap()[0];
+        assert_eq!(row.branch, 1);
+        assert!(row.enforced && row.binding);
+        close(row.relief_per_mw.unwrap(), 30.0, "thermal relief");
+
+        let relaxed = solve_limits(
+            &network,
+            serde_json::json!({ "thermal": { "branches": [] } }),
+        )
+        .unwrap();
+        let row = relaxed.branch_constraints.unwrap()[0];
+        assert!(!row.enforced && !row.binding);
+        assert!(row.relief_per_mw.is_none());
+        assert!(relaxed.flows.unwrap()[0].loading > 1.0);
+
+        let near = solve_limits(&case3_line_1_2_rated_json(60.01), serde_json::json!({})).unwrap();
+        let row = near.branch_constraints.unwrap()[0];
+        assert!(near.flows.unwrap()[0].loading > 0.999);
+        assert!(row.enforced && !row.binding);
+        close(row.relief_per_mw.unwrap(), 0.0, "slack relief");
+
+        let lazy = solve_limits(&network, serde_json::json!({ "lazy": {} })).unwrap();
+        let row = lazy.branch_constraints.as_ref().unwrap()[0];
+        assert!(row.enforced && row.binding);
+        close(row.relief_per_mw.unwrap(), 30.0, "lazy thermal relief");
     }
 
     fn assert_same_solution(a: &SolveResponse, b: &SolveResponse) {
@@ -3641,6 +3868,7 @@ mod tests {
         close(response.objective.unwrap(), 1200.0, "objective");
         let row = &response.constraints.as_ref().expect("constraints")[0];
         assert_eq!(row.id, "line 1-2");
+        assert_eq!(row.branches, [1]);
         assert_eq!(row.upper, Some(50.0));
         assert_eq!(row.lower, None);
         close(row.value, 50.0, "interface value");

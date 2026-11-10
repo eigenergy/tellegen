@@ -36,12 +36,14 @@ import {
   assertEngineInputLength,
 } from "./input-limit.js";
 import type {
+  BranchFlow,
   AcPfInitialization,
   BranchRatingDeltas,
   BrowserFormulation,
   DemandDeltas,
   NetworkBranch,
   NetworkBus,
+  NetworkSubstation,
   ProblemCaps,
   SensitivityColumn,
   Solution,
@@ -66,6 +68,10 @@ export {
 export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
 
 export type {
+  BranchConstraintResult,
+  BranchFlow,
+  BranchLoading,
+  SolutionFlow,
   AcPfInitialization,
   AcPfStartStrategy,
   BranchRatingDeltas,
@@ -82,6 +88,7 @@ export type {
   Network,
   NetworkBranch,
   NetworkBus,
+  NetworkSubstation,
   PowerFlowStart,
   ProblemCaps,
   SensRequest,
@@ -152,6 +159,13 @@ export interface TopologyBus {
   editable?: boolean;
   demand_mw: number;
   gen_mw: number;
+  /** Nominal voltage in kV; 0 when the source gives none. */
+  base_kv?: number;
+  /** Source operating voltage bounds in per unit. */
+  vmin_pu?: number;
+  vmax_pu?: number;
+  /** Index into `Topology.substations`. */
+  substation?: number;
 }
 
 export interface TopologyBranch {
@@ -164,11 +178,15 @@ export interface TopologyBranch {
   to: number;
   rate_mw: number;
   status: number;
+  /** Joins two voltage levels. */
+  transformer?: boolean;
 }
 
 export interface Topology {
   buses: TopologyBus[];
   branches: TopologyBranch[];
+  /** Substations for transmission diagrams, grouped without coordinates. */
+  substations?: NetworkSubstation[];
 }
 
 /** One parse per dropped file: summary stats, plus map geometry when the
@@ -183,6 +201,8 @@ export interface IngestedCase extends CaseFileSummary {
     coordinate_space?: "geographic" | "diagram";
     buses: NetworkBus[];
     branches: NetworkBranch[];
+    /** Substations for transmission diagrams; `NetworkBus.substation` indexes this list. */
+    substations?: NetworkSubstation[];
   } | null;
 }
 
@@ -844,6 +864,78 @@ export async function mcSchematicLayout(
       await engineHost().call({
         op: "mc_schematic_layout",
         graph_json: graphJson,
+        options_json: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** A balanced network as columns for the substation overview layout, in payload order. */
+export interface TxLayoutInput {
+  /** Substation index per bus (`NetworkBus.substation`). */
+  bus_substation: number[];
+  /** Nominal kV per bus; 0 when unknown. */
+  kv: number[];
+  /** Bus row of each branch end; -1 when the bus is not drawn. */
+  from: number[];
+  to: number[];
+  /** 1 in service, 0 out. */
+  in_service: number[];
+  /** `x, y` per bus (y down): the seeds, usually Web Mercator metres. */
+  xy: number[];
+}
+
+export interface TxLayoutOptions {
+  /** `given` starts substations at their buses' positions; `stress` lays them out by their
+   * connections (sparse stress), fitted into the same frame, for synthetic positions. */
+  seeding?: "given" | "stress";
+  /** Typical substation box size as a fraction of the median spacing between neighbouring
+   * substations. */
+  fill?: number;
+  /** Density tiers: radius in median spacings, neighbour counts and the scale for each tier. */
+  tier_radius?: number;
+  tier_counts?: [number, number];
+  tier_scales?: [number, number];
+  /** Candidate offsets either side of the seed, per axis. */
+  search?: number;
+  /** Rounds of channel spacing in line routing (default 10); 0 draws straight lines. */
+  route_iterations?: number;
+}
+
+/** Columnar substation overview in the units of the seeds; y grows downwards. Edge roles: 0 line
+ * between substations, 1 inside a substation (a transformer or coupler), 2 out of service. */
+export interface TxLayout {
+  version: number;
+  /** `x, y` per bus: the middle of its busbar. */
+  positions: number[];
+  /** `x0, y0, x1, y1` per bus. */
+  busbars: number[];
+  /** `x0, y0, x1, y1` per substation. */
+  boxes: number[];
+  /** `x0, y0, x1, y1` per segment; a routed branch has several. */
+  segments: number[];
+  segment_edge: number[];
+  role: number[];
+  /** Drawing units per interior grid block, before tier scaling. */
+  unit: number;
+  /** Tier scale per substation. */
+  scale: number[];
+  bounds: [number, number, number, number];
+}
+
+/** Lay out a balanced network as a substation overview in the engine: substations placed greedily
+ * near their seeds, one busbar per bus inside each, lines between busbar slots. */
+export async function txSchematicLayout(
+  input: TxLayoutInput,
+  options: TxLayoutOptions = {},
+): Promise<TxLayout> {
+  const inputJson = JSON.stringify(input);
+  assertEngineInputLength(inputJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "tx_schematic_layout",
+        input_json: inputJson,
         options_json: JSON.stringify(options),
       }),
     ),
@@ -1947,7 +2039,7 @@ interface StudySolveResponse {
   vm?: { bus: number; value: number }[];
   va?: { bus: number; value: number }[];
   w?: { bus: number; value: number }[];
-  flows?: { branch: number; pf: number; loading: number }[];
+  flows?: BranchFlow[];
   dispatch?: { gen: number; bus?: number; pg: number }[];
   diagnostics?: SolveDiagnostic[];
 }
@@ -2011,15 +2103,19 @@ function sensitivityColumn(
 }
 
 export interface SolutionResponseProjection {
+  formulation?: string;
+  status?: string;
   initialization?: AcPfInitialization | null;
   objective?: number | null;
   lmp?: { bus: number; value: number }[] | null;
   vm?: { bus: number; value: number }[] | null;
   va?: { bus: number; value: number }[] | null;
   w?: { bus: number; value: number }[] | null;
-  flows?: { branch: number; pf: number; loading: number }[] | null;
+  flows?: BranchFlow[] | null;
   dispatch?: { gen: number; bus?: number | null; pg: number }[] | null;
   diagnostics?: SolveDiagnostic[] | null;
+  constraints?: Solution["constraints"] | null;
+  branch_constraints?: Solution["branch_constraints"] | null;
 }
 
 /** Project the formulation-agnostic wire response onto the compact map result. */
@@ -2027,6 +2123,8 @@ export function solveResponseToSolution(
   out: SolutionResponseProjection,
 ): Solution {
   return {
+    ...(out.formulation !== undefined ? { formulation: out.formulation } : {}),
+    ...(out.status !== undefined ? { status: out.status } : {}),
     objective: out.objective ?? null,
     // Keep serialized compact results equal across direct struct responses
     // and commit envelopes, whose nested JSON keys arrive in sorted order.
@@ -2050,6 +2148,11 @@ export function solveResponseToSolution(
       branch: f.branch,
       mw: f.pf,
       loading: f.loading,
+      ...(f.uid !== undefined ? { uid: f.uid } : {}),
+      ...(f.loading_info !== undefined ? { loading_info: f.loading_info } : {}),
+      ...(f.qf !== undefined ? { qf: f.qf } : {}),
+      ...(f.pt !== undefined ? { pt: f.pt } : {}),
+      ...(f.qt !== undefined ? { qt: f.qt } : {}),
     })),
     dispatch: (out.dispatch ?? []).map((d) => ({
       gen: d.gen,
@@ -2057,6 +2160,10 @@ export function solveResponseToSolution(
       mw: d.pg,
     })),
     ...(out.diagnostics?.length ? { diagnostics: out.diagnostics } : {}),
+    ...(out.constraints != null ? { constraints: out.constraints } : {}),
+    ...(out.branch_constraints != null
+      ? { branch_constraints: out.branch_constraints }
+      : {}),
   };
 }
 
@@ -2917,6 +3024,10 @@ export interface EngineTransport {
     graph: DistGraph,
     options?: SchematicOptions,
   ): Promise<SchematicLayout>;
+  txSchematicLayout?(
+    input: TxLayoutInput,
+    options?: TxLayoutOptions,
+  ): Promise<TxLayout>;
   applyDisplayGeo(
     moduleJson: string,
     bytes: Uint8Array,
@@ -2987,6 +3098,7 @@ export const browserWasmTransport: EngineTransport = {
   applyLayout,
   extractGeo,
   mcSchematicLayout,
+  txSchematicLayout,
   applyDisplayGeo,
   capabilities,
   solveModule,

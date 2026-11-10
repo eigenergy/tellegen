@@ -1,6 +1,48 @@
 import { expect, it, vi } from "vitest";
-import { BrowserStudy } from "../src/index.js";
+import { BrowserStudy, solveResponseToSolution } from "../src/index.js";
 import type { EngineHost } from "../src/host.js";
+
+it("preserves AC endpoint quantities, utilization metadata and source identities", () => {
+  const loading_info = {
+    basis: "mva",
+    rating: 80,
+    rating_source: "stated",
+    limiting_end: "to",
+  } as const;
+  const projected = solveResponseToSolution({
+    formulation: "acpf",
+    status: "feasible",
+    flows: [
+      {
+        branch: 42,
+        uid: "line-a",
+        pf: 30,
+        qf: 40,
+        pt: -29,
+        qt: -42,
+        loading: 0.64,
+        loading_info,
+      },
+    ],
+  });
+  expect(projected).toMatchObject({ formulation: "acpf", status: "feasible" });
+  expect(projected.flows).toEqual([
+    {
+      branch: 42,
+      uid: "line-a",
+      mw: 30,
+      qf: 40,
+      pt: -29,
+      qt: -42,
+      loading: 0.64,
+      loading_info,
+    },
+  ]);
+  expect(
+    solveResponseToSolution({ flows: [{ branch: 91, pf: -10, loading: 0.1 }] })
+      .flows,
+  ).toEqual([{ branch: 91, mw: -10, loading: 0.1 }]);
+});
 
 it("keeps AC power-flow voltages and omits price requests for selected equipment", async () => {
   const solution = {

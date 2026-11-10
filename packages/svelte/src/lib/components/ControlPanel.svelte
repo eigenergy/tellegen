@@ -161,6 +161,17 @@
 					<NetworkStats />
 				{/if}
 
+				{#if ctrl.activeSolvable?.network && !app.activeMulti}
+					{@const c = ctrl.activeSolvable}
+					<button
+						class="reset diagram-toggle"
+						aria-pressed={c.schematic}
+						title="Single-line diagram: voltage levels, transformers and results on a plain canvas"
+						onclick={() => (c.schematic = !c.schematic)}
+						>{c.schematic ? 'Show map' : 'Show diagram'}</button
+					>
+				{/if}
+
 				{#if ctrl.activeSolvable}
 					<FormulationSelector />
 				{/if}
@@ -178,7 +189,8 @@
 					{@render selectionBlock()}
 				{/if}
 
-				{#if app.busSizing === 'power'}
+				<!-- The diagram does not size buses by power, so the map's size key would mislead. -->
+				{#if app.busSizing === 'power' && !ctrl.singleLineShown}
 					<hr />
 
 					<SizeLegend />
