@@ -1,5 +1,15 @@
 # @tellegen/engine
 
+## 0.9.0
+
+### Minor Changes
+
+- [#358](https://github.com/eigenergy/tellegen/pull/358) [`caffe32`](https://github.com/eigenergy/tellegen/commit/caffe32a4eb40d91253ff9b7a5f6ac20e6920c1c) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add equipment inventories, automatic regulator studies, detailed DC-grid power flow, coupled AC/DC studies and joint nonlinear AC/DC dispatch with explicit model limits and operating diagnostics.
+
+- [#357](https://github.com/eigenergy/tellegen/pull/357) [`78e2768`](https://github.com/eigenergy/tellegen/commit/78e27688f0ce715488e738a46dc438d1273ee0f6) Thanks [@samtalki](https://github.com/samtalki)! - Preserve synthetic grids' planned bus voltages and angles, validate AC power flow from that state, and report the successful initialization and fallback attempts in full and compact solve results.
+
+- [#300](https://github.com/eigenergy/tellegen/pull/300) [`bd39062`](https://github.com/eigenergy/tellegen/commit/bd3906247d1e322b2a0cde813de438d5b325204a) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add transmission substation grouping and geographic or stress-seeded schematic layouts. Preserve voltage bounds, endpoint flows, rating provenance, formulation/status and DC constraint economics in network and result payloads.
+
 ## 0.8.0
 
 ### Minor Changes

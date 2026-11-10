@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/engine",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Browser engine for case parsing, solves, Study previews and commits, and sensitivities.",
   "keywords": [
     "power-flow",
