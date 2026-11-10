@@ -87,11 +87,12 @@ pub mod tx_schematic;
 pub use api::solve_ac_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
-    validate_canonical_identity, AcOpfResiduals, BranchConstraintResult, BranchFlow, BranchLoading,
-    BranchScalar, BusInjection, BusScalar, ConstraintResult, ConstraintTerm, ConstraintTermKind,
-    Edits, ElementKey, GenDispatch, Iterations, LazyLimits, LimitOptions, LimitRound,
-    LinearConstraint, LoadingBasis, LoadingEnd, PowerFlowStart, Problem, ProblemCaps, RatingSource,
-    SolveRequest, SolveResponse, SolveStatus, ThermalLimits,
+    validate_canonical_identity, AcOpfResiduals, AcPfInitialization, AcPfStartStrategy,
+    BranchConstraintResult, BranchFlow, BranchLoading, BranchScalar, BusInjection, BusScalar,
+    ConstraintResult, ConstraintTerm, ConstraintTermKind, Edits, ElementKey, GenDispatch,
+    Iterations, LazyLimits, LimitOptions, LimitRound, LinearConstraint, LoadingBasis, LoadingEnd,
+    PowerFlowStart, Problem, ProblemCaps, RatingSource, SolveRequest, SolveResponse, SolveStatus,
+    ThermalLimits,
 };
 #[cfg(feature = "acopf")]
 pub use api::{solve_ac_opf_instance, solve_ac_opf_instance_cancellable};

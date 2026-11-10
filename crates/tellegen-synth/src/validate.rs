@@ -263,6 +263,7 @@ pub fn run_dc_opf(
                 ));
             }
             outcomes.push(IslandOutcome {
+                initialization: None,
                 index: idx,
                 buses: members.len(),
                 branches: 0,
@@ -314,6 +315,7 @@ pub fn run_dc_opf(
                     lmps.extend(l.iter().map(|b| b.value));
                 }
                 outcomes.push(IslandOutcome {
+                    initialization: None,
                     index: idx,
                     buses: members.len(),
                     branches: branch_count,
@@ -330,6 +332,7 @@ pub fn run_dc_opf(
                 any_infeasible = true;
                 first_message.get_or_insert(message.clone());
                 outcomes.push(IslandOutcome {
+                    initialization: None,
                     index: idx,
                     buses: members.len(),
                     branches: branch_count,
@@ -446,6 +449,7 @@ pub(crate) fn run_ac_pf_with_voltages(
     for (idx, members) in islands(&copy).iter().enumerate() {
         let Some(island) = island_network(&copy, members) else {
             outcomes.push(IslandOutcome {
+                initialization: None,
                 index: idx,
                 buses: members.len(),
                 branches: 0,
@@ -465,6 +469,7 @@ pub(crate) fn run_ac_pf_with_voltages(
             .and_then(|instance| {
                 let request = SolveRequest {
                     formulation: Problem::AcPf,
+                    start: tellegen::PowerFlowStart::Case,
                     ..Default::default()
                 };
                 tellegen::solve_ac_pf_instance(&instance, &request)
@@ -487,6 +492,7 @@ pub(crate) fn run_ac_pf_with_voltages(
                     residual = residual.max(*r);
                 }
                 outcomes.push(IslandOutcome {
+                    initialization: resp.initialization,
                     index: idx,
                     buses: members.len(),
                     branches: island.branch_rows.len(),
@@ -500,6 +506,7 @@ pub(crate) fn run_ac_pf_with_voltages(
                 any_failed = true;
                 first_message.get_or_insert(message.clone());
                 outcomes.push(IslandOutcome {
+                    initialization: None,
                     index: idx,
                     buses: members.len(),
                     branches: island.branch_rows.len(),

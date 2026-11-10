@@ -11,7 +11,7 @@ use std::sync::Arc;
 use powerio::geo::CoordsKind;
 use powerio::{BalancedNetwork, HistoryEntry, HistoryId, HistoryKind, PioModule, Producer};
 
-use crate::build::{build_network, BuiltNetwork};
+use crate::build::{apply_planning_angles, build_network, BuiltNetwork};
 use crate::calibrate::Calibrator;
 use crate::context::{resolve_context, ContextData};
 use crate::demand::{CountryAreas, NationalDemand};
@@ -611,6 +611,7 @@ impl Generator {
         let reactive = if self.state.osm.is_some() {
             crate::electrical::reactive::ReactivePlan {
                 shunts: Vec::new(),
+                angles: plan.angles.clone(),
                 angles_converged: true,
                 max_angle_difference_deg: 0.0,
             }
@@ -705,6 +706,14 @@ impl Generator {
             osm_ids.as_deref(),
             makeup.as_deref(),
         )?;
+        apply_planning_angles(
+            &mut built.net,
+            if reactive.angles_converged {
+                &reactive.angles
+            } else {
+                &plan.angles
+            },
+        );
         if self.state.osm.is_some() {
             let mut added = 0usize;
             for (k, branch) in branches.iter().enumerate() {
@@ -1073,6 +1082,7 @@ impl Generator {
             return Vec::new();
         }
         built.net.shunts_mut().clear();
+        apply_planning_angles(&mut built.net, &reactive.angles);
         let initial: Vec<DraftShunt> = reactive
             .shunts
             .iter()
@@ -1125,6 +1135,19 @@ impl Generator {
         let producer = Producer::new(PRODUCER_NAME, crate::VERSION)
             .map_err(|e| SynthError::Build(e.to_string()))?;
         let mut module = PioModule::new(net.clone()).with_producer(producer);
+        // Reopening the generated module in a Study/viewer should use the
+        // same stored-case start as validation. Explicit caller settings
+        // can still select a flat start through the common settings API.
+        if self.request.validation.run_ac_pf {
+            module
+                .insert_extension(
+                    "tellegen.calculation_settings",
+                    serde_json::json!({
+                        "version": 1, "calculation": "acpf", "overrides": { "start": "case" }
+                    }),
+                )
+                .map_err(|e| SynthError::Build(e.to_string()))?;
+        }
         let id = HistoryId::new(HISTORY_NAME).map_err(|e| SynthError::Build(e.to_string()))?;
         let mut parameters = BTreeMap::new();
         parameters.insert(

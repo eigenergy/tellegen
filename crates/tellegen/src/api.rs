@@ -343,6 +343,29 @@ pub enum PowerFlowStart {
     Case,
 }
 
+/// Initialization that produced a converged AC power flow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AcPfStartStrategy {
+    Case,
+    Flat,
+    Perturbed,
+}
+
+/// Successful AC initialization, including any fallback from the requested start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AcPfInitialization {
+    pub requested: PowerFlowStart,
+    pub used: AcPfStartStrategy,
+    /// Starts attempted, including the successful one (one-based).
+    pub attempts: usize,
+    /// Deterministic perturbation number (one-based), only for `perturbed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart: Option<usize>,
+}
+
 /// The one solve request: a formulation, an operating-point edit set, zero or more
 /// caller-supplied linear constraints, and zero or more sensitivity cells. A bare
 /// `{"formulation":"acpf"}` (or even `{}`, which defaults to DC OPF) is valid.
@@ -782,6 +805,9 @@ pub struct SolveResponse {
     pub objective: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iterations: Option<Iterations>,
+    /// Successful AC power-flow start. Absent for other formulations and legacy results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initialization: Option<AcPfInitialization>,
     /// Active nodal price when the solved OPF declares a network generator
     /// cost objective. Feasibility solves leave this absent.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1148,6 +1174,7 @@ fn ac_opf_assemble(
         })
         .collect();
     Ok(SolveResponse {
+        initialization: None,
         formulation: Problem::Acopf,
         // A locally converged nonconvex NLP is independently feasible, but
         // does not establish global optimality.
@@ -1429,6 +1456,7 @@ pub(crate) fn dc_opf_assemble(
     });
 
     Ok(SolveResponse {
+        initialization: None,
         formulation: Problem::DcOpf,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
@@ -1494,6 +1522,7 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     let sol = super::problem::dc_pf(&dc, &injection)?;
 
     Ok(SolveResponse {
+        initialization: None,
         formulation: Problem::DcPf,
         status: SolveStatus::Feasible,
         objective: None,
@@ -1573,6 +1602,7 @@ pub(crate) fn ac_pf_assemble(
     let sensitivities = run_cells(&super::sens::AcNewton::new(acnet, sol), &req.sensitivities)?;
 
     Ok(SolveResponse {
+        initialization: Some(sol.initialization),
         formulation: Problem::AcPf,
         status: SolveStatus::Feasible,
         objective: None,
@@ -1664,6 +1694,7 @@ pub(crate) fn socwr_assemble(
     };
 
     Ok(SolveResponse {
+        initialization: None,
         formulation: Problem::Socwr,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
@@ -4627,6 +4658,30 @@ mod tests {
 
         let warm = solve_ac_module(&network, r#"{"formulation":"acpf","start":"case"}"#);
         let cold = solve_ac_module(&network, r#"{"formulation":"acpf","start":"flat"}"#);
+        assert_eq!(
+            warm.initialization,
+            Some(AcPfInitialization {
+                requested: PowerFlowStart::Case,
+                used: AcPfStartStrategy::Case,
+                attempts: 1,
+                restart: None,
+            })
+        );
+        assert_eq!(
+            cold.initialization,
+            Some(AcPfInitialization {
+                requested: PowerFlowStart::Flat,
+                used: AcPfStartStrategy::Flat,
+                attempts: 1,
+                restart: None,
+            })
+        );
+        let mut legacy = serde_json::to_value(&warm).unwrap();
+        legacy.as_object_mut().unwrap().remove("initialization");
+        assert!(serde_json::from_value::<SolveResponse>(legacy)
+            .unwrap()
+            .initialization
+            .is_none());
         assert!(
             newton_count(&warm) <= 2,
             "case start took {} iterations",

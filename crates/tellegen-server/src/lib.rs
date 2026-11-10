@@ -450,6 +450,8 @@ pub struct SolutionPayload {
     pub formulation: tellegen::Problem,
     pub status: tellegen::SolveStatus,
     pub objective: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initialization: Option<tellegen::AcPfInitialization>,
     pub prices: Vec<PriceValue>,
     pub va: Vec<ScalarValue>,
     pub w: Vec<ScalarValue>,
@@ -1695,6 +1697,7 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
         constraints: resp.constraints.clone(),
         branch_constraints: resp.branch_constraints.clone(),
         status: resp.status,
+        initialization: resp.initialization,
         objective: resp.objective.unwrap_or(0.0),
         prices: resp
             .lmp

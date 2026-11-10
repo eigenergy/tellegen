@@ -214,6 +214,10 @@ def sweep_row(spec, report, references, tolerance):
         'dc_message': dc.get('message'),
         'ac_pf': ac.get('status'),
         'ac_message': ac.get('message'),
+        'ac_solve_ms': ac.get('solve_ms'),
+        'ac_iterations': ac.get('newton_iterations'),
+        'ac_residual': ac.get('residual'),
+        'ac_initializations': [i.get('initialization') for i in ac.get('islands', [])],
         'vm': [ac.get('vm_min'), ac.get('vm_max')],
         'valid': (dc.get('status') == 'optimal' and ac.get('status') == 'converged'
                   and ac.get('vm_min') is not None and 0.9 <= ac['vm_min'] and ac['vm_max'] <= 1.1),

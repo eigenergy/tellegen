@@ -1,5 +1,11 @@
 # Synthetic Generation Evidence
 
+The 9 November [AC warm-start evaluation](warm-start-262/README.md) reruns
+the same 105 country requests before and after preserving the planning
+state. It records convergence, AC solve times, numerical comparisons and
+a separate restart-policy experiment. The tables below retain the earlier
+release-audit results.
+
 The country sweeps and California scorecards were refreshed on 7 November 2026
 with the mapped-grid reinforcement repair. `refresh-2026-11.json` records the
 engine source, executable hash and California OpenStreetMap input hash. The
