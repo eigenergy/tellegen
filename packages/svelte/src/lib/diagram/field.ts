@@ -55,17 +55,22 @@ export function fieldImage(
 	const width = Math.max(2, Math.round(spanX * scale));
 	const height = Math.max(2, Math.round(spanY * scale));
 
-	// Bucket the points in cells one reach wide, so each pixel checks its 3 × 3 neighbourhood.
-	const cols = Math.max(1, Math.ceil(spanX / reach));
-	const rows = Math.max(1, Math.ceil(spanY / reach));
+	// Keep the spatial index no finer than the image. A sparse drawing can span many
+	// kilometres while its typical branch (or the branchless fallback) is tiny; a
+	// reach-sized grid would then allocate for the empty space between its buses.
+	// Cells remain at least one reach wide, so the same 3 × 3 neighbourhood and
+	// exact distance check still find every point that can contribute to a pixel.
+	const cellSize = Math.max(reach, Math.max(spanX, spanY) / maxSize);
+	const cols = Math.max(1, Math.ceil(spanX / cellSize));
+	const rows = Math.max(1, Math.ceil(spanY / cellSize));
 	const head = new Int32Array(cols * rows).fill(-1);
 	const next = new Int32Array(n).fill(-1);
 	for (let i = 0; i < n; i++) {
 		const x = positions[i * 3],
 			y = positions[i * 3 + 1];
 		if (!Number.isFinite(values[i]) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-		const c = Math.min(cols - 1, Math.floor((x - x0) / reach));
-		const r = Math.min(rows - 1, Math.floor((y - y0) / reach));
+		const c = Math.min(cols - 1, Math.floor((x - x0) / cellSize));
+		const r = Math.min(rows - 1, Math.floor((y - y0) / cellSize));
 		next[i] = head[r * cols + c];
 		head[r * cols + c] = i;
 	}
@@ -74,10 +79,10 @@ export function fieldImage(
 	const reach2 = reach * reach;
 	for (let py = 0; py < height; py++) {
 		const y = y0 + ((py + 0.5) / height) * spanY;
-		const r = Math.min(rows - 1, Math.floor((y - y0) / reach));
+		const r = Math.min(rows - 1, Math.floor((y - y0) / cellSize));
 		for (let px = 0; px < width; px++) {
 			const x = x0 + ((px + 0.5) / width) * spanX;
-			const c = Math.min(cols - 1, Math.floor((x - x0) / reach));
+			const c = Math.min(cols - 1, Math.floor((x - x0) / cellSize));
 			let sum = 0,
 				weight = 0,
 				nearest = Infinity;

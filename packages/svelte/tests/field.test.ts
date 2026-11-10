@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	voltageBandPosition,
 	fieldImage,
@@ -41,6 +41,65 @@ describe('bus value field', () => {
 		// The missing bus neither shades nor extends the image.
 		expect(img.bounds).toEqual([5, -5, 15, 5]);
 		expect(pixel(img, 10, 0)[0]).toBe(100);
+	});
+
+	it.each([1, 1_000_000])('bounds the index for widely separated buses at y=%s', (y) => {
+		const budget = 320 * 320;
+		const allocations: number[] = [];
+		// Fail before a regression can allocate terabytes of empty spatial cells.
+		vi.stubGlobal(
+			'Int32Array',
+			new Proxy(Int32Array, {
+				construct(Target, [length]) {
+					allocations.push(length);
+					if (length > budget) throw new Error(`Unbounded field index: ${length} cells`);
+					return new Target(length);
+				}
+			})
+		);
+		try {
+			const positions = Float32Array.from([0, 0, 0, 1_000_000, y, 0]);
+			const img = fieldImage(positions, [0, 200], grey, { reach: 1.4, maxSize: 320 })!;
+			expect(img.width).toBeLessThanOrEqual(320);
+			expect(img.height).toBeLessThanOrEqual(320);
+			expect(img.data.length).toBe(img.width * img.height * 4);
+			expect(Math.max(...allocations)).toBeLessThanOrEqual(budget);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('keeps the exact reach and interpolation when the index cells are coarser', () => {
+		const positions = Float32Array.from([0, 0, 0, 49, 0, 0, 49.5, 0, 0, 1000, 0, 0]);
+		const values = [0, 100, 200, 250];
+		const reach = 1;
+		const img = fieldImage(positions, values, grey, { reach, maxSize: 10 })!;
+		const [x0, y0, x1, y1] = img.bounds;
+		const expected = new Uint8ClampedArray(img.data.length);
+		// Independent all-points interpolation: spatial bucketing must not alter a pixel.
+		for (let py = 0; py < img.height; py++) {
+			for (let px = 0; px < img.width; px++) {
+				const x = x0 + ((px + 0.5) / img.width) * (x1 - x0);
+				const y = y0 + ((py + 0.5) / img.height) * (y1 - y0);
+				let sum = 0,
+					weight = 0,
+					nearest = Infinity;
+				values.forEach((value, i) => {
+					const distance2 = (positions[i * 3] - x) ** 2 + (positions[i * 3 + 1] - y) ** 2;
+					if (distance2 > reach ** 2) return;
+					const w = 1 / Math.max(distance2, 1e-12);
+					sum += value * w;
+					weight += w;
+					nearest = Math.min(nearest, distance2);
+				});
+				if (!weight) continue;
+				const value = sum / weight;
+				const alpha = Math.round(200 * Math.min(1, 2 * (1 - Math.sqrt(nearest) / reach)));
+				expected.set([value, value, value, alpha], (py * img.width + px) * 4);
+			}
+		}
+		expect(expected.some((value) => value > 0)).toBe(true);
+		expect(img.data).toEqual(expected);
 	});
 
 	it('shades voltage by its place in the bus band: clear mid-band, strong at a limit', () => {
