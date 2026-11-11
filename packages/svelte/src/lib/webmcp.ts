@@ -375,6 +375,7 @@ function displayedCase(ctrl: Controller, expectedCaseId?: string): ReadCase {
 		ratings: {},
 		solution: result
 			? {
+					branch_susceptance_formula: result.branch_susceptance_formula ?? undefined,
 					objective: result.objective ?? null,
 					prices: result.lmp ?? [],
 					va: result.va ?? [],
@@ -523,6 +524,9 @@ function requireRevision(c: SolvableCase, expected: string): void {
 
 function solutionPayload(c: SolvableCase): ToolPayload {
 	return {
+		...(c.solution?.branch_susceptance_formula
+			? { branch_susceptance_formula: c.solution.branch_susceptance_formula }
+			: {}),
 		objective: finite(c.solution?.objective),
 		base_objective: finite(c.baseSolution?.objective),
 		objective_delta: finite(

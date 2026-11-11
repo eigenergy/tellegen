@@ -41,7 +41,12 @@ it('saved settings read as overrides of the engine defaults, dropping options th
 	expect(recorded).toEqual({
 		calculation: 'dcopf',
 		overrides: { thermal: 'rated' },
-		effective: { angle_difference: true, lazy: null, thermal: 'rated' },
+		effective: {
+			angle_difference: true,
+			branch_susceptance_formula: null,
+			lazy: null,
+			thermal: 'rated'
+		},
 		ignored: ['future_option']
 	});
 	// Unknown record versions and the unreleased full-effective shape are not read.

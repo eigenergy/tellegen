@@ -44,8 +44,8 @@ pub fn solve_dc_opf_instance(
 /// demand, and the two branch columns are the nonnegative multipliers on the
 /// positive and negative thermal flow bounds.
 ///
-/// `dc` must be the model [`DcNetwork::from_network`] built from
-/// `instance.network()`; the source row maps are what align the dense
+/// `dc` must be the model [`DcNetwork::from_instance`] built from
+/// the same instance; the source row maps are what align the dense
 /// columns with the instance's tables.
 pub fn emit_dc_opf_solution(
     instance: Arc<DcOpfInstance>,

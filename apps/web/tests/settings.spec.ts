@@ -181,3 +181,33 @@ test('partial lazy options agree with accepted settings and remain clean when sw
 	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
 	await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
 });
+
+test('DC conventions share common settings and can return to the input default', async ({
+	page
+}) => {
+	await page.locator('header input[type=file]').setInputFiles([
+		{ name: 'case14.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
+		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
+	]);
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	const panel = page.getByRole('region', { name: 'Common settings' });
+	const convention = panel.getByRole('combobox', { name: 'DC convention', exact: true });
+	await expect(convention).toHaveValue('null');
+	for (const [selected, resolved] of [
+		['reactance_only', 'reactance_only'],
+		['null', 'series_susceptance']
+	]) {
+		await convention.selectOption(selected);
+		await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
+		await expect
+			.poll(async () => (await tool(page, 'inspect_case')).data.solution)
+			.toMatchObject({
+				branch_susceptance_formula: resolved
+			});
+		const settings = await tool(page, 'inspect_settings');
+		expect(settings.data.accepted).toMatchObject({
+			branch_susceptance_formula: selected === 'null' ? null : selected
+		});
+	}
+});

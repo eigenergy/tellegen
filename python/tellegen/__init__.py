@@ -28,6 +28,7 @@ PANIC_CODE = _tellegen.PANIC_CODE
 __version__ = _tellegen.__version__
 
 __all__ = [
+    "DC_FORMULAS",
     "PANIC_CODE",
     "Case",
     "TellegenError",
@@ -45,6 +46,13 @@ __all__ = [
 #: Formulations this build can solve. `acopf` is a wire-stable tag that is never
 #: available; it is deliberately absent here.
 FORMULATIONS = ("dcpf", "dcopf", "acpf", "socwr")
+DC_FORMULAS = (
+    "series_susceptance",
+    "series_susceptance_no_phase_shift",
+    "tap_adjusted_reactance",
+    "tap_adjusted_series_susceptance",
+    "reactance_only",
+)
 
 # Extension -> PowerIO format token. `.epc` is PSLF, whose token is not its
 # extension; everything else is spelled the same as the suffix.
@@ -108,7 +116,12 @@ def versions() -> Dict[str, str]:
 
 
 @guard
-def load(source: _PathLike, *, format: Optional[str] = None) -> "Case":
+def load(
+    source: _PathLike,
+    *,
+    format: Optional[str] = None,
+    branch_susceptance_formula: Optional[str] = None,
+) -> "Case":
     """Read a case file and solve it.
 
     `source` is a path. The format is inferred from the extension unless
@@ -119,11 +132,16 @@ def load(source: _PathLike, *, format: Optional[str] = None) -> "Case":
     token = _format_for(path, format)
     with open(path, "rb") as handle:
         raw = handle.read()
-    return load_ir(_tellegen.parse_case(raw, token))
+    return load_ir(
+        _tellegen.parse_case(raw, token),
+        branch_susceptance_formula=branch_susceptance_formula,
+    )
 
 
 @guard
-def load_ir(module_json: str) -> "Case":
+def load_ir(
+    module_json: str, *, branch_susceptance_formula: Optional[str] = None
+) -> "Case":
     """Wrap a stored PowerIO `pio-ir` module that is already in hand.
 
     This is the boundary the engine speaks, so it is also how a module produced
@@ -131,7 +149,7 @@ def load_ir(module_json: str) -> "Case":
     """
     if not isinstance(module_json, str):
         raise TellegenInputError("module_json must be a str of PowerIO IR")
-    return Case(module_json)
+    return Case(module_json, branch_susceptance_formula=branch_susceptance_formula)
 
 
 @guard_class
@@ -143,14 +161,28 @@ class Case:
     state as once, not 100 MW. `reset()` returns to the base case.
     """
 
-    __slots__ = ("_module_json", "_formulation", "_demand", "_ratings", "_solution")
+    __slots__ = (
+        "_module_json",
+        "_formulation",
+        "_demand",
+        "_ratings",
+        "_solution",
+        "_branch_susceptance_formula",
+    )
 
-    def __init__(self, module_json: str, formulation: str = "dcopf") -> None:
+    def __init__(
+        self,
+        module_json: str,
+        formulation: str = "dcopf",
+        *,
+        branch_susceptance_formula: Optional[str] = None,
+    ) -> None:
         self._module_json = module_json
         self._formulation = self._checked_formulation(formulation)
         self._demand: Dict[str, float] = {}
         self._ratings: Dict[str, float] = {}
         self._solution: Optional[Dict[str, Any]] = None
+        self.branch_susceptance_formula = branch_susceptance_formula
 
     @staticmethod
     def _checked_formulation(name: str) -> str:
@@ -175,6 +207,18 @@ class Case:
             self._solution = None
 
     @property
+    def branch_susceptance_formula(self) -> Optional[str]:
+        """DC convention; None inherits the instance or the legacy network default."""
+        return self._branch_susceptance_formula
+
+    @branch_susceptance_formula.setter
+    def branch_susceptance_formula(self, name: Optional[str]) -> None:
+        if name is not None and name not in DC_FORMULAS:
+            raise TellegenInputError(f"unknown branch_susceptance_formula {name!r}")
+        self._branch_susceptance_formula = name
+        self._solution = None
+
+    @property
     def module_json(self) -> str:
         """The stored PowerIO module, as the engine received it."""
         return self._module_json
@@ -188,6 +232,8 @@ class Case:
 
     def _request(self, sensitivities: Optional[Sequence[Mapping[str, Any]]]) -> str:
         request: Dict[str, Any] = {"formulation": self._formulation}
+        if self._branch_susceptance_formula is not None:
+            request["branch_susceptance_formula"] = self._branch_susceptance_formula
         edits: Dict[str, Any] = {}
         if self._demand:
             edits["deltas"] = self._demand

@@ -24,7 +24,7 @@ export interface SettingDescriptor {
   group: string;
   type: string;
   default: unknown;
-  choices?: readonly string[];
+  choices?: readonly (string | null)[];
   minimum?: number;
   maximum?: number;
   exclusive_minimum?: number;

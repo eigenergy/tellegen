@@ -85,3 +85,17 @@ and source archive that passed the Python gates.
   the optional `tellegen.mcp` server.
 - `python/tests/`: pytest suites run against the installed wheel in CI on
   Python 3.11 and 3.13, with wheels built for Linux, macOS, and Windows.
+
+## DC branch conventions
+
+```python
+case = tellegen.load("case.m", branch_susceptance_formula="series_susceptance_no_phase_shift")
+result = case.solve()
+assert result["branch_susceptance_formula"] == "series_susceptance_no_phase_shift"
+case.branch_susceptance_formula = "tap_adjusted_reactance"
+```
+
+Changing the property invalidates the cached solution; demand/rating edits and
+reset retain it. `None` inherits a typed instance's convention or the legacy
+network default. The engine rejects conflicts with typed instances and rejects
+DC options for AC solves. See the [optimality compatibility matrix](dc-compatibility.md).

@@ -9,6 +9,12 @@ Supported implicit derivatives use the interface described in
 
 ## DC power flow and DC OPF (B–θ)
 
+The default is unchanged. Select an explicit branch convention to match
+PowerModels DCP/PGLib DC or MATPOWER/PowerModels DCMP; see the
+[optimality compatibility matrix](dc-compatibility.md).
+Phase-shifting variants include an affine branch flow and nodal injection term
+in addition to the angle-dependent matrix below.
+
 The linearized power flow couples bus angles $\theta$ to injections through the
 susceptance-weighted graph Laplacian
 

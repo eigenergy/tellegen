@@ -17,7 +17,9 @@ import tellegen
 
 # docs/evidence/studies/case3.m: a three-bus MATPOWER case already in the repo, small
 # enough to reason about and congested once demand moves.
-CASE3 = Path(__file__).resolve().parents[2] / "docs" / "evidence" / "studies" / "case3.m"
+CASE3 = (
+    Path(__file__).resolve().parents[2] / "docs" / "evidence" / "studies" / "case3.m"
+)
 
 
 @pytest.fixture(scope="module")
@@ -275,6 +277,33 @@ def test_a_bad_study_timeout_is_refused_before_any_work(tmp_path, seconds):
 
     missing = str(tmp_path / "absent.study.json")
     with pytest.raises(TellegenInputError) as caught:
-        _tellegen.study_run(missing, '{"expected_revision": 0, "operation": {"kind": "inspect", "state": "s"}}', seconds)
+        _tellegen.study_run(
+            missing,
+            '{"expected_revision": 0, "operation": {"kind": "inspect", "state": "s"}}',
+            seconds,
+        )
     assert caught.value.code == "REQUEST.MALFORMED"
     assert "timeout_seconds" in str(caught.value)
+
+
+@pytest.mark.parametrize("formula", tellegen.DC_FORMULAS)
+def test_explicit_dc_formula_survives_edits_and_reset(formula):
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "crates/tellegen/tests/data/dc_variants/case3_variants.m"
+    )
+    case = tellegen.load(source, branch_susceptance_formula=formula)
+    assert case.solve()["branch_susceptance_formula"] == formula
+    assert case.update(demand={2: 0.01})["branch_susceptance_formula"] == formula
+    assert case.reset()["branch_susceptance_formula"] == formula
+    case.formulation = "acpf"
+    with pytest.raises(tellegen.TellegenError, match="only supported"):
+        case.solve()
+
+
+def test_dc_formula_change_invalidates_cached_result(case):
+    case.solve()
+    case.branch_susceptance_formula = "tap_adjusted_reactance"
+    assert case.solution["branch_susceptance_formula"] == "tap_adjusted_reactance"
+    with pytest.raises(tellegen.TellegenInputError, match="unknown"):
+        case.branch_susceptance_formula = "not_a_formula"

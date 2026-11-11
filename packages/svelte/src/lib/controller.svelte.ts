@@ -1,3 +1,4 @@
+import type { DcFormula } from '@tellegen/engine';
 import { ApiError, createApiClient, type TellegenApiClient } from './api.js';
 import type {
 	BranchRatingDeltas,
@@ -1279,7 +1280,10 @@ export class Controller {
 				// The server caches only the DC OPF base solution. Other formulations
 				// must hydrate from the browser Study so their objective, nodal values, flows, and
 				// voltage fields all come from the selected formulation.
-				requestedFormulation === 'dcopf' ? api.getSolution(c.id) : Promise.resolve(null)
+				requestedFormulation === 'dcopf' &&
+				(!c.branchSusceptanceFormula || c.branchSusceptanceFormula === 'series_susceptance')
+					? api.getSolution(c.id)
+					: Promise.resolve(null)
 			]);
 			if (!this.app.byId(c.id)) return;
 			c.network = network;
@@ -1568,7 +1572,12 @@ export class Controller {
 	};
 
 	private caseEditKey(c: SolvableCase): string {
-		return JSON.stringify([c.formulation, this.caseDeltas(c), this.caseRatings(c)]);
+		return JSON.stringify([
+			c.formulation,
+			c.branchSusceptanceFormula,
+			this.caseDeltas(c),
+			this.caseRatings(c)
+		]);
 	}
 
 	private async localSidecarCopy(source: CaseState): Promise<LocalCase> {
@@ -1585,6 +1594,11 @@ export class Controller {
 			name: `${source.name} (local copy)`
 		});
 		copy.formulation = source.formulation;
+		copy.settings.calculation = source.settings.calculation;
+		copy.settings.accepted = source.settings.accepted;
+		copy.settings.baselines = JSON.parse(JSON.stringify(source.settings.baselines));
+		copy.settings.options = JSON.parse(JSON.stringify(source.settings.options));
+		copy.settings.resolved = JSON.parse(JSON.stringify(source.settings.resolved));
 		copy.deltas = { ...source.deltas };
 		copy.ratings = { ...source.ratings };
 		copy.solution = source.solution;
@@ -1858,7 +1872,12 @@ export class Controller {
 					handled = true;
 				}
 			}
-			if (!handled && !ac.signal.aborted && c.formulation === 'dcopf') {
+			if (
+				!handled &&
+				!ac.signal.aborted &&
+				c.formulation === 'dcopf' &&
+				(!c.branchSusceptanceFormula || c.branchSusceptanceFormula === 'series_susceptance')
+			) {
 				if (this.hasRatingEdits(c)) {
 					// The server solves at base ratings, so its column would come from the
 					// wrong operating point once rating edits are committed. Fail instead
@@ -1896,6 +1915,10 @@ export class Controller {
 		ac: AbortController,
 		sensitivitySeq: number
 	) => {
+		if (c.branchSusceptanceFormula && c.branchSusceptanceFormula !== 'series_susceptance') {
+			this.fail('Sensitivity for the selected DC variant requires the browser engine.');
+			return;
+		}
 		const retryOp =
 			'bus' in target
 				? () => this.selectBus(c.id, target.bus)
@@ -2362,6 +2385,28 @@ export class Controller {
 		if (this.app.selectedBus !== null) this.setNearbyRangeAnchor(c, this.app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
 		this.runSolve(c, this.selectionTarget);
+	};
+
+	/** Change the convention through the same settings path as WebMCP. */
+	changeDcFormula = async (c: SolvableCase, next: DcFormula) => {
+		if (c.solution?.branch_susceptance_formula === next) return;
+		if (c instanceof LocalCase && c.declaredFormulation) {
+			this.fail(
+				'The imported instance owns its DC convention. Select a network input to change it.'
+			);
+			return;
+		}
+		try {
+			await this.updateSettings(
+				c,
+				'dcopf',
+				{ branch_susceptance_formula: next },
+				c.settings.revision
+			);
+			await this.runSettings(c);
+		} catch (error) {
+			this.fail(error instanceof Error ? error.message : String(error));
+		}
 	};
 
 	/** Read selected next-run settings without changing a result or starting work. */
@@ -3797,7 +3842,13 @@ export class Controller {
 			);
 		}
 		const api = this.api;
-		if (c instanceof CaseState && c.solution && c.formulation === 'dcopf' && api?.getSavedCase) {
+		if (
+			c instanceof CaseState &&
+			c.solution &&
+			c.formulation === 'dcopf' &&
+			(!c.branchSusceptanceFormula || c.branchSusceptanceFormula === 'series_susceptance') &&
+			api?.getSavedCase
+		) {
 			const snapshot = await api.getSavedCase(c.id);
 			if (snapshot.base_input !== base || !sameSolution(snapshot.display_solution, c.solution))
 				throw new Error('The server case changed. Reload it before saving.');
@@ -3806,6 +3857,15 @@ export class Controller {
 				solution: snapshot.solution,
 				view: snapshot.view
 			};
+		}
+		if (
+			c.formulation === 'dcopf' &&
+			c.branchSusceptanceFormula &&
+			c.branchSusceptanceFormula !== 'series_susceptance'
+		) {
+			throw new Error(
+				'The selected DC variant has no matching saved result. Finish solving before saving it.'
+			);
 		}
 		return { input: base };
 	}

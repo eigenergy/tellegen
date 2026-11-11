@@ -600,6 +600,17 @@
             "null"
           ]
         },
+        "branch_susceptance_formula": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DcFormula"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "decisions": {
           "anyOf": [
             {
@@ -697,6 +708,36 @@
         "formulation"
       ],
       "type": "object"
+    },
+    "DcFormula": {
+      "description": "The complete DC convention, including taps and phase shifts.",
+      "oneOf": [
+        {
+          "const": "series_susceptance",
+          "description": "Legacy Tellegen: series susceptance with shifts, ignoring taps.",
+          "type": "string"
+        },
+        {
+          "const": "tap_adjusted_reactance",
+          "description": "MATPOWER / PowerModels DCMP: ignore resistance, include taps and shifts.",
+          "type": "string"
+        },
+        {
+          "const": "reactance_only",
+          "description": "Textbook 1/x, ignoring taps and shifts.",
+          "type": "string"
+        },
+        {
+          "const": "tap_adjusted_series_susceptance",
+          "description": "Ignore conductance: series susceptance divided by tap, with shifts.",
+          "type": "string"
+        },
+        {
+          "const": "series_susceptance_no_phase_shift",
+          "description": "PowerModels DCP (PGLib DC baseline): ignore taps and shifts.",
+          "type": "string"
+        }
+      ]
     },
     "DecisionKind": {
       "enum": [
@@ -1986,6 +2027,17 @@
             "null"
           ]
         },
+        "branch_susceptance_formula": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DcFormula"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Resolved DC convention; absent for AC results and older saved responses."
+        },
         "constraints": {
           "description": "The request's linear constraints, in request order (dcopf). Absent when\nthe request stated none.",
           "items": {
@@ -2988,5 +3040,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "af30ba41d9fbdcf4e2b6b34b3f18be17ca525c942863dd5020eaff92508b9f88"
+  "x-rust-source-sha256": "a920bfd545144bcc69b9bb1ad18597189c3b45034421aefac8aa0fa36673b5d6"
 }

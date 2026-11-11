@@ -21,6 +21,7 @@ fn main() {
         include_str!("../src/exploration.rs"),
         include_str!("../src/study_ops.rs"),
         include_str!("../src/api.rs"),
+        include_str!("../src/dc_formula.rs"),
         include_str!("../src/sens/interface.rs"),
         include_str!("../src/solve.rs"),
     ];

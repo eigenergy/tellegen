@@ -27,6 +27,7 @@
 - [Architecture](architecture.md)
   - [Release Architecture](release-architecture.md)
   - [Formulations](formulations.md)
+  - [DC variant compatibility](dc-compatibility.md)
   - [Sensitivity interface](sensitivity-interface.md)
   - [Methodology](methodology.md)
   - [Validation](validation.md)

@@ -1,3 +1,5 @@
+import type { DcFormula } from "./generated/api-types.js";
+export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 import type { DcGrid, DcGridSolution } from "./dc-grid.js";
 export type { DcGrid, DcGridSolution } from "./dc-grid.js";
 export * from "./settings.js";
@@ -2144,6 +2146,7 @@ function sensitivityColumn(
 }
 
 export interface SolutionResponseProjection {
+  branch_susceptance_formula?: DcFormula | null;
   formulation?: string;
   status?: string;
   initialization?: AcPfInitialization | null;
@@ -2164,6 +2167,7 @@ export function solveResponseToSolution(
   out: SolutionResponseProjection,
 ): Solution {
   return {
+    branch_susceptance_formula: out.branch_susceptance_formula ?? undefined,
     ...(out.formulation !== undefined ? { formulation: out.formulation } : {}),
     ...(out.status !== undefined ? { status: out.status } : {}),
     objective: out.objective ?? null,
@@ -2536,18 +2540,35 @@ export async function createStudy(
   options: {
     isolated?: boolean;
     signal?: AbortSignal;
+    branch_susceptance_formula?: DcFormula;
     settings?: import("./settings.js").SettingsRequest;
   } = {},
 ): Promise<BrowserStudy> {
   if (options.settings && options.settings.calculation !== formulation)
     throw new Error("Settings calculation must match the Study formulation");
+  let settings = options.settings;
+  if (options.branch_susceptance_formula !== undefined) {
+    const explicit = settings?.overrides?.branch_susceptance_formula;
+    if (explicit != null && explicit !== options.branch_susceptance_formula)
+      throw new Error(
+        "Conflicting DC conventions in Study options and settings",
+      );
+    settings = {
+      ...settings,
+      calculation: formulation,
+      overrides: {
+        ...settings?.overrides,
+        branch_susceptance_formula: options.branch_susceptance_formula,
+      },
+    };
+  }
   const host = options.isolated ? isolatedEngineHost() : engineHost();
   return createStudyOnHost(
     moduleJson,
     formulation,
     host,
     options.signal,
-    options.settings,
+    settings,
     !!options.isolated,
   );
 }

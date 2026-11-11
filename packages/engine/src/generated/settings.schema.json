@@ -125,6 +125,7 @@
         "calculation": "dcopf",
         "defaults": {
           "angle_difference": true,
+          "branch_susceptance_formula": null,
           "lazy": null,
           "thermal": "all"
         },
@@ -136,6 +137,23 @@
             "key": "angle_difference",
             "label": "Enforce angle-difference limits",
             "type": "boolean",
+            "unit": ""
+          },
+          {
+            "choices": [
+              null,
+              "series_susceptance",
+              "tap_adjusted_reactance",
+              "reactance_only",
+              "tap_adjusted_series_susceptance",
+              "series_susceptance_no_phase_shift"
+            ],
+            "default": null,
+            "description": "null inherits the typed instance or legacy network default; an explicit convention must match a typed instance.",
+            "group": "model",
+            "key": "branch_susceptance_formula",
+            "label": "DC convention",
+            "type": "enum",
             "unit": ""
           },
           {
@@ -183,8 +201,28 @@
       {
         "available": true,
         "calculation": "dcpf",
-        "defaults": {},
-        "fields": []
+        "defaults": {
+          "branch_susceptance_formula": null
+        },
+        "fields": [
+          {
+            "choices": [
+              null,
+              "series_susceptance",
+              "tap_adjusted_reactance",
+              "reactance_only",
+              "tap_adjusted_series_susceptance",
+              "series_susceptance_no_phase_shift"
+            ],
+            "default": null,
+            "description": "null inherits the typed instance or legacy network default; an explicit convention must match a typed instance.",
+            "group": "model",
+            "key": "branch_susceptance_formula",
+            "label": "DC convention",
+            "type": "enum",
+            "unit": ""
+          }
+        ]
       },
       {
         "available": true,
@@ -368,5 +406,5 @@
     "title": "Contract",
     "type": "object"
   },
-  "x-rust-source-sha256": "0b15d3c9a1c5cfdd7f8c4870729b7989abe976b94173cda0df7f53a8cfc22bb5"
+  "x-rust-source-sha256": "3b4631051d007fd2f54038fdc89fcb8aa795564dc1032c1442aac5043ca5d480"
 }

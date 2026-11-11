@@ -220,8 +220,15 @@
 		{:else if field.type === 'enum'}
 			<select
 				value={String(draft[field.key])}
-				onchange={(e) => (draft = { ...draft, [field.key]: e.currentTarget.value })}
-				>{#each field.choices ?? [] as choice (choice)}<option value={choice}>{choice}</option
+				onchange={(e) =>
+					(draft = {
+						...draft,
+						[field.key]: (field.choices ?? []).find(
+							(choice) => String(choice) === e.currentTarget.value
+						)
+					})}
+				>{#each field.choices ?? [] as choice (choice)}<option value={String(choice)}
+						>{choice ?? 'Use input default'}</option
 					>{/each}</select
 			>
 		{:else}
