@@ -1,5 +1,6 @@
 {
   "reference_reversed_branch_count": 0,
+  "reference_reversed_nonunity_branches": [],
   "reactance_only": {
     "dcpf": {
       "actual_status": "feasible",
@@ -17,6 +18,10 @@
       "flow_pu": 3.070432796903333e-11,
       "angle_rad": 3.991553615412258e-12,
       "dispatch_pu": 5.2895798852148346e-11,
+      "actual_objective": 1005.004970465644,
+      "reference_objective": 1005.0049704143829,
+      "objective_absolute_gap": 5.12610540681635e-08,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 5.100577168989282e-11,
       "lmp_per_mw": 7.956373337947298e-10
     },
@@ -100,6 +105,10 @@
       "flow_pu": 1.4155343563970746e-13,
       "angle_rad": 1.8509499488672532e-14,
       "dispatch_pu": 2.389199948993337e-13,
+      "actual_objective": 788.7962790069305,
+      "reference_objective": 788.7962790070874,
+      "objective_absolute_gap": 1.5688783605583012e-10,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 1.9889525373181998e-13,
       "lmp_per_mw": 9.013234603116871e-11
     },
@@ -183,6 +192,10 @@
       "flow_pu": 3.7947894826473316e-11,
       "angle_rad": 4.962405486530486e-12,
       "dispatch_pu": 6.354761161730949e-11,
+      "actual_objective": 1004.5219734041984,
+      "reference_objective": 1004.5219733426514,
+      "objective_absolute_gap": 6.154698439786443e-08,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 6.126992343737433e-11,
       "lmp_per_mw": 1.0301519637323509e-09
     },
@@ -266,6 +279,10 @@
       "flow_pu": 3.398392678377604e-13,
       "angle_rad": 4.417646803922537e-14,
       "dispatch_pu": 5.733191699164308e-13,
+      "actual_objective": 772.5411622736443,
+      "reference_objective": 772.5411622732952,
+      "objective_absolute_gap": 3.4913227864308283e-10,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 4.5192708905726026e-13,
       "lmp_per_mw": 9.349676588499278e-11
     },
@@ -349,6 +366,10 @@
       "flow_pu": 2.958744360626042e-14,
       "angle_rad": 3.864963904476326e-15,
       "dispatch_pu": 5.10702591327572e-14,
+      "actual_objective": 771.9389351003263,
+      "reference_objective": 771.9389351003603,
+      "objective_absolute_gap": 3.399236447876319e-11,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 4.4035043360449004e-14,
       "lmp_per_mw": 1.0578204978628492e-10
     },
@@ -415,7 +436,7 @@
       "objective": 0.0
     }
   },
-  "ac_flat_slope_max_error": 4.4989079128754383e-10,
+  "unit_voltage_phase_compensated_ac_slope_max_error": 4.4989079128754383e-10,
   "ac_pf": {
     "status": "LOCALLY_SOLVED",
     "converged": true,
@@ -450,10 +471,119 @@
     },
     "objective": 736.7495518130046
   },
+  "ac_opf_operating_point": {
+    "status": "LOCALLY_SOLVED",
+    "converged": true,
+    "coordinate_system": "PowerModels parsed branch orientation and impedance reference side",
+    "note": "All equations evaluated at the same local AC OPF voltages and angles; not independently solved DC dispatches or a universal accuracy ranking.",
+    "distributions": {
+      "tau": {
+        "count": 1,
+        "min": 1.1,
+        "median": 1.1,
+        "max": 1.1,
+        "mean": 1.1
+      },
+      "rho": {
+        "count": 1,
+        "min": 1.0960121561955576,
+        "median": 1.0960121561955576,
+        "max": 1.0960121561955576,
+        "mean": 1.0960121561955576
+      },
+      "delta_rad": {
+        "count": 1,
+        "min": 0.03327360187465599,
+        "median": 0.03327360187465599,
+        "max": 0.03327360187465599,
+        "mean": 0.03327360187465599
+      }
+    },
+    "absolute_error_mw": {
+      "reactance_only": {
+        "count": 1,
+        "min": 36.77424206914807,
+        "median": 36.77424206914807,
+        "max": 36.77424206914807,
+        "mean": 36.77424206914807
+      },
+      "series_susceptance": {
+        "count": 1,
+        "min": 0.8797045934165482,
+        "median": 0.8797045934165482,
+        "max": 0.8797045934165482,
+        "mean": 0.8797045934165482
+      },
+      "series_susceptance_no_phase_shift": {
+        "count": 1,
+        "min": 31.144685351433534,
+        "median": 31.144685351433534,
+        "max": 31.144685351433534,
+        "mean": 31.144685351433534
+      },
+      "tap_adjusted_reactance": {
+        "count": 1,
+        "min": 1.1572158684345268,
+        "median": 1.1572158684345268,
+        "max": 1.1572158684345268,
+        "mean": 1.1572158684345268
+      },
+      "tap_adjusted_series_susceptance": {
+        "count": 1,
+        "min": 3.6548173435963633,
+        "median": 3.6548173435963633,
+        "max": 3.6548173435963633,
+        "mean": 3.6548173435963633
+      }
+    },
+    "transformers": [
+      {
+        "branch": "1",
+        "tau": 1.1,
+        "rho": 1.0960121561955576,
+        "delta_rad": 0.03327360187465599,
+        "symmetric_ac_mw": 31.40594484539452,
+        "from_angle_derivative_mw_per_rad": 922.7222350102545,
+        "symmetric_angle_derivative_mw_per_rad": 913.5992466936198,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 68.18018691454259,
+            "signed_error_mw": 36.77424206914807,
+            "absolute_error_mw": 36.77424206914807
+          },
+          "series_susceptance": {
+            "dc_mw": 30.52624025197797,
+            "signed_error_mw": -0.8797045934165482,
+            "absolute_error_mw": 0.8797045934165482
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 62.55063019682805,
+            "signed_error_mw": 31.144685351433534,
+            "absolute_error_mw": 31.144685351433534
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 30.248728976959992,
+            "signed_error_mw": -1.1572158684345268,
+            "absolute_error_mw": 1.1572158684345268
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 27.751127501798155,
+            "signed_error_mw": -3.6548173435963633,
+            "absolute_error_mw": 3.6548173435963633
+          }
+        }
+      }
+    ]
+  },
   "case_sha256": "841633dba17c09b97b941e6bb8f92543a2cf01bfa29709f1067fb3688cc188b6",
   "versions": {
     "julia": "1.12.6",
     "PowerModels": "0.19.9",
     "Ipopt": "1.4.1"
-  }
+  },
+  "raw_sha256": {
+    "tellegen": "ff5c76fe0eef3ffb5784fd624b74e6b6ce275f751d286eeb7bee55b90c4a9d74",
+    "reference": "78fbd6c927eedaa4436205b6f501a9488e569b7578051d895cfd18db98186391"
+  },
+  "provenance": "Original recorded solver outputs; existing report metrics verified unchanged before enrichment. No solver rerun for this report."
 }

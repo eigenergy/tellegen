@@ -152,17 +152,43 @@ fn saved_study_edits_and_reload_keep_the_convention() {
 
 #[test]
 fn independent_powermodels_reference_matches_flows_angles_dispatch_prices_and_cost() {
-    let expected: serde_json::Value =
-        serde_json::from_str(include_str!("data/dc_variants/case3-reference.json")).unwrap();
-    for formula in FORMULAS {
+    assert_reference(
+        CASE,
+        include_str!("data/dc_variants/case3-reference.json"),
+        &FORMULAS,
+    );
+}
+
+#[test]
+fn tap_adjusted_modes_match_powermodels_after_nonunity_transformer_reversal() {
+    assert_reference(
+        include_str!("data/dc_variants/case3_reversed_transformer.m"),
+        include_str!("data/dc_variants/case3-reversed-reference.json"),
+        &[F::TapAdjustedReactance, F::TapAdjustedSeriesSusceptance],
+    );
+}
+
+fn assert_reference(case: &str, golden: &str, formulas: &[F]) {
+    let expected: serde_json::Value = serde_json::from_str(golden).unwrap();
+    let net = tellegen::ir::balanced_module(
+        powerio::parse(Source::from_memory("case.m", case.as_bytes().to_vec()).unwrap()).unwrap(),
+    )
+    .unwrap()
+    .into_value();
+    for &formula in formulas {
         let name = powerio::BranchSusceptanceFormula::from(formula).formula_name();
         for problem in ["dcpf", "dcopf"] {
-            let actual = solve(network(), formula, problem);
+            let actual = solve(net.clone(), formula, problem);
             let reference = &expected[name][problem];
             for flow in actual["flows"].as_array().unwrap() {
                 let i = flow["branch"].as_u64().unwrap().to_string();
+                let direction = reference["reference_directions"][&i]
+                    .as_f64()
+                    .unwrap_or(1.0);
                 assert!(
-                    (flow["pf"].as_f64().unwrap() - reference["pf"][&i].as_f64().unwrap()).abs()
+                    (direction * flow["pf"].as_f64().unwrap()
+                        - reference["pf"][&i].as_f64().unwrap())
+                    .abs()
                         < 1e-3
                 );
             }
