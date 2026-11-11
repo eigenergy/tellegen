@@ -53,7 +53,7 @@ schemars = { version = "1", features = ["derive"] }
 # Both halves of the opt-in AC OPF backend use the same published release.
 # Tellegen explicitly installs restoration and second-opinion recovery.
 # No shipping adapter enables these dependencies.
-pounce-nl = "=0.15.0"
+pounce-nl = "=0.16.0"
 pounce-rs = "=0.15.0"
 
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
