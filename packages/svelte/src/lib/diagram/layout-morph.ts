@@ -47,3 +47,58 @@ export function chordsInto(
 		}
 	}
 }
+
+/** A running layout transition: bus positions `cur` between the layouts, and the straight
+ * chords `s`→`t` between each branch's `endpoints`, for the renderer to draw. */
+export interface Morph {
+	from: Float32Array;
+	cur: Float32Array;
+	s: Float32Array;
+	t: Float32Array;
+	endpoints: Int32Array;
+	start: number | null;
+	warm: boolean;
+	raf: number;
+}
+
+/** Start a transition from `before` (on screen through camera `from`) to `destination` (through
+ * `to`). `onframe` receives the morph each frame and null when it ends, for the caller to store
+ * and redraw. A warm-up frame lets the renderer upload the target first. Cancel with
+ * `cancelAnimationFrame(morph.raf)`. */
+export function startMorph(
+	before: ArrayLike<number>,
+	destination: ArrayLike<number>,
+	endpoints: Int32Array,
+	from: Camera,
+	to: Camera,
+	onframe: (morph: Morph | null) => void
+): Morph {
+	const n = endpoints.length / 2;
+	const m: Morph = {
+		from: screenAnchored(before, from, to),
+		cur: new Float32Array(before.length),
+		s: new Float32Array(n * 3),
+		t: new Float32Array(n * 3),
+		endpoints,
+		start: null,
+		warm: false,
+		raf: 0
+	};
+	const tick = (now: number) => {
+		if (!m.warm) {
+			m.warm = true;
+			m.raf = requestAnimationFrame(tick);
+			return;
+		}
+		m.start ??= now;
+		const k = ease(Math.min(1, (now - m.start) / MORPH_MS));
+		lerpInto(m.cur, m.from, destination, k);
+		chordsInto(m.s, m.t, m.endpoints, m.cur);
+		if (k < 1) {
+			onframe(m);
+			m.raf = requestAnimationFrame(tick);
+		} else onframe(null);
+	};
+	m.raf = requestAnimationFrame(tick);
+	return m;
+}

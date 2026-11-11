@@ -32,7 +32,7 @@ pub(crate) mod islands;
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
 #[cfg(feature = "acopf")]
-pub(crate) use acopf::{solve_ac_opf_cancellable, AcOpfSolved};
+pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
 pub(crate) use dc::{DcNetwork, LinearRow};
 
 #[cfg(all(test, feature = "conic"))]
@@ -355,6 +355,39 @@ fn reject_unfiltered_normalized_elements(network: &BalancedNetwork) -> Result<()
     ))
 }
 
+/// Reactive-only SVC controls are outside the supported AC formulations.
+/// DC models omit reactive quantities and report that approximation separately.
+pub(super) fn reject_active_svcs(network: &BalancedNetwork) -> Result<(), String> {
+    let count = network
+        .static_var_compensators()
+        .iter()
+        .filter(|s| s.in_service)
+        .count();
+    if count == 0 {
+        Ok(())
+    } else {
+        Err(format!("network contains {count} in-service static VAR compensator(s); AC SVC controls are not supported"))
+    }
+}
+
+pub(super) fn dc_diagnostics(network: &BalancedNetwork) -> Vec<crate::api::SolveDiagnostic> {
+    let mut diagnostics = hvdc_diagnostics(network);
+    let buses: std::collections::BTreeSet<_> = network
+        .static_var_compensators()
+        .iter()
+        .filter(|s| s.in_service)
+        .map(|s| s.bus.0)
+        .collect();
+    if !buses.is_empty() {
+        diagnostics.push(crate::api::SolveDiagnostic {
+            code: "dc_svc_reactive_omitted".into(),
+            message: "DC formulation omits static VAR compensator reactive controls, as it omits all reactive quantities".into(),
+            buses: buses.into_iter().collect(),
+        });
+    }
+    diagnostics
+}
+
 pub(super) fn reject_unsupported_active_elements(
     network: &BalancedNetwork,
     hvdc: HvdcLines,
@@ -371,6 +404,37 @@ pub(super) fn reject_unsupported_active_elements(
         .count();
     let active_hvdc = network.hvdc().iter().filter(|link| link.in_service).count();
     let mut unsupported = Vec::new();
+    if let Some(detailed) = network.detailed_connectivity() {
+        let covered: std::collections::HashSet<_> = network
+            .hvdc()
+            .iter()
+            .filter(|h| h.in_service)
+            .flat_map(|h| [h.converter1.as_ref(), h.converter2.as_ref()])
+            .flatten()
+            .map(|c| &c.component)
+            .collect();
+        let unmapped = detailed
+            .voltage_source_converters
+            .iter()
+            .filter(|c| {
+                c.dc_terminal1.connected != Some(false)
+                    && c.dc_terminal2.connected != Some(false)
+                    && !covered.contains(&c.component)
+            })
+            .count()
+            + detailed
+                .line_commutated_converters
+                .iter()
+                .filter(|c| {
+                    c.dc_terminal1.connected != Some(false)
+                        && c.dc_terminal2.connected != Some(false)
+                        && !covered.contains(&c.component)
+                })
+                .count();
+        if unmapped > 0 {
+            unsupported.push(format!("{unmapped} detailed DC converter(s) without an explicit reduced injection equivalent; use a qualified DC-grid calculation"));
+        }
+    }
     if closed_switches > 0 {
         unsupported.push(format!("{closed_switches} closed switch(es)"));
     }

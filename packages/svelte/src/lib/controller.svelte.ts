@@ -131,6 +131,21 @@ const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
 const DEFAULT_CASE_ID = 'case500';
 
+/** Commit and snapshot responses can order object keys differently (including nested loading
+ * metadata). Compare the exact JSON values, retaining array order and numerical equality. */
+function sameSolution(a: Solution, b: Solution): boolean {
+	const ordered = (_key: string, value: unknown) => {
+		if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+		const record = value as Record<string, unknown>;
+		return Object.fromEntries(
+			Object.keys(record)
+				.sort()
+				.map((key) => [key, record[key]])
+		);
+	};
+	return JSON.stringify(a, ordered) === JSON.stringify(b, ordered);
+}
+
 /** A parsed geographic sidecar awaiting application: the canonical `.geo.json`
  * layer document from the engine's tolerant reader, its source file name, and
  * the reader's notes on records it could not use. */
@@ -623,7 +638,9 @@ export class Controller {
 			...(c.network?.model_details ? { model_details: c.network.model_details } : {}),
 			coordinate_space: view.coordinate_space,
 			buses: view.buses,
-			branches: view.branches
+			branches: view.branches,
+			equipment: view.equipment,
+			...(view.substations ? { substations: view.substations } : {})
 		};
 	}
 
@@ -899,6 +916,15 @@ export class Controller {
 			this.app.active ?? (this.app.activeLocal?.network ? this.app.activeLocal : null)
 	);
 	activeFormulation = $derived(this.activeSolvable?.formulation ?? 'dcopf');
+	/** The balanced case that can open as a single-line diagram: none in a saved study or for a
+	 * multiconductor case. */
+	singleLineCase = $derived.by(() =>
+		!this.app.studyView && !this.app.activeMulti && this.activeSolvable?.network
+			? this.activeSolvable
+			: null
+	);
+	/** That case while its single-line diagram replaces the map. */
+	singleLineShown = $derived(this.singleLineCase?.schematic ? this.singleLineCase : null);
 
 	networkStats = $derived.by(() => {
 		const c = this.activeSolvable;
@@ -911,10 +937,28 @@ export class Controller {
 				c.solution?.objective != null && c.baseSolution?.objective != null
 					? c.solution.objective - c.baseSolution.objective
 					: null,
-			binding:
-				c.solution && c.formulation !== 'acpf'
-					? c.solution.flows.filter((f) => f.loading >= 0.999).length
-					: null
+			binding: c.solution && c.formulation !== 'acpf' ? (this.bindingRule?.count ?? null) : null
+		};
+	});
+
+	/** Which lines the active result treats as binding: the solver's own binding flags when it
+	 * reports them, else lines loaded to 99.9% of rating (legacy and non-DC results), with the
+	 * label that says which. */
+	bindingRule = $derived.by(() => {
+		const solution = this.activeSolvable?.solution;
+		if (!solution) return null;
+		const constraints = solution.branch_constraints;
+		const flagged = constraints
+			? new Set(constraints.filter((row) => row.binding).map((row) => row.branch))
+			: null;
+		const binds = (flow: { branch: number; loading: number }) =>
+			flagged ? flagged.has(flow.branch) : flow.loading >= 0.999;
+		return {
+			label: constraints ? 'Binding lines' : 'Lines near or above rating',
+			binds,
+			count: constraints
+				? constraints.filter((row) => row.binding).length
+				: solution.flows.filter(binds).length
 		};
 	});
 
@@ -3781,7 +3825,7 @@ export class Controller {
 		const cached = this.caseStudies.get(c);
 		if (c.solution && cached?.studyInputJson === base && cached.formulation === c.formulation) {
 			const current = await cached.study.currentSolution();
-			if (JSON.stringify(current) === JSON.stringify(c.solution)) {
+			if (sameSolution(current, c.solution)) {
 				return {
 					input: await cached.study.saveInstanceModule(),
 					solution: await cached.study.saveSolutionModule(),
@@ -3806,10 +3850,7 @@ export class Controller {
 			api?.getSavedCase
 		) {
 			const snapshot = await api.getSavedCase(c.id);
-			if (
-				snapshot.base_input !== base ||
-				JSON.stringify(snapshot.display_solution) !== JSON.stringify(c.solution)
-			)
+			if (snapshot.base_input !== base || !sameSolution(snapshot.display_solution, c.solution))
 				throw new Error('The server case changed. Reload it before saving.');
 			return {
 				input: snapshot.input,

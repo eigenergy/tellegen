@@ -1,9 +1,13 @@
 // Generated from Rust by synth_schema and generate-synth-types.mjs.
-// Source SHA256: b232679d06323e7f164cf9baebebad1717b4b36c0077e28abc656081299ca102
+// Source SHA256: 2c65f388a0b2ff3171b0f70cf20d6bb23b6aaa16e440193ac60d8676a12f86fc
+
+export type AcPfInitialization = { /** Starts attempted, including the successful one (one-based). */ "attempts": number; "requested": PowerFlowStart; /** Deterministic perturbation number (one-based), only for `perturbed`. */ "restart"?: number | null; "used": AcPfStartStrategy; };
 
 export type AcPfOutcome = "converged" | "not_converged" | "skipped";
 
 export type AcPfReport = { "buses_outside_emergency_band": number; "buses_outside_planning_band": number; "islands": Array<IslandOutcome>; "losses_mw"?: number | null; "message"?: string | null; "newton_iterations"?: number | null; "residual"?: number | null; "solve_ms"?: number | null; "status": AcPfOutcome; "vm_max"?: number | null; "vm_min"?: number | null; };
+
+export type AcPfStartStrategy = "case" | "flat" | "perturbed";
 
 export type BBox = { "east": number; "north": number; "south": number; "west": number; };
 
@@ -63,7 +67,7 @@ export type GeneratorAnnotation = { "bus": number; /** A synchronous condenser t
 
 export type IslandOptions = { "beyond"?: FarIslandPolicy; /** Landmasses whose nearest buses are closer than this are joined by an interconnect corridor (submarine or overhead), like Sicily or the Danish islands. source: typical AC/HVDC interconnector lengths, ENTSO-E grid map. */ "max_interconnect_km"?: number; };
 
-export type IslandOutcome = { "branches": number; "buses": number; "generators": number; "index": number; "load_mw": number; "message"?: string | null; "status": string; };
+export type IslandOutcome = { "branches": number; "buses": number; "generators": number; "index": number; /** Successful AC start for this island, including fallback attempts. */ "initialization"?: (AcPfInitialization) | (null); "load_mw": number; "message"?: string | null; "status": string; };
 
 export type Limits = { /** Spherical area cap of the region, km²; positive and finite. */ "max_area_km2"?: number; /** Upper bound of `branch_factor`; finite and at least 1. */ "max_branch_factor"?: number; /** Bus cap. A synthetic grid's count is held at it (`bus_count_capped`); an OpenStreetMap grid drops its lowest voltage levels until it fits (`osm_bus_count_capped`) and is refused when its highest level alone exceeds it. A transmission-only synthetic grid sized from demand also stops at 3,000 buses (`context::TRANSMISSION_AUTO_MAX_BUSES`); one that reaches subtransmission is sized up to this cap. */ "max_bus_count"?: number; /** Maximum raw Overpass response size, in bytes. */ "max_osm_document_bytes"?: number; /** Maximum Overpass elements accepted before topology construction. */ "max_osm_elements"?: number; };
 
@@ -78,6 +82,8 @@ export type OsmProvenance = { /** The Overpass answer's `osm3s.copyright` notice
 export type PlacesProvenance = { "count": number; /** SHA-256 of the table as loaded. */ "sha256": string; /** The dataset the table was derived from (the bundled table names GeoNames' `cities5000` dump and its licence); absent for a bare array of rows. */ "source"?: string | null; /** SHA-256 of that dataset. */ "source_sha256"?: string | null; };
 
 export type PlanningReport = { /** The highest level the plan added above the modelled ones (one of `RegionContext::promotion_levels_kv`) because corridors at the highest modelled level needed more than two circuits; absent when the modelled levels sufficed or the region has no higher level in service. */ "added_level_kv"?: number | null; /** Widest island angle spread of the planning case (DC), degrees. */ "angle_spread_deg": number; /** Branches the requested branch factor asks for. */ "branch_target": number; /** Branches in the network. */ "branches": number; "capacitor_banks": number; /** Total capacitor rating, MVAr at 1 pu. */ "capacitor_mvar": number; /** Circuits added beyond one per corridor because the planning flow needed them. */ "capacity_circuits": number; /** Corridors at the cap whose planning flow still needs more circuits. */ "capped_corridors": number; /** Parallel circuits one corridor may hold. */ "circuit_cap": number; /** False when the plan stopped at its round or circuit cap. */ "converged": boolean; /** The planning case: `economic_dispatch_at_peak`, the least-cost dispatch of the generators serving peak load on a lossless network with no limits. */ "dispatch": string; /** Circuits added, heaviest planned loading first, to reach the target. */ "filler_circuits": number; /** Largest angle difference across one branch in the AC solution of the planning case at the planned voltage profile, degrees. */ "max_angle_difference_deg": number; /** Most parallel circuits on one corridor. */ "max_parallel_circuits": number; /** Highest circuit loading in the planning case. */ "max_planning_loading": number; /** Corridors still above their rating in the planning case. */ "overloaded_corridors": number; /** Buses raised to the next voltage level because an incident corridor would have needed more than two circuits at the lower one. */ "promoted_buses": number; "reactor_banks": number; /** Total shunt reactor rating, MVAr at 1 pu. */ "reactor_mvar": number; /** Capacity and stiffening rounds the corridor plan ran (each one DC power flow). */ "rounds": number; /** Circuits added to hold each island's angle spread within the St. Clair stability margin (44.4°). */ "stiffening_circuits": number; /** Transformer corridors whose bank the plan enlarged (up to the rating of the line it terminates) before adding circuits. */ "upsized_transformers": number; /** Share of its rating no circuit may exceed in the planning case. */ "utilisation_target": number; };
+
+export type PowerFlowStart = ("flat") | ("case");
 
 export type Preview = { "branches": Array<PreviewBranch>; "buses": Array<PreviewBus>; "stage": Stage; };
 

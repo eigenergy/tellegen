@@ -96,6 +96,8 @@ pub fn build_network(
             BusType::Pq
         };
         let mut bus = Bus::new(BusId(i + 1), kind, b.base_kv);
+        // The reactive plan holds this profile at every bus, including PQ buses.
+        bus.vm = GENERATOR_VG;
         bus.vmax = BUS_VMAX;
         bus.vmin = BUS_VMIN;
         bus.name = Some(b.name.clone());
@@ -243,6 +245,21 @@ pub fn build_network(
         annotations,
         gen_fuels: generators.iter().map(|g| g.fuel).collect(),
     })
+}
+
+/// Retain planning angles in PowerIO's degree-valued bus state. Rows follow
+/// the draft bus order, including each island's independently grounded slack.
+pub(crate) fn apply_planning_angles(net: &mut BalancedNetwork, angles: &[f64]) {
+    assert_eq!(net.buses().len(), angles.len());
+    for (bus, &angle) in net.buses_mut().iter_mut().zip(angles) {
+        // An incomplete DC plan can also be unusable. Keep a finite flat
+        // state for that bus; the planning warning remains in the report.
+        bus.va = if angle.is_finite() {
+            angle.to_degrees()
+        } else {
+            0.0
+        };
+    }
 }
 
 fn annotate(

@@ -1,5 +1,18 @@
 # @tellegen/svelte
 
+## 0.8.0
+
+### Minor Changes
+
+- [#358](https://github.com/eigenergy/tellegen/pull/358) [`caffe32`](https://github.com/eigenergy/tellegen/commit/caffe32a4eb40d91253ff9b7a5f6ac20e6920c1c) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add equipment inventories, automatic regulator studies, detailed DC-grid power flow, coupled AC/DC studies and joint nonlinear AC/DC dispatch with explicit model limits and operating diagnostics.
+
+- [#300](https://github.com/eigenergy/tellegen/pull/300) [`bd39062`](https://github.com/eigenergy/tellegen/commit/bd3906247d1e322b2a0cde813de438d5b325204a) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add interactive transmission diagrams with geographic and substation layouts, voltage-level keys, operating-limit and economic views, equipment inspection, accessible mobile controls and PNG export.
+
+### Patch Changes
+
+- Updated dependencies [[`caffe32`](https://github.com/eigenergy/tellegen/commit/caffe32a4eb40d91253ff9b7a5f6ac20e6920c1c), [`78e2768`](https://github.com/eigenergy/tellegen/commit/78e27688f0ce715488e738a46dc438d1273ee0f6), [`bd39062`](https://github.com/eigenergy/tellegen/commit/bd3906247d1e322b2a0cde813de438d5b325204a)]:
+  - @tellegen/engine@0.9.0
+
 ## 0.7.0
 
 ### Minor Changes

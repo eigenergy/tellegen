@@ -62,6 +62,8 @@ pub(crate) struct AcNetwork {
     /// stands in for an unlimited `rate_a == 0` branch). The conic OPF caps each
     /// branch's `|S|` at this with a second-order cone.
     pub rate_a: Vec<f64>,
+    /// Whether the source states an equipment rating (excludes numerical sentinels).
+    pub(crate) thermal_rated: Vec<bool>,
     /// Per-branch voltage-angle-difference bounds (radians): `va_from − va_to ∈
     /// [angmin, angmax]`. Normalized to the ±60° MATPOWER/PowerModels convention when
     /// the source leaves them unset or unconstrained (shared with the DC model). The AC
@@ -346,6 +348,7 @@ impl AcNetwork {
             .map_err(|e| e.to_string())?;
         let instance = adjusted.as_ref().unwrap_or(instance);
         let raw = instance.network();
+        super::reject_active_svcs(raw)?;
         reject_unsupported_active_elements(raw, HvdcLines::Reject)?;
         let voltage_dependent_loads = raw
             .loads()
@@ -459,6 +462,12 @@ impl AcNetwork {
             tap: prep.branches.tap.clone(),
             shift: prep.branches.shift.clone(),
             rate_a: prep.branches.s_max.clone(),
+            thermal_rated: prep
+                .branches
+                .s_max
+                .iter()
+                .map(|rate| rate.is_finite() && *rate > 0.0)
+                .collect(),
             angmin: prep.branches.angle_min.clone(),
             angmax: prep.branches.angle_max.clone(),
             sw: vec![1.0; m],
@@ -578,6 +587,7 @@ impl AcNetwork {
                     .regulated_bus
                     .is_some_and(|regulated| regulated != generator.bus)
         });
+        super::reject_active_svcs(raw)?;
         let input = normalize_for_model(raw, hvdc)?;
         let norm = input.network;
         let source_rows = input.source_rows;
@@ -681,6 +691,11 @@ impl AcNetwork {
         let b_to = suppress(branches.b_to);
         let tap = branches.tap;
         let shift = branches.shift;
+        let thermal_rated = branches
+            .s_max
+            .iter()
+            .map(|rate| rate.is_finite() && *rate > 0.0)
+            .collect();
         let rate_a = branches
             .s_max
             .into_iter()
@@ -756,6 +771,7 @@ impl AcNetwork {
             tap,
             shift,
             rate_a,
+            thermal_rated,
             #[cfg(feature = "conic")]
             angmin,
             #[cfg(feature = "conic")]

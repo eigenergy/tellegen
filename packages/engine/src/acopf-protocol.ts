@@ -12,4 +12,5 @@ export type AcOpfWorkerRequest =
 export type AcOpfWorkerResponse =
   | { type: "ready" }
   | { type: "result"; response: SolveResponse }
+  | { type: "joint_result"; response: import("./dc-grid.js").AcDcSolution }
   | { type: "error"; message: string };

@@ -23,13 +23,16 @@
 /// Tellegen engine package version embedded by Cargo.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod ac_dc;
 mod api;
 mod dc_formula;
 pub use dc_formula::{DcFormula, StudyOptions};
 mod content_id;
+pub mod dc_grid;
 #[cfg(feature = "sensitivity")]
 pub mod document;
 mod emit;
+pub mod equipment;
 #[cfg(feature = "sensitivity")]
 pub mod exploration;
 mod formulation;
@@ -66,27 +69,36 @@ pub mod objective;
 #[cfg(feature = "sensitivity")]
 pub mod plan;
 mod problem;
+pub mod regulation;
 /// Schematic layouts for multiconductor graphs.
 pub mod schematic;
 #[cfg(feature = "sensitivity")]
 mod sens;
 pub mod settings;
 mod solve;
+/// Sparse stress layout for graphs without coordinates.
+pub mod stress;
 #[cfg(feature = "sensitivity")]
 pub mod study;
 #[cfg(feature = "sensitivity")]
 pub mod study_ops;
 #[cfg(all(feature = "sensitivity", not(target_arch = "wasm32")))]
 pub mod study_storage;
+/// Substation grouping for balanced network diagrams.
+pub mod substations;
+/// Substation overview layouts for balanced network diagrams.
+pub mod tx_schematic;
 
 #[cfg(feature = "conic")]
 pub use api::solve_ac_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
-    validate_canonical_identity, AcOpfResiduals, BranchFlow, BranchScalar, BusInjection, BusScalar,
+    validate_canonical_identity, AcOpfResiduals, AcPfInitialization, AcPfStartStrategy,
+    BranchConstraintResult, BranchFlow, BranchLoading, BranchScalar, BusInjection, BusScalar,
     ConstraintResult, ConstraintTerm, ConstraintTermKind, Edits, ElementKey, GenDispatch,
-    Iterations, LazyLimits, LimitOptions, LimitRound, LinearConstraint, PowerFlowStart, Problem,
-    ProblemCaps, SolveRequest, SolveResponse, SolveStatus, ThermalLimits,
+    Iterations, LazyLimits, LimitOptions, LimitRound, LinearConstraint, LoadingBasis, LoadingEnd,
+    PowerFlowStart, Problem, ProblemCaps, RatingSource, SolveRequest, SolveResponse, SolveStatus,
+    ThermalLimits,
 };
 #[cfg(feature = "acopf")]
 pub use api::{solve_ac_opf_instance, solve_ac_opf_instance_cancellable};

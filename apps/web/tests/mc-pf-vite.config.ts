@@ -5,8 +5,8 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 export default defineConfig({
-	// Playwright starts this fixture and the SvelteKit dev server together.
-	// Their different dependency graphs must not overwrite one optimizer cache.
+	// Playwright serves this fixture and the Kit app simultaneously. They use
+	// different Svelte plugins and must not replace each other's optimized deps.
 	cacheDir: fileURLToPath(new URL('../node_modules/.vite-mc-pf/', import.meta.url)),
 	plugins: [svelte({ configFile: false })],
 	root: fileURLToPath(new URL('./fixtures/mc-pf-browser/', import.meta.url)),

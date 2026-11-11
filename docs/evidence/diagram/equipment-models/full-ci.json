@@ -1,0 +1,50 @@
+{
+  "verified_commit": "895653bf4f0771e8ee5e55efc6445ac8d97c3a23",
+  "completed_utc": "2026-11-06T19:59:33.026976+00:00",
+  "local_date": "2026-11-07",
+  "timezone": "Australia/Brisbane",
+  "command": "just ci",
+  "status": "passed",
+  "exit_code": 0,
+  "recipe_modified": false,
+  "recipe_sha256": "a460215d3160183a9390e4fded89170b9e49b63ad8735bb883a4ad7c38494d92",
+  "log_sha256": "69948888e6a4c2a8868af3c8f6ad7ab306fd167e85c44e3c73868e5cacbd1fe4",
+  "platform": "Darwin arm64",
+  "tools": {
+    "just": "1.59.0",
+    "cargo-deny": "0.20.2",
+    "rustc": "1.96.0",
+    "node": "26.12.1"
+  },
+  "environment": {
+    "CI": "1",
+    "TELLEGEN_ALLOW_FALLBACK": "1",
+    "TELLEGEN_PREVIEW_PORT": "4283"
+  },
+  "tool_setup": "just and cargo-deny installed under a temporary directory; matching cached wasm-bindgen added to PATH",
+  "checks": {
+    "webmcp_unit": {
+      "passed": 36
+    },
+    "engine_unit": {
+      "passed": 64
+    },
+    "svelte_unit": {
+      "passed": 395,
+      "skipped": 1
+    },
+    "browser": {
+      "passed": 109,
+      "skipped": 8,
+      "workers": 8
+    },
+    "evidence_harness": {
+      "passed": 16
+    },
+    "mc_pf_10k_regression": "all deterministic checks passed",
+    "cargo_deny": "advisories, bans, licenses and sources passed",
+    "npm_audit": "no advisories at or above high"
+  },
+  "browser_skip_scope": "Existing external datasets, checksum-keyed oracle and opt-in benchmark cases; no new skips added",
+  "code_fixes_required": false
+}

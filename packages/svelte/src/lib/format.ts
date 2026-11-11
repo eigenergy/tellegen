@@ -61,3 +61,34 @@ export const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.ab
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 export const displayFmt = (mode: DisplayMode, value: number) =>
 	mode === 'price' || mode === 'demand' ? fmt.format(value) : value.toFixed(3);
+
+const exactNumber = new Intl.NumberFormat('en', { maximumFractionDigits: 6, useGrouping: false });
+const decimals = [0, 1, 2, 3, 4].map(
+	(d) => new Intl.NumberFormat('en', { maximumFractionDigits: d, minimumFractionDigits: 0 })
+);
+
+/**
+ * A quantity rounded for reading: per-unit voltage to four decimals, percentages to one, and
+ * other engineering quantities (MW, MVA, MVAr, prices) to about three significant figures,
+ * never dropping integer digits. `exact` keeps up to six decimals, for a tooltip or a check.
+ */
+export function readable(
+	value: number | null | undefined,
+	unit: string,
+	signed = false
+): { text: string; exact: string } {
+	if (value == null || !Number.isFinite(value))
+		return { text: 'Unavailable', exact: 'Unavailable' };
+	const magnitude = Math.abs(value);
+	const places =
+		unit === 'pu' ? 4 : unit === '%' ? 1 : magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : 2;
+	const rounded = decimals[places].format(magnitude);
+	const zero = Number(rounded.replace(/,/g, '')) === 0;
+	const sign = !signed || zero ? (value < 0 && !zero ? '-' : '') : value < 0 ? '-' : '+';
+	const join = (n: string) => `${n}${unit === '%' ? '' : ' '}${unit}`.trimEnd();
+	const exact = exactNumber.format(value);
+	return {
+		text: join(`${sign}${rounded}`),
+		exact: join(signed && value > 0 ? `+${exact}` : exact === '-0' ? '0' : exact)
+	};
+}

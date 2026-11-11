@@ -1,11 +1,54 @@
 import { expect, it, vi } from "vitest";
-import { BrowserStudy } from "../src/index.js";
+import { BrowserStudy, solveResponseToSolution } from "../src/index.js";
 import type { EngineHost } from "../src/host.js";
+
+it("preserves AC endpoint quantities, utilization metadata and source identities", () => {
+  const loading_info = {
+    basis: "mva",
+    rating: 80,
+    rating_source: "stated",
+    limiting_end: "to",
+  } as const;
+  const projected = solveResponseToSolution({
+    formulation: "acpf",
+    status: "feasible",
+    flows: [
+      {
+        branch: 42,
+        uid: "line-a",
+        pf: 30,
+        qf: 40,
+        pt: -29,
+        qt: -42,
+        loading: 0.64,
+        loading_info,
+      },
+    ],
+  });
+  expect(projected).toMatchObject({ formulation: "acpf", status: "feasible" });
+  expect(projected.flows).toEqual([
+    {
+      branch: 42,
+      uid: "line-a",
+      mw: 30,
+      qf: 40,
+      pt: -29,
+      qt: -42,
+      loading: 0.64,
+      loading_info,
+    },
+  ]);
+  expect(
+    solveResponseToSolution({ flows: [{ branch: 91, pf: -10, loading: 0.1 }] })
+      .flows,
+  ).toEqual([{ branch: 91, mw: -10, loading: 0.1 }]);
+});
 
 it("keeps AC power-flow voltages and omits price requests for selected equipment", async () => {
   const solution = {
     formulation: "acpf",
     status: "feasible",
+    initialization: { requested: "case", used: "flat", attempts: 2 },
     objective: null,
     vm: [{ bus: 10, value: 0.98 }],
     va: [{ bus: 10, value: -0.02 }],
@@ -15,7 +58,14 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
     if (request.op === "study_solution") return JSON.stringify(solution);
     if (request.op === "study_replace_edits") {
       expect(request.sensitivities).toBe("[]");
-      return JSON.stringify({ solution, iterations: [], sensitivities: [] });
+      // Rust's commit envelope goes through serde_json::Value, which sorts
+      // object keys; study_solution serializes the response struct directly.
+      const initialization = { attempts: 2, requested: "case", used: "flat" };
+      return JSON.stringify({
+        solution: { ...solution, initialization },
+        iterations: [],
+        sensitivities: [],
+      });
     }
     throw new Error(`unexpected operation ${request.op}`);
   });
@@ -25,15 +75,31 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
     prices: [],
     vm: solution.vm,
     va: solution.va,
+    initialization: solution.initialization,
   });
-  await expect(study.commit("case", {}, {}, { branch: 42 })).resolves.toMatchObject({
+  await expect(
+    study.commit("case", {}, {}, { branch: 42 }),
+  ).resolves.toMatchObject({
     sensitivity: null,
-    solution: { objective: null, vm: solution.vm },
+    solution: {
+      objective: null,
+      vm: solution.vm,
+      initialization: solution.initialization,
+    },
   });
+  // Saved-case capture compares these serialized compact results before
+  // retaining the matching solved view.
+  const current = await study.currentSolution();
+  const committed = await study.commit("case", {}, {}, null);
+  expect(JSON.stringify(current)).toBe(JSON.stringify(committed.solution));
   call.mockClear();
-  await expect(study.sensitivity("case", {}, {}, { bus: 10 })).resolves.toBeNull();
+  await expect(
+    study.sensitivity("case", {}, {}, { bus: 10 }),
+  ).resolves.toBeNull();
   await expect(study.preview({ 10: 1 })).resolves.toEqual({
-    prices: [], objectiveDelta: null, units: null,
+    prices: [],
+    objectiveDelta: null,
+    units: null,
   });
   expect(call).not.toHaveBeenCalled();
 });

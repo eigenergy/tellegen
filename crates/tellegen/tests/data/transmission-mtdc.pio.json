@@ -1,0 +1,690 @@
+{
+  "schema": "pio-ir",
+  "version": 2,
+  "producer": {
+    "name": "powerio",
+    "version": "0.11.7"
+  },
+  "value": {
+    "type": "powerio.BalancedNetwork",
+    "data": {
+      "name": "Three-terminal VSC grid",
+      "base_mva": 100,
+      "base_frequency": 60,
+      "case_metadata": {},
+      "generated_uids": [
+        "1",
+        "1-2",
+        "2",
+        "2-3",
+        "2-4",
+        "3",
+        "3-4",
+        "4",
+        "bus-1",
+        "bus-3",
+        "bus-4",
+        "bus-4-2"
+      ],
+      "buses": [
+        {
+          "id": 1,
+          "kind": "REF",
+          "vm": 1,
+          "va": 0,
+          "base_kv": 345,
+          "vmax": 1.1,
+          "vmin": 0.9,
+          "evhi": null,
+          "evlo": null,
+          "area": 1,
+          "zone": 1,
+          "name": null,
+          "uid": "1",
+          "extras": {}
+        },
+        {
+          "id": 2,
+          "kind": "PQ",
+          "vm": 1,
+          "va": 0,
+          "base_kv": 138,
+          "vmax": 1.1,
+          "vmin": 0.9,
+          "evhi": null,
+          "evlo": null,
+          "area": 1,
+          "zone": 1,
+          "name": null,
+          "uid": "2",
+          "extras": {}
+        },
+        {
+          "id": 3,
+          "kind": "PQ",
+          "vm": 1,
+          "va": 0,
+          "base_kv": 138,
+          "vmax": 1.1,
+          "vmin": 0.9,
+          "evhi": null,
+          "evlo": null,
+          "area": 1,
+          "zone": 1,
+          "name": null,
+          "uid": "3",
+          "extras": {}
+        },
+        {
+          "id": 4,
+          "kind": "PV",
+          "vm": 1,
+          "va": 0,
+          "base_kv": 138,
+          "vmax": 1.1,
+          "vmin": 0.9,
+          "evhi": null,
+          "evlo": null,
+          "area": 1,
+          "zone": 1,
+          "name": null,
+          "uid": "4",
+          "extras": {}
+        }
+      ],
+      "loads": [
+        {
+          "bus": 3,
+          "p": 90,
+          "q": 30,
+          "voltage_model": null,
+          "in_service": true,
+          "uid": "bus-3",
+          "extras": {}
+        },
+        {
+          "bus": 4,
+          "p": 20,
+          "q": 5,
+          "voltage_model": null,
+          "in_service": true,
+          "uid": "bus-4",
+          "extras": {}
+        }
+      ],
+      "shunts": [
+        {
+          "bus": 2,
+          "g": 0,
+          "b": 20,
+          "in_service": true,
+          "section_count": 2,
+          "control": {
+            "mode": "discrete",
+            "vhigh": 1.05,
+            "vlow": 0.95,
+            "control_bus": null,
+            "rmpct": 100,
+            "blocks": [
+              {
+                "steps": 4,
+                "g": 0,
+                "b": 10
+              }
+            ]
+          },
+          "uid": "cap-bank",
+          "extras": {}
+        },
+        {
+          "bus": 3,
+          "g": 0,
+          "b": -15,
+          "in_service": false,
+          "section_count": null,
+          "control": null,
+          "uid": "reactor",
+          "extras": {}
+        }
+      ],
+      "static_var_compensators": [],
+      "branches": [
+        {
+          "from": 1,
+          "to": 2,
+          "r": 0.001,
+          "x": 0.05,
+          "b": 0,
+          "charging": null,
+          "rate_a": 35,
+          "rate_b": 35,
+          "rate_c": 35,
+          "rating_sets": [],
+          "current_ratings": null,
+          "tap": 1,
+          "shift": 0,
+          "in_service": true,
+          "angmin": -360,
+          "angmax": 360,
+          "control": {
+            "mode": "active_flow",
+            "enabled": true,
+            "controlled_bus": null,
+            "controlled_bus_on_winding_side": false,
+            "tap_min": -20,
+            "tap_max": 20,
+            "band_min": 20,
+            "band_max": 30,
+            "ntp": 33,
+            "mva_base": 100
+          },
+          "solution": null,
+          "uid": "1-2",
+          "extras": {}
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "r": 0.01,
+          "x": 0.1,
+          "b": 0,
+          "charging": null,
+          "rate_a": 120,
+          "rate_b": 120,
+          "rate_c": 120,
+          "rating_sets": [],
+          "current_ratings": null,
+          "tap": 0,
+          "shift": 0,
+          "in_service": true,
+          "angmin": -360,
+          "angmax": 360,
+          "control": null,
+          "solution": null,
+          "uid": "2-3",
+          "extras": {}
+        },
+        {
+          "from": 3,
+          "to": 4,
+          "r": 0.01,
+          "x": 0.1,
+          "b": 0,
+          "charging": null,
+          "rate_a": 120,
+          "rate_b": 120,
+          "rate_c": 120,
+          "rating_sets": [],
+          "current_ratings": null,
+          "tap": 0,
+          "shift": 0,
+          "in_service": true,
+          "angmin": -360,
+          "angmax": 360,
+          "control": null,
+          "solution": null,
+          "uid": "3-4",
+          "extras": {}
+        },
+        {
+          "from": 2,
+          "to": 4,
+          "r": 0.01,
+          "x": 0.1,
+          "b": 0,
+          "charging": null,
+          "rate_a": 120,
+          "rate_b": 120,
+          "rate_c": 120,
+          "rating_sets": [],
+          "current_ratings": null,
+          "tap": 0,
+          "shift": 0,
+          "in_service": false,
+          "angmin": -360,
+          "angmax": 360,
+          "control": null,
+          "solution": null,
+          "uid": "2-4",
+          "extras": {}
+        }
+      ],
+      "switches": [],
+      "generators": [
+        {
+          "bus": 1,
+          "energy_source": "other",
+          "pg": 0,
+          "qg": 0,
+          "pmax": 250,
+          "pmin": 10,
+          "qmax": 300,
+          "qmin": -300,
+          "vg": 1,
+          "mbase": 100,
+          "in_service": true,
+          "cost": {
+            "model": 2,
+            "startup": 0,
+            "shutdown": 0,
+            "ncost": 3,
+            "coeffs": [
+              0.11,
+              5,
+              0
+            ]
+          },
+          "caps": {
+            "pc1": 0,
+            "pc2": 0,
+            "qc1min": 0,
+            "qc1max": 0,
+            "qc2min": 0,
+            "qc2max": 0,
+            "ramp_agc": 0,
+            "ramp_10": 0,
+            "ramp_30": 0,
+            "ramp_q": 0,
+            "apf": 0
+          },
+          "voltage_regulation_on": true,
+          "regulated_bus": null,
+          "uid": "bus-1"
+        },
+        {
+          "bus": 4,
+          "energy_source": "other",
+          "pg": 20,
+          "qg": 0,
+          "pmax": 100,
+          "pmin": 10,
+          "qmax": 300,
+          "qmin": -300,
+          "vg": 1,
+          "mbase": 100,
+          "in_service": true,
+          "cost": {
+            "model": 2,
+            "startup": 0,
+            "shutdown": 0,
+            "ncost": 3,
+            "coeffs": [
+              0.085,
+              9,
+              0
+            ]
+          },
+          "caps": {
+            "pc1": 0,
+            "pc2": 0,
+            "qc1min": 0,
+            "qc1max": 0,
+            "qc2min": 0,
+            "qc2max": 0,
+            "ramp_agc": 0,
+            "ramp_10": 0,
+            "ramp_30": 0,
+            "ramp_q": 0,
+            "apf": 0
+          },
+          "voltage_regulation_on": true,
+          "regulated_bus": null,
+          "uid": "bus-4-2"
+        }
+      ],
+      "storage": [],
+      "hvdc": [],
+      "transformers_3w": [],
+      "areas": [],
+      "solver": null,
+      "source_format": "matpower",
+      "detailed_connectivity": {
+        "voltage_levels": [
+          {
+            "component": {
+              "component_type": "voltage_level",
+              "local_id": "vla"
+            },
+            "nominal_kv": 345,
+            "topology_kind": "bus_breaker",
+            "buses": [
+              1
+            ]
+          },
+          {
+            "component": {
+              "component_type": "voltage_level",
+              "local_id": "vlb"
+            },
+            "nominal_kv": 345,
+            "topology_kind": "bus_breaker",
+            "buses": [
+              2
+            ]
+          },
+          {
+            "component": {
+              "component_type": "voltage_level",
+              "local_id": "vlc"
+            },
+            "nominal_kv": 345,
+            "topology_kind": "bus_breaker",
+            "buses": [
+              4
+            ]
+          }
+        ],
+        "bus_breaker_buses": [
+          {
+            "component": {
+              "component_type": "bus_breaker_bus",
+              "local_id": "bba"
+            },
+            "voltage_level": {
+              "component_type": "voltage_level",
+              "local_id": "vla"
+            },
+            "calculated_bus": 1
+          },
+          {
+            "component": {
+              "component_type": "bus_breaker_bus",
+              "local_id": "bbb"
+            },
+            "voltage_level": {
+              "component_type": "voltage_level",
+              "local_id": "vlb"
+            },
+            "calculated_bus": 2
+          },
+          {
+            "component": {
+              "component_type": "bus_breaker_bus",
+              "local_id": "bbc"
+            },
+            "voltage_level": {
+              "component_type": "voltage_level",
+              "local_id": "vlc"
+            },
+            "calculated_bus": 4
+          }
+        ],
+        "terminals": [
+          {
+            "equipment": {
+              "component_type": "voltage_source_converter",
+              "local_id": "a"
+            },
+            "terminal": 1,
+            "voltage_level": {
+              "component_type": "voltage_level",
+              "local_id": "vla"
+            },
+            "bus": {
+              "component_type": "bus_breaker_bus",
+              "local_id": "bba"
+            },
+            "connected": true
+          },
+          {
+            "equipment": {
+              "component_type": "voltage_source_converter",
+              "local_id": "b"
+            },
+            "terminal": 1,
+            "voltage_level": {
+              "component_type": "voltage_level",
+              "local_id": "vlb"
+            },
+            "bus": {
+              "component_type": "bus_breaker_bus",
+              "local_id": "bbb"
+            },
+            "connected": true
+          },
+          {
+            "equipment": {
+              "component_type": "voltage_source_converter",
+              "local_id": "c"
+            },
+            "terminal": 1,
+            "voltage_level": {
+              "component_type": "voltage_level",
+              "local_id": "vlc"
+            },
+            "bus": {
+              "component_type": "bus_breaker_bus",
+              "local_id": "bbc"
+            },
+            "connected": true
+          }
+        ],
+        "dc_nodes": [
+          {
+            "component": {
+              "component_type": "dc_node",
+              "local_id": "return"
+            },
+            "voltage_kv": 0
+          },
+          {
+            "component": {
+              "component_type": "dc_node",
+              "local_id": "a"
+            },
+            "voltage_kv": 320
+          },
+          {
+            "component": {
+              "component_type": "dc_node",
+              "local_id": "b"
+            },
+            "voltage_kv": 320
+          },
+          {
+            "component": {
+              "component_type": "dc_node",
+              "local_id": "c"
+            },
+            "voltage_kv": 320
+          }
+        ],
+        "dc_grounds": [
+          {
+            "component": {
+              "component_type": "dc_ground",
+              "local_id": "return-ground"
+            },
+            "dc_terminal": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "return"
+              },
+              "connected": true
+            },
+            "resistance_ohm": 0
+          }
+        ],
+        "dc_lines": [
+          {
+            "component": {
+              "component_type": "dc_line",
+              "local_id": "ab"
+            },
+            "dc_terminal1": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "a"
+              },
+              "connected": true
+            },
+            "dc_terminal2": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "b"
+              },
+              "connected": true
+            },
+            "resistance_ohm": 5
+          },
+          {
+            "component": {
+              "component_type": "dc_line",
+              "local_id": "bc"
+            },
+            "dc_terminal1": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "b"
+              },
+              "connected": true
+            },
+            "dc_terminal2": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "c"
+              },
+              "connected": true
+            },
+            "resistance_ohm": 10
+          },
+          {
+            "component": {
+              "component_type": "dc_line",
+              "local_id": "ac"
+            },
+            "dc_terminal1": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "a"
+              },
+              "connected": true
+            },
+            "dc_terminal2": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "c"
+              },
+              "connected": true
+            },
+            "resistance_ohm": 8
+          }
+        ],
+        "voltage_source_converters": [
+          {
+            "component": {
+              "component_type": "voltage_source_converter",
+              "local_id": "a"
+            },
+            "dc_terminal1": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "a"
+              },
+              "connected": true,
+              "polarity": "positive"
+            },
+            "dc_terminal2": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "return"
+              },
+              "connected": true,
+              "polarity": "middle"
+            },
+            "pcc_terminal": {
+              "equipment": {
+                "component_type": "voltage_source_converter",
+                "local_id": "a"
+              },
+              "terminal": 1
+            },
+            "control_mode": "dc_voltage",
+            "target_dc_voltage_kv": 320,
+            "idle_loss_mw": 0.2,
+            "switching_loss_mw_per_ampere": 0.0001,
+            "resistive_loss_ohm": 0.5,
+            "voltage_regulator_on": false,
+            "reactive_power_setpoint_mvar": 0
+          },
+          {
+            "component": {
+              "component_type": "voltage_source_converter",
+              "local_id": "b"
+            },
+            "dc_terminal1": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "b"
+              },
+              "connected": true,
+              "polarity": "positive"
+            },
+            "dc_terminal2": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "return"
+              },
+              "connected": true,
+              "polarity": "middle"
+            },
+            "pcc_terminal": {
+              "equipment": {
+                "component_type": "voltage_source_converter",
+                "local_id": "b"
+              },
+              "terminal": 1
+            },
+            "control_mode": "active_power_at_pcc",
+            "target_dc_voltage_kv": 320,
+            "target_active_power_mw": -100,
+            "idle_loss_mw": 0.2,
+            "switching_loss_mw_per_ampere": 0.0001,
+            "resistive_loss_ohm": 0.5,
+            "voltage_regulator_on": false,
+            "reactive_power_setpoint_mvar": 0
+          },
+          {
+            "component": {
+              "component_type": "voltage_source_converter",
+              "local_id": "c"
+            },
+            "dc_terminal1": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "c"
+              },
+              "connected": true,
+              "polarity": "positive"
+            },
+            "dc_terminal2": {
+              "dc_node": {
+                "component_type": "dc_node",
+                "local_id": "return"
+              },
+              "connected": true,
+              "polarity": "middle"
+            },
+            "pcc_terminal": {
+              "equipment": {
+                "component_type": "voltage_source_converter",
+                "local_id": "c"
+              },
+              "terminal": 1
+            },
+            "control_mode": "active_power_at_pcc",
+            "target_dc_voltage_kv": 320,
+            "target_active_power_mw": 50,
+            "idle_loss_mw": 0.2,
+            "switching_loss_mw_per_ampere": 0.0001,
+            "resistive_loss_ohm": 0.5,
+            "voltage_regulator_on": false,
+            "reactive_power_setpoint_mvar": 0
+          }
+        ]
+      }
+    }
+  },
+  "sources": [],
+  "source_map": []
+}

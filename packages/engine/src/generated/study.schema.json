@@ -58,6 +58,47 @@
       ],
       "type": "object"
     },
+    "AcPfInitialization": {
+      "description": "Successful AC initialization, including any fallback from the requested start.",
+      "properties": {
+        "attempts": {
+          "description": "Starts attempted, including the successful one (one-based).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requested": {
+          "$ref": "#/$defs/PowerFlowStart"
+        },
+        "restart": {
+          "description": "Deterministic perturbation number (one-based), only for `perturbed`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "used": {
+          "$ref": "#/$defs/AcPfStartStrategy"
+        }
+      },
+      "required": [
+        "requested",
+        "used",
+        "attempts"
+      ],
+      "type": "object"
+    },
+    "AcPfStartStrategy": {
+      "description": "Initialization that produced a converged AC power flow.",
+      "enum": [
+        "case",
+        "flat",
+        "perturbed"
+      ],
+      "type": "string"
+    },
     "ArtifactKind": {
       "enum": [
         "powerio_ir",
@@ -74,6 +115,37 @@
       ],
       "type": "string"
     },
+    "BranchConstraintResult": {
+      "description": "A DC OPF branch's thermal constraint in the final solved program.",
+      "properties": {
+        "binding": {
+          "description": "An enforced bound is met to the solver's reporting tolerance.",
+          "type": "boolean"
+        },
+        "branch": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "enforced": {
+          "type": "boolean"
+        },
+        "relief_per_mw": {
+          "description": "Objective decrease per additional MW of symmetric rating. Only present\nfor an enforced row with an economic objective.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch",
+        "enforced",
+        "binding"
+      ],
+      "type": "object"
+    },
     "BranchFlow": {
       "description": "Branch flows, keyed by original branch id (plus the row uid when carried, as in\n[`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,\ndimensionless) are present on every formulation that has flows; the reactive\nand to-end legs are `None` on the DC paths.",
       "properties": {
@@ -85,6 +157,16 @@
         "loading": {
           "format": "double",
           "type": "number"
+        },
+        "loading_info": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BranchLoading"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "pf": {
           "format": "double",
@@ -122,6 +204,45 @@
         "branch",
         "pf",
         "loading"
+      ],
+      "type": "object"
+    },
+    "BranchLoading": {
+      "description": "Interpretation of `loading`, independent of economic binding or enforcement.\nAn absent rating means no known equipment limit, even if a numerical solver\nfallback produced a finite utilization. Older responses omit this object.",
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/LoadingBasis"
+        },
+        "limiting_end": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadingEnd"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rating": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rating_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RatingSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "basis"
       ],
       "type": "object"
     },
@@ -324,6 +445,15 @@
         "binding": {
           "description": "`value` sits at a limit, within solver tolerance. Always true for an\nequality.",
           "type": "boolean"
+        },
+        "branches": {
+          "description": "Branches in the resolved row, including flows implied by injection terms.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -1413,6 +1543,22 @@
       ],
       "type": "object"
     },
+    "LoadingBasis": {
+      "description": "Basis of the dimensionless branch utilization, with the rating in MW or MVA.",
+      "enum": [
+        "mw",
+        "mva"
+      ],
+      "type": "string"
+    },
+    "LoadingEnd": {
+      "enum": [
+        "from",
+        "to",
+        "both"
+      ],
+      "type": "string"
+    },
     "ModelDetails": {
       "properties": {
         "approximations": {
@@ -1665,6 +1811,21 @@
       ],
       "type": "string"
     },
+    "PowerFlowStart": {
+      "description": "Where the AC power flow's Newton iteration starts, as the lowercase JSON tags\n`\"flat\"` and `\"case\"`. Only `acpf` iterates from a start; every other\nformulation refuses `\"case\"`.",
+      "oneOf": [
+        {
+          "const": "flat",
+          "description": "Voltage setpoint magnitudes and every angle at its island's reference angle.",
+          "type": "string"
+        },
+        {
+          "const": "case",
+          "description": "The case's stored bus voltages: each bus's magnitude and its angle\nrelative to its island's reference bus (star buses of three-winding transformers\nwhere the source carries them), or a typed instance's initial point. A\nstored state that does not converge falls back to the flat start.",
+          "type": "string"
+        }
+      ]
+    },
     "Problem": {
       "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.",
       "oneOf": [
@@ -1694,6 +1855,13 @@
           "type": "string"
         }
       ]
+    },
+    "RatingSource": {
+      "enum": [
+        "stated",
+        "synthesized"
+      ],
+      "type": "string"
     },
     "RowMeta": {
       "description": "Identity and quantity metadata for one row of a [`SensitivityMatrix`].",
@@ -1849,6 +2017,16 @@
     "SolveResponse": {
       "description": "The formulation-agnostic solve result. A superset: every block is optional, and\neach formulation fills what it produces. Powers are MW/MVAr, nodal values are\nin objective units per selected power unit, angles radians, `vm` per unit, and\n`w = |V|^2` per unit squared. Element ids\nare the original bus/branch/generator ids, so the frontend joins straight onto\nits case.",
       "properties": {
+        "branch_constraints": {
+          "description": "Thermal constraint state and marginal relief, when exposed by the formulation.",
+          "items": {
+            "$ref": "#/$defs/BranchConstraintResult"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "branch_susceptance_formula": {
           "anyOf": [
             {
@@ -1898,6 +2076,17 @@
         "formulation": {
           "$ref": "#/$defs/Problem",
           "description": "The formulation that produced this, echoed for the client."
+        },
+        "initialization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AcPfInitialization"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Successful AC power-flow start. Absent for other formulations and legacy results."
         },
         "injections": {
           "description": "Nodal injections (acpf), MW/MVAr.",
@@ -2851,5 +3040,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "bc6334d6158d282433b81bbab5317b7f90e4f6c70d99a2267e9d4653e7b3ab39"
+  "x-rust-source-sha256": "a920bfd545144bcc69b9bb1ad18597189c3b45034421aefac8aa0fa36673b5d6"
 }

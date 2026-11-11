@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   probeAcOpfWorker,
   solveAcOpfModule,
+  solveJointAcDcModule,
   type AcOpfWorkerFactory,
 } from "./acopf.js";
 import type {
@@ -118,4 +119,37 @@ describe("experimental AC OPF worker host", () => {
     ).rejects.toThrow("post failed");
     expect(worker.terminated).toBe(true);
   });
+});
+
+it("sends joint dispatch to the dedicated worker and rejects an ordinary result", async () => {
+  const worker = new FakeWorker();
+  const pending = solveJointAcDcModule(
+    "/acopf.wasm",
+    "{}",
+    undefined,
+    () => worker,
+  );
+  expect(worker.request).toMatchObject({
+    type: "solve",
+    requestJson: JSON.stringify({ formulation: "acopf", ac_dc: true }),
+  });
+  worker.reply({
+    type: "result",
+    response: { formulation: "acopf", status: "feasible" },
+  });
+  await expect(pending).rejects.toThrow("no joint result");
+  expect(worker.terminated).toBe(true);
+});
+it("cancels joint dispatch by terminating its worker", async () => {
+  const worker = new FakeWorker();
+  const abort = new AbortController();
+  const pending = solveJointAcDcModule(
+    "/acopf.wasm",
+    "{}",
+    abort.signal,
+    () => worker,
+  );
+  abort.abort();
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  expect(worker.terminated).toBe(true);
 });

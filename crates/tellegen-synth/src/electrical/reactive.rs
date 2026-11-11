@@ -62,6 +62,9 @@ impl DraftShunt {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReactivePlan {
     pub shunts: Vec<DraftShunt>,
+    /// Bus angles in radians at `GENERATOR_VG`. Use as a warm start only when
+    /// `angles_converged` is true; an unsuccessful iteration can diverge.
+    pub angles: Vec<f64>,
     /// True when the AC angle solve met its tolerance at the planned profile.
     pub angles_converged: bool,
     /// Largest angle difference across one branch at the planned profile,
@@ -350,6 +353,7 @@ pub(crate) fn plan_shunts_with_minimum(
         .collect();
     ReactivePlan {
         shunts,
+        angles: theta,
         angles_converged,
         max_angle_difference_deg: max_angle.to_degrees(),
     }

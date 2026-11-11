@@ -119,3 +119,26 @@ export async function solveAcOpfModule(
   }
   return response.response;
 }
+
+/** Joint AC/DC economic dispatch in the separate optional nonlinear worker. */
+export async function solveJointAcDcModule(
+  wasmUrl: string,
+  moduleJson: string,
+  signal?: AbortSignal,
+  workerFactory?: AcOpfWorkerFactory,
+): Promise<import("./dc-grid.js").AcDcSolution> {
+  assertEngineInputLength(moduleJson.length);
+  const response = await workerCall(
+    {
+      type: "solve",
+      wasmUrl,
+      moduleJson,
+      requestJson: JSON.stringify({ formulation: "acopf", ac_dc: true }),
+    },
+    signal,
+    workerFactory,
+  );
+  if (response.type !== "joint_result")
+    throw new Error("AC/DC worker returned no joint result");
+  return response.response;
+}

@@ -114,7 +114,20 @@ pub unsafe extern "C" fn tellegen_acopf_solve(
         let module = unsafe { input(module_ptr, module_len, "module JSON") }?;
         // SAFETY: forwarded from this function's caller contract.
         let request = unsafe { input(request_ptr, request_len, "request JSON") }?;
-        tellegen::solve_module_json(module, request)
+        let value: serde_json::Value = serde_json::from_str(request).map_err(|e| e.to_string())?;
+        if value.get("ac_dc").is_some() {
+            if value.get("ac_dc") != Some(&serde_json::Value::Bool(true))
+                || value.get("formulation").and_then(|v| v.as_str()) != Some("acopf")
+                || value.as_object().is_none_or(|o| o.len() != 2)
+            {
+                return Err(
+                    "Joint AC/DC request accepts only formulation=acopf and ac_dc=true".into(),
+                );
+            }
+            tellegen::ac_dc::solve_module_json(module, tellegen::Problem::Acopf)
+        } else {
+            tellegen::solve_module_json(module, request)
+        }
     })) {
         Ok(Ok(response)) => to_payload(&response),
         Ok(Err(error)) => error_payload(error),

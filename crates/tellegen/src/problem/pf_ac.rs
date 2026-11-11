@@ -23,6 +23,8 @@
 
 use num_complex::Complex;
 
+use crate::{AcPfInitialization, AcPfStartStrategy, PowerFlowStart};
+
 use crate::formulation::{AcPolar, Formulation};
 use crate::model::islands::dense_islands;
 use crate::model::AcNetwork;
@@ -301,6 +303,8 @@ pub struct AcPfSolution {
     pub iterations: usize,
     /// Final infinity-norm power mismatch.
     pub residual: f64,
+    /// Successful start, with the requested strategy and any fallback attempts.
+    pub initialization: AcPfInitialization,
     /// Final bus typing after the Q-limit outer loop. A generator bus that hit its reactive
     /// limit is recorded as PQ (its voltage was released, its reactive output fixed at the
     /// limit). The AC sensitivity reads this so the differentiated system matches the active
@@ -312,6 +316,7 @@ impl AcPfSolution {
     /// Bundle the converged voltages, injections, the final bus typing, and convergence
     /// diagnostics. Crate-internal: the typing carries [`BusKind`], and a solution is only
     /// produced by [`ac_pf_with_start`].
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         vm: Vec<f64>,
         va: Vec<f64>,
@@ -320,6 +325,7 @@ impl AcPfSolution {
         iterations: usize,
         residual: f64,
         kinds: Vec<BusKind>,
+        initialization: AcPfInitialization,
     ) -> Self {
         AcPfSolution {
             vm,
@@ -329,6 +335,7 @@ impl AcPfSolution {
             iterations,
             residual,
             kinds,
+            initialization,
         }
     }
 }
@@ -714,9 +721,13 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
 
     let mut starts = Vec::with_capacity(RESTARTS + 2);
     if start == AcStart::Case {
-        starts.push(case_start(net));
+        starts.push((AcPfStartStrategy::Case, None, case_start(net)));
     }
-    starts.push((flat_vm.clone(), flat_va.clone()));
+    starts.push((
+        AcPfStartStrategy::Flat,
+        None,
+        (flat_vm.clone(), flat_va.clone()),
+    ));
     for restart in 1..=RESTARTS {
         // Perturb the free unknowns: ±0.1 rad on non-slack angles, ±3% on non-slack
         // magnitudes (released PV buses get a magnitude start too).
@@ -728,12 +739,13 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
                 vm[b] = flat_vm[b] * (1.0 + 0.03 * mix(b as u64, restart as u64 + 1_000));
             }
         }
-        starts.push((vm, va));
+        starts.push((AcPfStartStrategy::Perturbed, Some(restart), (vm, va)));
     }
     let start_count = starts.len();
 
     let mut best: Option<QlimSolve> = None;
-    for (vm0, va0) in starts {
+    let mut initialization = None;
+    for (attempt, (used, restart, (vm0, va0))) in starts.into_iter().enumerate() {
         let res = solve_qlim(
             f, net, &ybus, &net.pg, &net.qg, &qmin_bus, &qmax_bus, &has_gen, &vm_hold, vm0, va0,
         );
@@ -745,6 +757,15 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             .is_none_or(|b| !res.4.is_nan() && (b.4.is_nan() || res.4 < b.4));
         if replace {
             best = Some(res);
+            initialization = Some(AcPfInitialization {
+                requested: match start {
+                    AcStart::Flat => PowerFlowStart::Flat,
+                    AcStart::Case => PowerFlowStart::Case,
+                },
+                used,
+                attempts: attempt + 1,
+                restart,
+            });
         }
         if best.as_ref().is_some_and(|b| b.4 < TOL) {
             break;
@@ -760,7 +781,16 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
         ));
     }
     let (p, q, _) = f.injections(&ybus, &vm, &va);
-    Ok(AcPfSolution::new(vm, va, p, q, iters, residual, kinds))
+    Ok(AcPfSolution::new(
+        vm,
+        va,
+        p,
+        q,
+        iters,
+        residual,
+        kinds,
+        initialization.expect("the successful start is recorded"),
+    ))
 }
 
 #[cfg(test)]
@@ -798,6 +828,79 @@ mpc.gencost = [
     fn parse_case2() -> AcNetwork {
         let net = crate::model::parse_matpower(CASE2).expect("parse case2");
         AcNetwork::from_network(&net).expect("build AcNetwork")
+    }
+
+    #[test]
+    fn a_failed_case_start_reports_the_flat_fallback() {
+        let mut net = parse_case2();
+        // Finite but extreme stored voltages overflow the initial injection.
+        // The flat fallback remains the ordinary, independently checked case.
+        net.vm_case[1] = 1e200;
+        let result = ac_pf_with_start(&AcPolar::new(), &net, AcStart::Case).unwrap();
+        assert_eq!(
+            result.initialization,
+            AcPfInitialization {
+                requested: PowerFlowStart::Case,
+                used: AcPfStartStrategy::Flat,
+                attempts: 2,
+                restart: None,
+            }
+        );
+        let flat = ac_pf(&AcPolar::new(), &net).unwrap();
+        assert_eq!(result.vm, flat.vm);
+        assert_eq!(result.va, flat.va);
+    }
+
+    #[test]
+    fn perturbed_success_reports_its_restart_and_attempt_count() {
+        // Reject just the exactly flat initial state to exercise fallback
+        // bookkeeping; the successful solve still uses the actual AC equations.
+        struct RejectFlat;
+        impl Formulation for RejectFlat {}
+        impl AcPfFormulation for RejectFlat {
+            fn injections(
+                &self,
+                y: &[(usize, usize, Complex<f64>)],
+                vm: &[f64],
+                va: &[f64],
+            ) -> (Vec<f64>, Vec<f64>, Vec<Complex<f64>>) {
+                let (mut p, q, i) = ac_injections(y, vm, va);
+                if va.iter().all(|&v| v == 0.0) {
+                    p.fill(f64::NAN);
+                }
+                (p, q, i)
+            }
+            fn jacobian(
+                &self,
+                y: &[(usize, usize, Complex<f64>)],
+                vm: &[f64],
+                va: &[f64],
+                i: &[Complex<f64>],
+                layout: &AcPfLayout,
+            ) -> Vec<(usize, usize, f64)> {
+                ac_jacobian(y, vm, va, i, layout)
+            }
+        }
+        let net = parse_case2();
+        let reference = ac_pf(&AcPolar::new(), &net).unwrap();
+        for (start, requested, attempts) in [
+            (AcStart::Flat, PowerFlowStart::Flat, 2),
+            (AcStart::Case, PowerFlowStart::Case, 3),
+        ] {
+            let sol = ac_pf_with_start(&RejectFlat, &net, start).unwrap();
+            assert_eq!(
+                sol.initialization,
+                AcPfInitialization {
+                    requested,
+                    used: AcPfStartStrategy::Perturbed,
+                    attempts,
+                    restart: Some(1),
+                }
+            );
+            for (a, b) in sol.vm.iter().zip(&reference.vm) {
+                approx(*a, *b, 1e-8, "perturbed voltage");
+            }
+        }
     }
 
     #[test]

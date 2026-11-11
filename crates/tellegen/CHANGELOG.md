@@ -4,6 +4,14 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.7.0](https://github.com/eigenergy/tellegen/compare/v0.6.2...v0.7.0) - 2026-11-10
+
+### Changed
+
+- Preserve synthetic-grid planning state for AC warm starts (#357)
+- Add transmission diagrams and substation layouts (#300)
+- Add equipment inventories and regulated AC/DC studies (#358)
+
 ## [0.6.2](https://github.com/eigenergy/tellegen/compare/v0.6.1...v0.6.2) - 2026-11-07
 
 ### Changed

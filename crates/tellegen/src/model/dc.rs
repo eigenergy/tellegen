@@ -18,7 +18,7 @@ use crate::api::SolveDiagnostic;
 
 use super::islands::{energize, ReferencePolicy};
 use super::{
-    branch_ids_for_view_rows, bus_ids_for_source_rows, hvdc_diagnostics, ids_for_view_rows,
+    branch_ids_for_view_rows, bus_ids_for_source_rows, dc_diagnostics, ids_for_view_rows,
     normalize_angle_bounds, normalize_for_model, project_source_rows,
     reject_unsupported_active_elements, uids_for_source_rows, validate_canonical_identity,
     HvdcLines, PiecewiseCost,
@@ -598,7 +598,7 @@ impl DcNetwork {
             // `raw` is the caller's network after energizing, in its own units,
             // so the transfer totals read in MW and an HVDC line whose terminal
             // sits in a de-energized island is reported as left out.
-            diagnostics: hvdc_diagnostics(raw),
+            diagnostics: dc_diagnostics(raw),
         })
     }
 

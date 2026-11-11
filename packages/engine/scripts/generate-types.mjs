@@ -201,12 +201,24 @@ export interface BusInjection {
 \tq: number;
 }
 
+/** Meaning of a branch's dimensionless loading; not an economic binding flag. */
+export interface BranchLoading {
+\tbasis: 'mw' | 'mva';
+\t/** Effective MW/MVA rating. Absent for unknown/unrated AC equipment. */
+\trating?: number;
+\trating_source?: 'stated' | 'synthesized';
+\t/** End with the greater apparent power; omitted for DC. */
+\tlimiting_end?: 'from' | 'to' | 'both';
+}
+
 export interface BranchFlow {
 \tbranch: number;
 \t/** powerio row uid, present when the solved network carried uids. */
 \tuid?: string;
 \tpf: number;
 \tloading: number;
+\t/** Absent in legacy responses. */
+\tloading_info?: BranchLoading;
 \tqf?: number;
 \tpt?: number;
 \tqt?: number;
@@ -249,11 +261,20 @@ export interface LimitRound {
 \tipm_iterations: number;
 }
 
+/** Thermal constraint from the final DC OPF program. */
+export interface BranchConstraintResult {
+\tbranch: number;
+\tenforced: boolean;
+\tbinding: boolean;
+\trelief_per_mw?: number;
+}
+
 /** The solved state of one LinearConstraint. \`shadow_price\` is
  * \`-d objective / d limit\` in objective units per MW: positive when the upper
  * limit binds, negative when the lower limit binds. */
 export interface ConstraintResult {
 \tid: string;
+\tbranches?: number[];
 \tvalue: number;
 \tlower?: number;
 \tupper?: number;
@@ -270,12 +291,23 @@ export interface SolveDiagnostic {
 \tbuses: number[];
 }
 
+export type AcPfStartStrategy = "case" | "flat" | "perturbed";
+
+/** Successful AC start, including fallback attempts (one-based). */
+export interface AcPfInitialization {
+\trequested: PowerFlowStart;
+\tused: AcPfStartStrategy;
+\tattempts: number;
+\trestart?: number;
+}
+
 export interface SolveResponse {
     branch_susceptance_formula?: DcFormula;
 \tformulation: FormulationId;
 \tstatus: SolveStatus;
 \tobjective?: number;
 \titerations?: Iterations;
+\tinitialization?: AcPfInitialization;
 \tlmp?: BusScalar[];
 \tlmp_q?: BusScalar[];
 \tvm?: BusScalar[];
@@ -285,6 +317,7 @@ export interface SolveResponse {
 \tflows?: BranchFlow[];
 \tdispatch?: GenDispatch[];
 \tconstraints?: ConstraintResult[];
+\tbranch_constraints?: BranchConstraintResult[];
 \tdiagnostics?: SolveDiagnostic[];
 \tlimit_rounds?: LimitRound[];
 \tsensitivities?: SensitivityMatrix[];
@@ -313,6 +346,27 @@ export interface NetworkBus {
 \tlat: number;
 \tdemand_mw: number;
 \tgen_mw: number;
+\t/** Nominal voltage in kV; 0 when the source gives none. Older payloads omit the field. */
+\tbase_kv?: number;
+\t/** Source operating voltage bounds in per unit; absent for lowered/legacy rows. */
+\tvmin_pu?: number;
+\tvmax_pu?: number;
+\t/** Index into \`Network.substations\`. Older payloads omit the field. */
+\tsubstation?: number;
+}
+
+/** How a substation's buses were grouped, strongest first: declared by the source data, sharing
+ * one coordinate, joined by transformers, joined by bus-splitting jumpers, or a bus on its own. */
+export type SubstationSource = 'declared' | 'colocated' | 'transformer' | 'jumper' | 'single';
+
+/** One substation of a transmission diagram: the buses that \`NetworkBus.substation\` points at. */
+export interface NetworkSubstation {
+\t/** \`sub:<declared id>\` when declared, else \`bus:<lowest bus id>\`. */
+\tkey: string;
+\tname: string | null;
+\tsource: SubstationSource;
+\t/** Distinct nominal voltages of the members in kV, highest first. */
+\tkv: number[];
 }
 
 export interface NetworkBranch {
@@ -325,10 +379,67 @@ export interface NetworkBranch {
 \tto: number;
 \trate_mw: number;
 \tstatus: number;
+\t/** Joins two voltage levels. Older payloads omit the field. */
+\ttransformer?: boolean;
 \tpath: [number, number][];
 }
 
+/** Source equipment settings, independent of the AC solver branch arrays. */
+export interface NetworkEquipment {
+  transformers: NetworkTransformer[];
+  shunts: NetworkShunt[];
+  hvdc: NetworkHvdc[];
+  three_winding?: { id: number; uid: string | null; name: string | null; buses: number[]; in_service: boolean; star_bus: number | null; branches: number[] }[];
+  devices?: { key: string; uid: string | null; kind: 'svc' | 'storage' | 'switch'; buses: number[]; in_service: boolean; treatment: 'unsupported' | 'open' }[];
+  /** Counts of retained detailed DC records. See dc_topology and dc_model for qualified support. */
+  detailed_dc: { nodes: number; lines: number; converters: number };
+  dc_topology?: { nodes: string[]; links: { id: string; kind: 'line' | 'switch' | 'series' | 'ground'; from: string | null; to: string | null; connected: boolean | null; resistance_ohm: number | null }[]; converters: { id: string; kind: 'vsc' | 'lcc'; terminal1: string | null; terminal2: string | null; connected1: boolean | null; connected2: boolean | null; ac_bus: number | null; control: string | null }[] };
+  dc_model?: import('../dc-grid.js').DcGrid | null;
+  dc_model_unavailable?: string | null;
+  import_notes?: string[];
+}
+export interface NetworkTransformer {
+  branch: number;
+  uid: string | null;
+  phase_shifter: boolean;
+  tap_changers?: { kind: 'ratio' | 'phase'; winding: number; tap_position?: number | null; solved_tap_position?: number | null; low_tap_position: number; regulating: boolean; regulation_mode?: string | null; regulation_value?: number | null; target_deadband?: number | null; steps: { position: number; rho: number; alpha_degrees: number; resistance_deviation_percent: number; reactance_deviation_percent: number; conductance_deviation_percent: number; susceptance_deviation_percent: number }[] }[];
+  tap_ratio: number;
+  phase_shift_deg: number;
+  control_mode: 'fixed' | 'voltage' | 'reactive_flow' | 'active_flow' | 'dc_line_quantity' | 'asymmetric_active_flow' | null;
+  control_enabled: boolean | null;
+  controlled_bus: number | null;
+  setting_min: number | null;
+  setting_max: number | null;
+}
+export interface NetworkShunt {
+  id: number;
+  uid: string | null;
+  bus: number;
+  in_service: boolean;
+  /** Conductance MW and capacitive-positive susceptance Mvar at 1 pu voltage. */
+  g_mw: number;
+  b_mvar: number;
+  section_count: number | null;
+  control_mode: 'locked' | 'continuous' | 'discrete' | null;
+  blocks: { steps: number; g_mw: number; b_mvar: number }[];
+}
+export interface NetworkHvdc {
+  id: number;
+  uid: string | null;
+  from: number;
+  to: number;
+  in_service: boolean;
+  /** Input withdrawal at from and injection at to, signed MW; not solved DC results. */
+  pf_mw: number;
+  pt_mw: number;
+  nominal_kv: number | null;
+  from_converter: 'vsc' | 'lcc' | null;
+  to_converter: 'vsc' | 'lcc' | null;
+}
+
 export interface Network {
+  /** Absent in older payloads: equipment coverage is unknown, not empty. */
+  equipment?: NetworkEquipment;
 \tcoordinate_space?: 'geographic' | 'diagram';
 \tmodel_details?: import('./study-types.js').ModelDetails | null;
 \tid: string;
@@ -337,17 +448,31 @@ export interface Network {
 \tsynthetic_coords: boolean;
 \tbuses: NetworkBus[];
 \tbranches: NetworkBranch[];
+\t/** Substations for transmission diagrams. Older payloads omit the field. */
+\tsubstations?: NetworkSubstation[];
+}
+
+/** Compact result retaining source endpoint conventions: mw/pf and pt in MW,
+ * qf and qt in MVAr, each positive from its bus into the branch. */
+export interface SolutionFlow extends Omit<BranchFlow, 'pf'> {
+\tmw: number;
 }
 
 export interface Solution {
     branch_susceptance_formula?: DcFormula;
+\t/** Solver context, absent in legacy display payloads. */
+\tformulation?: string;
+\tstatus?: string;
+\tinitialization?: AcPfInitialization;
 \tobjective: number | null;
 \tprices: { bus: number; value: number }[];
 \tvm?: { bus: number; value: number }[];
 \tva: { bus: number; value: number }[];
 \tw: { bus: number; value: number }[];
-\tflows: { branch: number; mw: number; loading: number }[];
+\tflows: SolutionFlow[];
 \tdispatch: { gen: number; bus?: number; mw: number }[];
+\tconstraints?: ConstraintResult[];
+\tbranch_constraints?: BranchConstraintResult[];
 \t/** How the solve treated the network: islands, HVDC transfers. Absent when it
 \t * solved the case as stated. */
 \tdiagnostics?: SolveDiagnostic[];
