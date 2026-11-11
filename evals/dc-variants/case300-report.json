@@ -1,5 +1,6 @@
 {
   "reference_reversed_branch_count": 0,
+  "reference_reversed_nonunity_branches": [],
   "reactance_only": {
     "dcpf": {
       "actual_status": "feasible",
@@ -17,6 +18,10 @@
       "flow_pu": 1.2857913844754876e-08,
       "angle_rad": 2.291357437123054e-09,
       "dispatch_pu": 1.6620651077658977e-08,
+      "actual_objective": 517358.81506825314,
+      "reference_objective": 517358.81505588203,
+      "objective_absolute_gap": 1.2371107004582882e-05,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 2.3912044493233632e-11,
       "lmp_per_mw": 2.4586107372215338e-08
     },
@@ -48,6 +53,10 @@
       "flow_pu": 4.8981121381075354e-09,
       "angle_rad": 3.926069053195036e-10,
       "dispatch_pu": 8.167741150089114e-09,
+      "actual_objective": 517852.4394843453,
+      "reference_objective": 517852.439484585,
+      "objective_absolute_gap": 2.396991476416588e-07,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 4.628715235564589e-13,
       "lmp_per_mw": 2.9623375041865074e-07
     },
@@ -79,6 +88,10 @@
       "flow_pu": 2.2097554008837506e-08,
       "angle_rad": 1.8464060280720673e-09,
       "dispatch_pu": 2.206650506764163e-08,
+      "actual_objective": 517851.07520169474,
+      "reference_objective": 517851.0752021818,
+      "objective_absolute_gap": 4.870817065238953e-07,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 9.405825918846004e-13,
       "lmp_per_mw": 8.971542087010675e-08
     },
@@ -110,6 +123,10 @@
       "flow_pu": 4.8927692120059874e-08,
       "angle_rad": 4.015485111086292e-09,
       "dispatch_pu": 8.908389803607974e-08,
+      "actual_objective": 517585.53485595627,
+      "reference_objective": 517585.5348562749,
+      "objective_absolute_gap": 3.186287358403206e-07,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 6.156059518332533e-13,
       "lmp_per_mw": 3.2246894932086434e-08
     },
@@ -141,6 +158,10 @@
       "flow_pu": 6.79555145488564e-09,
       "angle_rad": 1.3869398407528877e-09,
       "dispatch_pu": 6.7957395266660114e-09,
+      "actual_objective": 518068.86777645757,
+      "reference_objective": 518068.86776856985,
+      "objective_absolute_gap": 7.887720130383968e-06,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
       "objective_relative": 1.5225234753746187e-11,
       "lmp_per_mw": 6.92698165494221e-09
     },
@@ -155,7 +176,7 @@
       "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
     }
   },
-  "ac_flat_slope_max_error": 1.779062586138025e-08,
+  "unit_voltage_phase_compensated_ac_slope_max_error": 1.779062586138025e-08,
   "ac_pf": {
     "status": "LOCALLY_INFEASIBLE",
     "converged": false,
@@ -178,10 +199,2351 @@
     },
     "objective": 565219.9908886984
   },
+  "ac_opf_operating_point": {
+    "status": "LOCALLY_SOLVED",
+    "converged": true,
+    "coordinate_system": "PowerModels parsed branch orientation and impedance reference side",
+    "note": "All equations evaluated at the same local AC OPF voltages and angles; not independently solved DC dispatches or a universal accuracy ranking.",
+    "distributions": {
+      "tau": {
+        "count": 63,
+        "min": 0.9284,
+        "median": 1.0,
+        "max": 1.073,
+        "mean": 0.9977904761904761
+      },
+      "rho": {
+        "count": 63,
+        "min": 0.9415020427105768,
+        "median": 1.0466912823200971,
+        "max": 1.1182271840449969,
+        "mean": 1.0475852718434358
+      },
+      "delta_rad": {
+        "count": 63,
+        "min": -0.17980491883519023,
+        "median": 0.017124803272282052,
+        "max": 0.15974155027803108,
+        "mean": 0.014012126082151707
+      }
+    },
+    "absolute_error_mw": {
+      "reactance_only": {
+        "count": 63,
+        "min": 2.0408247471649868e-13,
+        "median": 6.349378437712971,
+        "max": 996.3322698034781,
+        "mean": 26.51104602967257
+      },
+      "series_susceptance": {
+        "count": 63,
+        "min": 2.040824747165116e-13,
+        "median": 5.857769152634162,
+        "max": 64.6112861870617,
+        "mean": 10.981350996893918
+      },
+      "series_susceptance_no_phase_shift": {
+        "count": 63,
+        "min": 2.040824747165116e-13,
+        "median": 6.243308558305785,
+        "max": 996.3095400302905,
+        "mean": 26.772030414619074
+      },
+      "tap_adjusted_reactance": {
+        "count": 63,
+        "min": 1.6119534681297535e-12,
+        "median": 3.67244101797867,
+        "max": 58.54774274892361,
+        "mean": 8.581103985535275
+      },
+      "tap_adjusted_series_susceptance": {
+        "count": 63,
+        "min": 1.611953468129747e-12,
+        "median": 3.67244101797867,
+        "max": 59.3481015926144,
+        "mean": 8.896833169117478
+      }
+    },
+    "transformers": [
+      {
+        "branch": "407",
+        "tau": 0.965,
+        "rho": 1.0983366211927952,
+        "delta_rad": 4.829470157119431e-15,
+        "symmetric_ac_mw": 1.7454410850752082e-11,
+        "from_angle_derivative_mw_per_rad": 3602.952404078799,
+        "symmetric_angle_derivative_mw_per_rad": 3602.952404078799,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 1.528797137423055e-11,
+            "signed_error_mw": -2.166439476521532e-12,
+            "absolute_error_mw": 2.166439476521532e-12
+          },
+          "series_susceptance": {
+            "dc_mw": 1.528797137423055e-11,
+            "signed_error_mw": -2.166439476521532e-12,
+            "absolute_error_mw": 2.166439476521532e-12
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 1.528797137423055e-11,
+            "signed_error_mw": -2.166439476521532e-12,
+            "absolute_error_mw": 2.166439476521532e-12
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 1.584245738262233e-11,
+            "signed_error_mw": -1.6119534681297535e-12,
+            "absolute_error_mw": 1.6119534681297535e-12
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 1.5842457382622335e-11,
+            "signed_error_mw": -1.611953468129747e-12,
+            "absolute_error_mw": 1.611953468129747e-12
+          }
+        }
+      },
+      {
+        "branch": "1",
+        "tau": 1.0082,
+        "rho": 1.0497240510584942,
+        "delta_rad": 0.0002420486601737437,
+        "symmetric_ac_mw": 53.639757180514295,
+        "from_angle_derivative_mw_per_rad": 222565.43480983318,
+        "symmetric_angle_derivative_mw_per_rad": 222558.4082925824,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 52.61927395081385,
+            "signed_error_mw": -1.0204832297004458,
+            "absolute_error_mw": 1.0204832297004458
+          },
+          "series_susceptance": {
+            "dc_mw": 51.73902587356976,
+            "signed_error_mw": -1.900731306944536,
+            "absolute_error_mw": 1.900731306944536
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 51.73902587356976,
+            "signed_error_mw": -1.900731306944536,
+            "absolute_error_mw": 1.900731306944536
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 52.19130524778205,
+            "signed_error_mw": -1.4484519327322474,
+            "absolute_error_mw": 1.4484519327322474
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 51.31821649828382,
+            "signed_error_mw": -2.321540682230477,
+            "absolute_error_mw": 2.321540682230477
+          }
+        }
+      },
+      {
+        "branch": "371",
+        "tau": 1.0506,
+        "rho": 0.9675500445909129,
+        "delta_rad": -0.06019318395736761,
+        "symmetric_ac_mw": -346.25901187106814,
+        "from_angle_derivative_mw_per_rad": 5745.512984972722,
+        "symmetric_angle_derivative_mw_per_rad": 5745.512984972722,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -376.2073997335476,
+            "signed_error_mw": -29.94838786247948,
+            "absolute_error_mw": 29.94838786247948
+          },
+          "series_susceptance": {
+            "dc_mw": -376.2073997335476,
+            "signed_error_mw": -29.94838786247948,
+            "absolute_error_mw": 29.94838786247948
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -376.2073997335476,
+            "signed_error_mw": -29.94838786247948,
+            "absolute_error_mw": 29.94838786247948
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -358.0881398567938,
+            "signed_error_mw": -11.829127985725677,
+            "absolute_error_mw": 11.829127985725677
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -358.0881398567938,
+            "signed_error_mw": -11.829127985725677,
+            "absolute_error_mw": 11.829127985725677
+          }
+        }
+      },
+      {
+        "branch": "335",
+        "tau": 0.947,
+        "rho": 1.0392329161386122,
+        "delta_rad": 0.0753700860563136,
+        "symmetric_ac_mw": 158.90857214739754,
+        "from_angle_derivative_mw_per_rad": 2104.3833848465156,
+        "symmetric_angle_derivative_mw_per_rad": 2104.383384846515,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 144.94247318521843,
+            "signed_error_mw": -13.966098962179103,
+            "absolute_error_mw": 13.966098962179103
+          },
+          "series_susceptance": {
+            "dc_mw": 144.94247318521843,
+            "signed_error_mw": -13.966098962179103,
+            "absolute_error_mw": 13.966098962179103
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 144.94247318521843,
+            "signed_error_mw": -13.966098962179103,
+            "absolute_error_mw": 13.966098962179103
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 153.05435394426445,
+            "signed_error_mw": -5.854218203133087,
+            "absolute_error_mw": 5.854218203133087
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 153.05435394426445,
+            "signed_error_mw": -5.854218203133087,
+            "absolute_error_mw": 5.854218203133087
+          }
+        }
+      },
+      {
+        "branch": "362",
+        "tau": 1.05,
+        "rho": 0.9545779143077828,
+        "delta_rad": 0.048976629419613324,
+        "symmetric_ac_mw": 112.2488593267513,
+        "from_angle_derivative_mw_per_rad": 2260.140844224658,
+        "symmetric_angle_derivative_mw_per_rad": 2257.388412370974,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 121.83241149157544,
+            "signed_error_mw": 9.583552164824141,
+            "absolute_error_mw": 9.583552164824141
+          },
+          "series_susceptance": {
+            "dc_mw": 121.75706863580713,
+            "signed_error_mw": 9.508209309055829,
+            "absolute_error_mw": 9.508209309055829
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 121.75706863580713,
+            "signed_error_mw": 9.508209309055829,
+            "absolute_error_mw": 9.508209309055829
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 116.0308680872147,
+            "signed_error_mw": 3.7820087604633983,
+            "absolute_error_mw": 3.7820087604633983
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 115.95911298648298,
+            "signed_error_mw": 3.710253659731677,
+            "absolute_error_mw": 3.710253659731677
+          }
+        }
+      },
+      {
+        "branch": "387",
+        "tau": 1.02,
+        "rho": 1.1182271840449969,
+        "delta_rad": -0.13822738744389423,
+        "symmetric_ac_mw": -457.02211954182593,
+        "from_angle_derivative_mw_per_rad": 3253.959057740284,
+        "symmetric_angle_derivative_mw_per_rad": 3267.651158774723,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -416.34755254185006,
+            "signed_error_mw": 40.674566999975866,
+            "absolute_error_mw": 40.674566999975866
+          },
+          "series_susceptance": {
+            "dc_mw": -415.97016634071366,
+            "signed_error_mw": 41.05195320111227,
+            "absolute_error_mw": 41.05195320111227
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -415.97016634071366,
+            "signed_error_mw": 41.05195320111227,
+            "absolute_error_mw": 41.05195320111227
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -408.1838750410295,
+            "signed_error_mw": 48.83824450079641,
+            "absolute_error_mw": 48.83824450079641
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -407.8138885693271,
+            "signed_error_mw": 49.208230972498825,
+            "absolute_error_mw": 49.208230972498825
+          }
+        }
+      },
+      {
+        "branch": "372",
+        "tau": 0.975,
+        "rho": 1.068344426515658,
+        "delta_rad": 0.010095882068811735,
+        "symmetric_ac_mw": 27.94912786565364,
+        "from_angle_derivative_mw_per_rad": 2765.1811379638903,
+        "symmetric_angle_derivative_mw_per_rad": 2764.335400011135,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 25.49465168891852,
+            "signed_error_mw": -2.4544761767351204,
+            "absolute_error_mw": 2.4544761767351204
+          },
+          "series_susceptance": {
+            "dc_mw": 25.47126210021309,
+            "signed_error_mw": -2.4778657654405514,
+            "absolute_error_mw": 2.4778657654405514
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 25.47126210021309,
+            "signed_error_mw": -2.4778657654405514,
+            "absolute_error_mw": 2.4778657654405514
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 26.148360706583095,
+            "signed_error_mw": -1.8007671590705456,
+            "absolute_error_mw": 1.8007671590705456
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 26.12437138483394,
+            "signed_error_mw": -1.8247564808197012,
+            "absolute_error_mw": 1.8247564808197012
+          }
+        }
+      },
+      {
+        "branch": "9",
+        "tau": 1.0435,
+        "rho": 1.0470167868052973,
+        "delta_rad": -4.782840790085174e-13,
+        "symmetric_ac_mw": -5.998959235078118e-11,
+        "from_angle_derivative_mw_per_rad": 125.42127297619753,
+        "symmetric_angle_derivative_mw_per_rad": 125.42127297619751,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -5.978550987606468e-11,
+            "signed_error_mw": 2.0408247471649868e-13,
+            "absolute_error_mw": 2.0408247471649868e-13
+          },
+          "series_susceptance": {
+            "dc_mw": -5.978550987606467e-11,
+            "signed_error_mw": 2.040824747165116e-13,
+            "absolute_error_mw": 2.040824747165116e-13
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -5.978550987606467e-11,
+            "signed_error_mw": 2.040824747165116e-13,
+            "absolute_error_mw": 2.040824747165116e-13
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -5.7293253355117084e-11,
+            "signed_error_mw": 2.6963389956640945e-12,
+            "absolute_error_mw": 2.6963389956640945e-12
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -5.729325335511707e-11,
+            "signed_error_mw": 2.6963389956641075e-12,
+            "absolute_error_mw": 2.6963389956641075e-12
+          }
+        }
+      },
+      {
+        "branch": "363",
+        "tau": 0.975,
+        "rho": 1.111201531999623,
+        "delta_rad": 0.059766333618944775,
+        "symmetric_ac_mw": 113.78313739350175,
+        "from_angle_derivative_mw_per_rad": 1888.1671721702294,
+        "symmetric_angle_derivative_mw_per_rad": 1883.681005171802,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 99.1149811259449,
+            "signed_error_mw": -14.668156267556853,
+            "absolute_error_mw": 14.668156267556853
+          },
+          "series_susceptance": {
+            "dc_mw": 98.95821950992956,
+            "signed_error_mw": -14.824917883572184,
+            "absolute_error_mw": 14.824917883572184
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 98.95821950992956,
+            "signed_error_mw": -14.824917883572184,
+            "absolute_error_mw": 14.824917883572184
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 101.65639089840504,
+            "signed_error_mw": -12.126746495096711,
+            "absolute_error_mw": 12.126746495096711
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 101.49560975377392,
+            "signed_error_mw": -12.287527639727827,
+            "absolute_error_mw": 12.287527639727827
+          }
+        }
+      },
+      {
+        "branch": "350",
+        "tau": 1.017,
+        "rho": 0.9415020427105768,
+        "delta_rad": -0.0838413633754147,
+        "symmetric_ac_mw": -204.01689172991553,
+        "from_angle_derivative_mw_per_rad": 2427.6636535893317,
+        "symmetric_angle_derivative_mw_per_rad": 2427.6636535893317,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -220.63516677740714,
+            "signed_error_mw": -16.618275047491608,
+            "absolute_error_mw": 16.618275047491608
+          },
+          "series_susceptance": {
+            "dc_mw": -220.63516677740708,
+            "signed_error_mw": -16.61827504749155,
+            "absolute_error_mw": 16.61827504749155
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -220.63516677740708,
+            "signed_error_mw": -16.61827504749155,
+            "absolute_error_mw": 16.61827504749155
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -216.94706664445147,
+            "signed_error_mw": -12.93017491453594,
+            "absolute_error_mw": 12.93017491453594
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -216.9470666444514,
+            "signed_error_mw": -12.930174914535883,
+            "absolute_error_mw": 12.930174914535883
+          }
+        }
+      },
+      {
+        "branch": "357",
+        "tau": 1.01,
+        "rho": 1.0951055807175138,
+        "delta_rad": 0.0029057854188276333,
+        "symmetric_ac_mw": -0.5636749236554591,
+        "from_angle_derivative_mw_per_rad": 5725.433287848607,
+        "symmetric_angle_derivative_mw_per_rad": 5720.465646427121,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 16.699916200158814,
+            "signed_error_mw": 17.263591123814273,
+            "absolute_error_mw": 17.263591123814273
+          },
+          "series_susceptance": {
+            "dc_mw": 15.330705363129418,
+            "signed_error_mw": 15.894380286784877,
+            "absolute_error_mw": 15.894380286784877
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 15.330705363129418,
+            "signed_error_mw": 15.894380286784877,
+            "absolute_error_mw": 15.894380286784877
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 16.534570495206747,
+            "signed_error_mw": 17.098245418862206,
+            "absolute_error_mw": 17.098245418862206
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 15.178916201118236,
+            "signed_error_mw": 15.742591124773694,
+            "absolute_error_mw": 15.742591124773694
+          }
+        }
+      },
+      {
+        "branch": "341",
+        "tau": 0.985,
+        "rho": 1.0413877381363301,
+        "delta_rad": 0.04517578865108189,
+        "symmetric_ac_mw": 90.08622132165534,
+        "from_angle_derivative_mw_per_rad": 1992.7693895025259,
+        "symmetric_angle_derivative_mw_per_rad": 1992.7693895025263,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 85.237337077513,
+            "signed_error_mw": -4.84888424414234,
+            "absolute_error_mw": 4.84888424414234
+          },
+          "series_susceptance": {
+            "dc_mw": 85.237337077513,
+            "signed_error_mw": -4.84888424414234,
+            "absolute_error_mw": 4.84888424414234
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 85.237337077513,
+            "signed_error_mw": -4.84888424414234,
+            "absolute_error_mw": 4.84888424414234
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 86.53536759138377,
+            "signed_error_mw": -3.5508537302715695,
+            "absolute_error_mw": 3.5508537302715695
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 86.53536759138377,
+            "signed_error_mw": -3.5508537302715695,
+            "absolute_error_mw": 3.5508537302715695
+          }
+        }
+      },
+      {
+        "branch": "396",
+        "tau": 0.95,
+        "rho": 1.059857156596793,
+        "delta_rad": 0.10306197664194394,
+        "symmetric_ac_mw": 357.11428658554615,
+        "from_angle_derivative_mw_per_rad": 3452.7670294879413,
+        "symmetric_angle_derivative_mw_per_rad": 3452.7670294879413,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 320.6657642873178,
+            "signed_error_mw": -36.44852229822834,
+            "absolute_error_mw": 36.44852229822834
+          },
+          "series_susceptance": {
+            "dc_mw": 320.6657642873178,
+            "signed_error_mw": -36.44852229822834,
+            "absolute_error_mw": 36.44852229822834
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 320.6657642873178,
+            "signed_error_mw": -36.44852229822834,
+            "absolute_error_mw": 36.44852229822834
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 337.542909776124,
+            "signed_error_mw": -19.571376809422134,
+            "absolute_error_mw": 19.571376809422134
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 337.542909776124,
+            "signed_error_mw": -19.571376809422134,
+            "absolute_error_mw": 19.571376809422134
+          }
+        }
+      },
+      {
+        "branch": "365",
+        "tau": 1.035,
+        "rho": 1.0822630170322958,
+        "delta_rad": 0.030060388490415882,
+        "symmetric_ac_mw": 37.729117512567115,
+        "from_angle_derivative_mw_per_rad": 1254.732702164477,
+        "symmetric_angle_derivative_mw_per_rad": 1254.7327021644767,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 36.086900948878615,
+            "signed_error_mw": -1.6422165636884998,
+            "absolute_error_mw": 1.6422165636884998
+          },
+          "series_susceptance": {
+            "dc_mw": 36.086900948878615,
+            "signed_error_mw": -1.6422165636884998,
+            "absolute_error_mw": 1.6422165636884998
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 36.086900948878615,
+            "signed_error_mw": -1.6422165636884998,
+            "absolute_error_mw": 1.6422165636884998
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 34.86657096510012,
+            "signed_error_mw": -2.862546547466998,
+            "absolute_error_mw": 2.862546547466998
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 34.86657096510012,
+            "signed_error_mw": -2.862546547466998,
+            "absolute_error_mw": 2.862546547466998
+          }
+        }
+      },
+      {
+        "branch": "368",
+        "tau": 1.05,
+        "rho": 0.9551780349886952,
+        "delta_rad": 0.06858476742802928,
+        "symmetric_ac_mw": 160.65484301888185,
+        "from_angle_derivative_mw_per_rad": 2317.739203540569,
+        "symmetric_angle_derivative_mw_per_rad": 2313.6847950830947,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 174.9611413980339,
+            "signed_error_mw": 14.306298379152054,
+            "absolute_error_mw": 14.306298379152054
+          },
+          "series_susceptance": {
+            "dc_mw": 174.84735589466638,
+            "signed_error_mw": 14.19251287578453,
+            "absolute_error_mw": 14.19251287578453
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 174.84735589466638,
+            "signed_error_mw": 14.19251287578453,
+            "absolute_error_mw": 14.19251287578453
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 166.62965847431798,
+            "signed_error_mw": 5.974815455436129,
+            "absolute_error_mw": 5.974815455436129
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 166.52129132825368,
+            "signed_error_mw": 5.866448309371833,
+            "absolute_error_mw": 5.866448309371833
+          }
+        }
+      },
+      {
+        "branch": "3",
+        "tau": 0.9668,
+        "rho": 1.033640896013168,
+        "delta_rad": 0.105914127943974,
+        "symmetric_ac_mw": 26.35342669274161,
+        "from_angle_derivative_mw_per_rad": 244.06670393702592,
+        "symmetric_angle_derivative_mw_per_rad": 242.62648144828216,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 24.246629720244954,
+            "signed_error_mw": -2.1067969724966567,
+            "absolute_error_mw": 2.1067969724966567
+          },
+          "series_susceptance": {
+            "dc_mw": 24.171273673443935,
+            "signed_error_mw": -2.182153019297676,
+            "absolute_error_mw": 2.182153019297676
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 24.171273673443935,
+            "signed_error_mw": -2.182153019297676,
+            "absolute_error_mw": 2.182153019297676
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 25.079261191813146,
+            "signed_error_mw": -1.274165500928465,
+            "absolute_error_mw": 1.274165500928465
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 25.00131741150593,
+            "signed_error_mw": -1.3521092812356805,
+            "absolute_error_mw": 1.3521092812356805
+          }
+        }
+      },
+      {
+        "branch": "392",
+        "tau": 0.9284,
+        "rho": 1.035443930251867,
+        "delta_rad": -0.020623727826272698,
+        "symmetric_ac_mw": -100.0,
+        "from_angle_derivative_mw_per_rad": 4848.096449967118,
+        "symmetric_angle_derivative_mw_per_rad": 4848.096449967117,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -89.66838185335956,
+            "signed_error_mw": 10.331618146640437,
+            "absolute_error_mw": 10.331618146640437
+          },
+          "series_susceptance": {
+            "dc_mw": -89.66838185335956,
+            "signed_error_mw": 10.331618146640437,
+            "absolute_error_mw": 10.331618146640437
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -89.66838185335956,
+            "signed_error_mw": 10.331618146640437,
+            "absolute_error_mw": 10.331618146640437
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -96.58378054002537,
+            "signed_error_mw": 3.416219459974627,
+            "absolute_error_mw": 3.416219459974627
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -96.58378054002537,
+            "signed_error_mw": 3.416219459974627,
+            "absolute_error_mw": 3.416219459974627
+          }
+        }
+      },
+      {
+        "branch": "346",
+        "tau": 1.01,
+        "rho": 1.0298147425588176,
+        "delta_rad": -0.0104313785444832,
+        "symmetric_ac_mw": -22.62943457264571,
+        "from_angle_derivative_mw_per_rad": 2169.283155913421,
+        "symmetric_angle_derivative_mw_per_rad": 2169.283155913421,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -22.19442243507064,
+            "signed_error_mw": 0.43501213757507173,
+            "absolute_error_mw": 0.43501213757507173
+          },
+          "series_susceptance": {
+            "dc_mw": -22.19442243507064,
+            "signed_error_mw": 0.43501213757507173,
+            "absolute_error_mw": 0.43501213757507173
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -22.19442243507064,
+            "signed_error_mw": 0.43501213757507173,
+            "absolute_error_mw": 0.43501213757507173
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -21.97467567828776,
+            "signed_error_mw": 0.6547588943579505,
+            "absolute_error_mw": 0.6547588943579505
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -21.97467567828776,
+            "signed_error_mw": 0.6547588943579505,
+            "absolute_error_mw": 0.6547588943579505
+          }
+        }
+      },
+      {
+        "branch": "389",
+        "tau": 1.02,
+        "rho": 1.1092493693067995,
+        "delta_rad": -0.06153658642924591,
+        "symmetric_ac_mw": -424.5153914759693,
+        "from_angle_derivative_mw_per_rad": 6764.338105933003,
+        "symmetric_angle_derivative_mw_per_rad": 6777.387622451212,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -384.6036651827869,
+            "signed_error_mw": 39.91172629318237,
+            "absolute_error_mw": 39.91172629318237
+          },
+          "series_susceptance": {
+            "dc_mw": -384.22844209480377,
+            "signed_error_mw": 40.28694938116553,
+            "absolute_error_mw": 40.28694938116553
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -384.22844209480377,
+            "signed_error_mw": 40.28694938116553,
+            "absolute_error_mw": 40.28694938116553
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -377.0624168458695,
+            "signed_error_mw": 47.45297463009979,
+            "absolute_error_mw": 47.45297463009979
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -376.694551073337,
+            "signed_error_mw": 47.820840402632314,
+            "absolute_error_mw": 47.820840402632314
+          }
+        }
+      },
+      {
+        "branch": "360",
+        "tau": 1.0522,
+        "rho": 1.0233045729916699,
+        "delta_rad": -0.03245984561837651,
+        "symmetric_ac_mw": -175.34940417556226,
+        "from_angle_derivative_mw_per_rad": 5400.143203670512,
+        "symmetric_angle_derivative_mw_per_rad": 5400.143203670512,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -180.3324756576473,
+            "signed_error_mw": -4.983071482085052,
+            "absolute_error_mw": 4.983071482085052
+          },
+          "series_susceptance": {
+            "dc_mw": -180.3324756576473,
+            "signed_error_mw": -4.983071482085052,
+            "absolute_error_mw": 4.983071482085052
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -180.3324756576473,
+            "signed_error_mw": -4.983071482085052,
+            "absolute_error_mw": 4.983071482085052
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -171.38612018404035,
+            "signed_error_mw": 3.963283991521905,
+            "absolute_error_mw": 3.963283991521905
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -171.38612018404035,
+            "signed_error_mw": 3.963283991521905,
+            "absolute_error_mw": 3.963283991521905
+          }
+        }
+      },
+      {
+        "branch": "345",
+        "tau": 0.943,
+        "rho": 1.083406814306229,
+        "delta_rad": 0.09971620551679206,
+        "symmetric_ac_mw": 178.70869350794877,
+        "from_angle_derivative_mw_per_rad": 1786.2290309908403,
+        "symmetric_angle_derivative_mw_per_rad": 1786.2290309908403,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 155.80657111998758,
+            "signed_error_mw": -22.902122387961185,
+            "absolute_error_mw": 22.902122387961185
+          },
+          "series_susceptance": {
+            "dc_mw": 155.8065711199876,
+            "signed_error_mw": -22.902122387961157,
+            "absolute_error_mw": 22.902122387961157
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 155.8065711199876,
+            "signed_error_mw": -22.902122387961157,
+            "absolute_error_mw": 22.902122387961157
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 165.22435961822652,
+            "signed_error_mw": -13.48433388972225,
+            "absolute_error_mw": 13.48433388972225
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 165.22435961822652,
+            "signed_error_mw": -13.48433388972225,
+            "absolute_error_mw": 13.48433388972225
+          }
+        }
+      },
+      {
+        "branch": "344",
+        "tau": 0.952,
+        "rho": 1.0046252716024828,
+        "delta_rad": 0.06598944844269986,
+        "symmetric_ac_mw": 497.0480454602141,
+        "from_angle_derivative_mw_per_rad": 7521.298701805461,
+        "symmetric_angle_derivative_mw_per_rad": 7521.298701805461,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 471.3532031621418,
+            "signed_error_mw": -25.694842298072274,
+            "absolute_error_mw": 25.694842298072274
+          },
+          "series_susceptance": {
+            "dc_mw": 471.3532031621417,
+            "signed_error_mw": -25.694842298072388,
+            "absolute_error_mw": 25.694842298072388
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 471.3532031621417,
+            "signed_error_mw": -25.694842298072388,
+            "absolute_error_mw": 25.694842298072388
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 495.1189108846028,
+            "signed_error_mw": -1.9291345756112719,
+            "absolute_error_mw": 1.9291345756112719
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 495.11891088460277,
+            "signed_error_mw": -1.9291345756113287,
+            "absolute_error_mw": 1.9291345756113287
+          }
+        }
+      },
+      {
+        "branch": "385",
+        "tau": 0.97,
+        "rho": 1.0780518260848149,
+        "delta_rad": -0.014333405253925485,
+        "symmetric_ac_mw": -45.11010950197455,
+        "from_angle_derivative_mw_per_rad": 3135.4343758271275,
+        "symmetric_angle_derivative_mw_per_rad": 3136.704509614867,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -40.48984535007199,
+            "signed_error_mw": 4.6202641519025605,
+            "absolute_error_mw": 4.6202641519025605
+          },
+          "series_susceptance": {
+            "dc_mw": -40.45756091638724,
+            "signed_error_mw": 4.652548585587311,
+            "absolute_error_mw": 4.652548585587311
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -40.45756091638724,
+            "signed_error_mw": 4.652548585587311,
+            "absolute_error_mw": 4.652548585587311
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -41.74210860832164,
+            "signed_error_mw": 3.368000893652912,
+            "absolute_error_mw": 3.368000893652912
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -41.70882568699715,
+            "signed_error_mw": 3.401283814977397,
+            "absolute_error_mw": 3.401283814977397
+          }
+        }
+      },
+      {
+        "branch": "342",
+        "tau": 0.9561,
+        "rho": 1.085635317091094,
+        "delta_rad": 0.0165943871617035,
+        "symmetric_ac_mw": 71.46223412084056,
+        "from_angle_derivative_mw_per_rad": 2655.1791432064097,
+        "symmetric_angle_derivative_mw_per_rad": 2627.97322659221,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 53.358158076217045,
+            "signed_error_mw": -18.10407604462352,
+            "absolute_error_mw": 18.10407604462352
+          },
+          "series_susceptance": {
+            "dc_mw": 38.41150373474987,
+            "signed_error_mw": -33.05073038609069,
+            "absolute_error_mw": 33.05073038609069
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 38.41150373474987,
+            "signed_error_mw": -33.05073038609069,
+            "absolute_error_mw": 33.05073038609069
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 55.80813521202494,
+            "signed_error_mw": -15.65409890881562,
+            "absolute_error_mw": 15.65409890881562
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 40.17519478584863,
+            "signed_error_mw": -31.28703933499193,
+            "absolute_error_mw": 31.28703933499193
+          }
+        }
+      },
+      {
+        "branch": "355",
+        "tau": 1.015,
+        "rho": 1.0397976338250012,
+        "delta_rad": 0.04451258485280765,
+        "symmetric_ac_mw": 99.09787449807834,
+        "from_angle_derivative_mw_per_rad": 2224.818359116912,
+        "symmetric_angle_derivative_mw_per_rad": 2224.818359116912,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 96.76648881045142,
+            "signed_error_mw": -2.33138568762692,
+            "absolute_error_mw": 2.33138568762692
+          },
+          "series_susceptance": {
+            "dc_mw": 96.76648881045142,
+            "signed_error_mw": -2.33138568762692,
+            "absolute_error_mw": 2.33138568762692
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 96.76648881045142,
+            "signed_error_mw": -2.33138568762692,
+            "absolute_error_mw": 2.33138568762692
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 95.33644217778465,
+            "signed_error_mw": -3.761432320293693,
+            "absolute_error_mw": 3.761432320293693
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 95.33644217778465,
+            "signed_error_mw": -3.761432320293693,
+            "absolute_error_mw": 3.761432320293693
+          }
+        }
+      },
+      {
+        "branch": "408",
+        "tau": 0.95,
+        "rho": 1.015653585835564,
+        "delta_rad": 1.4815926263622714e-13,
+        "symmetric_ac_mw": 2.962263689917153e-10,
+        "from_angle_derivative_mw_per_rad": 1999.4558401377344,
+        "symmetric_angle_derivative_mw_per_rad": 1999.4558401377342,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 2.770885779618986e-10,
+            "signed_error_mw": -1.913779102981673e-11,
+            "absolute_error_mw": 1.913779102981673e-11
+          },
+          "series_susceptance": {
+            "dc_mw": 2.770885779618986e-10,
+            "signed_error_mw": -1.913779102981673e-11,
+            "absolute_error_mw": 1.913779102981673e-11
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 2.770885779618986e-10,
+            "signed_error_mw": -1.913779102981673e-11,
+            "absolute_error_mw": 1.913779102981673e-11
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 2.916721873283143e-10,
+            "signed_error_mw": -4.5541816634010255e-12,
+            "absolute_error_mw": 4.5541816634010255e-12
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 2.916721873283143e-10,
+            "signed_error_mw": -4.5541816634010255e-12,
+            "absolute_error_mw": 4.5541816634010255e-12
+          }
+        }
+      },
+      {
+        "branch": "340",
+        "tau": 1.046,
+        "rho": 1.057471684647462,
+        "delta_rad": -0.0554141918393379,
+        "symmetric_ac_mw": -62.913778678344656,
+        "from_angle_derivative_mw_per_rad": 1134.1745909066635,
+        "symmetric_angle_derivative_mw_per_rad": 1134.1745909066635,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -62.26313689813247,
+            "signed_error_mw": 0.6506417802121831,
+            "absolute_error_mw": 0.6506417802121831
+          },
+          "series_susceptance": {
+            "dc_mw": -62.26313689813247,
+            "signed_error_mw": 0.6506417802121831,
+            "absolute_error_mw": 0.6506417802121831
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -62.26313689813247,
+            "signed_error_mw": 0.6506417802121831,
+            "absolute_error_mw": 0.6506417802121831
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -59.52498747431403,
+            "signed_error_mw": 3.3887912040306247,
+            "absolute_error_mw": 3.3887912040306247
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -59.52498747431403,
+            "signed_error_mw": 3.3887912040306247,
+            "absolute_error_mw": 3.3887912040306247
+          }
+        }
+      },
+      {
+        "branch": "356",
+        "tau": 0.967,
+        "rho": 1.0578507175162297,
+        "delta_rad": -0.04990068699804484,
+        "symmetric_ac_mw": -36.62165056146194,
+        "from_angle_derivative_mw_per_rad": 733.2814593644605,
+        "symmetric_angle_derivative_mw_per_rad": 733.2814593644605,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -33.490393958419354,
+            "signed_error_mw": 3.131256603042587,
+            "absolute_error_mw": 3.131256603042587
+          },
+          "series_susceptance": {
+            "dc_mw": -33.490393958419354,
+            "signed_error_mw": 3.131256603042587,
+            "absolute_error_mw": 3.131256603042587
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -33.490393958419354,
+            "signed_error_mw": 3.131256603042587,
+            "absolute_error_mw": 3.131256603042587
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -34.63329261470461,
+            "signed_error_mw": 1.9883579467573327,
+            "absolute_error_mw": 1.9883579467573327
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -34.63329261470461,
+            "signed_error_mw": 1.9883579467573327,
+            "absolute_error_mw": 1.9883579467573327
+          }
+        }
+      },
+      {
+        "branch": "358",
+        "tau": 1.05,
+        "rho": 0.991333952300292,
+        "delta_rad": -0.00202010354613813,
+        "symmetric_ac_mw": -6.811550579625836,
+        "from_angle_derivative_mw_per_rad": 3371.877311476511,
+        "symmetric_angle_derivative_mw_per_rad": 3371.877311476511,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -7.214655521921894,
+            "signed_error_mw": -0.403104942296058,
+            "absolute_error_mw": 0.403104942296058
+          },
+          "series_susceptance": {
+            "dc_mw": -7.214655521921892,
+            "signed_error_mw": -0.4031049422960562,
+            "absolute_error_mw": 0.4031049422960562
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -7.214655521921892,
+            "signed_error_mw": -0.4031049422960562,
+            "absolute_error_mw": 0.4031049422960562
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -6.871100497068469,
+            "signed_error_mw": -0.05954991744263349,
+            "absolute_error_mw": 0.05954991744263349
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -6.8711004970684675,
+            "signed_error_mw": -0.05954991744263172,
+            "absolute_error_mw": 0.05954991744263172
+          }
+        }
+      },
+      {
+        "branch": "5",
+        "tau": 1.0435,
+        "rho": 1.048928788393395,
+        "delta_rad": 0.136691546538345,
+        "symmetric_ac_mw": 35.92839173829494,
+        "from_angle_derivative_mw_per_rad": 266.7183851516386,
+        "symmetric_angle_derivative_mw_per_rad": 265.18291344767823,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 36.46469256211519,
+            "signed_error_mw": 0.5363008238202482,
+            "absolute_error_mw": 0.5363008238202482
+          },
+          "series_susceptance": {
+            "dc_mw": 36.40018963217108,
+            "signed_error_mw": 0.47179789387613624,
+            "absolute_error_mw": 0.47179789387613624
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 36.40018963217108,
+            "signed_error_mw": 0.47179789387613624,
+            "absolute_error_mw": 0.47179789387613624
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 34.9446023594779,
+            "signed_error_mw": -0.9837893788170433,
+            "absolute_error_mw": 0.9837893788170433
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 34.88278833940687,
+            "signed_error_mw": -1.045603398888069,
+            "absolute_error_mw": 1.045603398888069
+          }
+        }
+      },
+      {
+        "branch": "390",
+        "tau": 1.0,
+        "rho": 1.0163540332148113,
+        "delta_rad": 0.017124803272282052,
+        "symmetric_ac_mw": 87.11861252812054,
+        "from_angle_derivative_mw_per_rad": 5081.333114129075,
+        "symmetric_angle_derivative_mw_per_rad": 5080.898024701364,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -909.2136572753576,
+            "signed_error_mw": -996.3322698034781,
+            "absolute_error_mw": 996.3322698034781
+          },
+          "series_susceptance": {
+            "dc_mw": 85.6218758145149,
+            "signed_error_mw": -1.4967367136056424,
+            "absolute_error_mw": 1.4967367136056424
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -909.1909275021699,
+            "signed_error_mw": -996.3095400302905,
+            "absolute_error_mw": 996.3095400302905
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 85.62401636141026,
+            "signed_error_mw": -1.4945961667102807,
+            "absolute_error_mw": 1.4945961667102807
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 85.6218758145149,
+            "signed_error_mw": -1.4967367136056424,
+            "absolute_error_mw": 1.4967367136056424
+          }
+        }
+      },
+      {
+        "branch": "366",
+        "tau": 0.9565,
+        "rho": 1.1083451868434455,
+        "delta_rad": 0.07397983927569174,
+        "symmetric_ac_mw": 233.9364720846044,
+        "from_angle_derivative_mw_per_rad": 3119.034062696682,
+        "symmetric_angle_derivative_mw_per_rad": 3110.954835040042,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 199.40657486709364,
+            "signed_error_mw": -34.52989721751075,
+            "absolute_error_mw": 34.52989721751075
+          },
+          "series_susceptance": {
+            "dc_mw": 199.16203737959248,
+            "signed_error_mw": -34.77443470501191,
+            "absolute_error_mw": 34.77443470501191
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 199.16203737959248,
+            "signed_error_mw": -34.77443470501191,
+            "absolute_error_mw": 34.77443470501191
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 208.475248162147,
+            "signed_error_mw": -25.46122392245738,
+            "absolute_error_mw": 25.46122392245738
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 208.21958952388133,
+            "signed_error_mw": -25.716882560723064,
+            "absolute_error_mw": 25.716882560723064
+          }
+        }
+      },
+      {
+        "branch": "380",
+        "tau": 1.03,
+        "rho": 1.0078388086729169,
+        "delta_rad": -0.04039244128320657,
+        "symmetric_ac_mw": -40.319002373785196,
+        "from_angle_derivative_mw_per_rad": 997.6389450100369,
+        "symmetric_angle_derivative_mw_per_rad": 997.6389450100369,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -41.216776819598536,
+            "signed_error_mw": -0.8977744458133401,
+            "absolute_error_mw": 0.8977744458133401
+          },
+          "series_susceptance": {
+            "dc_mw": -41.216776819598536,
+            "signed_error_mw": -0.8977744458133401,
+            "absolute_error_mw": 0.8977744458133401
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -41.216776819598536,
+            "signed_error_mw": -0.8977744458133401,
+            "absolute_error_mw": 0.8977744458133401
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -40.01628817436752,
+            "signed_error_mw": 0.30271419941767874,
+            "absolute_error_mw": 0.30271419941767874
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -40.01628817436751,
+            "signed_error_mw": 0.30271419941768585,
+            "absolute_error_mw": 0.30271419941768585
+          }
+        }
+      },
+      {
+        "branch": "6",
+        "tau": 0.9391,
+        "rho": 1.0107868594538185,
+        "delta_rad": 0.10128335326133045,
+        "symmetric_ac_mw": 30.11506458895168,
+        "from_angle_derivative_mw_per_rad": 286.3732193746006,
+        "symmetric_angle_derivative_mw_per_rad": 285.15326685208976,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 27.01898128936949,
+            "signed_error_mw": -3.0960832995821903,
+            "absolute_error_mw": 3.0960832995821903
+          },
+          "series_susceptance": {
+            "dc_mw": 26.971187016750818,
+            "signed_error_mw": -3.1438775722008607,
+            "absolute_error_mw": 3.1438775722008607
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 26.971187016750818,
+            "signed_error_mw": -3.1438775722008607,
+            "absolute_error_mw": 3.1438775722008607
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 28.77114395630868,
+            "signed_error_mw": -1.3439206326429982,
+            "absolute_error_mw": 1.3439206326429982
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 28.720250257428198,
+            "signed_error_mw": -1.3948143315234809,
+            "absolute_error_mw": 1.3948143315234809
+          }
+        }
+      },
+      {
+        "branch": "7",
+        "tau": 1.0435,
+        "rho": 1.0363408136210317,
+        "delta_rad": 0.10864282326133398,
+        "symmetric_ac_mw": 27.8535296772722,
+        "from_angle_derivative_mw_per_rad": 260.2278294614336,
+        "symmetric_angle_derivative_mw_per_rad": 259.0381452667856,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 28.555649282798186,
+            "signed_error_mw": 0.7021196055259864,
+            "absolute_error_mw": 0.7021196055259864
+          },
+          "series_susceptance": {
+            "dc_mw": 28.505109922975784,
+            "signed_error_mw": 0.6515802457035846,
+            "absolute_error_mw": 0.6515802457035846
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 28.505109922975784,
+            "signed_error_mw": 0.6515802457035846,
+            "absolute_error_mw": 0.6515802457035846
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 27.36526045308882,
+            "signed_error_mw": -0.48826922418338015,
+            "absolute_error_mw": 0.48826922418338015
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 27.316827908937025,
+            "signed_error_mw": -0.536701768335174,
+            "absolute_error_mw": 0.536701768335174
+          }
+        }
+      },
+      {
+        "branch": "361",
+        "tau": 1.0522,
+        "rho": 1.0236998403037005,
+        "delta_rad": -0.03594555083620881,
+        "symmetric_ac_mw": -249.7456413587736,
+        "from_angle_derivative_mw_per_rad": 6944.894772330084,
+        "symmetric_angle_derivative_mw_per_rad": 6944.894772330084,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -256.7539345443487,
+            "signed_error_mw": -7.00829318557507,
+            "absolute_error_mw": 7.00829318557507
+          },
+          "series_susceptance": {
+            "dc_mw": -256.75393454434857,
+            "signed_error_mw": -7.008293185574956,
+            "absolute_error_mw": 7.008293185574956
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -256.75393454434857,
+            "signed_error_mw": -7.008293185574956,
+            "absolute_error_mw": 7.008293185574956
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -244.01628449377367,
+            "signed_error_mw": 5.729356864999943,
+            "absolute_error_mw": 5.729356864999943
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -244.0162844937736,
+            "signed_error_mw": 5.729356865,
+            "absolute_error_mw": 5.729356865
+          }
+        }
+      },
+      {
+        "branch": "337",
+        "tau": 0.971,
+        "rho": 1.0419459265531166,
+        "delta_rad": 0.02991559058120609,
+        "symmetric_ac_mw": 641.9315893750097,
+        "from_angle_derivative_mw_per_rad": 21451.693521035908,
+        "symmetric_angle_derivative_mw_per_rad": 21451.693521035908,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 598.3118116241218,
+            "signed_error_mw": -43.61977775088792,
+            "absolute_error_mw": 43.61977775088792
+          },
+          "series_susceptance": {
+            "dc_mw": 598.3118116241218,
+            "signed_error_mw": -43.61977775088792,
+            "absolute_error_mw": 43.61977775088792
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 598.3118116241218,
+            "signed_error_mw": -43.61977775088792,
+            "absolute_error_mw": 43.61977775088792
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 616.1810624347289,
+            "signed_error_mw": -25.750526940280793,
+            "absolute_error_mw": 25.750526940280793
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 616.1810624347289,
+            "signed_error_mw": -25.750526940280793,
+            "absolute_error_mw": 25.750526940280793
+          }
+        }
+      },
+      {
+        "branch": "4",
+        "tau": 0.9796,
+        "rho": 1.03214335572364,
+        "delta_rad": 0.10319882947305822,
+        "symmetric_ac_mw": 16.938137433095314,
+        "from_angle_derivative_mw_per_rad": 161.91813236247293,
+        "symmetric_angle_derivative_mw_per_rad": 160.98709246506272,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 15.901696427171593,
+            "signed_error_mw": -1.0364410059237201,
+            "absolute_error_mw": 1.0364410059237201
+          },
+          "series_susceptance": {
+            "dc_mw": 15.852264781452835,
+            "signed_error_mw": -1.0858726516424788,
+            "absolute_error_mw": 1.0858726516424788
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 15.852264781452835,
+            "signed_error_mw": -1.0858726516424788,
+            "absolute_error_mw": 1.0858726516424788
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 16.232846495683535,
+            "signed_error_mw": -0.7052909374117782,
+            "absolute_error_mw": 0.7052909374117782
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 16.182385444521067,
+            "signed_error_mw": -0.7557519885742465,
+            "absolute_error_mw": 0.7557519885742465
+          }
+        }
+      },
+      {
+        "branch": "369",
+        "tau": 1.073,
+        "rho": 1.0116218942656325,
+        "delta_rad": 0.0644776956697623,
+        "symmetric_ac_mw": 94.86646390684051,
+        "from_angle_derivative_mw_per_rad": 1473.746532006878,
+        "symmetric_angle_derivative_mw_per_rad": 1469.736808644413,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 100.90406208100518,
+            "signed_error_mw": 6.037598174164671,
+            "absolute_error_mw": 6.037598174164671
+          },
+          "series_susceptance": {
+            "dc_mw": 100.72423305947467,
+            "signed_error_mw": 5.857769152634162,
+            "absolute_error_mw": 5.857769152634162
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 100.72423305947467,
+            "signed_error_mw": 5.857769152634162,
+            "absolute_error_mw": 5.857769152634162
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 94.03920044828068,
+            "signed_error_mw": -0.8272634585598269,
+            "absolute_error_mw": 0.8272634585598269
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 93.8716058336204,
+            "signed_error_mw": -0.9948580732201151,
+            "absolute_error_mw": 0.9948580732201151
+          }
+        }
+      },
+      {
+        "branch": "373",
+        "tau": 0.98,
+        "rho": 1.097715594279629,
+        "delta_rad": -0.0767885209766224,
+        "symmetric_ac_mw": -220.18425875180893,
+        "from_angle_derivative_mw_per_rad": 2897.481761669775,
+        "symmetric_angle_derivative_mw_per_rad": 2905.048637675085,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -199.97010670995417,
+            "signed_error_mw": 20.21415204185476,
+            "absolute_error_mw": 20.21415204185476
+          },
+          "series_susceptance": {
+            "dc_mw": -199.74118242183238,
+            "signed_error_mw": 20.44307632997655,
+            "absolute_error_mw": 20.44307632997655
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -199.74118242183238,
+            "signed_error_mw": 20.44307632997655,
+            "absolute_error_mw": 20.44307632997655
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -204.0511292958716,
+            "signed_error_mw": 16.133129455937336,
+            "absolute_error_mw": 16.133129455937336
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -203.8175330835024,
+            "signed_error_mw": 16.366725668306515,
+            "absolute_error_mw": 16.366725668306515
+          }
+        }
+      },
+      {
+        "branch": "38",
+        "tau": 0.9583,
+        "rho": 1.071864506138028,
+        "delta_rad": 0.008727412731744932,
+        "symmetric_ac_mw": 1.3015388618545736,
+        "from_angle_derivative_mw_per_rad": 149.1284824727645,
+        "symmetric_angle_derivative_mw_per_rad": 149.1284824727645,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 1.1636550308993243,
+            "signed_error_mw": -0.13788383095524925,
+            "absolute_error_mw": 0.13788383095524925
+          },
+          "series_susceptance": {
+            "dc_mw": 1.1636550308993243,
+            "signed_error_mw": -0.13788383095524925,
+            "absolute_error_mw": 0.13788383095524925
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 1.1636550308993243,
+            "signed_error_mw": -0.13788383095524925,
+            "absolute_error_mw": 0.13788383095524925
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 1.214290964102394,
+            "signed_error_mw": -0.08724789775217956,
+            "absolute_error_mw": 0.08724789775217956
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 1.214290964102394,
+            "signed_error_mw": -0.08724789775217956,
+            "absolute_error_mw": 0.08724789775217956
+          }
+        }
+      },
+      {
+        "branch": "375",
+        "tau": 1.05,
+        "rho": 1.0456616533794871,
+        "delta_rad": 0.04856451217838573,
+        "symmetric_ac_mw": 364.283837357159,
+        "from_angle_derivative_mw_per_rad": 7597.5515518253505,
+        "symmetric_angle_derivative_mw_per_rad": 7589.104578070977,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 370.721467010578,
+            "signed_error_mw": 6.437629653419037,
+            "absolute_error_mw": 6.437629653419037
+          },
+          "series_susceptance": {
+            "dc_mw": 370.52714591546476,
+            "signed_error_mw": 6.243308558305785,
+            "absolute_error_mw": 6.243308558305785
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 370.52714591546476,
+            "signed_error_mw": 6.243308558305785,
+            "absolute_error_mw": 6.243308558305785
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 353.06806381959814,
+            "signed_error_mw": -11.215773537560835,
+            "absolute_error_mw": 11.215773537560835
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 352.8829961099665,
+            "signed_error_mw": -11.400841247192488,
+            "absolute_error_mw": 11.400841247192488
+          }
+        }
+      },
+      {
+        "branch": "378",
+        "tau": 0.985,
+        "rho": 1.09799631176281,
+        "delta_rad": 0.025809616916406125,
+        "symmetric_ac_mw": 80.15248199535844,
+        "from_angle_derivative_mw_per_rad": 3044.9239282613416,
+        "symmetric_angle_derivative_mw_per_rad": 3043.2067382045984,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 70.51807900657411,
+            "signed_error_mw": -9.63440298878433,
+            "absolute_error_mw": 9.63440298878433
+          },
+          "series_susceptance": {
+            "dc_mw": 70.48440375619043,
+            "signed_error_mw": -9.668078239168011,
+            "absolute_error_mw": 9.668078239168011
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 70.48440375619043,
+            "signed_error_mw": -9.668078239168011,
+            "absolute_error_mw": 9.668078239168011
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 71.59195838230875,
+            "signed_error_mw": -8.560523613049696,
+            "absolute_error_mw": 8.560523613049696
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 71.55777031085321,
+            "signed_error_mw": -8.594711684505228,
+            "absolute_error_mw": 8.594711684505228
+          }
+        }
+      },
+      {
+        "branch": "376",
+        "tau": 1.03,
+        "rho": 1.0654964046441169,
+        "delta_rad": -0.032995651348181776,
+        "symmetric_ac_mw": -13.542290398947074,
+        "from_angle_derivative_mw_per_rad": 410.2775648660946,
+        "symmetric_angle_derivative_mw_per_rad": 410.2775648660947,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -13.093512439754672,
+            "signed_error_mw": 0.4487779591924017,
+            "absolute_error_mw": 0.4487779591924017
+          },
+          "series_susceptance": {
+            "dc_mw": -13.093512439754672,
+            "signed_error_mw": 0.4487779591924017,
+            "absolute_error_mw": 0.4487779591924017
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -13.093512439754672,
+            "signed_error_mw": 0.4487779591924017,
+            "absolute_error_mw": 0.4487779591924017
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -12.71214799976182,
+            "signed_error_mw": 0.8301423991852541,
+            "absolute_error_mw": 0.8301423991852541
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -12.712147999761816,
+            "signed_error_mw": 0.8301423991852577,
+            "absolute_error_mw": 0.8301423991852577
+          }
+        }
+      },
+      {
+        "branch": "411",
+        "tau": 0.9565,
+        "rho": 1.0285423157135989,
+        "delta_rad": 0.13055410015741548,
+        "symmetric_ac_mw": 202.99999999987995,
+        "from_angle_derivative_mw_per_rad": 1546.0667354664995,
+        "symmetric_angle_derivative_mw_per_rad": 1546.0667354664995,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 189.31859071550969,
+            "signed_error_mw": -13.681409284370261,
+            "absolute_error_mw": 13.681409284370261
+          },
+          "series_susceptance": {
+            "dc_mw": 189.31859071550969,
+            "signed_error_mw": -13.681409284370261,
+            "absolute_error_mw": 13.681409284370261
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 189.31859071550969,
+            "signed_error_mw": -13.681409284370261,
+            "absolute_error_mw": 13.681409284370261
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 197.92847957711416,
+            "signed_error_mw": -5.071520422765786,
+            "absolute_error_mw": 5.071520422765786
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 197.92847957711416,
+            "signed_error_mw": -5.071520422765786,
+            "absolute_error_mw": 5.071520422765786
+          }
+        }
+      },
+      {
+        "branch": "388",
+        "tau": 1.07,
+        "rho": 1.0659817591636578,
+        "delta_rad": -0.1404469698908811,
+        "symmetric_ac_mw": -878.9155575321075,
+        "from_angle_derivative_mw_per_rad": 6131.993054096552,
+        "symmetric_angle_derivative_mw_per_rad": 6159.204761413644,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -877.7935618180069,
+            "signed_error_mw": 1.121995714100649,
+            "absolute_error_mw": 1.121995714100649
+          },
+          "series_susceptance": {
+            "dc_mw": -876.9371778552577,
+            "signed_error_mw": 1.9783796768498405,
+            "absolute_error_mw": 1.9783796768498405
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -876.9371778552577,
+            "signed_error_mw": 1.9783796768498405,
+            "absolute_error_mw": 1.9783796768498405
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -820.3678147831839,
+            "signed_error_mw": 58.54774274892361,
+            "absolute_error_mw": 58.54774274892361
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -819.5674559394931,
+            "signed_error_mw": 59.3481015926144,
+            "absolute_error_mw": 59.3481015926144
+          }
+        }
+      },
+      {
+        "branch": "382",
+        "tau": 1.05,
+        "rho": 1.0218928501949278,
+        "delta_rad": -0.17980491883519023,
+        "symmetric_ac_mw": -86.33189014686577,
+        "from_angle_derivative_mw_per_rad": 456.62948611020903,
+        "symmetric_angle_derivative_mw_per_rad": 464.9144436013563,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -88.13966609568149,
+            "signed_error_mw": -1.807775948815717,
+            "absolute_error_mw": 1.807775948815717
+          },
+          "series_susceptance": {
+            "dc_mw": -87.30056036362056,
+            "signed_error_mw": -0.9686702167547878,
+            "absolute_error_mw": 0.9686702167547878
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -87.30056036362056,
+            "signed_error_mw": -0.9686702167547878,
+            "absolute_error_mw": 0.9686702167547878
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -83.94253913874428,
+            "signed_error_mw": 2.389351008121494,
+            "absolute_error_mw": 2.389351008121494
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -83.14339082249577,
+            "signed_error_mw": 3.1884993243699995,
+            "absolute_error_mw": 3.1884993243699995
+          }
+        }
+      },
+      {
+        "branch": "381",
+        "tau": 1.01,
+        "rho": 1.065122321884803,
+        "delta_rad": -0.032942739413623856,
+        "symmetric_ac_mw": -27.13621676895213,
+        "from_angle_derivative_mw_per_rad": 823.4409235410637,
+        "symmetric_angle_derivative_mw_per_rad": 823.4409235410637,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -25.736515166893636,
+            "signed_error_mw": 1.3997016020584958,
+            "absolute_error_mw": 1.3997016020584958
+          },
+          "series_susceptance": {
+            "dc_mw": -25.736515166893643,
+            "signed_error_mw": 1.3997016020584887,
+            "absolute_error_mw": 1.3997016020584887
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -25.736515166893643,
+            "signed_error_mw": 1.3997016020584887,
+            "absolute_error_mw": 1.3997016020584887
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -25.481698185043207,
+            "signed_error_mw": 1.6545185839089243,
+            "absolute_error_mw": 1.6545185839089243
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -25.481698185043207,
+            "signed_error_mw": 1.6545185839089243,
+            "absolute_error_mw": 1.6545185839089243
+          }
+        }
+      },
+      {
+        "branch": "347",
+        "tau": 1.008,
+        "rho": 1.0845477724915984,
+        "delta_rad": 0.045042839033032384,
+        "symmetric_ac_mw": 242.23508809404782,
+        "from_angle_derivative_mw_per_rad": 5374.244851845166,
+        "symmetric_angle_derivative_mw_per_rad": 5374.244851845165,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 225.21419516516193,
+            "signed_error_mw": -17.0208929288859,
+            "absolute_error_mw": 17.0208929288859
+          },
+          "series_susceptance": {
+            "dc_mw": 225.21419516516193,
+            "signed_error_mw": -17.0208929288859,
+            "absolute_error_mw": 17.0208929288859
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 225.21419516516193,
+            "signed_error_mw": -17.0208929288859,
+            "absolute_error_mw": 17.0208929288859
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 223.42678091781934,
+            "signed_error_mw": -18.80830717622848,
+            "absolute_error_mw": 18.80830717622848
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 223.42678091781934,
+            "signed_error_mw": -18.80830717622848,
+            "absolute_error_mw": 18.80830717622848
+          }
+        }
+      },
+      {
+        "branch": "409",
+        "tau": 0.942,
+        "rho": 1.0676324406322113,
+        "delta_rad": 0.1328254314940699,
+        "symmetric_ac_mw": 82.55750546522593,
+        "from_angle_derivative_mw_per_rad": 617.8893829768259,
+        "symmetric_angle_derivative_mw_per_rad": 617.8893829768259,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 73.0572748991089,
+            "signed_error_mw": -9.500230566117025,
+            "absolute_error_mw": 9.500230566117025
+          },
+          "series_susceptance": {
+            "dc_mw": 73.0572748991089,
+            "signed_error_mw": -9.500230566117025,
+            "absolute_error_mw": 9.500230566117025
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 73.0572748991089,
+            "signed_error_mw": -9.500230566117025,
+            "absolute_error_mw": 9.500230566117025
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 77.55549352347018,
+            "signed_error_mw": -5.002011941755754,
+            "absolute_error_mw": 5.002011941755754
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 77.55549352347018,
+            "signed_error_mw": -5.002011941755754,
+            "absolute_error_mw": 5.002011941755754
+          }
+        }
+      },
+      {
+        "branch": "339",
+        "tau": 0.959,
+        "rho": 1.038761234014734,
+        "delta_rad": -0.03421970320036202,
+        "symmetric_ac_mw": -95.02196247880727,
+        "from_angle_derivative_mw_per_rad": 2775.7362232177734,
+        "symmetric_angle_derivative_mw_per_rad": 2775.736223217774,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -87.74282871887699,
+            "signed_error_mw": 7.279133759930275,
+            "absolute_error_mw": 7.279133759930275
+          },
+          "series_susceptance": {
+            "dc_mw": -87.74282871887699,
+            "signed_error_mw": 7.279133759930275,
+            "absolute_error_mw": 7.279133759930275
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -87.74282871887699,
+            "signed_error_mw": 7.279133759930275,
+            "absolute_error_mw": 7.279133759930275
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -91.49408625534619,
+            "signed_error_mw": 3.527876223461078,
+            "absolute_error_mw": 3.527876223461078
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -91.49408625534619,
+            "signed_error_mw": 3.527876223461078,
+            "absolute_error_mw": 3.527876223461078
+          }
+        }
+      },
+      {
+        "branch": "374",
+        "tau": 0.956,
+        "rho": 1.0445385441774508,
+        "delta_rad": 0.027017010963158422,
+        "symmetric_ac_mw": 132.19519142479257,
+        "from_angle_derivative_mw_per_rad": 4726.006884158047,
+        "symmetric_angle_derivative_mw_per_rad": 4721.036260880811,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 116.95675741627024,
+            "signed_error_mw": -15.238434008522333,
+            "absolute_error_mw": 15.238434008522333
+          },
+          "series_susceptance": {
+            "dc_mw": 116.77949052224088,
+            "signed_error_mw": -15.415700902551691,
+            "absolute_error_mw": 15.415700902551691
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 116.77949052224088,
+            "signed_error_mw": -15.415700902551691,
+            "absolute_error_mw": 15.415700902551691
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 122.33970441032452,
+            "signed_error_mw": -9.855487014468054,
+            "absolute_error_mw": 9.855487014468054
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 122.15427878895491,
+            "signed_error_mw": -10.040912635837657,
+            "absolute_error_mw": 10.040912635837657
+          }
+        }
+      },
+      {
+        "branch": "370",
+        "tau": 1.05,
+        "rho": 1.0007096517750944,
+        "delta_rad": 0.024785650540183446,
+        "symmetric_ac_mw": 93.80054856887364,
+        "from_angle_derivative_mw_per_rad": 3720.9841846318545,
+        "symmetric_angle_derivative_mw_per_rad": 3718.103731641956,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 96.81894742259158,
+            "signed_error_mw": 3.0183988537179403,
+            "absolute_error_mw": 3.0183988537179403
+          },
+          "series_susceptance": {
+            "dc_mw": 96.72448991291101,
+            "signed_error_mw": 2.923941344037374,
+            "absolute_error_mw": 2.923941344037374
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 96.72448991291101,
+            "signed_error_mw": 2.923941344037374,
+            "absolute_error_mw": 2.923941344037374
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 92.20852135484911,
+            "signed_error_mw": -1.592027214024526,
+            "absolute_error_mw": 1.592027214024526
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 92.11856182182001,
+            "signed_error_mw": -1.681986747053628,
+            "absolute_error_mw": 1.681986747053628
+          }
+        }
+      },
+      {
+        "branch": "406",
+        "tau": 0.942,
+        "rho": 1.0859739378549271,
+        "delta_rad": 0.07035929326462882,
+        "symmetric_ac_mw": 489.99999999981156,
+        "from_angle_derivative_mw_per_rad": 6952.758336060086,
+        "symmetric_angle_derivative_mw_per_rad": 6952.758336060085,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 425.38871381274987,
+            "signed_error_mw": -64.6112861870617,
+            "absolute_error_mw": 64.6112861870617
+          },
+          "series_susceptance": {
+            "dc_mw": 425.38871381274987,
+            "signed_error_mw": -64.6112861870617,
+            "absolute_error_mw": 64.6112861870617
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 425.38871381274987,
+            "signed_error_mw": -64.6112861870617,
+            "absolute_error_mw": 64.6112861870617
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 451.580375597399,
+            "signed_error_mw": -38.41962440241258,
+            "absolute_error_mw": 38.41962440241258
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 451.5803755973991,
+            "signed_error_mw": -38.41962440241247,
+            "absolute_error_mw": 38.41962440241247
+          }
+        }
+      },
+      {
+        "branch": "377",
+        "tau": 1.03,
+        "rho": 1.0427755753412271,
+        "delta_rad": -0.019696841167120616,
+        "symmetric_ac_mw": -8.413443451959965,
+        "from_angle_derivative_mw_per_rad": 427.0915986154333,
+        "symmetric_angle_derivative_mw_per_rad": 427.0915986154333,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -8.310903446042454,
+            "signed_error_mw": 0.10254000591751122,
+            "absolute_error_mw": 0.10254000591751122
+          },
+          "series_susceptance": {
+            "dc_mw": -8.310903446042454,
+            "signed_error_mw": 0.10254000591751122,
+            "absolute_error_mw": 0.10254000591751122
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -8.310903446042454,
+            "signed_error_mw": 0.10254000591751122,
+            "absolute_error_mw": 0.10254000591751122
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -8.068838297128595,
+            "signed_error_mw": 0.34460515483137044,
+            "absolute_error_mw": 0.34460515483137044
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -8.068838297128595,
+            "signed_error_mw": 0.34460515483137044,
+            "absolute_error_mw": 0.34460515483137044
+          }
+        }
+      },
+      {
+        "branch": "410",
+        "tau": 0.942,
+        "rho": 1.0197447415161245,
+        "delta_rad": 0.15974155027803108,
+        "symmetric_ac_mw": 87.82107236234758,
+        "from_angle_derivative_mw_per_rad": 545.0855521351174,
+        "symmetric_angle_derivative_mw_per_rad": 545.0855521351173,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 81.47169392463461,
+            "signed_error_mw": -6.349378437712971,
+            "absolute_error_mw": 6.349378437712971
+          },
+          "series_susceptance": {
+            "dc_mw": 81.47169392463461,
+            "signed_error_mw": -6.349378437712971,
+            "absolute_error_mw": 6.349378437712971
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 81.47169392463461,
+            "signed_error_mw": -6.349378437712971,
+            "absolute_error_mw": 6.349378437712971
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 86.48799779685203,
+            "signed_error_mw": -1.3330745654955507,
+            "absolute_error_mw": 1.3330745654955507
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 86.48799779685203,
+            "signed_error_mw": -1.3330745654955507,
+            "absolute_error_mw": 1.3330745654955507
+          }
+        }
+      },
+      {
+        "branch": "349",
+        "tau": 0.975,
+        "rho": 1.048652012647631,
+        "delta_rad": 0.01713941266179614,
+        "symmetric_ac_mw": 31.242763365746633,
+        "from_angle_derivative_mw_per_rad": 1822.6822958545058,
+        "symmetric_angle_derivative_mw_per_rad": 1822.6822958545058,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 29.049851969146,
+            "signed_error_mw": -2.192911396600632,
+            "absolute_error_mw": 2.192911396600632
+          },
+          "series_susceptance": {
+            "dc_mw": 29.049851969146,
+            "signed_error_mw": -2.192911396600632,
+            "absolute_error_mw": 2.192911396600632
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 29.049851969146,
+            "signed_error_mw": -2.192911396600632,
+            "absolute_error_mw": 2.192911396600632
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 29.794719968354872,
+            "signed_error_mw": -1.4480433973917606,
+            "absolute_error_mw": 1.4480433973917606
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 29.794719968354872,
+            "signed_error_mw": -1.4480433973917606,
+            "absolute_error_mw": 1.4480433973917606
+          }
+        }
+      },
+      {
+        "branch": "391",
+        "tau": 1.0223,
+        "rho": 1.0908964275772512,
+        "delta_rad": 0.021348822452541938,
+        "symmetric_ac_mw": 100.36151791213106,
+        "from_angle_derivative_mw_per_rad": 4634.0545151100905,
+        "symmetric_angle_derivative_mw_per_rad": 4629.7564773742415,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 92.82096718496496,
+            "signed_error_mw": -7.5405507271661065,
+            "absolute_error_mw": 7.5405507271661065
+          },
+          "series_susceptance": {
+            "dc_mw": 92.64583328461595,
+            "signed_error_mw": -7.715684627515117,
+            "absolute_error_mw": 7.715684627515117
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 92.64583328461595,
+            "signed_error_mw": -7.715684627515117,
+            "absolute_error_mw": 7.715684627515117
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 90.79621166483903,
+            "signed_error_mw": -9.565306247292028,
+            "absolute_error_mw": 9.565306247292028
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 90.62489805792426,
+            "signed_error_mw": -9.736619854206808,
+            "absolute_error_mw": 9.736619854206808
+          }
+        }
+      },
+      {
+        "branch": "8",
+        "tau": 1.0435,
+        "rho": 1.0485528937229176,
+        "delta_rad": -0.12740914785204593,
+        "symmetric_ac_mw": -83.99999999967358,
+        "from_angle_derivative_mw_per_rad": 655.7219964835128,
+        "symmetric_angle_derivative_mw_per_rad": 655.7219964835128,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -83.82180779739865,
+            "signed_error_mw": 0.1781922022749285,
+            "absolute_error_mw": 0.1781922022749285
+          },
+          "series_susceptance": {
+            "dc_mw": -83.82180779739863,
+            "signed_error_mw": 0.1781922022749427,
+            "absolute_error_mw": 0.1781922022749427
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -83.82180779739863,
+            "signed_error_mw": 0.1781922022749427,
+            "absolute_error_mw": 0.1781922022749427
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -80.3275589816949,
+            "signed_error_mw": 3.67244101797867,
+            "absolute_error_mw": 3.67244101797867
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -80.3275589816949,
+            "signed_error_mw": 3.67244101797867,
+            "absolute_error_mw": 3.67244101797867
+          }
+        }
+      },
+      {
+        "branch": "338",
+        "tau": 0.948,
+        "rho": 1.028072114244712,
+        "delta_rad": 0.06968598557643084,
+        "symmetric_ac_mw": 193.61746331190312,
+        "from_angle_derivative_mw_per_rad": 2773.92863504009,
+        "symmetric_angle_derivative_mw_per_rad": 2773.92863504009,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 178.68201429854062,
+            "signed_error_mw": -14.9354490133625,
+            "absolute_error_mw": 14.9354490133625
+          },
+          "series_susceptance": {
+            "dc_mw": 178.68201429854062,
+            "signed_error_mw": -14.9354490133625,
+            "absolute_error_mw": 14.9354490133625
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 178.68201429854062,
+            "signed_error_mw": -14.9354490133625,
+            "absolute_error_mw": 14.9354490133625
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 188.48313744571797,
+            "signed_error_mw": -5.134325866185151,
+            "absolute_error_mw": 5.134325866185151
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 188.48313744571797,
+            "signed_error_mw": -5.134325866185151,
+            "absolute_error_mw": 5.134325866185151
+          }
+        }
+      },
+      {
+        "branch": "343",
+        "tau": 0.971,
+        "rho": 1.067440249879758,
+        "delta_rad": 0.07154699046564589,
+        "symmetric_ac_mw": 209.73914494938435,
+        "from_angle_derivative_mw_per_rad": 2888.989058940167,
+        "symmetric_angle_derivative_mw_per_rad": 2883.5505821262445,
+        "models": {
+          "reactance_only": {
+            "dc_mw": 188.2815538569629,
+            "signed_error_mw": -21.457591092421467,
+            "absolute_error_mw": 21.457591092421467
+          },
+          "series_susceptance": {
+            "dc_mw": 188.15125520377467,
+            "signed_error_mw": -21.587889745609687,
+            "absolute_error_mw": 21.587889745609687
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": 188.15125520377467,
+            "signed_error_mw": -21.587889745609687,
+            "absolute_error_mw": 21.587889745609687
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": 193.90479284960134,
+            "signed_error_mw": -15.834352099783018,
+            "absolute_error_mw": 15.834352099783018
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": 193.77060268153932,
+            "signed_error_mw": -15.968542267845038,
+            "absolute_error_mw": 15.968542267845038
+          }
+        }
+      },
+      {
+        "branch": "383",
+        "tau": 1.03,
+        "rho": 1.1098186625662831,
+        "delta_rad": -0.08959451228833148,
+        "symmetric_ac_mw": -47.605691338724576,
+        "from_angle_derivative_mw_per_rad": 495.4592087562722,
+        "symmetric_angle_derivative_mw_per_rad": 501.0051947135545,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -42.46185416508601,
+            "signed_error_mw": 5.143837173638566,
+            "absolute_error_mw": 5.143837173638566
+          },
+          "series_susceptance": {
+            "dc_mw": -41.82676304364878,
+            "signed_error_mw": 5.778928295075794,
+            "absolute_error_mw": 5.778928295075794
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -41.82676304364878,
+            "signed_error_mw": 5.778928295075794,
+            "absolute_error_mw": 5.778928295075794
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -41.22510113115147,
+            "signed_error_mw": 6.380590207573107,
+            "absolute_error_mw": 6.380590207573107
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -40.60850780936775,
+            "signed_error_mw": 6.997183529356825,
+            "absolute_error_mw": 6.997183529356825
+          }
+        }
+      },
+      {
+        "branch": "336",
+        "tau": 0.956,
+        "rho": 1.0466912823200971,
+        "delta_rad": -0.04344674931845506,
+        "symmetric_ac_mw": -91.44880192953167,
+        "from_angle_derivative_mw_per_rad": 2103.5234148539207,
+        "symmetric_angle_derivative_mw_per_rad": 2103.5234148539207,
+        "models": {
+          "reactance_only": {
+            "dc_mw": -83.55144099702896,
+            "signed_error_mw": 7.897360932502707,
+            "absolute_error_mw": 7.897360932502707
+          },
+          "series_susceptance": {
+            "dc_mw": -83.55144099702896,
+            "signed_error_mw": 7.897360932502707,
+            "absolute_error_mw": 7.897360932502707
+          },
+          "series_susceptance_no_phase_shift": {
+            "dc_mw": -83.55144099702896,
+            "signed_error_mw": 7.897360932502707,
+            "absolute_error_mw": 7.897360932502707
+          },
+          "tap_adjusted_reactance": {
+            "dc_mw": -87.3969048086077,
+            "signed_error_mw": 4.051897120923968,
+            "absolute_error_mw": 4.051897120923968
+          },
+          "tap_adjusted_series_susceptance": {
+            "dc_mw": -87.3969048086077,
+            "signed_error_mw": 4.051897120923968,
+            "absolute_error_mw": 4.051897120923968
+          }
+        }
+      }
+    ]
+  },
   "case_sha256": "7ecf056d5942135765200ad7ae8791c28f0d35fb1dc888ba2c32dfc950f3c2f5",
   "versions": {
     "julia": "1.12.6",
     "PowerModels": "0.19.9",
     "Ipopt": "1.4.1"
-  }
+  },
+  "raw_sha256": {
+    "tellegen": "4af6eac8658173c7d290c431e18252403915142a3a1051a34e9f8bd98b63cfba",
+    "reference": "e8476766c7132a0dabf61ee4edc0307ad1c73b9fa0c3d8f3a292a07ec8f24e89"
+  },
+  "provenance": "Original recorded solver outputs; existing report metrics verified unchanged before enrichment. No solver rerun for this report."
 }

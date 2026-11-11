@@ -30,6 +30,18 @@ exhaustive list of cases that happen to yield equal costs. All five options
 agree when `r=0`, `τ=1`, `φ=0`. Taps can change radial-network angles without
 changing its fixed-injection flows; meshed networks redistribute flows.
 
+Equation parity assumes the same branch orientation and impedance reference
+side. PowerModels `parse_file` may reverse antiparallel transformers, scaling
+`r,x` by `τ²`, inverting `τ`, negating `φ`, and reversing angle bounds.
+The two tap-adjusted conventions are invariant under this complete reversal
+(with reversed flow sign); the three tap-ignoring coefficients change by
+`1/τ²`. PowerIO preserves source orientation, so independently parsing the
+same file does not by itself guarantee DCP parity for off-nominal transformers.
+
+In per unit, nodal balance is `pg,i − pd,i − gs,i = Σout f − Σin f`,
+where `f` includes the selected shift term. Fixed HVDC terminal injections
+enter the same balance separately.
+
 The built-in DCP and DCMP equations are checked against **PowerModels 0.19.9**.
 MATPOWER compatibility here means its documented DC equations, tested
 numerically through PowerModels DCMP; it is not a claim that a separate
@@ -112,6 +124,10 @@ choices. At unit bus voltage magnitudes and effective angle difference zero,
 the full complex transformer model has active-flow angle derivative
 `x/((r²+x²)τ)`. That local derivative justifies the tap-adjusted series option;
 it does not establish that it predicts every network's AC flows best.
+At general operating voltages, let `ρ = vf vt`, `δ = Δθ − φ`, and
+`g = r/(r²+x²)`. The from-end derivative is
+`ρ(k cos δ + g sin δ)/τ`; the symmetric-transfer derivative is
+`ρ k cos δ/τ`. The simplified `ρk/τ` slope assumes `δ=0`.
 
 - [PowerModels formulation details](https://lanl-ansi.github.io/PowerModels.jl/stable/formulation-details/)
   and [v0.19.9 DC implementations](https://github.com/lanl-ansi/PowerModels.jl/blob/v0.19.9/src/form/dcp.jl).

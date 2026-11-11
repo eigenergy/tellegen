@@ -8,3 +8,10 @@ fixture, using the reproducible environment and scripts in
 `evals/dc-variants/` at the repository root. DCP and DCMP use built-in models;
 the other three use explicit independent extensions. No third-party network
 data is vendored in this directory.
+
+`case3_reversed_transformer.m` is another original MIT fixture, adding an
+antiparallel off-nominal transformer with a phase shift and asymmetric angle
+limits. PowerModels reverses a nonunity transformer when parsing it. The
+`case3-reversed-reference.json` oracle includes reference orientation signs;
+only the two invariant tap-adjusted modes are compared. Regenerate with the
+same harness using `--check --expect-reversed-nonunity --golden PATH`.

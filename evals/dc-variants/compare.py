@@ -44,6 +44,61 @@ def ac_metrics(result, data):
             'violation_counts':{k:len(v) for k,v in violations.items()}, 'violation_examples':{k:v[:20] for k,v in violations.items()}, 'objective':result.get('objective')}
 
 
+TAP_ADJUSTED = {'tap_adjusted_reactance', 'tap_adjusted_series_susceptance'}
+
+
+def dc_coefficient(name, row):
+    x, r = row['br_x'], row['br_r']
+    k = 1/x if name in {'reactance_only', 'tap_adjusted_reactance'} else x/(r*r+x*x)
+    return k/row['tap'] if name in TAP_ADJUSTED else k
+
+
+def dc_shift(name, row):
+    return 0 if name in {'reactance_only', 'series_susceptance_no_phase_shift'} else row['shift']
+
+
+def distribution(values):
+    values = sorted(values)
+    if not values:
+        return {'count': 0}
+    return {'count': len(values), 'min': values[0], 'median': values[len(values)//2],
+            'max': values[-1], 'mean': sum(values)/len(values)}
+
+
+def ac_operating_point_diagnostics(result, data, names):
+    if not ac_converged(result):
+        return {'status': result.get('termination_status'), 'converged': False}
+    solution, base = result['solution'], data['baseMVA']
+    rows = []
+    for i, row in data['branch'].items():
+        if not row['br_status'] or (row['tap'] == 1 and row['shift'] == 0):
+            continue
+        vf, vt = solution['bus'][str(row['f_bus'])], solution['bus'][str(row['t_bus'])]
+        rho = vf['vm']*vt['vm']
+        angle = vf['va']-vt['va']
+        delta, tau = angle-row['shift'], row['tap']
+        r, x = row['br_r'], row['br_x']
+        g, k = r/(r*r+x*x), x/(r*r+x*x)
+        flow = solution['branch'][i]
+        symmetric = (flow['pf']-flow['pt'])*base/2
+        models = {}
+        for name in names:
+            dc = dc_coefficient(name, row)*(angle-dc_shift(name, row))*base
+            models[name] = {'dc_mw': dc, 'signed_error_mw': dc-symmetric,
+                            'absolute_error_mw': abs(dc-symmetric)}
+        rows.append({'branch': i, 'tau': tau, 'rho': rho, 'delta_rad': delta,
+                     'symmetric_ac_mw': symmetric,
+                     'from_angle_derivative_mw_per_rad': base*rho/tau*(k*math.cos(delta)+g*math.sin(delta)),
+                     'symmetric_angle_derivative_mw_per_rad': base*rho*k*math.cos(delta)/tau,
+                     'models': models})
+    return {'status': result['termination_status'], 'converged': True,
+            'coordinate_system': 'PowerModels parsed branch orientation and impedance reference side',
+            'note': 'All equations evaluated at the same local AC OPF voltages and angles; not independently solved DC dispatches or a universal accuracy ranking.',
+            'distributions': {key: distribution([row[key] for row in rows]) for key in ['tau', 'rho', 'delta_rad']},
+            'absolute_error_mw': {name: distribution([row['models'][name]['absolute_error_mw'] for row in rows]) for name in names},
+            'transformers': rows}
+
+
 def audit(t, r, case):
     data, report, golden = r['data'], {}, {}
     base = data['baseMVA']
@@ -55,12 +110,24 @@ def audit(t, r, case):
         target = (branch['f_bus'], branch['t_bus'])
         assert target in [source, source[::-1]], (i,source,target)
         directions[i] = 1 if target == source else -1
-        assert directions[i] == 1 or branch['tap'] == 1, 'Nonunity reversed transformer needs a source-coordinate equation audit'
+
     report['reference_reversed_branch_count'] = sum(v == -1 for v in directions.values())
+    reversed_nonunity = [i for i, direction in directions.items()
+                        if direction == -1 and data['branch'][i]['br_status'] == 1
+                        and not math.isclose(data['branch'][i]['tap'], 1, rel_tol=0, abs_tol=1e-12)]
+    report['reference_reversed_nonunity_branches'] = reversed_nonunity
     for name, solves in t.items():
         report[name], golden[name] = {}, {}
         for problem in ['dcpf', 'dcopf']:
             actual, ref = solves[problem], r[name][problem]
+            if reversed_nonunity and name not in TAP_ADJUSTED:
+                report[name][problem] = {
+                    'comparison_status': 'incompatible_preprocessing',
+                    'branches': reversed_nonunity,
+                    'note': 'PowerModels moved the impedance reference side. This tap-ignoring equation is not invariant; objective/flow parity is not compared.',
+                    'actual_status': actual.get('status'),
+                    'reference_status': ref.get('termination_status')}
+                continue
             if 'error' in actual or 'solution' not in ref:
                 report[name][problem] = {'actual_error':actual.get('error'),'reference_error':ref.get('error'), 'status':ref.get('termination_status')}
                 continue
@@ -71,10 +138,7 @@ def audit(t, r, case):
             equation_errors, balance = [], {i:0.0 for i in va}
             for i, flow in flows.items():
                 row = data['branch'][i]
-                x, resistance, tap = row['br_x'], row['br_r'], row['tap']
-                k = 1/x if name in ['reactance_only','tap_adjusted_reactance'] else x/(resistance**2+x*x)
-                if name in ['tap_adjusted_reactance','tap_adjusted_series_susceptance']: k /= tap
-                shift = 0 if name in ['reactance_only','series_susceptance_no_phase_shift'] else row['shift']
+                k, shift = dc_coefficient(name, row), dc_shift(name, row)
                 f, to = str(row['f_bus']),str(row['t_bus'])
                 equation_errors.append(abs(flow-k*(va[f]-va[to]-shift)))
                 balance[f] += flow; balance[to] -= flow
@@ -90,12 +154,16 @@ def audit(t, r, case):
                 'angle_rad':maxerr(abs(v-rs['bus'][i]['va']) for i,v in va.items())}
             if problem == 'dcopf':
                 errors['dispatch_pu'] = maxerr(abs(v-rs['gen'][i]['pg']) for i,v in pg.items())
+                errors['actual_objective'] = actual['objective']
+                errors['reference_objective'] = ref['objective']
+                errors['objective_absolute_gap'] = abs(actual['objective']-ref['objective'])
+                errors['objective_units'] = 'case cost units per hour (USD/h for PGLib)'
                 errors['objective_relative'] = abs(actual['objective']-ref['objective'])/max(1,abs(ref['objective']))
                 errors['lmp_per_mw'] = maxerr(abs(v['value']+rs['bus'][str(v['bus'])]['lam_kcl_r']/base) for v in actual['lmp'])
             # Unique dispatch/dual comparison is gated only for the synthetic,
             # strictly convex, nondegenerate fixture. Large-case metrics report.
             report[name][problem] = errors
-            golden[name][problem] = {'va':{i:v['va'] for i,v in rs['bus'].items()}, 'pf':{i:v['pf']*base for i,v in rs['branch'].items()}, 'objective':ref['objective'], 'pg':{i:v['pg']*base for i,v in rs['gen'].items()}, 'lmp':{i:-v['lam_kcl_r']/base for i,v in rs['bus'].items() if v.get('lam_kcl_r') is not None}}
+            golden[name][problem] = {'reference_directions': directions, 'va':{i:v['va'] for i,v in rs['bus'].items()}, 'pf':{i:v['pf']*base for i,v in rs['branch'].items()}, 'objective':ref['objective'], 'pg':{i:v['pg']*base for i,v in rs['gen'].items()}, 'lmp':{i:-v['lam_kcl_r']/base for i,v in rs['bus'].items() if v.get('lam_kcl_r') is not None}}
         ac = r['ac_pf'].get('solution',{}).get('branch',{})
         if ac_converged(r['ac_pf']) and ac and 'flows' in solves['dcpf']:
             errors = []
@@ -123,26 +191,35 @@ def audit(t, r, case):
         eps = 1e-6
         derivative = (p(b['shift']+eps)-p(b['shift']-eps))/(2*eps)
         slopes.append(abs(derivative+y.imag/b['tap']))
-    report['ac_flat_slope_max_error'] = maxerr(slopes)
+    report['unit_voltage_phase_compensated_ac_slope_max_error'] = maxerr(slopes)
     report['ac_pf'] = ac_metrics(r['ac_pf'],data)
-    if 'ac_opf_local' in r: report['ac_opf_local'] = ac_metrics(r['ac_opf_local'],data)
+    if 'ac_opf_local' in r:
+        report['ac_opf_local'] = ac_metrics(r['ac_opf_local'],data)
+        report['ac_opf_operating_point'] = ac_operating_point_diagnostics(r['ac_opf_local'], data, t)
     return report,golden
 
 
 if __name__ == '__main__':
-    p=argparse.ArgumentParser();p.add_argument('case',type=Path);p.add_argument('tellegen',type=Path);p.add_argument('reference',type=Path);p.add_argument('output',type=Path);p.add_argument('--golden',type=Path);p.add_argument('--check',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('case',type=Path);p.add_argument('tellegen',type=Path);p.add_argument('reference',type=Path);p.add_argument('output',type=Path);p.add_argument('--golden',type=Path);p.add_argument('--check',action='store_true');p.add_argument('--expect-reversed-nonunity',action='store_true');a=p.parse_args()
     t,r=json.loads(a.tellegen.read_text()),json.loads(a.reference.read_text())
     report,golden=audit(t,r,a.case.read_text())
     report['case_sha256']=hashlib.sha256(a.case.read_bytes()).hexdigest();report['versions']=r['versions']
+    report['raw_sha256'] = {'tellegen': hashlib.sha256(a.tellegen.read_bytes()).hexdigest(), 'reference': hashlib.sha256(a.reference.read_bytes()).hexdigest()}
     a.output.write_text(json.dumps(report,indent=2)+'\n')
     if a.golden: a.golden.write_text(json.dumps(golden,indent=2)+'\n')
+    if a.expect_reversed_nonunity:
+        assert TAP_ADJUSTED <= t.keys(), 'Both invariant conventions must be audited'
+        assert report['reference_reversed_nonunity_branches'], 'Fixture did not trigger a nonunity transformer reversal'
     if a.check:
         for name in t:
             for problem in ['dcpf','dcopf']:
                 e=report[name][problem]
+                if e.get('comparison_status') == 'incompatible_preprocessing':
+                    assert a.expect_reversed_nonunity and name not in TAP_ADJUSTED, (name, e)
+                    continue
                 assert e.get('reference_status') in ['LOCALLY_SOLVED','OPTIMAL'] and e.get('actual_status') in ['optimal','feasible'], (name,e)
                 assert 'actual_error' not in e and e['equation_pu']<1e-8 and e['balance_pu']<1e-8,(name,e)
                 assert e['flow_pu']<(1e-8 if problem=='dcpf' else 1e-5),(name,e)
                 assert e['angle_rad']<1e-6,(name,e)
                 if problem=='dcopf': assert e['objective_relative']<1e-6 and e['dispatch_pu']<1e-5 and e['lmp_per_mw']<1e-4,(name,e)
-        assert report['ac_flat_slope_max_error']<1e-7
+        assert report['unit_voltage_phase_compensated_ac_slope_max_error']<1e-7
