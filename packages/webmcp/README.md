@@ -67,6 +67,38 @@ const savedJournal = journal.export(); // call when the user chooses to save
 The journal keeps up to 100 completed calls by default and reports discarded
 records in its export. Its data cannot authorize or execute edits.
 
+Every descriptor carries the WebMCP `outputSchema` of the response it
+resolves with: `{ ok: true, data }` or `{ ok: false, error: { code, message } }`.
+Each tool's `data` schema names the fields it reports without requiring them,
+so a response trimmed to the output budget still validates. `schemaErrors`
+checks a value against a schema; use it in a host's tests to confirm the
+adapter's results match:
+
+```ts
+import { schemaErrors } from "@tellegen/webmcp";
+
+const response = await tool.execute(input);
+expect(schemaErrors(tool.outputSchema, response)).toEqual([]);
+```
+
+Hosts that provide `adapter.files` also register `export_case`, which writes
+the displayed case through PowerIO to one of `files.exportFormats` and
+downloads it for the user, and `import_case`, which opens case text the way a
+dropped file opens. Both return PowerIO's findings, not the file text.
+
+Registration options:
+
+- `exposedTo`: origins other than the document's own that may discover and
+  call the tools, such as a page that embeds the host in an iframe. The
+  embedding page must opt in too.
+- `debugTool: true`: also register `inspect_webmcp_registration`, a read-only
+  tool annotated `debugging` that reports the registered tools, the last
+  registration error, and the optional WebMCP features the browser offers.
+
+A rejected `registerTool()` call throws `TellegenRegistrationError`, whose
+`reason` is the DOMException name the browser gave, such as
+`InvalidStateError` for a duplicate tool name.
+
 The adapter exposes case, network, sensitivity, and edit operations. Hosts keep
 PowerIO v0.11 generation-2 `pio-ir` modules, typed state selection, and
 calculation instances behind that interface.

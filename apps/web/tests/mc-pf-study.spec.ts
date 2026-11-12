@@ -611,9 +611,12 @@ test('settings reruns qualify modified results and preserve provenance through e
 
 	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(settings.getByRole('button', { name: 'Run power flow', exact: true })).toBeVisible();
-	await settings
-		.getByRole('button', { name: 'Run power flow', exact: true })
-		.scrollIntoViewIfNeeded();
+	// The resize re-renders the panel, which can detach the button mid-scroll; retry until it settles.
+	await expect(async () => {
+		await settings
+			.getByRole('button', { name: 'Run power flow', exact: true })
+			.scrollIntoViewIfNeeded({ timeout: 2_000 });
+	}).toPass();
 	await page.screenshot({
 		path: testInfo.outputPath('modified-model-settings-mobile.png'),
 		fullPage: true

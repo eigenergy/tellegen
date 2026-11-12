@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { PUBLIC_WEBMCP_EXPOSED_TO } from '$app/env/public';
 	import { trackUsage } from '../analytics/client.js';
 	import { getController } from '@tellegen/svelte';
 	import {
@@ -36,7 +37,7 @@
 		if (event.type === 'finished')
 			trackUsage('agent.call', {
 				tool: event.toolName,
-				result: event.response.ok ? 'completed' : 'failed',
+				result: event.callerCancelled ? 'cancelled' : event.response.ok ? 'completed' : 'failed',
 				duration_ms: event.finishedAt - event.startedAt
 			});
 		if (event.type === 'finished') experiments = journal.records;
@@ -88,6 +89,8 @@
 			signal: lifecycle.signal,
 			onActivity: recordActivity,
 			recordValidatedInput: true,
+			debugTool: true,
+			...(PUBLIC_WEBMCP_EXPOSED_TO ? { exposedTo: PUBLIC_WEBMCP_EXPOSED_TO.split(',') } : {}),
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
 				document.documentElement.dataset.webmcp = error ? 'error' : 'ready';

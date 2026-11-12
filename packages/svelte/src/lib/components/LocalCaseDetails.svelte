@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { CASE_EXPORT_FORMATS } from '../export-formats.js';
 	import type { Snippet } from 'svelte';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt } from '../format.js';
@@ -11,16 +12,7 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// Grid exchange formats the committed state can export.
-	const EXPORT_FORMATS = [
-		{ token: 'matpower', label: 'MATPOWER (.m)' },
-		{ token: 'psse', label: 'PSS/E (.raw)' },
-		{ token: 'psse35', label: 'PSS/E v35 (.raw)' },
-		{ token: 'powerworld', label: 'PowerWorld (.aux)' },
-		{ token: 'pslf', label: 'PSLF (.epc)' },
-		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
-		{ token: 'pandapower-json', label: 'pandapower (.json)' }
-	];
+	const EXPORT_FORMATS = CASE_EXPORT_FORMATS;
 
 	let busy = $state(false);
 	let exportOpen = $state(false);

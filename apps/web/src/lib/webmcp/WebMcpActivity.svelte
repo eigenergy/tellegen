@@ -308,6 +308,12 @@
 									</div>
 								{/if}
 
+								{#if finished(activity) && activity.callerCancelled && activity.response.ok}
+									<p class="error mono" data-testid="caller-cancelled">
+										The agent cancelled this call, but it had already completed. Any change it made
+										stands; the agent did not receive the result.
+									</p>
+								{/if}
 								{#if finished(activity) && !activity.response.ok}
 									<p class="error mono">
 										{activity.response.error.code}: {activity.response.error.message}
