@@ -1573,7 +1573,7 @@ pub fn apply_network_edits(net: &mut BalancedNetwork, edits: &[NetworkEdit]) -> 
                         "rating edit names branch {branch}, which is not in the network"
                     ));
                 };
-                if edited.rate_a <= 0.0 {
+                if crate::ratings::unlimited(edited.rate_a) {
                     return Err(format!(
                         "rating edit on branch {branch} adjusts a limit the source does not \
                          state (`rate_a` is unlimited); export cannot represent it"

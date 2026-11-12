@@ -67,6 +67,7 @@ pub mod objective;
 #[cfg(feature = "sensitivity")]
 pub mod plan;
 mod problem;
+pub mod ratings;
 pub mod regulation;
 /// Schematic layouts for multiconductor graphs.
 pub mod schematic;
