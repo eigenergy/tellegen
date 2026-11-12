@@ -27,6 +27,7 @@ import {
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { powerIoEntry, solveEntry } from './log.svelte.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
+import { PIO_MODULE_EXPORT } from './export-formats.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
 import { CollectionImport } from './collection-import.svelte.js';
@@ -234,6 +235,11 @@ function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> 
 		timeout = setTimeout(finish, ms);
 		signal.addEventListener('abort', finish, { once: true });
 	});
+}
+
+/** `writeCaseFile` found no Study to write; the error banner already says why. */
+class CaseFileUnavailable extends Error {
+	override name = 'CaseFileUnavailable';
 }
 
 /** Trigger a browser download of in-memory text. Case files never leave the machine:
@@ -4015,25 +4021,48 @@ export class Controller {
 		}
 	};
 
+	/** Write the active study's committed state to `format` (a PowerIO token, or
+	 * `pio-module` for the retained module) and download it. Throws when the case
+	 * cannot be written; the error banner then names the reason. */
+	writeCaseFile = async (
+		c: SolvableCase,
+		format: string
+	): Promise<{ fileName: string; bytes: number; diagnostics: PowerIoDiagnostic[] }> => {
+		const study = await this.syncedStudy(c);
+		if (!study)
+			throw new CaseFileUnavailable(this.app.error ?? `${this.caseName(c)}: export is unavailable`);
+		const stem = this.caseFileStem(c);
+		let text: string;
+		let fileName: string;
+		let diagnostics: PowerIoDiagnostic[] = [];
+		if (format === PIO_MODULE_EXPORT.token) {
+			text = await study.saveModule();
+			fileName = `${stem}.pio.json`;
+			downloadText(text, fileName, 'application/json');
+		} else {
+			const exported = await study.export(format);
+			text = exported.text;
+			fileName = `${stem}.${exported.extension}`;
+			diagnostics = exported.diagnostics ?? [];
+			downloadText(text, fileName, 'text/plain');
+			this.app.log.record(
+				diagnostics.map((d) => powerIoEntry(d, { stage: 'Export', subject: fileName })),
+				{ repeat: false }
+			);
+		}
+		this.app.error = null;
+		return { fileName, bytes: new TextEncoder().encode(text).length, diagnostics };
+	};
+
 	/** Export the active study's committed state to `format` and download it.
 	 * Returns this output operation's structured diagnostics. */
 	exportCaseAs = async (c: SolvableCase, format: string): Promise<PowerIoDiagnostic[]> => {
-		const study = await this.syncedStudy(c);
-		if (!study) return [];
 		try {
-			const exported = await study.export(format);
-			const fileName = `${this.caseFileStem(c)}.${exported.extension}`;
-			downloadText(exported.text, fileName, 'text/plain');
-			this.app.error = null;
-			this.app.log.record(
-				(exported.diagnostics ?? []).map((d) =>
-					powerIoEntry(d, { stage: 'Export', subject: fileName })
-				),
-				{ repeat: false }
-			);
-			return exported.diagnostics;
+			return (await this.writeCaseFile(c, format)).diagnostics;
 		} catch (e) {
-			this.app.error = `${this.caseName(c)}: could not export study: ${errorText(e)}`;
+			// An unavailable study has already put its reason in the banner.
+			if (!(e instanceof CaseFileUnavailable))
+				this.app.error = `${this.caseName(c)}: could not export study: ${errorText(e)}`;
 			return [];
 		}
 	};

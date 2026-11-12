@@ -26,6 +26,9 @@ import {
 	TellegenToolError,
 	type AnalyzeSensitivityInput,
 	type ApplyCapacityPlanInput,
+	type ExportCaseInput,
+	type ImportCaseInput,
+	type TellegenFileAdapter,
 	type FocusNetworkInput,
 	type ProposeCapacityPlanInput,
 	type PreviewCaseUpdateInput,
@@ -39,6 +42,7 @@ import {
 	type UpdateCaseInput
 } from '@tellegen/webmcp';
 import { capacityPlanFirstOrderError, capacityPlanPredictedPhiDelta } from './webmcp-metrics.js';
+import { CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT } from './export-formats.js';
 export type {
 	WebMcpStudyHost,
 	WebMcpPlanningHost,
@@ -1740,6 +1744,125 @@ async function applyCapacityPlan(
 	);
 }
 
+const MAX_REPORTED_DIAGNOSTICS = 6;
+
+function diagnosticRows(
+	diagnostics: readonly { code?: string; severity: string; message: string }[]
+): ToolPayload[] {
+	// Errors first, then warnings, so a bounded list keeps what matters most.
+	const rank = (severity: string) => (severity === 'error' ? 0 : severity === 'warning' ? 1 : 2);
+	return [...diagnostics]
+		.sort((a, b) => rank(a.severity) - rank(b.severity))
+		.slice(0, MAX_REPORTED_DIAGNOSTICS)
+		.map((d) => ({
+			code: d.code ?? 'UNCODED',
+			severity: d.severity,
+			message: clip(d.message, 160)
+		}));
+}
+
+async function exportCaseFile(
+	ctrl: Controller,
+	input: ExportCaseInput,
+	signal: AbortSignal
+): Promise<ToolPayload> {
+	signal.throwIfAborted();
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	const unavailable = ctrl.caseExportUnavailableReason(c);
+	if (unavailable) throw new TellegenToolError('EXPORT_UNAVAILABLE', clip(unavailable, 240));
+	signal.throwIfAborted();
+	let written: Awaited<ReturnType<Controller['writeCaseFile']>>;
+	try {
+		written = await ctrl.writeCaseFile(c, input.format);
+	} catch (error) {
+		throw new TellegenToolError(
+			'EXPORT_UNAVAILABLE',
+			clip(error instanceof Error ? error.message : String(error), 240)
+		);
+	}
+	return withBudgetedRows(
+		{
+			...displayedContext(ctrl),
+			format: input.format,
+			file_name: clip(written.fileName, 128),
+			bytes: written.bytes,
+			downloaded: true
+		},
+		diagnosticRows(written.diagnostics),
+		'diagnostics',
+		'diagnostic_count',
+		'diagnostics_truncated'
+	);
+}
+
+async function importCaseText(
+	ctrl: Controller,
+	input: ImportCaseInput,
+	signal: AbortSignal
+): Promise<ToolPayload> {
+	signal.throwIfAborted();
+	if (ctrl.app.studyView)
+		throw new TellegenToolError(
+			'SAVED_STATE_READ_ONLY',
+			'a saved state is displayed; select_case returns to a live case before opening a file'
+		);
+	const before = new Set([
+		...ctrl.app.localCases.map((c) => c.id),
+		...ctrl.app.multiCases.map((c) => c.id)
+	]);
+	const lastLogId = ctrl.app.log.entries.at(-1)?.id ?? 0;
+	ctrl.app.error = null;
+	// The same path as a dropped file: PowerIO picks the reader by extension.
+	await ctrl.ingestFiles([new File([input.text], input.fileName)]);
+	await tick();
+	const opened = [
+		...ctrl.app.localCases
+			.filter((c) => !before.has(c.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.label, 64),
+				kind: 'local',
+				calculation: c.studyInputJson && c.summary ? 'balanced' : 'display_only',
+				availability: c.coordsKind === 'synthetic_pending' ? 'placement_required' : 'ready'
+			})),
+		...ctrl.app.multiCases
+			.filter((c) => !before.has(c.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.label, 64),
+				kind: 'distribution',
+				calculation: c.mcPfSupported ? 'multiconductor_ac_pf' : 'display_only',
+				availability: c.placed ? 'ready' : 'placement_required'
+			}))
+	];
+	if (opened.length === 0)
+		throw new TellegenToolError(
+			'IMPORT_FAILED',
+			clip(ctrl.app.error ?? 'PowerIO opened no case from the file', 240)
+		);
+	const findings = ctrl.app.log.entries.filter((entry) => entry.id > lastLogId);
+	return withBudgetedRows(
+		{ ...displayedContext(ctrl), opened },
+		diagnosticRows(findings),
+		'diagnostics',
+		'diagnostic_count',
+		'diagnostics_truncated'
+	);
+}
+
+/** Case export and import over the controller's file paths. */
+function fileAdapter(
+	ctrl: Controller,
+	enqueue: <T>(operation: () => Promise<T>) => Promise<T>
+): TellegenFileAdapter {
+	return {
+		exportFormats: [...CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT],
+		exportCase: (input, signal) => enqueue(() => exportCaseFile(ctrl, input, signal)),
+		importCase: (input, signal) => enqueue(() => importCaseText(ctrl, input, signal))
+	};
+}
+
 /** Bind WebMCP to a controller. Planning and evidence are opt-in host capabilities.
  * Mutations are serialized and re-check revisions in queue order. Import this entry point only
  * in hosts that install the optional @tellegen/webmcp peer. */
@@ -1952,6 +2075,7 @@ export function createTellegenWebMcpAdapter(
 				};
 			}),
 		...(planning ? { planning } : {}),
+		files: fileAdapter(ctrl, enqueue),
 		inspectCase(signal) {
 			signal.throwIfAborted();
 			return observe('inspect_case', {}, signal, () => inspect(ctrl, activities, signal));
