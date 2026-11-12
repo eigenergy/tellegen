@@ -22,7 +22,9 @@ POWERIO_CRATES = (
 )
 OPTIONAL_POWERIO_CRATES = ("powerio-archive",)
 REVISION = re.compile(r"[0-9a-f]{40}")
-SUPPORTED_VERSION = re.compile(r"0\.(11|12)\.\d+(?:-[0-9A-Za-z.-]+)?")
+# Tellegen builds only against the PowerIO 0.12 series; its 0.11 code paths
+# are gone, so a 0.11 candidate cannot build.
+SUPPORTED_VERSION = re.compile(r"0\.12\.\d+(?:-[0-9A-Za-z.-]+)?")
 
 
 def fail(message: str) -> "NoReturn":
@@ -103,7 +105,7 @@ def candidate_configuration(candidate_manifest: Path) -> tuple[str, tuple[str, .
     manifest = read_toml(candidate_manifest)
     version = manifest.get("workspace", {}).get("package", {}).get("version")
     if not isinstance(version, str) or SUPPORTED_VERSION.fullmatch(version) is None:
-        fail("candidate must declare a PowerIO 0.11.x or 0.12.x workspace version")
+        fail("candidate must declare a PowerIO 0.12.x workspace version")
     dependencies = manifest.get("workspace", {}).get("dependencies", {})
     crates = POWERIO_CRATES + tuple(
         crate for crate in OPTIONAL_POWERIO_CRATES if crate in dependencies
@@ -127,8 +129,9 @@ def set_manifest_revision(
     if version is not None:
         if SUPPORTED_VERSION.fullmatch(version) is None:
             fail("unsupported PowerIO candidate version")
-        # A git patch whose release is 0.12 cannot satisfy ^0.11.11. Change only
-        # this disposable checkout's PowerIO constraints to the exact candidate.
+        # A git patch for a prerelease or another series may not satisfy the
+        # committed requirement. Change only this disposable checkout's PowerIO
+        # constraints to the exact candidate.
         dependencies = read_toml(manifest_path).get("workspace", {}).get("dependencies", {})
         for crate in POWERIO_CRATES:
             if crate not in dependencies:
