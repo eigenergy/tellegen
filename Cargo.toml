@@ -54,7 +54,7 @@ schemars = { version = "1", features = ["derive"] }
 # Tellegen explicitly installs restoration and second-opinion recovery.
 # No shipping adapter enables these dependencies.
 pounce-nl = "=0.15.0"
-pounce-rs = "=0.15.0"
+pounce-rs = "=0.16.0"
 
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
 # `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards
