@@ -4,11 +4,8 @@ import { expect, test } from './fixtures/page-errors.js';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
 
-// The candidate reader writes the new IR version; shipping builds retain generation 2.
-const powerio012 = (process.env.TELLEGEN_POWERIO_FEATURES ?? '')
-	.split(',')
-	.some((feature) => feature === 'powerio-012' || feature === 'powerio-collections');
-const expectedIrVersion = powerio012 ? '0.12.0' : 2;
+// PowerIO 0.12 writes the release whose schema an IR document follows.
+const expectedIrVersion = '0.12.0';
 
 test('a materialized PowerIO module downloads and loads as a fresh case', async ({ page }) => {
 	await page.route('**/api/cases', (route) => {
