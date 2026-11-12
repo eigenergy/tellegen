@@ -1,0 +1,23 @@
+European 3809-bus example case for tellegen.
+
+Sources, both CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/):
+- WAMCES by R. Musca, https://doi.org/10.5281/zenodo.18721887.
+  Operating point, buses, lines and machine ratings.
+  Paper: R. Musca, M. G. Ippolito, E. Riva Sanseverino, Electricity 7(2): 28,
+  2026, https://doi.org/10.3390/electricity7020028.
+- PanTaGruEl by L. Pagnier and P. Jacquod, https://doi.org/10.5281/zenodo.2642175.
+  Line ratings, generator costs, bus names and coordinates.
+  Papers: https://doi.org/10.1371/journal.pone.0213550 and
+  https://doi.org/10.1126/sciadv.aaw8359.
+  Topology from the GridKit extract of the ENTSO-E map by B. Wiegmans,
+  https://doi.org/10.5281/zenodo.55853.
+
+Adjustments (https://github.com/stkotum/wamces-tellegen):
+- Bus 355 is the only reference bus. The other WAMCES slack buses are PV.
+- Generator ratings rise to the solved apparent power over 0.8 where needed,
+  as in WAMCES.
+- Pmax and the Q limits follow the machine rating. Pmin is 0.
+- The bus area holds a country number. The case header lists them.
+
+A research test grid, not a validated model of the European grid. Not endorsed
+by the dataset creators or ENTSO-E.
