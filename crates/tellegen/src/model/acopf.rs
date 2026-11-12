@@ -601,7 +601,12 @@ fn compile_ac_opf_model_with(
                     source.angmax,
                 )?;
             }
-            if instance.constraints().thermal_limits.selects(identity) {
+            // On the 0.12 line a stated infinity is the source's way to say no
+            // bound, and the preparation above has already refused a negative
+            // or NaN rating; on 0.11 every selected rating is checked here.
+            let stated_unlimited =
+                cfg!(feature = "powerio-012") && crate::ratings::unlimited(source.rate_a);
+            if instance.constraints().thermal_limits.selects(identity) && !stated_unlimited {
                 validate_bounds(&format!("thermal_limit[{identity}]"), 0.0, source.rate_a)?;
             }
         }
@@ -2398,12 +2403,41 @@ mpc.gencost = [
 
     #[test]
     fn invalid_branch_bounds_are_rejected_and_zero_rating_is_unlimited() {
-        for rating in [-1.0, f64::NAN, f64::INFINITY] {
+        // A negative or NaN rating is refused: by the instance itself where the
+        // PowerIO line validates ratings, else by the model compiler.
+        for rating in [-1.0, f64::NAN] {
             let mut network = parse_matpower(CASE3).unwrap();
             network.branches_mut()[0].rate_a = rating;
+            match AcOpfInstance::from_network(network) {
+                Err(error) => {
+                    let text = error.to_string().to_lowercase();
+                    assert!(text.contains("thermal"), "{text}");
+                }
+                Ok(instance) => {
+                    // Tellegen's own bound check names `thermal_limit[...]`; a
+                    // PowerIO preparation refusal names the thermal limit by its
+                    // code and message.
+                    let error = compile_ac_opf_model(&instance).unwrap_err();
+                    assert!(error.to_lowercase().contains("thermal"), "{error}");
+                }
+            }
+        }
+        // On the 0.11 line infinity is not a rating; on 0.12 it is the stated
+        // way to say no bound, and the model carries no thermal row for it.
+        let mut network = parse_matpower(CASE3).unwrap();
+        network.branches_mut()[0].rate_a = f64::INFINITY;
+        #[cfg(not(feature = "powerio-012"))]
+        {
             let instance = AcOpfInstance::from_network(network).unwrap();
             let error = compile_ac_opf_model(&instance).unwrap_err();
             assert!(error.contains("thermal_limit"), "{error}");
+        }
+        #[cfg(feature = "powerio-012")]
+        {
+            let model =
+                compile_ac_opf_model(&AcOpfInstance::from_network(network).unwrap()).unwrap();
+            assert!(model.rows.thermal_from[0].is_none());
+            assert!(model.rows.thermal_to[0].is_none());
         }
         for (lower, upper) in [(20.0, -20.0), (f64::NAN, 30.0)] {
             let mut network = parse_matpower(CASE3).unwrap();
@@ -2413,6 +2447,9 @@ mpc.gencost = [
             let error = compile_ac_opf_model(&instance).unwrap_err();
             assert!(error.contains("angle_difference"), "{error}");
         }
+        // Zero means no bound on the 0.11 line and a zero bound on 0.12; the
+        // AC model carries a thermal row only for a positive limit, so on
+        // either line a zero rating leaves the branch without one.
         let mut network = parse_matpower(CASE3).unwrap();
         network.branches_mut()[0].rate_a = 0.0;
         let model = compile_ac_opf_model(&AcOpfInstance::from_network(network).unwrap()).unwrap();

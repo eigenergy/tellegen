@@ -318,11 +318,15 @@ impl DcNetwork {
             .analysis_sources
             .iter()
             .map(|source| match *source {
-                AnalysisBranchSource::Branch { row } => prepared.branches()[row].rate_a > 0.0,
+                AnalysisBranchSource::Branch { row } => {
+                    !crate::ratings::unlimited(prepared.branches()[row].rate_a)
+                }
                 AnalysisBranchSource::ThreeWindingTransformerWinding {
                     transformer_row,
                     winding,
-                } => prepared.transformers_3w()[transformer_row].windings[winding].rate_a > 0.0,
+                } => !crate::ratings::unlimited(
+                    prepared.transformers_3w()[transformer_row].windings[winding].rate_a,
+                ),
                 // A source kind this build does not know keeps its limit.
                 _ => true,
             })

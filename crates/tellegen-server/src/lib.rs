@@ -1664,7 +1664,7 @@ fn network_payload(
                 id: i + 1,
                 from: br.from.0,
                 to: br.to.0,
-                rate_mw: br.rate_a * power_scale,
+                rate_mw: tellegen::ratings::rate_mw(br.rate_a, power_scale),
                 status: br.in_service as u8,
                 transformer: grouping.transformer[i],
                 editable: editable_branch_rows.contains(&i),

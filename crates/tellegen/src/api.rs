@@ -2594,7 +2594,7 @@ fn ac_branch_flows(
         .map(|(e, &branch)| {
             let s_from = (pf[e] * pf[e] + qf[e] * qf[e]).sqrt();
             let s_to = (pt[e] * pt[e] + qt[e] * qt[e]).sqrt();
-            let loading = if rate_a[e] > 0.0 {
+            let loading = if rate_a[e] > 0.0 && rate_a[e].is_finite() {
                 s_from.max(s_to) / rate_a[e]
             } else {
                 0.0
