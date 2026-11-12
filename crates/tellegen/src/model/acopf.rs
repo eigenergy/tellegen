@@ -2409,8 +2409,11 @@ mpc.gencost = [
                     assert!(text.contains("thermal"), "{text}");
                 }
                 Ok(instance) => {
+                    // Tellegen's own bound check names `thermal_limit[...]`; a
+                    // PowerIO preparation refusal names the thermal limit by its
+                    // code and message.
                     let error = compile_ac_opf_model(&instance).unwrap_err();
-                    assert!(error.contains("thermal_limit"), "{error}");
+                    assert!(error.to_lowercase().contains("thermal"), "{error}");
                 }
             }
         }
