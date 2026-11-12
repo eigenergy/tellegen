@@ -28,9 +28,11 @@ dependencies = []
 # The MCP server. `mcp` 2.x moved the server class to
 # `mcp.server.mcpserver.MCPServer`. `powerio` supplies the filesystem path policy
 # (`powerio.mcp.sandbox`), which is shared with PowerMCP rather than copied.
+# It also reads the PowerIO IR the engine writes, so it follows the engine's
+# PowerIO release series: a 0.11 wheel refuses a 0.12 document.
 mcp = [
   "mcp>=2,<3",
-  "powerio>=0.11.3,<0.12",
+  "powerio>=0.12.0rc1,<0.13",
 ]
 
 [project.scripts]

@@ -146,7 +146,7 @@ def test_solve_module_returns_a_solution_module(case3):
     assert result["termination"] == "converged"
     assert result["objective"] == pytest.approx(626.9487, abs=1e-3)
     module = json.loads(result["powerio_ir"])
-    assert module["schema"] == "pio-ir" and module["version"] == 2
+    assert module["schema"] == "pio-ir" and module["version"] == "0.12.0"
 
 
 def test_solve_module_writes_to_a_checked_path_and_refuses_overwrite(
