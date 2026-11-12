@@ -127,7 +127,7 @@ def set_manifest_revision(
     if version is not None:
         if SUPPORTED_VERSION.fullmatch(version) is None:
             fail("unsupported PowerIO candidate version")
-        # A git patch whose release is 0.12 cannot satisfy ^0.11.9. Change only
+        # A git patch whose release is 0.12 cannot satisfy ^0.11.11. Change only
         # this disposable checkout's PowerIO constraints to the exact candidate.
         dependencies = read_toml(manifest_path).get("workspace", {}).get("dependencies", {})
         for crate in POWERIO_CRATES:

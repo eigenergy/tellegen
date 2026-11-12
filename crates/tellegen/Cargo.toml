@@ -47,7 +47,7 @@ pounce-rs = { workspace = true, optional = true }
 [features]
 default = ["sensitivity", "mc-pf"]
 # Compatibility with the next PowerIO series, enabled only when dependency
-# resolution selects 0.12. The default release remains on published 0.11.9.
+# resolution selects 0.12. The default release remains on published 0.11.11.
 powerio-012 = []
 # The multiconductor fixed-point solver is deliberately independent of the
 # sensitivity feature, including in browser builds.
