@@ -601,7 +601,12 @@ fn compile_ac_opf_model_with(
                     source.angmax,
                 )?;
             }
-            if instance.constraints().thermal_limits.selects(identity) {
+            // On the 0.12 line a stated infinity is the source's way to say no
+            // bound, and the preparation above has already refused a negative
+            // or NaN rating; on 0.11 every selected rating is checked here.
+            let stated_unlimited =
+                cfg!(feature = "powerio-012") && crate::ratings::unlimited(source.rate_a);
+            if instance.constraints().thermal_limits.selects(identity) && !stated_unlimited {
                 validate_bounds(&format!("thermal_limit[{identity}]"), 0.0, source.rate_a)?;
             }
         }
