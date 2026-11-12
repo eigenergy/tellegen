@@ -49,7 +49,7 @@ pub fn parse_geo_impl(bytes: &[u8], hint: &str) -> Result<String, String> {
 /// Apply a parsed layer (the canonical `.geo.json` from [`parse_geo_impl`])
 /// onto a case: matching follows uid, external id, case insensitive name, and
 /// the unordered branch endpoint pair. Errors when nothing matched; otherwise
-/// returns the refreshed drop-panel payload (its generation-2 `module_json`
+/// returns the refreshed drop-panel payload (its PowerIO IR `module_json`
 /// now carries the locations and routes) with a `report` of matched/unmatched
 /// counts.
 pub fn apply_geo_impl(module_json: &str, layer_geojson: &str) -> Result<String, String> {

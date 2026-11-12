@@ -68,7 +68,7 @@ The journal keeps up to 100 completed calls by default and reports discarded
 records in its export. Its data cannot authorize or execute edits.
 
 The adapter exposes case, network, sensitivity, and edit operations. Hosts keep
-PowerIO v0.11 generation-2 `pio-ir` modules, typed state selection, and
+PowerIO 0.12 `pio-ir` modules, typed state selection, and
 calculation instances behind that interface.
 
 See the [WebMCP guide](https://eigenergy.github.io/tellegen/webmcp.html) for the

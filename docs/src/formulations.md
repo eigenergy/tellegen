@@ -273,7 +273,7 @@ cargo run -p tellegen --no-default-features --features mc-opf --locked \
 
 The first command explicitly promotes the bundled four-bus network to an OPF
 instance and increases one load coil's nominal active power by 1 W. The second
-requires a generation-2 PowerIO module containing a declared `McAcOpfInstance`
+requires a PowerIO IR module containing a declared `McAcOpfInstance`
 and a JSON array of `McOpfEdit` values. It checks input diagnostics before
 extracting the instance, preserving the declared objective, constraints and
 initial point. Bare networks require an explicit `McAcOpfInstance::from_network`

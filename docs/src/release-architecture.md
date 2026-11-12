@@ -221,8 +221,11 @@ release skips build verification because those unprivileged gates have already
 verified the package against that exact commit. release-plz obtains its
 short-lived crates.io credential directly from OIDC.
 
-The explicit feature list excludes `powerio-012`, which requires selecting
-matching 0.12 dependencies and belongs to the separate PowerIO Candidate gate.
+While the workspace resolves PowerIO from a temporary git pin (a
+`[patch.crates-io]` section, used until a PowerIO release candidate reaches
+crates.io), this packaging check fails, because packaging ignores `[patch]`;
+that keeps the crate from publishing ahead of its PowerIO dependency. The
+`powerio-012` feature is a no-op and is not in the list.
 The release API comparison also uses `--only-explicit-features` with that list:
 `cargo-semver-checks` otherwise enables non-default features heuristically.
 `release-plz` itself has `semver_check = false` because this read-only gate owns

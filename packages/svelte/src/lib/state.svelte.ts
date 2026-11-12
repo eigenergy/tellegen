@@ -123,7 +123,7 @@ export class LocalCase {
 	readonly declaredFormulation?: Formulation;
 	/** Case stats; null for a .pwd display only entry. */
 	summary: CaseFileSummary | null = $state.raw<CaseFileSummary | null>(null);
-	/** Generation 2 PowerIO IR used for display edits and solver studies. */
+	/** PowerIO IR used for display edits and solver studies. */
 	studyInputJson: string | undefined = $state.raw<string | undefined>(undefined);
 	/** Topology for synthetic placement when the file has no coordinates. */
 	topology: Topology | undefined = $state.raw<Topology | undefined>(undefined);

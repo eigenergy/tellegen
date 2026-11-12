@@ -1,43 +1,57 @@
-# PowerIO 0.11 consumer review
+# PowerIO consumer review
 
-Tellegen uses the published PowerIO 0.11.11 crates. All eight PowerIO components
-resolve from crates.io at 0.11.11 with registry checksums. Since 0.11.8 they
-include the multiconductor IVR terminal-role checks and bounded power-factor
-coefficients; 0.11.10 and 0.11.11 are conversion fixes (pandapower, CGMES,
-XIIDM, Egret and OpenDSS output) that change no API Tellegen calls.
-`docs/evidence/webmcp/powerio-releases.json` maps each release tag, such as
-[`v0.11.11`](https://github.com/eigenergy/powerio/releases/tag/v0.11.11), to
+Tellegen builds against PowerIO 0.12, starting with the release candidate
+0.12.0-rc.1. Until 0.12.0-rc.1 is on crates.io, the workspace `Cargo.toml`
+carries a temporary `[patch.crates-io]` section that resolves every PowerIO
+component from one commit of `eigenergy/powerio`; the lockfile records that
+commit. When the release candidate is published, that section is deleted and
+the lockfile returns to checksummed crates.io sources.
+`docs/evidence/webmcp/powerio-releases.json` maps each published release tag to
 its commit.
 
 Pull requests that change the dependency manifests, lockfile, or pin scripts
 run the `PowerIO Candidate` workflow against the committed dependency set.
 Manual dispatch can test a full PowerIO commit SHA using temporary Git patches
 and a disposable lockfile. It reads the exact selected checkout's version and
-temporarily updates the dependency requirements too: a 0.12 git patch cannot
-satisfy a 0.11 requirement. Both paths verify one common version and source for
-every PowerIO component, including the optional archive crate, before exercising
-Rust, WebAssembly, WebMCP, and browser integration. The committed manifest and
-lockfile remain on the published 0.11.11 baseline.
+temporarily updates the dependency requirements too, and it accepts only a
+0.12 checkout. Both paths verify one common version and source for every
+PowerIO component, including the archive crate, before exercising Rust,
+WebAssembly, WebMCP, and browser integration.
 
-## Testing PowerIO 0.12 without changing the shipping baseline
+## Moving from PowerIO 0.11
 
-PowerIO 0.12 renames the SOCWR result's branch power columns to `*_flow`.
-Tellegen's opt-in `powerio-012` Cargo feature adapts those four field names,
-with identical row order, units and numerical values. Enable it only in a build
-whose PowerIO dependencies resolve to 0.12; enabling it against 0.11 is not a
-supported combination. The native adapters and WASM crate forward this feature.
-The candidate workflow selects it for a 0.12 checkout. Candidate-only collection
-support, when present, is tested through `powerio-collections`; default released
-builds do not enable capabilities absent from their PowerIO dependency.
+PowerIO's own guide, "From 0.11 to 0.12", lists every change. The ones that
+reach Tellegen:
+
+- **Thermal ratings.** PowerIO 0.12 states a branch or winding with no thermal
+  bound as a rating of positive infinity and reads a numeric zero as a zero
+  apparent-power bound. Format readers translate their own convention (a
+  MATPOWER `0` still means no bound in the file), and a 0.11 IR document is
+  read with the meaning it had. `tellegen::ratings::unlimited` is the one place
+  Tellegen decides whether a rating limits a branch; the browser and HTTP
+  payloads still state an unrated branch as `0`.
+- **SOCWR solution columns.** The SOCWR result's branch power columns are named
+  `*_flow`, with identical row order, units and values.
+- **OpenDSS snapshots.** PowerIO 0.12's distribution readiness checks let a raw
+  OpenDSS import solve as a multiconductor power flow snapshot instead of
+  remaining view-only.
+- **Document version.** See below.
+
+The `powerio-012` Cargo feature selected these paths while the shipping build
+was on 0.11. They are now unconditional and the feature is a no-op, kept in
+every manifest so existing build commands and `TELLEGEN_POWERIO_FEATURES`
+values keep resolving. ZIP and folder collection support is still opt-in
+through the `tellegen-wasm` `powerio-collections` feature.
 
 PowerIO owns document-version validation. The 0.12 reader accepts both the
-legacy integer `2` and its own release-string header, such as `"0.12.0"`.
-The 0.11 reader still refuses a 0.12 document. Tellegen does not rewrite that
-header or pretend the newer document is compatible; use a 0.12-backed build
-to read it, or preserve an export written by 0.11 when sharing with older
-installations. Study artifacts pass through the same PowerIO reader as ordinary
-imports, so a reader-compatible document is not rejected by an independent
-Tellegen version check.
+0.11 integer `2` and its own release-string header, such as `"0.12.0"`, and
+writes `"0.12.0"`. A 0.11 reader refuses a 0.12 document, so documents
+Tellegen saves now need PowerIO 0.12 to read them; documents saved by earlier
+Tellegen releases still open. Tellegen does not rewrite that header. Study
+artifacts pass through the same PowerIO reader as ordinary imports, so a
+reader-compatible document is not rejected by an independent Tellegen version
+check. The Python package's optional `mcp` extra reads the engine's documents
+with the PowerIO Python wheel, so it requires the 0.12 series of that wheel.
 
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem
@@ -47,40 +61,34 @@ journal records browser tool activity and never replaces the electrical module. 
 text is written and read through `tellegen::ir`, which calls
 `powerio::serialize` and `powerio::deserialize`.
 
-## Release, IR, and ABI versions
+## Release and IR versions
 
-For the shipping PowerIO 0.11 baseline, the release, stored IR generation,
-and C ABI are independent:
+| Concern            | Current value                             | Tellegen integration                       |
+| ------------------ | ----------------------------------------- | ------------------------------------------ |
+| Rust crate release | `0.12.0-rc.1`                             | dependency requirement `0.12.0-rc.1`       |
+| Stored IR          | `"schema": "pio-ir"`, `"version": "0.12.0"` | sole durable browser and CLI JSON boundary |
+| Producer           | `powerio` `0.12.0-rc.1`                   | records which release wrote an IR document |
 
-| Concern            | Current value                        | Tellegen integration                             |
-| ------------------ | ------------------------------------ | ------------------------------------------------ |
-| Rust crate release | `0.11.11`                            | dependency requirement `0.11.11`                 |
-| Stored IR          | `"schema": "pio-ir"`, `"version": 2` | sole durable browser and CLI JSON boundary       |
-| Producer           | `powerio` `0.11.11`                  | records which release wrote an IR document       |
-| C ABI              | `7`                                  | unchanged and not used as an IR or crate version |
-
-The historical `powerio.module` version 1 document and bare balanced-network
-model JSON are not current input formats. Regenerate those documents from
-their original case data. Checked-in evidence produced with the old candidate
-is historical and must be rerun before it is cited for this release.
+PowerIO 0.12 replaced the separate C ABI number with the release; Tellegen does
+not use the C ABI. The historical `powerio.module` version 1 document and bare
+balanced-network model JSON are not current input formats. Regenerate those
+documents from their original case data. Checked-in evidence produced with an
+older PowerIO is historical and must be rerun before it is cited for this
+release.
 
 ## Cargo features
 
-`powerio-012` selects a dependency-version bridge, so it is deliberately absent
-from the shipping 0.11 feature set. In a published 0.11 build, run the complete
-numerical checks with this explicit list:
+Run the complete numerical checks with this explicit list:
 
 ```sh
 cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
 ```
 
-Do not substitute `--all-features`: that also enables the 0.12 bridge against
-0.11 dependencies. The Rust gate, `just mc-opf-test`, `just crate-package`,
-package inspection, and release API comparison use the shipping list. The API
-comparison disables cargo-semver-checks' feature heuristic with
-`--only-explicit-features`. Add new shipping features to those lists together.
-Only the candidate workflow selects and tests the 0.12 bridge and collection
-capabilities against their matching dependency versions.
+The Rust gate, `just mc-opf-test`, `just crate-package`, package inspection,
+and release API comparison use this shipping list. The API comparison disables
+cargo-semver-checks' feature heuristic with `--only-explicit-features`. Add new
+shipping features to those lists together. `powerio-012` is a no-op and need
+not be listed.
 
 The `powerio` facade enables a `sincal` feature by default. It reads SINCAL
 projects through `powerio-tnd` and a bundled SQLite, which the wasm engine
@@ -121,7 +129,7 @@ bus, and the distribution graph shows both.
 
 ## Current module API
 
-Tellegen uses the v0.11 facade directly:
+Tellegen uses the PowerIO facade directly:
 
 - `powerio::parse(input)` for automatic routing and
   `powerio::parse_with_options(input, &ParseOptions)` for an explicit format;
@@ -144,7 +152,7 @@ universal parse route and narrows to `powerio.GeoLayer`.
 
 ## Browser boundary
 
-Every solvable browser payload carries `module_json`. That generation-2 IR is
+Every solvable browser payload carries `module_json`. That PowerIO IR is
 used for Study construction, geographic transforms, saved cases, and exact
 solution modules. Counts, topology, and map views remain derived response data;
 there is no separately serialized `network_json` integration point.
@@ -164,5 +172,5 @@ convention-neutral demand marginals and terminal multipliers.
 When Tellegen commits edits, it retains valid module diagnostics, history,
 extensions, and producer data; replaces the module value with the committed
 network; and severs obsolete source targets. A saved exact solution contains
-the amended OPF instance that was solved and is emitted as generation-2
+the amended OPF instance that was solved and is emitted as
 `pio-ir` with value type `powerio.DcOpfSolution`.
