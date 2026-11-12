@@ -2,78 +2,12 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/page-errors.js';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
-
-type ToolResponse =
-	| { ok: true; data: Record<string, unknown> }
-	| { ok: false; error: { code: string; message: string } };
-
-async function installWebMcpHarness(page: Page, failTool: string | null = null) {
-	await page.addInitScript((rejectedTool) => {
-		type Tool = {
-			name: string;
-			execute(input: Record<string, unknown>, options?: { signal: AbortSignal }): Promise<unknown>;
-		};
-		const tools = new Map<string, Tool>();
-		const modelContext = new (class extends EventTarget {
-			async registerTool(tool: Tool, options: { signal?: AbortSignal } = {}) {
-				if (tool.name === rejectedTool) throw new Error(`registration refused for ${tool.name}`);
-				if (tools.has(tool.name)) throw new DOMException('duplicate tool', 'InvalidStateError');
-				tools.set(tool.name, tool);
-				options.signal?.addEventListener(
-					'abort',
-					() => {
-						tools.delete(tool.name);
-						this.dispatchEvent(new Event('toolchange'));
-					},
-					{ once: true }
-				);
-				this.dispatchEvent(new Event('toolchange'));
-			}
-		})();
-		Object.defineProperty(Document.prototype, 'modelContext', {
-			configurable: true,
-			get: () => modelContext
-		});
-		Object.defineProperty(window, '__tellegenWebMcpTest', {
-			value: {
-				list: () => [...tools.keys()].sort(),
-				execute: async (name: string, input: Record<string, unknown>) => {
-					const tool = tools.get(name);
-					if (!tool) throw new Error(`tool ${name} is not registered`);
-					return tool.execute(input);
-				},
-				executeAborted: async (name: string, input: Record<string, unknown>, delayMs: number) => {
-					const tool = tools.get(name);
-					if (!tool) throw new Error(`tool ${name} is not registered`);
-					const controller = new AbortController();
-					const pending = tool.execute(input, { signal: controller.signal });
-					setTimeout(() => controller.abort(), delayMs);
-					return pending;
-				}
-			}
-		});
-	}, failTool);
-}
-
-async function callTool(
-	page: Page,
-	name: string,
-	input: Record<string, unknown>
-): Promise<ToolResponse> {
-	return page.evaluate(
-		async ({ toolName, args }) => {
-			const harness = (
-				window as unknown as {
-					__tellegenWebMcpTest: {
-						execute(name: string, input: Record<string, unknown>): Promise<ToolResponse>;
-					};
-				}
-			).__tellegenWebMcpTest;
-			return harness.execute(toolName, args);
-		},
-		{ toolName: name, args: input }
-	);
-}
+import {
+	callTool,
+	describeTool,
+	installWebMcpHarness,
+	type ToolResponse
+} from './fixtures/planning-case';
 
 test('headless tools inspect, query, focus, preview, mutate, and reject a stale replay', async ({
 	page
@@ -97,8 +31,11 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
+				'export_case',
 				'focus_network',
+				'import_case',
 				'inspect_case',
+				'inspect_webmcp_registration',
 				'inspect_settings',
 				'update_settings',
 				'reset_settings',
@@ -446,8 +383,11 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
+				'export_case',
 				'focus_network',
+				'import_case',
 				'inspect_case',
+				'inspect_webmcp_registration',
 				'inspect_settings',
 				'update_settings',
 				'reset_settings',
