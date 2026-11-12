@@ -1,4 +1,5 @@
 import type {
+  TellegenFileAdapter,
   TellegenPlanningAdapter,
   TellegenStudyAdapter,
   StudyToolName,
@@ -9,6 +10,7 @@ import type {
   ToolResponse,
 } from "./types.js";
 import { TellegenToolError } from "./types.js";
+import { responseSchema } from "./output.js";
 import {
   validateSettings,
   validateAnalyzeSensitivity,
@@ -23,7 +25,19 @@ import {
   validateSolveMulticonductor,
   validateResetCase,
   validateUpdateCase,
+  validateExportCase,
+  validateImportCase,
+  IMPORT_EXTENSIONS,
+  MAX_IMPORT_TEXT,
 } from "./validation.js";
+
+/** A tool before its output schema is attached. */
+type ToolSpec = Omit<TellegenToolDefinition, "outputSchema">;
+
+/** Attach the response envelope schema each tool resolves with. */
+function withOutputSchema(tool: ToolSpec): TellegenToolDefinition {
+  return { ...tool, outputSchema: responseSchema(tool.name) };
+}
 
 export const DEFAULT_OUTPUT_BUDGET = 1_450;
 export const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
@@ -289,6 +303,7 @@ function execute<T>(
       finishedAt: Date.now(),
       ...(recordedInput ? { input: recordedInput } : {}),
       response,
+      ...(parentSignal?.aborted ? { callerCancelled: true } : {}),
     });
     return response;
   };
@@ -366,7 +381,7 @@ export function createTellegenTools(
       options.recordValidatedInput,
     );
 
-  const caseTools: TellegenToolDefinition[] = adapter.cases
+  const caseTools: ToolSpec[] = adapter.cases
     ? [
         {
           name: "list_cases",
@@ -426,7 +441,7 @@ export function createTellegenTools(
         },
       ]
     : [];
-  const mcTools: TellegenToolDefinition[] = adapter.solveMulticonductorPowerFlow
+  const mcTools: ToolSpec[] = adapter.solveMulticonductorPowerFlow
     ? [
         {
           name: "solve_multiconductor_pf",
@@ -465,7 +480,7 @@ export function createTellegenTools(
         },
       ]
     : [];
-  const settingsTools: TellegenToolDefinition[] = adapter.settings
+  const settingsTools: ToolSpec[] = adapter.settings
     ? (["inspect", "update", "reset", "run"] as const).map((action) => ({
         name: action === "run" ? "run_calculation" : `${action}_settings`,
         title:
@@ -533,9 +548,13 @@ export function createTellegenTools(
         annotations: annotations(action === "inspect"),
       }))
     : [];
-  return [
+  const fileTools: ToolSpec[] = adapter.files
+    ? createFileTools(adapter.files, tracked)
+    : [];
+  const tools: ToolSpec[] = [
     ...settingsTools,
     ...caseTools,
+    ...fileTools,
     ...mcTools,
     {
       name: "inspect_case",
@@ -844,6 +863,96 @@ export function createTellegenTools(
       annotations: annotations(false),
     },
   ];
+  return tools.map(withOutputSchema);
+}
+
+type Tracked = <T>(
+  name: string,
+  title: string,
+  validate: (input: unknown) => T,
+  run: (input: T, signal: AbortSignal) => Promise<ToolPayload> | ToolPayload,
+  completion?: "abortable" | "commit-aware",
+) => TellegenToolDefinition["execute"];
+
+const MAX_IMPORT_TEXT_LENGTH = MAX_IMPORT_TEXT;
+
+function createFileTools(
+  files: TellegenFileAdapter,
+  tracked: Tracked,
+): ToolSpec[] {
+  const formats = files.exportFormats.map((format) => format.token);
+  const exportCase: ToolSpec[] =
+    formats.length > 0
+      ? [
+          {
+            name: "export_case",
+            title: "Export case file",
+            description: `Write the displayed live case, with its committed edits, to a grid exchange format through PowerIO and download the file to the user's computer. Returns the file name, size and PowerIO's conversion findings (what the target cannot represent); the file text is not returned. Formats: ${files.exportFormats
+              .map((format) => `${format.token} (${format.label})`)
+              .join(", ")}.`,
+            inputSchema: objectSchema(
+              {
+                case_id: {
+                  type: "string",
+                  description: "Active case ID from inspect_case.",
+                },
+                expected_revision: {
+                  type: "string",
+                  description:
+                    "Current revision from inspect_case; the exported file is that revision.",
+                },
+                format: {
+                  type: "string",
+                  enum: formats,
+                  description: "PowerIO target format token.",
+                },
+              },
+              ["case_id", "expected_revision", "format"],
+            ),
+            execute: tracked(
+              "export_case",
+              "Export case file",
+              (input) => validateExportCase(input, formats),
+              (input, signal) => files.exportCase(input, signal),
+            ),
+            // Changes no case state, but saves a file for the user.
+            annotations: annotations(false),
+          },
+        ]
+      : [];
+  return [
+    ...exportCase,
+    {
+      name: "import_case",
+      title: "Open case text",
+      description: `Open case file text the way a dropped file opens. PowerIO reads it by the file name's extension (${IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(", ")}; .json covers the JSON case formats PowerIO detects and saved .pio.json modules), and the new case becomes the displayed case. Returns the opened case IDs and PowerIO's parse findings. Text is limited to ${MAX_IMPORT_TEXT_LENGTH.toLocaleString("en-US")} characters; binary formats, archives and geographic sidecars need the file picker.`,
+      inputSchema: objectSchema(
+        {
+          file_name: {
+            type: "string",
+            maxLength: 128,
+            pattern: "^[^/\\\\]+\\.[A-Za-z0-9]+$",
+            description:
+              "File name with the extension that names its format, such as case14.m.",
+          },
+          text: {
+            type: "string",
+            maxLength: MAX_IMPORT_TEXT_LENGTH,
+            description: "Complete file text.",
+          },
+        },
+        ["file_name", "text"],
+      ),
+      execute: tracked(
+        "import_case",
+        "Open case text",
+        validateImportCase,
+        (input, signal) => files.importCase(input, signal),
+        "commit-aware",
+      ),
+      annotations: annotations(false),
+    },
+  ];
 }
 
 /** Build the two capacity planning tools. They are registered dynamically so
@@ -879,7 +988,7 @@ export function createTellegenPlanningTools(
       options.recordValidatedInput,
     );
 
-  const proposeCapacityPlan: TellegenToolDefinition = {
+  const proposeCapacityPlan: ToolSpec = {
     name: "propose_capacity_plan",
     title: "Propose capacity increases",
     description:
@@ -986,7 +1095,7 @@ export function createTellegenPlanningTools(
     annotations: { readOnlyHint: false, untrustedContentHint: true },
   };
 
-  const applyCapacityPlan: TellegenToolDefinition = {
+  const applyCapacityPlan: ToolSpec = {
     name: "apply_capacity_plan",
     title: "Apply capacity proposal",
     description:
@@ -1020,8 +1129,8 @@ export function createTellegenPlanningTools(
   };
 
   return {
-    planning: [proposeCapacityPlan],
-    proposal: [applyCapacityPlan],
+    planning: [withOutputSchema(proposeCapacityPlan)],
+    proposal: [withOutputSchema(applyCapacityPlan)],
   };
 }
 
@@ -1064,36 +1173,67 @@ export function createTellegenStudyTools(
     record_study_evidence: "Record an observation or sensitivity result",
   };
   return (Object.entries(descriptions) as [StudyToolName, string][]).map(
-    ([name, description]) => ({
-      name,
-      title: titles[name],
-      description,
-      inputSchema: adapter.inputSchema(name),
-      annotations: annotations(name === "inspect_study"),
-      execute: execute(
+    ([name, description]) =>
+      withOutputSchema({
         name,
-        titles[name],
-        (input) => {
-          if (
-            !input ||
-            typeof input !== "object" ||
-            Array.isArray(input) ||
-            JSON.stringify(input).length > 1_048_576
-          )
-            throw new TellegenToolError(
-              "INVALID_INPUT",
-              "Study input must be an object no larger than 1 MiB",
-            );
-          return input as Record<string, unknown>;
-        },
-        (input, signal) => adapter.execute(name, input, signal),
-        outputBudget,
-        Math.max(timeoutMs, 300_000),
-        options.onActivity,
-        () => `tellegen-study-${++sequence}`,
-        "commit-aware",
-        options.recordValidatedInput,
-      ),
-    }),
+        title: titles[name],
+        description,
+        inputSchema: adapter.inputSchema(name),
+        annotations: annotations(name === "inspect_study"),
+        execute: execute(
+          name,
+          titles[name],
+          (input) => {
+            if (
+              !input ||
+              typeof input !== "object" ||
+              Array.isArray(input) ||
+              JSON.stringify(input).length > 1_048_576
+            )
+              throw new TellegenToolError(
+                "INVALID_INPUT",
+                "Study input must be an object no larger than 1 MiB",
+              );
+            return input as Record<string, unknown>;
+          },
+          (input, signal) => adapter.execute(name, input, signal),
+          outputBudget,
+          Math.max(timeoutMs, 300_000),
+          options.onActivity,
+          () => `tellegen-study-${++sequence}`,
+          "commit-aware",
+          options.recordValidatedInput,
+        ),
+      }),
   );
+}
+
+/**
+ * The read-only `inspect_webmcp_registration` tool, annotated `debugging` so
+ * agents for end users can leave it out. `status` reads the live registration.
+ */
+export function createTellegenDebugTool(
+  status: () => ToolPayload,
+  options: CreateTellegenToolsOptions = {},
+): TellegenToolDefinition {
+  const { outputBudget, timeoutMs } = executionLimits(options);
+  let sequence = 0;
+  return withOutputSchema({
+    name: "inspect_webmcp_registration",
+    title: "Inspect WebMCP registration",
+    description:
+      "Developer check of this tab's WebMCP integration: the tellegen tools registered now, the last dynamic registration error, the origins the tools are exposed to, the output budget and timeout, and the optional WebMCP features the browser offers. Changes nothing.",
+    inputSchema: objectSchema({}),
+    execute: execute(
+      "inspect_webmcp_registration",
+      "Inspect WebMCP registration",
+      validateEmpty,
+      () => status(),
+      outputBudget,
+      timeoutMs,
+      options.onActivity,
+      () => `tellegen-debug-${++sequence}`,
+    ),
+    annotations: { readOnlyHint: true, debugging: true },
+  });
 }

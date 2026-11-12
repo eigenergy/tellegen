@@ -244,6 +244,102 @@ describe("createTellegenTools", () => {
     expect(response).toEqual({ ok: true, data: { committed: true } });
   });
 
+  it("marks a committed call the caller cancelled in the activity record", async () => {
+    const controller = new AbortController();
+    const events: TellegenToolActivityEvent[] = [];
+    const tool = createTellegenTools(
+      adapter({
+        updateCase: () => {
+          controller.abort();
+          return { revision: "r2" };
+        },
+      }),
+      { onActivity: (event) => events.push(event) },
+    ).find((candidate) => candidate.name === "update_case")!;
+    const edit = { demand: [{ bus_id: "buses:1", delta_mw: 5 }] };
+    await tool.execute(
+      { case_id: "case9", expected_revision: "r1", ...edit },
+      { signal: controller.signal },
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: "finished",
+      callerCancelled: true,
+      response: { ok: true },
+    });
+    await tool.execute({ case_id: "case9", expected_revision: "r2", ...edit });
+    expect(events.at(-1)).not.toHaveProperty("callerCancelled");
+  });
+
+  it("validates export and import requests before the host runs", async () => {
+    const exportCase = vi.fn(() => ({ file_name: "case.m" }));
+    const importCase = vi.fn(() => ({ case_id: "local-1" }));
+    const tools = createTellegenTools(
+      adapter({
+        files: {
+          exportFormats: [{ token: "matpower", label: "MATPOWER (.m)" }],
+          exportCase,
+          importCase,
+        },
+      }),
+    );
+    const exporter = tools.find((tool) => tool.name === "export_case")!;
+    const importer = tools.find((tool) => tool.name === "import_case")!;
+    expect(exporter.description).toContain("matpower (MATPOWER (.m))");
+    expect(exporter.inputSchema).toMatchObject({
+      properties: { format: { enum: ["matpower"] } },
+    });
+    expect(
+      await exporter.execute({
+        case_id: "c",
+        expected_revision: "r1",
+        format: "psse",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+    expect(exportCase).not.toHaveBeenCalled();
+    expect(
+      await exporter.execute({
+        case_id: "c",
+        expected_revision: "r1",
+        format: "matpower",
+      }),
+    ).toEqual({ ok: true, data: { file_name: "case.m" } });
+    expect(exportCase).toHaveBeenCalledWith(
+      { caseId: "c", expectedRevision: "r1", format: "matpower" },
+      expect.any(AbortSignal),
+    );
+
+    for (const bad of [
+      { file_name: "case14", text: "x" },
+      { file_name: "dir/case14.m", text: "x" },
+      { file_name: "layer.geojson", text: "{}" },
+      { file_name: "case.pwb", text: "x" },
+      { file_name: "case14.m", text: "   " },
+      { file_name: "case14.m", text: "x", activate: true },
+    ])
+      expect(await importer.execute(bad), JSON.stringify(bad)).toMatchObject({
+        ok: false,
+        error: { code: "INVALID_INPUT" },
+      });
+    expect(importCase).not.toHaveBeenCalled();
+    expect(
+      await importer.execute({ file_name: "CASE14.M", text: "mpc = struct;" }),
+    ).toEqual({ ok: true, data: { case_id: "local-1" } });
+    expect(importCase).toHaveBeenCalledWith(
+      { fileName: "CASE14.M", text: "mpc = struct;" },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("omits export_case when the host offers no formats", () => {
+    const names = createTellegenTools(
+      adapter({
+        files: { exportFormats: [], exportCase: vi.fn(), importCase: vi.fn() },
+      }),
+    ).map((tool) => tool.name);
+    expect(names).toContain("import_case");
+    expect(names).not.toContain("export_case");
+  });
+
   it("returns a definite success when abort arrives after focus commits", async () => {
     const controller = new AbortController();
     const focusNetwork = vi.fn(() => {

@@ -48,7 +48,11 @@
     "dist/journal.d.ts",
     "dist/journal.d.ts.map",
     "dist/journal.js",
-    "dist/journal.js.map"
+    "dist/journal.js.map",
+    "dist/output.d.ts",
+    "dist/output.d.ts.map",
+    "dist/output.js",
+    "dist/output.js.map"
   ],
   "publishConfig": {
     "access": "public"
