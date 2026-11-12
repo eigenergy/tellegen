@@ -41,6 +41,8 @@ schemars = { workspace = true, optional = true }
 
 [features]
 default = []
+# No-op alias kept for existing build commands; PowerIO 0.12 is the shipping
+# dependency (see the `tellegen` crate's `powerio-012` feature).
 powerio-012 = ["tellegen/powerio-012"]
 # JSON Schema derives for the generated `@tellegen/engine/synth` types.
 schema = ["dep:schemars", "tellegen/schema", "powerio/schema"]

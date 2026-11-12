@@ -24,29 +24,32 @@ repository = "https://github.com/eigenergy/tellegen"
 # PowerIO modules, values, problem instances, solutions, and numerical
 # preparation supply Tellegen's network data. The shared lockfile keeps
 # one exact PowerIO revision across the engine and every adapter.
+# The shipping line is PowerIO 0.12 (0.12.0-rc.1; the caret requirement also
+# accepts 0.12.0 and later 0.12 releases). See the temporary
+# `[patch.crates-io]` section at the end of this file.
 # No SINCAL: `powerio` turns off its default `sincal` feature, which compiles
 # SQLite that the wasm build could only link with a C compiler targeting
 # WebAssembly, and `powerio-dist` and `powerio-tx` come without default
 # features so none arrives through them. Tellegen reads no SINCAL projects.
-powerio = { version = "0.11.11", default-features = false }
+powerio = { version = "0.12.0-rc.1", default-features = false }
 # The multiconductor distribution model and its lossless readers for OpenDSS,
 # PMD JSON, and BMOPF JSON. The wasm ingest path views distribution cases
 # through `MulticonductorNetwork::to_graph()`. Collection ingestion supplies
 # a confined named tree; includes never acquire host files or network data.
 
-powerio-dist = { version = "0.11.11", default-features = false }
+powerio-dist = { version = "0.12.0-rc.1", default-features = false }
 # Lower level analysis views used only inside Tellegen's private solver and
 # display workspaces. Portable inputs and outputs still cross the `powerio`
 # module facade.
-powerio-tx = { version = "0.11.11", default-features = false }
+powerio-tx = { version = "0.12.0-rc.1", default-features = false }
 # Typed problem instances and solutions (`DcOpfInstance`, `DcOpfSolution`, ...),
 # the shared owner of case interpretation.
-powerio-prob = "0.11.11"
+powerio-prob = "0.12.0-rc.1"
 # The shared numerical assembly: `build_dc_opf_preparation` derives the matrix
 # free DC OPF arrays (demand, costs, bounds, limits, mappings) from a
 # `DcOpfInstance`, so the solver formulates over PowerIO's one assembly
 # instead of re-deriving it from the network.
-powerio-matrix = "0.11.11"
+powerio-matrix = "0.12.0-rc.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
@@ -78,3 +81,23 @@ lto = true
 inherits = "release"
 opt-level = 3
 lto = "thin"
+
+# TEMPORARY: PowerIO 0.12.0-rc.1 is not on crates.io yet. Until it is, every
+# PowerIO crate resolves from one commit of eigenergy/powerio (the release
+# candidate branch, PR #821), written by
+# `.github/scripts/powerio-pin.py --set <sha> --candidate-manifest <powerio Cargo.toml>`.
+# Once 0.12.0-rc.1 is published, delete this whole section and run
+# `cargo update -p powerio -p powerio-core -p powerio-dist -p powerio-matrix
+# -p powerio-prob -p powerio-synth -p powerio-tnd -p powerio-tx` so the
+# lockfile returns to checksummed crates.io sources. `cargo package` ignores
+# this section, so the crate packaging gate stays red until then.
+[patch.crates-io]
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-synth = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-tnd = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
+powerio-archive = { git = "https://github.com/eigenergy/powerio.git", rev = "ae9d6305f2e939b6b3345b247626a6dc6949d1cb" }
