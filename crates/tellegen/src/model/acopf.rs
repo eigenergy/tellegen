@@ -2447,20 +2447,14 @@ mpc.gencost = [
             let error = compile_ac_opf_model(&instance).unwrap_err();
             assert!(error.contains("angle_difference"), "{error}");
         }
-        // Zero means no bound on the 0.11 line and a zero bound on 0.12.
+        // Zero means no bound on the 0.11 line and a zero bound on 0.12; the
+        // AC model carries a thermal row only for a positive limit, so on
+        // either line a zero rating leaves the branch without one.
         let mut network = parse_matpower(CASE3).unwrap();
         network.branches_mut()[0].rate_a = 0.0;
         let model = compile_ac_opf_model(&AcOpfInstance::from_network(network).unwrap()).unwrap();
-        #[cfg(not(feature = "powerio-012"))]
-        {
-            assert!(model.rows.thermal_from[0].is_none());
-            assert!(model.rows.thermal_to[0].is_none());
-        }
-        #[cfg(feature = "powerio-012")]
-        {
-            assert!(model.rows.thermal_from[0].is_some());
-            assert!(model.rows.thermal_to[0].is_some());
-        }
+        assert!(model.rows.thermal_from[0].is_none());
+        assert!(model.rows.thermal_to[0].is_none());
     }
 
     #[test]
