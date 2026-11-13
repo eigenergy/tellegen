@@ -480,11 +480,16 @@ export function createTellegenTools(
         },
       ]
     : [];
+  const settingsTitles = {
+    inspect: "Inspect settings",
+    update: "Update settings",
+    reset: "Reset settings",
+    run: "Run selected calculation",
+  } as const;
   const settingsTools: ToolSpec[] = adapter.settings
     ? (["inspect", "update", "reset", "run"] as const).map((action) => ({
         name: action === "run" ? "run_calculation" : `${action}_settings`,
-        title:
-          action === "run" ? "Run selected calculation" : `${action} settings`,
+        title: settingsTitles[action],
         description:
           action === "inspect"
             ? "Inspect selected and accepted calculation settings or browser display preferences. Use field to inspect one setting descriptor. Returns settings_revision."
@@ -540,7 +545,7 @@ export function createTellegenTools(
         ),
         execute: tracked(
           action === "run" ? "run_calculation" : `${action}_settings`,
-          `${action} settings`,
+          settingsTitles[action],
           (input) => validateSettings(input, action),
           (input, signal) => adapter.settings!(input, signal),
           action === "inspect" ? "abortable" : "commit-aware",

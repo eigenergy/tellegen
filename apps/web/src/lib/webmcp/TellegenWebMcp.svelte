@@ -16,6 +16,7 @@
 	} from './tellegen-adapter.js';
 	import { PlanningActivityStore } from './planning-activity.svelte.js';
 	import WebMcpActivity from './WebMcpActivity.svelte';
+	import AgentRibbon from './AgentRibbon.svelte';
 
 	import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 	import { createStudyAdapter } from '../studies/adapter.js';
@@ -89,7 +90,8 @@
 			signal: lifecycle.signal,
 			onActivity: recordActivity,
 			recordValidatedInput: true,
-			debugTool: true,
+			// The registration check is for developers: dev builds, or `?debug`.
+			debugTool: import.meta.env.DEV || new URL(location.href).searchParams.has('debug'),
 			...(PUBLIC_WEBMCP_EXPOSED_TO ? { exposedTo: PUBLIC_WEBMCP_EXPOSED_TO.split(',') } : {}),
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
@@ -140,3 +142,4 @@
 	{experiments}
 	{exportJournal}
 />
+<AgentRibbon {activities} />

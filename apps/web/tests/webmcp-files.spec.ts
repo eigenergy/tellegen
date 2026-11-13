@@ -9,7 +9,8 @@ test('agents open case text, export it through PowerIO, and inspect the registra
 	await page.route('**/api/cases', (route) => {
 		void route.fulfill({ json: [] });
 	});
-	await page.goto('/');
+	// Production builds register the developer check only with `?debug`.
+	await page.goto('/?debug');
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
 
 	// The debug tool is marked for developer tooling and reports the live registration.

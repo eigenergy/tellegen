@@ -775,3 +775,19 @@ it("settings tools require revisions for writes, keep inspect read-only, and dis
     ok: true,
   });
 });
+
+it("reports every tool's own title in its activity events", async () => {
+  const events: TellegenToolActivityEvent[] = [];
+  const tools = createTellegenTools(
+    adapter({ settings: () => ({ settings_revision: 1 }) }),
+    { onActivity: (event) => events.push(event) },
+  );
+  for (const tool of tools) await tool.execute({});
+  for (const tool of tools) {
+    const started = events.find(
+      (event) => event.type === "started" && event.toolName === tool.name,
+    );
+    expect(started?.title).toBe(tool.title);
+    expect(tool.title).toMatch(/^[A-Z]/);
+  }
+});

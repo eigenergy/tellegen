@@ -69,6 +69,12 @@ COPY --from=acopf /build/target/experimental-acopf ./target/experimental-acopf
 # sends it with every tile request, so restrict it to the deployment's hosts
 # on CARTO's side. Empty leaves OpenFreeMap as the primary basemap.
 ARG PUBLIC_CARTO_BASEMAP_KEY=""
+# Optional WebMCP origin trial token for the deployment's origin, and the
+# origins allowed to call the tools when they embed the app. Both ship in the
+# page, so they are public. Empty adds no origin-trial tag and keeps the tools
+# same-origin.
+ARG PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN=""
+ARG PUBLIC_WEBMCP_EXPOSED_TO=""
 RUN npm run build:engine && npm run build:web && npm run smoke:web
 
 # ---- tellegen backend (cargo-chef: dependency compile is a cacheable layer) ----
