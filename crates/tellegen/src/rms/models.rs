@@ -495,6 +495,112 @@ impl Avr {
         }
     }
 
+    /// The exciter with its output and internal limits removed, for solving
+    /// the steady state a dispatch needs before checking it against them.
+    pub(crate) fn unlimited(&self) -> Self {
+        let mut free = self.clone();
+        match &mut free {
+            Self::Sexs { v_min, v_max, .. } => (*v_min, *v_max) = (-NO_LIMIT, NO_LIMIT),
+            Self::Esac1a {
+                va_min,
+                va_max,
+                vr_min,
+                vr_max,
+                ..
+            } => {
+                (*va_min, *va_max) = (-NO_LIMIT, NO_LIMIT);
+                (*vr_min, *vr_max) = (-NO_LIMIT, NO_LIMIT);
+            }
+            Self::Exst1 {
+                vi_min,
+                vi_max,
+                vr_min,
+                vr_max,
+                ..
+            } => {
+                (*vi_min, *vi_max) = (-NO_LIMIT, NO_LIMIT);
+                (*vr_min, *vr_max) = (-NO_LIMIT, NO_LIMIT);
+            }
+            _ => {}
+        }
+        free
+    }
+
+    /// The limits a steady state `x` at the inputs `u` stands beyond
+    /// (PowerSimulationsDynamics.jl init_avr.jl reports the same). SEXS's
+    /// field voltage past `EMAX` and ESAC1A's `VA` past `VAMAX` rest there
+    /// anyway (the non-windup lag freezes only while it is pushed further);
+    /// the others leave no steady state.
+    pub(crate) fn limit_breaches(&self, x: &[f64], u: AvrIn) -> Vec<LimitBreach> {
+        let mut out = Vec::new();
+        match self {
+            Self::Sexs { v_min, v_max, .. } => breach(
+                &mut out,
+                true,
+                "SEXS field voltage EFD",
+                x[0],
+                ("EMIN", *v_min),
+                ("EMAX", *v_max),
+            ),
+            Self::Esac1a {
+                va_min,
+                va_max,
+                vr_min,
+                vr_max,
+                ..
+            } => {
+                // At rest `V_R = V_FE = VA` (the regulator output is VA clamped).
+                breach(
+                    &mut out,
+                    true,
+                    "ESAC1A regulator voltage VA",
+                    x[2],
+                    ("VAMIN", *va_min),
+                    ("VAMAX", *va_max),
+                );
+                breach(
+                    &mut out,
+                    false,
+                    "ESAC1A regulator output VR",
+                    x[2],
+                    ("VRMIN", *vr_min),
+                    ("VRMAX", *vr_max),
+                );
+            }
+            Self::Exst1 {
+                vi_min,
+                vi_max,
+                vr_min,
+                vr_max,
+                kc,
+                kf,
+                tf,
+                ..
+            } => {
+                let (vm, vr, vfb) = (x[0], x[2], x[3]);
+                let (y_hp, _) = high_pass(vr, vfb, *kf, *tf);
+                breach(
+                    &mut out,
+                    false,
+                    "EXST1 voltage error VI",
+                    u.v_ref + u.vs - vm - y_hp,
+                    ("VIMIN", *vi_min),
+                    ("VIMAX", *vi_max),
+                );
+                breach(
+                    &mut out,
+                    false,
+                    "EXST1 field voltage EFD",
+                    vr,
+                    ("VT·VRMIN − KC·Ifd", u.vt * vr_min - kc * u.xad_ifd),
+                    ("VT·VRMAX − KC·Ifd", u.vt * vr_max - kc * u.xad_ifd),
+                );
+            }
+            _ => {}
+        }
+        out
+    }
+
     /// Field voltage and exciter derivatives.
     pub(crate) fn eval(&self, x: &[f64], u: AvrIn, f: &mut [f64]) -> f64 {
         match self {
@@ -594,6 +700,45 @@ impl Avr {
     }
 }
 
+/// The bound standing in for a removed limit: finite, so a clamp scaled by
+/// the terminal voltage (EXST1's output) stays ordered even at `VT = 0`.
+const NO_LIMIT: f64 = 1e30;
+
+/// A limit an exciter or governor at rest stands beyond. `holds` is false
+/// when the limited model cannot rest there at all (its initialization
+/// fails); true when it rests there anyway, past the limit.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct LimitBreach {
+    pub holds: bool,
+    pub text: String,
+}
+
+/// `value` against `[lo, hi]` (with a 1e-8 relative slack for the solver):
+/// the breach as `"{what} = value pu is above {hi_name} = hi"`, or below.
+fn breach(
+    out: &mut Vec<LimitBreach>,
+    holds: bool,
+    what: &str,
+    value: f64,
+    (lo_name, lo): (&str, f64),
+    (hi_name, hi): (&str, f64),
+) {
+    let slack = |b: f64| 1e-8 * (1.0 + b.abs());
+    let side = if value > hi + slack(hi) {
+        Some(("above", hi_name, hi))
+    } else if value < lo - slack(lo) {
+        Some(("below", lo_name, lo))
+    } else {
+        None
+    };
+    if let Some((side, name, bound)) = side {
+        out.push(LimitBreach {
+            holds,
+            text: format!("{what} = {value:.4} pu is {side} {name} = {bound:.4}"),
+        });
+    }
+}
+
 /// Turbine-governors. `Fixed` holds `τm = P_ref`.
 #[derive(Clone, Debug)]
 pub(crate) enum Governor {
@@ -683,6 +828,68 @@ impl Governor {
             }
             _ => {}
         }
+    }
+
+    /// The governor with its valve and gate limits removed (GAST's
+    /// temperature limit stays: its initialization does not solve).
+    pub(crate) fn unlimited(&self) -> Self {
+        let mut free = self.clone();
+        match &mut free {
+            Self::Tgov1 { v_min, v_max, .. } | Self::Gast { v_min, v_max, .. } => {
+                (*v_min, *v_max) = (-NO_LIMIT, NO_LIMIT);
+            }
+            Self::Hygov { g_min, g_max, .. } => (*g_min, *g_max) = (-NO_LIMIT, NO_LIMIT),
+            _ => {}
+        }
+        free
+    }
+
+    /// The limits a steady state `x` with the torque `tm` stands beyond
+    /// (PowerSimulationsDynamics.jl init_tg.jl): none of them leaves a
+    /// steady state at that torque.
+    pub(crate) fn limit_breaches(&self, x: &[f64], tm: f64) -> Vec<LimitBreach> {
+        let mut out = Vec::new();
+        match self {
+            Self::Tgov1 { v_min, v_max, .. } => breach(
+                &mut out,
+                false,
+                "TGOV1 valve position",
+                x[0],
+                ("VMIN", *v_min),
+                ("VMAX", *v_max),
+            ),
+            Self::Gast {
+                v_min, v_max, at, ..
+            } => {
+                breach(
+                    &mut out,
+                    false,
+                    "GAST valve position",
+                    x[0],
+                    ("VMIN", *v_min),
+                    ("VMAX", *v_max),
+                );
+                breach(
+                    &mut out,
+                    false,
+                    "GAST turbine power",
+                    tm,
+                    ("-", f64::NEG_INFINITY),
+                    ("AT", *at),
+                );
+            }
+            // At rest the gate `c` is the gate servo's state `x3`.
+            Self::Hygov { g_min, g_max, .. } => breach(
+                &mut out,
+                false,
+                "HYGOV gate opening",
+                x[2],
+                ("GMIN", *g_min),
+                ("GMAX", *g_max),
+            ),
+            _ => {}
+        }
+        out
     }
 
     /// Mechanical torque and governor derivatives.

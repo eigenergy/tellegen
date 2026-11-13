@@ -542,7 +542,13 @@ pub(crate) fn build(
             tripped: None,
         };
         nx += dev.n_states();
-        device_x0.push(init_device(&mut dev, v[b], i_sys)?);
+        let (x0, notes) = init_device(&mut dev, v[b], i_sys)?;
+        for note in notes {
+            report
+                .notes
+                .push(format!("generator {}: {note}", dev.name()));
+        }
+        device_x0.push(x0);
         devices.push(dev);
     }
 
@@ -857,8 +863,16 @@ pub(crate) fn newton(
 
 /// Solve one generator's steady state: all derivatives zero at `ω = 1` and
 /// its injection equal to the power flow current `i_sys`. Sets `v_ref`,
-/// `p_ref` (and the classical `e'q`) and returns the local state vector.
-pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec<f64>, String> {
+/// `p_ref` (and the classical `e'q`) and returns the local state vector with
+/// notes on the limits its exciter rests beyond. The exciter and governor
+/// steady states are solved with their limits removed and then checked
+/// against them: one that leaves no steady state fails naming the limit and
+/// the value the dispatch needs.
+pub(crate) fn init_device(
+    dev: &mut GenDevice,
+    v: C64,
+    i_sys: C64,
+) -> Result<(Vec<f64>, Vec<String>), String> {
     let name = format!("generator {}", dev.name());
     let k = dev.n_states();
     let [m, s, a, g, p] = dev.layout();
@@ -940,6 +954,22 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
     x[s + 1] = 1.0;
     let alg = dev.machine.algebraic(&x[m..s], x[s], v.re, v.im);
     let vt = v.norm();
+    let mut notes = Vec::new();
+    let mut check = |breaches: Vec<super::models::LimitBreach>| -> Result<(), String> {
+        for b in breaches {
+            if !b.holds {
+                return Err(format!(
+                    "{name}: {}, so the unit has no steady state at its power flow dispatch",
+                    b.text
+                ));
+            }
+            notes.push(format!(
+                "{}: the unit starts, and rests, beyond this limit",
+                b.text
+            ));
+        }
+        Ok(())
+    };
 
     // Stage 2a: stabilizer at rest.
     if dev.pss.n_states() > 0 {
@@ -976,7 +1006,8 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
                 v_ref: vt,
             };
             let guess = avr_start(avr, input, vf0);
-            let avr = avr.clone();
+            let limited = avr;
+            let avr = avr.unlimited();
             let ua = newton(
                 guess,
                 |u, res| {
@@ -992,6 +1023,13 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
                 },
                 &name,
             )?;
+            check(limited.limit_breaches(
+                &ua[..na],
+                super::models::AvrIn {
+                    v_ref: ua[na],
+                    ..input
+                },
+            ))?;
             x[a..g].copy_from_slice(&ua[..na]);
             dev.v_ref = ua[na];
         }
@@ -1003,14 +1041,16 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
         // GAST sits on the kink of `min(P_ref, AT + KT (AT − x3))` when it runs
         // at its load limit, where the torque does not depend on `P_ref`. As in
         // PowerSimulationsDynamics.jl (init_tg.jl, GasTG), take the `P_ref` branch.
-        Governor::Gast { .. } => {
+        gast @ Governor::Gast { .. } => {
+            check(gast.limit_breaches(&[tm0; 3], tm0))?;
             x[g..p].copy_from_slice(&[tm0, tm0, tm0]);
             dev.p_ref = tm0;
         }
         gov => {
             let ng = gov.n_states();
             let guess = gov_start(gov, tm0);
-            let gov = gov.clone();
+            let limited = gov;
+            let gov = gov.unlimited();
             let ug = newton(
                 guess,
                 |u, res| {
@@ -1019,6 +1059,7 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
                 },
                 &name,
             )?;
+            check(limited.limit_breaches(&ug[..ng], tm0))?;
             x[g..p].copy_from_slice(&ug[..ng]);
             dev.p_ref = ug[ng];
         }
@@ -1035,7 +1076,7 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
             "{name}: device initialization left residual {worst:.3e}"
         ));
     }
-    Ok(x)
+    Ok((x, notes))
 }
 
 /// Starting point of the stabilizer states at rest.
@@ -1297,5 +1338,134 @@ mod tests {
             // times the perturbation): rounding there is about 1e-12.
             assert!(worst < 1e-9, "{}: {worst:e}", case.id);
         }
+    }
+
+    /// One GENROU unit with the controller `records` (DYR text after the
+    /// bus, model and id), initialized at `V = 1 pu` delivering
+    /// `0.8 + j0.3 pu`: its states and notes, or the error.
+    fn init_genrou_with(records: &[&str]) -> Result<(Vec<f64>, Vec<String>), String> {
+        let mut dyr = String::from(
+            "102 'GENROU' 1 7.0 0.03 0.75 0.05 4.0 0.0 1.8 1.75 0.3 0.55 0.25 0.2 0.1 0.3 /\n",
+        );
+        for r in records {
+            dyr.push_str(&format!("102 {r} /\n"));
+        }
+        let case = powerio::parse_dyr(&dyr).unwrap();
+        let models: Vec<_> = case
+            .records()
+            .iter()
+            .map(|r| powerio::typed_model(r).unwrap())
+            .collect();
+        let (machine, shaft) = machine_from_psse(&models[0], (0.0, 0.25)).unwrap();
+        let (mut avr, mut gov) = (Avr::Fixed, Governor::Fixed);
+        for m in &models[1..] {
+            if let Ok(a) = avr_from_psse(m) {
+                avr = a;
+            } else {
+                gov = governor_from_psse(m).unwrap();
+            }
+        }
+        let mut dev = GenDevice {
+            bus_number: 102,
+            machine_id: "1".into(),
+            bus: 0,
+            scale: 1.0,
+            f0: 60.0,
+            machine,
+            shaft,
+            avr,
+            gov,
+            pss: Stabilizer::None,
+            v_ref: 1.0,
+            p_ref: 1.0,
+            offset: 0,
+            tripped: None,
+        };
+        let v = C64::new(1.0, 0.0);
+        let i = (C64::new(0.8, 0.3) / v).conj();
+        init_device(&mut dev, v, i)
+    }
+
+    /// An exciter or governor whose steady state at the dispatch stands
+    /// beyond a limit is reported by the limit and the value: a note where
+    /// the model rests there anyway (SEXS past EMAX, ESAC1A's VA past
+    /// VAMAX), an error naming the limit where it cannot (before, a generic
+    /// Newton failure, or for SEXS a field voltage above its ceiling with no
+    /// word).
+    #[test]
+    fn controllers_beyond_their_limits_at_rest_are_named() {
+        // Within every limit: no note.
+        let (_, notes) = init_genrou_with(&[
+            "'SEXS' 1 0.1 10 100 0.1 0 5",
+            "'TGOV1' 1 0.05 0.5 1.0 0.0 2.0 6.0 0.0",
+        ])
+        .unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+
+        // SEXS rests above EMAX: a note naming it, and the field voltage the
+        // dispatch needs (above the ceiling) is the one it starts with.
+        let (x, notes) = init_genrou_with(&["'SEXS' 1 0.1 10 100 0.1 0 1.5"]).unwrap();
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("SEXS field voltage EFD") && notes[0].contains("above EMAX = 1.5"),
+            "{notes:?}"
+        );
+        assert!(x[6] > 1.5, "Efd0 {}", x[6]);
+
+        // ESAC1A's VA above VAMAX with VR inside its limits: a note.
+        let esac1a = |va_max: f64, vr_max: f64| {
+            format!(
+                "'ESAC1A' 1 0 0 0 400 0.02 {va_max} -14.5 0.8 0.03 1 0.2 0.38 1 3.1 0.03 4.2 0.1 {vr_max} -5.43"
+            )
+        };
+        let (_, notes) = init_genrou_with(&[&esac1a(1.5, 6.03)]).unwrap();
+        assert!(
+            notes.len() == 1 && notes[0].contains("ESAC1A regulator voltage VA"),
+            "{notes:?}"
+        );
+
+        // No steady state: an error naming the unit, the quantity and the limit.
+        let fails = |records: &[&str], what: &str, limit: &str| {
+            let e = init_genrou_with(records).unwrap_err();
+            assert!(
+                e.starts_with("generator 102-1: ") && e.contains(what) && e.contains(limit),
+                "{e}"
+            );
+        };
+        fails(
+            &[&esac1a(14.5, 1.5)],
+            "ESAC1A regulator output VR",
+            "above VRMAX = 1.5",
+        );
+        fails(
+            &["'EXST1' 1 0 0.1 -0.1 1 10 200 0.02 1.5 -5 0.05 0 1"],
+            "EXST1 field voltage EFD",
+            "above VT·VRMAX − KC·Ifd",
+        );
+        fails(
+            &["'EXST1' 1 0 0.005 -0.1 1 10 200 0.02 5 -5 0.05 0 1"],
+            "EXST1 voltage error VI",
+            "above VIMAX = 0.005",
+        );
+        fails(
+            &["'TGOV1' 1 0.05 0.5 0.7 0.0 2.0 6.0 0.0"],
+            "TGOV1 valve position = 0.8000",
+            "above VMAX = 0.7",
+        );
+        fails(
+            &["'GAST' 1 0.05 0.4 0.1 3.0 0.7 2.0 1.2 0.0 0.0"],
+            "GAST turbine power = 0.8000",
+            "above AT = 0.7",
+        );
+        fails(
+            &["'GAST' 1 0.05 0.4 0.1 3.0 1.0 2.0 0.7 0.0 0.0"],
+            "GAST valve position",
+            "above VMAX = 0.7",
+        );
+        fails(
+            &["'HYGOV' 1 0.05 0.3 5.0 0.05 0.5 0.2 0.6 0.0 1.2 1.2 0.0 0.08"],
+            "HYGOV gate opening",
+            "above GMAX = 0.6",
+        );
     }
 }

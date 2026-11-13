@@ -71,7 +71,17 @@ regulates a remote bus holds its terminal at the case's voltage instead (the
 static AC power flow refuses remote regulation). Each machine is then solved
 for its states and references so every derivative vanishes and it injects its
 power flow current: `‖f(x0)‖∞` is below 1e-8 on every shipped case
-(`RmsSimulation::initial_residual`).
+(`RmsSimulation::initial_residual`). The exciter and governor steady states
+are checked against their limits, as PowerSimulationsDynamics.jl does at
+initialization. A SEXS field voltage beyond `EMIN`/`EMAX`, or an ESAC1A
+regulator voltage beyond `VAMIN`/`VAMAX`, still rests there (the non-windup lag
+holds a state it is not pushing further), and a note names the unit, the limit
+and the value. No steady state exists when the dispatch needs ESAC1A's `VR`
+beyond `VRMIN`/`VRMAX`, EXST1's voltage error beyond `VIMIN`/`VIMAX` or its
+field voltage beyond `VT·VRMIN − KC·Ifd`/`VT·VRMAX − KC·Ifd`, a TGOV1 or GAST
+valve beyond `VMIN`/`VMAX`, GAST power above `AT`, or a HYGOV gate beyond
+`GMIN`/`GMAX`. Then the initialization fails with an error that names the unit,
+the limit and the value.
 
 ### Loads
 

@@ -423,7 +423,7 @@ impl RmsLive {
             }
             d.tripped = None;
             let u = v_bus * v_ratio * C64::from_polar(1.0, angle);
-            let local = init::init_device(d, u, C64::new(0.0, 0.0))?;
+            let (local, _) = init::init_device(d, u, C64::new(0.0, 0.0))?;
             let [_, k, ..] = d.layout();
             x[d.offset..d.offset + local.len()].copy_from_slice(&local);
             x[d.offset + k + 1] = speed;
