@@ -332,6 +332,21 @@ repository variable, not a secret, and restrict it to the deployment's hosts
 in CARTO's key dashboard. Without the variable, the build has no key:
 OpenFreeMap leads and CARTO is the fallback. The CSP is the same either way.
 
+Agents reach the app's WebMCP tools through `document.modelContext`. Chrome and
+Edge offer it on an origin with a WebMCP origin trial token, so visitors do not
+need to enable a browser flag. Register the deployment's origin for the trial
+and set the repository variable `WEBMCP_ORIGIN_TRIAL_TOKEN` to the token. The
+deploy workflow passes it to the frontend build as
+`PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN`, and the prerendered pages carry it in an
+`origin-trial` meta tag. A token is valid for one origin only, so a staging host
+needs its own. To let other sites call the tools when they embed the app, set
+`WEBMCP_EXPOSED_TO` to a comma-separated list of their origins, such as
+`https://maptogrid.example`; the workflow passes it as
+`PUBLIC_WEBMCP_EXPOSED_TO`, and the embedding page must also opt in. Both values
+ship in the page, so keep them in repository variables, not secrets. Without
+them the build adds no meta tag and the tools stay same-origin. A local build
+reads both variables from the environment.
+
 A Caddy image with `github.com/mholt/caddy-ratelimit` is needed for the sample
 rate limits; stock Caddy does not include that module. The tellegen backend also
 enforces solve and sensitivity rate limits with the same defaults, so the
