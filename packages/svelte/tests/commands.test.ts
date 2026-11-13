@@ -69,4 +69,41 @@ describe('command registry', () => {
 		registry.toggle();
 		expect(registry.open).toBe(false);
 	});
+	it('lists sources after static commands, grouped Actions, Cases, Panels', () => {
+		const registry = new CommandRegistry();
+		const cases = ['IEEE 14', 'IEEE 118'];
+		registry.register({ id: 'zen', title: 'Enter zen mode', run: noop });
+		registry.registerSource(() => [
+			{ id: 'panel:agent', title: 'Open Agent panel', group: 'Panels', run: noop }
+		]);
+		const remove = registry.registerSource(() =>
+			cases.map((name) => ({
+				id: `case:${name}`,
+				title: `Switch to ${name}`,
+				group: 'Cases' as const,
+				run: noop
+			}))
+		);
+		registry.register({ id: 'run', title: 'Run calculation', run: noop });
+		expect(registry.matches().map((c) => c.id)).toEqual([
+			'zen',
+			'run',
+			'case:IEEE 14',
+			'case:IEEE 118',
+			'panel:agent'
+		]);
+		// Sources are read on demand, so a new case appears without re-registering.
+		cases.push('Texas 7k');
+		registry.query = 'texas';
+		expect(registry.matches().map((c) => c.id)).toEqual(['case:Texas 7k']);
+		remove();
+		expect(registry.matches()).toEqual([]);
+	});
+	it('ignores a stale unregister after a command is replaced', () => {
+		const registry = new CommandRegistry();
+		const stale = registry.register({ id: 'zen', title: 'Old', run: noop });
+		registry.register({ id: 'zen', title: 'New', run: noop });
+		stale();
+		expect(registry.commands.map(commandTitle)).toEqual(['New']);
+	});
 });

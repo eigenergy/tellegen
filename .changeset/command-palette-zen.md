@@ -2,4 +2,4 @@
 "@tellegen/svelte": minor
 ---
 
-Add a Cmd+K command palette with a Zen mode command that hides the panel toolbar, panels, footer and zoom buttons and collapses the case strip to the active case until Escape or the header's exit link. Components can register their own commands with `getCommandRegistry()`.
+Add a command palette, opened with Cmd+K (Ctrl+K) or the header's Commands button. It runs the calculation, switches cases, opens and closes panels, changes the theme, fits the network to the view, resets the panel layout, and toggles zen mode, which hides the panels until Escape and is saved with the display preferences. Components register their own commands with `getCommandRegistry().register()`, or live lists with `registerSource()`.

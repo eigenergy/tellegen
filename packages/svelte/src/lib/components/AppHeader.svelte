@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
+	import { getCommandRegistry, type Command } from '../commands.svelte.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -21,6 +22,57 @@
 		};
 		input.click();
 	}
+	// Every case chip is also a palette command, so a case can be opened by name.
+	const commands = getCommandRegistry();
+	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+	onDestroy(
+		commands.registerSource((): Command[] => [
+			{
+				id: 'open-file',
+				title: 'Open case file…',
+				hint: 'MATPOWER, PSS/E, OpenDSS, CIM and other formats',
+				keywords: ['import', 'upload', 'load'],
+				group: 'Cases',
+				run: () => fileInput?.click()
+			},
+			...app.cases
+				.filter((c) => !c.unavailableReason)
+				.map((c): Command => ({
+					id: `case:${c.id}`,
+					title: `Switch to ${c.name}`,
+					group: 'Cases',
+					keywords: ['case', 'network', 'open'],
+					run: () => void ctrl.activateCase(c.id)
+				})),
+			...app.hostedDistributionCases
+				.filter((c) => !c.unavailable_reason)
+				.filter((c) => !app.multiCases.some((m) => m.hosted && m.id === c.id))
+				.map((c): Command => ({
+					id: `case:${c.id}`,
+					title: `Switch to ${c.name}`,
+					hint: 'Distribution case',
+					group: 'Cases',
+					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
+					run: () => void ctrl.activateHostedDistribution(c.id)
+				})),
+			...app.localCases.map((c): Command => ({
+				id: `case:${c.id}`,
+				title: `Switch to ${c.label}`,
+				hint: 'Opened from a file',
+				group: 'Cases',
+				keywords: ['case', 'network', 'open', 'local'],
+				run: () => void ctrl.activateLocal(c)
+			})),
+			...app.multiCases.map((c): Command => ({
+				id: `case:${c.id}`,
+				title: `Switch to ${c.label}`,
+				hint: 'Distribution case',
+				group: 'Cases',
+				keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
+				run: () => void ctrl.activateMulti(c)
+			}))
+		])
+	);
 	let headerEl = $state.raw<HTMLElement | undefined>(undefined);
 
 	// The case tabs wrap onto their own row on a narrow viewport and unwrap on a
@@ -139,6 +191,12 @@
 		{/if}
 	</nav>
 	<button
+		class="settings-button commands-button"
+		onclick={() => commands.show()}
+		aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
+		title="Search commands, cases and panels">Commands <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd></button
+	>
+	<button
 		class="settings-button"
 		onclick={() => (app.settingsOpen = !app.settingsOpen)}
 		aria-expanded={app.settingsOpen}>Settings</button
@@ -153,7 +211,7 @@
 			class="zen-exit mono"
 			aria-label="Exit zen mode"
 			title="Exit zen mode (Esc)"
-			onclick={() => (app.zen = false)}>exit zen</button
+			onclick={() => (app.zen = false)}>Exit zen</button
 		>
 	{/if}
 	<input
@@ -182,6 +240,27 @@
 		font: inherit;
 		font-size: 12px;
 		cursor: pointer;
+	}
+
+	.commands-button {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-sm, 6px);
+	}
+	.commands-button kbd {
+		font: inherit;
+		font-family: var(--font-mono);
+		font-size: var(--fs-meta, 10px);
+		color: var(--text-secondary);
+		padding: 1px 5px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-sm, 3px);
+		background: var(--paper);
+	}
+	@media (max-width: 960px) {
+		.commands-button {
+			display: none;
+		}
 	}
 
 	header {

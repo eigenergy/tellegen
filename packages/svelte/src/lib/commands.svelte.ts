@@ -9,8 +9,14 @@ export interface Command {
 	hint?: string | (() => string);
 	/** Extra terms the query matches against, in addition to the title. */
 	keywords?: string[];
+	/** Section the palette lists the command under; defaults to "Actions". */
+	group?: CommandGroup;
 	run: () => void;
 }
+
+export type CommandGroup = 'Actions' | 'Cases' | 'Panels';
+const GROUP_ORDER: CommandGroup[] = ['Actions', 'Cases', 'Panels'];
+export const commandGroup = (command: Command): CommandGroup => command.group ?? 'Actions';
 
 const KEY = Symbol('tellegen.commands');
 
@@ -26,20 +32,45 @@ export class CommandRegistry {
 	open = $state(false);
 	query = $state('');
 
+	/** Command lists computed on demand, such as one command per open case.
+	 * The palette reads them inside its own `$derived`, so they track live
+	 * state without any component syncing them through an effect. */
+	sources = $state.raw<(() => Command[])[]>([]);
+
 	register(command: Command) {
 		this.commands = [...this.commands.filter((c) => c.id !== command.id), command];
 		return () => {
-			this.commands = this.commands.filter((c) => c.id !== command.id);
+			// Compare by identity: a stale unregister must not remove a replacement.
+			this.commands = this.commands.filter((c) => c !== command);
 		};
 	}
-	/** Every token of the query must appear in the title or a keyword. */
+	/** Register a function that lists commands; returns its unregister function. */
+	registerSource(source: () => Command[]) {
+		this.sources = [...this.sources, source];
+		return () => {
+			this.sources = this.sources.filter((s) => s !== source);
+		};
+	}
+	/** Static commands followed by every source's current commands. */
+	all(): Command[] {
+		return [...this.commands, ...this.sources.flatMap((source) => source())];
+	}
+	/** Every query token must start a word of the title or a keyword, so "two"
+	 * finds "Case Two" but not "network". Results
+	 * keep registration order within each group, and groups keep a fixed order. */
 	matches(): Command[] {
-		const tokens = this.query.toLowerCase().split(/\s+/).filter(Boolean);
-		if (tokens.length === 0) return this.commands;
-		return this.commands.filter((command) => {
-			const haystack = [commandTitle(command), ...(command.keywords ?? [])].join(' ').toLowerCase();
-			return tokens.every((token) => haystack.includes(token));
-		});
+		const tokens = this.query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+		const found =
+			tokens.length === 0
+				? this.all()
+				: this.all().filter((command) => {
+						const words = [commandTitle(command), ...(command.keywords ?? [])]
+							.join(' ')
+							.toLowerCase()
+							.split(/[^\p{L}\p{N}]+/u);
+						return tokens.every((token) => words.some((word) => word.startsWith(token)));
+					});
+		return GROUP_ORDER.flatMap((group) => found.filter((c) => commandGroup(c) === group));
 	}
 	show() {
 		this.query = '';

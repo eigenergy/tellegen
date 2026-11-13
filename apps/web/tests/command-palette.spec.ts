@@ -94,7 +94,7 @@ test('zen mode keeps only the active case tab until the strip is hovered', async
 	await page.route('**/api/cases/case2/solution', (route) => route.fulfill({ json: SOLUTION }));
 	await page.route('**/api/cases/case2/case', (route) => route.fulfill({ status: 500, json: {} }));
 	await page.goto('/');
-	const strip = page.getByRole('navigation', { name: 'networks' });
+	const strip = page.getByRole('navigation', { name: 'Networks' });
 	const caseA = strip.getByRole('button', { name: /Case One/ }).first();
 	const caseB = strip.getByRole('button', { name: /Case Two/ }).first();
 	const file = strip.getByRole('button', { name: /case file/ });
@@ -152,4 +152,60 @@ test('zen mode hides the compact drawer and restores it on exit', async ({ page 
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Exit zen mode', exact: true }).click();
 	await expect(page.locator('[data-panel="studies"]')).toBeVisible();
+});
+
+test('the palette switches cases, opens panels and is reachable from the header', async ({
+	page
+}) => {
+	await mockDataRoutes(page);
+	await page.route('**/api/cases', (route) =>
+		route.fulfill({
+			json: [...CASE_SUMMARY, { ...CASE_SUMMARY[0], id: 'case2', name: 'Case Two' }]
+		})
+	);
+	await page.route('**/api/cases/case2/network', (route) =>
+		route.fulfill({ json: { ...NETWORK, id: 'case2', name: 'Case Two' } })
+	);
+	await page.route('**/api/cases/case2/solution', (route) => route.fulfill({ json: SOLUTION }));
+	await page.route('**/api/cases/case2/case', (route) => route.fulfill({ status: 500, json: {} }));
+	await page.goto('/');
+	const strip = page.getByRole('navigation', { name: 'Networks' });
+	await expect(strip.getByRole('button', { name: /Case Two/ }).first()).toBeVisible();
+
+	await page.getByRole('button', { name: /^Commands/ }).click();
+	const dialog = page.getByRole('dialog', { name: 'Command palette' });
+	await expect(dialog.getByText('Cases', { exact: true })).toBeVisible();
+	await expect(dialog.getByText('Panels', { exact: true })).toBeVisible();
+	await dialog.getByRole('combobox').fill('case two');
+	await page.keyboard.press('Enter');
+
+	await expect(dialog).toHaveCount(0);
+	await expect(strip.locator('.case-chip.active')).toContainText('Case Two');
+
+	await page.keyboard.press('ControlOrMeta+k');
+	await dialog.getByRole('combobox').fill('agent');
+	await expect(dialog.getByRole('option', { name: 'Open Agent panel' })).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(page.locator('[data-panel="agent"]')).toBeVisible();
+	await page.keyboard.press('ControlOrMeta+k');
+	await dialog.getByRole('combobox').fill('agent');
+	await expect(dialog.getByRole('option', { name: 'Close Agent panel' })).toBeVisible();
+});
+
+test('zen mode survives a reload until it is exited', async ({ page }) => {
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	await page.goto('/');
+	const toolbar = page.locator('.panel-toolbar');
+	await expect(toolbar).toBeVisible();
+	await page.keyboard.press('ControlOrMeta+k');
+	await page.getByRole('dialog', { name: 'Command palette' }).getByRole('combobox').fill('zen');
+	await page.keyboard.press('Enter');
+	await expect(toolbar).toHaveCount(0);
+	await page.reload();
+	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await expect(toolbar).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	await expect(toolbar).toBeVisible();
+	await page.reload();
+	await expect(toolbar).toBeVisible();
 });
