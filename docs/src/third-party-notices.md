@@ -144,8 +144,8 @@ v0.16.2 and [PowerSystems.jl](https://github.com/NREL-Sienna/PowerSystems.jl)
 v5.12 into Rust, the WECC generic renewable plant (`REGCA1`, `REECB1`,
 `REPCA1`) included. Both are BSD 3-Clause licensed by Alliance for Sustainable
 Energy, LLC and The Regents of the University of California: PowerSimulationsDynamics.jl
-Copyright (c) 2020, 2023 (`licenses/PowerSimulationsDynamics.jl-LICENSE`),
-PowerSystems.jl Copyright (c) 2018, 2023 (`licenses/PowerSystems.jl-LICENSE`).
+Copyright (c) 2020, 2023 (`crates/tellegen/licenses/PowerSimulationsDynamics.jl-LICENSE`),
+PowerSystems.jl Copyright (c) 2018, 2023 (`crates/tellegen/licenses/PowerSystems.jl-LICENSE`), shipped with the crate.
 The WECC 240-bus case under `crates/tellegen/tests/data/rms_examples/wecc240`
 is copied from that package's `test/data_tests` directory under the same
 license, with the bus coordinates of
