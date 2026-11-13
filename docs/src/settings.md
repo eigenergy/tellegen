@@ -71,7 +71,7 @@ tellegen calculate < calculation-request.json
 tellegen solve-mc '@pf-options.json' < case.pio.json
 ```
 
-`tellegen solve-mc` resolves its options through the same resolver, so an unknown option key is an error rather than being ignored.
+`tellegen solve-mc` resolves its options through the same resolver, so an unknown option key is an error rather than being ignored. The `output` and `profile` keys choose the printed view and are removed before resolution ([Multiconductor power flow](multiconductor-pf.md)).
 
 `tellegen describe` includes the settings catalog and calculation request schema. Existing solve commands remain available. A calculation request contains a `module_json` string, `settings`, optional balanced-network `edits`, and optional `energized_only` (multiconductor PF only). Multiconductor load edits belong in the input module.
 
