@@ -4,6 +4,17 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.7.2](https://github.com/eigenergy/tellegen/compare/v0.7.1...v0.7.2) - 2026-11-13
+
+### Added
+
+- Solve-mc profile and compact output views ([#389](https://github.com/eigenergy/tellegen/pull/389))
+- AC power flow with ZIP and exponential loads ([#391](https://github.com/eigenergy/tellegen/pull/391))
+
+### Changed
+
+- Bump pounce-nl and pounce-rs to 0.16.0 ([#387](https://github.com/eigenergy/tellegen/pull/387))
+
 ## [0.7.1](https://github.com/eigenergy/tellegen/compare/v0.7.0...v0.7.1) - 2026-11-13
 
 ### Changed
