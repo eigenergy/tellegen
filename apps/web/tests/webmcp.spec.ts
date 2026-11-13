@@ -125,7 +125,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 	if (!previewed.ok) return;
 	expect(JSON.stringify(previewed).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('Predicted cost change')).toBeVisible();
+	await expect(page.getByText('Predicted cost change', { exact: true })).toBeVisible();
 
 	const cancelled = await page.evaluate(
 		async ({ caseId, focusedRevision, busId }) =>
