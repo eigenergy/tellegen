@@ -30,6 +30,8 @@ Neither is a default feature of the `tellegen` crate.
   and replay, packed result buffers, DYR parameter editing, the model library
   and dynamize, and `tellegen::case_edit`. Without it a request for
   small-signal analysis or checkpoints is noted in the result and skipped.
+  Small-signal analysis (a dense `O(n³)` eigensolve) runs only when a request
+  asks for it (`small_signal` is false by default).
 
 Julia is not a dependency. PowerSimulationsDynamics.jl is the reference the
 equations are translated from (BSD-3, see
@@ -45,13 +47,56 @@ equations are translated from (BSD-3, see
 | Governor | `TGOV1`, `GAST`, `HYGOV` |
 | Stabilizer | `IEEEST` |
 | Renewable plant | `REGCA1` + `REECB1` + `REPCA1` (WECC generic converter, electrical and plant control) |
-| Loads | constant impedance, current or power at the power flow voltage |
+| Loads | each load's static law (constant power, ZIP, exponential), or one law for every bus |
 
 `RmsSimulation::with_options` (with graphs, `with_models_and_options`) takes `RmsOptions`, fixed for that simulation
 only: whether renewable plants are simulated (the default) or held at their
-power flow output, PowerSimulationsDynamics.jl 0.16.2's low-voltage gain in
-place of the PSS/E one (for comparing with that tool), and whether step
-matrices are factorized by blocks (the default) or as one sparse LU.
+power flow output, whether the initialization enforces reactive limits (the
+default), the loads' low-voltage behaviour, PowerSimulationsDynamics.jl
+0.16.2's low-voltage gain and saturation in place of the PSS/E ones (for
+comparing with that tool), and whether step matrices are factorized by blocks
+(the default) or as one sparse LU.
+
+### Initialization
+
+The initialization starts from the static study's AC power flow, with the
+generators' reactive limits enforced (PV→PQ switching), so the dynamic run
+starts where the static study is. A generator bus released at a limit starts
+there, its voltage off the setpoint; the notes name each such bus with its
+reactive power and the voltage difference. `RmsOptions::reactive_limits =
+false` holds every generator at its setpoint whatever reactive power that
+takes, as PowerSimulationsDynamics.jl does; the notes then name each bus whose
+reactive generation exceeds its limits, and by how much. A generator that
+regulates a remote bus holds its terminal at the case's voltage instead (the
+static AC power flow refuses remote regulation). Each machine is then solved
+for its states and references so every derivative vanishes and it injects its
+power flow current: `‖f(x0)‖∞` is below 1e-8 on every shipped case
+(`RmsSimulation::initial_residual`).
+
+### Loads
+
+With `LoadModel::PowerFlow` (the default) each load keeps the law the AC power
+flow solved it with: the constant-power part, the ZIP constant-current and
+constant-impedance parts, and exponential loads, the decomposition of
+`load_voltage`. A part with exponent `γ` and power `P0` at the power flow
+voltage `V0` draws `P(V) = P0 (V / V0)^γ` (a ZIP part `c (V / v_nom)^γ` is
+`c (V0 / v_nom)^γ (V / V0)^γ`), as the current `I = (P − jQ) V / |V|²`; the
+constant-impedance parts enter the admittance matrix. At `t = 0` the loads
+draw exactly the power flow demand. `ConstantImpedance`, `ConstantCurrent` and
+`ConstantPower` are a global override: the whole bus demand at `V0` follows
+that one law (PSS/E `CONL` with all of P and Q in one class).
+
+Below a breakpoint the parts with `γ < 2` (constant power, constant current,
+exponential loads with `γ < 2`) draw the constant admittance of their power
+there, `P(V) = P(V_b) (V / V_b)²`, as PSS/E converts constant-power loads
+below `PQBRAK`: `RmsOptions::low_voltage_load` is `Break { v_break: 0.7 }` by
+default (PSS/E's default `PQBRAK`; a bus starting below it breaks at its own
+`V0`). The power is continuous at `V_b` and the current falls linearly to zero
+with the voltage, where an unconverted constant-power load would draw an
+unbounded current. `Exact` keeps every law down to 20 % of `V0` (below that, a
+smooth floor keeps the current's direction defined at 0 V), as
+PowerSimulationsDynamics.jl does. The power drawn by the loads of each bus is
+recorded as `pl:<bus>` and `ql:<bus>`.
 
 Following PowerSystems.jl, a generator without a machine record, or a
 `GENCLS` with zero inertia, is a Thevenin source behind its `ZSORCE` (an
@@ -81,8 +126,8 @@ validated model.
 
 ## What a run records
 
-By default a run records every channel at every output step: two per bus, four
-per branch and about eight per unit. A request's `record` (`RecordSpec`)
+By default a run records every channel at every output step: two per bus (four
+at a bus with load), four per branch and about eight per unit. A request's `record` (`RecordSpec`)
 narrows that without coarsening anything:
 
 - `channels`: the watch set, recorded at the full output step (keys such as
@@ -117,7 +162,14 @@ own dq frame, and the control blocks keep their time constants in `M`, so a
 zero time constant makes a state algebraic. The reference frame is the speed of
 a dynamic machine at the slack bus, or the synchronous frame when a source
 holds it. Each step solves the implicit trapezoidal rule with Newton's method
-(device Jacobian blocks by forward differences, the network block exactly).
+(device Jacobian blocks by forward differences with the step
+`1e-7 · max(|x|, 1)` rounded to the step actually taken, the network and load
+blocks exactly). The rule is of second order: halving a 4 ms step quarters
+the difference to the next finer run (`tests/rms_physics.rs`; on a
+single-machine line trip, 3.3e-5 rad of rotor angle from 4 to 2 ms, 8.2e-6
+rad from 2 to 1 ms), so the default 2.5 ms step is within about 2e-5 rad of
+the converged trajectory there. The step is fixed: there is no local error
+estimate or step-size control.
 The step matrix is factorized by blocks where every unit is a machine: each
 unit's states are eliminated onto its bus by a small dense LU, and a sparse LU
 (faer) factorizes the network with a 2 × 2 contribution per unit and the frame
@@ -125,22 +177,23 @@ speed as a bordered column; otherwise the whole matrix goes to one sparse LU.
 Both solve the same system. A factorization is reused while the step size, the
 method and the topology are unchanged. An event is applied at its exact time
 and the algebraic variables are re-solved with the differential states held.
-The Newton iteration is damped (backtracking on the residual); a step the
-trapezoidal rule cannot solve falls back to backward Euler, then halves, so
-rectifiers and limiters that switch inside a step (an ESAC1A with KC ≠ 0
-chattering at its bounds) do not stop a run.
+The Newton iteration is damped (backtracking on the residual): a step that
+does not lower the residual is never taken; the iteration refactorizes, and if
+a fresh factorization finds no descent either, the step falls back to backward
+Euler, then halves, so rectifiers and limiters that switch inside a step (an
+ESAC1A with KC ≠ 0 chattering at its bounds) do not stop a run.
+
+Events are checked before a run starts: each needs a finite time in
+`[0, t_end]` and an element the system has (judged in time order, as the run
+applies them), or the run is refused with the event named.
 
 ## Known limitations
 
-- **Voltage-dependent loads.** The AC power flow solves ZIP and exponential
-  loads exactly inside its Newton iteration, and the RMS initialization starts
-  from that operating point. The dynamic load model then applies to each bus's
-  demand at the power flow voltage (the per-load ZIP split is not yet carried
-  into the dynamics).
-- **Generator reactive limits.** The initialization holds every generator at
-  its voltage setpoint and does not apply its reactive limits, so on a case
-  whose dispatch needs more reactive power than a unit's limit it starts from
-  another operating point than a power flow that applies them.
+- **Loads** are static: no induction motor or composite load models, and no
+  frequency dependence.
+- **Remote voltage regulation** is held at the case's terminal voltage, not
+  solved (the static AC power flow refuses it).
+- **Step size** is fixed (see Formulation).
 - **Inverter-based resources** other than the `REGCA1` + `REECB1` + `REPCA1`
   plant (for example `REECA1`, `WTGT*`) are not modeled: such a unit keeps its
   power flow output as a constant-current injection, named in the notes.
@@ -148,11 +201,6 @@ chattering at its bounds) do not stop a run.
   branch flow are not modelled, as in PowerSimulationsDynamics.jl.
 - **Models outside the table above** are preserved by PowerIO and named in the
   notes, not simulated.
-- **Block templates.** On two single-machine cases built from WECC 240 a run
-  with the templates of its controllers departs from the compiled run
-  (channels up to 5e-5, held below 1e-4 by `tests/rms_graph.rs`); the cause is
-  open. Ruled out: the IEEEST filter with A3 = A4 = 0 and its output limit. The
-  compiled models are the validated ones.
 - **Trajectories** have no PowerIO value yet.
 
 ## Differences from the PSS/E Model Library
@@ -162,13 +210,22 @@ tellegen follows PSS/E for:
 
 - the REGCA1 low-voltage active current gain between `Lvpnt0` and `Lvpnt1`
   (unless `RmsOptions::psid_lv_gain`) and `Xc` in the compensated voltage;
+- quadratic saturation `B (x − A)²/x` with `Se = 0` for `x ≤ A` (unless
+  `RmsOptions::psid_saturation`; the formula alone rises again below `A` and
+  diverges as `x → 0`);
+- an ESAC1A's rectifier current `IN = KC Ifd / VE` with `VE` floored at 1e-3,
+  so it stays finite as `VE` collapses, and `TB` as the lead-lag's mass, so
+  `TB = TC = 0` bypasses it;
+- constant-power and constant-current loads below `PQBRAK` (see Loads; unless
+  `LowVoltageLoad::Exact`);
+- the initialization with reactive limits enforced (unless
+  `RmsOptions::reactive_limits = false`);
 - an ESAC1A with `TR = 0`: no transducer lag (PowerSimulationsDynamics.jl
   substitutes 1 s);
 - a washout (rate feedback) with `T = 0`: the block is off.
 
 It follows PowerSimulationsDynamics.jl, and so differs from PSS/E, in:
 
-- quadratic saturation `B (x − A)²/x`, with no zero region below `A`;
 - the REGCA1 active current ramp limit, applied before the `Tg` lag, so the
   effective ramp is `Rrpwr/Tg` (500 pu/s for `Rrpwr = 10`, `Tg = 0.02 s`), and
   the placement of the low-voltage power limit;

@@ -6,10 +6,25 @@ The RMS engine is validated against
 
 | Test | Cases | Data | Runs |
 |---|---|---|---|
-| `tests/rms_psid_validation.rs` | single-machine cases built from WECC 240 (the renewable plant included); WECC 240 | ships with the code | always |
+| `tests/rms_psid_validation.rs` | single-machine cases built from WECC 240 (the renewable plant included) | ships with the code | always |
+| `tests/rms_psid_validation.rs` | WECC 240, four 20 s scenarios | ships with the code | release profile (`just rms-validation`; ignored in debug) |
 | `tests/rms_validation.rs` | PowerSimulationsDynamics.jl's PSS/E benchmark cases (`test/benchmarks/psse`) | case data repository (`$TELLEGEN_CASE_DATA`) | where the data is |
 
-No closed-source tool's output is used.
+No closed-source tool's output is used. The tests need the `rms` feature;
+`just rms-test` runs the RMS suite in debug, `just rms-validation` every
+validation in release (CI runs both). The comparisons simulate what
+PowerSimulationsDynamics.jl simulates where tellegen's defaults differ
+(`RmsOptions` with `reactive_limits: false`, `psid_saturation: true`,
+`low_voltage_load: Exact`), so they compare like with like.
+
+The per-quantity bounds below are regression bounds: about three (single
+machines) or two (WECC 240) times what tellegen showed in the validation
+study, so a change to the trajectories shows. Every run also meets two fixed
+physical tolerances on every machine's speed and rotor angle against the
+reference: `|Δω| < 1e-4` pu (6 mHz at 60 Hz, below governor deadbands) and
+`|Δδ| < 0.5°` (small against the swings a transient stability study judges).
+The largest differences are 2.1e-6 pu and 0.0076° on the single machines,
+3.2e-6 pu and 0.013° on WECC 240.
 
 ## Single-machine cases from WECC 240
 
