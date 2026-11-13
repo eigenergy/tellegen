@@ -49,11 +49,11 @@
 						? 'Islands and equipment to exclude'
 						: 'Excluded islands and equipment'}</summary
 				>
-				{#each islands as island, i}
+				{#each islands as island, i (i)}
 					<h4>Island {i + 1}: no voltage source</h4>
 					<p>Buses: {island.buses.join(', ')}</p>
 					<ul>
-						{#each island.equipment as item}<li>
+						{#each island.equipment as item, k (k)}<li>
 								{item.kind}: {item.name}
 							</li>{/each}
 					</ul>

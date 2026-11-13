@@ -190,7 +190,7 @@
 	</p>
 	<div class="search">
 		<span class="current"
-			>Bus result <strong class="mono">{busId || MISSING}</strong>{#if edgeId}{' · '}equipment
+			>Bus result <strong class="mono">{busId || MISSING}</strong>{#if edgeId}&nbsp;· equipment
 				<strong class="mono">{edgeId}</strong>{/if}</span
 		>
 		{#if index}<OmniSearch
