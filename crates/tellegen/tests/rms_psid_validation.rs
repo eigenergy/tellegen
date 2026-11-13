@@ -14,9 +14,21 @@
 //!   (every machine speed and rotor angle, every bus voltage), within the
 //!   bounds below.
 //!
+//! The bounds above are regression bounds: they hold tellegen to what it
+//! showed in the validation study, so any change to the trajectories shows.
+//! Besides them every run meets fixed physical tolerances on the machines'
+//! speed and rotor angle against the reference, [`OMEGA_TOL`] and
+//! [`DELTA_TOL`], which say what the agreement means for a study.
+//!
 //! The reference is `tests/data/rms_examples/wecc240/psid_reference.json`:
 //! PowerSimulationsDynamics.jl results of the validation study, see the
 //! `SOURCES.md` next to it. Set `RMS_PSID_REPORT=1` to print every comparison.
+//!
+//! The single-machine runs take about a second in the debug profile and run
+//! with every `cargo test`. The four 20 s WECC 240 runs take about 1.5 s in
+//! release and 70 s in debug, so the debug profile skips them; run them
+//! with `just rms-validation` (`cargo test --release -p tellegen --features
+//! rms --test rms_psid_validation -- --include-ignored`), as CI does.
 
 #![cfg(feature = "sensitivity")]
 // Negated comparisons are deliberate: they treat NaN as failing.
@@ -26,12 +38,27 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::Value;
-use tellegen::rms::{LoadModel, RmsEvent, RmsOptions, RmsRequest, RmsSimulation};
+use tellegen::rms::{LoadModel, LowVoltageLoad, RmsEvent, RmsOptions, RmsRequest, RmsSimulation};
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/smib.rs"
 ));
+
+/// The largest speed difference to the reference any run may show, pu:
+/// 1e-4 pu is 6 mHz at 60 Hz, below the governor deadbands of interconnection
+/// practice (16.6 to 36 mHz) and a small fraction of the 0.1 to 0.5 Hz
+/// excursions these events cause, so a study reads the same frequency
+/// response from either tool. Observed: 2.1e-6 (single machines), 3.2e-6
+/// (WECC 240).
+const OMEGA_TOL: f64 = 1e-4;
+
+/// The largest rotor angle difference to the reference any run may show
+/// (relative to the angle reference), rad: 0.5°, small against what a
+/// transient stability study judges (first swings of tens of degrees, loss
+/// of synchronism past about 180°). Observed: 0.0076° (single machines),
+/// 0.013° (WECC 240).
+const DELTA_TOL: f64 = 0.5 * std::f64::consts::PI / 180.0;
 
 fn reference() -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -53,12 +80,30 @@ fn wrap(d: f64) -> f64 {
     d - two_pi * (d / two_pi).round()
 }
 
+/// What PowerSimulationsDynamics.jl 0.16.2 simulates, so the comparison
+/// is like with like where tellegen's defaults differ: the units start at
+/// their voltage setpoints whatever reactive power that takes (its power
+/// flow does not enforce reactive limits; tellegen's default does, as its
+/// static study) and the loads keep their law at any voltage (no PSS/E
+/// `PQBRAK` conversion; the loads here are constant impedance, which the
+/// conversion leaves alone, so this is stated for completeness), and the
+/// quadratic saturation keeps its formula below the knee `A` (PSS/E: 0).
+fn psid_options() -> RmsOptions {
+    RmsOptions {
+        reactive_limits: false,
+        psid_saturation: true,
+        low_voltage_load: LowVoltageLoad::Exact,
+        ..RmsOptions::default()
+    }
+}
+
 #[test]
 fn smib_cases_against_psid() {
     let reference = reference();
     let cases = wecc240_smib_cases();
     let mut failures = Vec::new();
     let mut compared = 0;
+    let mut physical_checks = 0;
     for run in reference["smib"].as_array().unwrap() {
         let id = run["case"].as_str().unwrap();
         let event = run["event"].as_str().unwrap();
@@ -98,7 +143,7 @@ fn smib_cases_against_psid() {
         };
         let options = RmsOptions {
             psid_lv_gain: run["psid_lv_gain"].as_bool().unwrap_or(false),
-            ..RmsOptions::default()
+            ..psid_options()
         };
         let sim =
             RmsSimulation::with_options(&network, &dyr, LoadModel::ConstantImpedance, options)
@@ -108,7 +153,7 @@ fn smib_cases_against_psid() {
                 t_end: 3.0,
                 dt: 0.001,
                 output_step: 0.01,
-                load_model: LoadModel::ConstantImpedance,
+                load_model: Some(LoadModel::ConstantImpedance),
                 events,
                 small_signal: false,
                 record: None,
@@ -146,11 +191,28 @@ fn smib_cases_against_psid() {
             if !(d <= tol) {
                 failures.push(format!("{id} {event} {key}: {d:.2e} > {tol:.1e}"));
             }
+            let physical = if key.starts_with("omega:") {
+                Some(OMEGA_TOL)
+            } else if key.starts_with("delta:") {
+                Some(DELTA_TOL)
+            } else {
+                None
+            };
+            if let Some(p) = physical {
+                physical_checks += 1;
+                if !(d <= p) {
+                    failures.push(format!(
+                        "{id} {event} {key}: {d:.2e} beyond the physical tolerance {p:.1e}"
+                    ));
+                }
+            }
         }
     }
     // Six machine combinations with eight channels each, the plant's three
     // events with twelve.
     assert_eq!(compared, 12 * 8 + 3 * 12);
+    // Every machine's speed and angle in every run (the plant has none).
+    assert_eq!(physical_checks, 12 * 2);
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
@@ -299,6 +361,10 @@ fn quantity(key: &str) -> &str {
 }
 
 #[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "four 20 s WECC 240 runs, 70 s in debug: `just rms-validation` runs them in release"
+)]
 fn wecc240_scenarios_against_psid() {
     let reference = reference();
     let wecc = &reference["wecc240"];
@@ -309,7 +375,7 @@ fn wecc240_scenarios_against_psid() {
     // (its low-voltage active current gain), as in the validation study.
     let options = RmsOptions {
         psid_lv_gain: true,
-        ..RmsOptions::default()
+        ..psid_options()
     };
     let sim =
         RmsSimulation::with_options(&network, &dyr, LoadModel::ConstantImpedance, options).unwrap();
@@ -343,7 +409,7 @@ fn wecc240_scenarios_against_psid() {
                 t_end: 20.0,
                 dt: 0.005,
                 output_step: 0.01,
-                load_model: LoadModel::ConstantImpedance,
+                load_model: Some(LoadModel::ConstantImpedance),
                 events,
                 small_signal: false,
                 record: None,
@@ -415,6 +481,16 @@ fn wecc240_scenarios_against_psid() {
         println!("{q:6} {d:.2e} at {at} (bound {bound:.0e})");
         if !(d <= &bound) {
             failures.push(format!("{q}: {d:.2e} at {at} > {bound:.0e}"));
+        }
+    }
+    // The physical tolerances, on the largest difference of any machine.
+    for (q, p) in [("omega", OMEGA_TOL), ("delta", DELTA_TOL)] {
+        let (d, at) = &worst[q];
+        println!("{q:6} {d:.2e} at {at} (physical tolerance {p:.1e})");
+        if !(d <= &p) {
+            failures.push(format!(
+                "{q}: {d:.2e} at {at} beyond the physical tolerance {p:.1e}"
+            ));
         }
     }
     // Every quantity was compared.

@@ -8,8 +8,11 @@ description = "DC optimal power flow, AC power flow, SOCWR, and sensitivities in
 readme = "README.md"
 keywords = ["opf", "power-flow", "differentiable", "sensitivity"]
 categories = ["science", "mathematics"]
-# Third-party test data stays in the repository, not in the published crate.
-exclude = ["tests/data/rms_examples/"]
+# Third-party test data stays in the repository, not in the published crate,
+# and so do the RMS integration tests built on it (the unit tests that read it
+# skip without it). `licenses/` (the BSD-3-Clause notices of the code the RMS
+# engine translates) is packaged.
+exclude = ["tests/data/rms_examples/", "tests/rms_*.rs"]
 
 [dependencies]
 powerio.workspace = true
@@ -126,6 +129,10 @@ required-features = ["schema"]
 
 [[test]]
 name = "rms_events"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_physics"
 required-features = ["rms"]
 
 [[test]]
