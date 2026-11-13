@@ -1802,7 +1802,7 @@ pub fn template(model: &powerio::DynamicModel) -> Option<BlockGraph> {
             ],
             "torque",
         ),
-        M::Ieeest(m) if m.input_code == 1 || m.input_code == 3 => {
+        M::Ieeest(m) if m.remote_bus.is_none() && (m.input_code == 1 || m.input_code == 3) => {
             let source = if m.input_code == 3 {
                 // PSS/E input code 3: the electrical power on `MBASE`, as
                 // the compiled model reads it.

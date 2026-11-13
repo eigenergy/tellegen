@@ -50,7 +50,7 @@ fn overrides(net: &powerio::BalancedNetwork, dyr: &powerio::DynamicCase) -> Vec<
         {
             if let Some(graph) = template(&l.model) {
                 out.push(ModelOverride {
-                    bus: m.bus,
+                    bus: m.bus.0,
                     machine_id: m.machine_id.clone(),
                     graph,
                 });

@@ -75,7 +75,8 @@ pub(crate) fn build(
         .collect();
 
     // Branch keys for events and flows.
-    let circuits = powerio::psse_branch_circuit_ids(network);
+    let equipment = powerio::PsseEquipmentIndex::new(network);
+    let circuits = equipment.circuit_ids();
     let branch_keys: Vec<(usize, usize, String)> = ac
         .branch_ids
         .iter()
@@ -145,25 +146,30 @@ pub(crate) fn build(
             "dyr: {count} {model} record(s) have no model in tellegen and are not simulated"
         ));
     }
-    let unsupported_units: std::collections::BTreeSet<(usize, String)> = dynamics
-        .records()
-        .iter()
-        .filter(|r| {
-            matches!(
-                powerio::typed_model(r),
-                Err(powerio::ModelError::Unsupported { .. })
-            )
-        })
-        .filter_map(|r| {
-            Some((
-                r.bus_id()? as usize,
-                r.device_id().unwrap_or("1").trim().to_owned(),
-            ))
-        })
-        .collect();
+    // The units that name records without a typed view, keyed by bus and
+    // machine id (ASCII case folded, as PowerIO falls back to matching it),
+    // with those records' models: PowerIO reports a generator-attached
+    // record of an unsupported model as `Untyped` with its unit.
+    let mut unsupported_units: std::collections::BTreeMap<(usize, String), Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for issue in &linking.issues {
+        if let powerio::LinkIssue::Untyped {
+            bus: Some(bus),
+            machine_id: Some(id),
+            error: powerio::ModelError::Unsupported { model_name },
+            ..
+        } = issue
+        {
+            unsupported_units
+                .entry((bus.0, id.to_ascii_uppercase()))
+                .or_default()
+                .push(model_name.as_str());
+        }
+    }
     // Renewable plants: REGCA1 + REECB1 + REPCA1 of one unit, simulated
     // ([`super::renewable`]); a unit with other inverter records, or with a
-    // record that does not parse, keeps its power flow output.
+    // record that does not parse, keeps its power flow output. A later record
+    // of one model replaces an earlier one, as PSS/E reads a DYR file.
     let mut plant_records: std::collections::BTreeMap<
         (usize, String),
         [Option<&powerio::DynamicRecord>; 3],
@@ -176,7 +182,7 @@ pub(crate) fn build(
             _ => continue,
         };
         let Some(bus) = r.bus_id() else { continue };
-        let id = r.device_id().unwrap_or("1").trim().to_owned();
+        let id = r.device_id().unwrap_or("1").trim().to_ascii_uppercase();
         plant_records.entry((bus as usize, id)).or_default()[slot] = Some(r);
     }
     let mut dynamic_plants = 0usize;
@@ -185,7 +191,7 @@ pub(crate) fn build(
     let mut at_bus: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut entries: Vec<(&MachineDynamics, usize)> = Vec::new();
     for m in &linking.machines {
-        let Some(b) = dense(m.bus) else {
+        let Some(b) = dense(m.bus.0) else {
             report.notes.push(format!(
                 "generator {}-{} sits on a bus outside the energized network; skipped",
                 m.bus, m.machine_id
@@ -310,18 +316,16 @@ pub(crate) fn build(
         // A unit whose only dynamic records are models tellegen does not
         // simulate (an inverter chain such as REGCA1/REECB1/REPCA1) keeps its
         // power flow output as a constant-current injection.
-        if m.machine.is_none() && unsupported_units.contains(&(m.bus, m.machine_id.clone())) {
-            let unit = (m.bus, m.machine_id.clone());
+        let unit = (m.bus.0, m.machine_id.to_ascii_uppercase());
+        if let (None, Some(untyped_models)) = (&m.machine, unsupported_units.get(&unit)) {
             let plant = match plant_records.get(&unit) {
                 Some([Some(gc), Some(ec), Some(pc)]) if simulate_plants => {
-                    let others = dynamics.records().iter().any(|r| {
-                        r.bus_id().map(|b| b as usize) == Some(m.bus)
-                            && r.device_id().unwrap_or("1").trim() == m.machine_id
-                            && !matches!(
-                                r.model_name().trim().to_ascii_uppercase().as_str(),
-                                "REGCA1" | "REECB1" | "REPCA1"
-                            )
-                    });
+                    let others = m.exciter.is_some()
+                        || m.governor.is_some()
+                        || m.stabilizer.is_some()
+                        || untyped_models
+                            .iter()
+                            .any(|model| !plant_model(model.trim().to_ascii_uppercase().as_str()));
                     let built = (|| -> Result<_, String> {
                         if others {
                             return Err("other inverter records of the unit have no model".into());
@@ -382,7 +386,7 @@ pub(crate) fn build(
                 }
             };
             held.push(HeldUnit {
-                bus_number: m.bus,
+                bus_number: m.bus.0,
                 machine_id: m.machine_id.clone(),
                 bus: b,
                 s,
@@ -403,7 +407,7 @@ pub(crate) fn build(
             let z = C64::new(m.zsource.0, m.zsource.1) / scale;
             let e = v[b] + z * i_sys;
             sources.push(Source {
-                bus_number: m.bus,
+                bus_number: m.bus.0,
                 machine_id: m.machine_id.clone(),
                 bus: b,
                 y: C64::new(1.0, 0.0) / z,
@@ -445,7 +449,7 @@ pub(crate) fn build(
         let graph = |slot: Slot| -> Result<Option<Box<CompiledGraph>>, String> {
             models
                 .iter()
-                .find(|o| o.bus == m.bus && o.machine_id == m.machine_id && o.graph.slot == slot)
+                .find(|o| o.bus == m.bus.0 && o.machine_id == m.machine_id && o.graph.slot == slot)
                 .map(|o| {
                     CompiledGraph::new(&o.graph).map(Box::new).map_err(|e| {
                         format!("generator {}-{} {slot:?} graph: {e}", m.bus, m.machine_id)
@@ -457,7 +461,7 @@ pub(crate) fn build(
         let gov = graph(Slot::Governor)?.map_or(gov, Governor::Graph);
         let pss = graph(Slot::Stabilizer)?.map_or(pss, Stabilizer::Graph);
         let mut dev = GenDevice {
-            bus_number: m.bus,
+            bus_number: m.bus.0,
             machine_id: m.machine_id.clone(),
             bus: b,
             scale,

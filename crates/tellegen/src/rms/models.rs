@@ -1011,7 +1011,7 @@ pub(crate) fn governor_from_psse(model: &DynamicModel) -> Result<Governor, Strin
 pub(crate) fn stabilizer_from_psse(model: &DynamicModel) -> Result<Stabilizer, String> {
     Ok(match model {
         DynamicModel::Ieeest(p) => {
-            if p.remote_bus != 0 {
+            if p.remote_bus.is_some() {
                 return Err("IEEEST with a remote input bus is not supported".into());
             }
             if !matches!(p.input_code, 1 | 3) {
@@ -1021,7 +1021,7 @@ pub(crate) fn stabilizer_from_psse(model: &DynamicModel) -> Result<Stabilizer, S
                 ));
             }
             Stabilizer::Ieeest {
-                input_code: p.input_code,
+                input_code: i32::from(p.input_code),
                 a: [p.a1, p.a2, p.a3, p.a4, p.a5, p.a6],
                 t: [p.t1, p.t2, p.t3, p.t4, p.t5, p.t6],
                 ks: p.ks,

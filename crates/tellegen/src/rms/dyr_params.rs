@@ -496,18 +496,23 @@ pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGe
                 parameters,
             });
         }
-        let inverter = dyr
-            .records()
+        let inverter = linking
+            .issues
             .iter()
-            .filter(|r| {
-                r.bus_id().is_some_and(|b| b as usize == m.bus)
-                    && r.device_id().unwrap_or("1").trim() == m.machine_id
-                    && powerio::typed_model(r).is_err()
+            .filter_map(|issue| match issue {
+                powerio::LinkIssue::Untyped {
+                    bus: Some(bus),
+                    machine_id: Some(id),
+                    error: powerio::ModelError::Unsupported { model_name },
+                    ..
+                } if *bus == m.bus && id.eq_ignore_ascii_case(&m.machine_id) => {
+                    Some(model_name.trim().to_ascii_uppercase())
+                }
+                _ => None,
             })
-            .map(|r| r.model_name().trim().to_ascii_uppercase())
             .collect();
         out.push(DyrGeneratorView {
-            bus: m.bus,
+            bus: m.bus.0,
             machine_id: m.machine_id.clone(),
             mbase: m.mbase,
             pg: g.pg,
