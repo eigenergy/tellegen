@@ -197,6 +197,7 @@
 		--text-secondary: var(--ink-dim);
 		--text-tertiary: var(--ink-faint);
 		--text-accent: var(--accent-bright);
+		--warn: #e0a23a; /* caution rule beside a qualified result */
 		--text-danger: var(--red);
 		--focus-ring: #8de7f7; /* 12.7:1 */
 		--surface-menu: var(--paper);
