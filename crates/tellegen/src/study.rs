@@ -1523,8 +1523,10 @@ fn branch_id_for_key(net: &BalancedNetwork, key: &ElementKey) -> Result<i64, Str
 }
 
 /// Materialize one edit batch onto the exported network, mirroring the
-/// solver's semantics on the dense model: a demand delta lands on the bus's
-/// first in service load (a new load appears when the bus has none), and a
+/// solver's semantics on the dense model: a demand delta is constant-power
+/// demand and lands on the bus's first in service constant-power load (a new
+/// one appears when the bus has none, so a ZIP or exponential load at the bus
+/// keeps its stated parts), and a
 /// rating delta moves a stated `rate_a`. Both fail closed: a negative bus
 /// demand, a non positive resulting rating, an edit on a limit the source
 /// never stated (`rate_a == 0` means unlimited), or a key that resolves to
@@ -1553,11 +1555,17 @@ pub fn apply_network_edits(net: &mut BalancedNetwork, edits: &[NetworkEdit]) -> 
                         "demand delta for bus {bus} would make demand negative"
                     ));
                 }
-                match net
-                    .loads_mut()
-                    .iter_mut()
-                    .find(|load| load.in_service && load.bus.0 == id)
-                {
+                // The solver adds the delta as constant-power demand, so it lands
+                // on a constant-power load: one on a ZIP or exponential load would
+                // change its stated `p` but not the parts that set its power.
+                match net.loads_mut().iter_mut().find(|load| {
+                    load.in_service
+                        && load.bus.0 == id
+                        && matches!(
+                            load.voltage_model,
+                            None | Some(powerio::LoadVoltageModel::ConstantPower)
+                        )
+                }) {
                     Some(load) => load.p += p_mw,
                     None => {
                         net.loads_mut()

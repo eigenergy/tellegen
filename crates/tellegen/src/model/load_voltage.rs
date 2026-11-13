@@ -43,7 +43,9 @@ use crate::api::SolveDiagnostic;
 /// its tangent at the floor (see [`LoadTerm::eval`]): `x^γ` has an unbounded
 /// slope at zero for `γ < 1` (and is itself unbounded for `γ < 0`), and a
 /// Newton iterate can pass near zero on its way to the solution. A converged
-/// point below the floor is refused rather than reported.
+/// point with any voltage-dependent term below the floor is refused rather than
+/// reported: for `γ < 1` it was solved on the continuation, and for `γ ≥ 1`
+/// it is the collapsed root `vm = 0` that such a load admits at any loading.
 pub(crate) const RATIO_FLOOR: f64 = 1e-3;
 
 /// A voltage-dependent part of a bus's demand: `coefficient · (vm / v_nom)^exponent`
@@ -84,23 +86,11 @@ impl LoadTerm {
         }
     }
 
-    /// Whether `vm` lies where [`Self::eval`] continues the term by its tangent.
+    /// Whether `vm` lies below the term's ratio floor: a collapsed voltage, not an
+    /// operating point (see [`RATIO_FLOOR`]).
     pub(crate) fn below_floor(&self, vm: f64) -> bool {
-        self.exponent < 1.0 && self.exponent != 0.0 && vm / self.v_nom < RATIO_FLOOR
+        self.exponent != 0.0 && vm / self.v_nom < RATIO_FLOOR
     }
-}
-
-/// One voltage-dependent load resolved to the AC model's per-unit system: its
-/// stated nominal power (what the preparation aggregated into the bus demand),
-/// its constant-power part and its voltage-dependent terms.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ResolvedLoad {
-    /// Stated `(p, q)` (per unit on the system base).
-    pub stated: (f64, f64),
-    /// Constant-power `(p, q)` part (per unit on the system base).
-    pub constant: (f64, f64),
-    /// Voltage-dependent parts; `bus` is left for the caller to set.
-    pub terms: Vec<LoadTerm>,
 }
 
 /// The in-service loads whose power depends on the voltage.
@@ -124,9 +114,12 @@ pub(crate) fn voltage_dependent(network: &BalancedNetwork) -> Vec<usize> {
 ///
 /// No stated `v_nom` is the bus base voltage (1 per unit). PowerIO's model does
 /// not state the unit of a stated one, and sources use both, so it is read
-/// against the bus base voltage `base_kv`: as kV when `v_nom / base_kv` lies in
-/// `[0.5, 2]`, as per unit when `v_nom` itself does. When both readings are
-/// plausible and differ (a bus of 0.69 kV with `v_nom = 1`), or neither is, the
+/// against the bus base voltage `base_kv`: as kV giving `v_nom / base_kv`, or as
+/// per unit giving `v_nom`. A reading is plausible in `[0.5, 2]` and usual in
+/// `[0.8, 1.25]`. When the two readings agree, or only one is plausible, or only
+/// one is usual (`v_nom = 0.69` on a 0.69 kV bus is 1 pu in kV, not 0.69 pu), that
+/// reading is taken. When both are usual and differ (a 0.9 kV bus with
+/// `v_nom = 1`), both are plausible and neither usual, or neither is plausible, the
 /// load is refused rather than solved at a guessed voltage.
 ///
 /// # Errors
@@ -142,10 +135,18 @@ pub(crate) fn nominal_pu(v_nom: Option<f64>, base_kv: f64, bus: usize) -> Result
         ));
     }
     let plausible = |ratio: f64| (0.5..=2.0).contains(&ratio);
-    let as_kv = (base_kv.is_finite() && base_kv > 0.0)
+    let usual = |ratio: f64| (0.8..=1.25).contains(&ratio);
+    let mut as_kv = (base_kv.is_finite() && base_kv > 0.0)
         .then(|| stated / base_kv)
         .filter(|&ratio| plausible(ratio));
-    let as_pu = plausible(stated).then_some(stated);
+    let mut as_pu = plausible(stated).then_some(stated);
+    if let (Some(kv), Some(pu)) = (as_kv, as_pu) {
+        match (usual(kv), usual(pu)) {
+            (true, false) => as_pu = None,
+            (false, true) => as_kv = None,
+            _ => {}
+        }
+    }
     match (as_kv, as_pu) {
         (Some(kv), Some(pu)) if (kv - pu).abs() <= 1e-9 * kv.max(pu) => Ok(kv),
         (Some(kv), None) => Ok(kv),
@@ -163,9 +164,12 @@ pub(crate) fn nominal_pu(v_nom: Option<f64>, base_kv: f64, bus: usize) -> Result
     }
 }
 
-/// Resolve load `index` of `network` into the AC model's per-unit system, or
-/// `None` for a constant-power load. `scale` converts the load's unit to per
-/// unit on the system base (`1 / base_mva`, or 1 for a normalized network).
+/// Resolve load `index` of `network` into its voltage-dependent terms in the AC
+/// model's per-unit system (`bus` left for the caller to set), or `None` for a
+/// constant-power load. `scale` converts the load's unit to per unit on the
+/// system base (`1 / base_mva`, or 1 for a normalized network). A ZIP
+/// constant-power part and an exponential `γ = 0` side add no term: the stated
+/// `p`/`q` less the terms' nominal powers is the load's constant-power part.
 ///
 /// # Errors
 /// A non-finite coefficient or exponent, or an unusable nominal voltage.
@@ -174,7 +178,7 @@ pub(crate) fn resolve(
     index: usize,
     base_kv: f64,
     scale: f64,
-) -> Result<Option<ResolvedLoad>, String> {
+) -> Result<Option<Vec<LoadTerm>>, String> {
     let load = &network.loads()[index];
     let bus = load.bus.0;
     let finite = |values: &[f64]| -> Result<(), String> {
@@ -193,7 +197,6 @@ pub(crate) fn resolve(
         v_nom,
         exponent,
     };
-    let stated = (load.p * scale, load.q * scale);
     match load.voltage_model.as_ref() {
         Some(LoadVoltageModel::Zip {
             p_constant_power,
@@ -216,21 +219,18 @@ pub(crate) fn resolve(
                 *q_constant_impedance,
             ])?;
             let vn = nominal_pu(*v_nom, base_kv, bus)?;
-            let terms = [
-                (false, *p_constant_current, 1.0),
-                (true, *q_constant_current, 1.0),
-                (false, *p_constant_impedance, 2.0),
-                (true, *q_constant_impedance, 2.0),
-            ]
-            .into_iter()
-            .filter(|&(_, c, _)| c != 0.0)
-            .map(|(reactive, c, g)| term(reactive, c, vn, g))
-            .collect();
-            Ok(Some(ResolvedLoad {
-                stated,
-                constant: (p_constant_power * scale, q_constant_power * scale),
-                terms,
-            }))
+            Ok(Some(
+                [
+                    (false, *p_constant_current, 1.0),
+                    (true, *q_constant_current, 1.0),
+                    (false, *p_constant_impedance, 2.0),
+                    (true, *q_constant_impedance, 2.0),
+                ]
+                .into_iter()
+                .filter(|&(_, c, _)| c != 0.0)
+                .map(|(reactive, c, g)| term(reactive, c, vn, g))
+                .collect(),
+            ))
         }
         Some(LoadVoltageModel::Exponential {
             p,
@@ -241,28 +241,14 @@ pub(crate) fn resolve(
         }) => {
             finite(&[load.p, load.q, *p, *q, *gamma_p, *gamma_q])?;
             let vn = nominal_pu(*v_nom, base_kv, bus)?;
-            let mut constant = (0.0, 0.0);
-            let mut terms = Vec::new();
-            for (reactive, c, g) in [(false, *p, *gamma_p), (true, *q, *gamma_q)] {
-                if c == 0.0 {
-                    continue;
-                }
-                if g == 0.0 {
-                    // γ = 0 is constant power: exact, and no derivative.
-                    if reactive {
-                        constant.1 = c * scale;
-                    } else {
-                        constant.0 = c * scale;
-                    }
-                } else {
-                    terms.push(term(reactive, c, vn, g));
-                }
-            }
-            Ok(Some(ResolvedLoad {
-                stated,
-                constant,
-                terms,
-            }))
+            // γ = 0 is constant power: it stays in the stated demand.
+            Ok(Some(
+                [(false, *p, *gamma_p), (true, *q, *gamma_q)]
+                    .into_iter()
+                    .filter(|&(_, c, g)| c != 0.0 && g != 0.0)
+                    .map(|(reactive, c, g)| term(reactive, c, vn, g))
+                    .collect(),
+            ))
         }
         _ => Ok(None),
     }
@@ -274,8 +260,12 @@ pub(crate) type Attached = (BTreeMap<usize, (f64, f64)>, Vec<LoadTerm>);
 
 /// Resolve every in-service voltage-dependent load of `network` onto the dense
 /// buses `dense` names (source bus id → dense index). Returns, per dense bus,
-/// the change `constant − stated` to apply to the prepared demand `(pd, qd)`
-/// (which aggregates each load's stated power) and the voltage-dependent terms.
+/// the change to apply to the prepared demand `(pd, qd)` (which aggregates each
+/// load's stated `p`/`q`), minus the nominal power of every voltage-dependent
+/// term, and the terms themselves. The stated `p`/`q` stays authoritative for
+/// the rest: whatever it holds beyond the terms (the ZIP constant-power part,
+/// an exponential `γ = 0` side, or a demand edit written onto `p`) is constant
+/// power, so an edited `p` is never silently dropped.
 /// A load at a bus the energizing step isolated is left out with its bus.
 ///
 /// # Errors
@@ -308,9 +298,14 @@ pub(crate) fn attach(
             continue;
         };
         let entry = shift.entry(bus).or_insert((0.0, 0.0));
-        entry.0 += resolved.constant.0 - resolved.stated.0;
-        entry.1 += resolved.constant.1 - resolved.stated.1;
-        terms.extend(resolved.terms.into_iter().map(|t| LoadTerm { bus, ..t }));
+        for t in &resolved {
+            if t.reactive {
+                entry.1 -= t.coefficient;
+            } else {
+                entry.0 -= t.coefficient;
+            }
+        }
+        terms.extend(resolved.into_iter().map(|t| LoadTerm { bus, ..t }));
     }
     Ok((shift, terms))
 }

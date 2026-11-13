@@ -726,6 +726,19 @@ fn case_start(net: &AcNetwork) -> (Vec<f64>, Vec<f64>) {
     (vm, va)
 }
 
+/// The first voltage-dependent load term `vm` places below its ratio floor. Such a
+/// point is a collapse, not an operating point: a term with exponent below one is
+/// solved there on its tangent continuation rather than its law, and when every
+/// term at a bus vanishes at zero voltage (exponent one or above, no constant
+/// power), `vm = 0` solves the bus balance at any loading, so Newton can converge
+/// to it past the load's maximum loadability.
+fn collapsed<'a>(
+    net: &'a AcNetwork,
+    vm: &[f64],
+) -> Option<&'a crate::model::load_voltage::LoadTerm> {
+    net.load_terms.iter().find(|t| t.below_floor(vm[t.bus]))
+}
+
 /// Solve the AC power flow for `net` under formulation `f` from a flat start. This
 /// convenience entry exists for numerical tests; product paths use
 /// [`ac_pf_with_start`].
@@ -788,9 +801,17 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
         // Keep the smallest-residual restart. A non-finite (NaN) residual must never
         // displace a finite one nor mask a later converging start: replace only when
         // the new residual is finite and strictly better (or the current best is NaN).
-        let replace = best
-            .as_ref()
-            .is_none_or(|b| !res.4.is_nan() && (b.4.is_nan() || res.4 < b.4));
+        // A converged point that is not collapsed outranks any other: a load whose
+        // terms all vanish at zero voltage has the collapsed root at every loading, and
+        // another start may still find the operating point.
+        let usable = |r: &QlimSolve| r.4 < TOL && collapsed(net, &r.0).is_none();
+        let replace = best.as_ref().is_none_or(|b| {
+            if usable(&res) == usable(b) {
+                !res.4.is_nan() && (b.4.is_nan() || res.4 < b.4)
+            } else {
+                usable(&res)
+            }
+        });
         if replace {
             best = Some(res);
             initialization = Some(AcPfInitialization {
@@ -803,7 +824,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
                 restart,
             });
         }
-        if best.as_ref().is_some_and(|b| b.4 < TOL) {
+        if best.as_ref().is_some_and(usable) {
             break;
         }
     }
@@ -816,9 +837,9 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             "AC power flow did not converge: best mismatch {residual:.3e} over {start_count} starts"
         ));
     }
-    // A load term below its ratio floor was solved on its tangent continuation, not
-    // its law: that is a collapsed voltage, not an operating point.
-    if let Some(term) = net.load_terms.iter().find(|t| t.below_floor(vm[t.bus])) {
+    // A voltage-dependent load below its ratio floor is a collapsed voltage, not an
+    // operating point (see [`collapsed`]).
+    if let Some(term) = collapsed(net, &vm) {
         return Err(format!(
             "AC power flow converged to a collapsed voltage of {:.3e} pu at bus {}, below the \
              range of its voltage-dependent load (exponent {})",

@@ -115,8 +115,17 @@ fn nominal_voltage_reads_against_the_bus_base() {
     assert_eq!(nominal_pu(Some(0.98), 230.0, 1).unwrap(), 0.98);
     // A 1 kV bus reads the same either way.
     assert_eq!(nominal_pu(Some(1.0), 1.0, 1).unwrap(), 1.0);
-    // A 0.69 kV bus with v_nom = 1 is 1.449 pu in kV or 1 pu in per unit.
-    let error = nominal_pu(Some(1.0), 0.69, 7).unwrap_err();
+    // LV buses with a base in [0.5, 2] kV stating the base (or near it) in kV:
+    // the kV reading is the usual one (0.69 pu in per unit is not).
+    for base in [0.6, 0.69, 1.5] {
+        assert!((nominal_pu(Some(base), base, 1).unwrap() - 1.0).abs() < 1e-15);
+    }
+    assert!((nominal_pu(Some(0.72), 0.69, 1).unwrap() - 0.72 / 0.69).abs() < 1e-15);
+    assert!((nominal_pu(Some(1.65), 1.5, 1).unwrap() - 1.1).abs() < 1e-12);
+    // A 0.69 kV bus with v_nom = 1: 1.449 pu in kV is unusual, so per unit.
+    assert_eq!(nominal_pu(Some(1.0), 0.69, 1).unwrap(), 1.0);
+    // A 0.9 kV bus with v_nom = 1 is 1.111 pu in kV or 1 pu in per unit, both usual.
+    let error = nominal_pu(Some(1.0), 0.9, 7).unwrap_err();
     assert!(
         error.contains("bus 7") && error.contains("unambiguously"),
         "{error}"
@@ -381,8 +390,9 @@ fn low_voltage_nominal_in_kilovolts_reads_against_the_bus_base() {
         .iter()
         .all(|t| (t.v_nom - 0.95).abs() < 1e-15));
     let scale = 0.95_f64.powf(-gamma);
+    // The stated `p`/`q` match the law's (a difference is constant power).
     let (_, scaled) = solve(&with_model(
-        base(),
+        two_bus((0.0, 0.0), (0.05 * scale, 0.02 * scale), 0.4, 1.0),
         2,
         exponential(0.05 * scale, 0.02 * scale, gamma, gamma, None),
     ));
@@ -527,10 +537,135 @@ fn socwr_refuses_voltage_dependent_loads_clearly() {
 #[test]
 fn an_ambiguous_nominal_voltage_is_refused() {
     let net = with_model(
-        two_bus((0.0, 0.0), (0.05, 0.02), 0.69, 1.0),
+        two_bus((0.0, 0.0), (0.05, 0.02), 0.9, 1.0),
         2,
         exponential(0.05, 0.02, 1.0, 2.0, Some(1.0)),
     );
     let error = AcNetwork::from_network_pf(&net).unwrap_err();
     assert!(error.contains("unambiguously"), "{error}");
+}
+
+/// A demand edit at a bus whose first load is ZIP re-solves to the committed point
+/// from every path that writes the edit into a case: the saved module, the saved
+/// instance (from a network Study and from an AC power flow instance Study), the
+/// materialized network solved one shot, and a ZIP load whose stated `p` carries an
+/// edit its parts do not. The ZIP load keeps its parts summing to its `p`.
+#[test]
+fn a_demand_edit_at_a_zip_bus_survives_save_and_reload() {
+    let net = with_model(
+        four_bus((70.0, 25.0), (0.0, 0.0)),
+        3,
+        zip([20.0, 25.0, 25.0], [5.0, 10.0, 10.0], None),
+    );
+    let vm = |r: &crate::api::SolveResponse| -> Vec<f64> {
+        r.vm.as_ref().unwrap().iter().map(|v| v.value).collect()
+    };
+    let req = SolveRequest {
+        formulation: Problem::AcPf,
+        ..SolveRequest::default()
+    };
+    let edit = [NetworkEdit::AddLoad {
+        bus: 3_i64.into(),
+        p_mw: 30.0,
+    }];
+    let base = vm(&crate::api::solve_network(&net, &req).expect("base"));
+    // A separate 30 MW constant-power load at bus 3: what the edit means.
+    let mut separate = net.clone();
+    separate
+        .loads_mut()
+        .push(powerio::Load::new(powerio::BusId(3), 30.0, 0.0));
+    let expected = vm(&crate::api::solve_network(&separate, &req).expect("separate"));
+    assert!((expected[2] - base[2]).abs() > 1e-3, "the edit moves bus 3");
+
+    let close = |label: &str, got: &[f64]| {
+        for (a, b) in got.iter().zip(&expected) {
+            assert!((a - b).abs() < 1e-9, "{label}: {got:?} vs {expected:?}");
+        }
+    };
+    for input in [
+        PioValue::BalancedNetwork(net.clone()),
+        PioValue::AcPfInstance(powerio::AcPfInstance::from_network(net.clone()).expect("inst")),
+    ] {
+        let mut study = Study::new(&module_json(input), Problem::AcPf).expect("study");
+        close("commit", &vm(&study.commit(&edit).expect("commit")));
+        let saved = study.save_module().expect("save");
+        close(
+            "saved module",
+            &vm(Study::new(&saved, Problem::AcPf)
+                .expect("reload")
+                .solution()),
+        );
+        let instance = study.save_instance_module().expect("save instance");
+        close(
+            "saved instance",
+            &vm(Study::new(&instance, Problem::AcPf)
+                .expect("reload")
+                .solution()),
+        );
+        let materialized = study.materialized_network().expect("materialize");
+        close(
+            "materialized",
+            &vm(&crate::api::solve_network(&materialized, &req).expect("solve")),
+        );
+        let zip_load = materialized
+            .loads()
+            .iter()
+            .find(|l| l.bus.0 == 3 && l.voltage_model.is_some())
+            .expect("the ZIP load");
+        assert_eq!(zip_load.p, 70.0, "the ZIP load keeps its stated parts");
+    }
+
+    // A stated `p` edited without its parts keeps the edit as constant power.
+    let mut edited = net.clone();
+    edited
+        .loads_mut()
+        .iter_mut()
+        .find(|l| l.bus.0 == 3)
+        .unwrap()
+        .p += 30.0;
+    close(
+        "edited p",
+        &vm(&crate::api::solve_network(&edited, &req).expect("edited p")),
+    );
+}
+
+/// A constant-current load draws nothing at zero voltage, so `vm = 0` solves its
+/// bus at every loading. Past its maximum loadability that collapsed root is the
+/// only one; the solve refuses it instead of reporting a bolted fault as feasible.
+/// Below the limit it finds the operating point.
+#[test]
+fn a_collapsed_voltage_past_loadability_is_refused_for_every_exponent() {
+    let req = SolveRequest {
+        formulation: Problem::AcPf,
+        ..SolveRequest::default()
+    };
+    for (stated, model) in [
+        (
+            (1200.0, 360.0),
+            zip([0.0, 1200.0, 0.0], [0.0, 360.0, 0.0], None),
+        ),
+        (
+            (2000.0, 600.0),
+            zip([0.0, 1400.0, 600.0], [0.0, 420.0, 180.0], None),
+        ),
+        ((1100.0, 330.0), exponential(1100.0, 330.0, 1.0, 1.0, None)),
+        ((1500.0, 450.0), exponential(1500.0, 450.0, 1.0, 2.0, None)),
+    ] {
+        let p = model.clone();
+        let net = with_model(two_bus((0.0, 0.0), stated, 230.0, 1.0), 2, model);
+        let error = crate::api::solve_network(&net, &req)
+            .map(|r| format!("{:?}", r.vm))
+            .expect_err("a collapsed voltage is not an operating point");
+        assert!(error.contains("collapsed"), "{p:?}: {error}");
+    }
+    // Below the limit (2 (R c_p + X c_q) + |z|² (c_p² + c_q²) < 1) the solve
+    // matches the scalar root.
+    let net = with_model(
+        two_bus((0.0, 0.0), (300.0, 90.0), 230.0, 1.0),
+        2,
+        zip([0.0, 300.0, 0.0], [0.0, 90.0, 0.0], None),
+    );
+    let (model, sol) = solve(&net);
+    let v = two_bus_voltage(&|v| 3.0 * v, &|v| 0.9 * v);
+    assert!((sol.vm[dense(&model, 2)] - v).abs() < 1e-9);
 }

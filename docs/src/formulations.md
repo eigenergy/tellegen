@@ -224,7 +224,9 @@ $$ P_L(V_m) = P_0 + P_1 x + P_2 x^2 + \sum_k P_k x^{\gamma_k}, $$
 and $Q_L$ likewise. $P_0$, $P_1$, $P_2$ are the ZIP constant-power,
 constant-current and constant-impedance parts, each stated as the part's power
 at the nominal voltage (MW, in the load's own unit; the parts sum to the load's
-stated `p`). An exponential load contributes $p\,x^{\gamma}$; $\gamma = 0$, 1
+stated `p`). The stated `p` and `q` stay authoritative: whatever they hold
+beyond the current, impedance and exponential parts is constant power, so a
+`p` edited without its parts keeps the edit. An exponential load contributes $p\,x^{\gamma}$; $\gamma = 0$, 1
 and 2 are constant power, current and impedance. The Newton Jacobian is
 $\partial(P_{calc} + P_L)/\partial(\theta, V_m)$, so each load adds
 $\mathrm{d}P_L/\mathrm{d}V_m = P_1 / V_n + 2 P_2 x / V_n + \sum_k \gamma_k P_k x^{\gamma_k - 1} / V_n$
@@ -236,19 +238,28 @@ voltage.
 
 The nominal voltage $V_n$ is optional, and every PowerIO reader leaves it out:
 the load is then stated at the bus base voltage ($V_n = 1$ pu). A stated
-`v_nom` carries no unit, so it is read against the bus base: as kV when
-`v_nom / base_kv` lies in $[0.5, 2]$ (a 0.4 kV bus with `v_nom = 0.4` is 1 pu),
-and as per unit when `v_nom` itself does. A value that reads plausibly both
-ways but differently, or neither way, is refused. For an exponent below one,
-$x^\gamma$ has an unbounded slope at zero voltage, so below $x = 10^{-3}$ the
-term follows its tangent; a solution down there is refused as a collapsed
-voltage.
+`v_nom` carries no unit, so it is read against the bus base, as kV
+(`v_nom / base_kv`) or as per unit (`v_nom`). A reading is plausible in
+$[0.5, 2]$ and usual in $[0.8, 1.25]$. The reading taken is the only plausible
+one, or the only usual one when both are plausible: a 0.4 kV bus with
+`v_nom = 0.4` and a 0.69 kV bus with `v_nom = 0.69` are both 1 pu. A value that
+reads usually both ways but differently (a 0.9 kV bus with `v_nom = 1`), or
+plausibly but unusually both ways, or neither way, is refused. For an exponent
+below one, $x^\gamma$ has an unbounded slope at zero voltage, so below
+$x = 10^{-3}$ the term follows its tangent. A load with no constant-power part
+and exponents of one or more draws nothing at zero voltage, so $V_m = 0$
+solves its bus at any loading, and past the maximum loadability it is the only
+solution. A solution with any voltage-dependent load below $x = 10^{-3}$ is
+therefore refused as a collapsed voltage (after the other starts have been
+tried).
 
 The solve reports `load_voltage_dependent` with the buses of such loads. The AC
 sensitivities differentiate the same Newton system, load derivatives included.
 Their demand parameter, like a demand edit, is constant-power demand added at
 the bus: at a bus with a ZIP or exponential load it does not scale that load's
-nominal power. A network with constant-power loads only solves exactly as it
+nominal power. A saved or exported case writes the edit onto a constant-power
+load at the bus, adding one when the bus has none, so it re-solves to the
+committed point. A network with constant-power loads only solves exactly as it
 did before. SOCWR and AC OPF hold every load at constant power and refuse a
 network with voltage-dependent loads.
 
