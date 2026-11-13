@@ -8,6 +8,8 @@ description = "DC optimal power flow, AC power flow, SOCWR, and sensitivities in
 readme = "README.md"
 keywords = ["opf", "power-flow", "differentiable", "sensitivity"]
 categories = ["science", "mathematics"]
+# Third-party test data stays in the repository, not in the published crate.
+exclude = ["tests/data/rms_examples/"]
 
 [dependencies]
 powerio.workspace = true
