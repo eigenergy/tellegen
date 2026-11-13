@@ -32,7 +32,7 @@ dependencies = []
 # PowerIO release series: a 0.11 wheel refuses a 0.12 document.
 mcp = [
   "mcp>=2,<3",
-  "powerio>=0.12.0rc1,<0.13",
+  "powerio>=0.12,<0.13",
 ]
 
 [project.scripts]

@@ -222,7 +222,7 @@ verified the package against that exact commit. release-plz obtains its
 short-lived crates.io credential directly from OIDC.
 
 While the workspace resolves PowerIO from a temporary git pin (a
-`[patch.crates-io]` section, used until a PowerIO release candidate reaches
+`[patch.crates-io]` section, used only until a PowerIO release reaches
 crates.io), this packaging check fails, because packaging ignores `[patch]`;
 that keeps the crate from publishing ahead of its PowerIO dependency. The
 `powerio-012` feature is a no-op and is not in the list.

@@ -1,11 +1,8 @@
 # PowerIO consumer review
 
-Tellegen builds against PowerIO 0.12, starting with the release candidate
-0.12.0-rc.1. Until 0.12.0-rc.1 is on crates.io, the workspace `Cargo.toml`
-carries a temporary `[patch.crates-io]` section that resolves every PowerIO
-component from one commit of `eigenergy/powerio`; the lockfile records that
-commit. When the release candidate is published, that section is deleted and
-the lockfile returns to checksummed crates.io sources.
+Tellegen builds against PowerIO 0.12, starting with 0.12.0. The workspace
+requires `0.12`, so any later 0.12 release satisfies it, and the lockfile
+records one checksummed crates.io release for every PowerIO component.
 `docs/evidence/webmcp/powerio-releases.json` maps each published release tag to
 its commit.
 
@@ -65,9 +62,9 @@ text is written and read through `tellegen::ir`, which calls
 
 | Concern            | Current value                             | Tellegen integration                       |
 | ------------------ | ----------------------------------------- | ------------------------------------------ |
-| Rust crate release | `0.12.0-rc.1`                             | dependency requirement `0.12.0-rc.1`       |
+| Rust crate release | `0.12.0`                                  | dependency requirement `0.12`              |
 | Stored IR          | `"schema": "pio-ir"`, `"version": "0.12.0"` | sole durable browser and CLI JSON boundary |
-| Producer           | `powerio` `0.12.0-rc.1`                   | records which release wrote an IR document |
+| Producer           | `powerio` `0.12.0`                        | records which release wrote an IR document |
 
 PowerIO 0.12 replaced the separate C ABI number with the release; Tellegen does
 not use the C ABI. The historical `powerio.module` version 1 document and bare
