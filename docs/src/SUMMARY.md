@@ -13,6 +13,8 @@
   - [MCP server](mcp.md)
 - [Multiconductor AC power flow](multiconductor-pf.md)
 - [Settings](settings.md)
+- [RMS dynamic simulation](rms.md)
+  - [RMS validation](rms-validation.md)
 - [Transports](transports.md)
 - [Getting Started](getting-started.md)
 - [Local Case Files](local-case-files.md)
