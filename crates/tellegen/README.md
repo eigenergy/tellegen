@@ -29,7 +29,7 @@ documented default of ±60 degrees.
 
 ## Use
 
-`solve_module_json` accepts a generation-2 `pio-ir` document and a
+`solve_module_json` accepts a PowerIO IR (`pio-ir`) document and a
 `SolveRequest`. A module holding a balanced network is promoted to the default
 problem instance for the requested formulation. A module holding a declared
 problem instance keeps its objective and active constraint selections.
@@ -99,10 +99,19 @@ are gone; call `build_result()` for the full terminal and equipment result,
 `detail()` for one bus and a page of equipment ports, and `base_instance()` or
 `edited_instance()` for the instance.
 
+After 0.7 the crate depends on PowerIO 0.12 instead of 0.11, an incompatible
+dependency line: Rust consumers must pass PowerIO 0.12 types. A branch or
+winding rating of positive infinity means no thermal bound and a numeric zero
+is a zero bound (PowerIO's readers translate each file format's own
+convention). The SOCWR solution names its branch columns `*_flow`. Saved
+`pio-ir` documents state `"version": "0.12.0"`, which PowerIO 0.11 readers
+refuse; documents written by 0.11 still load. Raw OpenDSS imports that pass the
+snapshot checks solve as a multiconductor power flow.
+
 Persistent investigations use `document::StudyDocument` and the operations in
 `study_ops`, with immutable states, goal revisions and explicit application.
 The document's schema version identifies its storage format separately from
-the crate version and PowerIO IR generation.
+the crate version and the PowerIO IR version.
 
 ## Build
 
@@ -111,15 +120,14 @@ cargo test                          # native, with sensitivities (default featur
 cargo build --no-default-features   # solve only, no faer (smaller wasm core)
 ```
 
-For all shipping numerical paths on PowerIO 0.11.11:
+For all shipping numerical paths:
 
 ```sh
 cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
 ```
 
-The `powerio-012` feature is a version bridge for builds explicitly selecting
-PowerIO 0.12 dependencies. It is not part of a published 0.11 build; use the
-shipping feature list above instead of `--all-features`.
+The `powerio-012` feature is a no-op kept for existing build commands; PowerIO
+0.12 is the only supported dependency line.
 
 ## Citing
 

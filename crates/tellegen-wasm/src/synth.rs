@@ -89,7 +89,7 @@ pub fn report_impl(session: &Generator) -> Result<String, String> {
     to_json(session.report())
 }
 
-/// The module as generation 2 PowerIO IR text, from `Electrify` on.
+/// The module as PowerIO IR text, from `Electrify` on.
 pub fn module_impl(session: &Generator) -> Result<String, String> {
     session.module_json().map_err(|e| payload(&e))
 }

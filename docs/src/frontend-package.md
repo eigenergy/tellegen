@@ -459,7 +459,7 @@ import { createStudy, formatOf, ingestCase, solveModule } from '@tellegen/engine
 ```
 
 `ingestCase` and solvable JSON ingestion return a retained PowerIO module in
-`module_json`. Both `createStudy` and `solveModule` accept that generation-2
+`module_json`. Both `createStudy` and `solveModule` accept that
 PowerIO IR module. Geographic transforms update and return the same module.
 
 The engine package resolves its wasm files relative to the package module. Apps

@@ -40,7 +40,9 @@ wasm-adapter-test:
 epl-guard:
     scripts/epl-guard.sh
 
-# CI gate: PowerIO must resolve from crates.io, never a git or path override.
+# CI gate: every PowerIO crate resolves from one source: one checksummed
+# crates.io release, or one git revision while a temporary [patch.crates-io]
+# pin is in place (never a path override).
 powerio-pin:
     python3 .github/scripts/powerio-pin.py
 
@@ -49,7 +51,6 @@ mc-pf-test:
     cargo test -p tellegen --no-default-features --features mc-pf
 
 # CI gate: every shipping numerical feature and the frozen OPF references.
-# The PowerIO 0.12 bridge is tested separately with matching candidate dependencies.
 mc-opf-test:
     cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
     cargo test -p tellegen --no-default-features --features mc-opf --locked

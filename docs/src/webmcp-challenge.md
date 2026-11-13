@@ -31,7 +31,7 @@ and the applied state. Viewing an alternative does not apply it. Human approval
 binds a particular proposal, starting state and goal. A revised goal or changed
 proposal expires that approval.
 
-Electrical inputs, instances and solutions use PowerIO generation-2 IR. Study
+Electrical inputs, instances and solutions use PowerIO IR. Study
 semantics live in a separate document with hashed, deduplicated artifacts.
 Browser IndexedDB and atomic filesystem storage preserve completed operations.
 A portable bundle can move from a browser to a headless agent and back. Import

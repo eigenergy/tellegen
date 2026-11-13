@@ -1,8 +1,8 @@
 # ZIP and folder case collections
 
-These controls require the optional PowerIO 0.12 collection build. The ordinary
-build uses published PowerIO 0.11.9, hides collection controls, and continues to
-accept individual case files. Hosts can query `collectionSupported()` from
+These controls require the optional collection build (the `tellegen-wasm`
+`powerio-collections` feature). The ordinary build hides collection controls
+and continues to accept individual case files. Hosts can query `collectionSupported()` from
 `@tellegen/engine` before offering ZIP or folder acquisition.
 
 Drop a ZIP onto Tellegen, choose it with **Open a case file**, or use **Open
@@ -56,9 +56,8 @@ and restoring a module does not restore an original-ZIP download.
 ## OpenDSS snapshot power flow
 
 Qualified OpenDSS imports can run **Studies → Run power flow** after import.
-Snapshot qualification also requires the `powerio-012` build feature. PowerIO
-0.11 OpenDSS imports remain view-only; existing typed module and BMOPF solving
-remain available under the same validation rules.
+Existing typed module and BMOPF solving remain available under the same
+validation rules.
 The initial profile covers normalized finite sources with grounded references,
 explicit conductor impedances, bounded ZIP and exponential loads (including
 OpenDSS voltage bands and ZIP dropout), and supported finite-leakage transformers.

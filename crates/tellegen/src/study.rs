@@ -1200,8 +1200,8 @@ impl Study {
         Ok(net)
     }
 
-    /// Serialize the current operating point as a stored PowerIO module — the
-    /// generation 2 `pio-ir` document every PowerIO 0.11 reader understands, with no
+    /// Serialize the current operating point as a stored PowerIO module — a
+    /// plain `pio-ir` document any PowerIO 0.12 reader understands, with no
     /// tellegen format around it. The value is the materialized balanced
     /// network; each committed edit rides along as one descriptive `Edit`
     /// history entry created by the internal `history::edit_entry` helper.
@@ -2887,7 +2887,7 @@ mod tests {
         .unwrap();
         let committed = s.solution().objective.unwrap();
 
-        // Generation-2 PowerIO IR is the exact snapshot and re-solves to the
+        // PowerIO IR is the exact snapshot and re-solves to the
         // identical objective.
         let pio = s.save_module().unwrap();
         let restored = Study::new(&pio, Problem::DcOpf).unwrap();

@@ -34,7 +34,7 @@
   - [Benchmark Results](benchmark-results.md)
   - [Multiconductor PF performance](mc-pf-performance.md)
   - [References](references.md)
-- [PowerIO 0.11 Consumer Review](powerio-011-review.md)
+- [PowerIO Consumer Review](powerio-011-review.md)
 - [HTTP API](http-api.md)
 - [Deployment](deployment.md)
 - [Privacy](privacy.md)

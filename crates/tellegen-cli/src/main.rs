@@ -13,7 +13,7 @@
 //! ```
 //!
 //! `solve-module` and `plan` accept a stored
-//! generation 2 `pio-ir` document on stdin, and a stored
+//! PowerIO IR (`pio-ir`) document on stdin, and a stored
 //! DC OPF solution module with LMPs and thermal multipliers
 //! or a capacity proposal and its exact proposed solution on stdout. A module holding a
 //! typed `dc_opf_instance` is consumed natively; a balanced network becomes

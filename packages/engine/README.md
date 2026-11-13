@@ -46,8 +46,8 @@ const casePayload = await ingestCase(bytes, "raw");
 const jsonPayload = await ingestJsonDrop(bytes);
 ```
 
-Every solvable ingest payload includes `module_json`, a generation-2 PowerIO
-IR module. Pass that value to `createStudy`, `solveModule`, and geographic
+Every solvable ingest payload includes `module_json`, a PowerIO IR
+module. Pass that value to `createStudy`, `solveModule`, and geographic
 transforms. The engine does not expose a second network JSON boundary.
 
 Stored AC OPF instances retain `formulation: "acopf"` and their original
@@ -85,21 +85,23 @@ Compact solutions also retain optional `formulation` and `status` from the solve
 Legacy display payloads can omit them; absence does not establish solve success.
 
 ZIP and folder acquisition is optional. Call `await collectionSupported()` before
-offering collection controls. The ordinary build uses published PowerIO 0.11.9
-and reports `false`; individual case imports remain available. A compatible
-PowerIO 0.12 build enables `powerio-collections` (which includes `powerio-012`)
-and provides `BrowserCaseCollection`. Its unsupported-build methods reject with
-an actionable error rather than failing on a missing WASM export.
-
-For candidate verification, select the PowerIO candidate with the repository's
-pin script, then run:
+offering collection controls. The ordinary build reports `false`; individual
+case imports remain available. A build with the `powerio-collections` feature
+provides `BrowserCaseCollection`. Its unsupported-build methods reject with an
+actionable error rather than failing on a missing WASM export.
 
 ```sh
-TELLEGEN_POWERIO_FEATURES=powerio-012,powerio-collections npm run wasm
+TELLEGEN_POWERIO_FEATURES=powerio-collections npm run wasm
 ```
 
-The released manifest and lockfile must continue to reference
-published dependencies; a local candidate patch must never be published.
+The engine is built on PowerIO 0.12. Modules it saves state
+`"version": "0.12.0"` in their `pio-ir` header, which PowerIO 0.11 readers
+refuse; modules saved by earlier releases still load. A branch rating of
+positive infinity means no thermal bound and a zero rating a zero bound; display
+payloads still state an unrated branch as `0`. To test a PowerIO candidate,
+select it with the repository's pin script before building. The released
+manifest and lockfile must reference published dependencies; a local candidate
+patch must never be published.
 
 ## Experimental AC OPF
 

@@ -143,14 +143,20 @@ with tempfile.TemporaryDirectory() as directory:
     pin.set_manifest_revision(manifest_path, OLD, version=version, crates=selected_crates)
     assert pin.manifest_revision(manifest_path) == OLD
 
-    # A reused candidate checkout can return from 0.12 to 0.11 without a
-    # stale archive patch, while plain revision updates keep all current crates.
+    # A reused candidate checkout can move to a candidate without the archive
+    # crate and drop its stale patch, while plain revision updates keep all
+    # current crates.
     pin.set_manifest_revision(manifest_path, NEW)
     assert pin.manifest_revision(manifest_path) == NEW
     assert "powerio-archive" in pin.read_toml(manifest_path)['patch']['crates-io']
-    pin.set_manifest_revision(manifest_path, OLD, version='0.11.9')
+    pin.set_manifest_revision(manifest_path, OLD, version='0.12.0')
     assert pin.manifest_revision(manifest_path) == OLD
     assert "powerio-archive" not in pin.read_toml(manifest_path)['patch']['crates-io']
+
+    # Tellegen no longer builds against the 0.11 series.
+    before = manifest_path.read_text()
+    rejects(lambda: pin.set_manifest_revision(manifest_path, NEW, version='0.11.9'))
+    assert manifest_path.read_text() == before
 
     # Check a newly introduced component too; otherwise the candidate could
     # accidentally mix its archive acquisition with a registry implementation.

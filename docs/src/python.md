@@ -61,8 +61,9 @@ python -m pip install "tellegen[mcp]"
 tellegen-mcp                 # or: python -m tellegen.mcp
 ```
 
-The MCP extra uses PowerIO 0.11.x so its serialized cases match the stable
-compiled engine. Installing the base package does not install or require
+The MCP extra uses the PowerIO 0.12 series of the Python wheel, the line the
+compiled engine is built on, so it reads the IR documents the engine writes
+(a 0.11 wheel refuses them). Installing the base package does not install or require
 the Python PowerIO package.
 
 Case and Study paths are confined to `POWERIO_MCP_ALLOWED_ROOTS`, the policy

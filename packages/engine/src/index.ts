@@ -202,7 +202,7 @@ export interface Topology {
 export interface IngestedCase extends CaseFileSummary {
   /** Calculation declared by a typed problem instance. */
   formulation?: Formulation;
-  /** Generation 2 PowerIO IR used for display edits and every solver Study. */
+  /** PowerIO IR used for display edits and every solver Study. */
   module_json: string;
   topology: Topology;
   view: {
@@ -464,7 +464,7 @@ export interface JsonDropClassification {
  * same typed payload returned by its dedicated ingest API. */
 export type IngestedJsonDrop =
   | {
-      /** A generation 2 `pio-ir` document; the payload family follows the
+      /** A PowerIO IR (`pio-ir`) document; the payload family follows the
        * network family carried by the module value. */
       kind: "module";
       format: null;
@@ -2396,7 +2396,7 @@ export class BrowserStudy {
     return solveResponseToSolution(await this.#solution());
   }
 
-  /** Materialize the current case as generation 2 PowerIO IR. */
+  /** Materialize the current case as PowerIO IR. */
   async saveModule(): Promise<string> {
     return expectText(
       await this.#host.call({ op: "study_save_module", study: this.#handle }),
@@ -2861,7 +2861,7 @@ export class BrowserSynthSession {
     ) as GenerationReport;
   }
 
-  /** The module as generation 2 PowerIO IR text, with bus locations and
+  /** The module as PowerIO IR text, with bus locations and
    * branch routes. Available from `electrify` on; does not free the session. */
   async takeModule(): Promise<string> {
     this.#check();
