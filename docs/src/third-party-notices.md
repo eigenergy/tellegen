@@ -135,6 +135,35 @@ Embedded fallback cases are from PGLib OPF and are used only when
 `TELLEGEN_ALLOW_FALLBACK=1` is set. PGLib OPF data is CC BY 4.0; the PGLib
 software is MIT licensed.
 
+## RMS Dynamic Models and Validation Data
+
+The RMS dynamic simulation (`crates/tellegen/src/rms`) translates the device
+equations, network formulation and PSS/E parameter mapping of
+[PowerSimulationsDynamics.jl](https://github.com/NREL-Sienna/PowerSimulationsDynamics.jl)
+v0.16.2 and [PowerSystems.jl](https://github.com/NREL-Sienna/PowerSystems.jl)
+v5.12 into Rust, the WECC generic renewable plant (`REGCA1`, `REECB1`,
+`REPCA1`) included. Both are BSD 3-Clause licensed by Alliance for Sustainable
+Energy, LLC and The Regents of the University of California: PowerSimulationsDynamics.jl
+Copyright (c) 2020, 2023 (`licenses/PowerSimulationsDynamics.jl-LICENSE`),
+PowerSystems.jl Copyright (c) 2018, 2023 (`licenses/PowerSystems.jl-LICENSE`).
+The WECC 240-bus case under `crates/tellegen/tests/data/rms_examples/wecc240`
+is copied from that package's `test/data_tests` directory under the same
+license, with the bus coordinates of
+[eudoxys/wecc240](https://github.com/eudoxys/wecc240) (MIT,
+`LICENSE-wecc240-coordinates`); its `psid_reference.json` holds output of
+PowerSimulationsDynamics.jl and the load values of the WECC 240 system of
+PowerSystemCaseBuilder.jl (BSD 3-Clause, `LICENSE-PowerSystemCaseBuilder.jl`).
+It is test data: read at test time, excluded from the published crate, and not
+compiled into any tellegen artifact. Please cite:
+
+> J. D. Lara, R. Henriquez-Auba, M. Bossart, D. S. Callaway, and C. Barrows,
+> "PowerSimulationsDynamics.jl -- An Open Source Modeling Package for Modern
+> Power Systems with Inverter-Based Resources," arXiv:2308.02921, 2023.
+
+No other case is distributed with tellegen. Tests that use further cases read
+them from a data folder outside this repository and are skipped where it is
+absent; see `crates/tellegen/tests/data/rms_examples/README.md`.
+
 ## Maps
 
 The web app's basemap comes from one of two providers, depending on whether
