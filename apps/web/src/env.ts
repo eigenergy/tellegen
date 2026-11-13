@@ -19,7 +19,7 @@ export const variables = defineEnvVars({
 		public: true,
 		static: true,
 		description:
-			'Optional WebMCP origin trial token for the host that serves this build (Chrome and Edge register one per origin). The prerendered pages carry it in an origin-trial meta tag, so visitors get document.modelContext without enabling a browser flag. Empty or unset adds no tag.',
+			'Optional WebMCP origin trial tokens for the host that serves this build, separated by commas or whitespace (Chrome and Edge run separate trials and each registers one token per origin). The prerendered pages carry it in an origin-trial meta tag each, so visitors get document.modelContext without enabling a browser flag. Empty or unset adds no tag.',
 		schema: (value) => value?.trim() ?? ''
 	},
 	PUBLIC_WEBMCP_EXPOSED_TO: {

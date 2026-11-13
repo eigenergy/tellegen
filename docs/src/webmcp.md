@@ -214,7 +214,9 @@ Chrome 149 and Edge 150 run separate WebMCP origin trials, each with its own
 tokens; https://tellegen.dev carries a Chrome token. For local development,
 enable `chrome://flags/#enable-webmcp-testing`. A deployment that registers
 for the trial sets `PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN` at build time, and the
-prerendered pages carry the token in an `origin-trial` meta tag.
+prerendered pages carry each token in its own `origin-trial` meta tag. To cover
+both browsers, put the Chrome and Edge tokens in the one setting, separated by a
+comma or whitespace.
 
 The tools are same-origin by default. To let a page that embeds tellegen call
 them, list its origins, comma separated, in `PUBLIC_WEBMCP_EXPOSED_TO`; the
