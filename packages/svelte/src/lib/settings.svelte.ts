@@ -15,6 +15,8 @@ export class UserPreferences {
 	theme = $state<'light' | 'dark' | null>(null);
 	busSizing = $state<'power' | 'uniform'>('power');
 	coloring = $state<'price' | 'angle' | 'voltage' | 'demand'>('price');
+	/** Zen mode hides the panels; it survives a reload so a presenter keeps the view. */
+	zen = $state(false);
 	error = $state<string | null>(null);
 	revision = $state(0);
 	#storage: Storage | undefined;
@@ -35,7 +37,8 @@ export class UserPreferences {
 		return {
 			theme: this.theme,
 			busSizing: this.busSizing,
-			coloring: this.coloring
+			coloring: this.coloring,
+			zen: this.zen
 		};
 	}
 	update(patch: Record<string, unknown>, save = true) {
@@ -47,12 +50,15 @@ export class UserPreferences {
 						? value === 'power' || value === 'uniform'
 						: key === 'coloring'
 							? ['price', 'angle', 'voltage', 'demand'].includes(value as string)
-							: false;
+							: key === 'zen'
+								? typeof value === 'boolean'
+								: false;
 			if (!valid) throw new Error(`Invalid display preference: ${key}`);
 		}
 		if ('theme' in patch) this.theme = patch.theme as typeof this.theme;
 		if ('busSizing' in patch) this.busSizing = patch.busSizing as typeof this.busSizing;
 		if ('coloring' in patch) this.coloring = patch.coloring as typeof this.coloring;
+		if ('zen' in patch) this.zen = patch.zen as boolean;
 		this.revision++;
 		if (!save || !this.#storage) return;
 		try {
@@ -66,7 +72,12 @@ export class UserPreferences {
 		}
 	}
 	reset() {
-		this.update({ theme: null, busSizing: 'power', coloring: 'price' });
+		this.update({
+			theme: null,
+			busSizing: 'power',
+			coloring: 'price',
+			zen: false
+		});
 	}
 }
 
@@ -117,5 +128,10 @@ export function recordedCalculationSettings(input?: string): RecordedCalculation
 		if (Object.hasOwn(defaults, key)) overrides[key] = option;
 		else ignored.push(key);
 	}
-	return { calculation, overrides, effective: { ...defaults, ...overrides }, ignored };
+	return {
+		calculation,
+		overrides,
+		effective: { ...defaults, ...overrides },
+		ignored
+	};
 }

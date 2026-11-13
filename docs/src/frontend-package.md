@@ -97,6 +97,61 @@ controller, which frees every case's browser Study and multiconductor session
 in the engine worker, so a provider that should keep its cases across pages
 belongs in a layout that stays mounted.
 
+### Command palette and zen mode
+
+Press **Cmd+K** (Ctrl+K on Windows and Linux), or the **Commands** button in
+the header, to open the command palette. Type to filter; each word you type
+must start a word of the command or its keywords. Use the arrow keys to move
+and Enter to run. The shell lists its commands in three groups:
+
+- **Actions**: run the calculation for the displayed case, fit the network to
+  the view, switch between the light and dark themes, enter or exit zen mode,
+  and reset the panel layout.
+- **Cases**: open a case file, or switch to any case in the header.
+- **Panels**: open or close each panel, including panels a host registers, such
+  as the web app's Agent panel.
+
+**Zen mode** hides the panel toolbar, every panel, the footer and the zoom
+buttons so only the map and header remain. The case strip collapses to the
+active case and shows the rest on hover or focus, and the map attribution
+collapses to its (i) button. Escape, the **Exit zen** button in the header, or
+running the command again restores the previous view. Zen mode is saved with
+the display preferences, so it survives a reload.
+
+Components under `TellegenProvider` can add commands. `register` adds one
+command; `registerSource` adds a function the palette calls each time it
+filters, for lists that follow live state:
+
+```ts
+import { onDestroy } from "svelte";
+import { getCommandRegistry } from "@tellegen/svelte";
+
+const commands = getCommandRegistry();
+onDestroy(
+  commands.register({
+    id: "export-report",
+    title: "Export report",
+    hint: "Download the current results as a PDF",
+    keywords: ["pdf", "save"],
+    run: () => exportReport(),
+  }),
+);
+onDestroy(
+  commands.registerSource(() =>
+    scenarios.map((s) => ({
+      id: `scenario:${s.id}`,
+      title: `Load scenario ${s.name}`,
+      group: "Cases",
+      run: () => load(s),
+    })),
+  ),
+);
+```
+
+Both return an unregister function. Registering the same `id` again replaces
+the earlier command, and `title` and `hint` may be functions when the label
+depends on state.
+
 `@tellegen/svelte` also exports lower level pieces for custom shells:
 
 - `TellegenMap`, with basemap, theme, projection, camera, extra-layer and
