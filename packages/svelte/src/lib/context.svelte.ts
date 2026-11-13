@@ -35,7 +35,7 @@ export const DEFAULT_TELLEGEN_UI_CONFIG: TellegenUiConfig = {
 	loadDefaultCases: true,
 	docsHref: 'https://eigenergy.github.io/tellegen/',
 	orgHref: 'https://github.com/eigenergy',
-	orgLabel: 'eigenergy group @ michigan ece',
+	orgLabel: 'Eigenergy Group @ Michigan ECE',
 	showFooter: true,
 	theme: 'light',
 	cartoApiKey: ''
