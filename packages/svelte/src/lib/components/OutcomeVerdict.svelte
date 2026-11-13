@@ -24,16 +24,10 @@
 <style>
 	.outcome {
 		margin: 0 0 var(--space-lg);
-		padding-left: var(--space-sm);
-		border-left: 3px solid var(--status-ok);
 		font-size: var(--fs-body);
 		font-weight: 600;
 		line-height: var(--lh-snug);
 		color: var(--text-primary);
 		text-wrap: pretty;
-	}
-
-	.outcome.warning {
-		border-left-color: var(--accent);
 	}
 </style>

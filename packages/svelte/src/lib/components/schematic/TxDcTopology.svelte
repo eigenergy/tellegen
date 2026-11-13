@@ -347,10 +347,6 @@
 		padding-left: var(--space-xl);
 		overflow-wrap: anywhere;
 	}
-	.notice {
-		border-left: 3px solid var(--accent);
-		padding-left: var(--space-sm);
-	}
 	button {
 		min-height: 44px;
 	}

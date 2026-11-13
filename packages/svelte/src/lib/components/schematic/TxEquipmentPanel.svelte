@@ -256,10 +256,6 @@
 	article ul {
 		padding-left: var(--space-xl);
 	}
-	.notice {
-		border-left: 3px solid var(--accent);
-		padding-left: var(--space-sm);
-	}
 	.count,
 	.intro {
 		color: var(--text-secondary);

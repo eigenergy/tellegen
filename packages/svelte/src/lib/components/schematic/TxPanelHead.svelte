@@ -69,19 +69,7 @@
 	}
 	.lead {
 		margin: var(--space-2xs) 0 var(--space-xs);
-		padding-left: var(--space-sm);
-		border-left: 3px solid var(--line);
 		font-family: var(--font-display);
-	}
-	.lead.ok {
-		/* no token names a success colour; this muted green reads on both themes */
-		border-left-color: #6b8f5e;
-	}
-	.lead.warning {
-		border-left-color: var(--accent);
-	}
-	.lead.violation {
-		border-left-color: var(--red);
 	}
 	.lead p {
 		margin: var(--space-3xs) 0;
