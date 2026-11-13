@@ -25,11 +25,11 @@ export function pricedBranch(result: BranchConstraintResult | undefined): boolea
 export function thermalStatus(result: BranchConstraintResult | undefined): string {
 	if (!result) return 'Constraint data unavailable';
 	if (!result.enforced) return 'Not enforced';
-	if (!result.binding) return 'Enforced · slack';
-	if (result.relief_per_mw == null) return 'Binding · marginal relief unavailable';
+	if (!result.binding) return 'Enforced, not binding';
+	if (result.relief_per_mw == null) return 'Binding, marginal relief unavailable';
 	return pricedBranch(result)
-		? 'Binding · positive marginal relief'
-		: 'Binding · negligible marginal relief';
+		? 'Binding, with positive marginal relief'
+		: 'Binding, with negligible marginal relief';
 }
 
 /** Calculations that produce prices and binding limits. */

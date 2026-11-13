@@ -16,13 +16,13 @@
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 		<table>
 			<caption class="dim" title={unitTitle}>
-				Largest LMP response <span class="mono unit">{units}</span>
+				Largest LMP response <span class="unit">({units})</span>
 			</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}
 					<tr>
 						<td>Bus <span class="mono">{mover.bus}</span></td>
-						<td class="mono" class:pos={mover.value > 0} class:neg={mover.value < 0}>
+						<td class={['mono', { pos: mover.value > 0, neg: mover.value < 0 }]}>
 							{signedExp(mover.value)}
 						</td>
 					</tr>
@@ -39,15 +39,15 @@
 
 	table {
 		width: 100%;
-		margin-top: 12px;
+		margin-top: var(--space-lg);
 		border-collapse: collapse;
-		font-size: 12px;
+		font-size: var(--fs-label);
 	}
 
 	caption {
 		text-align: left;
-		font-size: 12.5px;
-		margin-bottom: 4px;
+		font-size: var(--fs-data);
+		margin-bottom: var(--space-2xs);
 	}
 
 	.unit {
@@ -55,12 +55,13 @@
 	}
 
 	td {
-		padding: 3px 0;
+		padding: var(--space-3xs) 0;
 		border-top: 1px solid var(--line);
 	}
 
 	td:last-child {
 		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.pos {

@@ -23,7 +23,7 @@ for (const width of [1280, 390, 320]) {
 			await toolbar.getByRole('button', { name: 'Equipment', exact: true }).click();
 			const panel = page.getByRole('region', { name: 'Equipment models' });
 			await expect(panel).toBeVisible();
-			await panel.getByRole('button', { name: /PST · branch 1/ }).click();
+			await panel.getByRole('button', { name: /PST on branch 1/ }).click();
 			await expect(panel.getByRole('article')).toContainText('Phase setting 0°');
 			await expect(panel.getByRole('article')).toContainText('separate automatic regulator study');
 			await panel.getByRole('button', { name: /Capacitor bank 1/ }).click();
@@ -92,7 +92,7 @@ for (const width of [1280, 390, 320]) {
 				.getByRole('button', { name: 'Equipment', exact: true })
 				.click();
 			const panel = page.getByRole('region', { name: 'Equipment models' });
-			await panel.getByText('Detailed DC network · 4 nodes', { exact: true }).click();
+			await panel.getByText('Detailed DC network (4 nodes)', { exact: true }).click();
 			await expect(
 				panel.getByRole('img', { name: 'Detailed DC nodes, branches and converters' })
 			).toBeVisible();
@@ -161,7 +161,7 @@ for (const width of [1280, 390, 320]) {
 				.getByRole('button', { name: 'Equipment', exact: true })
 				.click();
 			const panel = page.getByRole('region', { name: 'Equipment models' });
-			await panel.getByText('Detailed DC network · 4 nodes', { exact: true }).click();
+			await panel.getByText('Detailed DC network (4 nodes)', { exact: true }).click();
 			await panel.getByRole('button', { name: 'Solve with AC power flow', exact: true }).click();
 			await expect(panel.getByRole('region', { name: 'Regulator results' })).toContainText(
 				'regulated'

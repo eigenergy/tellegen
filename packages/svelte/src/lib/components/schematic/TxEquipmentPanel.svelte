@@ -87,9 +87,12 @@
 		{/if}
 		{#if network.equipment.import_notes?.length}
 			<details>
-				<summary>Import coverage · {network.equipment.import_notes.length} notes</summary>
+				<summary
+					>Import coverage ({network.equipment.import_notes.length}
+					{network.equipment.import_notes.length === 1 ? 'note' : 'notes'})</summary
+				>
 				<ul>
-					{#each network.equipment.import_notes as note}<li>{note}</li>{/each}
+					{#each network.equipment.import_notes as note, index (index)}<li>{note}</li>{/each}
 				</ul>
 			</details>
 		{/if}
@@ -112,7 +115,7 @@
 				{#if controlError}<p role="alert">{controlError}</p>{/if}
 				{#if regulated}
 					<p role="status">
-						AC power flow completed in {regulated.passes} regulator passes · {regulated.controls
+						AC power flow completed in {regulated.passes} regulator passes with {regulated.controls
 							.length} active controls.
 					</p>
 					<TxControlResults controls={regulated.controls} />
@@ -120,7 +123,9 @@
 						{regulated.violations.length} reported operating-limit violations. Power-flow convergence
 						does not certify feasibility.
 					</p>
-					{#each regulated.violations as violation}<p class="notice">{violation}</p>{/each}
+					{#each regulated.violations as violation, index (index)}<p class="notice">
+							{violation}
+						</p>{/each}
 				{/if}
 			</details>
 		{/if}
@@ -140,7 +145,7 @@
 					{formulation.toUpperCase()}: {equipmentTreatment(detail.kind, formulation)}
 				</p>
 				<ul>
-					{#each detail.facts as fact}<li>{fact}</li>{/each}
+					{#each detail.facts as fact, index (index)}<li>{fact}</li>{/each}
 				</ul>
 				<p>{detail.explanation}</p>
 			</article>
@@ -167,38 +172,39 @@
 
 <style>
 	.equipment-panel {
-		color: var(--ink, #37352f);
-		background: var(--paper, #fbfaf6);
-		padding: 12px;
-		border: 1px solid #d2cec4;
-		border-radius: 8px;
-
+		color: var(--ink);
+		background: var(--paper);
+		padding: var(--space-lg);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-sm);
 		box-sizing: border-box;
-		font-size: 12px;
-		line-height: 1.45;
+		font-family: var(--font-display);
+		font-size: var(--fs-label);
+		line-height: var(--lh-normal);
 	}
 	header {
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: var(--paper, #fbfaf6);
-		padding-block: 4px;
+		background: var(--paper);
+		padding-block: var(--space-2xs);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 8px;
+		gap: var(--space-sm);
 	}
 	h3,
 	h4 {
 		margin: 0;
-		font-size: 14px;
+		font-size: var(--fs-heading);
+		font-weight: 600;
 	}
 	p {
-		margin: 8px 0;
+		margin: var(--space-sm) 0;
 	}
 	label {
 		display: grid;
-		gap: 4px;
+		gap: var(--space-2xs);
 	}
 	input {
 		width: 100%;
@@ -219,21 +225,21 @@
 	.devices button {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		width: 100%;
 		text-align: left;
-		padding: 6px;
+		padding: var(--space-xs);
 		border: 1px solid transparent;
 		background: transparent;
-		border-radius: 4px;
+		border-radius: var(--radius-sm);
 	}
 	.devices button[aria-pressed='true'] {
-		border-color: #566b95;
-		background: #e9edf5;
+		border-color: var(--accent);
+		background: var(--accent-soft);
 	}
 	small {
 		display: block;
-		color: #67635b;
+		color: var(--text-secondary);
 	}
 	svg {
 		flex-shrink: 0;
@@ -242,21 +248,21 @@
 		stroke-width: 1.4;
 	}
 	article {
-		border-block: 1px solid #d2cec4;
-		padding: 10px 0;
-		margin-bottom: 8px;
+		border-block: 1px solid var(--line);
+		padding: var(--space-md) 0;
+		margin-bottom: var(--space-sm);
 		overflow-wrap: anywhere;
 	}
 	article ul {
-		padding-left: 18px;
+		padding-left: var(--space-xl);
 	}
 	.notice {
-		border-left: 3px solid #956b2a;
-		padding-left: 8px;
+		border-left: 3px solid var(--accent);
+		padding-left: var(--space-sm);
 	}
 	.count,
 	.intro {
-		color: #67635b;
+		color: var(--text-secondary);
 	}
 	@media (max-width: 600px) {
 		button {

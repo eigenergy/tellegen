@@ -66,7 +66,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			key: `three-winding:${t.id}`,
 			kind: 'three_winding',
 			title: t.name ?? `Three-winding transformer ${t.id}`,
-			state: t.in_service ? 'In service · star equivalent' : 'Out of service',
+			state: t.in_service ? 'In service, star equivalent' : 'Out of service',
 			bus: t.buses[0],
 			facts: [
 				`Winding buses: ${t.buses.join(', ')}`,
@@ -84,12 +84,12 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			state:
 				d.kind === 'switch'
 					? d.in_service
-						? 'Closed · topology reduction required'
+						? 'Closed, topology reduction required'
 						: 'Open'
 					: d.in_service
 						? d.kind === 'svc'
-							? 'In service · formulation-dependent treatment'
-							: 'In service · unsupported by this solver'
+							? 'In service, formulation-dependent treatment'
+							: 'In service, unsupported by this solver'
 						: 'Out of service',
 			bus: d.buses[0],
 			facts: [`Terminal buses: ${d.buses.join(', ')}`, `Calculation treatment: ${d.treatment}`],
@@ -105,7 +105,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			return {
 				key: `transformer:${t.branch}`,
 				kind: t.phase_shifter ? 'pst' : 'transformer',
-				title: `${t.phase_shifter ? 'PST' : 'Transformer'} · branch ${t.branch}`,
+				title: `${t.phase_shifter ? 'PST' : 'Transformer'} on branch ${t.branch}`,
 				state: branch
 					? branch.status
 						? 'In service'
@@ -114,10 +114,10 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 				branch: branch?.id,
 				facts: [
 					...(branch ? [`Bus ${branch.from} ↔ bus ${branch.to}`] : []),
-					`Phase setting ${number(t.phase_shift_deg)}° · tap ratio ${number(t.tap_ratio)}`,
+					`Phase setting ${number(t.phase_shift_deg)}°, tap ratio ${number(t.tap_ratio)}`,
 					...(t.tap_changers ?? []).map(
 						(tap) =>
-							`${tap.kind === 'phase' ? 'Phase' : 'Ratio'} tap changer · winding ${tap.winding} · assigned position ${tap.tap_position ?? 'unknown'} · ${tap.steps.length} recorded steps · source regulation ${tap.regulating ? 'enabled' : 'disabled'}`
+							`${tap.kind === 'phase' ? 'Phase' : 'Ratio'} tap changer on winding ${tap.winding}: assigned position ${tap.tap_position ?? 'unknown'}, ${tap.steps.length} recorded steps, source regulation ${tap.regulating ? 'enabled' : 'disabled'}`
 					),
 					`Source control: ${t.control_mode?.replaceAll('_', ' ') ?? 'not specified'}${t.control_enabled === null ? '' : t.control_enabled ? ' (enabled in source)' : ' (disabled in source)'}`,
 					...(t.setting_min !== null && t.setting_max !== null
@@ -142,7 +142,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 				state: s.in_service ? 'In service' : 'Out of service',
 				facts: [
 					`Bus ${s.bus}`,
-					`At 1 pu: B = ${number(s.b_mvar)} Mvar · G = ${number(s.g_mw)} MW`,
+					`At 1 pu: B = ${number(s.b_mvar)} Mvar, G = ${number(s.g_mw)} MW`,
 					...(s.section_count === null ? [] : [`${s.section_count} sections connected`]),
 					...(s.blocks.length
 						? [
@@ -160,7 +160,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			kind: 'hvdc',
 			bus: h.from,
 			title: `HVDC link ${h.id}`,
-			state: h.in_service ? 'In service · fixed-transfer input' : 'Out of service',
+			state: h.in_service ? 'In service, fixed-transfer input' : 'Out of service',
 			facts: [
 				`Bus ${h.from} ↔ bus ${h.to}`,
 				`Input withdrawal at bus ${h.from}: ${number(h.pf_mw)} MW`,

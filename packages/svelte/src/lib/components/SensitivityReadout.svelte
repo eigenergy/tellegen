@@ -100,12 +100,12 @@
 <style>
 	.chip {
 		font-family: var(--font-mono);
-		font-size: 13px;
-		padding: 2px 8px;
+		font-size: var(--fs-label);
+		padding: var(--space-3xs) var(--space-sm);
 		border: 1px solid var(--accent);
 		color: var(--text-accent);
 		background: var(--accent-soft);
-		border-radius: 2px;
+		border-radius: var(--radius-xs);
 		white-space: nowrap;
 	}
 
@@ -118,8 +118,8 @@
 	}
 
 	.sensitivity-copy {
-		font-size: 13.5px;
-		line-height: 1.35;
+		font-size: var(--fs-data);
+		line-height: var(--lh-snug);
 		white-space: nowrap;
 	}
 </style>

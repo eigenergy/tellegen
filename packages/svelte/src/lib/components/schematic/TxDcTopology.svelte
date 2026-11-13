@@ -87,7 +87,10 @@
 
 {#if topology && topology.nodes.length}
 	<details class="dc-topology">
-		<summary>Detailed DC network · {topology.nodes.length} nodes</summary>
+		<summary
+			>Detailed DC network ({topology.nodes.length}
+			{topology.nodes.length === 1 ? 'node' : 'nodes'})</summary
+		>
 		<p>
 			Source connections, including converter terminals. This DC graph is separate from AC
 			synchronous islands. Crossings without a node dot are not connections.
@@ -111,7 +114,7 @@
 								y2={b.y}
 								stroke-dasharray={link.connected !== true ? '5 4' : undefined}
 								><title
-									>{link.id} · {link.kind} · {link.connected === null
+									>{link.id}, {link.kind}, {link.connected === null
 										? 'state unknown'
 										: link.connected
 											? 'connected'
@@ -126,7 +129,7 @@
 					{/each}
 					{#each topology.converters as c, i (c.id)}
 						{@const x = 40 + (i * 280) / Math.max(1, topology.converters.length - 1)}
-						{#each [c.terminal1, c.terminal2] as terminal, end}
+						{#each [c.terminal1, c.terminal2] as terminal, end (end)}
 							{@const p = terminal ? positions.get(terminal) : undefined}
 							{#if p}<line
 									stroke-dasharray={(end ? c.connected2 : c.connected1) === true
@@ -166,13 +169,13 @@
 						? short(link.to)
 						: link.kind === 'ground'
 							? 'ground'
-							: 'unknown terminal'} · {link.kind} · {link.connected === null
+							: 'unknown terminal'}, {link.kind}, {link.connected === null
 						? 'state unknown'
 						: link.connected
 							? 'connected'
 							: 'disconnected'}{link.resistance_ohm === null
 						? ''
-						: ` · ${num(link.resistance_ohm)} Ω`}
+						: `, ${num(link.resistance_ohm)} Ω`}
 				</li>
 			{/each}
 		</ul>
@@ -207,7 +210,7 @@
 				</p>
 			{/if}
 			<details>
-				<summary>Choose a study · controls and limits</summary>
+				<summary>Choosing a study: controls and limits</summary>
 				<ul>
 					<li><strong>DC network:</strong> DC voltages, currents and losses only.</li>
 					<li>
@@ -246,43 +249,51 @@
 		{#if coupled}
 			<section aria-label="AC/DC study results">
 				<p>
-					AC {coupled.ac.formulation?.toUpperCase() ?? 'network'} calculation completed · {coupled
+					AC {coupled.ac.formulation?.toUpperCase() ?? 'network'} calculation completed with {coupled
 						.violations.length} reported limit violations.
 				</p>
 				<p>{coupled.scope}</p>
 				<TxControlResults controls={coupled.controls} />
 				<p>Positive converter Mvar is absorbed from AC; negative Mvar is supplied to AC.</p>
 				<ul>
-					{#each coupled.converter_reactive as [id, q]}<li>{short(id)}: {num(q)} Mvar</li>{/each}
+					{#each coupled.converter_reactive as [id, q] (id)}<li>
+							{short(id)}: {num(q)} Mvar
+						</li>{/each}
 				</ul>
 				{#if coupled.ac.objective != null}<p>
 						AC generation objective: {num(coupled.ac.objective)}
 					</p>{/if}
 				<ul>
-					{#each coupled.ac.vm ?? [] as v}<li>AC bus {v.bus}: {num(v.value)} pu</li>{/each}
+					{#each coupled.ac.vm ?? [] as v (v.bus)}<li>AC bus {v.bus}: {num(v.value)} pu</li>{/each}
 				</ul>
-				{#each coupled.violations as violation}<p class="notice">{violation}</p>{/each}
+				{#each coupled.violations as violation, index (index)}<p class="notice">
+						{violation}
+					</p>{/each}
 			</section>
 		{/if}
 		{#if result}
 			<section aria-label="DC network results" aria-live="polite">
 				<p>
-					Converged in {result.iterations} iterations · {result.violations.length} limit violations.
+					Converged in {result.iterations} iterations with {result.violations.length} limit violations.
 				</p>
 				<p>
 					{result.limits_checked} declared bounds checked; {result.limits_unspecified} bounds unspecified.
 					Convergence does not certify equipment feasibility.
 				</p>
 				<p>Positive converter MW is taken from the AC bus; negative MW is supplied to it.</p>
-				{#each result.violations as violation}<p class="notice">{violation}</p>{/each}
+				{#each result.violations as violation, index (index)}<p class="notice">
+						{violation}
+					</p>{/each}
 				<ul>
-					{#each result.nodes as node}<li>{short(node.id)}: {num(node.voltage_kv)} kV</li>{/each}
+					{#each result.nodes as node (node.id)}<li>
+							{short(node.id)}: {num(node.voltage_kv)} kV
+						</li>{/each}
 				</ul>
 				<ul>
-					{#each result.branches as b}<li>
+					{#each result.branches as b (b.id)}<li>
 							{short(b.id)}: {num(b.current_ka)} kA; {num(b.loss_mw)} MW line loss
 						</li>{/each}
-					{#each result.converters as c}<li>
+					{#each result.converters as c (c.id)}<li>
 							{short(c.id)}: {num(c.ac_power_mw)} MW from AC bus {c.ac_bus}; {num(c.loss_mw)} MW converter
 							loss
 						</li>{/each}
@@ -295,9 +306,9 @@
 <style>
 	.control-option {
 		display: flex;
-		gap: 8px;
+		gap: var(--space-sm);
 		align-items: flex-start;
-		margin: 12px 0;
+		margin: var(--space-lg) 0;
 	}
 	.control-option input {
 		flex-shrink: 0;
@@ -306,39 +317,39 @@
 	}
 	summary {
 		cursor: pointer;
-		padding: 10px 0;
+		padding: var(--space-md) 0;
 		font-weight: 600;
 	}
 	.drawing {
 		overflow-x: auto;
-		border: 1px solid #d2cec4;
+		border: 1px solid var(--line);
 	}
 	svg {
 		display: block;
 		min-width: 250px;
 		width: 100%;
-		stroke: #555049;
+		stroke: var(--text-secondary);
 		stroke-width: 1.4;
 		fill: none;
 	}
 	text {
-		fill: #37352f;
+		fill: var(--ink);
 		stroke: none;
-		font: 12px sans-serif;
+		font: var(--fs-label) var(--font-display);
 	}
 	circle {
-		fill: #37352f;
+		fill: var(--ink);
 	}
 	rect {
-		fill: #fbfaf6;
+		fill: var(--paper);
 	}
 	ul {
-		padding-left: 18px;
+		padding-left: var(--space-xl);
 		overflow-wrap: anywhere;
 	}
 	.notice {
-		border-left: 3px solid #956b2a;
-		padding-left: 8px;
+		border-left: 3px solid var(--accent);
+		padding-left: var(--space-sm);
 	}
 	button {
 		min-height: 44px;

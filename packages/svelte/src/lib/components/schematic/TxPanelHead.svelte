@@ -30,8 +30,8 @@
 			class="relaxation">Relaxation</strong
 		>{/if}
 </div>
-<p class:stale={context.stale} class="freshness" role="status" hidden={brief && !context.stale}>
-	{context.freshness} · {context.status} · base case
+<p class={['freshness', context.stale && 'stale']} role="status" hidden={brief && !context.stale}>
+	{context.freshness}. Solver status: {context.status}. Base case.
 </p>
 <div class="lead {lead.tone}">
 	<p class="text">{lead.text}</p>
@@ -49,48 +49,52 @@
 	.heading {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 12px;
+		gap: var(--space-2xs) var(--space-lg);
 		align-items: center;
+		font-family: var(--font-display);
+		font-size: var(--fs-label);
 	}
 	.heading strong {
 		color: var(--ink);
 	}
 	.heading .relaxation,
 	.stale {
-		color: #925b05;
+		color: var(--text-accent);
 	}
 	.freshness {
-		margin: 3px 0;
-		font-size: 10px;
+		margin: var(--space-3xs) 0;
+		font-family: var(--font-display);
+		font-size: var(--fs-control);
+		color: var(--text-secondary);
 	}
 	.lead {
-		margin: 4px 0 6px;
-		padding-left: 8px;
+		margin: var(--space-2xs) 0 var(--space-xs);
+		padding-left: var(--space-sm);
 		border-left: 3px solid var(--line);
 		font-family: var(--font-display);
 	}
 	.lead.ok {
+		/* no token names a success colour; this muted green reads on both themes */
 		border-left-color: #6b8f5e;
 	}
 	.lead.warning {
-		border-left-color: #c98a12;
+		border-left-color: var(--accent);
 	}
 	.lead.violation {
-		border-left-color: #be2024;
+		border-left-color: var(--red);
 	}
 	.lead p {
-		margin: 2px 0;
-		line-height: 1.4;
+		margin: var(--space-3xs) 0;
+		line-height: var(--lh-snug);
 	}
 	.text {
-		font-size: 13px;
+		font-size: var(--fs-data);
 		font-weight: 600;
 		color: var(--ink);
 	}
 	.why {
-		font-size: 12px;
-		color: var(--ink);
-		opacity: 0.85;
+		font-size: var(--fs-label);
+		color: var(--text-secondary);
 	}
 	a {
 		color: inherit;
