@@ -460,10 +460,10 @@ fn invert_reduced_leakage(
 ///
 /// Unlike an isolating transformer, this subtype states its impedance in
 /// referred ohms and its ratio as regulated/source voltage.  Its winding
-/// primitive is therefore `y * [1, -n; -n, n^2]`, where `n = 1/a` for the
-/// default ANSI Type B connection and `n = a` for Type A.  This matches the
-/// BMOPFTools calculation and the equivalent fixed-tap OpenDSS
-/// two-winding regulator.
+/// primitive is therefore `y * [1, -n; -n, n^2]`, where `n = 1/a` for both
+/// ANSI Type A and Type B, as the BMOPF schema and PowerIO 0.12 read it.
+/// For Type B this matches the BMOPFTools calculation and the equivalent
+/// fixed-tap OpenDSS two-winding regulator.
 fn prepare_single_phase_autotransformer(
     transformer: &DistTransformer,
 ) -> Result<TransformerPrimitive, TransformerError> {
@@ -498,17 +498,17 @@ fn prepare_single_phase_autotransformer(
         .unwrap_or("B")
         .trim()
         .to_ascii_uppercase();
-    let n_eff = match regulator_type.as_str() {
-        "A" => tap_ratio,
-        "B" => 1.0 / tap_ratio,
-        _ => {
-            return Err(TransformerError::Invalid {
-                transformer: transformer.name.clone(),
-                field: "regulator_type".into(),
-                reason: format!("expected A or B, got `{regulator_type}`"),
-            });
-        }
-    };
+    // BMOPF's ratio is the regulated over source voltage for both ANSI types;
+    // `regulator_type` records the hardware only. PowerIO 0.12 prepares MC OPF
+    // regulators the same way, so both solvers read one document alike.
+    if !matches!(regulator_type.as_str(), "A" | "B") {
+        return Err(TransformerError::Invalid {
+            transformer: transformer.name.clone(),
+            field: "regulator_type".into(),
+            reason: format!("expected A or B, got `{regulator_type}`"),
+        });
+    }
+    let n_eff = 1.0 / tap_ratio;
     let impedance = |key: &str| -> Result<f64, TransformerError> {
         let value = value_number(&transformer.extras, key).unwrap_or(0.0);
         if !value.is_finite() || value < 0.0 {
@@ -1177,13 +1177,12 @@ mod tests {
     }
 
     #[test]
-    fn type_a_autotransformer_uses_reciprocal_connection() {
+    fn type_a_autotransformer_reads_its_ratio_as_type_b_does() {
         let tap = 1.05;
-        let p = prepare_transformer(&autotransformer("A", tap)).unwrap();
-        let z = Complex64::new(0.5 + tap * tap * 0.25, 2.0 + tap * tap * 0.5);
-        let y = z.recip();
-        assert!((p.y_prim[0][1] + tap * y).norm() < 1e-12);
-        assert!((p.y_prim[1][1] - tap * tap * y).norm() < 1e-12);
+        let a = prepare_transformer(&autotransformer("A", tap)).unwrap();
+        let b = prepare_transformer(&autotransformer("B", tap)).unwrap();
+        assert_eq!(a.y_prim, b.y_prim);
+        assert_eq!(a.y_shunt, b.y_shunt);
     }
 
     #[test]

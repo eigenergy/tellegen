@@ -39,10 +39,12 @@ impl ControlParameter {
     /// Residual parameter partial and exact mixed state–parameter partial.
     pub fn evaluate(&self, x: &[f64]) -> Result<(f64, Vec<(usize, f64)>), String> {
         let (value, gradient) = match self {
+            // The row is `a(pf) * P - pf * Q` (OpenDSS and BMOPF sign: pf > 0
+            // puts Q on the same side as P), so d/dpf is `a'(pf) * P - Q`.
             Self::PowerFactor {
                 columns: [p, q],
                 active_coefficient_derivative: da,
-            } => (da * x[*p] + x[*q], vec![(*p, *da), (*q, 1.)]),
+            } => (da * x[*p] - x[*q], vec![(*p, *da), (*q, -1.)]),
             Self::Droop {
                 columns,
                 knots,

@@ -594,15 +594,16 @@ pub(super) fn check_power_factors(
         let a = (1. - pf.abs()).sqrt() * (1. + pf.abs()).sqrt();
         for (k, &[p, q]) in device.coil_power_va.iter().enumerate() {
             checks.at(inv.name.clone(), Some(format!("coil:{k}")));
+            // OpenDSS and BMOPF sign: pf > 0 puts Q on the same side as P,
+            // so the declared relation is `a * P - pf * Q = 0`.
             checks.mismatch(
                 "prescribed_power_pu",
-                a * (p / power_base) + pf * (q / power_base),
+                a * (p / power_base) - pf * (q / power_base),
             )?;
             let apparent = p.hypot(q);
             let achieved = (apparent > 0.).then(|| p.abs() / apparent);
             let relative_error = achieved.map(|v| (v - pf.abs()).abs() / pf.abs());
-            let wrong_sign =
-                a > 0. && p != 0. && q != 0. && p.signum() * q.signum() != -pf.signum();
+            let wrong_sign = a > 0. && p != 0. && q != 0. && p.signum() * q.signum() != pf.signum();
             if pf.abs() <= tolerance
                 || apparent == 0.
                 || wrong_sign
