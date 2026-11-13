@@ -309,23 +309,12 @@ fn solve_state(
             Ok(Box::new(DcState { net, sol }))
         }
         (StudyInput::BalancedNetwork, Problem::AcPf) => {
-            // ZIP and exponential loads at their power at the solved voltages
-            // (a fixed point over constant-power solves; one solve without).
-            let ((mut acnet, sol), rounds) = crate::model::load_voltage::settle(net, |n| {
-                let instance = AcPfInstance::from_network(n.clone()).map_err(|e| e.to_string())?;
-                let (acnet, sol) = ac_pf_solved(AcNetwork::from_pf_instance(&instance)?, req)?;
-                let vm = acnet
-                    .bus_ids
-                    .iter()
-                    .copied()
-                    .zip(sol.vm.iter().copied())
-                    .collect();
-                Ok(((acnet, sol), vm))
-            })?;
-            acnet
-                .diagnostics
-                .extend(crate::model::load_voltage::diagnostic(net, rounds));
-            Ok(Box::new(AcPfState { net: acnet, sol }))
+            // ZIP and exponential loads are solved exactly inside the Newton
+            // iteration; the retained model carries them, so sensitivities and
+            // previews differentiate the system that was solved.
+            let instance = AcPfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
+            let (net, sol) = ac_pf_solved(AcNetwork::from_pf_instance(&instance)?, req)?;
+            Ok(Box::new(AcPfState { net, sol }))
         }
         (StudyInput::AcPf(instance), Problem::AcPf) => {
             let (net, sol) = ac_pf_solved(AcNetwork::from_pf_instance(instance)?, req)?;

@@ -182,31 +182,65 @@ impl AcPfLayout {
         self.q_of[bus]
     }
 
-    /// Power mismatch `r = spec − calc`: `spec` is the net scheduled injection
-    /// `(pg − pd) + j(qg − qd)`, `calc` the polar injection. `pg`/`qg` are the scheduled
-    /// per-bus generation (the published dispatch for an operational solve; the relaxation
-    /// dispatch for the OPF warm-start polish; a limit-clamped value at a bus the Q-limit
-    /// loop has switched PV→PQ). Only the active mismatch enters at PV buses (their reactive
+    /// Power mismatch `r = spec − calc` at the iterate magnitudes `vm`: `spec` is the net
+    /// scheduled injection `(pg − P_L(vm)) + j(qg − Q_L(vm))`, `calc` the polar injection.
+    /// `pg`/`qg` are the scheduled per-bus generation (the published dispatch for an
+    /// operational solve; the relaxation dispatch for the OPF warm-start polish; a
+    /// limit-clamped value at a bus the Q-limit loop has switched PV→PQ). The demand
+    /// `P_L`/`Q_L` is [`AcNetwork::demand_at`]: `pd`/`qd` plus each voltage-dependent load
+    /// at its bus voltage. Only the active mismatch enters at PV buses (their reactive
     /// injection is free); the slack has neither.
+    #[allow(clippy::too_many_arguments)]
     fn residual(
         &self,
         net: &AcNetwork,
         pg: &[f64],
         qg: &[f64],
+        vm: &[f64],
         p_calc: &[f64],
         q_calc: &[f64],
     ) -> Vec<f64> {
+        let (pd, qd) = net.demand_at(vm);
         let mut r = vec![0.0; self.dim];
         for b in 0..self.n {
             if let Some(pr) = self.p_of[b] {
-                r[pr] = (pg[b] - net.pd[b]) - p_calc[b];
+                r[pr] = (pg[b] - pd[b]) - p_calc[b];
             }
             if let Some(qr) = self.q_of[b] {
-                r[qr] = (qg[b] - net.qd[b]) - q_calc[b];
+                r[qr] = (qg[b] - qd[b]) - q_calc[b];
             }
         }
         r
     }
+}
+
+/// The voltage-dependent demand's contribution to the reduced Newton Jacobian, as
+/// `(row, col, value)` triplets to add to [`ac_jacobian`]'s. The mismatch is
+/// `r = pg − P_L(vm) − P_calc` and Newton solves `J dx = r` with `J = ∂(P_calc + P_L)/∂x`,
+/// so each term adds `+∂P_L/∂vm_b` (or `+∂Q_L/∂vm_b`) at its bus's own active (reactive)
+/// row and magnitude column. The magnitude columns are absolute `vm`, not `Δvm/vm`. A bus
+/// without a magnitude column (slack, PV) holds its voltage, so its loads contribute
+/// nothing; a PV bus the Q-limit loop released to PQ gains the column and the entry.
+pub(crate) fn load_jacobian(
+    net: &AcNetwork,
+    vm: &[f64],
+    layout: &AcPfLayout,
+) -> Vec<(usize, usize, f64)> {
+    let mut t = Vec::new();
+    for term in &net.load_terms {
+        let Some(c) = layout.vm_of[term.bus] else {
+            continue;
+        };
+        let row = if term.reactive {
+            layout.q_of[term.bus]
+        } else {
+            layout.p_of[term.bus]
+        };
+        if let Some(r) = row {
+            t.push((r, c, term.eval(vm[term.bus]).1));
+        }
+    }
+    t
 }
 
 /// Polar bus power injections and the bus current `I = Y V` at state `(vm, va)`.
@@ -441,14 +475,15 @@ fn newton<F: AcPfFormulation>(
     // point rather than twice.
     let mut iters = 0;
     let (p0, q0, mut i_bus) = f.injections(ybus, &vm, &va);
-    let mut r = layout.residual(net, pg, qg, &p0, &q0);
+    let mut r = layout.residual(net, pg, qg, &vm, &p0, &q0);
     let mut residual = inf_norm(&r);
     for it in 0..MAX_ITERS {
         iters = it;
         if residual < TOL {
             break;
         }
-        let jac = f.jacobian(ybus, &vm, &va, &i_bus, layout);
+        let mut jac = f.jacobian(ybus, &vm, &va, &i_bus, layout);
+        jac.extend(load_jacobian(net, &vm, layout));
         let Ok(dx) = solve_sparse(layout.dim(), &jac, &r) else {
             break; // singular Jacobian: stop at the best iterate so far
         };
@@ -466,7 +501,7 @@ fn newton<F: AcPfFormulation>(
                 continue;
             }
             let (tp, tq, ti) = f.injections(ybus, &tvm, &tva);
-            let tr = layout.residual(net, pg, qg, &tp, &tq);
+            let tr = layout.residual(net, pg, qg, &tvm, &tp, &tq);
             let tres = inf_norm(&tr);
             if tres < residual {
                 vm = tvm;
@@ -583,13 +618,14 @@ fn solve_qlim<F: AcPfFormulation>(
 
         // Recover each regulating bus's reactive generation and switch on a limit violation.
         let (_, q_calc, _) = f.injections(ybus, &vm, &va);
+        let (_, qd) = net.demand_at(&vm);
         let mut changed = false;
         for b in 0..net.n {
             if kinds[b] == BusKind::Slack || !has_gen[b] {
                 continue;
             }
             if kinds[b] == BusKind::Pv {
-                let qg = q_calc[b] + net.qd[b];
+                let qg = q_calc[b] + qd[b];
                 if qg > qmax_bus[b] + Q_TOL {
                     kinds[b] = BusKind::Pq;
                     qsched[b] = qmax_bus[b];
@@ -778,6 +814,15 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
     if residual.is_nan() || residual >= TOL {
         return Err(format!(
             "AC power flow did not converge: best mismatch {residual:.3e} over {start_count} starts"
+        ));
+    }
+    // A load term below its ratio floor was solved on its tangent continuation, not
+    // its law: that is a collapsed voltage, not an operating point.
+    if let Some(term) = net.load_terms.iter().find(|t| t.below_floor(vm[t.bus])) {
+        return Err(format!(
+            "AC power flow converged to a collapsed voltage of {:.3e} pu at bus {}, below the \
+             range of its voltage-dependent load (exponent {})",
+            vm[term.bus], net.bus_ids[term.bus], term.exponent
         ));
     }
     let (p, q, _) = f.injections(&ybus, &vm, &va);
@@ -1099,6 +1144,142 @@ mpc.gencost = [
             1e-6,
             "wide-limit PV holds its setpoint",
         );
+    }
+
+    /// The case3qlim network with a ZIP load at the PV bus 2 and an exponential load at
+    /// PQ bus 3, built for the AC power flow.
+    fn case3qlim_voltage_dependent() -> AcNetwork {
+        use crate::model::load_voltage::{exponential, zip};
+        let mut net = crate::model::parse_matpower(CASE3QLIM).expect("parse case3qlim");
+        for load in net.loads_mut() {
+            load.voltage_model = Some(match load.bus.0 {
+                2 => zip([8.0, 6.0, 6.0], [4.0, 3.0, 3.0], None),
+                _ => exponential(80.0, 60.0, 1.7, 3.0, None),
+            });
+        }
+        AcNetwork::from_network_pf(&net).expect("build AcNetwork")
+    }
+
+    /// (ii) The Newton Jacobian, polar part plus the load derivatives, equals the central
+    /// finite difference of the mismatch, `J = −∂r/∂x`, with ZIP and exponential loads
+    /// (γ ∈ {0, 0.5, 1, 1.7, 2, 3}) at PQ buses and at a PV bus, under the default typing
+    /// and with the PV bus released to PQ, away from any solution.
+    #[test]
+    fn jacobian_with_voltage_dependent_loads_matches_finite_differences() {
+        use crate::model::load_voltage::{exponential, zip};
+        let raw = {
+            let mut raw = crate::model::parse_matpower(crate::model::CASE9).expect("case9");
+            let models = [
+                zip([30.0, 40.0, 55.0], [10.0, 12.0, 8.0], None),
+                exponential(90.0, 30.0, 0.5, 1.7, Some(1.02)),
+                exponential(100.0, 35.0, 3.0, 0.0, None),
+            ];
+            for (load, model) in raw.loads_mut().iter_mut().zip(models) {
+                load.voltage_model = Some(model);
+            }
+            // A load at a PV bus (generator bus 2), γ = 1 and 2 in the exponential form.
+            let mut extra = powerio::Load::new(powerio::BusId(2), 25.0, 10.0);
+            extra.voltage_model = Some(exponential(25.0, 10.0, 1.0, 2.0, None));
+            raw.loads_mut().push(extra);
+            raw
+        };
+        let model = AcNetwork::from_network_pf(&raw).expect("model");
+        let exponents: Vec<f64> = model.load_terms.iter().map(|t| t.exponent).collect();
+        for g in [0.5, 1.0, 1.7, 2.0, 3.0] {
+            assert!(exponents.contains(&g), "γ = {g} missing: {exponents:?}");
+        }
+        let net = model;
+        let pv = net.bus_ids.iter().position(|&id| id == 2).expect("bus 2");
+        assert!(net.load_terms.iter().any(|t| t.bus == pv));
+
+        let ybus = net.ybus();
+        let mut kinds_released = default_kinds(&net);
+        assert_eq!(kinds_released[pv], BusKind::Pv);
+        kinds_released[pv] = BusKind::Pq;
+        for kinds in [default_kinds(&net), kinds_released] {
+            let layout = AcPfLayout::with_kinds(&net, &kinds);
+            let vm: Vec<f64> = (0..net.n).map(|b| 1.0 + 0.06 * mix(b as u64, 7)).collect();
+            let va: Vec<f64> = (0..net.n).map(|b| 0.2 * mix(b as u64, 11)).collect();
+            let residual = |vm: &[f64], va: &[f64]| {
+                let (p, q, _) = ac_injections(&ybus, vm, va);
+                layout.residual(&net, &net.pg, &net.qg, vm, &p, &q)
+            };
+            let (_, _, i_bus) = ac_injections(&ybus, &vm, &va);
+            let mut jac = ac_jacobian(&ybus, &vm, &va, &i_bus, &layout);
+            jac.extend(load_jacobian(&net, &vm, &layout));
+            let dim = layout.dim();
+            let mut dense = vec![vec![0.0; dim]; dim];
+            for (r, c, v) in jac {
+                dense[r][c] += v;
+            }
+            let h = 1e-6;
+            for b in 0..net.n {
+                for (col, magnitude) in [(layout.va_col(b), false), (layout.vm_col(b), true)] {
+                    let Some(c) = col else { continue };
+                    let step = |s: f64| {
+                        let (mut vm, mut va) = (vm.clone(), va.clone());
+                        if magnitude {
+                            vm[b] += s;
+                        } else {
+                            va[b] += s;
+                        }
+                        residual(&vm, &va)
+                    };
+                    let (plus, minus) = (step(h), step(-h));
+                    for r in 0..dim {
+                        let fd = -(plus[r] - minus[r]) / (2.0 * h);
+                        assert!(
+                            (dense[r][c] - fd).abs() < 1e-7,
+                            "J[{r}][{c}] = {}, finite difference {fd}",
+                            dense[r][c]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// (v) A ZIP load at a PV bus whose generator hits its reactive limit: the bus
+    /// switches to PQ, its released voltage carries the load's voltage derivative, and
+    /// the reactive output pinned at `qmax` covers the load at the released voltage.
+    #[test]
+    fn pv_bus_with_zip_load_switches_to_pq_at_reactive_limit() {
+        let net = case3qlim_voltage_dependent();
+        let b2 = net.bus_ids.iter().position(|&id| id == 2).expect("bus 2");
+        let b3 = net.bus_ids.iter().position(|&id| id == 3).expect("bus 3");
+        let qmax2: f64 = (0..net.k)
+            .filter(|&g| net.gen_bus[g] == b2)
+            .map(|g| net.qmax[g])
+            .sum();
+        let sol = ac_pf(&AcPolar::new(), &net).expect("ac power flow");
+        assert!(sol.residual < TOL);
+        assert_eq!(sol.kinds[b2], BusKind::Pq);
+        let v2 = sol.vm[b2];
+        assert!(v2 < 1.05 - 1e-4, "released voltage {v2}");
+        // Loads at the solved voltages, written out independently of the model.
+        let p2 = 0.08 + 0.06 * v2 + 0.06 * v2 * v2;
+        let q2 = 0.04 + 0.03 * v2 + 0.03 * v2 * v2;
+        let v3 = sol.vm[b3];
+        let (p3, q3) = (0.8 * v3.powf(1.7), 0.6 * v3.powf(3.0));
+        approx(sol.q[b2] + q2, qmax2, 1e-7, "bus 2 reactive output at qmax");
+        approx(sol.p[b2], net.pg[b2] - p2, 1e-8, "bus 2 active balance");
+        approx(sol.p[b3], -p3, 1e-8, "bus 3 active balance");
+        approx(sol.q[b3], -q3, 1e-8, "bus 3 reactive balance");
+        // The released bus's magnitude column carries the load derivative.
+        let layout = AcPfLayout::with_kinds(&net, &sol.kinds);
+        let terms = load_jacobian(&net, &sol.vm, &layout);
+        let c = layout.vm_col(b2).expect("released magnitude column");
+        assert!(terms
+            .iter()
+            .any(|&(r, col, _)| col == c && Some(r) == layout.q_row(b2)));
+        assert!(terms
+            .iter()
+            .any(|&(r, col, _)| col == c && Some(r) == layout.p_row(b2)));
+        // Under the default typing bus 2 holds its voltage: no load column there.
+        let held = AcPfLayout::with_kinds(&net, &default_kinds(&net));
+        assert!(load_jacobian(&net, &sol.vm, &held)
+            .iter()
+            .all(|&(r, _, _)| Some(r) != held.p_row(b2)));
     }
 
     /// Star buses synthesized for a three-winding transformer start from the

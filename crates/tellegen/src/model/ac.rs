@@ -16,6 +16,7 @@ use powerio_matrix::{build_ac_opf_preparation, AcOpfAssemblyOptions, Units};
 use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
 
 use super::islands::{dense_islands, energize, ReferencePolicy};
+use super::load_voltage::LoadTerm;
 use super::{hvdc_diagnostics, normalize_for_model, reconstruct_ids, HvdcLines, Ids};
 #[cfg(feature = "conic")]
 use super::{
@@ -164,6 +165,13 @@ pub(crate) struct AcNetwork {
     pub has_remote_voltage_control: bool,
     /// How the model treated the network's islands, reported with the solve.
     pub(crate) diagnostics: Vec<SolveDiagnostic>,
+    /// The voltage-dependent parts of the bus demand (ZIP constant-current and
+    /// constant-impedance parts, exponential loads), added to `pd`/`qd` at the bus
+    /// voltage: see [`AcNetwork::demand_at`]. Empty unless the AC power flow
+    /// constructors ([`AcNetwork::from_network_pf`], [`AcNetwork::from_pf_instance`])
+    /// met such a load; every other constructor refuses one. `pd`/`qd` then hold
+    /// only the constant-power demand.
+    pub(crate) load_terms: Vec<LoadTerm>,
 }
 
 /// One slack per island: the first of `references` in each island, in order of
@@ -200,6 +208,31 @@ fn extra_reference_diagnostic(bus_ids: &[usize], extra: &[usize]) -> Option<Solv
         ),
         buses: extra.iter().map(|&bus| bus_ids[bus]).collect(),
     })
+}
+
+/// Refuse a network with in-service voltage-dependent (ZIP or exponential) loads
+/// for a `consumer` that holds every load at constant power.
+#[cfg_attr(not(feature = "conic"), allow(dead_code))]
+fn reject_voltage_dependent_loads(raw: &BalancedNetwork, consumer: &str) -> Result<(), String> {
+    let count = raw
+        .loads()
+        .iter()
+        .filter(|load| {
+            load.in_service
+                && !matches!(
+                    load.voltage_model.as_ref(),
+                    None | Some(LoadVoltageModel::ConstantPower)
+                )
+        })
+        .count();
+    if count > 0 {
+        return Err(format!(
+            "network contains {count} active voltage-dependent load(s) (ZIP or exponential); \
+             {consumer} supports constant-power loads only. The AC power flow (acpf) solves \
+             them at the bus voltage"
+        ));
+    }
+    Ok(())
 }
 
 impl AcNetwork {
@@ -331,6 +364,12 @@ impl AcNetwork {
         // Each slack holds its stated reference angle; a designated one holds zero.
         model.va_slacks = slacks.iter().map(|&bus| stated_va[bus]).collect();
         model.slacks = slacks;
+        // The specifications state net injections against each load's stated power,
+        // which `pg`/`qg` above recovered; the loads' voltage dependence comes last.
+        model.attach_voltage_loads(
+            energize(instance.network(), ReferencePolicy::GeneratorHosted)
+                .network(instance.network()),
+        )?;
         Ok(model)
     }
 
@@ -350,22 +389,7 @@ impl AcNetwork {
         let raw = instance.network();
         super::reject_active_svcs(raw)?;
         reject_unsupported_active_elements(raw, HvdcLines::Reject)?;
-        let voltage_dependent_loads = raw
-            .loads()
-            .iter()
-            .filter(|load| {
-                load.in_service
-                    && !matches!(
-                        load.voltage_model.as_ref(),
-                        None | Some(LoadVoltageModel::ConstantPower)
-                    )
-            })
-            .count();
-        if voltage_dependent_loads > 0 {
-            return Err(format!(
-                "network contains {voltage_dependent_loads} active voltage-dependent load(s); SOCWR supports constant-power loads only"
-            ));
-        }
+        reject_voltage_dependent_loads(raw, "the SOCWR relaxation")?;
         let mut assembly = AcOpfAssemblyOptions::default();
         assembly.units = Units::PerUnit;
         assembly.skip_zero_impedance = false;
@@ -516,6 +540,7 @@ impl AcNetwork {
             angle_bound_active: prep.branches.angle_bound_active.clone(),
             has_remote_voltage_control,
             diagnostics,
+            load_terms: Vec::new(),
         })
     }
 
@@ -550,8 +575,84 @@ impl AcNetwork {
     ///
     /// The AC preparation has no HVDC term, so a network with an in-service HVDC
     /// line is rejected here; [`Self::from_pf_instance`] carries such lines.
+    ///
+    /// The conic relaxation and the other consumers of this model hold every load at
+    /// constant power, so a network with an in-service voltage-dependent (ZIP or
+    /// exponential) load is refused here; [`Self::from_network_pf`] carries such
+    /// loads for the AC power flow.
+    #[cfg_attr(not(feature = "conic"), allow(dead_code))]
     pub fn from_network(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
+        reject_voltage_dependent_loads(raw, "the SOCWR relaxation")?;
         Self::from_network_with(raw, HvdcLines::Reject)
+    }
+
+    /// As [`Self::from_network`] for the AC power flow, which solves voltage-dependent
+    /// (ZIP and exponential) loads exactly: see [`Self::attach_voltage_loads`].
+    pub fn from_network_pf(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
+        let energized = energize(raw, ReferencePolicy::GeneratorHosted);
+        let mut model = Self::from_network_with(raw, HvdcLines::Reject)?;
+        model.attach_voltage_loads(energized.network(raw))?;
+        Ok(model)
+    }
+
+    /// Carry `network`'s in-service voltage-dependent loads as voltage-dependent
+    /// demand. The preparation aggregated each load's stated power into `pd`/`qd`;
+    /// this replaces it by the load's constant-power part and records its
+    /// voltage-dependent parts in [`Self::load_terms`]. A network with constant-power
+    /// loads only leaves the model untouched.
+    pub(crate) fn attach_voltage_loads(&mut self, network: &BalancedNetwork) -> Result<(), String> {
+        if super::load_voltage::voltage_dependent(network).is_empty() {
+            return Ok(());
+        }
+        let dense: BTreeMap<usize, usize> = self
+            .bus_ids
+            .iter()
+            .enumerate()
+            .map(|(dense, &id)| (id, dense))
+            .collect();
+        let scale = if network.is_normalized() {
+            1.0
+        } else {
+            1.0 / network.base_mva()
+        };
+        let (shift, terms) = super::load_voltage::attach(network, &dense, scale)?;
+        for (bus, (dp, dq)) in shift {
+            self.pd[bus] += dp;
+            self.qd[bus] += dq;
+        }
+        self.load_terms = terms;
+        self.diagnostics
+            .extend(super::load_voltage::diagnostic(network));
+        Ok(())
+    }
+
+    /// The bus demand at the voltage magnitudes `vm` (per unit): the constant-power
+    /// demand `pd`/`qd` plus every voltage-dependent term at its bus voltage. Equal to
+    /// `(pd, qd)` when every load is constant power.
+    pub(crate) fn demand_at(&self, vm: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        let mut pd = self.pd.clone();
+        let mut qd = self.qd.clone();
+        for term in &self.load_terms {
+            let (value, _) = term.eval(vm[term.bus]);
+            if term.reactive {
+                qd[term.bus] += value;
+            } else {
+                pd[term.bus] += value;
+            }
+        }
+        (pd, qd)
+    }
+
+    /// The active demand at `bus` with every load at its nominal voltage: the
+    /// constant-power part plus each active term's coefficient.
+    pub(crate) fn nominal_pd(&self, bus: usize) -> f64 {
+        self.pd[bus]
+            + self
+                .load_terms
+                .iter()
+                .filter(|t| t.bus == bus && !t.reactive)
+                .map(|t| t.coefficient)
+                .sum::<f64>()
     }
 
     fn from_network_with(raw: &BalancedNetwork, hvdc: HvdcLines) -> Result<AcNetwork, String> {
@@ -565,22 +666,6 @@ impl AcNetwork {
     }
 
     fn build(raw: &BalancedNetwork, hvdc: HvdcLines) -> Result<AcNetwork, String> {
-        let voltage_dependent_loads = raw
-            .loads()
-            .iter()
-            .filter(|load| {
-                load.in_service
-                    && !matches!(
-                        load.voltage_model.as_ref(),
-                        None | Some(LoadVoltageModel::ConstantPower)
-                    )
-            })
-            .count();
-        if voltage_dependent_loads > 0 {
-            return Err(format!(
-                "network contains {voltage_dependent_loads} active voltage-dependent load(s); ACPF/SOCWR support constant-power loads only"
-            ));
-        }
         let has_remote_voltage_control = raw.generators().iter().any(|generator| {
             generator.in_service
                 && generator
@@ -830,6 +915,7 @@ impl AcNetwork {
             angle_bound_active,
             has_remote_voltage_control,
             diagnostics,
+            load_terms: Vec::new(),
         })
     }
 

@@ -1557,27 +1557,14 @@ fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     // The network's own AC model has no HVDC term. With in-service HVDC lines,
     // solve PowerIO's power flow instance, whose bus specifications state each
     // line's transfer as fixed injections.
-    // ZIP and exponential loads at their power at the solved voltages (a fixed
-    // point over constant-power solves; one solve without them).
-    let ((mut acnet, sol), rounds) = super::model::load_voltage::settle(net, |n| {
-        let acnet = if n.hvdc().iter().any(|line| line.in_service) {
-            let instance = AcPfInstance::from_network(n.clone()).map_err(|e| e.to_string())?;
-            super::model::AcNetwork::from_pf_instance(&instance)?
-        } else {
-            super::model::AcNetwork::from_network(n)?
-        };
-        let (acnet, sol) = ac_pf_solved(acnet, req)?;
-        let vm = acnet
-            .bus_ids
-            .iter()
-            .copied()
-            .zip(sol.vm.iter().copied())
-            .collect();
-        Ok(((acnet, sol), vm))
-    })?;
-    acnet
-        .diagnostics
-        .extend(super::model::load_voltage::diagnostic(net, rounds));
+    // ZIP and exponential loads are solved exactly inside the Newton iteration.
+    let acnet = if net.hvdc().iter().any(|line| line.in_service) {
+        let instance = AcPfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
+        super::model::AcNetwork::from_pf_instance(&instance)?
+    } else {
+        super::model::AcNetwork::from_network_pf(net)?
+    };
+    let (acnet, sol) = ac_pf_solved(acnet, req)?;
     ac_pf_assemble(&acnet, &sol, req)
 }
 
@@ -2113,7 +2100,9 @@ fn apply_demand_deltas(
     Ok(())
 }
 
-/// AC analogue of [`apply_demand_deltas`]: active-power demand deltas onto `pd`.
+/// AC analogue of [`apply_demand_deltas`]: active-power demand deltas onto `pd`. At a
+/// bus with a ZIP or exponential load the delta is constant-power demand added beside
+/// it; the sign check reads the bus demand with every load at its nominal voltage.
 #[cfg(feature = "sensitivity")]
 fn apply_demand_deltas_ac(
     acnet: &mut super::model::AcNetwork,
@@ -2122,7 +2111,7 @@ fn apply_demand_deltas_ac(
     let base = acnet.base_mva;
     let idx = KeyIndex::new(&acnet.bus_ids, &acnet.bus_uids, deltas);
     for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
-        if acnet.pd[i] * base + mw < -1e-9 {
+        if acnet.nominal_pd(i) * base + mw < -1e-9 {
             return Err(format!(
                 "demand delta for bus {bus} would make demand negative"
             ));
