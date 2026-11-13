@@ -345,8 +345,11 @@ test('a center-tap transformer (one id, several graph edges) does not break the 
 	const overview = page.getByRole('region', { name: 'Operating point overview' });
 	await expect(overview.getByRole('heading', { name: /^Issues/ })).toBeVisible({ timeout: 60_000 });
 	await page.getByText('Equipment currents and power').click();
-	const equipment = page.getByLabel('Branch result');
-	await expect(equipment.locator('option', { hasText: 't1' })).toHaveCount(1);
+	const find = page.getByRole('combobox', { name: 'Find a bus or equipment' });
+	await find.fill('t1');
+	await expect(page.getByRole('option').filter({ hasText: /^transformer/ })).toHaveCount(1);
+	await find.press('Enter');
+	await expect(page.getByText(/^Equipment t1 \(/)).toBeVisible();
 	await overview.getByRole('button', { name: 'Show diagram' }).click();
 	await expect(page.getByRole('application', { name: 'Schematic diagram' })).toBeVisible();
 	await expect(page.getByText('Internal Error')).toHaveCount(0);

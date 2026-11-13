@@ -601,6 +601,7 @@
 						selectedBus={multi.selectedBusId}
 						selectedEdge={multi.selectedEdgeId}
 						graph={multi.graph}
+						searchIndex={multi.overviewSearch}
 					/>{/if}
 			{:else if !doc || creating}
 				<h3>Save this case</h3>

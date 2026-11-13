@@ -80,6 +80,14 @@ async function noNeutralTypedCase(): Promise<string> {
 	return JSON.stringify(document);
 }
 
+/** Show one bus's terminal results: find it in the results search and take the first match. */
+async function pickBus(scope: Locator, id: string) {
+	const find = scope.getByRole('combobox', { name: 'Find a bus or equipment' });
+	await find.fill(id);
+	await find.press('Enter');
+	await expect(scope.getByText(`Bus result ${id}`)).toBeVisible();
+}
+
 function savedDistributionOptions(scope: Locator | Page) {
 	return scope.getByLabel('Saved study').locator('option').filter({ hasText: 'distribution' });
 }
@@ -194,7 +202,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	await expect(
 		study.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
 	).toHaveText(sourcePQ(source.re / 1000, source.im / 1000));
-	await study.getByLabel('Bus result').selectOption('lb');
+	await pickBus(study, 'lb');
 	await study.getByText('Voltages to neutral', { exact: true }).click();
 	type Terminal = { bus: string; terminal: string; voltage: { re: number; im: number } };
 	const terminals = (result.terminals as Terminal[]).filter((row) => row.bus === 'lb');
@@ -311,7 +319,7 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await expect(threeWireStudy.getByText('Converged', { exact: true })).toBeVisible({
 		timeout: 60_000
 	});
-	await threeWireStudy.getByLabel('Bus result').selectOption('lb');
+	await pickBus(threeWireStudy, 'lb');
 	await expect(threeWireStudy.getByText('Voltages to neutral', { exact: true })).toHaveCount(0);
 });
 
@@ -702,7 +710,7 @@ test('energized-network selection retains excluded islands through solve, CSV an
 		study.getByText('1 load has no voltage source and is absent from solved totals.').first()
 	).toBeVisible();
 	const results = study.getByRole('region', { name: 'Multiconductor power flow results' });
-	await results.getByLabel('Bus result').selectOption('unpowered');
+	await pickBus(results, 'unpowered');
 	await expect(results.getByText('0 terminals at bus unpowered', { exact: true })).toBeVisible();
 	await expect(
 		results.getByRole('table', { name: 'Terminal results', exact: true }).locator('tbody tr')
@@ -742,9 +750,7 @@ test('energized-network selection retains excluded islands through solve, CSV an
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	await page.getByLabel('Saved study').selectOption(savedId!);
 	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
-	await expect(results.getByLabel('Bus result').locator('option[value="unpowered"]')).toHaveCount(
-		1
-	);
+	await pickBus(results, 'unpowered');
 	await study.getByRole('button', { name: 'Solve energized network', exact: true }).click();
 	await expect(
 		study.getByRole('button', { name: 'Solve energized network', exact: true })

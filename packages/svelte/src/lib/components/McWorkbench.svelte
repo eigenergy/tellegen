@@ -277,8 +277,11 @@
 								: 'no limits declared'}</span
 				>
 			</button>
-			<div class="kpi" title="Sum of both into-equipment end powers over active branches">
-				<span class="label">Losses</span>
+			<div
+				class="kpi"
+				title="Lines, switches and transformers: both end powers into the equipment, summed over the energized branches"
+			>
+				<span class="label">Branch losses</span>
 				<span class="value">{quantity(summary.loss.p, 'kW')}</span>
 				<span class="sub">{quantity(summary.loss.q, 'kvar')}</span>
 			</div>

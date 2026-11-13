@@ -1,6 +1,8 @@
 <script lang="ts">
 	import McNetworkScope from './McNetworkScope.svelte';
 	import McModelQualification from './McModelQualification.svelte';
+	import OmniSearch from './OmniSearch.svelte';
+	import { buildSearchIndex, graphInputs, type SearchIndex } from '../diagram/index.js';
 	import {
 		mcPfResultDetail,
 		summarizeMcPfResult,
@@ -29,7 +31,8 @@
 		elapsedMs,
 		selectedBus,
 		selectedEdge,
-		graph
+		graph,
+		searchIndex
 	}: {
 		/** A live session's summary, or a stored full result. */
 		result: McPfSummary | McPfResult;
@@ -42,6 +45,9 @@
 		selectedBus: string | null;
 		selectedEdge: string | null;
 		graph: DistGraph | null;
+		/** The case's search index (`MulticonductorCase.overviewSearch`); built from `graph` when
+		 * omitted. */
+		searchIndex?: SearchIndex | null;
 	} = $props();
 	const summary = $derived('terminals' in result ? summarizeMcPfResult(result) : result);
 	const load = $derived.by(() => {
@@ -52,16 +58,18 @@
 	});
 	let busChoice = $state('');
 	let edgeChoice = $state('');
-	/** One entry per equipment id. A multi-winding transformer projects to several graph edges
-	 * that share its id (one per winding pair), so the edges are grouped by id. */
-	const equipmentOptions = $derived.by(() => {
-		const byId = new Map<string, string[]>();
-		for (const edge of graph?.edges ?? []) {
-			const ends = byId.get(edge.id) ?? [];
-			ends.push(`${edge.from} - ${edge.to}`);
-			byId.set(edge.id, ends);
-		}
-		return [...byId].map(([id, ends]) => ({ id, label: `${ends.join(', ')}, ${id}` }));
+	/** The search over buses and equipment: the case's own when given, else built from `graph`.
+	 * A multi-winding transformer is one entry, at its first edge. */
+	const index = $derived(
+		searchIndex ?? (graph ? buildSearchIndex(graphInputs(graph).entities) : null)
+	);
+	/** The selected equipment with the buses its edges join (a multi-winding transformer has
+	 * several). */
+	const equipmentLabel = $derived.by(() => {
+		const ends = (graph?.edges ?? [])
+			.filter((edge) => edge.id === edgeId)
+			.map((edge) => `${edge.from}–${edge.to}`);
+		return ends.length ? `${edgeId} (${ends.join(', ')})` : edgeId;
 	});
 	const busId = $derived(
 		selectedBus ??
@@ -171,23 +179,37 @@
 				{quantity(sourcePower.re / 1000, 'kW')} / {quantity(sourcePower.im / 1000, 'kvar')}
 			</dd>
 		</div>
-		<div>
+		<div title="V·conj(I) summed over the ports of lines, switches, transformers and shunts">
 			<dt>Passive loss</dt>
 			<dd>{quantity(passiveLoss / 1000, 'kW')}</dd>
 		</div>
 	</dl>
-	<label class="search"
-		>Bus result<select
-			value={busId}
-			onchange={(event) => {
-				busChoice = event.currentTarget.value;
-				selectedBus = null;
-				page = 0;
-			}}
-			>{#each graph?.buses ?? [] as bus (bus.id)}<option value={bus.id}>{bus.id}</option
-				>{/each}</select
-		></label
-	>
+	<p class="convention">
+		Source power is positive into the network; equipment P and Q are positive into the equipment.
+		Passive loss includes shunts, so it can exceed the overview's branch losses.
+	</p>
+	<div class="search">
+		<span class="current"
+			>Bus result <strong class="mono">{busId || MISSING}</strong>{#if edgeId}{' · '}equipment
+				<strong class="mono">{edgeId}</strong>{/if}</span
+		>
+		{#if index}<OmniSearch
+				{index}
+				placeholder="Find a bus or equipment"
+				onselect={(m) => {
+					if (!graph) return;
+					if (m.kind === 'bus') {
+						busChoice = graph.buses[m.index].id;
+						selectedBus = null;
+						page = 0;
+					} else if (m.kind === 'branch') {
+						edgeChoice = graph.edges[m.index].id;
+						selectedEdge = null;
+						portPage = 0;
+					}
+				}}
+			/>{/if}
+	</div>
 	{#if excludedIslands.some((island) => island.buses.includes(busId ?? ''))}
 		<p role="status">{EXCLUDED_ISLAND_BUS}</p>
 	{/if}
@@ -259,19 +281,16 @@
 	{/if}
 	<details>
 		<summary>Equipment currents and power</summary>
-		<label class="search"
-			>Branch result<select
-				value={edgeId}
-				onchange={(event) => {
-					edgeChoice = event.currentTarget.value;
-					selectedEdge = null;
-					portPage = 0;
-				}}
-				><option value="">All equipment</option>{#each equipmentOptions as option, i (i)}<option
-						value={option.id}>{option.label}</option
-					>{/each}</select
-			></label
-		>
+		<p class="equipment-scope">
+			{#if edgeId}Equipment <strong class="mono">{equipmentLabel}</strong>
+				<button
+					onclick={() => {
+						edgeChoice = '';
+						selectedEdge = null;
+						portPage = 0;
+					}}>Show all equipment</button
+				>{:else}All equipment; find one above to narrow the table.{/if}
+		</p>
 		<p>Current enters the named equipment at each bus terminal.</p>
 		<!-- Scrollable result tables accept keyboard navigation. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -382,6 +401,17 @@
 	p {
 		color: var(--text-secondary);
 	}
+	.current {
+		color: var(--text-secondary);
+	}
+	.current strong {
+		color: var(--ink);
+		font-weight: 500;
+	}
+	.equipment-scope button {
+		margin-left: 6px;
+		padding: 2px 6px;
+	}
 	.search {
 		display: flex;
 		flex-direction: column;
@@ -389,7 +419,6 @@
 		margin: 12px 0 8px;
 	}
 	input,
-	select,
 	button {
 		font: inherit;
 		color: var(--ink);
@@ -405,8 +434,7 @@
 		opacity: 0.4;
 		cursor: default;
 	}
-	input,
-	select {
+	input {
 		width: 100%;
 		box-sizing: border-box;
 	}
