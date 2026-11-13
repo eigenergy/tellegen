@@ -1,4 +1,5 @@
 import { settingsCatalog, type ResolvedSettings } from '@tellegen/engine';
+import { readModuleText } from './module-text.js';
 
 /** Selected next-run settings and accepted-result provenance have separate lives. */
 export class CaseSettings {
@@ -82,7 +83,7 @@ export class UserPreferences {
 }
 
 /** The PowerIO module extension in which a saved Study records its settings. */
-export const RECORDED_SETTINGS_EXTENSION = 'tellegen.calculation_settings';
+export { RECORDED_SETTINGS_EXTENSION } from './module-text.js';
 
 /** Calculation settings a saved module records, read for this engine. */
 export interface RecordedCalculationSettings {
@@ -103,14 +104,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * A record from another engine version still opens: options this engine does not
  * know are dropped and listed in `ignored`, as the Rust Study does. */
 export function recordedCalculationSettings(input?: string): RecordedCalculationSettings | null {
-	if (!input) return null;
-	let value: unknown;
-	try {
-		value = JSON.parse(input)?.extensions?.[RECORDED_SETTINGS_EXTENSION];
-	} catch {
-		/* Input validation remains the engine's responsibility. */
-		return null;
-	}
+	// Text that does not parse reads as no record: input validation remains
+	// the engine's responsibility. The read is shared with the other reads of
+	// the same text, so it is a copy that callers may keep.
+	const recorded = readModuleText(input).recordedSettings;
+	const value: unknown = recorded === undefined ? undefined : structuredClone(recorded);
 	if (
 		!isRecord(value) ||
 		value.version !== 1 ||
