@@ -12,18 +12,20 @@
 	import { PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN } from '$app/env/public';
 
 	let { children } = $props();
+	// Chrome and Edge run separate WebMCP trials, each with its own token, so the
+	// setting may hold several, separated by commas or whitespace (tokens are base64).
 	// Svelte's meta typings predate origin trials, so the attributes go through a spread.
-	const originTrial: Record<string, string> = {
-		'http-equiv': 'origin-trial',
-		content: PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN
-	};
+	const originTrials: Record<string, string>[] = (PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN ?? '')
+		.split(/[\s,]+/)
+		.filter(Boolean)
+		.map((content) => ({ 'http-equiv': 'origin-trial', content }));
 </script>
 
 <svelte:head>
-	{#if PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN}
-		<!-- Enables WebMCP (document.modelContext) for visitors during the browser origin trial. -->
+	<!-- Enables WebMCP (document.modelContext) for visitors during the browser origin trials. -->
+	{#each originTrials as originTrial (originTrial.content)}
 		<meta {...originTrial} />
-	{/if}
+	{/each}
 </svelte:head>
 
 <Analytics />
