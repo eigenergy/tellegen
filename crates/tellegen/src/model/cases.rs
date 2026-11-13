@@ -162,7 +162,7 @@ pub(crate) fn parse_case9_ac() -> AcNetwork {
 }
 
 /// Parse and build the shared 3-bus fixture as an [`AcNetwork`].
-#[cfg(feature = "conic")]
+#[cfg(feature = "sensitivity")]
 pub(crate) fn parse_case3_ac() -> AcNetwork {
     let net = crate::model::parse_matpower(CASE3).expect("parse case3");
     AcNetwork::from_network(&net).expect("build AcNetwork")
