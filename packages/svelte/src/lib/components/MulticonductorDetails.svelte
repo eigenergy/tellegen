@@ -55,15 +55,14 @@
 			{#if mc.distribution.source_url}<a
 					href={mc.distribution.source_url}
 					target="_blank"
-					rel="noreferrer">Dataset and attribution</a
+					rel="noreferrer">Source data</a
 				>{/if}
 		</p>
 	{/if}
 	{#if s}
-		<p class="tag">Distribution case</p>
 		<details class="case-details">
 			<summary
-				>{s.n_bus} buses, {s.n_edge}
+				>{s.n_bus.toLocaleString('en-US')} buses, {s.n_edge.toLocaleString('en-US')}
 				{s.n_edge === 1 ? 'branch' : 'branches'}</summary
 			>
 			<dl>
@@ -301,13 +300,6 @@
 		margin: 0 0 8px;
 		font-size: 12px;
 		font-weight: 600;
-	}
-
-	.tag {
-		margin: 0 0 10px;
-		font-size: 12px;
-		color: var(--text-secondary);
-		letter-spacing: 0;
 	}
 
 	dl {
