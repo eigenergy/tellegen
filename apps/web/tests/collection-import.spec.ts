@@ -90,10 +90,10 @@ test.describe('PowerIO collection build', () => {
 		expect(source.includes(Buffer.from(day))).toBe(false);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 		await expect(
-			page.getByRole('button', { name: /study.zip \/ masters\/day.dss Multiconductor/ })
+			page.getByRole('button', { name: /study.zip \/ masters\/day.dss Distribution/ })
 		).toBeVisible();
 		await expect(
-			page.getByRole('button', { name: /study.zip \/ masters\/night.dss Multiconductor/ })
+			page.getByRole('button', { name: /study.zip \/ masters\/night.dss Distribution/ })
 		).toBeVisible();
 	});
 
@@ -228,9 +228,7 @@ test.describe('PowerIO collection build', () => {
 		).toContainText('generator or IBR injections');
 		await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-		await page
-			.getByRole('button', { name: /snapshots.zip \/ four-wire.dss Multiconductor/ })
-			.click();
+		await page.getByRole('button', { name: /snapshots.zip \/ four-wire.dss Distribution/ }).click();
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
 		const study = page.getByRole('region', { name: 'Study workspace' });
 		await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled();
