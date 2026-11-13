@@ -62,6 +62,7 @@
     "check": "npm run types:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
     "test": "vitest run",
     "test:import": "node scripts/import-smoke.mjs",
+    "bench:synth-handoff": "node scripts/bench-synth-handoff.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },
   "devDependencies": {
