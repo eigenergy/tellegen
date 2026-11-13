@@ -669,3 +669,41 @@ fn a_collapsed_voltage_past_loadability_is_refused_for_every_exponent() {
     let v = two_bus_voltage(&|v| 3.0 * v, &|v| 0.9 * v);
     assert!((sol.vm[dense(&model, 2)] - v).abs() < 1e-9);
 }
+
+/// A voltage-dependent load on a de-energized island draws nothing, so the
+/// diagnostic neither counts it nor names its bus.
+#[test]
+fn a_zip_load_on_a_deenergized_island_is_not_reported() {
+    let text = "function mpc = iso\nmpc.version = '2';\nmpc.baseMVA = 100;\nmpc.bus = [\n \
+         1 3 0 0 0 0 1 1 0 230 1 1.1 0.9;\n \
+         2 1 50 10 0 0 1 1 0 230 1 1.1 0.9;\n \
+         3 1 30 5 0 0 1 1 0 230 1 1.1 0.9;\n];\nmpc.gen = [\n \
+         1 0 0 300 -300 1.0 100 1 900 0 0 0 0 0 0 0 0 0 0 0 0;\n];\nmpc.branch = [\n \
+         1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;\n];\nmpc.gencost = [\n 2 0 0 3 0 10 0;\n];\n";
+    let net = crate::model::parse_matpower(text).expect("parse case");
+    let zip_at = |net: BalancedNetwork, bus: usize| {
+        with_model(net, bus, zip([10.0, 10.0, 10.0], [2.0, 2.0, 1.0], None))
+    };
+    let study = |net: &BalancedNetwork| {
+        Study::new(
+            &module_json(PioValue::BalancedNetwork(net.clone())),
+            Problem::AcPf,
+        )
+        .expect("study")
+    };
+    let note = |net: &BalancedNetwork| {
+        study(net)
+            .solution()
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "load_voltage_dependent")
+            .cloned()
+    };
+    // Only the isolated bus 3 has a ZIP load: nothing to report.
+    assert!(note(&zip_at(net.clone(), 3)).is_none());
+    // With an energized ZIP load too, only that one is counted.
+    let both = zip_at(zip_at(net, 3), 2);
+    let d = note(&both).expect("the energized ZIP load is reported");
+    assert_eq!(d.buses, vec![2]);
+    assert!(d.message.starts_with("1 "), "{}", d.message);
+}

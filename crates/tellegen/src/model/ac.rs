@@ -622,7 +622,7 @@ impl AcNetwork {
         }
         self.load_terms = terms;
         self.diagnostics
-            .extend(super::load_voltage::diagnostic(network));
+            .extend(super::load_voltage::diagnostic(network, &dense));
         Ok(())
     }
 

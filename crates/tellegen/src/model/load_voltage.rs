@@ -311,8 +311,17 @@ pub(crate) fn attach(
 }
 
 /// What a solve with voltage-dependent loads reports about them.
-pub(crate) fn diagnostic(network: &BalancedNetwork) -> Option<SolveDiagnostic> {
-    let dependent = voltage_dependent(network);
+///
+/// Only loads on buses the solved model contains (`dense`: bus id to model
+/// index) are counted; a load on a de-energized island draws nothing.
+pub(crate) fn diagnostic(
+    network: &BalancedNetwork,
+    dense: &BTreeMap<usize, usize>,
+) -> Option<SolveDiagnostic> {
+    let dependent: Vec<usize> = voltage_dependent(network)
+        .into_iter()
+        .filter(|&i| dense.contains_key(&network.loads()[i].bus.0))
+        .collect();
     if dependent.is_empty() {
         return None;
     }
