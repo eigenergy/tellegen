@@ -1005,3 +1005,93 @@ pub(crate) fn gov_guess(gov: &Governor, tm: f64) -> Vec<f64> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use powerio::LoadVoltageModel;
+
+    use super::*;
+    use crate::rms::{LoadModel, RmsRequest, RmsSimulation};
+
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/smib.rs"
+    ));
+
+    /// A single-machine case from WECC 240 with a ZIP load at the unit's bus.
+    fn smib_with_zip_load() -> (BalancedNetwork, powerio::DynamicCase) {
+        let case = &wecc240_smib_cases()[0];
+        let raw = with_load(
+            &case.raw,
+            "102,'1 ',1,   1,   1,    40.000,    10.000,    30.000,     5.000,    20.000,     4.000,   1,1",
+        );
+        let src = powerio::Source::from_memory("case.raw", raw.into_bytes()).unwrap();
+        let module = powerio::parse(src).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        (net.clone(), powerio::parse_dyr(&case.dyr).unwrap())
+    }
+
+    /// The RMS initialization's power flow and the static AC power flow find
+    /// the same operating point with a ZIP load, and at it the load draws its
+    /// ZIP power at the solved voltage.
+    #[test]
+    fn a_zip_load_initializes_at_the_static_operating_point() {
+        let (net, _) = smib_with_zip_load();
+        assert!(matches!(
+            net.loads()[0].voltage_model,
+            Some(LoadVoltageModel::Zip { .. })
+        ));
+        let (ac, pf, terms) = power_flow(&net).unwrap();
+        assert!(terms > 0);
+        let mut static_ac = AcNetwork::from_network_pf(&net).unwrap();
+        // The static flow enforces reactive limits, the initialization holds
+        // the case's setpoints (this unit's limit binds with the load); the
+        // loads are what is compared here.
+        static_ac.qmin.iter_mut().for_each(|q| *q = f64::NEG_INFINITY);
+        static_ac.qmax.iter_mut().for_each(|q| *q = f64::INFINITY);
+        let reference = ac_pf_with_start(&AcPolar, &static_ac, AcStart::Case).unwrap();
+        for b in 0..ac.n {
+            assert!(
+                (pf.vm[b] - reference.vm[b]).abs() < 1e-8
+                    && (pf.va[b] - reference.va[b]).abs() < 1e-8,
+                "bus {}: {} {} vs {} {}",
+                ac.bus_ids[b],
+                pf.vm[b],
+                pf.va[b],
+                reference.vm[b],
+                reference.va[b]
+            );
+        }
+        let k = ac.bus_ids.iter().position(|&b| b == 102).unwrap();
+        let v = pf.vm[k];
+        let (pd, qd) = ac.demand_at(&pf.vm);
+        let base = net.base_mva();
+        let p = (40.0 + 30.0 * v + 20.0 * v * v) / base;
+        // PSS/E states YQ positive for a capacitive load: PowerIO reads it as
+        // a negative constant-impedance demand.
+        let q = (10.0 + 5.0 * v - 4.0 * v * v) / base;
+        assert!((pd[k] - p).abs() < 1e-10, "{} vs {p}", pd[k]);
+        assert!((qd[k] - q).abs() < 1e-10, "{} vs {q}", qd[k]);
+    }
+
+    /// The RMS simulation starts at rest from that operating point.
+    #[test]
+    fn rms_starts_at_rest_with_a_zip_load() {
+        let (net, dyr) = smib_with_zip_load();
+        let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 1.0,
+                ..RmsRequest::default()
+            })
+            .unwrap();
+        assert!(
+            r.notes.iter().any(|n| n.contains("voltage-dependent")),
+            "{:?}",
+            r.notes
+        );
+        let w = &r.channels["omega:102"];
+        assert!(w.iter().all(|x| (x - 1.0).abs() < 1e-8), "not at rest");
+    }
+}
