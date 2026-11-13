@@ -40,7 +40,7 @@ fn solve(args: &[&str], input: &str) -> Value {
     serde_json::from_str(&stdout).unwrap()
 }
 
-const PROFILE_PHASES: [&str; 8] = [
+const PROFILE_PHASES: [&str; 9] = [
     "parse_ms",
     "prepare_ms",
     "factor_ms",
@@ -49,6 +49,7 @@ const PROFILE_PHASES: [&str; 8] = [
     "linear_solve_ms",
     "summary_ms",
     "output_ms",
+    "serialize_ms",
 ];
 
 #[test]
@@ -88,13 +89,31 @@ fn summary_and_tables_are_compact_and_deterministic() {
         );
         assert!(summary.get("terminals").is_none() && summary.get("profile").is_none());
 
-        let tables = solve(&[command, r#"{"output":"tables","damping":1.0}"#], input);
-        assert_eq!(tables["summary"]["converged"], true);
+        let tables_args = [command, r#"{"output":"tables","damping":1.0}"#];
+        let (ok, first, stderr) = run(&tables_args, input);
+        assert!(ok, "{command} tables failed: {stderr}");
+        let (_, second, _) = run(&tables_args, input);
+        assert_eq!(first, second, "{command} tables are not deterministic");
+        let tables: Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(tables["summary"], summary, "{command} tables summary");
         let columns = &tables["tables"];
-        assert_eq!(
-            columns["terminal_voltage"].as_array().unwrap().len(),
-            2 * full["terminals"].as_array().unwrap().len()
-        );
+        let terminals = full["terminals"].as_array().unwrap();
+        let voltage = columns["terminal_voltage"].as_array().unwrap();
+        assert_eq!(voltage.len(), 2 * terminals.len());
+        // Row for row in the full result's order, complex values as [re, im].
+        for (row, terminal) in [0, terminals.len() - 1].map(|row| (row, &terminals[row])) {
+            assert_eq!(
+                voltage[2 * row],
+                terminal["voltage"]["re"],
+                "{command} row {row}"
+            );
+            assert_eq!(
+                voltage[2 * row + 1],
+                terminal["voltage"]["im"],
+                "{command} row {row}"
+            );
+        }
+        assert_eq!(columns["iterations"], full["iterations"]);
 
         let profiled = solve(&[command, r#"{"output":"summary","profile":true}"#], input);
         assert!(profiled["profile"]["total_ms"].as_f64().unwrap() > 0.0);
@@ -108,8 +127,10 @@ fn view_keys_are_validated() {
         r#"{"profile":"yes"}"#,
         r#"{"not_an_option":1}"#,
     ] {
-        let (ok, _, stderr) = run(&["solve-mc", options], MODULE);
-        assert!(!ok, "{options} was accepted");
-        assert!(!stderr.is_empty());
+        for (command, input) in [("solve-mc", MODULE), ("solve-mc-bmopf", BMOPF)] {
+            let (ok, _, stderr) = run(&[command, options], input);
+            assert!(!ok, "{command} accepted {options}");
+            assert!(!stderr.is_empty());
+        }
     }
 }

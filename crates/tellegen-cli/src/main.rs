@@ -282,37 +282,59 @@ fn solve_mc_command(
     }
 }
 
-#[derive(Serialize)]
+/// The `"tables"` view: the summary and the columnar result tables.
+#[derive(Serialize, JsonSchema)]
 struct McTablesView<'a> {
     summary: &'a tellegen::McPfSummary,
     tables: tellegen::McPfResultTables,
 }
 
+/// The `profile` object a profiled view carries: the session's solve phases
+/// plus the two output phases the CLI times itself.
+#[derive(Serialize, Deserialize, JsonSchema)]
+struct McSolveProfile {
+    #[serde(flatten)]
+    solve: tellegen::McPfProfile,
+    /// Milliseconds building the printed view (the full result, the summary
+    /// or the tables) from the solved session.
+    output_ms: f64,
+    /// Milliseconds writing that view as JSON text.
+    serialize_ms: f64,
+}
+
 /// Serialize `view`, adding the solve profile as a `profile` field when one
-/// was requested. `output_ms` is the time since `profile` was taken, which is
-/// building `view`; writing the JSON text is not included.
+/// was requested. `output_ms` is the time from `profile` being taken to the
+/// start of serialization, which is building `view`; `serialize_ms` is the
+/// time spent writing `view` as JSON text. The view's bytes are the same with
+/// or without the profile.
 fn with_profile<T: Serialize>(
     view: &T,
     profile: Option<(tellegen::McPfProfile, std::time::Instant)>,
 ) -> Result<String, String> {
-    #[derive(Serialize)]
-    struct Profile {
-        #[serde(flatten)]
-        solve: tellegen::McPfProfile,
-        output_ms: f64,
-    }
-    #[derive(Serialize)]
-    struct Profiled<'a, T> {
-        #[serde(flatten)]
-        view: &'a T,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        profile: Option<Profile>,
-    }
-    let profile = profile.map(|(solve, started)| Profile {
+    let Some((solve, started)) = profile else {
+        return serde_json::to_string(view).map_err(|e| e.to_string());
+    };
+    let output_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let serializing = std::time::Instant::now();
+    let mut text = serde_json::to_string(view).map_err(|e| e.to_string())?;
+    let serialize_ms = serializing.elapsed().as_secs_f64() * 1_000.0;
+    let profile = serde_json::to_string(&McSolveProfile {
         solve,
-        output_ms: started.elapsed().as_secs_f64() * 1_000.0,
-    });
-    serde_json::to_string(&Profiled { view, profile }).map_err(|e| e.to_string())
+        output_ms,
+        serialize_ms,
+    })
+    .map_err(|e| e.to_string())?;
+    // Every view is a JSON object: add `profile` as its last field.
+    if text.len() < 2 || !text.starts_with('{') || text.pop() != Some('}') {
+        return Err("solve-mc view is not a JSON object".to_owned());
+    }
+    if text.len() > 1 {
+        text.push(',');
+    }
+    text.push_str("\"profile\":");
+    text.push_str(&profile);
+    text.push('}');
+    Ok(text)
 }
 
 /// The solve request named by the first argument: `{}` when empty, the
@@ -530,6 +552,8 @@ fn describe_value() -> Result<serde_json::Value, String> {
             "mc_pf_summary": schemars::schema_for!(tellegen::McPfSummary),
             "mc_pf_result_tables": schemars::schema_for!(tellegen::McPfResultTables),
             "mc_pf_profile": schemars::schema_for!(tellegen::McPfProfile),
+            "mc_pf_tables_view": schemars::schema_for!(McTablesView<'static>),
+            "mc_pf_solve_profile": schemars::schema_for!(McSolveProfile),
             "study_bundle": schemars::schema_for!(tellegen::document::StudyBundle),
             "study_create": schemars::schema_for!(tellegen::study_ops::CreateStudy),
             "study_request": schemars::schema_for!(tellegen::study_ops::StudyRequest),
@@ -702,6 +726,60 @@ mpc.gencost = [
                 .type_name(),
             "powerio.DcOpfSolution"
         );
+    }
+
+    /// Every key of `value` is a property its schema lists, and every
+    /// property the schema requires is present.
+    fn assert_object_matches_schema(value: &serde_json::Value, schema: &serde_json::Value) {
+        let keys = value.as_object().expect("object");
+        let properties = schema["properties"].as_object().expect("schema properties");
+        for key in keys.keys() {
+            assert!(properties.contains_key(key), "{key} is not in the schema");
+        }
+        for required in schema["required"].as_array().expect("required list") {
+            let required = required.as_str().unwrap();
+            assert!(keys.contains_key(required), "missing required {required}");
+        }
+    }
+
+    #[test]
+    fn mc_views_match_their_named_schemas() {
+        const MODULE: &str = include_str!(
+            "../../../apps/web/tests/fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json"
+        );
+        let schemas = describe_value().expect("describe output")["schemas"].clone();
+        let solve = |output: McOutput| -> serde_json::Value {
+            let text = solve_mc_command(
+                false,
+                MODULE,
+                tellegen::McPfOptions::default(),
+                McOutputView {
+                    output,
+                    profile: true,
+                },
+            )
+            .expect("solve-mc view");
+            serde_json::from_str(&text).expect("view JSON")
+        };
+
+        let mut tables = solve(McOutput::Tables);
+        let profile = tables.as_object_mut().unwrap().remove("profile").unwrap();
+        assert_object_matches_schema(&profile, &schemas["mc_pf_solve_profile"]);
+        assert_eq!(
+            profile.as_object().unwrap().len(),
+            schemas["mc_pf_solve_profile"]["properties"]
+                .as_object()
+                .unwrap()
+                .len()
+        );
+        let _: McSolveProfile = serde_json::from_value(profile).expect("typed profile");
+        assert_object_matches_schema(&tables, &schemas["mc_pf_tables_view"]);
+        assert_object_matches_schema(&tables["tables"], &schemas["mc_pf_result_tables"]);
+        assert_object_matches_schema(&tables["summary"], &schemas["mc_pf_summary"]);
+
+        let mut summary = solve(McOutput::Summary);
+        summary.as_object_mut().unwrap().remove("profile").unwrap();
+        let _: tellegen::McPfSummary = serde_json::from_value(summary).expect("typed summary");
     }
 
     #[test]
