@@ -19,6 +19,10 @@ const POWERIO_PACKAGES = new Set([
   "powerio-tnd",
   "powerio-tx",
 ]);
+// Linked only by some PowerIO releases (0.12 adds it); checked when present.
+const OPTIONAL_POWERIO_PACKAGES = new Set(["powerio-archive"]);
+// PowerIO 0.12 stores the pio-ir version as its release string.
+const PIO_IR_VERSION = /^0\.12\.(?:0|[1-9][0-9]*)$/;
 const EXPECTED_PREPARATION_FAILURES = new Map([
   [
     "nonconvex_piecewise_generator_cost",
@@ -384,9 +388,10 @@ export function validatePlanResponse(response, request) {
   }
   if (
     response.solution_module.schema !== "pio-ir" ||
-    response.solution_module.version !== 2
+    typeof response.solution_module.version !== "string" ||
+    !PIO_IR_VERSION.test(response.solution_module.version)
   ) {
-    fail("solution_module is not pio-ir generation 2");
+    fail("solution_module is not PowerIO 0.12 pio-ir");
   }
   if (response.solution_module.value?.type !== "powerio.DcOpfSolution") {
     fail("solution_module does not hold powerio.DcOpfSolution");
@@ -395,13 +400,16 @@ export function validatePlanResponse(response, request) {
 }
 
 export function resolvePowerioProvenance(packages, releases) {
-  if (packages.length !== POWERIO_PACKAGES.size) {
+  const names = new Set(packages.map((pkg) => pkg.name));
+  if ([...POWERIO_PACKAGES].some((name) => !names.has(name))) {
     fail("cargo metadata does not contain the complete PowerIO dependency set");
   }
-  const names = new Set(packages.map((pkg) => pkg.name));
   if (
-    names.size !== POWERIO_PACKAGES.size ||
-    [...POWERIO_PACKAGES].some((name) => !names.has(name))
+    names.size !== packages.length ||
+    [...names].some(
+      (name) =>
+        !POWERIO_PACKAGES.has(name) && !OPTIONAL_POWERIO_PACKAGES.has(name),
+    )
   ) {
     fail("cargo metadata does not contain each PowerIO component exactly once");
   }
@@ -487,8 +495,9 @@ function exactRevisions(repoRoot) {
     }),
     "cargo metadata",
   );
-  const packages = metadata.packages.filter((pkg) =>
-    POWERIO_PACKAGES.has(pkg.name),
+  const packages = metadata.packages.filter(
+    (pkg) =>
+      POWERIO_PACKAGES.has(pkg.name) || OPTIONAL_POWERIO_PACKAGES.has(pkg.name),
   );
   const releases = parseJson(
     readFileSync(

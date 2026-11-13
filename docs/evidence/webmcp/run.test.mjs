@@ -59,7 +59,7 @@ function validPlanResponse() {
     },
     solution_module: {
       schema: "pio-ir",
-      version: 2,
+      version: "0.12.0",
       value: { type: "powerio.DcOpfSolution" },
     },
   };
@@ -172,6 +172,22 @@ test("plan response accounts for the baseline and every nonempty trial", () => {
   );
 });
 
+test("solution module must be PowerIO 0.12 pio-ir", () => {
+  for (const version of ["0.12.0", "0.12.3"]) {
+    const response = validPlanResponse();
+    response.solution_module.version = version;
+    assert.equal(validatePlanResponse(response, cats.request), response);
+  }
+  for (const version of [2, "2", "0.11.11", "0.13.0", "0.12.0-rc.1"]) {
+    const response = validPlanResponse();
+    response.solution_module.version = version;
+    assert.throws(
+      () => validatePlanResponse(response, cats.request),
+      /not PowerIO 0\.12 pio-ir/,
+    );
+  }
+});
+
 test("proposal and trial changes must use request candidate identities", () => {
   const unknownProposal = validPlanResponse();
   unknownProposal.plan.proposal[0].branch = "branches:999999";
@@ -265,9 +281,10 @@ test("the JSON Schemas parse and name the checked in formats", async () => {
     "tellegen.webmcp-challenge-result/2",
   );
   assert.deepEqual(resultSchema.properties.status.enum, ["success", "failure"]);
-  assert.deepEqual(resultSchema.properties.solution.properties.version, {
-    const: 2,
-  });
+  const version = resultSchema.properties.solution.properties.version;
+  assert.equal(version.type, "string");
+  assert.ok(new RegExp(version.pattern).test("0.12.0"));
+  assert.ok(!new RegExp(version.pattern).test("0.11.0"));
 
   const releases = JSON.parse(
     await readFile(new URL("./powerio-releases.json", import.meta.url), "utf8"),
@@ -279,7 +296,7 @@ test("the JSON Schemas parse and name the checked in formats", async () => {
 test("solution evidence is compact and independent of object key order", () => {
   const first = {
     schema: "pio-ir",
-    version: 2,
+    version: "0.12.0",
     value: {
       type: "powerio.DcOpfSolution",
       data: {
@@ -298,7 +315,7 @@ test("solution evidence is compact and independent of object key order", () => {
       },
       type: "powerio.DcOpfSolution",
     },
-    version: 2,
+    version: "0.12.0",
     schema: "pio-ir",
   };
   assert.deepEqual(
@@ -322,7 +339,7 @@ test("PowerIO provenance accepts one exact Git revision", () => {
   const revision = "a".repeat(40);
   const packages = powerioNames.map((name) => ({
     name,
-    version: "0.11.0",
+    version: "0.12.0",
     source: `git+https://github.com/eigenergy/powerio.git?rev=${revision}#${revision}`,
     checksum: null,
   }));
@@ -339,19 +356,53 @@ test("PowerIO provenance ties a checksummed registry release to its commit", () 
   const revision = "b".repeat(40);
   const packages = powerioNames.map((name, index) => ({
     name,
-    version: "0.11.0",
+    version: "0.12.0",
     source: "registry+https://github.com/rust-lang/crates.io-index",
     checksum: index.toString(16).repeat(64),
   }));
   const resolved = resolvePowerioProvenance(packages, {
     schema: "tellegen.powerio-release-revisions/1",
-    releases: [{ version: "0.11.0", tag: "v0.11.0", revision }],
+    releases: [{ version: "0.12.0", tag: "v0.12.0", revision }],
   });
   assert.equal(resolved.powerio_revision, revision);
-  assert.equal(resolved.powerio_release_tag, "v0.11.0");
+  assert.equal(resolved.powerio_release_tag, "v0.12.0");
   assert.equal(
     Object.keys(resolved.powerio_lock_checksums).length,
     powerioNames.length,
+  );
+});
+
+test("PowerIO provenance checks the optional archive crate when linked", () => {
+  const revision = "c".repeat(40);
+  const source = `git+https://github.com/eigenergy/powerio.git?rev=${revision}#${revision}`;
+  const releases = {
+    schema: "tellegen.powerio-release-revisions/1",
+    releases: [],
+  };
+  const packages = [...powerioNames, "powerio-archive"].map((name) => ({
+    name,
+    version: "0.12.0",
+    source,
+    checksum: null,
+  }));
+  assert.equal(
+    resolvePowerioProvenance(packages, releases).powerio_revision,
+    revision,
+  );
+  const stale = packages.map((pkg) =>
+    pkg.name === "powerio-archive" ? { ...pkg, version: "0.11.0" } : pkg,
+  );
+  assert.throws(
+    () => resolvePowerioProvenance(stale, releases),
+    /one source and version/,
+  );
+  assert.throws(
+    () => resolvePowerioProvenance([...packages, packages[8]], releases),
+    /exactly once/,
+  );
+  assert.throws(
+    () => resolvePowerioProvenance(packages.slice(1), releases),
+    /complete PowerIO dependency set/,
   );
 });
 
