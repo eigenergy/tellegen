@@ -19,6 +19,24 @@ function format(value: number, digits = 2): string {
 	return value.toLocaleString('en-US', { maximumFractionDigits: digits });
 }
 
+/** Decimals for a value of this size: fewer as it grows, so a change reads at
+ * a glance. */
+function decimals(magnitude: number): number {
+	return magnitude >= 10_000 ? 0 : magnitude >= 1_000 ? 1 : 2;
+}
+
+/** A before → after pair at one precision, chosen from the larger magnitude,
+ * so `626.95 → 876.5` reads `626.95 → 876.50`. */
+export function formatChange(from: number, to: number): string {
+	const digits = decimals(Math.max(Math.abs(from), Math.abs(to)));
+	const fixed = (value: number) =>
+		value.toLocaleString('en-US', {
+			minimumFractionDigits: digits,
+			maximumFractionDigits: digits
+		});
+	return `${fixed(from)} → ${fixed(to)}`;
+}
+
 function signed(value: number): string {
 	return `${value > 0 ? '+' : value < 0 ? '−' : ''}${format(Math.abs(value))}`;
 }
@@ -103,7 +121,7 @@ export function activitySummary(event: Finished): string {
 			const to = number(after?.objective);
 			const lines = number(after?.binding_branches);
 			const parts: string[] = [];
-			if (from !== null && to !== null) parts.push(`objective ${format(from)} → ${format(to)}`);
+			if (from !== null && to !== null) parts.push(`objective ${formatChange(from, to)}`);
 			if (lines !== null) parts.push(plural(lines, 'binding line', 'binding lines'));
 			if (!parts.length)
 				return event.toolName === 'reset_case' ? 'Reset the case.' : 'Solved the change.';
