@@ -4,6 +4,7 @@ import {
   registerDocumentTellegenWebMcp,
   registerTellegenWebMcp,
 } from "./register.js";
+import { TellegenRegistrationError } from "./types.js";
 import type {
   ModelContextLike,
   TellegenToolDefinition,
@@ -204,7 +205,7 @@ describe("dynamic planning registration", () => {
     set({ planning: true });
     await settle();
     expect(errors).toHaveLength(1);
-    expect(handle.registrationError?.message).toBe(
+    expect(handle.registrationError?.message).toContain(
       "planning registration refused",
     );
     expect(
@@ -235,7 +236,7 @@ describe("dynamic planning registration", () => {
     );
 
     expect(handle.supported).toBe(true);
-    expect(handle.registrationError?.message).toBe(
+    expect(handle.registrationError?.message).toContain(
       "initial planning registration refused",
     );
     expect(
@@ -249,5 +250,56 @@ describe("dynamic planning registration", () => {
     expect(handle.toolNames).toContain("propose_capacity_plan");
     expect(errors).toEqual([expect.any(Error), null]);
     handle.dispose();
+  });
+});
+
+describe("registration options and errors", () => {
+  it("passes exposedTo to every registration, including dynamic tools", async () => {
+    const seen: Array<{ name: string; exposedTo?: string[] }> = [];
+    const context: ModelContextLike = {
+      async registerTool(tool, options) {
+        seen.push({ name: tool.name, exposedTo: options?.exposedTo });
+      },
+    };
+    const handle = await registerTellegenWebMcp(
+      context,
+      {
+        ...adapter,
+        planning: {
+          proposeCapacityPlan: () => ({}),
+          applyCapacityPlan: () => ({}),
+          planningAvailable: () => true,
+          proposalAvailable: () => false,
+          onAvailabilityChange: () => () => {},
+        },
+      },
+      { exposedTo: ["https://embedder.example"] },
+    );
+    expect(seen.map((entry) => entry.name)).toContain("propose_capacity_plan");
+    expect(
+      seen.every(
+        (entry) => entry.exposedTo?.join() === "https://embedder.example",
+      ),
+    ).toBe(true);
+    handle.dispose();
+  });
+
+  it("names the WebMCP DOMException a registration rejected with", async () => {
+    const context: ModelContextLike = {
+      async registerTool(tool) {
+        if (tool.name === "query_network")
+          throw new DOMException("name taken", "InvalidStateError");
+      },
+    };
+    const failure = await registerTellegenWebMcp(context, adapter).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(TellegenRegistrationError);
+    expect(failure).toMatchObject({
+      toolName: "query_network",
+      reason: "InvalidStateError",
+    });
+    expect((failure as Error).message).toContain("already registered");
+    expect((failure as Error).message).toContain("name taken");
   });
 });

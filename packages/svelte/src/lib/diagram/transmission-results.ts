@@ -185,15 +185,15 @@ export function operatingContext(
 		voltage: !dc,
 		relaxed: formulation === 'socwr',
 		freshness: mismatch
-			? `Previous ${solution!.formulation} result · awaiting ${formulation}`
+			? `Previous ${solution!.formulation} result, awaiting ${formulation}`
 			: solving
 				? solution
-					? 'Updating · previous result'
-					: 'Calculating · no result yet'
+					? 'Updating, showing the previous result'
+					: 'Calculating, no result yet'
 				: error
 					? solution
-						? 'Error · result may be stale'
-						: 'Calculation unavailable · no result'
+						? 'Error, result may be stale'
+						: 'Calculation unavailable, no result'
 					: solution
 						? 'Result available'
 						: 'Not solved',

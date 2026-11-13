@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
+	import { getCommandRegistry, type Command } from '../commands.svelte.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -21,6 +22,57 @@
 		};
 		input.click();
 	}
+	// Every case chip is also a palette command, so a case can be opened by name.
+	const commands = getCommandRegistry();
+	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+	onDestroy(
+		commands.registerSource((): Command[] => [
+			{
+				id: 'open-file',
+				title: 'Open case file…',
+				hint: 'MATPOWER, PSS/E, OpenDSS, CIM and other formats',
+				keywords: ['import', 'upload', 'load'],
+				group: 'Cases',
+				run: () => fileInput?.click()
+			},
+			...app.cases
+				.filter((c) => !c.unavailableReason)
+				.map((c): Command => ({
+					id: `case:${c.id}`,
+					title: `Switch to ${c.name}`,
+					group: 'Cases',
+					keywords: ['case', 'network', 'open'],
+					run: () => void ctrl.activateCase(c.id)
+				})),
+			...app.hostedDistributionCases
+				.filter((c) => !c.unavailable_reason)
+				.filter((c) => !app.multiCases.some((m) => m.hosted && m.id === c.id))
+				.map((c): Command => ({
+					id: `case:${c.id}`,
+					title: `Switch to ${c.name}`,
+					hint: 'Distribution case',
+					group: 'Cases',
+					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
+					run: () => void ctrl.activateHostedDistribution(c.id)
+				})),
+			...app.localCases.map((c): Command => ({
+				id: `case:${c.id}`,
+				title: `Switch to ${c.label}`,
+				hint: 'Opened from a file',
+				group: 'Cases',
+				keywords: ['case', 'network', 'open', 'local'],
+				run: () => void ctrl.activateLocal(c)
+			})),
+			...app.multiCases.map((c): Command => ({
+				id: `case:${c.id}`,
+				title: `Switch to ${c.label}`,
+				hint: 'Distribution case',
+				group: 'Cases',
+				keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
+				run: () => void ctrl.activateMulti(c)
+			}))
+		])
+	);
 	let headerEl = $state.raw<HTMLElement | undefined>(undefined);
 
 	// The case tabs wrap onto their own row on a narrow viewport and unwrap on a
@@ -47,7 +99,7 @@
 		</svg>
 		<h1>tellegen</h1>
 	</div>
-	<nav class="cases" aria-label="Networks">
+	<nav class="cases" class:zen={app.zen} aria-label="Networks">
 		{#each app.cases as c (c.id)}
 			{@const [cname, cregion] = splitName(c.name)}
 			<div class="case-chip" class:active={app.activeCaseId === c.id}>
@@ -60,7 +112,7 @@
 					<span class="cname"
 						>{cname}{#if c.perturbed}<i class="mark" title="Demand changed"></i>{/if}</span
 					>
-					<span class="cregion mono">{c.unavailableReason ? 'Unavailable' : cregion}</span>
+					<span class="cregion">{c.unavailableReason ? 'Unavailable' : cregion}</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -79,7 +131,7 @@
 					onclick={() => ctrl.activateHostedDistribution(c.id)}
 				>
 					<span class="cname">{c.name}</span>
-					<span class="cregion mono"
+					<span class="cregion"
 						>{c.unavailable_reason
 							? 'Unavailable'
 							: ctrl.loadingHostedDistribution === c.id
@@ -98,7 +150,7 @@
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion mono">Local</span>
+					<span class="cregion">Local</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -109,10 +161,13 @@
 			</div>
 		{/each}
 		{#each app.multiCases as c (c.id)}
-			<div class="case-chip" class:local={!c.hosted} class:active={app.activeMultiId === c.id}>
+			<div
+				class={['case-chip', { local: !c.hosted, active: app.activeMultiId === c.id }]}
+				data-testid="distribution-case-chip"
+			>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion mono">Multiconductor</span>
+					<span class="cregion">Distribution</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -128,26 +183,40 @@
 					? 'Drop a case file'
 					: 'Open a case file'}</span
 			>
-			<span class="cregion mono"
+			<span class="cregion"
 				>{ctrl.collectionsAvailable ? 'Case, ZIP or geo files' : 'Case or geo files'}</span
 			>
 		</button>
 		{#if ctrl.collectionsAvailable}
 			<button class="ghost filedrop-ui" onclick={openFolder}>
-				<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
+				<span class="cname">Open folder</span><span class="cregion">Shared case files</span>
 			</button>
 		{/if}
 	</nav>
+	<button
+		class="settings-button commands-button"
+		onclick={() => commands.show()}
+		aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
+		title="Search commands, cases and panels">Commands <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd></button
+	>
 	<button
 		class="settings-button"
 		onclick={() => (app.settingsOpen = !app.settingsOpen)}
 		aria-expanded={app.settingsOpen}>Settings</button
 	>
-	<span class="kicker mono">
+	<span class="kicker">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
 		<a href={config.docsHref} target="_blank" rel="noreferrer">Docs</a>
 	</span>
+	{#if app.zen}
+		<button
+			class="zen-exit"
+			aria-label="Exit zen mode"
+			title="Exit zen mode (Esc)"
+			onclick={() => (app.zen = false)}>Exit zen</button
+		>
+	{/if}
 	<input
 		type="file"
 		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx`}
@@ -174,6 +243,27 @@
 		font: inherit;
 		font-size: 12px;
 		cursor: pointer;
+	}
+
+	.commands-button {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-sm, 6px);
+	}
+	.commands-button kbd {
+		font: inherit;
+		font-family: var(--font-mono);
+		font-size: var(--fs-meta, 10px);
+		color: var(--text-secondary);
+		padding: 1px 5px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-sm, 3px);
+		background: var(--paper);
+	}
+	@media (max-width: 960px) {
+		.commands-button {
+			display: none;
+		}
 	}
 
 	header {
@@ -232,6 +322,24 @@
 
 	.cases::-webkit-scrollbar {
 		display: none;
+	}
+
+	/* Zen mode shows only the active case; hover or keyboard focus reveals the
+	   other cases and the file button so they stay reachable. The hidden chips
+	   keep their space so nothing shifts when they fade in and out. */
+	.cases.zen > :not(.active) {
+		visibility: hidden;
+		opacity: 0;
+		transition:
+			opacity var(--dur-fast) var(--ease-out),
+			visibility 0s var(--dur-fast);
+	}
+
+	.cases.zen:hover > :not(.active),
+	.cases.zen:focus-within > :not(.active) {
+		visibility: visible;
+		opacity: 1;
+		transition: opacity var(--dur-fast) var(--ease-out);
 	}
 
 	.cases > button,
@@ -346,10 +454,8 @@
 	}
 
 	.cregion {
-		font-size: 9.5px;
+		font-size: var(--fs-control, 11px);
 		color: var(--text-secondary);
-		letter-spacing: 0;
-		text-transform: uppercase;
 	}
 
 	.case-chip .cregion {
@@ -401,9 +507,7 @@
 		flex: 0 0 auto;
 		display: flex;
 		align-items: center;
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0;
+		font-size: var(--fs-label, 12px);
 		color: var(--text-secondary);
 		white-space: nowrap;
 	}
@@ -415,6 +519,29 @@
 
 	.kicker a:hover {
 		color: var(--text-accent);
+	}
+
+	/* Sits with the kicker links and stays when they collapse on narrow screens,
+	   since touch devices have no Escape key. */
+	.zen-exit {
+		flex: 0 0 auto;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: var(--fs-label, 12px);
+		color: var(--text-secondary);
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.zen-exit:hover {
+		color: var(--text-accent);
+	}
+
+	.zen-exit:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
 	}
 
 	@media (max-width: 760px) {

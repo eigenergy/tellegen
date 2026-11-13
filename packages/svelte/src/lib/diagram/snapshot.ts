@@ -6,7 +6,7 @@ import {
 	type McPfResult,
 	type McPfResultTables
 } from '@tellegen/engine';
-import { neutralTerminal } from '../multiconductor.js';
+import { neutralTerminal, pairLabel, phaseLabel } from '../multiconductor.js';
 
 /** Which reference a pair voltage is measured against. */
 export type PairZone = 'phase–neutral' | 'phase–phase' | 'phase–ground';
@@ -23,6 +23,12 @@ export interface PairVoltage {
 	volts: number;
 	min: number | null;
 	max: number | null;
+}
+
+/** A pair voltage as people read it: `A–N` for any phase–neutral pair, whatever the neutral
+ * terminal is named, otherwise through {@link pairLabel} (`A–B`, `C–G`). */
+export function pairVoltageLabel(p: Pick<PairVoltage, 'pair' | 'zone'>): string {
+	return p.zone === 'phase–neutral' ? `${phaseLabel(p.pair[0])}–N` : pairLabel(p.pair);
 }
 
 export interface UnbalanceValue {

@@ -1,11 +1,16 @@
 //! AC power flow differentiable system: the [`AcNewton`] wrapper over a converged
 //! Newton solution, exposing the bus voltage operands and the demand parameter.
 //!
-//! At a converged solution the power flow residual `F(x; pd) = calc(x) − spec(pd)`
+//! At a converged solution the power flow residual `F(x; pd) = calc(x) − spec(x; pd)`
 //! is zero, with `x = [va(non-slack); vm(PQ)]` under slack/PV/PQ bus typing and
-//! `spec_P = pg − pd`. The Newton Jacobian `J = ∂calc/∂x` is exactly what the solve
-//! assembles, and the real demand enters only the real power rows, so `∂F/∂pd` is a
-//! selector. The implicit function theorem gives `dx/dpd = −J⁻¹ (∂F/∂pd)`, run forward
+//! `spec_P = pg − P_L(vm)`, `P_L = pd + Σ voltage-dependent load terms`
+//! ([`AcNetwork::demand_at`]). The Newton Jacobian `J = ∂(calc + P_L)/∂x` is exactly what
+//! the solve assembles: the polar Jacobian plus each ZIP or exponential load's voltage
+//! derivative on its bus's magnitude column ([`load_jacobian`]). The demand parameter is
+//! the constant-power demand `pd` (`qd`): it enters only its bus's real (reactive) power
+//! row with a unit coefficient, so `∂F/∂pd` is a selector. For a bus with a ZIP or
+//! exponential load the parameter is therefore a constant-power increment at that bus,
+//! not a scaling of the load's nominal power. The implicit function theorem gives `dx/dpd = −J⁻¹ (∂F/∂pd)`, run forward
 //! or adjoint by the shared [`crate::sens::sensitivity`] driver; the converged `J` is
 //! nonsingular, so the solve needs no regularization.
 //!
@@ -18,7 +23,7 @@ use faer::Mat;
 use num_complex::Complex;
 
 use crate::model::AcNetwork;
-use crate::problem::{ac_injections, ac_jacobian, AcPfLayout, AcPfSolution};
+use crate::problem::{ac_injections, ac_jacobian, load_jacobian, AcPfLayout, AcPfSolution};
 
 use super::{
     Axis, Differentiable, ElementId, End, Operand, Parameter, Power, Selector, SensError,
@@ -48,7 +53,8 @@ impl<'a> AcNewton<'a> {
         let layout = AcPfLayout::with_kinds(net, &sol.kinds);
         let ybus = net.ybus();
         let (_, _, i_bus) = ac_injections(&ybus, &sol.vm, &sol.va);
-        let jac = ac_jacobian(&ybus, &sol.vm, &sol.va, &i_bus, &layout);
+        let mut jac = ac_jacobian(&ybus, &sol.vm, &sol.va, &i_bus, &layout);
+        jac.extend(load_jacobian(net, &sol.vm, &layout));
         AcNewton {
             net,
             layout,
@@ -569,5 +575,44 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Constant-power cases solve bit for bit as before voltage-dependent loads
+    /// entered the Newton iteration: the solution and the AC sensitivities hash to the
+    /// digest recorded from the fixed-point implementation (commit 86708f5e).
+    #[test]
+    fn constant_power_solutions_are_bitwise_unchanged() {
+        fn fnv(h: &mut u64, x: f64) {
+            for b in x.to_bits().to_le_bytes() {
+                *h ^= u64::from(b);
+                *h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        let mut h = 0xcbf2_9ce4_8422_2325_u64;
+        for net in [parse_case9_ac(), crate::model::parse_case3_ac()] {
+            let sol = ac_pf(&AcPolar::new(), &net).expect("ac power flow");
+            for v in [&sol.vm, &sol.va, &sol.p, &sol.q] {
+                for &x in v.iter() {
+                    fnv(&mut h, x);
+                }
+            }
+            fnv(&mut h, sol.iterations as f64);
+            fnv(&mut h, sol.residual);
+            let buses: Vec<usize> = (0..net.n).collect();
+            let sys = AcNewton::new(&net, &sol);
+            for (o, p) in [
+                (VM, DEMAND),
+                (VA, DEMAND),
+                (VM, Parameter::Demand(Power::Reactive)),
+            ] {
+                let m = sensitivity(&sys, o, p, Some(&buses), Mode::Forward).expect("sens");
+                for row in &m.values {
+                    for &x in row {
+                        fnv(&mut h, x);
+                    }
+                }
+            }
+        }
+        assert_eq!(h, 0xb573_3495_c6ba_94a5);
     }
 }

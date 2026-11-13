@@ -22,3 +22,22 @@ two 132 kV substations and 45 buses outside 0.9–1.1 pu after AC convergence.
 The regression retains the full demand, checks that inferred connections
 stay local, and requires converged AC voltages inside the planning band.
 The same OpenStreetMap and Natural Earth licences above apply.
+
+## Generated-grid hand-off
+
+`handoff-request.json` is the request behind the hand-off benchmarks of
+#261 (`scripts/bench-synth-handoff.mjs` and the opt-in browser spec
+`apps/web/tests/synth-handoff-bench.spec.ts`): a synthetic, network-free
+grid over a bounding box of eastern China, seed 2026. The benchmarks add
+`target_bus_count` (3,000 by default), so every run builds the same grid.
+It is a smaller proxy, not the grid #261 describes: it fixes the bus count
+so runs compare across machines, and it generates in about a quarter of the
+time.
+
+`handoff-china-request.json` is the request MapToGrid sends for China at its
+default density: the Natural Earth 110m outline of China from MapToGrid's
+`static/data/countries-110m.geojson`, unchanged, with the generation panel's
+defaults (seed 2026, `density` and `fidelity` high, population demand) and
+no bus count. Run it with `--request` and `--buses auto`, or with
+`TELLEGEN_SYNTH_BENCH_CHINA=1` in the browser spec.
+Natural Earth country outline: public domain.

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import AgentGuide from './AgentGuide.svelte';
-	import { PanelFrame } from '@tellegen/svelte';
+	import { PanelFrame, getAppState } from '@tellegen/svelte';
 	import type {
 		ExperimentRecord,
 		JsonValue,
@@ -11,14 +11,17 @@
 	} from '@tellegen/webmcp';
 	import {
 		capacityPlanExactPhiDelta,
-		capacityPlanFirstOrderError,
 		capacityPlanPredictedPhiDelta
 	} from './capacity-plan-metrics.js';
 	import type { CapacityPlanActivity, PlanningActivityStore } from './planning-activity.svelte.js';
+	import type { WebMcpBrowserState } from './browser-support.js';
 
 	let {
 		supported,
 		registrationError,
+		browser = null,
+		pageToolCalls = true,
+		toolCount = 0,
 		activities,
 		planning,
 		experiments,
@@ -28,6 +31,9 @@
 		closeStudy: () => void;
 		supported: boolean;
 		registrationError: string | null;
+		browser?: WebMcpBrowserState | null;
+		pageToolCalls?: boolean;
+		toolCount?: number;
 		activities: TellegenToolActivityEvent[];
 		planning: PlanningActivityStore;
 		experiments: ExperimentRecord[];
@@ -36,8 +42,9 @@
 
 	let open = $state(false);
 	let tab = $state<'activity' | 'connect'>('connect');
+	const app = getAppState();
 	let welcome = $state(false);
-	const welcomeKey = 'tellegen.welcome.studies-v1';
+	const welcomeKey = 'tellegen.welcome.webmcp-v1';
 	onMount(() => {
 		try {
 			welcome = localStorage.getItem(welcomeKey) !== 'seen';
@@ -53,6 +60,21 @@
 			/* Dismissal applies to this visit. */
 		}
 	}
+	// The welcome pill disappears once the panel opens, taking focus with it,
+	// so "Show me" asks for the Connect tab to take focus when it is attached.
+	let focusRequest = $state(0);
+	let focusHandled = 0;
+	function showConnect() {
+		open = true;
+		tab = 'connect';
+		focusRequest += 1;
+		dismiss();
+	}
+	function takeFocus(node: HTMLButtonElement) {
+		if (focusRequest === focusHandled) return;
+		focusHandled = focusRequest;
+		node.focus();
+	}
 	function show() {
 		open = true;
 		tab = activities.length || planning.entries.length ? 'activity' : 'connect';
@@ -65,10 +87,6 @@
 
 	function predictedPhiDelta(entry: CapacityPlanActivity): number {
 		return capacityPlanPredictedPhiDelta(entry.outcome);
-	}
-
-	function firstOrderError(entry: CapacityPlanActivity): number | null {
-		return capacityPlanFirstOrderError(entry.outcome);
 	}
 
 	function isStaged(entry: CapacityPlanActivity): boolean {
@@ -145,22 +163,30 @@
 	<div class="activity-panel" data-webmcp-activity="open" aria-label="WebMCP activity">
 		<nav aria-label="Agent panel">
 			<button
-				class:active={tab === 'activity'}
+				class={{ active: tab === 'activity' }}
 				aria-pressed={tab === 'activity'}
 				onclick={() => (tab = 'activity')}>Activity</button
 			>
 			<button
-				class:active={tab === 'connect'}
+				{@attach takeFocus}
+				class={{ active: tab === 'connect' }}
 				aria-pressed={tab === 'connect'}
 				onclick={() => (tab = 'connect')}>Connect</button
 			>
 		</nav>
 		<div class="agent-content">
-			{#if tab === 'connect'}<AgentGuide {supported} {registrationError} />{:else}
+			{#if tab === 'connect'}<AgentGuide
+					{supported}
+					{registrationError}
+					{browser}
+					{pageToolCalls}
+					{toolCount}
+					callCount={experiments.length}
+				/>{:else}
 				<p class="call-count" role="status">
 					{activities.length
-						? `${experiments.length} completed WebMCP calls${activities.some((activity) => !finished(activity)) ? ', working' : ''}`
-						: 'No WebMCP calls yet'}
+						? `${experiments.length} tool ${experiments.length === 1 ? 'call' : 'calls'} finished${activities.some((activity) => !finished(activity)) ? ', one running' : ''}`
+						: 'No tool calls yet'}
 				</p>
 				{#if registrationError}
 					<p class="registration-error mono" data-testid="webmcp-registration-error">
@@ -178,7 +204,7 @@
 				{#if planning.entries.length > 0}
 					<section class="plans" aria-label="capacity planning activity">
 						<div class="section-head">
-							<h3 class="mono">capacity proposals</h3>
+							<h3>Capacity plans</h3>
 						</div>
 						<ol aria-live="polite">
 							{#each planning.entries as entry (entry.id)}
@@ -186,32 +212,31 @@
 								{@const status = entry.decision}
 								<li class="plan" data-testid="capacity-plan-card" data-activity-id={entry.id}>
 									<div class="plan-head">
-										<strong>capacity proposal</strong>
+										<strong>Capacity plan</strong>
 										<span
 											class="chip-status mono"
 											data-testid="capacity-plan-status"
-											data-status={status}>{status}</span
+											data-status={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</span
 										>
 									</div>
 									{#if outcome}
 										<div class="phi mono">
-											<span class="label">Φ</span>
+											<span class="label">Weighted price</span>
 											<span
-												>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)}
-												({formatDelta(exactPhiDelta(entry))} objective units/MW)</span
+												>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)} $/MWh
+												({formatDelta(exactPhiDelta(entry))})</span
 											>
 										</div>
 										<div class="phi-detail mono">
-											<span>predicted {formatDelta(predictedPhiDelta(entry))}</span>
-											<span>exact {formatDelta(exactPhiDelta(entry))}</span>
-											<span>first order error {formatNumber(firstOrderError(entry), 4)}</span>
+											<span>Predicted {formatDelta(predictedPhiDelta(entry))}</span>
+											<span>Solved {formatDelta(exactPhiDelta(entry))}</span>
 										</div>
 										{#if entry.displayProposal.length > 0}
 											<ul class="changes mono">
 												{#each entry.displayProposal as change (change.branchId)}
 													<li>
 														<span>{change.branchId}</span>
-														<span>{formatDelta(change.deltaMw)} MW rating</span>
+														<span>Rating {formatDelta(change.deltaMw)} MW</span>
 													</li>
 												{/each}
 											</ul>
@@ -221,7 +246,7 @@
 										<div class="review">
 											{#if isApproved(entry)}
 												<span class="approved mono" data-testid="capacity-plan-approved"
-													>approved — the agent may apply once</span
+													>Approved. The agent can apply it once.</span
 												>
 											{:else}
 												<button
@@ -256,8 +281,10 @@
 								(entry) => entry.id === activity.id
 							)?.predictionCheck}
 							<li
-								class:running={!finished(activity)}
-								class:failed={finished(activity) && !activity.response.ok}
+								class={{
+									running: !finished(activity),
+									failed: finished(activity) && !activity.response.ok
+								}}
 							>
 								<div class="activity-head">
 									<span class="status" aria-hidden="true"></span>
@@ -269,29 +296,29 @@
 
 								{#if predicted}
 									<div class="preview-result">
-										<span class="mono label">predicted Δ objective</span>
-										<b class="mono">{formatDelta(number(predicted.objective_delta))}</b>
-										<span class="mono dim">state unchanged</span>
+										<span class="label">Predicted cost change</span>
+										<b class="mono">{formatDelta(number(predicted.objective_delta))} $/h</b>
+										<span class="dim">Nothing applied</span>
 									</div>
 								{/if}
 
 								{#if compare}
 									<div class="comparison">
-										<div class="comparison-head mono">
-											<span>exact result</span><span>before</span><span>after</span>
+										<div class="comparison-head">
+											<span>Solved</span><span>Before</span><span>After</span>
 										</div>
 										<div class="metric mono">
-											<span>objective</span>
+											<span class="name">Cost ($/h)</span>
 											<span>{formatNumber(number(compare.before.objective))}</span>
 											<span>{formatNumber(number(compare.after.objective))}</span>
 										</div>
 										<div class="metric mono">
-											<span>binding lines</span>
+											<span class="name">Lines at limit</span>
 											<span>{formatNumber(number(compare.before.binding_branches), 0)}</span>
 											<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
 										</div>
 										<div class="metric mono">
-											<span>edits (demand/rating)</span>
+											<span class="name">Demand and rating edits</span>
 											<span
 												>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
 													number(compare.before.rating_edit_count),
@@ -308,16 +335,19 @@
 									</div>
 								{/if}
 
-								{#if finished(activity) && !activity.response.ok}
-									<p class="error mono">
-										{activity.response.error.code}: {activity.response.error.message}
+								{#if finished(activity) && activity.callerCancelled && activity.response.ok}
+									<p class="error mono" data-testid="caller-cancelled">
+										The agent cancelled this call, but it had already completed. Any change it made
+										stands; the agent did not receive the result.
 									</p>
+								{/if}
+								{#if finished(activity) && !activity.response.ok}
+									<p class="error">{activity.response.error.message}</p>
 								{/if}
 								{#if check}
 									<div class="preview-result mono" data-testid="experiment-prediction-check">
-										<span>predicted Δ {formatDelta(check.predictedDelta)}</span>
-										<span>exact Δ {formatDelta(check.exactDelta)}</span>
-										<span>prediction error {formatNumber(check.absoluteError, 4)}</span>
+										<span>Predicted {formatDelta(check.predictedDelta)} $/h</span>
+										<span>Solved {formatDelta(check.exactDelta)} $/h</span>
 									</div>
 								{/if}
 							</li>
@@ -328,8 +358,10 @@
 		</div>
 	</div>
 </PanelFrame>
-{#if welcome && !open}<aside class="welcome" aria-label="New to Tellegen">
-		<a href={resolve('/changelog')}>New: saved studies and agent tools</a>
+{#if welcome && !open && !app.zen}<aside class="welcome" aria-label="New to Tellegen">
+		<span>New: AI agents can drive this map</span>
+		<button class="welcome-go" onclick={showConnect}>Show me</button>
+		<a href={resolve('/changelog')}>What's new</a>
 		<button aria-label="Dismiss introduction" onclick={dismiss}>Close</button>
 	</aside>{/if}
 
@@ -384,7 +416,7 @@
 	.registration-error {
 		margin: 0;
 		padding: 16px;
-		color: var(--danger);
+		color: var(--text-danger);
 		font-size: 12px;
 	}
 	.empty {
@@ -398,7 +430,7 @@
 		padding: 7px 10px;
 		border: 1px solid var(--line);
 		border-radius: 4px;
-		background: white;
+		background: var(--paper);
 		color: var(--ink);
 	}
 	.welcome {
@@ -420,7 +452,14 @@
 		color: var(--text-accent);
 		text-underline-offset: 3px;
 	}
-	.welcome button {
+	.welcome .welcome-go {
+		padding: 1px 8px;
+		border: 1px solid rgb(var(--agent-rgb) / 0.5);
+		border-radius: 3px;
+		background: var(--agent-soft);
+		color: var(--agent);
+	}
+	.welcome button:not(.welcome-go) {
 		padding: 2px;
 		border: 0;
 		background: none;
@@ -442,10 +481,8 @@
 	.section-head h3 {
 		margin: 0;
 		color: var(--text-tertiary);
-		font-size: 8px;
+		font-size: 11px;
 		font-weight: 500;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
 	}
 
 	.plan-head {
@@ -461,9 +498,7 @@
 		border-radius: 999px;
 		background: var(--surface-control);
 		color: var(--text-secondary);
-		font-size: 8px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 11px;
 	}
 
 	.chip-status[data-status='applied'] {
@@ -578,8 +613,13 @@
 		background: var(--neg);
 	}
 
+	li.running {
+		background: var(--agent-soft);
+		box-shadow: inset 2px 0 0 var(--agent);
+	}
+
 	.running .status {
-		background: var(--accent-bright);
+		background: var(--agent);
 		animation: blink var(--dur-blink) var(--ease-in-out) infinite;
 	}
 
@@ -645,8 +685,7 @@
 	.comparison-head {
 		padding-bottom: 5px;
 		color: var(--text-tertiary);
-		font-size: 8px;
-		text-transform: uppercase;
+		font-size: 11px;
 	}
 
 	.comparison-head span:first-child,

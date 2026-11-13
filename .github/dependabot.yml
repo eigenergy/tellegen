@@ -12,6 +12,11 @@ updates:
         patterns:
           - powerio
           - powerio-*
+      # pounce-nl and pounce-rs must pin the same release
+      # (scripts/acopf-release.py), so they move together.
+      pounce:
+        patterns:
+          - pounce-*
 
   - package-ecosystem: npm
     directory: /

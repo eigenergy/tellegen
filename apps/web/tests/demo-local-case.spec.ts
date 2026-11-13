@@ -33,6 +33,12 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	const solveCard = page.locator('.solvecard');
 	await expect(solveCard).toContainText('DC OPF', { timeout: 60_000 });
 	await expect(solveCard).toContainText(/Iterations\s*\d+/);
+	await expect(solveCard.getByRole('status')).toHaveText(
+		/^DC OPF found the cheapest dispatch in \d+ iterations \([\d.]+ m?s\)\.$/
+	);
+	// The convergence trace is a solver internal, behind the disclosure.
+	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeHidden();
+	await solveCard.getByText('Solver details', { exact: true }).click();
 	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeVisible();
 	await expect(solveCard).toContainText(/\d+ ms/);
 	await expect(solveCard).not.toContainText('Server');
@@ -83,7 +89,7 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	// shows the uniform predicted shift. The value must scale with the step — the
 	// regression this guards is the step cancelling out of the preview display.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/Uniform [+−-][\d.]+e[+-]\d+\s+objective units\/MW/);
+	await expect(labels).toContainText(/Uniform [+−-][\d.]+e[+-]\d+\s+\(?\$\/MWh/);
 	const atFull = parseShift(await labels.innerText());
 
 	await slider.evaluate((el) => {

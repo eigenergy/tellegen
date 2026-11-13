@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { getAppState } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { getNoticeCenter } from '../notices.svelte.js';
 	import PanelCard from './PanelCard.svelte';
+	import { getCommandRegistry } from '../commands.svelte.js';
 
 	// The dock insets come from `--tellegen-dock-left/right/bottom` on an
 	// ancestor (defaults 20px, 20px, 100px), so a custom shell with its own
@@ -13,6 +14,26 @@
 	const app = getAppState();
 	const layout = getPanelLayout();
 	const notices = getNoticeCenter();
+	const commands = getCommandRegistry();
+	// Each registered panel, including host panels such as the Agent panel, is
+	// also a palette command.
+	onDestroy(
+		commands.registerSource(() =>
+			layout.panels.map((panel) => {
+				const open = layout.compact ? layout.drawer === panel.id : panel.open;
+				return {
+					id: `panel:${panel.id}`,
+					title: `${open ? 'Close' : 'Open'} ${panel.title} panel`,
+					keywords: ['panel', 'show', 'hide'],
+					group: 'Panels',
+					run: () => {
+						if (app.zen) app.zen = false;
+						layout.toggle(panel);
+					}
+				};
+			})
+		)
+	);
 	const bottomReserve = $derived(notices.entries.length ? 120 : 88);
 	const left = $derived(layout.ordered('left').filter((p) => p.open));
 	const right = $derived(layout.ordered('right').filter((p) => p.open));
@@ -51,7 +72,7 @@
 		});
 	});
 	$effect(() => {
-		app.sheetInset = layout.compact && drawer ? drawerHeight + bottomReserve : 0;
+		app.sheetInset = !app.zen && layout.compact && drawer ? drawerHeight + bottomReserve : 0;
 	});
 </script>
 
@@ -61,7 +82,7 @@
 	onpointerup={() => layout.finishGesture()}
 	onpointercancel={() => layout.finishGesture()}
 />
-{#if showToolbar}
+{#if showToolbar && !app.zen}
 	<div class="panel-toolbar" style:top="{toolbarTop}px" aria-label="Panels">
 		<div class="panel-buttons">
 			{#each layout.ordered().filter((p) => p.side === 'left') as panel (panel.id)}
@@ -88,50 +109,52 @@
 		</div>
 	</div>
 {/if}
-{#if layout.storageError}<p class="layout-error" role="status" style:top="{panelTop}px">
-		{layout.storageError}
-	</p>{/if}
-<!-- The docks and the drawer take focus (tabindex -1) when a closed panel has
+{#if !app.zen}
+	{#if layout.storageError}<p class="layout-error" role="status" style:top="{panelTop}px">
+			{layout.storageError}
+		</p>{/if}
+	<!-- The docks and the drawer take focus (tabindex -1) when a closed panel has
 	 no toolbar button or opener to hand it back to. The drawer stays rendered,
 	 at zero height, while no panel is open in it. -->
-{#if layout.compact}
-	<div
-		class="drawer"
-		data-panel-drawer
-		role="region"
-		aria-label="Panels"
-		tabindex="-1"
-		style:bottom="{bottomReserve}px"
-		style:height="{drawer ? drawerHeight : 0}px"
-	>
-		{#if drawer}<PanelCard panel={drawer} mobile />{/if}
-	</div>
-{:else}
-	<div
-		class="dock left"
-		style:bottom="max(var(--tellegen-dock-bottom, 100px), {bottomReserve}px)"
-		data-panel-dock="left"
-		role="region"
-		aria-label="Left panels"
-		tabindex="-1"
-		style:top="{panelTop}px"
-		style:width="{layout.dockWidth('left')}px"
-	>
-		{#each left as panel (panel.id)}<PanelCard {panel} />{/each}
-	</div>
-	<div
-		class="dock right"
-		style:bottom="max(var(--tellegen-dock-bottom, 100px), {bottomReserve}px)"
-		data-panel-dock="right"
-		role="region"
-		aria-label="Right panels"
-		tabindex="-1"
-		style:top="{panelTop}px"
-		style:width="{layout.dockWidth('right')}px"
-	>
-		{#each right as panel (panel.id)}<PanelCard {panel} />{/each}
-	</div>
-	{#each floating as panel (panel.id)}<PanelCard {panel} floating />{/each}
+	{#if layout.compact}
+		<div
+			class="drawer"
+			data-panel-drawer
+			role="region"
+			aria-label="Panels"
+			tabindex="-1"
+			style:bottom="{bottomReserve}px"
+			style:height="{drawer ? drawerHeight : 0}px"
+		>
+			{#if drawer}<PanelCard panel={drawer} mobile />{/if}
+		</div>
+	{:else}
+		<div
+			class="dock left"
+			style:bottom="max(var(--tellegen-dock-bottom, 100px), {bottomReserve}px)"
+			data-panel-dock="left"
+			role="region"
+			aria-label="Left panels"
+			tabindex="-1"
+			style:top="{panelTop}px"
+			style:width="{layout.dockWidth('left')}px"
+		>
+			{#each left as panel (panel.id)}<PanelCard {panel} />{/each}
+		</div>
+		<div
+			class="dock right"
+			style:bottom="max(var(--tellegen-dock-bottom, 100px), {bottomReserve}px)"
+			data-panel-dock="right"
+			role="region"
+			aria-label="Right panels"
+			tabindex="-1"
+			style:top="{panelTop}px"
+			style:width="{layout.dockWidth('right')}px"
+		>
+			{#each right as panel (panel.id)}<PanelCard {panel} />{/each}
+		</div>
+		{#each floating as panel (panel.id)}<PanelCard {panel} floating />{/each}
+	{/if}
 {/if}
 
 <style>

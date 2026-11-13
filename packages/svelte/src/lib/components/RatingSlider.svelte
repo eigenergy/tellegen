@@ -25,7 +25,7 @@
 	const sliderTip = 'Drag to preview, release to solve. The tick marks the committed rating.';
 	const disabledTip = 'Synthesized rating; not adjustable';
 	const scoreTip =
-		'Gradient: first-order estimate from the committed point. Exact: solved objective change.';
+		'Estimated from the sensitivities at the current solution, then checked by solving again.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -81,7 +81,7 @@
 		<div class="rating-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
 			<p class="pred dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
 				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					Predicted objective change <span class="mono">{signed(ctrl.predictedDeltaObj)}</span>
+					Predicted cost change <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
 				{:else}
 					&nbsp;
 				{/if}
@@ -89,8 +89,8 @@
 			<p class="score" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
 					<span title={scoreTip}>
-						Gradient <span class="mono">{signed(ctrl.gradientScore.pred)}</span>, exact
-						<span class="mono">{signed(ctrl.gradientScore.exact)}</span> objective units
+						Cost change: estimated <span class="mono">{signed(ctrl.gradientScore.pred)}</span>,
+						solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h
 					</span>
 				{:else}
 					&nbsp;

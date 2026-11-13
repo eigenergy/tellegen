@@ -1,22 +1,18 @@
 <script lang="ts">
 	import { sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
+	import { dollarUnits } from '../display.js';
 	import { signedExp } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
-	const reportedUnits = $derived(
-		(ctrl.selectedSensitivity?.units ?? '(objective units/MW)/MW').replaceAll(
-			'objective_unit',
-			'objective units'
-		)
-	);
+	const reportedUnits = $derived(dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 	const unitTitle = $derived(`Units: ${reportedUnits}`);
 
 	// Branch mode: the selection is a line and the column is price/rating; the
 	// legend and preview pipeline are identical (both columns are bus-keyed).
 	const branchMode = $derived(app.selectedBranch !== null);
-	const previewUnits = $derived(app.previewPrices?.units ?? 'objective units/MW');
+	const previewUnits = $derived(dollarUnits(app.previewPrices?.units ?? '$/MWh'));
 
 	const previewStep = $derived(
 		branchMode
@@ -100,12 +96,12 @@
 <style>
 	.chip {
 		font-family: var(--font-mono);
-		font-size: 13px;
-		padding: 2px 8px;
+		font-size: var(--fs-label);
+		padding: var(--space-3xs) var(--space-sm);
 		border: 1px solid var(--accent);
 		color: var(--text-accent);
 		background: var(--accent-soft);
-		border-radius: 2px;
+		border-radius: var(--radius-xs);
 		white-space: nowrap;
 	}
 
@@ -118,8 +114,8 @@
 	}
 
 	.sensitivity-copy {
-		font-size: 13.5px;
-		line-height: 1.35;
+		font-size: var(--fs-data);
+		line-height: var(--lh-snug);
 		white-space: nowrap;
 	}
 </style>

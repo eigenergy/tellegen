@@ -77,9 +77,11 @@ jobs:
           context: .
           load: true
           tags: ${{ steps.meta.outputs.sha_tag }}
-          # A public browser key (see the Dockerfile); unset builds without one.
+          # Public browser values (see the Dockerfile); unset builds without them.
           build-args: |
             PUBLIC_CARTO_BASEMAP_KEY=${{ vars.CARTO_BASEMAP_KEY }}
+            PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN=${{ vars.WEBMCP_ORIGIN_TRIAL_TOKEN }}
+            PUBLIC_WEBMCP_EXPOSED_TO=${{ vars.WEBMCP_EXPOSED_TO }}
             TELLEGEN_SOURCE_REVISION=${{ steps.source.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

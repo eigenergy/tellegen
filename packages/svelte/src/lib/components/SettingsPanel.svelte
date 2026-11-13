@@ -88,10 +88,6 @@
 		font: inherit;
 		max-width: 55%;
 	}
-	[role='alert'] {
-		border-left: 3px solid #b7791f;
-		padding-left: 8px;
-	}
 	hr {
 		margin: 20px 0;
 	}

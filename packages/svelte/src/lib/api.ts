@@ -35,7 +35,15 @@ export interface TellegenApiClient {
 	getNetwork(caseId: string): Promise<Network>;
 	getCaseModuleJson(caseId: string, signal?: AbortSignal): Promise<string>;
 	getSolution(caseId: string): Promise<Solution>;
-    getSavedCase?(caseId: string): Promise<{base_input:string;input:string;solution:string;view:import('@tellegen/engine').StudyView;display_solution:Solution}>;
+	getSavedCase?(
+		caseId: string
+	): Promise<{
+		base_input: string;
+		input: string;
+		solution: string;
+		view: import('@tellegen/engine').StudyView;
+		display_solution: Solution;
+	}>;
 	getSensitivity(
 		caseId: string,
 		bus: number,
@@ -98,11 +106,14 @@ export class ApiError extends Error {
 	}
 }
 
+/** The notice for a rate-limited request, shared with the controller's own cooldown. */
+export const RATE_LIMITED = 'The server is limiting requests. Wait a few seconds and try again.';
+
 function userMessage(status: number, serverMessage: string | null): string {
-	if (status === 0) return 'server unreachable, check your connection';
-	if (status === 429) return 'rate limited; wait a few seconds and try again';
-	if (status >= 500) return 'server error, try again';
-	return serverMessage ?? `request failed (HTTP ${status})`;
+	if (status === 0) return 'The server is unreachable. Check your connection and try again.';
+	if (status === 429) return RATE_LIMITED;
+	if (status >= 500) return 'The server reported an error. Try again.';
+	return serverMessage ?? `The request failed (HTTP ${status}). Try again.`;
 }
 
 async function checkedFetch(
@@ -169,7 +180,7 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			const res = await checkedFetch(fetchImpl, url, signal);
 			return res.text();
 		},
-        getSavedCase: (caseId) => getJson(fetchImpl, apiPath(apiBase, `/cases/${caseId}/snapshot`)),
+		getSavedCase: (caseId) => getJson(fetchImpl, apiPath(apiBase, `/cases/${caseId}/snapshot`)),
 		getSolution: (caseId) =>
 			getJson<Solution>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/solution`)),
 		getSensitivity(caseId, bus, deltas = {}, signal) {

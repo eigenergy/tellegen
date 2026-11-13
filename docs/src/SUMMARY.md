@@ -10,6 +10,7 @@
 - [Challenge Evidence](challenge-evidence.md)
 - [Engine API Reference](engine-api.md)
 - [Python](python.md)
+  - [MCP server](mcp.md)
 - [Multiconductor AC power flow](multiconductor-pf.md)
 - [Settings](settings.md)
 - [Transports](transports.md)

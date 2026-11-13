@@ -131,15 +131,15 @@
 	<section class="inspection" aria-label="Selected equipment">
 		<header>
 			<h3 tabindex="-1" bind:this={heading}>
-				{#if bus}Bus {bus.id}{bus.name ? ` · ${bus.name}` : ''}{:else if branch}Branch {branch.id}{/if}
+				{#if bus}Bus {bus.id}{bus.name ? ` (${bus.name})` : ''}{:else if branch}Branch {branch.id}{/if}
 			</h3>
 			<button onclick={onframe}>Frame</button>
 			<button onclick={clear} aria-label="Clear selection">Clear</button>
 		</header>
-		{#if stale}<p>Showing previous or incomplete results</p>{/if}
+		{#if stale}<p>Showing previous or incomplete results.</p>{/if}
 		{#if brief}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}
+					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}.
 				</p>{/if}
 		{:else if bus}
 			<dl>
@@ -181,7 +181,7 @@
 			</dl>
 		{:else if branch}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}
+					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}.
 				</p>{/if}
 			<p class="convention">Signs at each end: positive where power enters the branch.</p>
 			<table>
@@ -193,12 +193,12 @@
 				</thead>
 				<tbody>
 					<tr>
-						<th scope="row">From · bus {branch.from}</th>
+						<th scope="row">From bus {branch.from}</th>
 						<td>{@render q(transfer ? transfer.reading?.from : flow?.mw, 'MW', true)}</td>
 						{#if !transfer?.dc}<td>{@render q(flow?.qf, 'MVAr', true)}</td>{/if}
 					</tr>
 					<tr>
-						<th scope="row">To · bus {branch.to}</th>
+						<th scope="row">To bus {branch.to}</th>
 						<td>{@render q(transfer ? transfer.reading?.to : flow?.pt, 'MW', true)}</td>
 						{#if !transfer?.dc}<td>{@render q(flow?.qt, 'MVAr', true)}</td>{/if}
 					</tr>
@@ -254,7 +254,7 @@
 
 {#if showExceptions && !brief}
 	<details bind:open>
-		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Exceptions'} · {total}</summary>
+		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Exceptions'} ({total})</summary>
 		{#if open}
 			<label>
 				Search exceptions
@@ -273,13 +273,13 @@
 							: 'No reported operating exceptions.'}
 				</p>{/if}
 			{#if buses.length}
-				<h3>Voltage · {buses.length}</h3>
+				<h3>Voltage ({buses.length} {buses.length === 1 ? 'bus' : 'buses'})</h3>
 				<ol>
 					{#each buses.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('bus', b.id)} {...preview('bus', b.id)}
-								><strong>Bus {b.id}{b.name ? ` · ${b.name}` : ''}</strong><span
-									>{@render q(b.value, 'pu')} · {@render q(b.exceedance, 'pu')}
+								><strong>Bus {b.id}{b.name ? ` (${b.name})` : ''}</strong><span
+									>{@render q(b.value, 'pu')}, {@render q(b.exceedance, 'pu')}
 									{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
 								></button
 							>
@@ -288,13 +288,16 @@
 				</ol>
 			{/if}
 			{#if branches.length}
-				<h3>Branch loading · {branches.length}</h3>
+				<h3>
+					Branch loading ({branches.length}
+					{branches.length === 1 ? 'branch' : 'branches'})
+				</h3>
 				<ol>
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
-								><strong>Branch {b.id} · {b.from} → {b.to}</strong><span
-									>{@render q(b.loading * 100, '%')} · {loadingStateText[b.state]}</span
+								><strong>Branch {b.id}, {b.from} → {b.to}</strong><span
+									>{@render q(b.loading * 100, '%')}, {loadingStateText[b.state]}</span
 								></button
 							>
 						</li>
@@ -314,14 +317,16 @@
 		width: 100%;
 		min-width: 0;
 		border-top: 1px solid var(--line);
-		font: 11px var(--font-mono);
-		padding: 4px 0;
+		font-family: var(--font-display);
+		font-size: var(--fs-label);
+		line-height: var(--lh-snug);
+		padding: var(--space-2xs) 0;
 	}
 	header,
 	dl div {
 		display: flex;
 		align-items: baseline;
-		gap: 6px;
+		gap: var(--space-xs);
 	}
 	header h3 {
 		flex: 1;
@@ -329,33 +334,42 @@
 	}
 	h3 {
 		font: inherit;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--ink);
-		margin: 4px 0;
+		margin: var(--space-2xs) 0;
 	}
 	p {
-		margin: 4px 0;
+		margin: var(--space-2xs) 0;
 	}
 	.flow-sentence {
 		color: var(--ink);
-		font-size: 12px;
+		font-size: var(--fs-data);
 	}
-	.convention {
+	.convention,
+	dt,
+	th {
 		color: var(--text-secondary);
 	}
 	dl {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(175px, 100%), 1fr));
-		gap: 4px 12px;
-		margin: 5px 0;
+		gap: var(--space-2xs) var(--space-lg);
+		margin: var(--space-2xs) 0;
 	}
 	dl div {
 		justify-content: space-between;
 	}
+	dd,
+	td,
+	li button > span {
+		font-family: var(--font-mono);
+		font-size: var(--fs-control);
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
 	dd {
 		margin: 0;
 		color: var(--ink);
-		text-align: right;
 	}
 	table {
 		border-collapse: collapse;
@@ -363,9 +377,15 @@
 	}
 	th,
 	td {
-		padding: 3px;
-		text-align: left;
+		padding: var(--space-3xs);
 		border-bottom: 1px solid var(--line);
+	}
+	th {
+		font-weight: 400;
+		text-align: left;
+	}
+	thead th:not(:first-child) {
+		text-align: right;
 	}
 	td {
 		color: var(--ink);
@@ -373,26 +393,26 @@
 	summary {
 		cursor: pointer;
 		color: var(--ink);
-		padding: 4px 0;
+		padding: var(--space-2xs) 0;
 	}
 	label {
 		display: grid;
-		gap: 4px;
-		margin: 4px 0;
+		gap: var(--space-2xs);
+		margin: var(--space-2xs) 0;
 	}
 	ol {
-		padding-left: 23px;
-		margin: 4px 0;
+		padding-left: var(--space-3xl);
+		margin: var(--space-2xs) 0;
 	}
 	li {
-		padding: 2px 0;
+		padding: var(--space-3xs) 0;
 	}
 	li button {
 		width: 100%;
 		text-align: left;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 12px;
+		gap: var(--space-2xs) var(--space-lg);
 		justify-content: space-between;
 		overflow-wrap: anywhere;
 	}
@@ -402,8 +422,8 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
-		padding: 5px 6px;
+		border-radius: var(--radius-sm);
+		padding: var(--space-2xs) var(--space-xs);
 	}
 	button {
 		cursor: pointer;

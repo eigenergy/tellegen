@@ -26,7 +26,7 @@ describe('checkedFetch error mapping', () => {
 		const err = e as ApiError;
 		expect(err.status).toBe(429);
 		expect(err.serverMessage).toBe('sensitivity rate limit exceeded');
-		expect(err.message).toBe('rate limited; wait a few seconds and try again');
+		expect(err.message).toBe('The server is limiting requests. Wait a few seconds and try again.');
 	});
 
 	it('maps an empty-body 429 (edge proxy) to the same copy with no server message', async () => {
@@ -35,13 +35,13 @@ describe('checkedFetch error mapping', () => {
 		const err = e as ApiError;
 		expect(err.status).toBe(429);
 		expect(err.serverMessage).toBeNull();
-		expect(err.message).toBe('rate limited; wait a few seconds and try again');
+		expect(err.message).toBe('The server is limiting requests. Wait a few seconds and try again.');
 	});
 
 	it('maps 5xx to the server error copy', async () => {
 		const e = (await caught(async () => new Response(null, { status: 503 }))) as ApiError;
 		expect(e.status).toBe(503);
-		expect(e.message).toBe('server error, try again');
+		expect(e.message).toBe('The server reported an error. Try again.');
 	});
 
 	it('surfaces the backend message for other 4xx', async () => {
@@ -64,7 +64,7 @@ describe('checkedFetch error mapping', () => {
 		})) as ApiError;
 		expect(e).toBeInstanceOf(ApiError);
 		expect(e.status).toBe(0);
-		expect(e.message).toBe('server unreachable, check your connection');
+		expect(e.message).toBe('The server is unreachable. Check your connection and try again.');
 	});
 
 	it('passes DOMException aborts through unwrapped', async () => {

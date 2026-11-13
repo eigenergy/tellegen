@@ -50,14 +50,15 @@ validates identities, hashes and references, and restores no approvals.
 
 A small AC power-flow example instead minimizes squared voltage-target error
 through demand transfers. This uses the existing AC power-flow solver.
-Nonlinear AC OPF and multiconductor solving are outside the shipping WebMCP
-calculations; AC OPF exists only behind a non-default native development
-feature.
+Nonlinear AC OPF is outside the shipping WebMCP calculations; it exists only
+behind a non-default native development feature. Multiconductor AC power flow
+is available through `solve_multiconductor_pf`, but the Study objectives cover
+balanced networks only.
 
 ## Reproducible evidence
 
 [Studies](studies.md) describes the document and operations. The checked-in
-[Study declarations and runner](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies)
+[Study declarations and runner](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/studies)
 record executable and input hashes, exact trial outcomes, solve budgets and
 numerical tolerances. Browser tests run the same declared Study through native
 and WASM implementations and compare semantic results.
@@ -73,7 +74,7 @@ contest submission.
 
 ## Verified examples
 
-Fresh [result records](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies/results)
+Fresh [result records](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/studies/results)
 include the declared tolerances and all attempted trials. The values below are
 the outer objectives specified by each declaration; capacity and demand examples
 sum selected nodal prices, while the AC example measures squared voltage error.
@@ -91,8 +92,9 @@ retains its starting state: the tested changes are below its recorded improvemen
 tolerance. The planner reports that limit instead of presenting numerical noise
 as a gain. None of these searches applies its recommendation automatically.
 
-The [native WebMCP demonstration](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies/native-webmcp)
-records all seven Study tools, reload, branching, goal revision and a rejected
+The [native WebMCP demonstration](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/studies/native-webmcp)
+records seven of the nine Study tools (all but `edit_demand` and
+`restore_base_case`), reload, branching, goal revision and a rejected
 stale request. Application and stale approvals have separate browser tests. On its synthetic three-bus case, a 5 MW
 capacity increase lowers the target bus price but raises the price at another
 bus. A second goal explores demand transfers from the original starting state.

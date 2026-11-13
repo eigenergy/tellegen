@@ -58,11 +58,11 @@ describe('transmission operating limits', () => {
 		});
 		expect(operatingContext('acpf', solution, true, false)).toMatchObject({
 			stale: true,
-			freshness: 'Updating · previous result'
+			freshness: 'Updating, showing the previous result'
 		});
 		expect(operatingContext('acpf', solution, false, true)).toMatchObject({
 			stale: true,
-			freshness: 'Error · result may be stale'
+			freshness: 'Error, result may be stale'
 		});
 		expect(operatingContext('dcopf', null, false, false)).toMatchObject({
 			voltage: false,

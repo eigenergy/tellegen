@@ -84,12 +84,13 @@ tellegen study export study.json > portable-study.json
 also generate the TypeScript types. Browser controls, WebMCP, and the CLI use
 the same Study operations and revision checks.
 
-PowerMCP's Tellegen server (`powermcp run tellegen`) invokes the native CLI.
-Its `solve`, `solve_module`, and `plan` tools handle calculations;
-`study_create`, `study_inspect`, `study_run`, `study_export`, and `study_import`
-handle saved cases. `study_create` also accepts a grid file for PowerIO to read.
-The server provides read-only capability descriptions and leaves applying a
-proposal to an explicit user action: `study_run` refuses `apply`.
+The Python package's MCP server, `tellegen-mcp` (see [MCP server](mcp.md)),
+runs the engine in process. Its `solve`, `solve_module`, and `plan` tools handle
+calculations; `study_create`, `study_inspect`, `study_run`, `study_export`, and
+`study_import` handle saved cases. `study_create` also accepts a case file for
+PowerIO to read. Applying a proposal is left to an explicit user action:
+`study_run` refuses `apply`. PowerMCP's Tellegen server
+(`powermcp run tellegen`) offers the same tool names over the native CLI.
 
 WebMCP `list_cases` and `select_case` change the visible case without proposal
 approval. Network queries identify the displayed case and saved state, so an

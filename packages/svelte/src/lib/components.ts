@@ -8,6 +8,7 @@ export { default as PanelHost } from './components/PanelHost.svelte';
 export { default as ShellEnvironment } from './components/ShellEnvironment.svelte';
 export { default as AppHeader } from './components/AppHeader.svelte';
 export { default as BusPicker } from './components/BusPicker.svelte';
+export { default as CommandPalette } from './components/CommandPalette.svelte';
 export { default as ControlPanel } from './components/ControlPanel.svelte';
 export { default as DemandSlider } from './components/DemandSlider.svelte';
 export { default as DisplayControls } from './components/DisplayControls.svelte';
@@ -28,6 +29,7 @@ export { default as McResults } from './components/McResults.svelte';
 export { default as McWorkbench } from './components/McWorkbench.svelte';
 
 export { default as McPfSettings } from './components/McPfSettings.svelte';
+export { default as McSolveControls } from './components/McSolveControls.svelte';
 export { default as McModelQualification } from './components/McModelQualification.svelte';
 
 export { default as McNetworkScope } from './components/McNetworkScope.svelte';

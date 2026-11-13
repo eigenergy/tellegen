@@ -12,6 +12,8 @@ export type { LogDocument, LogEntry, LogEntryInput, LogSeverity } from './log.sv
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as PanelFrame } from './components/PanelFrame.svelte';
 export { getPanelLayout } from './panels.svelte.js';
+export { getCommandRegistry, commandTitle, commandHint } from './commands.svelte.js';
+export type { Command } from './commands.svelte.js';
 export type { PanelSide, PanelPosition, PanelBounds } from './panels.svelte.js';
 export { default as TellegenProvider } from './TellegenProvider.svelte';
 export { default as TellegenShell } from './TellegenShell.svelte';
@@ -54,10 +56,17 @@ export {
 	edgeColor,
 	edgeWidth,
 	phaseColor,
+	phaseCss,
+	phaseLabel,
+	pairLabel,
+	wiresLabel,
 	neutralTerminal,
+	MC_PF_NAME,
 	placeMultiView,
 	buildGeographicView
 } from './multiconductor.js';
+export { quantity, quantityRange, voltsWithPu, degrees, MISSING } from './format.js';
+export type { QuantityUnit, QuantityOptions } from './format.js';
 export { distExtensionFormat } from './drop-classify.js';
 
 export { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
@@ -159,6 +168,7 @@ export { default as McResults } from './components/McResults.svelte';
 export { default as McWorkbench } from './components/McWorkbench.svelte';
 
 export { default as McPfSettings } from './components/McPfSettings.svelte';
+export { default as McSolveControls } from './components/McSolveControls.svelte';
 export { default as McModelQualification } from './components/McModelQualification.svelte';
 
 export { default as McNetworkScope } from './components/McNetworkScope.svelte';

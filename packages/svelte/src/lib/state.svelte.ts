@@ -417,11 +417,14 @@ export class MulticonductorCase {
 
 	get mcPfReason(): string | null {
 		if (!this.mcInput) return 'This case has no retained electrical input';
-		if (this.summary?.mc_pf_enabled !== true) return 'AC power flow is unavailable in this build';
+		if (this.summary?.mc_pf_enabled !== true)
+			return 'Multiconductor power flow is unavailable in this build';
 		return (
 			this.summary.mc_pf_reason ??
 			this.summary.mc_pf_unavailable_reason ??
-			(this.summary.mc_pf_supported !== true ? 'AC power flow is unavailable for this case' : null)
+			(this.summary.mc_pf_supported !== true
+				? 'Multiconductor power flow is unavailable for this case'
+				: null)
 		);
 	}
 	/** Import detects scope; only a solve action opts into the selection. */
@@ -606,6 +609,16 @@ export class AppState {
 	/** True under `(max-width: 760px)`; the panel renders as a bottom sheet. Set by
 	 * the shell from one media query so panel and map read the same value. */
 	compactLayout = $state(false);
+	/** Zen mode hides the panel toolbar and every panel so only the map and
+	 * header remain. It is a saved display preference, so a presenter keeps the
+	 * view across reloads; panel open state is left untouched so leaving zen
+	 * restores the previous view. */
+	get zen() {
+		return this.preferences.zen;
+	}
+	set zen(value: boolean) {
+		if (value !== this.preferences.zen) this.preferences.update({ zen: value });
+	}
 	/** Height in px the bottom sheet covers; 0 when `compactLayout` is false.
 	 * Read by the map's camera padding and by chrome anchored above the sheet. */
 	sheetInset = $state(0);

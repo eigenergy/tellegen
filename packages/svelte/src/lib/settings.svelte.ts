@@ -1,4 +1,5 @@
 import { settingsCatalog, type ResolvedSettings } from '@tellegen/engine';
+import { readModuleText } from './module-text.js';
 
 /** Selected next-run settings and accepted-result provenance have separate lives. */
 export class CaseSettings {
@@ -15,6 +16,8 @@ export class UserPreferences {
 	theme = $state<'light' | 'dark' | null>(null);
 	busSizing = $state<'power' | 'uniform'>('power');
 	coloring = $state<'price' | 'angle' | 'voltage' | 'demand'>('price');
+	/** Zen mode hides the panels; it survives a reload so a presenter keeps the view. */
+	zen = $state(false);
 	error = $state<string | null>(null);
 	revision = $state(0);
 	#storage: Storage | undefined;
@@ -35,7 +38,8 @@ export class UserPreferences {
 		return {
 			theme: this.theme,
 			busSizing: this.busSizing,
-			coloring: this.coloring
+			coloring: this.coloring,
+			zen: this.zen
 		};
 	}
 	update(patch: Record<string, unknown>, save = true) {
@@ -47,12 +51,15 @@ export class UserPreferences {
 						? value === 'power' || value === 'uniform'
 						: key === 'coloring'
 							? ['price', 'angle', 'voltage', 'demand'].includes(value as string)
-							: false;
+							: key === 'zen'
+								? typeof value === 'boolean'
+								: false;
 			if (!valid) throw new Error(`Invalid display preference: ${key}`);
 		}
 		if ('theme' in patch) this.theme = patch.theme as typeof this.theme;
 		if ('busSizing' in patch) this.busSizing = patch.busSizing as typeof this.busSizing;
 		if ('coloring' in patch) this.coloring = patch.coloring as typeof this.coloring;
+		if ('zen' in patch) this.zen = patch.zen as boolean;
 		this.revision++;
 		if (!save || !this.#storage) return;
 		try {
@@ -66,12 +73,17 @@ export class UserPreferences {
 		}
 	}
 	reset() {
-		this.update({ theme: null, busSizing: 'power', coloring: 'price' });
+		this.update({
+			theme: null,
+			busSizing: 'power',
+			coloring: 'price',
+			zen: false
+		});
 	}
 }
 
 /** The PowerIO module extension in which a saved Study records its settings. */
-export const RECORDED_SETTINGS_EXTENSION = 'tellegen.calculation_settings';
+export { RECORDED_SETTINGS_EXTENSION } from './module-text.js';
 
 /** Calculation settings a saved module records, read for this engine. */
 export interface RecordedCalculationSettings {
@@ -92,14 +104,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * A record from another engine version still opens: options this engine does not
  * know are dropped and listed in `ignored`, as the Rust Study does. */
 export function recordedCalculationSettings(input?: string): RecordedCalculationSettings | null {
-	if (!input) return null;
-	let value: unknown;
-	try {
-		value = JSON.parse(input)?.extensions?.[RECORDED_SETTINGS_EXTENSION];
-	} catch {
-		/* Input validation remains the engine's responsibility. */
-		return null;
-	}
+	// Text that does not parse reads as no record: input validation remains
+	// the engine's responsibility. The read is shared with the other reads of
+	// the same text, so it is a copy that callers may keep.
+	const recorded = readModuleText(input).recordedSettings;
+	const value: unknown = recorded === undefined ? undefined : structuredClone(recorded);
 	if (
 		!isRecord(value) ||
 		value.version !== 1 ||
@@ -117,5 +126,10 @@ export function recordedCalculationSettings(input?: string): RecordedCalculation
 		if (Object.hasOwn(defaults, key)) overrides[key] = option;
 		else ignored.push(key);
 	}
-	return { calculation, overrides, effective: { ...defaults, ...overrides }, ignored };
+	return {
+		calculation,
+		overrides,
+		effective: { ...defaults, ...overrides },
+		ignored
+	};
 }

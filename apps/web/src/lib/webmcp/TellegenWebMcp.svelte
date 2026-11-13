@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { PUBLIC_WEBMCP_EXPOSED_TO } from '$app/env/public';
 	import { trackUsage } from '../analytics/client.js';
 	import { getController } from '@tellegen/svelte';
 	import {
 		ExperimentJournal,
+		modelContextFeatures,
 		registerDocumentTellegenWebMcp,
 		type ExperimentRecord,
 		type TellegenToolActivityEvent
@@ -15,6 +17,12 @@
 	} from './tellegen-adapter.js';
 	import { PlanningActivityStore } from './planning-activity.svelte.js';
 	import WebMcpActivity from './WebMcpActivity.svelte';
+	import AgentRibbon from './AgentRibbon.svelte';
+	import {
+		detectWebMcpBrowser,
+		readBrowserSignals,
+		type WebMcpBrowserState
+	} from './browser-support.js';
 
 	import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 	import { createStudyAdapter } from '../studies/adapter.js';
@@ -29,6 +37,10 @@
 	let experiments = $state.raw<ExperimentRecord[]>([]);
 	let supported = $state(false);
 	let registrationError = $state<string | null>(null);
+	let browser = $state.raw<WebMcpBrowserState | null>(null);
+	/** Whether the page can list and call its own tools, as Claude in Chrome does. */
+	let pageToolCalls = $state(true);
+	let toolCount = $state(0);
 	let activities = $state<TellegenToolActivityEvent[]>([]);
 
 	function recordActivity(event: TellegenToolActivityEvent) {
@@ -36,7 +48,7 @@
 		if (event.type === 'finished')
 			trackUsage('agent.call', {
 				tool: event.toolName,
-				result: event.response.ok ? 'completed' : 'failed',
+				result: event.callerCancelled ? 'cancelled' : event.response.ok ? 'completed' : 'failed',
 				duration_ms: event.finishedAt - event.startedAt
 			});
 		if (event.type === 'finished') experiments = journal.records;
@@ -82,14 +94,26 @@
 		const lifecycle = new AbortController();
 		let disposed = false;
 		let handle: Awaited<ReturnType<typeof registerDocumentTellegenWebMcp>> | null = null;
+		browser = detectWebMcpBrowser(readBrowserSignals(document, navigator));
+		if (browser.kind === 'ready') {
+			const features = modelContextFeatures(
+				(document as unknown as { modelContext: Parameters<typeof modelContextFeatures>[0] })
+					.modelContext
+			);
+			pageToolCalls = features.get_tools && features.execute_tool;
+		}
 		const adapter = createTellegenWebMcpAdapter(ctrl, planning, workspace);
 		adapter.studies = createStudyAdapter(workspace);
 		void registerDocumentTellegenWebMcp(document, adapter, {
 			signal: lifecycle.signal,
 			onActivity: recordActivity,
 			recordValidatedInput: true,
+			// The registration check is for developers: dev builds, or `?debug`.
+			debugTool: import.meta.env.DEV || new URL(location.href).searchParams.has('debug'),
+			...(PUBLIC_WEBMCP_EXPOSED_TO ? { exposedTo: PUBLIC_WEBMCP_EXPOSED_TO.split(',') } : {}),
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
+				toolCount = handle?.toolNames.length ?? toolCount;
 				document.documentElement.dataset.webmcp = error ? 'error' : 'ready';
 				if (error) console.warn('tellegen WebMCP dynamic registration failed', error);
 			}
@@ -101,6 +125,7 @@
 				}
 				handle = registered;
 				supported = registered.supported;
+				toolCount = registered.toolNames.length;
 				trackUsage('agent.availability', {
 					result: supported && !registered.registrationError ? 'completed' : 'unavailable'
 				});
@@ -132,8 +157,12 @@
 	{closeStudy}
 	{supported}
 	{registrationError}
+	{browser}
+	{pageToolCalls}
+	{toolCount}
 	{activities}
 	{planning}
 	{experiments}
 	{exportJournal}
 />
+<AgentRibbon {activities} />

@@ -52,8 +52,9 @@ wrong trade for a native solver.
 ## MCP server
 
 The optional `mcp` extra adds the `mcp` SDK and the `powerio` wheel. It runs
-capability, solve, plan, and Study tools in process; see
-[Persistent Studies](studies.md).
+capability, solve, plan, and Study tools in process over stdio, with a case
+index resource and a congestion prompt. [MCP server](mcp.md) covers setup in
+Claude Code and Claude Desktop, the tools, and an example session.
 
 ```sh
 python -m pip install "tellegen[mcp]"
@@ -65,8 +66,8 @@ compiled engine is built on, so it reads the IR documents the engine writes
 (a 0.11 wheel refuses them). Installing the base package does not install or require
 the Python PowerIO package.
 
-Study paths are confined to `POWERIO_MCP_ALLOWED_ROOTS`, the policy shared
-with PowerMCP. Proposals stay unapplied; applying one is a human action, and
+Case and Study paths are confined to `POWERIO_MCP_ALLOWED_ROOTS`, the policy
+shared with PowerMCP. Proposals stay unapplied; applying one is a human action, and
 there is no tool for it.
 
 ## Versions

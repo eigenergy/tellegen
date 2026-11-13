@@ -1,5 +1,7 @@
 import type {
   AnalyzeSensitivityInput,
+  ExportCaseInput,
+  ImportCaseInput,
   ApplyCapacityPlanInput,
   CapacityPlanBusWeight,
   DemandEdit,
@@ -633,4 +635,67 @@ export function validateSettings(
     field: value.field === undefined ? undefined : string(value.field, "field"),
     patch,
   };
+}
+
+export function validateExportCase(
+  input: unknown,
+  formats: readonly string[],
+): ExportCaseInput {
+  const value = object(input, "input");
+  exactKeys(value, ["case_id", "expected_revision", "format"], "input");
+  const format = string(value.format, "format");
+  if (!formats.includes(format))
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      `format must be one of ${formats.join(", ")}`,
+    );
+  return {
+    caseId: string(value.case_id, "case_id"),
+    expectedRevision: string(value.expected_revision, "expected_revision"),
+    format,
+  };
+}
+
+/** Text case formats `import_case` opens, by file extension. */
+export const IMPORT_EXTENSIONS: readonly string[] = [
+  "m",
+  "raw",
+  "rawx",
+  "aux",
+  "epc",
+  "dss",
+  "json",
+  "xml",
+  "xiidm",
+  "uct",
+  "ucte",
+  "cdf",
+];
+const IMPORT_EXTENSION_SET = new Set(IMPORT_EXTENSIONS);
+/** Largest case text `import_case` accepts, in UTF-16 code units. */
+export const MAX_IMPORT_TEXT = 4_000_000;
+
+export function validateImportCase(input: unknown): ImportCaseInput {
+  const value = object(input, "input");
+  exactKeys(value, ["file_name", "text"], "input");
+  const fileName = string(value.file_name, "file_name");
+  const extension = /\.([A-Za-z0-9]+)$/.exec(fileName)?.[1]?.toLowerCase();
+  if (/[/\\\u0000-\u001f]/.test(fileName) || !extension)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "file_name must be a plain file name with an extension, such as case14.m",
+    );
+  if (!IMPORT_EXTENSION_SET.has(extension))
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      `import_case opens ${[...IMPORT_EXTENSION_SET].map((ext) => `.${ext}`).join(", ")} text; use the file picker for .${extension}`,
+    );
+  if (typeof value.text !== "string" || value.text.trim().length === 0)
+    throw new TellegenToolError("INVALID_INPUT", "text must be nonempty");
+  if (value.text.length > MAX_IMPORT_TEXT)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      `text exceeds ${MAX_IMPORT_TEXT} characters; use the file picker`,
+    );
+  return { fileName, text: value.text };
 }

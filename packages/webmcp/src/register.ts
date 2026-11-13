@@ -1,24 +1,69 @@
 import {
+  createTellegenDebugTool,
   createTellegenPlanningTools,
   createTellegenStudyTools,
   createTellegenTools,
+  DEFAULT_OUTPUT_BUDGET,
+  DEFAULT_TOOL_TIMEOUT_MS,
   type CreateTellegenToolsOptions,
 } from "./tools.js";
-import type {
-  ModelContextLike,
-  RegistrationHandle,
-  TellegenToolDefinition,
-  TellegenWebMcpAdapter,
+import {
+  TellegenRegistrationError,
+  type ModelContextLike,
+  type RegisterToolOptions,
+  type RegistrationHandle,
+  type TellegenToolDefinition,
+  type TellegenWebMcpAdapter,
 } from "./types.js";
 
 export interface RegisterOptions extends CreateTellegenToolsOptions {
   signal?: AbortSignal;
   /** Reports a dynamic registration error, then `null` after a later retry succeeds. */
   onRegistrationError?: (error: Error | null) => void;
+  /**
+   * Origins, other than this document's, allowed to discover and call the
+   * tools: for example the page that embeds tellegen in an iframe. The
+   * embedding page must also opt in from its side. Omit to keep the tools
+   * same-origin.
+   */
+  exposedTo?: string[];
+  /**
+   * Register `inspect_webmcp_registration`, a read-only tool annotated
+   * `debugging` that reports the registered tools, the last registration
+   * error and the WebMCP features the browser offers. Defaults to false.
+   */
+  debugTool?: boolean;
 }
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+async function registerOne(
+  modelContext: ModelContextLike,
+  tool: TellegenToolDefinition,
+  options: RegisterToolOptions,
+): Promise<void> {
+  try {
+    await modelContext.registerTool(tool, options);
+  } catch (error) {
+    throw new TellegenRegistrationError(tool.name, error);
+  }
+}
+
+/** The optional WebMCP features a model context offers. */
+export function modelContextFeatures(
+  modelContext: ModelContextLike,
+): Record<string, boolean> {
+  const has = (name: string) =>
+    typeof (modelContext as unknown as Record<string, unknown>)[name] ===
+    "function";
+  return {
+    register_tool: has("registerTool"),
+    get_tools: has("getTools"),
+    execute_tool: has("executeTool"),
+    events: has("addEventListener"),
+  };
 }
 
 /**
@@ -35,6 +80,7 @@ class DynamicGroup {
     private readonly modelContext: ModelContextLike,
     private readonly tools: TellegenToolDefinition[],
     private readonly lifecycle: AbortSignal,
+    private readonly exposedTo: string[] | undefined,
   ) {}
 
   async sync(available: boolean): Promise<void> {
@@ -48,8 +94,9 @@ class DynamicGroup {
       this.registered = true;
       try {
         for (const tool of this.tools) {
-          await this.modelContext.registerTool(tool, {
+          await registerOne(this.modelContext, tool, {
             signal: controller.signal,
+            ...(this.exposedTo ? { exposedTo: this.exposedTo } : {}),
           });
         }
       } catch (error) {
@@ -98,7 +145,17 @@ export async function registerTellegenWebMcp(
     onActivity: options.onActivity,
     recordValidatedInput: options.recordValidatedInput,
   };
-  const tools = [...createTellegenTools(adapter, toolOptions), ...(adapter.studies ? createTellegenStudyTools(adapter.studies, toolOptions) : [])];
+  const exposedTo = options.exposedTo ? [...options.exposedTo] : undefined;
+  const registration: RegisterToolOptions = {
+    signal: lifecycle.signal,
+    ...(exposedTo ? { exposedTo } : {}),
+  };
+  const tools = [
+    ...createTellegenTools(adapter, toolOptions),
+    ...(adapter.studies
+      ? createTellegenStudyTools(adapter.studies, toolOptions)
+      : []),
+  ];
   let dynamicNames: () => string[] = () => [];
   let unsubscribe: () => void = () => {};
   let registrationError: Error | null = null;
@@ -106,9 +163,25 @@ export async function registerTellegenWebMcp(
     registrationError = asError(error);
     options.onRegistrationError?.(registrationError);
   };
+  const allNames = () => [...tools.map((tool) => tool.name), ...dynamicNames()];
+  if (options.debugTool) {
+    tools.push(
+      createTellegenDebugTool(
+        () => ({
+          tools: allNames(),
+          registration_error: registrationError?.message ?? null,
+          exposed_to: exposedTo ?? [],
+          output_budget: toolOptions.outputBudget ?? DEFAULT_OUTPUT_BUDGET,
+          timeout_ms: toolOptions.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS,
+          model_context: modelContextFeatures(modelContext),
+        }),
+        toolOptions,
+      ),
+    );
+  }
   try {
     for (const tool of tools) {
-      await modelContext.registerTool(tool, { signal: lifecycle.signal });
+      await registerOne(modelContext, tool, registration);
     }
     const planning = adapter.planning;
     if (planning) {
@@ -117,11 +190,13 @@ export async function registerTellegenWebMcp(
         modelContext,
         groups.planning,
         lifecycle.signal,
+        exposedTo,
       );
       const proposalGroup = new DynamicGroup(
         modelContext,
         groups.proposal,
         lifecycle.signal,
+        exposedTo,
       );
       // Serialize syncs: availability can change while a registration is in
       // flight, and interleaved register/abort calls on one group would race.
@@ -162,7 +237,7 @@ export async function registerTellegenWebMcp(
   return {
     supported: true,
     get toolNames() {
-      return [...tools.map((tool) => tool.name), ...dynamicNames()];
+      return allNames();
     },
     get registrationError() {
       return registrationError;

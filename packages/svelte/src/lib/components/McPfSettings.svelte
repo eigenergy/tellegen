@@ -154,7 +154,5 @@
 	}
 	[role='alert'] {
 		color: var(--text-primary);
-		border-left: 3px solid #b7791f;
-		padding-left: 0.5rem;
 	}
 </style>

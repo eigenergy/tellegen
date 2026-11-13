@@ -2,78 +2,13 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/page-errors.js';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
-
-type ToolResponse =
-	| { ok: true; data: Record<string, unknown> }
-	| { ok: false; error: { code: string; message: string } };
-
-async function installWebMcpHarness(page: Page, failTool: string | null = null) {
-	await page.addInitScript((rejectedTool) => {
-		type Tool = {
-			name: string;
-			execute(input: Record<string, unknown>, options?: { signal: AbortSignal }): Promise<unknown>;
-		};
-		const tools = new Map<string, Tool>();
-		const modelContext = new (class extends EventTarget {
-			async registerTool(tool: Tool, options: { signal?: AbortSignal } = {}) {
-				if (tool.name === rejectedTool) throw new Error(`registration refused for ${tool.name}`);
-				if (tools.has(tool.name)) throw new DOMException('duplicate tool', 'InvalidStateError');
-				tools.set(tool.name, tool);
-				options.signal?.addEventListener(
-					'abort',
-					() => {
-						tools.delete(tool.name);
-						this.dispatchEvent(new Event('toolchange'));
-					},
-					{ once: true }
-				);
-				this.dispatchEvent(new Event('toolchange'));
-			}
-		})();
-		Object.defineProperty(Document.prototype, 'modelContext', {
-			configurable: true,
-			get: () => modelContext
-		});
-		Object.defineProperty(window, '__tellegenWebMcpTest', {
-			value: {
-				list: () => [...tools.keys()].sort(),
-				execute: async (name: string, input: Record<string, unknown>) => {
-					const tool = tools.get(name);
-					if (!tool) throw new Error(`tool ${name} is not registered`);
-					return tool.execute(input);
-				},
-				executeAborted: async (name: string, input: Record<string, unknown>, delayMs: number) => {
-					const tool = tools.get(name);
-					if (!tool) throw new Error(`tool ${name} is not registered`);
-					const controller = new AbortController();
-					const pending = tool.execute(input, { signal: controller.signal });
-					setTimeout(() => controller.abort(), delayMs);
-					return pending;
-				}
-			}
-		});
-	}, failTool);
-}
-
-async function callTool(
-	page: Page,
-	name: string,
-	input: Record<string, unknown>
-): Promise<ToolResponse> {
-	return page.evaluate(
-		async ({ toolName, args }) => {
-			const harness = (
-				window as unknown as {
-					__tellegenWebMcpTest: {
-						execute(name: string, input: Record<string, unknown>): Promise<ToolResponse>;
-					};
-				}
-			).__tellegenWebMcpTest;
-			return harness.execute(toolName, args);
-		},
-		{ toolName: name, args: input }
-	);
-}
+import {
+	callTool,
+	describeTool,
+	installWebMcpHarness,
+	type ToolResponse,
+	congestCase
+} from './fixtures/planning-case';
 
 test('headless tools inspect, query, focus, preview, mutate, and reject a stale replay', async ({
 	page
@@ -97,7 +32,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
+				'export_case',
 				'focus_network',
+				'import_case',
 				'inspect_case',
 				'inspect_settings',
 				'update_settings',
@@ -151,7 +88,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	await expect(page.locator('[data-webmcp-activity="open"]')).not.toBeVisible();
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
-	await expect(page.getByText('Inspect network')).toBeVisible();
+	await expect(
+		page.locator('[data-webmcp-activity="open"]').getByText('Inspect network')
+	).toBeVisible();
 
 	const queried = await callTool(page, 'query_network', {
 		case_id: caseId,
@@ -186,7 +125,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 	if (!previewed.ok) return;
 	expect(JSON.stringify(previewed).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('predicted Δ objective')).toBeVisible();
+	await expect(page.getByText('Predicted cost change', { exact: true })).toBeVisible();
 
 	const cancelled = await page.evaluate(
 		async ({ caseId, focusedRevision, busId }) =>
@@ -272,8 +211,8 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!updated.ok) return;
 	expect(String(updated.data.revision)).not.toBe(focusedRevision);
 	expect(JSON.stringify(updated).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('exact result')).toBeVisible();
-	await expect(page.getByText('binding lines')).toBeVisible();
+	await expect(page.getByText('Solved', { exact: true })).toBeVisible();
+	await expect(page.getByText('Lines at limit')).toBeVisible();
 
 	// Tool deltas are exact values, not slider gestures. A valid update below
 	// the UI slider's deadband must survive the transactional solve.
@@ -446,7 +385,9 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
+				'export_case',
 				'focus_network',
+				'import_case',
 				'inspect_case',
 				'inspect_settings',
 				'update_settings',
@@ -469,4 +410,61 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				'revise_study_goal'
 			].sort()
 		);
+});
+
+test('an agent call shows the activity ribbon with the Agent panel closed, and the ribbon opens the panel', async ({
+	page
+}) => {
+	await installWebMcpHarness(page);
+	const { caseId } = await congestCase(page);
+	await expect(page.locator('[data-webmcp-activity="open"]')).not.toBeVisible();
+
+	const queried = await callTool(page, 'query_network', {
+		case_id: caseId,
+		element_kind: 'branch',
+		sort_by: 'loading',
+		limit: 2
+	});
+	expect(queried.ok).toBe(true);
+	const ribbon = page.getByTestId('agent-ribbon');
+	await expect(ribbon).toBeVisible();
+	await expect(ribbon).toHaveAttribute('data-status', 'done');
+	await expect(ribbon).toContainText('Query network elements');
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('Returned 2 of 3 branches.');
+
+	// A failure stays on screen with the tool's own sentence.
+	const failed = await callTool(page, 'focus_network', {
+		case_id: 'no-such-case',
+		target: { kind: 'bus', element_id: '1' }
+	});
+	expect(failed.ok).toBe(false);
+	await expect(ribbon).toHaveAttribute('data-status', 'failed');
+	await expect(ribbon).toContainText('Focus network element');
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText(/^The .+\.$/);
+
+	await ribbon.click();
+	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
+	await expect(
+		page.locator('[data-webmcp-activity="open"]').getByText('Focus network element')
+	).toBeVisible();
+
+	// The ribbon leaves on its own once the result has been on screen a while.
+	await expect(ribbon).toHaveCount(0, { timeout: 12_000 });
+});
+
+test('zen mode keeps the ribbon, and the ribbon leaves zen to open the Agent panel', async ({
+	page
+}) => {
+	await installWebMcpHarness(page);
+	await congestCase(page);
+	await page.keyboard.press('ControlOrMeta+k');
+	const dialog = page.getByRole('dialog', { name: 'Command palette' });
+	await dialog.getByRole('combobox').fill('zen');
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await callTool(page, 'inspect_case', {});
+	const ribbon = page.getByTestId('agent-ribbon');
+	await expect(ribbon).toBeVisible();
+	await ribbon.click();
+	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
 });

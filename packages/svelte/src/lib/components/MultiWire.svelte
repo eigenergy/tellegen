@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { rgbaCss } from '../format.js';
-	import { isPhaseTerminal, phaseColor } from '../multiconductor.js';
+	import { quantity } from '../format.js';
+	import { phaseCss } from '../multiconductor.js';
+	import { uiTheme } from './ui-theme.js';
 	import type { MultiWireView } from '../diagram/index.js';
 
 	let { view }: { view: MultiWireView } = $props();
 
-	const colour = (terminal: string) =>
-		isPhaseTerminal(terminal) ? rgbaCss(phaseColor(terminal)) : 'var(--text-secondary)';
-	const amps = (a: number | null) => (a === null ? '' : `${a.toFixed(a >= 100 ? 0 : 1)} A`);
+	const theme = uiTheme();
+	const colour = (terminal: string) => phaseCss(terminal, theme.current);
 </script>
 
 <figure class="multi-wire">
@@ -21,7 +21,7 @@
 			<text class="bus" x={bus.x} y="12" text-anchor="middle">{bus.id}</text>
 			{#each bus.terminals as t, r (r)}
 				<g>
-					{#if t.attachments.length}<title>{t.name}: {t.attachments.join(', ')}</title>{/if}
+					{#if t.attachments.length}<title>{t.label}: {t.attachments.join(', ')}</title>{/if}
 					<line
 						class="rail"
 						x1={bus.x - 8}
@@ -34,7 +34,7 @@
 						class="terminal"
 						x={bus.x + (bus.x < view.width / 2 ? -12 : 12)}
 						y={t.y + 3}
-						text-anchor={bus.x < view.width / 2 ? 'end' : 'start'}>{t.name}</text
+						text-anchor={bus.x < view.width / 2 ? 'end' : 'start'}>{t.label}</text
 					>
 					{#if t.grounded}
 						<!-- Earth symbol: three shrinking bars below the rail end. -->
@@ -81,7 +81,7 @@
 			/>
 			{#if w.amps !== null}
 				<text class="amps" x={(w.x1 + w.x2) / 2} y={(w.y1 + w.y2) / 2 - 3} text-anchor="middle"
-					>{amps(w.amps)}</text
+					>{quantity(w.amps, 'A')}</text
 				>
 			{/if}
 		{/each}

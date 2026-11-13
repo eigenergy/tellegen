@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppState, CaseState, LocalCase } from '../src/lib/state.svelte.js';
-import { Controller } from '../src/lib/controller.svelte.js';
+import { Controller, NOTICES } from '../src/lib/controller.svelte.js';
 import type { TellegenApiClient } from '../src/lib/api.js';
 import { applyDisplayGeo, applyGeo, createStudy, ingestJsonDrop, parseGeo } from '@tellegen/engine';
 
@@ -233,7 +233,7 @@ describe('coordinate attachments', () => {
 		});
 		app.localCases = [unrelated];
 		await ctrl.ingestFiles(files().slice(1));
-		expect(app.error).toBe('Select the matching case before attaching coordinates');
+		expect(app.error).toBe(NOTICES.selectMatchingCase);
 		expect(unrelated.studyInputJson).toBe('other');
 		expect(applyGeo).not.toHaveBeenCalled();
 		expect(applyDisplayGeo).not.toHaveBeenCalled();
@@ -321,7 +321,7 @@ describe('coordinate attachments', () => {
 		const { app, ctrl } = host();
 		app.studyView = { id: 'saved' } as never;
 		await ctrl.ingestFiles(files().slice(1));
-		expect(app.error).toBe('Return to the live case before attaching coordinates');
+		expect(app.error).toBe(NOTICES.returnToLiveCase);
 		expect(applyGeo).not.toHaveBeenCalled();
 	});
 

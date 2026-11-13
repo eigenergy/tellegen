@@ -150,6 +150,8 @@ describe('results table', () => {
 			'violation',
 			'IEEE PVUR'
 		]);
+		// The CSV keeps source names; the table shows phase labels.
+		expect(row.pairLabels).toBe('A–N B–N C–N');
 		const branch = tableModel(snapshot, names, 'branch');
 		expect([branch.row(0).loss, branch.row(0).state, branch.row(2).state]).toEqual([
 			2,
@@ -168,7 +170,7 @@ describe('results table', () => {
 		expect([...queryTable(bus, { sortKey: 'band', descending: true })]).toEqual([1, 0, 2]);
 		const csv = tableCsv(bus, [0, 2], ['case: test']).split('\r\n');
 		expect(csv[0]).toBe('# case: test');
-		expect(csv[1]).toContain('V1 (V)');
+		expect(csv[1]).toContain('V AN (V)');
 		expect(csv[3].startsWith(`"'=cmd"`)).toBe(true);
 		expect(tableCsv(branch, [0]).split('\r\n')[1]).toContain(',-98,');
 	});
@@ -206,10 +208,10 @@ describe('value labels', () => {
 	});
 
 	it('labels the pair nearest a limit and the branch value for the view family', () => {
-		expect(busLabel(snapshot, 1)).toMatchObject({ text: '195 V', state: 'violation' });
+		expect(busLabel(snapshot, 1)).toMatchObject({ text: '195.0 V', state: 'violation' });
 		expect(busLabel(snapshot, 2)).toBeNull();
-		expect(branchLabel(snapshot, 0, 'loading')).toMatchObject({ text: '95.0 %', state: 'warning' });
-		expect(branchLabel(snapshot, 1, 'power')?.text).toBe('50 kW');
+		expect(branchLabel(snapshot, 0, 'loading')).toMatchObject({ text: '95.0%', state: 'warning' });
+		expect(branchLabel(snapshot, 1, 'power')?.text).toBe('50.00 kW');
 		expect(branchLabel(snapshot, 2, 'loading')).toBeNull();
 	});
 });

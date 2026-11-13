@@ -11,10 +11,12 @@
 		McNetworkScope,
 		McModelQualification,
 		McWorkbench,
+		McSolveControls,
+		MC_PF_NAME,
 		getNoticeCenter,
 		errorNoticeTitle
 	} from '@tellegen/svelte';
-	import { validateMcPfOptions, type StudyOperation } from '@tellegen/engine';
+	import type { StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
 	import { caseRevision } from '../webmcp/tellegen-adapter.js';
 	import { StudyWorkspace } from './workspace.svelte.js';
@@ -546,50 +548,31 @@
 				</p>{/if}
 			{#if multi}
 				<h3>{multi.label}</h3>
-				<p class="hint">Distribution power flow</p>
-				<button onclick={() => (ctrl.app.settingsOpen = true)}>Power flow settings</button>
+				<p class="hint">Distribution case · {MC_PF_NAME}</p>
 				<McNetworkScope scope={multi.mcPreparedScope} islands={multi.mcExcludedIslands} preview />
-				{#if !multi.mcPfSupported}<p class="hint">{multi.mcPfReason}</p>{/if}
 				{#if multi.result}<McModelQualification model={multi.result.load_model} compact />{/if}
-				<div class="action-row">
-					{#if multi.solving}<span role="status">Calculating...</span>{#if multi.solveAbort}<button
-								onclick={() => multi.solveAbort?.abort()}>Cancel</button
+				<McSolveControls
+					mc={multi}
+					busy={workspace.busy}
+					onsettings={() => (ctrl.app.settingsOpen = true)}
+					onsolve={() => {
+						void attempt(() =>
+							ctrl.solveMultiCase(multi, multi.mcOptions, undefined, multi.mcRequiresEnergizedSolve)
+						);
+					}}
+				>
+					{#snippet actions()}
+						<button
+							disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
+							onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
+						>
+						{#if linkable}<button
+								title="A link back to this saved study, its selection and view. It opens only in a browser that holds the study, saved there or imported from an export; it does not carry the data."
+								onclick={() => void attempt(copyLink)}
+								>{linkCopied ? 'Link copied' : 'Copy view link'}</button
 							>{/if}
-					{:else}<button
-							class="primary"
-							disabled={!multi.mcPfSupported ||
-								workspace.busy ||
-								!!validateMcPfOptions(multi.mcOptions)}
-							onclick={() => {
-								void attempt(() =>
-									ctrl.solveMultiCase(
-										multi,
-										multi.mcOptions,
-										undefined,
-										multi.mcRequiresEnergizedSolve
-									)
-								);
-							}}>{multi.mcSolveLabel}</button
-						>{/if}
-					<button
-						disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
-						onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
-					>
-					{#if linkable}<button
-							title="A link back to this saved study, its selection and view. It opens only in a browser that holds the study, saved there or imported from an export; it does not carry the data."
-							onclick={() => void attempt(copyLink)}
-							>{linkCopied ? 'Link copied' : 'Copy view link'}</button
-						>{/if}
-				</div>
-				{#if !multi.mcPfSupported}<button
-						class="text-button"
-						onclick={() =>
-							notices.push({
-								kind: 'warning',
-								title: 'AC power flow unavailable',
-								details: multi.mcPfReason ?? 'This case cannot run AC power flow'
-							})}>Why unavailable</button
-					>{/if}
+					{/snippet}
+				</McSolveControls>
 				{#if multi.result}<div bind:this={mcResultsStart}></div>{/if}
 				{#if multi.result && multi.graph && multi.overviewInputs && multi.overviewSearch}<McWorkbench
 						snapshot={multi.overviewSnapshot}
@@ -618,6 +601,7 @@
 						selectedBus={multi.selectedBusId}
 						selectedEdge={multi.selectedEdgeId}
 						graph={multi.graph}
+						searchIndex={multi.overviewSearch}
 					/>{/if}
 			{:else if !doc || creating}
 				<h3>Save this case</h3>

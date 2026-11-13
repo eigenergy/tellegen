@@ -492,8 +492,4 @@
 		margin: 0;
 		overflow-wrap: anywhere;
 	}
-	[role='alert'] {
-		border-left: 3px solid #b7791f;
-		padding-left: 8px;
-	}
 </style>

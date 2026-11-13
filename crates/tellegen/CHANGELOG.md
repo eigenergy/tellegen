@@ -4,6 +4,16 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.7.1](https://github.com/eigenergy/tellegen/compare/v0.7.0...v0.7.1) - 2026-11-13
+
+### Changed
+
+- Pin PowerIO 0.11.11 ([#372](https://github.com/eigenergy/tellegen/pull/372))
+
+### Fixed
+
+- Read a PowerIO 0.12 unlimited rating as no bound in the 0.12 bridge ([#371](https://github.com/eigenergy/tellegen/pull/371))
+
 ## [0.7.0](https://github.com/eigenergy/tellegen/compare/v0.6.2...v0.7.0) - 2026-11-10
 
 ### Changed

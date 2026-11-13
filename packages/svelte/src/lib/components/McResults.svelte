@@ -1,6 +1,8 @@
 <script lang="ts">
 	import McNetworkScope from './McNetworkScope.svelte';
 	import McModelQualification from './McModelQualification.svelte';
+	import OmniSearch from './OmniSearch.svelte';
+	import { buildSearchIndex, graphInputs, type SearchIndex } from '../diagram/index.js';
 	import {
 		mcPfResultDetail,
 		summarizeMcPfResult,
@@ -11,7 +13,15 @@
 		type McPfResult,
 		type McPfSummary
 	} from '@tellegen/engine';
-	import { neutralTerminal } from '../multiconductor.js';
+	import {
+		EXCLUDED_ISLAND_BUS,
+		MC_PF_NAME,
+		neutralTerminal,
+		phaseCss,
+		phaseLabel
+	} from '../multiconductor.js';
+	import { uiTheme } from './ui-theme.js';
+	import { MISSING, quantity } from '../format.js';
 	import type { McEditTiming } from '../state.svelte.js';
 	let {
 		result,
@@ -21,7 +31,8 @@
 		elapsedMs,
 		selectedBus,
 		selectedEdge,
-		graph
+		graph,
+		searchIndex
 	}: {
 		/** A live session's summary, or a stored full result. */
 		result: McPfSummary | McPfResult;
@@ -34,6 +45,9 @@
 		selectedBus: string | null;
 		selectedEdge: string | null;
 		graph: DistGraph | null;
+		/** The case's search index (`MulticonductorCase.overviewSearch`); built from `graph` when
+		 * omitted. */
+		searchIndex?: SearchIndex | null;
 	} = $props();
 	const summary = $derived('terminals' in result ? summarizeMcPfResult(result) : result);
 	const load = $derived.by(() => {
@@ -44,16 +58,18 @@
 	});
 	let busChoice = $state('');
 	let edgeChoice = $state('');
-	/** One entry per equipment id. A multi-winding transformer projects to several graph edges
-	 * that share its id (one per winding pair), so the edges are grouped by id. */
-	const equipmentOptions = $derived.by(() => {
-		const byId = new Map<string, string[]>();
-		for (const edge of graph?.edges ?? []) {
-			const ends = byId.get(edge.id) ?? [];
-			ends.push(`${edge.from} - ${edge.to}`);
-			byId.set(edge.id, ends);
-		}
-		return [...byId].map(([id, ends]) => ({ id, label: `${ends.join(', ')}, ${id}` }));
+	/** The search over buses and equipment: the case's own when given, else built from `graph`.
+	 * A multi-winding transformer is one entry, at its first edge. */
+	const index = $derived(
+		searchIndex ?? (graph ? buildSearchIndex(graphInputs(graph).entities) : null)
+	);
+	/** The selected equipment with the buses its edges join (a multi-winding transformer has
+	 * several). */
+	const equipmentLabel = $derived.by(() => {
+		const ends = (graph?.edges ?? [])
+			.filter((edge) => edge.id === edgeId)
+			.map((edge) => `${edge.from}–${edge.to}`);
+		return ends.length ? `${edgeId} (${ends.join(', ')})` : edgeId;
 	});
 	const busId = $derived(
 		selectedBus ??
@@ -106,7 +122,9 @@
 		(current?.terminals ?? []).filter(
 			(row) =>
 				(!busId || row.bus === busId) &&
-				`${row.bus} ${row.terminal}`.toLowerCase().includes(search.toLowerCase())
+				`${row.bus} ${row.terminal} ${phaseLabel(row.terminal, neutralName)}`
+					.toLowerCase()
+					.includes(search.toLowerCase())
 		)
 	);
 	const pageCount = $derived(Math.max(1, Math.ceil(terminals.length / size)));
@@ -117,20 +135,22 @@
 	const currentPortPage = $derived(Math.min(portPage, portPages - 1));
 	const visiblePorts = $derived(current?.element_ports ?? []);
 	const magnitude = (value: McComplex) => Math.hypot(value.re, value.im);
-	const fixed = (value: number) => (Number.isFinite(value) ? value.toFixed(3) : '-');
-	const ms = (value: number | null) => (value === null ? '-' : `${value.toFixed(1)} ms`);
+	const theme = uiTheme();
 	const angle = (value: McComplex) =>
-		magnitude(value) > 1e-12 ? ((Math.atan2(value.im, value.re) * 180) / Math.PI).toFixed(2) : '-';
+		quantity(
+			magnitude(value) > 1e-12 ? (Math.atan2(value.im, value.re) * 180) / Math.PI : null,
+			'°'
+		);
 </script>
 
-<section aria-label="AC power flow results" class="mc-results">
+<section aria-label="{MC_PF_NAME} results" class="mc-results">
 	<McNetworkScope
 		scope={summary.network_scope}
 		islands={'excluded_islands' in result ? result.excluded_islands : excludedIslands}
 	/>
 	<McModelQualification model={summary.load_model} />
 	<div class="result-heading">
-		<strong>AC power flow</strong><span
+		<strong>{MC_PF_NAME}</strong><span
 			>{summary.iterations} iterations{elapsedMs === null
 				? ''
 				: `, ${Math.round(elapsedMs)} ms`}</span
@@ -149,36 +169,49 @@
 			<dt>Load voltage range</dt>
 			<dd>
 				{summary.min_voltage_pu == null || summary.max_voltage_pu == null
-					? 'n/a'
-					: `${fixed(summary.min_voltage_pu)}–${fixed(summary.max_voltage_pu)} pu`}
+					? MISSING
+					: `${quantity(summary.min_voltage_pu, 'pu')} – ${quantity(summary.max_voltage_pu, 'pu')}`}
 			</dd>
 		</div>
 		<div>
 			<dt>Source P / Q</dt>
-			<dd>{fixed(sourcePower.re / 1000)} / {fixed(sourcePower.im / 1000)} kW / kvar</dd>
+			<dd>
+				{quantity(sourcePower.re / 1000, 'kW')} / {quantity(sourcePower.im / 1000, 'kvar')}
+			</dd>
 		</div>
-		<div>
+		<div title="V·conj(I) summed over the ports of lines, switches, transformers and shunts">
 			<dt>Passive loss</dt>
-			<dd>{fixed(passiveLoss / 1000)} kW</dd>
+			<dd>{quantity(passiveLoss / 1000, 'kW')}</dd>
 		</div>
 	</dl>
-	<label class="search"
-		>Bus result<select
-			value={busId}
-			onchange={(event) => {
-				busChoice = event.currentTarget.value;
-				selectedBus = null;
-				page = 0;
-			}}
-			>{#each graph?.buses ?? [] as bus (bus.id)}<option value={bus.id}>{bus.id}</option
-				>{/each}</select
-		></label
-	>
+	<p class="convention">
+		Source power is positive into the network; equipment P and Q are positive into the equipment.
+		Passive loss includes shunts, so it can exceed the overview's branch losses.
+	</p>
+	<div class="search">
+		<span class="current"
+			>Bus result <strong class="mono">{busId || MISSING}</strong>{#if edgeId}&nbsp;· equipment
+				<strong class="mono">{edgeId}</strong>{/if}</span
+		>
+		{#if index}<OmniSearch
+				{index}
+				placeholder="Find a bus or equipment"
+				onselect={(m) => {
+					if (!graph) return;
+					if (m.kind === 'bus') {
+						busChoice = graph.buses[m.index].id;
+						selectedBus = null;
+						page = 0;
+					} else if (m.kind === 'branch') {
+						edgeChoice = graph.edges[m.index].id;
+						selectedEdge = null;
+						portPage = 0;
+					}
+				}}
+			/>{/if}
+	</div>
 	{#if excludedIslands.some((island) => island.buses.includes(busId ?? ''))}
-		<p role="status">
-			This bus is excluded from the calculation because its island has no voltage source. No result
-			is available.
-		</p>
+		<p role="status">{EXCLUDED_ISLAND_BUS}</p>
 	{/if}
 	<label class="search"
 		>Terminals<input
@@ -193,19 +226,16 @@
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div class="scroll" role="region" aria-label="Terminal result columns" tabindex="0">
 		<table aria-label="Terminal results">
-			<thead
-				><tr
-					><th>Terminal</th><th>To ground<br />V</th><th>Angle<br />deg</th><th
-						>Net current<br />A</th
-					></tr
-				></thead
-			>
+			<thead><tr><th>Terminal</th><th>To ground</th><th>Angle</th><th>Net current</th></tr></thead>
 			<tbody
 				>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
 					<tr
-						><td>{row.terminal}</td><td>{fixed(magnitude(row.voltage))}</td><td
-							>{angle(row.voltage)}</td
-						><td>{fixed(magnitude(row.current_into_network))}</td></tr
+						><td
+							><i class="phase" style:background={phaseCss(row.terminal, theme.current)}
+							></i>{phaseLabel(row.terminal, neutralName)}</td
+						><td>{quantity(magnitude(row.voltage), 'V')}</td><td>{angle(row.voltage)}</td><td
+							>{quantity(magnitude(row.current_into_network), 'A')}</td
+						></tr
 					>
 				{/each}</tbody
 			>
@@ -230,7 +260,7 @@
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div class="scroll" role="region" aria-label="Neutral voltage columns" tabindex="0">
 				<table aria-label="Neutral voltage results">
-					<thead><tr><th>Terminal</th><th>To neutral<br />V</th><th>Angle<br />deg</th></tr></thead>
+					<thead><tr><th>Terminal</th><th>To neutral</th><th>Angle</th></tr></thead>
 					<tbody
 						>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
 							{@const relative = {
@@ -238,9 +268,10 @@
 								im: row.voltage.im - neutral.im
 							}}
 							<tr
-								><td>{row.terminal}</td><td>{fixed(magnitude(relative))}</td><td
-									>{angle(relative)}</td
-								></tr
+								><td
+									><i class="phase" style:background={phaseCss(row.terminal, theme.current)}
+									></i>{phaseLabel(row.terminal, neutralName)}</td
+								><td>{quantity(magnitude(relative), 'V')}</td><td>{angle(relative)}</td></tr
 							>
 						{/each}</tbody
 					>
@@ -250,19 +281,16 @@
 	{/if}
 	<details>
 		<summary>Equipment currents and power</summary>
-		<label class="search"
-			>Branch result<select
-				value={edgeId}
-				onchange={(event) => {
-					edgeChoice = event.currentTarget.value;
-					selectedEdge = null;
-					portPage = 0;
-				}}
-				><option value="">All equipment</option>{#each equipmentOptions as option, i (i)}<option
-						value={option.id}>{option.label}</option
-					>{/each}</select
-			></label
-		>
+		<p class="equipment-scope">
+			{#if edgeId}Equipment <strong class="mono">{equipmentLabel}</strong>
+				<button
+					onclick={() => {
+						edgeChoice = '';
+						selectedEdge = null;
+						portPage = 0;
+					}}>Show all equipment</button
+				>{:else}All equipment; find one above to narrow the table.{/if}
+		</p>
 		<p>Current enters the named equipment at each bus terminal.</p>
 		<!-- Scrollable result tables accept keyboard navigation. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -270,16 +298,16 @@
 			<table aria-label="Equipment currents">
 				<thead
 					><tr
-						><th>Equipment</th><th>Bus</th><th>Terminal</th><th>Current<br />A</th><th>P<br />kW</th
-						><th>Q<br />kvar</th></tr
+						><th>Equipment</th><th>Bus</th><th>Terminal</th><th>Current</th><th>P</th><th>Q</th></tr
 					></thead
 				><tbody
 					>{#each visiblePorts as row (JSON.stringify( [row.kind, row.element, row.branch, row.bus, row.terminal] ))}<tr
-							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td>{row.terminal}</td><td
-								>{fixed(magnitude(row.current_into_element))}</td
-							><td>{fixed(row.power_into_element.re / 1000)}</td><td
-								>{fixed(row.power_into_element.im / 1000)}</td
-							></tr
+							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td
+								><i class="phase" style:background={phaseCss(row.terminal, theme.current)}
+								></i>{phaseLabel(row.terminal)}</td
+							><td>{quantity(magnitude(row.current_into_element), 'A')}</td><td
+								>{quantity(row.power_into_element.re / 1000, 'kW')}</td
+							><td>{quantity(row.power_into_element.im / 1000, 'kvar')}</td></tr
 						>{/each}</tbody
 				>
 			</table>
@@ -326,21 +354,22 @@
 			{#if timing}
 				<div>
 					<dt>Engine solve</dt>
-					<dd>{ms(timing.engine_ms)}</dd>
+					<dd>{quantity(timing.engine_ms, 'ms')}</dd>
 				</div>
 				<div>
 					<dt>Transfer and parse</dt>
 					<dd>
-						{ms(
+						{quantity(
 							timing.engine_ms === null
 								? null
-								: timing.round_trip_ms - timing.engine_ms + timing.parse_ms
+								: timing.round_trip_ms - timing.engine_ms + timing.parse_ms,
+							'ms'
 						)}
 					</dd>
 				</div>
 				<div>
 					<dt>Total update</dt>
-					<dd>{ms(timing.total_ms)}</dd>
+					<dd>{quantity(timing.total_ms, 'ms')}</dd>
 				</div>
 			{/if}
 		</dl>
@@ -372,6 +401,17 @@
 	p {
 		color: var(--text-secondary);
 	}
+	.current {
+		color: var(--text-secondary);
+	}
+	.current strong {
+		color: var(--ink);
+		font-weight: 500;
+	}
+	.equipment-scope button {
+		margin-left: 6px;
+		padding: 2px 6px;
+	}
 	.search {
 		display: flex;
 		flex-direction: column;
@@ -379,7 +419,6 @@
 		margin: 12px 0 8px;
 	}
 	input,
-	select,
 	button {
 		font: inherit;
 		color: var(--ink);
@@ -395,8 +434,7 @@
 		opacity: 0.4;
 		cursor: default;
 	}
-	input,
-	select {
+	input {
 		width: 100%;
 		box-sizing: border-box;
 	}
@@ -427,6 +465,13 @@
 	th {
 		color: var(--text-secondary);
 		font-weight: 500;
+	}
+	.phase {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		margin-right: 5px;
+		border-radius: 50%;
 	}
 	.pagination {
 		margin: 8px 0;

@@ -11,7 +11,7 @@
 			{mw}
 		</span>
 	{/each}
-	<span class="mono dim caption">MW, max(load,&#8201;gen)</span>
+	<span class="dim caption">MW of load or generation, whichever is larger</span>
 </div>
 
 <style>

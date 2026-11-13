@@ -27,8 +27,8 @@ Render the full viewer:
 
 ```svelte
 <script lang="ts">
-  import { TellegenViewer } from "@tellegen/svelte";
-  import "@tellegen/svelte/styles.css";
+	import { TellegenViewer } from '@tellegen/svelte';
+	import '@tellegen/svelte/styles.css';
 </script>
 
 <TellegenViewer />
@@ -61,8 +61,8 @@ Use local files only by disabling bundled case loading:
 
 ```svelte
 <script lang="ts">
-  import { TellegenViewer } from "@tellegen/svelte";
-  import "@tellegen/svelte/styles.css";
+	import { TellegenViewer } from '@tellegen/svelte';
+	import '@tellegen/svelte/styles.css';
 </script>
 
 <TellegenViewer loadDefaultCases={false} showFooter={false} />
@@ -73,20 +73,20 @@ persistent layout and render the shell on the page:
 
 ```svelte
 <script lang="ts">
-  import { TellegenProvider } from "@tellegen/svelte";
-  import "@tellegen/svelte/styles.css";
+	import { TellegenProvider } from '@tellegen/svelte';
+	import '@tellegen/svelte/styles.css';
 
-  let { children } = $props();
+	let { children } = $props();
 </script>
 
 <TellegenProvider>
-  {@render children()}
+	{@render children()}
 </TellegenProvider>
 ```
 
 ```svelte
 <script lang="ts">
-  import { TellegenShell } from "@tellegen/svelte";
+	import { TellegenShell } from '@tellegen/svelte';
 </script>
 
 <TellegenShell />
@@ -96,6 +96,61 @@ The provider owns the controller and its cases. Unmounting it disposes the
 controller, which frees every case's browser Study and multiconductor session
 in the engine worker, so a provider that should keep its cases across pages
 belongs in a layout that stays mounted.
+
+### Command palette and zen mode
+
+Press **Cmd+K** (Ctrl+K on Windows and Linux), or the **Commands** button in
+the header, to open the command palette. Type to filter; each word you type
+must start a word of the command or its keywords. Use the arrow keys to move
+and Enter to run. The shell lists its commands in three groups:
+
+- **Actions**: run the calculation for the displayed case, fit the network to
+  the view, switch between the light and dark themes, enter or exit zen mode,
+  and reset the panel layout.
+- **Cases**: open a case file, or switch to any case in the header.
+- **Panels**: open or close each panel, including panels a host registers, such
+  as the web app's Agent panel.
+
+**Zen mode** hides the panel toolbar, every panel, the footer and the zoom
+buttons so only the map and header remain. The case strip collapses to the
+active case and shows the rest on hover or focus, and the map attribution
+collapses to its (i) button. Escape, the **Exit zen** button in the header, or
+running the command again restores the previous view. Zen mode is saved with
+the display preferences, so it survives a reload.
+
+Components under `TellegenProvider` can add commands. `register` adds one
+command; `registerSource` adds a function the palette calls each time it
+filters, for lists that follow live state:
+
+```ts
+import { onDestroy } from 'svelte';
+import { getCommandRegistry } from '@tellegen/svelte';
+
+const commands = getCommandRegistry();
+onDestroy(
+	commands.register({
+		id: 'export-report',
+		title: 'Export report',
+		hint: 'Download the current results as a PDF',
+		keywords: ['pdf', 'save'],
+		run: () => exportReport()
+	})
+);
+onDestroy(
+	commands.registerSource(() =>
+		scenarios.map((s) => ({
+			id: `scenario:${s.id}`,
+			title: `Load scenario ${s.name}`,
+			group: 'Cases',
+			run: () => load(s)
+		}))
+	)
+);
+```
+
+Both return an unregister function. Registering the same `id` again replaces
+the earlier command, and `title` and `hint` may be functions when the label
+depends on state.
 
 `@tellegen/svelte` also exports lower level pieces for custom shells:
 
@@ -116,35 +171,35 @@ inside `TellegenProvider`:
 ```svelte
 <!-- +layout.svelte -->
 <script lang="ts">
-  import { TellegenProvider } from "@tellegen/svelte";
-  import "@tellegen/svelte/styles.css";
-  import MyShell from "./MyShell.svelte";
+	import { TellegenProvider } from '@tellegen/svelte';
+	import '@tellegen/svelte/styles.css';
+	import MyShell from './MyShell.svelte';
 </script>
 
 <TellegenProvider loadDefaultCases={false} apiBase={null} theme="dark">
-  <MyShell />
+	<MyShell />
 </TellegenProvider>
 ```
 
 ```svelte
 <!-- MyShell.svelte: reads the controller from context, so it must be a child -->
 <script lang="ts">
-  import { PanelFrame, getController } from "@tellegen/svelte";
-  import { TellegenMap } from "@tellegen/svelte/map";
-  import { NotificationCenter, PanelHost, ShellEnvironment } from "@tellegen/svelte/components";
+	import { PanelFrame, getController } from '@tellegen/svelte';
+	import { TellegenMap } from '@tellegen/svelte/map';
+	import { NotificationCenter, PanelHost, ShellEnvironment } from '@tellegen/svelte/components';
 
-  const ctrl = getController();
+	const ctrl = getController();
 </script>
 
 <ShellEnvironment />
 <TellegenMap
-  theme="dark"
-  projection="globe"
-  onbusclick={ctrl.selectBus}
-  onlocalbusclick={ctrl.selectLocalBus}
-  onmultibusclick={ctrl.selectMultiBus}
-  onplacecase={ctrl.placeCase}
-  onmapclick={ctrl.clearSelection}
+	theme="dark"
+	projection="globe"
+	onbusclick={ctrl.selectBus}
+	onlocalbusclick={ctrl.selectLocalBus}
+	onmultibusclick={ctrl.selectMultiBus}
+	onplacecase={ctrl.placeCase}
+	onmapclick={ctrl.clearSelection}
 />
 <PanelHost showToolbar={false} />
 <NotificationCenter />
@@ -271,15 +326,15 @@ runs before the first style loads, so one listener covers the primary and the
 fallback:
 
 ```ts
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { Map as MapLibreMap } from 'maplibre-gl';
 
 function onMapReady(map: MapLibreMap) {
-  const addFeeders = () => {
-    map.addSource("feeders", { type: "geojson", data: "/feeders.geojson" });
-    map.addLayer({ id: "feeders", type: "line", source: "feeders" });
-  };
-  map.on("style.load", addFeeders);
-  return () => map.off("style.load", addFeeders);
+	const addFeeders = () => {
+		map.addSource('feeders', { type: 'geojson', data: '/feeders.geojson' });
+		map.addLayer({ id: 'feeders', type: 'line', source: 'feeders' });
+	};
+	map.on('style.load', addFeeders);
+	return () => map.off('style.load', addFeeders);
 }
 ```
 
@@ -290,17 +345,17 @@ declare the key as an optional public build-time variable:
 
 ```ts
 // src/env.ts
-import { defineEnvVars } from "@sveltejs/kit/env";
+import { defineEnvVars } from '@sveltejs/kit/env';
 
 export const variables = defineEnvVars({
-  PUBLIC_CARTO_BASEMAP_KEY: { public: true, static: true, schema: (value) => value ?? "" }
+	PUBLIC_CARTO_BASEMAP_KEY: { public: true, static: true, schema: (value) => value ?? '' }
 });
 ```
 
 ```svelte
 <script lang="ts">
-  import { TellegenProvider } from "@tellegen/svelte";
-  import { PUBLIC_CARTO_BASEMAP_KEY } from "$app/env/public";
+	import { TellegenProvider } from '@tellegen/svelte';
+	import { PUBLIC_CARTO_BASEMAP_KEY } from '$app/env/public';
 </script>
 
 <TellegenProvider cartoApiKey={PUBLIC_CARTO_BASEMAP_KEY}>...</TellegenProvider>
@@ -359,18 +414,21 @@ exclusion.
 token in `styles.css`. The default shell passes the theme to its map, so the
 basemap and the overlay palette follow. A custom shell passes
 `theme="dark"` to `TellegenMap` itself. A server-rendered host can put the
-attribute in its template to avoid a light first paint. Text tokens keep at
-least 7:1 against the panel on either ground.
+attribute in its template to avoid a light first paint. With no `theme` prop,
+no attribute in the template and no saved viewer choice, the provider follows
+the operating system's `prefers-color-scheme`, and `styles.css` paints the dark
+tokens from the first frame. Text tokens keep at least 7:1 against the panel on
+either ground.
 
 ### Opening a module from memory
 
 A host that produces a balanced powerio module itself opens it without a file:
 
 ```ts
-import { getController } from "@tellegen/svelte";
+import { getController } from '@tellegen/svelte';
 
 const ctrl = getController();
-const local = await ctrl.openBalancedModule({ name: "synthetic grid", moduleJson });
+const local = await ctrl.openBalancedModule({ name: 'synthetic grid', moduleJson });
 // or, with the payload the engine's ingestCase already returned for it:
 await ctrl.openBalancedModule({ name, payload, frame: false });
 // swap it for a new result in place
@@ -397,7 +455,7 @@ npm install @tellegen/engine
 Use the engine package when you want to build your own UI:
 
 ```ts
-import { createStudy, formatOf, ingestCase, solveModule } from "@tellegen/engine";
+import { createStudy, formatOf, ingestCase, solveModule } from '@tellegen/engine';
 ```
 
 `ingestCase` and solvable JSON ingestion return a retained PowerIO module in
@@ -426,19 +484,23 @@ http, under Do Not Track or Global Privacy Control, or after the visitor opted
 out. The package has no dependencies.
 
 ```ts
-import { createAnalytics, localStorageOptOut } from "@tellegen/analytics";
+import { createAnalytics, localStorageOptOut } from '@tellegen/analytics';
 
 const analytics = createAnalytics({
-  website: "your-umami-website-id",
-  hosts: ["example.org"],
-  pages: { "/": "Site" },
-  events: { "calculation.solve": ["calculation", "result", "duration_ms"] },
-  enums: { calculation: new Set(["dcopf"]), result: new Set(["completed", "failed"]) },
-  numbers: new Set(["duration_ms"]),
-  optOut: localStorageOptOut("umami.disabled"),
+	website: 'your-umami-website-id',
+	hosts: ['example.org'],
+	pages: { '/': 'Site' },
+	events: { 'calculation.solve': ['calculation', 'result', 'duration_ms'] },
+	enums: { calculation: new Set(['dcopf']), result: new Set(['completed', 'failed']) },
+	numbers: new Set(['duration_ms']),
+	optOut: localStorageOptOut('umami.disabled')
 });
 analytics.page(location.pathname);
-analytics.track("calculation.solve", { calculation: "dcopf", result: "completed", duration_ms: 812 });
+analytics.track('calculation.solve', {
+	calculation: 'dcopf',
+	result: 'completed',
+	duration_ms: 812
+});
 ```
 
 A site keeps its vocabulary in one file and asserts `checkVocabulary` in a

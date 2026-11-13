@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { DistGraph } from '@tellegen/engine';
 import {
+	pairLabel,
+	phaseLabel,
+	wiresLabel,
 	buildGeographicView,
 	edgeWidth,
 	isPhaseTerminal,
@@ -309,5 +312,23 @@ describe('palette', () => {
 	it('grows edge width with conductor count and draws transformers wider', () => {
 		expect(edgeWidth('line', 3)).toBeGreaterThan(edgeWidth('line', 1));
 		expect(edgeWidth('transformer', 3)).toBeGreaterThan(edgeWidth('line', 3));
+	});
+});
+
+describe('phase labels', () => {
+	it('reads node numbers and named phases as A/B/C/N', () => {
+		expect(['1', '2', '3', '4'].map((t) => phaseLabel(t))).toEqual(['A', 'B', 'C', 'N']);
+		expect(['a', 'b', 'c', 'n', 'ground'].map((t) => phaseLabel(t))).toEqual([
+			'A',
+			'B',
+			'C',
+			'N',
+			'G'
+		]);
+		expect(phaseLabel('x7')).toBe('x7');
+		expect(phaseLabel('r', 'r')).toBe('N');
+		expect(pairLabel(['c', 'ground'])).toBe('C–G');
+		expect(wiresLabel(3, true)).toBe('3 phases + N');
+		expect(wiresLabel(1, false)).toBe('1 phase');
 	});
 });

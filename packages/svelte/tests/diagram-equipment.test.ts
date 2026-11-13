@@ -352,6 +352,15 @@ describe('conductor marks', () => {
 			]
 		};
 		expect(conductorSet(g, 0)).toEqual({ phases: 1, neutral: true });
+		// A bus silent about its neutral falls back to the familiar aliases, as everywhere else;
+		// one that declares none has none.
+		const silent: DistGraph = { ...g, buses: [bus('A', [], true), bus('B')] };
+		expect(conductorSet(silent, 0)).toEqual({ phases: 1, neutral: true });
+		const none: DistGraph = {
+			...g,
+			buses: [{ ...bus('A', [], true), neutral_terminal: null }, bus('B')]
+		};
+		expect(conductorSet(none, 0)).toEqual({ phases: 2, neutral: false });
 		// One slash per conductor, and the neutral's slash carries a circle.
 		expect(conductorTicks(1, true)).toHaveLength(3);
 		expect(conductorTicks(3, false)).toHaveLength(3);
@@ -496,9 +505,9 @@ describe('solved values on the drawing', () => {
 			]
 		} as unknown as McPfResult);
 		expect(elementPowers(tables)).toEqual(powers);
-		expect(formatPower(15_000, 5_000)).toBe('15.0 kW 5.0 kvar');
-		expect(formatPower(2.5e6, -1e5)).toBe('2.5 MW -0.1 Mvar');
-		expect(formatPower(160, 20)).toBe('160 W 20.0 var');
+		expect(formatPower(15_000, 5_000)).toBe('15.00 kW 5.000 kvar');
+		expect(formatPower(2.5e6, -1e5)).toBe('2,500 kW -100.0 kvar');
+		expect(formatPower(160, 20)).toBe('0.160 kW 0.020 kvar');
 	});
 });
 

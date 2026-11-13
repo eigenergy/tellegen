@@ -42,13 +42,15 @@
 		attachmentColor,
 		edgeColor,
 		edgeWidth,
-		isPhaseTerminal,
 		phaseColor,
 		transformerMarks,
 		type PlacedMultiBus,
 		type PlacedMultiEdge,
 		type TransformerMark,
-		multiDiagramNetwork
+		multiDiagramNetwork,
+		neutralTerminal,
+		phaseLabel,
+		wiresLabel
 	} from './multiconductor.js';
 	import {
 		TRANSFORMER_ICON,
@@ -59,7 +61,7 @@
 	import { foldMapBounds } from './map-bounds.js';
 	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
-	import { displayFmt, fmt, rgbaCss } from './format.js';
+	import { displayFmt, fmt, quantity, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
@@ -437,7 +439,7 @@
 				scalarHi,
 				scalarMode,
 				scalarLabel: activeMeta?.label ?? 'LMP',
-				scalarUnit: activeMeta?.unit ?? 'objective units/MW',
+				scalarUnit: activeMeta?.unit ?? '$/MWh',
 				loading,
 				mode,
 				sens,
@@ -723,7 +725,7 @@
 				const ay = (busPt.y + py * off).toFixed(1);
 				const bx = (b.x + px * off).toFixed(1);
 				const by = (b.y + py * off).toFixed(1);
-				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
+				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term, theme))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
 			}
 		}
 
@@ -734,13 +736,14 @@
 		const sx = busPt.x + STACK_DX;
 		const top = busPt.y - ((terminals.length - 1) / 2) * STACK_DY;
 		let stack = `<line class="mc-leader" x1="${busPt.x.toFixed(1)}" y1="${busPt.y.toFixed(1)}" x2="${sx.toFixed(1)}" y2="${busPt.y.toFixed(1)}"/>`;
+		const neutral = neutralTerminal(bus.terminals, bus.neutral_terminal);
 		terminals.forEach((t, k) => {
 			const cy = top + k * STACK_DY;
 			const grounded = bus.grounded.includes(t);
-			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col(palette.neutral);
+			const fill = col(phaseColor(t, theme));
 			if (grounded) stack += groundGlyph(sx - 14, cy);
 			stack += `<circle class="mc-terminal" cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}"/>`;
-			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(t)}</text>`;
+			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(phaseLabel(t, neutral))}</text>`;
 			// Attachment squares for elements landing on this terminal.
 			const kinds = [...new Set((bus.terminalAttachments[t] ?? []).map((a) => a.kind))];
 			kinds.slice(0, 5).forEach((kind, j) => {
@@ -876,14 +879,14 @@
 			const e = object as PlacedMultiEdge;
 			const state = e.kind === 'switch' ? (e.closed ? '<br>Closed' : '<br>Open') : '';
 			return {
-				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${e.n_phases}&#8202;&phi;${state}</div>`
+				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${wiresLabel(e.n_phases, e.conductors.length > e.n_phases)}${state}</div>`
 			};
 		}
 		if (layerId?.startsWith('multi-buses-')) {
 			const b = object as PlacedMultiBus;
 			const roles = b.attachmentKinds.length ? b.attachmentKinds.join(', ') : 'None';
 			return {
-				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${b.load_kw.toFixed(0)} kW<br>Generation ${b.gen_kw.toFixed(0)} kW<br>Attachments: ${esc(roles)}</div>`
+				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${quantity(b.load_kw, 'kW')}<br>Generation ${quantity(b.gen_kw, 'kW')}<br>Attachments: ${esc(roles)}</div>`
 			};
 		}
 		const c = caseOf(info);
@@ -919,14 +922,14 @@
 		const previewRow =
 			preview === undefined
 				? ''
-				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} objective units/MW`;
+				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
 		// Demand already has its own row below, so the demand colouring shows LMP here alone.
 		const scalarRow =
 			!d || d.scalarMode === 'price' || d.scalarMode === 'demand'
-				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`
+				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`;
+					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`;
 		return {
 			html: `<div class="tt"><b>Bus ${bus.id}</b><br>${scalarRow}<br>${loadRow}<br>Generation ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}</div>`
 		};
@@ -985,6 +988,16 @@
 				app.placingId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
 		});
 	}
+
+	// Zen collapses the compact attribution to its (i) button; maplibre opens it
+	// by default on wide maps. The button still expands it on demand. Leaving zen
+	// restores the open state.
+	$effect(() => {
+		const zen = app.zen;
+		const attrib = map?.getContainer().querySelector('.maplibregl-ctrl-attrib');
+		if (!attrib) return;
+		attrib.classList.toggle('maplibregl-compact-show', !zen);
+	});
 
 	function initMap(container: HTMLDivElement) {
 		// Attachments re-run when state they read changes, so reading the
@@ -1749,7 +1762,7 @@
 {:else}
 	{#key mapGen}
 		<div class="map-stage">
-			<div class="map" {@attach initMap}></div>
+			<div class="map" class:zen={app.zen} {@attach initMap}></div>
 			{#if selectedBusCue}
 				{#key selectedBusCue.key}
 					<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
@@ -2043,6 +2056,13 @@
 		order: 2;
 	}
 
+	/* Zen mode keeps the basemap attribution (a licensing requirement) and
+	   drops the zoom buttons; wheel, pinch and keyboard zoom still work. The
+	   buttons keep their space so the attribution does not shift. */
+	.map.zen :global(.maplibregl-ctrl-group) {
+		visibility: hidden;
+	}
+
 	.map :global(.maplibregl-ctrl-attrib) {
 		order: 1;
 		position: relative;
@@ -2062,6 +2082,25 @@
 
 	.map :global(.maplibregl-ctrl-attrib a) {
 		color: var(--text-secondary);
+	}
+
+	/* Collapsed and expanded attribution share one explicit height so the (i)
+	   button, which is pinned to the control's top edge, holds still when the
+	   text toggles. maplibre sizes the collapsed state with min-height and
+	   content-box, which the border-box rule above would otherwise shrink. */
+	.map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
+		height: 24px;
+		min-height: 0;
+		box-sizing: border-box;
+	}
+
+	.map :global(.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner) {
+		line-height: 20px;
+	}
+
+	.map :global(.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button) {
+		width: 24px;
+		height: 24px;
 	}
 
 	@media (hover: none), (pointer: coarse) {

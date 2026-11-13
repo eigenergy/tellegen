@@ -14,9 +14,12 @@
 		<ul>
 			{#each controls as c (c.id)}
 				<li>
-					<strong>{c.id}</strong>: {c.status.replaceAll('_', ' ')}<br />Setting {number(c.setting)}
-					{c.units}; measured {number(c.measured)}
-					{c.measured_units}, target {number(c.target_low)}–{number(c.target_high)}.
+					<strong>{c.id}</strong>: {c.status.replaceAll('_', ' ')}.
+					<span class="reading"
+						>Setting {number(c.setting)}
+						{c.units}; measured {number(c.measured)}
+						{c.measured_units}, target {number(c.target_low)}–{number(c.target_high)}.</span
+					>
 				</li>
 			{/each}
 		</ul>
@@ -25,10 +28,14 @@
 
 <style>
 	ul {
-		padding-left: 18px;
+		padding-left: var(--space-xl);
 		overflow-wrap: anywhere;
 	}
 	li {
-		margin-block: 8px;
+		margin-block: var(--space-sm);
+	}
+	.reading {
+		display: block;
+		font-variant-numeric: tabular-nums;
 	}
 </style>

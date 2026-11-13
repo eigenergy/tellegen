@@ -86,7 +86,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const card = page.locator('[data-testid="capacity-plan-card"]').first();
 	await expect(card).toBeVisible();
-	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('pending');
+	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('Pending');
 	for (const change of proposal) {
 		await expect(card.locator('.changes')).toContainText(change.branch_id);
 	}
@@ -300,7 +300,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 
 	// The proposal is consumed: apply deregisters and the card resolves.
 	await expect.poll(() => listTools(page)).toEqual(PLANNING_TOOLS);
-	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('applied');
+	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('Applied');
 	await page.reload();
 	await expect.poll(() => listTools(page)).toContain('inspect_study');
 	const resumedStudy = await callTool(page, 'inspect_study', { study_id: planned.data.study_id });
@@ -351,7 +351,7 @@ test('a case edit expires the staged proposal and drops apply_capacity_plan', as
 	// The revision change expires the proposal, resolves the card, and
 	// deregisters apply; a replay attempt no longer finds the tool.
 	await expect.poll(() => listTools(page)).toEqual(PLANNING_TOOLS);
-	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('expired');
+	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('Expired');
 	const replay = await page.evaluate(
 		async ({ args }) => {
 			const harness = (
@@ -410,7 +410,7 @@ test('switching cases expires the staged proposal and its approval', async ({ pa
 			return tools.includes('apply_capacity_plan');
 		})
 		.toBe(false);
-	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('expired');
+	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('Expired');
 	const switched = await callTool(page, 'inspect_case', {});
 	expect(switched.ok).toBe(true);
 	if (!switched.ok) return;
@@ -494,7 +494,7 @@ test('a revised Study goal expires the capacity compatibility approval', async (
 		operation: { kind: 'revise_goal', goal }
 	});
 	expect(revised.ok).toBe(true);
-	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('expired');
+	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('Expired');
 	await expect
 		.poll(async () => (await listTools(page)).includes('apply_capacity_plan'))
 		.toBe(false);

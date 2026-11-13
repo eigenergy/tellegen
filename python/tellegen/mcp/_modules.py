@@ -80,7 +80,8 @@ def check_diagnostics(items: Any) -> None:
     failures = [item for item in items if item.severity == "error"]
     if failures:
         raise ValueError(
-            "PowerIO input fails validation: " + "; ".join(diagnostic_messages(failures))
+            "PowerIO input fails validation: "
+            + "; ".join(diagnostic_messages(failures))
         )
 
 
@@ -284,28 +285,12 @@ def bounded(payload: Any, max_elements: int) -> Any:
             return {
                 "truncated": True,
                 "count": len(payload),
-                "head": [bounded(item, max_elements) for item in payload[:max_elements]],
+                "head": [
+                    bounded(item, max_elements) for item in payload[:max_elements]
+                ],
             }
         return [bounded(item, max_elements) for item in payload]
     return payload
-
-
-def json_argument(text: str, name: str, expected: type) -> Any:
-    """Parse a JSON-carrying string argument.
-
-    These arrive as bare `str` with a `""` default on purpose: the mcp 2.x SDK
-    rewrites a string whose text parses as JSON into the parsed object before
-    validation, so any other annotation would receive an object here.
-    """
-    if not text:
-        return None
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{name} must be JSON: {exc}") from exc
-    if not isinstance(value, expected):
-        raise ValueError(f"{name} must be a JSON {expected.__name__}")
-    return value
 
 
 def study_summary(value: Dict[str, Any]) -> Dict[str, Any]:

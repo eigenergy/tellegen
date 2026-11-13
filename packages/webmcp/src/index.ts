@@ -1,17 +1,22 @@
 export {
   DEFAULT_OUTPUT_BUDGET,
+  DEFAULT_TOOL_TIMEOUT_MS,
+  createTellegenDebugTool,
   createTellegenPlanningTools,
   createTellegenStudyTools,
   createTellegenTools,
   type CreateTellegenToolsOptions,
 } from "./tools.js";
+export { ERROR_CODES, responseSchema, schemaErrors } from "./output.js";
+export { IMPORT_EXTENSIONS, MAX_IMPORT_TEXT } from "./validation.js";
 export {
   documentModelContext,
+  modelContextFeatures,
   registerDocumentTellegenWebMcp,
   registerTellegenWebMcp,
   type RegisterOptions,
 } from "./register.js";
-export { TellegenToolError } from "./types.js";
+export { TellegenRegistrationError, TellegenToolError } from "./types.js";
 export {
   ExperimentJournal,
   type ExperimentJournalDocument,
@@ -27,7 +32,10 @@ export type {
   EditMode,
   ElementKind,
   ElementTarget,
+  ExportCaseInput,
+  ExportFormat,
   FocusNetworkInput,
+  ImportCaseInput,
   JsonPrimitive,
   JsonValue,
   MaybePromise,
@@ -39,7 +47,9 @@ export type {
   SelectCaseInput,
   SolveMulticonductorInput,
   TellegenCaseAdapter,
+  TellegenFileAdapter,
   RatingEdit,
+  RegisterToolOptions,
   RegistrationHandle,
   ResetCaseInput,
   SortDirection,

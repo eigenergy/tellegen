@@ -35,7 +35,7 @@ test('protocol tasks stay within their interaction budgets', async ({ page }) =>
 		await expect(overview.getByRole('button', { name: /Violations/ })).toContainText('1');
 	});
 	await test.step('2. its size and phase are visible without interaction', async () => {
-		await expect(issues.first()).toContainText('c–n below 207.00 V by 1.72 %');
+		await expect(issues.first()).toContainText('C–N below 207.0 V by 1.7%');
 	});
 	await test.step('3. every phase at it against its band: one click', async () => {
 		await issues.first().click();
@@ -82,7 +82,7 @@ test('7. switch to the schematic and between layouts, keeping the selection', as
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('leaf-order');
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('tidy');
 	await toolbar.getByRole('combobox', { name: 'Colour by' }).selectOption('loading-heat');
-	await expect(page.getByText('≥ 100 %')).toBeVisible();
+	await expect(page.getByText('≥ 100%')).toBeVisible();
 	await own.click();
 	await expect(own).toHaveAttribute('aria-pressed', 'true');
 	await expect(overview.getByRole('heading', { name: 'Phases at lb' })).toBeVisible();
@@ -146,7 +146,7 @@ test('the schematic can be walked bus by bus from the keyboard', async ({ page }
 	await expect(spoken).toHaveText(/^src: source bus\. 1 branch onward\. 1 source, 1 neutral earth/);
 	await page.keyboard.press('ArrowRight');
 	await expect(spoken).toHaveText(
-		/^lb: 1 step from src, fed by line l1\. 0 branches onward\. 3 loads\. Worst voltage c–n 203\.4 V, outside 207\.0 V to 253\.0 V/
+		/^lb: 1 step from src, fed by line l1\. 0 branches onward\. 3 loads\. Worst voltage C–N 203\.4 V, outside 207\.0 V to 253\.0 V/
 	);
 	await page.keyboard.press('Enter');
 	await expect(overview.getByRole('heading', { name: 'Phases at lb' })).toBeVisible();
@@ -345,8 +345,11 @@ test('a center-tap transformer (one id, several graph edges) does not break the 
 	const overview = page.getByRole('region', { name: 'Operating point overview' });
 	await expect(overview.getByRole('heading', { name: /^Issues/ })).toBeVisible({ timeout: 60_000 });
 	await page.getByText('Equipment currents and power').click();
-	const equipment = page.getByLabel('Branch result');
-	await expect(equipment.locator('option', { hasText: 't1' })).toHaveCount(1);
+	const find = page.getByRole('combobox', { name: 'Find a bus or equipment' });
+	await find.fill('t1');
+	await expect(page.getByRole('option').filter({ hasText: /^transformer/ })).toHaveCount(1);
+	await find.press('Enter');
+	await expect(page.getByText(/^Equipment t1 \(/)).toBeVisible();
 	await overview.getByRole('button', { name: 'Show diagram' }).click();
 	await expect(page.getByRole('application', { name: 'Schematic diagram' })).toBeVisible();
 	await expect(page.getByText('Internal Error')).toHaveCount(0);
@@ -433,7 +436,7 @@ test('switching between two open diagrams draws each case with its own layout', 
 	await expect(diagram).toBeVisible();
 	await schematicLayout();
 
-	await page.getByRole('button', { name: 'pf_3ph_line multiconductor' }).click();
+	await page.getByRole('button', { name: 'pf_3ph_line Distribution' }).click();
 	await expect(diagram).toBeVisible();
 	expect(await schematicLayout()).toEqual(first);
 });

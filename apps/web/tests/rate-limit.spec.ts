@@ -32,12 +32,16 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// of the same doomed request.
 	await lookupBus(page, 1);
 	const error = await noticeDetails(page);
-	await expect(error).toHaveText('rate limited; wait a few seconds and try again');
+	await expect(error).toHaveText(
+		'The server is limiting requests. Wait a few seconds and try again.'
+	);
 	expect(sensitivityFetches).toBe(1);
 
 	// The cooldown suppresses the server call for the next selection entirely.
 	await lookupBus(page, 2);
-	await expect(error).toHaveText('rate limited; wait a few seconds and try again');
+	await expect(error).toHaveText(
+		'The server is limiting requests. Wait a few seconds and try again.'
+	);
 	expect(sensitivityFetches).toBe(1);
 
 	// Retry re-runs the failed bus selection (not a case list reload) and the

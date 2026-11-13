@@ -75,10 +75,10 @@ def stage(repository, destination, wasm, main_island=False):
             raise ValueError(f'Refusing to replace existing bundle: {final}')
         options = json.loads((output / 'tellegen_options.json').read_text())
         entry = {
-            'id': CASE_ID, 'name': 'Texas7k distribution — p1uhs0_1247',
+            'id': CASE_ID, 'name': 'Texas7k distribution p1uhs0_1247',
             'file': str(relative / 'p1uhs0_1247.reduced.pio.json'),
             'metadata': {
-                'description': ('Main energized island of the six-feeder substation; all 15,299 loads retained. ' if main_island else 'Six-feeder substation: ') + 'Nominal-load snapshot with frozen regulator taps. Voltage drops and equipment overloads are present; this is a power-flow example, not a demonstrated feasible OPF benchmark.',
+                'description': ('One substation of the Texas7k distribution model, with all 15,299 loads. ' if main_island else 'One substation of the Texas7k distribution model. ') + 'Loads are at nominal demand and regulator taps are fixed. Some voltages are low and some equipment is overloaded.',
                 'source_url': source_url,
                 'related_case_id': 'case7000', 'pf_options': options,
             },

@@ -98,7 +98,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	}
 	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await expect(page.getByText('Geographic', { exact: true })).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Dataset and attribution' })).toHaveAttribute(
+	await expect(page.getByRole('link', { name: 'Source data' })).toHaveAttribute(
 		'href',
 		entry.distribution.source_url
 	);

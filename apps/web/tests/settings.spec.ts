@@ -61,14 +61,16 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 			new URL('./fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json', import.meta.url)
 				.pathname
 		);
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible();
 	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await panel.getByLabel('Maximum iterations', { exact: true }).fill('150');
 	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await panel.getByRole('button', { name: 'Apply settings', exact: true }).click();
 	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
-	await expect(page.getByRole('region', { name: 'AC power flow results' })).toHaveCount(0);
+	await expect(page.getByRole('region', { name: 'Multiconductor power flow results' })).toHaveCount(
+		0
+	);
 	let inspected = await tool(page, 'inspect_settings');
 	expect(inspected.ok).toBe(true);
 	expect(inspected.data.selected).toMatchObject({ max_iterations: 150 });

@@ -76,8 +76,8 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	const table = page.getByRole('table', { name: 'Terminal results', exact: true });
 	await expect(table).toBeVisible({ timeout: 60_000 });
 	await expect(table.locator('tbody tr')).toHaveCount(4);
-	await expect(table.getByRole('columnheader', { name: 'To ground V' })).toBeVisible();
-	await expect(table.getByRole('columnheader', { name: 'Net current A' })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'To ground', exact: true })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Net current', exact: true })).toBeVisible();
 	const before = await table.innerText();
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected.ok).toBe(true);
@@ -113,9 +113,9 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	expect(JSON.stringify(query.data)).toContain('current_a');
 	expect(query.data.units).toMatchObject({ lmp: null });
 	await page.getByText('Calculation details', { exact: true }).click();
-	await expect(page.getByRole('region', { name: 'AC power flow results' })).toContainText(
-		'Maximum KCL residual'
-	);
+	await expect(
+		page.getByRole('region', { name: 'Multiconductor power flow results' })
+	).toContainText('Maximum KCL residual');
 	await page.screenshot({ path: testInfo.outputPath('mc-results-desktop.png') });
 	await page.locator('header input[type=file]').setInputFiles({
 		name: 'private-map.geojson',
