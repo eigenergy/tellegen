@@ -7,6 +7,7 @@ import type {
 import type { SchematicGeometry } from './schematic-layout.js';
 import { terminalConductors, transformerGlyph, transformerInfo } from './connections.js';
 import { quantity } from '../format.js';
+import { neutralTerminal } from '../multiconductor.js';
 
 /** A stroked glyph: polylines in symbol units, x along the connection, y down. */
 export type Glyph = [number, number][][];
@@ -220,7 +221,7 @@ function neutralOf(graph: DistGraph, bus: string): string | null {
 		// The first bus of an id wins, as a search in graph order would find it.
 		for (const b of graph.buses) {
 			const id = b.id.toLowerCase();
-			if (!index.has(id)) index.set(id, b.neutral_terminal ?? null);
+			if (!index.has(id)) index.set(id, neutralTerminal(b.terminals, b.neutral_terminal));
 		}
 		neutralsByGraph.set(graph, index);
 	}
@@ -263,7 +264,7 @@ export const ATTACHMENT_NAMES: Record<SymbolKind, string> = {
 
 /** Shunts of `bus` connected to its neutral terminal and to nothing else: neutral earths. */
 export function neutralEarths(bus: DistGraph['buses'][number]): Set<string> {
-	const neutral = bus.neutral_terminal;
+	const neutral = neutralTerminal(bus.terminals, bus.neutral_terminal);
 	const out = new Set<string>();
 	if (!neutral) return out;
 	const elsewhere = new Set<string>();
@@ -590,7 +591,10 @@ export function schematicEquipment(
 				const x0 = drop + unit * (beside ? labelRoom : LEAD);
 				line(drop, y, x0, y);
 				if (v.terminals && !beside) {
-					const { phases, neutral } = terminalConductors(v.terminals, bus.neutral_terminal);
+					const { phases, neutral } = terminalConductors(
+						v.terminals,
+						neutralTerminal(bus.terminals, bus.neutral_terminal)
+					);
 					if (phases + (neutral ? 1 : 0) > 0)
 						stroke(conductorTicks(phases, neutral), drop + (unit * LEAD) / 2, y, 1, 0, owner, tick);
 				}

@@ -352,6 +352,15 @@ describe('conductor marks', () => {
 			]
 		};
 		expect(conductorSet(g, 0)).toEqual({ phases: 1, neutral: true });
+		// A bus silent about its neutral falls back to the familiar aliases, as everywhere else;
+		// one that declares none has none.
+		const silent: DistGraph = { ...g, buses: [bus('A', [], true), bus('B')] };
+		expect(conductorSet(silent, 0)).toEqual({ phases: 1, neutral: true });
+		const none: DistGraph = {
+			...g,
+			buses: [{ ...bus('A', [], true), neutral_terminal: null }, bus('B')]
+		};
+		expect(conductorSet(none, 0)).toEqual({ phases: 2, neutral: false });
 		// One slash per conductor, and the neutral's slash carries a circle.
 		expect(conductorTicks(1, true)).toHaveLength(3);
 		expect(conductorTicks(3, false)).toHaveLength(3);

@@ -1,5 +1,5 @@
 import { pairVoltageLabel, type BranchEnd, type PairVoltage } from './snapshot.js';
-import { phaseLabel } from '../multiconductor.js';
+import { neutralTerminal, phaseLabel } from '../multiconductor.js';
 import { pairState, type VoltageState } from './summary.js';
 
 const clampPercent = (x: number) => Math.max(0, Math.min(100, x));
@@ -58,13 +58,17 @@ export interface ConductorBars {
 	neutralShare: number | null;
 }
 
-/** Conductor |I| at both ends on one scale; neutral current is called out as an unbalance signal. */
+/** Conductor |I| at both ends on one scale; neutral current is called out as an unbalance signal.
+ * `declared` is the from bus's neutral (`null` when it has none); left out, the conductor names
+ * decide through {@link neutralTerminal}, as everywhere else. */
 export function conductorBars(
 	ends: [BranchEnd | null, BranchEnd | null],
-	neutral = 'n'
+	declared?: string | null
 ): ConductorBars | null {
 	const live = ends.filter((e): e is BranchEnd => !!e?.currents.length);
 	if (!live.length) return null;
+	const neutral =
+		declared !== undefined ? declared : neutralTerminal(live[0].currents.map((c) => c.terminal));
 	const scaleAmps = Math.max(
 		...live.flatMap((e) => e.currents.map((c) => c.amps)).filter(Number.isFinite),
 		1e-9

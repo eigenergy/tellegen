@@ -193,7 +193,7 @@
 		// The neutral as the from bus declares it, whatever it is named (PMD numbers it 4).
 		const from = graph.buses[busIndex.get(graph.edges[k].from) ?? -1];
 		const neutral = from ? neutralTerminal(from.terminals, from.neutral_terminal) : null;
-		return conductorBars(snapshot.branches[k].ends, neutral ?? '');
+		return conductorBars(snapshot.branches[k].ends, neutral);
 	});
 
 	function exportCsv(kind: TableKind) {
