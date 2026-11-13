@@ -366,6 +366,7 @@ pub struct RmsResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frames: Option<RmsSeries>,
     /// The full state at [`RecordSpec::checkpoint_step`] intervals.
+    #[cfg(feature = "rms-experimental")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checkpoints: Vec<Checkpoint>,
 }
@@ -555,7 +556,8 @@ impl RmsSimulation {
         })
     }
 
-    /// Check every event before a run: a finite time in `[0, t_end]`, and
+    /// Check every event before a run: a finite time in `[0, t_end)` (an
+    /// event at the end would act on nothing the run records), and
     /// an element the system has (each event applied in time order to a
     /// copy of the system, so an element an earlier event adds or removes
     /// is judged as the run would).
@@ -565,9 +567,9 @@ impl RmsSimulation {
             if !t.is_finite() {
                 return Err(format!("event {k} has a non-finite time {t}"));
             }
-            if t < 0.0 || t > t_end {
+            if t < 0.0 || t >= t_end {
                 return Err(format!(
-                    "event {k} at t = {t} s lies outside the run [0, {t_end}] s"
+                    "event {k} at t = {t} s lies outside the run [0, {t_end}) s"
                 ));
             }
         }
@@ -624,16 +626,26 @@ impl RmsSimulation {
         if request.load_model.is_some_and(|m| m != self.load_model) {
             return Err("the request's load model differs from the prepared simulation's".into());
         }
-        if !(request.dt > 0.0
+        if !(request.dt >= MIN_DT
             && request.output_step >= request.dt
+            && request.output_step.is_finite()
             && request.t_end > 0.0
             && request.t_end.is_finite())
         {
-            return Err("need dt > 0, output_step >= dt and a finite t_end > 0".into());
+            return Err(format!(
+                "need dt >= {MIN_DT} s, a finite output_step >= dt and a finite t_end > 0"
+            ));
         }
         self.check_events(&request.events, request.t_end)?;
         let substeps = substeps(request.output_step, request.dt) as usize;
         let h = request.output_step / substeps as f64;
+        if request.t_end / h > MAX_STEPS {
+            return Err(format!(
+                "t_end / dt = {:.3e} steps exceeds the limit of {MAX_STEPS:e}; use a larger dt or a shorter run",
+                request.t_end / h
+            ));
+        }
+        let targets = output_times(request.t_end, request.output_step);
         let mut sys = self.sys.clone();
         let mut x = self.x0.clone();
         let mut f = vec![0.0; sys.nx];
@@ -686,22 +698,8 @@ impl RmsSimulation {
             }
             stepper.restore_past(&sys, cp.past.iter().map(|p| (p.h, p.x.as_slice())));
             t = cp.t;
-            k0 = (cp.t / request.output_step).round() as usize;
+            k0 = targets.partition_point(|&tk| tk <= cp.t + tol);
         }
-        #[cfg_attr(feature = "rms-experimental", allow(unused_mut))]
-        let mut checkpoint_note: Option<String> = None;
-        #[cfg(not(feature = "rms-experimental"))]
-        let checkpoints: Vec<Checkpoint> = {
-            if request
-                .record
-                .as_ref()
-                .is_some_and(|r| r.checkpoint_step > 0.0)
-            {
-                checkpoint_note =
-                    Some("checkpoints need the rms-experimental feature; none recorded".to_owned());
-            }
-            Vec::new()
-        };
         #[cfg(feature = "rms-experimental")]
         let checkpoint_step = match (start, &request.record) {
             (None, Some(r)) if r.checkpoint_step > 0.0 => r.checkpoint_step,
@@ -727,12 +725,10 @@ impl RmsSimulation {
         let mut steps = 0usize;
         let mut iterations = 0usize;
         let mut euler_steps = 0usize;
-        let n_out = (request.t_end / request.output_step).round() as usize;
-        for k_out in (k0 + 1)..=n_out {
+        for &t_target in &targets[k0..] {
             if cancelled() {
                 return Err("cancelled".into());
             }
-            let t_target = k_out as f64 * request.output_step;
             while t < t_target - tol {
                 // Apply every event due now, then re-solve the algebraic part.
                 let mut changed = false;
@@ -763,7 +759,18 @@ impl RmsSimulation {
                     &mut euler_steps,
                     &mut stepper,
                 )
-                .map_err(|e| format!("integration failed at t = {t:.4} s: {e}"))?;
+                .map_err(|e| {
+                    let islands: Vec<String> =
+                        sys.detached_islands().into_iter().map(|(_, s)| s).collect();
+                    if islands.is_empty() {
+                        format!("integration failed at t = {t:.4} s: {e}")
+                    } else {
+                        format!(
+                            "integration failed at t = {t:.4} s: {e}; the network is split, with an island of {}",
+                            islands.join("; an island of ")
+                        )
+                    }
+                })?;
                 steps += 1;
                 t = t_next;
             }
@@ -789,7 +796,8 @@ impl RmsSimulation {
             }
         }
         let (time, channels, frames) = rec.take();
-        let mut eigen_note: Vec<String> = checkpoint_note.into_iter().collect();
+        #[cfg_attr(feature = "rms-experimental", allow(unused_mut))]
+        let mut eigen_note: Vec<String> = Vec::new();
         #[cfg(feature = "rms-experimental")]
         let eigenvalues = if request.small_signal && start.is_none() {
             self.eigenvalues().unwrap_or_else(|e| {
@@ -833,6 +841,7 @@ impl RmsSimulation {
             time,
             channels,
             frames,
+            #[cfg(feature = "rms-experimental")]
             checkpoints,
             buses: self.sys.bus_numbers.clone(),
             base_mva: self.sys.sbase,
@@ -953,8 +962,10 @@ fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<S
             scale,
         } => {
             let k = bus(sys, *b)?;
-            if !scale.is_finite() {
-                return Err(format!("load scale {scale} is not finite"));
+            if !(scale.is_finite() && *scale >= 0.0) {
+                return Err(format!(
+                    "load scale {scale} is not a finite number >= 0 (a negative scale turns loads into sources)"
+                ));
             }
             sys.loads[k].scale(*scale, *scale);
             format!("t = {time} s: load at bus {b} scaled by {scale}")
@@ -1088,6 +1099,25 @@ fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<S
     })
 }
 
+/// The smallest integration step a run takes, s.
+const MIN_DT: f64 = 1e-6;
+
+/// The most integration steps a run takes (`t_end / dt`).
+const MAX_STEPS: f64 = 1e7;
+
+/// The output times after `t = 0`: every whole output step up to `t_end`,
+/// then `t_end` itself when it is not one (a last, shorter interval), so a
+/// run ends exactly at `t_end`.
+fn output_times(t_end: f64, output_step: f64) -> Vec<f64> {
+    let tol = 1e-9 * output_step;
+    let n = ((t_end + tol) / output_step).floor() as usize;
+    let mut times: Vec<f64> = (1..=n).map(|k| k as f64 * output_step).collect();
+    if times.last().is_none_or(|&t| t_end - t > tol) {
+        times.push(t_end);
+    }
+    times
+}
+
 /// Integration steps per output step: the step is at most `dt` (never
 /// coarser than asked), the output step divided evenly.
 fn substeps(output_step: f64, dt: f64) -> f64 {
@@ -1098,6 +1128,11 @@ fn substeps(output_step: f64, dt: f64) -> f64 {
 /// nonzero impedance.
 fn fault_admittance(r: f64, x: f64) -> Result<C64, String> {
     let z = C64::new(r, x);
+    if r < 0.0 || x < 0.0 {
+        return Err(format!(
+            "a fault impedance needs r >= 0 and x >= 0, not {r} + j{x} (a negative part makes the fault a source)"
+        ));
+    }
     if !(z.norm() > 0.0 && z.norm().is_finite()) {
         return Err(format!(
             "a fault needs a finite, nonzero impedance r + jx, not {r} + j{x} (use a small reactance for a bolted fault)"
@@ -1119,6 +1154,11 @@ pub struct RmsOptions {
     /// gain for renewable plants (negative between its two points,
     /// `get_LV_current_gain`) instead of the PSS/E one.
     pub psid_lv_gain: bool,
+    /// Apply a renewable plant's converter ramp limits (`REGCA1` `Rrpwr`,
+    /// `Iqrmax`, `Iqrmin`) to the `Tg` lag's error as
+    /// PowerSimulationsDynamics.jl 0.16.2 does (an effective rate
+    /// `Rrpwr/Tg`) instead of to the currents' rate in pu/s (PSS/E).
+    pub psid_converter_ramp: bool,
     /// Evaluate the quadratic saturation of machines and `ESAC1A` below its
     /// knee `A` as PowerSimulationsDynamics.jl 0.16.2 does (the formula
     /// `B (x − A)² / x`, which rises again below `A`) instead of PSS/E's
@@ -1146,6 +1186,7 @@ impl Default for RmsOptions {
         Self {
             renewable_plants: true,
             psid_lv_gain: false,
+            psid_converter_ramp: false,
             psid_saturation: false,
             factorize_by_blocks: true,
             low_voltage_load: LowVoltageLoad::default(),
@@ -1172,6 +1213,7 @@ pub struct RecordSpec {
     /// The full state every `checkpoint_step` seconds (0: none), in
     /// [`RmsResult::checkpoints`]: any channel can be replayed from them
     /// ([`RmsSimulation::replay`]).
+    #[cfg(feature = "rms-experimental")]
     #[serde(default)]
     pub checkpoint_step: f64,
 }
@@ -1194,6 +1236,7 @@ pub struct RmsSeries {
 /// The full state at `t` (differential and algebraic, in the engine's order)
 /// and the integrator's reusable factorization there, so a replay from it
 /// continues the run sample for sample.
+#[cfg(feature = "rms-experimental")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub t: f64,
@@ -1210,6 +1253,7 @@ pub struct Checkpoint {
 
 /// A point of the run before a checkpoint: the full state and the step that
 /// led away from it.
+#[cfg(feature = "rms-experimental")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PastPoint {
     pub h: f64,
@@ -1217,12 +1261,17 @@ pub struct PastPoint {
 }
 
 /// What rebuilds an integrator factorization exactly.
+#[cfg(feature = "rms-experimental")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SolverState {
     pub at: Vec<f64>,
     pub h: f64,
     pub theta: f64,
 }
+
+/// No checkpoints without `rms-experimental`: a run starts at `t = 0`.
+#[cfg(not(feature = "rms-experimental"))]
+type Checkpoint = std::convert::Infallible;
 
 /// Where a channel's value comes from.
 #[derive(Clone, Copy, Debug)]

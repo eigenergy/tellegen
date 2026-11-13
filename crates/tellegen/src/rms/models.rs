@@ -486,9 +486,10 @@ impl Avr {
             // `TB` as the lead-lag's mass, as SEXS and EXST1: `TB = TC = 0`
             // (the lead-lag bypassed, common in PSS/E data) makes it
             // algebraic instead of dividing by zero.
-            Self::Esac1a { tr, tb, .. } => {
+            Self::Esac1a { tr, tb, ta, .. } => {
                 m[0] = *tr;
                 m[1] = *tb;
+                m[2] = *ta;
             }
             _ => {}
         }
@@ -504,15 +505,15 @@ impl Avr {
                 ta_tb,
                 tb,
                 k,
+                te,
                 v_min,
                 v_max,
-                ..
             } => {
                 // avr_models.jl, SEXS. The field voltage is the state itself.
                 let (vf, vr) = (x[0], x[1]);
                 let v_in = u.v_ref + u.vs - u.vt;
                 let (v_ll, dvr) = lead_lag_mm(v_in, vr, 1.0, tb * ta_tb, *tb);
-                let (_, dvf) = low_pass_nonwindup_mm(v_ll, vf, *k, *v_min, *v_max);
+                let (_, dvf) = low_pass_nonwindup_mm(v_ll, vf, *k, *te, *v_min, *v_max);
                 f[0] = dvf;
                 f[1] = dvr;
                 vf
@@ -545,7 +546,7 @@ impl Avr {
                 let (v_f, dvr3) = high_pass(v_fe, vr3, *kf, *tf);
                 let v_in = u.v_ref + u.vs - vm - v_f;
                 let (y_ll, dvr1) = lead_lag_mm(v_in, vr1, 1.0, *tc, *tb);
-                let (_, dvr2) = low_pass_nonwindup(y_ll, vr2, *ka, *ta, *va_min, *va_max);
+                let (_, dvr2) = low_pass_nonwindup_mm(y_ll, vr2, *ka, *ta, *va_min, *va_max);
                 let v_r = vr2.clamp(*vr_min, *vr_max);
                 f[0] = dvm;
                 f[1] = dvr1;
@@ -721,16 +722,12 @@ impl Governor {
             } => {
                 // tg_models.jl, GasTG.
                 let inv_r = if *r < f64::EPSILON { 0.0 } else { 1.0 / r };
-                // A unit initialized at its temperature limit sits exactly on
-                // the kink of the min; a tie resolves to the limit, the branch
-                // PowerSimulationsDynamics.jl's initialization lands on.
+                // The exact min (tg_models.jl): at rest `x = P_ref`, so any
+                // dispatch up to `AT` is a steady state, at `AT` on the kink
+                // where both branches agree.
                 let reference = p_ref - inv_r * (omega - 1.0);
                 let limit = at + kt * (at - x[2]);
-                let x_in = if reference < limit - 1e-4 {
-                    reference
-                } else {
-                    limit
-                };
+                let x_in = reference.min(limit);
                 let (x1_sat, dx1) = low_pass_nonwindup(x_in, x[0], 1.0, *t1, *v_min, *v_max);
                 let (_, dx2) = low_pass(x1_sat, x[1], 1.0, *t2);
                 let (_, dx3) = low_pass(x[1], x[2], 1.0, *t3);
@@ -878,14 +875,23 @@ impl Stabilizer {
                 f[5] = dx6;
                 f[6] = dx7;
                 let v_ss = y_out.clamp(*ls_min, *ls_max);
-                // pss_models.jl output_pss_limiter: bypassed when a limit is zero.
-                if *vcl == 0.0 || *vcu == 0.0 || (*vcl <= vt && vt <= *vcu) {
-                    v_ss
-                } else {
-                    0.0
-                }
+                terminal_cutoff(v_ss, vt, *vcl, *vcu)
             }
         }
+    }
+}
+
+/// The IEEEST output cut-off (PSS/E): `Vs = 0` while the terminal voltage
+/// is outside `[VCL, VCU]`, each bound ignored when it is zero.
+/// PowerSimulationsDynamics.jl 0.16.2 (`output_pss_limiter`) ignores both
+/// when either is zero.
+pub(crate) fn terminal_cutoff(v_ss: f64, vt: f64, vcl: f64, vcu: f64) -> f64 {
+    let above = vcu != 0.0 && vt > vcu;
+    let below = vcl != 0.0 && vt < vcl;
+    if above || below {
+        0.0
+    } else {
+        v_ss
     }
 }
 
@@ -1091,6 +1097,44 @@ pub(crate) fn stabilizer_from_psse(model: &DynamicModel) -> Result<Stabilizer, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// IEEEST's cut-off: each of `VCL`, `VCU` ignored only when it is zero
+    /// itself, so `VCU = 1.2`, `VCL = 0` still cuts the output above 1.2.
+    #[test]
+    fn ieeest_cutoff_bounds_are_independent() {
+        assert_eq!(terminal_cutoff(0.05, 1.25, 0.0, 1.2), 0.0);
+        assert_eq!(terminal_cutoff(0.05, 1.1, 0.0, 1.2), 0.05);
+        assert_eq!(terminal_cutoff(0.05, 0.1, 0.0, 1.2), 0.05);
+        assert_eq!(terminal_cutoff(0.05, 0.7, 0.8, 0.0), 0.0);
+        assert_eq!(terminal_cutoff(0.05, 1.5, 0.8, 0.0), 0.05);
+        assert_eq!(terminal_cutoff(0.05, 1.5, 0.0, 0.0), 0.05);
+        assert_eq!(terminal_cutoff(0.05, 1.0, 0.8, 1.2), 0.05);
+        assert_eq!(terminal_cutoff(0.05, 1.3, 0.8, 1.2), 0.0);
+    }
+
+    /// GAST's governor input is the exact `min(reference, limit)`: a unit
+    /// dispatched just under its temperature limit `AT` is at rest (before,
+    /// a 1e-4 tie band put it on the limit branch, 2e-4 off rest).
+    #[test]
+    fn gast_just_under_its_temperature_limit_is_at_rest() {
+        let gov = Governor::Gast {
+            r: 0.05,
+            t1: 0.4,
+            t2: 0.1,
+            t3: 3.0,
+            at: 1.0,
+            kt: 2.0,
+            v_min: 0.0,
+            v_max: 1.2,
+            d_turb: 0.0,
+        };
+        for tm0 in [0.5, 1.0 - 2e-5, 1.0] {
+            let mut f = [0.0; 3];
+            let tm = gov.eval(&[tm0; 3], 1.0, tm0, &mut f);
+            assert!((tm - tm0).abs() < 1e-15, "{tm0}: {tm}");
+            assert!(f.iter().all(|d| d.abs() < 1e-15), "{tm0}: {f:?}");
+        }
+    }
 
     /// PSS/E's quadratic saturation: zero up to the knee `A`, continuous
     /// there, rising above it, and finite down to (and below) zero, where

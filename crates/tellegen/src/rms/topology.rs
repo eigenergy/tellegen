@@ -317,7 +317,12 @@ pub(crate) fn trip_held(sys: &mut DynSystem, k: usize) {
     sys.loads[b].u_q += s.im;
 }
 
-/// Transient faults inside branches whose ends are both open die out.
+/// After an event: transient faults inside branches whose ends are both
+/// open die out; an island whose only units in service are inverters or
+/// held units (nothing that holds a voltage and a frequency) loses them, so
+/// its buses go dead; and each island newly apart from the reference bus is
+/// named once (it runs at its own frequency, which renewable plants do not
+/// measure: they measure the reference's).
 pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
     let mut out = Vec::new();
     for e in 0..sys.ac.m {
@@ -329,6 +334,33 @@ pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
                     "t = {t:.4} s: transient fault inside {a}-{b} circuit {c} extinguished (line dead)"
                 ));
             }
+        }
+    }
+    for (island, text) in sys.detached_islands() {
+        let inside = |b: usize| island.binary_search(&b).is_ok();
+        let synchronous = sys
+            .devices
+            .iter()
+            .any(|d| d.tripped.is_none() && inside(d.bus))
+            || sys
+                .sources
+                .iter()
+                .any(|s| s.y != C64::new(0.0, 0.0) && inside(s.bus));
+        if !synchronous {
+            let held: Vec<usize> = (0..sys.held.len())
+                .filter(|&k| !sys.held[k].tripped && inside(sys.held[k].bus))
+                .collect();
+            for k in held {
+                trip_held(sys, k);
+            }
+            out.push(format!(
+                "t = {t:.4} s: island of {text} has no synchronous unit to hold its voltage; its units trip and its buses go dead"
+            ));
+        } else if !sys.noted_islands.contains(&island) {
+            out.push(format!(
+                "t = {t:.4} s: island of {text}, apart from the reference bus: it runs at its own frequency, which its renewable plants do not measure"
+            ));
+            sys.noted_islands.push(island);
         }
     }
     out

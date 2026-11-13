@@ -260,6 +260,12 @@ impl RmsSimulation {
     pub fn live(&self, dt: f64, output_step: f64) -> RmsLive {
         let mut f = vec![0.0; self.sys.nx];
         self.sys.residual(&self.x0, &mut f, None);
+        // A step below the engine's smallest (`MIN_DT`) is raised to it.
+        let dt = if dt.is_finite() {
+            dt.max(MIN_DT)
+        } else {
+            MIN_DT
+        };
         let output_step = output_step.max(dt);
         let substeps = substeps(output_step, dt);
         let mut rec = Recorder::new(&self.sys, None);
@@ -301,10 +307,10 @@ impl RmsLive {
     /// their times (at most one step per output sample).
     ///
     /// # Errors
-    /// When `dt` is not a positive number.
+    /// When `dt` is not a finite number of at least 1e-6 s.
     pub fn set_step(&mut self, dt: f64) -> Result<(), String> {
-        if !(dt.is_finite() && dt > 0.0) {
-            return Err(format!("the step must be positive, not {dt}"));
+        if !(dt.is_finite() && dt >= MIN_DT) {
+            return Err(format!("the step must be at least {MIN_DT} s, not {dt}"));
         }
         let substeps = substeps(self.output_step, dt);
         self.h = self.output_step / substeps;

@@ -113,7 +113,8 @@ REECB1 voltage filter and reactive current state and the REPCA1 filters and
 integrators, are recorded as `inv.<state>:<unit>`. Where PowerSimulationsDynamics.jl
 0.16.2 departs from the PSS/E definition, tellegen follows PSS/E: the
 low-voltage active current gain between `Lvpnt0` and `Lvpnt1`, and `Xc` in the
-compensated voltage. A unit with other inverter records, or without the plant
+compensated voltage, the converter ramp limits as rates on the currents, and
+the high-voltage reactive current clamp (`Khv`, `Iolim`). A unit with other inverter records, or without the plant
 controller, keeps its power flow output as a constant-current injection; the
 notes say which.
 
@@ -168,8 +169,15 @@ blocks exactly). The rule is of second order: halving a 4 ms step quarters
 the difference to the next finer run (`tests/rms_physics.rs`; on a
 single-machine line trip, 3.3e-5 rad of rotor angle from 4 to 2 ms, 8.2e-6
 rad from 2 to 1 ms), so the default 2.5 ms step is within about 2e-5 rad of
-the converged trajectory there. The step is fixed: there is no local error
-estimate or step-size control.
+the converged trajectory there. That holds for a trajectory on which no
+limit switches. A limiter, non-windup bound or rectifier that switches inside
+a step is not located in time, so through such a switch the error no longer
+falls with the step: on a 0.1 s fault at the same unit through half its line
+reactance, which drives its exciter to the ceiling, the rotor angle of runs
+at 5, 2.5, 1 and 0.5 ms lies 1.9e-4, 1.3e-4, 1.2e-4 and 1.2e-4 rad from a
+0.1 ms run, and through a twentieth of it 7.6e-4, 3.9e-4, 3.5e-4 and 3.5e-4
+rad. The step is fixed: there is no local error estimate or step-size
+control. A run takes at most 1e7 steps (`t_end / dt`), with `dt ≥ 1e-6` s.
 The step matrix is factorized by blocks where every unit is a machine: each
 unit's states are eliminated onto its bus by a small dense LU, and a sparse LU
 (faer) factorizes the network with a 2 × 2 contribution per unit and the frame
@@ -184,8 +192,19 @@ Euler, then halves, so rectifiers and limiters that switch inside a step (an
 ESAC1A with KC ≠ 0 chattering at its bounds) do not stop a run.
 
 Events are checked before a run starts: each needs a finite time in
-`[0, t_end]` and an element the system has (judged in time order, as the run
-applies them), or the run is refused with the event named.
+`[0, t_end)` (an event at `t_end` would act on nothing the run records), an
+element the system has (judged in time order, as the run applies them), a
+fault impedance with `r ≥ 0` and `x ≥ 0`, and a load scale `≥ 0`, or the run
+is refused with the event named. A run ends exactly at `t_end`: when `t_end`
+is not a whole number of output steps, the last output interval is shorter.
+
+After a topology event, an island apart from the reference bus that keeps a
+synchronous machine or source is named in the run's events: it runs at its
+own frequency (renewable plants there measure the reference's frequency, as
+PowerSimulationsDynamics.jl's `FixedFrequency` does, so an island fed by one
+can run away). An island left with only inverters or held units has nothing
+to hold its voltage: those units trip and its buses go dead. When the
+integration fails with the network split, the error names the islands.
 
 ## Known limitations
 
@@ -193,7 +212,13 @@ applies them), or the run is refused with the event named.
   frequency dependence.
 - **Remote voltage regulation** is held at the case's terminal voltage, not
   solved (the static AC power flow refuses it).
-- **Step size** is fixed (see Formulation).
+- **Step size** is fixed (see Formulation), and switching limiters are not
+  located inside a step.
+- **HVDC lines** are not modelled: a case with an in-service HVDC line is
+  refused (the static AC power flow holds them as fixed injections).
+- **Islands** run on (see Formulation); there is no under/over-frequency or
+  overspeed protection, so an island without load accelerates until the run
+  fails.
 - **Inverter-based resources** other than the `REGCA1` + `REECB1` + `REPCA1`
   plant (for example `REECA1`, `WTGT*`) are not modeled: such a unit keeps its
   power flow output as a constant-current injection, named in the notes.
@@ -210,6 +235,18 @@ tellegen follows PSS/E for:
 
 - the REGCA1 low-voltage active current gain between `Lvpnt0` and `Lvpnt1`
   (unless `RmsOptions::psid_lv_gain`) and `Xc` in the compensated voltage;
+- the REGCA1 ramp limits `Rrpwr`, `Iqrmax`, `Iqrmin` as rates in pu/s on the
+  converter currents (unless `RmsOptions::psid_converter_ramp`, which limits
+  the `Tg` lag's error instead: an effective ramp `Rrpwr/Tg`, 500 pu/s for
+  `Rrpwr = 10`, `Tg = 0.02 s`);
+- the REGCA1 high-voltage reactive current clamp: above `Volim` the injected
+  reactive current falls by `Khv (V − Volim)`, down to `Iolim`
+  (PowerSimulationsDynamics.jl adds the term and ignores `Iolim`);
+- the IEEEST output cut-off: `VCU` and `VCL` each ignored only when it is
+  zero (PowerSimulationsDynamics.jl ignores both when either is);
+- a non-windup lag with a zero time constant (SEXS `TE`, ESAC1A `TA`, REGCA1
+  `Tg`, REECB1 `Tpord`): algebraic, its output the clamped input;
+- exciter saturation points in either order (IEEE 421.5 lists `E1 > E2`);
 - quadratic saturation `B (x − A)²/x` with `Se = 0` for `x ≤ A` (unless
   `RmsOptions::psid_saturation`; the formula alone rises again below `A` and
   diverges as `x → 0`);
@@ -226,9 +263,7 @@ tellegen follows PSS/E for:
 
 It follows PowerSimulationsDynamics.jl, and so differs from PSS/E, in:
 
-- the REGCA1 active current ramp limit, applied before the `Tg` lag, so the
-  effective ramp is `Rrpwr/Tg` (500 pu/s for `Rrpwr = 10`, `Tg = 0.02 s`), and
-  the placement of the low-voltage power limit;
+- the placement of the REGCA1 low-voltage power limit;
 - the non-windup PI: its integrator stops while the output is limited, so with
   `Kp = 0` it stays at the limit;
 - the REECB1 reactive current PI with `QFLAG = 1`, which has no limit.

@@ -329,3 +329,55 @@ fn smib_cases_start_at_rest() {
         .unwrap();
     assert!(at_rest(&r, "omega:102"));
 }
+
+/// Opening both lines islands the unit. A synchronous machine in an island
+/// keeps it alive and the island is named in the events; an island of only
+/// a renewable plant has nothing to hold its voltage, so the plant trips and
+/// the bus goes dead (it held 0 V and no current), and the run goes on.
+#[test]
+fn islanding_is_named_and_an_inverter_island_goes_dead() {
+    let trips = |time: f64| {
+        ["1", "2"]
+            .map(|circuit| RmsEvent::BranchTrip {
+                time,
+                from: 101,
+                to: 102,
+                circuit: circuit.into(),
+            })
+            .to_vec()
+    };
+    let request = RmsRequest {
+        t_end: 1.2,
+        dt: 0.0025,
+        output_step: 0.01,
+        events: trips(1.0),
+        ..RmsRequest::default()
+    };
+    let (net, dyr, _) = smib();
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+    let r = sim.run(&request).unwrap();
+    assert!(
+        r.events
+            .iter()
+            .any(|e| e.contains("island of buses 102 with units 102 '1'")),
+        "{:?}",
+        r.events
+    );
+
+    let case = wecc240_smib_cases()
+        .into_iter()
+        .find(|c| c.id == "smib_regca1_reecb1_repca1")
+        .unwrap();
+    let (net, dyr) = smib_study(&case);
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+    let r = sim.run(&request).unwrap();
+    assert!(
+        r.events.iter().any(|e| e.contains("no synchronous unit")),
+        "{:?}",
+        r.events
+    );
+    let vm = &r.channels["vm:102"];
+    assert!(vm[vm.len() - 1].abs() < 1e-9, "{}", vm[vm.len() - 1]);
+    let pe = &r.channels["pe:102"];
+    assert!(pe[pe.len() - 1].abs() < 1e-9, "{}", pe[pe.len() - 1]);
+}

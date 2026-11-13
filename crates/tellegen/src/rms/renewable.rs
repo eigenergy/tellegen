@@ -74,6 +74,8 @@ pub(crate) struct Regca1 {
     pub iqr_max: f64,
     /// [`super::RmsOptions::psid_lv_gain`].
     pub psid_lv_gain: bool,
+    /// [`super::RmsOptions::psid_converter_ramp`].
+    pub psid_ramp: bool,
 }
 
 /// `REECB1`: the electrical control.
@@ -215,6 +217,7 @@ impl Regca1 {
             iqr_max: v(13),
             iqr_min: v(14),
             psid_lv_gain: false,
+            psid_ramp: false,
         })
     }
 }
@@ -392,9 +395,19 @@ fn converter_current(regc: &Regca1, ip: f64, iq: f64, vmeas: f64, v: C64) -> (C6
         }
     }
     let g_lv = lv_gain(vt, regc.lv_pnt0, regc.lv_pnt1, regc.psid_lv_gain);
+    // High-voltage reactive current management (REGC_A): above `Volim` the
+    // injected reactive current falls by `Khv (V − Volim)`, down to `Iolim`
+    // (negative: absorbing) but never below the command itself.
+    // PowerSimulationsDynamics.jl 0.16.2 adds the term (more injection at
+    // high voltage) and drops `Iolim`.
     let iq_extra = (regc.k_hv * (vt - regc.vo_lim)).max(0.0);
+    let iq_inj = if iq_extra > 0.0 {
+        (iq - iq_extra).max(regc.io_lim.min(iq))
+    } else {
+        iq
+    };
     let id_cnv = g_lv * ip_sat;
-    let iq_cnv = -iq - iq_extra;
+    let iq_cnv = -iq_inj;
     let (s, c) = v.im.atan2(v.re).sin_cos();
     (
         C64::new(id_cnv * c - iq_cnv * s, id_cnv * s + iq_cnv * c),
@@ -497,11 +510,21 @@ impl Plant {
             fa[1] = dxi;
             fa[2] = p_pi - p_ext;
             // Ramp-limited, non-windup lag (IEEE Std 421.5).
+            // With `Tpord = 0` it is algebraic (no ramp), so its row stays
+            // nonsingular at a limit.
             let t = reec.t_pord;
-            let rate = (p_ext - p_ord).clamp(t * reec.dp_min, t * reec.dp_max);
-            let stop = (p_ord >= reec.p_max_inner && rate > 0.0)
-                || (p_ord <= reec.p_min_inner && rate < 0.0);
-            fa[3] = if stop { 0.0 } else { rate };
+            fa[3] = if t < f64::EPSILON {
+                p_ext.clamp(reec.p_min_inner, reec.p_max_inner) - p_ord
+            } else {
+                let rate = (p_ext - p_ord).clamp(t * reec.dp_min, t * reec.dp_max);
+                let stop = (p_ord >= reec.p_max_inner && rate > 0.0)
+                    || (p_ord <= reec.p_min_inner && rate < 0.0);
+                if stop {
+                    0.0
+                } else {
+                    rate
+                }
+            };
             p_ord.clamp(reec.p_min_inner, reec.p_max_inner) / vt_filt.max(V_LB)
         } else {
             fa[0] = self.p_ref - xa[0];
@@ -553,19 +576,30 @@ impl Plant {
         let iq_cmd = (i_icv + iq_inj).clamp(-iq_max, iq_max);
         let ip_cmd = ip_oc.clamp(0.0, ip_max);
 
-        // Converter.
-        let (rp_dn, rp_up) = if ip >= 0.0 {
-            (f64::NEG_INFINITY, regc.rrpwr)
+        // Converter: the `Tg` lags with their ramp limits `Rrpwr`, `Iqrmax`,
+        // `Iqrmin` in pu/s on the currents (mass form: the right-hand side
+        // `Tg dI/dt` is limited to `Tg` times the rate). With
+        // `psid_ramp`, PowerSimulationsDynamics.jl 0.16.2's limit on the
+        // lag's error instead (an effective rate `Rrpwr/Tg`). With `Tg = 0`
+        // the currents follow their commands (algebraic; no ramp).
+        if regc.t_g < f64::EPSILON {
+            fc[0] = ip_cmd - ip;
+            fc[1] = iq_cmd - iq;
         } else {
-            (-regc.rrpwr, f64::INFINITY)
-        };
-        fc[0] = ip_binary * (ip_cmd - ip_sat).clamp(rp_dn, rp_up);
-        let (rq_dn, rq_up) = if self.q_ref_converter >= 0.0 {
-            (f64::NEG_INFINITY, regc.iqr_max)
-        } else {
-            (regc.iqr_min, f64::INFINITY)
-        };
-        fc[1] = (iq_cmd - iq).clamp(rq_dn, rq_up);
+            let k = if regc.psid_ramp { 1.0 } else { regc.t_g };
+            let (rp_dn, rp_up) = if ip >= 0.0 {
+                (f64::NEG_INFINITY, k * regc.rrpwr)
+            } else {
+                (-k * regc.rrpwr, f64::INFINITY)
+            };
+            fc[0] = ip_binary * (ip_cmd - ip_sat).clamp(rp_dn, rp_up);
+            let (rq_dn, rq_up) = if self.q_ref_converter >= 0.0 {
+                (f64::NEG_INFINITY, k * regc.iqr_max)
+            } else {
+                (k * regc.iqr_min, f64::INFINITY)
+            };
+            fc[1] = (iq_cmd - iq).clamp(rq_dn, rq_up);
+        }
         fc[2] = vt - vmeas;
 
         (i_cnv - v / C64::new(self.r_source, self.x_source)) * self.scale
@@ -697,6 +731,24 @@ mod tests {
 
     fn tok(s: &str) -> Vec<String> {
         s.split_whitespace().map(str::to_owned).collect()
+    }
+
+    /// High-voltage reactive current management: above `Volim` = 1.2 the
+    /// injected reactive current falls by `Khv (V − Volim)` and stops at
+    /// `Iolim` = −1.3; a command already below `Iolim` is left alone.
+    #[test]
+    fn high_voltage_clamp_absorbs_down_to_iolim() {
+        let mut regc = plant().regc;
+        regc.k_hv = 10.0;
+        // Injected reactive power `Q = V Iq_inj` at a terminal on the real axis.
+        let q = |iq: f64, v: f64| {
+            let vt = C64::new(v, 0.0);
+            (vt * converter_current(&regc, 0.0, iq, v, vt).0.conj()).im / v
+        };
+        assert!((q(0.2, 1.1) - 0.2).abs() < 1e-12);
+        assert!((q(0.2, 1.25) - (0.2 - 0.5)).abs() < 1e-12);
+        assert!((q(0.2, 1.4) + 1.3).abs() < 1e-12);
+        assert!((q(-1.5, 1.4) + 1.5).abs() < 1e-12);
     }
 
     /// The WECC 240-bus plant at bus 1032.

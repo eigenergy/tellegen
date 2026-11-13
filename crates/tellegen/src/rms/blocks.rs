@@ -20,9 +20,22 @@ pub(crate) fn low_pass(u: f64, y: f64, k: f64, t: f64) -> (f64, f64) {
     (y, rhs / t)
 }
 
-/// Non-windup low pass from IEEE Std 421.5: the state stops at a limit while
-/// its derivative pushes past it. The output is the clamped state.
-pub(crate) fn low_pass_nonwindup_mm(u: f64, y: f64, k: f64, y_min: f64, y_max: f64) -> (f64, f64) {
+/// Non-windup low pass from IEEE Std 421.5 with mass `T`: the state stops at
+/// a limit while its derivative pushes past it. The output is the clamped
+/// state. With `T = 0` the block is algebraic, `0 = clamp(K u) − y`, which
+/// keeps its row nonsingular when a limit binds (zeroing the rate would leave
+/// the state with no equation).
+pub(crate) fn low_pass_nonwindup_mm(
+    u: f64,
+    y: f64,
+    k: f64,
+    t: f64,
+    y_min: f64,
+    y_max: f64,
+) -> (f64, f64) {
+    if t < EPS {
+        return (y.clamp(y_min, y_max), (k * u).clamp(y_min, y_max) - y);
+    }
     let dydt = k * u - y;
     let y_sat = y.clamp(y_min, y_max);
     let blocked = (y >= y_max && dydt > 0.0) || (y <= y_min && dydt < 0.0);
@@ -37,7 +50,7 @@ pub(crate) fn low_pass_nonwindup(
     y_min: f64,
     y_max: f64,
 ) -> (f64, f64) {
-    let (y_sat, rhs) = low_pass_nonwindup_mm(u, y, k, y_min, y_max);
+    let (y_sat, rhs) = low_pass_nonwindup_mm(u, y, k, t, y_min, y_max);
     (y_sat, rhs / t)
 }
 
@@ -114,14 +127,22 @@ pub(crate) fn rectifier(i: f64) -> f64 {
 
 /// Coefficients `(A, B)` of `Se(x) = B (x − A)²/x` through the two points
 /// `(E1, Se1)`, `(E2, Se2)` (PowerSystems.jl `calculate_saturation_coefficients`).
-/// No saturation data gives `(0, 0)`.
+/// No saturation data gives `(0, 0)`. The points may come in either order
+/// (IEEE 421.5 lists `E1 > E2`, PowerSystems.jl `E1 < E2`); the curve
+/// through them is the same, so they are sorted by `E` first.
 pub(crate) fn quadratic_saturation(e: (f64, f64), se: (f64, f64)) -> Result<(f64, f64), String> {
     if e.0 == 0.0 || e.1 == 0.0 || se.0 == 0.0 || se.1 == 0.0 {
         return Ok((0.0, 0.0));
     }
+    let (e, se) = if e.1 < e.0 {
+        ((e.1, e.0), (se.1, se.0))
+    } else {
+        (e, se)
+    };
     if e.1 <= e.0 || se.1 <= se.0 {
         return Err(format!(
-            "inconsistent saturation data: E = {e:?}, Se = {se:?} must both increase"
+            "inconsistent saturation data: E = {e:?}, Se = {se:?}: Se must increase with E \
+             at two distinct points"
         ));
     }
     let a = (1.0 / (se.1 * e.1 - se.0 * e.0))
@@ -158,6 +179,24 @@ mod tests {
         assert!((se(1.2) - 0.8).abs() < 1e-12, "{}", se(1.2));
     }
 
+    /// IEEE 421.5 lists the ESAC1A points high first (VE1 = 4.18, VE2 = 3.14);
+    /// either order is the same curve.
+    #[test]
+    #[allow(clippy::approx_constant)] // 3.14 is the IEEE sample's VE2, not π.
+    fn quadratic_saturation_does_not_depend_on_point_order() {
+        let ieee = quadratic_saturation((4.18, 3.14), (0.1, 0.03)).unwrap();
+        let ascending = quadratic_saturation((3.14, 4.18), (0.03, 0.1)).unwrap();
+        assert_eq!(ieee, ascending);
+        let (a, b) = ieee;
+        let se = |x: f64| b * (x - a).powi(2) / x;
+        assert!((se(4.18) - 0.1).abs() < 1e-12);
+        assert!((se(3.14) - 0.03).abs() < 1e-12);
+        // Se falling as E rises is still refused, in either order.
+        assert!(quadratic_saturation((4.18, 3.14), (0.03, 0.1)).is_err());
+        assert!(quadratic_saturation((3.14, 4.18), (0.1, 0.03)).is_err());
+        assert!(quadratic_saturation((3.14, 3.14), (0.03, 0.1)).is_err());
+    }
+
     #[test]
     fn exponential_saturation_passes_through_both_points() {
         let (a, b) = exponential_saturation((0.0392, 0.2672)).unwrap();
@@ -167,7 +206,23 @@ mod tests {
 
     #[test]
     fn nonwindup_holds_at_limit() {
-        assert_eq!(low_pass_nonwindup_mm(10.0, 5.0, 1.0, -5.0, 5.0), (5.0, 0.0));
-        assert_eq!(low_pass_nonwindup_mm(0.0, 5.0, 1.0, -5.0, 5.0), (5.0, -5.0));
+        assert_eq!(
+            low_pass_nonwindup_mm(10.0, 5.0, 1.0, 0.1, -5.0, 5.0),
+            (5.0, 0.0)
+        );
+        assert_eq!(
+            low_pass_nonwindup_mm(0.0, 5.0, 1.0, 0.1, -5.0, 5.0),
+            (5.0, -5.0)
+        );
+        // Algebraic (`T = 0`): the state is the clamped input, with a
+        // residual that still depends on the state at a binding limit.
+        assert_eq!(
+            low_pass_nonwindup_mm(10.0, 5.0, 1.0, 0.0, -5.0, 5.0),
+            (5.0, 0.0)
+        );
+        assert_eq!(
+            low_pass_nonwindup_mm(10.0, 4.0, 1.0, 0.0, -5.0, 5.0),
+            (4.0, 1.0)
+        );
     }
 }

@@ -376,6 +376,7 @@ pub(crate) fn build(
                         }
                         let mut regc = super::renewable::Regca1::from_tokens(gc.parameters())?;
                         regc.psid_lv_gain = options.psid_lv_gain;
+                        regc.psid_ramp = options.psid_converter_ramp;
                         let mut p = super::renewable::Plant {
                             regc,
                             reec: super::renewable::Reecb1::from_tokens(ec.parameters())?,
@@ -586,6 +587,7 @@ pub(crate) fn build(
         held,
         low_voltage,
         factorize_by_blocks: options.factorize_by_blocks,
+        noted_islands: Vec::new(),
     };
     sys.rebuild_ybus();
     sys.rebuild_mass();
@@ -632,6 +634,14 @@ pub(crate) fn power_flow(
     network: &BalancedNetwork,
     reactive_limits: bool,
 ) -> Result<(AcNetwork, crate::problem::AcPfSolution, usize, Vec<String>), String> {
+    // The static study holds in-service HVDC lines as fixed injections; the
+    // dynamic network has no HVDC model, so such a case is refused by name.
+    let hvdc = network.hvdc().iter().filter(|l| l.in_service).count();
+    if hvdc > 0 {
+        return Err(format!(
+            "HVDC is not supported in RMS simulation: the case has {hvdc} in-service HVDC line(s) (take them out of service, or represent them as loads or generators)"
+        ));
+    }
     let mut ac = AcNetwork::from_network_pf(network)?;
     hold_remote_regulators(network, &mut ac);
     let (qmin, qmax) = (ac.qmin.clone(), ac.qmax.clone());

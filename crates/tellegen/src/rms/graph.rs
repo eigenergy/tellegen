@@ -113,8 +113,8 @@ pub enum Block {
         a: f64,
         b: f64,
     },
-    /// `u₀` while `lo ≤ u₁ ≤ hi`, else 0; a zero limit bypasses (IEEE 421.5
-    /// stabilizer output limiter).
+    /// `u₀` while `lo ≤ u₁ ≤ hi`, else 0; a zero limit is ignored, each on
+    /// its own (the PSS/E IEEEST output limiter).
     Gate {
         lo: f64,
         hi: f64,
@@ -300,13 +300,7 @@ impl Block {
             Self::Rectifier => rectifier(u[0]),
             Self::SatQuadratic { a, b } => super::models::quadratic_se(*a, *b, u[0], true),
             Self::Max => u.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            Self::Gate { lo, hi } => {
-                if *lo == 0.0 || *hi == 0.0 || (*lo <= u[1] && u[1] <= *hi) {
-                    u[0]
-                } else {
-                    0.0
-                }
-            }
+            Self::Gate { lo, hi } => super::models::terminal_cutoff(u[0], u[1], *lo, *hi),
             Self::Lag { k, .. } => {
                 let (y, d) = low_pass_mm(u[0], x[0], *k);
                 dx[0] = d;
@@ -314,12 +308,12 @@ impl Block {
             }
             Self::LagLimited {
                 k,
+                t,
                 min,
                 max,
                 clamp_output,
-                ..
             } => {
-                let (y, d) = low_pass_nonwindup_mm(u[0], x[0], *k, *min, *max);
+                let (y, d) = low_pass_nonwindup_mm(u[0], x[0], *k, *t, *min, *max);
                 dx[0] = d;
                 if *clamp_output {
                     y
@@ -609,6 +603,7 @@ enum Op {
         a: u32,
         x: u32,
         k: f64,
+        t: f64,
         min: f64,
         max: f64,
     },
@@ -926,10 +921,11 @@ impl CompiledGraph {
             let a = || at(self.inputs[i][0]);
             match &self.blocks[i] {
                 Block::Lag { k, .. } => tape.push(Op::LagRate { a: a()?, x, k: *k }),
-                Block::LagLimited { k, min, max, .. } => tape.push(Op::LagLimitedRate {
+                Block::LagLimited { k, t, min, max, .. } => tape.push(Op::LagLimitedRate {
                     a: a()?,
                     x,
                     k: *k,
+                    t: *t,
                     min: *min,
                     max: *max,
                 }),
@@ -1052,12 +1048,8 @@ impl CompiledGraph {
                     y[out as usize] = super::models::quadratic_se(sa, sb, y[a as usize], true);
                 }
                 Op::Gate { out, a, b, lo, hi } => {
-                    let u1 = y[b as usize];
-                    y[out as usize] = if lo == 0.0 || hi == 0.0 || (lo <= u1 && u1 <= hi) {
-                        y[a as usize]
-                    } else {
-                        0.0
-                    };
+                    y[out as usize] =
+                        super::models::terminal_cutoff(y[a as usize], y[b as usize], lo, hi);
                 }
                 Op::LeadLag {
                     out,
@@ -1113,11 +1105,12 @@ impl CompiledGraph {
                     a,
                     x: s,
                     k,
+                    t,
                     min,
                     max,
                 } => {
                     f[s as usize] =
-                        low_pass_nonwindup_mm(y[a as usize], x[s as usize], k, min, max).1;
+                        low_pass_nonwindup_mm(y[a as usize], x[s as usize], k, t, min, max).1;
                 }
                 Op::IntegratorRate { a, x: s, k } => f[s as usize] = k * y[a as usize],
                 Op::Lag2Rate { a, x: s, k, t1 } => {

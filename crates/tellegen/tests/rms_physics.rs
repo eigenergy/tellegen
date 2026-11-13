@@ -129,7 +129,9 @@ fn the_initial_point_is_a_steady_state() {
                 eprintln!(
                     "WECC 240, reactive limits {reactive_limits}: {} generator bus(es) noted{}",
                     flagged.len(),
-                    flagged.first().map_or(String::new(), |n| format!(", e.g. {n}"))
+                    flagged
+                        .first()
+                        .map_or(String::new(), |n| format!(", e.g. {n}"))
                 );
             }
             assert!(
@@ -493,8 +495,9 @@ fn the_trapezoidal_rule_is_second_order() {
 }
 
 /// Events are checked before the run: a time that is not finite or lies
-/// outside `[0, t_end]`, or an element the system does not have, is an
-/// error naming the event, and nothing is simulated.
+/// outside `[0, t_end)`, an element the system does not have, a fault
+/// impedance or load scale that would make a source, is an error naming the
+/// event, and nothing is simulated; so is a step too small to finish.
 #[test]
 fn events_are_checked_before_the_run() {
     if shipped_wecc240().is_none() {
@@ -541,7 +544,7 @@ fn events_are_checked_before_the_run() {
             bus: 102,
             scale: f64::NAN,
         }],
-        "not finite",
+        "not a finite number",
     );
     fails(
         vec![RmsEvent::GeneratorTrip {
@@ -551,14 +554,86 @@ fn events_are_checked_before_the_run() {
         }],
         "no generator 102 '9'",
     );
-    // At the end of the run is inside it.
-    assert!(sim
-        .run(&RmsRequest {
-            t_end: 0.5,
-            events: vec![at(0.5)],
+    // An event at the end acts on nothing the run records.
+    fails(vec![at(2.0)], "outside the run");
+    // A fault or a load scale that would make a source.
+    let bus_fault = |r: f64, x: f64| RmsEvent::BusFault {
+        time: 1.0,
+        bus: 102,
+        r,
+        x,
+    };
+    fails(vec![bus_fault(-0.01, 0.0)], "r >= 0 and x >= 0");
+    fails(vec![bus_fault(0.0, -0.01)], "r >= 0 and x >= 0");
+    fails(
+        vec![RmsEvent::LoadChange {
+            time: 1.0,
+            bus: 102,
+            scale: -1.0,
+        }],
+        "finite number >= 0",
+    );
+    // A step too small to finish is refused before the run.
+    let tiny = |dt: f64| {
+        sim.run(&RmsRequest {
+            t_end: 1.0,
+            dt,
+            output_step: 0.005,
             ..RmsRequest::default()
         })
-        .is_ok());
+        .unwrap_err()
+    };
+    assert!(tiny(1e-300).contains("dt >= "), "{}", tiny(1e-300));
+    let long = sim
+        .run(&RmsRequest {
+            t_end: 1e5,
+            dt: 0.001,
+            output_step: 0.005,
+            ..RmsRequest::default()
+        })
+        .unwrap_err();
+    assert!(long.contains("exceeds the limit"), "{long}");
+}
+
+/// A run ends exactly at `t_end`, with a last shorter output interval when
+/// `t_end` is not a whole number of output steps, and every accepted event
+/// is applied.
+#[test]
+fn a_run_ends_at_t_end_and_applies_every_event() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let (net, dyr) = smib_study(&wecc240_smib_cases()[0]);
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::PowerFlow).unwrap();
+    let ends = |t_end: f64, events: Vec<RmsEvent>| {
+        let r = sim
+            .run(&RmsRequest {
+                t_end,
+                dt: 0.0025,
+                output_step: 0.005,
+                events,
+                ..RmsRequest::default()
+            })
+            .unwrap();
+        (*r.time.last().unwrap(), r.time.len(), r.events)
+    };
+    let trip = |time: f64| {
+        vec![RmsEvent::GeneratorTrip {
+            time,
+            bus: 102,
+            machine_id: "1".into(),
+        }]
+    };
+    let (last, n, events) = ends(1.0024, trip(1.002));
+    assert!((last - 1.0024).abs() < 1e-12, "{last}");
+    assert_eq!(n, 202);
+    assert_eq!(events.len(), 1, "{events:?}");
+    let (last, n, _) = ends(1.003, Vec::new());
+    assert!((last - 1.003).abs() < 1e-12 && n == 202, "{last} {n}");
+    let (last, n, _) = ends(0.004, Vec::new());
+    assert!((last - 0.004).abs() < 1e-12 && n == 2, "{last} {n}");
+    let (last, n, _) = ends(1.0, Vec::new());
+    assert!((last - 1.0).abs() < 1e-12 && n == 201, "{last} {n}");
 }
 
 /// Small-signal analysis is off unless a request asks for it.
@@ -575,4 +650,123 @@ fn small_signal_is_off_by_default() {
     let sim = RmsSimulation::new(&net, &dyr, LoadModel::PowerFlow).unwrap();
     let r = run(&sim, 0.1, 0.0025, Vec::new());
     assert!(r.eigenvalues.is_empty());
+}
+
+/// `dyr` with parameters of its `model` record set: `(index, value)`, the
+/// index 1-based as in the PSS/E Model Library.
+fn with_params(dyr: &str, model: &str, params: &[(usize, f64)]) -> String {
+    dyr.split('/')
+        .filter(|r| !r.trim().is_empty())
+        .map(|r| {
+            if !r.contains(&format!("'{model}'")) {
+                return format!("{r}/");
+            }
+            let mut tokens: Vec<String> = r.split_whitespace().map(str::to_owned).collect();
+            for &(i, v) in params {
+                tokens[2 + i] = format!("{v}");
+            }
+            format!("\n {} /", tokens.join(" "))
+        })
+        .collect()
+}
+
+fn smib_case(id: &str) -> SmibCase {
+    wecc240_smib_cases()
+        .into_iter()
+        .find(|c| c.id == id)
+        .unwrap()
+}
+
+/// A zero time constant makes a limited lag algebraic, and it stays solvable
+/// when its limit binds: SEXS with `TE = 0` (and `TB = TE = 0`), and the
+/// REGCA1 converter with `Tg = 0` (and REECB1 with `Tpord = 0`), through a fault that drives the field
+/// voltage and the converter currents to their limits. Before, the limited
+/// row was `0 = 0` and the step matrix structurally singular.
+#[test]
+fn zero_time_constants_ride_through_a_limit() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let cases = [
+        ("smib_genrou_sexs_tgov1", "SEXS", vec![(4, 0.0)]),
+        ("smib_genrou_sexs_tgov1", "SEXS", vec![(2, 0.0), (4, 0.0)]),
+        (
+            "smib_genrou_sexs_tgov1",
+            "SEXS",
+            vec![(1, 1.0), (2, 0.0), (4, 0.0)],
+        ),
+        ("smib_regca1_reecb1_repca1", "REGCA1", vec![(2, 0.0)]),
+        ("smib_regca1_reecb1_repca1", "REECB1", vec![(30, 0.0)]),
+    ];
+    for (id, model, params) in cases {
+        let case = smib_case(id);
+        let dyr = with_params(&case.dyr, model, &params);
+        let dyr = powerio::parse_dyr(&dyr).unwrap();
+        let net = network(&case.raw);
+        let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+        assert!(sim.initial_residual() < 1e-8, "{id} {params:?}");
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 2.0,
+                dt: 0.0025,
+                output_step: 0.005,
+                events: fault(102, 0.2 * case.x_line, 1.0, 1.1),
+                ..RmsRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{id} {model} {params:?}: {e}"));
+        assert!(r
+            .channels
+            .iter()
+            .all(|(_, v)| v.iter().all(|x| x.is_finite())));
+        if model == "SEXS" {
+            // The field voltage reaches its ceiling and never passes it.
+            let efd = &r.channels["efd:102"];
+            let hi = efd.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            assert!((hi - 3.0).abs() < 1e-9, "{id} {params:?}: Efd up to {hi}");
+        }
+    }
+}
+
+/// REGCA1's ramp limits are rates in pu/s on the converter currents (PSS/E):
+/// after a deep fault the active current recovers at `Rrpwr` (here 2 pu/s,
+/// with REECB1's own power ramp opened up so the converter's binds), not at
+/// `Rrpwr/Tg` = 100 pu/s as PowerSimulationsDynamics.jl 0.16.2 has it
+/// (`RmsOptions::psid_converter_ramp`).
+#[test]
+fn the_converter_ramps_at_rrpwr() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let case = smib_case("smib_regca1_reecb1_repca1");
+    let dyr = with_params(&case.dyr, "REGCA1", &[(3, 2.0)]);
+    let dyr = with_params(&dyr, "REECB1", &[(25, 99.0)]);
+    let dyr = powerio::parse_dyr(&dyr).unwrap();
+    let net = network(&case.raw);
+    let fastest = |psid: bool| {
+        let options = RmsOptions {
+            psid_converter_ramp: psid,
+            ..RmsOptions::default()
+        };
+        let sim =
+            RmsSimulation::with_options(&net, &dyr, LoadModel::ConstantImpedance, options).unwrap();
+        let dt = 0.001;
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 1.5,
+                dt,
+                output_step: dt,
+                events: fault(102, 0.125 * case.x_line, 1.0, 1.1),
+                ..RmsRequest::default()
+            })
+            .unwrap();
+        let ip = &r.channels["inv.Ip:102"];
+        ip.windows(2)
+            .map(|w| (w[1] - w[0]) / dt)
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let pss = fastest(false);
+    let psid = fastest(true);
+    eprintln!("fastest active current rise: {pss:.3} pu/s (PSS/E), {psid:.3} pu/s (PSID)");
+    assert!(pss <= 2.0 * (1.0 + 1e-6), "{pss}");
+    assert!(psid > 4.0, "{psid}");
 }

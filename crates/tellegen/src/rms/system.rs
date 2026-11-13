@@ -399,6 +399,19 @@ impl BusLoad {
     }
 
     /// Whether any load part (not a held unit) is stated.
+    /// Active power drawn at the power flow voltage (system per unit).
+    pub(crate) fn p0(&self) -> f64 {
+        self.p_z
+            + self.p_i
+            + self.p_p
+            + self
+                .exp
+                .iter()
+                .filter(|e| !e.reactive)
+                .map(|e| e.s0)
+                .sum::<f64>()
+    }
+
     pub(crate) fn has_load(&self) -> bool {
         self.p_z != 0.0
             || self.q_z != 0.0
@@ -566,6 +579,8 @@ pub(crate) struct DynSystem {
     /// Factorize step matrices by blocks where possible
     /// ([`super::RmsOptions::factorize_by_blocks`]).
     pub factorize_by_blocks: bool,
+    /// The islands apart from the reference already named in the notes.
+    pub noted_islands: Vec<Vec<usize>>,
 }
 
 impl DynSystem {
@@ -887,9 +902,9 @@ impl DynSystem {
         ]
     }
 
-    /// Buses in islands (over branches closed at both ends) without a
-    /// unit in service.
-    pub(crate) fn dead_buses(&self) -> Vec<bool> {
+    /// The electrical islands over branches closed at both ends, each its
+    /// dense buses in ascending order.
+    pub(crate) fn islands(&self) -> Vec<Vec<usize>> {
         let n = self.n;
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
         for e in 0..self.ac.m {
@@ -899,6 +914,34 @@ impl DynSystem {
                 adj[t].push(f);
             }
         }
+        let mut seen = vec![false; n];
+        let mut islands = Vec::new();
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            let mut stack = vec![start];
+            let mut members = Vec::new();
+            seen[start] = true;
+            while let Some(b) = stack.pop() {
+                members.push(b);
+                for &o in &adj[b] {
+                    if !seen[o] {
+                        seen[o] = true;
+                        stack.push(o);
+                    }
+                }
+            }
+            members.sort_unstable();
+            islands.push(members);
+        }
+        islands
+    }
+
+    /// Buses in islands (over branches closed at both ends) without a
+    /// unit in service.
+    pub(crate) fn dead_buses(&self) -> Vec<bool> {
+        let n = self.n;
         let mut live = vec![false; n];
         for d in self.devices.iter().filter(|d| d.tripped.is_none()) {
             live[d.bus] = true;
@@ -909,33 +952,58 @@ impl DynSystem {
         for h in self.held.iter().filter(|h| !h.tripped) {
             live[h.bus] = true;
         }
-        let mut seen = vec![false; n];
         let mut dead = vec![false; n];
-        for start in 0..n {
-            if seen[start] {
-                continue;
-            }
-            let mut stack = vec![start];
-            let mut members = Vec::new();
-            let mut any_live = false;
-            seen[start] = true;
-            while let Some(b) = stack.pop() {
-                members.push(b);
-                any_live |= live[b];
-                for &o in &adj[b] {
-                    if !seen[o] {
-                        seen[o] = true;
-                        stack.push(o);
-                    }
-                }
-            }
-            if !any_live {
-                for b in members {
+        for island in self.islands() {
+            if !island.iter().any(|&b| live[b]) {
+                for b in island {
                     dead[b] = true;
                 }
             }
         }
         dead
+    }
+
+    /// The islands apart from the reference (slack) bus that hold a unit in
+    /// service, each named: its buses, units and load.
+    pub(crate) fn detached_islands(&self) -> Vec<(Vec<usize>, String)> {
+        let reference = self.ac.slacks.first().copied();
+        self.islands()
+            .into_iter()
+            .filter(|island| reference.is_none_or(|r| island.binary_search(&r).is_err()))
+            .filter_map(|island| {
+                let inside = |b: usize| island.binary_search(&b).is_ok();
+                let mut units: Vec<String> = Vec::new();
+                for d in self.devices.iter().filter(|d| d.tripped.is_none()) {
+                    if inside(d.bus) {
+                        units.push(format!("{} '{}'", d.bus_number, d.machine_id));
+                    }
+                }
+                for h in self.held.iter().filter(|h| !h.tripped) {
+                    if inside(h.bus) {
+                        units.push(format!("{} '{}' (inverter)", h.bus_number, h.machine_id));
+                    }
+                }
+                if units.is_empty() {
+                    return None;
+                }
+                let load: f64 = island.iter().map(|&b| self.loads[b].p0()).sum();
+                let mut buses: Vec<String> = island
+                    .iter()
+                    .take(10)
+                    .map(|&b| self.bus_numbers[b].to_string())
+                    .collect();
+                if island.len() > 10 {
+                    buses.push(format!("… ({} buses)", island.len()));
+                }
+                let text = format!(
+                    "buses {} with units {} and {:.1} MW of load",
+                    buses.join(", "),
+                    units.join(", "),
+                    load * self.sbase
+                );
+                Some((island, text))
+            })
+            .collect()
     }
 
     /// Whether every path from the network into branch `e` is open.
