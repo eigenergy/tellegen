@@ -671,11 +671,17 @@ impl Plant {
 
     /// Initialize at the power flow: `s` the plant's output (system base)
     /// at terminal voltage `v`. Sets the references and returns the states
-    /// and notes on an operating point outside the plant's ranges (which
-    /// PowerSimulationsDynamics.jl reports and simulates as well).
+    /// and notes on an operating point outside the plant's ranges where the
+    /// plant still rests there.
     ///
     /// # Errors
-    /// When a gain the initialization divides by is zero.
+    /// When a gain the initialization divides by is zero, or when the
+    /// operating point has no steady state: a controller output past its
+    /// limit (REPCA1 `Qmin`/`Qmax` or `Pmin`/`Pmax`, REECB1 `Pmin`/`Pmax`,
+    /// `Qmin`/`Qmax` or `Vmin`/`Vmax`, the current limits, the LVPL
+    /// ceiling) moves the plant off the power flow at `t = 0`. The error
+    /// names each limit and value (or, failing that, the state that moves),
+    /// and the caller holds the plant at its power flow output.
     pub(crate) fn initialize(&mut self, s: C64, v: C64) -> Result<(Vec<f64>, Vec<String>), String> {
         let mut notes = Vec::new();
         let vt = v.norm();
@@ -772,6 +778,65 @@ impl Plant {
         x.extend([ip, iq, vt]);
         if regc.lvpl_sw && ip > lvpl_gain(vt, regc.zerox, regc.brkpt, regc.lvpl1) + tol {
             notes.push(format!("active current {ip:.4} pu above the LVPL ceiling"));
+        }
+        // The controllers' limits at the operating point.
+        let mut outside = |what: &str, value: f64, lo: f64, hi: f64| {
+            if value > hi + tol || value < lo - tol {
+                notes.push(format!("{what} {value:.4} pu outside [{lo}, {hi}]"));
+            }
+        };
+        outside("REPCA1 Q PI output", q_ext, repc.q_min, repc.q_max);
+        if repc.freq_flag == 1 {
+            outside("REPCA1 P PI output", p_elec, repc.p_min, repc.p_max);
+            outside("REECB1 Pord", p_elec, reec.p_min_inner, reec.p_max_inner);
+        }
+        // The voltage command reaches the currents only with `QFLAG = 1`.
+        if reec.v_flag == 1 {
+            outside(
+                "REECB1 Q command",
+                q_ext,
+                reec.q_min_inner,
+                reec.q_max_inner,
+            );
+            if reec.q_flag == 1 {
+                outside(
+                    "REECB1 V PI output (terminal voltage)",
+                    vt,
+                    reec.v_min,
+                    reec.v_max,
+                );
+            }
+        } else if repc.ref_flag == 1 && reec.q_flag == 1 {
+            outside("REECB1 voltage command", q_ext, reec.v_min, reec.v_max);
+        }
+        let v_err = deadband(self.v_ref0 - vt, reec.dbd1, reec.dbd2);
+        if (reec.k_qv * v_err).abs() > tol {
+            notes.push(format!(
+                "REECB1 Vref0 = {} pu with the terminal at {vt:.4} pu injects a voltage-dip current at rest",
+                self.v_ref0
+            ));
+        }
+        // A plant past a limit that moves it rests elsewhere: no steady
+        // state at the power flow, so the caller holds it.
+        let mut f = vec![0.0; x.len()];
+        self.eval(&x, v.re, v.im, 1.0, &mut f);
+        let (worst, row) = f.iter().enumerate().fold((0.0_f64, 0), |(a, k), (i, r)| {
+            if r.abs() > a {
+                (r.abs(), i)
+            } else {
+                (a, k)
+            }
+        });
+        if worst > 1e-8 {
+            let why = if notes.is_empty() {
+                format!(
+                    "state {} moves at rate {worst:.3e}",
+                    self.state_names()[row]
+                )
+            } else {
+                notes.join("; ")
+            };
+            return Err(format!("its operating point has no steady state ({why})"));
         }
         Ok((x, notes))
     }
@@ -995,6 +1060,38 @@ mod tests {
             let s_out = v * i.conj();
             assert!((s_out - s).norm() < 1e-12, "{flags:?}: {s_out} vs {s}");
         }
+    }
+
+    /// An operating point past a controller limit has no steady state: the
+    /// initialization refuses it naming the limit (the caller then holds the
+    /// plant), rather than starting the plant off rest.
+    #[test]
+    fn operating_points_past_controller_limits_are_named() {
+        let v = C64::from_polar(1.02, 0.3);
+        let cases: [(C64, f64, u8, &str); 3] = [
+            // Plant Q = 0.5 above REPCA1 Qmax = 0.43.
+            (C64::new(1.2, 1.0), 1.02, 0, "REPCA1 Q PI output"),
+            // QFLAG = 1 with the terminal above REECB1 Vmax = 1.05.
+            (C64::new(1.2, 0.25), 1.07, 1, "REECB1 V PI output"),
+            // Plant P = 1.1 above REPCA1 Pmax = 1.0 (Fflag = 1).
+            (C64::new(2.2, 0.1), 1.02, 0, "REPCA1 P PI output"),
+        ];
+        for (s, vm, q_flag, limit) in cases {
+            let mut p = plant();
+            p.reec.i_max = 5.0;
+            p.reec.q_flag = q_flag;
+            let v = C64::from_polar(vm, v.arg());
+            let e = p.initialize(s, v).unwrap_err();
+            assert!(
+                e.contains(limit) && e.contains("no steady state"),
+                "{limit}: {e}"
+            );
+        }
+        // Inside every limit it rests, without a note.
+        let mut p = plant();
+        p.reec.i_max = 5.0;
+        let (_, notes) = p.initialize(C64::new(1.2, 0.25), v).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
     }
 
     /// A voltage dip below `Lvpnt1` scales the active current down (PSS/E

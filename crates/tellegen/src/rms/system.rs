@@ -999,9 +999,17 @@ impl DynSystem {
     /// service, each named: its buses, units and load.
     pub(crate) fn detached_islands(&self) -> Vec<(Vec<usize>, String)> {
         let reference = self.ac.slacks.first().copied();
+        self.unit_islands()
+            .into_iter()
+            .filter(|(island, _)| reference.is_none_or(|r| island.binary_search(&r).is_err()))
+            .collect()
+    }
+
+    /// Every island with a unit in service, the reference bus's among them,
+    /// with the text [`Self::detached_islands`] gives.
+    pub(crate) fn unit_islands(&self) -> Vec<(Vec<usize>, String)> {
         self.islands()
             .into_iter()
-            .filter(|island| reference.is_none_or(|r| island.binary_search(&r).is_err()))
             .filter_map(|island| {
                 let inside = |b: usize| island.binary_search(&b).is_ok();
                 let mut units: Vec<String> = Vec::new();

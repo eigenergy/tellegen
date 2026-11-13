@@ -6,7 +6,6 @@
 
 #![cfg(feature = "sensitivity")]
 
-#[cfg(feature = "rms-experimental")]
 use std::path::Path;
 
 use tellegen::rms::{LoadModel, RmsEvent, RmsRequest, RmsSimulation};
@@ -54,6 +53,60 @@ fn wecc240(options: RmsOptions) -> RmsSimulation {
     };
     let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
     RmsSimulation::with_options(net, &dyr, LoadModel::ConstantImpedance, options).unwrap()
+}
+
+/// The reference bus's island left with only renewable plants has nothing
+/// to hold its voltage either: its plants trip and its buses go dead, as in
+/// any other island. WECC 240's reference bus 3933 carries the synchronous
+/// units CG, NB, NG and NH and the plants NW and S. Before, only the
+/// islands apart from the reference were checked, and the run failed with
+/// "the Newton step does not lower the residual" when the last line opened.
+#[test]
+fn a_reference_island_of_only_inverters_goes_dead() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/rms_examples/wecc240");
+    let module = powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
+    let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+        panic!("not a balanced network")
+    };
+    let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
+    let sim = RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap();
+    let trip_units = |time: f64| {
+        ["CG", "NB", "NG", "NH"].map(|id| RmsEvent::GeneratorTrip {
+            time,
+            bus: 3933,
+            machine_id: id.into(),
+        })
+    };
+    let cut = |time: f64| RmsEvent::BranchTrip {
+        time,
+        from: 3923,
+        to: 3933,
+        circuit: "1".into(),
+    };
+    for events in [
+        [trip_units(0.5).to_vec(), vec![cut(1.0)]].concat(),
+        [vec![cut(1.0)], trip_units(1.5).to_vec()].concat(),
+    ] {
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 2.0,
+                dt: 0.0025,
+                output_step: 0.01,
+                events: events.clone(),
+                small_signal: false,
+                ..RmsRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{events:?}: {e}"));
+        assert!(
+            r.events
+                .iter()
+                .any(|e| e.contains("3933") && e.contains("no synchronous unit")),
+            "{:?}",
+            r.events
+        );
+        let vm = &r.channels["vm:3933"];
+        assert!(vm[vm.len() - 1].abs() < 1e-9, "{}", vm[vm.len() - 1]);
+    }
 }
 
 fn at_rest(r: &tellegen::rms::RmsResult, key: &str) -> bool {

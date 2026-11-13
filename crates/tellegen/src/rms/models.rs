@@ -529,14 +529,19 @@ impl Avr {
     /// The limits a steady state `x` at the inputs `u` stands beyond
     /// (PowerSimulationsDynamics.jl init_avr.jl reports the same). SEXS's
     /// field voltage past `EMAX` and ESAC1A's `VA` past `VAMAX` rest there
-    /// anyway (the non-windup lag freezes only while it is pushed further);
-    /// the others leave no steady state.
+    /// anyway (the non-windup lag freezes only while it is pushed further)
+    /// unless the lag's time constant is zero; the others leave no steady
+    /// state.
     pub(crate) fn limit_breaches(&self, x: &[f64], u: AvrIn) -> Vec<LimitBreach> {
         let mut out = Vec::new();
         match self {
-            Self::Sexs { v_min, v_max, .. } => breach(
+            // With `TE = 0` (`TA = 0` for ESAC1A) the limited lag is
+            // algebraic (`0 = clamp(K·u) − y`): no rest past the limit.
+            Self::Sexs {
+                v_min, v_max, te, ..
+            } => breach(
                 &mut out,
-                true,
+                *te >= f64::EPSILON,
                 "SEXS field voltage EFD",
                 x[0],
                 ("EMIN", *v_min),
@@ -547,12 +552,13 @@ impl Avr {
                 va_max,
                 vr_min,
                 vr_max,
+                ta,
                 ..
             } => {
                 // At rest `V_R = V_FE = VA` (the regulator output is VA clamped).
                 breach(
                     &mut out,
-                    true,
+                    *ta >= f64::EPSILON,
                     "ESAC1A regulator voltage VA",
                     x[2],
                     ("VAMIN", *va_min),

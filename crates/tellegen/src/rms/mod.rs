@@ -365,8 +365,8 @@ pub struct RmsResult {
     /// The channels of [`RecordSpec::frames`] at their own step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frames: Option<RmsSeries>,
-    /// The full state at [`RecordSpec::checkpoint_step`] intervals.
-    #[cfg(feature = "rms-experimental")]
+    /// The full state at [`RecordSpec::checkpoint_step`] intervals (empty
+    /// without the `rms-experimental` feature, with a note).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checkpoints: Vec<Checkpoint>,
 }
@@ -556,12 +556,13 @@ impl RmsSimulation {
         })
     }
 
-    /// Check every event before a run: a finite time in `[0, t_end)` (an
-    /// event at the end would act on nothing the run records), and
+    /// Check every event before a run: a finite time in `[0, t_end − tol)`
+    /// (an event at the end would act on nothing the run records, and the
+    /// run reaches `t_end` once within `tol`, the step's time tolerance), and
     /// an element the system has (each event applied in time order to a
     /// copy of the system, so an element an earlier event adds or removes
     /// is judged as the run would).
-    fn check_events(&self, events: &[RmsEvent], t_end: f64) -> Result<(), String> {
+    fn check_events(&self, events: &[RmsEvent], t_end: f64, tol: f64) -> Result<(), String> {
         for (k, e) in events.iter().enumerate() {
             let t = e.time();
             if !t.is_finite() {
@@ -570,6 +571,11 @@ impl RmsSimulation {
             if t < 0.0 || t >= t_end {
                 return Err(format!(
                     "event {k} at t = {t} s lies outside the run [0, {t_end}) s"
+                ));
+            }
+            if t >= t_end - tol {
+                return Err(format!(
+                    "event {k} at t = {t} s lies within {tol:.1e} s of the run's end t_end = {t_end} s, where it would act on nothing the run records"
                 ));
             }
         }
@@ -636,9 +642,17 @@ impl RmsSimulation {
                 "need dt >= {MIN_DT} s, a finite output_step >= dt and a finite t_end > 0"
             ));
         }
-        self.check_events(&request.events, request.t_end)?;
-        let substeps = substeps(request.output_step, request.dt) as usize;
-        let h = request.output_step / substeps as f64;
+        // Bounded before the count is cast: a huge output step would
+        // saturate it and leave a step coarser than `dt`.
+        let substeps = substeps(request.output_step, request.dt);
+        if substeps > MAX_STEPS {
+            return Err(format!(
+                "output_step / dt = {:.3e} steps per output step exceeds the limit of {MAX_STEPS:e}; use a smaller output_step",
+                request.output_step / request.dt
+            ));
+        }
+        let h = request.output_step / substeps;
+        self.check_events(&request.events, request.t_end, 1e-9 * h)?;
         if request.t_end / h > MAX_STEPS {
             return Err(format!(
                 "t_end / dt = {:.3e} steps exceeds the limit of {MAX_STEPS:e}; use a larger dt or a shorter run",
@@ -798,11 +812,11 @@ impl RmsSimulation {
         }
         let (time, channels, frames) = rec.take();
         #[cfg_attr(feature = "rms-experimental", allow(unused_mut))]
-        let mut eigen_note: Vec<String> = Vec::new();
+        let mut run_notes: Vec<String> = Vec::new();
         #[cfg(feature = "rms-experimental")]
         let eigenvalues = if request.small_signal && start.is_none() {
             self.eigenvalues().unwrap_or_else(|e| {
-                eigen_note.push(e);
+                run_notes.push(e);
                 Vec::new()
             })
         } else {
@@ -811,7 +825,7 @@ impl RmsSimulation {
         #[cfg(not(feature = "rms-experimental"))]
         let eigenvalues = {
             if request.small_signal {
-                eigen_note.push(
+                run_notes.push(
                     "small-signal analysis needs the rms-experimental feature; not computed"
                         .to_owned(),
                 );
@@ -838,11 +852,22 @@ impl RmsSimulation {
                 mbase: d.scale * self.sys.sbase,
             })
             .collect();
+        #[cfg(not(feature = "rms-experimental"))]
+        let checkpoints = {
+            if request
+                .record
+                .as_ref()
+                .is_some_and(|r| r.checkpoint_step > 0.0)
+            {
+                run_notes
+                    .push("checkpoints need the rms-experimental feature; none taken".to_owned());
+            }
+            Vec::new()
+        };
         Ok(RmsResult {
             time,
             channels,
             frames,
-            #[cfg(feature = "rms-experimental")]
             checkpoints,
             buses: self.sys.bus_numbers.clone(),
             base_mva: self.sys.sbase,
@@ -858,7 +883,7 @@ impl RmsSimulation {
             events: applied,
             notes: {
                 let mut notes = self.notes.clone();
-                notes.extend(eigen_note);
+                notes.extend(run_notes);
                 if euler_steps > 0 {
                     notes.push(format!(
                         "{euler_steps} step(s) fell back from the trapezoidal rule to backward Euler (limiter or rectifier switching inside the step)"
@@ -1213,8 +1238,10 @@ pub struct RecordSpec {
     pub frame_step: f64,
     /// The full state every `checkpoint_step` seconds (0: none), in
     /// [`RmsResult::checkpoints`]: any channel can be replayed from them
-    /// ([`RmsSimulation::replay`]).
-    #[cfg(feature = "rms-experimental")]
+    /// (`RmsSimulation::replay`). Checkpoints need the `rms-experimental`
+    /// feature; without it a request for them is noted and none are taken.
+    /// The field is there under every feature, so the features stay
+    /// additive.
     #[serde(default)]
     pub checkpoint_step: f64,
 }
@@ -1237,7 +1264,6 @@ pub struct RmsSeries {
 /// The full state at `t` (differential and algebraic, in the engine's order)
 /// and the integrator's reusable factorization there, so a replay from it
 /// continues the run sample for sample.
-#[cfg(feature = "rms-experimental")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub t: f64,
@@ -1254,7 +1280,6 @@ pub struct Checkpoint {
 
 /// A point of the run before a checkpoint: the full state and the step that
 /// led away from it.
-#[cfg(feature = "rms-experimental")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PastPoint {
     pub h: f64,
@@ -1262,17 +1287,12 @@ pub struct PastPoint {
 }
 
 /// What rebuilds an integrator factorization exactly.
-#[cfg(feature = "rms-experimental")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SolverState {
     pub at: Vec<f64>,
     pub h: f64,
     pub theta: f64,
 }
-
-/// No checkpoints without `rms-experimental`: a run starts at `t = 0`.
-#[cfg(not(feature = "rms-experimental"))]
-type Checkpoint = std::convert::Infallible;
 
 /// Where a channel's value comes from.
 #[derive(Clone, Copy, Debug)]

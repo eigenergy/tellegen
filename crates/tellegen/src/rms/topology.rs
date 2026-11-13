@@ -336,7 +336,10 @@ pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
             }
         }
     }
-    for (island, text) in sys.detached_islands() {
+    // Every island, the reference bus's too: one left without a synchronous
+    // unit has nothing to hold its voltage.
+    let reference = sys.ac.slacks.first().copied();
+    for (island, text) in sys.unit_islands() {
         let inside = |b: usize| island.binary_search(&b).is_ok();
         let synchronous = sys
             .devices
@@ -356,7 +359,9 @@ pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
             out.push(format!(
                 "t = {t:.4} s: island of {text} has no synchronous unit to hold its voltage; its units trip and its buses go dead"
             ));
-        } else if !sys.noted_islands.contains(&island) {
+        } else if reference.is_none_or(|r| island.binary_search(&r).is_err())
+            && !sys.noted_islands.contains(&island)
+        {
             out.push(format!(
                 "t = {t:.4} s: island of {text}, apart from the reference bus: it runs at its own frequency, which its renewable plants do not measure"
             ));

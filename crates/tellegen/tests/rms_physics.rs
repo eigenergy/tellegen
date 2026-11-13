@@ -498,9 +498,10 @@ fn the_trapezoidal_rule_is_second_order() {
 }
 
 /// Events are checked before the run: a time that is not finite or lies
-/// outside `[0, t_end)`, an element the system does not have, a fault
+/// outside `[0, t_end)` (or within the step's tolerance of `t_end`), an element the system does not have, a fault
 /// impedance or load scale that would make a source, is an error naming the
-/// event, and nothing is simulated; so is a step too small to finish.
+/// event, and nothing is simulated; so is a step too small to finish or an
+/// output step too long to divide into steps.
 #[test]
 fn events_are_checked_before_the_run() {
     if shipped_wecc240().is_none() {
@@ -557,8 +558,12 @@ fn events_are_checked_before_the_run() {
         }],
         "no generator 102 '9'",
     );
-    // An event at the end acts on nothing the run records.
+    // An event at the end acts on nothing the run records, and nor does
+    // one within the step's time tolerance of it (before, accepted and then
+    // never applied; such times come from sums like 0.7 + 0.1 + 0.1 + 0.1).
     fails(vec![at(2.0)], "outside the run");
+    fails(vec![at(2.0 - 1e-12)], "of the run's end");
+    fails(vec![at(2.0 - 1e-15)], "of the run's end");
     // A fault or a load scale that would make a source.
     let bus_fault = |r: f64, x: f64| RmsEvent::BusFault {
         time: 1.0,
@@ -596,6 +601,26 @@ fn events_are_checked_before_the_run() {
         })
         .unwrap_err();
     assert!(long.contains("exceeds the limit"), "{long}");
+    // An output step so long that the count of steps in it saturates is
+    // refused (before, the run took no step and returned the initial state
+    // at t_end, the fault never applied; or took steps coarser than dt).
+    for output_step in [1e300, 1e17] {
+        let e = sim
+            .run(&RmsRequest {
+                t_end: 1.0,
+                dt: 0.0025,
+                output_step,
+                events: vec![RmsEvent::BusFault {
+                    time: 0.005,
+                    bus: 102,
+                    r: 0.0,
+                    x: 0.01,
+                }],
+                ..RmsRequest::default()
+            })
+            .unwrap_err();
+        assert!(e.contains("steps per output step"), "{e}");
+    }
 }
 
 /// A run ends exactly at `t_end`, with a last shorter output interval when
@@ -637,6 +662,41 @@ fn a_run_ends_at_t_end_and_applies_every_event() {
     assert!((last - 0.004).abs() < 1e-12 && n == 2, "{last} {n}");
     let (last, n, _) = ends(1.0, Vec::new());
     assert!((last - 1.0).abs() < 1e-12 && n == 201, "{last} {n}");
+}
+
+/// `RecordSpec` and `RmsResult` have the same fields under `rms` and
+/// `rms-experimental` (the features are additive: this literal compiles under
+/// both), and a checkpoint request without `rms-experimental` is noted, as a
+/// small-signal request is. Before, `checkpoint_step` existed only under
+/// `rms-experimental`, and without it the request was dropped silently.
+#[test]
+fn checkpoint_requests_are_taken_or_noted_under_every_feature() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let (net, dyr) = smib_study(&wecc240_smib_cases()[0]);
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::PowerFlow).unwrap();
+    let r = sim
+        .run(&RmsRequest {
+            t_end: 0.1,
+            record: Some(tellegen::rms::RecordSpec {
+                channels: vec!["omega:".into()],
+                frames: vec![],
+                frame_step: 0.0,
+                checkpoint_step: 0.05,
+            }),
+            ..RmsRequest::default()
+        })
+        .unwrap();
+    let noted = r
+        .notes
+        .iter()
+        .any(|n| n.contains("checkpoints need the rms-experimental"));
+    if cfg!(feature = "rms-experimental") {
+        assert!(!r.checkpoints.is_empty() && !noted, "{:?}", r.notes);
+    } else {
+        assert!(r.checkpoints.is_empty() && noted, "{:?}", r.notes);
+    }
 }
 
 /// Small-signal analysis is off unless a request asks for it.

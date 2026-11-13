@@ -30,6 +30,9 @@ Neither is a default feature of the `tellegen` crate.
   and replay, packed result buffers, DYR parameter editing, the model library
   and dynamize, and `tellegen::case_edit`. Without it a request for
   small-signal analysis or checkpoints is noted in the result and skipped.
+  The request and result types have the same fields under both features
+  (`RecordSpec::checkpoint_step`, `RmsResult::checkpoints`), so turning on
+  `rms-experimental` breaks no code written against `rms`.
   Small-signal analysis (a dense `O(n³)` eigensolve) runs only when a request
   asks for it (`small_signal` is false by default).
 
@@ -76,9 +79,10 @@ are checked against their limits, as PowerSimulationsDynamics.jl does at
 initialization. A SEXS field voltage beyond `EMIN`/`EMAX`, or an ESAC1A
 regulator voltage beyond `VAMIN`/`VAMAX`, still rests there (the non-windup lag
 holds a state it is not pushing further), and a note names the unit, the limit
-and the value. No steady state exists when the dispatch needs ESAC1A's `VR`
-beyond `VRMIN`/`VRMAX`, EXST1's voltage error beyond `VIMIN`/`VIMAX` or its
-field voltage beyond `VT·VRMIN − KC·Ifd`/`VT·VRMAX − KC·Ifd`, a TGOV1 or GAST
+and the value; with `TE = 0` (`TA = 0`) the lag is algebraic and cannot rest
+past its limit, so that breach fails as below. No steady state exists when the
+dispatch needs ESAC1A's `VR` beyond `VRMIN`/`VRMAX`, EXST1's voltage error
+beyond `VIMIN`/`VIMAX` or its field voltage beyond `VT·VRMIN − KC·Ifd`/`VT·VRMAX − KC·Ifd`, a TGOV1 or GAST
 valve beyond `VMIN`/`VMAX`, GAST power above `AT`, or a HYGOV gate beyond
 `GMIN`/`GMAX`. Then the initialization fails with an error that names the unit,
 the limit and the value.
@@ -134,6 +138,11 @@ Limits in the dynamic data must be ordered (each minimum at most its maximum,
 HYGOV's `VELM` not negative, REGCA1's `Zerox` below `Brkpt` and `Lvpnt0`
 below `Lvpnt1`): a generator's swapped limits refuse the case with the unit
 and parameters named, and a renewable plant's hold the plant with a note.
+A renewable plant whose power flow output lies past a controller limit
+(REPCA1 `Qmin`/`Qmax` or `Pmin`/`Pmax`, REECB1 `Pmin`/`Pmax`, `Qmin`/`Qmax` or
+`Vmin`/`Vmax`, the current limits or the LVPL ceiling) has no steady state
+there: it is held at its power flow output, with a note naming the limit and
+the value.
 
 A controller can also be a block graph (`BlockGraph`: lags with and without
 non-windup limits, lead-lags, washouts, second-order filters, PI, integrators,
@@ -214,18 +223,21 @@ has a solution. When a step still fails, the error names the variable with
 the largest residual.
 
 Events are checked before a run starts: each needs a finite time in
-`[0, t_end)` (an event at `t_end` would act on nothing the run records), an
+`[0, t_end)`, and more than a billionth of a step before `t_end` (an event at
+`t_end` would act on nothing the run records), an
 element the system has (judged in time order, as the run applies them), a
 fault impedance with `r ≥ 0` and `x ≥ 0`, and a load scale `≥ 0`, or the run
 is refused with the event named. A run ends exactly at `t_end`: when `t_end`
 is not a whole number of output steps, the last output interval is shorter.
+An output step of more than 10⁷ integration steps is refused.
 
 After a topology event, an island apart from the reference bus that keeps a
 synchronous machine or source is named in the run's events: it runs at its
 own frequency (renewable plants there measure the reference's frequency, as
 PowerSimulationsDynamics.jl's `FixedFrequency` does, so an island fed by one
-can run away). An island left with only inverters or held units has nothing
-to hold its voltage: those units trip and its buses go dead. When the
+can run away). An island left with only inverters or held units, the
+reference bus's included, has nothing to hold its voltage: those units trip
+and its buses go dead. When the
 integration fails with the network split, the error names the islands.
 
 ## Known limitations

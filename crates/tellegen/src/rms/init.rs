@@ -1424,6 +1424,26 @@ mod tests {
             "{notes:?}"
         );
 
+        // With a zero time constant the limited lag is algebraic, so past
+        // the limit there is no rest: the same breaches fail by name.
+        let fails_named = |record: &str, what: &str, limit: &str| {
+            let e = init_genrou_with(&[record]).unwrap_err();
+            assert!(
+                e.starts_with("generator 102-1: ") && e.contains(what) && e.contains(limit),
+                "{e}"
+            );
+        };
+        fails_named(
+            "'SEXS' 1 0.1 10 100 0 0 1.5",
+            "SEXS field voltage EFD",
+            "above EMAX = 1.5",
+        );
+        fails_named(
+            "'ESAC1A' 1 0 0 0 400 0 1.5 -14.5 0.8 0.03 1 0.2 0.38 1 3.1 0.03 4.2 0.1 6.03 -5.43",
+            "ESAC1A regulator voltage VA",
+            "above VAMAX = 1.5",
+        );
+
         // No steady state: an error naming the unit, the quantity and the limit.
         let fails = |records: &[&str], what: &str, limit: &str| {
             let e = init_genrou_with(records).unwrap_err();
