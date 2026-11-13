@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState } from '../context.svelte.js';
-	import { fmt, formulationLabel, signed } from '../format.js';
+	import { degrees, fmt, formulationLabel, quantity, signed } from '../format.js';
 	import BusPicker from './BusPicker.svelte';
 	import ModelDetails from './ModelDetails.svelte';
 
@@ -90,11 +90,11 @@
 						</div>{/if}
 					{#if voltage != null || squaredVoltage != null}<div>
 							<dt>Voltage</dt>
-							<dd>{(voltage ?? Math.sqrt(Math.max(0, squaredVoltage!))).toFixed(4)} pu</dd>
+							<dd>{quantity(voltage ?? Math.sqrt(Math.max(0, squaredVoltage!)), 'pu')}</dd>
 						</div>{/if}
 					{#if angle != null}<div>
 							<dt>Voltage angle</dt>
-							<dd>{angle.toFixed(4)} rad</dd>
+							<dd>{degrees(angle)}</dd>
 						</div>{/if}
 				</dl>
 			</div>
