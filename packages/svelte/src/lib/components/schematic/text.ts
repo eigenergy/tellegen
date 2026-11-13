@@ -1,5 +1,6 @@
 import type { PickingInfo } from '@deck.gl/core';
 import type { DistGraph } from '@tellegen/engine';
+import { quantity } from '../../format.js';
 import {
 	ATTACHMENT_NAMES,
 	bandPosition,
@@ -46,8 +47,7 @@ export interface TextContext {
 const list = (ids: string[]) =>
 	ids.slice(0, 4).join(', ') + (ids.length > 4 ? ` +${ids.length - 4}` : '');
 const counted = (n: number, name: string) => (n > 1 ? `${n} ${name}s` : name);
-const volts = (x: number, digits: number) =>
-	x >= 1000 ? `${(x / 1000).toFixed(digits)} kV` : `${x.toFixed(1)} V`;
+const volts = (x: number) => quantity(x, 'V');
 const attachmentKinds = (graph: DistGraph, i: number) =>
 	new Set(
 		Object.values(graph.buses[i].terminal_attachments ?? {}).flatMap((l) => l.map((a) => a.kind))
@@ -88,9 +88,9 @@ export class SchematicText {
 		const t = bandPosition(worst);
 		const band =
 			worst.min !== null && worst.max !== null
-				? `, ${t !== null && Math.abs(t) > 1 ? 'outside' : 'within'} ${volts(worst.min, 3)} to ${volts(worst.max, 3)}`
+				? `, ${t !== null && Math.abs(t) > 1 ? 'outside' : 'within'} ${volts(worst.min)} to ${volts(worst.max)}`
 				: '';
-		return `Worst voltage ${worst.pair.join('–')} ${volts(worst.volts, 3)}${band}`;
+		return `Worst voltage ${worst.pair.join('–')} ${volts(worst.volts)}${band}`;
 	}
 
 	bus(i: number): string {
@@ -201,7 +201,7 @@ export class SchematicText {
 				kind: e.kind,
 				level: edgeMv[k] ? 'MV' : 'LV',
 				wires: `${phases}${neutral ? '+N' : ''}`,
-				loading: loading === null ? null : `${loading.toFixed(0)} %`,
+				loading: loading === null ? null : quantity(loading, '%'),
 				state: state === 'missing' ? 'normal' : state
 			};
 		});

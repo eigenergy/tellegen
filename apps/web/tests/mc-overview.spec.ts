@@ -32,7 +32,7 @@ test('multiconductor overview ranks declared-limit issues and links them to the 
 	const issues = overview.locator('.issues button');
 	await expect(issues).toHaveCount(2);
 	await expect(issues.nth(0)).toContainText('lb');
-	await expect(issues.nth(0)).toContainText('c–n below 207.00 V');
+	await expect(issues.nth(0)).toContainText('c–n below 207.0 V');
 	await expect(issues.nth(1)).toContainText('l1');
 	await expect(issues.nth(1)).toContainText('of rating');
 
@@ -93,7 +93,7 @@ test('phase-to-ground bounds are ranked like the other references', async ({ pag
 	const issues = overview.locator('.issues button');
 	await expect(issues).toHaveCount(2);
 	await expect(issues.nth(0)).toContainText('lb');
-	await expect(issues.nth(0)).toContainText('c–ground below 216.00 V by 1.12 %');
+	await expect(issues.nth(0)).toContainText('c–ground below 216.0 V by 1.1%');
 	await expect(overview.getByRole('button', { name: /V phase–ground/ })).toContainText(
 		'limit violated'
 	);

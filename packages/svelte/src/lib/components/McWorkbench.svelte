@@ -24,6 +24,7 @@
 		type TableKind
 	} from '../diagram/index.js';
 	import { neutralTerminal } from '../multiconductor.js';
+	import { quantity, quantityRange } from '../format.js';
 
 	let {
 		snapshot,
@@ -117,12 +118,14 @@
 		if (!snapshot) return null;
 		if (m.kind === 'branch') {
 			const loading = snapshot.branches[m.index].loading;
-			return loading === null ? null : { text: `${n(loading, 1)} %`, state: loadingState(loading) };
+			return loading === null
+				? null
+				: { text: quantity(loading, '%'), state: loadingState(loading) };
 		}
 		const bus = snapshot.buses[m.index];
 		if (!bus.pairs.length) return null;
 		const lowest = bus.pairs.reduce((a, b) => (b.volts < a.volts ? b : a));
-		return { text: `${n(lowest.volts)} V`, state: busState(bus) };
+		return { text: quantity(lowest.volts, 'V'), state: busState(bus) };
 	}
 	/** Selecting what is already selected would toggle it off in the controller. */
 	function selectOnce(kind: 'bus' | 'branch', index: number) {
@@ -130,14 +133,6 @@
 		if (id !== (kind === 'bus' ? selectedBus : selectedEdge)) select(kind, index);
 	}
 
-	const n = (v: number, digits = 2) =>
-		v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-	/** Compact range: kV above 1 kV, four significant figures; exact values are in the tables. */
-	function range(a: number, b: number): string {
-		const k = Math.max(Math.abs(a), Math.abs(b)) >= 1000;
-		const f = (v: number) => Number((k ? v / 1000 : v).toPrecision(4)).toLocaleString();
-		return `${f(a)}–${f(b)} ${k ? 'kV' : 'V'}`;
-	}
 	const zoneLabel = (zone: string) =>
 		zone === 'phase–neutral'
 			? 'V phase–neutral'
@@ -160,15 +155,15 @@
 			const id = graph.buses[issue.target.index].id;
 			return {
 				id,
-				value: `${n(issue.value)} V`,
-				detail: `${issue.pair?.join('–')} ${issue.low ? 'below' : 'above'} ${n(issue.limit)} V by ${n(issue.score)} %`
+				value: quantity(issue.value, 'V'),
+				detail: `${issue.pair?.join('–')} ${issue.low ? 'below' : 'above'} ${quantity(issue.limit, 'V')} by ${quantity(issue.score, '%')}`
 			};
 		}
 		const edge = graph.edges[issue.target.index];
 		return {
 			id: edge.id,
-			value: `${n(issue.value, 1)} %`,
-			detail: `${edge.kind} · ${issue.severity === 'violation' ? 'over rating' : `≥ ${LOADING_WARNING} % of rating`}`
+			value: quantity(issue.value, '%'),
+			detail: `${edge.kind} · ${issue.severity === 'violation' ? 'over rating' : `≥ ${LOADING_WARNING}% of rating`}`
 		};
 	}
 	const isSelected = (issue: Issue) =>
@@ -261,8 +256,8 @@
 			</button>
 			<div class="kpi" title="Sum of both into-equipment end powers over active branches">
 				<span class="label">Losses</span>
-				<span class="value">{n(summary.loss.p)} kW</span>
-				<span class="sub">{n(summary.loss.q)} kvar</span>
+				<span class="value">{quantity(summary.loss.p, 'kW')}</span>
+				<span class="sub">{quantity(summary.loss.q, 'kvar')}</span>
 			</div>
 			{#each summary.zones as zone (zone.zone)}
 				{@const bad =
@@ -278,7 +273,7 @@
 					title={`Minimum at ${graph.buses[zone.min.bus].id}, maximum at ${graph.buses[zone.max.bus].id}`}
 				>
 					<span class="label">{zoneLabel(zone.zone)}</span>
-					<span class="value">{range(zone.min.volts, zone.max.volts)}</span>
+					<span class="value">{quantityRange(zone.min.volts, zone.max.volts, 'V')}</span>
 					<span class="sub">{bad ? 'limit violated' : `${zone.buses.toLocaleString()} buses`}</span>
 				</button>
 			{/each}
@@ -292,7 +287,7 @@
 					title={snapshot?.branches[top.branch].basis ?? ''}
 				>
 					<span class="label">Max loading</span>
-					<span class="value">{n(top.value, 1)} %</span>
+					<span class="value">{quantity(top.value, '%')}</span>
 					<span class="sub">{graph.edges[top.branch].id}</span>
 				</button>
 			{/if}
@@ -306,7 +301,7 @@
 						: 'Magnitude-only unbalance: max deviation from the mean / mean'}
 				>
 					<span class="label">Max unbalance</span>
-					<span class="value">{n(u.percent)} %</span>
+					<span class="value">{quantity(u.percent, '%')}</span>
 					<span class="sub">{u.definition} · {graph.buses[u.bus].id}</span>
 				</button>
 			{/if}
@@ -364,15 +359,17 @@
 									></i>{/if}
 								<i class="mark" style:left="{bar.marker}%"></i>
 							</span>
-							<span class="num">{n(bar.volts)} V{bar.state === 'violation' ? ' !' : ''}</span>
+							<span class="num"
+								>{quantity(bar.volts, 'V')}{bar.state === 'violation' ? ' !' : ''}</span
+							>
 						</div>
 					{/each}
 				</div>
 				<p class="hint">
-					Track: the declared band ± 25 %{busSelection.unbalance
-						? ` · unbalance ${n(busSelection.unbalance.percent)} % (${busSelection.unbalance.definition})`
+					Track: the declared band ± 25%{busSelection.unbalance
+						? ` · unbalance ${quantity(busSelection.unbalance.percent, '%')} (${busSelection.unbalance.definition})`
 						: ''}{busSpread
-						? ` · magnitude spread ${n(busSpread.percent)} % (${busSpread.definition})`
+						? ` · magnitude spread ${quantity(busSpread.percent, '%')} (${busSpread.definition})`
 						: ''}
 				</p>
 				{#if busSelection.unbalance && busSpread && busSpread.percent > 2 * busSelection.unbalance.percent}
@@ -385,7 +382,9 @@
 			<h4>Conductors on {selectedEdge}</h4>
 			{#each edgeSelection.ends as end, side (side)}
 				{#if end}
-					<p class="end">{side ? 'To' : 'From'} end · {n(end.p)} kW · {n(end.q)} kvar</p>
+					<p class="end">
+						{side ? 'To' : 'From'} end · {quantity(end.p, 'kW')} · {quantity(end.q, 'kvar')}
+					</p>
 					<div
 						class="bars"
 						role="list"
@@ -395,16 +394,18 @@
 							<div class="bar" class:neutral={bar.neutral} role="listitem">
 								<span class="mono">{bar.terminal}</span>
 								<span class="track"><i class="fill" style:width="{bar.fill}%"></i></span>
-								<span class="num">{n(bar.amps, 1)} A</span>
+								<span class="num">{quantity(bar.amps, 'A')}</span>
 							</div>
 						{/each}
 					</div>
 				{/if}
 			{/each}
 			<p class="hint">
-				One scale for both ends (max {n(edgeSelection.scaleAmps, 1)} A){edgeSelection.neutralShare !==
-				null
-					? ` · neutral carries ${n(edgeSelection.neutralShare, 0)} % of the largest phase current`
+				One scale for both ends (max {quantity(
+					edgeSelection.scaleAmps,
+					'A'
+				)}){edgeSelection.neutralShare !== null
+					? ` · neutral carries ${quantity(edgeSelection.neutralShare, '%')} of the largest phase current`
 					: ''}
 			</p>
 			{#if multiWire}

@@ -59,7 +59,7 @@
 	import { foldMapBounds } from './map-bounds.js';
 	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
-	import { displayFmt, fmt, rgbaCss } from './format.js';
+	import { displayFmt, fmt, quantity, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
@@ -883,7 +883,7 @@
 			const b = object as PlacedMultiBus;
 			const roles = b.attachmentKinds.length ? b.attachmentKinds.join(', ') : 'None';
 			return {
-				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${b.load_kw.toFixed(0)} kW<br>Generation ${b.gen_kw.toFixed(0)} kW<br>Attachments: ${esc(roles)}</div>`
+				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${quantity(b.load_kw, 'kW')}<br>Generation ${quantity(b.gen_kw, 'kW')}<br>Attachments: ${esc(roles)}</div>`
 			};
 		}
 		const c = caseOf(info);

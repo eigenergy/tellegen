@@ -97,6 +97,7 @@
 	import { DEAD, HALO, INK, LEVEL_COLOURS } from './schematic/palette.js';
 	import PickCard from './schematic/PickCard.svelte';
 	import { SchematicText, tooltip } from './schematic/text.js';
+	import { quantity } from '../format.js';
 	import { HoverPin, StoredFlag } from './schematic/view-prefs.svelte.js';
 	import { basemapCredit, type BasemapSpec } from '../basemap.js';
 	import { BasemapUnderlay } from './schematic/basemap-underlay.svelte.js';
@@ -317,12 +318,11 @@
 			const zone = zones.zones[z];
 			const t = zone.transformers[0];
 			const { minVolts, maxLoading } = zoneSummary(zone, snapshot);
-			const v = (x: number) => (x >= 1000 ? `${(x / 1000).toFixed(2)} kV` : `${x.toFixed(1)} V`);
 			const text = [
 				t === undefined ? 'network' : (transformerNames.get(t) ?? graph.edges[t].id),
 				`${zone.buses.length} buses`,
-				...(minVolts === null ? [] : [`min ${v(minVolts)}`]),
-				...(maxLoading === null ? [] : [`${maxLoading.toFixed(0)} %`])
+				...(minVolts === null ? [] : [`min ${quantity(minVolts, 'V')}`]),
+				...(maxLoading === null ? [] : [quantity(maxLoading, '%')])
 			].join(' · ');
 			return {
 				z,
@@ -1389,7 +1389,7 @@
 	{#if colour !== 'none' && snapshot}
 		<div class="legend" style:top="{panels.top + 50}px" style:left="{toolLeft}px">
 			{#if colour === 'loading-heat'}
-				Loading <span>0 %</span><i style:background={priceGradient}></i><span>≥ 100 %</span>
+				Loading <span>0%</span><i style:background={priceGradient}></i><span>≥ 100%</span>
 			{:else}
 				Voltage <span>min</span><i style:background={sensGradient}></i><span>max</span> of each declared
 				band, worst pair

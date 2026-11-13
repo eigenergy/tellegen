@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { queryTable, type TableModel } from '../diagram/index.js';
+	import { quantity } from '../format.js';
 
 	let {
 		model,
@@ -42,15 +43,11 @@
 			)
 			.join(' ')
 	);
-	const format = (v: unknown, digits = 2) =>
-		v === null || v === undefined
-			? '—'
-			: typeof v === 'number'
-				? v.toLocaleString(undefined, {
-						minimumFractionDigits: digits,
-						maximumFractionDigits: digits
-					})
-				: String(v);
+	/** Numbers through the shared formatter, the unit in the column header; text as is. */
+	const format = (v: unknown, digits?: number) =>
+		typeof v === 'number' || v === null || v === undefined
+			? quantity(v, '', digits === undefined ? {} : { decimals: digits })
+			: String(v);
 
 	function sort(key: string, numeric?: boolean) {
 		// Numbers start largest-first, text A–Z; a second click reverses.

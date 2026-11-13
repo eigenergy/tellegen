@@ -76,8 +76,8 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	const table = page.getByRole('table', { name: 'Terminal results', exact: true });
 	await expect(table).toBeVisible({ timeout: 60_000 });
 	await expect(table.locator('tbody tr')).toHaveCount(4);
-	await expect(table.getByRole('columnheader', { name: 'To ground V' })).toBeVisible();
-	await expect(table.getByRole('columnheader', { name: 'Net current A' })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'To ground', exact: true })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Net current', exact: true })).toBeVisible();
 	const before = await table.innerText();
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected.ok).toBe(true);

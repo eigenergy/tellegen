@@ -6,6 +6,7 @@ import type {
 } from '@tellegen/engine';
 import type { SchematicGeometry } from './schematic-layout.js';
 import { terminalConductors, transformerGlyph, transformerInfo } from './connections.js';
+import { quantity } from '../format.js';
 
 /** A stroked glyph: polylines in symbol units, x along the connection, y down. */
 export type Glyph = [number, number][][];
@@ -765,10 +766,7 @@ export function elementPowers(
 	return out;
 }
 
-/** `12.3 kW 4.1 kvar` for a power in W and var. */
+/** `12.30 kW 4.100 kvar` for a power in W and var. */
 export function formatPower(p: number, q: number): string {
-	const scale = Math.max(Math.abs(p), Math.abs(q));
-	const [k, unit] = scale >= 1e6 ? [1e6, 'M'] : scale >= 1e3 ? [1e3, 'k'] : [1, ''];
-	const f = (v: number) => (v / k).toFixed(Math.abs(v / k) >= 100 ? 0 : 1);
-	return `${f(p)} ${unit}W ${f(q)} ${unit}var`;
+	return `${quantity(p / 1000, 'kW')} ${quantity(q / 1000, 'kvar')}`;
 }

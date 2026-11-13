@@ -2,7 +2,7 @@
 	import McNetworkScope from './McNetworkScope.svelte';
 	import McModelQualification from './McModelQualification.svelte';
 	import { getAppState, getController } from '../context.svelte.js';
-	import { fmt, rgbaCss } from '../format.js';
+	import { quantity, rgbaCss } from '../format.js';
 	import {
 		attachmentColor,
 		attachmentGlyph,
@@ -77,11 +77,11 @@
 				</div>
 				<div>
 					<dt>Load</dt>
-					<dd class="mono">{fmt.format(s.load_kw)} kW</dd>
+					<dd class="mono">{quantity(s.load_kw, 'kW')}</dd>
 				</div>
 				<div>
 					<dt>Generation capacity</dt>
-					<dd class="mono">{fmt.format(s.gen_kw)} kW</dd>
+					<dd class="mono">{quantity(s.gen_kw, 'kW')}</dd>
 				</div>
 				<div>
 					<dt>Sources / loads / generators</dt>

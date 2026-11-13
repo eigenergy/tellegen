@@ -32,9 +32,9 @@ const BUS_COLUMNS: TableColumn[] = [
 	{ key: 'source', label: 'Source' },
 	{ key: 'reference', label: 'Reference' },
 	{ key: 'pairs', label: 'Pairs' },
-	{ key: 'v0', label: 'V1', unit: 'V', numeric: true, digits: 2 },
-	{ key: 'v1', label: 'V2', unit: 'V', numeric: true, digits: 2 },
-	{ key: 'v2', label: 'V3', unit: 'V', numeric: true, digits: 2 },
+	{ key: 'v0', label: 'V1', unit: 'V', numeric: true },
+	{ key: 'v1', label: 'V2', unit: 'V', numeric: true },
+	{ key: 'v2', label: 'V3', unit: 'V', numeric: true },
 	{
 		key: 'band',
 		label: 'Band position',
@@ -44,7 +44,7 @@ const BUS_COLUMNS: TableColumn[] = [
 		title:
 			'Worst pair: −1 at the declared minimum, +1 at the maximum; sorts by distance from mid-band'
 	},
-	{ key: 'unbalance', label: 'Unbalance', unit: '%', numeric: true, digits: 2 },
+	{ key: 'unbalance', label: 'Unbalance', unit: '%', numeric: true, digits: 1 },
 	{ key: 'unbalanceBasis', label: 'Basis' },
 	{ key: 'state', label: 'Status' }
 ];
@@ -59,25 +59,22 @@ const BRANCH_COLUMNS: TableColumn[] = [
 		label: 'P from',
 		unit: 'kW',
 		numeric: true,
-		digits: 2,
 		title: 'Positive into the equipment'
 	},
-	{ key: 'qFrom', label: 'Q from', unit: 'kvar', numeric: true, digits: 2 },
+	{ key: 'qFrom', label: 'Q from', unit: 'kvar', numeric: true },
 	{
 		key: 'pTo',
 		label: 'P to',
 		unit: 'kW',
 		numeric: true,
-		digits: 2,
 		title: 'Positive into the equipment'
 	},
-	{ key: 'qTo', label: 'Q to', unit: 'kvar', numeric: true, digits: 2 },
+	{ key: 'qTo', label: 'Q to', unit: 'kvar', numeric: true },
 	{
 		key: 'loss',
 		label: 'Losses',
 		unit: 'kW',
 		numeric: true,
-		digits: 3,
 		title: 'Sum of both end P'
 	},
 	{ key: 'loading', label: 'Loading', unit: '%', numeric: true, digits: 1 },

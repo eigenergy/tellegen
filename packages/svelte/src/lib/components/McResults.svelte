@@ -12,6 +12,7 @@
 		type McPfSummary
 	} from '@tellegen/engine';
 	import { neutralTerminal } from '../multiconductor.js';
+	import { MISSING, quantity } from '../format.js';
 	import type { McEditTiming } from '../state.svelte.js';
 	let {
 		result,
@@ -117,10 +118,11 @@
 	const currentPortPage = $derived(Math.min(portPage, portPages - 1));
 	const visiblePorts = $derived(current?.element_ports ?? []);
 	const magnitude = (value: McComplex) => Math.hypot(value.re, value.im);
-	const fixed = (value: number) => (Number.isFinite(value) ? value.toFixed(3) : '-');
-	const ms = (value: number | null) => (value === null ? '-' : `${value.toFixed(1)} ms`);
 	const angle = (value: McComplex) =>
-		magnitude(value) > 1e-12 ? ((Math.atan2(value.im, value.re) * 180) / Math.PI).toFixed(2) : '-';
+		quantity(
+			magnitude(value) > 1e-12 ? (Math.atan2(value.im, value.re) * 180) / Math.PI : null,
+			'°'
+		);
 </script>
 
 <section aria-label="AC power flow results" class="mc-results">
@@ -149,17 +151,19 @@
 			<dt>Load voltage range</dt>
 			<dd>
 				{summary.min_voltage_pu == null || summary.max_voltage_pu == null
-					? 'n/a'
-					: `${fixed(summary.min_voltage_pu)}–${fixed(summary.max_voltage_pu)} pu`}
+					? MISSING
+					: `${quantity(summary.min_voltage_pu, 'pu')} – ${quantity(summary.max_voltage_pu, 'pu')}`}
 			</dd>
 		</div>
 		<div>
 			<dt>Source P / Q</dt>
-			<dd>{fixed(sourcePower.re / 1000)} / {fixed(sourcePower.im / 1000)} kW / kvar</dd>
+			<dd>
+				{quantity(sourcePower.re / 1000, 'kW')} / {quantity(sourcePower.im / 1000, 'kvar')}
+			</dd>
 		</div>
 		<div>
 			<dt>Passive loss</dt>
-			<dd>{fixed(passiveLoss / 1000)} kW</dd>
+			<dd>{quantity(passiveLoss / 1000, 'kW')}</dd>
 		</div>
 	</dl>
 	<label class="search"
@@ -193,19 +197,13 @@
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div class="scroll" role="region" aria-label="Terminal result columns" tabindex="0">
 		<table aria-label="Terminal results">
-			<thead
-				><tr
-					><th>Terminal</th><th>To ground<br />V</th><th>Angle<br />deg</th><th
-						>Net current<br />A</th
-					></tr
-				></thead
-			>
+			<thead><tr><th>Terminal</th><th>To ground</th><th>Angle</th><th>Net current</th></tr></thead>
 			<tbody
 				>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
 					<tr
-						><td>{row.terminal}</td><td>{fixed(magnitude(row.voltage))}</td><td
+						><td>{row.terminal}</td><td>{quantity(magnitude(row.voltage), 'V')}</td><td
 							>{angle(row.voltage)}</td
-						><td>{fixed(magnitude(row.current_into_network))}</td></tr
+						><td>{quantity(magnitude(row.current_into_network), 'A')}</td></tr
 					>
 				{/each}</tbody
 			>
@@ -230,7 +228,7 @@
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div class="scroll" role="region" aria-label="Neutral voltage columns" tabindex="0">
 				<table aria-label="Neutral voltage results">
-					<thead><tr><th>Terminal</th><th>To neutral<br />V</th><th>Angle<br />deg</th></tr></thead>
+					<thead><tr><th>Terminal</th><th>To neutral</th><th>Angle</th></tr></thead>
 					<tbody
 						>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
 							{@const relative = {
@@ -238,7 +236,7 @@
 								im: row.voltage.im - neutral.im
 							}}
 							<tr
-								><td>{row.terminal}</td><td>{fixed(magnitude(relative))}</td><td
+								><td>{row.terminal}</td><td>{quantity(magnitude(relative), 'V')}</td><td
 									>{angle(relative)}</td
 								></tr
 							>
@@ -270,15 +268,14 @@
 			<table aria-label="Equipment currents">
 				<thead
 					><tr
-						><th>Equipment</th><th>Bus</th><th>Terminal</th><th>Current<br />A</th><th>P<br />kW</th
-						><th>Q<br />kvar</th></tr
+						><th>Equipment</th><th>Bus</th><th>Terminal</th><th>Current</th><th>P</th><th>Q</th></tr
 					></thead
 				><tbody
 					>{#each visiblePorts as row (JSON.stringify( [row.kind, row.element, row.branch, row.bus, row.terminal] ))}<tr
 							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td>{row.terminal}</td><td
-								>{fixed(magnitude(row.current_into_element))}</td
-							><td>{fixed(row.power_into_element.re / 1000)}</td><td
-								>{fixed(row.power_into_element.im / 1000)}</td
+								>{quantity(magnitude(row.current_into_element), 'A')}</td
+							><td>{quantity(row.power_into_element.re / 1000, 'kW')}</td><td
+								>{quantity(row.power_into_element.im / 1000, 'kvar')}</td
 							></tr
 						>{/each}</tbody
 				>
@@ -326,21 +323,22 @@
 			{#if timing}
 				<div>
 					<dt>Engine solve</dt>
-					<dd>{ms(timing.engine_ms)}</dd>
+					<dd>{quantity(timing.engine_ms, 'ms')}</dd>
 				</div>
 				<div>
 					<dt>Transfer and parse</dt>
 					<dd>
-						{ms(
+						{quantity(
 							timing.engine_ms === null
 								? null
-								: timing.round_trip_ms - timing.engine_ms + timing.parse_ms
+								: timing.round_trip_ms - timing.engine_ms + timing.parse_ms,
+							'ms'
 						)}
 					</dd>
 				</div>
 				<div>
 					<dt>Total update</dt>
-					<dd>{ms(timing.total_ms)}</dd>
+					<dd>{quantity(timing.total_ms, 'ms')}</dd>
 				</div>
 			{/if}
 		</dl>

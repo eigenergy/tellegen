@@ -496,9 +496,9 @@ describe('solved values on the drawing', () => {
 			]
 		} as unknown as McPfResult);
 		expect(elementPowers(tables)).toEqual(powers);
-		expect(formatPower(15_000, 5_000)).toBe('15.0 kW 5.0 kvar');
-		expect(formatPower(2.5e6, -1e5)).toBe('2.5 MW -0.1 Mvar');
-		expect(formatPower(160, 20)).toBe('160 W 20.0 var');
+		expect(formatPower(15_000, 5_000)).toBe('15.00 kW 5.000 kvar');
+		expect(formatPower(2.5e6, -1e5)).toBe('2,500 kW -100.0 kvar');
+		expect(formatPower(160, 20)).toBe('0.160 kW 0.020 kvar');
 	});
 });
 

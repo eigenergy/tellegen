@@ -3,6 +3,9 @@ import type { Locator, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures/page-errors.js';
 import { callTool, installWebMcpHarness } from './fixtures/planning-case.js';
+import { quantity } from '../../../packages/svelte/src/lib/format.js';
+
+const sourcePQ = (p: number, q: number) => `${quantity(p, 'kW')} / ${quantity(q, 'kvar')}`;
 
 // These are local browser/WASM tests. Make startup deterministic and wait for
 // hydration before dispatching file-input events, including under parallel CI.
@@ -188,7 +191,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	);
 	await expect(
 		study.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
-	).toHaveText(`${(source.re / 1000).toFixed(3)} / ${(source.im / 1000).toFixed(3)} kW / kvar`);
+	).toHaveText(sourcePQ(source.re / 1000, source.im / 1000));
 	await study.getByLabel('Bus result').selectOption('lb');
 	await study.getByText('Voltages to neutral', { exact: true }).click();
 	type Terminal = { bus: string; terminal: string; voltage: { re: number; im: number } };
@@ -196,10 +199,13 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	expect(terminals.map((row) => row.terminal).sort()).toEqual(['a', 'b', 'c', 'n']);
 	const neutral = terminals.find((row) => row.terminal === 'n')!.voltage;
 	const formatted = (voltage: { re: number; im: number }) => [
-		Math.hypot(voltage.re, voltage.im).toFixed(3),
-		Math.hypot(voltage.re, voltage.im) === 0
-			? '-'
-			: ((Math.atan2(voltage.im, voltage.re) * 180) / Math.PI).toFixed(2)
+		quantity(Math.hypot(voltage.re, voltage.im), 'V'),
+		quantity(
+			Math.hypot(voltage.re, voltage.im) === 0
+				? null
+				: (Math.atan2(voltage.im, voltage.re) * 180) / Math.PI,
+			'°'
+		)
 	];
 	for (const row of terminals) {
 		const relative = { re: row.voltage.re - neutral.re, im: row.voltage.im - neutral.im };
@@ -373,9 +379,7 @@ for (const nominalVoltage of [200, 240]) {
 			},
 			{ p: 0, q: 0 }
 		);
-		await expect(source).toHaveText(
-			`${(expectedTotal.p / 1000).toFixed(3)} / ${(expectedTotal.q / 1000).toFixed(3)} kW / kvar`
-		);
+		await expect(source).toHaveText(sourcePQ(expectedTotal.p / 1000, expectedTotal.q / 1000));
 		await study.getByRole('button', { name: 'Save result' }).click();
 		await expect(savedDistributionOptions(page)).toHaveCount(1);
 		const downloadWait = page.waitForEvent('download');
@@ -488,9 +492,7 @@ for (const nominalVoltage of [200, 240]) {
 		if (!baselineSource) throw new Error('constant-power baseline summary is missing');
 		const baselineRatio = 239.6003617136947 / nominalVoltage;
 		const baselineScale = baselineRatio > 1.15 ? (baselineRatio / 1.15) ** 2 : 1;
-		expect(baselineSource).toBe(
-			`${(45 * baselineScale).toFixed(3)} / ${(15 * baselineScale).toFixed(3)} kW / kvar`
-		);
+		expect(baselineSource).toBe(sourcePQ(45 * baselineScale, 15 * baselineScale));
 	});
 }
 

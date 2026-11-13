@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { rgbaCss } from '../format.js';
+	import { quantity, rgbaCss } from '../format.js';
 	import { isPhaseTerminal, phaseColor } from '../multiconductor.js';
 	import type { MultiWireView } from '../diagram/index.js';
 
@@ -7,7 +7,6 @@
 
 	const colour = (terminal: string) =>
 		isPhaseTerminal(terminal) ? rgbaCss(phaseColor(terminal)) : 'var(--text-secondary)';
-	const amps = (a: number | null) => (a === null ? '' : `${a.toFixed(a >= 100 ? 0 : 1)} A`);
 </script>
 
 <figure class="multi-wire">
@@ -81,7 +80,7 @@
 			/>
 			{#if w.amps !== null}
 				<text class="amps" x={(w.x1 + w.x2) / 2} y={(w.y1 + w.y2) / 2 - 3} text-anchor="middle"
-					>{amps(w.amps)}</text
+					>{quantity(w.amps, 'A')}</text
 				>
 			{/if}
 		{/each}

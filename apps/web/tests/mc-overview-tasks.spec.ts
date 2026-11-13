@@ -35,7 +35,7 @@ test('protocol tasks stay within their interaction budgets', async ({ page }) =>
 		await expect(overview.getByRole('button', { name: /Violations/ })).toContainText('1');
 	});
 	await test.step('2. its size and phase are visible without interaction', async () => {
-		await expect(issues.first()).toContainText('c–n below 207.00 V by 1.72 %');
+		await expect(issues.first()).toContainText('c–n below 207.0 V by 1.7%');
 	});
 	await test.step('3. every phase at it against its band: one click', async () => {
 		await issues.first().click();
@@ -82,7 +82,7 @@ test('7. switch to the schematic and between layouts, keeping the selection', as
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('leaf-order');
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('tidy');
 	await toolbar.getByRole('combobox', { name: 'Colour by' }).selectOption('loading-heat');
-	await expect(page.getByText('≥ 100 %')).toBeVisible();
+	await expect(page.getByText('≥ 100%')).toBeVisible();
 	await own.click();
 	await expect(own).toHaveAttribute('aria-pressed', 'true');
 	await expect(overview.getByRole('heading', { name: 'Phases at lb' })).toBeVisible();

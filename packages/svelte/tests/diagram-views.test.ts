@@ -206,10 +206,10 @@ describe('value labels', () => {
 	});
 
 	it('labels the pair nearest a limit and the branch value for the view family', () => {
-		expect(busLabel(snapshot, 1)).toMatchObject({ text: '195 V', state: 'violation' });
+		expect(busLabel(snapshot, 1)).toMatchObject({ text: '195.0 V', state: 'violation' });
 		expect(busLabel(snapshot, 2)).toBeNull();
-		expect(branchLabel(snapshot, 0, 'loading')).toMatchObject({ text: '95.0 %', state: 'warning' });
-		expect(branchLabel(snapshot, 1, 'power')?.text).toBe('50 kW');
+		expect(branchLabel(snapshot, 0, 'loading')).toMatchObject({ text: '95.0%', state: 'warning' });
+		expect(branchLabel(snapshot, 1, 'power')?.text).toBe('50.00 kW');
 		expect(branchLabel(snapshot, 2, 'loading')).toBeNull();
 	});
 });

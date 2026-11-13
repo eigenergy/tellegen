@@ -1,6 +1,7 @@
 import { bandPosition } from './colour-modes.js';
 import type { ResultSnapshot } from './snapshot.js';
 import { loadingState } from './summary.js';
+import { quantity } from '../format.js';
 
 export const VALUE_LABEL_BUDGET = 60;
 export const MIN_LABEL_ZOOM = -0.2;
@@ -65,8 +66,6 @@ export function placeLabels<T extends LabelCandidate>(
 	return placed;
 }
 
-const short = (x: number) => Number(x.toPrecision(Math.abs(x) >= 1000 ? 5 : 4)).toLocaleString();
-
 /** The pair nearest a limit, shown in volts. Buses without declared limits rank last. */
 export function busLabel(
 	result: ResultSnapshot,
@@ -85,7 +84,7 @@ export function busLabel(
 		const pt = rank(p);
 		if (pt > t) [pick, t] = [p, pt];
 	}
-	return { text: `${short(pick.volts)} V`, state: t > 1 ? 'violation' : 'normal', priority: t };
+	return { text: quantity(pick.volts, 'V'), state: t > 1 ? 'violation' : 'normal', priority: t };
 }
 
 export function branchLabel(
@@ -98,10 +97,10 @@ export function branchLabel(
 		const state = loadingState(row.loading);
 		return state === 'missing'
 			? null
-			: { text: `${(row.loading as number).toFixed(1)} %`, state, priority: row.loading as number };
+			: { text: quantity(row.loading, '%'), state, priority: row.loading as number };
 	}
 	const end = row.ends[0] ?? row.ends[1];
 	return end
-		? { text: `${short(Math.abs(end.p))} kW`, state: 'normal', priority: Math.abs(end.p) }
+		? { text: quantity(Math.abs(end.p), 'kW'), state: 'normal', priority: Math.abs(end.p) }
 		: null;
 }
