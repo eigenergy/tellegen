@@ -161,10 +161,13 @@
 			</div>
 		{/each}
 		{#each app.multiCases as c (c.id)}
-			<div class="case-chip" class:local={!c.hosted} class:active={app.activeMultiId === c.id}>
+			<div
+				class={['case-chip', { local: !c.hosted, active: app.activeMultiId === c.id }]}
+				data-testid="distribution-case-chip"
+			>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion">Multiconductor</span>
+					<span class="cregion">Distribution</span>
 				</button>
 				<button
 					class="case-remove mono"

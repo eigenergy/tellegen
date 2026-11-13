@@ -163,7 +163,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
 	await expect(headerFileInput).toHaveCount(1);
 	await headerFileInput.setInputFiles(typedCase);
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible({
 		timeout: 60_000
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
@@ -246,7 +246,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	await openApp(page);
 	await expect(page.locator('header input[type="file"][accept*=".dss"]')).toHaveCount(1);
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles(typedCase);
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible({
 		timeout: 60_000
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
@@ -307,7 +307,7 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 		mimeType: 'application/json',
 		buffer: Buffer.from(noNeutral)
 	});
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible({
 		timeout: 60_000
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
@@ -360,7 +360,7 @@ for (const nominalVoltage of [200, 240]) {
 			mimeType: 'application/json',
 			buffer: Buffer.from(JSON.stringify(raw))
 		});
-		await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
+		await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible({
 			timeout: 60_000
 		});
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
@@ -488,7 +488,7 @@ for (const nominalVoltage of [200, 240]) {
 			mimeType: 'application/json',
 			buffer: Buffer.from(JSON.stringify(constantPower))
 		});
-		await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
+		await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible({
 			timeout: 60_000
 		});
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
@@ -517,7 +517,7 @@ test('settings reruns qualify modified results and preserve provenance through e
 	await installWebMcpHarness(page);
 	await openApp(page);
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles(typedCase);
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const study = page.getByRole('region', { name: 'Study workspace' });
 	const settings = page.getByRole('region', { name: 'Common settings' });
@@ -654,7 +654,7 @@ test('energized-network selection retains excluded islands through solve, CSV an
 		mimeType: 'application/json',
 		buffer: Buffer.from(JSON.stringify(fixture))
 	});
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible();
 	await expect(
 		page.getByRole('button', { name: 'Solve energized network', exact: true })
 	).toHaveCount(1);
@@ -772,7 +772,7 @@ test('a case without voltage sources remains inspectable with solving disabled',
 		mimeType: 'application/json',
 		buffer: Buffer.from(JSON.stringify(fixture))
 	});
-	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible();
 	await expect(
 		page.getByRole('button', { name: 'Solve energized network', exact: true })
 	).toBeDisabled();
