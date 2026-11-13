@@ -2228,6 +2228,9 @@ export class BrowserStudy {
   /** External branch id -> dense positional branch index, from the committed solution's
    * flows ordering — the branch-axis counterpart of `#busToIndex`. */
   #branchToIndex: Map<number, number> | null = null;
+  /** True while the committed point is the base case the Study solved when
+   * it was built: no edits have been committed since. */
+  #atBase = true;
 
   constructor(
     host: EngineHost,
@@ -2256,20 +2259,36 @@ export class BrowserStudy {
     target: SensTarget | null,
     signal?: AbortSignal,
   ): Promise<StudyCommitOutput> {
-    const sensitivities = sensitivitiesJson(await this.#senseTarget(target));
+    const sense = await this.#senseTarget(target);
     signal?.throwIfAborted();
+    const edits = toEdits(deltas, rates);
+    // The Study solved its base case when it was built. Replacing an empty
+    // edit set with an empty one, with no sensitivity column asked for, would
+    // solve that same problem again: answer the retained base solution.
+    if (this.#atBase && edits.length === 0 && sense === null) {
+      const solution = await this.#solution();
+      signal?.throwIfAborted();
+      return {
+        solution,
+        iterations: solution.iterations ?? [],
+        sensitivities: [],
+      };
+    }
     const cancel = () => {
       this.#host.cancel?.(new DOMException("solve cancelled", "AbortError"));
     };
     signal?.addEventListener("abort", cancel, { once: true });
+    // A failed or cancelled replacement may have moved the committed point.
+    this.#atBase = false;
     try {
       const result = await this.#host.call({
         op: "study_replace_edits",
         study: this.#handle,
-        edits: JSON.stringify(toEdits(deltas, rates)),
-        sensitivities,
+        edits: JSON.stringify(edits),
+        sensitivities: sensitivitiesJson(sense),
       });
       signal?.throwIfAborted();
+      this.#atBase = edits.length === 0;
       return JSON.parse(expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
