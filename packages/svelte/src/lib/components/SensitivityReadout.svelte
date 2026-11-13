@@ -6,9 +6,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
-	const reportedUnits = $derived(
-		dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW')
-	);
+	const reportedUnits = $derived(dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 	const unitTitle = $derived(`Units: ${reportedUnits}`);
 
 	// Branch mode: the selection is a line and the column is price/rating; the

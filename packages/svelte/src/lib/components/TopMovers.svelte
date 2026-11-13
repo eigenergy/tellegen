@@ -4,9 +4,7 @@
 	import { signedExp } from '../format.js';
 
 	const ctrl = getController();
-	const units = $derived(
-		dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW')
-	);
+	const units = $derived(dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 	const unitTitle = $derived(`LMP response per MW of demand, in ${units}.`);
 </script>
 
