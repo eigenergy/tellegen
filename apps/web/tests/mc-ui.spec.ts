@@ -113,9 +113,9 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	expect(JSON.stringify(query.data)).toContain('current_a');
 	expect(query.data.units).toMatchObject({ lmp: null });
 	await page.getByText('Calculation details', { exact: true }).click();
-	await expect(page.getByRole('region', { name: 'AC power flow results' })).toContainText(
-		'Maximum KCL residual'
-	);
+	await expect(
+		page.getByRole('region', { name: 'Multiconductor power flow results' })
+	).toContainText('Maximum KCL residual');
 	await page.screenshot({ path: testInfo.outputPath('mc-results-desktop.png') });
 	await page.locator('header input[type=file]').setInputFiles({
 		name: 'private-map.geojson',

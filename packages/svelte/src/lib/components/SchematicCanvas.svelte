@@ -1367,7 +1367,7 @@
 				class="note"
 				role="status"
 				title="Buses with no path to a source through closed branches are drawn faint"
-				>{live.deadBuses.toLocaleString()} bus{live.deadBuses === 1 ? '' : 'es'} not energised</span
+				>{live.deadBuses.toLocaleString()} bus{live.deadBuses === 1 ? '' : 'es'} not energized</span
 			>{/if}
 		{#if unplaced}<span
 				class="note"
@@ -1394,7 +1394,7 @@
 				Voltage <span>min</span><i style:background={sensGradient}></i><span>max</span> of each declared
 				band, worst pair
 			{/if}
-			· grey: no limit or rating{live.deadBuses ? ' · faint: not energised' : ''}
+			· grey: no limit or rating{live.deadBuses ? ' · faint: not energized' : ''}
 		</div>
 	{/if}
 	{#if colour === 'none' && zoomedOut && landmarkPool.length}

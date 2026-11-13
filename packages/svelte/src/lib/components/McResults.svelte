@@ -11,7 +11,13 @@
 		type McPfResult,
 		type McPfSummary
 	} from '@tellegen/engine';
-	import { neutralTerminal, phaseCss, phaseLabel } from '../multiconductor.js';
+	import {
+		EXCLUDED_ISLAND_BUS,
+		MC_PF_NAME,
+		neutralTerminal,
+		phaseCss,
+		phaseLabel
+	} from '../multiconductor.js';
 	import { uiTheme } from './ui-theme.js';
 	import { MISSING, quantity } from '../format.js';
 	import type { McEditTiming } from '../state.svelte.js';
@@ -129,14 +135,14 @@
 		);
 </script>
 
-<section aria-label="AC power flow results" class="mc-results">
+<section aria-label="{MC_PF_NAME} results" class="mc-results">
 	<McNetworkScope
 		scope={summary.network_scope}
 		islands={'excluded_islands' in result ? result.excluded_islands : excludedIslands}
 	/>
 	<McModelQualification model={summary.load_model} />
 	<div class="result-heading">
-		<strong>AC power flow</strong><span
+		<strong>{MC_PF_NAME}</strong><span
 			>{summary.iterations} iterations{elapsedMs === null
 				? ''
 				: `, ${Math.round(elapsedMs)} ms`}</span
@@ -183,10 +189,7 @@
 		></label
 	>
 	{#if excludedIslands.some((island) => island.buses.includes(busId ?? ''))}
-		<p role="status">
-			This bus is excluded from the calculation because its island has no voltage source. No result
-			is available.
-		</p>
+		<p role="status">{EXCLUDED_ISLAND_BUS}</p>
 	{/if}
 	<label class="search"
 		>Terminals<input

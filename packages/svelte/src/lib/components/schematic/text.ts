@@ -122,7 +122,7 @@ export class SchematicText {
 				: '';
 		const f = this.c.feeders.edgeFeeder[k];
 		const feeder = f >= 0 ? ` · ${this.feederName(f)}` : '';
-		return `${e.kind} ${e.id} · ${wires}${e.closed ? '' : ' · open'}${live.edges[k] ? '' : ' · not energised'}${feeder}${route}`;
+		return `${e.kind} ${e.id} · ${wires}${e.closed ? '' : ' · open'}${live.edges[k] ? '' : ' · not energized'}${feeder}${route}`;
 	}
 
 	item(d: EquipmentItem): string {

@@ -160,7 +160,9 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const study = page.getByRole('region', { name: 'Study workspace' });
-	await expect(study.getByText('Distribution power flow', { exact: true })).toBeVisible();
+	await expect(
+		study.getByText('Distribution case · Multiconductor power flow', { exact: true })
+	).toBeVisible();
 	await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
 		timeout: 60_000
 	});
@@ -263,7 +265,9 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	const reopenedSaved = page.getByLabel('Saved study');
 	await expect(savedDistributionOptions(page)).toHaveCount(2);
 	await reopenedSaved.selectOption(firstSavedValue);
-	await expect(reopened.getByText('Distribution power flow', { exact: true })).toBeVisible();
+	await expect(
+		reopened.getByText('Distribution case · Multiconductor power flow', { exact: true })
+	).toBeVisible();
 	await expect(reopened.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
 	await expect(reopened.getByText('Goal', { exact: true })).toHaveCount(0);
 });
@@ -276,7 +280,9 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const demoStudy = page.getByRole('region', { name: 'Study workspace' });
 	await demoStudy.getByRole('button', { name: 'Load 4-conductor example' }).click();
-	await expect(demoStudy.getByText('Distribution power flow', { exact: true })).toBeVisible({
+	await expect(
+		demoStudy.getByText('Distribution case · Multiconductor power flow', { exact: true })
+	).toBeVisible({
 		timeout: 60_000
 	});
 	await expect(demoStudy.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
@@ -524,7 +530,7 @@ test('settings reruns qualify modified results and preserve provenance through e
 	await settings.getByRole('button', { name: 'Apply settings', exact: true }).click();
 	await page.getByRole('button', { name: 'Close settings panel', exact: true }).click();
 	await study.getByRole('button', { name: 'Run power flow', exact: true }).click();
-	const results = study.getByRole('region', { name: 'AC power flow results' });
+	const results = study.getByRole('region', { name: 'Multiconductor power flow results' });
 	await expect(
 		results.getByText('Modified load model — non-canonical result', { exact: true })
 	).toBeVisible();
@@ -695,7 +701,7 @@ test('energized-network selection retains excluded islands through solve, CSV an
 	await expect(
 		study.getByText('1 load has no voltage source and is absent from solved totals.').first()
 	).toBeVisible();
-	const results = study.getByRole('region', { name: 'AC power flow results' });
+	const results = study.getByRole('region', { name: 'Multiconductor power flow results' });
 	await results.getByLabel('Bus result').selectOption('unpowered');
 	await expect(results.getByText('0 terminals at bus unpowered', { exact: true })).toBeVisible();
 	await expect(

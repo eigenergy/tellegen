@@ -417,11 +417,14 @@ export class MulticonductorCase {
 
 	get mcPfReason(): string | null {
 		if (!this.mcInput) return 'This case has no retained electrical input';
-		if (this.summary?.mc_pf_enabled !== true) return 'AC power flow is unavailable in this build';
+		if (this.summary?.mc_pf_enabled !== true)
+			return 'Multiconductor power flow is unavailable in this build';
 		return (
 			this.summary.mc_pf_reason ??
 			this.summary.mc_pf_unavailable_reason ??
-			(this.summary.mc_pf_supported !== true ? 'AC power flow is unavailable for this case' : null)
+			(this.summary.mc_pf_supported !== true
+				? 'Multiconductor power flow is unavailable for this case'
+				: null)
 		);
 	}
 	/** Import detects scope; only a solve action opts into the selection. */

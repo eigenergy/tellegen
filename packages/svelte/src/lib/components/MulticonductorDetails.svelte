@@ -1,12 +1,14 @@
 <script lang="ts">
 	import McNetworkScope from './McNetworkScope.svelte';
 	import McModelQualification from './McModelQualification.svelte';
+	import McSolveControls from './McSolveControls.svelte';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { quantity, rgbaCss } from '../format.js';
 	import {
 		attachmentColor,
 		attachmentGlyph,
 		edgeColor,
+		EXCLUDED_ISLAND_BUS,
 		neutralTerminal,
 		phaseCss,
 		phaseLabel,
@@ -14,12 +16,10 @@
 	} from '../multiconductor.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { uiTheme } from './ui-theme.js';
-	import { getNoticeCenter } from '../notices.svelte.js';
-	import { validateMcPfOptions, type DistAttachmentKind } from '@tellegen/engine';
+	import type { DistAttachmentKind } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
-	const notices = getNoticeCenter();
 	const panels = getPanelLayout();
 	function openResults() {
 		const panel = panels.panels.find((p) => p.id === 'studies');
@@ -60,7 +60,7 @@
 		</p>
 	{/if}
 	{#if s}
-		<p class="tag">Multiconductor</p>
+		<p class="tag">Distribution case</p>
 		<details class="case-details">
 			<summary
 				>{s.n_bus} buses, {s.n_edge}
@@ -117,39 +117,16 @@
 			islands={mc.mcExcludedIslands}
 			preview={!mc.result}
 		/>
-		{#if !mc.mcPfSupported}<p class="footnote">{mc.mcPfReason}</p>{/if}
-		{#if validateMcPfOptions(mc.mcOptions)}<p class="footnote">
-				{validateMcPfOptions(mc.mcOptions)} Open Settings to update solver options before solving.
-			</p>{/if}
-		<button onclick={() => (app.settingsOpen = true)}>Power flow settings</button>
-		<div class="calculation-actions">
-			{#if mc.solving}
-				<span role="status">Calculating&hellip;</span>{#if mc.solveAbort}<button
-						onclick={() => mc.solveAbort?.abort()}>Cancel</button
-					>{/if}
-			{:else}
-				<button
-					disabled={!mc.mcPfSupported || !!validateMcPfOptions(mc.mcOptions)}
-					onclick={() => {
-						void ctrl
-							.solveMultiCase(mc, mc.mcOptions, undefined, mc.mcRequiresEnergizedSolve)
-							.then(openResults)
-							.catch(() => {});
-					}}>{mc.mcSolveLabel}</button
-				>
-				{#if !mc.mcPfSupported}
-					<button
-						class="quiet"
-						onclick={() =>
-							notices.push({
-								kind: 'warning',
-								title: 'AC power flow unavailable',
-								details: mc.mcPfReason ?? 'AC power flow does not support this case'
-							})}>Why unavailable</button
-					>
-				{/if}
-			{/if}
-		</div>
+		<McSolveControls
+			{mc}
+			onsettings={() => (app.settingsOpen = true)}
+			onsolve={() => {
+				void ctrl
+					.solveMultiCase(mc, mc.mcOptions, undefined, mc.mcRequiresEnergizedSolve)
+					.then(openResults)
+					.catch(() => {});
+			}}
+		/>
 		{#if mc.result}<McModelQualification model={mc.result.load_model} compact />
 			<p class="footnote">Converged, {mc.result.iterations} iterations</p>
 			<button class="reset" onclick={openResults}>View results in Studies</button>{/if}
@@ -158,8 +135,7 @@
 	{#if mc.selectedBus}
 		{@const b = mc.selectedBus}
 		{#if mc.mcExcludedIslands.some((island) => island.buses.includes(b.id))}<p role="status">
-				This bus belongs to an island with no voltage source and will be excluded from
-				energized-network calculations. No power-flow result is available for it.
+				{EXCLUDED_ISLAND_BUS}
 			</p>{/if}
 		<hr />
 		<h3>Bus <span class="mono">{b.id}</span></h3>
@@ -315,31 +291,6 @@
 	.case-details dl {
 		margin-top: 8px;
 	}
-	.calculation-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		align-items: center;
-		margin: 14px 0;
-	}
-	.calculation-actions button {
-		font: inherit;
-		padding: 7px 10px;
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		background: var(--ink);
-		color: var(--paper);
-		cursor: pointer;
-	}
-	.calculation-actions button:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-	.calculation-actions button.quiet {
-		background: transparent;
-		color: var(--ink);
-	}
-
 	h2 {
 		margin: 0 0 8px;
 		font-size: 16px;

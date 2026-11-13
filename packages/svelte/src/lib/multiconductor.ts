@@ -15,6 +15,15 @@ import { placeSyntheticTopology, type PlacementCenter } from './synthetic-layout
 import { MAP_PALETTE, type RGBA } from './colors.js';
 import { extent, rgbaCss } from './format.js';
 
+/** The calculation's one name in the interface, as the WebMCP tool `solve_multiconductor_pf`
+ * and the literature name it. */
+export const MC_PF_NAME = 'Multiconductor power flow';
+export const MC_PF_UNAVAILABLE_TITLE = 'Multiconductor power flow unavailable';
+export const MC_PF_UNAVAILABLE = 'This case cannot run multiconductor power flow.';
+/** The one wording for a bus left out because its island has no voltage source. */
+export const EXCLUDED_ISLAND_BUS =
+	'This bus is in an island with no voltage source, so the calculation leaves it out and it has no result.';
+
 /** A bus positioned on the map, carrying its terminal-level detail. */
 export interface PlacedMultiBus {
 	id: string;
