@@ -1,8 +1,8 @@
-/** One plain sentence that leads each result: whether the solve worked, how long it took, and
+/** The sentence at the top of each result: whether the solve worked, how long it took, and
  * (for an OPF) what it found. The panels keep the exact rows below it. Pure, so the wording is
  * tested without a renderer. */
 
-import { formulationLabel, fmt } from '../format.js';
+import { formulationLabel } from '../format.js';
 import type { Formulation } from '@tellegen/engine';
 
 export type VerdictTone = 'ok' | 'warning' | 'failure' | 'pending';
@@ -69,11 +69,11 @@ function finding(formulation: Formulation): string {
 		case 'acpf':
 			return 'AC power flow converged';
 		case 'socwr':
-			return 'SOCWR found a lower bound on the least-cost dispatch';
+			return 'SOCWR found a lower bound on generation cost';
 		case 'acopf':
 			return 'AC OPF found a locally optimal dispatch';
 		default:
-			return `${formulationLabel(formulation)} found the least-cost dispatch`;
+			return `${formulationLabel(formulation)} found the cheapest dispatch`;
 	}
 }
 
@@ -112,7 +112,10 @@ export function solveVerdict(input: SolveVerdictInput): Verdict {
 			: input.formulation === 'acpf'
 				? `AC power flow did not converge${iterations ? ` after ${plural(iterations, 'iteration')}` : ''}.`
 				: `${label} did not finish${iterations ? ` after ${plural(iterations, 'iteration')}` : ''}.`;
-		return { text: `${what} ${advice(input.formulation, infeasible)}`, tone: 'failure' };
+		return {
+			text: `${what} ${advice(input.formulation, infeasible)}`,
+			tone: 'failure'
+		};
 	}
 	const parts: string[] = [];
 	if (iterations) parts.push(`in ${plural(iterations, 'iteration')}`);
@@ -121,7 +124,10 @@ export function solveVerdict(input: SolveVerdictInput): Verdict {
 	const words = statusWords(input.status);
 	const loose = input.status != null && !['Optimal', 'Feasible', 'Converged'].includes(words);
 	return loose
-		? { text: `${sentence} Solver status: ${words.toLowerCase()}.`, tone: 'warning' }
+		? {
+				text: `${sentence} Solver status: ${words.toLowerCase()}.`,
+				tone: 'warning'
+			}
 		: { text: sentence, tone: 'ok' };
 }
 
@@ -133,7 +139,10 @@ export function savedVerdict(input: {
 }): Verdict {
 	const label = formulationLabel(input.formulation);
 	if (!input.status)
-		return { text: `Saved state “${input.label}” has no ${label} result.`, tone: 'pending' };
+		return {
+			text: `Saved state “${input.label}” has no ${label} result.`,
+			tone: 'pending'
+		};
 	const words = statusWords(input.status);
 	const ok = ['Optimal', 'Feasible', 'Converged'].includes(words);
 	return {
@@ -153,32 +162,39 @@ export interface OutcomeVerdictInput {
 	deltaObjective?: number | null;
 }
 
-/** The lead sentence for the network summary: what the result means for the network. Null when
- * there is nothing yet to say (no result, or a power flow, whose verdict is the solver's). */
+const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+
+/** A count that starts a sentence: a word below ten, digits above. */
+const count = (n: number) => WORDS[n] ?? n.toLocaleString('en-US');
+
+/** Dollars per hour, the unit of MATPOWER generator costs: whole dollars from $100 up. */
+export function costPerHour(value: number): string {
+	const digits = Math.abs(value) >= 100 ? 0 : 2;
+	return `$${value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}/h`;
+}
+
+/** The sentences at the top of the network summary: what the result means for the network. Null
+ * when there is nothing yet to say (no result, or a power flow, whose verdict is the solver's). */
 export function outcomeVerdict(input: OutcomeVerdictInput): Verdict | null {
 	if (!OPF.has(input.formulation) || input.objective === null) return null;
-	const sentences = [`The least-cost dispatch has an objective of ${fmt.format(input.objective)}.`];
+	const bound = input.formulation === 'socwr' ? 'at least ' : '';
+	const sentences = [`Generation cost is ${bound}${costPerHour(input.objective)}.`];
 	if (input.deltaObjective != null && input.deltaObjective !== 0) {
 		const change = Math.abs(input.deltaObjective);
 		sentences.push(
-			`That is ${fmt.format(change)} ${input.deltaObjective > 0 ? 'more' : 'less'} than the base case.`
+			`That is ${costPerHour(change)} ${input.deltaObjective > 0 ? 'more' : 'less'} than the base case.`
 		);
 	}
 	let tone: VerdictTone = 'ok';
 	if (input.binding !== null) {
-		if (input.binding === 0)
-			sentences.push(
-				input.flagged ? 'No line is at its limit.' : 'No line is loaded to its rating.'
-			);
-		else {
-			tone = 'warning';
-			const n = input.binding;
-			sentences.push(
-				input.flagged
-					? `${plural(n, 'line is', 'lines are')} at ${n === 1 ? 'its' : 'their'} limit.`
-					: `${plural(n, 'line is', 'lines are')} loaded to ${n === 1 ? 'its' : 'their'} rating or above.`
-			);
-		}
+		const n = input.binding;
+		if (n > 0) tone = 'warning';
+		const line = n === 1 ? 'line is' : 'lines are';
+		sentences.push(
+			input.flagged
+				? `${count(n)} ${line} at ${n === 1 ? 'its' : 'their'} limit.`
+				: `${count(n)} ${line} at or above ${n === 1 ? 'its' : 'their'} rating.`
+		);
 	}
 	return { text: sentences.join(' '), tone };
 }

@@ -145,8 +145,6 @@
 
 	.verdict {
 		margin: 0 0 var(--space-sm);
-		padding-left: var(--space-sm);
-		border-left: 3px solid var(--line);
 		font-size: var(--fs-body);
 		font-weight: 600;
 		line-height: var(--lh-snug);
@@ -154,16 +152,8 @@
 		text-wrap: pretty;
 	}
 
-	.verdict.ok {
-		border-left-color: var(--status-ok);
-	}
-
-	.verdict.warning {
-		border-left-color: var(--accent);
-	}
-
 	.verdict.failure {
-		border-left-color: var(--text-danger);
+		color: var(--text-danger);
 	}
 
 	.verdict.pending {
