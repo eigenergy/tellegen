@@ -1,7 +1,7 @@
 import type { BranchConstraintResult, Solution } from '@tellegen/engine';
 import { readable } from '../format.js';
 
-export const PRICE_UNIT = 'objective units/MW';
+export const PRICE_UNIT = '$/MWh';
 export const PRICE_SCALES = [
 	{ lo: 0, hi: 50 },
 	{ lo: -50, hi: 50 },

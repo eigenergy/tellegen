@@ -111,7 +111,7 @@ export function activitySummary(event: Finished): string {
 			const delta = number(record(data.prediction)?.objective_delta);
 			return delta === null
 				? 'Previewed the change. Nothing was applied.'
-				: `Predicted objective change ${signed(delta)}. Nothing was applied.`;
+				: `Predicted cost change ${signed(delta)} $/h. Nothing was applied.`;
 		}
 		case 'update_case':
 		case 'reset_case': {
@@ -121,8 +121,8 @@ export function activitySummary(event: Finished): string {
 			const to = number(after?.objective);
 			const lines = number(after?.binding_branches);
 			const parts: string[] = [];
-			if (from !== null && to !== null) parts.push(`objective ${formatChange(from, to)}`);
-			if (lines !== null) parts.push(plural(lines, 'binding line', 'binding lines'));
+			if (from !== null && to !== null) parts.push(`cost ${formatChange(from, to)} $/h`);
+			if (lines !== null) parts.push(plural(lines, 'line at its limit', 'lines at their limit'));
 			if (!parts.length)
 				return event.toolName === 'reset_case' ? 'Reset the case.' : 'Solved the change.';
 			const sentence = parts.join(', ');

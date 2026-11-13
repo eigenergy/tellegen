@@ -125,7 +125,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 	if (!previewed.ok) return;
 	expect(JSON.stringify(previewed).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('predicted Δ objective')).toBeVisible();
+	await expect(page.getByText('Predicted cost change', { exact: true })).toBeVisible();
 
 	const cancelled = await page.evaluate(
 		async ({ caseId, focusedRevision, busId }) =>
@@ -211,8 +211,8 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!updated.ok) return;
 	expect(String(updated.data.revision)).not.toBe(focusedRevision);
 	expect(JSON.stringify(updated).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('exact result')).toBeVisible();
-	await expect(page.getByText('binding lines')).toBeVisible();
+	await expect(page.getByText('Solved', { exact: true })).toBeVisible();
+	await expect(page.getByText('Lines at limit')).toBeVisible();
 
 	// Tool deltas are exact values, not slider gestures. A valid update below
 	// the UI slider's deadband must survive the transactional solve.

@@ -439,7 +439,7 @@
 				scalarHi,
 				scalarMode,
 				scalarLabel: activeMeta?.label ?? 'LMP',
-				scalarUnit: activeMeta?.unit ?? 'objective units/MW',
+				scalarUnit: activeMeta?.unit ?? '$/MWh',
 				loading,
 				mode,
 				sens,
@@ -922,14 +922,14 @@
 		const previewRow =
 			preview === undefined
 				? ''
-				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} objective units/MW`;
+				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
 		// Demand already has its own row below, so the demand colouring shows LMP here alone.
 		const scalarRow =
 			!d || d.scalarMode === 'price' || d.scalarMode === 'demand'
-				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`
+				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`;
+					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`;
 		return {
 			html: `<div class="tt"><b>Bus ${bus.id}</b><br>${scalarRow}<br>${loadRow}<br>Generation ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}</div>`
 		};

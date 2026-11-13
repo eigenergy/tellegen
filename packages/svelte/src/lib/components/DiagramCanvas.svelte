@@ -385,7 +385,7 @@
 							values.has(bus.id)
 								? `, ${
 										displayMode === 'price'
-											? `${values.get(bus.id)!.toFixed(4)} objective units/MW LMP`
+											? `${values.get(bus.id)!.toFixed(4)} $/MWh LMP`
 											: displayMode === 'voltage'
 												? `${quantity(values.get(bus.id), 'pu')} voltage`
 												: `${degrees(values.get(bus.id))} voltage angle`

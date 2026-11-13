@@ -11,7 +11,6 @@
 	} from '@tellegen/webmcp';
 	import {
 		capacityPlanExactPhiDelta,
-		capacityPlanFirstOrderError,
 		capacityPlanPredictedPhiDelta
 	} from './capacity-plan-metrics.js';
 	import type { CapacityPlanActivity, PlanningActivityStore } from './planning-activity.svelte.js';
@@ -66,10 +65,6 @@
 
 	function predictedPhiDelta(entry: CapacityPlanActivity): number {
 		return capacityPlanPredictedPhiDelta(entry.outcome);
-	}
-
-	function firstOrderError(entry: CapacityPlanActivity): number | null {
-		return capacityPlanFirstOrderError(entry.outcome);
 	}
 
 	function isStaged(entry: CapacityPlanActivity): boolean {
@@ -160,8 +155,8 @@
 			{#if tab === 'connect'}<AgentGuide {supported} {registrationError} />{:else}
 				<p class="call-count" role="status">
 					{activities.length
-						? `${experiments.length} completed WebMCP ${experiments.length === 1 ? 'call' : 'calls'}${activities.some((activity) => !finished(activity)) ? ', working' : ''}`
-						: 'No WebMCP calls yet'}
+						? `${experiments.length} tool ${experiments.length === 1 ? 'call' : 'calls'} finished${activities.some((activity) => !finished(activity)) ? ', one running' : ''}`
+						: 'No tool calls yet'}
 				</p>
 				{#if registrationError}
 					<p class="registration-error mono" data-testid="webmcp-registration-error">
@@ -179,7 +174,7 @@
 				{#if planning.entries.length > 0}
 					<section class="plans" aria-label="capacity planning activity">
 						<div class="section-head">
-							<h3 class="mono">capacity proposals</h3>
+							<h3>Capacity plans</h3>
 						</div>
 						<ol aria-live="polite">
 							{#each planning.entries as entry (entry.id)}
@@ -187,32 +182,31 @@
 								{@const status = entry.decision}
 								<li class="plan" data-testid="capacity-plan-card" data-activity-id={entry.id}>
 									<div class="plan-head">
-										<strong>capacity proposal</strong>
+										<strong>Capacity plan</strong>
 										<span
 											class="chip-status mono"
 											data-testid="capacity-plan-status"
-											data-status={status}>{status}</span
+											data-status={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</span
 										>
 									</div>
 									{#if outcome}
 										<div class="phi mono">
-											<span class="label">Φ</span>
+											<span class="label">Weighted price</span>
 											<span
-												>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)}
-												({formatDelta(exactPhiDelta(entry))} objective units/MW)</span
+												>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)} $/MWh
+												({formatDelta(exactPhiDelta(entry))})</span
 											>
 										</div>
 										<div class="phi-detail mono">
-											<span>predicted {formatDelta(predictedPhiDelta(entry))}</span>
-											<span>exact {formatDelta(exactPhiDelta(entry))}</span>
-											<span>first order error {formatNumber(firstOrderError(entry), 4)}</span>
+											<span>Predicted {formatDelta(predictedPhiDelta(entry))}</span>
+											<span>Solved {formatDelta(exactPhiDelta(entry))}</span>
 										</div>
 										{#if entry.displayProposal.length > 0}
 											<ul class="changes mono">
 												{#each entry.displayProposal as change (change.branchId)}
 													<li>
 														<span>{change.branchId}</span>
-														<span>{formatDelta(change.deltaMw)} MW rating</span>
+														<span>Rating {formatDelta(change.deltaMw)} MW</span>
 													</li>
 												{/each}
 											</ul>
@@ -222,7 +216,7 @@
 										<div class="review">
 											{#if isApproved(entry)}
 												<span class="approved mono" data-testid="capacity-plan-approved"
-													>approved — the agent may apply once</span
+													>Approved. The agent can apply it once.</span
 												>
 											{:else}
 												<button
@@ -272,29 +266,29 @@
 
 								{#if predicted}
 									<div class="preview-result">
-										<span class="mono label">predicted Δ objective</span>
-										<b class="mono">{formatDelta(number(predicted.objective_delta))}</b>
-										<span class="mono dim">state unchanged</span>
+										<span class="label">Predicted cost change</span>
+										<b class="mono">{formatDelta(number(predicted.objective_delta))} $/h</b>
+										<span class="dim">Nothing applied</span>
 									</div>
 								{/if}
 
 								{#if compare}
 									<div class="comparison">
-										<div class="comparison-head mono">
-											<span>exact result</span><span>before</span><span>after</span>
+										<div class="comparison-head">
+											<span>Solved</span><span>Before</span><span>After</span>
 										</div>
 										<div class="metric mono">
-											<span>objective</span>
+											<span class="name">Cost ($/h)</span>
 											<span>{formatNumber(number(compare.before.objective))}</span>
 											<span>{formatNumber(number(compare.after.objective))}</span>
 										</div>
 										<div class="metric mono">
-											<span>binding lines</span>
+											<span class="name">Lines at limit</span>
 											<span>{formatNumber(number(compare.before.binding_branches), 0)}</span>
 											<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
 										</div>
 										<div class="metric mono">
-											<span>edits (demand/rating)</span>
+											<span class="name">Demand and rating edits</span>
 											<span
 												>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
 													number(compare.before.rating_edit_count),
@@ -318,15 +312,12 @@
 									</p>
 								{/if}
 								{#if finished(activity) && !activity.response.ok}
-									<p class="error mono">
-										{activity.response.error.code}: {activity.response.error.message}
-									</p>
+									<p class="error">{activity.response.error.message}</p>
 								{/if}
 								{#if check}
 									<div class="preview-result mono" data-testid="experiment-prediction-check">
-										<span>predicted Δ {formatDelta(check.predictedDelta)}</span>
-										<span>exact Δ {formatDelta(check.exactDelta)}</span>
-										<span>prediction error {formatNumber(check.absoluteError, 4)}</span>
+										<span>Predicted {formatDelta(check.predictedDelta)} $/h</span>
+										<span>Solved {formatDelta(check.exactDelta)} $/h</span>
 									</div>
 								{/if}
 							</li>
@@ -451,10 +442,8 @@
 	.section-head h3 {
 		margin: 0;
 		color: var(--text-tertiary);
-		font-size: 8px;
+		font-size: 11px;
 		font-weight: 500;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
 	}
 
 	.plan-head {
@@ -470,9 +459,7 @@
 		border-radius: 999px;
 		background: var(--surface-control);
 		color: var(--text-secondary);
-		font-size: 8px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 11px;
 	}
 
 	.chip-status[data-status='applied'] {
@@ -659,8 +646,7 @@
 	.comparison-head {
 		padding-bottom: 5px;
 		color: var(--text-tertiary);
-		font-size: 8px;
-		text-transform: uppercase;
+		font-size: 11px;
 	}
 
 	.comparison-head span:first-child,

@@ -1,14 +1,10 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
+	import { dollarUnits } from '../display.js';
 	import { signedExp } from '../format.js';
 
 	const ctrl = getController();
-	const units = $derived(
-		(ctrl.selectedSensitivity?.units ?? '(objective units/MW)/MW').replaceAll(
-			'objective_unit',
-			'objective units'
-		)
-	);
+	const units = $derived(dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 	const unitTitle = $derived(`LMP response per MW of demand, in ${units}.`);
 </script>
 
