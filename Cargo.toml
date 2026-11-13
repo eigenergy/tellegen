@@ -78,3 +78,17 @@ lto = true
 inherits = "release"
 opt-level = 3
 lto = "thin"
+
+# The RMS engine reads PSS/E DYR records through PowerIO's typed model views
+# and generator linking, proposed in eigenergy/powerio#111. Until a PowerIO
+# release carries them, every PowerIO crate comes from that branch, pinned to
+# one commit (github.com/sebeich/powerio, feat/dyr-model-views).
+[patch.crates-io]
+powerio = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-core = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-dist = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-matrix = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-prob = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-synth = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-tnd = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
+powerio-tx = { git = "https://github.com/sebeich/powerio", rev = "2d4d28182e2effb320924ee6f4a310f998a0801e" }
