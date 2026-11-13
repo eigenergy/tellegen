@@ -144,12 +144,14 @@ describe('results table', () => {
 		const row = tableModel(snapshot, names, 'bus').row(1);
 		expect([row.id, row.pairs, row.reference, row.v0, row.state, row.unbalanceBasis]).toEqual([
 			'B2',
-			'A–N B–N C–N',
+			'1–n 2–n 3–n',
 			'phase–neutral',
 			195,
 			'violation',
 			'IEEE PVUR'
 		]);
+		// The CSV keeps source names; the table shows phase labels.
+		expect(row.pairLabels).toBe('A–N B–N C–N');
 		const branch = tableModel(snapshot, names, 'branch');
 		expect([branch.row(0).loss, branch.row(0).state, branch.row(2).state]).toEqual([
 			2,

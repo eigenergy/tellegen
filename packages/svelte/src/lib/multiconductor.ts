@@ -394,7 +394,7 @@ export const phaseCss = (terminal: string, theme: 'light' | 'dark' = 'light') =>
 
 /** The display name of a terminal: OpenDSS node numbers 1/2/3/4 and named a/b/c/n read as the
  * phases A/B/C and the neutral N, as does a bus's declared `neutral`; the ground reference reads
- * G. Any other terminal name passes through unchanged. Agent tools and JSON exports keep the
+ * G. Any other terminal name passes through unchanged. Agent tools and exports (JSON and CSV) keep the
  * source names; this is for what people read. */
 export function phaseLabel(terminal: string, neutral?: string | null): string {
 	if (neutral && terminal === neutral) return 'N';

@@ -107,7 +107,7 @@ test('phase-to-ground bounds are ranked like the other references', async ({ pag
 	const download = page.waitForEvent('download');
 	await overview.getByRole('button', { name: 'Bus CSV' }).click();
 	const csv = await readFile(await (await download).path(), 'utf8');
-	expect(csv).toMatch(/^lb,.*phase–ground,A–G B–G C–G,.*,violation$/m);
+	expect(csv).toMatch(/^lb,.*phase–ground,a–ground b–ground c–ground,.*,violation$/m);
 });
 
 test('the overview says whether a case declares limits it does not rank', async ({ page }) => {

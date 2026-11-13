@@ -672,7 +672,7 @@ describe('phase–ground limits', () => {
 		const row = tableModel(s, inputs.names, 'bus').row(0);
 		expect([row.reference, row.pairs, row.state]).toEqual([
 			'phase–neutral, phase–ground',
-			'A–N B–N C–N A–G B–G C–G',
+			'a–n b–n c–n a–ground b–ground c–ground',
 			'violation'
 		]);
 	});

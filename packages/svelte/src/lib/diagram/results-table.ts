@@ -143,7 +143,10 @@ export function tableModel(result: ResultSnapshot, names: TableNames, kind: Tabl
 				id: names.buses[i].id,
 				source: names.buses[i].source ?? null,
 				reference: bus.pairs.length ? [...new Set(bus.pairs.map((p) => p.zone))].join(', ') : null,
-				pairs: bus.pairs.map(pairVoltageLabel).join(' ') || null,
+				// Source terminal names, so a CSV round-trips with the case data; the table shows
+				// `pairLabels` (A–N) on screen.
+				pairs: bus.pairs.map((p) => p.pair.join('–')).join(' ') || null,
+				pairLabels: bus.pairs.map(pairVoltageLabel).join(' ') || null,
 				v0: slots[0]?.volts ?? null,
 				v1: slots[1]?.volts ?? null,
 				v2: slots[2]?.volts ?? null,

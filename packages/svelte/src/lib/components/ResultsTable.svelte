@@ -140,9 +140,10 @@
 				>
 					{#each model.columns as c (c.key)}
 						{@const value = row[c.key]}
-						{#if c.key === 'pairs' && typeof value === 'string'}
+						{@const labels = c.key === 'pairs' ? row.pairLabels : null}
+						{#if typeof labels === 'string'}
 							<span role="gridcell" class="pairs"
-								>{#each value.split(' ') as pair, k (k)}<span
+								>{#each labels.split(' ') as pair, k (k)}<span
 										class="pair"
 										style:--pc={pairColour(pair)}>{pair}</span
 									>{/each}</span
