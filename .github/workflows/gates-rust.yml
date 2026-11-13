@@ -82,6 +82,15 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
+      # RMS is behind its own features, which no run above reaches. Mirrors
+      # `just rms-test` and `just rms-validation`: the debug run skips the
+      # 20 s WECC 240 validation runs, the release run includes them.
+      - name: Test the RMS dynamic simulation
+        run: |
+          cargo test -p tellegen --no-default-features --features rms
+          cargo test -p tellegen --features rms-experimental
+          cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
+          cargo test --release -p tellegen --features rms --test rms_psid_validation --test rms_physics --test rms_validation -- --include-ignored
       # Exercise the native feature explicitly; shipping adapters still exclude it.
       - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
