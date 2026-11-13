@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/engine",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Browser engine for case parsing, solves, Study previews and commits, and sensitivities.",
   "keywords": [
     "power-flow",
@@ -62,6 +62,7 @@
     "check": "npm run types:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
     "test": "vitest run",
     "test:import": "node scripts/import-smoke.mjs",
+    "bench:synth-handoff": "node scripts/bench-synth-handoff.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },
   "devDependencies": {

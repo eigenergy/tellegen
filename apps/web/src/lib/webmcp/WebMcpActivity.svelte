@@ -14,10 +14,14 @@
 		capacityPlanPredictedPhiDelta
 	} from './capacity-plan-metrics.js';
 	import type { CapacityPlanActivity, PlanningActivityStore } from './planning-activity.svelte.js';
+	import type { WebMcpBrowserState } from './browser-support.js';
 
 	let {
 		supported,
 		registrationError,
+		browser = null,
+		pageToolCalls = true,
+		toolCount = 0,
 		activities,
 		planning,
 		experiments,
@@ -27,6 +31,9 @@
 		closeStudy: () => void;
 		supported: boolean;
 		registrationError: string | null;
+		browser?: WebMcpBrowserState | null;
+		pageToolCalls?: boolean;
+		toolCount?: number;
 		activities: TellegenToolActivityEvent[];
 		planning: PlanningActivityStore;
 		experiments: ExperimentRecord[];
@@ -37,7 +44,7 @@
 	let tab = $state<'activity' | 'connect'>('connect');
 	const app = getAppState();
 	let welcome = $state(false);
-	const welcomeKey = 'tellegen.welcome.studies-v1';
+	const welcomeKey = 'tellegen.welcome.webmcp-v1';
 	onMount(() => {
 		try {
 			welcome = localStorage.getItem(welcomeKey) !== 'seen';
@@ -52,6 +59,21 @@
 		} catch {
 			/* Dismissal applies to this visit. */
 		}
+	}
+	// The welcome pill disappears once the panel opens, taking focus with it,
+	// so "Show me" asks for the Connect tab to take focus when it is attached.
+	let focusRequest = $state(0);
+	let focusHandled = 0;
+	function showConnect() {
+		open = true;
+		tab = 'connect';
+		focusRequest += 1;
+		dismiss();
+	}
+	function takeFocus(node: HTMLButtonElement) {
+		if (focusRequest === focusHandled) return;
+		focusHandled = focusRequest;
+		node.focus();
 	}
 	function show() {
 		open = true;
@@ -146,13 +168,21 @@
 				onclick={() => (tab = 'activity')}>Activity</button
 			>
 			<button
+				{@attach takeFocus}
 				class={{ active: tab === 'connect' }}
 				aria-pressed={tab === 'connect'}
 				onclick={() => (tab = 'connect')}>Connect</button
 			>
 		</nav>
 		<div class="agent-content">
-			{#if tab === 'connect'}<AgentGuide {supported} {registrationError} />{:else}
+			{#if tab === 'connect'}<AgentGuide
+					{supported}
+					{registrationError}
+					{browser}
+					{pageToolCalls}
+					{toolCount}
+					callCount={experiments.length}
+				/>{:else}
 				<p class="call-count" role="status">
 					{activities.length
 						? `${experiments.length} tool ${experiments.length === 1 ? 'call' : 'calls'} finished${activities.some((activity) => !finished(activity)) ? ', one running' : ''}`
@@ -329,7 +359,9 @@
 	</div>
 </PanelFrame>
 {#if welcome && !open && !app.zen}<aside class="welcome" aria-label="New to Tellegen">
-		<a href={resolve('/changelog')}>New: saved studies and agent tools</a>
+		<span>New: AI agents can drive this map</span>
+		<button class="welcome-go" onclick={showConnect}>Show me</button>
+		<a href={resolve('/changelog')}>What's new</a>
 		<button aria-label="Dismiss introduction" onclick={dismiss}>Close</button>
 	</aside>{/if}
 
@@ -384,7 +416,7 @@
 	.registration-error {
 		margin: 0;
 		padding: 16px;
-		color: var(--danger);
+		color: var(--text-danger);
 		font-size: 12px;
 	}
 	.empty {
@@ -420,7 +452,14 @@
 		color: var(--text-accent);
 		text-underline-offset: 3px;
 	}
-	.welcome button {
+	.welcome .welcome-go {
+		padding: 1px 8px;
+		border: 1px solid rgb(var(--agent-rgb) / 0.5);
+		border-radius: 3px;
+		background: var(--agent-soft);
+		color: var(--agent);
+	}
+	.welcome button:not(.welcome-go) {
 		padding: 2px;
 		border: 0;
 		background: none;

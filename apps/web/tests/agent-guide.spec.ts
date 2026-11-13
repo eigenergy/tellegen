@@ -16,9 +16,8 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await expect(page.getByLabel('Agent prompt')).toHaveValue(
 		/Use the WebMCP tools in this Tellegen tab/
 	);
-	await expect(
-		page.getByText('WebMCP tools available. Calls appear in Activity.', { exact: false })
-	).toBeVisible();
+	await expect(page.getByTestId('webmcp-status')).toContainText('Ready for agents');
+	await expect(page.getByTestId('webmcp-status')).toContainText(/This tab offers \d+ tools/);
 	await page.getByRole('link', { name: 'Changelog', exact: true }).click();
 	await expect(page.getByRole('heading', { name: "What's new in Tellegen" })).toBeVisible();
 	await page.getByRole('link', { name: 'Back to Tellegen' }).click();

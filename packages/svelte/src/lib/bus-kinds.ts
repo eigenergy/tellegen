@@ -1,29 +1,12 @@
 import type { NetworkBus } from './api.js';
-
-/** The `extras` key under which tellegen-synth records each element's
- * annotation in the modules it writes. */
-const SYNTH_EXTRAS = 'tellegen_synth';
+import { readModuleText } from './module-text.js';
 
 /** Each bus's kind as a generated grid records it, by bus id: `generator`,
  * `substation`, `converter`, `load` or `tap`. tellegen-synth writes the kind
  * in each bus row's `extras.tellegen_synth.kind`; the map view does not carry
  * it. Empty for any other module, and for text that does not parse. */
 export function readBusKinds(moduleJson: string | null | undefined): ReadonlyMap<number, string> {
-	const kinds = new Map<number, string>();
-	// Only a module tellegen-synth wrote is parsed a second time.
-	if (!moduleJson?.includes(`"${SYNTH_EXTRAS}"`)) return kinds;
-	let buses: unknown;
-	try {
-		buses = JSON.parse(moduleJson)?.value?.data?.buses;
-	} catch {
-		return kinds;
-	}
-	if (!Array.isArray(buses)) return kinds;
-	for (const bus of buses) {
-		const kind = bus?.extras?.[SYNTH_EXTRAS]?.kind;
-		if (typeof bus?.id === 'number' && typeof kind === 'string') kinds.set(bus.id, kind);
-	}
-	return kinds;
+	return readModuleText(moduleJson).busKinds;
 }
 
 /** Ids of the buses in `kinds` that are line taps: points where a line is

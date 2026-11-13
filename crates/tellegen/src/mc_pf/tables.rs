@@ -20,7 +20,8 @@ use super::{
 /// [`McPfResult`] as columns, row for row in the same order. Names are
 /// indices into `strings`, each name stored once; complex values are
 /// interleaved `[re, im]`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct McPfResultTables {
     pub iterations: usize,

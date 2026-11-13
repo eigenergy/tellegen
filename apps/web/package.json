@@ -13,8 +13,9 @@
 		"test:browser": "playwright test",
 		"wasm": "npm --prefix ../.. run wasm",
 		"preview": "vite preview",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && npm run test:study-goals && npm run test:activity-summary",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && npm run test:study-goals && npm run test:activity-summary && npm run test:browser-support",
 		"test:activity-summary": "node --experimental-strip-types scripts/test-activity-summary.mjs",
+		"test:browser-support": "node --experimental-strip-types scripts/test-browser-support.mjs",
 		"test:study-goals": "node --experimental-strip-types scripts/test-goal-form.mjs",
 		"format": "prettier --write .",
 		"lint": "prettier --check ."
@@ -24,8 +25,8 @@
 		"@deck.gl/layers": "^9.4.1",
 		"@deck.gl/maplibre": "^9.4.1",
 		"@tellegen/analytics": "^0.1.0",
-		"@tellegen/svelte": "^0.8.0",
-		"@tellegen/webmcp": "^0.2.0",
+		"@tellegen/svelte": "^0.9.0",
+		"@tellegen/webmcp": "^0.3.0",
 		"maplibre-gl": "^6.17.0"
 	},
 	"devDependencies": {
