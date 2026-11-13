@@ -25,16 +25,16 @@
 			</h3>
 			<dl>
 				{#if demand !== null}<div>
-						<dt>Demand</dt>
-						<dd>{fmt.format(demand)} MW</dd>
+						<dt>Demand (MW)</dt>
+						<dd>{fmt.format(demand)}</dd>
 					</div>{/if}
 				{#if voltage != null}<div>
-						<dt>Voltage</dt>
-						<dd>{voltage.toFixed(4)} pu</dd>
+						<dt>Voltage (pu)</dt>
+						<dd>{voltage.toFixed(4)}</dd>
 					</div>{/if}
 				{#if angle != null}<div>
-						<dt>Voltage angle</dt>
-						<dd>{angle.toFixed(4)} rad</dd>
+						<dt>Voltage angle (rad)</dt>
+						<dd>{angle.toFixed(4)}</dd>
 					</div>{/if}
 			</dl>
 		{:else if branch}
@@ -46,12 +46,12 @@
 				</div>
 				{#if flow}
 					<div>
-						<dt>Active power</dt>
-						<dd>{fmt.format(flow.mw)} MW</dd>
+						<dt>Active power (MW)</dt>
+						<dd>{fmt.format(flow.mw)}</dd>
 					</div>
 					{#if branch.rate_mw > 0}<div>
-							<dt>Loading</dt>
-							<dd>{fmt.format(flow.loading * 100)}%</dd>
+							<dt>Loading (%)</dt>
+							<dd>{fmt.format(flow.loading * 100)}</dd>
 						</div>{/if}
 				{/if}
 			</dl>
@@ -62,32 +62,33 @@
 <style>
 	.equipment {
 		border-top: 1px solid var(--line);
-		margin-top: 14px;
-		padding-top: 14px;
+		margin-top: var(--space-xl);
+		padding-top: var(--space-xl);
 	}
 	h3 {
-		margin: 0 0 12px;
-		font-size: 13px;
+		margin: 0 0 var(--space-lg);
+		font-size: var(--fs-heading);
 		font-weight: 600;
 	}
 	h3 span {
 		display: block;
-		margin-top: 3px;
-		font-size: 13px;
+		margin-top: var(--space-3xs);
+		font-size: var(--fs-label);
 		font-weight: 400;
 		color: var(--text-secondary);
 	}
 	dl {
 		margin: 0;
 		display: grid;
-		gap: 6px;
-		font: 12px/1.5 var(--font-mono);
+		gap: var(--space-xs);
+		font-size: var(--fs-data);
+		line-height: var(--lh-normal);
 	}
 	dl > div {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
-		gap: 12px;
+		gap: var(--space-lg);
 	}
 	dt {
 		color: var(--text-secondary);
@@ -95,5 +96,7 @@
 	dd {
 		margin: 0;
 		text-align: right;
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
 	}
 </style>

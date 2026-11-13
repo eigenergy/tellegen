@@ -32,7 +32,7 @@
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>
 					<button
-						class:selected={app.selectedBranch === branch.id}
+						class={{ selected: app.selectedBranch === branch.id }}
 						aria-pressed={app.selectedBranch === branch.id}
 						onclick={() => select(branch.id)}
 					>
@@ -47,12 +47,12 @@
 
 <style>
 	.binding-lines {
-		margin-top: 10px;
+		margin-top: var(--space-md);
 	}
 
 	.head {
-		font-size: 12.5px;
-		margin: 0 0 4px;
+		font-size: var(--fs-data);
+		margin: 0 0 var(--space-2xs);
 	}
 
 	ul {
@@ -65,11 +65,11 @@
 
 	li button {
 		display: flex;
-		gap: 4px;
+		gap: var(--space-2xs);
 		width: 100%;
-		padding: 3px 6px 3px 8px;
+		padding: var(--space-3xs) var(--space-xs) var(--space-3xs) var(--space-sm);
 		text-align: left;
-		font-size: 12px;
+		font-size: var(--fs-label);
 		color: var(--ink);
 		background: none;
 		border: 0;
@@ -80,6 +80,7 @@
 
 	.load {
 		margin-left: auto;
+		text-align: right;
 	}
 
 	li button:hover {
@@ -89,7 +90,8 @@
 	li button.selected {
 		color: var(--text-accent);
 		background:
-			linear-gradient(90deg, rgba(177, 104, 27, 0.16), rgba(177, 104, 27, 0.05)), var(--accent-soft);
+			linear-gradient(90deg, rgb(var(--accent-rgb) / 0.16), rgb(var(--accent-rgb) / 0.05)),
+			var(--accent-soft);
 		box-shadow: inset 3px 0 0 var(--accent);
 		font-weight: 600;
 	}
@@ -103,7 +105,7 @@
 
 		li button {
 			min-height: 44px;
-			padding-block: 6px;
+			padding-block: var(--space-xs);
 		}
 	}
 </style>

@@ -1,4 +1,4 @@
-import { ApiError, createApiClient, type TellegenApiClient } from './api.js';
+import { ApiError, createApiClient, RATE_LIMITED, type TellegenApiClient } from './api.js';
 import type {
 	BranchRatingDeltas,
 	Network,
@@ -97,6 +97,25 @@ function sameSettings(a: unknown, b: unknown): boolean {
 	}
 	return Object.is(a, b);
 }
+
+/** Notices the controller raises from more than one place. Each says what happened and what to
+ * do next, as full sentences, so the notification center reads the same wherever it came from. */
+export const NOTICES = {
+	caseChanged:
+		'The selected case changed before the coordinates were attached. Attach the coordinates again.',
+	caseChangedWhileLoading:
+		'The selected case changed while the coordinates loaded. Attach the coordinates again.',
+	selectMatchingCase: 'Select the case these coordinates belong to, then attach them again.',
+	returnToLiveCase: 'Coordinates attach to the live case. Close the saved study, then attach them.',
+	batchBusy:
+		'Another set of files is still being read. Wait for it to finish, then add these again.',
+	collectionOpen: 'A collection is still open. Finish or close it before opening another.',
+	rateLimited: RATE_LIMITED
+} as const;
+
+/** A case that needs the server when the host configured none. */
+const noApiNotice = (name: string) =>
+	`${name} is served by the tellegen server, and this page has none configured. Add a local case instead.`;
 
 function acOpfSolveDetail(response: SolveResponse): string {
 	const diagnostics = response.iterations;
@@ -1274,7 +1293,7 @@ export class Controller {
 		}
 		const api = this.api;
 		if (!api) {
-			this.fail(`${c.name}: no API configured`);
+			this.fail(noApiNotice(c.name));
 			return;
 		}
 		this.loadingBackendCase = c.id;
@@ -1578,14 +1597,14 @@ export class Controller {
 	}
 
 	private async localSidecarCopy(source: CaseState): Promise<LocalCase> {
-		if (source.solving) throw new Error('Wait for the current solve before attaching coordinates');
+		if (source.solving) throw new Error('Wait for the current solve before attaching coordinates.');
 		const revision = source.revisionGeneration;
 		const captured = await this.captureSavedCase(source);
 		const base = await this.ensureStudyInputJson(source);
-		if (!base) throw new Error('The selected case input is unavailable');
+		if (!base) throw new Error('The selected case input is unavailable.');
 		const parsed = await ingestJsonDrop(new TextEncoder().encode(base));
 		if (!parsed.payload || !('topology' in parsed.payload))
-			throw new Error('The selected case has no balanced network data');
+			throw new Error('The selected case has no balanced network data.');
 		const copy = this.localFromBalancedPayload(`${source.name}.pio.json`, {
 			...parsed.payload,
 			name: `${source.name} (local copy)`
@@ -1637,7 +1656,7 @@ export class Controller {
 			}
 		}
 		if (source.revisionGeneration !== revision || source.solving)
-			throw new Error('The selected case changed while loading. Attach the coordinates again');
+			throw new Error(NOTICES.caseChangedWhileLoading);
 		this.detachedCaseCaptures.set(copy, {
 			baseInput: copy.studyInputJson!,
 			edits: this.caseEditKey(copy),
@@ -1687,16 +1706,16 @@ export class Controller {
 		expected?: SolvableCase | MulticonductorCase | null
 	) {
 		if (this.app.studyView) {
-			this.app.error = 'Return to the live case before attaching coordinates';
+			this.app.error = NOTICES.returnToLiveCase;
 			return;
 		}
 		const source = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
 		if (expected !== undefined && source !== expected) {
-			this.app.error = 'The selected case changed. Attach the coordinates again';
+			this.app.error = NOTICES.caseChanged;
 			return;
 		}
 		if (!source) {
-			this.app.error = 'Select the matching case before attaching coordinates';
+			this.app.error = NOTICES.selectMatchingCase;
 			return;
 		}
 		if (source instanceof MulticonductorCase) {
@@ -1706,7 +1725,8 @@ export class Controller {
 				this.app.error = errorText(error);
 			}
 			if (displays.length)
-				this.app.error = 'Attach a GeoJSON or CSV drawing to this multiconductor case';
+				this.app.error =
+					'Multiconductor cases take GeoJSON or CSV coordinates, not a drawing file. Attach a GeoJSON or CSV file instead.';
 			return;
 		}
 		const selectedId = source.id;
@@ -1718,7 +1738,7 @@ export class Controller {
 					? await this.localSidecarCopy(source)
 					: this.stageLocalSidecars(source);
 			if ((this.app.activeLocal ?? this.app.active)?.id !== selectedId || this.app.studyView)
-				throw new Error('The selected case changed. Attach the coordinates again');
+				throw new Error(NOTICES.caseChanged);
 			const placement = await this.prepareDroppedLocal(target, layers, displays);
 			const applied = placement.geoLayersConsumed || displays.some((display) => display.consumed);
 			if (!applied) throw new Error(placement.error ?? 'No coordinates matched the selected case');
@@ -1727,7 +1747,7 @@ export class Controller {
 				this.app.studyView ||
 				source.revisionGeneration !== revision
 			)
-				throw new Error('The selected case changed. Attach the coordinates again');
+				throw new Error(NOTICES.caseChanged);
 			const saved = this.detachedCaseCaptures.get(target);
 			if (saved) saved.baseInput = target.studyInputJson!;
 			if (
@@ -1736,7 +1756,7 @@ export class Controller {
 				source.revisionGeneration !== revision ||
 				source.solving
 			)
-				throw new Error('The selected case changed. Attach the coordinates again');
+				throw new Error(NOTICES.caseChanged);
 			if (source instanceof LocalCase) {
 				const cached = this.caseStudies.get(source);
 				if (cached && target.studyInputJson && target.view) {
@@ -1754,7 +1774,7 @@ export class Controller {
 						source.solving
 					) {
 						this.disposeStudy(source);
-						throw new Error('The selected case changed. Attach the coordinates again');
+						throw new Error(NOTICES.caseChanged);
 					}
 					cached.studyInputJson = target.studyInputJson;
 				}
@@ -1919,7 +1939,7 @@ export class Controller {
 			return;
 		}
 		if (Date.now() < this.sensitivity429Until) {
-			this.fail('rate limited; wait a few seconds and try again', retryOp);
+			this.fail(NOTICES.rateLimited, retryOp);
 			return;
 		}
 		try {
@@ -2144,19 +2164,19 @@ export class Controller {
 				}
 				if (this.isBackendCase(c)) return this.serverSolve(c, target, seq);
 				c.solving = false;
-				this.app.error = `${c.label}: local case has no retained PowerIO module`;
+				this.app.error = `${c.label}: the calculation cannot run because the case's PowerIO module was not kept. Add the case again.`;
 				return;
 			}
 			const t0 = performance.now();
 			if (c.formulation === 'acopf') {
 				if (!this.acOpfAvailable || !this.acOpfWasmUrl) {
 					c.solving = false;
-					this.app.error = `${this.caseName(c)}: the experimental AC OPF worker is unavailable`;
+					this.app.error = `${this.caseName(c)}: the experimental AC OPF worker is unavailable in this build. Choose DC OPF or SOCWR instead.`;
 					return;
 				}
 				if (c.perturbed) {
 					c.solving = false;
-					this.app.error = `${this.caseName(c)}: AC OPF currently solves the canonical base case only; reset demand and rating edits first`;
+					this.app.error = `${this.caseName(c)}: AC OPF solves the unedited base case only. Reset the demand and rating edits, then solve again.`;
 					return;
 				}
 				const cancellation = new AbortController();
@@ -2222,7 +2242,7 @@ export class Controller {
 						this.app.previewActive = false;
 						this.app.previewDeltaMw = null;
 						this.app.previewRatingMw = null;
-						this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} has no feasible solution at this demand`;
+						this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} has no feasible solution at this demand. Reduce the demand and solve again.`;
 						return;
 					}
 					// Any other commit failure is unexpected; drop the Study so the next solve
@@ -2430,18 +2450,18 @@ export class Controller {
 		expectedRevision: number,
 		reset = false
 	) => {
-		if (c.solving) throw new Error('Settings cannot change during a calculation');
+		if (c.solving) throw new Error('Settings cannot change during a calculation.');
 		if (c.settings.revision !== expectedRevision)
-			throw new Error('Settings changed; inspect settings before retrying');
+			throw new Error('The settings changed during the check. Review them and try again.');
 		if (
 			!isCalculation(calculation) ||
 			(c instanceof MulticonductorCase
 				? calculation !== 'mc_ac_pf'
 				: !this.formulationAvailable(c, calculation as Formulation))
 		)
-			throw new Error('This calculation is unavailable for the selected case');
+			throw new Error('This calculation is unavailable for the selected case.');
 		if (c instanceof LocalCase && c.declaredFormulation && calculation !== c.declaredFormulation)
-			throw new Error('This PowerIO instance requires its declared calculation');
+			throw new Error('This PowerIO instance requires its declared calculation.');
 		// An undefined value (a cleared field) removes that override, so the
 		// setting falls back to the case baseline or engine default.
 		const overrides = reset
@@ -2463,7 +2483,7 @@ export class Controller {
 		let resolved: ResolvedSettings;
 		if (calculation === 'acopf' && this.acOpfAvailable) {
 			if (Object.keys(overrides).length)
-				throw new Error('The isolated AC OPF backend has no public numerical settings');
+				throw new Error('The isolated AC OPF backend has no public numerical settings.');
 			resolved = {
 				version: 1,
 				calculation,
@@ -2478,7 +2498,9 @@ export class Controller {
 			c.revisionGeneration !== caseRevision ||
 			c.settings.revision !== expectedRevision
 		)
-			throw new Error('Case or settings changed while validating; inspect before retrying');
+			throw new Error(
+				'The case or its settings changed during the check. Review them and try again.'
+			);
 		c.settings.options = {
 			...c.settings.options,
 			[calculation]: { ...resolved.overrides }
@@ -2500,7 +2522,8 @@ export class Controller {
 	/** Explicit solve. A candidate Study replaces the accepted Study only after success. */
 	runSettings = async (c: SolvableCase | MulticonductorCase, signal?: AbortSignal) => {
 		signal?.throwIfAborted();
-		if (c.solving) throw new Error('A calculation is already running for this case');
+		if (c.solving)
+			throw new Error('A calculation is already running for this case. Wait for it to finish.');
 		const snapshot = this.inspectSettings(c);
 		const initialRevision = c.revisionGeneration;
 		if (c instanceof MulticonductorCase) {
@@ -2513,7 +2536,9 @@ export class Controller {
 				c.revisionGeneration !== initialRevision ||
 				c.settings.revision !== snapshot.settings_revision
 			)
-				throw new Error('Case or settings changed before calculation');
+				throw new Error(
+					'The case or its settings changed before the calculation started. Run it again.'
+				);
 			const result = await this.solveMultiCase(
 				c,
 				resolved.effective as McPfOptions,
@@ -2540,12 +2565,15 @@ export class Controller {
 						overrides: c.settings.options[formulation] ?? {}
 					});
 		signal?.throwIfAborted();
-		if (c.solving) throw new Error('A calculation is already running for this case');
+		if (c.solving)
+			throw new Error('A calculation is already running for this case. Wait for it to finish.');
 		if (
 			c.revisionGeneration !== initialRevision ||
 			c.settings.revision !== snapshot.settings_revision
 		)
-			throw new Error('Case or settings changed before calculation');
+			throw new Error(
+				'The case or its settings changed before the calculation started. Run it again.'
+			);
 		const sequence = ++c.solveSeq;
 		const revision = c.revisionGeneration;
 		const settingsRevision = c.settings.revision;
@@ -2558,14 +2586,14 @@ export class Controller {
 		let study: BrowserStudy | null = null;
 		try {
 			const input = await this.ensureStudyInputJson(c);
-			if (!input) throw new Error('This case has no retained PowerIO input');
+			if (!input) throw new Error('This case has no retained PowerIO input. Add the case again.');
 			let solution: Solution;
 			let baseSolution: Solution | null = null;
 			let iterations: typeof c.iterations = [];
 			let solveDetail: string | null = null;
 			if (formulation === 'acopf') {
 				if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
-					throw new Error('AC OPF requires its isolated backend and the unedited base case');
+					throw new Error('AC OPF requires its isolated backend and the unedited base case.');
 				const response = await solveAcOpfModule(this.acOpfWasmUrl, input, cancellation.signal);
 				solution = solveResponseToSolution(response);
 				solveDetail = acOpfSolveDetail(response);
@@ -2593,7 +2621,7 @@ export class Controller {
 				revision !== c.revisionGeneration ||
 				settingsRevision !== c.settings.revision
 			)
-				throw new Error('Case or settings changed during calculation');
+				throw new Error('The case or its settings changed during the calculation. Run it again.');
 			this.disposeStudy(c);
 			c.formulation = formulation;
 			c.settings.accepted = resolved;
@@ -2669,12 +2697,12 @@ export class Controller {
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
 		if (this.collectionImport.open) {
-			this.app.error = 'Finish or close the current collection before opening another';
+			this.app.error = NOTICES.collectionOpen;
 			return;
 		}
 		const release = this.dropBatchGate.enter();
 		if (!release) {
-			this.app.error = 'another file batch is still being parsed';
+			this.app.error = NOTICES.batchBusy;
 			return;
 		}
 		try {
@@ -2706,7 +2734,7 @@ export class Controller {
 	ingestFolder = async (files: FileList | File[]) => {
 		const release = this.dropBatchGate.enter();
 		if (!release) {
-			this.app.error = 'Another file batch is still being parsed';
+			this.app.error = NOTICES.batchBusy;
 			return;
 		}
 		try {
@@ -2729,7 +2757,7 @@ export class Controller {
 			const read = captureDrop(data);
 			const release = this.dropBatchGate.enter();
 			if (!release) {
-				this.app.error = 'Another file batch is still being parsed';
+				this.app.error = NOTICES.batchBusy;
 				return;
 			}
 			void this.openCollection(read)
@@ -2857,7 +2885,7 @@ export class Controller {
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .epc, .pwb, .dss, .pwd, .csv, .json, .geojson)`;
+				this.app.error = `${file.name} is not a case or geographic file. Open a .m, .raw, .aux, .epc, .pwb, .dss, .pwd, .csv, .json or .geojson file.`;
 				continue;
 			}
 			this.app.parsingFile = true;
@@ -2865,7 +2893,7 @@ export class Controller {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				const { module_json, topology, view, ...summary } = await ingestCase(bytes, format);
 				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
-					this.app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
+					this.app.error = `${file.name} was read, but it does not hold a complete network. Add the matching .m or .raw case file.`;
 					continue;
 				}
 				const id = `local-${++this.localSeq}`;
@@ -2900,7 +2928,7 @@ export class Controller {
 		} else {
 			const unmatchedDisplays = displays.filter((display) => !display.consumed);
 			if (unmatchedDisplays.length)
-				this.app.error = `${unmatchedDisplays.map((display) => display.file.name).join(' + ')}: no drawing objects matched the dropped case`;
+				this.app.error = `No drawing objects in ${unmatchedDisplays.map((display) => display.file.name).join(' and ')} matched the case. Check that the drawing belongs to this case.`;
 		}
 	};
 
@@ -3017,7 +3045,7 @@ export class Controller {
 			const result = await ingestJsonDrop(bytes, { retain: true });
 			if (result.kind === 'unknown') return { outcome: 'unrouted', bytes };
 			if (result.kind === 'ambiguous') {
-				this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
+				this.app.error = `${file.name} has markers for both a transmission and a distribution format, so its type is unclear. Remove one set of markers and open it again.`;
 				return { outcome: 'failed' };
 			}
 			if (result.kind === 'transmission') {
@@ -3036,7 +3064,7 @@ export class Controller {
 				this.app.error = null;
 				return { outcome: 'multiconductor', payload: result.payload };
 			}
-			throw new Error('engine returned an unsupported JSON drop result');
+			throw new Error('The engine returned an unsupported result for this JSON file.');
 		} catch (e) {
 			this.app.error = `${file.name}: ${errorText(e)}`;
 			return { outcome: 'failed' };
@@ -3121,7 +3149,8 @@ export class Controller {
 	): Promise<McPfSummary> => {
 		if (signal?.aborted || this.disposed)
 			throw new DOMException('Calculation cancelled', 'AbortError');
-		if (c.solving) throw new Error('A calculation is already running for this case');
+		if (c.solving)
+			throw new Error('A calculation is already running for this case. Wait for it to finish.');
 		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
 		const settingsError = validateMcPfOptions(options);
 		if (settingsError) throw new Error(settingsError);
@@ -3177,7 +3206,7 @@ export class Controller {
 			if (retainedAtStart) input = editedInput = await retainedAtStart.input();
 			if (energizedOnly) {
 				if (!this.mcTransport.prepareMcEnergizedNetwork)
-					throw new Error('Energized-network preparation is unavailable');
+					throw new Error('Energized-network preparation is unavailable.');
 				const prepared = await this.mcTransport.prepareMcEnergizedNetwork(input);
 				const selectedInput = 'input' in prepared ? prepared.input : prepared.module_json;
 				if (editedInput !== selectedInput) releaseMcInput(editedInput);
@@ -3221,8 +3250,8 @@ export class Controller {
 				revision !== c.revisionGeneration ||
 				!this.app.multiCases.includes(c)
 			)
-				throw new Error('The case changed while calculating. Run AC power flow again');
-			if (!result.converged) throw new Error('AC power flow did not converge');
+				throw new Error('The case changed while calculating. Run AC power flow again.');
+			if (!result.converged) throw new Error('AC power flow did not converge.');
 			// A load edit staged against the previous session has nothing to
 			// apply to the fresh operating point; drop its pending flush.
 			if (c.mcEditTimer !== null) {
@@ -3274,8 +3303,8 @@ export class Controller {
 	snapshotMultiCase = async (c: MulticonductorCase): Promise<McStudySnapshot> => {
 		if (c.mcSnapshot) return c.mcSnapshot;
 		const session = c.mcSession;
-		if (!session || !c.result) throw new Error('Run AC power flow before saving its result');
-		if (c.solving) throw new Error('Wait for the calculation before saving its result');
+		if (!session || !c.result) throw new Error('Run AC power flow before saving its result.');
+		if (c.solving) throw new Error('Wait for the calculation before saving its result.');
 		const revision = c.revisionGeneration;
 		const snapshot = await session.snapshot(crypto.randomUUID(), c.label);
 		if (
@@ -3283,7 +3312,7 @@ export class Controller {
 			revision !== c.revisionGeneration ||
 			!this.app.multiCases.includes(c)
 		)
-			throw new Error('The case changed while preparing its result');
+			throw new Error('The case changed while preparing its result.');
 		c.mcSnapshot = snapshot;
 		return snapshot;
 	};
@@ -3430,10 +3459,10 @@ export class Controller {
 	applyMultiGeoLayers = async (c: MulticonductorCase, layers: GeoLayerFile[]) => {
 		if (!layers.length) return;
 		if (this.app.studyView || this.app.activeMulti !== c)
-			throw new Error('Select the matching case before attaching coordinates');
-		if (c.solving) throw new Error('Wait for the calculation before attaching coordinates');
+			throw new Error(NOTICES.selectMatchingCase);
+		if (c.solving) throw new Error('Wait for the calculation before attaching coordinates.');
 		if (!c.mcInput || !this.mcTransport.applyMcGeo)
-			throw new Error('Coordinate attachment is unavailable for this case');
+			throw new Error('Coordinate attachment is unavailable for this case.');
 		const baseInput = c.mcInput;
 		const retainedAtStart = c.mcSession;
 		let snapshot = c.mcSnapshot;
@@ -3449,11 +3478,11 @@ export class Controller {
 			payload = await this.mcTransport.applyMcGeo(next, layer.layer);
 			if (snapshot) {
 				if (!this.mcTransport.applyMcStudyGeo)
-					throw new Error('Saved result coordinates are unavailable in this build');
+					throw new Error('Saved result coordinates are unavailable in this build.');
 				snapshot = await this.mcTransport.applyMcStudyGeo(snapshot, layer.layer);
 			}
 			if (!payload.module_json)
-				throw new Error('Coordinate attachment returned no electrical input');
+				throw new Error('Coordinate attachment returned no electrical input.');
 			next = payload.module_json;
 			matched += payload.report.matched_buses + payload.report.matched_branches;
 			notes.push(
@@ -3463,7 +3492,7 @@ export class Controller {
 			);
 			this.logCoordinates(layer.name, layer.diagnostics, payload.report.notes);
 		}
-		if (!payload || !matched) throw new Error('No coordinates matched the selected case');
+		if (!payload || !matched) throw new Error('No coordinates matched the selected case.');
 		if (
 			this.app.studyView ||
 			this.app.activeMulti !== c ||
@@ -3472,7 +3501,7 @@ export class Controller {
 			c.revisionGeneration !== revision ||
 			c.solving
 		)
-			throw new Error('The selected case changed. Attach the coordinates again');
+			throw new Error(NOTICES.caseChanged);
 		const { graph, ...summary } = payload;
 		if (c.mcEditTimer !== null) {
 			clearTimeout(c.mcEditTimer);
@@ -3513,16 +3542,16 @@ export class Controller {
 		q_var: number
 	) => {
 		if (!c.mcSession) {
-			this.app.error = 'Run AC power flow once before editing loads';
+			this.app.error = 'Run AC power flow once before editing loads.';
 			return;
 		}
 		if (!Number.isFinite(p_w) || !Number.isFinite(q_var)) {
-			this.app.error = 'Load P and Q must be finite numbers';
+			this.app.error = 'Load P and Q must be finite numbers.';
 			return;
 		}
 		const row = c.mcLoadBranches.find((entry) => entry.load === load && entry.branch === branch);
 		if (!row) {
-			this.app.error = `Load ${load} branch ${branch} is unavailable`;
+			this.app.error = `Load ${load} branch ${branch} is unavailable.`;
 			return;
 		}
 		c.mcLoadBranches = c.mcLoadBranches.map((entry) =>
@@ -3698,7 +3727,7 @@ export class Controller {
 		}
 		const api = this.api;
 		if (!api) {
-			this.fail(`${summary.name}: no API configured`);
+			this.fail(noApiNotice(summary.name));
 			return;
 		}
 		this.hostedLoadAbort?.abort();
@@ -3752,7 +3781,7 @@ export class Controller {
 			? { payload: await applyGeo(input, layer) }
 			: await ingestJsonDrop(new TextEncoder().encode(input));
 		if (!parsed.payload || !('topology' in parsed.payload))
-			throw new Error('Study requires a balanced network');
+			throw new Error('Study requires a balanced network.');
 		const c = parsed.payload;
 		const view = c.view ?? {
 			...placeSyntheticTopology(c.topology, { lon: 0, lat: 0 }),
@@ -3775,7 +3804,7 @@ export class Controller {
 	/** Capture a matching cached result without constructing or solving a model. */
 	async captureSavedCase(c: SolvableCase): Promise<SavedCaseCapture> {
 		const base = await this.ensureStudyInputJson(c);
-		if (!base) throw new Error('The case input is unavailable');
+		if (!base) throw new Error('The case input is unavailable.');
 		const detached = c instanceof LocalCase ? this.detachedCaseCaptures.get(c) : undefined;
 		if (
 			detached?.baseInput === base &&
@@ -3973,12 +4002,12 @@ export class Controller {
 		}
 		const studyInputJson = await this.ensureStudyInputJson(c);
 		if (!studyInputJson) {
-			this.app.error = `${this.caseName(c)}: no PowerIO module available to save`;
+			this.app.error = `${this.caseName(c)}: there is no PowerIO module to save. Add the case again.`;
 			return null;
 		}
 		const study = await this.getStudy(c, studyInputJson);
 		if (!study) {
-			this.app.error = `${this.caseName(c)}: the browser study is unavailable`;
+			this.app.error = `${this.caseName(c)}: the browser study is unavailable. Solve the case again, then save.`;
 			return null;
 		}
 		await study.commit(c.id, this.caseDeltas(c), this.caseRatings(c), null);
@@ -4004,7 +4033,7 @@ export class Controller {
 	/** Save the exact DC OPF result with the materialized problem instance it solved. */
 	saveSolutionModule = async (c: SolvableCase): Promise<void> => {
 		if (c.formulation !== 'dcopf') {
-			this.app.error = `${this.caseName(c)}: exact solution modules require the DC OPF formulation`;
+			this.app.error = `${this.caseName(c)}: exact solution modules need a DC OPF result. Choose DC OPF, solve, then save.`;
 			return;
 		}
 		const study = await this.syncedStudy(c);

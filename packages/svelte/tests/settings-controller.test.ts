@@ -40,7 +40,7 @@ it('an input change during asynchronous settings validation prevents a stale pat
 	const pending = ctrl.updateSettings(c, 'acpf', { start: 'case' }, 0);
 	c.revisionGeneration++;
 	finish(resolved);
-	await expect(pending).rejects.toThrow('Case or settings changed');
+	await expect(pending).rejects.toThrow('The case or its settings changed');
 	expect(c.settings.revision).toBe(0);
 	expect(c.settings.calculation).toBeNull();
 	expect(c.formulation).toBe('dcopf');

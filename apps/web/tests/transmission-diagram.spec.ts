@@ -161,14 +161,14 @@ for (const touch of [false, true]) {
 			await expect(inspector).toContainText('0 MW');
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await expect(inspector).toHaveCount(0);
-			const exceptions = diagram.getByText('Exceptions · 1', { exact: true });
+			const exceptions = diagram.getByText('Exceptions (1)', { exact: true });
 			if (touch) await exceptions.tap();
 			else await exceptions.press('Enter');
 			const search = diagram.getByRole('searchbox', { name: 'Search exceptions' });
 			await search.fill('branch 99');
 			await expect(diagram.getByText('No matching exceptions.')).toBeVisible();
 			await search.fill('branch 1');
-			const row = diagram.getByRole('button', { name: /Branch 1 · 1 → 2/ });
+			const row = diagram.getByRole('button', { name: /Branch 1, 1 → 2/ });
 			if (touch) await row.tap();
 			else await row.press('Enter');
 			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeFocused();
@@ -185,14 +185,14 @@ for (const touch of [false, true]) {
 			await expect(economics).toContainText('objective units/MW');
 			await economics.getByLabel('Price scale').selectOption('3');
 			await expect(economics).toContainText('200 objective units/MW');
-			await economics.getByText('Binding thermal limits · 1', { exact: true }).click();
+			await economics.getByText('Binding thermal limits (1)', { exact: true }).click();
 			const binding = economics.getByRole('button', { name: /Branch 1.*marginal relief/ });
 			if (touch) await binding.tap();
 			else await binding.press('Enter');
 			const heading = inspector.getByRole('heading', { name: 'Branch 1' });
 			await expect(heading).toBeFocused();
 			await expect(heading).toBeInViewport({ ratio: 1 });
-			await expect(economics).toContainText('Binding · positive marginal relief');
+			await expect(economics).toContainText('Binding, with positive marginal relief');
 			await expect(economics).toContainText(/Marginal rating relief [1-9]/);
 			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('opf-economics.png') });
@@ -202,11 +202,11 @@ for (const touch of [false, true]) {
 			await expect(transfers).toContainText('0 to 500 MW');
 			await transfers.getByLabel('Width scale').selectOption('100');
 			await expect(transfers).toContainText('0 to 100 MW');
-			await expect(inspector.getByRole('row', { name: /From · bus 1/ })).toContainText('+80 MW');
-			await expect(inspector.getByRole('row', { name: /To · bus 2/ })).toContainText('-80 MW');
+			await expect(inspector.getByRole('row', { name: /From bus 1/ })).toContainText('+80 MW');
+			await expect(inspector.getByRole('row', { name: /To bus 2/ })).toContainText('-80 MW');
 			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toHaveCount(0);
 			await expect(inspector).toContainText('Bus 1 → bus 2');
-			await expect(diagram.getByText('Overloads · 0', { exact: true })).toBeVisible();
+			await expect(diagram.getByText('Overloads (0)', { exact: true })).toBeVisible();
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await transfers.getByText('Largest active transfers', { exact: true }).click();
 			const ranked = transfers.getByRole('button', { name: /Branch 1.*Bus 1 → bus 2.*80 MW/ });
@@ -303,7 +303,7 @@ for (const touch of [false, true]) {
 					await expandResults(page);
 					await expect(panel).toContainText(uniform ? '1.0800–1.0800 pu' : '1.0200–1.0800 pu');
 					const diagram = page.locator('.tx-stage');
-					const exceptions = diagram.getByText(`Exceptions · ${uniform ? 2 : 1}`, { exact: true });
+					const exceptions = diagram.getByText(`Exceptions (${uniform ? 2 : 1})`, { exact: true });
 					await exceptions.click();
 					await expect(
 						diagram.getByRole('listitem').filter({ hasText: 'above maximum' }).first()
@@ -312,7 +312,7 @@ for (const touch of [false, true]) {
 					await panel.locator('details.station summary').click();
 					await expect(panel.getByRole('button', { name: /Worst violation: bus 1/ })).toBeVisible();
 					await expect(
-						panel.getByRole('button', { name: /Maximum: bus 1 · 1.0800 pu/ })
+						panel.getByRole('button', { name: /Maximum: bus 1, 1.0800 pu/ })
 					).toBeVisible();
 					await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
 					await page.evaluate(
@@ -329,7 +329,7 @@ for (const touch of [false, true]) {
 					await panel.getByRole('button', { name: /Worst violation: bus 1/ }).click();
 					await expect(
 						page.getByRole('region', { name: 'Power-flow equipment results' })
-					).toContainText('1.0800 pu');
+					).toContainText('Voltage (pu) 1.0800');
 					if (!touch && !uniform) {
 						const pending = page.waitForEvent('download');
 						await exportPng(toolbar);
@@ -482,7 +482,9 @@ for (const touch of [false, true]) {
 			const warning = page.getByRole('spinbutton', { name: 'Loading warning percent' });
 			await warning.fill('10');
 			await warning.press('Tab');
-			await expect(page.locator('.tx-stage .legend')).toContainText('Grey below 10%');
+			await expect(page.locator('.tx-stage .legend')).toContainText(
+				'Lines are grey below 10% of their rating'
+			);
 			await page.locator('.tx-stage details.settings summary').click();
 			await canvas.press('f');
 			await expect(
@@ -529,7 +531,7 @@ for (const touch of [false, true]) {
 			await page.getByRole('spinbutton', { name: 'Loading warning percent' }).press('Tab');
 			await expect(page.locator('.tx-stage .legend')).toContainText('0.90');
 			await expect(page.locator('.tx-stage .legend')).toContainText('1.10 pu');
-			await expect(page.locator('.tx-stage .legend')).toContainText('against case limits');
+			await expect(page.locator('.tx-stage .legend')).toContainText('its case voltage limits');
 			await expect(page.locator('.tx-stage .legend')).toContainText(
 				'max(|S from|, |S to|) / MVA rating'
 			);
@@ -555,7 +557,7 @@ for (const touch of [false, true]) {
 			await selectView(toolbar, 'Power transfers');
 			const transfer = page.getByRole('region', { name: 'Power transfers' });
 			await expect(transfer).toContainText('AC power flow');
-			const overloads = page.getByText('Overloads · 1', { exact: true });
+			const overloads = page.getByText('Overloads (1)', { exact: true });
 			await expect(overloads).toBeVisible();
 			await overloads.click();
 			await expect(page.getByRole('button', { name: /Branch 1.*overload/ }).first()).toBeVisible();

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import {
 		resolveCartoApiKey,
 		resolveTellegenUiConfig,
@@ -33,6 +34,13 @@
 		children
 	}: Props = $props();
 
+	// A root theme already in the document before this provider runs belongs to the
+	// host's template; leave it alone. Otherwise, with no host or viewer choice, follow
+	// the operating system (styles.css covers first paint for the same case).
+	const hostRootTheme =
+		typeof document === 'undefined' ? undefined : document.documentElement.dataset.theme;
+	const systemDark = new MediaQuery('(prefers-color-scheme: dark)', false);
+
 	// Read once, at mount: `apiBase`, `acOpfWasmUrl` and `loadDefaultCases`
 	// configure the controller this provider owns, and the links and footer are
 	// fixed copy. `theme` and `cartoApiKey` stay live, so a host can switch them
@@ -50,7 +58,10 @@
 			})
 		),
 		get theme() {
-			return app.preferences.theme ?? resolveTheme(theme);
+			if (app.preferences.theme) return app.preferences.theme;
+			if (theme !== undefined) return resolveTheme(theme);
+			if (hostRootTheme === 'dark' || hostRootTheme === 'light') return hostRootTheme;
+			return systemDark.current ? 'dark' : 'light';
 		},
 		get cartoApiKey() {
 			return resolveCartoApiKey(cartoApiKey);
@@ -137,11 +148,12 @@
 	// worker; release them with the provider.
 	onDestroy(() => ctrl.dispose());
 
-	// Hosts may own the root theme themselves. Only manage the attribute when
-	// the host supplied a theme or the user explicitly saved a viewer preference.
-	// A server-rendered host can set it before first paint in its app template.
+	// Hosts may own the root theme themselves. Leave the attribute to a host whose
+	// template set it unless the user explicitly saved a viewer preference; otherwise
+	// write the resolved theme (the host's prop, else the operating system's).
 	$effect(() => {
-		if (theme === undefined && app.preferences.theme === null) return;
+		if (theme === undefined && app.preferences.theme === null && hostRootTheme !== undefined)
+			return;
 		const root = document.documentElement;
 		const previous = root.dataset.theme;
 		root.dataset.theme = config.theme;

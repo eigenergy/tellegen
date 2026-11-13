@@ -337,7 +337,7 @@ describe('hosted distribution catalogue', () => {
 		app.hostedDistributionCases = [summary];
 		ctrl.api = null;
 		await ctrl.activateHostedDistribution(summary.id);
-		expect(app.error).toContain('no API configured');
+		expect(app.error).toContain('has none configured');
 		expect(app.multiCases).toEqual([local]);
 		expect(getCaseModuleJson).not.toHaveBeenCalled();
 		expect(ingest).not.toHaveBeenCalled();
@@ -928,7 +928,7 @@ describe('multiconductor calculation and coordinates', () => {
 		app.activeMultiId = null;
 		await expect(
 			ctrl.applyMultiGeoLayers(c, [{ name: 'other', layer: 'other', diagnostics: [] }])
-		).rejects.toThrow('Select the matching case');
+		).rejects.toThrow('Select the case these coordinates belong to');
 		expect(app.activeMultiId).toBeNull();
 		expect(apply).toHaveBeenCalledTimes(1);
 	});

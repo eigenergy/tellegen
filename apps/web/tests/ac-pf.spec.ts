@@ -66,9 +66,9 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.getByRole('combobox', { name: 'Bus lookup', exact: true }).fill('2');
 	await page.getByRole('combobox', { name: 'Bus lookup', exact: true }).press('Enter');
 	const equipment = page.getByRole('region', { name: 'Power-flow equipment results' });
-	await expect(equipment).toContainText(`${loadBus.voltage_pu.toFixed(4)} pu`);
-	await expect(equipment).toContainText('90 MW');
-	await expect(equipment).toContainText('rad');
+	await expect(equipment).toContainText(`Voltage (pu) ${loadBus.voltage_pu.toFixed(4)}`);
+	await expect(equipment).toContainText('Demand (MW) 90');
+	await expect(equipment).toContainText('Voltage angle (rad)');
 	await expect(page.locator('.error')).toHaveCount(0);
 	await equipment.scrollIntoViewIfNeeded();
 	await page.screenshot({ path: testInfo.outputPath('ac-power-flow.png') });

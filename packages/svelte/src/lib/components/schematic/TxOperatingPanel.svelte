@@ -55,8 +55,8 @@
 				<span class="high">maximum</span> voltage limit
 			</p>{/if}{/if}
 	<div class="counts" aria-label="Operating limit counts">
-		{#if voltageAvailable}<span class:violation={counts.low + counts.high > 0}
-				>↓ {counts.low} low · ↑ {counts.high} high</span
+		{#if voltageAvailable}<span class={[counts.low + counts.high > 0 && 'violation']}
+				>↓ {counts.low} low, ↑ {counts.high} high</span
 			>
 		{:else}<span
 				title={context.voltage
@@ -64,21 +64,22 @@
 					: 'DC power flow treats every voltage as 1 pu, so voltage magnitudes are not solved.'}
 				>{context.voltage ? 'Voltage results unavailable' : 'Voltage not solved (DC)'}</span
 			>{/if}
-		<span class:violation={counts.overload > 0} title="Lines carrying more than their rating."
+		<span
+			class={[counts.overload > 0 && 'violation']}
+			title="Lines carrying more than their rating."
 			>{counts.overload} overload{counts.overload === 1 ? '' : 's'}</span
 		>
-		<span class:warning={counts.warning + counts.atLimit > 0}
-			><span title="{TERMS.warning} The threshold is {warning}%.">{counts.warning} warning</span>
-			· <span title={TERMS.atRating}>{counts.atLimit} at rating</span></span
+		<span class={[counts.warning + counts.atLimit > 0 && 'warning']}
+			><span title="{TERMS.warning} The threshold is {warning}%.">{counts.warning} warning</span>,
+			<span title={TERMS.atRating}>{counts.atLimit} at rating</span></span
 		>
 		<span hidden={brief}
-			>{context.voltage ? `${counts.voltageUnknown} voltage unknown · ` : ''}<span
+			>{context.voltage ? `${counts.voltageUnknown} voltage unknown, ` : ''}<span
 				title={TERMS.loadingUnknown}
-				>{counts.flowMissing} missing flows · {counts.ratingUnknown} unknown ratings</span
-			>
-			·
+				>{counts.flowMissing} missing flows, {counts.ratingUnknown} unknown ratings</span
+			>,
 			<span title={TERMS.outOfService}>{counts.inactive} out of service</span>{counts.disconnected
-				? ` · ${counts.disconnected} de-energized`
+				? `, ${counts.disconnected} de-energized`
 				: ''}</span
 		>
 	</div>
@@ -87,7 +88,8 @@
 		<div class="settings-body">
 			{#if context.voltage}
 				<p>
-					↓ low · ↑ high, against case limits. Faded: missing voltage or limits. × de-energized.
+					↓ marks a bus below and ↑ a bus above its case voltage limits. Faded buses lack a voltage
+					or limits; × marks a de-energized bus.
 				</p>{/if}
 			<p>
 				<span title={TERMS.rating}>Loading</span> is {context.basisText} (<code
@@ -116,8 +118,8 @@
 				it.
 			</p>
 			<p>
-				Grey below {warning}% · amber {warning}–100% · red above 100%. At rating does not mean
-				economically binding.
+				Lines are grey below {warning}% of their rating, amber from {warning}% to 100%, and red
+				above 100%. At rating does not mean economically binding.
 			</p>
 			<p>
 				Unknown or synthesized ratings are faded; out-of-service lines are dashed. Nominal kV is
@@ -134,25 +136,24 @@
 						4
 					)} pu{:else}voltage unavailable{/if}
 				{#if station.worst}<span class="violation">
-						· {station.worst.assessment.state === 'low' ? '↓' : '↑'} bus {station.worst.bus}</span
+						{station.worst.assessment.state === 'low' ? '↓' : '↑'} bus {station.worst.bus}</span
 					>{/if}</summary
 			>
 			<div class="station-values" aria-label="Station voltage range">
 				{#if station.min}<button onclick={() => onselectbus(station.min!.bus)}
-						>Minimum: bus {station.min.bus} · {station.min.value.toFixed(4)} pu</button
+						>Minimum: bus {station.min.bus}, {station.min.value.toFixed(4)} pu</button
 					>{/if}
 				{#if station.max}<button onclick={() => onselectbus(station.max!.bus)}
-						>Maximum: bus {station.max.bus} · {station.max.value.toFixed(4)} pu</button
+						>Maximum: bus {station.max.bus}, {station.max.value.toFixed(4)} pu</button
 					>{/if}
 				{#if station.worst}<button class="violation" onclick={() => onselectbus(station.worst!.bus)}
-						>Worst violation: bus {station.worst.bus} · {station.worst.assessment.exceedance.toFixed(
+						>Worst violation: bus {station.worst.bus}, {station.worst.assessment.exceedance.toFixed(
 							4
 						)} pu {station.worst.assessment.state === 'low'
 							? 'below minimum'
 							: 'above maximum'}</button
 					>{/if}
-				<span>{station.unknown} missing values or limits · {station.disconnected} de-energized</span
-				>
+				<span>{station.unknown} missing values or limits, {station.disconnected} de-energized</span>
 			</div>
 		</details>
 	{/if}
@@ -178,48 +179,60 @@
 	.operating-panel {
 		width: 100%;
 		min-width: 0;
-		font: 11px var(--font-mono);
+		font-family: var(--font-display);
+		font-size: var(--fs-label);
+		line-height: var(--lh-snug);
 	}
 	.counts,
 	.voltage-key {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 12px;
+		gap: var(--space-2xs) var(--space-lg);
 		align-items: center;
 	}
+	.counts,
+	.station-values {
+		font-variant-numeric: tabular-nums;
+	}
+	.voltage-key span {
+		font-family: var(--font-mono);
+		font-size: var(--fs-control);
+		font-variant-numeric: tabular-nums;
+	}
 	p {
-		margin: 3px 0;
+		margin: var(--space-3xs) 0;
 	}
 	.freshness {
-		font-size: 10px;
+		font-size: var(--fs-control);
+		color: var(--text-secondary);
 	}
 	.warning {
-		color: #925b05;
+		color: var(--text-accent);
 	}
 	.violation {
-		color: #be2024;
+		color: var(--text-danger);
 		font-weight: 600;
 	}
 	.counts {
-		margin: 6px 0;
+		margin: var(--space-xs) 0;
 	}
 	details {
 		border-top: 1px solid var(--line);
-		padding-top: 3px;
-		margin-top: 3px;
+		padding-top: var(--space-3xs);
+		margin-top: var(--space-3xs);
 	}
 	summary {
 		cursor: pointer;
-		padding: 4px 0;
+		padding: var(--space-2xs) 0;
 		overflow-wrap: anywhere;
 	}
 	.settings-body,
 	.station-values {
 		max-height: 24vh;
 		overflow: auto;
-		padding: 4px 2px;
+		padding: var(--space-2xs) var(--space-3xs);
 		display: grid;
-		gap: 6px;
+		gap: var(--space-xs);
 	}
 	.voltage-key i {
 		display: inline-block;
@@ -228,17 +241,20 @@
 	}
 	label {
 		display: flex;
-		gap: 6px;
+		gap: var(--space-xs);
 		align-items: center;
 	}
 	input {
 		width: 64px;
 		font: inherit;
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+		text-align: right;
 		background: var(--paper);
 		color: var(--ink);
 		border: 1px solid var(--line);
-		border-radius: 3px;
-		padding: 5px;
+		border-radius: var(--radius-sm);
+		padding: var(--space-2xs);
 	}
 	button {
 		text-align: left;
@@ -246,8 +262,8 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
-		padding: 6px;
+		border-radius: var(--radius-sm);
+		padding: var(--space-xs);
 		cursor: pointer;
 	}
 	@media (pointer: coarse) {

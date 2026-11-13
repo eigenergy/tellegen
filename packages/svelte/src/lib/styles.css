@@ -45,6 +45,8 @@
 	--text-tertiary: #636657;
 	--text-accent: #8a4800;
 	--text-danger: var(--red);
+	/* a result that solved cleanly: the edge mark beside a verdict */
+	--status-ok: var(--neg);
 	--data-pos: var(--pos);
 	--data-neg: var(--neg);
 	--focus-ring: var(--accent);
@@ -163,6 +165,49 @@
 	--elev-tooltip: var(--elev-1);
 	/* the light form derives from --ink-rgb, which would glow here */
 	--shadow-thumb: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+
+/* No theme chosen by the host or the viewer: follow the operating system. The
+   provider then writes the same choice to the attribute after hydration, so this
+   block only covers first paint (no light flash) and hosts without a provider.
+   Keep it in step with the block above. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) {
+		--bg: #0b1420;
+		--paper: #0f1a27;
+		--panel: rgba(10, 20, 31, 0.92);
+		--line: #34465a; /* decorative separators only */
+		--border-strong: #859cb4; /* 6.30:1 against the panel, 3.13:1 against bare #4a4a4a */
+		--ink: #e8eef4; /* 15.3:1 */
+		--ink-dim: #b4c1cd; /* 9.7:1 */
+		--ink-faint: #95a6b6; /* 7.14:1, and 7.02:1 on the opaque --paper of a panel card */
+		--accent: #ffb24d;
+		--accent-bright: #ffc46e; /* 11.4:1 */
+		--accent-soft: rgba(255, 178, 77, 0.14);
+		--red: #ff9f8b; /* 9.0:1 */
+		--pos: #c9a7e0;
+		--neg: #8fd0a4;
+		--bg-rgb: 11 20 32;
+		--ink-rgb: 232 238 244;
+		--accent-rgb: 255 178 77;
+		--paper-rgb: 15 26 39;
+		--text-primary: var(--ink);
+		--text-secondary: var(--ink-dim);
+		--text-tertiary: var(--ink-faint);
+		--text-accent: var(--accent-bright);
+		--text-danger: var(--red);
+		--focus-ring: #8de7f7; /* 12.7:1 */
+		--surface-menu: var(--paper);
+		--diagram-bus-stroke: var(--ink-faint);
+		--mc-ground-stroke: var(--ink-dim);
+		--elev-1: 0 2px 10px rgb(0 0 0 / 0.45);
+		--elev-2: 0 4px 24px rgb(0 0 0 / 0.4);
+		--elev-cue: var(--elev-2);
+		--elev-menu: var(--elev-2);
+		--elev-tooltip: var(--elev-1);
+		/* the light form derives from --ink-rgb, which would glow here */
+		--shadow-thumb: 0 1px 4px rgb(0 0 0 / 0.5);
+	}
 }
 
 * {

@@ -337,7 +337,7 @@ test('CATS links the routed transfer and binding limit lists to the equipment in
 	const readEndpoint = async (end: string) => {
 		// Values are rounded for reading; the exact value stays on the element.
 		const value = inspector
-			.getByRole('row', { name: new RegExp(`^${end} · bus `) })
+			.getByRole('row', { name: new RegExp(`^${end} bus `) })
 			.getByRole('cell')
 			.locator('[data-exact]');
 		return Number((await value.getAttribute('data-exact'))!.replace(' MW', ''));
@@ -355,7 +355,7 @@ test('CATS links the routed transfer and binding limit lists to the equipment in
 	if (binding) {
 		expect(binding.length).toBeGreaterThan(0);
 		await economics
-			.getByText(`Binding thermal limits · ${binding.length}`, { exact: true })
+			.getByText(`Binding thermal limits (${binding.length})`, { exact: true })
 			.press('Enter');
 		await economics
 			.getByRole('button', { name: new RegExp(`^Branch ${binding[0].branch} `) })
@@ -363,7 +363,7 @@ test('CATS links the routed transfer and binding limit lists to the equipment in
 		await expect(
 			inspector.getByRole('heading', { name: `Branch ${binding[0].branch}`, exact: true })
 		).toBeVisible();
-		await expect(economics).toContainText('Binding · positive marginal relief');
+		await expect(economics).toContainText('Binding, with positive marginal relief');
 	} else {
 		await expect(economics).toContainText('Thermal enforcement and marginal relief unavailable');
 	}

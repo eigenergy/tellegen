@@ -63,12 +63,11 @@
 <section class="transfer" aria-label="Power transfers">
 	<TxPanelHead title="Power transfers" {formulation} {context} {lead} view="transfer" {brief} />
 	<p>
-		<span class="blue">Blue line width</span> ·
+		<span class="blue">Blue line width</span> shows
 		<span
 			title="{TERMS.activePower} Each line shows the larger of its two ends' |P| (the ends differ by the losses)."
 			>active power</span
-		>
-		· 0 to {scale} MW
+		>, from 0 to {scale} MW.
 	</p>
 	{#if !brief}<label>
 			Width scale
@@ -77,11 +76,16 @@
 			</select>
 			<span>Lines stop widening at the selected MW.</span>
 		</label>
-		<p>Chevrons show direction close in · Red gauges show overload in percent of rating.</p>
 		<p>
-			{zero} carrying no power · {missing} without a flow value
+			Chevrons show the flow direction when you zoom in. Red gauges show overload as a percentage of
+			rating.
+		</p>
+		<p>
+			{zero}
+			{zero === 1 ? 'line carries' : 'lines carry'} no power, and {missing}
+			{missing === 1 ? 'has' : 'have'} no flow value.
 			{#if dc}
-				· <span title={TERMS.lossless}>lossless (DC)</span>{/if}
+				DC flows are <span title={TERMS.lossless}>lossless</span>.{/if}
 		</p>
 		<p>
 			{hasDispatch
@@ -111,7 +115,7 @@
 								})}
 							>
 								<strong>Branch {branch.id}</strong><span
-									>{transferDirectionText(reading, branch)} · {readable(reading.magnitude, 'MW')
+									>{transferDirectionText(reading, branch)}, {readable(reading.magnitude, 'MW')
 										.text}</span
 								>
 							</button>
@@ -131,13 +135,15 @@
 	.transfer {
 		width: 100%;
 		min-width: 0;
-		font: 11px var(--font-mono);
+		font-family: var(--font-display);
+		font-size: var(--fs-label);
+		line-height: var(--lh-snug);
 	}
 	label {
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 4px 10px;
+		gap: var(--space-2xs) var(--space-md);
 	}
 	strong {
 		color: var(--ink);
@@ -147,39 +153,45 @@
 		font-weight: 600;
 	}
 	p {
-		margin: 5px 0;
+		margin: var(--space-2xs) 0;
 	}
 	details {
 		border-top: 1px solid var(--line);
-		margin-top: 4px;
+		margin-top: var(--space-2xs);
 	}
 	summary {
-		padding: 6px 0;
+		padding: var(--space-xs) 0;
 		cursor: pointer;
 	}
 	ol {
-		margin: 4px 0;
-		padding-left: 24px;
+		margin: var(--space-2xs) 0;
+		padding-left: var(--space-3xl);
 	}
 	li {
-		padding: 2px 0;
+		padding: var(--space-3xs) 0;
 	}
 	li button {
 		width: 100%;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 12px;
+		gap: var(--space-2xs) var(--space-lg);
 		justify-content: space-between;
 		text-align: left;
 	}
+	li button span {
+		font-family: var(--font-mono);
+		font-size: var(--fs-control);
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
 	button,
 	select {
-		padding: 4px 6px;
+		padding: var(--space-2xs) var(--space-xs);
 		font: inherit;
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 	}
 	@media (pointer: coarse) {
