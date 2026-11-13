@@ -6,7 +6,8 @@ import {
 	callTool,
 	describeTool,
 	installWebMcpHarness,
-	type ToolResponse
+	type ToolResponse,
+	congestCase
 } from './fixtures/planning-case';
 
 test('headless tools inspect, query, focus, preview, mutate, and reject a stale replay', async ({
@@ -87,7 +88,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	await expect(page.locator('[data-webmcp-activity="open"]')).not.toBeVisible();
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
-	await expect(page.getByText('Inspect network')).toBeVisible();
+	await expect(
+		page.locator('[data-webmcp-activity="open"]').getByText('Inspect network')
+	).toBeVisible();
 
 	const queried = await callTool(page, 'query_network', {
 		case_id: caseId,
@@ -407,4 +410,61 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				'revise_study_goal'
 			].sort()
 		);
+});
+
+test('an agent call shows the activity ribbon with the Agent panel closed, and the ribbon opens the panel', async ({
+	page
+}) => {
+	await installWebMcpHarness(page);
+	const { caseId } = await congestCase(page);
+	await expect(page.locator('[data-webmcp-activity="open"]')).not.toBeVisible();
+
+	const queried = await callTool(page, 'query_network', {
+		case_id: caseId,
+		element_kind: 'branch',
+		sort_by: 'loading',
+		limit: 2
+	});
+	expect(queried.ok).toBe(true);
+	const ribbon = page.getByTestId('agent-ribbon');
+	await expect(ribbon).toBeVisible();
+	await expect(ribbon).toHaveAttribute('data-status', 'done');
+	await expect(ribbon).toContainText('Query network elements');
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('Returned 2 of 3 branches.');
+
+	// A failure stays on screen with the tool's own sentence.
+	const failed = await callTool(page, 'focus_network', {
+		case_id: 'no-such-case',
+		target: { kind: 'bus', element_id: '1' }
+	});
+	expect(failed.ok).toBe(false);
+	await expect(ribbon).toHaveAttribute('data-status', 'failed');
+	await expect(ribbon).toContainText('Focus network element');
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText(/^The .+\.$/);
+
+	await ribbon.click();
+	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
+	await expect(
+		page.locator('[data-webmcp-activity="open"]').getByText('Focus network element')
+	).toBeVisible();
+
+	// The ribbon leaves on its own once the result has been on screen a while.
+	await expect(ribbon).toHaveCount(0, { timeout: 12_000 });
+});
+
+test('zen mode keeps the ribbon, and the ribbon leaves zen to open the Agent panel', async ({
+	page
+}) => {
+	await installWebMcpHarness(page);
+	await congestCase(page);
+	await page.keyboard.press('ControlOrMeta+k');
+	const dialog = page.getByRole('dialog', { name: 'Command palette' });
+	await dialog.getByRole('combobox').fill('zen');
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await callTool(page, 'inspect_case', {});
+	const ribbon = page.getByTestId('agent-ribbon');
+	await expect(ribbon).toBeVisible();
+	await ribbon.click();
+	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
 });

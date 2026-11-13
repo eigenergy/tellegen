@@ -146,12 +146,12 @@
 	<div class="activity-panel" data-webmcp-activity="open" aria-label="WebMCP activity">
 		<nav aria-label="Agent panel">
 			<button
-				class:active={tab === 'activity'}
+				class={{ active: tab === 'activity' }}
 				aria-pressed={tab === 'activity'}
 				onclick={() => (tab = 'activity')}>Activity</button
 			>
 			<button
-				class:active={tab === 'connect'}
+				class={{ active: tab === 'connect' }}
 				aria-pressed={tab === 'connect'}
 				onclick={() => (tab = 'connect')}>Connect</button
 			>
@@ -160,7 +160,7 @@
 			{#if tab === 'connect'}<AgentGuide {supported} {registrationError} />{:else}
 				<p class="call-count" role="status">
 					{activities.length
-						? `${experiments.length} completed WebMCP calls${activities.some((activity) => !finished(activity)) ? ', working' : ''}`
+						? `${experiments.length} completed WebMCP ${experiments.length === 1 ? 'call' : 'calls'}${activities.some((activity) => !finished(activity)) ? ', working' : ''}`
 						: 'No WebMCP calls yet'}
 				</p>
 				{#if registrationError}
@@ -257,8 +257,10 @@
 								(entry) => entry.id === activity.id
 							)?.predictionCheck}
 							<li
-								class:running={!finished(activity)}
-								class:failed={finished(activity) && !activity.response.ok}
+								class={{
+									running: !finished(activity),
+									failed: finished(activity) && !activity.response.ok
+								}}
 							>
 								<div class="activity-head">
 									<span class="status" aria-hidden="true"></span>
@@ -405,7 +407,7 @@
 		padding: 7px 10px;
 		border: 1px solid var(--line);
 		border-radius: 4px;
-		background: white;
+		background: var(--paper);
 		color: var(--ink);
 	}
 	.welcome {
@@ -585,8 +587,13 @@
 		background: var(--neg);
 	}
 
+	li.running {
+		background: var(--agent-soft);
+		box-shadow: inset 2px 0 0 var(--agent);
+	}
+
 	.running .status {
-		background: var(--accent-bright);
+		background: var(--agent);
 		animation: blink var(--dur-blink) var(--ease-in-out) infinite;
 	}
 
