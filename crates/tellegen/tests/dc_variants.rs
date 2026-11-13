@@ -151,6 +151,40 @@ fn saved_study_edits_and_reload_keep_the_convention() {
 }
 
 #[test]
+fn saved_network_module_keeps_a_typed_instance_convention() {
+    for formula in FORMULAS {
+        let instance = DcOpfInstance::from_network(network())
+            .unwrap()
+            .with_branch_susceptance_formula(formula.into());
+        let text =
+            tellegen::ir::serialize_module(&PioModule::new(PioValue::DcOpfInstance(instance)))
+                .unwrap();
+        let study = Study::new(&text, Problem::DcOpf).unwrap();
+        assert_eq!(study.solution().branch_susceptance_formula, Some(formula));
+        let saved = study.save_module().unwrap();
+        let module = tellegen::ir::deserialize_module(&saved).unwrap();
+        assert!(matches!(module.value(), PioValue::BalancedNetwork(_)));
+        // The legacy default stays implicit: no invented settings record.
+        assert_eq!(
+            module
+                .extensions()
+                .get("tellegen.calculation_settings")
+                .is_some(),
+            formula != F::SeriesSusceptance
+        );
+        let reloaded = Study::new(&saved, Problem::DcOpf).unwrap();
+        assert_eq!(
+            reloaded.solution().branch_susceptance_formula,
+            Some(formula)
+        );
+        assert!(
+            (reloaded.solution().objective.unwrap() - study.solution().objective.unwrap()).abs()
+                < 1e-6
+        );
+    }
+}
+
+#[test]
 fn independent_powermodels_reference_matches_flows_angles_dispatch_prices_and_cost() {
     assert_reference(
         CASE,

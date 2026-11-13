@@ -1418,13 +1418,27 @@ impl Study {
 
     /// Record the settings this Study was given, as the overrides of its
     /// calculation's engine defaults. A Study given no settings records none, so a
-    /// legacy input does not acquire invented provenance.
+    /// legacy input does not acquire invented provenance. A typed DC OPF instance
+    /// whose convention the options inherit (null) contributes that convention
+    /// when it is not the legacy default: a network-valued save drops the
+    /// instance, and the record is then the only place the choice survives.
     fn record_settings(&self, module: &mut PioModule<PioValue>) -> Result<(), String> {
-        if self.calculation_options.is_empty() {
+        let mut options = self.calculation_options.clone();
+        if let StudyInput::DcOpf(instance) = &self.input {
+            if crate::settings::dc_formula(&options)?.is_none() {
+                let formula = crate::DcFormula::try_from(instance.branch_susceptance_formula())?;
+                if formula != crate::DcFormula::default() {
+                    options.insert(
+                        "branch_susceptance_formula".into(),
+                        serde_json::to_value(formula).map_err(|e| e.to_string())?,
+                    );
+                }
+            }
+        }
+        if options.is_empty() {
             return Ok(());
         }
-        let record =
-            crate::settings::record::write(self.formulation.into(), &self.calculation_options)?;
+        let record = crate::settings::record::write(self.formulation.into(), &options)?;
         module
             .insert_extension(crate::settings::record::EXTENSION, record)
             .map(|_| ())
