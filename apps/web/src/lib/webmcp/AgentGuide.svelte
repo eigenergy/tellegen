@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import type { WebMcpBrowserState } from './browser-support.js';
+	import { WEBMCP_TRIAL_ORIGIN, type WebMcpBrowserState } from './browser-support.js';
 
 	let {
 		supported,
 		registrationError,
 		browser = null,
+		pageToolCalls = true,
 		toolCount = 0,
 		callCount = 0
 	}: {
@@ -14,6 +15,8 @@
 		registrationError: string | null;
 		/** Null until the page has checked the browser. */
 		browser?: WebMcpBrowserState | null;
+		/** Whether this browser has getTools and executeTool, which Claude in Chrome uses. */
+		pageToolCalls?: boolean;
 		toolCount?: number;
 		callCount?: number;
 	} = $props();
@@ -41,13 +44,17 @@
 		codexDevtools: `codex mcp add chrome-devtools -- ${devtoolsArgs}`
 	};
 
-	let origin = $state('https://tellegen.dev');
+	let origin = $state(WEBMCP_TRIAL_ORIGIN);
+	const onTrialOrigin = $derived(origin === WEBMCP_TRIAL_ORIGIN);
 	// Claude in Chrome does not list page tools by itself yet, so the prompt
-	// tells it where they are.
+	// tells it where they are and how to call them: executeTool takes the tool
+	// object from getTools and a plain input object (Chrome's Imperative API).
 	const claudePrompt = $derived(
-		`Open ${origin} in Chrome. The page offers WebMCP tools: list them by running ` +
-			'`await document.modelContext.getTools()` in the page, and call them with ' +
-			'`document.modelContext.executeTool()` instead of clicking. ' +
+		`Open ${origin} in Chrome. The page offers WebMCP tools; use them instead of clicking. ` +
+			'List them by running `const tools = await document.modelContext.getTools()` in the page ' +
+			'(each has a name, description and inputSchema). Call one with ' +
+			"`await document.modelContext.executeTool(tools.find((t) => t.name === '<name>'), { ...args })`, " +
+			'passing the tool object and a plain object of arguments, not a name or a JSON string. ' +
 			prompt
 	);
 
@@ -87,17 +94,29 @@
 	const readyText = $derived(
 		callCount > 0
 			? `Your agent has made ${callCount} ${callCount === 1 ? 'call' : 'calls'}. Watch them in Activity.`
-			: `This tab offers ${toolCount || 'its'} ${toolCount === 1 ? 'tool' : 'tools'} to an AI agent. Connect one below, then ask it something. Calls appear in Activity.`
+			: `This tab offers ${toolCount || 'its'} ${toolCount === 1 ? 'tool' : 'tools'} to an AI agent. Pick an agent under Connect your agent, then copy the prompt to it. Calls appear in Activity.`
 	);
 	const brandName = (brand: 'Chrome' | 'Edge' | 'Chromium') =>
 		brand === 'Chromium' ? 'This browser' : brand;
+	const flagHint = $derived.by(() => {
+		if (browser?.kind !== 'flag') return '';
+		if (browser.brand === 'Edge')
+			return `Edge runs its own WebMCP trial, and ${WEBMCP_TRIAL_ORIGIN.slice(8)} has joined only Chrome's, so Edge needs this switch everywhere. Chrome needs none on ${WEBMCP_TRIAL_ORIGIN.slice(8)}.`;
+		if (browser.brand === 'Chromium')
+			return `Brave, Opera and other Chromium browsers need this switch everywhere. Chrome needs none on ${WEBMCP_TRIAL_ORIGIN.slice(8)}.`;
+		return onTrialOrigin
+			? "Chrome's trial should switch this on here by itself. It didn't in this browser (a policy, or a build outside the trial), so the switch does it."
+			: `Chrome needs no switch on ${WEBMCP_TRIAL_ORIGIN.slice(8)}, which is in Chrome's trial; local and preview copies of the site do.`;
+	});
 </script>
 
 {#snippet copyRow(text: string, label: string)}
 	<div class="cmd">
 		<code>{text}</code>
-		<button class="ask-copy" aria-label="Copy {label}" onclick={() => copy(text)}
-			>{copied === text ? 'Copied' : 'Copy'}</button
+		<button
+			class="ask-copy"
+			aria-label={copied === text ? `Copied ${label}` : `Copy ${label}`}
+			onclick={() => copy(text)}>{copied === text ? 'Copied' : 'Copy'}</button
 		>
 	</div>
 {/snippet}
@@ -121,26 +140,32 @@
 				<p>The agents that use these tools run on a computer for now.</p>
 			{/if}
 		</div>
+	{:else if browser?.kind === 'ready'}
+		<div class="status" data-state="pending" role="status" data-testid="webmcp-status">
+			<strong><span class="dot"></span>Getting the tools ready…</strong>
+			<p>Your browser speaks WebMCP. Tellegen is handing it the toolbox now.</p>
+		</div>
 	{:else if browser}
 		<div class="status" data-state="setup" role="status" data-testid="webmcp-status">
 			{#if browser.kind === 'flag'}
 				<strong>One switch away</strong>
 				<p>
-					{brandName(browser.brand)}{browser.version ? ` ${browser.version}` : ''} can run WebMCP, but
-					it's off for this page. Paste this into the address bar, set it to Enabled, then relaunch:
+					{brandName(browser.brand)}{browser.version ? ` ${browser.version}` : ''} has WebMCP, but it's
+					off for this page. Paste this into the address bar, set it to Enabled, then relaunch:
 				</p>
 				{@render copyRow(browser.flagUrl, 'flag address')}
-				<p class="hint">
-					{browser.brand === 'Chrome'
-						? 'Chrome 149 and later need no flag on tellegen.dev itself; local and preview copies of the site do.'
-						: 'Chrome needs no flag on tellegen.dev, if you have it.'}
-				</p>
+				<p class="hint">{flagHint}</p>
 			{:else if browser.kind === 'update' || browser.kind === 'legacy'}
 				<strong>Almost there</strong>
 				<p>
 					{brandName(browser.brand)}{browser.version ? ` ${browser.version}` : ''} is a little too old
-					for WebMCP. Update to version 149 or later (Settings, then About), and reload.
+					for WebMCP. Update to version {browser.minVersion} or later (Settings, then About), and reload.
 				</p>
+				{#if browser.brand !== 'Chrome'}
+					<p class="hint">
+						Updated Chrome works on {WEBMCP_TRIAL_ORIGIN.slice(8)} with no switch to flip.
+					</p>
+				{/if}
 			{:else if browser.kind === 'mobile'}
 				<strong>Agents work from a computer</strong>
 				<p>
@@ -173,33 +198,12 @@
 			<span class="who">This map</span>
 		</div>
 		<p class="hint">
-			It's a new browser standard, in trial in Chrome and Edge. For most people this is a first.
+			It's a brand-new browser standard, on trial in Chrome. If this is your first time meeting it,
+			you're in good company.
 		</p>
 	</details>
 
-	{#if ready}
-		<label for="agent-prompt">Agent prompt</label>
-		<textarea id="agent-prompt" rows="5" readonly value={prompt}></textarea>
-		<div class="actions">
-			<button class="primary" onclick={() => copy(prompt)}
-				>{copied === prompt ? 'Copied' : 'Copy prompt'}</button
-			>
-		</div>
-		<h3>Things to ask</h3>
-		<ul class="asks">
-			{#each asks as ask (ask)}
-				<li>
-					<span>{ask}</span>
-					<button class="ask-copy" aria-label="Copy: {ask}" onclick={() => copy(ask)}
-						>{copied === ask ? 'Copied' : 'Copy'}</button
-					>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-	{#if copyError}<p role="status" class="hint">Select the text and copy it yourself.</p>{/if}
-
-	<h3>Connect your agent</h3>
+	<h3>{ready ? '1. ' : ''}Connect your agent</h3>
 	<div class="routes">
 		<details open>
 			<summary>ChatGPT desktop app <span class="tag">No setup</span></summary>
@@ -209,23 +213,40 @@
 				<li>The <b>Site tools</b> button in the address bar lists them.</li>
 			</ol>
 			<p class="hint">
+				Needs a model that supports Site tools. If the button is missing, check Settings, Browser,
+				Permissions, <b>Enable site tools</b>. Some work and school workspaces don't have it yet.
 				Not in the Codex CLI or IDE extension, and not through the Chrome connector.
 			</p>
 		</details>
 		<details>
 			<summary>Claude Code with Claude in Chrome</summary>
 			<ol>
-				<li>Install the Claude in Chrome extension and sign in to Claude Code with /login.</li>
-				<li>Start Claude Code with Chrome:</li>
+				<li>
+					Install the Claude in Chrome extension (1.0.36 or later) and sign it in to the same Claude
+					account as Claude Code.
+				</li>
+				<li>
+					Start Claude Code with Chrome, and run <code>/chrome</code> to check it's connected:
+				</li>
 			</ol>
 			{@render copyRow(commands.claudeChrome, 'Claude Code command')}
+			<p class="hint">
+				Needs a Claude Pro, Max, Team or Enterprise plan signed in with <code>/login</code>. With an
+				API key, Bedrock or Vertex, Claude Code keeps the browser off.
+			</p>
 			<p>
 				Claude doesn't look for page tools on its own yet, so start with this prompt. It tells
-				Claude where the toolbox is.
+				Claude where the toolbox is and how to open it.
 			</p>
 			<button class="primary" onclick={() => copy(claudePrompt)}
 				>{copied === claudePrompt ? 'Copied' : 'Copy prompt for Claude'}</button
 			>
+			{#if ready && !pageToolCalls}
+				<p class="hint note" data-testid="page-tool-calls-missing">
+					This browser lets the page offer tools but not call them, so this prompt won't work here.
+					Use Chrome DevTools MCP below instead.
+				</p>
+			{/if}
 		</details>
 		<details>
 			<summary>Claude Code, Codex CLI or Cursor with Chrome DevTools MCP</summary>
@@ -233,6 +254,7 @@
 				Add Google's Chrome DevTools MCP server once. It opens its own Chrome window with WebMCP on
 				and gives the agent <code>list_webmcp_tools</code> and <code>execute_webmcp_tool</code>.
 			</p>
+			<p class="hint">Needs Node.js (for <code>npx</code>) and Chrome 150 or later installed.</p>
 			<p class="label">Claude Code</p>
 			{@render copyRow(commands.claudeDevtools, 'Claude Code DevTools command')}
 			<p class="label">Codex CLI</p>
@@ -248,12 +270,39 @@
 		</details>
 	</div>
 
+	{#if ready}
+		<h3>2. Give it this prompt</h3>
+		<label class="visually-hidden" for="agent-prompt">Agent prompt</label>
+		<textarea id="agent-prompt" rows="5" readonly value={prompt}></textarea>
+		<div class="actions">
+			<button class="primary" onclick={() => copy(prompt)}
+				>{copied === prompt ? 'Copied' : 'Copy prompt'}</button
+			>
+		</div>
+		<h3>3. Things to ask</h3>
+		<ul class="asks">
+			{#each asks as ask (ask)}
+				<li>
+					<span>{ask}</span>
+					<button
+						class="ask-copy"
+						aria-label={copied === ask ? `Copied: ${ask}` : `Copy: ${ask}`}
+						onclick={() => copy(ask)}>{copied === ask ? 'Copied' : 'Copy'}</button
+					>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	{#if copyError}<p role="status" class="hint">Select the text and copy it yourself.</p>{/if}
+	<p class="visually-hidden" role="status">{copied ? 'Copied' : ''}</p>
 	<h3>Questions</h3>
 	<dl class="faq">
 		<dt>Do I need to turn on remote debugging?</dt>
 		<dd>
-			No. You only need it to attach Chrome DevTools MCP to the Chrome you already have open (its
-			<code>--autoConnect</code> option). None of the setups above do that.
+			No. Chrome DevTools MCP needs it only to attach to a Chrome you already have open: its
+			<code>--autoConnect</code> option needs remote debugging turned on at
+			<code>chrome://inspect/#remote-debugging</code>, and <code>--browserUrl</code> needs a Chrome started
+			with a debugging port. None of the setups above use either.
 		</dd>
 		<dt>Do I need to add an MCP server?</dt>
 		<dd>
@@ -313,6 +362,26 @@
 	}
 	.status .cmd {
 		margin-bottom: 6px;
+	}
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+		border: 0;
+	}
+	.note {
+		margin-top: 8px;
+	}
+	.status[data-state='pending'] {
+		border-left-color: var(--agent);
+	}
+	.status[data-state='pending'] .dot {
+		background: var(--ink-dim);
 	}
 	.dot {
 		width: 7px;

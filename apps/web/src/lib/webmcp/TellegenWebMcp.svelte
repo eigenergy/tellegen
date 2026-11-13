@@ -5,6 +5,7 @@
 	import { getController } from '@tellegen/svelte';
 	import {
 		ExperimentJournal,
+		modelContextFeatures,
 		registerDocumentTellegenWebMcp,
 		type ExperimentRecord,
 		type TellegenToolActivityEvent
@@ -37,6 +38,8 @@
 	let supported = $state(false);
 	let registrationError = $state<string | null>(null);
 	let browser = $state.raw<WebMcpBrowserState | null>(null);
+	/** Whether the page can list and call its own tools, as Claude in Chrome does. */
+	let pageToolCalls = $state(true);
 	let toolCount = $state(0);
 	let activities = $state<TellegenToolActivityEvent[]>([]);
 
@@ -92,6 +95,13 @@
 		let disposed = false;
 		let handle: Awaited<ReturnType<typeof registerDocumentTellegenWebMcp>> | null = null;
 		browser = detectWebMcpBrowser(readBrowserSignals(document, navigator));
+		if (browser.kind === 'ready') {
+			const features = modelContextFeatures(
+				(document as unknown as { modelContext: Parameters<typeof modelContextFeatures>[0] })
+					.modelContext
+			);
+			pageToolCalls = features.get_tools && features.execute_tool;
+		}
 		const adapter = createTellegenWebMcpAdapter(ctrl, planning, workspace);
 		adapter.studies = createStudyAdapter(workspace);
 		void registerDocumentTellegenWebMcp(document, adapter, {
@@ -148,6 +158,7 @@
 	{supported}
 	{registrationError}
 	{browser}
+	{pageToolCalls}
 	{toolCount}
 	{activities}
 	{planning}

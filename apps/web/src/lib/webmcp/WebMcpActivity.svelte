@@ -20,6 +20,7 @@
 		supported,
 		registrationError,
 		browser = null,
+		pageToolCalls = true,
 		toolCount = 0,
 		activities,
 		planning,
@@ -31,6 +32,7 @@
 		supported: boolean;
 		registrationError: string | null;
 		browser?: WebMcpBrowserState | null;
+		pageToolCalls?: boolean;
 		toolCount?: number;
 		activities: TellegenToolActivityEvent[];
 		planning: PlanningActivityStore;
@@ -58,10 +60,20 @@
 			/* Dismissal applies to this visit. */
 		}
 	}
+	// The welcome pill disappears once the panel opens, taking focus with it,
+	// so "Show me" asks for the Connect tab to take focus when it is attached.
+	let focusRequest = $state(0);
+	let focusHandled = 0;
 	function showConnect() {
 		open = true;
 		tab = 'connect';
+		focusRequest += 1;
 		dismiss();
+	}
+	function takeFocus(node: HTMLButtonElement) {
+		if (focusRequest === focusHandled) return;
+		focusHandled = focusRequest;
+		node.focus();
 	}
 	function show() {
 		open = true;
@@ -156,6 +168,7 @@
 				onclick={() => (tab = 'activity')}>Activity</button
 			>
 			<button
+				{@attach takeFocus}
 				class={{ active: tab === 'connect' }}
 				aria-pressed={tab === 'connect'}
 				onclick={() => (tab = 'connect')}>Connect</button
@@ -166,6 +179,7 @@
 					{supported}
 					{registrationError}
 					{browser}
+					{pageToolCalls}
 					{toolCount}
 					callCount={experiments.length}
 				/>{:else}

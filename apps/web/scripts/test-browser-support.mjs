@@ -50,7 +50,66 @@ test('Chromium before the trial is told to update', () => {
 		detectWebMcpBrowser(
 			signals({ userAgentData: { brands: brands('Google Chrome', 140), mobile: false } })
 		),
-		{ kind: 'update', brand: 'Chrome', version: 140 }
+		{ kind: 'update', brand: 'Chrome', version: 140, minVersion: 149 }
+	);
+});
+
+test("Edge's own trial starts in 150, a release after Chrome's", () => {
+	assert.deepEqual(
+		detectWebMcpBrowser(
+			signals({ userAgentData: { brands: brands('Microsoft Edge', 149), mobile: false } })
+		),
+		{ kind: 'update', brand: 'Edge', version: 149, minVersion: 150 }
+	);
+	assert.equal(
+		detectWebMcpBrowser(
+			signals({ userAgentData: { brands: brands('Microsoft Edge', 150), mobile: false } })
+		).kind,
+		'flag'
+	);
+});
+
+test('navigator.modelContext on a current build is a polyfill, not an old browser', () => {
+	assert.equal(detectWebMcpBrowser(signals({ navigatorModelContext: true })).kind, 'flag');
+	assert.equal(
+		detectWebMcpBrowser(
+			signals({
+				navigatorModelContext: true,
+				userAgentData: { brands: brands('Google Chrome', 'unknown'), mobile: false }
+			})
+		).kind,
+		'legacy'
+	);
+});
+
+test('Android tablets and desktop-mode Android are mobile; desktop-mode iPad Safari is Safari', () => {
+	assert.equal(
+		detectWebMcpBrowser(
+			signals({
+				userAgent:
+					'Mozilla/5.0 (Linux; Android 15; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36',
+				userAgentData: { brands: brands('Google Chrome', 157), mobile: false, platform: 'Android' }
+			})
+		).kind,
+		'mobile'
+	);
+	assert.equal(
+		detectWebMcpBrowser({
+			documentModelContext: false,
+			navigatorModelContext: false,
+			userAgent:
+				'Mozilla/5.0 (Linux; Android 15; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36'
+		}).kind,
+		'mobile'
+	);
+	assert.deepEqual(
+		detectWebMcpBrowser({
+			documentModelContext: false,
+			navigatorModelContext: false,
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Safari/605.1.15'
+		}),
+		{ kind: 'other', browser: 'Safari' }
 	);
 });
 
@@ -110,7 +169,8 @@ test('without client hints the user agent string decides', () => {
 	assert.deepEqual(detectWebMcpBrowser({ ...base, userAgent: chromeUa(120) }), {
 		kind: 'update',
 		brand: 'Chrome',
-		version: 120
+		version: 120,
+		minVersion: 149
 	});
 	const edge = detectWebMcpBrowser({ ...base, userAgent: `${chromeUa(150)} Edg/150.0.0.0` });
 	assert.equal(edge.kind, 'flag');

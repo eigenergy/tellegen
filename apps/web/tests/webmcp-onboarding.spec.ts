@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/page-errors.js';
-import { installWebMcpHarness } from './fixtures/planning-case.js';
+import { callTool, congestCase, installWebMcpHarness } from './fixtures/planning-case.js';
 
 const MAC_CHROME = (version: number) =>
 	`Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.0.0 Safari/537.36`;
@@ -46,18 +46,27 @@ test('recent Chrome without WebMCP gets the flag to copy', async ({ page, contex
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	const status = await asBrowser(page, MAC_CHROME(157));
 	await expect(status).toContainText('One switch away');
-	await expect(status).toContainText('Chrome 157 can run WebMCP');
+	await expect(status).toContainText('Chrome 157 has WebMCP');
+	// The test server is not tellegen.dev, so the hint says the trial origin needs no switch.
+	await expect(status).toContainText('Chrome needs no switch on tellegen.dev');
 	await expect(status.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
 	await status.getByRole('button', { name: 'Copy flag address' }).click();
-	await expect(status.getByRole('button', { name: 'Copy flag address' })).toHaveText('Copied');
+	await expect(status.getByRole('button', { name: 'Copied flag address' })).toHaveText('Copied');
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
 		'chrome://flags/#enable-webmcp-testing'
 	);
 });
 
-test('Edge gets its own flag scheme', async ({ page }) => {
+test('Edge gets its own flag scheme and hears that its trial is separate', async ({ page }) => {
 	const status = await asBrowser(page, `${MAC_CHROME(150)} Edg/150.0.0.0`);
 	await expect(status.locator('code')).toHaveText('edge://flags/#enable-webmcp-testing');
+	await expect(status).toContainText('Edge runs its own WebMCP trial');
+});
+
+test('Edge 149 is asked for 150, where its trial starts', async ({ page }) => {
+	const status = await asBrowser(page, `${MAC_CHROME(149)} Edg/149.0.0.0`);
+	await expect(status).toContainText('Almost there');
+	await expect(status).toContainText('Update to version 150 or later');
 });
 
 test('Chrome before the trial is asked to update', async ({ page }) => {
@@ -89,8 +98,10 @@ test('the setup routes copy their exact commands', async ({ page, context }) => 
 	await page.getByText('Claude Code with Claude in Chrome').click();
 	await page.getByRole('button', { name: 'Copy prompt for Claude' }).click();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
-		/^Open http:\/\/127\.0\.0\.1:\d+ in Chrome\. The page offers WebMCP tools: list them by running `await document\.modelContext\.getTools\(\)`/
+		/^Open http:\/\/127\.0\.0\.1:\d+ in Chrome\. .*`const tools = await document\.modelContext\.getTools\(\)`.*executeTool\(tools\.find\(/
 	);
+	// The test host has registerTool only, so the Claude route says it can't call tools here.
+	await expect(page.getByTestId('page-tool-calls-missing')).toContainText('Chrome DevTools MCP');
 });
 
 test('the introduction opens Connect and the explainer remembers being closed', async ({
@@ -101,8 +112,10 @@ test('the introduction opens Connect and the explainer remembers being closed', 
 	await page.goto('/');
 	const welcome = page.getByRole('complementary', { name: 'New to Tellegen' });
 	await expect(welcome).toContainText('New: AI agents can drive this map');
-	await welcome.getByRole('button', { name: 'Show me' }).click();
+	await welcome.getByRole('button', { name: 'Show me' }).press('Enter');
 	await expect(welcome).toHaveCount(0);
+	// Focus follows the invitation into the panel it opened.
+	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeFocused();
 	await expect(page.getByTestId('webmcp-status')).toContainText('Ready for agents');
 	const intro = page.locator('details.intro');
 	await expect(intro).toHaveAttribute('open', '');
@@ -113,4 +126,58 @@ test('the introduction opens Connect and the explainer remembers being closed', 
 	await expect(welcome).toHaveCount(0);
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.locator('details.intro')).not.toHaveAttribute('open', '');
+});
+
+test('a browser with WebMCP sees a loading card while the tools register', async ({ page }) => {
+	await installWebMcpHarness(page);
+	await page.addInitScript(() => {
+		const modelContext = (document as unknown as { modelContext: { registerTool: Function } })
+			.modelContext;
+		const register = modelContext.registerTool.bind(modelContext);
+		// Hold the first registration back, as a slow browser would.
+		let first = true;
+		modelContext.registerTool = (...args: unknown[]) => {
+			const wait = first ? 1_500 : 0;
+			first = false;
+			return new Promise((done) => setTimeout(done, wait)).then(() => register(...args));
+		};
+	});
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
+	const status = page.getByTestId('webmcp-status');
+	await expect(status).toContainText('Getting the tools ready');
+	await expect(status).toContainText('Ready for agents');
+	// Connect comes first, then the prompt.
+	const headings = await page
+		.getByRole('region', { name: 'Use Tellegen with an agent' })
+		.locator('h3')
+		.allTextContents();
+	expect(headings.slice(0, 3)).toEqual([
+		'1. Connect your agent',
+		'2. Give it this prompt',
+		'3. Things to ask'
+	]);
+});
+
+test('a refused registration shows the error card', async ({ page }) => {
+	await installWebMcpHarness(page, 'inspect_case');
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
+	const status = page.getByTestId('webmcp-status');
+	await expect(status).toContainText("The tools didn't load");
+	await expect(status).toContainText('registration refused for inspect_case');
+	await expect(page.getByLabel('Agent prompt')).toHaveCount(0);
+});
+
+test('a finished call turns the card into Agent connected', async ({ page }) => {
+	await installWebMcpHarness(page);
+	await congestCase(page);
+	await callTool(page, 'inspect_case', {});
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
+	await page.getByRole('button', { name: 'Connect', exact: true }).click();
+	const status = page.getByTestId('webmcp-status');
+	await expect(status).toContainText('Agent connected');
+	await expect(status).toContainText(/Your agent has made \d+ calls?/);
 });
