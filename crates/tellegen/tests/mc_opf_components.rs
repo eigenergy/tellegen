@@ -6,6 +6,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tellegen::{solve_mc_ac_opf_instance, McOpfOptions, McOpfResult};
 
+#[path = "support/legacy_bmopf.rs"]
+mod legacy_bmopf;
+
 fn check_bundle(name: &str, bundle: &str) {
     let input = match bundle {
         "components" => include_str!("data/mc_opf/components.json"),
@@ -33,12 +36,11 @@ fn check_bundle(name: &str, bundle: &str) {
         reference["provenance"]["bmopftools_commit"],
         "a8b52e069bfd4a7a57434c91bc0470ac03cfdd55"
     );
+    let mut case = cases[name].clone();
+    legacy_bmopf::current_load_tokens(&mut case);
+    legacy_bmopf::restate_in_current_conventions(&mut case);
     let module = powerio::parse_with_options(
-        Source::from_memory(
-            "components.bmopf.json",
-            serde_json::to_vec(&cases[name]).unwrap(),
-        )
-        .unwrap(),
+        Source::from_memory("components.bmopf.json", serde_json::to_vec(&case).unwrap()).unwrap(),
         &ParseOptions::default().format("bmopf-json").unwrap(),
     )
     .unwrap();
@@ -46,7 +48,10 @@ fn check_bundle(name: &str, bundle: &str) {
         module
             .diagnostics()
             .iter()
-            .all(|d| d.code() == "READ.BMOPF.TRANSFORMER_OPEN_DELTA_SPLIT"
+            // Every fixture predates the current schema and is reported once
+            // as an older draft.
+            .all(|d| legacy_bmopf::is_legacy_notice(d)
+                || d.code() == "READ.BMOPF.TRANSFORMER_OPEN_DELTA_SPLIT"
                 || (d.code() == "READ.BMOPF.CAPACITOR_LOWERED"
                     && d.severity() == powerio::DiagnosticSeverity::Remark
                     && name.starts_with("capacitor_"))

@@ -245,11 +245,29 @@ mod tests {
         );
     }
 
+    // The fixtures use the older BMOPF draft's lowercase load model tokens.
+    // PowerIO 0.12.0 reads them, but its semantic check compares the token
+    // case-sensitively and asks a lowercase `constant_power` load for `v_nom`.
+    fn current_load_tokens(case: &mut serde_json::Value) {
+        for load in case["load"]
+            .as_object_mut()
+            .into_iter()
+            .flat_map(|loads| loads.values_mut())
+        {
+            if let Some(model) = load.get_mut("model") {
+                if let Some(token) = model.as_str() {
+                    *model = serde_json::Value::from(token.to_ascii_uppercase());
+                }
+            }
+        }
+    }
+
     #[test]
     fn probe_rejects_dropped_sequence_voltage_bounds() {
         let input = include_bytes!("../tests/data/mc_opf/unbalanced.json");
-        assert!(parse_case(input.to_vec()).is_ok());
         let mut case: serde_json::Value = serde_json::from_slice(input).unwrap();
+        current_load_tokens(&mut case);
+        assert!(parse_case(serde_json::to_vec(&case).unwrap()).is_ok());
         case["bus"]["s"]["vsym_min"] = serde_json::json!([100, 0, 100]);
         let error = parse_case(serde_json::to_vec(&case).unwrap()).unwrap_err();
         assert!(
@@ -266,7 +284,9 @@ mod tests {
     fn probe_accepts_lossless_converter_remarks() {
         let cases: serde_json::Value =
             serde_json::from_str(include_str!("../tests/data/mc_opf/components.json")).unwrap();
-        let module = parse_case(serde_json::to_vec(&cases["capacitor_wye"]).unwrap()).unwrap();
+        let mut case = cases["capacitor_wye"].clone();
+        current_load_tokens(&mut case);
+        let module = parse_case(serde_json::to_vec(&case).unwrap()).unwrap();
         assert!(module
             .diagnostics()
             .iter()

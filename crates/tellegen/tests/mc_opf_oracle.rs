@@ -5,15 +5,25 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tellegen::{solve_mc_ac_opf_instance, McOpfOptions};
 
+#[path = "support/legacy_bmopf.rs"]
+mod legacy_bmopf;
+
 fn network() -> powerio_dist::MulticonductorNetwork {
     let text = include_str!("data/mc_opf/unbalanced.json");
+    let mut case: serde_json::Value = serde_json::from_str(text).unwrap();
+    legacy_bmopf::current_load_tokens(&mut case);
+    legacy_bmopf::restate_in_current_conventions(&mut case);
     let module = powerio::parse_with_options(
-        Source::from_memory("unbalanced.bmopf.json", text.as_bytes().to_vec()).unwrap(),
+        Source::from_memory("unbalanced.bmopf.json", serde_json::to_vec(&case).unwrap()).unwrap(),
         &ParseOptions::default().format("bmopf-json").unwrap(),
     )
     .unwrap();
+    // The frozen fixture predates the current BMOPF schema.
     assert!(
-        module.diagnostics().is_empty(),
+        module
+            .diagnostics()
+            .iter()
+            .all(legacy_bmopf::is_legacy_notice),
         "unexpected fixture conversion diagnostics: {:?}",
         module.diagnostics()
     );
