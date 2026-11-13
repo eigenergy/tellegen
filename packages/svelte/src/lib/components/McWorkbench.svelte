@@ -6,6 +6,7 @@
 	import {
 		busState,
 		conductorBars,
+		galvanicZones,
 		LOADING_WARNING,
 		loadingState,
 		magnitudeUnbalance,
@@ -18,6 +19,7 @@
 		tableModel,
 		type GraphInputs,
 		type Issue,
+		type PairZone,
 		type ResultSnapshot,
 		type SearchIndex,
 		type SearchMatch,
@@ -25,7 +27,7 @@
 	} from '../diagram/index.js';
 	import { neutralTerminal, pairLabel, phaseCss } from '../multiconductor.js';
 	import { uiTheme } from './ui-theme.js';
-	import { quantity, quantityRange } from '../format.js';
+	import { quantity, quantityRange, voltsWithPu } from '../format.js';
 
 	let {
 		snapshot,
@@ -178,6 +180,25 @@
 			? snapshot.buses[busIndex.get(selectedBus) as number]
 			: null
 	);
+	/** The selected bus's declared level: the largest rated voltage of a winding or source in its
+	 * galvanic zone, line to line. Zones are found only once a bus is selected. */
+	const zones = $derived(galvanicZones(graph));
+	const busNominal = $derived.by(() => {
+		if (!busSelection || selectedBus === null) return null;
+		const zone = zones.zones[zones.busZone[busIndex.get(selectedBus) ?? -1]];
+		let v = 0;
+		for (const i of zone?.buses ?? []) v = Math.max(v, graph.buses[i].nominal_voltage ?? 0);
+		return v > 0 ? v : null;
+	});
+	/** The per-unit base for a pair: line to line for phase–phase, else the phase voltage. A value
+	 * far from 1 pu means the rating is not this pair's base (a single-phase winding states its own
+	 * voltage), so no per-unit value is shown rather than a wrong one. */
+	function pairVolts(volts: number, zone: PairZone): string {
+		if (busNominal === null) return quantity(volts, 'V');
+		const base = zone === 'phase–phase' ? busNominal : busNominal / Math.sqrt(3);
+		const pu = volts / base;
+		return pu > 0.5 && pu < 1.5 ? voltsWithPu(volts, base) : quantity(volts, 'V');
+	}
 	// Phase–neutral magnitudes also move with neutral shift, which VUF excludes; show both.
 	const busSpread = $derived(
 		busSelection?.unbalance ? magnitudeUnbalance(busSelection.pairs) : null
@@ -365,7 +386,9 @@
 								<i class="mark" style:left="{bar.marker}%"></i>
 							</span>
 							<span class="num"
-								>{quantity(bar.volts, 'V')}{bar.state === 'violation' ? ' !' : ''}</span
+								>{pairVolts(bar.volts, busSelection.pairs[k].zone)}{bar.state === 'violation'
+									? ' !'
+									: ''}</span
 							>
 						</div>
 					{/each}
@@ -603,7 +626,7 @@
 	}
 	.bar {
 		display: grid;
-		grid-template-columns: 44px 1fr 84px;
+		grid-template-columns: 44px 1fr auto;
 		gap: 6px;
 		align-items: center;
 	}

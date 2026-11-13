@@ -68,7 +68,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	const equipment = page.getByRole('region', { name: 'Power-flow equipment results' });
 	await expect(equipment).toContainText(`Voltage (pu) ${loadBus.voltage_pu.toFixed(4)}`);
 	await expect(equipment).toContainText('Demand (MW) 90');
-	await expect(equipment).toContainText('Voltage angle (rad)');
+	await expect(equipment).toContainText(/Voltage angle \(°\) -?[0-9]+\.[0-9]{2}/);
 	await expect(page.locator('.error')).toHaveCount(0);
 	await equipment.scrollIntoViewIfNeeded();
 	await page.screenshot({ path: testInfo.outputPath('ac-power-flow.png') });

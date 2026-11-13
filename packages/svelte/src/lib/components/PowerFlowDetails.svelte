@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
 	import { caseDeltas } from '../display.js';
-	import { fmt } from '../format.js';
+	import { fmt, quantity } from '../format.js';
 
 	const ctrl = getController();
 	const active = $derived(ctrl.activeSolvable);
@@ -30,11 +30,11 @@
 					</div>{/if}
 				{#if voltage != null}<div>
 						<dt>Voltage (pu)</dt>
-						<dd>{voltage.toFixed(4)}</dd>
+						<dd>{quantity(voltage, '', { decimals: 4 })}</dd>
 					</div>{/if}
 				{#if angle != null}<div>
-						<dt>Voltage angle (rad)</dt>
-						<dd>{angle.toFixed(4)}</dd>
+						<dt>Voltage angle (°)</dt>
+						<dd>{quantity((angle * 180) / Math.PI, '', { decimals: 2 })}</dd>
 					</div>{/if}
 			</dl>
 		{:else if branch}
