@@ -7,23 +7,32 @@
 //
 //   generate       SynthSession advance() to the end (synthetic worker)
 //   ingest         synth_session_ingest: the drop-panel payload as JSON text
-//   copy 1         synthetic worker -> page postMessage (structured clone)
+//   copy 1         synthetic worker -> page postMessage of the payload response
 //   page parse     JSON.parse of the payload on the page (BrowserSynthSession.ingest)
 //   copy 2         page -> study worker postMessage of module_json (structured clone)
 //   study build    study_new: wasm Study construction from module_json,
 //                  which parses the module and solves the base case
 //   first solve    study_solution: the retained base-case answer as JSON
-//   solution copy  study worker -> page clone + parse of that answer
+//   solution copy  study worker -> page clone of that response + parse
 //
-// The two copies use structuredClone, the algorithm postMessage uses; the
-// browser's cross-thread hop adds scheduling on top (see the opt-in browser
+// The copies use structuredClone, the algorithm postMessage uses, on the
+// message each hop actually posts (the worker's `{ id, ok, value, worker_ms }`
+// response, the host's request). They must clone that envelope, not the bare
+// string: V8 returns a primitive string from structuredClone without
+// serializing it, which times nothing. The browser's cross-thread hop adds
+// scheduling on top (see the opt-in browser
 // spec `apps/web/tests/synth-handoff-bench.spec.ts`). Layout is not timed: a
 // generated module carries bus coordinates, so the viewer skips the
 // connectivity layout. First paint needs a browser.
 //
 // Usage (after `npm run wasm`):
 //   node packages/engine/scripts/bench-synth-handoff.mjs \
-//     [--buses 3000] [--runs 5] [--json] [--write-module path.pio.json]
+//     [--buses 3000|auto] [--runs 5] [--json] [--write-module path.pio.json]
+//     [--request packages/engine/tests/fixtures/handoff-china-request.json]
+//
+// The default request is a 3,000-bus proxy over eastern China. The China
+// request (`--request .../handoff-china-request.json --buses auto`) is the
+// one MapToGrid sends for China at its default density.
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
@@ -32,12 +41,14 @@ const option = (name) => {
   const at = args.indexOf(`--${name}`);
   return at >= 0 ? args[at + 1] : undefined;
 };
-const buses = Number(option("buses") ?? 3000);
+// `--buses auto` leaves the bus count to the request's density.
+const busesOption = option("buses") ?? "3000";
+const buses = busesOption === "auto" ? null : Number(busesOption);
 const runs = Number(option("runs") ?? 5);
 const writeModule = option("write-module");
 const asJson = args.includes("--json");
-if (!Number.isInteger(buses) || buses < 2)
-  throw new Error("--buses must be an integer >= 2");
+if (buses !== null && (!Number.isInteger(buses) || buses < 2))
+  throw new Error("--buses must be an integer >= 2, or auto");
 if (!Number.isInteger(runs) || runs < 1)
   throw new Error("--runs must be a positive integer");
 
@@ -48,15 +59,22 @@ mod.synth_load_places(
   readFileSync(new URL("../src/data/populated_places.json", import.meta.url)),
 );
 
+const requestPath =
+  option("request") ??
+  new URL("../tests/fixtures/handoff-request.json", import.meta.url);
 const request = JSON.stringify({
-  ...JSON.parse(
-    readFileSync(
-      new URL("../tests/fixtures/handoff-request.json", import.meta.url),
-      "utf8",
-    ),
-  ),
-  target_bus_count: buses,
+  ...JSON.parse(readFileSync(requestPath, "utf8")),
+  ...(buses === null ? {} : { target_bus_count: buses }),
 });
+
+/** The worker's reply to the page, cloned as postMessage clones it. */
+function workerResponse(value) {
+  const message = { id: 1, ok: true, value, worker_ms: 0 };
+  const copy = structuredClone(message);
+  if (copy.value.length !== value.length)
+    throw new Error("cloned response lost its value");
+  return copy;
+}
 
 function time(stages, name, fn) {
   const start = performance.now();
@@ -83,8 +101,8 @@ function once() {
   } finally {
     session.free();
   }
-  const received = time(stages, "copy 1", () => structuredClone(payloadText));
-  const payload = time(stages, "page parse", () => JSON.parse(received));
+  const received = time(stages, "copy 1", () => workerResponse(payloadText));
+  const payload = time(stages, "page parse", () => JSON.parse(received.value));
   const message = time(stages, "copy 2", () =>
     structuredClone({
       op: "study_new",
@@ -100,7 +118,9 @@ function once() {
   );
   try {
     const solution = time(stages, "first solve", () => study.solution());
-    time(stages, "solution copy", () => JSON.parse(structuredClone(solution)));
+    time(stages, "solution copy", () =>
+      JSON.parse(workerResponse(solution).value),
+    );
   } finally {
     study.free();
   }
@@ -127,7 +147,7 @@ const median = (xs) => {
 const names = Object.keys(samples[0].stages);
 const handoff = names.filter((n) => n !== "generate");
 const result = {
-  target_bus_count: buses,
+  target_bus_count: buses ?? "auto",
   runs,
   node: process.version,
   sizes: samples[0].sizes,
