@@ -2,12 +2,15 @@
 //! equations take constant-power loads: each such load is evaluated at the
 //! bus voltage, the flow is solved with it as constant power, and this repeats
 //! until the voltages settle. At the fixed point the loads draw exactly their
-//! voltage-dependent power. The RMS simulation's initialization starts from
-//! this operating point.
+//! voltage-dependent power. The static AC power flow and the RMS
+//! simulation's initialization share it, so both find the same operating
+//! point.
 
 use std::collections::BTreeMap;
 
 use powerio::{BalancedNetwork, Load, LoadVoltageModel};
+
+use crate::api::SolveDiagnostic;
 
 /// Fixed-point rounds before giving up.
 const MAX_ITERATIONS: usize = 30;
@@ -137,9 +140,39 @@ pub(crate) fn settle<T>(
     ))
 }
 
+/// What a solve with voltage-dependent loads reports about them.
+pub(crate) fn diagnostic(network: &BalancedNetwork, iterations: usize) -> Option<SolveDiagnostic> {
+    let dependent = voltage_dependent(network);
+    if dependent.is_empty() {
+        return None;
+    }
+    let mut buses: Vec<usize> = dependent
+        .iter()
+        .map(|&i| network.loads()[i].bus.0)
+        .collect();
+    buses.sort_unstable();
+    buses.dedup();
+    Some(SolveDiagnostic {
+        code: "load_voltage_dependent".to_owned(),
+        message: format!(
+            "{} voltage-dependent (ZIP or exponential) load(s) draw their power at the solved \
+             voltages ({iterations} fixed-point rounds); sensitivities and previews hold them at \
+             that power",
+            dependent.len()
+        ),
+        buses,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Problem, Study};
+
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/case_data.rs"
+    ));
 
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -210,6 +243,106 @@ mod tests {
         };
         *v_nom = Some(230.0);
         assert!(power_at(&load, &v, &BTreeMap::new()).is_err());
+    }
+
+    fn module(case: &str) -> String {
+        let dir = rms_example(case).expect("case data");
+        let module = powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
+        crate::ir::serialize_module(&module).unwrap()
+    }
+
+    /// The study's AC power flow of a case with voltage-dependent loads
+    /// reports them and finds the operating point the dynamic initialization
+    /// starts from.
+    fn matches_dynamics(json: &str, dependent: usize) {
+        let study = Study::new(json, Problem::AcPf).expect("acpf with voltage-dependent loads");
+        let response = study.solution();
+        let note = response
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "load_voltage_dependent")
+            .expect("the voltage-dependent loads are reported");
+        assert!(
+            note.message.starts_with(&format!("{dependent} ")),
+            "{}",
+            note.message
+        );
+        let network = crate::ir::balanced_module(crate::ir::deserialize_module(json).unwrap())
+            .unwrap()
+            .value()
+            .clone();
+        assert_eq!(voltage_dependent(&network).len(), dependent);
+        let (ac, pf, rounds) = crate::rms::init::power_flow(&network).unwrap();
+        assert!(rounds > 1, "{rounds} rounds");
+        let vm = response.vm.as_ref().unwrap();
+        let worst = ac
+            .bus_ids
+            .iter()
+            .zip(&pf.vm)
+            .map(|(id, v)| {
+                let s = vm.iter().find(|b| b.bus == *id).expect("bus in both").value;
+                (s - v).abs()
+            })
+            .fold(0.0_f64, f64::max);
+        assert!(worst < 1e-8, "|V| differs by {worst:e}");
+    }
+
+    /// A ZIP load at the unit's bus, the unit's reactive limits wide (the RMS
+    /// initialization holds generators at their setpoints, the static power
+    /// flow applies the limits): both find the same operating point.
+    #[test]
+    fn ac_power_flow_with_a_zip_load() {
+        let case = &wecc240_smib_cases()[0];
+        let raw = with_load(&case.raw, "102,'1 ',1,   1,   1,    40.000,    10.000,    30.000,     5.000,    20.000,     4.000,   1,1");
+        let raw: String = raw
+            .lines()
+            .map(|l| {
+                if l.starts_with("   102,'1 ',") && l.split(',').count() > 18 {
+                    let mut f: Vec<String> = l.split(',').map(str::to_owned).collect();
+                    f[4] = " 9999.000".into();
+                    f[5] = " -9999.000".into();
+                    f.join(",")
+                } else {
+                    l.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let src = powerio::Source::from_memory("case.raw", raw.into_bytes()).unwrap();
+        let json = crate::ir::serialize_module(&powerio::parse(src).unwrap()).unwrap();
+        matches_dynamics(&json, 1);
+    }
+
+    /// WECC 240's ZIP loads no longer stop the AC power flow; what remains is
+    /// its generators' remote voltage control.
+    #[test]
+    fn wecc240_stops_only_at_remote_voltage_control() {
+        let Err(error) = Study::new(&module("wecc240"), Problem::AcPf) else {
+            panic!("remote voltage control is still refused");
+        };
+        assert!(error.contains("regulating a remote bus"), "{error}");
+    }
+
+    #[test]
+    fn nordic44_ac_power_flow_with_zip_loads() {
+        if rms_example("nordic44").is_none() {
+            return; // data kept outside the repository
+        }
+        matches_dynamics(&module("nordic44"), 13);
+    }
+
+    /// Without voltage-dependent loads the study solves once, as before.
+    #[test]
+    fn constant_power_cases_solve_once() {
+        let case = &wecc240_smib_cases()[0];
+        let src = powerio::Source::from_memory("case.raw", case.raw.as_bytes().to_vec()).unwrap();
+        let json = crate::ir::serialize_module(&powerio::parse(src).unwrap()).unwrap();
+        let study = Study::new(&json, Problem::AcPf).expect("acpf");
+        assert!(study
+            .solution()
+            .diagnostics
+            .iter()
+            .all(|d| d.code != "load_voltage_dependent"));
     }
 
     /// The RMS initialization starts from that operating point and holds it.
