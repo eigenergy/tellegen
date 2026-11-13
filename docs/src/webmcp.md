@@ -23,7 +23,7 @@ tools.
 | `export_case`                 | Write the displayed case through PowerIO to an exchange format or a `.pio.json` module, download it, and report conversion findings. |
 | `inspect_case`                | Read the displayed case or saved state, formulation, solve summary, IDs, units, and revision.                                        |
 | `query_network`               | Return a bounded set of buses or branches by stable identity or solved metric.                                                       |
-| `analyze_sensitivity`         | Compute an LMP sensitivity column for the current DC OPF solution.                                                                   |
+| `analyze_sensitivity`         | Compute an LMP sensitivity column for the displayed state under its formulation (not AC power flow).                                 |
 | `focus_network`               | Select a bus or branch in the visible interface.                                                                                     |
 | `preview_case_update`         | Predict demand or rating edits from cloned state.                                                                                    |
 | `update_case`                 | Solve and commit a bounded batch of demand or rating edits.                                                                          |
@@ -86,7 +86,8 @@ and identifiers come from imported files. No tool sets `consequentialHint`:
 every change stays in the tab and can be reset, and a capacity proposal
 applies only after the user approves it in the interface.
 `inspect_webmcp_registration` sets `debugging`, so agents for end users can
-leave it out.
+leave it out. The web app registers it only in a development build or when the
+page URL has `?debug`.
 
 ## Enabling WebMCP
 
@@ -142,9 +143,17 @@ application consumes neither the proposal nor its approval.
 
 ## Persistence
 
+While an agent works, a ribbon below the header names the running tool and its
+elapsed time, then shows a one-line result or the failure for a few seconds.
+It appears with the Agent panel closed and in zen mode, so people watching see
+each call; clicking it opens the Agent panel. `focus_network`,
+`preview_case_update`, `update_case` and `analyze_sensitivity` also fly the map
+to the bus or branch they work on. Only `focus_network` changes the selection;
+the others move the camera, so the revision an agent holds stays valid.
+
 The activity panel records the last 100 completed tool calls in an experiment
 journal, including validated requests, bounded results, failures, and elapsed
-time. **Export journal** downloads that record with the retained capacity
+time. **Export** downloads that record with the retained capacity
 planning trials and their decisions. The export identifies its browser session
 and reports how many older records were discarded. Invalid requests are omitted
 from the recorded input.
