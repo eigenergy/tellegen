@@ -40,7 +40,6 @@ export const BASE_TOOLS = [
 	'focus_network',
 	'import_case',
 	'inspect_case',
-	'inspect_webmcp_registration',
 	'inspect_settings',
 	'update_settings',
 	'reset_settings',

@@ -89,7 +89,8 @@
 			signal: lifecycle.signal,
 			onActivity: recordActivity,
 			recordValidatedInput: true,
-			debugTool: true,
+			// The registration check is for developers: dev builds, or `?debug`.
+			debugTool: import.meta.env.DEV || new URL(location.href).searchParams.has('debug'),
 			...(PUBLIC_WEBMCP_EXPOSED_TO ? { exposedTo: PUBLIC_WEBMCP_EXPOSED_TO.split(',') } : {}),
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
