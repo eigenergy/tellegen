@@ -28,6 +28,8 @@ mod acopf;
 mod cases;
 mod dc;
 pub(crate) mod islands;
+#[cfg(feature = "sensitivity")]
+pub(crate) mod load_voltage;
 
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
