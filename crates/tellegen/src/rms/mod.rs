@@ -766,7 +766,8 @@ impl RmsSimulation {
                         format!("integration failed at t = {t:.4} s: {e}")
                     } else {
                         format!(
-                            "integration failed at t = {t:.4} s: {e}; the network is split, with an island of {}",
+                            "integration failed at t = {t:.4} s: {e}; for reference, the network is \
+                             split at that time, with an island of {}",
                             islands.join("; an island of ")
                         )
                     }

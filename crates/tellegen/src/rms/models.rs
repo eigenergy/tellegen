@@ -979,6 +979,18 @@ pub(crate) fn machine_from_psse(
 }
 
 pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
+    match model {
+        DynamicModel::Sexs(s) => ordered("SEXS", ("EMIN", s.emin), ("EMAX", s.emax))?,
+        DynamicModel::Esac1a(e) => {
+            ordered("ESAC1A", ("VAMIN", e.vamin), ("VAMAX", e.vamax))?;
+            ordered("ESAC1A", ("VRMIN", e.vrmin), ("VRMAX", e.vrmax))?;
+        }
+        DynamicModel::Exst1(e) => {
+            ordered("EXST1", ("VIMIN", e.vimin), ("VIMAX", e.vimax))?;
+            ordered("EXST1", ("VRMIN", e.vrmin), ("VRMAX", e.vrmax))?;
+        }
+        _ => {}
+    }
     Ok(match model {
         DynamicModel::Sexs(s) => Avr::Sexs {
             ta_tb: s.ta_tb,
@@ -1028,6 +1040,15 @@ pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
 }
 
 pub(crate) fn governor_from_psse(model: &DynamicModel) -> Result<Governor, String> {
+    match model {
+        DynamicModel::Tgov1(g) => ordered("TGOV1", ("VMIN", g.vmin), ("VMAX", g.vmax))?,
+        DynamicModel::Gast(g) => ordered("GAST", ("VMIN", g.vmin), ("VMAX", g.vmax))?,
+        DynamicModel::Hygov(g) => {
+            ordered("HYGOV", ("GMIN", g.gmin), ("GMAX", g.gmax))?;
+            ordered("HYGOV", ("-VELM", -g.velm), ("VELM", g.velm))?;
+        }
+        _ => {}
+    }
     Ok(match model {
         DynamicModel::Tgov1(g) => Governor::Tgov1 {
             r: g.r,
@@ -1073,6 +1094,7 @@ pub(crate) fn stabilizer_from_psse(model: &DynamicModel) -> Result<Stabilizer, S
             if p.remote_bus.is_some() {
                 return Err("IEEEST with a remote input bus is not supported".into());
             }
+            ordered("IEEEST", ("LSMIN", p.lsmin), ("LSMAX", p.lsmax))?;
             if !matches!(p.input_code, 1 | 3) {
                 return Err(format!(
                     "IEEEST input code {} is not supported (1 speed, 3 electrical power)",

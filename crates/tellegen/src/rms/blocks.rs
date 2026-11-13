@@ -103,11 +103,50 @@ pub(crate) fn lead_lag_2nd_mm(
     (y, dx1, dx2)
 }
 
-/// Non-windup PI: `y = clamp(kp u + ki x)`, `ẋ = u` only while unclamped.
+/// Time constant (s) with which a state that a limit stops (a non-windup
+/// PI's integrator, the REGCA1 active current under LVPL) settles onto the
+/// limit: its rate toward the limit is capped at `distance/τ`, continuous in
+/// the state, so a state sliding along a limit has an implicit step.
+pub(crate) const LIMIT_TAU: f64 = 1e-3;
+
+/// Non-windup PI: `y = clamp(kp u + ki x)`; the integrator follows `ẋ = u`
+/// except that it does not drive the output past a limit. Past a limit the
+/// integrator stops while `u` pushes further out and integrates `u` as soon
+/// as it points back inside (conditional integration, as PSS/E). Near a
+/// limit its outward rate is capped at `(limit − y)/(ki τ)` with
+/// `τ` = [`LIMIT_TAU`], so the rate is continuous in the state: the
+/// output can slide along a limit (the proportional path pulling it inside,
+/// the integrator out) and every implicit step has a solution. A rate that
+/// switches between `u` and 0 at the limit has none there.
 pub(crate) fn pi_nonwindup(u: f64, x: f64, kp: f64, ki: f64, y_min: f64, y_max: f64) -> (f64, f64) {
     let y = kp * u + ki * x;
-    let inside = y_min < y && y < y_max;
-    (y.clamp(y_min, y_max), if inside { u } else { 0.0 })
+    let rate = if ki > 0.0 {
+        let k = 1.0 / (ki * LIMIT_TAU);
+        let down = ((y_min - y) * k).min(0.0);
+        let up = ((y_max - y) * k).max(0.0);
+        u.clamp(down, up)
+    } else if y_min < y && y < y_max {
+        u
+    } else {
+        0.0
+    };
+    (y.clamp(y_min, y_max), rate)
+}
+
+/// Checks that the limits `(lo, hi)` of a `model` record are ordered
+/// (`lo ≤ hi`, neither NaN): swapped limits are refused with the record's
+/// parameters named, rather than reaching a clamp that cannot hold them.
+pub(crate) fn ordered(
+    model: &str,
+    (lo_name, lo): (&str, f64),
+    (hi_name, hi): (&str, f64),
+) -> Result<(), String> {
+    if lo <= hi {
+        return Ok(());
+    }
+    Err(format!(
+        "{model} limits are swapped: {lo_name} = {lo} is above {hi_name} = {hi}"
+    ))
 }
 
 /// Rectifier regulation `FEX(I_N)` of IEEE Std 421.5 AC exciters.
@@ -202,6 +241,31 @@ mod tests {
         let (a, b) = exponential_saturation((0.0392, 0.2672)).unwrap();
         assert!((b - 0.0392).abs() < 1e-15);
         assert!((b * 1.2_f64.powf(a) - 0.2672).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pi_integrator_does_not_drive_past_a_limit() {
+        let (kp, ki) = (2.0, 0.5);
+        // Inside, far from the limits: a plain PI.
+        assert_eq!(pi_nonwindup(0.1, 0.0, kp, ki, -1.0, 1.0), (0.2, 0.1));
+        // Past the upper limit and pushed further out: the integrator stops.
+        assert_eq!(pi_nonwindup(1.0, 0.0, kp, ki, -1.0, 1.0), (1.0, 0.0));
+        // Past it, the input pointing back inside: it integrates at once.
+        let (y, rate) = pi_nonwindup(-0.1, 4.0, kp, ki, -1.0, 1.0);
+        assert_eq!((y, rate), (1.0, -0.1));
+        // Below the lower limit, pushed further down: stopped; pushed up:
+        // integrating.
+        assert_eq!(pi_nonwindup(-1.0, 0.0, kp, ki, -1.0, 1.0).1, 0.0);
+        assert_eq!(pi_nonwindup(0.1, -4.0, kp, ki, -1.0, 1.0).1, 0.1);
+        // The rate is continuous across a limit (Lipschitz in `x` with
+        // constant `1/τ`).
+        let at = |x: f64| pi_nonwindup(-0.5, x, kp, ki, 0.0, 1.0).1;
+        let x_lim = 2.0; // y = −1 + 0.5 x = 0
+        for d in [1e-6, 1e-9, 1e-12] {
+            assert!((at(x_lim + d) - at(x_lim - d)).abs() <= 2.0 * d / LIMIT_TAU * (1.0 + 1e-6));
+        }
+        // Without integral gain the old rule: stopped outside.
+        assert_eq!(pi_nonwindup(1.0, 0.0, kp, 0.0, -1.0, 1.0), (1.0, 0.0));
     }
 
     #[test]

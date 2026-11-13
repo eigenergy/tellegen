@@ -612,7 +612,9 @@ impl Stepper {
             let Some((alpha, trial_norm)) = found else {
                 if refresh {
                     return Err(format!(
-                        "the Newton step does not lower the residual {rnorm:.3e}"
+                        "the Newton step does not lower the residual {rnorm:.3e} \
+                         (largest in {})",
+                        largest_residual(sys, r)
                     ));
                 }
                 lu = None;
@@ -710,6 +712,18 @@ impl Step<'_> {
         } else {
             worst
         }
+    }
+}
+
+/// The variable with the largest residual, named (the state that stops a
+/// step, for the error).
+fn largest_residual(sys: &DynSystem, r: &[f64]) -> String {
+    let i = (0..r.len())
+        .max_by(|&a, &b| r[a].abs().total_cmp(&r[b].abs()))
+        .unwrap_or(0);
+    match sys.variable_names().into_iter().nth(i) {
+        Some(name) if !name.is_empty() => name,
+        _ => format!("variable {i}"),
     }
 }
 

@@ -12,7 +12,10 @@
 //! - the trapezoidal rule is of second order (halving the step quarters the
 //!   difference), which states the accuracy of the default step;
 //! - events are checked before a run; small-signal analysis is off unless
-//!   asked for.
+//!   asked for;
+//! - limits a state slides along (HYGOV's gate after a load rejection, the
+//!   REGCA1 low-voltage power limit on WECC 240) do not stop a run; swapped
+//!   limits and a renewable plant regulating a remote bus are refused.
 //!
 //! The cases are built from the shipped WECC 240 data; without it (the
 //! published crate) every test here is skipped.
@@ -769,4 +772,247 @@ fn the_converter_ramps_at_rrpwr() {
     eprintln!("fastest active current rise: {pss:.3} pu/s (PSS/E), {psid:.3} pu/s (PSID)");
     assert!(pss <= 2.0 * (1.0 + 1e-6), "{pss}");
     assert!(psid > 4.0, "{psid}");
+}
+
+/// The WECC 240 network and dynamic data, `dyr` edited by `edit`.
+fn wecc240_with(edit: impl Fn(&str) -> String) -> Option<RmsSimulation> {
+    let dir = shipped_wecc240()?;
+    let net = shipped_wecc240_network()?;
+    let text = edit(&std::fs::read_to_string(dir.join("case.dyr")).unwrap());
+    let dyr = powerio::parse_dyr(&text).unwrap();
+    Some(RmsSimulation::new(&net, &dyr, LoadModel::PowerFlow).unwrap())
+}
+
+/// A HYGOV unit that loses its load (both lines open) closes its gate onto
+/// `GMIN` while its proportional path pulls the PI output back inside: the
+/// output slides along the limit. The PSS/E Model Library sample data. Before,
+/// the integrator's rate switched between `u` and 0 on that limit and no
+/// implicit step had a solution (the run failed near 3.8 s at every step).
+#[test]
+fn hygov_slides_along_its_gate_limit_after_a_load_rejection() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let case = wecc240_smib_cases()
+        .into_iter()
+        .find(|c| c.models.iter().any(|m| m == "HYGOV"))
+        .unwrap();
+    let sample = [
+        0.05, 0.3, 5.0, 0.05, 0.5, 0.2, 1.0, 0.0, 1.0, 1.2, 0.5, 0.08,
+    ];
+    let params: Vec<(usize, f64)> = sample
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i + 1, v))
+        .collect();
+    let dyr = powerio::parse_dyr(&with_params(&case.dyr, "HYGOV", &params)).unwrap();
+    let net = network(&case.raw);
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+    let trip = |ckt: &str| RmsEvent::BranchTrip {
+        time: 1.0,
+        from: 101,
+        to: 102,
+        circuit: ckt.into(),
+    };
+    for dt in [0.01, 0.0025] {
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 10.0,
+                dt,
+                output_step: 0.01,
+                events: vec![trip("1"), trip("2")],
+                ..RmsRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{} at dt = {dt}: {e}", case.id));
+        assert!(r.channels.values().all(|v| v.iter().all(|x| x.is_finite())));
+    }
+}
+
+/// WECC 240: the plant at bus 1032 (REGCA1 with LVPL) rides its moving
+/// low-voltage power limit through a transformer trip, a sustained fault and
+/// a load step. Before, `Ip` froze on the ceiling while the filtered voltage
+/// recovered and every run failed with "the Newton step does not lower the
+/// residual" (the trip at 3.2 s, blamed on the island it leaves).
+#[test]
+#[ignore = "WECC 240 runs of 10 s; run in release (`just rms-validation`)"]
+fn wecc240_runs_through_the_lvpl_ceiling() {
+    let Some(sim) = wecc240_with(str::to_owned) else {
+        return;
+    };
+    let cases = [
+        vec![RmsEvent::BranchTrip {
+            time: 1.0,
+            from: 1004,
+            to: 1034,
+            circuit: "1".into(),
+        }],
+        vec![RmsEvent::BusFault {
+            time: 1.0,
+            bus: 1101,
+            r: 0.0,
+            x: 0.01,
+        }],
+        vec![RmsEvent::LoadChange {
+            time: 1.0,
+            bus: 1101,
+            scale: 50.0,
+        }],
+    ];
+    for events in cases {
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 10.0,
+                dt: 0.0025,
+                output_step: 0.01,
+                events: events.clone(),
+                ..RmsRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{events:?}: {e}"));
+        assert!(r.channels.values().all(|v| v.iter().all(|x| x.is_finite())));
+        if matches!(events[0], RmsEvent::BranchTrip { .. }) {
+            // The island of bus 1034 has no load and accelerates (no
+            // overspeed protection): what the run shows, not a failure.
+            let top = r.channels["omega:1034#C"]
+                .iter()
+                .copied()
+                .fold(0.0, f64::max);
+            assert!(top > 1.5, "{top}");
+        }
+    }
+}
+
+/// `dyr` with the record of `model` replaced by `record` (the unit's bus and
+/// id added in front).
+fn with_record(dyr: &str, model: &str, record: &str) -> String {
+    dyr.split('/')
+        .filter(|r| !r.trim().is_empty())
+        .map(|r| {
+            if r.contains(&format!("'{model}'")) {
+                format!("\n 102 {record} /")
+            } else {
+                format!("{r}/")
+            }
+        })
+        .collect()
+}
+
+/// Swapped limits in the dynamic data (a minimum above its maximum, a
+/// negative rate limit) are refused with the record named. Before, they
+/// reached `f64::clamp` and panicked inside the library.
+#[test]
+fn swapped_limits_are_refused_not_a_panic() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let with = |m: &str| {
+        wecc240_smib_cases()
+            .into_iter()
+            .find(|c| c.models.iter().any(|x| x == m))
+            .unwrap()
+    };
+    let sexs = with("SEXS");
+    let cases: Vec<(&str, String, String)> = vec![
+        (
+            "SEXS",
+            sexs.raw.clone(),
+            with_record(&sexs.dyr, "SEXS", "'SEXS' 1 0.1 10.0 100.0 0.1 5.0 0.0"),
+        ),
+        (
+            "ESAC1A",
+            sexs.raw.clone(),
+            with_record(
+                &sexs.dyr,
+                "SEXS",
+                "'ESAC1A' 1 0.0 0.0 0.0 400.0 0.02 14.5 -14.5 0.8 0.03 1.0 0.2 0.38 1.0 \
+                 4.18 0.1 3.14 0.03 -5.43 6.03",
+            ),
+        ),
+        (
+            "EXST1",
+            sexs.raw.clone(),
+            with_record(
+                &sexs.dyr,
+                "SEXS",
+                "'EXST1' 1 0.02 -0.2 0.2 1.0 10.0 200.0 0.02 5.0 -5.0 0.05 0.0 1.0",
+            ),
+        ),
+        {
+            let c = with("TGOV1");
+            let d = with_params(&c.dyr, "TGOV1", &[(3, 0.0), (4, 1.0)]);
+            ("TGOV1", c.raw.clone(), d)
+        },
+        {
+            let c = with("GAST");
+            let d = with_params(&c.dyr, "GAST", &[(7, 0.0), (8, 1.0)]);
+            ("GAST", c.raw.clone(), d)
+        },
+        {
+            let c = with("HYGOV");
+            let d = with_params(&c.dyr, "HYGOV", &[(6, -0.2)]);
+            ("HYGOV", c.raw.clone(), d)
+        },
+        {
+            let c = with("HYGOV");
+            let d = with_params(&c.dyr, "HYGOV", &[(7, 0.0), (8, 1.0)]);
+            ("HYGOV", c.raw.clone(), d)
+        },
+        {
+            let c = with("IEEEST");
+            let d = with_record(
+                &c.dyr,
+                "IEEEST",
+                "'IEEEST' 1 1 0 1.013 0.013 0.0 0.0 1.013 0.113 3.0 0.02 0.0 0.0 1.65 1.65 \
+                 3.0 -0.1 0.1 0.0 0.0",
+            );
+            ("IEEEST", c.raw.clone(), d)
+        },
+    ];
+    for (model, raw, dyr) in cases {
+        let dyr = powerio::parse_dyr(&dyr).unwrap_or_else(|e| panic!("{model}: {e}"));
+        let net = network(&raw);
+        let e = match RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance) {
+            Ok(sim) => match sim.run(&RmsRequest {
+                t_end: 0.1,
+                ..RmsRequest::default()
+            }) {
+                Ok(_) => panic!("{model}: swapped limits accepted"),
+                Err(e) => e,
+            },
+            Err(e) => e,
+        };
+        assert!(
+            e.contains("generator 102-1") && e.contains(&format!("{model} limits are swapped")),
+            "{model}: {e}"
+        );
+    }
+}
+
+/// A renewable plant whose controllers regulate another bus (`IREG`) is
+/// held at its power flow output with a note, not simulated as regulating
+/// its own terminal.
+#[test]
+fn a_plant_regulating_a_remote_bus_is_held_with_a_note() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let case = smib_case("smib_regca1_reecb1_repca1");
+    let net = network(&case.raw);
+    for model in ["REECB1", "REPCA1"] {
+        let dyr = powerio::parse_dyr(&with_params(&case.dyr, model, &[(1, 101.0)])).unwrap();
+        let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+        let r = sim
+            .run(&RmsRequest {
+                t_end: 0.01,
+                ..RmsRequest::default()
+            })
+            .unwrap();
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.contains("held at its power flow output")
+                    && n.contains(&format!("{model} regulates bus 101"))),
+            "{model}: {:?}",
+            r.notes
+        );
+    }
 }

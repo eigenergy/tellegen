@@ -584,6 +584,38 @@ pub(crate) struct DynSystem {
 }
 
 impl DynSystem {
+    /// Names of every global state, `bus:quantity` for buses and
+    /// `G<bus>[ 'id'].<state>` for devices.
+    pub(crate) fn variable_names(&self) -> Vec<String> {
+        let mut names = vec![String::new(); self.nx];
+        for (b, number) in self.bus_numbers.iter().enumerate() {
+            names[b] = format!("bus {number} Vr");
+            names[self.n + b] = format!("bus {number} Vi");
+        }
+        for d in &self.devices {
+            let tag = if d.machine_id == "1" {
+                format!("G{}", d.bus_number)
+            } else {
+                format!("G{} '{}'", d.bus_number, d.machine_id)
+            };
+            for (k, s) in d.state_names().into_iter().enumerate() {
+                names[d.offset + k] = format!("{tag} {s}");
+            }
+        }
+        for h in &self.held {
+            let Some(p) = &h.plant else { continue };
+            let tag = if h.machine_id == "1" {
+                format!("R{}", h.bus_number)
+            } else {
+                format!("R{} '{}'", h.bus_number, h.machine_id)
+            };
+            for (k, s) in p.state_names().into_iter().enumerate() {
+                names[h.offset + k] = format!("{tag} {s}");
+            }
+        }
+        names
+    }
+
     /// Rebuild the admittance matrix after a topology or load change.
     pub(crate) fn rebuild_ybus(&mut self) {
         self.epoch += 1;

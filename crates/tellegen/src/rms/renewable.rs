@@ -39,6 +39,16 @@
 //! - Every first-order block is written in mass-matrix form (`T ẏ = u − y`),
 //!   so a zero time constant makes the block algebraic instead of dividing by
 //!   zero. With nonzero time constants the equations are the same.
+//! - The non-windup PI ([`super::blocks::pi_nonwindup`]) integrates while its
+//!   input points back inside a limit, and its rate is continuous at the
+//!   limit; 0.16.2 stops the integrator whenever the output is limited.
+//! - LVPL: below the ceiling the rising rate of `Ip` is capped at
+//!   `(LVPL − Ip)/τ` ([`super::blocks::LIMIT_TAU`]), so it is continuous in
+//!   `Ip` at the ceiling; 0.16.2 switches it to zero there, which leaves an
+//!   implicit step without a solution while `Ip` rides a rising ceiling.
+//!   Above the ceiling `Ip` holds, as in 0.16.2.
+//! - `IREG` (REECB1, REPCA1) must be 0 or the plant's bus, and limits must
+//!   be ordered; otherwise the plant is refused (and held).
 //! - The lead-lag state starts at its steady state `(1 − T_ft/T_fv) Q`, and
 //!   with `Ref_Flag = 1` the voltage reference is the compensated voltage at
 //!   the operating point; 0.16.2 starts both at values that are only steady
@@ -49,6 +59,7 @@
 //! the plant's remote branch flow are not modelled, as in
 //! PowerSimulationsDynamics.jl.
 
+use super::blocks::{ordered, pi_nonwindup, LIMIT_TAU};
 use super::system::C64;
 
 /// Lower bound of a voltage divisor (PowerSimulationsDynamics.jl's
@@ -173,6 +184,20 @@ fn flag(v: f64, name: &str, allowed: &[u8]) -> Result<u8, String> {
     Ok(f as u8)
 }
 
+/// The regulated bus `IREG` of a REECB1 or REPCA1 record: 0 or the plant's
+/// own bus `bus`. A remote regulated bus is refused: the controllers measure
+/// the plant's terminal, and a plant simulated as regulating its own
+/// terminal when the data names another bus would be wrong without a word.
+fn local_regulation(model: &str, ireg: f64, bus: usize) -> Result<(), String> {
+    if ireg == 0.0 || ireg == bus as f64 {
+        return Ok(());
+    }
+    Err(format!(
+        "{model} regulates bus {ireg} (IREG), not the plant's own bus {bus}: \
+         remote voltage regulation is not supported"
+    ))
+}
+
 fn numbers(model: &str, tokens: &[String], arity: usize) -> Result<Vec<f64>, String> {
     if tokens.len() != arity {
         return Err(format!(
@@ -201,8 +226,24 @@ impl Regca1 {
     pub(crate) fn from_tokens(tokens: &[String]) -> Result<Self, String> {
         let p = numbers("REGCA1", tokens, 15)?;
         let v = |i: usize| p[i - 1];
+        let lvpl_sw = flag(v(1), "REGCA1 LVPLSW", &[0, 1])? == 1;
+        // The two gains divide by these differences.
+        if lvpl_sw && !(v(5) < v(4)) {
+            return Err(format!(
+                "REGCA1 Zerox = {} must be below Brkpt = {}",
+                v(5),
+                v(4)
+            ));
+        }
+        if !(v(9) < v(8)) {
+            return Err(format!(
+                "REGCA1 Lvpnt0 = {} must be below Lvpnt1 = {}",
+                v(9),
+                v(8)
+            ));
+        }
         Ok(Self {
-            lvpl_sw: flag(v(1), "REGCA1 LVPLSW", &[0, 1])? == 1,
+            lvpl_sw,
             t_g: v(2),
             rrpwr: v(3),
             brkpt: v(4),
@@ -225,10 +266,22 @@ impl Regca1 {
 impl Reecb1 {
     /// From the 30 DYR values (`IREG, PFFLAG, VFLAG, QFLAG, PQFLAG, Vdip,
     /// Vup, Trv, dbd1, dbd2, Kqv, Iqh1, Iql1, Vref0, Tp, Qmax, Qmin, Vmax,
-    /// Vmin, Kqp, Kqi, Kvp, Kvi, Tiq, dPmax, dPmin, Pmax, Pmin, Imax, Tpord`).
-    pub(crate) fn from_tokens(tokens: &[String]) -> Result<Self, String> {
+    /// Vmin, Kqp, Kqi, Kvp, Kvi, Tiq, dPmax, dPmin, Pmax, Pmin, Imax, Tpord`)
+    /// of the plant at `bus`. `IREG` must be 0 or `bus`.
+    pub(crate) fn from_tokens(tokens: &[String], bus: usize) -> Result<Self, String> {
         let p = numbers("REECB1", tokens, 30)?;
         let v = |i: usize| p[i - 1];
+        local_regulation("REECB1", v(1), bus)?;
+        for (lo, hi) in [
+            (("Iql1", v(13)), ("Iqh1", v(12))),
+            (("Qmin", v(17)), ("Qmax", v(16))),
+            (("Vmin", v(19)), ("Vmax", v(18))),
+            (("dPmin", v(26)), ("dPmax", v(25))),
+            (("Pmin", v(28)), ("Pmax", v(27))),
+            (("0", 0.0), ("Imax", v(29))),
+        ] {
+            ordered("REECB1", lo, hi)?;
+        }
         let pf_flag = flag(v(2), "REECB1 PFFLAG", &[0, 1])?;
         if pf_flag == 1 {
             return Err("REECB1 with PFFLAG = 1 (power factor control) is not supported".into());
@@ -268,9 +321,10 @@ impl Repca1 {
     /// From the 34 DYR values (`IREG, from, to, circuit, VCFlag, RefFlag,
     /// Fflag, Tfltr, Kp, Ki, Tft, Tfv, Vfrz, Rc, Xc, Kc, emax, emin, dbd1,
     /// dbd2, Qmax, Qmin, Kpg, Kig, Tp, fdbd1, fdbd2, femax, femin, Pmax,
-    /// Pmin, Tlag, Ddn, Dup`). The regulated bus and the monitored branch
-    /// must be the plant's own (0): a remote branch flow is not modelled.
-    pub(crate) fn from_tokens(tokens: &[String]) -> Result<Self, String> {
+    /// Pmin, Tlag, Ddn, Dup`) of the plant at `bus`. The regulated bus must be
+    /// 0 or `bus`, and the monitored branch none (0, 0): remote regulation and
+    /// a remote branch flow are not modelled.
+    pub(crate) fn from_tokens(tokens: &[String], bus: usize) -> Result<Self, String> {
         if tokens.len() != 34 {
             return Err(format!(
                 "REPCA1 states {} parameters, the PSS/E schema has 34",
@@ -282,6 +336,15 @@ impl Repca1 {
         t[3] = "0".into();
         let p = numbers("REPCA1", &t, 34)?;
         let v = |i: usize| p[i - 1];
+        local_regulation("REPCA1", v(1), bus)?;
+        for (lo, hi) in [
+            (("emin", v(18)), ("emax", v(17))),
+            (("Qmin", v(22)), ("Qmax", v(21))),
+            (("femin", v(29)), ("femax", v(28))),
+            (("Pmin", v(31)), ("Pmax", v(30))),
+        ] {
+            ordered("REPCA1", lo, hi)?;
+        }
         if v(2) != 0.0 || v(3) != 0.0 {
             return Err(format!(
                 "REPCA1 monitoring branch {}-{}: a remote branch flow is not supported",
@@ -333,14 +396,6 @@ fn deadband(x: f64, low: f64, high: f64) -> f64 {
     }
 }
 
-/// `pi_block_nonwindup`: the clamped output and the integrator's rate
-/// (stopped while the unclamped output is at or beyond a limit).
-fn pi_nonwindup(u: f64, x: f64, kp: f64, ki: f64, lo: f64, hi: f64) -> (f64, f64) {
-    let y = kp * u + ki * x;
-    let rate = if lo < y && y < hi { u } else { 0.0 };
-    (y.clamp(lo, hi), rate)
-}
-
 /// Lead-lag `K (1 + s T1)/(1 + s T2)`: output and the mass-matrix row
 /// `T2 ẋ = K (1 − T1/T2) u − x`.
 fn lead_lag(u: f64, x: f64, k: f64, t1: f64, t2: f64) -> (f64, f64) {
@@ -382,18 +437,17 @@ fn parts(repc: &Repca1, reec: &Reecb1) -> [usize; 4] {
     [active, reactive, 2, 3]
 }
 
-/// Converter currents from its states: `(I_cnv, Ip_sat, Ip_binary)` with
-/// `I_cnv` in the network frame, plant base.
-fn converter_current(regc: &Regca1, ip: f64, iq: f64, vmeas: f64, v: C64) -> (C64, f64, f64) {
+/// Converter currents from its states: `(I_cnv, LVPL)` with `I_cnv` in the
+/// network frame, plant base, and the low-voltage power limit on `Ip`
+/// (infinite with `LVPLSW = 0`). The active current is `min(Ip, LVPL)`.
+fn converter_current(regc: &Regca1, ip: f64, iq: f64, vmeas: f64, v: C64) -> (C64, f64) {
     let vt = v.norm();
-    let (mut ip_sat, mut binary) = (ip, 1.0);
-    if regc.lvpl_sw {
-        let lvpl = lvpl_gain(vmeas, regc.zerox, regc.brkpt, regc.lvpl1);
-        if ip > lvpl {
-            ip_sat = lvpl;
-            binary = 0.0;
-        }
-    }
+    let lvpl = if regc.lvpl_sw {
+        lvpl_gain(vmeas, regc.zerox, regc.brkpt, regc.lvpl1)
+    } else {
+        f64::INFINITY
+    };
+    let ip_sat = ip.min(lvpl);
     let g_lv = lv_gain(vt, regc.lv_pnt0, regc.lv_pnt1, regc.psid_lv_gain);
     // High-voltage reactive current management (REGC_A): above `Volim` the
     // injected reactive current falls by `Khv (V − Volim)`, down to `Iolim`
@@ -411,8 +465,7 @@ fn converter_current(regc: &Regca1, ip: f64, iq: f64, vmeas: f64, v: C64) -> (C6
     let (s, c) = v.im.atan2(v.re).sin_cos();
     (
         C64::new(id_cnv * c - iq_cnv * s, id_cnv * s + iq_cnv * c),
-        ip_sat,
-        binary,
+        lvpl,
     )
 }
 
@@ -471,7 +524,7 @@ impl Plant {
     /// voltage `v`: the converter current less `V/Z_source`.
     pub(crate) fn output_current(&self, x: &[f64], v: C64) -> C64 {
         let k = self.n_states();
-        let (i_cnv, _, _) = converter_current(&self.regc, x[k - 3], x[k - 2], x[k - 1], v);
+        let (i_cnv, _) = converter_current(&self.regc, x[k - 3], x[k - 2], x[k - 1], v);
         i_cnv - v / C64::new(self.r_source, self.x_source)
     }
 
@@ -493,7 +546,7 @@ impl Plant {
         // Converter currents from the states (PowerSimulationsDynamics.jl's
         // `_update_inner_vars!`): the plant controller measures them.
         let (ip, iq, vmeas) = (xc[0], xc[1], xc[2]);
-        let (i_cnv, ip_sat, ip_binary) = converter_current(regc, ip, iq, vmeas, v);
+        let (i_cnv, lvpl) = converter_current(regc, ip, iq, vmeas, v);
         let s_cnv = v * i_cnv.conj();
         let (p_elec, q_elec) = (s_cnv.re, s_cnv.im);
         let vt_filt = xi[0];
@@ -582,6 +635,13 @@ impl Plant {
         // `psid_ramp`, PowerSimulationsDynamics.jl 0.16.2's limit on the
         // lag's error instead (an effective rate `Rrpwr/Tg`). With `Tg = 0`
         // the currents follow their commands (algebraic; no ramp).
+        // LVPL caps the active current (`converter_current`). With a lag,
+        // `Ip` holds above the ceiling, as in PowerSimulationsDynamics.jl
+        // 0.16.2, but below it its rising rate is capped at `(LVPL − Ip)/τ`
+        // rather than switched to zero at the ceiling: `Ip` can ride a
+        // recovering ceiling, where a switched rate leaves the implicit step
+        // without a solution. Algebraic (`Tg = 0`), the state
+        // is the command and the cap on the output alone suffices.
         if regc.t_g < f64::EPSILON {
             fc[0] = ip_cmd - ip;
             fc[1] = iq_cmd - iq;
@@ -592,7 +652,11 @@ impl Plant {
             } else {
                 (-k * regc.rrpwr, f64::INFINITY)
             };
-            fc[0] = ip_binary * (ip_cmd - ip_sat).clamp(rp_dn, rp_up);
+            let ceiling = (regc.t_g * (lvpl - ip) / LIMIT_TAU).max(0.0);
+            let rate = (ip_cmd - ip).clamp(rp_dn, rp_up).min(ceiling);
+            // Above the ceiling `Ip` holds (a falling `Ip` moves away from
+            // the ceiling, so this switch has no sliding mode).
+            fc[0] = if ip > lvpl { rate.max(0.0) } else { rate };
             let (rq_dn, rq_up) = if self.q_ref_converter >= 0.0 {
                 (f64::NEG_INFINITY, k * regc.iqr_max)
             } else {
@@ -751,21 +815,119 @@ mod tests {
         assert!((q(-1.5, 1.4) + 1.5).abs() < 1e-12);
     }
 
+    const REGCA1: &str = "1 0.02 10.0 0.9 0.4 1.22 1.2 0.9 0.5 -1.3 0.02 0.0 100.0 -100.0 0.7";
+    const REECB1: &str = "0 0 1 0 0 -99.0 99.0 0.02 0.0 0.0 0.0 1.1 -1.1 0.0 0.05 0.44 -0.44 1.05 0.9 0.0 0.01 10.0 60.0 0.02 99.0 -99.0 1.0 0.0 1.11 0.02";
+    const REPCA1: &str = "0 0 0 '0' 0 0 1 0.02 18.0 5.0 0.0 0.05 0.0 0.0 0.0 0.02 0.1 -0.1 -1.0 1.0 0.43 -0.43 1.0 0.05 0.25 -1.0 1.0 99.0 -99.0 1.0 0.0 0.1 0.0 0.0";
+
+    /// `text` with its 1-based parameter `i` set to `value`.
+    fn set(text: &str, i: usize, value: &str) -> Vec<String> {
+        let mut t = tok(text);
+        t[i - 1] = value.into();
+        t
+    }
+
+    /// A regulated bus (`IREG`) other than the plant's own is refused, in
+    /// REECB1 and REPCA1; 0 and the own bus are local.
+    #[test]
+    fn a_remote_regulated_bus_is_refused() {
+        for ireg in ["0", "1032"] {
+            assert!(Reecb1::from_tokens(&set(REECB1, 1, ireg), 1032).is_ok());
+            assert!(Repca1::from_tokens(&set(REPCA1, 1, ireg), 1032).is_ok());
+        }
+        let e = Reecb1::from_tokens(&set(REECB1, 1, "1031"), 1032).unwrap_err();
+        assert!(e.contains("REECB1 regulates bus 1031"), "{e}");
+        let e = Repca1::from_tokens(&set(REPCA1, 1, "1031"), 1032).unwrap_err();
+        assert!(e.contains("REPCA1 regulates bus 1031"), "{e}");
+    }
+
+    /// Swapped limits are refused with the parameters named, not passed to
+    /// a clamp that panics.
+    #[test]
+    fn swapped_limits_are_refused() {
+        let swap = |text: &str, (i, a): (usize, &str), (j, b): (usize, &str)| {
+            let mut t = set(text, i, a);
+            t[j - 1] = b.into();
+            t
+        };
+        for (lo, hi, name) in [
+            ((13, "0.5"), (12, "-0.5"), "Iql1"),
+            ((17, "0.4"), (16, "-0.4"), "Qmin"),
+            ((19, "1.1"), (18, "0.9"), "Vmin"),
+            ((26, "1.0"), (25, "-1.0"), "dPmin"),
+            ((28, "1.0"), (27, "0.0"), "Pmin"),
+        ] {
+            let e = Reecb1::from_tokens(&swap(REECB1, lo, hi), 1032).unwrap_err();
+            assert!(e.contains("swapped") && e.contains(name), "{e}");
+        }
+        assert!(Reecb1::from_tokens(&set(REECB1, 29, "-1.0"), 1032)
+            .unwrap_err()
+            .contains("Imax"));
+        for (lo, hi, name) in [
+            ((18, "0.1"), (17, "-0.1"), "emin"),
+            ((22, "0.43"), (21, "-0.43"), "Qmin"),
+            ((29, "99.0"), (28, "-99.0"), "femin"),
+            ((31, "1.0"), (30, "0.0"), "Pmin"),
+        ] {
+            let e = Repca1::from_tokens(&swap(REPCA1, lo, hi), 1032).unwrap_err();
+            assert!(e.contains("swapped") && e.contains(name), "{e}");
+        }
+        let e = Regca1::from_tokens(&swap(REGCA1, (4, "0.4"), (5, "0.9"))).unwrap_err();
+        assert!(e.contains("Zerox"), "{e}");
+        let e = Regca1::from_tokens(&swap(REGCA1, (8, "0.5"), (9, "0.9"))).unwrap_err();
+        assert!(e.contains("Lvpnt0"), "{e}");
+    }
+
+    /// LVPL caps the active current at once and stops `Ip` rising past the
+    /// ceiling with a rate continuous in `Ip` (Lipschitz `Tg/τ`), not
+    /// switched to zero, which leaves an implicit step on a rising ceiling
+    /// without a solution.
+    #[test]
+    fn lvpl_caps_the_active_current_continuously() {
+        let mut p = plant();
+        let v = C64::new(1.0, 0.0);
+        let (mut x, _) = p.initialize(C64::new(1.0, 0.1), v).unwrap();
+        let k = p.n_states();
+        let ip_row = k - 3;
+        // Measured voltage 0.55: LVPL = 1.22 (0.55 − 0.4)/0.5 = 0.366, below
+        // the command (about 0.5).
+        x[k - 1] = 0.55;
+        let mut f = vec![0.0; k];
+        let rate = |x: &[f64], f: &mut Vec<f64>| {
+            p.eval(x, v.re, v.im, 1.0, f);
+            f[ip_row]
+        };
+        let ip0 = 0.366;
+        for d in [1e-6, 1e-9] {
+            x[ip_row] = ip0 + d;
+            let above = rate(&x, &mut f);
+            x[ip_row] = ip0 - d;
+            let below = rate(&x, &mut f);
+            assert_eq!(above, 0.0);
+            let lipschitz = p.regc.t_g / LIMIT_TAU;
+            assert!(
+                (above - below).abs() <= 2.0 * d * lipschitz * (1.0 + 1e-6),
+                "{below}"
+            );
+        }
+        // Above the ceiling `Ip` holds, below or above the command (as
+        // PowerSimulationsDynamics.jl).
+        for ip in [0.45, 0.8] {
+            x[ip_row] = ip;
+            assert_eq!(rate(&x, &mut f), 0.0);
+        }
+        let i = p.output_current(&x, v) + v / C64::new(p.r_source, p.x_source);
+        assert!((i.re - 0.366).abs() < 1e-12, "{i}");
+        p.regc.lvpl_sw = false;
+        let i = p.output_current(&x, v) + v / C64::new(p.r_source, p.x_source);
+        assert!((i.re - 0.8).abs() < 1e-12, "{i}");
+    }
+
     /// The WECC 240-bus plant at bus 1032.
     fn plant() -> Plant {
         Plant {
-            regc: Regca1::from_tokens(&tok(
-                "1 0.02 10.0 0.9 0.4 1.22 1.2 0.9 0.5 -1.3 0.02 0.0 100.0 -100.0 0.7",
-            ))
-            .unwrap(),
-            reec: Reecb1::from_tokens(&tok(
-                "0 0 1 0 0 -99.0 99.0 0.02 0.0 0.0 0.0 1.1 -1.1 0.0 0.05 0.44 -0.44 1.05 0.9 0.0 0.01 10.0 60.0 0.02 99.0 -99.0 1.0 0.0 1.11 0.02",
-            ))
-            .unwrap(),
-            repc: Repca1::from_tokens(&tok(
-                "0 0 0 '0' 0 0 1 0.02 18.0 5.0 0.0 0.05 0.0 0.0 0.0 0.02 0.1 -0.1 -1.0 1.0 0.43 -0.43 1.0 0.05 0.25 -1.0 1.0 99.0 -99.0 1.0 0.0 0.1 0.0 0.0",
-            ))
-            .unwrap(),
+            regc: Regca1::from_tokens(&tok(REGCA1)).unwrap(),
+            reec: Reecb1::from_tokens(&tok(REECB1), 1032).unwrap(),
+            repc: Repca1::from_tokens(&tok(REPCA1), 1032).unwrap(),
             scale: 2.0,
             r_source: 0.0,
             x_source: 1e5,
@@ -795,7 +957,7 @@ mod tests {
         assert_eq!(p.n_states(), p.mass().len());
         assert!(Repca1::from_tokens(&tok(
             "0 7 8 '1' 0 0 1 0.02 18.0 5.0 0.0 0.05 0.0 0.0 0.0 0.02 0.1 -0.1 -1.0 1.0 0.43 -0.43 1.0 0.05 0.25 -1.0 1.0 99.0 -99.0 1.0 0.0 0.1 0.0 0.0"
-        ))
+        ), 1032)
         .unwrap_err()
         .contains("remote branch"));
     }

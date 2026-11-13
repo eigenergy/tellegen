@@ -120,38 +120,6 @@ pub struct LinearResult {
     pub bode: Vec<BodeCurve>,
 }
 
-/// Names of every global state, `bus:quantity` for buses and
-/// `G<bus>[ 'id'].<state>` for devices.
-pub(crate) fn state_names(sys: &DynSystem) -> Vec<String> {
-    let mut names = vec![String::new(); sys.nx];
-    for (b, number) in sys.bus_numbers.iter().enumerate() {
-        names[b] = format!("bus {number} Vr");
-        names[sys.n + b] = format!("bus {number} Vi");
-    }
-    for d in &sys.devices {
-        let tag = if d.machine_id == "1" {
-            format!("G{}", d.bus_number)
-        } else {
-            format!("G{} '{}'", d.bus_number, d.machine_id)
-        };
-        for (k, s) in d.state_names().into_iter().enumerate() {
-            names[d.offset + k] = format!("{tag} {s}");
-        }
-    }
-    for h in &sys.held {
-        let Some(p) = &h.plant else { continue };
-        let tag = if h.machine_id == "1" {
-            format!("R{}", h.bus_number)
-        } else {
-            format!("R{} '{}'", h.bus_number, h.machine_id)
-        };
-        for (k, s) in p.state_names().into_iter().enumerate() {
-            names[h.offset + k] = format!("{tag} {s}");
-        }
-    }
-    names
-}
-
 /// Largest system (states, network voltages included) whose eigenvalues and
 /// modes are computed: the linearization is a dense `nx × nx` matrix (0.3 GB
 /// at this size) and its eigenvalue problem costs `O(nx³)`, more than a
@@ -222,7 +190,7 @@ pub(crate) fn modes(
     keep: usize,
 ) -> Result<(Vec<String>, Vec<Mode>), String> {
     check_eigen_size(sys)?;
-    let names = state_names(sys);
+    let names = sys.variable_names();
     let (a, diff) = reduced_a(sys, x);
     let n = diff.len();
     if n == 0 {

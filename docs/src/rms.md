@@ -114,9 +114,16 @@ integrators, are recorded as `inv.<state>:<unit>`. Where PowerSimulationsDynamic
 0.16.2 departs from the PSS/E definition, tellegen follows PSS/E: the
 low-voltage active current gain between `Lvpnt0` and `Lvpnt1`, and `Xc` in the
 compensated voltage, the converter ramp limits as rates on the currents, and
-the high-voltage reactive current clamp (`Khv`, `Iolim`). A unit with other inverter records, or without the plant
-controller, keeps its power flow output as a constant-current injection; the
-notes say which.
+the high-voltage reactive current clamp (`Khv`, `Iolim`). A unit
+with other inverter records, or without the plant controller, keeps its power
+flow output as a constant-current injection; so does a plant whose `REECB1`
+or `REPCA1` regulates another bus (`IREG`), which the controllers do not
+measure. The notes say which.
+
+Limits in the dynamic data must be ordered (each minimum at most its maximum,
+HYGOV's `VELM` not negative, REGCA1's `Zerox` below `Brkpt` and `Lvpnt0`
+below `Lvpnt1`): a generator's swapped limits refuse the case with the unit
+and parameters named, and a renewable plant's hold the plant with a note.
 
 A controller can also be a block graph (`BlockGraph`: lags with and without
 non-windup limits, lead-lags, washouts, second-order filters, PI, integrators,
@@ -189,7 +196,12 @@ The Newton iteration is damped (backtracking on the residual): a step that
 does not lower the residual is never taken; the iteration refactorizes, and if
 a fresh factorization finds no descent either, the step falls back to backward
 Euler, then halves, so rectifiers and limiters that switch inside a step (an
-ESAC1A with KC ≠ 0 chattering at its bounds) do not stop a run.
+ESAC1A with KC ≠ 0 chattering at its bounds) do not stop a run. A limit a
+state slides along (a PI output held at a limit while its proportional path
+pulls inside, the REGCA1 active current on its rising low-voltage power limit)
+is written so the state's rate is continuous there, and every implicit step
+has a solution. When a step still fails, the error names the variable with
+the largest residual.
 
 Events are checked before a run starts: each needs a finite time in
 `[0, t_end)` (an event at `t_end` would act on nothing the run records), an
@@ -217,13 +229,15 @@ integration fails with the network split, the error names the islands.
 - **HVDC lines** are not modelled: a case with an in-service HVDC line is
   refused (the static AC power flow holds them as fixed injections).
 - **Islands** run on (see Formulation); there is no under/over-frequency or
-  overspeed protection, so an island without load accelerates until the run
-  fails.
+  overspeed protection, so an island without load accelerates without bound
+  (WECC 240 with transformer 1004-1034 open: bus 1034's units reach 1.9 pu
+  speed in 9 s).
 - **Inverter-based resources** other than the `REGCA1` + `REECB1` + `REPCA1`
   plant (for example `REECA1`, `WTGT*`) are not modeled: such a unit keeps its
   power flow output as a constant-current injection, named in the notes.
   Voltage-dip freezing (`Vdip`, `Vup`, `Vfrz`) and a plant controller's remote
-  branch flow are not modelled, as in PowerSimulationsDynamics.jl.
+  branch flow are not modelled, as in PowerSimulationsDynamics.jl, nor is
+  remote voltage regulation by a plant (`IREG`; such a plant is held).
 - **Models outside the table above** are preserved by PowerIO and named in the
   notes, not simulated.
 - **Trajectories** have no PowerIO value yet.
@@ -247,6 +261,13 @@ tellegen follows PSS/E for:
 - a non-windup lag with a zero time constant (SEXS `TE`, ESAC1A `TA`, REGCA1
   `Tg`, REECB1 `Tpord`): algebraic, its output the clamped input;
 - exciter saturation points in either order (IEEE 421.5 lists `E1 > E2`);
+- the non-windup PI (HYGOV, REPCA1, REECB1): its integrator stops only while
+  its input drives the output further past a limit, and integrates as soon as
+  the input points back inside (PowerSimulationsDynamics.jl stops it whenever
+  the output is limited, so with `Kp = 0` it never leaves the limit). Near a
+  limit the integrator's outward rate is capped at `(limit − y)/(Ki τ)`,
+  `τ` = 1 ms, so an output sliding along the limit has a solution (the same
+  for the REGCA1 low-voltage power limit below);
 - quadratic saturation `B (x − A)²/x` with `Se = 0` for `x ≤ A` (unless
   `RmsOptions::psid_saturation`; the formula alone rises again below `A` and
   diverges as `x → 0`);
@@ -263,10 +284,15 @@ tellegen follows PSS/E for:
 
 It follows PowerSimulationsDynamics.jl, and so differs from PSS/E, in:
 
-- the placement of the REGCA1 low-voltage power limit;
-- the non-windup PI: its integrator stops while the output is limited, so with
-  `Kp = 0` it stays at the limit;
-- the REECB1 reactive current PI with `QFLAG = 1`, which has no limit.
+- the REECB1 reactive current PI with `QFLAG = 1`, which has no limit;
+- the placement of the REGCA1 low-voltage power limit (`LVPLSW = 1`): the
+  active current is `min(Ip, LVPL)` and `Ip` stops rising at the ceiling
+  (PSS/E limits the `Tg` lag itself, so after a fault `Ip` recovers from the
+  ceiling at `Rrpwr`). `Ip` holds above the ceiling; below it, where
+  PowerSimulationsDynamics.jl switches the rate of `Ip` to zero at the
+  ceiling, tellegen caps the rising rate at `(LVPL − Ip)/τ`, `τ` = 1 ms, so
+  `Ip` can ride a recovering ceiling (with a switched rate no implicit step
+  has a solution there).
 
 A fault needs a finite, nonzero impedance; a bolted fault is a small
 reactance.

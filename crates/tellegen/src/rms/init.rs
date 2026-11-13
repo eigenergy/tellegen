@@ -379,8 +379,8 @@ pub(crate) fn build(
                         regc.psid_ramp = options.psid_converter_ramp;
                         let mut p = super::renewable::Plant {
                             regc,
-                            reec: super::renewable::Reecb1::from_tokens(ec.parameters())?,
-                            repc: super::renewable::Repca1::from_tokens(pc.parameters())?,
+                            reec: super::renewable::Reecb1::from_tokens(ec.parameters(), m.bus.0)?,
+                            repc: super::renewable::Repca1::from_tokens(pc.parameters(), m.bus.0)?,
                             scale,
                             r_source: 0.0,
                             x_source: 1e5,
@@ -471,12 +471,14 @@ pub(crate) fn build(
             .as_ref()
             .map(|l| l.model.clone())
             .expect("checked above");
-        let (mut machine, shaft) = machine_from_psse(&model, m.zsource)?;
+        let unit_err = |e: String| format!("generator {}-{}: {e}", m.bus, m.machine_id);
+        let (mut machine, shaft) = machine_from_psse(&model, m.zsource).map_err(unit_err)?;
         let mut avr = m
             .exciter
             .as_ref()
             .map(|l| avr_from_psse(&l.model))
-            .transpose()?
+            .transpose()
+            .map_err(unit_err)?
             .unwrap_or(Avr::Fixed);
         if options.psid_saturation {
             match &mut machine {
@@ -492,13 +494,15 @@ pub(crate) fn build(
             .governor
             .as_ref()
             .map(|l| governor_from_psse(&l.model))
-            .transpose()?
+            .transpose()
+            .map_err(unit_err)?
             .unwrap_or(Governor::Fixed);
         let pss = m
             .stabilizer
             .as_ref()
             .map(|l| stabilizer_from_psse(&l.model))
-            .transpose()?
+            .transpose()
+            .map_err(unit_err)?
             .unwrap_or(Stabilizer::None);
         // Controller graphs given for this generator replace its records.
         #[cfg(feature = "rms-experimental")]
