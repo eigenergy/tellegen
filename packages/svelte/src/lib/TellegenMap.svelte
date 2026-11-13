@@ -42,13 +42,15 @@
 		attachmentColor,
 		edgeColor,
 		edgeWidth,
-		isPhaseTerminal,
 		phaseColor,
 		transformerMarks,
 		type PlacedMultiBus,
 		type PlacedMultiEdge,
 		type TransformerMark,
-		multiDiagramNetwork
+		multiDiagramNetwork,
+		neutralTerminal,
+		phaseLabel,
+		wiresLabel
 	} from './multiconductor.js';
 	import {
 		TRANSFORMER_ICON,
@@ -59,7 +61,7 @@
 	import { foldMapBounds } from './map-bounds.js';
 	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
-	import { displayFmt, fmt, rgbaCss } from './format.js';
+	import { displayFmt, fmt, quantity, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
@@ -723,7 +725,7 @@
 				const ay = (busPt.y + py * off).toFixed(1);
 				const bx = (b.x + px * off).toFixed(1);
 				const by = (b.y + py * off).toFixed(1);
-				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
+				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term, theme))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
 			}
 		}
 
@@ -734,13 +736,14 @@
 		const sx = busPt.x + STACK_DX;
 		const top = busPt.y - ((terminals.length - 1) / 2) * STACK_DY;
 		let stack = `<line class="mc-leader" x1="${busPt.x.toFixed(1)}" y1="${busPt.y.toFixed(1)}" x2="${sx.toFixed(1)}" y2="${busPt.y.toFixed(1)}"/>`;
+		const neutral = neutralTerminal(bus.terminals, bus.neutral_terminal);
 		terminals.forEach((t, k) => {
 			const cy = top + k * STACK_DY;
 			const grounded = bus.grounded.includes(t);
-			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col(palette.neutral);
+			const fill = col(phaseColor(t, theme));
 			if (grounded) stack += groundGlyph(sx - 14, cy);
 			stack += `<circle class="mc-terminal" cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}"/>`;
-			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(t)}</text>`;
+			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(phaseLabel(t, neutral))}</text>`;
 			// Attachment squares for elements landing on this terminal.
 			const kinds = [...new Set((bus.terminalAttachments[t] ?? []).map((a) => a.kind))];
 			kinds.slice(0, 5).forEach((kind, j) => {
@@ -876,14 +879,14 @@
 			const e = object as PlacedMultiEdge;
 			const state = e.kind === 'switch' ? (e.closed ? '<br>Closed' : '<br>Open') : '';
 			return {
-				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${e.n_phases}&#8202;&phi;${state}</div>`
+				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${wiresLabel(e.n_phases, e.conductors.length > e.n_phases)}${state}</div>`
 			};
 		}
 		if (layerId?.startsWith('multi-buses-')) {
 			const b = object as PlacedMultiBus;
 			const roles = b.attachmentKinds.length ? b.attachmentKinds.join(', ') : 'None';
 			return {
-				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${b.load_kw.toFixed(0)} kW<br>Generation ${b.gen_kw.toFixed(0)} kW<br>Attachments: ${esc(roles)}</div>`
+				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${quantity(b.load_kw, 'kW')}<br>Generation ${quantity(b.gen_kw, 'kW')}<br>Attachments: ${esc(roles)}</div>`
 			};
 		}
 		const c = caseOf(info);

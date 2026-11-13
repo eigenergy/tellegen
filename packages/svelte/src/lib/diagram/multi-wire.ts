@@ -1,11 +1,19 @@
 import type { DistGraph } from '@tellegen/engine';
 import type { ResultSnapshot } from './snapshot.js';
+import { neutralTerminal, phaseLabel } from '../multiconductor.js';
 
 /** One bus drawn as a stack of terminal rails. */
 export interface WireBus {
 	id: string;
 	x: number;
-	terminals: { name: string; y: number; grounded: boolean; attachments: string[] }[];
+	/** `name` is the source terminal; `label` reads it as a phase (`A`, `N`). */
+	terminals: {
+		name: string;
+		label: string;
+		y: number;
+		grounded: boolean;
+		attachments: string[];
+	}[];
 }
 
 /** One conductor segment between two points; `terminal` names the end it belongs to. */
@@ -49,16 +57,20 @@ export function multiWireBranch(
 	const from = graph.buses[index.get(edge?.from.toLowerCase() ?? '') ?? -1];
 	const to = graph.buses[index.get(edge?.to.toLowerCase() ?? '') ?? -1];
 	if (!edge || !from || !to) return null;
-	const rails = (bus: typeof from, x: number): WireBus => ({
-		id: bus.id,
-		x,
-		terminals: bus.terminals.map((name, i) => ({
-			name,
-			y: TOP + i * ROW,
-			grounded: bus.grounded.includes(name),
-			attachments: (bus.terminal_attachments?.[name] ?? []).map((a) => `${a.kind} ${a.id}`)
-		}))
-	});
+	const rails = (bus: typeof from, x: number): WireBus => {
+		const neutral = neutralTerminal(bus.terminals, bus.neutral_terminal);
+		return {
+			id: bus.id,
+			x,
+			terminals: bus.terminals.map((name, i) => ({
+				name,
+				label: phaseLabel(name, neutral),
+				y: TOP + i * ROW,
+				grounded: bus.grounded.includes(name),
+				attachments: (bus.terminal_attachments?.[name] ?? []).map((a) => `${a.kind} ${a.id}`)
+			}))
+		};
+	};
 	const left = rails(from, 56);
 	const right = rails(to, width - 56);
 	const rowOf = (bus: WireBus, name: string) => bus.terminals.find((t) => t.name === name)?.y;

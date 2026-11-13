@@ -92,3 +92,103 @@ export function readable(
 		exact: join(signed && value > 0 ? `+${exact}` : exact === '-0' ? '0' : exact)
 	};
 }
+
+/** The one glyph for a value that is missing or not finite. */
+export const MISSING = '—';
+
+/** Units {@link quantity} formats. `V` switches to kV at 1 kV; `°` and `%` attach to the number. */
+export type QuantityUnit = 'V' | 'kV' | 'A' | 'kW' | 'kvar' | 'kVA' | '°' | '%' | 'pu' | 'ms' | '';
+
+export interface QuantityOptions {
+	/** Prefix positive values with `+`. */
+	signed?: boolean;
+	/** Up to six decimals in the base unit, no grouping and no kV switch: for a tooltip or a check. */
+	exact?: boolean;
+	/** Significant figures for the scaled units (V, kV, A, kW, kvar, kVA, ms); default 4. */
+	figures?: number;
+	/** Fixed decimals, overriding the unit's rule. */
+	decimals?: number;
+}
+
+const fixedFormats = new Map<number, Intl.NumberFormat>();
+function fixedFormat(places: number): Intl.NumberFormat {
+	let f = fixedFormats.get(places);
+	if (!f) {
+		f = new Intl.NumberFormat('en-US', {
+			minimumFractionDigits: places,
+			maximumFractionDigits: places
+		});
+		fixedFormats.set(places, f);
+	}
+	return f;
+}
+
+/** Decimals for a unit: pu to four, angles to two, percent to one, everything else to `figures`
+ * significant figures without ever dropping integer digits. */
+function placesFor(magnitude: number, unit: QuantityUnit, figures: number): number {
+	if (unit === 'pu') return 4;
+	if (unit === '°') return 2;
+	if (unit === '%') return 1;
+	const integerDigits = magnitude >= 1 ? Math.floor(Math.log10(magnitude)) + 1 : 1;
+	return Math.min(figures - 1, Math.max(0, figures - integerDigits));
+}
+
+/**
+ * The one formatter for a multiconductor or balanced quantity on screen: thousands separators,
+ * `figures` significant figures (four by default) for V, A, kW, kvar, kVA and ms, two decimals for
+ * degrees, one for percent and four for pu. Volts switch to kV at |v| ≥ 1000. `%` and `°` attach to
+ * the number, other units follow a space. A missing or non-finite value is {@link MISSING}.
+ */
+export function quantity(
+	value: number | null | undefined,
+	unit: QuantityUnit,
+	options: QuantityOptions = {}
+): string {
+	if (value == null || !Number.isFinite(value)) return MISSING;
+	const { signed = false, exact = false, figures = 4, decimals } = options;
+	let shown = value;
+	let shownUnit: string = unit;
+	if (!exact && unit === 'V' && Math.abs(value) >= 1000) {
+		shown = value / 1000;
+		shownUnit = 'kV';
+	}
+	const attach = shownUnit === '%' || shownUnit === '°' || shownUnit === '';
+	const join = (n: string) => (attach ? `${n}${shownUnit}` : `${n} ${shownUnit}`);
+	if (exact) {
+		const text = exactNumber.format(shown);
+		return join(text === '-0' ? '0' : signed && shown > 0 ? `+${text}` : text);
+	}
+	const magnitude = Math.abs(shown);
+	const places = decimals ?? placesFor(magnitude, shownUnit as QuantityUnit, figures);
+	const rounded = fixedFormat(places).format(magnitude);
+	const zero = Number(rounded.replace(/,/g, '')) === 0;
+	const sign = zero ? '' : shown < 0 ? '-' : signed ? '+' : '';
+	return join(`${sign}${rounded}`);
+}
+
+/** A voltage with its per-unit value beside it when the base is known: `239.6 V (0.9983 pu)`. */
+export function voltsWithPu(volts: number | null | undefined, base: number | null | undefined) {
+	const v = quantity(volts, 'V');
+	if (volts == null || !Number.isFinite(volts) || !base || !Number.isFinite(base) || base <= 0)
+		return v;
+	return `${v} (${quantity(volts / base, 'pu')})`;
+}
+
+/** Degrees from radians, through {@link quantity}. */
+export const degrees = (radians: number | null | undefined, options?: QuantityOptions) =>
+	quantity(radians == null ? radians : (radians * 180) / Math.PI, '°', options);
+
+/** A range through {@link quantity}, the unit written once when both ends share it:
+ * `203.4–239.6 V`, `0.9500–1.0500 pu`, `950.0 V – 1.050 kV`. */
+export function quantityRange(
+	low: number | null | undefined,
+	high: number | null | undefined,
+	unit: QuantityUnit
+): string {
+	const a = quantity(low, unit);
+	const b = quantity(high, unit);
+	if (a === MISSING || b === MISSING) return a === b ? MISSING : `${a} – ${b}`;
+	const suffix = (s: string) => s.match(/\s?[^\d\s.,+-]*$/)?.[0] ?? '';
+	const sa = suffix(a);
+	return sa && sa === suffix(b) ? `${a.slice(0, -sa.length)}–${b}` : `${a} – ${b}`;
+}

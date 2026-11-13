@@ -55,7 +55,7 @@
 		font-size: 12px;
 	}
 	.warning {
-		border-left: 4px solid #b7791f;
+		border-left: 4px solid var(--warn);
 	}
 	p {
 		margin: 0.4rem 0;

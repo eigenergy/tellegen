@@ -98,9 +98,9 @@ describe('transformer kinds and labels', () => {
 
 describe('attachment connections', () => {
 	it('labels terminals compactly, with the connection in front', () => {
-		expect(terminalLabel(['2', '4'], 'single_phase')).toBe('2–4');
-		expect(terminalLabel(['1', '2', '3', '4'], 'wye')).toBe('Y 1234');
-		expect(terminalLabel(['a', 'b', 'c'], 'delta')).toBe('Δ abc');
+		expect(terminalLabel(['2', '4'], 'single_phase')).toBe('B–N');
+		expect(terminalLabel(['1', '2', '3', '4'], 'wye')).toBe('Y ABCN');
+		expect(terminalLabel(['a', 'b', 'c'], 'delta')).toBe('Δ ABC');
 		expect(terminalLabel(['L1', 'L2', 'L3', 'N'], 'wye')).toBe('Y L1·L2·L3·N');
 		expect(terminalConductors(['1', '4'], '4')).toEqual({ phases: 1, neutral: true });
 		expect(terminalConductors(['1', '2', '3'], '4')).toEqual({ phases: 3, neutral: false });

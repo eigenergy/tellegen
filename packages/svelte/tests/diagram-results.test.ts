@@ -668,7 +668,7 @@ describe('phase–ground limits', () => {
 			'violation',
 			2
 		]);
-		expect(busLabel(s, 1)).toMatchObject({ text: '215 V', state: 'violation' });
+		expect(busLabel(s, 1)).toMatchObject({ text: '215.0 V', state: 'violation' });
 		const row = tableModel(s, inputs.names, 'bus').row(0);
 		expect([row.reference, row.pairs, row.state]).toEqual([
 			'phase–neutral, phase–ground',

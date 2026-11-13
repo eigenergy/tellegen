@@ -12,8 +12,17 @@ import type {
 	Topology
 } from '@tellegen/engine';
 import { placeSyntheticTopology, type PlacementCenter } from './synthetic-layout.js';
-import type { RGBA } from './colors.js';
-import { extent } from './format.js';
+import { MAP_PALETTE, type RGBA } from './colors.js';
+import { extent, rgbaCss } from './format.js';
+
+/** The calculation's one name in the interface, as the WebMCP tool `solve_multiconductor_pf`
+ * and the literature name it. */
+export const MC_PF_NAME = 'Multiconductor power flow';
+export const MC_PF_UNAVAILABLE_TITLE = 'Multiconductor power flow unavailable';
+export const MC_PF_UNAVAILABLE = 'This case cannot run multiconductor power flow.';
+/** The one wording for a bus left out because its island has no voltage source. */
+export const EXCLUDED_ISLAND_BUS =
+	'This bus is in an island with no voltage source, so the calculation leaves it out and it has no result.';
 
 /** A bus positioned on the map, carrying its terminal-level detail. */
 export interface PlacedMultiBus {
@@ -353,18 +362,17 @@ export function placeMultiView(graph: DistGraph, center: PlacementCenter): Multi
 // single-phase view without a palette clash.
 // ---------------------------------------------------------------------------
 
-/** Rust, green, and steel-blue for the three phases; a warm gray for the
- * neutral/ground return. Distinct in hue and lightness so they survive color
- * vision deficiency and never read as the nodal value ramp. */
+/** Rust, green, and steel-blue for the three phases. Distinct in hue and lightness so they
+ * survive color vision deficiency and never read as the nodal value ramp. The neutral/ground
+ * return is the theme's `MAP_PALETTE.neutral`. */
 const PHASE_A: RGBA = [194, 86, 75, 255];
 const PHASE_B: RGBA = [74, 143, 95, 255];
 const PHASE_C: RGBA = [63, 111, 187, 255];
-const NEUTRAL: RGBA = [120, 114, 102, 255];
 
 /** Color a conductor by its terminal name. OpenDSS node numbers map 1/2/3 to
  * the three phases; a named phase (`a`/`b`/`c`) maps the same way; anything else
- * (neutral `n`, ground, the fourth wire) is the neutral gray. */
-export function phaseColor(terminal: string): RGBA {
+ * (neutral `n`, ground, the fourth wire) is the theme's neutral gray. */
+export function phaseColor(terminal: string, theme: 'light' | 'dark' = 'light'): RGBA {
 	switch (terminal.trim().toLowerCase()) {
 		case '1':
 		case 'a':
@@ -376,8 +384,50 @@ export function phaseColor(terminal: string): RGBA {
 		case 'c':
 			return PHASE_C;
 		default:
-			return NEUTRAL;
+			return MAP_PALETTE[theme].neutral;
 	}
+}
+
+/** {@link phaseColor} as a CSS color, for markup. */
+export const phaseCss = (terminal: string, theme: 'light' | 'dark' = 'light') =>
+	rgbaCss(phaseColor(terminal, theme));
+
+/** The display name of a terminal: OpenDSS node numbers 1/2/3/4 and named a/b/c/n read as the
+ * phases A/B/C and the neutral N, as does a bus's declared `neutral`; the ground reference reads
+ * G. Any other terminal name passes through unchanged. Agent tools and exports (JSON and CSV) keep the
+ * source names; this is for what people read. */
+export function phaseLabel(terminal: string, neutral?: string | null): string {
+	if (neutral && terminal === neutral) return 'N';
+	switch (terminal.trim().toLowerCase()) {
+		case '1':
+		case 'a':
+			return 'A';
+		case '2':
+		case 'b':
+			return 'B';
+		case '3':
+		case 'c':
+			return 'C';
+		case '4':
+		case 'n':
+		case 'neutral':
+			return 'N';
+		case 'ground':
+		case 'g':
+			return 'G';
+		default:
+			return terminal;
+	}
+}
+
+/** A terminal pair as people read it: `A–N`, `A–B`, `C–G`. */
+export function pairLabel(pair: readonly [string, string], neutral?: string | null): string {
+	return `${phaseLabel(pair[0], neutral)}–${phaseLabel(pair[1], neutral)}`;
+}
+
+/** The one wording for a conductor set: `3 phases + N`, `1 phase`. */
+export function wiresLabel(phases: number, neutral: boolean): string {
+	return `${phases} phase${phases === 1 ? '' : 's'}${neutral ? ' + N' : ''}`;
 }
 
 /** True when a terminal is a phase conductor (not a neutral/ground return). */
@@ -451,10 +501,12 @@ function computeTransformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
 		});
 }
 
+/** Attachment hues stay clear of the phase colors, so a badge never reads as a phase: wine for a
+ * source, mustard for a generator, teal for an inverter. */
 const ATTACHMENT_COLOR: Record<DistAttachmentKind, RGBA> = {
-	source: [63, 111, 187, 255],
-	generator: [74, 143, 95, 255],
-	ibr: [120, 158, 70, 255],
+	source: [136, 34, 85, 255],
+	generator: [204, 153, 34, 255],
+	ibr: [68, 170, 153, 255],
 	load: [178, 94, 0, 255],
 	shunt: [138, 108, 168, 255]
 };

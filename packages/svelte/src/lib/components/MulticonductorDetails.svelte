@@ -1,22 +1,25 @@
 <script lang="ts">
 	import McNetworkScope from './McNetworkScope.svelte';
 	import McModelQualification from './McModelQualification.svelte';
+	import McSolveControls from './McSolveControls.svelte';
 	import { getAppState, getController } from '../context.svelte.js';
-	import { fmt, rgbaCss } from '../format.js';
+	import { quantity, rgbaCss } from '../format.js';
 	import {
 		attachmentColor,
 		attachmentGlyph,
 		edgeColor,
-		isPhaseTerminal,
-		phaseColor
+		EXCLUDED_ISLAND_BUS,
+		neutralTerminal,
+		phaseCss,
+		phaseLabel,
+		wiresLabel
 	} from '../multiconductor.js';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import { getNoticeCenter } from '../notices.svelte.js';
-	import { validateMcPfOptions, type DistAttachmentKind } from '@tellegen/engine';
+	import { uiTheme } from './ui-theme.js';
+	import type { DistAttachmentKind } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
-	const notices = getNoticeCenter();
 	const panels = getPanelLayout();
 	function openResults() {
 		const panel = panels.panels.find((p) => p.id === 'studies');
@@ -29,8 +32,6 @@
 		}
 	}
 
-	const NEUTRAL_RGBA = [120, 114, 102, 255] as const;
-
 	/** A cleared or unparsable number field is not a request for zero load;
 	 * only a finite value counts as an edit. */
 	function parseLoadInput(raw: string): number | null {
@@ -40,9 +41,8 @@
 	}
 	const ATTACHMENT_LEGEND: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
 
-	function terminalColor(t: string): string {
-		return rgbaCss(isPhaseTerminal(t) ? phaseColor(t) : [...NEUTRAL_RGBA]);
-	}
+	const theme = uiTheme();
+	const terminalColor = (t: string) => phaseCss(t, theme.current);
 </script>
 
 {#if app.activeMulti}
@@ -60,7 +60,7 @@
 		</p>
 	{/if}
 	{#if s}
-		<p class="tag">Multiconductor</p>
+		<p class="tag">Distribution case</p>
 		<details class="case-details">
 			<summary
 				>{s.n_bus} buses, {s.n_edge}
@@ -77,11 +77,11 @@
 				</div>
 				<div>
 					<dt>Load</dt>
-					<dd class="mono">{fmt.format(s.load_kw)} kW</dd>
+					<dd class="mono">{quantity(s.load_kw, 'kW')}</dd>
 				</div>
 				<div>
 					<dt>Generation capacity</dt>
-					<dd class="mono">{fmt.format(s.gen_kw)} kW</dd>
+					<dd class="mono">{quantity(s.gen_kw, 'kW')}</dd>
 				</div>
 				<div>
 					<dt>Sources / loads / generators</dt>
@@ -117,39 +117,16 @@
 			islands={mc.mcExcludedIslands}
 			preview={!mc.result}
 		/>
-		{#if !mc.mcPfSupported}<p class="footnote">{mc.mcPfReason}</p>{/if}
-		{#if validateMcPfOptions(mc.mcOptions)}<p class="footnote">
-				{validateMcPfOptions(mc.mcOptions)} Open Settings to update solver options before solving.
-			</p>{/if}
-		<button onclick={() => (app.settingsOpen = true)}>Power flow settings</button>
-		<div class="calculation-actions">
-			{#if mc.solving}
-				<span role="status">Calculating&hellip;</span>{#if mc.solveAbort}<button
-						onclick={() => mc.solveAbort?.abort()}>Cancel</button
-					>{/if}
-			{:else}
-				<button
-					disabled={!mc.mcPfSupported || !!validateMcPfOptions(mc.mcOptions)}
-					onclick={() => {
-						void ctrl
-							.solveMultiCase(mc, mc.mcOptions, undefined, mc.mcRequiresEnergizedSolve)
-							.then(openResults)
-							.catch(() => {});
-					}}>{mc.mcSolveLabel}</button
-				>
-				{#if !mc.mcPfSupported}
-					<button
-						class="quiet"
-						onclick={() =>
-							notices.push({
-								kind: 'warning',
-								title: 'AC power flow unavailable',
-								details: mc.mcPfReason ?? 'AC power flow does not support this case'
-							})}>Why unavailable</button
-					>
-				{/if}
-			{/if}
-		</div>
+		<McSolveControls
+			{mc}
+			onsettings={() => (app.settingsOpen = true)}
+			onsolve={() => {
+				void ctrl
+					.solveMultiCase(mc, mc.mcOptions, undefined, mc.mcRequiresEnergizedSolve)
+					.then(openResults)
+					.catch(() => {});
+			}}
+		/>
 		{#if mc.result}<McModelQualification model={mc.result.load_model} compact />
 			<p class="footnote">Converged, {mc.result.iterations} iterations</p>
 			<button class="reset" onclick={openResults}>View results in Studies</button>{/if}
@@ -158,20 +135,22 @@
 	{#if mc.selectedBus}
 		{@const b = mc.selectedBus}
 		{#if mc.mcExcludedIslands.some((island) => island.buses.includes(b.id))}<p role="status">
-				This bus belongs to an island with no voltage source and will be excluded from
-				energized-network calculations. No power-flow result is available for it.
+				{EXCLUDED_ISLAND_BUS}
 			</p>{/if}
 		<hr />
 		<h3>Bus <span class="mono">{b.id}</span></h3>
+		{@const neutral = neutralTerminal(b.terminals, b.neutral_terminal)}
 		<div class="terminals">
 			{#each b.terminals as t (t)}
+				{@const label = phaseLabel(t, neutral)}
 				<span
 					class="term"
 					class:grounded={b.grounded.includes(t)}
 					style={`--tc:${terminalColor(t)}`}
-					title={b.grounded.includes(t) ? `Terminal ${t}, grounded` : `Terminal ${t}`}
+					title={`Terminal ${label}${label === t ? '' : ` (${t} in the file)`}${b.grounded.includes(t) ? ', grounded' : ''}`}
 				>
-					{t}{#if b.grounded.includes(t)}<span class="gnd" aria-hidden="true">&#9178;</span>{/if}
+					{label}{#if b.grounded.includes(t)}<span class="gnd" aria-hidden="true">&#9178;</span
+						>{/if}
 				</span>
 			{/each}
 		</div>
@@ -252,12 +231,8 @@
 		</h3>
 		<dl>
 			<div>
-				<dt>Phases</dt>
-				<dd class="mono">{e.n_phases}</dd>
-			</div>
-			<div>
 				<dt>Conductors</dt>
-				<dd class="mono">{e.conductors.length}</dd>
+				<dd class="mono">{wiresLabel(e.n_phases, e.conductors.length > e.n_phases)}</dd>
 			</div>
 			{#if e.kind === 'switch'}
 				<div>
@@ -269,9 +244,9 @@
 		<div class="pairs">
 			{#each e.conductors as [ft, tt], i (i)}
 				<span class="pair">
-					<span class="term" style={`--tc:${terminalColor(ft)}`}>{ft}</span>
+					<span class="term" style={`--tc:${terminalColor(ft)}`}>{phaseLabel(ft)}</span>
 					<span class="pair-dash mono">&ndash;</span>
-					<span class="term" style={`--tc:${terminalColor(tt)}`}>{tt}</span>
+					<span class="term" style={`--tc:${terminalColor(tt)}`}>{phaseLabel(tt)}</span>
 				</span>
 			{/each}
 		</div>
@@ -279,10 +254,11 @@
 
 	<div class="mc-legend mono">
 		<span class="legend-row">
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('1')])}`}></i>a
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('2')])}`}></i>b
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('3')])}`}></i>c
-			<i class="swatch" style={`--sc:${rgbaCss([...NEUTRAL_RGBA])}`}></i>n
+			{#each ['A', 'B', 'C', 'N'] as phase (phase)}<i
+					class="swatch"
+					style={`--sc:${terminalColor(phase.toLowerCase())}`}
+				></i>{phase}
+			{/each}
 		</span>
 		<span class="legend-row">
 			{#each ATTACHMENT_LEGEND as kind (kind)}
@@ -315,31 +291,6 @@
 	.case-details dl {
 		margin-top: 8px;
 	}
-	.calculation-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		align-items: center;
-		margin: 14px 0;
-	}
-	.calculation-actions button {
-		font: inherit;
-		padding: 7px 10px;
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		background: var(--ink);
-		color: var(--paper);
-		cursor: pointer;
-	}
-	.calculation-actions button:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-	.calculation-actions button.quiet {
-		background: transparent;
-		color: var(--ink);
-	}
-
 	h2 {
 		margin: 0 0 8px;
 		font-size: 16px;

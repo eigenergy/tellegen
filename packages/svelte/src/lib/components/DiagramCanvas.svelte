@@ -13,7 +13,7 @@
 		priceColor,
 		scalarDomain
 	} from '../colors.js';
-	import { rgbaCss } from '../format.js';
+	import { degrees, quantity, rgbaCss } from '../format.js';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import { edgeColor, attachmentColor } from '../multiconductor.js';
 	import { diagramLabels } from '../diagram-labels.js';
@@ -379,9 +379,17 @@
 						<title
 							>Bus {multiconductor ? bus.uid : bus.id}{!multiconductor && bus.name
 								? `, ${bus.name}`
-								: ''}, {(bus.demand_mw * (multiconductor ? 1000 : 1)).toFixed(1)}
-							{multiconductor ? 'kW' : 'MW'} demand{displayMode !== 'demand' && values.has(bus.id)
-								? `, ${values.get(bus.id)!.toFixed(4)} ${displayMode === 'price' ? 'objective units/MW LMP' : displayMode === 'voltage' ? 'pu voltage' : 'rad voltage angle'}`
+								: ''}, {multiconductor
+								? quantity(bus.demand_mw * 1000, 'kW')
+								: `${bus.demand_mw.toFixed(1)} MW`} demand{displayMode !== 'demand' &&
+							values.has(bus.id)
+								? `, ${
+										displayMode === 'price'
+											? `${values.get(bus.id)!.toFixed(4)} objective units/MW LMP`
+											: displayMode === 'voltage'
+												? `${quantity(values.get(bus.id), 'pu')} voltage`
+												: `${degrees(values.get(bus.id))} voltage angle`
+									}`
 								: ''}</title
 						>
 					</g>

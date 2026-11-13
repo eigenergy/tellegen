@@ -1,5 +1,12 @@
 <script lang="ts">
 	import { queryTable, type TableModel } from '../diagram/index.js';
+	import { quantity } from '../format.js';
+	import { phaseCss } from '../multiconductor.js';
+	import { uiTheme } from './ui-theme.js';
+
+	const theme = uiTheme();
+	/** A pair label (`A–N`) takes the color of the phase it starts from. */
+	const pairColour = (pair: string) => phaseCss(pair.split('–')[0].toLowerCase(), theme.current);
 
 	let {
 		model,
@@ -42,15 +49,11 @@
 			)
 			.join(' ')
 	);
-	const format = (v: unknown, digits = 2) =>
-		v === null || v === undefined
-			? '—'
-			: typeof v === 'number'
-				? v.toLocaleString(undefined, {
-						minimumFractionDigits: digits,
-						maximumFractionDigits: digits
-					})
-				: String(v);
+	/** Numbers through the shared formatter, the unit in the column header; text as is. */
+	const format = (v: unknown, digits?: number) =>
+		typeof v === 'number' || v === null || v === undefined
+			? quantity(v, '', digits === undefined ? {} : { decimals: digits })
+			: String(v);
 
 	function sort(key: string, numeric?: boolean) {
 		// Numbers start largest-first, text A–Z; a second click reverses.
@@ -136,7 +139,18 @@
 					onpointerleave={() => onhover?.(-1)}
 				>
 					{#each model.columns as c (c.key)}
-						<span role="gridcell" class:num={c.numeric}>{format(row[c.key], c.digits)}</span>
+						{@const value = row[c.key]}
+						{@const labels = c.key === 'pairs' ? row.pairLabels : null}
+						{#if typeof labels === 'string'}
+							<span role="gridcell" class="pairs"
+								>{#each labels.split(' ') as pair, k (k)}<span
+										class="pair"
+										style:--pc={pairColour(pair)}>{pair}</span
+									>{/each}</span
+							>
+						{:else}
+							<span role="gridcell" class={{ num: c.numeric }}>{format(value, c.digits)}</span>
+						{/if}
 					{/each}
 				</div>
 			{/each}
@@ -231,6 +245,25 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.pairs {
+		display: flex;
+		gap: 6px;
+	}
+	.row .pairs .pair {
+		padding: 0;
+		overflow: visible;
+		color: inherit;
+	}
+	.pair::before {
+		content: '';
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		margin-right: 3px;
+		border-radius: 50%;
+		background: var(--pc);
+		vertical-align: 1px;
 	}
 	.num {
 		text-align: right;

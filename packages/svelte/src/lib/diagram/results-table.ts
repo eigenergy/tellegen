@@ -1,6 +1,8 @@
 import { worstBand } from './colour-modes.js';
 import type { ResultSnapshot } from './snapshot.js';
+import { pairVoltageLabel, type PairVoltage } from './snapshot.js';
 import { busState, busUnbalance, loadingState } from './summary.js';
+import { phaseLabel } from '../multiconductor.js';
 
 export type TableKind = 'bus' | 'branch';
 type Cell = string | number | null;
@@ -32,9 +34,9 @@ const BUS_COLUMNS: TableColumn[] = [
 	{ key: 'source', label: 'Source' },
 	{ key: 'reference', label: 'Reference' },
 	{ key: 'pairs', label: 'Pairs' },
-	{ key: 'v0', label: 'V1', unit: 'V', numeric: true, digits: 2 },
-	{ key: 'v1', label: 'V2', unit: 'V', numeric: true, digits: 2 },
-	{ key: 'v2', label: 'V3', unit: 'V', numeric: true, digits: 2 },
+	{ key: 'v0', label: 'V A', unit: 'V', numeric: true },
+	{ key: 'v1', label: 'V B', unit: 'V', numeric: true },
+	{ key: 'v2', label: 'V C', unit: 'V', numeric: true },
 	{
 		key: 'band',
 		label: 'Band position',
@@ -44,7 +46,7 @@ const BUS_COLUMNS: TableColumn[] = [
 		title:
 			'Worst pair: −1 at the declared minimum, +1 at the maximum; sorts by distance from mid-band'
 	},
-	{ key: 'unbalance', label: 'Unbalance', unit: '%', numeric: true, digits: 2 },
+	{ key: 'unbalance', label: 'Unbalance', unit: '%', numeric: true, digits: 1 },
 	{ key: 'unbalanceBasis', label: 'Basis' },
 	{ key: 'state', label: 'Status' }
 ];
@@ -59,30 +61,75 @@ const BRANCH_COLUMNS: TableColumn[] = [
 		label: 'P from',
 		unit: 'kW',
 		numeric: true,
-		digits: 2,
 		title: 'Positive into the equipment'
 	},
-	{ key: 'qFrom', label: 'Q from', unit: 'kvar', numeric: true, digits: 2 },
+	{ key: 'qFrom', label: 'Q from', unit: 'kvar', numeric: true },
 	{
 		key: 'pTo',
 		label: 'P to',
 		unit: 'kW',
 		numeric: true,
-		digits: 2,
 		title: 'Positive into the equipment'
 	},
-	{ key: 'qTo', label: 'Q to', unit: 'kvar', numeric: true, digits: 2 },
+	{ key: 'qTo', label: 'Q to', unit: 'kvar', numeric: true },
 	{
 		key: 'loss',
 		label: 'Losses',
 		unit: 'kW',
 		numeric: true,
-		digits: 3,
 		title: 'Sum of both end P'
 	},
 	{ key: 'loading', label: 'Loading', unit: '%', numeric: true, digits: 1 },
 	{ key: 'state', label: 'Status' }
 ];
+
+const PHASE_SLOT: Record<string, number> = { A: 0, B: 1, C: 2 };
+
+/** A bus's pairs in the three voltage columns, by the phase each pair starts from (phase A in the
+ * first column), so a single-phase bus on phase B lands under B. A pair whose first terminal is
+ * not a phase fills the first free column. The first pair for a phase wins. */
+function voltageSlots(pairs: PairVoltage[]): (PairVoltage | null)[] {
+	const slots: (PairVoltage | null)[] = [null, null, null];
+	const rest: PairVoltage[] = [];
+	for (const p of pairs) {
+		const slot = PHASE_SLOT[phaseLabel(p.pair[0])];
+		if (slot === undefined) rest.push(p);
+		else if (!slots[slot]) slots[slot] = p;
+	}
+	for (const p of rest) {
+		const free = slots.indexOf(null);
+		if (free < 0) break;
+		slots[free] = p;
+	}
+	return slots;
+}
+
+/** Name each voltage column after the pair its rows share (`V AN`, `V AB`, `V AG`); a column
+ * whose rows mix references keeps the phase alone (`V A`). Never `V1`, which reads as the
+ * positive-sequence voltage. */
+function busColumns(result: ResultSnapshot): TableColumn[] {
+	const seen: (string | null | undefined)[] = [undefined, undefined, undefined];
+	for (const bus of result.buses) {
+		voltageSlots(bus.pairs).forEach((p, k) => {
+			if (!p) return;
+			const name = pairVoltageLabel(p).replace('–', '');
+			seen[k] = seen[k] === undefined || seen[k] === name ? name : null;
+		});
+	}
+	return BUS_COLUMNS.map((c) => {
+		const k = ['v0', 'v1', 'v2'].indexOf(c.key);
+		const name = k < 0 ? undefined : seen[k];
+		return name
+			? {
+					...c,
+					label: `V ${name}`,
+					title: `${name[0]}–${name.slice(1)} voltage magnitude`
+				}
+			: k < 0
+				? c
+				: { ...c, title: `Phase ${'ABC'[k]} pair voltage; the Pairs column names its reference` };
+	});
+}
 
 /** Rows are built on demand and cached in a bounded window, so 100k-row snapshots stay cheap. */
 export function tableModel(result: ResultSnapshot, names: TableNames, kind: TableKind): TableModel {
@@ -91,14 +138,18 @@ export function tableModel(result: ResultSnapshot, names: TableNames, kind: Tabl
 		if (kind === 'bus') {
 			const bus = result.buses[i];
 			const u = busUnbalance(bus);
+			const slots = voltageSlots(bus.pairs);
 			return {
 				id: names.buses[i].id,
 				source: names.buses[i].source ?? null,
 				reference: bus.pairs.length ? [...new Set(bus.pairs.map((p) => p.zone))].join(', ') : null,
+				// Source terminal names, so a CSV round-trips with the case data; the table shows
+				// `pairLabels` (A–N) on screen.
 				pairs: bus.pairs.map((p) => p.pair.join('–')).join(' ') || null,
-				v0: bus.pairs[0]?.volts ?? null,
-				v1: bus.pairs[1]?.volts ?? null,
-				v2: bus.pairs[2]?.volts ?? null,
+				pairLabels: bus.pairs.map(pairVoltageLabel).join(' ') || null,
+				v0: slots[0]?.volts ?? null,
+				v1: slots[1]?.volts ?? null,
+				v2: slots[2]?.volts ?? null,
 				band: worstBand(bus.pairs),
 				unbalance: u?.percent ?? null,
 				unbalanceBasis: u?.definition ?? null,
@@ -126,7 +177,7 @@ export function tableModel(result: ResultSnapshot, names: TableNames, kind: Tabl
 	return {
 		kind,
 		count: kind === 'bus' ? result.buses.length : result.branches.length,
-		columns: kind === 'bus' ? BUS_COLUMNS : BRANCH_COLUMNS,
+		columns: kind === 'bus' ? busColumns(result) : BRANCH_COLUMNS,
 		row(i) {
 			let row = cache.get(i);
 			if (!row) {
