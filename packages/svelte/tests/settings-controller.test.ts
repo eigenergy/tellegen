@@ -254,3 +254,42 @@ it('an explicit null DC convention overrides a nondefault baseline', () => {
 	expect(c.branchSusceptanceFormula).toBeUndefined();
 	ctrl.dispose();
 });
+
+it('server paths and saves follow the displayed DC convention, not a pending one', async () => {
+	const { ctrl, c } = setup();
+	const dcResolved = (formula: string | null): ResolvedSettings => ({
+		version: 1,
+		calculation: 'dcopf',
+		engine_defaults: { branch_susceptance_formula: null },
+		baseline: { branch_susceptance_formula: null },
+		overrides: formula ? { branch_susceptance_formula: formula } : {},
+		effective: { branch_susceptance_formula: formula }
+	});
+	// Before any result, the Study's accepted convention counts.
+	c.settings.accepted = dcResolved('reactance_only');
+	expect(c.resultDcFormula).toBe('reactance_only');
+
+	// A legacy result is displayed; a variant is selected but not yet run.
+	c.solution = { objective: 1, branch_susceptance_formula: 'series_susceptance' } as Solution;
+	c.settings.accepted = dcResolved(null);
+	vi.mocked(resolveSettings).mockResolvedValue(dcResolved('tap_adjusted_reactance'));
+	await ctrl.updateSettings(
+		c,
+		'dcopf',
+		{ branch_susceptance_formula: 'tap_adjusted_reactance' },
+		0
+	);
+	expect(c.branchSusceptanceFormula).toBe('tap_adjusted_reactance');
+	expect(c.resultDcFormula).toBe('series_susceptance');
+	await expect(ctrl.captureSavedCase(c)).resolves.toEqual({ input: 'input' });
+
+	// A variant result is displayed; a return to legacy is pending.
+	c.solution = { objective: 2, branch_susceptance_formula: 'tap_adjusted_reactance' } as Solution;
+	c.settings.accepted = dcResolved('tap_adjusted_reactance');
+	vi.mocked(resolveSettings).mockResolvedValue(dcResolved(null));
+	await ctrl.updateSettings(c, 'dcopf', { branch_susceptance_formula: null }, c.settings.revision);
+	expect(c.branchSusceptanceFormula).toBeUndefined();
+	expect(c.resultDcFormula).toBe('tap_adjusted_reactance');
+	await expect(ctrl.captureSavedCase(c)).rejects.toThrow('selected DC variant');
+	ctrl.dispose();
+});

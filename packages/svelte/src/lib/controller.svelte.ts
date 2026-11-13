@@ -1307,7 +1307,7 @@ export class Controller {
 				// must hydrate from the browser Study so their objective, nodal values, flows, and
 				// voltage fields all come from the selected formulation.
 				requestedFormulation === 'dcopf' &&
-				(!c.branchSusceptanceFormula || c.branchSusceptanceFormula === 'series_susceptance')
+				(!c.resultDcFormula || c.resultDcFormula === 'series_susceptance')
 					? api.getSolution(c.id)
 					: Promise.resolve(null)
 			]);
@@ -1600,7 +1600,7 @@ export class Controller {
 	private caseEditKey(c: SolvableCase): string {
 		return JSON.stringify([
 			c.formulation,
-			c.branchSusceptanceFormula,
+			c.resultDcFormula,
 			this.caseDeltas(c),
 			this.caseRatings(c)
 		]);
@@ -1903,7 +1903,7 @@ export class Controller {
 				!handled &&
 				!ac.signal.aborted &&
 				c.formulation === 'dcopf' &&
-				(!c.branchSusceptanceFormula || c.branchSusceptanceFormula === 'series_susceptance')
+				(!c.resultDcFormula || c.resultDcFormula === 'series_susceptance')
 			) {
 				if (this.hasRatingEdits(c)) {
 					// The server solves at base ratings, so its column would come from the
@@ -1942,7 +1942,7 @@ export class Controller {
 		ac: AbortController,
 		sensitivitySeq: number
 	) => {
-		if (c.branchSusceptanceFormula && c.branchSusceptanceFormula !== 'series_susceptance') {
+		if (c.resultDcFormula && c.resultDcFormula !== 'series_susceptance') {
 			this.fail('Sensitivity for the selected DC variant requires the browser engine.');
 			return;
 		}
@@ -3882,7 +3882,7 @@ export class Controller {
 			c instanceof CaseState &&
 			c.solution &&
 			c.formulation === 'dcopf' &&
-			(!c.branchSusceptanceFormula || c.branchSusceptanceFormula === 'series_susceptance') &&
+			(!c.resultDcFormula || c.resultDcFormula === 'series_susceptance') &&
 			api?.getSavedCase
 		) {
 			const snapshot = await api.getSavedCase(c.id);
@@ -3896,8 +3896,8 @@ export class Controller {
 		}
 		if (
 			c.formulation === 'dcopf' &&
-			c.branchSusceptanceFormula &&
-			c.branchSusceptanceFormula !== 'series_susceptance'
+			c.resultDcFormula &&
+			c.resultDcFormula !== 'series_susceptance'
 		) {
 			throw new Error(
 				'The selected DC variant has no matching saved result. Finish solving before saving it.'

@@ -108,6 +108,18 @@ export interface LocalCaseInit {
 	substations?: LocalSubstations;
 }
 
+/** The convention that produced `solution`, or, before any result, the one the
+ * Study is built with (accepted settings, else the case baseline). Pending
+ * next-run selections never count: they have produced nothing yet. */
+function resultDcFormula(solution: Solution | null, settings: CaseSettings): DcFormula | undefined {
+	if (solution) return solution.branch_susceptance_formula ?? undefined;
+	const effective =
+		settings.accepted?.calculation === 'dcopf'
+			? settings.accepted.effective
+			: settings.baselines.dcopf;
+	return (effective?.branch_susceptance_formula ?? undefined) as DcFormula | undefined;
+}
+
 /** A case file parsed in the browser. Network cases can solve after they have
  * coordinates; a .pwd display file has no case summary, substations only. A
  * class with a stable identity and reactive fields, like CaseState: the solve
@@ -161,12 +173,17 @@ export class LocalCase {
 	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
 	/** The selected calculation. Changing it rebuilds the numerical Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
+	/** The pending next-run DC convention selected in the settings. */
 	get branchSusceptanceFormula(): DcFormula | undefined {
 		const effective = this.settings.resolved.dcopf?.effective ?? {
 			...this.settings.baselines.dcopf,
 			...this.settings.options.dcopf
 		};
 		return (effective.branch_susceptance_formula ?? undefined) as DcFormula | undefined;
+	}
+	/** The DC convention behind the displayed result; gates server paths and saves. */
+	get resultDcFormula(): DcFormula | undefined {
+		return resultDcFormula(this.solution, this.settings);
 	}
 	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
@@ -239,12 +256,17 @@ export class CaseState {
 	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
 	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
+	/** The pending next-run DC convention selected in the settings. */
 	get branchSusceptanceFormula(): DcFormula | undefined {
 		const effective = this.settings.resolved.dcopf?.effective ?? {
 			...this.settings.baselines.dcopf,
 			...this.settings.options.dcopf
 		};
 		return (effective.branch_susceptance_formula ?? undefined) as DcFormula | undefined;
+	}
+	/** The DC convention behind the displayed result; gates server paths and saves. */
+	get resultDcFormula(): DcFormula | undefined {
+		return resultDcFormula(this.solution, this.settings);
 	}
 	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
