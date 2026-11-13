@@ -338,8 +338,6 @@ a {
 	font-size: 12px;
 	font-weight: 400;
 	color: var(--text-secondary);
-	text-transform: uppercase;
-	letter-spacing: 0;
 	margin-left: 4px;
 }
 

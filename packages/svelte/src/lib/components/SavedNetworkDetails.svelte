@@ -46,7 +46,7 @@
 			</div>
 			{#if saved.solution?.objective != null}
 				<div>
-					<dt>OPF objective</dt>
+					<dt>Generation cost ($/h)</dt>
 					<dd>{fmt.format(saved.solution.objective)}</dd>
 				</div>
 			{/if}

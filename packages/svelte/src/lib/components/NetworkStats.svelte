@@ -28,7 +28,7 @@
 				<dd class="mono">{stats.binding ?? '…'}</dd>
 			</div>
 			<div>
-				<dt>OPF objective</dt>
+				<dt>Generation cost ($/h)</dt>
 				{#if stats.objective === null}
 					<dd class="blink">Solving&hellip;</dd>
 				{:else}
