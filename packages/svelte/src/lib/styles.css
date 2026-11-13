@@ -48,6 +48,12 @@
 	--data-pos: var(--pos);
 	--data-neg: var(--neg);
 	--focus-ring: var(--accent);
+	/* Agent activity only: the WebMCP ribbon and the Agent panel's running call.
+	   One hue, apart from the amber accent, so an agent's work reads as its own.
+	   5.17:1 on --paper and 4.6:1 on --agent-soft over --paper. */
+	--agent: #0e7490;
+	--agent-rgb: 14 116 144;
+	--agent-soft: rgb(var(--agent-rgb) / 0.08);
 	/* unselected bus outline in the plain diagram view */
 	--diagram-bus-stroke: #756a5b;
 	/* ground symbol in the multiconductor bus detail */
@@ -144,6 +150,9 @@
 	--text-accent: var(--accent-bright);
 	--text-danger: var(--red);
 	--focus-ring: #8de7f7; /* 12.7:1 */
+	--agent: #8de7f7; /* 12.4:1 on --paper */
+	--agent-rgb: 141 231 247;
+	--agent-soft: rgb(var(--agent-rgb) / 0.12); /* 9.3:1 for --agent text on it */
 	--surface-menu: var(--paper);
 	--diagram-bus-stroke: var(--ink-faint);
 	--mc-ground-stroke: var(--ink-dim);
