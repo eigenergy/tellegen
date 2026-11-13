@@ -162,7 +162,19 @@ tellegen solve-mc < case.pio.json
 tellegen solve-mc-bmopf '{"max_iterations":200}' < case.bmopf.json
 ```
 
-`tellegen describe` includes the options and result schemas.
+`OPTIONS_JSON` also takes two keys that choose what the command prints; neither is a solver setting:
+
+- `"output"` selects the view. `"full"` (the default) prints the complete `McPfResult`, as before. `"summary"` prints the constant-size `McPfSummary` (convergence, iterations, residuals, load voltage range and violation count, source power, passive loss, counts) without building per-terminal records. `"tables"` prints `{"summary": McPfSummary, "tables": McPfResultTables}`, the full result's rows as columns with each name stored once and complex values interleaved `[re, im]`.
+- `"profile": true` adds a `profile` object to whichever view is printed: the `McPfProfile` phases in milliseconds (`parse_ms`, `prepare_ms`, `factor_ms`, `load_evaluation_ms`, `kcl_and_matvec_ms`, `linear_solve_ms`, `summary_ms`, `total_ms`, with `iterations` and `linear_solves`), plus `output_ms`, the time spent building the printed view. Writing the JSON text and process start-up are outside the profile.
+
+```sh
+tellegen solve-mc '{"output":"summary","profile":true}' < case.pio.json
+tellegen solve-mc-bmopf '{"output":"tables"}' < case.bmopf.json
+```
+
+The views other than the default solve through `McPfSession`, so `solve-mc` then applies the same input checks as a multiconductor Study: the module must hold a `MulticonductorNetwork` or an `McAcPfInstance`. Every view except `profile` is deterministic for a given case and options; the profile's durations vary between runs.
+
+`tellegen describe` includes the options and result schemas, and the `McPfSummary`, `McPfResultTables` and `McPfProfile` schemas.
 
 The browser's distribution graph carries the case's declared limits when present, in volts: `DistGraphBus.voltage_limits` lists phase-to-neutral (`vpn_min`, `vpn_max`) and phase-to-phase (`vpp_min`, `vpp_max`) bounds, the latter ordered by the pairs (1,2), (2,3), (3,1) of the phase terminals and named in `vpp_pairs`, phase-to-ground bounds keyed by phase terminal (`v_min_by_terminal`, `v_max_by_terminal`, from BMOPF `v_min`/`v_max` or PMD `vm_lb`/`vm_ub`), and the sequence and neutral-to-ground bounds (`vpos_min`, `vpos_max`, `vneg_max`, `vzero_max`, `vn_max`). `DistGraphEdge.rating` gives per-conductor ampacity (`i_max`) or, for a transformer, its largest winding rating in volt-amperes at each bus it connects (`s_rating_by_bus`). The overview ranks voltages against the phase-to-neutral, phase-to-phase and phase-to-ground bands. The `McWorkbench` component in `@tellegen/svelte` renders it from a result snapshot and the graph's inputs. `MulticonductorCase.overviewSnapshot` holds the active case's snapshot of `overviewResult`, built once per operating point and shared with the schematic, and `overviewInputs` and `overviewSearch` hold the network-only inputs, rebuilt only when the graph is replaced. `controller.multiFullResult(case)` reads the full result from a stored solve or the live session.
 
