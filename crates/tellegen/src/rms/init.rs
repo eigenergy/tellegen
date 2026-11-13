@@ -18,8 +18,10 @@ use super::models::{
     avr_from_psse, governor_from_psse, machine_from_psse, ri_dq, stabilizer_from_psse, Avr,
     Governor, Machine, Stabilizer,
 };
-use super::system::{BusLoad, DynSystem, GenDevice, HeldUnit, Source, C64};
-use super::LoadModel;
+use super::system::{
+    fd_step, BusLoad, DynSystem, ExpPart, GenDevice, HeldUnit, LowVoltage, Source, C64,
+};
+use super::{LoadModel, LowVoltageLoad};
 use crate::formulation::AcPolar;
 use crate::model::AcNetwork;
 use crate::problem::{ac_pf_with_start, AcStart};
@@ -42,11 +44,28 @@ pub(crate) fn build(
     options: super::RmsOptions,
 ) -> Result<(DynSystem, Vec<f64>, InitReport), String> {
     let mut report = InitReport::default();
-    let (ac, pf, zip_terms) = power_flow(network)?;
+    let low_voltage = match options.low_voltage_load {
+        LowVoltageLoad::Break { v_break } => {
+            if !(v_break.is_finite() && v_break > 0.0) {
+                return Err(format!(
+                    "the load breakpoint v_break must be a positive voltage, not {v_break}"
+                ));
+            }
+            LowVoltage::Break(v_break)
+        }
+        LowVoltageLoad::Exact => LowVoltage::Floor,
+    };
+    let (ac, pf, zip_terms, pf_notes) = power_flow(network, options.reactive_limits)?;
+    report.notes.extend(pf_notes);
     if zip_terms > 0 {
-        report.notes.push(format!(
-            "voltage-dependent (ZIP/exponential) loads: the power flow solved {zip_terms} voltage-dependent load part(s) exactly; the dynamic load model applies to their power at the power flow voltage"
-        ));
+        report.notes.push(match load_model {
+            LoadModel::PowerFlow => format!(
+                "voltage-dependent (ZIP/exponential) loads: the power flow solved {zip_terms} voltage-dependent load part(s) exactly, and each keeps its law in the simulation"
+            ),
+            other => format!(
+                "voltage-dependent (ZIP/exponential) loads: the power flow solved {zip_terms} voltage-dependent load part(s) exactly; the {other:?} load model replaces their law with its own from the power flow voltage on"
+            ),
+        });
     }
     let remote = network
         .generators()
@@ -100,6 +119,10 @@ pub(crate) fn build(
         let l = &mut loads[b];
         l.v0 = pf.vm[b];
         match load_model {
+            LoadModel::PowerFlow => {
+                l.p_p = ac.pd[b];
+                l.q_p = ac.qd[b];
+            }
             LoadModel::ConstantImpedance => {
                 l.p_z = p;
                 l.q_z = q;
@@ -111,6 +134,26 @@ pub(crate) fn build(
             LoadModel::ConstantPower => {
                 l.p_p = p;
                 l.q_p = q;
+            }
+        }
+    }
+    // The voltage-dependent parts with their own law: a term
+    // `c (V / v_nom)^γ` is `c (V0 / v_nom)^γ (V / V0)^γ`, its power at the
+    // power flow voltage `V0` times the law relative to `V0`.
+    if load_model == LoadModel::PowerFlow {
+        for t in &ac.load_terms {
+            let l = &mut loads[t.bus];
+            let (s0, _) = t.eval(l.v0);
+            match (t.exponent, t.reactive) {
+                (1.0, false) => l.p_i += s0,
+                (1.0, true) => l.q_i += s0,
+                (2.0, false) => l.p_z += s0,
+                (2.0, true) => l.q_z += s0,
+                (gamma, reactive) => l.exp.push(ExpPart {
+                    reactive,
+                    s0,
+                    gamma,
+                }),
             }
         }
     }
@@ -380,8 +423,8 @@ pub(crate) fn build(
                     (Some(Box::new(p)), off)
                 }
                 None => {
-                    loads[b].p_i -= s.re;
-                    loads[b].q_i -= s.im;
+                    loads[b].u_p -= s.re;
+                    loads[b].u_q -= s.im;
                     static_units += 1;
                     (None, 0)
                 }
@@ -427,13 +470,23 @@ pub(crate) fn build(
             .as_ref()
             .map(|l| l.model.clone())
             .expect("checked above");
-        let (machine, shaft) = machine_from_psse(&model, m.zsource)?;
-        let avr = m
+        let (mut machine, shaft) = machine_from_psse(&model, m.zsource)?;
+        let mut avr = m
             .exciter
             .as_ref()
             .map(|l| avr_from_psse(&l.model))
             .transpose()?
             .unwrap_or(Avr::Fixed);
+        if options.psid_saturation {
+            match &mut machine {
+                Machine::RoundRotor(mm) => mm.sat = mm.sat.without_knee(),
+                Machine::SalientPole(mm) => mm.sat = mm.sat.without_knee(),
+                Machine::Classic { .. } => {}
+            }
+            if let Avr::Esac1a { sat, .. } = &mut avr {
+                *sat = sat.without_knee();
+            }
+        }
         let gov = m
             .governor
             .as_ref()
@@ -531,6 +584,7 @@ pub(crate) fn build(
         end_open: vec![[false; 2]; m_branches],
         branch_faults: vec![None; m_branches],
         held,
+        low_voltage,
         factorize_by_blocks: options.factorize_by_blocks,
     };
     sys.rebuild_ybus();
@@ -559,25 +613,80 @@ pub(crate) fn build(
     Ok((sys, x0, report))
 }
 
-/// The AC power flow the dynamic initialization starts from. Voltage-dependent
-/// (ZIP and exponential) loads are solved exactly inside the Newton iteration
-/// ([`AcNetwork::from_network_pf`]); the bus demand at the solution is
-/// [`AcNetwork::demand_at`] at the solved magnitudes. Returns the number of
-/// voltage-dependent load terms (0 when every load is constant power).
+/// The AC power flow the dynamic initialization starts from: the static
+/// study's ([`AcNetwork::from_network_pf`], [`ac_pf_with_start`]), whose
+/// Newton iteration solves voltage-dependent (ZIP and exponential) loads
+/// exactly, so the bus demand at the solution is [`AcNetwork::demand_at`] at
+/// the solved magnitudes. With `reactive_limits` the generators' reactive
+/// limits are enforced as in the static study (PV→PQ switching); without,
+/// every generator holds its voltage setpoint whatever reactive power that
+/// takes, as PowerSimulationsDynamics.jl initializes. Remote regulation is
+/// the one difference to the static study, which refuses it: the
+/// regulating terminal holds the case's voltage ([`hold_remote_regulators`]).
+///
+/// Returns the number of voltage-dependent load terms (0 when every load is
+/// constant power) and notes naming every generator bus whose solution and
+/// setpoint disagree: a bus released at a reactive limit (its voltage off the
+/// setpoint), or, without limits, a bus whose reactive generation exceeds them.
 pub(crate) fn power_flow(
     network: &BalancedNetwork,
-) -> Result<(AcNetwork, crate::problem::AcPfSolution, usize), String> {
+    reactive_limits: bool,
+) -> Result<(AcNetwork, crate::problem::AcPfSolution, usize, Vec<String>), String> {
     let mut ac = AcNetwork::from_network_pf(network)?;
     hold_remote_regulators(network, &mut ac);
-    // The dynamic initialization starts from the case as solved: a
-    // generator keeps its voltage setpoint whatever reactive power that
-    // takes (no PV→PQ switching at its limits), as PSS/E initializes a
-    // dynamic run from a solved case and PowerSimulationsDynamics.jl does.
-    ac.qmin.iter_mut().for_each(|q| *q = f64::NEG_INFINITY);
-    ac.qmax.iter_mut().for_each(|q| *q = f64::INFINITY);
+    let (qmin, qmax) = (ac.qmin.clone(), ac.qmax.clone());
+    if !reactive_limits {
+        ac.qmin.iter_mut().for_each(|q| *q = f64::NEG_INFINITY);
+        ac.qmax.iter_mut().for_each(|q| *q = f64::INFINITY);
+    }
     let pf = ac_pf_with_start(&AcPolar, &ac, AcStart::Case)?;
     let terms = ac.load_terms.len();
-    Ok((ac, pf, terms))
+    // Per generator bus: the limits, and the reactive generation solved.
+    let (_, qd) = ac.demand_at(&pf.vm);
+    let mut lim: std::collections::BTreeMap<usize, (f64, f64)> = std::collections::BTreeMap::new();
+    for g in 0..ac.k {
+        let e = lim.entry(ac.gen_bus[g]).or_insert((0.0, 0.0));
+        e.0 += qmin[g];
+        e.1 += qmax[g];
+    }
+    let base = ac.base_mva;
+    let mut notes = Vec::new();
+    for (&b, &(lo, hi)) in &lim {
+        if ac.slacks.contains(&b) {
+            continue;
+        }
+        let qg = pf.q[b] + qd[b];
+        let id = ac.bus_ids[b];
+        let dv = pf.vm[b] - ac.vm_set[b];
+        let released = ac.pf_pv[b] && pf.kinds[b] == crate::problem::BusKind::Pq;
+        if reactive_limits && released {
+            notes.push(format!(
+                "generator bus {id} starts at its reactive limit (Q = {:.2} Mvar): V = {:.5} pu, {dv:+.5} pu from its setpoint {:.5} pu (the static AC power flow's PV→PQ switch; RmsOptions::reactive_limits)",
+                qg * base,
+                pf.vm[b],
+                ac.vm_set[b]
+            ));
+        } else if !reactive_limits && ac.pf_pv[b] {
+            let over = if qg > hi {
+                qg - hi
+            } else if qg < lo {
+                qg - lo
+            } else {
+                0.0
+            };
+            if over.abs() > 1e-6 {
+                notes.push(format!(
+                    "generator bus {id} holds its setpoint {:.5} pu with Q = {:.2} Mvar, {:+.2} Mvar beyond its limits [{:.2}, {:.2}] Mvar (reactive limits not enforced)",
+                    ac.vm_set[b],
+                    qg * base,
+                    over * base,
+                    lo * base,
+                    hi * base
+                ));
+            }
+        }
+    }
+    Ok((ac, pf, terms, notes))
 }
 
 /// A generator that regulates a remote bus (PSS/E `IREG`) holds its own
@@ -683,8 +792,8 @@ pub(crate) fn newton(
         }
         let mut j = faer::Mat::<f64>::zeros(k, k);
         for c in 0..k {
-            let h = 1e-7 * u[c].abs().max(1.0);
             let keep = u[c];
+            let h = fd_step(keep);
             u[c] += h;
             g(&u, &mut r1);
             u[c] = keep;
@@ -1016,6 +1125,10 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/support/smib.rs"
     ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
 
     /// A single-machine case from WECC 240 with a ZIP load at the unit's bus.
     fn smib_with_zip_load() -> (BalancedNetwork, powerio::DynamicCase) {
@@ -1037,20 +1150,26 @@ mod tests {
     /// ZIP power at the solved voltage.
     #[test]
     fn a_zip_load_initializes_at_the_static_operating_point() {
+        if shipped_wecc240().is_none() {
+            return;
+        }
         let (net, _) = smib_with_zip_load();
         assert!(matches!(
             net.loads()[0].voltage_model,
             Some(LoadVoltageModel::Zip { .. })
         ));
-        let (ac, pf, terms) = power_flow(&net).unwrap();
+        let (ac, pf, terms, notes) = power_flow(&net, true).unwrap();
         assert!(terms > 0);
-        let mut static_ac = AcNetwork::from_network_pf(&net).unwrap();
-        // The static flow enforces reactive limits, the initialization holds
-        // the case's setpoints (this unit's limit binds with the load); the
-        // loads are what is compared here.
-        static_ac.qmin.iter_mut().for_each(|q| *q = f64::NEG_INFINITY);
-        static_ac.qmax.iter_mut().for_each(|q| *q = f64::INFINITY);
+        // The static study's power flow, reactive limits and all: this unit's
+        // limit binds with the load, and the initialization says so.
+        let static_ac = AcNetwork::from_network_pf(&net).unwrap();
         let reference = ac_pf_with_start(&AcPolar, &static_ac, AcStart::Case).unwrap();
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("generator bus 102 starts at its reactive limit")),
+            "{notes:?}"
+        );
         for b in 0..ac.n {
             assert!(
                 (pf.vm[b] - reference.vm[b]).abs() < 1e-8
@@ -1078,6 +1197,9 @@ mod tests {
     /// The RMS simulation starts at rest from that operating point.
     #[test]
     fn rms_starts_at_rest_with_a_zip_load() {
+        if shipped_wecc240().is_none() {
+            return;
+        }
         let (net, dyr) = smib_with_zip_load();
         let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
         let r = sim
@@ -1093,5 +1215,73 @@ mod tests {
         );
         let w = &r.channels["omega:102"];
         assert!(w.iter().all(|x| (x - 1.0).abs() < 1e-8), "not at rest");
+    }
+
+    /// The network-device interface frame: turning every bus voltage, every
+    /// rotor angle and the infinite bus's internal voltage by `θ` turns the
+    /// system onto itself. At a point off the steady state, every device row
+    /// keeps its value and every bus's current balance turns by `θ`: the
+    /// dq↔RI rotation (`Vd + jVq = (Vr + jVi) e^{−j(δ − π/2)}`) and the
+    /// machine-base scaling enter the network as they should.
+    #[test]
+    fn the_device_frame_turns_with_the_network() {
+        if shipped_wecc240().is_none() {
+            return;
+        }
+        for case in wecc240_smib_cases()
+            .iter()
+            .filter(|c| c.id.starts_with("smib_genrou"))
+        {
+            let (net, dyr) = smib_study(case);
+            let (mut sys, x0, _) = build(
+                &net,
+                &dyr,
+                #[cfg(feature = "rms-experimental")]
+                &[],
+                LoadModel::PowerFlow,
+                crate::rms::RmsOptions::default(),
+            )
+            .unwrap();
+            let n = sys.n;
+            let mut f = vec![0.0; sys.nx];
+            // The start is a steady state to rounding.
+            sys.residual(&x0, &mut f, None);
+            let r = f.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
+            assert!(r < 1e-8, "{}: {r:e}", case.id);
+            // Off the steady state.
+            let x: Vec<f64> = x0
+                .iter()
+                .enumerate()
+                .map(|(i, v)| v + 1e-2 * (((i * 7) % 5) as f64 - 2.0))
+                .collect();
+            let theta = 0.7_f64;
+            let turn = C64::from_polar(1.0, theta);
+            let mut xr = x.clone();
+            for b in 0..n {
+                let v = C64::new(x[b], x[n + b]) * turn;
+                xr[b] = v.re;
+                xr[n + b] = v.im;
+            }
+            for d in &sys.devices {
+                xr[d.offset + d.layout()[1]] += theta;
+            }
+            sys.residual(&x, &mut f, None);
+            for s in &mut sys.sources {
+                s.e *= turn;
+            }
+            let mut fr = vec![0.0; sys.nx];
+            sys.residual(&xr, &mut fr, None);
+            let mut worst = 0.0_f64;
+            for b in 0..n {
+                let i = C64::new(f[b], f[n + b]) * turn;
+                worst = worst.max((i - C64::new(fr[b], fr[n + b])).norm());
+            }
+            for k in 2 * n..sys.nx {
+                worst = worst.max((f[k] - fr[k]).abs());
+            }
+            // The bus rows reach 3e3 (the infinite bus's 1e5 pu admittance
+            // times the perturbation): rounding there is about 1e-12.
+            assert!(worst < 1e-9, "{}: {worst:e}", case.id);
+        }
     }
 }

@@ -720,53 +720,56 @@ mod tests {
         );
     }
 
-    /// On the example cases: every linked record, one parameter changed,
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
+
+    /// On the example case: every linked record, one parameter changed,
     /// every other record and parameter as before.
     #[test]
     fn edit_every_linked_record_of_the_examples() {
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
-        for name in ["rms_examples/wecc240"] {
-            let raw = powerio::Source::open(base.join(name).join("case.raw")).unwrap();
-            let module = powerio::parse(raw).unwrap();
-            let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-                panic!("not a balanced network")
-            };
-            let text = std::fs::read_to_string(base.join(name).join("case.dyr")).unwrap();
-            let dyr = powerio::parse_dyr(&text).unwrap();
-            let views = dyr_parameters(net, &dyr);
-            assert!(!views.is_empty());
-            let mut edited = 0;
-            for g in &views {
-                for r in &g.records {
-                    let k = r.parameters.len() - 1;
-                    let value = r.parameters[k].value + 0.25;
-                    let out = dyr_edit(
-                        &text,
-                        &[DyrEdit {
-                            line: r.line,
-                            index: k,
-                            value,
-                        }],
-                    )
-                    .unwrap();
-                    let after = powerio::parse_dyr(&out).unwrap();
-                    assert_eq!(after.records().len(), dyr.records().len());
-                    for (a, b) in dyr.records().iter().zip(after.records()) {
-                        if a.line() == r.line {
-                            assert_eq!(b.parameters()[k].parse::<f64>().unwrap(), value);
-                            assert_eq!(a.parameters()[..k], b.parameters()[..k]);
-                        } else {
-                            assert_eq!(a.raw_record(), b.raw_record());
-                        }
+        let Some(dir) = shipped_wecc240() else { return };
+        let raw = powerio::Source::open(dir.join("case.raw")).unwrap();
+        let module = powerio::parse(raw).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        let text = std::fs::read_to_string(dir.join("case.dyr")).unwrap();
+        let dyr = powerio::parse_dyr(&text).unwrap();
+        let views = dyr_parameters(net, &dyr);
+        assert!(!views.is_empty());
+        let mut edited = 0;
+        for g in &views {
+            for r in &g.records {
+                let k = r.parameters.len() - 1;
+                let value = r.parameters[k].value + 0.25;
+                let out = dyr_edit(
+                    &text,
+                    &[DyrEdit {
+                        line: r.line,
+                        index: k,
+                        value,
+                    }],
+                )
+                .unwrap();
+                let after = powerio::parse_dyr(&out).unwrap();
+                assert_eq!(after.records().len(), dyr.records().len());
+                for (a, b) in dyr.records().iter().zip(after.records()) {
+                    if a.line() == r.line {
+                        assert_eq!(b.parameters()[k].parse::<f64>().unwrap(), value);
+                        assert_eq!(a.parameters()[..k], b.parameters()[..k]);
+                    } else {
+                        assert_eq!(a.raw_record(), b.raw_record());
                     }
-                    edited += 1;
                 }
+                edited += 1;
             }
-            println!(
-                "{name}: {} generators, {edited} records edited",
-                views.len()
-            );
         }
+        println!(
+            "wecc240: {} generators, {edited} records edited",
+            views.len()
+        );
     }
 
     #[test]

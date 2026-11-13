@@ -360,14 +360,18 @@ pub fn dyr_auto_json(module_json: &str, dyr_text: &str) -> Result<String, String
 mod tests {
     use super::*;
 
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
+
     #[test]
     fn a_static_case_becomes_dynamic_by_rule() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/data/rms_examples/wecc240");
-        let module = powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
-        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-            panic!()
+        let Some(dir) = shipped_wecc240() else {
+            return;
         };
+        let net = shipped_wecc240_network().unwrap();
+        let net = &net;
         let auto = dyr_auto(net, "").unwrap();
         for a in &auto.assigned {
             println!(

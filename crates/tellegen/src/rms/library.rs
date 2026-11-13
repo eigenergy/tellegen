@@ -473,16 +473,10 @@ pub fn library_json() -> String {
 mod tests {
     use super::*;
 
-    /// The WECC 240-bus case (`tests/data/rms_examples/wecc240`), static part.
-    fn wecc240() -> BalancedNetwork {
-        let raw = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/data/rms_examples/wecc240/case.raw");
-        let module = powerio::parse(powerio::Source::open(raw).unwrap()).unwrap();
-        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-            panic!("not a balanced network")
-        };
-        net.clone()
-    }
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
 
     /// Every library record parses through powerio's schema (typed models)
     /// with the arity the engine expects.
@@ -507,7 +501,9 @@ mod tests {
     #[test]
     fn dynamize_swap_remove_and_simulate() {
         use crate::rms::{LoadModel, RmsEvent, RmsRequest, RmsSimulation};
-        let net = wecc240();
+        let Some(net) = shipped_wecc240_network() else {
+            return;
+        };
         let req = DynamizeRequest {
             machine: "GENROU".into(),
             exciter: Some("SEXS".into()),
@@ -523,7 +519,7 @@ mod tests {
             t_end: 2.0,
             dt: 0.005,
             output_step: 0.01,
-            load_model: LoadModel::ConstantImpedance,
+            load_model: Some(LoadModel::ConstantImpedance),
             events: vec![
                 RmsEvent::BusFault {
                     time: 0.5,
@@ -571,7 +567,9 @@ mod tests {
     fn added_unit_moves_with_its_records() {
         use crate::case_edit::{apply_case_edit, CaseEdit};
         use crate::rms::{LoadModel, RmsEvent, RmsRequest, RmsSimulation};
-        let mut net = wecc240();
+        let Some(mut net) = shipped_wecc240_network() else {
+            return;
+        };
         let req = DynamizeRequest {
             machine: "GENROU".into(),
             exciter: Some("SEXS".into()),
@@ -615,7 +613,7 @@ mod tests {
             t_end: 1.5,
             dt: 0.005,
             output_step: 0.01,
-            load_model: LoadModel::ConstantImpedance,
+            load_model: Some(LoadModel::ConstantImpedance),
             events: vec![
                 RmsEvent::BusFault {
                     time: 0.5,
@@ -656,7 +654,9 @@ mod tests {
     fn presets_parse_initialize_and_simulate() {
         use crate::rms::presets::UNIT_PRESETS;
         use crate::rms::{LoadModel, RmsEvent, RmsRequest, RmsSimulation};
-        let net = wecc240();
+        let Some(net) = shipped_wecc240_network() else {
+            return;
+        };
         let base = dyr_dynamize(
             &net,
             "",
@@ -684,7 +684,7 @@ mod tests {
                     t_end: 3.0,
                     dt: 0.005,
                     output_step: 0.01,
-                    load_model: LoadModel::ConstantImpedance,
+                    load_model: Some(LoadModel::ConstantImpedance),
                     events: vec![
                         RmsEvent::BusFault {
                             time: 0.5,

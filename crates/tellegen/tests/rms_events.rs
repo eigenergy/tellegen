@@ -114,7 +114,7 @@ fn line_fault_breakers_and_reclose() {
         t_end: 6.0,
         dt: 0.005,
         output_step: 0.01,
-        load_model: LoadModel::ConstantImpedance,
+        load_model: Some(LoadModel::ConstantImpedance),
         events: events(permanent),
         small_signal: false,
         record: None,
@@ -154,7 +154,7 @@ fn replay_after_a_generator_trip_reproduces_the_run() {
         t_end: 2.0,
         dt: 0.005,
         output_step: 0.01,
-        load_model: LoadModel::ConstantImpedance,
+        load_model: Some(LoadModel::ConstantImpedance),
         events: vec![RmsEvent::GeneratorTrip {
             time: 0.5,
             bus: 1431,

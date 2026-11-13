@@ -22,8 +22,11 @@
 //! Supported models: machines `GENCLS`, `GENROU`, `GENROE`, `GENSAL`,
 //! `GENSAE`; exciters `SEXS`, `ESAC1A`, `EXST1`; governors `TGOV1`, `GAST`,
 //! `HYGOV`; stabilizer `IEEEST`; renewable plants `REGCA1` + `REECB1` +
-//! `REPCA1` ([`renewable`]). Loads are constant impedance, constant current
-//! or constant power at their power flow voltage.
+//! `REPCA1` ([`renewable`]). Each static load keeps the voltage law the AC
+//! power flow solved it with (constant power, ZIP and exponential parts,
+//! [`LoadModel::PowerFlow`]), or the whole bus demand follows one law
+//! ([`LoadModel`]); constant-power and constant-current parts convert to
+//! constant admittance below a breakpoint ([`LowVoltageLoad`]).
 
 // Negated comparisons are NaN-safe on purpose (`!(x <= tol)` fails on NaN);
 // index loops mirror the row-by-row residual equations.
@@ -99,14 +102,48 @@ pub enum InputSignal {
 }
 
 /// How static loads respond to voltage during the simulation.
+///
+/// The default keeps every load's own law: the constant-power part, the ZIP
+/// constant-current and constant-impedance parts and exponential loads, the
+/// same decomposition the AC power flow solves (each part `P0 (V / V0)^γ`
+/// with `P0` its power at the power flow voltage `V0`), so the loads draw
+/// exactly the power flow demand at `t = 0`. The other variants are a global
+/// override: the whole bus demand at `V0`, whatever its parts, follows one
+/// law (PSS/E `CONL` with 100 % of P and Q in one class).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadModel {
-    /// Constant admittance at the power flow voltage (PSS/E `CONL` 100% Z).
+    /// Each load part keeps the voltage law of the static model.
     #[default]
+    PowerFlow,
+    /// Constant admittance at the power flow voltage (PSS/E `CONL` 100% Z).
     ConstantImpedance,
     ConstantCurrent,
     ConstantPower,
+}
+
+/// How the constant-power and constant-current load parts (and exponential
+/// parts with `γ < 2`) behave at low voltage.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LowVoltageLoad {
+    /// PSS/E `PQBRAK`: below `v_break` (pu, absolute; 0.7 by default as in
+    /// PSS/E) each part draws the constant admittance of its power at the
+    /// breakpoint, `P(V) = P(V_b) (V / V_b)²`, continuous in value at `V_b`.
+    /// A bus whose power flow voltage `V0` is below `v_break` breaks at `V0`
+    /// instead, so it starts on its own law.
+    Break { v_break: f64 },
+    /// The stated law at every voltage down to 20 % of `V0`, below that a
+    /// smooth floor on the magnitude the parts divide by (as
+    /// PowerSimulationsDynamics.jl applies the law at every voltage; the
+    /// floor only keeps the current's direction defined at 0 V).
+    Exact,
+}
+
+impl Default for LowVoltageLoad {
+    fn default() -> Self {
+        Self::Break { v_break: 0.7 }
+    }
 }
 
 /// A discrete event at `time` seconds.
@@ -243,8 +280,11 @@ pub struct RmsRequest {
     /// Output sampling interval in seconds, a multiple of `dt`.
     #[serde(default = "default_output_step")]
     pub output_step: f64,
-    #[serde(default)]
-    pub load_model: LoadModel,
+    /// The load model: for [`simulate`] the one the simulation is built with
+    /// (default [`LoadModel::PowerFlow`]); for [`RmsSimulation::run`] it
+    /// must be the prepared simulation's or `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_model: Option<LoadModel>,
     #[serde(default)]
     pub events: Vec<RmsEvent>,
     /// Compute the eigenvalues of the linearized system at the initial point
@@ -277,7 +317,7 @@ impl Default for RmsRequest {
             t_end: default_t_end(),
             dt: default_dt(),
             output_step: default_output_step(),
-            load_model: LoadModel::default(),
+            load_model: None,
             events: Vec::new(),
             small_signal: false,
             record: None,
@@ -301,7 +341,8 @@ pub struct RmsGenerator {
 
 /// The simulation result. Channels are keyed `quantity:bus` (`vm`, `va` in
 /// radians, `delta` in radians, `omega`, `efd`, `tm` on the machine base,
-/// `pe`, `qe` on the system base) and `quantity:from-to` for branch flows
+/// `pe`, `qe` on the system base; `pl`, `ql` the power the loads of a bus
+/// draw, system base) and `quantity:from-to` for branch flows
 /// (`p_from`, `q_from`, `p_to`, `q_to`, system base), with `#id` appended for
 /// a machine or circuit id other than `1`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -337,6 +378,7 @@ pub struct RmsSimulation {
     notes: Vec<String>,
     load_model: LoadModel,
     topology: Topology,
+    initial_residual: f64,
 }
 
 impl RmsSimulation {
@@ -430,6 +472,7 @@ impl RmsSimulation {
             notes,
             load_model,
             topology,
+            initial_residual: report.steady_residual,
         })
     }
 
@@ -450,6 +493,14 @@ impl RmsSimulation {
                 from.norm().max(to.norm())
             })
             .collect()
+    }
+
+    /// `‖f(x0)‖∞` at the initial point: every derivative and every network
+    /// current balance, the steadiness of the initialization (system per
+    /// unit; the build refuses more than 1e-6).
+    #[must_use]
+    pub fn initial_residual(&self) -> f64 {
+        self.initial_residual
     }
 
     pub fn load_model(&self) -> LoadModel {
@@ -504,6 +555,33 @@ impl RmsSimulation {
         })
     }
 
+    /// Check every event before a run: a finite time in `[0, t_end]`, and
+    /// an element the system has (each event applied in time order to a
+    /// copy of the system, so an element an earlier event adds or removes
+    /// is judged as the run would).
+    fn check_events(&self, events: &[RmsEvent], t_end: f64) -> Result<(), String> {
+        for (k, e) in events.iter().enumerate() {
+            let t = e.time();
+            if !t.is_finite() {
+                return Err(format!("event {k} has a non-finite time {t}"));
+            }
+            if t < 0.0 || t > t_end {
+                return Err(format!(
+                    "event {k} at t = {t} s lies outside the run [0, {t_end}] s"
+                ));
+            }
+        }
+        let mut order: Vec<&RmsEvent> = events.iter().collect();
+        order.sort_by(|a, b| a.time().total_cmp(&b.time()));
+        let mut sys = self.sys.clone();
+        let mut x = self.x0.clone();
+        for e in order {
+            apply_event(&mut sys, &mut x, e)
+                .map_err(|err| format!("event at t = {} s: {err}", e.time()))?;
+        }
+        Ok(())
+    }
+
     /// Run the simulation.
     ///
     /// # Errors
@@ -543,12 +621,17 @@ impl RmsSimulation {
         start: Option<&Checkpoint>,
         cancelled: &mut dyn FnMut() -> bool,
     ) -> Result<RmsResult, String> {
-        if request.load_model != self.load_model {
+        if request.load_model.is_some_and(|m| m != self.load_model) {
             return Err("the request's load model differs from the prepared simulation's".into());
         }
-        if !(request.dt > 0.0 && request.output_step >= request.dt && request.t_end > 0.0) {
-            return Err("need dt > 0, output_step >= dt and t_end > 0".into());
+        if !(request.dt > 0.0
+            && request.output_step >= request.dt
+            && request.t_end > 0.0
+            && request.t_end.is_finite())
+        {
+            return Err("need dt > 0, output_step >= dt and a finite t_end > 0".into());
         }
+        self.check_events(&request.events, request.t_end)?;
         let substeps = substeps(request.output_step, request.dt) as usize;
         let h = request.output_step / substeps as f64;
         let mut sys = self.sys.clone();
@@ -870,12 +953,10 @@ fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<S
             scale,
         } => {
             let k = bus(sys, *b)?;
-            let l = &mut sys.loads[k];
-            for v in [
-                &mut l.p_z, &mut l.q_z, &mut l.p_i, &mut l.q_i, &mut l.p_p, &mut l.q_p,
-            ] {
-                *v *= scale;
+            if !scale.is_finite() {
+                return Err(format!("load scale {scale} is not finite"));
             }
+            sys.loads[k].scale(*scale, *scale);
             format!("t = {time} s: load at bus {b} scaled by {scale}")
         }
         RmsEvent::SetReference {
@@ -885,6 +966,9 @@ fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<S
             signal,
             value,
         } => {
+            if !value.is_finite() {
+                return Err(format!("reference value {value} is not finite"));
+            }
             let d = sys
                 .devices
                 .iter_mut()
@@ -1025,7 +1109,7 @@ fn fault_admittance(r: f64, x: f64) -> Result<C64, String> {
 /// Choices of one prepared simulation, fixed when it is built. The defaults
 /// are tellegen's own; the others exist to compare with another tool or
 /// method, and affect only the simulation they are given to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RmsOptions {
     /// Simulate renewable plants (`REGCA1` + `REECB1` + `REPCA1`), the
@@ -1035,9 +1119,26 @@ pub struct RmsOptions {
     /// gain for renewable plants (negative between its two points,
     /// `get_LV_current_gain`) instead of the PSS/E one.
     pub psid_lv_gain: bool,
+    /// Evaluate the quadratic saturation of machines and `ESAC1A` below its
+    /// knee `A` as PowerSimulationsDynamics.jl 0.16.2 does (the formula
+    /// `B (x − A)² / x`, which rises again below `A`) instead of PSS/E's
+    /// `Se = 0` there.
+    pub psid_saturation: bool,
     /// Factorize the step matrices by blocks where every unit allows it, the
     /// default, or always as one sparse LU over all unknowns.
     pub factorize_by_blocks: bool,
+    /// Low-voltage behaviour of the constant-power and constant-current load
+    /// parts: PSS/E's `PQBRAK` conversion at 0.7 pu by default, or the exact
+    /// law (PowerSimulationsDynamics.jl).
+    pub low_voltage_load: LowVoltageLoad,
+    /// Initialize from the AC power flow with the generators' reactive
+    /// limits enforced (PV→PQ switching), the default and the same solve as
+    /// the static study, or with every generator at its voltage setpoint
+    /// whatever reactive power that takes (PowerSimulationsDynamics.jl, and
+    /// PSS/E from a case solved without limits). Either way the result's
+    /// notes name every unit whose solved reactive power and setpoint
+    /// disagree, and by how much.
+    pub reactive_limits: bool,
 }
 
 impl Default for RmsOptions {
@@ -1045,7 +1146,10 @@ impl Default for RmsOptions {
         Self {
             renewable_plants: true,
             psid_lv_gain: false,
+            psid_saturation: false,
             factorize_by_blocks: true,
+            low_voltage_load: LowVoltageLoad::default(),
+            reactive_limits: true,
         }
     }
 }
@@ -1140,6 +1244,9 @@ enum Source {
     HeldQe(usize),
     /// Simulated plant, local state index.
     PlantState(usize, usize),
+    /// Power drawn by the loads of a bus (not its held units), system base.
+    Pl(usize),
+    Ql(usize),
     PFrom(usize),
     QFrom(usize),
     PTo(usize),
@@ -1280,6 +1387,12 @@ impl Recorder {
                 for (j, name) in p.state_names().into_iter().enumerate() {
                     cat.push((format!("inv.{name}:{key}"), Source::PlantState(k, j)));
                 }
+            }
+        }
+        for (b, &number) in sys.bus_numbers.iter().enumerate() {
+            if sys.loads[b].has_load() {
+                cat.push((format!("pl:{number}"), Source::Pl(b)));
+                cat.push((format!("ql:{number}"), Source::Ql(b)));
             }
         }
         for e in 0..sys.ac.m {
@@ -1535,6 +1648,16 @@ impl Recorder {
                     }
                 }
                 Source::PlantState(k, j) => x[sys.held[k].offset + j],
+                Source::Pl(b) => {
+                    sys.loads[b]
+                        .power(Complex::new(x[b], x[n + b]), sys.low_voltage)
+                        .re
+                }
+                Source::Ql(b) => {
+                    sys.loads[b]
+                        .power(Complex::new(x[b], x[n + b]), sys.low_voltage)
+                        .im
+                }
                 Source::PFrom(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).0.re,
                 Source::QFrom(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).0.im,
                 Source::PTo(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).1.re,
@@ -1596,7 +1719,7 @@ pub fn simulate(
     dyr_text: &str,
     request: &RmsRequest,
 ) -> Result<RmsResult, String> {
-    let (_, sim) = prepare(network, dyr_text, request.load_model)?;
+    let (_, sim) = prepare(network, dyr_text, request.load_model.unwrap_or_default())?;
     sim.run(request)
 }
 
@@ -1670,7 +1793,7 @@ pub fn inspect_module_json(
         t_end: 0.005,
         dt: 0.005,
         output_step: 0.005,
-        load_model,
+        load_model: Some(load_model),
         events: Vec::new(),
         small_signal: cfg!(feature = "rms-experimental"),
         record: None,
@@ -1680,7 +1803,7 @@ pub fn inspect_module_json(
         .loads
         .iter()
         .zip(&sim.sys.bus_numbers)
-        .filter(|(l, _)| l.p_z != 0.0 || l.q_z != 0.0 || l.is_nonlinear())
+        .filter(|(l, _)| l.has_load())
         .map(|(_, &b)| b)
         .collect();
     let inspection = RmsInspection {

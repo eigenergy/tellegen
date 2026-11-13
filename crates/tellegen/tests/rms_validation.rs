@@ -141,7 +141,7 @@ fn rms_validation() {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.0025),
             output_step: 0.005,
-            load_model: lm,
+            load_model: Some(lm),
             events: vec![event],
             small_signal: false,
             record: None,

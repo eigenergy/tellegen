@@ -313,8 +313,8 @@ pub(crate) fn trip_held(sys: &mut DynSystem, k: usize) {
         return;
     }
     let (b, s) = (h.bus, h.s);
-    sys.loads[b].p_i += s.re;
-    sys.loads[b].q_i += s.im;
+    sys.loads[b].u_p += s.re;
+    sys.loads[b].u_q += s.im;
 }
 
 /// Transient faults inside branches whose ends are both open die out.

@@ -598,20 +598,27 @@ impl Stepper {
             if !dnorm.is_finite() {
                 return Err("the Newton step is not finite (singular Jacobian?)".into());
             }
-            // Backtracking: accept the first step length that lowers the
-            // residual, or leaves it below the tolerance (a residual at
-            // rounding level cannot be lowered, and searching for a step
-            // length that does costs a residual each).
-            let mut alpha = 1.0;
-            let trial_norm = loop {
+            // A step length that lowers the residual (or reaches the
+            // tolerance). None: the direction is not a descent one. From a
+            // reused factorization, refactorize at this iterate and try
+            // again; from a fresh one, the step fails and the caller falls
+            // back (backward Euler, then halved steps).
+            let found = backtrack(rnorm, |alpha| {
                 for i in 0..nx {
                     trial[i] = x[i] + alpha * dx[i];
                 }
-                let tn = step.residual(trial, f_trial, r_trial);
-                if (tn.is_finite() && tn < rnorm) || tn < TOL_RES || alpha < 1.0 / 64.0 {
-                    break tn;
+                step.residual(trial, f_trial, r_trial)
+            });
+            let Some((alpha, trial_norm)) = found else {
+                if refresh {
+                    return Err(format!(
+                        "the Newton step does not lower the residual {rnorm:.3e}"
+                    ));
                 }
-                alpha *= 0.5;
+                lu = None;
+                fresh = true;
+                stalls = 0;
+                continue;
             };
             std::mem::swap(x, trial);
             std::mem::swap(f, f_trial);
@@ -646,6 +653,24 @@ impl Stepper {
         }
         Err(format!("Newton did not converge in {MAX_ITERS} iterations"))
     }
+}
+
+/// Backtracking along a Newton direction from a point with residual
+/// `rnorm`: the first step length `α ∈ {1, 1/2, …, 1/64}` whose trial
+/// residual `trial(α)` is finite and below `rnorm`, or below `TOL_RES` (a
+/// residual at rounding level cannot be lowered), with that residual.
+/// `None` when no step length does: a step that raises the residual is never
+/// taken.
+fn backtrack(rnorm: f64, mut trial: impl FnMut(f64) -> f64) -> Option<(f64, f64)> {
+    let mut alpha = 1.0;
+    while alpha >= 1.0 / 64.0 {
+        let tn = trial(alpha);
+        if (tn.is_finite() && tn < rnorm) || tn < TOL_RES {
+            return Some((alpha, tn));
+        }
+        alpha *= 0.5;
+    }
+    None
 }
 
 /// The equations of one step from `(xn, fn_)`.
@@ -685,5 +710,53 @@ impl Step<'_> {
         } else {
             worst
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{backtrack, TOL_RES};
+
+    /// A step length that lowers the residual is taken, the longest first.
+    #[test]
+    fn backtracking_takes_the_first_decrease() {
+        let mut tried = Vec::new();
+        let r = backtrack(1.0, |a| {
+            tried.push(a);
+            if a <= 0.25 {
+                0.5
+            } else {
+                2.0
+            }
+        });
+        assert_eq!(r, Some((0.25, 0.5)));
+        assert_eq!(tried, [1.0, 0.5, 0.25]);
+    }
+
+    /// No step length down to 1/64 lowers the residual: no step is taken
+    /// (the old search took the 1/128 step whatever its residual), and a
+    /// non-finite trial counts as no decrease.
+    #[test]
+    fn backtracking_refuses_an_increase() {
+        let mut tried = Vec::new();
+        let r = backtrack(1.0, |a| {
+            tried.push(a);
+            if a == 0.5 {
+                f64::NAN
+            } else {
+                1.0 + a
+            }
+        });
+        assert_eq!(r, None);
+        assert_eq!(tried.len(), 7, "1 down to 1/64: {tried:?}");
+        assert_eq!(*tried.last().unwrap(), 1.0 / 64.0);
+    }
+
+    /// A residual at rounding level is accepted even when it does not
+    /// decrease.
+    #[test]
+    fn backtracking_accepts_the_tolerance() {
+        let r = backtrack(0.5 * TOL_RES, |_| 0.9 * TOL_RES);
+        assert_eq!(r, Some((1.0, 0.9 * TOL_RES)));
     }
 }

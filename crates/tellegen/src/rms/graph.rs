@@ -107,7 +107,8 @@ pub enum Block {
     Max,
     /// The rectifier regulation `FEX(I_N)` of IEEE Std 421.5 AC exciters.
     Rectifier,
-    /// Exciter saturation `S_E(u) = B (u − A)² / u` (0 without data).
+    /// Exciter saturation `S_E(u) = B (u − A)² / u` above `A`, 0 below it
+    /// and without data ([`super::models::quadratic_se`]).
     SatQuadratic {
         a: f64,
         b: f64,
@@ -297,13 +298,7 @@ impl Block {
             }
             Self::Min { .. } => u.iter().copied().fold(f64::INFINITY, f64::min),
             Self::Rectifier => rectifier(u[0]),
-            Self::SatQuadratic { a, b } => {
-                if *b == 0.0 {
-                    0.0
-                } else {
-                    b * (u[0] - a).powi(2) / u[0]
-                }
-            }
+            Self::SatQuadratic { a, b } => super::models::quadratic_se(*a, *b, u[0], true),
             Self::Max => u.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             Self::Gate { lo, hi } => {
                 if *lo == 0.0 || *hi == 0.0 || (*lo <= u[1] && u[1] <= *hi) {
@@ -1054,12 +1049,7 @@ impl CompiledGraph {
                 }
                 Op::Rectifier { out, a } => y[out as usize] = rectifier(y[a as usize]),
                 Op::SatQuadratic { out, a, sa, sb } => {
-                    let u = y[a as usize];
-                    y[out as usize] = if sb == 0.0 {
-                        0.0
-                    } else {
-                        sb * (u - sa).powi(2) / u
-                    };
+                    y[out as usize] = super::models::quadratic_se(sa, sb, y[a as usize], true);
                 }
                 Op::Gate { out, a, b, lo, hi } => {
                     let u1 = y[b as usize];
@@ -1528,7 +1518,16 @@ pub fn template(model: &powerio::DynamicModel) -> Option<BlockGraph> {
                         &["kd_ifd", "ke_ve", "se_ve"],
                     ),
                     node("kc_ifd", Block::Gain { k: m.kc }, &["ifd"]),
-                    node("IN", Block::Divide, &["kc_ifd", "Ve"]),
+                    // IN = KC Ifd / max(VE, VE_MIN), as the compiled model.
+                    node(
+                        "ve_min",
+                        Block::Const {
+                            value: super::models::VE_MIN,
+                        },
+                        &[],
+                    ),
+                    node("ve_div", Block::Max, &["Ve", "ve_min"]),
+                    node("IN", Block::Divide, &["kc_ifd", "ve_div"]),
                     node("FEX", Block::Rectifier, &["IN"]),
                     node("Efd", Block::Product, &["Ve", "FEX"]),
                 ],
@@ -2192,11 +2191,15 @@ mod tests {
         }
         // Every kind of operation was run.
         assert_eq!(kinds.len(), 24, "{} graphs", graphs.len());
-        assert!(
-            graphs.len() > 15 && evaluated > 4500,
-            "{} graphs",
-            graphs.len()
-        );
+        // The example cases' graphs, where their data is here (the published
+        // crate leaves it out; `every_block` alone still runs every kind).
+        if rms_example("wecc240").is_some() {
+            assert!(
+                graphs.len() > 15 && evaluated > 4500,
+                "{} graphs",
+                graphs.len()
+            );
+        }
     }
 
     #[test]

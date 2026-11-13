@@ -27,7 +27,7 @@ fn request(record: Option<RecordSpec>) -> RmsRequest {
         t_end: 3.0,
         dt: 0.005,
         output_step: 0.005,
-        load_model: LoadModel::ConstantImpedance,
+        load_model: Some(LoadModel::ConstantImpedance),
         events: vec![
             RmsEvent::BusFault {
                 time: 0.5,

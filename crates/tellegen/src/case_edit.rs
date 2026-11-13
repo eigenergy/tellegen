@@ -925,16 +925,10 @@ pub fn apply_case_edits(
 mod tests {
     use super::*;
 
-    /// The WECC 240-bus case (`tests/data/rms_examples/wecc240`).
-    fn wecc240() -> BalancedNetwork {
-        let raw = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/data/rms_examples/wecc240/case.raw");
-        let module = powerio::parse(powerio::Source::open(raw).unwrap()).unwrap();
-        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-            panic!("not a balanced network")
-        };
-        net.clone()
-    }
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
 
     fn kind(net: &BalancedNetwork, bus: usize) -> BusType {
         net.buses()[bus_index(net, bus).unwrap()].kind
@@ -942,7 +936,9 @@ mod tests {
 
     #[test]
     fn add_move_remove_retype_and_rekey() {
-        let mut net = wecc240();
+        let Some(mut net) = shipped_wecc240_network() else {
+            return;
+        };
         let n = net.generators().len();
         assert_eq!(kind(&net, 1002), BusType::Pq);
         let out = apply_case_edit(
@@ -1047,7 +1043,9 @@ mod tests {
 
     #[test]
     fn loads_shunts_and_lines() {
-        let mut net = wecc240();
+        let Some(mut net) = shipped_wecc240_network() else {
+            return;
+        };
         let n_load = net.loads().len();
         let edits = [
             CaseEdit::AddLoad {
@@ -1130,7 +1128,9 @@ mod tests {
         use crate::rms::{
             dyr_dynamize, DynamizeRequest, LoadModel, RmsEvent, RmsRequest, RmsSimulation,
         };
-        let mut net = wecc240();
+        let Some(mut net) = shipped_wecc240_network() else {
+            return;
+        };
         let new_bus = net.buses().iter().map(|b| b.id.0).max().unwrap() + 1;
         let out = apply_case_edits(
             &mut net,
@@ -1201,7 +1201,7 @@ mod tests {
                 t_end: 1.5,
                 dt: 0.005,
                 output_step: 0.01,
-                load_model: LoadModel::ConstantImpedance,
+                load_model: Some(LoadModel::ConstantImpedance),
                 events: vec![
                     RmsEvent::BusFault {
                         time: 0.5,

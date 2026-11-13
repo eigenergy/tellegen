@@ -217,9 +217,21 @@ pub(crate) struct Source {
     pub e: C64,
 }
 
-/// Voltage-dependent static loads at one bus (PowerSimulationsDynamics.jl
-/// `mdl_zip_load!`): powers drawn at the power flow voltage `v0`.
-#[derive(Clone, Copy, Debug, Default)]
+/// The static loads at one bus (PowerSimulationsDynamics.jl
+/// `mdl_zip_load!`, generalized to any voltage exponent), each part stated
+/// as its power at the power flow voltage `v0` (system per unit, drawn
+/// positive). A part with exponent `γ` draws
+///
+/// ```text
+/// P(V) = P0 (V / v0)^γ          (the same for Q)
+/// ```
+///
+/// so at `v0` every part draws exactly what the power flow solved it with.
+/// Constant impedance (`γ = 2`) enters the admittance matrix; constant
+/// current (`γ = 1`), constant power (`γ = 0`) and the other exponents are
+/// the nonlinear current `I = (P − jQ) V / |V|²` ([`Self::nonlinear_current`]),
+/// with their low-voltage behaviour set by [`LowVoltage`].
+#[derive(Clone, Debug, Default)]
 pub(crate) struct BusLoad {
     pub v0: f64,
     pub p_z: f64,
@@ -228,6 +240,84 @@ pub(crate) struct BusLoad {
     pub q_i: f64,
     pub p_p: f64,
     pub q_p: f64,
+    /// Parts with another exponent (an exponential load).
+    pub exp: Vec<ExpPart>,
+    /// Constant current drawn for the units held at their power flow output
+    /// (negative: they inject), at `v0`. Not a load: no low-voltage
+    /// conversion, no load scaling, and no `pl`/`ql` channel.
+    pub u_p: f64,
+    pub u_q: f64,
+}
+
+/// A load part `s0 (V / v0)^gamma` with an exponent other than 0, 1 or 2.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ExpPart {
+    pub reactive: bool,
+    /// Power at the power flow voltage.
+    pub s0: f64,
+    pub gamma: f64,
+}
+
+/// How the parts with an exponent below 2 behave at low voltage (a part
+/// with a larger exponent keeps its law: its current falls faster than an
+/// admittance's).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum LowVoltage {
+    /// PSS/E `PQBRAK`: below the breakpoint (pu, capped at the power flow
+    /// voltage so a bus that starts below it starts on its own law) the part
+    /// draws the constant admittance of its power at the breakpoint,
+    /// `P(V) = P(V_b) (V / V_b)²`: continuous in value, and the current falls
+    /// linearly to zero at 0 V.
+    Break(f64),
+    /// The stated law at any voltage down to 20 % of the power flow voltage,
+    /// below that a smooth floor of the magnitude the parts divide by (half
+    /// of it at 0 V), so the current keeps a direction at 0 V.
+    /// PowerSimulationsDynamics.jl applies the law at every voltage.
+    Floor,
+}
+
+/// `w(V) = (u / v0)^γ / u²` and `(dw/dV) / V` for a part with exponent
+/// `gamma`: the part's current is `P0 w(V) V` (rotated by `−jQ0`). `u` is the
+/// magnitude the law is evaluated at ([`LowVoltage`]).
+#[inline]
+fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
+    // `u`, and `(du/dV) / V`. A part with `γ > 2` falls faster than an
+    // admittance and needs no conversion; its law holds down to 0.1 % of
+    // `V0`, where `u` stops so `u^(γ − 2)` keeps a finite slope.
+    let (u, du) = match lv {
+        _ if gamma > 2.0 => {
+            let e = 1e-3 * v0;
+            if vm > e {
+                (vm, 1.0 / vm)
+            } else {
+                (e, 0.0)
+            }
+        }
+        LowVoltage::Break(vb) => {
+            let vb = vb.min(v0);
+            if vm > vb {
+                (vm, 1.0 / vm)
+            } else {
+                (vb, 0.0)
+            }
+        }
+        LowVoltage::Floor => {
+            let e = 0.2 * v0;
+            if vm >= e {
+                (vm, 1.0 / vm)
+            } else {
+                (0.5 * e * ((vm / e).powi(2) + 1.0), 1.0 / e)
+            }
+        }
+    };
+    let w = if gamma == 0.0 {
+        1.0 / (u * u)
+    } else if gamma == 1.0 {
+        1.0 / (v0 * u)
+    } else {
+        (u / v0).powf(gamma) / (u * u)
+    };
+    (w, (gamma - 2.0) * w / u * du)
 }
 
 impl BusLoad {
@@ -236,22 +326,133 @@ impl BusLoad {
         C64::new(self.p_z, -self.q_z) / (self.v0 * self.v0)
     }
 
-    /// Current drawn by the constant-current and constant-power parts.
-    pub(crate) fn nonlinear_current(&self, vr: f64, vi: f64) -> (f64, f64) {
-        if self.p_i == 0.0 && self.q_i == 0.0 && self.p_p == 0.0 && self.q_p == 0.0 {
+    /// `(G, B, dG/dV / V, dB/dV / V)` of the nonlinear parts: their current
+    /// is `(G + jB)^* V`-like, `Ir = G Vr + B Vi`, `Ii = G Vi − B Vr`.
+    fn weights(&self, vm: f64, lv: LowVoltage) -> [f64; 4] {
+        let mut out = [0.0; 4];
+        let mut add = |p: f64, q: f64, (w, dw): (f64, f64)| {
+            out[0] += p * w;
+            out[1] += q * w;
+            out[2] += p * dw;
+            out[3] += q * dw;
+        };
+        if self.p_p != 0.0 || self.q_p != 0.0 {
+            add(self.p_p, self.q_p, part_weight(0.0, vm, self.v0, lv));
+        }
+        if self.p_i != 0.0 || self.q_i != 0.0 {
+            add(self.p_i, self.q_i, part_weight(1.0, vm, self.v0, lv));
+        }
+        for e in &self.exp {
+            let w = part_weight(e.gamma, vm, self.v0, lv);
+            if e.reactive {
+                add(0.0, e.s0, w);
+            } else {
+                add(e.s0, 0.0, w);
+            }
+        }
+        if self.u_p != 0.0 || self.u_q != 0.0 {
+            add(
+                self.u_p,
+                self.u_q,
+                part_weight(1.0, vm, self.v0, LowVoltage::Floor),
+            );
+        }
+        out
+    }
+
+    /// Current drawn by every part but the constant impedance.
+    pub(crate) fn nonlinear_current(&self, vr: f64, vi: f64, lv: LowVoltage) -> (f64, f64) {
+        if !self.is_nonlinear() {
             return (0.0, 0.0);
         }
-        let vm = soft_vm(mag(vr, vi), self.v0);
-        let k_i = 1.0 / (self.v0 * vm);
-        let k_p = 1.0 / (vm * vm);
-        (
-            k_i * (vr * self.p_i + vi * self.q_i) + k_p * (vr * self.p_p + vi * self.q_p),
-            k_i * (vi * self.p_i - vr * self.q_i) + k_p * (vi * self.p_p - vr * self.q_p),
-        )
+        let [g, b, ..] = self.weights(mag(vr, vi), lv);
+        (g * vr + b * vi, g * vi - b * vr)
+    }
+
+    /// `∂(Ir, Ii)/∂(Vr, Vi)` of [`Self::nonlinear_current`], exact:
+    /// `[[∂Ir/∂Vr, ∂Ir/∂Vi], [∂Ii/∂Vr, ∂Ii/∂Vi]]`.
+    pub(crate) fn nonlinear_jacobian(&self, vr: f64, vi: f64, lv: LowVoltage) -> [[f64; 2]; 2] {
+        let [g, b, dg, db] = self.weights(mag(vr, vi), lv);
+        // ∂G/∂Vr = (dG/dV / V) Vr, and so on.
+        let (ir_g, ir_b) = (vr, vi);
+        let (ii_g, ii_b) = (vi, -vr);
+        [
+            [
+                g + (ir_g * dg + ir_b * db) * vr,
+                b + (ir_g * dg + ir_b * db) * vi,
+            ],
+            [
+                -b + (ii_g * dg + ii_b * db) * vr,
+                g + (ii_g * dg + ii_b * db) * vi,
+            ],
+        ]
     }
 
     pub(crate) fn is_nonlinear(&self) -> bool {
-        self.p_i != 0.0 || self.q_i != 0.0 || self.p_p != 0.0 || self.q_p != 0.0
+        self.p_i != 0.0
+            || self.q_i != 0.0
+            || self.p_p != 0.0
+            || self.q_p != 0.0
+            || self.u_p != 0.0
+            || self.u_q != 0.0
+            || !self.exp.is_empty()
+    }
+
+    /// Whether any load part (not a held unit) is stated.
+    pub(crate) fn has_load(&self) -> bool {
+        self.p_z != 0.0
+            || self.q_z != 0.0
+            || self.p_i != 0.0
+            || self.q_i != 0.0
+            || self.p_p != 0.0
+            || self.q_p != 0.0
+            || !self.exp.is_empty()
+    }
+
+    /// Scale every load part (not the held units) by `(p, q)`.
+    pub(crate) fn scale(&mut self, p: f64, q: f64) {
+        self.p_z *= p;
+        self.p_i *= p;
+        self.p_p *= p;
+        self.q_z *= q;
+        self.q_i *= q;
+        self.q_p *= q;
+        for e in &mut self.exp {
+            e.s0 *= if e.reactive { q } else { p };
+        }
+    }
+
+    /// Complex power the load parts (not the held units) draw at `v`.
+    pub(crate) fn power(&self, v: C64, lv: LowVoltage) -> C64 {
+        let held = BusLoad {
+            v0: self.v0,
+            u_p: self.u_p,
+            u_q: self.u_q,
+            ..BusLoad::default()
+        };
+        let (ir, ii) = self.nonlinear_current(v.re, v.im, lv);
+        let (hr, hi) = held.nonlinear_current(v.re, v.im, lv);
+        let i = C64::new(ir - hr, ii - hi) + self.admittance() * v;
+        v * i.conj()
+    }
+
+    /// Complex power the load parts draw at the power flow voltage.
+    #[cfg(feature = "rms-experimental")]
+    pub(crate) fn power_at_v0(&self) -> C64 {
+        let (p, q) = self.exp.iter().fold(
+            (
+                self.p_z + self.p_i + self.p_p,
+                self.q_z + self.q_i + self.q_p,
+            ),
+            |(p, q), e| {
+                if e.reactive {
+                    (p, q + e.s0)
+                } else {
+                    (p + e.s0, q)
+                }
+            },
+        );
+        C64::new(p, q)
     }
 }
 
@@ -265,10 +466,9 @@ pub(crate) struct BranchFault {
     pub permanent: bool,
 }
 
-/// The voltage magnitude constant-current and constant-power parts divide
-/// by: the voltage itself above 20 % of the power flow voltage, below it a
-/// smooth floor (half of that at 0 V), so the currents fall with the voltage
-/// instead of keeping a direction undefined at 0 V.
+/// The voltage magnitude a held unit's constant current divides by: the
+/// voltage itself above 20 % of the power flow voltage, below it a smooth
+/// floor (half of that at 0 V), so the current keeps a direction at 0 V.
 fn soft_vm(vm: f64, v0: f64) -> f64 {
     let e = 0.2 * v0;
     if vm >= e {
@@ -360,6 +560,9 @@ pub(crate) struct DynSystem {
     /// Per branch, a fault inside it.
     pub branch_faults: Vec<Option<BranchFault>>,
     pub held: Vec<HeldUnit>,
+    /// Low-voltage behaviour of the constant-current and constant-power load
+    /// parts ([`super::RmsOptions::low_voltage_load`]).
+    pub low_voltage: LowVoltage,
     /// Factorize step matrices by blocks where possible
     /// ([`super::RmsOptions::factorize_by_blocks`]).
     pub factorize_by_blocks: bool,
@@ -442,7 +645,7 @@ impl DynSystem {
         }
         for (b, load) in self.loads.iter().enumerate() {
             if load.is_nonlinear() {
-                let (ir, ii) = load.nonlinear_current(vr[b], vi[b]);
+                let (ir, ii) = load.nonlinear_current(vr[b], vi[b], self.low_voltage);
                 f[b] -= ir;
                 f[n + b] -= ii;
             }
@@ -503,8 +706,9 @@ impl DynSystem {
         u
     }
 
-    /// `∂f/∂x` as triplets. The network part is exact; device and nonlinear
-    /// load blocks are forward differences of their local functions.
+    /// `∂f/∂x` as triplets. The network and load parts are exact; device
+    /// blocks are forward differences of their local functions with the
+    /// scaled step of [`fd_step`].
     pub(crate) fn jacobian(&self, x: &[f64]) -> Vec<(usize, usize, f64)> {
         let n = self.n;
         let mut t: Vec<(usize, usize, f64)> = Vec::with_capacity(self.ybus.len() * 4 + self.nx * 8);
@@ -518,15 +722,11 @@ impl DynSystem {
             if !load.is_nonlinear() {
                 continue;
             }
-            let (vr, vi) = (x[b], x[n + b]);
-            let (i0r, i0i) = load.nonlinear_current(vr, vi);
-            let h = 1e-7;
-            let (ar, ai) = load.nonlinear_current(vr + h, vi);
-            let (br, bi) = load.nonlinear_current(vr, vi + h);
-            t.push((b, b, -(ar - i0r) / h));
-            t.push((n + b, b, -(ai - i0i) / h));
-            t.push((b, n + b, -(br - i0r) / h));
-            t.push((n + b, n + b, -(bi - i0i) / h));
+            let j = load.nonlinear_jacobian(x[b], x[n + b], self.low_voltage);
+            t.push((b, b, -j[0][0]));
+            t.push((b, n + b, -j[0][1]));
+            t.push((n + b, b, -j[1][0]));
+            t.push((n + b, n + b, -j[1][1]));
         }
         let w_sys = self.omega_sys(x);
         for d in &self.devices {
@@ -591,23 +791,27 @@ impl DynSystem {
                 }
             };
         for j in 0..k {
-            let h = 1e-7 * xl[j].abs().max(1.0);
             let keep = xl[j];
+            let h = fd_step(keep);
             xl[j] += h;
             let (ir, ii) = eval(&xl, vr, vi, w_sys, &mut f1);
             xl[j] = keep;
             push_col(off + j, &f1, ir, ii, h, t);
         }
-        let h = 1e-7;
+        let keep = vr;
+        let h = fd_step(keep);
         vr += h;
         let (ir, ii) = eval(&xl, vr, vi, w_sys, &mut f1);
-        vr -= h;
+        vr = keep;
         push_col(bus, &f1, ir, ii, h, t);
+        let keep = vi;
+        let h = fd_step(keep);
         vi += h;
         let (ir, ii) = eval(&xl, vr, vi, w_sys, &mut f1);
-        vi -= h;
+        vi = keep;
         push_col(n + bus, &f1, ir, ii, h, t);
         if let Some(ri) = ext_ref {
+            let h = fd_step(w_sys);
             let (ir, ii) = eval(&xl, vr, vi, w_sys + h, &mut f1);
             push_col(ri, &f1, ir, ii, h, t);
         }
@@ -743,6 +947,26 @@ impl DynSystem {
         self.bus_numbers.iter().position(|&b| b == number)
     }
 }
+
+/// The forward-difference step for a variable at `x`: [`FD_REL`] `· max(|x|, 1)`,
+/// rounded to the step `x + h − x` actually taken, which the difference
+/// quotient divides by (dividing by the nominal step instead puts a relative
+/// error of up to `ε |x| / h` into every column).
+#[inline]
+pub(crate) fn fd_step(x: f64) -> f64 {
+    let h = FD_REL * x.abs().max(1.0);
+    (x + h) - x
+}
+
+/// The relative forward-difference step. The optimum balances truncation
+/// (`h |f''| / 2`) against rounding (`ε F / h`, `F` the largest term that
+/// cancels in `f`): `h = √(2 ε F / |f''|)`, which is `√ε ≈ 1.5e-8` only for
+/// `F ≈ |f''|`. Device rows divide by time constants down to milliseconds,
+/// so `F` exceeds the curvature by about two orders and the optimum is near
+/// `10 √ε`. With `√ε` the block-graph controllers, whose rows are the same
+/// functions summed in another order, depart from the compiled models by up
+/// to 7.5e-6 (`tests/rms_graph.rs`); with `1e-7` they agree to 1e-9.
+pub(crate) const FD_REL: f64 = 1e-7;
 
 /// `Y_EE − Y_EI Y_II⁻¹ Y_IE` of a 3×3 admittance matrix.
 fn kron(y: &[[C64; 3]; 3], ext: &[usize], int: &[usize]) -> Vec<Vec<C64>> {

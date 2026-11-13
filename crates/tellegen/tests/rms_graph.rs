@@ -15,7 +15,9 @@
 
 use std::path::Path;
 
-use tellegen::rms::{template, LoadModel, ModelOverride, RmsEvent, RmsRequest, RmsSimulation};
+use tellegen::rms::{
+    template, LoadModel, ModelOverride, RmsEvent, RmsOptions, RmsRequest, RmsSimulation,
+};
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -26,19 +28,15 @@ include!(concat!(
 /// compiled runs.
 const GATE: f64 = 1e-7;
 
-/// Open: on these cases the graph run departs from the compiled run (channels
-/// up to 5e-5), and the cause is not found yet. Ruled out: the IEEEST filter
-/// with A3 = A4 = 0 (A4 = 1e-3 leaves the gap) and its output limit (also
-/// reached in `smib_genrou_gast_ieeest_sexs`, which agrees to 1e-13). The
-/// compiled models are the ones validated against PowerSimulationsDynamics.jl.
-/// These cases are held to [`OPEN_BOUND`] instead of [`GATE`]; one that starts
-/// to agree fails the test, so the list stays current.
+/// Open: cases where the graph run departs from the compiled run beyond
+/// [`GATE`], held to [`OPEN_BOUND`] instead; one that starts to agree fails
+/// the test, so the list stays current. Empty: the gaps of up to 5e-5 on
+/// `smib_genrou_hygov_ieeest_sexs` and `smib_genrou_ieeest_sexs_tgov1` were
+/// the forward-difference Jacobian dividing by its nominal step instead of
+/// the step actually taken (`system::fd_step`); both agree to 1e-9 since.
 const OPEN_BOUND: f64 = 1e-4;
 
-const OPEN: &[&str] = &[
-    "smib_genrou_hygov_ieeest_sexs",
-    "smib_genrou_ieeest_sexs_tgov1",
-];
+const OPEN: &[&str] = &[];
 
 /// Template graphs for every linked controller record that has one.
 fn overrides(net: &powerio::BalancedNetwork, dyr: &powerio::DynamicCase) -> Vec<ModelOverride> {
@@ -112,16 +110,23 @@ fn rms_templates_match_compiled_models() {
             t_end: t_end.unwrap_or(3.0),
             dt: 0.0025,
             output_step: 0.005,
-            load_model: lm,
+            load_model: Some(lm),
             events: vec![event],
             small_signal: false,
             record: None,
         };
-        let compiled = RmsSimulation::new(net, &dyr, lm)
+        // The units at their setpoints whatever their reactive power (the
+        // operating points on which the OPEN gaps were found: with reactive
+        // limits two of these units start at a limit and the gaps vanish).
+        let options = RmsOptions {
+            reactive_limits: false,
+            ..RmsOptions::default()
+        };
+        let compiled = RmsSimulation::with_options(net, &dyr, lm, options)
             .unwrap()
             .run(&request)
             .unwrap();
-        let graph = match RmsSimulation::with_models(net, &dyr, &models, lm)
+        let graph = match RmsSimulation::with_models_and_options(net, &dyr, &models, lm, options)
             .and_then(|s| s.run(&request))
         {
             Ok(r) => r,
@@ -170,7 +175,7 @@ fn rms_templates_match_compiled_models_wecc240_fault() {
         t_end: 3.0,
         dt: 0.005,
         output_step: 0.01,
-        load_model: LoadModel::ConstantImpedance,
+        load_model: Some(LoadModel::ConstantImpedance),
         events: vec![
             RmsEvent::BusFault {
                 time: 0.5,

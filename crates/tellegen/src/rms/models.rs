@@ -59,26 +59,54 @@ pub(crate) fn dq_ri_sc((s, c): (f64, f64), id: f64, iq: f64) -> (f64, f64) {
     (s * id + c * iq, -c * id + s * iq)
 }
 
+/// The quadratic saturation function of PSS/E, `Se(x) = B (x − A)² / x` for
+/// `x > A` and `0` for `x ≤ A` (no saturation below the curve's knee; the
+/// formula alone rises again below `A` and diverges as `x → 0`, which a deep
+/// fault reaches). The divisor is floored at [`SAT_X_MIN`], which only data
+/// with `A` below it can reach (`Se` there is at most `B · SAT_X_MIN`).
+/// PowerSimulationsDynamics.jl evaluates the formula without the knee (the
+/// same above `A`); `knee: false` does so too, for comparisons with it.
+#[inline]
+pub(crate) fn quadratic_se(a: f64, b: f64, x: f64, knee: bool) -> f64 {
+    if b == 0.0 || (knee && !(x > a)) {
+        0.0
+    } else {
+        b * (x - a).powi(2) / x.max(SAT_X_MIN)
+    }
+}
+
+/// The smallest divisor of [`quadratic_se`].
+pub(crate) const SAT_X_MIN: f64 = 0.05;
+
+/// The exciter voltage `VE` an `ESAC1A` divides the field current by is
+/// floored here: the rectifier's normalized current `IN = KC Ifd / VE`
+/// stays finite as `VE → 0` (the rectifier then delivers nothing,
+/// `FEX(IN ≥ 1) = 0`, so `Efd = VE · FEX` falls to zero with `VE`).
+pub(crate) const VE_MIN: f64 = 1e-3;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Saturation {
-    /// `Se(x) = B (x − A)² / x`.
-    Quadratic { a: f64, b: f64 },
+    /// `Se(x) = B (x − A)² / x` above `A` ([`quadratic_se`]).
+    Quadratic { a: f64, b: f64, knee: bool },
     /// `Se(x) = B x^A`.
     Exponential { a: f64, b: f64 },
 }
 
 impl Saturation {
-    fn eval(self, x: f64) -> f64 {
+    /// Evaluate a quadratic curve below `A` as PowerSimulationsDynamics.jl
+    /// does (no knee, [`quadratic_se`]).
+    pub(crate) fn without_knee(self) -> Self {
         match self {
-            Self::Quadratic { a, b } => {
-                if b == 0.0 {
-                    0.0
-                } else {
-                    b * (x - a).powi(2) / x
-                }
-            }
+            Self::Quadratic { a, b, .. } => Self::Quadratic { a, b, knee: false },
+            other => other,
+        }
+    }
+
+    pub(crate) fn eval(self, x: f64) -> f64 {
+        match self {
+            Self::Quadratic { a, b, knee } => quadratic_se(a, b, x, knee),
             Self::Exponential { a, b } => {
-                if b == 0.0 {
+                if b == 0.0 || !(x > 0.0) {
                     0.0
                 } else {
                     b * x.powf(a)
@@ -374,7 +402,7 @@ pub(crate) enum Avr {
         kc: f64,
         kd: f64,
         ke: f64,
-        sat: (f64, f64),
+        sat: Saturation,
         vr_min: f64,
         vr_max: f64,
     },
@@ -455,7 +483,13 @@ impl Avr {
             }
             // The voltage transducer: `TR = 0` makes it algebraic (PSS/E),
             // where PowerSimulationsDynamics.jl substitutes 1 s.
-            Self::Esac1a { tr, .. } => m[0] = *tr,
+            // `TB` as the lead-lag's mass, as SEXS and EXST1: `TB = TC = 0`
+            // (the lead-lag bypassed, common in PSS/E data) makes it
+            // algebraic instead of dividing by zero.
+            Self::Esac1a { tr, tb, .. } => {
+                m[0] = *tr;
+                m[1] = *tb;
+            }
             _ => {}
         }
     }
@@ -503,18 +537,14 @@ impl Avr {
             } => {
                 // avr_models.jl, ESAC1A.
                 let (vm, vr1, vr2, ve, vr3) = (x[0], x[1], x[2], x[3], x[4]);
-                let se = if sat.1 == 0.0 {
-                    0.0
-                } else {
-                    sat.1 * (ve - sat.0).powi(2) / ve
-                };
-                let i_n = kc * u.xad_ifd / ve;
+                let se = sat.eval(ve);
+                let i_n = kc * u.xad_ifd / ve.max(VE_MIN);
                 let v_fe = kd * u.xad_ifd + ke * ve + se * ve;
                 let vf = ve * rectifier(i_n);
                 let (_, dvm) = low_pass_mm(u.vt, vm, 1.0);
                 let (v_f, dvr3) = high_pass(v_fe, vr3, *kf, *tf);
                 let v_in = u.v_ref + u.vs - vm - v_f;
-                let (y_ll, dvr1) = lead_lag(v_in, vr1, 1.0, *tc, *tb);
+                let (y_ll, dvr1) = lead_lag_mm(v_in, vr1, 1.0, *tc, *tb);
                 let (_, dvr2) = low_pass_nonwindup(y_ll, vr2, *ka, *ta, *va_min, *va_max);
                 let v_r = vr2.clamp(*vr_min, *vr_max);
                 f[0] = dvm;
@@ -902,7 +932,7 @@ pub(crate) fn machine_from_psse(
                     xd_pp: g.xd_pp,
                     xl: g.xl,
                     sat: if quadratic {
-                        Saturation::Quadratic { a, b }
+                        Saturation::Quadratic { a, b, knee: true }
                     } else {
                         Saturation::Exponential { a, b }
                     },
@@ -931,7 +961,7 @@ pub(crate) fn machine_from_psse(
                     sat: if exponential {
                         Saturation::Exponential { a, b }
                     } else {
-                        Saturation::Quadratic { a, b }
+                        Saturation::Quadratic { a, b, knee: true }
                     },
                     exponential,
                 }),
@@ -966,7 +996,10 @@ pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
             kc: e.kc,
             kd: e.kd,
             ke: e.ke,
-            sat: quadratic_saturation((e.e1, e.e2), (e.se_e1, e.se_e2))?,
+            sat: {
+                let (a, b) = quadratic_saturation((e.e1, e.e2), (e.se_e1, e.se_e2))?;
+                Saturation::Quadratic { a, b, knee: true }
+            },
             vr_min: e.vrmin,
             vr_max: e.vrmax,
         },
@@ -1053,4 +1086,86 @@ pub(crate) fn stabilizer_from_psse(model: &DynamicModel) -> Result<Stabilizer, S
         }
         other => return Err(format!("{} is not a stabilizer model", other.name())),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// PSS/E's quadratic saturation: zero up to the knee `A`, continuous
+    /// there, rising above it, and finite down to (and below) zero, where
+    /// the formula alone diverges (`B A² / x`).
+    #[test]
+    fn quadratic_saturation_has_a_knee_and_stays_finite() {
+        let (a, b) = quadratic_saturation((1.0, 1.2), (0.1, 0.4)).unwrap();
+        assert!(a > SAT_X_MIN && a < 1.0, "A = {a}");
+        let se = |x: f64| quadratic_se(a, b, x, true);
+        assert!((se(1.0) - 0.1).abs() < 1e-12 && (se(1.2) - 0.4).abs() < 1e-12);
+        for x in [-1.0, 0.0, 1e-300, 1e-6, 0.5 * a, a] {
+            assert_eq!(se(x), 0.0, "Se({x})");
+        }
+        // Continuous at the knee: Se(A + d) = B d² / (A + d).
+        for d in [1e-3, 1e-6, 1e-9] {
+            assert!(se(a + d) <= b * d * d / a * (1.0 + 1e-12), "{}", se(a + d));
+        }
+        // Increasing above it.
+        let xs: Vec<f64> = (1..200).map(|k| a + 0.01 * f64::from(k)).collect();
+        assert!(xs.windows(2).all(|w| se(w[1]) > se(w[0])));
+        // The formula without the knee (PowerSimulationsDynamics.jl) rises
+        // below A and is floored only where x < SAT_X_MIN.
+        let psid = |x: f64| quadratic_se(a, b, x, false);
+        assert!(psid(0.5 * a) > 0.0);
+        assert!(psid(0.0).is_finite() && psid(0.0) == b * a * a / SAT_X_MIN);
+        // Exponential saturation is zero at and below zero flux, not NaN.
+        let e = Saturation::Exponential { a: 6.0, b: 0.05 };
+        assert_eq!(e.eval(0.0), 0.0);
+        assert_eq!(e.eval(-0.1), 0.0);
+    }
+
+    /// `ESAC1A` as its exciter voltage `VE` collapses (a deep fault): the
+    /// field voltage and every derivative stay finite and the field voltage
+    /// falls to zero with `VE` (`IN = KC Ifd / max(VE, VE_MIN)`, `FEX(IN ≥ 1)
+    /// = 0`). Before, `IN = KC Ifd / VE` was infinite at `VE = 0` and the
+    /// saturation `B (VE − A)² / VE` too.
+    #[test]
+    fn esac1a_stays_finite_as_its_exciter_voltage_collapses() {
+        let (a, b) = quadratic_saturation((3.1, 4.2), (0.03, 0.1)).unwrap();
+        let avr = Avr::Esac1a {
+            tr: 0.0,
+            tb: 0.0,
+            tc: 0.0,
+            ka: 400.0,
+            ta: 0.02,
+            va_min: -14.5,
+            va_max: 14.5,
+            te: 0.8,
+            kf: 0.03,
+            tf: 1.0,
+            kc: 0.2,
+            kd: 0.38,
+            ke: 1.0,
+            sat: Saturation::Quadratic { a, b, knee: true },
+            vr_min: -5.43,
+            vr_max: 6.03,
+        };
+        let mut f = vec![0.0; avr.n_states()];
+        let mut m = vec![1.0; avr.n_states()];
+        avr.mass(&mut m);
+        assert_eq!(m[..2], [0.0, 0.0], "TR = TB = 0: algebraic");
+        let mut last = f64::INFINITY;
+        for ve in [2.0, 1.0, 0.1, 1e-2, 1e-3, 1e-6, 0.0, -1e-3] {
+            let x = [1.0, 0.0, 2.0, ve, 0.0];
+            let u = AvrIn {
+                vt: 0.1,
+                vs: 0.0,
+                xad_ifd: 2.5,
+                v_ref: 1.0,
+            };
+            let vf = avr.eval(&x, u, &mut f);
+            assert!(vf.is_finite() && f.iter().all(|v| v.is_finite()), "VE {ve}");
+            assert!(vf.abs() <= last.abs() + 1e-12, "VE {ve}: Efd {vf}");
+            last = vf;
+        }
+        assert!(last.abs() < 1e-12, "Efd {last} at VE ≤ 0");
+    }
 }

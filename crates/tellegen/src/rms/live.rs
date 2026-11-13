@@ -171,7 +171,12 @@ pub fn replay_module_buffers(
     let request: RmsRequest =
         serde_json::from_str(request_json).map_err(|e| format!("request: {e}"))?;
     let (dynamics, models) = read_dynamics(dyr_text)?;
-    let sim = RmsSimulation::with_models(&network, &dynamics, &models, request.load_model)?;
+    let sim = RmsSimulation::with_models(
+        &network,
+        &dynamics,
+        &models,
+        request.load_model.unwrap_or_default(),
+    )?;
     let solver = (!solver_at.is_empty()).then(|| SolverState {
         at: solver_at.to_vec(),
         h: solver_h,
@@ -453,8 +458,8 @@ impl RmsLive {
             if h.plant.is_some() {
                 sys.rebuild_mass();
             } else {
-                sys.loads[b].p_i -= s.re;
-                sys.loads[b].q_i -= s.im;
+                sys.loads[b].u_p -= s.re;
+                sys.loads[b].u_q -= s.im;
             }
             format!("unit {name} reconnected")
         };
@@ -506,19 +511,16 @@ impl RmsLive {
         }
         let mut sys = self.sys.clone();
         for &(b, p, q) in scales {
-            let base = *self
+            let mut scaled = self
                 .base_loads
                 .get(b)
-                .ok_or_else(|| format!("no bus index {b}"))?;
-            let (p0, q0) = self.load_scales[b];
+                .ok_or_else(|| format!("no bus index {b}"))?
+                .clone();
+            scaled.scale(p, q);
+            // The held units' currents are not load: they stay as they are.
             let l = &mut sys.loads[b];
-            l.p_z = base.p_z * p;
-            l.p_p = base.p_p * p;
-            l.q_z = base.q_z * q;
-            l.q_p = base.q_p * q;
-            // A tripped inverter's current stays in the constant-current part.
-            l.p_i += base.p_i * (p - p0);
-            l.q_i += base.q_i * (q - q0);
+            (scaled.u_p, scaled.u_q) = (l.u_p, l.u_q);
+            *l = scaled;
             self.load_scales[b] = (p, q);
         }
         self.resolve_network(sys)
@@ -529,7 +531,7 @@ impl RmsLive {
     pub fn base_loads(&self) -> Vec<C64> {
         self.base_loads
             .iter()
-            .map(|l| C64::new(l.p_z + l.p_i + l.p_p, l.q_z + l.q_i + l.q_p))
+            .map(system::BusLoad::power_at_v0)
             .collect()
     }
 
@@ -541,14 +543,7 @@ impl RmsLive {
             .loads
             .iter()
             .enumerate()
-            .map(|(b, l)| {
-                let v = C64::new(self.x[b], self.x[n + b]).norm();
-                let r = if l.v0 > 0.0 { v / l.v0 } else { 1.0 };
-                C64::new(
-                    l.p_z * r * r + l.p_i * r + l.p_p,
-                    l.q_z * r * r + l.q_i * r + l.q_p,
-                )
-            })
+            .map(|(b, l)| l.power(C64::new(self.x[b], self.x[n + b]), self.sys.low_voltage))
             .collect()
     }
 

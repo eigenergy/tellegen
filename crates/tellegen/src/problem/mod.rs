@@ -53,6 +53,8 @@ pub(crate) use dc::DcOpfSolution;
 pub(crate) use dc::{dc_opf_cancellable, dc_opf_size};
 #[cfg(all(test, feature = "sensitivity"))]
 pub(crate) use pf_ac::ac_pf;
+#[cfg(feature = "rms")]
+pub(crate) use pf_ac::BusKind;
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_ac::{ac_injections, ac_jacobian, load_jacobian};
 #[cfg(feature = "sensitivity")]

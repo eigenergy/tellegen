@@ -552,6 +552,10 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/support/case_data.rs"
         ));
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/wecc240.rs"
+        ));
 
         fn simulation(dir: &Path) -> RmsSimulation {
             let module =
@@ -622,12 +626,10 @@ mod tests {
             // WECC 240 with library machine models on every generator (the block
             // form needs every unit to be a machine, no voltage sources); the
             // cases kept outside the repository where they are.
-            let raw = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/data/rms_examples/wecc240/case.raw");
-            let module = powerio::parse(powerio::Source::open(raw).unwrap()).unwrap();
-            let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-                panic!("not a balanced network")
+            let Some(net) = shipped_wecc240_network() else {
+                return;
             };
+            let net = &net;
             let request = crate::rms::DynamizeRequest {
                 machine: "GENROU".into(),
                 exciter: Some("SEXS".into()),
