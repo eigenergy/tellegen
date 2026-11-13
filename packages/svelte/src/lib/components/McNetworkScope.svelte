@@ -68,7 +68,7 @@
 		margin: 0.75rem 0;
 		padding: 0.65rem;
 		border: 1px solid var(--line);
-		border-left: 4px solid #b7791f;
+		border-left: 4px solid var(--warn);
 		border-radius: 4px;
 		font-size: 12px;
 		overflow-wrap: anywhere;

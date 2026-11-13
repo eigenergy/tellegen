@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { quantity, rgbaCss } from '../format.js';
-	import { isPhaseTerminal, phaseColor } from '../multiconductor.js';
+	import { quantity } from '../format.js';
+	import { phaseCss } from '../multiconductor.js';
+	import { uiTheme } from './ui-theme.js';
 	import type { MultiWireView } from '../diagram/index.js';
 
 	let { view }: { view: MultiWireView } = $props();
 
-	const colour = (terminal: string) =>
-		isPhaseTerminal(terminal) ? rgbaCss(phaseColor(terminal)) : 'var(--text-secondary)';
+	const theme = uiTheme();
+	const colour = (terminal: string) => phaseCss(terminal, theme.current);
 </script>
 
 <figure class="multi-wire">

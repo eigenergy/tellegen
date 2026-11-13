@@ -44,6 +44,7 @@
 	--text-secondary: #4d5156;
 	--text-tertiary: #636657;
 	--text-accent: #8a4800;
+	--warn: #b7791f; /* caution rule beside a qualified result */
 	--text-danger: var(--red);
 	/* a result that solved cleanly: the edge mark beside a verdict */
 	--status-ok: var(--neg);
@@ -150,6 +151,7 @@
 	--text-secondary: var(--ink-dim);
 	--text-tertiary: var(--ink-faint);
 	--text-accent: var(--accent-bright);
+	--warn: #e0a23a; /* caution rule beside a qualified result */
 	--text-danger: var(--red);
 	--focus-ring: #8de7f7; /* 12.7:1 */
 	--agent: #8de7f7; /* 12.4:1 on --paper */

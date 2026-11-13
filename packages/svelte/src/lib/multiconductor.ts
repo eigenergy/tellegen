@@ -12,8 +12,8 @@ import type {
 	Topology
 } from '@tellegen/engine';
 import { placeSyntheticTopology, type PlacementCenter } from './synthetic-layout.js';
-import type { RGBA } from './colors.js';
-import { extent } from './format.js';
+import { MAP_PALETTE, type RGBA } from './colors.js';
+import { extent, rgbaCss } from './format.js';
 
 /** A bus positioned on the map, carrying its terminal-level detail. */
 export interface PlacedMultiBus {
@@ -353,18 +353,17 @@ export function placeMultiView(graph: DistGraph, center: PlacementCenter): Multi
 // single-phase view without a palette clash.
 // ---------------------------------------------------------------------------
 
-/** Rust, green, and steel-blue for the three phases; a warm gray for the
- * neutral/ground return. Distinct in hue and lightness so they survive color
- * vision deficiency and never read as the nodal value ramp. */
+/** Rust, green, and steel-blue for the three phases. Distinct in hue and lightness so they
+ * survive color vision deficiency and never read as the nodal value ramp. The neutral/ground
+ * return is the theme's `MAP_PALETTE.neutral`. */
 const PHASE_A: RGBA = [194, 86, 75, 255];
 const PHASE_B: RGBA = [74, 143, 95, 255];
 const PHASE_C: RGBA = [63, 111, 187, 255];
-const NEUTRAL: RGBA = [120, 114, 102, 255];
 
 /** Color a conductor by its terminal name. OpenDSS node numbers map 1/2/3 to
  * the three phases; a named phase (`a`/`b`/`c`) maps the same way; anything else
- * (neutral `n`, ground, the fourth wire) is the neutral gray. */
-export function phaseColor(terminal: string): RGBA {
+ * (neutral `n`, ground, the fourth wire) is the theme's neutral gray. */
+export function phaseColor(terminal: string, theme: 'light' | 'dark' = 'light'): RGBA {
 	switch (terminal.trim().toLowerCase()) {
 		case '1':
 		case 'a':
@@ -376,9 +375,13 @@ export function phaseColor(terminal: string): RGBA {
 		case 'c':
 			return PHASE_C;
 		default:
-			return NEUTRAL;
+			return MAP_PALETTE[theme].neutral;
 	}
 }
+
+/** {@link phaseColor} as a CSS color, for markup. */
+export const phaseCss = (terminal: string, theme: 'light' | 'dark' = 'light') =>
+	rgbaCss(phaseColor(terminal, theme));
 
 /** The display name of a terminal: OpenDSS node numbers 1/2/3/4 and named a/b/c/n read as the
  * phases A/B/C and the neutral N, as does a bus's declared `neutral`; the ground reference reads
@@ -489,10 +492,12 @@ function computeTransformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
 		});
 }
 
+/** Attachment hues stay clear of the phase colors, so a badge never reads as a phase: wine for a
+ * source, mustard for a generator, teal for an inverter. */
 const ATTACHMENT_COLOR: Record<DistAttachmentKind, RGBA> = {
-	source: [63, 111, 187, 255],
-	generator: [74, 143, 95, 255],
-	ibr: [120, 158, 70, 255],
+	source: [136, 34, 85, 255],
+	generator: [204, 153, 34, 255],
+	ibr: [68, 170, 153, 255],
 	load: [178, 94, 0, 255],
 	shunt: [138, 108, 168, 255]
 };

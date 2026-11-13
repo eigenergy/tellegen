@@ -7,13 +7,13 @@
 		attachmentColor,
 		attachmentGlyph,
 		edgeColor,
-		isPhaseTerminal,
 		neutralTerminal,
-		phaseColor,
+		phaseCss,
 		phaseLabel,
 		wiresLabel
 	} from '../multiconductor.js';
 	import { getPanelLayout } from '../panels.svelte.js';
+	import { uiTheme } from './ui-theme.js';
 	import { getNoticeCenter } from '../notices.svelte.js';
 	import { validateMcPfOptions, type DistAttachmentKind } from '@tellegen/engine';
 
@@ -32,8 +32,6 @@
 		}
 	}
 
-	const NEUTRAL_RGBA = [120, 114, 102, 255] as const;
-
 	/** A cleared or unparsable number field is not a request for zero load;
 	 * only a finite value counts as an edit. */
 	function parseLoadInput(raw: string): number | null {
@@ -43,9 +41,8 @@
 	}
 	const ATTACHMENT_LEGEND: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
 
-	function terminalColor(t: string): string {
-		return rgbaCss(isPhaseTerminal(t) ? phaseColor(t) : [...NEUTRAL_RGBA]);
-	}
+	const theme = uiTheme();
+	const terminalColor = (t: string) => phaseCss(t, theme.current);
 </script>
 
 {#if app.activeMulti}
@@ -281,10 +278,11 @@
 
 	<div class="mc-legend mono">
 		<span class="legend-row">
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('1')])}`}></i>A
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('2')])}`}></i>B
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('3')])}`}></i>C
-			<i class="swatch" style={`--sc:${rgbaCss([...NEUTRAL_RGBA])}`}></i>N
+			{#each ['A', 'B', 'C', 'N'] as phase (phase)}<i
+					class="swatch"
+					style={`--sc:${terminalColor(phase.toLowerCase())}`}
+				></i>{phase}
+			{/each}
 		</span>
 		<span class="legend-row">
 			{#each ATTACHMENT_LEGEND as kind (kind)}

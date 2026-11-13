@@ -11,7 +11,8 @@
 		type McPfResult,
 		type McPfSummary
 	} from '@tellegen/engine';
-	import { neutralTerminal, phaseLabel } from '../multiconductor.js';
+	import { neutralTerminal, phaseCss, phaseLabel } from '../multiconductor.js';
+	import { uiTheme } from './ui-theme.js';
 	import { MISSING, quantity } from '../format.js';
 	import type { McEditTiming } from '../state.svelte.js';
 	let {
@@ -120,6 +121,7 @@
 	const currentPortPage = $derived(Math.min(portPage, portPages - 1));
 	const visiblePorts = $derived(current?.element_ports ?? []);
 	const magnitude = (value: McComplex) => Math.hypot(value.re, value.im);
+	const theme = uiTheme();
 	const angle = (value: McComplex) =>
 		quantity(
 			magnitude(value) > 1e-12 ? (Math.atan2(value.im, value.re) * 180) / Math.PI : null,
@@ -203,9 +205,10 @@
 			<tbody
 				>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
 					<tr
-						><td>{phaseLabel(row.terminal, neutralName)}</td><td
-							>{quantity(magnitude(row.voltage), 'V')}</td
-						><td>{angle(row.voltage)}</td><td
+						><td
+							><i class="phase" style:background={phaseCss(row.terminal, theme.current)}
+							></i>{phaseLabel(row.terminal, neutralName)}</td
+						><td>{quantity(magnitude(row.voltage), 'V')}</td><td>{angle(row.voltage)}</td><td
 							>{quantity(magnitude(row.current_into_network), 'A')}</td
 						></tr
 					>
@@ -240,9 +243,10 @@
 								im: row.voltage.im - neutral.im
 							}}
 							<tr
-								><td>{phaseLabel(row.terminal, neutralName)}</td><td
-									>{quantity(magnitude(relative), 'V')}</td
-								><td>{angle(relative)}</td></tr
+								><td
+									><i class="phase" style:background={phaseCss(row.terminal, theme.current)}
+									></i>{phaseLabel(row.terminal, neutralName)}</td
+								><td>{quantity(magnitude(relative), 'V')}</td><td>{angle(relative)}</td></tr
 							>
 						{/each}</tbody
 					>
@@ -276,7 +280,9 @@
 					></thead
 				><tbody
 					>{#each visiblePorts as row (JSON.stringify( [row.kind, row.element, row.branch, row.bus, row.terminal] ))}<tr
-							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td>{phaseLabel(row.terminal)}</td
+							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td
+								><i class="phase" style:background={phaseCss(row.terminal, theme.current)}
+								></i>{phaseLabel(row.terminal)}</td
 							><td>{quantity(magnitude(row.current_into_element), 'A')}</td><td
 								>{quantity(row.power_into_element.re / 1000, 'kW')}</td
 							><td>{quantity(row.power_into_element.im / 1000, 'kvar')}</td></tr
@@ -428,6 +434,13 @@
 	th {
 		color: var(--text-secondary);
 		font-weight: 500;
+	}
+	.phase {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		margin-right: 5px;
+		border-radius: 50%;
 	}
 	.pagination {
 		margin: 8px 0;

@@ -23,7 +23,8 @@
 		type SearchMatch,
 		type TableKind
 	} from '../diagram/index.js';
-	import { neutralTerminal, pairLabel } from '../multiconductor.js';
+	import { neutralTerminal, pairLabel, phaseCss } from '../multiconductor.js';
+	import { uiTheme } from './ui-theme.js';
 	import { quantity, quantityRange } from '../format.js';
 
 	let {
@@ -71,6 +72,7 @@
 		onreveal?: () => void;
 	} = $props();
 
+	const theme = uiTheme();
 	const ISSUE_LIMIT = 50;
 	const issues = $derived(snapshot ? rankIssues(snapshot) : []);
 	const summary = $derived(snapshot ? snapshotSummary(snapshot, issues) : null);
@@ -350,7 +352,10 @@
 				<div class="bars" role="list" aria-label="Pair voltages against declared limits">
 					{#each busSelection.pairs.map(pairBar) as bar, k (k)}
 						<div class="bar {bar.state}" role="listitem">
-							<span class="mono">{bar.label}</span>
+							<span class="mono"
+								><i class="phase" style:background={phaseCss(bar.pair[0], theme.current)}
+								></i>{bar.label}</span
+							>
 							<span class="track">
 								{#if bar.band}<i
 										class="band"
@@ -391,9 +396,18 @@
 						aria-label={`${side ? 'To' : 'From'} end conductor currents`}
 					>
 						{#each end.bars as bar, k (k)}
-							<div class="bar" class:neutral={bar.neutral} role="listitem">
-								<span class="mono">{bar.label}</span>
-								<span class="track"><i class="fill" style:width="{bar.fill}%"></i></span>
+							<div class="bar" role="listitem">
+								<span class="mono"
+									><i class="phase" style:background={phaseCss(bar.terminal, theme.current)}
+									></i>{bar.label}</span
+								>
+								<span class="track"
+									><i
+										class="fill"
+										style:width="{bar.fill}%"
+										style:background={phaseCss(bar.terminal, theme.current)}
+									></i></span
+								>
 								<span class="num">{quantity(bar.amps, 'A')}</span>
 							</div>
 						{/each}
@@ -589,7 +603,7 @@
 	}
 	.bar {
 		display: grid;
-		grid-template-columns: 30px 1fr 84px;
+		grid-template-columns: 44px 1fr 84px;
 		gap: 6px;
 		align-items: center;
 	}
@@ -624,8 +638,12 @@
 		inset: 0 auto 0 0;
 		background: var(--text-secondary);
 	}
-	.neutral .fill {
-		background: var(--accent);
+	.phase {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		margin-right: 4px;
+		border-radius: 50%;
 	}
 	.end {
 		margin: 8px 0 3px;

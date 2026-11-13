@@ -42,7 +42,6 @@
 		attachmentColor,
 		edgeColor,
 		edgeWidth,
-		isPhaseTerminal,
 		phaseColor,
 		transformerMarks,
 		type PlacedMultiBus,
@@ -726,7 +725,7 @@
 				const ay = (busPt.y + py * off).toFixed(1);
 				const bx = (b.x + px * off).toFixed(1);
 				const by = (b.y + py * off).toFixed(1);
-				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
+				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term, theme))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
 			}
 		}
 
@@ -741,7 +740,7 @@
 		terminals.forEach((t, k) => {
 			const cy = top + k * STACK_DY;
 			const grounded = bus.grounded.includes(t);
-			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col(palette.neutral);
+			const fill = col(phaseColor(t, theme));
 			if (grounded) stack += groundGlyph(sx - 14, cy);
 			stack += `<circle class="mc-terminal" cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}"/>`;
 			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(phaseLabel(t, neutral))}</text>`;
