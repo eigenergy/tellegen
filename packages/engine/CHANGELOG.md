@@ -1,5 +1,13 @@
 # @tellegen/engine
 
+## 0.9.2
+
+### Patch Changes
+
+- [#390](https://github.com/eigenergy/tellegen/pull/390) [`32f7c3c`](https://github.com/eigenergy/tellegen/commit/32f7c3c5e9b93d8ef883a2e1db7ce6ba96f5cecb) Thanks [@samtalki](https://github.com/samtalki)! - A case opened without edits shows its first answer sooner. A browser Study answers a commit with no edits and no sensitivity column from the base case it solved when it was built, instead of solving that case a second time, and the viewer parses a module's text once for its recorded settings and generated bus kinds instead of three times. For a 3,000-bus generated grid this removes one DC OPF solve and two parses of about 12.6 million characters from the time between the grid's hand-off and its first result.
+
+- [#391](https://github.com/eigenergy/tellegen/pull/391) [`9db9dac`](https://github.com/eigenergy/tellegen/commit/9db9dac92328c91f56045ce26bd40fdac2046916) Thanks [@samtalki](https://github.com/samtalki)! - The AC power flow solves ZIP and exponential loads at the solved voltage, inside the Newton iteration with their exact voltage derivatives, and its sensitivities include that dependence. A solve with such loads reports them as `load_voltage_dependent`. SOCWR still refuses them, with a message that names the AC power flow.
+
 ## 0.9.1
 
 ### Patch Changes
