@@ -214,18 +214,18 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 				await study
 					.getByRole('table', { name: 'Terminal results', exact: true })
 					.locator('tbody tr')
-					.filter({ hasText: new RegExp(`^${row.terminal}`) })
+					.filter({ hasText: new RegExp(`^${row.terminal.toUpperCase()}`) })
 					.locator('td')
 					.allTextContents()
 			).slice(0, 3)
-		).toEqual([row.terminal, ...formatted(row.voltage)]);
+		).toEqual([row.terminal.toUpperCase(), ...formatted(row.voltage)]);
 		await expect(
 			study
 				.getByRole('table', { name: 'Neutral voltage results', exact: true })
 				.locator('tbody tr')
-				.filter({ hasText: new RegExp(`^${row.terminal}`) })
+				.filter({ hasText: new RegExp(`^${row.terminal.toUpperCase()}`) })
 				.locator('td')
-		).toHaveText([row.terminal, ...formatted(relative)]);
+		).toHaveText([row.terminal.toUpperCase(), ...formatted(relative)]);
 	}
 	await expect(savedDistributionOptions(page)).toHaveCount(1);
 	const firstSavedValue = await savedDistributionOptions(page).nth(0).getAttribute('value');

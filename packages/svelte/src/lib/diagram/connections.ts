@@ -1,5 +1,6 @@
 import type { DistConnection, DistGraph, DistWindingDetail } from '@tellegen/engine';
 import type { Glyph } from './schematic-equipment.js';
+import { phaseLabel } from '../multiconductor.js';
 
 const ring = (cx: number, cy: number, r: number, steps = 20) =>
 	Array.from({ length: steps + 1 }, (_, i): [number, number] => {
@@ -137,10 +138,11 @@ export function transformerGlyph(
 	return out;
 }
 
-/** Terminals as a compact label: "b–n" across two terminals, else the names run together when all
- * are single characters ("123n") and dotted otherwise; a wye or delta connection leads ("Y 123n"). */
-export function terminalLabel(terminals: string[], connection?: DistConnection): string {
-	if (!terminals.length) return '';
+/** Terminals as a compact label, read as phases: "B–N" across two terminals, else the names run together when all
+ * are single characters ("ABCN") and dotted otherwise; a wye or delta connection leads ("Y ABCN"). */
+export function terminalLabel(source: string[], connection?: DistConnection): string {
+	if (!source.length) return '';
+	const terminals = source.map((t) => phaseLabel(t));
 	if (terminals.length === 2 && connection !== 'wye' && connection !== 'delta')
 		return `${terminals[0]}–${terminals[1]}`;
 	const names = terminals.every((t) => t.length === 1) ? terminals.join('') : terminals.join('·');

@@ -48,7 +48,10 @@
 		type PlacedMultiBus,
 		type PlacedMultiEdge,
 		type TransformerMark,
-		multiDiagramNetwork
+		multiDiagramNetwork,
+		neutralTerminal,
+		phaseLabel,
+		wiresLabel
 	} from './multiconductor.js';
 	import {
 		TRANSFORMER_ICON,
@@ -734,13 +737,14 @@
 		const sx = busPt.x + STACK_DX;
 		const top = busPt.y - ((terminals.length - 1) / 2) * STACK_DY;
 		let stack = `<line class="mc-leader" x1="${busPt.x.toFixed(1)}" y1="${busPt.y.toFixed(1)}" x2="${sx.toFixed(1)}" y2="${busPt.y.toFixed(1)}"/>`;
+		const neutral = neutralTerminal(bus.terminals, bus.neutral_terminal);
 		terminals.forEach((t, k) => {
 			const cy = top + k * STACK_DY;
 			const grounded = bus.grounded.includes(t);
 			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col(palette.neutral);
 			if (grounded) stack += groundGlyph(sx - 14, cy);
 			stack += `<circle class="mc-terminal" cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}"/>`;
-			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(t)}</text>`;
+			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(phaseLabel(t, neutral))}</text>`;
 			// Attachment squares for elements landing on this terminal.
 			const kinds = [...new Set((bus.terminalAttachments[t] ?? []).map((a) => a.kind))];
 			kinds.slice(0, 5).forEach((kind, j) => {
@@ -876,7 +880,7 @@
 			const e = object as PlacedMultiEdge;
 			const state = e.kind === 'switch' ? (e.closed ? '<br>Closed' : '<br>Open') : '';
 			return {
-				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${e.n_phases}&#8202;&phi;${state}</div>`
+				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${wiresLabel(e.n_phases, e.conductors.length > e.n_phases)}${state}</div>`
 			};
 		}
 		if (layerId?.startsWith('multi-buses-')) {

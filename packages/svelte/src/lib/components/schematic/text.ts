@@ -1,12 +1,14 @@
 import type { PickingInfo } from '@deck.gl/core';
 import type { DistGraph } from '@tellegen/engine';
 import { quantity } from '../../format.js';
+import { wiresLabel } from '../../multiconductor.js';
 import {
 	ATTACHMENT_NAMES,
 	bandPosition,
 	conductorSet,
 	formatPower,
 	loadingState,
+	pairVoltageLabel,
 	terminalLabel,
 	type DisplayTree,
 	type EquipmentItem,
@@ -90,7 +92,7 @@ export class SchematicText {
 			worst.min !== null && worst.max !== null
 				? `, ${t !== null && Math.abs(t) > 1 ? 'outside' : 'within'} ${volts(worst.min)} to ${volts(worst.max)}`
 				: '';
-		return `Worst voltage ${worst.pair.join('–')} ${volts(worst.volts)}${band}`;
+		return `Worst voltage ${pairVoltageLabel(worst)} ${volts(worst.volts)}${band}`;
 	}
 
 	bus(i: number): string {
@@ -112,7 +114,7 @@ export class SchematicText {
 		const { graph, live, equipment } = this.c;
 		const e = graph.edges[k];
 		const { phases, neutral } = conductorSet(graph, k);
-		const wires = `${phases} phase${phases === 1 ? '' : 's'}${neutral ? ' + neutral' : ''}`;
+		const wires = wiresLabel(phases, neutral);
 		const shared = equipment?.sharedRoute[k] ?? 1;
 		const route =
 			shared > 1
@@ -200,7 +202,7 @@ export class SchematicText {
 				id: e.id,
 				kind: e.kind,
 				level: edgeMv[k] ? 'MV' : 'LV',
-				wires: `${phases}${neutral ? '+N' : ''}`,
+				wires: wiresLabel(phases, neutral),
 				loading: loading === null ? null : quantity(loading, '%'),
 				state: state === 'missing' ? 'normal' : state
 			};

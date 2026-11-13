@@ -11,7 +11,7 @@
 		type McPfResult,
 		type McPfSummary
 	} from '@tellegen/engine';
-	import { neutralTerminal } from '../multiconductor.js';
+	import { neutralTerminal, phaseLabel } from '../multiconductor.js';
 	import { MISSING, quantity } from '../format.js';
 	import type { McEditTiming } from '../state.svelte.js';
 	let {
@@ -107,7 +107,9 @@
 		(current?.terminals ?? []).filter(
 			(row) =>
 				(!busId || row.bus === busId) &&
-				`${row.bus} ${row.terminal}`.toLowerCase().includes(search.toLowerCase())
+				`${row.bus} ${row.terminal} ${phaseLabel(row.terminal, neutralName)}`
+					.toLowerCase()
+					.includes(search.toLowerCase())
 		)
 	);
 	const pageCount = $derived(Math.max(1, Math.ceil(terminals.length / size)));
@@ -201,9 +203,11 @@
 			<tbody
 				>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
 					<tr
-						><td>{row.terminal}</td><td>{quantity(magnitude(row.voltage), 'V')}</td><td
-							>{angle(row.voltage)}</td
-						><td>{quantity(magnitude(row.current_into_network), 'A')}</td></tr
+						><td>{phaseLabel(row.terminal, neutralName)}</td><td
+							>{quantity(magnitude(row.voltage), 'V')}</td
+						><td>{angle(row.voltage)}</td><td
+							>{quantity(magnitude(row.current_into_network), 'A')}</td
+						></tr
 					>
 				{/each}</tbody
 			>
@@ -236,9 +240,9 @@
 								im: row.voltage.im - neutral.im
 							}}
 							<tr
-								><td>{row.terminal}</td><td>{quantity(magnitude(relative), 'V')}</td><td
-									>{angle(relative)}</td
-								></tr
+								><td>{phaseLabel(row.terminal, neutralName)}</td><td
+									>{quantity(magnitude(relative), 'V')}</td
+								><td>{angle(relative)}</td></tr
 							>
 						{/each}</tbody
 					>
@@ -272,11 +276,10 @@
 					></thead
 				><tbody
 					>{#each visiblePorts as row (JSON.stringify( [row.kind, row.element, row.branch, row.bus, row.terminal] ))}<tr
-							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td>{row.terminal}</td><td
-								>{quantity(magnitude(row.current_into_element), 'A')}</td
-							><td>{quantity(row.power_into_element.re / 1000, 'kW')}</td><td
-								>{quantity(row.power_into_element.im / 1000, 'kvar')}</td
-							></tr
+							><td>{row.kind} {row.element}</td><td>{row.bus}</td><td>{phaseLabel(row.terminal)}</td
+							><td>{quantity(magnitude(row.current_into_element), 'A')}</td><td
+								>{quantity(row.power_into_element.re / 1000, 'kW')}</td
+							><td>{quantity(row.power_into_element.im / 1000, 'kvar')}</td></tr
 						>{/each}</tbody
 				>
 			</table>

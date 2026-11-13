@@ -23,7 +23,7 @@
 		type SearchMatch,
 		type TableKind
 	} from '../diagram/index.js';
-	import { neutralTerminal } from '../multiconductor.js';
+	import { neutralTerminal, pairLabel } from '../multiconductor.js';
 	import { quantity, quantityRange } from '../format.js';
 
 	let {
@@ -156,7 +156,7 @@
 			return {
 				id,
 				value: quantity(issue.value, 'V'),
-				detail: `${issue.pair?.join('–')} ${issue.low ? 'below' : 'above'} ${quantity(issue.limit, 'V')} by ${quantity(issue.score, '%')}`
+				detail: `${issue.pair ? pairLabel(issue.pair) : ''} ${issue.low ? 'below' : 'above'} ${quantity(issue.limit, 'V')} by ${quantity(issue.score, '%')}`
 			};
 		}
 		const edge = graph.edges[issue.target.index];
@@ -350,7 +350,7 @@
 				<div class="bars" role="list" aria-label="Pair voltages against declared limits">
 					{#each busSelection.pairs.map(pairBar) as bar, k (k)}
 						<div class="bar {bar.state}" role="listitem">
-							<span class="mono">{bar.pair.join('–')}</span>
+							<span class="mono">{bar.label}</span>
 							<span class="track">
 								{#if bar.band}<i
 										class="band"
@@ -392,7 +392,7 @@
 					>
 						{#each end.bars as bar, k (k)}
 							<div class="bar" class:neutral={bar.neutral} role="listitem">
-								<span class="mono">{bar.terminal}</span>
+								<span class="mono">{bar.label}</span>
 								<span class="track"><i class="fill" style:width="{bar.fill}%"></i></span>
 								<span class="num">{quantity(bar.amps, 'A')}</span>
 							</div>

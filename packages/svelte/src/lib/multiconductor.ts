@@ -380,6 +380,44 @@ export function phaseColor(terminal: string): RGBA {
 	}
 }
 
+/** The display name of a terminal: OpenDSS node numbers 1/2/3/4 and named a/b/c/n read as the
+ * phases A/B/C and the neutral N, as does a bus's declared `neutral`; the ground reference reads
+ * G. Any other terminal name passes through unchanged. Agent tools and JSON exports keep the
+ * source names; this is for what people read. */
+export function phaseLabel(terminal: string, neutral?: string | null): string {
+	if (neutral && terminal === neutral) return 'N';
+	switch (terminal.trim().toLowerCase()) {
+		case '1':
+		case 'a':
+			return 'A';
+		case '2':
+		case 'b':
+			return 'B';
+		case '3':
+		case 'c':
+			return 'C';
+		case '4':
+		case 'n':
+		case 'neutral':
+			return 'N';
+		case 'ground':
+		case 'g':
+			return 'G';
+		default:
+			return terminal;
+	}
+}
+
+/** A terminal pair as people read it: `A–N`, `A–B`, `C–G`. */
+export function pairLabel(pair: readonly [string, string], neutral?: string | null): string {
+	return `${phaseLabel(pair[0], neutral)}–${phaseLabel(pair[1], neutral)}`;
+}
+
+/** The one wording for a conductor set: `3 phases + N`, `1 phase`. */
+export function wiresLabel(phases: number, neutral: boolean): string {
+	return `${phases} phase${phases === 1 ? '' : 's'}${neutral ? ' + N' : ''}`;
+}
+
 /** True when a terminal is a phase conductor (not a neutral/ground return). */
 export function isPhaseTerminal(terminal: string): boolean {
 	return ['1', '2', '3', 'a', 'b', 'c'].includes(terminal.trim().toLowerCase());

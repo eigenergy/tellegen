@@ -8,7 +8,10 @@
 		attachmentGlyph,
 		edgeColor,
 		isPhaseTerminal,
-		phaseColor
+		neutralTerminal,
+		phaseColor,
+		phaseLabel,
+		wiresLabel
 	} from '../multiconductor.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { getNoticeCenter } from '../notices.svelte.js';
@@ -163,15 +166,18 @@
 			</p>{/if}
 		<hr />
 		<h3>Bus <span class="mono">{b.id}</span></h3>
+		{@const neutral = neutralTerminal(b.terminals, b.neutral_terminal)}
 		<div class="terminals">
 			{#each b.terminals as t (t)}
+				{@const label = phaseLabel(t, neutral)}
 				<span
 					class="term"
 					class:grounded={b.grounded.includes(t)}
 					style={`--tc:${terminalColor(t)}`}
-					title={b.grounded.includes(t) ? `Terminal ${t}, grounded` : `Terminal ${t}`}
+					title={`Terminal ${label}${label === t ? '' : ` (${t} in the file)`}${b.grounded.includes(t) ? ', grounded' : ''}`}
 				>
-					{t}{#if b.grounded.includes(t)}<span class="gnd" aria-hidden="true">&#9178;</span>{/if}
+					{label}{#if b.grounded.includes(t)}<span class="gnd" aria-hidden="true">&#9178;</span
+						>{/if}
 				</span>
 			{/each}
 		</div>
@@ -252,12 +258,8 @@
 		</h3>
 		<dl>
 			<div>
-				<dt>Phases</dt>
-				<dd class="mono">{e.n_phases}</dd>
-			</div>
-			<div>
 				<dt>Conductors</dt>
-				<dd class="mono">{e.conductors.length}</dd>
+				<dd class="mono">{wiresLabel(e.n_phases, e.conductors.length > e.n_phases)}</dd>
 			</div>
 			{#if e.kind === 'switch'}
 				<div>
@@ -269,9 +271,9 @@
 		<div class="pairs">
 			{#each e.conductors as [ft, tt], i (i)}
 				<span class="pair">
-					<span class="term" style={`--tc:${terminalColor(ft)}`}>{ft}</span>
+					<span class="term" style={`--tc:${terminalColor(ft)}`}>{phaseLabel(ft)}</span>
 					<span class="pair-dash mono">&ndash;</span>
-					<span class="term" style={`--tc:${terminalColor(tt)}`}>{tt}</span>
+					<span class="term" style={`--tc:${terminalColor(tt)}`}>{phaseLabel(tt)}</span>
 				</span>
 			{/each}
 		</div>
@@ -279,10 +281,10 @@
 
 	<div class="mc-legend mono">
 		<span class="legend-row">
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('1')])}`}></i>a
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('2')])}`}></i>b
-			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('3')])}`}></i>c
-			<i class="swatch" style={`--sc:${rgbaCss([...NEUTRAL_RGBA])}`}></i>n
+			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('1')])}`}></i>A
+			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('2')])}`}></i>B
+			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('3')])}`}></i>C
+			<i class="swatch" style={`--sc:${rgbaCss([...NEUTRAL_RGBA])}`}></i>N
 		</span>
 		<span class="legend-row">
 			{#each ATTACHMENT_LEGEND as kind (kind)}

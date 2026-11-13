@@ -20,7 +20,7 @@
 			<text class="bus" x={bus.x} y="12" text-anchor="middle">{bus.id}</text>
 			{#each bus.terminals as t, r (r)}
 				<g>
-					{#if t.attachments.length}<title>{t.name}: {t.attachments.join(', ')}</title>{/if}
+					{#if t.attachments.length}<title>{t.label}: {t.attachments.join(', ')}</title>{/if}
 					<line
 						class="rail"
 						x1={bus.x - 8}
@@ -33,7 +33,7 @@
 						class="terminal"
 						x={bus.x + (bus.x < view.width / 2 ? -12 : 12)}
 						y={t.y + 3}
-						text-anchor={bus.x < view.width / 2 ? 'end' : 'start'}>{t.name}</text
+						text-anchor={bus.x < view.width / 2 ? 'end' : 'start'}>{t.label}</text
 					>
 					{#if t.grounded}
 						<!-- Earth symbol: three shrinking bars below the rail end. -->

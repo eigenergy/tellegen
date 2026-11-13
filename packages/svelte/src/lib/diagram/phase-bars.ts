@@ -1,10 +1,13 @@
-import type { BranchEnd, PairVoltage } from './snapshot.js';
+import { pairVoltageLabel, type BranchEnd, type PairVoltage } from './snapshot.js';
+import { phaseLabel } from '../multiconductor.js';
 import { pairState, type VoltageState } from './summary.js';
 
 const clampPercent = (x: number) => Math.max(0, Math.min(100, x));
 
 export interface PairBar {
 	pair: [string, string];
+	/** The pair as people read it (`A–N`). */
+	label: string;
 	volts: number;
 	state: VoltageState;
 	/** Band and marker in percent of the track; the track is the declared band ±25 %. `null`
@@ -17,12 +20,20 @@ export interface PairBar {
 export function pairBar(p: PairVoltage): PairBar {
 	const state = pairState(p);
 	if (p.min === null || p.max === null || !(p.max > p.min))
-		return { pair: p.pair, volts: p.volts, state, band: null, marker: 50 };
+		return {
+			pair: p.pair,
+			label: pairVoltageLabel(p),
+			volts: p.volts,
+			state,
+			band: null,
+			marker: 50
+		};
 	const span = p.max - p.min;
 	const lo = p.min - 0.25 * span;
 	const x = (v: number) => (100 * (v - lo)) / (1.5 * span);
 	return {
 		pair: p.pair,
+		label: pairVoltageLabel(p),
 		volts: p.volts,
 		state,
 		band: { left: x(p.min), width: x(p.max) - x(p.min) },
@@ -32,6 +43,8 @@ export function pairBar(p: PairVoltage): PairBar {
 
 export interface ConductorBar {
 	terminal: string;
+	/** The terminal as people read it (`A`, `N`). */
+	label: string;
 	amps: number;
 	/** Percent of the largest conductor current across both ends. */
 	fill: number;
@@ -71,6 +84,7 @@ export function conductorBars(
 						q: e.q,
 						bars: e.currents.map((c) => ({
 							terminal: c.terminal,
+							label: phaseLabel(c.terminal, neutral),
 							amps: c.amps,
 							fill: clampPercent((100 * c.amps) / scaleAmps),
 							neutral: c.terminal === neutral

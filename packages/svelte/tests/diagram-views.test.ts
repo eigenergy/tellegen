@@ -144,7 +144,7 @@ describe('results table', () => {
 		const row = tableModel(snapshot, names, 'bus').row(1);
 		expect([row.id, row.pairs, row.reference, row.v0, row.state, row.unbalanceBasis]).toEqual([
 			'B2',
-			'1–n 2–n 3–n',
+			'A–N B–N C–N',
 			'phase–neutral',
 			195,
 			'violation',
@@ -168,7 +168,7 @@ describe('results table', () => {
 		expect([...queryTable(bus, { sortKey: 'band', descending: true })]).toEqual([1, 0, 2]);
 		const csv = tableCsv(bus, [0, 2], ['case: test']).split('\r\n');
 		expect(csv[0]).toBe('# case: test');
-		expect(csv[1]).toContain('V1 (V)');
+		expect(csv[1]).toContain('V AN (V)');
 		expect(csv[3].startsWith(`"'=cmd"`)).toBe(true);
 		expect(tableCsv(branch, [0]).split('\r\n')[1]).toContain(',-98,');
 	});
