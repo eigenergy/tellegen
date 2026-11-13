@@ -17,6 +17,11 @@
 	import { PlanningActivityStore } from './planning-activity.svelte.js';
 	import WebMcpActivity from './WebMcpActivity.svelte';
 	import AgentRibbon from './AgentRibbon.svelte';
+	import {
+		detectWebMcpBrowser,
+		readBrowserSignals,
+		type WebMcpBrowserState
+	} from './browser-support.js';
 
 	import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 	import { createStudyAdapter } from '../studies/adapter.js';
@@ -31,6 +36,8 @@
 	let experiments = $state.raw<ExperimentRecord[]>([]);
 	let supported = $state(false);
 	let registrationError = $state<string | null>(null);
+	let browser = $state.raw<WebMcpBrowserState | null>(null);
+	let toolCount = $state(0);
 	let activities = $state<TellegenToolActivityEvent[]>([]);
 
 	function recordActivity(event: TellegenToolActivityEvent) {
@@ -84,6 +91,7 @@
 		const lifecycle = new AbortController();
 		let disposed = false;
 		let handle: Awaited<ReturnType<typeof registerDocumentTellegenWebMcp>> | null = null;
+		browser = detectWebMcpBrowser(readBrowserSignals(document, navigator));
 		const adapter = createTellegenWebMcpAdapter(ctrl, planning, workspace);
 		adapter.studies = createStudyAdapter(workspace);
 		void registerDocumentTellegenWebMcp(document, adapter, {
@@ -95,6 +103,7 @@
 			...(PUBLIC_WEBMCP_EXPOSED_TO ? { exposedTo: PUBLIC_WEBMCP_EXPOSED_TO.split(',') } : {}),
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
+				toolCount = handle?.toolNames.length ?? toolCount;
 				document.documentElement.dataset.webmcp = error ? 'error' : 'ready';
 				if (error) console.warn('tellegen WebMCP dynamic registration failed', error);
 			}
@@ -106,6 +115,7 @@
 				}
 				handle = registered;
 				supported = registered.supported;
+				toolCount = registered.toolNames.length;
 				trackUsage('agent.availability', {
 					result: supported && !registered.registrationError ? 'completed' : 'unavailable'
 				});
@@ -137,6 +147,8 @@
 	{closeStudy}
 	{supported}
 	{registrationError}
+	{browser}
+	{toolCount}
 	{activities}
 	{planning}
 	{experiments}

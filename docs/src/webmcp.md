@@ -1,17 +1,111 @@
 # WebMCP
 
-Open **Agent**, then **Connect**, on the map for connection status, a copyable example
-request and the connection guide. A connected agent must discover the WebMCP
-tools exposed by this browser tab. A regular browser without WebMCP still
-supports manual interaction. The first-visit introduction links to the
-application changelog.
+WebMCP lets a web page hand your AI assistant a toolbox. Tellegen's map
+offers tools such as `inspect_case`, `query_network` and `update_case`, so an
+agent reads and changes the case through them instead of reading the screen
+and clicking. Each call shows in the **Agent** panel and in a ribbon below the
+header. The tools read and update the state shown in the interface and run the
+same WebAssembly solver.
 
-Tellegen exposes the solved case in the current browser tab through structured
-tools. They read and update the state shown in the interface and run the same
-WebAssembly solver.
-
+WebMCP is a new browser standard, in an origin trial in Chrome and Edge.
 Browsers without `document.modelContext` run the application without these
-tools.
+tools, and manual use works as before.
+
+## Getting started (no setup knowledge needed) {#getting-started}
+
+Open **Agent**, then **Connect**, on the map. The panel checks your browser,
+tells you what, if anything, to change, and has copy buttons for every command
+and prompt on this page.
+
+### 1. Use a browser that speaks WebMCP
+
+| What the Connect tab says   | What to do                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ready for agents            | Nothing. Go to step 2.                                                                                                                                                                                                                                        |
+| One switch away             | Paste `chrome://flags/#enable-webmcp-testing` (`edge://flags/...` in Edge) into the address bar, set it to Enabled and relaunch. Chrome 149 and later need no flag on https://tellegen.dev, which carries an origin-trial token; local and preview copies do. |
+| Almost there                | Update Chrome or Edge to version 149 or later.                                                                                                                                                                                                                |
+| … doesn't speak WebMCP yet  | Firefox and Safari have no WebMCP. Use Chrome or Edge on a computer, or an agent that brings its own browser (step 2).                                                                                                                                        |
+| Agents work from a computer | The agents that use page tools run on desktop.                                                                                                                                                                                                                |
+
+The origin-trial token covers https://tellegen.dev only, not other hosts.
+
+### 2. Connect an agent
+
+Pick one. Only the last option touches remote debugging, and you don't need it.
+
+**ChatGPT desktop app (no setup).** Open https://tellegen.dev in the app's
+built-in browser and ask for what you want. The agent finds the tools itself;
+the **Site tools** button in the address bar lists them. This works in the
+desktop app's browser only, not in the Codex CLI, the IDE extension or the
+Chrome connector.
+
+**Claude Code with Claude in Chrome.** Install the
+[Claude in Chrome](https://code.claude.com/docs/en/chrome) extension, sign in
+to Claude Code with `/login`, and start it with:
+
+```sh
+claude --chrome
+```
+
+Claude does not look for WebMCP tools on its own yet, so tell it where they
+are. The Connect tab's **Copy prompt for Claude** button copies a prompt that
+starts:
+
+> Open https://tellegen.dev in Chrome. The page offers WebMCP tools: list them
+> by running `await document.modelContext.getTools()` in the page, and call
+> them with `document.modelContext.executeTool()` instead of clicking.
+
+This uses your own Chrome, so the origin-trial token applies and no flag is
+needed.
+
+**Claude Code, Codex CLI, Cursor or another MCP client with Chrome DevTools
+MCP.** Add Google's
+[Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp)
+server once, with its experimental WebMCP tools turned on:
+
+```sh
+# Claude Code
+claude mcp add chrome-devtools --scope user -- npx chrome-devtools-mcp@latest --categoryExperimentalWebmcp=true --chromeArg=--enable-features=WebMCP
+# Codex CLI
+codex mcp add chrome-devtools -- npx chrome-devtools-mcp@latest --categoryExperimentalWebmcp=true --chromeArg=--enable-features=WebMCP
+```
+
+Then ask the agent to open https://tellegen.dev and list its WebMCP tools. It
+gets `list_webmcp_tools` and `execute_webmcp_tool`. The server starts its own
+Chrome window with a separate profile, which is why the command passes
+`--enable-features=WebMCP`: flags you set at `chrome://flags` in your everyday
+profile do not carry over.
+
+**Agents built into the browser.** Gemini in Chrome and Copilot in Edge do not
+call page tools yet.
+
+### 3. Ask
+
+With the tools ready, the Connect tab shows a prompt that explains the tools
+and a few requests to try, each with a copy button. For example: "Which lines
+are congested right now, and which buses pay the highest prices?"
+
+### Questions
+
+**Do I need to turn on remote debugging?** No. Remote debugging
+(`chrome://inspect/#remote-debugging`) is needed only to attach Chrome
+DevTools MCP to the Chrome you already have open, with its `--autoConnect` or
+`--browserUrl` options. The default DevTools MCP setup above starts its own
+window instead. If you do attach, that Chrome needs WebMCP itself (version 149
+or later on tellegen.dev, or the flag), because `--chromeArg` applies only to
+a browser the server starts.
+
+**Do I need to add an MCP server?** Only for the Chrome DevTools MCP route,
+with the one command above. The ChatGPT app and `claude --chrome` need none.
+To work on case files without a browser, Tellegen has a separate stdio server;
+see [MCP server](mcp.md).
+
+**How do I know it's working?** The Connect tab says **Ready for agents** and
+counts the tools this tab offers. After the first call it says **Agent
+connected**, and the call appears under **Activity**.
+
+The first-visit introduction at the bottom of the map opens the Connect tab
+and links to the application changelog.
 
 ## Tools
 
@@ -30,7 +124,7 @@ tools.
 | `reset_case`                  | Solve and commit the base state with the current formulation.                                                                        |
 | `inspect_settings`            | Read the selected and accepted calculation settings, or this browser's display preferences.                                          |
 | `update_settings`             | Validate and apply a settings patch atomically without solving.                                                                      |
-| `reset_settings`              | Return the selected calculation's settings to their defaults without solving.                                                       |
+| `reset_settings`              | Return the selected calculation's settings to their defaults without solving.                                                        |
 | `run_calculation`             | Calculate with the selected settings; a failed calculation keeps the preceding result.                                               |
 | `solve_multiconductor_pf`     | Solve the displayed distribution case's multiconductor AC power flow.                                                                |
 | `create_study`                | Save the current case and its results as a Study.                                                                                    |
