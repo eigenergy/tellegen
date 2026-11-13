@@ -66,7 +66,7 @@
 
 <style>
 	.variant-hint {
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--ink-dim);
 		margin: 6px 0;
 	}

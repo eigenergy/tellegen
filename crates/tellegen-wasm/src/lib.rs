@@ -853,6 +853,10 @@ impl Study {
         options_json: Option<String>,
     ) -> Result<Study, JsError> {
         install_panic_hook();
+        ensure_input_text(module_json)?;
+        if let Some(options) = &options_json {
+            ensure_input_text(options)?;
+        }
         let problem = parse_problem(formulation)?;
         let options = options_json
             .as_deref()

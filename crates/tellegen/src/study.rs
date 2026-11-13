@@ -459,6 +459,9 @@ impl Study {
         options: crate::StudyOptions,
     ) -> Result<Self, String> {
         crate::dc_formula::validate(formulation, options.branch_susceptance_formula)?;
+        if options.branch_susceptance_formula.is_none() {
+            return Self::new(module_json, formulation);
+        }
         let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
         Self::from_dynamic_module_with_options(module, formulation, options)
     }
@@ -468,12 +471,22 @@ impl Study {
         formulation: Problem,
         options: crate::StudyOptions,
     ) -> Result<Self, String> {
-        let module = crate::dc_formula::apply_study_options(
-            module,
-            formulation,
-            options.branch_susceptance_formula,
-        )?;
-        Self::from_dynamic_module(module, formulation)
+        let mut request = crate::settings::SettingsRequest::new(formulation.into());
+        if let Some(record) = module.extensions().get(crate::settings::record::EXTENSION) {
+            if let Some(saved) = crate::settings::record::read(record).settings {
+                if saved.calculation == request.calculation {
+                    request.baseline = saved.overrides;
+                }
+            }
+        }
+        if let Some(formula) = options.branch_susceptance_formula {
+            request.overrides.insert(
+                "branch_susceptance_formula".into(),
+                serde_json::to_value(formula).map_err(|e| e.to_string())?,
+            );
+        }
+        let resolved = crate::settings::resolve(&request)?;
+        Self::from_dynamic_module(module, formulation, resolved.effective)
     }
 
     /// Typed network-module constructor with explicit analysis options.
@@ -522,6 +535,11 @@ impl Study {
         formulation: Problem,
         calculation_options: crate::settings::Options,
     ) -> Result<Self, String> {
+        let module = crate::dc_formula::apply_study_options(
+            module,
+            formulation,
+            crate::settings::dc_formula(&calculation_options)?,
+        )?;
         let module_json = crate::ir::serialize_module(&module).map_err(|e| e.to_string())?;
         match module.into_value() {
             PioValue::BalancedNetwork(net) => Self::from_network_and_module(
@@ -1332,9 +1350,7 @@ impl Study {
         if self.calculation_options.is_empty() {
             return Ok(instance);
         }
-        let limits: crate::LimitOptions =
-            serde_json::from_value(serde_json::Value::Object(self.calculation_options.clone()))
-                .map_err(|e| e.to_string())?;
+        let limits = crate::settings::dc_limits(&self.calculation_options)?;
         let mut model = DcNetwork::from_instance(&instance)?;
         let enforceable = crate::api::apply_limit_options(&mut model, &limits)?;
         let mut constraints = instance.constraints().clone();
@@ -1910,10 +1926,8 @@ fn apply_calculation_options(
     )?;
     match req.formulation {
         Problem::DcOpf => {
-            req.limits = Some(
-                serde_json::from_value(serde_json::Value::Object(resolved.effective))
-                    .map_err(|e| e.to_string())?,
-            )
+            req.branch_susceptance_formula = crate::settings::dc_formula(&resolved.effective)?;
+            req.limits = Some(crate::settings::dc_limits(&resolved.effective)?);
         }
         Problem::AcPf => {
             req.start = serde_json::from_value(resolved.effective["start"].clone())

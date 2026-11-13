@@ -241,3 +241,16 @@ it('patching a reopened distribution Study preserves restored model settings', a
 	});
 	ctrl.dispose();
 });
+
+it('an explicit null DC convention overrides a nondefault baseline', () => {
+	const { ctrl, c } = setup();
+	c.settings.baselines = { dcopf: { branch_susceptance_formula: 'reactance_only' } };
+	expect(c.branchSusceptanceFormula).toBe('reactance_only');
+	c.settings.options = { dcopf: { branch_susceptance_formula: null } };
+	expect(c.branchSusceptanceFormula).toBeUndefined();
+	c.settings.resolved = {
+		dcopf: { ...resolved, calculation: 'dcopf', effective: { branch_susceptance_formula: null } }
+	};
+	expect(c.branchSusceptanceFormula).toBeUndefined();
+	ctrl.dispose();
+});
