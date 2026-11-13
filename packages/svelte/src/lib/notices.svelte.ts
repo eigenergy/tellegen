@@ -87,7 +87,7 @@ export function getNoticeCenter(): NoticeCenter {
 export function errorNoticeTitle(details: string): string {
 	if (/^ZIP and folder imports are unavailable in this build/.test(details))
 		return 'ZIP and folder imports unavailable';
-	if (/rate limit/i.test(details)) return 'Too many requests';
+	if (/rate limit|limiting requests/i.test(details)) return 'Too many requests';
 	if (/detailed DC converter\(s\).*qualified DC-grid/i.test(details))
 		return 'Open Equipment for AC/DC studies';
 	// MapLibre's WebGL failure includes "Read more"; classify our map errors
