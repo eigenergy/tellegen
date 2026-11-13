@@ -182,9 +182,9 @@ for (const touch of [false, true]) {
 			await selectView(toolbar, 'OPF economics');
 			const economics = diagram.getByRole('region', { name: 'OPF economics' });
 			await expect(economics).toContainText('Total LMP');
-			await expect(economics).toContainText('objective units/MW');
+			await expect(economics).toContainText('$/MWh');
 			await economics.getByLabel('Price scale').selectOption('3');
-			await expect(economics).toContainText('200 objective units/MW');
+			await expect(economics).toContainText('200 $/MWh');
 			await economics.getByText('Binding thermal limits (1)', { exact: true }).click();
 			const binding = economics.getByRole('button', { name: /Branch 1.*marginal relief/ });
 			if (touch) await binding.tap();

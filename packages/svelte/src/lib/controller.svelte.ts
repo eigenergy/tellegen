@@ -11,7 +11,8 @@ import {
 	caseDeltas as sharedCaseDeltas,
 	caseRatings as sharedCaseRatings,
 	displayMetaFor,
-	displaySeriesFor
+	displaySeriesFor,
+	dollarUnits
 } from './display.js';
 import {
 	CaseState,
@@ -233,7 +234,7 @@ function previewUnits(sensitivityUnits: string): string {
 	const numerator = sensitivityUnits.replace(/\/(?:MW|MVA)$/, '').trim();
 	const unwrapped =
 		numerator.startsWith('(') && numerator.endsWith(')') ? numerator.slice(1, -1) : numerator;
-	return unwrapped.replaceAll('objective_unit', 'objective units');
+	return dollarUnits(unwrapped);
 }
 
 /** A lowered analysis row is view-only only when a current producer says so;
@@ -4197,7 +4198,7 @@ export class Controller {
 						caseId: c.id,
 						target: { bus },
 						delta,
-						units: units?.replaceAll('objective_unit', 'objective units') ?? 'objective units/MW'
+						units: dollarUnits(units ?? '$/MWh')
 					};
 					this.previewObjective =
 						objectiveDelta === null ? null : { caseId: c.id, target: { bus }, objectiveDelta };

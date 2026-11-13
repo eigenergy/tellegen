@@ -21,7 +21,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 		options.push({
 			mode: 'price',
 			label: 'LMP',
-			unit: 'objective units/MW',
+			unit: '$/MWh',
 			copy:
 				c.formulation === 'socwr'
 					? 'Locational marginal price, SOCWR relaxation'
@@ -97,4 +97,12 @@ export function caseDeltas(c: SolvableCase): DemandDeltas {
  * The rating counterpart of `caseDeltas`. */
 export function caseRatings(c: SolvableCase): BranchRatingDeltas {
 	return c instanceof CaseState ? c.ratings : (c.ratings ?? {});
+}
+
+/** Engine cost units in dollars. MATPOWER generator costs are in $/h, so an objective is in $/h
+ * and a price (objective per MW) is in $/MWh. */
+export function dollarUnits(units: string): string {
+	return units
+		.replace(/objective[_ ]units?\/MW\b/g, '$/MWh')
+		.replace(/objective[_ ]units?/g, '$/h');
 }

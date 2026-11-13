@@ -26,5 +26,5 @@ test('the update summary uses the shared precision', () => {
 			}
 		}
 	});
-	assert.equal(summary, 'Objective 626.95 → 876.50, 1 binding line.');
+	assert.equal(summary, 'Cost 626.95 → 876.50 $/h, 1 line at its limit.');
 });

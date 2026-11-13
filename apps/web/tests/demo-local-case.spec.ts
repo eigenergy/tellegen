@@ -89,7 +89,7 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	// shows the uniform predicted shift. The value must scale with the step — the
 	// regression this guards is the step cancelling out of the preview display.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/Uniform [+−-][\d.]+e[+-]\d+\s+objective units\/MW/);
+	await expect(labels).toContainText(/Uniform [+−-][\d.]+e[+-]\d+\s+\(?\$\/MWh/);
 	const atFull = parseShift(await labels.innerText());
 
 	await slider.evaluate((el) => {

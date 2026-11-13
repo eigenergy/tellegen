@@ -122,7 +122,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	// value comes from the re-solve (a local case has no server fallback).
 	const panel = page.getByRole('complementary', { name: 'Network', exact: true });
 	await expect(panel).toContainText('+8 MW', { timeout: 30_000 });
-	await expect(panel).toContainText(/Gradient −[\d.,]+, exact −[\d.,]+/, {
+	await expect(panel).toContainText(/estimated −[\d.,]+,\s*solved −[\d.,]+/, {
 		timeout: 30_000
 	});
 });

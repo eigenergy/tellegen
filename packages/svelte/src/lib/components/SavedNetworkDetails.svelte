@@ -86,7 +86,7 @@
 						</div>{/if}
 					{#if lmp != null}<div>
 							<dt>LMP</dt>
-							<dd>{fmt.format(lmp)}<small>objective units/MW</small></dd>
+							<dd>{fmt.format(lmp)}<small>$/MWh</small></dd>
 						</div>{/if}
 					{#if voltage != null || squaredVoltage != null}<div>
 							<dt>Voltage</dt>

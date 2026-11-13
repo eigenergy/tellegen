@@ -1,22 +1,20 @@
 <script lang="ts">
 	import { sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
+	import { dollarUnits } from '../display.js';
 	import { signedExp } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const reportedUnits = $derived(
-		(ctrl.selectedSensitivity?.units ?? '(objective units/MW)/MW').replaceAll(
-			'objective_unit',
-			'objective units'
-		)
+		dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW')
 	);
 	const unitTitle = $derived(`Units: ${reportedUnits}`);
 
 	// Branch mode: the selection is a line and the column is price/rating; the
 	// legend and preview pipeline are identical (both columns are bus-keyed).
 	const branchMode = $derived(app.selectedBranch !== null);
-	const previewUnits = $derived(app.previewPrices?.units ?? 'objective units/MW');
+	const previewUnits = $derived(dollarUnits(app.previewPrices?.units ?? '$/MWh'));
 
 	const previewStep = $derived(
 		branchMode
