@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt, signed, splitName } from '../format.js';
+	import OutcomeVerdict from './OutcomeVerdict.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -10,7 +11,8 @@
 	{@const stats = ctrl.networkStats}
 	{@const [cname, cregion] = splitName(app.active?.name ?? '')}
 	{@const deltaObjective = stats.deltaObjective}
-	<h2>{cname} <span class="region mono">{cregion}</span></h2>
+	<h2>{cname} <span class="region">{cregion}</span></h2>
+	<OutcomeVerdict />
 	<dl>
 		<div>
 			<dt>Buses</dt>
@@ -45,20 +47,27 @@
 
 <style>
 	h2 {
-		margin: 0 0 12px;
-		font-size: 16px;
+		margin: 0 0 var(--space-lg);
+		font-size: var(--fs-heading);
 		font-weight: 600;
+	}
+
+	.region {
+		font-weight: 400;
+		color: var(--text-secondary);
 	}
 
 	dl {
 		margin: 0;
-		font-size: 12.5px;
+		font-size: var(--fs-data);
 	}
 
 	dl div {
 		display: flex;
 		justify-content: space-between;
-		padding: 3px 0;
+		align-items: baseline;
+		gap: var(--space-lg);
+		padding: var(--space-3xs) 0;
 	}
 
 	dl .delta dd {
@@ -71,5 +80,6 @@
 
 	dd {
 		margin: 0;
+		text-align: right;
 	}
 </style>

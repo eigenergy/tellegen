@@ -45,6 +45,8 @@
 	--text-tertiary: #636657;
 	--text-accent: #8a4800;
 	--text-danger: var(--red);
+	/* a result that solved cleanly: the edge mark beside a verdict */
+	--status-ok: var(--neg);
 	--data-pos: var(--pos);
 	--data-neg: var(--neg);
 	--focus-ring: var(--accent);

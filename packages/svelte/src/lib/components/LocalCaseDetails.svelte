@@ -5,6 +5,7 @@
 	import { fmt } from '../format.js';
 	import type { LocalCase } from '../state.svelte.js';
 	import { formatPowerIoDiagnostic, type PowerIoDiagnostic } from '@tellegen/engine';
+	import OutcomeVerdict from './OutcomeVerdict.svelte';
 
 	/** Optional host content rendered under the case stats. */
 	let { note }: { note?: Snippet<[LocalCase]> } = $props();
@@ -78,6 +79,7 @@
 {#if app.activeLocal}
 	{@const lc = app.activeLocal}
 	<h2>{lc.label}</h2>
+	<OutcomeVerdict />
 	{#if lc.substations}
 		<dl>
 			<div>
@@ -212,21 +214,22 @@
 
 <style>
 	h2 {
-		margin: 0 0 12px;
-		font-size: 16px;
+		margin: 0 0 var(--space-lg);
+		font-size: var(--fs-heading);
 		font-weight: 600;
 	}
 
 	dl {
 		margin: 0;
-		font-size: 12.5px;
+		font-size: var(--fs-data);
 	}
 
 	dl div {
 		display: flex;
 		justify-content: space-between;
-		gap: 12px;
-		padding: 3px 0;
+		align-items: baseline;
+		gap: var(--space-lg);
+		padding: var(--space-3xs) 0;
 	}
 
 	dt {
@@ -242,24 +245,24 @@
 	}
 
 	details {
-		margin-top: 8px;
-		font-size: 12px;
+		margin-top: var(--space-sm);
+		font-size: var(--fs-label);
 	}
 
 	.warnings {
-		margin: 8px 0 0;
+		margin: var(--space-sm) 0 0;
 		padding: 0;
 		list-style: none;
-		font-size: 12.5px;
-		line-height: 1.5;
+		font-size: var(--fs-data);
+		line-height: var(--lh-normal);
 		color: var(--text-accent);
 	}
 
 	.case-actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
-		margin: 10px 0 0;
+		gap: var(--space-sm);
+		margin: var(--space-md) 0 0;
 		padding: 0;
 		list-style: none;
 	}
@@ -269,8 +272,8 @@
 	}
 
 	.unavailable {
-		margin: 8px 0 0;
-		font-size: 12px;
+		margin: var(--space-sm) 0 0;
+		font-size: var(--fs-label);
 		color: var(--text-secondary);
 	}
 </style>
