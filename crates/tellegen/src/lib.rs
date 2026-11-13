@@ -25,6 +25,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod ac_dc;
 mod api;
+pub mod case_edit;
 mod dc_formula;
 pub use dc_formula::{DcFormula, StudyOptions};
 mod content_id;
@@ -71,6 +72,8 @@ pub mod plan;
 mod problem;
 pub mod ratings;
 pub mod regulation;
+#[cfg(feature = "sensitivity")]
+pub mod rms;
 /// Schematic layouts for multiconductor graphs.
 pub mod schematic;
 #[cfg(feature = "sensitivity")]
