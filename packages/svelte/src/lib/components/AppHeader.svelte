@@ -112,7 +112,7 @@
 					<span class="cname"
 						>{cname}{#if c.perturbed}<i class="mark" title="Demand changed"></i>{/if}</span
 					>
-					<span class="cregion mono">{c.unavailableReason ? 'Unavailable' : cregion}</span>
+					<span class="cregion">{c.unavailableReason ? 'Unavailable' : cregion}</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -131,7 +131,7 @@
 					onclick={() => ctrl.activateHostedDistribution(c.id)}
 				>
 					<span class="cname">{c.name}</span>
-					<span class="cregion mono"
+					<span class="cregion"
 						>{c.unavailable_reason
 							? 'Unavailable'
 							: ctrl.loadingHostedDistribution === c.id
@@ -150,7 +150,7 @@
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion mono">Local</span>
+					<span class="cregion">Local</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -164,7 +164,7 @@
 			<div class="case-chip" class:local={!c.hosted} class:active={app.activeMultiId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion mono">Multiconductor</span>
+					<span class="cregion">Multiconductor</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -180,13 +180,13 @@
 					? 'Drop a case file'
 					: 'Open a case file'}</span
 			>
-			<span class="cregion mono"
+			<span class="cregion"
 				>{ctrl.collectionsAvailable ? 'Case, ZIP or geo files' : 'Case or geo files'}</span
 			>
 		</button>
 		{#if ctrl.collectionsAvailable}
 			<button class="ghost filedrop-ui" onclick={openFolder}>
-				<span class="cname">Open folder</span><span class="cregion mono">Shared case files</span>
+				<span class="cname">Open folder</span><span class="cregion">Shared case files</span>
 			</button>
 		{/if}
 	</nav>
@@ -201,14 +201,14 @@
 		onclick={() => (app.settingsOpen = !app.settingsOpen)}
 		aria-expanded={app.settingsOpen}>Settings</button
 	>
-	<span class="kicker mono">
+	<span class="kicker">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
 		<a href={config.docsHref} target="_blank" rel="noreferrer">Docs</a>
 	</span>
 	{#if app.zen}
 		<button
-			class="zen-exit mono"
+			class="zen-exit"
 			aria-label="Exit zen mode"
 			title="Exit zen mode (Esc)"
 			onclick={() => (app.zen = false)}>Exit zen</button
@@ -451,10 +451,8 @@
 	}
 
 	.cregion {
-		font-size: 9.5px;
+		font-size: var(--fs-control, 11px);
 		color: var(--text-secondary);
-		letter-spacing: 0;
-		text-transform: uppercase;
 	}
 
 	.case-chip .cregion {
@@ -506,9 +504,7 @@
 		flex: 0 0 auto;
 		display: flex;
 		align-items: center;
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0;
+		font-size: var(--fs-label, 12px);
 		color: var(--text-secondary);
 		white-space: nowrap;
 	}
@@ -529,8 +525,8 @@
 		padding: 0;
 		border: 0;
 		background: none;
-		font-size: 11px;
-		text-transform: uppercase;
+		font: inherit;
+		font-size: var(--fs-label, 12px);
 		color: var(--text-secondary);
 		white-space: nowrap;
 		cursor: pointer;
