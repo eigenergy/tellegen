@@ -504,78 +504,7 @@ fn solve(a: &[f64], k: usize, perm: &[u32], x: &mut [f64], tmp: &mut [f64]) {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use super::super::{LoadModel, RmsSimulation};
     use super::*;
-
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/support/case_data.rs"
-    ));
-
-    fn simulation(dir: &Path) -> RmsSimulation {
-        let module = powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
-        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-            panic!("not a balanced network")
-        };
-        let dyr =
-            powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
-        RmsSimulation::with_models(net, &dyr, &[], LoadModel::ConstantImpedance).unwrap()
-    }
-
-    /// A right-hand side with entries of every size on every unknown.
-    fn rhs(nx: usize, seed: u64) -> Vec<f64> {
-        let mut s = seed;
-        (0..nx)
-            .map(|_| {
-                s = s
-                    .wrapping_mul(6_364_136_223_846_793_005)
-                    .wrapping_add(1_442_695_040_888_963_407);
-                let u = (s >> 11) as f64 / (1u64 << 53) as f64;
-                (u - 0.5) * 10f64.powi(((s >> 7) % 7) as i32 - 6)
-            })
-            .collect()
-    }
-
-    /// Both factorizations of the step matrix of `sys` at `x` solve the
-    /// same system: the largest difference of the two solutions against the
-    /// solution's largest entry.
-    fn compare(sys: &DynSystem, x: &[f64], h: f64) -> f64 {
-        let jf = sys.jacobian(x);
-        let mut patterns = Patterns::default();
-        let mut blocks = BlockLu::new(sys, &sys.mass, &jf, h, 0.5, &mut patterns)
-            .unwrap()
-            .expect("the units' blocks are regular");
-        let mut trip = Vec::new();
-        for &(row, col, v) in &jf {
-            trip.push(Triplet::new(
-                row,
-                col,
-                step_entry(&sys.mass, row, v, h, 0.5),
-            ));
-        }
-        for i in 0..sys.nx {
-            if sys.mass[i] != 0.0 {
-                trip.push(Triplet::new(i, i, sys.mass[i]));
-            }
-        }
-        let mut full = SparseLu::new(sys.nx, &trip, &mut patterns).unwrap();
-        let mut worst = 0.0_f64;
-        for seed in 1..4 {
-            let r = rhs(sys.nx, seed);
-            let (mut a, mut b) = (r.clone(), r);
-            blocks.solve(&mut a);
-            full.solve(&mut b);
-            let scale = b.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
-            let diff = a
-                .iter()
-                .zip(&b)
-                .fold(0.0_f64, |m, (p, q)| m.max((p - q).abs()));
-            worst = worst.max(diff / scale);
-        }
-        worst
-    }
 
     #[test]
     fn dense_factors_solve() {
@@ -611,38 +540,116 @@ mod tests {
         assert!(!factor(&mut s, 2, &mut [0u32; 2]));
     }
 
-    #[test]
-    fn blocks_solve_what_the_whole_matrix_does() {
-        // WECC 240 with library machine models on every generator (the block
-        // form needs every unit to be a machine, no voltage sources); the
-        // cases kept outside the repository where they are.
-        let raw =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/rms_examples/wecc240/case.raw");
-        let module = powerio::parse(powerio::Source::open(raw).unwrap()).unwrap();
-        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
-            panic!("not a balanced network")
-        };
-        let request = crate::rms::DynamizeRequest {
-            machine: "GENROU".into(),
-            exciter: Some("SEXS".into()),
-            governor: Some("TGOV1".into()),
-            ..crate::rms::DynamizeRequest::default()
-        };
-        let dyr =
-            powerio::parse_dyr(&crate::rms::dyr_dynamize(net, "", &request).unwrap()).unwrap();
-        let sim = RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap();
-        for h in [0.0, 0.005, 0.02] {
-            let d = compare(&sim.sys, &sim.x0, h);
-            assert!(d < 1e-9, "dynamized WECC 240 h {h}: {d:e}");
+    /// Whole-case comparisons on dynamized cases (`rms-experimental`).
+    #[cfg(feature = "rms-experimental")]
+    mod dynamized {
+        use std::path::Path;
+
+        use super::super::super::{LoadModel, RmsSimulation};
+        use super::super::*;
+
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/case_data.rs"
+        ));
+
+        fn simulation(dir: &Path) -> RmsSimulation {
+            let module =
+                powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
+            let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+                panic!("not a balanced network")
+            };
+            let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap())
+                .unwrap();
+            RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap()
         }
-        for dir in [rms_example("kundur"), rms_example("nordic44")]
-            .into_iter()
-            .flatten()
-        {
-            let sim = simulation(&dir);
+
+        /// A right-hand side with entries of every size on every unknown.
+        fn rhs(nx: usize, seed: u64) -> Vec<f64> {
+            let mut s = seed;
+            (0..nx)
+                .map(|_| {
+                    s = s
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    let u = (s >> 11) as f64 / (1u64 << 53) as f64;
+                    (u - 0.5) * 10f64.powi(((s >> 7) % 7) as i32 - 6)
+                })
+                .collect()
+        }
+
+        /// Both factorizations of the step matrix of `sys` at `x` solve the
+        /// same system: the largest difference of the two solutions against the
+        /// solution's largest entry.
+        fn compare(sys: &DynSystem, x: &[f64], h: f64) -> f64 {
+            let jf = sys.jacobian(x);
+            let mut patterns = Patterns::default();
+            let mut blocks = BlockLu::new(sys, &sys.mass, &jf, h, 0.5, &mut patterns)
+                .unwrap()
+                .expect("the units' blocks are regular");
+            let mut trip = Vec::new();
+            for &(row, col, v) in &jf {
+                trip.push(Triplet::new(
+                    row,
+                    col,
+                    step_entry(&sys.mass, row, v, h, 0.5),
+                ));
+            }
+            for i in 0..sys.nx {
+                if sys.mass[i] != 0.0 {
+                    trip.push(Triplet::new(i, i, sys.mass[i]));
+                }
+            }
+            let mut full = SparseLu::new(sys.nx, &trip, &mut patterns).unwrap();
+            let mut worst = 0.0_f64;
+            for seed in 1..4 {
+                let r = rhs(sys.nx, seed);
+                let (mut a, mut b) = (r.clone(), r);
+                blocks.solve(&mut a);
+                full.solve(&mut b);
+                let scale = b.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+                let diff = a
+                    .iter()
+                    .zip(&b)
+                    .fold(0.0_f64, |m, (p, q)| m.max((p - q).abs()));
+                worst = worst.max(diff / scale);
+            }
+            worst
+        }
+
+        #[test]
+        fn blocks_solve_what_the_whole_matrix_does() {
+            // WECC 240 with library machine models on every generator (the block
+            // form needs every unit to be a machine, no voltage sources); the
+            // cases kept outside the repository where they are.
+            let raw = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/rms_examples/wecc240/case.raw");
+            let module = powerio::parse(powerio::Source::open(raw).unwrap()).unwrap();
+            let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+                panic!("not a balanced network")
+            };
+            let request = crate::rms::DynamizeRequest {
+                machine: "GENROU".into(),
+                exciter: Some("SEXS".into()),
+                governor: Some("TGOV1".into()),
+                ..crate::rms::DynamizeRequest::default()
+            };
+            let dyr =
+                powerio::parse_dyr(&crate::rms::dyr_dynamize(net, "", &request).unwrap()).unwrap();
+            let sim = RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap();
             for h in [0.0, 0.005, 0.02] {
                 let d = compare(&sim.sys, &sim.x0, h);
-                assert!(d < 1e-9, "{} h {h}: {d:e}", dir.display());
+                assert!(d < 1e-9, "dynamized WECC 240 h {h}: {d:e}");
+            }
+            for dir in [rms_example("kundur"), rms_example("nordic44")]
+                .into_iter()
+                .flatten()
+            {
+                let sim = simulation(&dir);
+                for h in [0.0, 0.005, 0.02] {
+                    let d = compare(&sim.sys, &sim.x0, h);
+                    assert!(d < 1e-9, "{} h {h}: {d:e}", dir.display());
+                }
             }
         }
     }

@@ -285,6 +285,7 @@ impl<'a> RmsMeasure<'a> {
     }
 
     /// Whether the unit is connected.
+    #[cfg(feature = "rms-experimental")]
     pub(crate) fn unit_in_service(&self, u: usize) -> bool {
         let sys = self.sys;
         let nd = sys.devices.len();

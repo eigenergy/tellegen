@@ -16,6 +16,21 @@ trajectories.
 
 A `.dyr` file is attached to a case explicitly; nothing reads one implicitly.
 
+## Cargo features
+
+Neither is a default feature of the `tellegen` crate.
+
+- `rms` (implies `sensitivity`): the engine, its initialization from the AC
+  power flow, the integrator, the models validated against
+  PowerSimulationsDynamics.jl, events and recording, and the JSON front door
+  (`simulate_module_json`, `inspect_module_json`).
+- `rms-experimental` (implies `rms`): the less validated product layer:
+  controller block graphs (`RmsSimulation::with_models`), small-signal analysis
+  (`RmsRequest::small_signal`, `linear_analysis`), live sessions, checkpoints
+  and replay, packed result buffers, DYR parameter editing, the model library
+  and dynamize, and `tellegen::case_edit`. Without it a request for
+  small-signal analysis or checkpoints is noted in the result and skipped.
+
 Julia is not a dependency. PowerSimulationsDynamics.jl is the reference the
 equations are translated from (BSD-3, see
 [third-party notices](third-party-notices.md)) and the validation reference
@@ -32,7 +47,7 @@ equations are translated from (BSD-3, see
 | Renewable plant | `REGCA1` + `REECB1` + `REPCA1` (WECC generic converter, electrical and plant control) |
 | Loads | constant impedance, current or power at the power flow voltage |
 
-`RmsSimulation::with_options` takes `RmsOptions`, fixed for that simulation
+`RmsSimulation::with_options` (with graphs, `with_models_and_options`) takes `RmsOptions`, fixed for that simulation
 only: whether renewable plants are simulated (the default) or held at their
 power flow output, PowerSimulationsDynamics.jl 0.16.2's low-voltage gain in
 place of the PSS/E one (for comparing with that tool), and whether step
@@ -117,11 +132,11 @@ chattering at its bounds) do not stop a run.
 
 ## Known limitations
 
-- **Voltage-dependent loads in the power flow.** The AC power flow takes
-  constant-power loads; the RMS initialization reaches the ZIP/exponential
-  operating point by fixed-point iteration over constant-power flows and
-  reports it in the notes. A load's nominal voltage below 2 is in per unit,
-  one of 2 or more in kV against its bus's base voltage.
+- **Voltage-dependent loads.** The AC power flow solves ZIP and exponential
+  loads exactly inside its Newton iteration, and the RMS initialization starts
+  from that operating point. The dynamic load model then applies to each bus's
+  demand at the power flow voltage (the per-load ZIP split is not yet carried
+  into the dynamics).
 - **Generator reactive limits.** The initialization holds every generator at
   its voltage setpoint and does not apply its reactive limits, so on a case
   whose dispatch needs more reactive power than a unit's limit it starts from

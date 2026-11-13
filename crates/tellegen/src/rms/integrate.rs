@@ -159,7 +159,8 @@ struct Factor {
     theta: f64,
     epoch: u64,
     /// The iterate the Jacobian was taken at: with `h` and `theta` it
-    /// rebuilds this factorization exactly ([`Stepper::restore_factor`]).
+    /// rebuilds this factorization exactly (`Stepper::restore_factor`).
+    #[cfg_attr(not(feature = "rms-experimental"), allow(dead_code))]
     at: Vec<f64>,
 }
 
@@ -345,6 +346,7 @@ impl Stepper {
 
     /// The iterate, step and method of the factorization, when it is still
     /// valid for `sys` (its epoch), to rebuild it later.
+    #[cfg(feature = "rms-experimental")]
     pub(crate) fn solver_state(&self, sys: &DynSystem) -> Option<(Vec<f64>, f64, f64)> {
         self.factor
             .as_ref()
@@ -357,6 +359,7 @@ impl Stepper {
     ///
     /// # Errors
     /// When the assembly or the factorization fails.
+    #[cfg(feature = "rms-experimental")]
     pub(crate) fn restore_factor(
         &mut self,
         sys: &DynSystem,
@@ -378,6 +381,7 @@ impl Stepper {
     /// The predictor's memory at the present point of `sys`: the earlier
     /// points, newest first, each with the step that led away from it. With
     /// [`Self::solver_state`] it is what a run continues from exactly.
+    #[cfg(feature = "rms-experimental")]
     pub(crate) fn past(&self, sys: &DynSystem) -> Vec<(f64, Vec<f64>)> {
         (0..self.history.usable(sys.nx, sys.epoch))
             .map(|k| (self.history.h[k], self.history.x[k].clone()))
@@ -385,6 +389,7 @@ impl Stepper {
     }
 
     /// Start with the predictor's memory `past` ([`Self::past`]).
+    #[cfg(feature = "rms-experimental")]
     pub(crate) fn restore_past<'a>(
         &mut self,
         sys: &DynSystem,

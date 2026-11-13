@@ -14,16 +14,7 @@ use faer::{c64, Mat};
 use serde::{Deserialize, Serialize};
 
 use super::system::DynSystem;
-
-/// A generator reference that drives a frequency response.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InputSignal {
-    /// Exciter voltage reference (field voltage for a fixed exciter).
-    VRef,
-    /// Governor power reference (mechanical torque for a fixed governor).
-    PRef,
-}
+use super::InputSignal;
 
 /// A measured quantity of a frequency response.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

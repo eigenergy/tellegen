@@ -101,7 +101,7 @@ fn smib_cases_against_psid() {
             ..RmsOptions::default()
         };
         let sim =
-            RmsSimulation::with_options(&network, &dyr, &[], LoadModel::ConstantImpedance, options)
+            RmsSimulation::with_options(&network, &dyr, LoadModel::ConstantImpedance, options)
                 .unwrap();
         let ours = sim
             .run(&RmsRequest {
@@ -312,8 +312,7 @@ fn wecc240_scenarios_against_psid() {
         ..RmsOptions::default()
     };
     let sim =
-        RmsSimulation::with_options(&network, &dyr, &[], LoadModel::ConstantImpedance, options)
-            .unwrap();
+        RmsSimulation::with_options(&network, &dyr, LoadModel::ConstantImpedance, options).unwrap();
     let bounds: BTreeMap<&str, f64> = WECC_BOUNDS.iter().copied().collect();
     let response_bounds: BTreeMap<&str, f64> = RESPONSE_BOUNDS.iter().copied().collect();
     let mut response_failures = Vec::new();

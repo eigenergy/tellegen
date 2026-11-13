@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::blocks::*;
+use super::init::{least_squares_step, solve_small};
 
 /// The controller slot a graph fills.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1313,52 +1314,6 @@ impl CompiledGraph {
         residual(&z, &mut x);
         (x, if r.is_some() { z[0] } else { 0.0 })
     }
-}
-
-/// The step minimizing `|J dz + g|² + λ|dz|²` (λ small relative to `J`).
-pub(crate) fn least_squares_step(jac: &[f64], g: &[f64], n: usize) -> Option<Vec<f64>> {
-    let scale = jac.iter().fold(0.0_f64, |a, v| a.max(v.abs())).max(1e-300);
-    let lambda = 1e-10 * scale * scale;
-    let mut a = vec![0.0; n * n];
-    let mut b = vec![0.0; n];
-    for i in 0..n {
-        for j in 0..n {
-            a[i * n + j] = (0..n).map(|k| jac[k * n + i] * jac[k * n + j]).sum::<f64>();
-        }
-        a[i * n + i] += lambda;
-        b[i] = -(0..n).map(|k| jac[k * n + i] * g[k]).sum::<f64>();
-    }
-    solve_small(a, b, n)
-}
-
-/// Solve the dense `n × n` system `a x = b` (row-major) by Gaussian
-/// elimination with partial pivoting; `None` when singular or not finite.
-fn solve_small(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
-    for k in 0..n {
-        let p = (k..n).max_by(|&i, &j| a[i * n + k].abs().total_cmp(&a[j * n + k].abs()))?;
-        if !(a[p * n + k].abs() > 1e-300) {
-            return None;
-        }
-        if p != k {
-            for j in 0..n {
-                a.swap(k * n + j, p * n + j);
-            }
-            b.swap(k, p);
-        }
-        for i in k + 1..n {
-            let l = a[i * n + k] / a[k * n + k];
-            for j in k..n {
-                a[i * n + j] -= l * a[k * n + j];
-            }
-            b[i] -= l * b[k];
-        }
-    }
-    let mut x = vec![0.0; n];
-    for i in (0..n).rev() {
-        let s: f64 = (i + 1..n).map(|j| a[i * n + j] * x[j]).sum();
-        x[i] = (b[i] - s) / a[i * n + i];
-    }
-    x.iter().all(|v| v.is_finite()).then_some(x)
 }
 
 // ---------------------------------------------------------------------------

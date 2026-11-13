@@ -22,6 +22,7 @@ use std::f64::consts::PI;
 use powerio::DynamicModel;
 
 use super::blocks::*;
+#[cfg(feature = "rms-experimental")]
 use super::graph::CompiledGraph;
 
 /// `√(a² + b²)`: the magnitude of per-unit phasors and flux linkages in the
@@ -349,6 +350,7 @@ impl Shaft {
 pub(crate) enum Avr {
     Fixed,
     /// A block graph defined at run time.
+    #[cfg(feature = "rms-experimental")]
     Graph(Box<CompiledGraph>),
     Sexs {
         ta_tb: f64,
@@ -405,6 +407,7 @@ impl Avr {
     pub(crate) fn n_states(&self) -> usize {
         match self {
             Self::Fixed => 0,
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.n_states(),
             Self::Sexs { .. } => 2,
             Self::Esac1a { .. } => 5,
@@ -415,6 +418,7 @@ impl Avr {
     pub(crate) fn name(&self) -> String {
         match self {
             Self::Fixed => "fixed",
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => return graph_name(g),
             Self::Sexs { .. } => "SEXS",
             Self::Esac1a { .. } => "ESAC1A",
@@ -426,6 +430,7 @@ impl Avr {
     pub(crate) fn state_names(&self) -> Vec<String> {
         let names: &[&str] = match self {
             Self::Fixed => &[],
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => return g.state_names().to_vec(),
             Self::Sexs { .. } => &["Vf", "Vr"],
             Self::Esac1a { .. } => &["Vm", "Vr1", "Vr2", "Ve", "Vr3"],
@@ -437,6 +442,7 @@ impl Avr {
     /// Mass diagonal entries (avr_models.jl `mass_matrix_avr_entries!`).
     pub(crate) fn mass(&self, m: &mut [f64]) {
         match self {
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.mass(m),
             Self::Sexs { tb, te, .. } => {
                 m[0] = *te;
@@ -458,6 +464,7 @@ impl Avr {
     pub(crate) fn eval(&self, x: &[f64], u: AvrIn, f: &mut [f64]) -> f64 {
         match self {
             Self::Fixed => u.v_ref,
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.eval(x, &[u.vt, u.vs, u.xad_ifd, u.v_ref], f),
             Self::Sexs {
                 ta_tb,
@@ -561,6 +568,7 @@ impl Avr {
 pub(crate) enum Governor {
     Fixed,
     /// A block graph defined at run time; its output is the torque.
+    #[cfg(feature = "rms-experimental")]
     Graph(Box<CompiledGraph>),
     Tgov1 {
         r: f64,
@@ -602,6 +610,7 @@ impl Governor {
     pub(crate) fn n_states(&self) -> usize {
         match self {
             Self::Fixed => 0,
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.n_states(),
             Self::Tgov1 { .. } => 2,
             Self::Gast { .. } => 3,
@@ -612,6 +621,7 @@ impl Governor {
     pub(crate) fn name(&self) -> String {
         match self {
             Self::Fixed => "fixed",
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => return graph_name(g),
             Self::Tgov1 { .. } => "TGOV1",
             Self::Gast { .. } => "GAST",
@@ -623,6 +633,7 @@ impl Governor {
     pub(crate) fn state_names(&self) -> Vec<String> {
         let names: &[&str] = match self {
             Self::Fixed => &[],
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => return g.state_names().to_vec(),
             Self::Tgov1 { .. } => &["x_g1", "x_g2"],
             Self::Gast { .. } => &["x_g1", "x_g2", "x_g3"],
@@ -633,6 +644,7 @@ impl Governor {
 
     pub(crate) fn mass(&self, m: &mut [f64]) {
         match self {
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.mass(m),
             Self::Hygov { tf, tg, .. } => {
                 m[0] = *tf;
@@ -646,6 +658,7 @@ impl Governor {
     pub(crate) fn eval(&self, x: &[f64], omega: f64, p_ref: f64, f: &mut [f64]) -> f64 {
         match self {
             Self::Fixed => p_ref,
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.eval(x, &[omega, p_ref], f),
             Self::Tgov1 {
                 r,
@@ -733,6 +746,7 @@ impl Governor {
 pub(crate) enum Stabilizer {
     None,
     /// A block graph defined at run time; its output is `Vs`.
+    #[cfg(feature = "rms-experimental")]
     Graph(Box<CompiledGraph>),
     Ieeest {
         input_code: i32,
@@ -750,6 +764,7 @@ impl Stabilizer {
     pub(crate) fn n_states(&self) -> usize {
         match self {
             Self::None => 0,
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.n_states(),
             Self::Ieeest { .. } => 7,
         }
@@ -758,6 +773,7 @@ impl Stabilizer {
     pub(crate) fn name(&self) -> String {
         match self {
             Self::None => "none",
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => return graph_name(g),
             Self::Ieeest { .. } => "IEEEST",
         }
@@ -767,6 +783,7 @@ impl Stabilizer {
     pub(crate) fn state_names(&self) -> Vec<String> {
         let names: &[&str] = match self {
             Self::None => &[],
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => return g.state_names().to_vec(),
             Self::Ieeest { .. } => &["x_p1", "x_p2", "x_p3", "x_p4", "x_p5", "x_p6", "x_p7"],
         };
@@ -774,6 +791,7 @@ impl Stabilizer {
     }
 
     pub(crate) fn mass(&self, m: &mut [f64]) {
+        #[cfg(feature = "rms-experimental")]
         if let Self::Graph(g) = self {
             g.mass(m);
         }
@@ -799,6 +817,7 @@ impl Stabilizer {
     ) -> f64 {
         match self {
             Self::None => 0.0,
+            #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.eval(x, &[omega, pe_sys, vt, pe_sys / scale], f),
             Self::Ieeest {
                 input_code,
@@ -841,6 +860,7 @@ impl Stabilizer {
 }
 
 /// A graph controller's name in model lists: its name with a `*` (edited).
+#[cfg(feature = "rms-experimental")]
 fn graph_name(g: &CompiledGraph) -> String {
     let n = g.graph.name.trim();
     format!("{}*", if n.is_empty() { "graph" } else { n })

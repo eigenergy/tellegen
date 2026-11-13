@@ -97,8 +97,17 @@ impl GenDevice {
         m
     }
 
+    /// Outputs of every block of the device's graph controllers: none
+    /// without the block graphs of `rms-experimental`.
+    #[cfg(not(feature = "rms-experimental"))]
+    #[allow(clippy::unused_self)]
+    pub(crate) fn graph_signals(&self, _x: &[f64], _vr: f64, _vi: f64) -> Vec<(String, f64)> {
+        Vec::new()
+    }
+
     /// Outputs of every block of the device's graph controllers, named
     /// `{slot}.{node}` (empty without graphs).
+    #[cfg(feature = "rms-experimental")]
     pub(crate) fn graph_signals(&self, x: &[f64], vr: f64, vi: f64) -> Vec<(String, f64)> {
         use super::models::{Avr, Governor, Stabilizer};
         let graphs = (

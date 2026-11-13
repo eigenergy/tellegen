@@ -59,6 +59,7 @@ fn psd_dir() -> Option<PathBuf> {
 }
 
 /// The WECC 240 case that ships with the code.
+#[cfg(feature = "rms-experimental")]
 fn wecc240_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/rms_examples/wecc240")
 }
@@ -331,6 +332,7 @@ fn ieee14_every_branch_trip_completes() {
 
 /// Small-signal analysis: modes match the eigenvalues, participation sums to
 /// one, and a frequency response of the SMIB exciter loop is finite.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn linear_analysis_smib() {
     let (network, dyr) = smib_study(&wecc240_smib_cases()[0]);
@@ -426,6 +428,7 @@ fn ieee14_line_1_2_against_psd() {
 
 /// A live session reproduces the batch run when the same events are applied
 /// at the same times.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn live_session_matches_batch_run() {
     let dir = wecc240_dir();
@@ -518,6 +521,7 @@ fn wecc240_runs() {
 /// The frequency response agrees with the nonlinear simulation: its
 /// low-frequency gain V_ref → |V| equals the steady-state change after a small
 /// V_ref step, and its resonance sits at the swing mode's frequency.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn frequency_response_matches_time_domain() {
     let (network, dyr) = smib_study(&wecc240_smib_cases()[0]);

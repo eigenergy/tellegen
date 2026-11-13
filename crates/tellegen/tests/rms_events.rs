@@ -6,11 +6,12 @@
 
 #![cfg(feature = "sensitivity")]
 
+#[cfg(feature = "rms-experimental")]
 use std::path::Path;
 
-use tellegen::rms::{
-    LoadModel, RecordSpec, RmsEvent, RmsOptions, RmsRequest, RmsSimulation, UnitKind,
-};
+use tellegen::rms::{LoadModel, RmsEvent, RmsRequest, RmsSimulation};
+#[cfg(feature = "rms-experimental")]
+use tellegen::rms::{RecordSpec, RmsOptions, UnitKind};
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -44,6 +45,7 @@ fn smib_with_exciter(exciter: &str) -> RmsSimulation {
     RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap()
 }
 
+#[cfg(feature = "rms-experimental")]
 fn wecc240(options: RmsOptions) -> RmsSimulation {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/rms_examples/wecc240");
     let module = powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
@@ -51,7 +53,7 @@ fn wecc240(options: RmsOptions) -> RmsSimulation {
         panic!("not a balanced network")
     };
     let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
-    RmsSimulation::with_options(net, &dyr, &[], LoadModel::ConstantImpedance, options).unwrap()
+    RmsSimulation::with_options(net, &dyr, LoadModel::ConstantImpedance, options).unwrap()
 }
 
 fn at_rest(r: &tellegen::rms::RmsResult, key: &str) -> bool {
@@ -144,6 +146,7 @@ fn line_fault_breakers_and_reclose() {
 
 /// A replay from a checkpoint taken after a generator trip reproduces the
 /// run: the tripped unit stays out with the states it was tripped with.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn replay_after_a_generator_trip_reproduces_the_run() {
     let sim = wecc240(RmsOptions::default());
@@ -200,6 +203,7 @@ fn replay_after_a_generator_trip_reproduces_the_run() {
 
 /// The integration step is never coarser than asked: 4 ms within a 5 ms
 /// output step runs at 2.5 ms.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn the_step_is_never_coarser_than_asked() {
     let (net, dyr, _) = smib();
@@ -222,6 +226,7 @@ fn the_step_is_never_coarser_than_asked() {
 
 /// A fault needs an impedance: a bolted fault through zero is refused with a
 /// clear message, in a run and in a live session.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn a_fault_without_impedance_is_refused() {
     let (net, dyr, _) = smib();
@@ -247,6 +252,7 @@ fn a_fault_without_impedance_is_refused() {
 
 /// Unit references set together keep each unit's value, whatever the order:
 /// a held inverter before a machine does not drop the machine's.
+#[cfg(feature = "rms-experimental")]
 #[test]
 fn unit_references_keep_every_value() {
     let sim = wecc240(RmsOptions {

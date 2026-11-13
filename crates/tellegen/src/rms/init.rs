@@ -12,6 +12,7 @@
 
 use powerio::{BalancedNetwork, DynamicCase, MachineDynamics};
 
+#[cfg(feature = "rms-experimental")]
 use super::graph::{CompiledGraph, ModelOverride, Slot};
 use super::models::{
     avr_from_psse, governor_from_psse, machine_from_psse, ri_dq, stabilizer_from_psse, Avr,
@@ -36,7 +37,7 @@ pub(crate) struct InitReport {
 pub(crate) fn build(
     network: &BalancedNetwork,
     dynamics: &DynamicCase,
-    models: &[ModelOverride],
+    #[cfg(feature = "rms-experimental")] models: &[ModelOverride],
     load_model: LoadModel,
     options: super::RmsOptions,
 ) -> Result<(DynSystem, Vec<f64>, InitReport), String> {
@@ -446,20 +447,26 @@ pub(crate) fn build(
             .transpose()?
             .unwrap_or(Stabilizer::None);
         // Controller graphs given for this generator replace its records.
-        let graph = |slot: Slot| -> Result<Option<Box<CompiledGraph>>, String> {
-            models
-                .iter()
-                .find(|o| o.bus == m.bus.0 && o.machine_id == m.machine_id && o.graph.slot == slot)
-                .map(|o| {
-                    CompiledGraph::new(&o.graph).map(Box::new).map_err(|e| {
-                        format!("generator {}-{} {slot:?} graph: {e}", m.bus, m.machine_id)
+        #[cfg(feature = "rms-experimental")]
+        let (avr, gov, pss) = {
+            let graph = |slot: Slot| -> Result<Option<Box<CompiledGraph>>, String> {
+                models
+                    .iter()
+                    .find(|o| {
+                        o.bus == m.bus.0 && o.machine_id == m.machine_id && o.graph.slot == slot
                     })
-                })
-                .transpose()
+                    .map(|o| {
+                        CompiledGraph::new(&o.graph).map(Box::new).map_err(|e| {
+                            format!("generator {}-{} {slot:?} graph: {e}", m.bus, m.machine_id)
+                        })
+                    })
+                    .transpose()
+            };
+            let avr = graph(Slot::Exciter)?.map_or(avr, Avr::Graph);
+            let gov = graph(Slot::Governor)?.map_or(gov, Governor::Graph);
+            let pss = graph(Slot::Stabilizer)?.map_or(pss, Stabilizer::Graph);
+            (avr, gov, pss)
         };
-        let avr = graph(Slot::Exciter)?.map_or(avr, Avr::Graph);
-        let gov = graph(Slot::Governor)?.map_or(gov, Governor::Graph);
-        let pss = graph(Slot::Stabilizer)?.map_or(pss, Stabilizer::Graph);
         let mut dev = GenDevice {
             bus_number: m.bus.0,
             machine_id: m.machine_id.clone(),
@@ -599,6 +606,52 @@ pub(crate) fn hold_remote_regulators(net: &BalancedNetwork, ac: &mut AcNetwork) 
     held
 }
 
+/// The step minimizing `|J dz + g|² + λ|dz|²` (λ small relative to `J`).
+pub(crate) fn least_squares_step(jac: &[f64], g: &[f64], n: usize) -> Option<Vec<f64>> {
+    let scale = jac.iter().fold(0.0_f64, |a, v| a.max(v.abs())).max(1e-300);
+    let lambda = 1e-10 * scale * scale;
+    let mut a = vec![0.0; n * n];
+    let mut b = vec![0.0; n];
+    for i in 0..n {
+        for j in 0..n {
+            a[i * n + j] = (0..n).map(|k| jac[k * n + i] * jac[k * n + j]).sum::<f64>();
+        }
+        a[i * n + i] += lambda;
+        b[i] = -(0..n).map(|k| jac[k * n + i] * g[k]).sum::<f64>();
+    }
+    solve_small(a, b, n)
+}
+
+/// Solve the dense `n × n` system `a x = b` (row-major) by Gaussian
+/// elimination with partial pivoting; `None` when singular or not finite.
+pub(crate) fn solve_small(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
+    for k in 0..n {
+        let p = (k..n).max_by(|&i, &j| a[i * n + k].abs().total_cmp(&a[j * n + k].abs()))?;
+        if !(a[p * n + k].abs() > 1e-300) {
+            return None;
+        }
+        if p != k {
+            for j in 0..n {
+                a.swap(k * n + j, p * n + j);
+            }
+            b.swap(k, p);
+        }
+        for i in k + 1..n {
+            let l = a[i * n + k] / a[k * n + k];
+            for j in k..n {
+                a[i * n + j] -= l * a[k * n + j];
+            }
+            b[i] -= l * b[k];
+        }
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let s: f64 = (i + 1..n).map(|j| a[i * n + j] * x[j]).sum();
+        x[i] = (b[i] - s) / a[i * n + i];
+    }
+    x.iter().all(|v| v.is_finite()).then_some(x)
+}
+
 /// Infinity norm that propagates NaN (`f64::max` would drop it).
 fn inf_norm(r: &[f64]) -> f64 {
     r.iter().fold(0.0_f64, |a, v| {
@@ -648,7 +701,7 @@ pub(crate) fn newton(
         // least-squares step instead.
         if (0..k).any(|i| !du[(i, 0)].is_finite()) {
             let flat: Vec<f64> = (0..k * k).map(|i| j[(i / k, i % k)]).collect();
-            if let Some(step) = super::graph::least_squares_step(&flat, &r, k) {
+            if let Some(step) = least_squares_step(&flat, &r, k) {
                 du = faer::Mat::<f64>::from_fn(k, 1, |i, _| step[i]);
             }
         }
@@ -863,8 +916,10 @@ pub(crate) fn init_device(dev: &mut GenDevice, v: C64, i_sys: C64) -> Result<Vec
 }
 
 /// Starting point of the stabilizer states at rest.
+#[cfg_attr(not(feature = "rms-experimental"), allow(unused_variables))]
 pub(crate) fn pss_start(pss: &Stabilizer, pe: f64, vt: f64, scale: f64) -> Vec<f64> {
     match pss {
+        #[cfg(feature = "rms-experimental")]
         Stabilizer::Graph(g) => g.initial_guess(&[1.0, pe, vt, pe / scale], 0.0).0,
         p => vec![0.0; p.n_states()],
     }
@@ -874,8 +929,10 @@ pub(crate) fn pss_start(pss: &Stabilizer, pe: f64, vt: f64, scale: f64) -> Vec<f
 /// voltage `vf` at the inputs `u` (its `v_ref` unused): a graph's from its
 /// steady state (secant on `V_ref`), a compiled model's from its closed-form
 /// guess.
+#[cfg_attr(not(feature = "rms-experimental"), allow(unused_variables))]
 pub(crate) fn avr_start(avr: &Avr, u: super::models::AvrIn, vf: f64) -> Vec<f64> {
     let (vt, vs, xad_ifd) = (u.vt, u.vs, u.xad_ifd);
+    #[cfg(feature = "rms-experimental")]
     if let Avr::Graph(g) = avr {
         let (mut x, v_ref) = g.initial_guess(&[vt, vs, xad_ifd, vt], vf);
         x.push(v_ref);
@@ -889,6 +946,7 @@ pub(crate) fn avr_start(avr: &Avr, u: super::models::AvrIn, vf: f64) -> Vec<f64>
 /// Starting point of the governor states followed by `P_ref`, for the
 /// torque `tm` at `ω = 1`.
 pub(crate) fn gov_start(gov: &Governor, tm: f64) -> Vec<f64> {
+    #[cfg(feature = "rms-experimental")]
     if let Governor::Graph(g) = gov {
         let (mut x, p_ref) = g.initial_guess(&[1.0, tm], tm);
         x.push(p_ref);
@@ -901,7 +959,9 @@ pub(crate) fn gov_start(gov: &Governor, tm: f64) -> Vec<f64> {
 
 pub(crate) fn avr_guess(avr: &Avr, vt: f64, vf: f64, xad_ifd: f64) -> Vec<f64> {
     match avr {
-        Avr::Fixed | Avr::Graph(_) => vec![],
+        Avr::Fixed => vec![],
+        #[cfg(feature = "rms-experimental")]
+        Avr::Graph(_) => vec![],
         Avr::Sexs { k, ta_tb, .. } => vec![vf, (1.0 - ta_tb) * vf / k],
         Avr::Esac1a {
             kf, tf, ke, kd, ka, ..
@@ -927,7 +987,9 @@ pub(crate) fn avr_guess(avr: &Avr, vt: f64, vf: f64, xad_ifd: f64) -> Vec<f64> {
 
 pub(crate) fn gov_guess(gov: &Governor, tm: f64) -> Vec<f64> {
     match gov {
-        Governor::Fixed | Governor::Graph(_) => vec![],
+        Governor::Fixed => vec![],
+        #[cfg(feature = "rms-experimental")]
+        Governor::Graph(_) => vec![],
         Governor::Tgov1 { t2, t3, .. } => vec![tm, (1.0 - t2 / t3) * tm],
         Governor::Gast { .. } => vec![tm, tm, tm],
         Governor::Hygov {
@@ -942,3 +1004,4 @@ pub(crate) fn gov_guess(gov: &Governor, tm: f64) -> Vec<f64> {
         }
     }
 }
+
