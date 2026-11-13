@@ -15,7 +15,9 @@ No closed-source tool's output is used. The tests need the `rms` feature;
 validation in release (CI runs both). The comparisons simulate what
 PowerSimulationsDynamics.jl simulates where tellegen's defaults differ
 (`RmsOptions` with `reactive_limits: false`, `psid_saturation: true`,
-`low_voltage_load: Exact`), so they compare like with like.
+`psid_converter_ramp: true`, `low_voltage_load: Exact`; one helper,
+`tests/support/psid.rs`, for both test files), so they compare like with
+like.
 
 The per-quantity bounds below are regression bounds: about three (single
 machines) or two (WECC 240) times what tellegen showed in the validation

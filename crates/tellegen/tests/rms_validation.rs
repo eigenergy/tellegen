@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use tellegen::rms::{LoadModel, RmsEvent, RmsRequest, RmsSimulation};
+use tellegen::rms::{LoadModel, LowVoltageLoad, RmsEvent, RmsOptions, RmsRequest, RmsSimulation};
 
 /// Stage A tolerance on every channel shared with PowerSimulationsDynamics.jl.
 const PSD_TOL: f64 = 1e-3;
@@ -30,6 +30,10 @@ const PSD_TOL: f64 = 1e-3;
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/smib.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/psid.rs"
 ));
 
 /// A folder of the case data repository (`$TELLEGEN_CASE_DATA`), or `None`
@@ -146,7 +150,7 @@ fn rms_validation() {
             small_signal: false,
             record: None,
         };
-        let sim = match RmsSimulation::new(network, &dyr, lm) {
+        let sim = match RmsSimulation::with_options(network, &dyr, lm, psid_options()) {
             Ok(sim) => sim,
             Err(e) => {
                 failures.push(format!("{id}: initialization failed: {e}"));
@@ -391,10 +395,11 @@ fn ieee14_line_1_2_against_psd() {
     let powerio::PioValue::BalancedNetwork(network) = module.value() else {
         panic!()
     };
-    let r = tellegen::rms::simulate(
-        network,
-        &std::fs::read_to_string(dir.join("case.dyr")).unwrap(),
-        &RmsRequest {
+    let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
+    let sim =
+        RmsSimulation::with_options(network, &dyr, LoadModel::default(), psid_options()).unwrap();
+    let r = sim
+        .run(&RmsRequest {
             t_end: 10.0,
             events: vec![RmsEvent::BranchTrip {
                 time: 1.0,
@@ -404,9 +409,8 @@ fn ieee14_line_1_2_against_psd() {
             }],
             small_signal: false,
             ..RmsRequest::default()
-        },
-    )
-    .unwrap();
+        })
+        .unwrap();
     let t_ref: Vec<f64> = serde_json::from_value(psd["time"].clone()).unwrap();
     let mut worst_v: f64 = 0.0;
     let mut worst_w: f64 = 0.0;

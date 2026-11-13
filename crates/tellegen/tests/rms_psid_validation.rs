@@ -42,6 +42,10 @@ use tellegen::rms::{LoadModel, LowVoltageLoad, RmsEvent, RmsOptions, RmsRequest,
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/psid.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/smib.rs"
 ));
 
@@ -78,23 +82,6 @@ fn report() -> bool {
 fn wrap(d: f64) -> f64 {
     let two_pi = 2.0 * std::f64::consts::PI;
     d - two_pi * (d / two_pi).round()
-}
-
-/// What PowerSimulationsDynamics.jl 0.16.2 simulates, so the comparison
-/// is like with like where tellegen's defaults differ: the units start at
-/// their voltage setpoints whatever reactive power that takes (its power
-/// flow does not enforce reactive limits; tellegen's default does, as its
-/// static study) and the loads keep their law at any voltage (no PSS/E
-/// `PQBRAK` conversion; the loads here are constant impedance, which the
-/// conversion leaves alone, so this is stated for completeness), and the
-/// quadratic saturation keeps its formula below the knee `A` (PSS/E: 0).
-fn psid_options() -> RmsOptions {
-    RmsOptions {
-        reactive_limits: false,
-        psid_saturation: true,
-        low_voltage_load: LowVoltageLoad::Exact,
-        ..RmsOptions::default()
-    }
 }
 
 #[test]
