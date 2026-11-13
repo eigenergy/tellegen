@@ -28,6 +28,8 @@ mod acopf;
 mod cases;
 mod dc;
 pub(crate) mod islands;
+#[cfg(feature = "sensitivity")]
+pub(crate) mod load_voltage;
 
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
@@ -35,7 +37,7 @@ pub(crate) use ac::AcNetwork;
 pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
 pub(crate) use dc::{DcNetwork, LinearRow};
 
-#[cfg(all(test, feature = "conic"))]
+#[cfg(all(test, feature = "sensitivity"))]
 pub(crate) use cases::parse_case3_ac;
 #[cfg(test)]
 pub(crate) use cases::{parse_case3, CASE3, CASE3_TWIN, CASE_ISLANDS};
