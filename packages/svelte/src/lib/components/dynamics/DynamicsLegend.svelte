@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { dynVoltageGradient, haloLegendRadius } from '../../dynamics/legend.js';
 
-	let { theme = 'light', bottom = 120 }: { theme?: 'light' | 'dark'; bottom?: number } = $props();
+	let { theme = 'light', top = 112 }: { theme?: 'light' | 'dark'; top?: number } = $props();
 	const gradient = $derived(dynVoltageGradient(theme));
 	const ticks = [0.8, 0.9, 1.0, 1.1];
 	const pos = (v: number) => ((v - 0.5) / (1.2 - 0.5)) * 100;
 </script>
 
-<aside class="legend" style:bottom="{bottom}px" aria-label="Dynamics map legend">
+<aside class="legend" style:top="{top}px" aria-label="Dynamics map legend">
 	<div class="row">
 		<span class="title">Bus |V| (pu)</span>
 		<div class="bar" style:background={gradient}>

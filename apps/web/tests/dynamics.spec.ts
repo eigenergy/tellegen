@@ -12,7 +12,6 @@ const shot = async (page: import('@playwright/test').Page, name: string) => {
 const example = (name: string) =>
 	readFileSync(fileURLToPath(new URL(`../static/examples/wecc240/${name}`, import.meta.url)));
 
-test.describe.configure({ mode: 'serial' });
 test.setTimeout(180_000);
 
 async function openDemo(page: import('@playwright/test').Page) {

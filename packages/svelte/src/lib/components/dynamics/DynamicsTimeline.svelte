@@ -17,7 +17,7 @@
 	const marks = $derived(record ? markers(record.events, f0) : []);
 	const step = $derived(run?.outputStep ?? 0.01);
 	let showTraces = $state(true);
-	let traceHeight = $state(200);
+	let traceHeight = $state(160);
 
 	/** The nearest event at or before t, and how long after it, in cycles. */
 	const after = $derived.by(() => {

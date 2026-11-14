@@ -146,7 +146,7 @@
 	{#if !app.studyView}<DynamicsPanel />{/if}
 	{#if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} />
-		{#if !app.zen}<DynamicsLegend theme={config.theme} bottom={timelineHeight + 24} />{/if}
+		{#if !app.zen}<DynamicsLegend theme={config.theme} top={app.headerInset + 52} />{/if}
 	{/if}
 	<LogPanel />
 	<SettingsPanel />

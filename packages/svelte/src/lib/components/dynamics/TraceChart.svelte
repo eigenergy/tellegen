@@ -104,8 +104,13 @@
 		const mag = 10 ** Math.floor(Math.log10(raw));
 		const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
 		const out: number[] = [];
-		for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step)
+		if (!(step > 0) || !Number.isFinite(lo) || !Number.isFinite(hi)) return out;
+		const first = Math.ceil(lo / step);
+		for (let k = 0; k < 50; k++) {
+			const v = (first + k) * step;
+			if (v > hi + 1e-12) break;
 			out.push(+v.toPrecision(12));
+		}
 		return out;
 	}
 	const yTicks = $derived(ticks(yRange[0], yRange[1], 4));
