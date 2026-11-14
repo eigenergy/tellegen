@@ -52,9 +52,11 @@ pub(crate) mod models;
 pub mod presets;
 mod renewable;
 mod schur;
+pub mod screen;
 mod system;
 mod topology;
 
+pub use screen::{Reason, RmsScreening, ScreeningCriteria, ScreeningVerdict, SwingTrend};
 pub use topology::{End, TopoBranch, TopoUnit, Topology, UnitKind};
 
 use std::collections::BTreeMap;
@@ -92,6 +94,7 @@ pub use live::{
 
 /// A controller reference a [`RmsEvent::SetReference`] sets (and a frequency
 /// response perturbs).
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InputSignal {
@@ -110,6 +113,7 @@ pub enum InputSignal {
 /// exactly the power flow demand at `t = 0`. The other variants are a global
 /// override: the whole bus demand at `V0`, whatever its parts, follows one
 /// law (PSS/E `CONL` with 100 % of P and Q in one class).
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadModel {
@@ -124,6 +128,7 @@ pub enum LoadModel {
 
 /// How the constant-power and constant-current load parts (and exponential
 /// parts with `γ < 2`) behave at low voltage.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LowVoltageLoad {
@@ -147,6 +152,7 @@ impl Default for LowVoltageLoad {
 }
 
 /// A discrete event at `time` seconds.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RmsEvent {
@@ -269,6 +275,7 @@ impl RmsEvent {
 }
 
 /// A simulation request.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RmsRequest {
     /// End time in seconds.
@@ -326,6 +333,7 @@ impl Default for RmsRequest {
 }
 
 /// One dynamic generator in the result.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RmsGenerator {
     pub bus: usize,
@@ -337,6 +345,10 @@ pub struct RmsGenerator {
     pub v_ref: f64,
     pub p_ref: f64,
     pub mbase: f64,
+    /// Inertia constant `H` on the machine base, s (the weight of the
+    /// machine in a centre of inertia is `H · MBASE`).
+    #[serde(default)]
+    pub h: f64,
 }
 
 /// The simulation result. Channels are keyed `quantity:bus` (`vm`, `va` in
@@ -345,6 +357,7 @@ pub struct RmsGenerator {
 /// draw, system base) and `quantity:from-to` for branch flows
 /// (`p_from`, `q_from`, `p_to`, `q_to`, system base), with `#id` appended for
 /// a machine or circuit id other than `1`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RmsResult {
     pub time: Vec<f64>,
@@ -380,6 +393,17 @@ pub struct RmsSimulation {
     load_model: LoadModel,
     topology: Topology,
     initial_residual: f64,
+    options: RmsOptions,
+    dyr_records: usize,
+}
+
+/// A unit's channel key: its bus, with `#id` for a machine id other than `1`.
+pub(crate) fn unit_key(bus: usize, id: &str) -> String {
+    if id == "1" {
+        bus.to_string()
+    } else {
+        format!("{bus}#{id}")
+    }
 }
 
 impl RmsSimulation {
@@ -474,6 +498,8 @@ impl RmsSimulation {
             load_model,
             topology,
             initial_residual: report.steady_residual,
+            options,
+            dyr_records: dynamics.records().len(),
         })
     }
 
@@ -508,6 +534,12 @@ impl RmsSimulation {
         self.load_model
     }
 
+    /// The options this simulation was prepared with.
+    #[must_use]
+    pub fn options(&self) -> RmsOptions {
+        self.options
+    }
+
     /// Bus numbers in state order.
     pub fn buses(&self) -> &[usize] {
         &self.sys.bus_numbers
@@ -516,6 +548,108 @@ impl RmsSimulation {
     /// `(from, to, circuit)` of every branch.
     pub fn branches(&self) -> Vec<(usize, usize, String)> {
         self.sys.branch_keys.clone()
+    }
+
+    /// The dynamic generators with their models and initial states.
+    #[must_use]
+    pub fn generators(&self) -> Vec<RmsGenerator> {
+        self.sys
+            .devices
+            .iter()
+            .map(|d| RmsGenerator {
+                bus: d.bus_number,
+                machine_id: d.machine_id.clone(),
+                models: vec![
+                    d.machine.name().into(),
+                    d.avr.name(),
+                    d.gov.name(),
+                    d.pss.name(),
+                ],
+                states: d.state_names(),
+                initial_states: self.x0[d.offset..d.offset + d.n_states()].to_vec(),
+                v_ref: d.v_ref,
+                p_ref: d.p_ref,
+                mbase: d.scale * self.sys.sbase,
+                h: d.shaft.h,
+            })
+            .collect()
+    }
+
+    /// The unit whose rotor speed turns the reference frame of the bus
+    /// angles (`va:`) and rotor angles (`delta:`), keyed as its channels are
+    /// (`bus` or `bus#id`); `None` when the frame turns at the synchronous
+    /// speed (a voltage source holds the reference bus).
+    #[must_use]
+    pub fn reference_unit(&self) -> Option<String> {
+        let r = self.sys.omega_ref?;
+        self.sys
+            .devices
+            .iter()
+            .find(|d| {
+                let [_, s, ..] = d.layout();
+                d.offset + s + 1 == r
+            })
+            .map(|d| unit_key(d.bus_number, &d.machine_id))
+    }
+
+    /// The units held at their power flow output (constant currents, not
+    /// simulated), keyed `bus` or `bus#id`.
+    #[must_use]
+    pub fn held_units(&self) -> Vec<String> {
+        self.sys
+            .held
+            .iter()
+            .filter(|h| h.plant.is_none())
+            .map(|h| unit_key(h.bus_number, &h.machine_id))
+            .collect()
+    }
+
+    /// What the dynamic data resolves to, without running: the linked
+    /// models, the elements events can name, the notes of the
+    /// initialization and its residual. The eigenvalues are left empty
+    /// ([`Self::eigenvalues`] computes them).
+    #[must_use]
+    pub fn inspection(&self) -> RmsInspection {
+        RmsInspection {
+            buses: self.sys.bus_numbers.clone(),
+            base_mva: self.sys.sbase,
+            base_frequency: self.sys.f0,
+            generators: self.generators(),
+            sources: self
+                .sys
+                .sources
+                .iter()
+                .map(|s| format!("{}-{}", s.bus_number, s.machine_id))
+                .collect(),
+            branches: self.branches(),
+            load_buses: self
+                .sys
+                .loads
+                .iter()
+                .zip(&self.sys.bus_numbers)
+                .filter(|(l, _)| l.has_load())
+                .map(|(_, &b)| b)
+                .collect(),
+            dyr_records: self.dyr_records,
+            eigenvalues: Vec::new(),
+            notes: self.notes.clone(),
+            supported_models: powerio::SUPPORTED_MODELS
+                .iter()
+                .map(|(m, _)| (*m).to_owned())
+                .collect(),
+            initial_residual: self.initial_residual,
+            reference_unit: self.reference_unit(),
+            held_units: self.held_units(),
+            plants: self
+                .sys
+                .held
+                .iter()
+                .filter(|h| h.plant.is_some())
+                .map(|h| unit_key(h.bus_number, &h.machine_id))
+                .collect(),
+            options: self.options,
+            load_model: self.load_model,
+        }
     }
 
     /// Eigenvalues of the linearized system at the initial point:
@@ -854,26 +988,7 @@ impl RmsSimulation {
             }
             Vec::new()
         };
-        let generators = self
-            .sys
-            .devices
-            .iter()
-            .map(|d| RmsGenerator {
-                bus: d.bus_number,
-                machine_id: d.machine_id.clone(),
-                models: vec![
-                    d.machine.name().into(),
-                    d.avr.name(),
-                    d.gov.name(),
-                    d.pss.name(),
-                ],
-                states: d.state_names(),
-                initial_states: self.x0[d.offset..d.offset + d.n_states()].to_vec(),
-                v_ref: d.v_ref,
-                p_ref: d.p_ref,
-                mbase: d.scale * self.sys.sbase,
-            })
-            .collect();
+        let generators = self.generators();
         #[cfg(not(feature = "rms-experimental"))]
         let checkpoints = {
             if request
@@ -1192,6 +1307,7 @@ fn fault_admittance(r: f64, x: f64) -> Result<C64, String> {
 /// Choices of one prepared simulation, fixed when it is built. The defaults
 /// are tellegen's own; the others exist to compare with another tool or
 /// method, and affect only the simulation they are given to.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RmsOptions {
@@ -1245,6 +1361,7 @@ impl Default for RmsOptions {
 
 /// What a run records. Without one ([`RmsRequest::record`] `None`) every
 /// channel is recorded at every output step.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RecordSpec {
     /// Channels recorded at every output step: exact keys (`omega:2178`) or
@@ -1269,6 +1386,20 @@ pub struct RecordSpec {
 }
 
 impl RecordSpec {
+    /// The channels a display of a run needs: every bus voltage magnitude
+    /// and angle, every machine's speed, rotor angle and electrical power,
+    /// and every bus's load (what [`screen`] and an app's map and traces
+    /// read), at every output step.
+    #[must_use]
+    pub fn display() -> Self {
+        Self {
+            channels: ["vm:", "va:", "omega:", "delta:", "pe:", "pl:", "ql:"]
+                .map(str::to_owned)
+                .to_vec(),
+            ..Self::default()
+        }
+    }
+
     fn matches(patterns: &[String], key: &str) -> bool {
         patterns
             .iter()
@@ -1277,6 +1408,7 @@ impl RecordSpec {
 }
 
 /// Channels sampled at their own step (the map frames of a run).
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RmsSeries {
     pub time: Vec<f64>,
@@ -1286,6 +1418,7 @@ pub struct RmsSeries {
 /// The full state at `t` (differential and algebraic, in the engine's order)
 /// and the integrator's reusable factorization there, so a replay from it
 /// continues the run sample for sample.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub t: f64,
@@ -1302,6 +1435,7 @@ pub struct Checkpoint {
 
 /// A point of the run before a checkpoint: the full state and the step that
 /// led away from it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PastPoint {
     pub h: f64,
@@ -1309,6 +1443,7 @@ pub struct PastPoint {
 }
 
 /// What rebuilds an integrator factorization exactly.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SolverState {
     pub at: Vec<f64>,
@@ -1811,30 +1946,52 @@ pub fn simulate(
     dyr_text: &str,
     request: &RmsRequest,
 ) -> Result<RmsResult, String> {
-    let (_, sim) = prepare(network, dyr_text, request.load_model.unwrap_or_default())?;
+    let sim = prepare(
+        network,
+        dyr_text,
+        request.load_model.unwrap_or_default(),
+        RmsOptions::default(),
+    )?;
     sim.run(request)
 }
 
-/// Read the dynamic data and assemble the simulation; returns the number of
-/// DYR records too. With `rms-experimental` the text may be the JSON form
-/// with controller graphs ([`DynamicInput`]).
+/// Read the dynamic data and assemble the simulation. With
+/// `rms-experimental` the text may be the JSON form with controller graphs
+/// ([`DynamicInput`]).
 fn prepare(
     network: &BalancedNetwork,
     dyr_text: &str,
     load_model: LoadModel,
-) -> Result<(usize, RmsSimulation), String> {
+    options: RmsOptions,
+) -> Result<RmsSimulation, String> {
     #[cfg(feature = "rms-experimental")]
     {
         let (dynamics, models) = read_dynamics(dyr_text)?;
-        let sim = RmsSimulation::with_models(network, &dynamics, &models, load_model)?;
-        Ok((dynamics.records().len(), sim))
+        RmsSimulation::with_models_and_options(network, &dynamics, &models, load_model, options)
     }
     #[cfg(not(feature = "rms-experimental"))]
     {
         let dynamics = powerio::parse_dyr(dyr_text).map_err(|e| format!("DYR: {e}"))?;
-        let sim = RmsSimulation::new(network, &dynamics, load_model)?;
-        Ok((dynamics.records().len(), sim))
+        RmsSimulation::with_options(network, &dynamics, load_model, options)
     }
+}
+
+/// Prepare a simulation of a stored PowerIO module (JSON) with DYR text,
+/// once, to run any number of times ([`RmsSimulation::run`]) and inspect
+/// without a run ([`RmsSimulation::inspection`]). With `rms-experimental`
+/// the dynamic data may be the JSON form with controller graphs
+/// ([`DynamicInput`]).
+///
+/// # Errors
+/// When the inputs do not parse or the case cannot be initialized.
+pub fn prepare_module_json(
+    module_json: &str,
+    dyr_text: &str,
+    load_model: LoadModel,
+    options: RmsOptions,
+) -> Result<RmsSimulation, String> {
+    let network = network_from_module_json(module_json)?;
+    prepare(&network, dyr_text, load_model, options)
 }
 
 /// DYR text, or the JSON form with controller graphs ([`DynamicInput`]).
@@ -1846,6 +2003,7 @@ pub(crate) fn read_dynamics(text: &str) -> Result<(DynamicCase, Vec<ModelOverrid
 }
 
 /// What a case's dynamic data resolves to, for a UI to show before a run.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RmsInspection {
     pub buses: Vec<usize>,
@@ -1861,6 +2019,26 @@ pub struct RmsInspection {
     pub eigenvalues: Vec<[f64; 2]>,
     pub notes: Vec<String>,
     pub supported_models: Vec<String>,
+    /// `‖f(x0)‖∞` at the initial point ([`RmsSimulation::initial_residual`]).
+    #[serde(default)]
+    pub initial_residual: f64,
+    /// The unit whose speed turns the angle reference frame
+    /// ([`RmsSimulation::reference_unit`]).
+    #[serde(default)]
+    pub reference_unit: Option<String>,
+    /// Units held at their power flow output, not simulated
+    /// ([`RmsSimulation::held_units`]).
+    #[serde(default)]
+    pub held_units: Vec<String>,
+    /// Simulated renewable plants (`REGCA1` + `REECB1` + `REPCA1`), keyed
+    /// `bus` or `bus#id`.
+    #[serde(default)]
+    pub plants: Vec<String>,
+    /// The options the simulation was prepared with.
+    #[serde(default)]
+    pub options: RmsOptions,
+    #[serde(default)]
+    pub load_model: LoadModel,
 }
 
 pub(crate) fn network_from_module_json(module_json: &str) -> Result<BalancedNetwork, String> {
@@ -1879,41 +2057,14 @@ pub fn inspect_module_json(
     dyr_text: &str,
     load_model: LoadModel,
 ) -> Result<String, String> {
-    let network = network_from_module_json(module_json)?;
-    let (dyr_records, sim) = prepare(&network, dyr_text, load_model)?;
-    let result = sim.run(&RmsRequest {
-        t_end: 0.005,
-        dt: 0.005,
-        output_step: 0.005,
-        load_model: Some(load_model),
-        events: Vec::new(),
-        small_signal: cfg!(feature = "rms-experimental"),
-        record: None,
-    })?;
-    let load_buses = sim
-        .sys
-        .loads
-        .iter()
-        .zip(&sim.sys.bus_numbers)
-        .filter(|(l, _)| l.has_load())
-        .map(|(_, &b)| b)
-        .collect();
-    let inspection = RmsInspection {
-        buses: result.buses,
-        base_mva: result.base_mva,
-        base_frequency: result.base_frequency,
-        generators: result.generators,
-        sources: result.sources,
-        branches: sim.branches(),
-        load_buses,
-        dyr_records,
-        eigenvalues: result.eigenvalues,
-        notes: result.notes,
-        supported_models: powerio::SUPPORTED_MODELS
-            .iter()
-            .map(|(m, _)| (*m).to_owned())
-            .collect(),
-    };
+    let sim = prepare_module_json(module_json, dyr_text, load_model, RmsOptions::default())?;
+    #[cfg_attr(not(feature = "rms-experimental"), allow(unused_mut))]
+    let mut inspection = sim.inspection();
+    #[cfg(feature = "rms-experimental")]
+    match sim.eigenvalues() {
+        Ok(eig) => inspection.eigenvalues = eig,
+        Err(e) => inspection.notes.push(e),
+    }
     serde_json::to_string(&inspection).map_err(|e| e.to_string())
 }
 

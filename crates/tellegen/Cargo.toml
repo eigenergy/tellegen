@@ -92,6 +92,10 @@ name = "study_schema"
 required-features = ["schema"]
 
 [[example]]
+name = "rms_schema"
+required-features = ["schema", "rms-experimental"]
+
+[[example]]
 name = "convex_cost_scenario"
 required-features = ["sensitivity"]
 
@@ -135,6 +139,10 @@ required-features = ["rms"]
 
 [[test]]
 name = "rms_physics"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_screen"
 required-features = ["rms"]
 
 [[test]]
