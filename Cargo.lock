@@ -1636,8 +1636,9 @@ dependencies = [
 
 [[package]]
 name = "powerio"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "043cfb29b6300b93b48d12f6e683027c7caa239cb74245d4c92fdcee5413f332"
 dependencies = [
  "num-complex",
  "powerio-archive",
@@ -1653,8 +1654,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-archive"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e15a40b16315759865b9f9cd346fa9308926414cd05d319403cc6121219813eb"
 dependencies = [
  "memchr",
  "powerio-core",
@@ -1663,8 +1665,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-core"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9e0cdd53f509c444c613893ae7d3df802796503654093df099d8eb0eac5164b"
 dependencies = [
  "errno",
  "libc",
@@ -1676,8 +1679,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-dist"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7dfb209e875da882238949b3a58cf60f4352b4e86d6e33bf7b6aec14a019f2c"
 dependencies = [
  "memchr",
  "num-complex",
@@ -1693,8 +1697,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-matrix"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab48092904d58ce7dfb2e11ad4e0159d5add6e428cadee6c82e4a33d420990dd"
 dependencies = [
  "faer",
  "num-complex",
@@ -1715,8 +1720,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f50e5c560843b8f9b994294b767ce0a39ec8d02e878edae7a9fad8d2695973d7"
 dependencies = [
  "powerio-core",
  "powerio-dist",
@@ -1729,8 +1735,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-synth"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72e5e6a646c6663df7b7528524bd56185dc65ee42fc39a377f28bb318c043577"
 dependencies = [
  "powerio-tx",
  "rand",
@@ -1740,8 +1747,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-tnd"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07e2098d26e4c2dc46bea38780789ca3c8c76181b5f293725fcfccf8c28dd8f7"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1754,8 +1762,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-tx"
-version = "0.12.0-rc.1"
-source = "git+https://github.com/eigenergy/powerio.git?rev=ae9d6305f2e939b6b3345b247626a6dc6949d1cb#ae9d6305f2e939b6b3345b247626a6dc6949d1cb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae958aa183e334e84c3e8606656e970aa1e0fd4c60433423c76b8c9d14054ce0"
 dependencies = [
  "lexical-core",
  "memchr",
