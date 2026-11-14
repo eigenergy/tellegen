@@ -383,16 +383,22 @@ export class BrowserRmsCase {
   }
 
   /** Small-signal modes at the operating point (experimental). */
-  async linear(request: RmsLinearRequest = {}): Promise<RmsLinearResult> {
+  async linear(
+    request: RmsLinearRequest = {},
+    opts: { signal?: AbortSignal } = {},
+  ): Promise<RmsLinearResult> {
     const support = await rmsSupport();
     if (!support.experimental)
       throw new ExperimentalUnavailable("small-signal analysis");
-    await this.ready();
-    const { value } = await rmsHost().call({
-      op: "linear",
-      handle: this.handle,
-      request_json: JSON.stringify(request),
-    });
+    await this.ready(opts.signal);
+    const { value } = await rmsHost().call(
+      {
+        op: "linear",
+        handle: this.handle,
+        request_json: JSON.stringify(request),
+      },
+      { signal: opts.signal },
+    );
     return JSON.parse(value as string) as RmsLinearResult;
   }
 
@@ -422,7 +428,8 @@ export async function rmsDynamize(
   },
 ): Promise<string> {
   const support = await rmsSupport();
-  if (!support.experimental) throw new ExperimentalUnavailable("default dynamics");
+  if (!support.experimental)
+    throw new ExperimentalUnavailable("default dynamics");
   const { value } = await rmsHost().call({
     op: "dynamize",
     module_json: moduleJson,
@@ -435,7 +442,8 @@ export async function rmsDynamize(
 /** The model library (experimental). */
 export async function rmsLibrary(): Promise<unknown[]> {
   const support = await rmsSupport();
-  if (!support.experimental) throw new ExperimentalUnavailable("the model library");
+  if (!support.experimental)
+    throw new ExperimentalUnavailable("the model library");
   const { value } = await rmsHost().call({ op: "library" });
   return JSON.parse(value as string) as unknown[];
 }

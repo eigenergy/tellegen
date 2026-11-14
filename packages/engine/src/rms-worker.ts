@@ -78,7 +78,10 @@ async function execute(
     case "inspect":
       return { value: handle(req.handle).inspection(), transfer: [] };
     case "flat_check":
-      return { value: handle(req.handle).flat_check(req.seconds), transfer: [] };
+      return {
+        value: handle(req.handle).flat_check(req.seconds),
+        transfer: [],
+      };
     case "run": {
       const buffers = handle(req.handle).run(req.request_json, (t: number) =>
         scope.postMessage({ id: req.id, progress: { t } }),

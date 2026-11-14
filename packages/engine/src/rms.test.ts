@@ -63,7 +63,9 @@ class FakeWorker implements RmsWorkerLike {
   reply(msg: RmsWorkerRequest) {
     if (msg.op === "run") {
       for (const t of [0.005, 0.01])
-        this.onmessage?.({ data: { id: msg.id, progress: { t } } } as MessageEvent<RmsWorkerResponse>);
+        this.onmessage?.({
+          data: { id: msg.id, progress: { t } },
+        } as MessageEvent<RmsWorkerResponse>);
     }
     this.onmessage?.({
       data: { id: msg.id, ok: true, value: this.answer(msg), worker_ms: 1 },
@@ -113,7 +115,11 @@ describe("RMS run buffers", () => {
     expect(() =>
       unpackRun(
         { events: [] },
-        { meta: meta(["a", "b"]), time: new Float64Array(3), values: new Float64Array(5) },
+        {
+          meta: meta(["a", "b"]),
+          time: new Float64Array(3),
+          values: new Float64Array(5),
+        },
         0,
       ),
     ).toThrow(/2 channels × 3 samples/);
@@ -127,8 +133,14 @@ describe("RMS run buffers", () => {
       events: [],
       load_model: "power_flow",
     });
-    const r = buildRunRequest({ events: [], dt: 0.003, output_step: 0.01 }, { load_model: "constant_power" });
-    expect(r.output_step / r.dt).toBeCloseTo(Math.round(r.output_step / r.dt), 12);
+    const r = buildRunRequest(
+      { events: [], dt: 0.003, output_step: 0.01 },
+      { load_model: "constant_power" },
+    );
+    expect(r.output_step / r.dt).toBeCloseTo(
+      Math.round(r.output_step / r.dt),
+      12,
+    );
     expect(r.load_model).toBe("constant_power");
   });
 });
@@ -151,7 +163,9 @@ describe("RMS worker host", () => {
     expect(progress).toEqual([0.25, 0.5]);
     expect(Array.from(run.series("vm:2")!)).toEqual([1, 0.8, 0.9]);
     const sent = workers[0].requests.find((r) => r.op === "run")!;
-    expect(JSON.parse((sent as { request_json: string }).request_json)).toMatchObject({
+    expect(
+      JSON.parse((sent as { request_json: string }).request_json),
+    ).toMatchObject({
       t_end: 0.02,
       load_model: "constant_power",
     });
