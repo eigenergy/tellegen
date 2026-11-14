@@ -46,7 +46,23 @@ pub(super) fn case(bundle: &str, name: &str) -> MulticonductorNetwork {
         "bounds" => include_str!("../../tests/data/mc_opf/bounds.json"),
         _ => unreachable!(),
     };
-    let cases: serde_json::Value = serde_json::from_str(text).unwrap();
+    let mut cases: serde_json::Value = serde_json::from_str(text).unwrap();
+    // These hash-pinned fixtures use the older BMOPF draft's lowercase load
+    // model tokens. PowerIO 0.12.0 reads them, but its semantic check compares
+    // the token case-sensitively and asks a lowercase `constant_power` load for
+    // `v_nom`. Spell the token as the current schema does; the fixture bytes
+    // stay as their references record.
+    for load in cases[name]["load"]
+        .as_object_mut()
+        .into_iter()
+        .flat_map(|loads| loads.values_mut())
+    {
+        if let Some(model) = load.get_mut("model") {
+            if let Some(token) = model.as_str() {
+                *model = serde_json::Value::from(token.to_ascii_uppercase());
+            }
+        }
+    }
     let module = powerio::parse_with_options(
         powerio::Source::from_memory("seed.bmopf.json", serde_json::to_vec(&cases[name]).unwrap())
             .unwrap(),

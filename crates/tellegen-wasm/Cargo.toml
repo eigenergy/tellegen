@@ -30,6 +30,8 @@ tellegen-synth = { path = "../tellegen-synth", optional = true }
 
 [features]
 default = []
+# No-op alias kept for existing build commands; PowerIO 0.12 is the shipping
+# dependency (see the `tellegen` crate's `powerio-012` feature).
 powerio-012 = ["tellegen/powerio-012"]
 # The multiconductor fixed-point PF and its raw BMOPF entry point.
 mc-pf = ["tellegen/mc-pf"]
@@ -41,8 +43,9 @@ conic = ["sensitivity", "mc-pf", "tellegen/conic"]
 # Synthetic grid generation sessions. The generator validates with the DC OPF
 # and the AC power flow, so it needs `sensitivity`.
 synth = ["sensitivity", "dep:tellegen-synth"]
-# Collection acquisition is a PowerIO 0.12 capability. Published 0.11 builds
-# retain standalone imports and expose an explicit unavailable capability.
+# ZIP and folder collection acquisition (PowerIO 0.12 collections). Opt-in:
+# builds without it keep standalone imports and report the capability as
+# unavailable.
 powerio-collections = ["sensitivity", "powerio-012"]
 
 [lints]

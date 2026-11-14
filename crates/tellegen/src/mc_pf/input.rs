@@ -784,14 +784,12 @@ pub fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), S
 pub(super) fn validate_mc_network(
     network: &powerio_dist::MulticonductorNetwork,
 ) -> Result<(), String> {
-    #[cfg(feature = "powerio-012")]
     powerio_dist::require_electrical_readiness(network).map_err(|e| e.to_string())?;
     if !network.generators().is_empty() || !network.ibrs().is_empty() {
         return Err(
             "fixed-point MC PF does not yet support generator or IBR injections".to_owned(),
         );
     }
-    #[cfg(feature = "powerio-012")]
     for source in network.sources() {
         if source.reference_terminal.as_ref().is_some_and(|reference| {
             !network.buses().iter().any(|bus| {
@@ -827,10 +825,7 @@ pub(super) fn validate_mc_network(
     let unsupported: Vec<_> = network
         .untyped_objects()
         .iter()
-        .filter(|object| {
-            !cfg!(feature = "powerio-012")
-                || !PASSIVE_DEFINITIONS.contains(&object.class.to_ascii_lowercase().as_str())
-        })
+        .filter(|object| !PASSIVE_DEFINITIONS.contains(&object.class.to_ascii_lowercase().as_str()))
         .collect();
     if !unsupported.is_empty() {
         let names = unsupported
@@ -851,10 +846,7 @@ pub(super) fn validate_mc_network(
     // The DSS reader preserves source properties outside the typed ideal source
     // fields in extras. Permit only provenance values that do not change the
     // prescribed ideal voltage; finite source data must be normalized explicitly.
-    #[cfg(feature = "powerio-012")]
     const SOURCE_METADATA: &[&str] = &["basekv", "angle", "pu", "basemva", "nominal_phase_kv"];
-    #[cfg(not(feature = "powerio-012"))]
-    const SOURCE_METADATA: &[&str] = &["basekv", "angle", "pu"];
     for source in network.sources() {
         if let Some(key) = source
             .extras

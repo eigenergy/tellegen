@@ -46,8 +46,11 @@ pounce-rs = { workspace = true, optional = true }
 
 [features]
 default = ["sensitivity", "mc-pf"]
-# Compatibility with the next PowerIO series, enabled only when dependency
-# resolution selects 0.12. The default release remains on published 0.11.11.
+# No-op. This once selected the PowerIO 0.12 code paths while the shipping
+# build was on 0.11; PowerIO 0.12 is now the only supported dependency and
+# those paths are unconditional. Kept so existing build commands,
+# `TELLEGEN_POWERIO_FEATURES=powerio-012` and the PowerIO Candidate workflow
+# keep resolving.
 powerio-012 = []
 # The multiconductor fixed-point solver is deliberately independent of the
 # sensitivity feature, including in browser builds.

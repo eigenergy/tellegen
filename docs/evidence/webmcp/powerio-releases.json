@@ -40,6 +40,11 @@
       "version": "0.11.11",
       "tag": "v0.11.11",
       "revision": "da32f73ea3d9beb283b7d84530985e44eba90741"
+    },
+    {
+      "version": "0.12.0",
+      "tag": "v0.12.0",
+      "revision": "684cf896688e385d860aacc1b1f6aba769cbfa64"
     }
   ]
 }

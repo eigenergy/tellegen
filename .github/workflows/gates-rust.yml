@@ -82,7 +82,6 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
-      # PowerIO 0.11.8 supplies the MC preparation fixes from crates.io.
       # Exercise the native feature explicitly; shipping adapters still exclude it.
       - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
@@ -145,9 +144,8 @@ jobs:
       # builds the packaged crate against crates.io and ignores [patch], so it
       # stays red while a packaged dependency, or an API that an opt-in feature
       # uses, is unavailable from crates.io. That keeps Tellegen behind the
-      # PowerIO release in the publication order. All shipping numerical features are verified; the explicit
-      # powerio-012 adapter is verified separately against a 0.12 candidate:
-      # with defaults only, an opt-in feature such as mc-opf could need an
-      # unpublished PowerIO while this gate stays green.
+      # PowerIO release in the publication order. All shipping numerical
+      # features are verified: with defaults only, an opt-in feature such as
+      # mc-opf could need an unpublished PowerIO while this gate stays green.
       - name: Package and verify the published crate
         run: cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema

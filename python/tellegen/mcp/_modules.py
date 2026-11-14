@@ -168,7 +168,7 @@ def module_ir(
     checked_path,
     checked_read_tree,
 ) -> Tuple[str, Dict[str, Any]]:
-    """Serialized generation-2 IR for one declared value, and the input tail.
+    """Serialized PowerIO IR for one declared value, and the input tail.
 
     PowerIO parses a grid-exchange `path` and serializes the module; an IR
     document is deserialized so its identity is checked. A module PowerIO marks

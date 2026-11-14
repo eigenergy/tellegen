@@ -9,6 +9,9 @@ use std::{
 };
 use tellegen::{mc_opf::*, solve_mc_ac_opf_instance, McOpfOptions};
 
+#[path = "support/legacy_bmopf.rs"]
+mod legacy_bmopf;
+
 fn case(bundle: &str, name: &str) -> powerio::MulticonductorNetwork {
     let text = match bundle {
         "components" => include_str!("data/mc_opf/components.json"),
@@ -17,8 +20,10 @@ fn case(bundle: &str, name: &str) -> powerio::MulticonductorNetwork {
         _ => unreachable!(),
     };
     let cases: Value = serde_json::from_str(text).unwrap();
+    let mut case = cases[name].clone();
+    legacy_bmopf::current_load_tokens(&mut case);
     let module = powerio::parse_with_options(
-        powerio::Source::from_memory("case.bmopf.json", serde_json::to_vec(&cases[name]).unwrap())
+        powerio::Source::from_memory("case.bmopf.json", serde_json::to_vec(&case).unwrap())
             .unwrap(),
         &powerio::ParseOptions::default()
             .format("bmopf-json")

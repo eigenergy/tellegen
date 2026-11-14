@@ -9,7 +9,7 @@ describe balanced network topology; OpenDSS `.dss` opens the multiconductor
 viewer. If a balanced case includes complete coordinates, tellegen draws it
 directly. Otherwise it creates a local synthetic layout and asks the user to
 place it on the map. PowerIO classifies dropped JSON by content. A stored
-generation-2 `pio-ir` document opens by its value type: a balanced network or
+PowerIO IR (`pio-ir`) document opens by its value type: a balanced network or
 DC OPF instance becomes a case, while supported multiconductor networks,
 instances, and solutions open in the viewer. AC PF and AC OPF instance modules
 retain their declared calculation and original problem definition. AC PF is
@@ -30,7 +30,7 @@ Builds with PowerIO collection support also offer ZIP and folder imports. The
 chooser preserves shared paths, lets you select independent cases, and retains
 completed imports if another selection fails. Imported collection cases keep
 their saved calculation settings and wait for an explicit calculation. Switching
-tabs does not start a solve. The standard PowerIO 0.11 build hides these optional
+tabs does not start a solve. The standard build hides these optional
 controls; individual case files continue to open normally.
 
 ## Manual Placement

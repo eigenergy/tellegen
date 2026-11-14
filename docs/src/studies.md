@@ -58,7 +58,7 @@ or starting state invalidates its approval.
 ## Save, reopen, and continue
 
 The browser stores completed operations atomically in IndexedDB. **Export**
-creates a portable bundle containing PowerIO generation-2 inputs and solutions,
+creates a portable bundle containing PowerIO IR inputs and solutions,
 deduplicated SHA-256 artifacts, goals, states, and activity. Geographic layers,
 line paths, drawings, and the selected view travel with it. **Import** checks
 versions, hashes, identities, and references. It never restores approval tokens

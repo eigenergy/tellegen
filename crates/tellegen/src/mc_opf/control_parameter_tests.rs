@@ -636,7 +636,9 @@ fn bounded_pf_network(pf: f64) -> MulticonductorNetwork {
 // One bus, one inverter, three solves total including the central difference.
 #[test]
 fn bounded_pf_retains_hard_q_limit_and_local_derivatives() {
-    let n = bounded_pf_network(0.8);
+    // pf < 0 puts Q opposite P (OpenDSS and BMOPF sign), so the -300 var
+    // limit binds and fixes P = 0.8 * 300 / 0.6 = 400 W.
+    let n = bounded_pf_network(-0.8);
     let options = McOpfOptions {
         collect_duals: true,
         max_iterations: 50,
@@ -679,7 +681,9 @@ fn bounded_pf_retains_hard_q_limit_and_local_derivatives() {
         )
         .unwrap()[0]
         .derivative;
-    let expected = -0.2 / 1000. * 300. / 0.36_f64.powf(1.5);
+    // P = -pf * 300 / sqrt(1 - pf^2), so dP/dpf = -300 / 0.6^3 and the
+    // source's cost rises as pf moves toward zero.
+    let expected = 0.2 / 1000. * 300. / 0.36_f64.powf(1.5);
     close(forward, expected);
     close(adjoint, expected);
     close(marginal(&r, &parameter), expected);
@@ -727,8 +731,8 @@ fn bounded_pf_parameter_partials_stay_finite_without_dividing_by_pf() {
             panic!("missing PF partial")
         };
         let (value, mixed) = rule.evaluate(&[0., -0.3]).unwrap();
-        assert_eq!(value, -0.3);
-        assert_eq!(mixed, vec![(0, -pf), (1, 1.)]);
+        assert_eq!(value, 0.3);
+        assert_eq!(mixed, vec![(0, -pf), (1, -1.)]);
     }
 }
 
@@ -749,7 +753,7 @@ fn original_pf_validation_detects_wrong_control_and_qualifies_tiny_dispatch() {
     for pf in [-0.8, 0.8] {
         let n = pf_network(single(), pf);
         assert!(
-            validate::check_power_factors(&n, &ledger(400., -pf.signum() * 300.), 1000., 1e-6)
+            validate::check_power_factors(&n, &ledger(400., pf.signum() * 300.), 1000., 1e-6)
                 .unwrap()
                 .is_empty()
         );
@@ -761,8 +765,8 @@ fn original_pf_validation_detects_wrong_control_and_qualifies_tiny_dispatch() {
     for pf in [-1e-18, 1e-18] {
         let n = pf_network(single(), pf);
         for (p, q) in [
-            (1e-15, -pf.signum() * 1000.),
-            (1e-6, -pf.signum() * 1000.),
+            (1e-15, pf.signum() * 1000.),
+            (1e-6, pf.signum() * 1000.),
             (0., 0.),
         ] {
             let diagnostics =

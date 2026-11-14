@@ -1709,7 +1709,7 @@ impl SynthSession {
         synth::report_impl(&self.0).map_err(synth_err)
     }
 
-    /// The module as generation 2 PowerIO IR text, with bus locations and
+    /// The module as PowerIO IR text, with bus locations and
     /// branch routes, from `electrify` on.
     pub fn module(&self) -> Result<String, JsError> {
         synth::module_impl(&self.0).map_err(synth_err)
@@ -2634,7 +2634,7 @@ mpc.gencost = [
     /// A PowerModels generator that omits `qmax` reads as an unbounded reactive
     /// limit, which powerio carries as `+Inf`. JSON has no `Inf` literal, so
     /// powerio spells it as the string `"Infinity"` and reads it back the same
-    /// way: the generation-2 PowerIO IR this payload hands the Study round-trips
+    /// way: the PowerIO IR this payload hands the Study round-trips
     /// the unbounded limit, and the case both views and studies.
     #[test]
     fn a_case_with_an_unbounded_reactive_limit_reaches_a_study() {

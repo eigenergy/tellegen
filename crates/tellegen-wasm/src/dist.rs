@@ -46,9 +46,7 @@ fn parse_dist_bytes(
     let format = crate::source_format_id(format)?;
     // The angle bracketed name marks an anonymous in-memory source; the
     // readers take the case's own name (e.g. the OpenDSS circuit name).
-    let raw_study_error = if !cfg!(feature = "powerio-012") && format.as_str() == "dss" {
-        Some("OpenDSS snapshot solving requires a PowerIO 0.12 build; this import remains view-only. Use BMOPF or a typed MC AC PF module.".to_owned())
-    } else if matches!(format.as_str(), "bmopf-json" | "bmopf") {
+    let raw_study_error = if matches!(format.as_str(), "bmopf-json" | "bmopf") {
         #[cfg(feature = "mc-pf")]
         let preflight = tellegen::validate_bmopf_json(
             std::str::from_utf8(bytes).map_err(|_| "BMOPF input is not valid UTF-8".to_owned())?,
@@ -956,11 +954,6 @@ mod tests {
         }
         #[cfg(feature = "mc-pf")]
         {
-            if !cfg!(feature = "powerio-012") {
-                assert_eq!(v["mc_pf_supported"], false);
-                assert!(v["mc_pf_reason"].as_str().unwrap().contains("view-only"));
-                return;
-            }
             assert_eq!(v["mc_pf_supported"], true);
             let module = v["module_json"].as_str().unwrap();
             tellegen::validate_mc_module_json(module).unwrap();

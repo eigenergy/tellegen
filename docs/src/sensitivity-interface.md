@@ -160,7 +160,7 @@ holding electrical coefficients fixed. A shared winding nameplate may require
 several port directions and can also change impedance bases; arbitrary canonical
 nameplate edits are not represented by a single port parameter. Tap-bound inputs
 use physical ratio units, including the bound-side reversal and negative chain
-rule of type-B regulators. The physical formulation and nominal tap stay fixed.
+rule of Type A and Type B regulators. The physical formulation and nominal tap stay fixed.
 
 Outputs include operating cost, earth-referenced terminal voltage real/imaginary
 parts, magnitude and local angle, device coil or terminal P/Q and rectangular

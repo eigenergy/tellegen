@@ -20,10 +20,10 @@ fn browser_limits() -> CollectionLimits {
     // PowerIO conservatively charges the permitted project tree per parse.
     // Allow a full 32-case batch, acquisition and inspection without confusing
     // cumulative CPU/input work with the independent 64 MiB residency bound.
-    CollectionLimits {
-        work_bytes: 36 * MAX_BYTES as u64,
-        ..Default::default()
-    }
+    // `CollectionLimits` is non-exhaustive, so start from PowerIO's defaults.
+    let mut limits = CollectionLimits::default();
+    limits.work_bytes = 36 * MAX_BYTES as u64;
+    limits
 }
 
 /// A bounded ZIP or named file tree, held once until explicitly freed.

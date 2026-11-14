@@ -9,7 +9,7 @@ stale stub.
 from typing import Optional
 
 __all__ = [
-    "ENGINE_VERSION", "PANIC_CODE", "TellegenError", "TellegenInputError",
+    "ENGINE_VERSION", "PANIC_CODE", "POWERIO_IR_VERSION", "TellegenError", "TellegenInputError",
     "TellegenSolveError", "__version__", "_classify", "capabilities_json",
     "parse_case", "plan_capacity", "resolve_format", "solve_module",
     "solve_module_to_solution", "study_create", "study_export", "study_import",
@@ -22,6 +22,9 @@ __version__: str
 
 ENGINE_VERSION: str
 """The `tellegen` engine crate's version. Can differ from `__version__`."""
+
+POWERIO_IR_VERSION: str
+"""The PowerIO IR `version` this build writes, e.g. `0.12.0`."""
 
 PANIC_CODE: str
 """The `.code` value carried by a TellegenError raised from a Rust panic."""

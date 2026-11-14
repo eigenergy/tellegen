@@ -103,7 +103,7 @@ def versions() -> Dict[str, str]:
     return {
         "tellegen": _tellegen.__version__,
         "engine": _tellegen.ENGINE_VERSION,
-        "powerio_ir": "pio-ir/2",
+        "powerio_ir": f"pio-ir/{_tellegen.POWERIO_IR_VERSION}",
     }
 
 

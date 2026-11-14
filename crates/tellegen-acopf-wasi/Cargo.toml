@@ -13,6 +13,8 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # Workspace builds must not unify tellegen/acopf into shipping adapters.
 default = []
+# No-op alias kept for existing build commands; PowerIO 0.12 is the shipping
+# dependency (see the `tellegen` crate's `powerio-012` feature).
 powerio-012 = ["tellegen?/powerio-012"]
 acopf = ["dep:tellegen"]
 

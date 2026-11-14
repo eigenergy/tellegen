@@ -300,8 +300,10 @@ coil; WYE and SINGLE_PHASE return connections remain supported. Session edits
 change numerical values, not terminal roles or connection topology.
 
 Fixed power-factor control uses bounded coefficients:
-`sqrt((1 - abs(pf)) * (1 + abs(pf))) * P + pf * Q = 0`, with signed
-`0 < abs(pf) <= 1`. Capability bounds still intersect this physical law.
+`sqrt((1 - abs(pf)) * (1 + abs(pf))) * P - pf * Q = 0`, with signed
+`0 < abs(pf) <= 1`. The sign follows OpenDSS and the BMOPF schema: `pf > 0`
+puts Q on the same side as P, `pf < 0` on the opposite side (PowerIO 0.11
+prepared the opposite sign). Capability bounds still intersect this physical law.
 Acceptance also recomputes the relation from original input profiles and
 physical P/Q ledgers, independently of prepared coefficients. Passing an
 absolute power-equation tolerance is not a relative PF accuracy certificate.
@@ -325,7 +327,7 @@ cargo run -p tellegen --no-default-features --features mc-opf --locked \
 
 The first command explicitly promotes the bundled four-bus network to an OPF
 instance and increases one load coil's nominal active power by 1 W. The second
-requires a generation-2 PowerIO module containing a declared `McAcOpfInstance`
+requires a PowerIO IR module containing a declared `McAcOpfInstance`
 and a JSON array of `McOpfEdit` values. It checks input diagnostics before
 extracting the instance, preserving the declared objective, constraints and
 initial point. Bare networks require an explicit `McAcOpfInstance::from_network`
@@ -409,7 +411,10 @@ use a nonnegative magnitude auxiliary and stable softplus transitions with width
   ZIP and exponential loads; generators; and connection-aware capacitors.
   Unequal capacitor coil ratings are lowered to the exact terminal-shunt matrix.
 - Single-phase, center-tapped, WYE/delta and fixed n-winding transformers;
-  Type A/B autotransformer regulators; and ABBC/BCAC/CABA open-delta regulators.
+  Type A/B autotransformer regulators, whose BMOPF ratio is the regulated over
+  source voltage for both types (`regulator_type` records the hardware only;
+  PowerIO 0.11 read a type-A ratio inverted); and ABBC/BCAC/CABA open-delta
+  regulators.
   Preparation preserves polarity, delta roll, leakage coupling, core shunts,
   neutral impedance/return bonds, and distinct coil and terminal ratings.
   Supported two-sided subtypes have continuous taps; n-winding transformers
@@ -465,7 +470,7 @@ PowerIO's stored assignment decoder requires matching column order.
 
 Fixed source/ground voltages and fixed transformer taps take precedence, with
 `MC_OPF.INITIAL_POINT_PROJECTED` remarks. Active taps use the canonical physical
-coefficient, including inverse Type B regulator scaling. Missing voltages use
+coefficient, including the inverse scaling of Type A and Type B regulators. Missing voltages use
 the ordinary compiled defaults. Branch/winding currents are inferred from
 seeded voltages where consistent; otherwise their unspecified guesses remain
 zero, including for inconsistent ideal-branch voltage guesses. Device currents
@@ -715,8 +720,8 @@ the existing conservative refusal; absent or deselected ratings are unsupported.
 
 `TapLower` and `TapUpper` have no axis and vary the physical continuous tap bounds
 in ratio units, holding the nominal tap and transformer coefficients fixed. The
-mapper applies the chain rule for both `tap_nominal * alpha` and the type-B
-regulator convention `tap_nominal / alpha`. The inverse convention swaps the
+mapper applies the chain rule for both `tap_nominal * alpha` and the
+regulator convention `tap_nominal / alpha` (Type A and Type B alike). The inverse convention swaps the
 compiled bound sides and has a negative bound derivative. An inactive tap bound
 has zero derivative on the same active set. Fixed/discrete tap choices and edits
 that change the transformer equations are outside this interface.

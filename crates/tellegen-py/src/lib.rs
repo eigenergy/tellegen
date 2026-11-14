@@ -118,7 +118,7 @@ fn engine_error(py: Python<'_>, message: String) -> PyErr {
 
 /// Solve one stored PowerIO module.
 ///
-/// `module_json` is a PowerIO generation-2 `pio-ir` document; bare network JSON
+/// `module_json` is a PowerIO IR (`pio-ir`) document; bare network JSON
 /// is refused by the engine. An empty `request_json` is a base-case DC OPF.
 #[pyfunction]
 #[pyo3(signature = (module_json, request_json = ""))]
@@ -408,6 +408,7 @@ fn _tellegen(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("ENGINE_VERSION", tellegen::VERSION)?;
+    m.add("POWERIO_IR_VERSION", powerio::IR_VERSION)?;
     m.add("PANIC_CODE", PANIC_CODE)?;
     m.add("TellegenError", py.get_type::<TellegenError>())?;
     m.add("TellegenInputError", py.get_type::<TellegenInputError>())?;

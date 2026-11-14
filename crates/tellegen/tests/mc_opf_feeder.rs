@@ -7,6 +7,9 @@ use sha2::{Digest, Sha256};
 use std::{sync::Arc, time::Instant};
 use tellegen::*;
 
+#[path = "support/legacy_bmopf.rs"]
+mod legacy_bmopf;
+
 const INPUT: &[u8] = include_bytes!("data/mc_opf/feeder.json");
 fn network() -> powerio_dist::MulticonductorNetwork {
     let module = powerio::parse_with_options(
@@ -14,8 +17,13 @@ fn network() -> powerio_dist::MulticonductorNetwork {
         &ParseOptions::default().format("bmopf-json").unwrap(),
     )
     .unwrap();
+    // The frozen fixture predates the current BMOPF schema; PowerIO 0.12
+    // reports that once and nothing else.
     assert!(
-        module.diagnostics().is_empty(),
+        module
+            .diagnostics()
+            .iter()
+            .all(legacy_bmopf::is_legacy_notice),
         "{:?}",
         module.diagnostics()
     );
