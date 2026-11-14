@@ -46,13 +46,13 @@ stay within three times the difference of the validation study at 1 ms:
 | Models | Event | Largest `|V|` difference (pu) | Largest relative difference |
 |---|---|---|---|
 | GENROU, SEXS, TGOV1 | trip | 1.5e-7 | 7e-6 (pe) |
-| GENROU, SEXS, TGOV1 | fault | 1.3e-5 | 2e-3 (efd) |
+| GENROU, SEXS, TGOV1 | fault | 7.8e-6 | 2e-3 (efd) |
 | GENROU, SEXS, GAST | trip | 1.5e-7 | 8e-6 (pe) |
-| GENROU, SEXS, GAST | fault | 1.3e-5 | 2e-3 (efd) |
+| GENROU, SEXS, GAST | fault | 7.7e-6 | 2e-3 (efd) |
 | GENROU, SEXS, HYGOV | trip | 1.7e-8 | 5e-6 (va) |
 | GENROU, SEXS, HYGOV | fault | 2.1e-7 | 3e-5 (pe) |
 | GENROU, SEXS, GAST, IEEEST | trip | 1.3e-6 | 2e-4 (efd) |
-| GENROU, SEXS, GAST, IEEEST | fault | 2.7e-6 | 6e-4 (efd) |
+| GENROU, SEXS, GAST, IEEEST | fault | 3.3e-6 | 6e-4 (efd) |
 | GENROU, SEXS, HYGOV, IEEEST | trip | 4.5e-5 | 7e-4 (efd) |
 | GENROU, SEXS, HYGOV, IEEEST | fault | 1.7e-6 | 3e-5 (efd) |
 | GENROU, SEXS, TGOV1, IEEEST | trip | 5.0e-6 | 3e-4 (efd) |

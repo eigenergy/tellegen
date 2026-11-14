@@ -945,6 +945,43 @@ impl CompiledGraph {
         Ok(())
     }
 
+    /// The graph with each clamped lag's output clamp removed (its state
+    /// limits kept), for solving the steady state a dispatch needs before
+    /// [`Self::rest_at`] sets the clamps.
+    pub(crate) fn without_output_clamps(&self) -> Self {
+        let mut g = self.clone();
+        for op in &mut g.tape {
+            if let Op::StateClamped { min, max, .. } = op {
+                (*min, *max) = (f64::NEG_INFINITY, f64::INFINITY);
+            }
+        }
+        g
+    }
+
+    /// Sets each clamped lag's output clamp from the steady state `x`: its
+    /// limits, widened to a state that rests past them (a non-windup lag
+    /// holds a state it is pushing further out), so the graph starts at
+    /// rest there as the unclamped state would.
+    pub(crate) fn rest_at(&mut self, x: &[f64]) {
+        for op in &mut self.tape {
+            if let Op::StateClamped {
+                out,
+                x: s,
+                min,
+                max,
+            } = op
+            {
+                if let Block::LagLimited {
+                    min: lo, max: hi, ..
+                } = self.blocks[*out as usize]
+                {
+                    let v = x[*s as usize];
+                    (*min, *max) = (lo.min(v), hi.max(v));
+                }
+            }
+        }
+    }
+
     pub(crate) fn n_states(&self) -> usize {
         self.n_states
     }
@@ -1370,7 +1407,7 @@ pub fn template(model: &powerio::DynamicModel) -> Option<BlockGraph> {
                         t: m.te,
                         min: m.emin,
                         max: m.emax,
-                        clamp_output: false,
+                        clamp_output: true,
                     },
                     &["Vr"],
                 ),
@@ -1478,7 +1515,7 @@ pub fn template(model: &powerio::DynamicModel) -> Option<BlockGraph> {
                             t: m.ta,
                             min: m.vamin,
                             max: m.vamax,
-                            clamp_output: false,
+                            clamp_output: true,
                         },
                         &["Vr1"],
                     ),

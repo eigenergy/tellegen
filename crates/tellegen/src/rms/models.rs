@@ -387,6 +387,9 @@ pub(crate) enum Avr {
         te: f64,
         v_min: f64,
         v_max: f64,
+        /// The field voltage's clamp: `[EMIN, EMAX]`, widened to a state
+        /// that rests past them at initialization ([`Avr::rest_at`]).
+        out: (f64, f64),
     },
     Esac1a {
         tr: f64,
@@ -396,6 +399,9 @@ pub(crate) enum Avr {
         ta: f64,
         va_min: f64,
         va_max: f64,
+        /// `VA`'s clamp: `[VAMIN, VAMAX]`, widened to a state that rests
+        /// past them at initialization ([`Avr::rest_at`]).
+        va_out: (f64, f64),
         te: f64,
         kf: f64,
         tf: f64,
@@ -500,15 +506,24 @@ impl Avr {
     pub(crate) fn unlimited(&self) -> Self {
         let mut free = self.clone();
         match &mut free {
-            Self::Sexs { v_min, v_max, .. } => (*v_min, *v_max) = (-NO_LIMIT, NO_LIMIT),
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => **g = g.without_output_clamps(),
+            Self::Sexs {
+                v_min, v_max, out, ..
+            } => {
+                (*v_min, *v_max) = (-NO_LIMIT, NO_LIMIT);
+                *out = (-NO_LIMIT, NO_LIMIT);
+            }
             Self::Esac1a {
                 va_min,
                 va_max,
+                va_out,
                 vr_min,
                 vr_max,
                 ..
             } => {
                 (*va_min, *va_max) = (-NO_LIMIT, NO_LIMIT);
+                *va_out = (-NO_LIMIT, NO_LIMIT);
                 (*vr_min, *vr_max) = (-NO_LIMIT, NO_LIMIT);
             }
             Self::Exst1 {
@@ -524,6 +539,30 @@ impl Avr {
             _ => {}
         }
         free
+    }
+
+    /// Sets the output clamps for a run from the steady state `x`: SEXS's
+    /// field voltage and ESAC1A's `VA` are their lags' states clamped to
+    /// `[EMIN, EMAX]` (`[VAMIN, VAMAX]`), as PSS/E has it, so a step that
+    /// carries the state past a limit does not pass it on. A state that
+    /// rests past its limit at the dispatch (see [`Avr::limit_breaches`])
+    /// widens the clamp to itself, so the unit starts at rest there as
+    /// PowerSimulationsDynamics.jl, which applies the state unclamped, has it.
+    pub(crate) fn rest_at(&mut self, x: &[f64]) {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.rest_at(x),
+            Self::Sexs {
+                v_min, v_max, out, ..
+            } => *out = (v_min.min(x[0]), v_max.max(x[0])),
+            Self::Esac1a {
+                va_min,
+                va_max,
+                va_out,
+                ..
+            } => *va_out = (va_min.min(x[2]), va_max.max(x[2])),
+            _ => {}
+        }
     }
 
     /// The limits a steady state `x` at the inputs `u` stands beyond
@@ -620,15 +659,19 @@ impl Avr {
                 te,
                 v_min,
                 v_max,
+                out,
             } => {
-                // avr_models.jl, SEXS. The field voltage is the state itself.
+                // avr_models.jl, SEXS, with the field voltage the state
+                // clamped (PSS/E; avr_models.jl applies the state itself,
+                // which a step can carry past EMAX, where the non-windup lag
+                // then holds it while it is pushed further).
                 let (vf, vr) = (x[0], x[1]);
                 let v_in = u.v_ref + u.vs - u.vt;
                 let (v_ll, dvr) = lead_lag_mm(v_in, vr, 1.0, tb * ta_tb, *tb);
                 let (_, dvf) = low_pass_nonwindup_mm(v_ll, vf, *k, *te, *v_min, *v_max);
                 f[0] = dvf;
                 f[1] = dvr;
-                vf
+                vf.clamp(out.0, out.1)
             }
             Self::Esac1a {
                 tb,
@@ -637,6 +680,7 @@ impl Avr {
                 ta,
                 va_min,
                 va_max,
+                va_out,
                 te,
                 kf,
                 tf,
@@ -648,7 +692,8 @@ impl Avr {
                 vr_max,
                 ..
             } => {
-                // avr_models.jl, ESAC1A.
+                // avr_models.jl, ESAC1A, with VA the state clamped (PSS/E;
+                // avr_models.jl passes the state on).
                 let (vm, vr1, vr2, ve, vr3) = (x[0], x[1], x[2], x[3], x[4]);
                 let se = sat.eval(ve);
                 let i_n = kc * u.xad_ifd / ve.max(VE_MIN);
@@ -659,7 +704,7 @@ impl Avr {
                 let v_in = u.v_ref + u.vs - vm - v_f;
                 let (y_ll, dvr1) = lead_lag_mm(v_in, vr1, 1.0, *tc, *tb);
                 let (_, dvr2) = low_pass_nonwindup_mm(y_ll, vr2, *ka, *ta, *va_min, *va_max);
-                let v_r = vr2.clamp(*vr_min, *vr_max);
+                let v_r = vr2.clamp(va_out.0, va_out.1).clamp(*vr_min, *vr_max);
                 f[0] = dvm;
                 f[1] = dvr1;
                 f[2] = dvr2;
@@ -1212,6 +1257,7 @@ pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
             te: s.te,
             v_min: s.emin,
             v_max: s.emax,
+            out: (s.emin, s.emax),
         },
         DynamicModel::Esac1a(e) => Avr::Esac1a {
             tr: e.tr,
@@ -1221,6 +1267,7 @@ pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
             ta: e.ta,
             va_min: e.vamin,
             va_max: e.vamax,
+            va_out: (e.vamin, e.vamax),
             te: e.te,
             kf: e.kf,
             tf: e.tf,
@@ -1417,6 +1464,7 @@ mod tests {
             ta: 0.02,
             va_min: -14.5,
             va_max: 14.5,
+            va_out: (-14.5, 14.5),
             te: 0.8,
             kf: 0.03,
             tf: 1.0,

@@ -13,6 +13,8 @@
 //!   difference), which states the accuracy of the default step;
 //! - events are checked before a run; small-signal analysis is off unless
 //!   asked for;
+//! - SEXS's field voltage never passes `EMAX`, through a fault or a large
+//!   voltage reference step;
 //! - limits a state slides along (HYGOV's gate after a load rejection, the
 //!   REGCA1 low-voltage power limit on WECC 240) do not stop a run; swapped
 //!   limits and a renewable plant regulating a remote bus are refused.
@@ -788,6 +790,89 @@ fn zero_time_constants_ride_through_a_limit() {
             assert!((hi - 3.0).abs() < 1e-9, "{id} {params:?}: Efd up to {hi}");
         }
     }
+}
+
+/// SEXS's field voltage is its non-windup lag clamped to `[EMIN, EMAX]`
+/// (PSS/E): a step that carries the state past `EMAX` does not reach the
+/// machine. Before, the state itself was the field voltage, so it rested
+/// above the ceiling by the step's overshoot through a fault, and a large
+/// voltage reference step drove it without bound. The rotor angle's error
+/// through the fault, against a 0.05 ms run, is printed at each step.
+#[test]
+fn sexs_field_voltage_never_passes_emax() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let case = &wecc240_smib_cases()[0];
+    assert!(case.dyr.contains("SEXS"), "{}", case.dyr);
+    let (net, dyr) = smib_study(case);
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::PowerFlow).unwrap();
+    let emax = 3.0;
+    let peak = |r: &RmsResult| {
+        r.channels["efd:102"]
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    for depth in [0.5, 0.05] {
+        let events = fault(102, depth * case.x_line, 1.0, 1.1);
+        let fine = sim
+            .run(&RmsRequest {
+                t_end: 3.0,
+                dt: 5e-5,
+                output_step: 0.005,
+                events: events.clone(),
+                ..RmsRequest::default()
+            })
+            .unwrap();
+        let mut errors = Vec::new();
+        for dt in [0.005, 0.0025, 0.001, 0.0005] {
+            let r = sim
+                .run(&RmsRequest {
+                    t_end: 3.0,
+                    dt,
+                    output_step: 0.005,
+                    events: events.clone(),
+                    ..RmsRequest::default()
+                })
+                .unwrap();
+            let hi = peak(&r);
+            assert!(
+                hi <= emax,
+                "fault through {depth} x_line, dt {dt}: Efd up to {hi}"
+            );
+            assert!(
+                hi > emax - 1e-9,
+                "the fault drives Efd to its ceiling: {hi}"
+            );
+            errors.push(max_diff(
+                &r.channels["delta:102"],
+                &fine.channels["delta:102"],
+            ));
+        }
+        eprintln!(
+            "fault through {depth} x_line: rotor angle error at 5, 2.5, 1, 0.5 ms {errors:?}"
+        );
+    }
+    // A voltage reference far above anything the exciter can follow.
+    let r = sim
+        .run(&RmsRequest {
+            t_end: 1.0,
+            events: vec![RmsEvent::SetReference {
+                time: 0.5,
+                bus: 102,
+                machine_id: "1".into(),
+                signal: tellegen::rms::InputSignal::VRef,
+                value: 1e6,
+            }],
+            ..RmsRequest::default()
+        })
+        .unwrap();
+    let hi = peak(&r);
+    assert!(
+        (hi - emax).abs() < 1e-12,
+        "a V_ref step to 1e6: Efd up to {hi}"
+    );
 }
 
 /// REGCA1's ramp limits are rates in pu/s on the converter currents (PSS/E):

@@ -76,11 +76,15 @@ for its states and references so every derivative vanishes and it injects its
 power flow current: `‖f(x0)‖∞` is below 1e-8 on every shipped case
 (`RmsSimulation::initial_residual`). The exciter and governor steady states
 are checked against their limits, as PowerSimulationsDynamics.jl does at
-initialization. A SEXS field voltage beyond `EMIN`/`EMAX`, or an ESAC1A
-regulator voltage beyond `VAMIN`/`VAMAX`, still rests there (the non-windup lag
-holds a state it is not pushing further), and a note names the unit, the limit
-and the value; with `TE = 0` (`TA = 0`) the lag is algebraic and cannot rest
-past its limit, so that breach fails as below. No steady state exists when the
+initialization. SEXS's field voltage and ESAC1A's regulator voltage `VA` are
+their non-windup lags' states clamped to `EMIN`/`EMAX` (`VAMIN`/`VAMAX`), as in
+PSS/E, so a step that carries the state past a limit does not pass the
+overshoot on (PowerSimulationsDynamics.jl applies the state itself). A
+dispatch that needs one beyond its limits still rests there, as in
+PowerSimulationsDynamics.jl (the non-windup lag holds a state it is pushing
+further out): that unit's clamp is widened to its starting value, and a note
+names the unit, the limit and the value. With `TE = 0` (`TA = 0`) the lag is
+algebraic and cannot rest past its limit, so that breach fails as below. No steady state exists when the
 dispatch needs ESAC1A's `VR` beyond `VRMIN`/`VRMAX`, EXST1's voltage error
 beyond `VIMIN`/`VIMAX` or its field voltage beyond `VT·VRMIN − KC·Ifd`/`VT·VRMAX − KC·Ifd`, a TGOV1 or GAST
 valve beyond `VMIN`/`VMAX`, GAST power above `AT`, or a HYGOV gate beyond
@@ -140,9 +144,10 @@ below `Lvpnt1`): a generator's swapped limits refuse the case with the unit
 and parameters named, and a renewable plant's hold the plant with a note.
 A renewable plant whose power flow output lies past a controller limit
 (REPCA1 `Qmin`/`Qmax` or `Pmin`/`Pmax`, REECB1 `Pmin`/`Pmax`, `Qmin`/`Qmax` or
-`Vmin`/`Vmax`, the current limits or the LVPL ceiling) has no steady state
-there: it is held at its power flow output, with a note naming the limit and
-the value.
+`Vmin`/`Vmax`, the current limits or the LVPL ceiling), or whose terminal lies
+below `Lvpnt1` or above `Volim` with `Khv > 0` so the converter injects another
+current than the power flow's, has no steady state there: it is held at its
+power flow output, with a note naming the limit and the value.
 
 A controller can also be a block graph (`BlockGraph`: lags with and without
 non-windup limits, lead-lags, washouts, second-order filters, PI, integrators,
@@ -200,9 +205,9 @@ limit switches. A limiter, non-windup bound or rectifier that switches inside
 a step is not located in time, so through such a switch the error no longer
 falls with the step: on a 0.1 s fault at the same unit through half its line
 reactance, which drives its exciter to the ceiling, the rotor angle of runs
-at 5, 2.5, 1 and 0.5 ms lies 1.9e-4, 1.3e-4, 1.2e-4 and 1.2e-4 rad from a
-0.1 ms run, and through a twentieth of it 7.6e-4, 3.9e-4, 3.5e-4 and 3.5e-4
-rad. The step is fixed: there is no local error estimate or step-size
+at 5, 2.5, 1 and 0.5 ms lies 1.4e-4, 8.3e-5, 7.0e-5 and 6.8e-5 rad from a
+0.05 ms run, and through a twentieth of it 6.2e-4, 2.4e-4, 1.5e-4 and 1.4e-4
+rad (`sexs_field_voltage_never_passes_emax` in `tests/rms_physics.rs`). The step is fixed: there is no local error estimate or step-size
 control. A run takes at most 1e7 steps (`t_end / dt`), with `dt ≥ 1e-6` s.
 The step matrix is factorized by blocks where every unit is a machine: each
 unit's states are eliminated onto its bus by a small dense LU, and a sparse LU
@@ -278,6 +283,12 @@ tellegen follows PSS/E for:
 - the REGCA1 high-voltage reactive current clamp: above `Volim` the injected
   reactive current falls by `Khv (V − Volim)`, down to `Iolim`
   (PowerSimulationsDynamics.jl adds the term and ignores `Iolim`);
+- the SEXS field voltage and the ESAC1A regulator voltage `VA`: the
+  non-windup lag's state clamped to its limits, so a step that carries the
+  state past `EMAX` (`VAMAX`) does not pass the overshoot to the machine
+  (PowerSimulationsDynamics.jl applies the state, which then rests past the
+  limit while the input pushes further; a unit that starts past it keeps
+  that rest, see Initialization);
 - the IEEEST output cut-off: `VCU` and `VCL` each ignored only when it is
   zero (PowerSimulationsDynamics.jl ignores both when either is);
 - a non-windup lag with a zero time constant (SEXS `TE`, ESAC1A `TA`, REGCA1

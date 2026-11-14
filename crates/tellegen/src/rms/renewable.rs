@@ -678,8 +678,10 @@ impl Plant {
     /// When a gain the initialization divides by is zero, or when the
     /// operating point has no steady state: a controller output past its
     /// limit (REPCA1 `Qmin`/`Qmax` or `Pmin`/`Pmax`, REECB1 `Pmin`/`Pmax`,
-    /// `Qmin`/`Qmax` or `Vmin`/`Vmax`, the current limits, the LVPL
-    /// ceiling) moves the plant off the power flow at `t = 0`. The error
+    /// `Qmin`/`Qmax` or `Vmin`/`Vmax`, the current limits) moves the plant
+    /// off the power flow at `t = 0`, and the LVPL ceiling, the low-voltage
+    /// gain below `Lvpnt1` and high-voltage management above `Volim` make
+    /// it inject another current than the power flow's. The error
     /// names each limit and value (or, failing that, the state that moves),
     /// and the caller holds the plant at its power flow output.
     pub(crate) fn initialize(&mut self, s: C64, v: C64) -> Result<(Vec<f64>, Vec<String>), String> {
@@ -827,14 +829,25 @@ impl Plant {
                 (a, k)
             }
         });
-        if worst > 1e-8 {
-            let why = if notes.is_empty() {
+        // The LVPL ceiling, the low-voltage gain and high-voltage reactive
+        // current management act on the injection only, so a plant past
+        // them can rest with every rate zero yet inject less than the power
+        // flow.
+        let i_now = self.output_current(&x, v);
+        let off = (i_now - i_out).norm();
+        if worst > 1e-8 || off > 1e-8 {
+            let why = if !notes.is_empty() {
+                notes.join("; ")
+            } else if worst > 1e-8 {
                 format!(
                     "state {} moves at rate {worst:.3e}",
                     self.state_names()[row]
                 )
             } else {
-                notes.join("; ")
+                format!(
+                    "the converter injects {:.4} pu, {off:.3e} pu off the power flow current",
+                    i_now.norm()
+                )
             };
             return Err(format!("its operating point has no steady state ({why})"));
         }
@@ -1087,6 +1100,43 @@ mod tests {
                 "{limit}: {e}"
             );
         }
+        // With Fflag = 0 (and, at high voltage, RefFlag = 1 with Kc = 0) no
+        // rate reads the converter's output, so the plant rests past the
+        // LVPL ceiling, the low-voltage gain or high-voltage management with
+        // every rate zero, but injects another current than the power flow.
+        let lvpl = C64::new(2.6, 0.1);
+        let cases: [(C64, f64, u8, &str); 3] = [
+            // Ip = 1.368 above LVPL1 = 1.22.
+            (lvpl, 0.95, 0, "above the LVPL ceiling"),
+            // The terminal below Lvpnt1 = 0.9: the active current gain < 1.
+            (C64::new(1.2, 0.1), 0.88, 0, "outside the converter's range"),
+            // The terminal above Volim = 1.2 with Khv > 0.
+            (C64::new(1.2, 0.1), 1.25, 1, "outside the converter's range"),
+        ];
+        for (s, vm, ref_flag, limit) in cases {
+            let mut p = plant();
+            p.reec.i_max = 5.0;
+            p.repc.freq_flag = 0;
+            p.repc.ref_flag = ref_flag;
+            p.repc.k_c = 0.0;
+            p.regc.k_hv = 0.7;
+            let v = C64::from_polar(vm, v.arg());
+            let e = p.initialize(s, v).unwrap_err();
+            assert!(
+                e.contains(limit) && e.contains("no steady state"),
+                "{limit}: {e}"
+            );
+        }
+        // Without the LVPL ceiling the same point rests.
+        let mut p = plant();
+        p.reec.i_max = 5.0;
+        p.repc.freq_flag = 0;
+        p.regc.lvpl_sw = false;
+        let w = C64::from_polar(0.95, v.arg());
+        let (x, _) = p.initialize(lvpl, w).unwrap();
+        let i = p.output_current(&x, w) * p.scale;
+        assert!((i - (lvpl / w).conj()).norm() < 1e-12, "{i}");
+
         // Inside every limit it rests, without a note.
         let mut p = plant();
         p.reec.i_max = 5.0;

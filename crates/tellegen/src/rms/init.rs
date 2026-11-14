@@ -1034,6 +1034,7 @@ pub(crate) fn init_device(
             dev.v_ref = ua[na];
         }
     }
+    dev.avr.rest_at(&x[a..g]);
 
     // Stage 2c: governor states and power reference for the torque.
     match &dev.gov {
