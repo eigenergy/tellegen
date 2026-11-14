@@ -12,8 +12,11 @@ use num_complex::Complex;
 use powerio::{BalancedNetwork, LoadVoltageModel};
 #[cfg(feature = "conic")]
 use powerio_matrix::PreparedObjective;
-use powerio_matrix::{build_ac_opf_preparation, AcOpfAssemblyOptions, Units};
+use powerio_matrix::{
+    build_ac_opf_preparation, calc_admittance_matrix, AcOpfAssemblyOptions, BuildOptions, Units,
+};
 use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
+use powerio_tx::IndexedNetwork;
 
 use super::islands::{dense_islands, energize, ReferencePolicy};
 use super::load_voltage::LoadTerm;
@@ -39,9 +42,9 @@ pub(super) fn suppresses_terminal_charging(g: f64, b: f64) -> bool {
 ///
 /// Each branch contributes the standard pi-model stamp built from its series
 /// admittance `y = g + j b`, the complex tap `t = tap · e^{j·shift}`, and the
-/// from/to line-charging shunts; [`AcNetwork::ybus`] assembles the bus admittance
-/// matrix `Y`. The net injection at bus `i` is `S_i = V_i · conj((Y V)_i)`, equal
-/// to `(pg_i − pd_i) + j(qg_i − qd_i)`.
+/// from/to line-charging shunts; [`AcNetwork::ybus`] is the bus admittance matrix
+/// `Y`, which PowerIO assembles from the same network. The net injection at bus
+/// `i` is `S_i = V_i · conj((Y V)_i)`, equal to `(pg_i − pd_i) + j(qg_i − qd_i)`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub(crate) struct AcNetwork {
@@ -83,9 +86,15 @@ pub(crate) struct AcNetwork {
     #[cfg(feature = "conic")]
     pub angmax: Vec<f64>,
     /// Branch switching state (1 closed, 0 open). All branches start closed.
+    /// It scales [`AcNetwork::branch_admittance`]; [`AcNetwork::ybus`] is fixed at
+    /// construction and assumes every retained branch closed.
     pub sw: Vec<f64>,
     /// Per-bus shunt admittance (per unit): conductance `gs`, susceptance `bs`.
+    /// The SOCWR relaxation reads them; the power flow reads them through
+    /// [`AcNetwork::ybus`], whose diagonal PowerIO stamps from the same shunts.
+    #[cfg_attr(not(feature = "conic"), allow(dead_code))]
     pub gs: Vec<f64>,
+    #[cfg_attr(not(feature = "conic"), allow(dead_code))]
     pub bs: Vec<f64>,
     /// Per-bus real and reactive demand (per unit).
     pub pd: Vec<f64>,
@@ -173,6 +182,10 @@ pub(crate) struct AcNetwork {
     pub has_remote_voltage_control: bool,
     /// How the model treated the network's islands, reported with the solve.
     pub(crate) diagnostics: Vec<SolveDiagnostic>,
+    /// The bus admittance matrix as summed `(row, col, value)` triplets in
+    /// `(row, col)` order, assembled once by [`assemble_ybus`]. Read it through
+    /// [`AcNetwork::ybus`].
+    ybus: Vec<(usize, usize, Complex<f64>)>,
     /// The voltage-dependent parts of the bus demand (ZIP constant-current and
     /// constant-impedance parts, exponential loads), added to `pd`/`qd` at the bus
     /// voltage: see [`AcNetwork::demand_at`]. Empty unless the AC power flow
@@ -216,6 +229,97 @@ fn extra_reference_diagnostic(bus_ids: &[usize], extra: &[usize]) -> Option<Solv
         ),
         buses: extra.iter().map(|&bus| bus_ids[bus]).collect(),
     })
+}
+
+/// The model's bus admittance matrix: PowerIO's MATPOWER `makeYbus`
+/// ([`calc_admittance_matrix`]) over `network`, the network the AC preparation
+/// read, as `(row, col, value)` triplets in dense `(row, col)` order.
+///
+/// `bus_analysis_rows` is the preparation's dense bus -> analysis row map over
+/// the star-lowered view both PowerIO assemblies index; it is the one index
+/// translation. Two preparation rules `makeYbus` does not apply are stated on
+/// a copy of the view before it assembles, only when they change something:
+///
+/// - the preparation carries only active buses, so an in-service branch with an
+///   endpoint it does not carry (an isolated bus, or an unsupplied island the
+///   model de-energized) is taken out of service;
+/// - `suppressed_rows` lists the view's branch rows whose terminal charging the
+///   model drops (near-ideal jumpers, see [`suppresses_terminal_charging`]).
+///
+/// Every bus keeps a diagonal entry, zero when nothing stamps it. PowerIO prunes
+/// exact zeros, but the polar Jacobian's diagonal terms carry `conj(I_i)` even
+/// when `Y_ii` cancels to zero, so the position must stay.
+fn assemble_ybus(
+    network: &BalancedNetwork,
+    bus_analysis_rows: &[usize],
+    suppressed_rows: &[usize],
+) -> Result<Vec<(usize, usize, Complex<f64>)>, String> {
+    let view = IndexedNetwork::new(network);
+    let mut dense_of = vec![None; view.n()];
+    for (dense, &row) in bus_analysis_rows.iter().enumerate() {
+        dense_of[row] = Some(dense);
+    }
+    let carried = |bus| {
+        view.bus_index(bus)
+            .is_some_and(|row| dense_of[row].is_some())
+    };
+    let uncarried: Vec<usize> = view
+        .in_service_branches()
+        .filter(|(_, branch)| !carried(branch.from) || !carried(branch.to))
+        .map(|(row, _)| row)
+        .collect();
+    let edited;
+    let view = if uncarried.is_empty() && suppressed_rows.is_empty() {
+        view
+    } else {
+        let mut lowered = view.network().clone();
+        let branches = lowered.branches_mut();
+        for &row in &uncarried {
+            branches[row].in_service = false;
+        }
+        for &row in suppressed_rows {
+            branches[row].b = 0.0;
+            branches[row].charging = None;
+        }
+        edited = lowered;
+        IndexedNetwork::new(&edited)
+    };
+    let parts = calc_admittance_matrix(&view, &BuildOptions::default())
+        .map_err(|e| format!("{}: {e}", e.code().code))?;
+
+    let mut ybus = Vec::with_capacity(parts.g.nnz().max(parts.b.nnz()) + bus_analysis_rows.len());
+    let mut row_entries: Vec<(usize, Complex<f64>)> = Vec::new();
+    for (dense_row, &row) in bus_analysis_rows.iter().enumerate() {
+        row_entries.clear();
+        row_entries.push((dense_row, Complex::new(0.0, 0.0)));
+        for (matrix, imaginary) in [(&parts.g, false), (&parts.b, true)] {
+            let Some(view_row) = matrix.outer_view(row) else {
+                continue;
+            };
+            for (col, &value) in view_row.iter() {
+                // Unreachable: no in-service branch reaches an uncarried bus.
+                let dense_col = dense_of[col].ok_or_else(|| {
+                    format!("PowerIO's bus admittance matrix couples a carried bus to analysis bus row {col}, which the AC model does not carry")
+                })?;
+                let entry = if imaginary {
+                    Complex::new(0.0, value)
+                } else {
+                    Complex::new(value, 0.0)
+                };
+                row_entries.push((dense_col, entry));
+            }
+        }
+        // The dense map is increasing in the analysis row, so this is also
+        // PowerIO's column order.
+        row_entries.sort_by_key(|&(col, _)| col);
+        for &(col, value) in &row_entries {
+            match ybus.last_mut() {
+                Some((r, c, sum)) if *r == dense_row && *c == col => *sum += value,
+                _ => ybus.push((dense_row, col, value)),
+            }
+        }
+    }
+    Ok(ybus)
 }
 
 /// Refuse a network with in-service voltage-dependent (ZIP or exponential) loads
@@ -404,6 +508,7 @@ impl AcNetwork {
         assembly.synthesize_unrated_limits = true;
         let prep = build_ac_opf_preparation(instance, &assembly)
             .map_err(|e| format!("{}: {e}", e.code().code))?;
+        let ybus = assemble_ybus(raw, &prep.bus_analysis_rows, &[])?;
         let n = prep.n_buses;
         let m = prep.n_branches();
         let k = prep.n_generators();
@@ -549,6 +654,7 @@ impl AcNetwork {
             has_remote_voltage_control,
             diagnostics,
             load_terms: Vec::new(),
+            ybus,
         })
     }
 
@@ -762,6 +868,20 @@ impl AcNetwork {
             .zip(&branches.b)
             .map(|(&g, &b)| suppresses_terminal_charging(g, b))
             .collect();
+        // The suppressed jumpers, as rows of the star-lowered view PowerIO
+        // assembles Y_bus over, so Y_bus and the pi columns below drop the same
+        // charging.
+        let suppressed_rows: Vec<usize> = branches
+            .analysis_rows
+            .iter()
+            .zip(&suppress_terminal_charging)
+            .filter_map(|(&row, &suppressed)| suppressed.then_some(row))
+            .collect();
+        let ybus = assemble_ybus(
+            instance.network(),
+            &prep.bus_analysis_rows,
+            &suppressed_rows,
+        )?;
         let g = branches.g;
         let b = branches.b;
         let suppress = |values: Vec<f64>| {
@@ -920,38 +1040,18 @@ impl AcNetwork {
             has_remote_voltage_control,
             diagnostics,
             load_terms: Vec::new(),
+            ybus,
         })
     }
 
     /// The complex bus admittance matrix `Y` as summed `(row, col, value)`
-    /// triplets in `(row, col)` order. Each branch stamps its pi-model
-    /// coefficients
-    ///
-    /// ```text
-    /// yff = (y + y_fr) / tap²     yft = −y / conj(t)
-    /// ytf = −y / t                ytt =  y + y_to
-    /// ```
-    ///
-    /// scaled by the switching state, with `y = g + j b`, `t = tap · e^{j·shift}`,
-    /// `y_fr = g_fr + j b_fr`, `y_to = g_to + j b_to`; the bus shunt `gs + j bs`
-    /// lands on the diagonal. Open (`sw = 0`) branches contribute nothing.
-    pub fn ybus(&self) -> Vec<(usize, usize, Complex<f64>)> {
-        let mut acc: BTreeMap<(usize, usize), Complex<f64>> = BTreeMap::new();
-        for i in 0..self.n {
-            *acc.entry((i, i)).or_default() += Complex::new(self.gs[i], self.bs[i]);
-        }
-        for e in 0..self.m {
-            if self.sw[e] == 0.0 {
-                continue;
-            }
-            let (yff, yft, ytf, ytt) = self.branch_admittance(e);
-            let (f, t) = (self.br_from[e], self.br_to[e]);
-            *acc.entry((f, f)).or_default() += yff;
-            *acc.entry((f, t)).or_default() += yft;
-            *acc.entry((t, f)).or_default() += ytf;
-            *acc.entry((t, t)).or_default() += ytt;
-        }
-        acc.into_iter().map(|((r, c), v)| (r, c, v)).collect()
+    /// triplets in `(row, col)` order, one diagonal entry per bus. PowerIO's
+    /// MATPOWER `makeYbus` assembled it from the network this model was built
+    /// from (see [`assemble_ybus`]); each in-service branch stamps the pi-model
+    /// coefficients [`Self::branch_admittance`] returns, and the bus shunt lands
+    /// on the diagonal.
+    pub fn ybus(&self) -> &[(usize, usize, Complex<f64>)] {
+        &self.ybus
     }
 
     /// The pi-model branch admittance coefficients `(yff, yft, ytf, ytt)` of branch
@@ -964,8 +1064,10 @@ impl AcNetwork {
     /// ```
     ///
     /// with `y = g + j b`, `t = tap · e^{j·shift}`, `y_fr = g_fr + j b_fr`,
-    /// `y_to = g_to + j b_to`. The one source of this algebra, shared by `ybus`, the
-    /// AC flow-operand sensitivity, and its finite-difference test.
+    /// `y_to = g_to + j b_to`. The branch flows, the AC flow-operand
+    /// sensitivity, and its finite-difference test read it. PowerIO's `makeYbus`
+    /// stamps the same coefficients into [`Self::ybus`]; the PowerIO parity tests
+    /// hold the two to bitwise equality off the diagonal.
     pub(crate) fn branch_admittance(
         &self,
         e: usize,

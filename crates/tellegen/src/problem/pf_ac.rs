@@ -796,7 +796,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
     let mut initialization = None;
     for (attempt, (used, restart, (vm0, va0))) in starts.into_iter().enumerate() {
         let res = solve_qlim(
-            f, net, &ybus, &net.pg, &net.qg, &qmin_bus, &qmax_bus, &has_gen, &vm_hold, vm0, va0,
+            f, net, ybus, &net.pg, &net.qg, &qmin_bus, &qmax_bus, &has_gen, &vm_hold, vm0, va0,
         );
         // Keep the smallest-residual restart. A non-finite (NaN) residual must never
         // displace a finite one nor mask a later converging start: replace only when
@@ -846,7 +846,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             vm[term.bus], net.bus_ids[term.bus], term.exponent
         ));
     }
-    let (p, q, _) = f.injections(&ybus, &vm, &va);
+    let (p, q, _) = f.injections(ybus, &vm, &va);
     Ok(AcPfSolution::new(
         vm,
         va,
@@ -1222,11 +1222,11 @@ mpc.gencost = [
             let vm: Vec<f64> = (0..net.n).map(|b| 1.0 + 0.06 * mix(b as u64, 7)).collect();
             let va: Vec<f64> = (0..net.n).map(|b| 0.2 * mix(b as u64, 11)).collect();
             let residual = |vm: &[f64], va: &[f64]| {
-                let (p, q, _) = ac_injections(&ybus, vm, va);
+                let (p, q, _) = ac_injections(ybus, vm, va);
                 layout.residual(&net, &net.pg, &net.qg, vm, &p, &q)
             };
-            let (_, _, i_bus) = ac_injections(&ybus, &vm, &va);
-            let mut jac = ac_jacobian(&ybus, &vm, &va, &i_bus, &layout);
+            let (_, _, i_bus) = ac_injections(ybus, &vm, &va);
+            let mut jac = ac_jacobian(ybus, &vm, &va, &i_bus, &layout);
             jac.extend(load_jacobian(&net, &vm, &layout));
             let dim = layout.dim();
             let mut dense = vec![vec![0.0; dim]; dim];

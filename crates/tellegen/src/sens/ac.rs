@@ -52,8 +52,8 @@ impl<'a> AcNewton<'a> {
     pub fn new(net: &'a AcNetwork, sol: &AcPfSolution) -> Self {
         let layout = AcPfLayout::with_kinds(net, &sol.kinds);
         let ybus = net.ybus();
-        let (_, _, i_bus) = ac_injections(&ybus, &sol.vm, &sol.va);
-        let mut jac = ac_jacobian(&ybus, &sol.vm, &sol.va, &i_bus, &layout);
+        let (_, _, i_bus) = ac_injections(ybus, &sol.vm, &sol.va);
+        let mut jac = ac_jacobian(ybus, &sol.vm, &sol.va, &i_bus, &layout);
         jac.extend(load_jacobian(net, &sol.vm, &layout));
         AcNewton {
             net,
