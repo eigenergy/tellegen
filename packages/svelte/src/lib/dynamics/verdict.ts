@@ -95,7 +95,7 @@ function trendWords(
 		case 'sustained':
 			return '; swings sustained, neither growing nor decaying';
 		case 'undetermined':
-			return '; swing trend: too few large swing peaks to tell';
+			return '; no clear swing trend by the end of the run';
 		default:
 			return '';
 	}

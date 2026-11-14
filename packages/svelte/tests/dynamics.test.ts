@@ -257,7 +257,7 @@ describe('dynamics verdict wording', () => {
 		const sep = (angle: Partial<RmsScreening['angle']>, verdict = s.verdict) =>
 			rows({ ...s, verdict, angle: { ...s.angle, ...angle } })[2].value;
 		expect(sep({ initial_separation_deg: 86.1 })).toContain('86.1° before the event');
-		expect(sep({ trend: 'undetermined' })).toContain('too few large swing peaks');
+		expect(sep({ trend: 'undetermined' })).toContain('no clear swing trend');
 		expect(sep({ trend: 'sustained' })).toContain('swings sustained');
 		expect(sep({ trend: 'sustained' })).not.toContain('too few');
 		expect(sep({ trend: 'damped_out' })).toContain('damped out');

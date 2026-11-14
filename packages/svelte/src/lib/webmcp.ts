@@ -2259,7 +2259,8 @@ export function createTellegenWebMcpAdapter(
 					dt: dyn.dt,
 					options: dyn.options,
 					current: dyn.currentRunId,
-					presetId: dyn.presetId
+					presetId: dyn.presetId,
+					mode: ctrl.app.mode
 				};
 				dyn.events = events;
 				dyn.tEnd = input.tEndS;
@@ -2282,6 +2283,7 @@ export function createTellegenWebMcpAdapter(
 						dyn.presetId = saved.presetId;
 						if (saved.current !== null) dyn.select(saved.current);
 						else dyn.currentRunId = null;
+						ctrl.app.mode = saved.mode;
 					}
 				}
 				signal.throwIfAborted();
