@@ -170,9 +170,10 @@
 	.notifications {
 		position: fixed;
 		z-index: 65;
-		/* Above the dynamics playback dock while it is open, and above the
-		   host's one-line notice that sits on the dock. */
-		bottom: max(40px, calc(var(--tellegen-timeline-clear, 0px) + 32px));
+		/* While the dynamics playback dock is open: above the dock, the map's
+		   control row on it (44 px) and the host's one-line notice above that
+		   row (32 px). The fallback keeps the closed-dock position. */
+		bottom: max(40px, calc(var(--tellegen-timeline-clear, -1000px) + 76px));
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(540px, calc(100vw - 200px));
@@ -269,7 +270,8 @@
 	@media (max-width: 960px) {
 		.notifications {
 			width: calc(100vw - 24px);
-			bottom: max(60px, calc(var(--tellegen-timeline-clear, 0px) + 32px));
+			/* The host's notice is hidden here: clear the control row only. */
+			bottom: max(60px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
 		}
 		button {
 			min-height: 36px;

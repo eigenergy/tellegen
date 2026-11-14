@@ -25,10 +25,18 @@
 	const config = getUiConfig();
 
 	let dragDepth = 0;
+	/** Height kept free above the dock for the map's control row (the zoom
+	 * buttons stack two high on desktop). */
+	const MAP_CONTROL_ROW = 64;
 	const dyn = ctrl.dynamics;
 	let timelineHeight = $state(0);
 	const dynamicsShown = $derived(
 		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
+	);
+	// The legend explains the map's dynamics layers: during playback, and at
+	// rest before the first run. The single-line diagram draws neither.
+	const legendShown = $derived(
+		app.mode === 'dynamics' && !!dyn.frame && !app.zen && !ctrl.singleLineShown
 	);
 	$effect(() => {
 		dyn.theme = config.theme;
@@ -142,9 +150,11 @@
 <ShellEnvironment />
 <CollectionChooser />
 
+<!-- The side panels end above the map's control row (zoom, attribution,
+     diagram), which sits on the dock while it is open. -->
 <main
 	style:--tellegen-dock-bottom={dynamicsShown && !app.compactLayout
-		? `${timelineHeight + 24}px`
+		? `${app.dockInset + 8 + MAP_CONTROL_ROW}px`
 		: undefined}
 >
 	<TellegenMap
@@ -171,8 +181,12 @@
 	{#if !app.studyView}<DynamicsPanel />{/if}
 	{#if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} />
-		{#if !app.zen}<DynamicsLegend theme={config.theme} top={app.headerInset + 52} />{/if}
 	{/if}
+	{#if legendShown}<DynamicsLegend
+			theme={config.theme}
+			top={app.headerInset + 52}
+			atRest={dyn.atRest}
+		/>{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}

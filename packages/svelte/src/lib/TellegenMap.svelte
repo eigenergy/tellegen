@@ -160,6 +160,8 @@
 	const app = getAppState();
 	const ctrl = getController();
 	const panels = getPanelLayout();
+	/** Dynamics mode on a case with dynamic data attached. */
+	const dynamicsView = $derived(app.mode === 'dynamics' && !!ctrl.dynamics.active);
 	const diagramCase = $derived(app.studyView ? null : (app.active ?? app.activeLocal));
 	const diagramMulti = $derived(
 		!app.studyView && app.activeMulti?.coordsKind !== 'geographic' ? app.activeMulti : null
@@ -1427,7 +1429,9 @@
 		// (see busMarkers).
 		for (const c of app.localCases) {
 			if (c.view) {
-				const d = display.get(c.id);
+				// Dynamics draws its own buses; lines stay neutral, not coloured
+				// by the steady-state loading.
+				const d = c.id === app.activeLocalId && dynamicsView ? undefined : display.get(c.id);
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
@@ -1461,8 +1465,8 @@
 							return true;
 						},
 						updateTriggers: {
-							getColor: [display, app.selectedBranch, app.activeLocalId, theme],
-							getWidth: [display, app.selectedBranch, app.activeLocalId]
+							getColor: [display, app.selectedBranch, app.activeLocalId, theme, dynamicsView],
+							getWidth: [display, app.selectedBranch, app.activeLocalId, dynamicsView]
 						}
 					}),
 					new ScatterplotLayer<NetworkBus>({
@@ -1631,9 +1635,14 @@
 		if (!overlay) return;
 		// During playback the dynamics layer draws the buses: the static bus
 		// colours (price, demand) would read as voltages.
+		// In Dynamics mode the steady-state dispatch markers of the case with
+		// dynamic data stay off, before a run too.
+		const hidden = dynamicsView ? `local-buses-${app.activeLocalId}` : null;
 		const base = dynamicsLayers.length
 			? baseLayers.filter((l) => !l.id.startsWith('local-buses-'))
-			: baseLayers;
+			: hidden
+				? baseLayers.filter((l) => l.id !== hidden)
+				: baseLayers;
 		overlay.setProps({
 			layers: withGlobeHorizon([...base, ...dynamicsLayers, ...extraLayers], globeHorizon)
 		});

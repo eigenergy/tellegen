@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { dynVoltageGradient, haloLegendRadius } from '../../dynamics/legend.js';
 
-	let { theme = 'light', top = 112 }: { theme?: 'light' | 'dark'; top?: number } = $props();
+	let {
+		theme = 'light',
+		top = 112,
+		atRest = false
+	}: { theme?: 'light' | 'dark'; top?: number; atRest?: boolean } = $props();
 	const gradient = $derived(dynVoltageGradient(theme));
 	const ticks = [0.8, 0.9, 1.0, 1.1];
 	const pos = (v: number) => ((v - 0.5) / (1.2 - 0.5)) * 100;
@@ -27,13 +31,20 @@
 			output.</span
 		>
 	</div>
+	{#if atRest}
+		<p class="rest-note" data-testid="dyn-legend-rest">
+			At rest: where the simulation starts, from the AC power flow. Pick an event and run it to
+			watch the system respond.
+		</p>
+	{/if}
 	<details>
 		<summary>What am I looking at?</summary>
 		<p>
 			Each dot is a bus, coloured by its voltage magnitude at the time on the timeline: neutral near
 			1.0 pu, warm as voltage sags, purple above 1.05 pu. Rings around generating buses grow as
-			machines speed up or slow down. Press play, or drag the timeline, to watch the disturbance
-			travel and settle.
+			machines speed up or slow down. {atRest
+				? 'Before a run every machine turns at nominal speed, so the rings are faint.'
+				: 'Press play, or drag the timeline, to watch the disturbance travel and settle.'}
 		</p>
 	</details>
 </aside>
@@ -53,6 +64,10 @@
 		background: var(--panel);
 		font-size: var(--fs-control);
 		color: var(--text-secondary);
+	}
+	.rest-note {
+		margin: 0;
+		color: var(--ink);
 	}
 	.row {
 		display: flex;
