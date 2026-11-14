@@ -1,8 +1,8 @@
 // Generated from Rust by rms_schema and generate-rms-types.mjs.
-// Source SHA256: b0f46ff98175aee5759a691dd87a566a0468ccc493ef8ca1671e7714b21b853e
+// Source SHA256: a9600ab7abb5c6f2c27c07df1de98457dde7346708dabe7cee407c32fe1ba4c5
 
 /** Rotor angle figures, degrees. */
-export type AngleScreen = { "first_swing_deg": number; "first_swing_unit"?: string | null; "max_coi_angle_deg": number; "max_coi_angle_t": number; "max_coi_angle_unit"?: string | null; "max_separation_deg": number; "pair": Array<string>; "pole_slips": Array<PoleSlip>; "separation_t": number; "settled": boolean; "trend"?: (SwingTrend) | (null); };
+export type AngleScreen = { "first_swing_deg": number; "first_swing_unit"?: string | null; "initial_separation_deg"?: number; "max_coi_angle_deg": number; "max_coi_angle_t": number; "max_coi_angle_unit"?: string | null; "max_separation_deg": number; "pair": Array<string>; "pole_slips": Array<PoleSlip>; "separation_t": number; "settled": boolean; "trend"?: (SwingTrend) | (null); };
 
 /** Frequency figures, Hz (the COI of the island with the most inertia). */
 export type FrequencyScreen = { "coi_nadir_hz": number; "coi_peak_hz": number; "final_hz": number; "lowest_bus"?: number | null; "lowest_bus_hz": number; "lowest_bus_t": number; "lowest_unit"?: string | null; "lowest_unit_hz": number; "lowest_unit_t": number; "max_rocof_hz_s": number; "nadir_t": number; "nominal_hz": number; "peak_t": number; "rocof_t": number; "settled": boolean; };
@@ -67,9 +67,11 @@ export type ScreeningCriteria = { "bus_frequency_filter_s"?: number; "bus_freque
 /** The outcome of a screening. */
 export type ScreeningVerdict = ("stable") | ("loss_of_synchronism") | ("island_runaway") | ("not_settled");
 
-/** The trend of the rotor angle separation over its last three swing
- * peaks after the last event. */
-export type SwingTrend = "decaying" | "growing" | "undetermined";
+/** The trend of the rotor angle separation after the last event, read from
+ * the peaks of its distance to its final value. Only peaks above
+ * [`TREND_FLOOR_DEG`] and above [`TREND_FLOOR_FRACTION`] of the largest
+ * distance count: smaller wiggles are numerical, not swings. */
+export type SwingTrend = ("decaying") | ("growing") | ("damped_out") | ("undetermined");
 
 /** Bus voltage figures, pu. */
 export type VoltageScreen = { "final_max_pu": number; "final_min_pu": number; "last_event_t": number; "min_bus"?: number | null; "min_pu": number; "min_t": number; "recovered": boolean; "recovered_s"?: number | null; };

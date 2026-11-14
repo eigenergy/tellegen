@@ -259,6 +259,31 @@ fn the_validated_wecc240_scenarios_screen_stable_and_agree_with_the_reference() 
             s.reasons
         );
         assert!(s.frequency.settled && s.angle.settled, "{scenario}");
+        // A settled run does not read as growing: the trend ignores the
+        // sub-degree numerical wiggles at the end.
+        assert_ne!(
+            s.angle.trend,
+            Some(tellegen::rms::SwingTrend::Growing),
+            "{scenario}"
+        );
+        // The separation starts from the steady-state spread, and the
+        // largest one is counted from the first event on.
+        let t0 = events
+            .iter()
+            .map(RmsEvent::time)
+            .fold(f64::INFINITY, f64::min);
+        assert!(s.angle.initial_separation_deg > 80.0, "{scenario}");
+        assert!(s.angle.separation_t >= t0 - 1e-9, "{scenario}");
+        // The first swing is measured from before the disturbance: on
+        // fault 1101 through j0.01 it is 1034#C's 9.27°, not the 6.7° left
+        // after the clearing.
+        if scenario.contains("1101") && scenario.contains("fault") {
+            assert!(
+                (s.angle.first_swing_deg - 9.27).abs() < 0.1,
+                "{scenario}: {}",
+                s.angle.first_swing_deg
+            );
+        }
         let resp = &run["response"];
         let f0 = r.base_frequency;
         let omega_min = s.frequency.lowest_unit_hz / f0;

@@ -199,9 +199,18 @@ them) and names any that are missing.
 - **Voltage recovery.** Every live bus at or above 0.8 pu within 1 s of the
   last event; a miss is reported as a voltage concern.
 - **Reported figures.** COI frequency nadir and peak, RoCoF over a 0.5 s
-  window, the largest angle separation (pair, time, trend over the last three
-  swing peaks), the first swing after the last event, the lowest unit speed
-  and bus frequency, the lowest voltage and the final voltage range.
+  window, the largest `|δ − δ_COI|` (the figure the pole-slip criterion
+  reads), the largest angle separation from the first event on (pair, time)
+  next to the steady-state separation before it, the first swing (per
+  machine, the largest excursion of `δ − δ_COI` from its value before the
+  first event up to its first peak after the last event), the lowest unit
+  speed and bus frequency, the lowest voltage and the final voltage range.
+- **Swing trend.** From the peaks of the separation's distance to its final
+  value after the last event, counting only peaks above 0.5° and above 10 %
+  of the largest distance (smaller wiggles are numerical): *decaying* or
+  *growing* when the last three counted peaks each shrink or grow by more
+  than 2 %, *damped out* when the last peak is below that floor, otherwise
+  *undetermined*.
 
 `derived_series` gives `coi:omega`, `coi:delta`, `coi:f` and `f:<bus>`, each
 bus's frequency estimated as `f0 (ω_ref + (1/ω0) d(va)/dt)` with the

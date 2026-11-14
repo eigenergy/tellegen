@@ -129,16 +129,30 @@ pub enum ScreeningVerdict {
     NotSettled,
 }
 
-/// The trend of the rotor angle separation over its last three swing
-/// peaks after the last event.
+/// The trend of the rotor angle separation after the last event, read from
+/// the peaks of its distance to its final value. Only peaks above
+/// [`TREND_FLOOR_DEG`] and above [`TREND_FLOOR_FRACTION`] of the largest
+/// distance count: smaller wiggles are numerical, not swings.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SwingTrend {
+    /// The last three counted peaks each shrink by more than 2 %.
     Decaying,
+    /// The last three counted peaks each grow by more than 2 %.
     Growing,
+    /// The swings fell below the floor before the end of the run (or never
+    /// rose above it).
+    DampedOut,
+    /// Too few counted peaks, or no monotone trend in the last three.
     Undetermined,
 }
+
+/// The absolute floor of a counted swing peak, degrees.
+pub const TREND_FLOOR_DEG: f64 = 0.5;
+/// The relative floor of a counted swing peak: this fraction of the largest
+/// distance of the separation from its final value after the last event.
+pub const TREND_FLOOR_FRACTION: f64 = 0.1;
 
 /// One reason for the verdict: a stable code and a plain sentence.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -186,16 +200,23 @@ pub struct FrequencyScreen {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AngleScreen {
     /// The largest `max δ − min δ` among the machines in service of one
-    /// island, the pair and when.
+    /// island from the first event on (over the whole run without events),
+    /// the pair and when.
     pub max_separation_deg: f64,
     pub pair: Vec<String>,
     pub separation_t: f64,
+    /// The separation before the first event (at the start without
+    /// events): the steady-state spread the event starts from.
+    #[serde(default)]
+    pub initial_separation_deg: f64,
     /// The largest `|δ − δ_COI|` over the run, which unit and when.
     pub max_coi_angle_deg: f64,
     pub max_coi_angle_unit: Option<String>,
     pub max_coi_angle_t: f64,
-    /// The largest first swing after the last event: per machine the
-    /// first extremum of `δ − δ_COI`, measured from its value at the event.
+    /// The largest first swing: per machine the largest distance of
+    /// `δ − δ_COI` from its value before the first event, up to its first
+    /// extremum after the last event. Compare `max_coi_angle_deg`, not
+    /// this, with the pole-slip criterion.
     pub first_swing_deg: f64,
     pub first_swing_unit: Option<String>,
     pub pole_slips: Vec<PoleSlip>,
@@ -333,6 +354,30 @@ fn peaks(v: &[f64], floor: f64) -> Vec<(usize, f64)> {
         .filter(|&k| v[k] >= v[k - 1] && v[k] > v[k + 1] && v[k] > floor)
         .map(|k| (k, v[k]))
         .collect()
+}
+
+/// The trend of `dev`, the distance of the separation from its final value
+/// after the last event, degrees (see [`SwingTrend`]).
+fn swing_trend(dev: &[f64]) -> SwingTrend {
+    let largest = dev.iter().copied().fold(0.0_f64, f64::max);
+    let floor = TREND_FLOOR_DEG.max(TREND_FLOOR_FRACTION * largest);
+    let all = peaks(dev, 0.0);
+    let counted: Vec<f64> = all.iter().filter(|p| p.1 > floor).map(|p| p.1).collect();
+    if counted.len() >= 3 {
+        let a = &counted[counted.len() - 3..];
+        if a[1] < 0.98 * a[0] && a[2] < 0.98 * a[1] {
+            return SwingTrend::Decaying;
+        }
+        if a[1] > 1.02 * a[0] && a[2] > 1.02 * a[1] {
+            return SwingTrend::Growing;
+        }
+    }
+    // Damped out: the last peak is at or below the floor (or there is no
+    // peak at all: `dev` ends at 0 by construction).
+    if all.last().is_none_or(|p| p.1 <= floor) {
+        return SwingTrend::DampedOut;
+    }
+    SwingTrend::Undetermined
 }
 
 /// Everything a screening and the derived series read.
@@ -659,7 +704,14 @@ impl RmsSimulation {
             fr.lowest_unit_hz = f64::NAN;
         }
 
-        // Angles: separation, COI angle, pole slips.
+        // Angles: separation, COI angle, pole slips. `s_pre`: the last
+        // sample before the first event (the sample at its time).
+        let first_event = event_times.first().copied();
+        let s_pre = first_event.map_or(0, |t0| {
+            time.partition_point(|&t| t <= t0 + tol)
+                .saturating_sub(1)
+                .min(ns - 1)
+        });
         let mut an = AngleScreen::default();
         let mut sep = vec![0.0_f64; ns];
         let mut slipped: Vec<Option<f64>> = vec![None; sys.devices.len()];
@@ -690,7 +742,7 @@ impl RmsSimulation {
                 if let (Some((l, jl)), Some((h, jh))) = (lo, hi) {
                     let v = (h - l) * deg;
                     sep[s] = sep[s].max(v);
-                    if v > an.max_separation_deg {
+                    if s >= s_pre && v > an.max_separation_deg {
                         an.max_separation_deg = v;
                         an.pair = vec![keys[jh].clone(), keys[jl].clone()];
                         an.separation_t = time[s];
@@ -709,7 +761,9 @@ impl RmsSimulation {
             })
             .collect();
         an.pole_slips.sort_by(|a, b| a.t.total_cmp(&b.t));
-        // First swing after the last event.
+        an.initial_separation_deg = sep[s_pre];
+        // First swing: from the value before the first event to the first
+        // extremum after the last event.
         let s0 = time.partition_point(|&t| t <= last_event + tol).min(ns - 1);
         if !request.events.is_empty() {
             for (j, key) in keys.iter().enumerate() {
@@ -719,6 +773,13 @@ impl RmsSimulation {
                     let (_, dc) = cois[s][k]?;
                     Some((delta[j][s] - dc) * deg)
                 };
+                let Some(base) = rel(s_pre) else { continue };
+                let mut swing = 0.0_f64;
+                for s in s_pre..=s0 {
+                    if let Some(v) = rel(s) {
+                        swing = swing.max((v - base).abs());
+                    }
+                }
                 let Some(start) = rel(s0) else { continue };
                 let mut prev = start;
                 let mut dir = 0.0_f64;
@@ -733,8 +794,8 @@ impl RmsSimulation {
                         break;
                     }
                     prev = v;
+                    swing = swing.max((v - base).abs());
                 }
-                let swing = (prev - start).abs();
                 if swing > an.first_swing_deg {
                     an.first_swing_deg = swing;
                     an.first_swing_unit = Some(key.clone());
@@ -744,19 +805,7 @@ impl RmsSimulation {
         // Trend and settling.
         let final_sep = sep[ns - 1];
         let dev: Vec<f64> = sep[s0..].iter().map(|v| (v - final_sep).abs()).collect();
-        let pk = peaks(&dev, 0.05);
-        an.trend = Some(if pk.len() >= 3 {
-            let a: Vec<f64> = pk[pk.len() - 3..].iter().map(|p| p.1).collect();
-            if a[1] < 0.98 * a[0] && a[2] < 0.98 * a[1] {
-                SwingTrend::Decaying
-            } else if a[1] > 1.02 * a[0] && a[2] > 1.02 * a[1] {
-                SwingTrend::Growing
-            } else {
-                SwingTrend::Undetermined
-            }
-        } else {
-            SwingTrend::Undetermined
-        });
+        an.trend = Some(swing_trend(&dev));
         let t_end = time[ns - 1];
         let w0 = t_end - criteria.settle_window_s;
         let window_ok = w0 >= last_event - tol && w0 >= time[0] - tol;
@@ -984,6 +1033,31 @@ mod tests {
         assert!(masked.iter().all(|f| (f - 50.0).abs() < 1e-12));
         let unmasked = bus_frequency(&time, &va, &omega, 50.0, 0.02, &|_| false);
         assert!(unmasked.iter().any(|f| (f - 50.0).abs() > 0.5));
+    }
+
+    #[test]
+    fn numerical_wiggles_do_not_make_a_trend() {
+        // A 0.73° first excursion, then peaks of 0.061°, 0.083° and 0.097°
+        // (fault 1032 through j0.05 on WECC 240): damped out, not growing.
+        let mut dev = vec![0.0, 0.73, 0.2, 0.0];
+        for p in [0.061, 0.083, 0.097] {
+            dev.extend([p, 0.0]);
+        }
+        assert_eq!(swing_trend(&dev), SwingTrend::DampedOut);
+        // Real swings: 10°, 8°, 6.4° → decaying; 4°, 5°, 6° → growing.
+        assert_eq!(
+            swing_trend(&[0.0, 10.0, 0.0, 8.0, 0.0, 6.4, 0.0, 2.0, 1.0]),
+            SwingTrend::Decaying
+        );
+        assert_eq!(
+            swing_trend(&[0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0]),
+            SwingTrend::Growing
+        );
+        // One big swing, cut off by the end of the run: undetermined.
+        assert_eq!(
+            swing_trend(&[0.0, 30.0, 60.0, 40.0, 0.0]),
+            SwingTrend::Undetermined
+        );
     }
 
     #[test]

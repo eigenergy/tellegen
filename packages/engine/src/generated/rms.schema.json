@@ -4,7 +4,7 @@
       "description": "Rotor angle figures, degrees.",
       "properties": {
         "first_swing_deg": {
-          "description": "The largest first swing after the last event: per machine the\nfirst extremum of `δ − δ_COI`, measured from its value at the event.",
+          "description": "The largest first swing: per machine the largest distance of\n`δ − δ_COI` from its value before the first event, up to its first\nextremum after the last event. Compare `max_coi_angle_deg`, not\nthis, with the pole-slip criterion.",
           "format": "double",
           "type": "number"
         },
@@ -13,6 +13,12 @@
             "string",
             "null"
           ]
+        },
+        "initial_separation_deg": {
+          "default": 0.0,
+          "description": "The separation before the first event (at the start without\nevents): the steady-state spread the event starts from.",
+          "format": "double",
+          "type": "number"
         },
         "max_coi_angle_deg": {
           "description": "The largest `|δ − δ_COI|` over the run, which unit and when.",
@@ -30,7 +36,7 @@
           ]
         },
         "max_separation_deg": {
-          "description": "The largest `max δ − min δ` among the machines in service of one\nisland, the pair and when.",
+          "description": "The largest `max δ − min δ` among the machines in service of one\nisland from the first event on (over the whole run without events),\nthe pair and when.",
           "format": "double",
           "type": "number"
         },
@@ -1217,13 +1223,29 @@
       ]
     },
     "SwingTrend": {
-      "description": "The trend of the rotor angle separation over its last three swing\npeaks after the last event.",
-      "enum": [
-        "decaying",
-        "growing",
-        "undetermined"
-      ],
-      "type": "string"
+      "description": "The trend of the rotor angle separation after the last event, read from\nthe peaks of its distance to its final value. Only peaks above\n[`TREND_FLOOR_DEG`] and above [`TREND_FLOOR_FRACTION`] of the largest\ndistance count: smaller wiggles are numerical, not swings.",
+      "oneOf": [
+        {
+          "const": "decaying",
+          "description": "The last three counted peaks each shrink by more than 2 %.",
+          "type": "string"
+        },
+        {
+          "const": "growing",
+          "description": "The last three counted peaks each grow by more than 2 %.",
+          "type": "string"
+        },
+        {
+          "const": "damped_out",
+          "description": "The swings fell below the floor before the end of the run (or never\nrose above it).",
+          "type": "string"
+        },
+        {
+          "const": "undetermined",
+          "description": "Too few counted peaks, or no monotone trend in the last three.",
+          "type": "string"
+        }
+      ]
     },
     "VoltageScreen": {
       "description": "Bus voltage figures, pu.",
@@ -1315,5 +1337,5 @@
   ],
   "title": "RmsSchema",
   "type": "object",
-  "x-rust-source-sha256": "b0f46ff98175aee5759a691dd87a566a0468ccc493ef8ca1671e7714b21b853e"
+  "x-rust-source-sha256": "a9600ab7abb5c6f2c27c07df1de98457dde7346708dabe7cee407c32fe1ba4c5"
 }
