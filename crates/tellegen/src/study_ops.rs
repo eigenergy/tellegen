@@ -19,6 +19,8 @@ pub struct CreateStudy {
     #[cfg_attr(feature = "schema", schemars(schema_with = "study_formulation_schema"))]
     pub formulation: Problem,
     #[serde(default)]
+    pub branch_susceptance_formula: Option<crate::DcFormula>,
+    #[serde(default)]
     pub request: String,
     #[serde(default)]
     pub interpretation: String,
@@ -168,7 +170,17 @@ pub struct StudyOperationResult {
     pub demand_changes: Option<Vec<DemandChange>>,
 }
 
-pub fn create_study(request: CreateStudy) -> Result<StudyBundle, String> {
+pub fn create_study(mut request: CreateStudy) -> Result<StudyBundle, String> {
+    crate::dc_formula::validate(request.formulation, request.branch_susceptance_formula)?;
+    if request.branch_susceptance_formula.is_some() {
+        let module = crate::ir::deserialize_module(&request.input).map_err(|e| e.to_string())?;
+        let module = crate::dc_formula::apply_study_options(
+            module,
+            request.formulation,
+            request.branch_susceptance_formula,
+        )?;
+        request.input = crate::ir::serialize_module(&module).map_err(|e| e.to_string())?;
+    }
     let base_input = request.base_input.as_deref().unwrap_or(&request.input);
     same_bus_identities(&input_network(base_input)?, &input_network(&request.input)?)?;
     let mut bundle = StudyBundle::empty(request.id, request.title)?;
@@ -1222,6 +1234,7 @@ mod tests {
             input,
             base_input: None,
             formulation: Problem::DcOpf,
+            branch_susceptance_formula: None,
             request: "Lower bus 2 price".into(),
             interpretation: "Minimize bus 2 LMP with a 10 MW line upgrade budget".into(),
             objective: Some(StudyObjective::WeightedObservable {
@@ -1316,6 +1329,7 @@ mod tests {
             input: original.save_instance_module().unwrap(),
             base_input: Some(base_input),
             formulation: Problem::DcOpf,
+            branch_susceptance_formula: None,
             request: "Move demand between buses 2 and 3".into(),
             interpretation: "Preserve total demand with at most 10 MW per bus".into(),
             objective: Some(goal.objective),

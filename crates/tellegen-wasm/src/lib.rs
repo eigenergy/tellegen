@@ -847,10 +847,24 @@ impl Study {
     /// in a build that includes them — `"socwr"` / `"acopf"`), solving the base case.
     /// Bare model JSON and unknown or unavailable formulations are rejected.
     #[wasm_bindgen(constructor)]
-    pub fn new(module_json: &str, formulation: &str) -> Result<Study, JsError> {
+    pub fn new(
+        module_json: &str,
+        formulation: &str,
+        options_json: Option<String>,
+    ) -> Result<Study, JsError> {
         install_panic_hook();
+        ensure_input_text(module_json)?;
+        if let Some(options) = &options_json {
+            ensure_input_text(options)?;
+        }
         let problem = parse_problem(formulation)?;
-        tellegen::Study::new(module_json, problem)
+        let options = options_json
+            .as_deref()
+            .map(serde_json::from_str::<tellegen::StudyOptions>)
+            .transpose()
+            .map_err(jserr)?
+            .unwrap_or_default();
+        tellegen::Study::new_with_options(module_json, problem, options)
             .map(Study)
             .map_err(jserr)
     }

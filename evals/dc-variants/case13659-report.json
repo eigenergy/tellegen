@@ -1,0 +1,197 @@
+{
+  "reference_reversed_branch_count": 25,
+  "reference_reversed_nonunity_branches": [],
+  "reactance_only": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 2.842170943040401e-14,
+      "balance_pu": 1.8093211373582108e-09,
+      "flow_pu": 1.453415165997285e-09,
+      "angle_rad": 4.1325165511807427e-10
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 5.308879042162373e-05,
+      "balance_pu": 0.00017731743744331396,
+      "flow_pu": 0.3167468424051343,
+      "angle_rad": 0.0458523814598667,
+      "dispatch_pu": 0.31674684237070405,
+      "actual_objective": 8789408.236467052,
+      "reference_objective": 8789677.729294473,
+      "objective_absolute_gap": 269.49282742105424,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
+      "objective_relative": 3.0660148838322175e-05,
+      "lmp_per_mw": 0.2094481116903335
+    },
+    "ac_fixed_dispatch": {
+      "status": "TIME_LIMIT",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "series_susceptance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 5.684341886080802e-14,
+      "balance_pu": 7.14044290361926e-09,
+      "flow_pu": 7.14044290361926e-09,
+      "angle_rad": 1.2617533684533555e-09
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 0.00023977200620066766,
+      "balance_pu": 0.002178558668255892,
+      "flow_pu": 6.308844423272223,
+      "angle_rad": 0.4162048947751227,
+      "dispatch_pu": 6.308844409625291,
+      "actual_objective": 8769433.98927328,
+      "reference_objective": 8769907.631130518,
+      "objective_absolute_gap": 473.6418572384864,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
+      "objective_relative": 5.400762210507225e-05,
+      "lmp_per_mw": 5.856315690259574
+    },
+    "ac_fixed_dispatch": {
+      "status": "TIME_LIMIT",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "series_susceptance_no_phase_shift": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 1.1368683772161603e-13,
+      "balance_pu": 1.100761437555775e-08,
+      "flow_pu": 1.100761437555775e-08,
+      "angle_rad": 2.0125980881857686e-09
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 0.0002929081084514767,
+      "balance_pu": 0.0022657940601167326,
+      "flow_pu": 6.308927118024762,
+      "angle_rad": 0.45721991437365817,
+      "dispatch_pu": 6.30892489600371,
+      "actual_objective": 8769227.340918744,
+      "reference_objective": 8769893.207127793,
+      "objective_absolute_gap": 665.8662090487778,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
+      "objective_relative": 7.592637599139637e-05,
+      "lmp_per_mw": 7.707786000276585
+    },
+    "ac_fixed_dispatch": {
+      "status": "TIME_LIMIT",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "tap_adjusted_reactance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 4.547473508864641e-13,
+      "balance_pu": 7.553808245575055e-09,
+      "flow_pu": 7.553808245575055e-09,
+      "angle_rad": 1.6115109247039072e-09
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 3.734232232807666e-08,
+      "balance_pu": 5.816590809004651e-07,
+      "flow_pu": 0.00018185487929667232,
+      "angle_rad": 0.0004595976739340535,
+      "dispatch_pu": 0.00018185487933330968,
+      "actual_objective": 8787724.210112039,
+      "reference_objective": 8787724.21117615,
+      "objective_absolute_gap": 0.0010641105473041534,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
+      "objective_relative": 1.2109057154420333e-10,
+      "lmp_per_mw": 2.3352226596884407e-05
+    },
+    "ac_fixed_dispatch": {
+      "status": "TIME_LIMIT",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "tap_adjusted_series_susceptance": {
+    "dcpf": {
+      "actual_status": "feasible",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 5.684341886080802e-14,
+      "balance_pu": 1.0654275683918968e-08,
+      "flow_pu": 1.0653820936568081e-08,
+      "angle_rad": 2.1935306904197205e-09
+    },
+    "dcopf": {
+      "actual_status": "optimal",
+      "reference_status": "LOCALLY_SOLVED",
+      "equation_pu": 0.00019096500622976798,
+      "balance_pu": 0.001347771544197851,
+      "flow_pu": 8.999982637826069,
+      "angle_rad": 0.3117722723721249,
+      "dispatch_pu": 8.999968485224635,
+      "actual_objective": 8769089.305120427,
+      "reference_objective": 8769320.924839053,
+      "objective_absolute_gap": 231.61971862614155,
+      "objective_units": "case cost units per hour (USD/h for PGLib)",
+      "objective_relative": 2.641250338667387e-05,
+      "lmp_per_mw": 7.2906443699328705
+    },
+    "ac_fixed_dispatch": {
+      "status": "TIME_LIMIT",
+      "converged": false
+    },
+    "ac_dispatch_replay": {
+      "status": "LOCALLY_INFEASIBLE",
+      "converged": false,
+      "error": null,
+      "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+    }
+  },
+  "unit_voltage_phase_compensated_ac_slope_max_error": 2.2181393433129415e-07,
+  "ac_pf": {
+    "status": "TIME_LIMIT",
+    "converged": false,
+    "error": null,
+    "note": "Returned iterates are not AC solutions; accuracy and violation metrics omitted."
+  },
+  "case_sha256": "778ccf66f026798392340ce24967b7b1262ecc9d7524643edcd489dbdf573831",
+  "versions": {
+    "julia": "1.12.6",
+    "PowerModels": "0.19.9",
+    "Ipopt": "1.4.1"
+  },
+  "raw_sha256": {
+    "tellegen": "1a036f735cb59e41bce3aee439cb109e6f72aee95980f97cb2117098f7a3dffc",
+    "reference": "9fd421a5c481f27eff838dac249fb76371d21703b61ba68c568b2de0a54540d6"
+  },
+  "provenance": "Original recorded solver outputs; existing report metrics verified unchanged before enrichment. No solver rerun for this report."
+}

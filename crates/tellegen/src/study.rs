@@ -452,6 +452,56 @@ impl Study {
         &self.calculation_options
     }
 
+    /// Start with explicit DC options. A typed instance remains authoritative.
+    pub fn new_with_options(
+        module_json: &str,
+        formulation: Problem,
+        options: crate::StudyOptions,
+    ) -> Result<Self, String> {
+        crate::dc_formula::validate(formulation, options.branch_susceptance_formula)?;
+        if options.branch_susceptance_formula.is_none() {
+            return Self::new(module_json, formulation);
+        }
+        let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
+        Self::from_dynamic_module_with_options(module, formulation, options)
+    }
+
+    fn from_dynamic_module_with_options(
+        module: PioModule<PioValue>,
+        formulation: Problem,
+        options: crate::StudyOptions,
+    ) -> Result<Self, String> {
+        let mut request = crate::settings::SettingsRequest::new(formulation.into());
+        if let Some(record) = module.extensions().get(crate::settings::record::EXTENSION) {
+            if let Some(saved) = crate::settings::record::read(record).settings {
+                if saved.calculation == request.calculation {
+                    request.baseline = saved.overrides;
+                }
+            }
+        }
+        if let Some(formula) = options.branch_susceptance_formula {
+            request.overrides.insert(
+                "branch_susceptance_formula".into(),
+                serde_json::to_value(formula).map_err(|e| e.to_string())?,
+            );
+        }
+        let resolved = crate::settings::resolve(&request)?;
+        Self::from_dynamic_module(module, formulation, resolved.effective)
+    }
+
+    /// Typed network-module constructor with explicit analysis options.
+    pub fn from_module_with_options(
+        module: PioModule<BalancedNetwork>,
+        formulation: Problem,
+        options: crate::StudyOptions,
+    ) -> Result<Self, String> {
+        Self::from_dynamic_module_with_options(
+            module.map_value(PioValue::BalancedNetwork),
+            formulation,
+            options,
+        )
+    }
+
     /// Build a retained module from a network for crate tests. Public callers
     /// use [`Study::new`] or [`Study::from_module`].
     #[cfg(test)]
@@ -485,6 +535,11 @@ impl Study {
         formulation: Problem,
         calculation_options: crate::settings::Options,
     ) -> Result<Self, String> {
+        let module = crate::dc_formula::apply_study_options(
+            module,
+            formulation,
+            crate::settings::dc_formula(&calculation_options)?,
+        )?;
         let module_json = crate::ir::serialize_module(&module).map_err(|e| e.to_string())?;
         match module.into_value() {
             PioValue::BalancedNetwork(net) => Self::from_network_and_module(
@@ -1024,6 +1079,7 @@ impl Study {
     ) -> Result<(Box<dyn SolvedState>, SolveResponse), String> {
         let mut req = SolveRequest {
             formulation: self.formulation,
+            branch_susceptance_formula: None,
             edits: fold(log),
             start: PowerFlowStart::Flat,
             constraints: self.constraints.clone(),
@@ -1294,9 +1350,7 @@ impl Study {
         if self.calculation_options.is_empty() {
             return Ok(instance);
         }
-        let limits: crate::LimitOptions =
-            serde_json::from_value(serde_json::Value::Object(self.calculation_options.clone()))
-                .map_err(|e| e.to_string())?;
+        let limits = crate::settings::dc_limits(&self.calculation_options)?;
         let mut model = DcNetwork::from_instance(&instance)?;
         let enforceable = crate::api::apply_limit_options(&mut model, &limits)?;
         let mut constraints = instance.constraints().clone();
@@ -1364,13 +1418,27 @@ impl Study {
 
     /// Record the settings this Study was given, as the overrides of its
     /// calculation's engine defaults. A Study given no settings records none, so a
-    /// legacy input does not acquire invented provenance.
+    /// legacy input does not acquire invented provenance. A typed DC OPF instance
+    /// whose convention the options inherit (null) contributes that convention
+    /// when it is not the legacy default: a network-valued save drops the
+    /// instance, and the record is then the only place the choice survives.
     fn record_settings(&self, module: &mut PioModule<PioValue>) -> Result<(), String> {
-        if self.calculation_options.is_empty() {
+        let mut options = self.calculation_options.clone();
+        if let StudyInput::DcOpf(instance) = &self.input {
+            if crate::settings::dc_formula(&options)?.is_none() {
+                let formula = crate::DcFormula::try_from(instance.branch_susceptance_formula())?;
+                if formula != crate::DcFormula::default() {
+                    options.insert(
+                        "branch_susceptance_formula".into(),
+                        serde_json::to_value(formula).map_err(|e| e.to_string())?,
+                    );
+                }
+            }
+        }
+        if options.is_empty() {
             return Ok(());
         }
-        let record =
-            crate::settings::record::write(self.formulation.into(), &self.calculation_options)?;
+        let record = crate::settings::record::write(self.formulation.into(), &options)?;
         module
             .insert_extension(crate::settings::record::EXTENSION, record)
             .map(|_| ())
@@ -1872,10 +1940,8 @@ fn apply_calculation_options(
     )?;
     match req.formulation {
         Problem::DcOpf => {
-            req.limits = Some(
-                serde_json::from_value(serde_json::Value::Object(resolved.effective))
-                    .map_err(|e| e.to_string())?,
-            )
+            req.branch_susceptance_formula = crate::settings::dc_formula(&resolved.effective)?;
+            req.limits = Some(crate::settings::dc_limits(&resolved.effective)?);
         }
         Problem::AcPf => {
             req.start = serde_json::from_value(resolved.effective["start"].clone())

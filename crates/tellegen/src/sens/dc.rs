@@ -671,7 +671,7 @@ impl Differentiable for DcKkt<'_> {
                     let (fb, tb) = (dc.br_from[col], dc.br_to[col]);
                     let dth = s.va[fb] - s.va[tb];
                     let dnu = s.nu_bal[fb] - s.nu_bal[tb];
-                    let sw = dc.sw[col];
+                    let sw = dc.sw[col] * dc.db_dseries_b[col];
                     let shift = dc.shift[col];
                     let nf = nu_flow[col];
                     // `dc.b` is the negative inductive susceptance and
@@ -1561,5 +1561,66 @@ mod tests {
         assert!(matches!(m.rows[0].element, ElementId::Generator(id) if id == dc.gen_ids[0]));
         assert!(matches!(m.cols[1].element, ElementId::Bus(id) if id == dc.bus_ids[1]));
         assert_eq!(m.units, "per unit");
+    }
+    #[test]
+    fn dc_variants_differentiate_source_admittance_with_g_held_fixed() {
+        use powerio::BranchSusceptanceFormula as F;
+        let source = crate::model::parse_matpower(include_str!(
+            "../../tests/data/dc_variants/case3_variants.m"
+        ))
+        .unwrap();
+        for formula in [
+            F::SeriesSusceptance,
+            F::SeriesSusceptanceNoPhaseShift,
+            F::TapAdjustedReactance,
+            F::TapAdjustedSeriesSusceptance,
+            F::ReactanceOnly,
+        ] {
+            let dc = DcNetwork::from_network_with_formula(&source, formula).unwrap();
+            let sol = dc_opf(&dc).unwrap();
+            let sys = DcKkt::new(&dc, &sol);
+            let mut open = dc.clone();
+            open.sw[0] = 0.0;
+            let opened = dc_opf(&open).unwrap();
+            assert!(opened.f[0].abs() < 1e-8);
+            let switching =
+                sensitivity(&sys, PRICE, Parameter::Switching, Some(&[0]), Mode::Forward).unwrap();
+            let fd = fd_column(&dc, PRICE, Parameter::Switching, 0, 1e-4);
+            for (row, value) in fd.iter().enumerate() {
+                assert!((switching.values[row][0] - value).abs() < 1e-3 * value.abs().max(1.0));
+            }
+            for op in OPERANDS {
+                let analytic = sensitivity(
+                    &sys,
+                    op,
+                    Parameter::SeriesAdmittance(GB::Susceptance),
+                    Some(&[0]),
+                    Mode::Forward,
+                )
+                .unwrap();
+                let branch = &source.branches()[0];
+                let denom = branch.r * branch.r + branch.x * branch.x;
+                let (g, b) = (branch.r / denom, -branch.x / denom);
+                let eps = 1e-4;
+                let perturbed = |delta: f64| {
+                    let mut net = source.clone();
+                    let bp = b + delta;
+                    net.branches_mut()[0].r = g / (g * g + bp * bp);
+                    net.branches_mut()[0].x = -bp / (g * g + bp * bp);
+                    let rebuilt = DcNetwork::from_network_with_formula(&net, formula).unwrap();
+                    operand_vec(&dc_opf(&rebuilt).unwrap(), op)
+                };
+                let plus = perturbed(eps);
+                let minus = perturbed(-eps);
+                for (i, (p, m)) in plus.iter().zip(&minus).enumerate() {
+                    let fd = (p - m) / (2.0 * eps);
+                    assert!(
+                        (analytic.values[i][0] - fd).abs() < 2e-3 * fd.abs().max(1.0),
+                        "{formula:?} {op:?} row {i}: {} vs {fd}",
+                        analytic.values[i][0]
+                    );
+                }
+            }
+        }
     }
 }

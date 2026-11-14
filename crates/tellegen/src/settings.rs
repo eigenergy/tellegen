@@ -226,7 +226,27 @@ fn defaults(calculation: Calculation) -> Result<Options, String> {
     if calculation == Calculation::DcOpf {
         options.insert("lazy".into(), Value::Null);
     }
+    if matches!(calculation, Calculation::DcOpf | Calculation::DcPf) {
+        // Null inherits a typed instance; a network keeps the legacy default.
+        options.insert("branch_susceptance_formula".into(), Value::Null);
+    }
     Ok(options)
+}
+
+pub(crate) fn dc_formula(options: &Options) -> Result<Option<crate::DcFormula>, String> {
+    serde_json::from_value(
+        options
+            .get("branch_susceptance_formula")
+            .cloned()
+            .unwrap_or(Value::Null),
+    )
+    .map_err(|e| e.to_string())
+}
+
+pub(crate) fn dc_limits(options: &Options) -> Result<crate::LimitOptions, String> {
+    let mut limits = options.clone();
+    limits.remove("branch_susceptance_formula");
+    serde_json::from_value(Value::Object(limits)).map_err(|e| e.to_string())
 }
 
 /// Resolve defaults, case/study baseline, then explicit overrides. Each layer
@@ -244,14 +264,15 @@ pub fn resolve(request: &SettingsRequest) -> Result<ResolvedSettings, String> {
         validate(request.calculation, &value)?;
         // Materialize nested defaults too, e.g. a partial lazy-enforcement object.
         if request.calculation == Calculation::DcOpf {
-            let typed: crate::LimitOptions =
-                serde_json::from_value(Value::Object(value)).map_err(|e| e.to_string())?;
+            let formula = value["branch_susceptance_formula"].clone();
+            let typed = dc_limits(&value)?;
             let mut normalized = serde_json::to_value(typed)
                 .map_err(|e| e.to_string())?
                 .as_object()
                 .cloned()
                 .ok_or("invalid limit options")?;
             normalized.entry("lazy").or_insert(Value::Null);
+            normalized.insert("branch_susceptance_formula".into(), formula);
             Ok(normalized)
         } else {
             Ok(value)
@@ -270,6 +291,10 @@ pub fn resolve(request: &SettingsRequest) -> Result<ResolvedSettings, String> {
 }
 
 fn validate(calculation: Calculation, options: &Options) -> Result<(), String> {
+    if matches!(calculation, Calculation::DcOpf | Calculation::DcPf) {
+        dc_formula(options)?;
+    }
+    #[cfg(feature = "mc-pf")]
     let value = Value::Object(options.clone());
     match calculation {
         #[cfg(feature = "mc-pf")]
@@ -282,8 +307,7 @@ fn validate(calculation: Calculation, options: &Options) -> Result<(), String> {
             crate::mc_pf::validate_options(&options)
         }
         Calculation::DcOpf => {
-            let options: crate::LimitOptions =
-                serde_json::from_value(value).map_err(|e| e.to_string())?;
+            let options = dc_limits(options)?;
             if let Some(lazy) = options.lazy {
                 if lazy.max_rounds == 0
                     || lazy.max_rounds > u32::MAX as usize
@@ -411,6 +435,7 @@ pub fn describe() -> Value {
                     let (label, unit, description, group) = field(key);
                     let kind = if default.is_boolean() { "boolean" } else if default.is_number() { "number" } else if default.is_string() { "enum" } else { "json" };
                     let mut value = json!({"key":key,"label":label,"unit":unit,"description":description,"group":group,"type":kind,"default":default});
+                    if key == "branch_susceptance_formula" { value["type"] = json!("enum"); value["choices"] = json!([null, "series_susceptance", "tap_adjusted_reactance", "reactance_only", "tap_adjusted_series_susceptance", "series_susceptance_no_phase_shift"]); }
                     if key == "start" { value["choices"] = json!(["flat","case"]); }
                     if key == "thermal" { value["type"] = json!("json"); }
                     if key == "max_iterations" { value["type"] = json!("integer"); value["minimum"] = json!(1); value["maximum"] = json!(u32::MAX); }
@@ -439,6 +464,7 @@ fn field(key: &str) -> (&str, &str, &str, &str) {
         "v_low_pu" => ("Vlow", "pu", "Nominal-impedance breakpoint; 0 < Vlow < Vmin < Vmax, even with envelope disabled.", "model"),
         "v_min_pu" => ("Vmin", "pu", "Lower edge of original load-law band; not an engineering voltage limit.", "model"),
         "v_max_pu" => ("Vmax", "pu", "Upper edge of original load-law band; not an engineering voltage limit.", "model"),
+        "branch_susceptance_formula" => ("DC convention", "", "null inherits the typed instance or legacy network default; an explicit convention must match a typed instance.", "model"),
         "angle_difference" => ("Enforce angle-difference limits", "", "Changes the constraints included in DC OPF.", "model"),
         "thermal" => ("Thermal limits", "", "all, rated, or an object with branches containing element keys.", "model"),
         "lazy" => ("Lazy thermal enforcement", "", "null disables; otherwise {max_rounds:20, near_binding:0.98}. Solves verify omitted limits.", "numerical"),
@@ -491,7 +517,12 @@ pub fn calculate(
         }
         let mut req = json!({"formulation":settings.calculation,"edits":request.edits});
         if settings.calculation == Calculation::DcOpf {
-            req["limits"] = Value::Object(settings.effective.clone());
+            req["limits"] =
+                serde_json::to_value(dc_limits(&settings.effective)?).map_err(|e| e.to_string())?;
+        }
+        if matches!(settings.calculation, Calculation::DcOpf | Calculation::DcPf) {
+            req["branch_susceptance_formula"] =
+                settings.effective["branch_susceptance_formula"].clone();
         }
         if settings.calculation == Calculation::AcPf {
             req["start"] = settings.effective["start"].clone();

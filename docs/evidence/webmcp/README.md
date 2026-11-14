@@ -23,14 +23,18 @@ For a published PowerIO release, every component crate must resolve to that one
 registry version with a Cargo.lock checksum, and `powerio-releases.json` maps
 the release tag to its commit. A candidate run
 against an unpublished PowerIO revision instead pins one Git revision for all
-eight crates in `Cargo.toml` and `Cargo.lock`. The runner
+eight component crates in `Cargo.toml` and `Cargo.lock`, plus `powerio-archive`
+when the release links it (PowerIO 0.12 does); a linked `powerio-archive` must
+resolve to the same source and version as the others. The runner
 creates outputs with exclusive writes, so a second run cannot replace evidence
 silently.
 
 The checked-in CATS, Texas7k, and native-browser result files use the historical
 generation-1 result format and identify their old PowerIO revision in `software`.
-They remain audit records, not evidence for the v0.11 pin. A clean rerun writes
-the generation-2 result format and must replace them before they are cited as
+They remain audit records, not evidence for the v0.12 pin. A clean rerun writes
+the generation-2 result format, whose `solution.version` is the PowerIO 0.12
+`pio-ir` release string (for example `"0.12.0"`) rather than the integer `2`
+that PowerIO 0.11 wrote, and must replace them before they are cited as
 current.
 
 `--allow-dirty` exists for local harness debugging and always marks the
