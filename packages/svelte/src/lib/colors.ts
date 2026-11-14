@@ -311,3 +311,76 @@ export function busMarkerRadius(sizing: BusSizing): {
 				radiusMaxPixels: Number.MAX_SAFE_INTEGER
 			};
 }
+
+/** Bus |V| during dynamics playback, on a fixed absolute domain so a colour
+ * means the same voltage in every frame: low voltage darkens from amber
+ * through rust to maroon (the nodal value ramp's hues), the 0.95–1.05 pu
+ * band is the paper neutral, high voltage deepens from lavender to purple
+ * (the sensitivity ramp's). Lightness falls monotonically away from the band
+ * on each side, so the order survives colour vision deficiency. */
+export const DYN_V_STOPS: { v: number; light: RGBA; dark: RGBA }[] = [
+	{ v: 0.5, light: [84, 18, 7, 250], dark: [84, 18, 7, 250] },
+	{ v: 0.8, light: [160, 56, 21, 245], dark: [160, 56, 21, 245] },
+	{ v: 0.9, light: [212, 116, 34, 240], dark: [212, 116, 34, 240] },
+	{ v: 0.95, light: [236, 200, 120, 230], dark: [236, 200, 120, 235] },
+	{ v: 0.97, light: [223, 219, 208, 200], dark: [223, 219, 208, 235] },
+	{ v: 1.03, light: [223, 219, 208, 200], dark: [223, 219, 208, 235] },
+	{ v: 1.05, light: [214, 196, 222, 220], dark: [214, 196, 222, 235] },
+	{ v: 1.1, light: [194, 165, 207, 230], dark: [194, 165, 207, 240] },
+	{ v: 1.2, light: [118, 42, 131, 245], dark: [150, 80, 165, 250] }
+];
+
+/** The playback colour of a bus at `v` pu, written into `out` at `offset`
+ * (no allocation per frame). */
+export function dynVoltageColorInto(
+	v: number,
+	theme: 'light' | 'dark',
+	out: Uint8Array | number[],
+	offset = 0
+): void {
+	const s = DYN_V_STOPS;
+	let c: RGBA;
+	if (!Number.isFinite(v) || v <= s[0].v) c = s[0][theme];
+	else if (v >= s[s.length - 1].v) c = s[s.length - 1][theme];
+	else {
+		let i = 0;
+		while (v > s[i + 1].v) i++;
+		const f = (v - s[i].v) / (s[i + 1].v - s[i].v);
+		c = lerpColor(s[i][theme], s[i + 1][theme], f);
+	}
+	out[offset] = c[0];
+	out[offset + 1] = c[1];
+	out[offset + 2] = c[2];
+	out[offset + 3] = c[3];
+}
+
+export function dynVoltageColor(v: number, theme: 'light' | 'dark' = 'light'): RGBA {
+	const out = [0, 0, 0, 0];
+	dynVoltageColorInto(v, theme, out);
+	return out as RGBA;
+}
+
+/** The |V| legend bar from 0.5 to 1.2 pu, stops at their voltages. */
+export function dynVoltageGradient(theme: 'light' | 'dark' = 'light'): string {
+	const lo = DYN_V_STOPS[0].v;
+	const hi = DYN_V_STOPS[DYN_V_STOPS.length - 1].v;
+	return `linear-gradient(90deg, ${DYN_V_STOPS.map((s) => {
+		const c = s[theme];
+		return `rgb(${c[0]} ${c[1]} ${c[2]}) ${(((s.v - lo) / (hi - lo)) * 100).toFixed(1)}%`;
+	}).join(', ')})`;
+}
+
+/** Speed halos: under-speed teal, over-speed magenta. */
+export const DYN_SPEED: Record<'light' | 'dark', { under: RGBA; over: RGBA; held: RGBA }> = {
+	light: { under: [14, 116, 144, 235], over: [176, 38, 132, 235], held: [110, 115, 120, 200] },
+	dark: { under: [141, 231, 247, 235], over: [240, 140, 210, 235], held: [150, 160, 170, 200] }
+};
+
+/** Relative luminance (WCAG) of an sRGB colour. */
+export function luminance(c: RGBA | number[]): number {
+	const lin = (x: number) => {
+		const s = x / 255;
+		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	};
+	return 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+}

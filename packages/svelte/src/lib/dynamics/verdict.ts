@@ -1,0 +1,147 @@
+/** The words of a dynamics verdict: an icon and a word first (never colour
+ * alone), then rows of metric · value · criterion · ✓/✗/–. Every number
+ * comes from the engine's screening of the run's own samples. Pure. */
+
+import type { RmsScreening } from '@tellegen/engine';
+
+export type DynTone = 'ok' | 'warning' | 'failure' | 'pending';
+
+export interface DynHeadline {
+	icon: string;
+	word: string;
+	detail: string | null;
+	tone: DynTone;
+}
+
+export interface DynRow {
+	metric: string;
+	value: string;
+	criterion: string;
+	status: '✓' | '✗' | '–';
+}
+
+const hz = (v: number | null | undefined, d = 3) =>
+	v == null || !Number.isFinite(v) ? '–' : `${v.toFixed(d)} Hz`;
+const deg = (v: number) => `${v.toFixed(1)}°`;
+const sec = (v: number) => `${v.toFixed(2)} s`;
+
+/** The headline of a screened run, or of a run that failed at `failedAt`. */
+export function headline(
+	s: RmsScreening | null,
+	failure?: { message: string; at: number | null } | null,
+	tEnd?: number
+): DynHeadline {
+	if (failure)
+		return {
+			icon: '⨯',
+			word: failure.at != null ? `Run failed at t = ${failure.at.toFixed(2)} s` : 'Run failed',
+			detail: failure.message,
+			tone: 'failure'
+		};
+	if (!s) return { icon: '…', word: 'Not run yet', detail: null, tone: 'pending' };
+	switch (s.verdict) {
+		case 'stable':
+			return {
+				icon: '✓',
+				word: 'Stable',
+				detail: s.voltage.recovered ? null : 'with a voltage concern',
+				tone: s.voltage.recovered ? 'ok' : 'warning'
+			};
+		case 'loss_of_synchronism':
+			return { icon: '✗', word: 'Unstable: loss of synchronism', detail: null, tone: 'failure' };
+		case 'island_runaway':
+			return {
+				icon: '✗',
+				word: 'Unstable: island frequency runs away',
+				detail: null,
+				tone: 'failure'
+			};
+		case 'not_settled':
+			return {
+				icon: '–',
+				word: `Inconclusive: not settled by ${tEnd != null ? `${tEnd} s` : 'the end of the run'}`,
+				detail: 'extend the run',
+				tone: 'warning'
+			};
+	}
+}
+
+/** The time at which a failed run stopped, read from the engine's message
+ * (`… at t = 3.4200 s: …`). */
+export function failureTime(message: string): number | null {
+	const m = /at t = ([0-9.]+) s/.exec(message);
+	return m ? Number(m[1]) : null;
+}
+
+/** The rows under the headline. */
+export function rows(s: RmsScreening): DynRow[] {
+	const c = s.criteria;
+	const f = s.frequency;
+	const a = s.angle;
+	const v = s.voltage;
+	const slip = a.pole_slips[0];
+	const out: DynRow[] = [
+		{
+			metric: 'First swing',
+			value: slip
+				? `unit ${slip.unit} slips at ${sec(slip.t)}`
+				: a.first_swing_unit
+					? `${deg(a.first_swing_deg)} (unit ${a.first_swing_unit})`
+					: '–',
+			criterion: `no machine past ±${c.pole_slip_deg}° from its centre of inertia`,
+			status: a.pole_slips.length ? '✗' : '✓'
+		},
+		{
+			metric: 'Max angle separation',
+			value: `${deg(a.max_separation_deg)}${a.pair.length === 2 ? ` (${a.pair[0]} – ${a.pair[1]}, ${sec(a.separation_t)})` : ''}${a.trend ? `; ${a.trend}` : ''}`,
+			criterion: 'reported; trend over the last 3 swing peaks',
+			status: '–'
+		},
+		{
+			metric: 'Frequency nadir',
+			value: `${hz(f.coi_nadir_hz)} at ${sec(f.nadir_t)} (COI)`,
+			criterion: `reported; lowest bus ${hz(f.lowest_bus_hz)}${f.lowest_bus != null ? ` at ${f.lowest_bus}` : ''}, lowest unit ${hz(f.lowest_unit_hz)}${f.lowest_unit ? ` (${f.lowest_unit})` : ''}`,
+			status: '–'
+		},
+		{
+			metric: 'RoCoF',
+			value: `${f.max_rocof_hz_s.toFixed(3)} Hz/s`,
+			criterion: `largest change of COI frequency over ${c.rocof_window_s} s`,
+			status: '–'
+		},
+		{
+			metric: 'Settling',
+			value: f.settled && a.settled ? `settled at ${hz(f.final_hz)}` : 'not settled',
+			criterion: `COI within ±${c.settle_frequency_hz} Hz and separation within ±${c.settle_angle_deg}° over the last ${c.settle_window_s} s`,
+			status: f.settled && a.settled ? '✓' : '✗'
+		},
+		{
+			metric: 'Voltage recovery',
+			value:
+				v.recovered_s == null
+					? `not recovered; lowest ${v.min_pu.toFixed(3)} pu`
+					: `${sec(v.recovered_s)} after the last event; lowest ${v.min_pu.toFixed(3)} pu${v.min_bus != null ? ` at ${v.min_bus}` : ''}`,
+			criterion: `every bus ≥ ${c.voltage_recovery_pu} pu within ${c.voltage_recovery_s} s; final ${v.final_min_pu.toFixed(3)}–${v.final_max_pu.toFixed(3)} pu`,
+			status: v.recovered ? '✓' : '✗'
+		}
+	];
+	if (s.islands.length > 1)
+		out.push({
+			metric: 'Islands',
+			value: s.islands.map((i) => `${i.buses} buses at ${hz(i.final_hz ?? null)}`).join('; '),
+			criterion: `each on its own COI; runaway past ${c.runaway_pu} pu`,
+			status: s.islands.some((i) => i.runaway) ? '✗' : '✓'
+		});
+	return out;
+}
+
+/** The one sentence a screen reader hears once per run. */
+export function announcement(s: RmsScreening | null, tEnd?: number): string {
+	const h = headline(s, null, tEnd);
+	if (!s) return h.word;
+	return `${h.word}. COI frequency nadir ${hz(s.frequency.coi_nadir_hz, 2)} at ${sec(s.frequency.nadir_t)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
+}
+
+/** The fixed disclaimer of the screening. */
+export const SCREENING_DISCLAIMER =
+	'Screening criteria chosen by tellegen, not a TPL-001 or WECC planning assessment. No protection, UFLS, or motor loads are modelled (see Known limitations).';

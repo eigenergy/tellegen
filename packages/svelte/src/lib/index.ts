@@ -43,6 +43,8 @@ export {
 } from './basemap.js';
 export { MAP_PALETTE } from './colors.js';
 export { Controller, createController } from './controller.svelte.js';
+export { DynamicsController, type DynAttachment, type DynRunRecord } from './dynamics/controller.svelte.js';
+export type { DynEvent } from './dynamics/events.js';
 export {
 	AppState,
 	CaseState,

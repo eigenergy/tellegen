@@ -1,0 +1,307 @@
+<script lang="ts">
+	import { getAppState, getController } from '../../context.svelte.js';
+	import { markers } from '../../dynamics/events.js';
+	import { SPEEDS, type Speed } from '../../dynamics/player.svelte.js';
+	import DynamicsTraces from './DynamicsTraces.svelte';
+
+	let { dockHeight = $bindable(0) }: { dockHeight?: number } = $props();
+
+	const app = getAppState();
+	const ctrl = getController();
+	const dyn = ctrl.dynamics;
+	const player = dyn.player;
+	const record = $derived(dyn.current);
+	const run = $derived(record?.run ?? null);
+	const f0 = $derived(run?.meta.base_frequency ?? 60);
+	const tEnd = $derived(run ? run.time[run.time.length - 1] : 0);
+	const marks = $derived(record ? markers(record.events, f0) : []);
+	const step = $derived(run?.outputStep ?? 0.01);
+	let showTraces = $state(true);
+	let traceHeight = $state(200);
+
+	/** The nearest event at or before t, and how long after it, in cycles. */
+	const after = $derived.by(() => {
+		const t = player.t;
+		const prior = marks.filter((m) => m.t <= t + 1e-9);
+		const m = prior.at(-1);
+		if (!m) return null;
+		const cycles = (t - m.t) * f0;
+		const what =
+			m.kind === 'fault'
+				? 'fault'
+				: m.kind === 'clear'
+					? 'clearing'
+					: m.kind === 'trip'
+						? 'trip'
+						: 'load step';
+		return { cycles, what, label: m.label };
+	});
+	const valueText = $derived.by(() => {
+		const s = dyn.summary;
+		const a = after;
+		const parts = [`${player.t.toFixed(3)} seconds`];
+		if (a) parts[0] += `, ${a.cycles.toFixed(1)} cycles after ${a.what}`;
+		if (s?.coiHz != null) parts.push(`system frequency ${s.coiHz.toFixed(2)} Hz`);
+		if (s && Number.isFinite(s.minV))
+			parts.push(`lowest voltage ${s.minV.toFixed(2)} pu at bus ${s.minBus}`);
+		return parts.join('; ');
+	});
+
+	function onkey(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target?.closest('input:not([type=range]), select, textarea, [contenteditable]')) return;
+		if (!run || app.mode !== 'dynamics') return;
+		const k = e.key;
+		const move = (d: number) => {
+			e.preventDefault();
+			player.pause();
+			player.seek(player.t + d);
+		};
+		if (k === ' ' && target?.closest('[data-dyn-timeline]')) {
+			e.preventDefault();
+			player.toggle();
+		} else if (k === '[') {
+			e.preventDefault();
+			player.jump(-1);
+		} else if (k === ']') {
+			e.preventDefault();
+			player.jump(1);
+		} else if (target?.closest('[data-dyn-timeline]')) {
+			if (k === 'ArrowLeft') move(e.shiftKey ? -0.1 : -step);
+			else if (k === 'ArrowRight') move(e.shiftKey ? 0.1 : step);
+			else if (k === 'Home') move(-player.t);
+			else if (k === 'End') move(tEnd - player.t);
+		}
+	}
+</script>
+
+<svelte:window onkeydown={onkey} />
+<svelte:document onvisibilitychange={() => document.hidden && player.pause()} />
+
+{#if run && record}
+	<section
+		class={['timeline', { compact: app.compactLayout }]}
+		aria-label="Dynamics playback"
+		data-dyn-timeline
+		bind:clientHeight={dockHeight}
+	>
+		<div class="controls">
+			<button
+				class="play"
+				aria-label={player.playing ? 'Pause' : 'Play'}
+				onclick={() => player.toggle()}
+				data-testid="dyn-play">{player.playing ? '❚❚' : '▶'}</button
+			>
+			<label class="speed"
+				><span class="sr-only">Playback speed</span>
+				<select
+					value={String(player.speed)}
+					onchange={(e) => (player.speed = Number(e.currentTarget.value) as Speed)}
+				>
+					{#each SPEEDS as s (s)}<option value={String(s)}>{s}×</option>{/each}
+				</select></label
+			>
+			<label class="slow" title="0.25× from 0.1 s before to 1.5 s after each event"
+				><input type="checkbox" bind:checked={player.slowAroundEvents} /> slow at events</label
+			>
+			<output class="time" data-testid="dyn-time"
+				>t = {player.t.toFixed(3)} s{#if after}<span class="dim">
+						(+{after.cycles.toFixed(1)} cyc after {after.what})</span
+					>{/if}</output
+			>
+			<div class="scrub">
+				<input
+					type="range"
+					min="0"
+					max={tEnd}
+					{step}
+					value={player.t}
+					aria-label="Simulation time"
+					aria-valuetext={valueText}
+					data-testid="dyn-scrubber"
+					oninput={(e) => {
+						player.pause();
+						player.seek(Number(e.currentTarget.value));
+					}}
+				/>
+				<div class="marks" aria-hidden="true">
+					{#each marks as m, i (i)}
+						<span class={['mark', m.kind]} style:left="{(100 * m.t) / tEnd}%" title={m.label}
+							>{m.kind === 'fault'
+								? '⚡'
+								: m.kind === 'clear'
+									? '|'
+									: m.kind === 'trip'
+										? '✂'
+										: '±'}</span
+						>
+					{/each}
+				</div>
+			</div>
+			<span class="end">{tEnd} s</span>
+			{#if !app.compactLayout}
+				<button class="toggle" aria-expanded={showTraces} onclick={() => (showTraces = !showTraces)}
+					>{showTraces ? 'Hide traces' : 'Traces'}</button
+				>
+			{/if}
+		</div>
+		{#if showTraces && !app.compactLayout}
+			<button
+				class="resize"
+				aria-label="Resize traces (up and down arrows)"
+				onkeydown={(e) => {
+					if (e.key === 'ArrowUp') traceHeight = Math.min(innerHeight * 0.5, traceHeight + 20);
+					if (e.key === 'ArrowDown') traceHeight = Math.max(160, traceHeight - 20);
+				}}
+				onpointerdown={(e) => {
+					const y0 = e.clientY;
+					const h0 = traceHeight;
+					const move = (ev: PointerEvent) =>
+						(traceHeight = Math.max(160, Math.min(innerHeight * 0.5, h0 + (y0 - ev.clientY))));
+					const up = () => {
+						removeEventListener('pointermove', move);
+						removeEventListener('pointerup', up);
+					};
+					addEventListener('pointermove', move);
+					addEventListener('pointerup', up);
+				}}
+			></button>
+			<DynamicsTraces {run} events={record.events} height={traceHeight} />
+		{/if}
+	</section>
+{/if}
+
+<style>
+	.timeline {
+		position: fixed;
+		left: var(--tellegen-dock-left, 20px);
+		right: var(--tellegen-dock-right, 20px);
+		bottom: 12px;
+		z-index: 26;
+		display: grid;
+		gap: 6px;
+		padding: 8px 12px 10px;
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		background: var(--panel);
+		backdrop-filter: blur(6px);
+		box-shadow: var(--elev-2, 0 4px 24px rgb(0 0 0 / 0.12));
+		color: var(--ink);
+		font-size: var(--fs-label);
+	}
+	.timeline.compact {
+		left: 8px;
+		right: 8px;
+		bottom: 40px;
+		padding: 4px 8px;
+	}
+	.controls {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.play {
+		width: 34px;
+		height: 30px;
+		border: 1px solid var(--accent);
+		border-radius: var(--radius-sm);
+		background: var(--accent);
+		color: var(--paper);
+		cursor: pointer;
+		font-size: 12px;
+	}
+	select {
+		padding: 2px 4px;
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		background: var(--surface-control);
+		color: var(--ink);
+		font: inherit;
+	}
+	.slow {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: var(--fs-control);
+		color: var(--text-secondary);
+		white-space: nowrap;
+	}
+	.time {
+		min-width: 15em;
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+	}
+	.dim {
+		color: var(--text-tertiary);
+	}
+	.scrub {
+		position: relative;
+		flex: 1;
+		min-width: 120px;
+	}
+	.scrub input {
+		width: 100%;
+		accent-color: var(--accent);
+	}
+	.marks {
+		position: absolute;
+		inset: -10px 7px auto 7px;
+		height: 12px;
+		pointer-events: none;
+	}
+	.mark {
+		position: absolute;
+		transform: translateX(-50%);
+		font-size: 10px;
+		line-height: 1;
+	}
+	.mark.fault {
+		color: var(--text-danger);
+	}
+	.mark.clear {
+		color: var(--status-ok);
+		font-weight: 700;
+	}
+	.end {
+		color: var(--text-tertiary);
+		font-family: var(--font-mono);
+	}
+	.toggle {
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		background: var(--surface-chip);
+		color: var(--ink);
+		font: inherit;
+		cursor: pointer;
+	}
+	.resize {
+		display: block;
+		width: 100%;
+		padding: 0;
+		background: none;
+		border: none;
+		height: 6px;
+		margin: -4px 0;
+		cursor: ns-resize;
+		border-top: 2px solid transparent;
+	}
+	.resize:hover,
+	.resize:focus-visible {
+		border-top-color: var(--accent);
+	}
+	.compact .slow,
+	.compact .end,
+	.compact .time .dim {
+		display: none;
+	}
+	.compact .time {
+		min-width: 0;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+	}
+</style>

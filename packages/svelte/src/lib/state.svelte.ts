@@ -585,6 +585,12 @@ export class AppState {
 		units: string;
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
+	/** Steady state (the static calculations) or dynamics (RMS simulation of
+	 * the active local case with its .dyr data). */
+	mode = $state<'steady' | 'dynamics'>('steady');
+	/** The bus or unit hovered in the dynamics traces or on the map; the
+	 * other view highlights it. */
+	dynamicsHover = $state.raw<{ kind: 'bus' | 'unit'; key: string } | null>(null);
 	displayMode = $state<DisplayMode>('price');
 	get busSizing(): BusSizing {
 		return this.preferences.busSizing;

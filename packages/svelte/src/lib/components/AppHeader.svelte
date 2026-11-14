@@ -3,6 +3,7 @@
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
 	import { getCommandRegistry, type Command } from '../commands.svelte.js';
+	import ModeSwitch from './dynamics/ModeSwitch.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -27,6 +28,36 @@
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	onDestroy(
 		commands.registerSource((): Command[] => [
+			{
+				id: 'dynamics:open',
+				title: () => (app.mode === 'dynamics' ? 'Back to steady state' : 'Open Dynamics'),
+				hint: 'RMS simulation of faults and trips',
+				keywords: ['dynamics', 'rms', 'transient', 'stability', 'mode'],
+				run: () => (app.mode = app.mode === 'dynamics' ? 'steady' : 'dynamics')
+			},
+			{
+				id: 'dynamics:demo',
+				title: 'Open WECC 240 dynamics demo',
+				keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
+				group: 'Cases',
+				run: () => void ctrl.dynamics.openDemo().catch((e) => (app.error = (e as Error).message))
+			},
+			...(ctrl.dynamics.active?.status === 'ready'
+				? [
+						{
+							id: 'dynamics:run',
+							title: 'Run dynamics simulation',
+							keywords: ['dynamics', 'run', 'simulate'],
+							run: () => void ctrl.dynamics.run()
+						},
+						{
+							id: 'dynamics:play',
+							title: () => (ctrl.dynamics.player.playing ? 'Pause playback' : 'Play dynamics'),
+							keywords: ['dynamics', 'play', 'pause'],
+							run: () => ctrl.dynamics.player.toggle()
+						}
+					]
+				: []),
 			{
 				id: 'open-file',
 				title: 'Open case file…',
@@ -193,6 +224,7 @@
 			</button>
 		{/if}
 	</nav>
+	{#if !app.zen && !app.studyView}<div class="mode-switch"><ModeSwitch /></div>{/if}
 	<button
 		class="settings-button commands-button"
 		onclick={() => commands.show()}
@@ -219,7 +251,7 @@
 	{/if}
 	<input
 		type="file"
-		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx`}
+		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx,.dyr`}
 		multiple
 		hidden
 		bind:this={fileInput}
@@ -234,6 +266,13 @@
 </header>
 
 <style>
+	.mode-switch {
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+		margin: 0 8px;
+		pointer-events: auto;
+	}
 	.settings-button {
 		border: 1px solid var(--line);
 		border-radius: 4px;

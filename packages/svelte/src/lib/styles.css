@@ -57,6 +57,18 @@
 	--agent: #0e7490;
 	--agent-rgb: 14 116 144;
 	--agent-soft: rgb(var(--agent-rgb) / 0.08);
+	/* Dynamics trace series (each ≥ 3:1 on the panel paper) and playback marks. */
+	--series-1: #2a5caa;
+	--series-2: #b25e00;
+	--series-3: #a2337a;
+	--series-4: #1b7837;
+	--series-5: #7a6a00;
+	--series-6: #4d5156;
+	--dyn-v-low: #a03815;
+	--dyn-v-neutral: rgb(223 219 208 / 0.8);
+	--dyn-v-high: #762a83;
+	--dyn-speed-under: #0e7490;
+	--dyn-speed-over: #b02684;
 	/* unselected bus outline in the plain diagram view */
 	--diagram-bus-stroke: #756a5b;
 	/* ground symbol in the multiconductor bus detail */
@@ -157,6 +169,17 @@
 	--agent: #8de7f7; /* 12.4:1 on --paper */
 	--agent-rgb: 141 231 247;
 	--agent-soft: rgb(var(--agent-rgb) / 0.12); /* 9.3:1 for --agent text on it */
+	--series-1: #8ab8f0;
+	--series-2: #ffb24d;
+	--series-3: #f08cd2;
+	--series-4: #8fd0a4;
+	--series-5: #e3d36a;
+	--series-6: #b4c1cd;
+	--dyn-v-low: #e07a4f;
+	--dyn-v-neutral: rgb(223 219 208 / 0.92);
+	--dyn-v-high: #c9a7e0;
+	--dyn-speed-under: #8de7f7;
+	--dyn-speed-over: #f08cd2;
 	--surface-menu: var(--paper);
 	--diagram-bus-stroke: var(--ink-faint);
 	--mc-ground-stroke: var(--ink-dim);
@@ -200,6 +223,17 @@
 		--warn: #e0a23a; /* caution rule beside a qualified result */
 		--text-danger: var(--red);
 		--focus-ring: #8de7f7; /* 12.7:1 */
+		--series-1: #8ab8f0;
+		--series-2: #ffb24d;
+		--series-3: #f08cd2;
+		--series-4: #8fd0a4;
+		--series-5: #e3d36a;
+		--series-6: #b4c1cd;
+		--dyn-v-low: #e07a4f;
+		--dyn-v-neutral: rgb(223 219 208 / 0.92);
+		--dyn-v-high: #c9a7e0;
+		--dyn-speed-under: #8de7f7;
+		--dyn-speed-over: #f08cd2;
 		--surface-menu: var(--paper);
 		--diagram-bus-stroke: var(--ink-faint);
 		--mc-ground-stroke: var(--ink-dim);
@@ -515,4 +549,19 @@ a {
 		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
 	}
+}
+
+/* Experimental tools: a pill with the word and a caution rule, never colour alone. */
+.pill-experimental {
+	display: inline-block;
+	padding: 0 6px;
+	border-left: 3px solid var(--warn);
+	border-radius: var(--radius-sm);
+	background: rgb(var(--ink-rgb) / 0.06);
+	color: var(--text-secondary);
+	font-size: var(--fs-meta);
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	vertical-align: middle;
 }

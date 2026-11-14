@@ -87,6 +87,7 @@ import {
 } from '@tellegen/engine';
 import { browserSolveFailure, errorText, extent, formulationLabel, rgbaCss } from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
+import { DynamicsController } from './dynamics/controller.svelte.js';
 
 function sameSettings(a: unknown, b: unknown): boolean {
 	if (a && b && typeof a === 'object' && typeof b === 'object') {
@@ -471,8 +472,16 @@ export class Controller {
 	// reads it, and previewObjective carries the rendered value.
 	ratingSlope: { caseId: string; branch: number; slope: number | null } | null = null;
 
+	/** Dynamics mode: RMS simulation of a local case with its .dyr data. */
+	readonly dynamics: DynamicsController;
+
 	constructor(app: AppState, options: ControllerOptions = {}) {
 		this.app = app;
+		this.dynamics = new DynamicsController(app, (files) => this.ingestFiles(files));
+		this.dynamics.onBusClick = (bus) => {
+			const local = this.app.activeLocal;
+			if (local) void this.selectLocalBus(local.id, bus);
+		};
 		this.api = options.api ?? createApiClient({ apiBase: options.apiBase });
 		this.loadDefaultCases = options.loadDefaultCases ?? true;
 		this.mcTransport = options.mcTransport ?? browserWasmTransport;
@@ -2024,7 +2033,9 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
-			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
+			// Dynamics mode selects a bus to pick events, not to price it.
+			if (c.formulation === 'acpf' || c.formulation === 'acopf' || this.app.mode === 'dynamics')
+				return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				bus: busId
 			});
@@ -2087,6 +2098,10 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
 		const retry = () => this.selectLocalBranch(localId, branchId);
+		if (this.app.mode === 'dynamics') {
+			if (this.abort === ac) this.app.sensitivityLoading = false;
+			return;
+		}
 		try {
 			if (opts.focus) {
 				await this.awaitFocus(localId, branchId, ac);
@@ -2816,9 +2831,19 @@ export class Controller {
 		}
 	};
 
-	private ingestFileBatch = async (list: File[]) => {
+	private ingestFileBatch = async (all: File[]) => {
 		const sidecarTarget = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
 		let parsedCaseCount = 0;
+
+		// PSS/E dynamic data (.dyr, or a .txt that reads as DYR) attaches to
+		// the balanced case of this drop, else to the active local case.
+		const dyrFiles: File[] = [];
+		const list: File[] = [];
+		for (const file of all) {
+			if (await this.dynamics.isDyr(file)) dyrFiles.push(file);
+			else list.push(file);
+		}
+		const localsBefore = new Set(this.app.localCases.map((c) => c.id));
 
 		// Routable `.json` content (saved packages, model JSON, and transmission or
 		// distribution documents) shares the extension with geographic files. Route
@@ -2969,6 +2994,8 @@ export class Controller {
 			}
 		}
 
+		if (dyrFiles.length > 0) await this.attachDynamics(dyrFiles, localsBefore);
+
 		if (parsedCaseCount === 0 && (geoLayers.length > 0 || displays.length > 0)) {
 			await this.attachSidecarsToSelected(geoLayers, displays, sidecarTarget);
 		} else {
@@ -2976,6 +3003,33 @@ export class Controller {
 			if (unmatchedDisplays.length)
 				this.app.error = `No drawing objects in ${unmatchedDisplays.map((display) => display.file.name).join(' and ')} matched the case. Check that the drawing belongs to this case.`;
 		}
+	};
+
+	/** Attach dropped dynamic data: to the balanced case the same drop
+	 * opened, else to the active local case. A second .dyr replaces the
+	 * first after a confirm. */
+	private attachDynamics = async (files: File[], localsBefore: Set<string>) => {
+		const added = this.app.localCases.filter((c) => !localsBefore.has(c.id));
+		const target = added.at(-1) ?? this.app.activeLocal;
+		if (!target || !target.studyInputJson) {
+			this.app.error = `Drop the matching .raw case with ${files.map((f) => f.name).join(' and ')}.`;
+			return;
+		}
+		if (files.length > 1) {
+			this.app.error = `Drop one .dyr file at a time (${files.length} were dropped).`;
+			return;
+		}
+		const file = files[0];
+		const previous = this.dynamics.attachments[target.id];
+		if (
+			previous &&
+			typeof confirm === 'function' &&
+			!confirm(`Replace ${previous.fileName} with ${file.name} for ${target.label}?`)
+		)
+			return;
+		if (this.app.activeLocal?.id !== target.id) this.activateLocal(target);
+		this.app.mode = 'dynamics';
+		await this.dynamics.attach(target, file.name, await file.text(), this.dynamics.attachingDemo);
 	};
 
 	/** Apply co-dropped geographic data before a local case becomes active and

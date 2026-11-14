@@ -16,12 +16,23 @@
 	import ShellEnvironment from './components/ShellEnvironment.svelte';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
+	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
+	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
+	import DynamicsLegend from './components/dynamics/DynamicsLegend.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
 
 	let dragDepth = 0;
+	const dyn = ctrl.dynamics;
+	let timelineHeight = $state(0);
+	const dynamicsShown = $derived(
+		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
+	);
+	$effect(() => {
+		dyn.theme = config.theme;
+	});
 
 	// The overview and the diagram read the active case's whole operating point once per solve.
 	$effect(() => {
@@ -106,7 +117,11 @@
 <ShellEnvironment />
 <CollectionChooser />
 
-<main>
+<main
+	style:--tellegen-dock-bottom={dynamicsShown && !app.compactLayout
+		? `${timelineHeight + 24}px`
+		: undefined}
+>
 	<TellegenMap
 		onbusclick={ctrl.selectBus}
 		onlocalbusclick={ctrl.selectLocalBus}
@@ -118,6 +133,8 @@
 		onmapclick={ctrl.clearSelection}
 		theme={config.theme}
 		cartoApiKey={config.cartoApiKey || undefined}
+		dynamicsLayers={dyn.mapLayers}
+		dynamicsTooltip={dyn.tooltip}
 	/>
 
 	<AppHeader />
@@ -125,7 +142,12 @@
 	<NotificationCenter />
 	<CommandPalette />
 	<ControlPanel />
-	<SolveCard />
+	{#if app.mode !== 'dynamics'}<SolveCard />{/if}
+	{#if !app.studyView}<DynamicsPanel />{/if}
+	{#if dynamicsShown}
+		<DynamicsTimeline bind:dockHeight={timelineHeight} />
+		{#if !app.zen}<DynamicsLegend theme={config.theme} bottom={timelineHeight + 24} />{/if}
+	{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}
@@ -133,7 +155,7 @@
 		<PlacementCue />
 		{#if !app.zen}<RestoreDefaultsButton />{/if}
 	{/if}
-	{#if config.showFooter && !app.compactLayout && !app.zen}
+	{#if config.showFooter && !app.compactLayout && !app.zen && !dynamicsShown}
 		<AppFooter />
 	{/if}
 </main>

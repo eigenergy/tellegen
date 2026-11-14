@@ -37,3 +37,10 @@ export { default as McNetworkScope } from './components/McNetworkScope.svelte';
 export { default as SettingsPanel } from './components/SettingsPanel.svelte';
 
 export { default as CalculationSettings } from './components/CalculationSettings.svelte';
+export { default as DynamicsPanel } from './components/dynamics/DynamicsPanel.svelte';
+export { default as DynamicsTimeline } from './components/dynamics/DynamicsTimeline.svelte';
+export { default as DynamicsTraces } from './components/dynamics/DynamicsTraces.svelte';
+export { default as DynamicsLegend } from './components/dynamics/DynamicsLegend.svelte';
+export { default as TraceChart } from './components/dynamics/TraceChart.svelte';
+export { default as EigenPlot } from './components/dynamics/EigenPlot.svelte';
+export { default as ModeSwitch } from './components/dynamics/ModeSwitch.svelte';
