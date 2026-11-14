@@ -33,6 +33,123 @@ export function haloColor(dfHz: number, live: boolean, pal: (typeof DYN_SPEED)['
 	return [...(dfHz < 0 ? pal.under : pal.over)];
 }
 
+/** A branch row drawn open: which circuit, and how many of the parallel
+ * circuits between its buses are still in service. */
+export interface OpenBranch {
+	path: [number, number][];
+	from: number;
+	to: number;
+	/** The circuit id, or null when the view row could not be matched to one. */
+	circuit: string | null;
+	/** In-service rows between the two buses, this one included. */
+	parallel: number;
+	/** Of those, the ones still closed. */
+	live: number;
+}
+
+const pairKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+
+/** The circuit id of every view branch row: per bus pair, the view's rows in
+ * id order against the RMS case's branches ([from, to, circuit], in the
+ * network's row order). A pair whose row counts disagree gets null, never a
+ * guess. */
+export function branchCircuits(
+	branches: readonly NetworkBranch[],
+	keys: readonly (readonly [number, number, string])[]
+): (string | null)[] {
+	const circuits = new Map<string, string[]>();
+	for (const [f, t, c] of keys) {
+		const k = pairKey(f, t);
+		const list = circuits.get(k) ?? [];
+		list.push(c.trim());
+		circuits.set(k, list);
+	}
+	const rows = (live: boolean) => {
+		const m = new Map<string, number[]>();
+		branches.forEach((b, i) => {
+			if (live && !b.status) return;
+			const k = pairKey(b.from, b.to);
+			const list = m.get(k) ?? [];
+			list.push(i);
+			m.set(k, list);
+		});
+		return m;
+	};
+	const all = rows(false);
+	const live = rows(true);
+	const out: (string | null)[] = branches.map(() => null);
+	for (const [k, cs] of circuits) {
+		// The RMS case may list every row or only those in service.
+		const idx = [all.get(k) ?? [], live.get(k) ?? []].find((r) => r.length === cs.length);
+		if (!idx) continue;
+		[...idx].sort((a, b) => branches[a].id - branches[b].id).forEach((i, n) => (out[i] = cs[n]));
+	}
+	return out;
+}
+
+/** The rows of `branches` open at time `t`: tripped branches from their
+ * trip, faulted lines from their clearing. Only the circuit an event names
+ * opens; a row whose circuit is unknown opens with every event on its pair. */
+export function openBranches(
+	branches: readonly NetworkBranch[],
+	circuits: readonly (string | null)[],
+	events: readonly DynEvent[],
+	t: number
+): OpenBranch[] {
+	const opened = new Map<string, Set<string>>();
+	for (const e of events) {
+		const on =
+			(e.kind === 'branch_trip' && t >= e.at) ||
+			(e.kind === 'line_fault' && t >= e.at + e.clearAfter);
+		if (!on) continue;
+		const k = pairKey(e.from, e.to);
+		const set = opened.get(k) ?? new Set<string>();
+		set.add(e.circuit.trim());
+		opened.set(k, set);
+	}
+	if (!opened.size) return [];
+	const open: number[] = [];
+	const inService = new Map<string, number>();
+	branches.forEach((b, i) => {
+		const k = pairKey(b.from, b.to);
+		const set = opened.get(k);
+		if (!set) return;
+		if (b.status) inService.set(k, (inService.get(k) ?? 0) + 1);
+		const c = circuits[i];
+		if (c === null || set.has(c)) open.push(i);
+	});
+	const openCount = new Map<string, number>();
+	for (const i of open) {
+		const k = pairKey(branches[i].from, branches[i].to);
+		openCount.set(k, (openCount.get(k) ?? 0) + 1);
+	}
+	return open.map((i) => {
+		const b = branches[i];
+		const k = pairKey(b.from, b.to);
+		const parallel = Math.max(inService.get(k) ?? 0, openCount.get(k) ?? 0);
+		return {
+			path: b.path,
+			from: b.from,
+			to: b.to,
+			circuit: circuits[i],
+			parallel,
+			live: Math.max(0, parallel - (openCount.get(k) ?? 0))
+		};
+	});
+}
+
+/** The tooltip of an open branch row. */
+export function openBranchText(b: OpenBranch): string {
+	const name =
+		b.circuit === null
+			? `Branch ${b.from}–${b.to}`
+			: `Branch ${b.from}–${b.to} circuit ${b.circuit}`;
+	if (b.parallel <= 1) return `${name} open`;
+	if (b.circuit === null)
+		return `${name} open (its ${b.parallel} parallel circuits are drawn together)`;
+	return `${name} open; ${b.live} of ${b.parallel} parallel circuits still in service`;
+}
+
 interface UnitAt {
 	key: string;
 	omega: Float64Array | undefined;
@@ -65,6 +182,8 @@ export class DynamicsFrame {
 	readonly haloColors: Uint8Array;
 	readonly f0: number;
 	readonly branches: NetworkBranch[];
+	/** The circuit of each of {@link branches}, null where unknown. */
+	readonly circuits: (string | null)[];
 	readonly busPos: Map<number, [number, number]>;
 	frame = 0;
 	/** Per bus, the voltage at the current frame (for tooltips). */
@@ -75,7 +194,8 @@ export class DynamicsFrame {
 		readonly run: RmsRun,
 		buses: readonly NetworkBus[],
 		branches: readonly NetworkBranch[],
-		heldUnits: readonly string[]
+		heldUnits: readonly string[],
+		branchKeys: readonly (readonly [number, number, string])[] = []
 	) {
 		const placed = buses.filter((b) => run.series(`vm:${b.id}`));
 		this.n = placed.length;
@@ -87,6 +207,7 @@ export class DynamicsFrame {
 		this.vm = placed.map((b) => run.series(`vm:${b.id}`));
 		this.f0 = run.meta.base_frequency;
 		this.branches = [...branches];
+		this.circuits = branchCircuits(this.branches, branchKeys);
 		const byBus = new Map<number, UnitAt[]>();
 		for (const g of run.meta.generators) {
 			const key = g.machine_id.trim() === '1' ? String(g.bus) : `${g.bus}#${g.machine_id.trim()}`;
@@ -162,33 +283,33 @@ export class DynamicsFrame {
 		const ink: [number, number, number, number] =
 			theme === 'dark' ? [232, 238, 244, 220] : [32, 36, 43, 200];
 		const out: Layer[] = [];
-		// Tripped and opened branches, from their opening on.
-		const open = new Set<string>();
-		for (const e of events) {
-			if (e.kind === 'branch_trip' && t >= e.at) open.add(`${e.from}-${e.to}`);
-			if (e.kind === 'line_fault' && t >= e.at + e.clearAfter) open.add(`${e.from}-${e.to}`);
-		}
-		const openPaths = this.branches.filter(
-			(b) => open.has(`${b.from}-${b.to}`) || open.has(`${b.to}-${b.from}`)
-		);
-		if (openPaths.length)
+		// Tripped and opened circuits, from their opening on. A corridor with
+		// a parallel circuit still closed keeps its colour under the dash.
+		const openRows = openBranches(this.branches, this.circuits, events, t);
+		const allOpen = openRows.filter((b) => b.live === 0);
+		if (allOpen.length)
 			out.push(
-				new PathLayer<NetworkBranch>({
-					id: 'dyn-open-branches',
-					data: openPaths,
+				new PathLayer<OpenBranch>({
+					id: 'dyn-open-branches-gap',
+					data: allOpen,
 					getPath: (b) => b.path,
 					getColor: theme === 'dark' ? [20, 28, 40, 230] : [250, 249, 245, 235],
 					getWidth: 5,
 					widthUnits: 'pixels',
 					pickable: true
-				}) as unknown as Layer,
-				new PathLayer<NetworkBranch>({
-					id: 'dyn-open-branches-dash',
-					data: openPaths,
+				}) as unknown as Layer
+			);
+		if (openRows.length)
+			out.push(
+				new PathLayer<OpenBranch>({
+					id: 'dyn-open-branches',
+					data: openRows,
 					getPath: (b) => b.path,
 					getColor: ink,
-					getWidth: 1.5,
-					widthUnits: 'pixels'
+					getWidth: (b) => (b.live === 0 ? 1.5 : 2.5),
+					widthUnits: 'pixels',
+					widthMinPixels: 1.5,
+					pickable: true
 				}) as unknown as Layer
 			);
 		out.push(

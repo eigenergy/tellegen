@@ -38,7 +38,7 @@ export interface Preset {
 export const WECC240_PRESETS: Preset[] = [
 	{
 		id: 'trip-1101-1401',
-		title: 'Trip line 1101–1401 at 1 s',
+		title: 'Trip line 1101–1401 circuit 1 (of 2) at 1 s',
 		events: () => [branchTrip(1101, 1401, '1')]
 	},
 	{

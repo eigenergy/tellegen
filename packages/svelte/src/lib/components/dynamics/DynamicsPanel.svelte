@@ -137,7 +137,18 @@
 					<p class="err" role="alert">{att.error}</p>
 				{:else if ins}
 					<p data-testid="dyn-counts">{counts}</p>
-					<dl class="init">
+					{#if att.preparing}
+						<p class="dim" role="status" data-testid="dyn-preparing">
+							Initializing again with the new settings…
+						</p>
+					{:else if att.prepareError}
+						<p class="err" role="alert">{att.prepareError}</p>
+					{/if}
+					<dl class="init" aria-busy={att.preparing}>
+						{#if att.network === 'validation'}
+							<dt>Network</dt>
+							<dd data-testid="dyn-network">the validation study's loads (case-validation.raw)</dd>
+						{/if}
 						<dt>Initial residual</dt>
 						<dd>‖f(x₀)‖∞ = {(ins.initial_residual ?? 0).toExponential(1)}</dd>
 						<dt>Power flow</dt>
