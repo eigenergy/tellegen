@@ -20,6 +20,7 @@ import {
 } from '@tellegen/engine';
 import { LocalCase, type SolvableCase, type StudyDisplaySnapshot } from './state.svelte.js';
 import type { Controller } from './controller.svelte.js';
+import { AgentInputError, agentSummary, resolveAgentEvents } from './dynamics/agent.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
 import {
 	DEFAULT_OUTPUT_BUDGET,
@@ -1951,6 +1952,33 @@ async function importCaseText(
 	]);
 	const lastLogId = ctrl.app.log.entries.at(-1)?.id ?? 0;
 	ctrl.app.error = null;
+	// PSS/E dynamic data attaches to the displayed local case.
+	if (/\.dyr$/i.test(input.fileName)) {
+		const target = ctrl.app.activeLocal;
+		if (!target)
+			throw new TellegenToolError(
+				'NO_ACTIVE_CASE',
+				'Dynamic data attaches to the displayed local case. Import its .raw case first.'
+			);
+		await ctrl.ingestFiles([new File([input.text], input.fileName)]);
+		const a = ctrl.dynamics.attachments[target.id];
+		if (!a || a.status !== 'ready')
+			throw new TellegenToolError(
+				'IMPORT_FAILED',
+				clip(a?.error ?? ctrl.app.error ?? 'The dynamic data could not be attached.', 240)
+			);
+		const ins = a.inspection!;
+		return {
+			...displayedContext(ctrl),
+			attached_to: target.id,
+			machines: ins.generators.length,
+			renewable_plants: ins.plants?.length ?? 0,
+			held_units: ins.held_units?.length ?? 0,
+			voltage_sources: ins.sources.length,
+			dyr_records: ins.dyr_records,
+			notes: ins.notes.length
+		};
+	}
 	// The same path as a dropped file: PowerIO picks the reader by extension.
 	await ctrl.ingestFiles([new File([input.text], input.fileName)]);
 	await tick();
@@ -2173,6 +2201,87 @@ export function createTellegenWebMcpAdapter(
 			},
 			selectCase: (input, signal) => enqueue(() => selectCase(ctrl, input, signal))
 		},
+		simulateDynamics: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				const local = ctrl.app.studyView ? null : ctrl.app.activeLocal;
+				if (!local || local.id !== input.caseId)
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'The displayed case is not the one named. Call inspect_case before retrying.'
+					);
+				if (input.expectedRevision !== displayedRevision(ctrl))
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'The displayed case changed. Call inspect_case before retrying.'
+					);
+				const dyn = ctrl.dynamics;
+				const a = dyn.attachments[local.id];
+				if (!a || a.status !== 'ready' || !a.inspection)
+					throw new TellegenToolError(
+						'INVALID_INPUT',
+						'The displayed case has no dynamic data. Import its .dyr with import_case, or open the WECC 240 dynamics demo.'
+					);
+				let events;
+				try {
+					events = resolveAgentEvents(a.inspection, input.events);
+				} catch (e) {
+					if (e instanceof AgentInputError) throw new TellegenToolError('INVALID_INPUT', e.message);
+					throw e;
+				}
+				const saved = {
+					events: dyn.events,
+					tEnd: dyn.tEnd,
+					dt: dyn.dt,
+					options: dyn.options,
+					current: dyn.currentRunId,
+					presetId: dyn.presetId
+				};
+				dyn.events = events;
+				dyn.tEnd = input.tEndS;
+				dyn.dt = input.dtS;
+				dyn.presetId = null;
+				if (input.loadModel) dyn.setOptions({ ...dyn.options, load_model: input.loadModel });
+				ctrl.app.mode = 'dynamics';
+				const abort = () => dyn.stop();
+				signal.addEventListener('abort', abort, { once: true });
+				let record;
+				try {
+					record = await dyn.run({ agent: true });
+				} finally {
+					signal.removeEventListener('abort', abort);
+					if (!input.showInApp) {
+						dyn.events = saved.events;
+						dyn.tEnd = saved.tEnd;
+						dyn.dt = saved.dt;
+						dyn.options = saved.options;
+						dyn.presetId = saved.presetId;
+						if (saved.current !== null) dyn.select(saved.current);
+					}
+				}
+				signal.throwIfAborted();
+				if (!record)
+					throw new TellegenToolError(
+						'INVALID_INPUT',
+						clip(dyn.error ?? 'The run did not start.', 240)
+					);
+				if (!record.run)
+					return {
+						...displayedContext(ctrl),
+						verdict: 'failed',
+						failure: clip(record.failure?.message ?? 'The run failed.', 400)
+					};
+				return {
+					...displayedContext(ctrl),
+					...agentSummary(record.run, {
+						channels: input.channels,
+						tracePoints: input.tracePoints,
+						wallMs: record.wallMs,
+						loadModel: record.options.load_model ?? 'power_flow',
+						dtS: record.dt
+					})
+				};
+			}),
 		solveMulticonductorPowerFlow: (input, signal) =>
 			enqueue(async () => {
 				signal.throwIfAborted();

@@ -14,6 +14,8 @@ import type {
   QueryNetworkInput,
   ListCasesInput,
   SelectCaseInput,
+  SimulateDynamicsEvent,
+  SimulateDynamicsInput,
   SolveMulticonductorInput,
   RatingEdit,
   ResetCaseInput,
@@ -670,6 +672,7 @@ export const IMPORT_EXTENSIONS: readonly string[] = [
   "uct",
   "ucte",
   "cdf",
+  "dyr",
 ];
 const IMPORT_EXTENSION_SET = new Set(IMPORT_EXTENSIONS);
 /** Largest case text `import_case` accepts, in UTF-16 code units. */
@@ -698,4 +701,229 @@ export function validateImportCase(input: unknown): ImportCaseInput {
       `text exceeds ${MAX_IMPORT_TEXT} characters; use the file picker`,
     );
   return { fileName, text: value.text };
+}
+
+/** Traces `simulate_dynamics` may return. */
+export const DYNAMICS_CHANNEL =
+  /^(coi:f|f:\d+|vm:\d+|omega:\d+(#\w+)?|dcoi:\d+(#\w+)?|pl:\d+)$/;
+const DYN_DT = [0.001, 0.0025, 0.005] as const;
+const LOAD_MODELS = [
+  "power_flow",
+  "constant_impedance",
+  "constant_current",
+  "constant_power",
+] as const;
+
+function busNumber(value: unknown, label: string): number {
+  return integer(value, label, 0, 2 ** 31 - 1);
+}
+
+function seconds(
+  value: unknown,
+  label: string,
+  min: number,
+  max: number,
+): number {
+  const v = number(value, label);
+  if (v < min || v > max)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      `${label} must lie in [${min}, ${max}] s`,
+    );
+  return v;
+}
+
+const BRANCH_ID = /^\d+-\d+(#\w+)?$/;
+const UNIT_ID = /^\d+(#\w+)?$/;
+
+export function validateSimulateDynamics(
+  input: unknown,
+): SimulateDynamicsInput {
+  const value = object(input, "input");
+  exactKeys(
+    value,
+    [
+      "case_id",
+      "expected_revision",
+      "events",
+      "t_end_s",
+      "dt_s",
+      "load_model",
+      "channels",
+      "trace_points",
+      "show_in_app",
+    ],
+    "input",
+  );
+  const tEndS =
+    value.t_end_s === undefined
+      ? 20
+      : seconds(value.t_end_s, "t_end_s", 0.1, 60);
+  if (
+    !Array.isArray(value.events) ||
+    value.events.length < 1 ||
+    value.events.length > 16
+  )
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "events must hold 1 to 16 events",
+    );
+  const events = value.events.map((raw, k): SimulateDynamicsEvent => {
+    const label = `events[${k}]`;
+    const e = object(raw, label);
+    const atS = seconds(e.at_s, `${label}.at_s`, 0, tEndS);
+    if (atS >= tEndS)
+      throw new TellegenToolError(
+        "INVALID_INPUT",
+        `${label}.at_s must be before t_end_s`,
+      );
+    const clear = () => {
+      const c =
+        e.clear_after_s === undefined
+          ? 0.1
+          : seconds(e.clear_after_s, `${label}.clear_after_s`, 0.001, 10);
+      if (atS + c >= tEndS)
+        throw new TellegenToolError(
+          "INVALID_INPUT",
+          `${label} must clear before t_end_s`,
+        );
+      return c;
+    };
+    const branch = () => {
+      const b = string(e.branch, `${label}.branch`);
+      if (!BRANCH_ID.test(b))
+        throw new TellegenToolError(
+          "INVALID_INPUT",
+          `${label}.branch must read from-to or from-to#circuit, such as 1101-1401#1`,
+        );
+      return b;
+    };
+    switch (e.kind) {
+      case "bus_fault": {
+        exactKeys(
+          e,
+          ["kind", "bus", "at_s", "clear_after_s", "x_pu", "r_pu"],
+          label,
+        );
+        const xPu =
+          e.x_pu === undefined ? 1e-4 : number(e.x_pu, `${label}.x_pu`);
+        const rPu = e.r_pu === undefined ? 0 : number(e.r_pu, `${label}.r_pu`);
+        if (xPu < 0 || rPu < 0 || xPu + rPu <= 0)
+          throw new TellegenToolError(
+            "INVALID_INPUT",
+            `${label} needs r_pu, x_pu >= 0 and a nonzero impedance`,
+          );
+        return {
+          kind: "bus_fault",
+          bus: busNumber(e.bus, `${label}.bus`),
+          atS,
+          clearAfterS: clear(),
+          xPu,
+          rPu,
+        };
+      }
+      case "line_fault":
+        exactKeys(
+          e,
+          ["kind", "branch", "near_bus", "at_s", "clear_after_s"],
+          label,
+        );
+        return {
+          kind: "line_fault",
+          branch: branch(),
+          ...(e.near_bus === undefined
+            ? {}
+            : { nearBus: busNumber(e.near_bus, `${label}.near_bus`) }),
+          atS,
+          clearAfterS: clear(),
+        };
+      case "branch_trip":
+        exactKeys(e, ["kind", "branch", "at_s"], label);
+        return { kind: "branch_trip", branch: branch(), atS };
+      case "generator_trip": {
+        exactKeys(e, ["kind", "unit", "at_s"], label);
+        const unit = string(e.unit, `${label}.unit`);
+        if (!UNIT_ID.test(unit))
+          throw new TellegenToolError(
+            "INVALID_INPUT",
+            `${label}.unit must read bus or bus#id, such as 1431#N`,
+          );
+        return { kind: "generator_trip", unit, atS };
+      }
+      case "load_change": {
+        exactKeys(e, ["kind", "bus", "at_s", "scale"], label);
+        const scale = number(e.scale, `${label}.scale`);
+        if (scale < 0 || scale > 10)
+          throw new TellegenToolError(
+            "INVALID_INPUT",
+            `${label}.scale must lie in [0, 10]`,
+          );
+        return {
+          kind: "load_change",
+          bus: busNumber(e.bus, `${label}.bus`),
+          atS,
+          scale,
+        };
+      }
+      default:
+        throw new TellegenToolError(
+          "INVALID_INPUT",
+          `${label}.kind must be bus_fault, line_fault, branch_trip, generator_trip or load_change`,
+        );
+    }
+  });
+  const dtS = value.dt_s === undefined ? 0.0025 : number(value.dt_s, "dt_s");
+  if (!(DYN_DT as readonly number[]).includes(dtS))
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "dt_s must be 0.001, 0.0025 or 0.005",
+    );
+  let loadModel: SimulateDynamicsInput["loadModel"];
+  if (value.load_model !== undefined) {
+    if (!(LOAD_MODELS as readonly unknown[]).includes(value.load_model))
+      throw new TellegenToolError(
+        "INVALID_INPUT",
+        `load_model must be one of ${LOAD_MODELS.join(", ")}`,
+      );
+    loadModel = value.load_model as SimulateDynamicsInput["loadModel"];
+  }
+  const channels =
+    value.channels === undefined
+      ? []
+      : Array.isArray(value.channels) && value.channels.length <= 4
+        ? value.channels.map((c, k) => {
+            const ch = string(c, `channels[${k}]`);
+            if (!DYNAMICS_CHANNEL.test(ch))
+              throw new TellegenToolError(
+                "INVALID_INPUT",
+                `channels[${k}] must be coi:f, f:<bus>, vm:<bus>, omega:<unit>, dcoi:<unit> or pl:<bus>`,
+              );
+            return ch;
+          })
+        : (() => {
+            throw new TellegenToolError(
+              "INVALID_INPUT",
+              "channels must hold at most 4 channels",
+            );
+          })();
+  const tracePoints =
+    value.trace_points === undefined
+      ? 0
+      : integer(value.trace_points, "trace_points", 0, 40);
+  if (value.show_in_app !== undefined && typeof value.show_in_app !== "boolean")
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "show_in_app must be a boolean",
+    );
+  return {
+    caseId: string(value.case_id, "case_id"),
+    expectedRevision: string(value.expected_revision, "expected_revision"),
+    events,
+    tEndS,
+    dtS: dtS as SimulateDynamicsInput["dtS"],
+    ...(loadModel ? { loadModel } : {}),
+    channels,
+    tracePoints,
+    showInApp: value.show_in_app !== false,
+  };
 }

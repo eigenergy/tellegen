@@ -46,6 +46,8 @@ export type {
   ListCasesInput,
   SelectCaseInput,
   SolveMulticonductorInput,
+  SimulateDynamicsInput,
+  SimulateDynamicsEvent,
   TellegenCaseAdapter,
   TellegenFileAdapter,
   RatingEdit,
