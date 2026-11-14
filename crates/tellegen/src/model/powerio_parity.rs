@@ -208,17 +208,20 @@ fn assert_incidence_parity(name: &str, raw: &BalancedNetwork) -> usize {
 /// Hand-built stress case: non-contiguous bus numbers, bus shunts, off-nominal
 /// taps with and without phase shift, an out-of-service branch, a parallel
 /// pair, a declared isolated bus, and an unsupplied island that is dropped.
+/// The isolated bus 99 and the island bus 50 sit in the middle of the bus
+/// table, so a preparation over the unnormalized network (the SOCWR path)
+/// carries buses through a map that is neither the identity nor a prefix.
 const STRESS: &str = "\
 function mpc = stress
 mpc.version = '2';
 mpc.baseMVA = 100;
 mpc.bus = [
  10 3 0   0  0   0   1 1    0    230 1 1.1 0.9;
+ 99 4 0   0  0   0   1 1    0    115 1 1.1 0.9;
  20 1 90  30 4.5 19  1 1    0    230 1 1.1 0.9;
+ 50 1 15  5  1   3   1 1    0    115 1 1.1 0.9;
  35 2 0   0  0   -12 1 1    0    230 1 1.1 0.9;
  7  1 40  10 0   0   1 1    0    115 1 1.1 0.9;
- 99 4 0   0  0   0   1 1    0    115 1 1.1 0.9;
- 50 1 15  5  1   3   1 1    0    115 1 1.1 0.9;
  51 1 5   1  0   0   1 1    0    115 1 1.1 0.9;
 ];
 mpc.gen = [
@@ -294,6 +297,64 @@ fn instance_ybus_matches_the_pi_columns_on_the_repository_cases() {
         let instance = powerio_prob::AcOpfInstance::from_network(raw).expect("instance");
         let model = AcNetwork::from_instance(&instance).expect("ac model");
         assert_model_ybus_parity(name, &model);
+    }
+    // The cases above must reach the mapping with a map that is not a prefix
+    // of the bus table; STRESS does.
+    let raw = super::parse_matpower(STRESS).expect("parse");
+    let (_, rows) = instance_bus_rows(&raw);
+    assert!(
+        rows.iter().enumerate().any(|(dense, &row)| dense != row),
+        "STRESS map {rows:?} is a prefix"
+    );
+}
+
+/// The SOCWR workspace's view of `raw`: energized with the stated references
+/// (de-energized islands typed isolated) and not normalized, with the AC
+/// preparation's dense bus -> analysis row map over it, built the way
+/// `AcNetwork::from_instance` builds them.
+fn instance_bus_rows(raw: &BalancedNetwork) -> (BalancedNetwork, Vec<usize>) {
+    let network = energize(raw, ReferencePolicy::Stated).network(raw).clone();
+    let instance = powerio_prob::AcOpfInstance::from_network(network.clone()).expect("instance");
+    let mut assembly = powerio_matrix::AcOpfAssemblyOptions::default();
+    assembly.units = Units::PerUnit;
+    assembly.skip_zero_impedance = false;
+    assembly.synthesize_unrated_limits = true;
+    let prep = powerio_matrix::build_ac_opf_preparation(&instance, &assembly).expect("preparation");
+    (network, prep.bus_analysis_rows)
+}
+
+/// The bus index mapping, on a map that is not a prefix of the bus table.
+/// STRESS's isolated bus 99 and island bus 50 sit between carried buses, so
+/// over the unnormalized network the preparation carries rows `[0, 2, 4, 5]`.
+/// Assembled through that map, Y_bus must equal the power flow model's, which
+/// normalizes the dropped buses away first and so indexes them through the
+/// identity. A mapping that ignored the map would read the isolated bus's row
+/// as dense bus 1 and fail here.
+#[test]
+fn ybus_maps_buses_dropped_mid_table_to_the_dense_columns() {
+    let raw = super::parse_matpower(STRESS).expect("parse");
+    let (network, rows) = instance_bus_rows(&raw);
+    assert_eq!(rows, vec![0, 2, 4, 5], "STRESS map");
+    let mapped = super::ac::assemble_ybus(&network, &rows, &[]).expect("ybus");
+    let model = AcNetwork::from_network_pf(&raw).expect("ac model");
+    assert_eq!(model.bus_ids, vec![10, 20, 35, 7]);
+    let reference = model.ybus();
+    assert_eq!(
+        mapped.iter().map(|&(r, c, _)| (r, c)).collect::<Vec<_>>(),
+        reference
+            .iter()
+            .map(|&(r, c, _)| (r, c))
+            .collect::<Vec<_>>(),
+        "sparsity pattern"
+    );
+    for (&(r, c, value), &(_, _, expected)) in mapped.iter().zip(reference) {
+        // Shunt diagonals scale by `* (1 / baseMVA)` here and `/ baseMVA` in
+        // the normalized network, so they may differ by an ulp.
+        let scale = value.norm().max(expected.norm());
+        assert!(
+            (value - expected).norm() <= 1e-12 * scale,
+            "({r}, {c}): mapped {value:e} vs power flow {expected:e}"
+        );
     }
 }
 

@@ -249,7 +249,7 @@ fn extra_reference_diagnostic(bus_ids: &[usize], extra: &[usize]) -> Option<Solv
 /// Every bus keeps a diagonal entry, zero when nothing stamps it. PowerIO prunes
 /// exact zeros, but the polar Jacobian's diagonal terms carry `conj(I_i)` even
 /// when `Y_ii` cancels to zero, so the position must stay.
-fn assemble_ybus(
+pub(super) fn assemble_ybus(
     network: &BalancedNetwork,
     bus_analysis_rows: &[usize],
     suppressed_rows: &[usize],
