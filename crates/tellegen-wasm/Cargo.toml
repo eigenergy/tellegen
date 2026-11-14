@@ -47,6 +47,16 @@ synth = ["sensitivity", "dep:tellegen-synth"]
 # builds without it keep standalone imports and report the capability as
 # unavailable.
 powerio-collections = ["sensitivity", "powerio-012"]
+# RMS dynamic simulation (`RmsCase`): prepared cases, display runs with
+# screening, packed into flat buffers.
+rms = ["sensitivity", "tellegen/rms"]
+# The experimental RMS tools: small-signal modes, default dynamics, DYR
+# parameters. The app shows them behind its experimental switch.
+rms-experimental = ["rms", "tellegen/rms-experimental"]
+
+[[test]]
+name = "rms_buffers"
+required-features = ["rms"]
 
 [lints]
 workspace = true
