@@ -186,9 +186,15 @@ fn trajectories_do_not_depend_on_the_system_base() {
         let d = max_diff(&a.channels[key], &b.channels[key]);
         assert!(d < 1e-8, "{key}: {d:e}");
     }
+    // pe is on the system base, so the restated run reports it 2.5 times
+    // smaller: compare relative to its size, since the Newton tolerance
+    // on that base scales the absolute rounding with it.
     let pe_b: Vec<f64> = b.channels["pe:102"].iter().map(|p| p * 2.5).collect();
+    let scale = a.channels["pe:102"]
+        .iter()
+        .fold(1.0_f64, |m, p| m.max(p.abs()));
     let d = max_diff(&a.channels["pe:102"], &pe_b);
-    assert!(d < 1e-8, "pe: {d:e}");
+    assert!(d < 1e-8 * scale, "pe: {d:e} (scale {scale})");
     // On the machine base the torque balances the power at rest, less the
     // stator loss: tm (MBASE) = pe (Sbase) · Sbase / MBASE + R |I|².
     let mbase = a.generators[0].mbase;
