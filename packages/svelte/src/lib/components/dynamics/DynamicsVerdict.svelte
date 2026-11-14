@@ -1,6 +1,12 @@
 <script lang="ts">
 	import type { DynRunRecord } from '../../dynamics/controller.svelte.js';
-	import { announcement, headline, rows, SCREENING_DISCLAIMER } from '../../dynamics/verdict.js';
+	import {
+		announcement,
+		headline,
+		rows,
+		SCREENING_CAVEAT,
+		SCREENING_DISCLAIMER
+	} from '../../dynamics/verdict.js';
 
 	let { record, experimental = false }: { record: DynRunRecord; experimental?: boolean } = $props();
 	const s = $derived(record.run?.screening ?? null);
@@ -16,6 +22,7 @@
 		<span data-testid="dyn-verdict-word">{h.word}</span>
 		{#if h.detail && !record.failure}<span class="detail">{h.detail}</span>{/if}
 	</h3>
+	{#if s}<p class="caveat" data-testid="dyn-caveat">{SCREENING_CAVEAT}</p>{/if}
 	<div class="badges">
 		{#if record.badge}
 			<span
@@ -29,6 +36,9 @@
 					>){/if}</span
 			>
 		{/if}
+		{#if record.network === 'validation'}<span class="badge" data-testid="dyn-network"
+				>Network: WECC 240 with the validation study's loads</span
+			>{/if}
 		{#if record.agent}<span class="badge agent">Run by the agent</span>{/if}
 		{#if experimental}<span class="pill-experimental">Experimental</span>{/if}
 	</div>
@@ -61,9 +71,10 @@
 		<details>
 			<summary>How this is computed</summary>
 			<p>{SCREENING_DISCLAIMER}</p>
-			{#if s.frequency.nominal_hz === 60}<p>
-					WECC's first UFLS stage is 59.5 Hz; UFLS is not modelled.
-				</p>{/if}
+			<p>
+				No under-frequency load shedding is modelled; the 59.5 Hz line on the frequency chart is an
+				illustrative reference, not a regional UFLS setting.
+			</p>
 			<p>
 				Centre of inertia: machines weighted by H · MBASE, a tripped machine left out from its trip,
 				each island on its own. Bus frequency is estimated from the bus angle (20 ms filter), with
@@ -179,6 +190,11 @@
 	pre {
 		font-size: var(--fs-meta);
 		overflow-x: auto;
+	}
+	.caveat {
+		margin: 0;
+		font-size: var(--fs-control);
+		color: var(--text-secondary);
 	}
 	.dim {
 		color: var(--text-tertiary);

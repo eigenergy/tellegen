@@ -73,6 +73,27 @@ export function failureTime(message: string): number | null {
 	return m ? Number(m[1]) : null;
 }
 
+/** The swing trend in plain words, after a `; `. */
+function trendWords(
+	trend: RmsScreening['angle']['trend'],
+	verdict: RmsScreening['verdict']
+): string {
+	switch (trend) {
+		case 'decaying':
+			return '; swings decaying';
+		case 'damped_out':
+			return '; swings damped out';
+		case 'growing':
+			return verdict === 'stable'
+				? '; swings growing at the end, extend the run to confirm'
+				: '; swings growing';
+		case 'undetermined':
+			return '; swing trend: too few large swing peaks to tell';
+		default:
+			return '';
+	}
+}
+
 /** The rows under the headline. */
 export function rows(s: RmsScreening): DynRow[] {
 	const c = s.criteria;
@@ -82,19 +103,25 @@ export function rows(s: RmsScreening): DynRow[] {
 	const slip = a.pole_slips[0];
 	const out: DynRow[] = [
 		{
-			metric: 'First swing',
+			metric: 'Pole slip',
 			value: slip
 				? `unit ${slip.unit} slips at ${sec(slip.t)}`
-				: a.first_swing_unit
-					? `${deg(a.first_swing_deg)} (unit ${a.first_swing_unit})`
-					: '–',
+				: `largest |δ − δ_COI| ${deg(a.max_coi_angle_deg)}${a.max_coi_angle_unit ? ` (unit ${a.max_coi_angle_unit}, ${sec(a.max_coi_angle_t)})` : ''}`,
 			criterion: `no machine past ±${c.pole_slip_deg}° from its centre of inertia`,
 			status: a.pole_slips.length ? '✗' : '✓'
 		},
 		{
+			metric: 'First swing',
+			value: a.first_swing_unit ? `${deg(a.first_swing_deg)} (unit ${a.first_swing_unit})` : '–',
+			criterion:
+				'reported; largest excursion of δ − δ_COI from its value before the first event, to its first peak after the last event',
+			status: '–'
+		},
+		{
 			metric: 'Max angle separation',
-			value: `${deg(a.max_separation_deg)}${a.pair.length === 2 ? ` (${a.pair[0]} – ${a.pair[1]}, ${sec(a.separation_t)})` : ''}${a.trend ? `; ${a.trend}` : ''}`,
-			criterion: 'reported; trend over the last 3 swing peaks',
+			value: `${deg(a.max_separation_deg)}${a.pair.length === 2 ? ` (${a.pair[0]} – ${a.pair[1]}, ${sec(a.separation_t)})` : ''}${a.initial_separation_deg != null ? `; ${deg(a.initial_separation_deg)} before the event` : ''}${trendWords(a.trend, s.verdict)}`,
+			criterion:
+				'reported; largest δmax − δmin from the first event on, against the steady-state spread before it',
 			status: '–'
 		},
 		{
@@ -112,7 +139,7 @@ export function rows(s: RmsScreening): DynRow[] {
 		{
 			metric: 'Settling',
 			value: f.settled && a.settled ? `settled at ${hz(f.final_hz)}` : 'not settled',
-			criterion: `COI within ±${c.settle_frequency_hz} Hz and separation within ±${c.settle_angle_deg}° over the last ${c.settle_window_s} s`,
+			criterion: `over the last ${c.settle_window_s} s, COI frequency stays within ${c.settle_frequency_hz} Hz of its final value and separation within ${c.settle_angle_deg}° of its final value`,
 			status: f.settled && a.settled ? '✓' : '✗'
 		},
 		{
@@ -139,8 +166,12 @@ export function rows(s: RmsScreening): DynRow[] {
 export function announcement(s: RmsScreening | null, tEnd?: number): string {
 	const h = headline(s, null, tEnd);
 	if (!s) return h.word;
-	return `${h.word}. COI frequency nadir ${hz(s.frequency.coi_nadir_hz, 2)} at ${sec(s.frequency.nadir_t)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
+	return `${h.word}. COI frequency nadir ${hz(s.frequency.coi_nadir_hz)} at ${sec(s.frequency.nadir_t)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
 }
+
+/** The one line under every verdict: what it does not prove. */
+export const SCREENING_CAVEAT =
+	"Screening by tellegen's criteria; no protection, UFLS or motor loads. Not a planning assessment.";
 
 /** The fixed disclaimer of the screening. */
 export const SCREENING_DISCLAIMER =

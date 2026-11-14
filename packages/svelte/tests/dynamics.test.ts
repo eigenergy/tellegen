@@ -213,6 +213,7 @@ describe('dynamics verdict wording', () => {
 	it('states every row with its criterion', () => {
 		const r = rows(screening());
 		expect(r.map((x) => x.metric)).toEqual([
+			'Pole slip',
 			'First swing',
 			'Max angle separation',
 			'Frequency nadir',
@@ -220,11 +221,31 @@ describe('dynamics verdict wording', () => {
 			'Settling',
 			'Voltage recovery'
 		]);
-		expect(r[2].value).toBe('59.842 Hz at 4.21 s (COI)');
+		expect(r[3].value).toBe('59.842 Hz at 4.21 s (COI)');
+		// The value compared with the ±180° criterion is |δ − δ_COI|, not the
+		// first swing.
 		expect(r[0].status).toBe('✓');
+		expect(r[0].value).toContain('40.0°');
+		expect(r[1].status).toBe('–');
 		expect(announcement(screening())).toBe(
-			'Stable. COI frequency nadir 59.84 Hz at 4.21 s; lowest voltage 0.41 pu.'
+			'Stable. COI frequency nadir 59.842 Hz at 4.21 s; lowest voltage 0.41 pu.'
 		);
+		// A 5 mHz dip is not announced as 60.00 Hz.
+		const s = screening();
+		expect(announcement({ ...s, frequency: { ...s.frequency, coi_nadir_hz: 59.995 } })).toContain(
+			'59.995 Hz'
+		);
+	});
+
+	it('words the separation against its start and the trend in plain words', () => {
+		const s = screening();
+		const sep = (angle: Partial<RmsScreening['angle']>, verdict = s.verdict) =>
+			rows({ ...s, verdict, angle: { ...s.angle, ...angle } })[2].value;
+		expect(sep({ initial_separation_deg: 86.1 })).toContain('86.1° before the event');
+		expect(sep({ trend: 'undetermined' })).toContain('too few large swing peaks');
+		expect(sep({ trend: 'damped_out' })).toContain('damped out');
+		expect(sep({ trend: 'growing' })).toContain('extend the run to confirm');
+		expect(rows(s)[5].criterion).toContain('of its final value');
 	});
 });
 

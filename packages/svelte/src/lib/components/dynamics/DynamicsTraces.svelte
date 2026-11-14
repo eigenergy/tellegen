@@ -142,7 +142,7 @@
 						label: 'range of all bus frequencies'
 					},
 					refLines:
-						f0 === 60 ? [{ value: 59.5, label: '59.5 Hz (UFLS stage 1, not modelled)' }] : [],
+						f0 === 60 ? [{ value: 59.5, label: '59.5 Hz (illustrative; UFLS not modelled)' }] : [],
 					unit: 'Hz',
 					summary: `Frequency: COI nadir ${s.frequency.coi_nadir_hz.toFixed(3)} Hz at ${s.frequency.nadir_t.toFixed(2)} s; ends at ${s.frequency.final_hz.toFixed(3)} Hz`
 				};

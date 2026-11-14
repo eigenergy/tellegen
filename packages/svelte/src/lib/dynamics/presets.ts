@@ -59,7 +59,7 @@ export const WECC240_PRESETS: Preset[] = [
 ];
 
 export const VALIDATED_CLAIM =
-	'Validated scenario: matches PowerSimulationsDynamics.jl 0.16.2 within 3.2e-6 pu speed, 1.2e-5 pu |V|';
+	'Validated scenario: trajectories match PowerSimulationsDynamics.jl 0.16.2 within 3.2e-6 pu speed, 1.2e-5 pu |V|';
 
 const sameOptions = (o: RmsCaseOptions): string[] => {
 	const diff: string[] = [];
