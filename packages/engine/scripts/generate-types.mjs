@@ -533,3 +533,4 @@ if (check) {
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, generated);
 }
+import "./generate-rms-types.mjs";
