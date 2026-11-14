@@ -94,8 +94,9 @@ function trendWords(
 	}
 }
 
-/** The rows under the headline. */
-export function rows(s: RmsScreening): DynRow[] {
+/** The rows under the headline. `events` is how many events the run
+ * applied: with none, nothing is "after the event". */
+export function rows(s: RmsScreening, events = 1): DynRow[] {
 	const c = s.criteria;
 	const f = s.frequency;
 	const a = s.angle;
@@ -126,7 +127,10 @@ export function rows(s: RmsScreening): DynRow[] {
 		},
 		{
 			metric: 'Frequency nadir',
-			value: `${hz(f.coi_nadir_hz)} at ${sec(f.nadir_t)} (COI)`,
+			value:
+				events > 0
+					? `${hz(f.coi_nadir_hz)} at ${sec(f.nadir_t)} (COI)`
+					: `${hz(f.coi_nadir_hz)} (COI); no events`,
 			criterion: `reported; lowest bus ${hz(f.lowest_bus_hz)}${f.lowest_bus != null ? ` at ${f.lowest_bus}` : ''}, lowest unit ${hz(f.lowest_unit_hz)}${f.lowest_unit ? ` (${f.lowest_unit})` : ''}`,
 			status: '–'
 		},
@@ -147,7 +151,9 @@ export function rows(s: RmsScreening): DynRow[] {
 			value:
 				v.recovered_s == null
 					? `not recovered; lowest ${v.min_pu.toFixed(3)} pu`
-					: `${sec(v.recovered_s)} after the last event; lowest ${v.min_pu.toFixed(3)} pu${v.min_bus != null ? ` at ${v.min_bus}` : ''}`,
+					: events === 0
+						? `no events; lowest ${v.min_pu.toFixed(3)} pu${v.min_bus != null ? ` at ${v.min_bus}` : ''}`
+						: `${sec(v.recovered_s)} after the last event; lowest ${v.min_pu.toFixed(3)} pu${v.min_bus != null ? ` at ${v.min_bus}` : ''}`,
 			criterion: `every bus ≥ ${c.voltage_recovery_pu} pu within ${c.voltage_recovery_s} s; final ${v.final_min_pu.toFixed(3)}–${v.final_max_pu.toFixed(3)} pu`,
 			status: v.recovered ? '✓' : '✗'
 		}
@@ -163,9 +169,11 @@ export function rows(s: RmsScreening): DynRow[] {
 }
 
 /** The one sentence a screen reader hears once per run. */
-export function announcement(s: RmsScreening | null, tEnd?: number): string {
+export function announcement(s: RmsScreening | null, tEnd?: number, events = 1): string {
 	const h = headline(s, null, tEnd);
 	if (!s) return h.word;
+	if (events === 0)
+		return `${h.word}. No events applied; lowest COI frequency ${hz(s.frequency.coi_nadir_hz)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
 	return `${h.word}. COI frequency nadir ${hz(s.frequency.coi_nadir_hz)} at ${sec(s.frequency.nadir_t)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
 }
 

@@ -247,6 +247,16 @@ describe('dynamics verdict wording', () => {
 		expect(sep({ trend: 'growing' })).toContain('extend the run to confirm');
 		expect(rows(s)[5].criterion).toContain('of its final value');
 	});
+
+	it('says nothing is after an event when the run had none', () => {
+		const s = screening();
+		const r = rows(s, 0);
+		expect(r[3].value).toBe('59.842 Hz (COI); no events');
+		expect(r[6].value).toBe('no events; lowest 0.410 pu at 1101');
+		expect(announcement(s, 20, 0)).toBe(
+			'Stable. No events applied; lowest COI frequency 59.842 Hz; lowest voltage 0.41 pu.'
+		);
+	});
 });
 
 describe('notes and decimation', () => {

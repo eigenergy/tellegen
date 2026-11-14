@@ -11,8 +11,8 @@
 	let { record, experimental = false }: { record: DynRunRecord; experimental?: boolean } = $props();
 	const s = $derived(record.run?.screening ?? null);
 	const h = $derived(headline(s, record.failure, record.tEnd));
-	const table = $derived(s ? rows(s) : []);
-	const said = $derived(announcement(s, record.tEnd));
+	const table = $derived(s ? rows(s, record.events.length) : []);
+	const said = $derived(announcement(s, record.tEnd, record.events.length));
 </script>
 
 <section class="verdict" aria-labelledby="dyn-verdict-h" data-testid="dyn-verdict">
