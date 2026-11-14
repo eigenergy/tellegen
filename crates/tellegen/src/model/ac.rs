@@ -27,6 +27,14 @@ use crate::api::SolveDiagnostic;
 
 const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
 
+/// Whether a branch with series admittance `g + j b` is a near-ideal jumper
+/// whose terminal charging the model suppresses (Tellegen's CATS stability
+/// policy): `|z|^2 = 1 / (g^2 + b^2)` at most [`NEAR_ZERO_IMPEDANCE_SQUARED`].
+pub(super) fn suppresses_terminal_charging(g: f64, b: f64) -> bool {
+    let admittance_squared = g * g + b * b;
+    admittance_squared > 0.0 && admittance_squared.recip() <= NEAR_ZERO_IMPEDANCE_SQUARED
+}
+
 /// AC network data in the vectorized pi-model admittance form.
 ///
 /// Each branch contributes the standard pi-model stamp built from its series
@@ -752,11 +760,7 @@ impl AcNetwork {
             .g
             .iter()
             .zip(&branches.b)
-            .map(|(&g, &b)| {
-                let admittance_squared = g * g + b * b;
-                admittance_squared > 0.0
-                    && admittance_squared.recip() <= NEAR_ZERO_IMPEDANCE_SQUARED
-            })
+            .map(|(&g, &b)| suppresses_terminal_charging(g, b))
             .collect();
         let g = branches.g;
         let b = branches.b;

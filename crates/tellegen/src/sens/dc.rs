@@ -264,8 +264,11 @@ fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
 }
 
 /// Per-bus incidence list `(branch, sign)` with `+1` at the from-bus and `-1` at
-/// the to-bus — the columns of the incidence matrix `A`.
-fn incidence_by_bus(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
+/// the to-bus — the columns of the incidence matrix `A`. A transpose of
+/// PowerIO's preparation endpoint columns; `DcOperators::calc_incidence_matrix`
+/// returns the same entries (checked in `model::powerio_parity`) but builds the
+/// whole DC operator set to get them.
+pub(crate) fn incidence_by_bus(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
     let mut inc = vec![Vec::new(); dc.n];
     for e in 0..dc.m {
         inc[dc.br_from[e]].push((e, 1.0));

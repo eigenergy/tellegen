@@ -30,6 +30,8 @@ mod dc;
 pub(crate) mod islands;
 #[cfg(feature = "sensitivity")]
 pub(crate) mod load_voltage;
+#[cfg(all(test, feature = "sensitivity"))]
+mod powerio_parity;
 
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
