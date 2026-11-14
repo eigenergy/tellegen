@@ -1088,6 +1088,11 @@ function createFileTools(
             maxLength: MAX_IMPORT_TEXT_LENGTH,
             description: "Complete file text.",
           },
+          replace_dynamics: {
+            type: "boolean",
+            description:
+              "For .dyr text only: replace the dynamic data the displayed case already has. Without it, a case that has dynamic data refuses a second .dyr; ask the user first.",
+          },
         },
         ["file_name", "text"],
       ),

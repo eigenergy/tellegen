@@ -680,7 +680,7 @@ export const MAX_IMPORT_TEXT = 4_000_000;
 
 export function validateImportCase(input: unknown): ImportCaseInput {
   const value = object(input, "input");
-  exactKeys(value, ["file_name", "text"], "input");
+  exactKeys(value, ["file_name", "text", "replace_dynamics"], "input");
   const fileName = string(value.file_name, "file_name");
   const extension = /\.([A-Za-z0-9]+)$/.exec(fileName)?.[1]?.toLowerCase();
   if (/[/\\\u0000-\u001f]/.test(fileName) || !extension)
@@ -700,7 +700,24 @@ export function validateImportCase(input: unknown): ImportCaseInput {
       "INVALID_INPUT",
       `text exceeds ${MAX_IMPORT_TEXT} characters; use the file picker`,
     );
-  return { fileName, text: value.text };
+  if (
+    value.replace_dynamics !== undefined &&
+    typeof value.replace_dynamics !== "boolean"
+  )
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "replace_dynamics must be a boolean",
+    );
+  if (value.replace_dynamics !== undefined && extension !== "dyr")
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      "replace_dynamics applies to .dyr text only",
+    );
+  return {
+    fileName,
+    text: value.text,
+    replaceDynamics: value.replace_dynamics === true,
+  };
 }
 
 /** Traces `simulate_dynamics` may return. */

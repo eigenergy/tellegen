@@ -192,6 +192,8 @@ export interface ExportCaseInput {
 export interface ImportCaseInput {
   fileName: string;
   text: string;
+  /** For .dyr text: replace dynamic data the displayed case already has. */
+  replaceDynamics: boolean;
 }
 
 /** One target `export_case` can write. `token` is the PowerIO format token. */

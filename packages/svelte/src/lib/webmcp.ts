@@ -1960,9 +1960,24 @@ async function importCaseText(
 				'NO_ACTIVE_CASE',
 				'Dynamic data attaches to the displayed local case. Import its .raw case first.'
 			);
-		await ctrl.ingestFiles([new File([input.text], input.fileName)]);
+		if (!target.studyInputJson)
+			throw new TellegenToolError(
+				'NO_ACTIVE_CASE',
+				`${target.label} has no network to simulate. Import its .raw case first.`
+			);
+		// Never a modal in the middle of a tool call: replacing the user's
+		// dynamic data takes an explicit flag, after asking them.
+		const previous = ctrl.dynamics.attachments[target.id];
+		if (previous && !input.replaceDynamics)
+			throw new TellegenToolError(
+				'DYNAMICS_ATTACHED',
+				`${target.label} already has dynamic data (${previous.fileName}). Ask the user, then call import_case again with replace_dynamics: true.`
+			);
+		ctrl.app.mode = 'dynamics';
+		await ctrl.dynamics.attach(target, input.fileName, input.text);
 		const a = ctrl.dynamics.attachments[target.id];
-		if (!a || a.status !== 'ready')
+		// The attachment must be this file, not one that was there before.
+		if (!a || a.text !== input.text || a.fileName !== input.fileName || a.status !== 'ready')
 			throw new TellegenToolError(
 				'IMPORT_FAILED',
 				clip(a?.error ?? ctrl.app.error ?? 'The dynamic data could not be attached.', 240)
@@ -2222,6 +2237,15 @@ export function createTellegenWebMcpAdapter(
 						'INVALID_INPUT',
 						'The displayed case has no dynamic data. Import its .dyr with import_case, or open the WECC 240 dynamics demo.'
 					);
+				// One RMS worker: refuse rather than queue behind (or overwrite) the
+				// user's own run or modes.
+				if (dyn.running || dyn.modesBusy)
+					throw new TellegenToolError(
+						'BUSY',
+						dyn.running
+							? 'A dynamics run is in progress in the app. Wait for it to finish, then retry.'
+							: 'The app is computing small-signal modes. Wait for them to finish, or ask the user to stop them, then retry.'
+					);
 				let events;
 				try {
 					events = resolveAgentEvents(a.inspection, input.events);
@@ -2257,6 +2281,7 @@ export function createTellegenWebMcpAdapter(
 						dyn.options = saved.options;
 						dyn.presetId = saved.presetId;
 						if (saved.current !== null) dyn.select(saved.current);
+						else dyn.currentRunId = null;
 					}
 				}
 				signal.throwIfAborted();

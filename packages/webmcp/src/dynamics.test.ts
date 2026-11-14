@@ -86,4 +86,22 @@ describe("simulate_dynamics input", () => {
         .fileName,
     ).toBe("wecc.dyr");
   });
+
+  it("import_case replaces dynamic data only when asked, and only for .dyr", () => {
+    const dyr = { file_name: "wecc.dyr", text: "1 'GENCLS' 1 3 0 /" };
+    expect(validateImportCase(dyr).replaceDynamics).toBe(false);
+    expect(
+      validateImportCase({ ...dyr, replace_dynamics: true }).replaceDynamics,
+    ).toBe(true);
+    expect(() =>
+      validateImportCase({ ...dyr, replace_dynamics: "yes" }),
+    ).toThrow(/boolean/);
+    expect(() =>
+      validateImportCase({
+        file_name: "case14.m",
+        text: "mpc = struct;",
+        replace_dynamics: true,
+      }),
+    ).toThrow(/\.dyr/);
+  });
 });
