@@ -1,5 +1,5 @@
 // Generated from Rust by rms_schema and generate-rms-types.mjs.
-// Source SHA256: a9600ab7abb5c6f2c27c07df1de98457dde7346708dabe7cee407c32fe1ba4c5
+// Source SHA256: db879ac156cc35cce7fb45b6fc34808dea345fcfea11dac5df8625f9eca0ab47
 
 /** Rotor angle figures, degrees. */
 export type AngleScreen = { "first_swing_deg": number; "first_swing_unit"?: string | null; "initial_separation_deg"?: number; "max_coi_angle_deg": number; "max_coi_angle_t": number; "max_coi_angle_unit"?: string | null; "max_separation_deg": number; "pair": Array<string>; "pole_slips": Array<PoleSlip>; "separation_t": number; "settled": boolean; "trend"?: (SwingTrend) | (null); };
@@ -71,7 +71,7 @@ export type ScreeningVerdict = ("stable") | ("loss_of_synchronism") | ("island_r
  * the peaks of its distance to its final value. Only peaks above
  * [`TREND_FLOOR_DEG`] and above [`TREND_FLOOR_FRACTION`] of the largest
  * distance count: smaller wiggles are numerical, not swings. */
-export type SwingTrend = ("decaying") | ("growing") | ("damped_out") | ("undetermined");
+export type SwingTrend = ("decaying") | ("growing") | ("damped_out") | ("sustained") | ("undetermined");
 
 /** Bus voltage figures, pu. */
 export type VoltageScreen = { "final_max_pu": number; "final_min_pu": number; "last_event_t": number; "min_bus"?: number | null; "min_pu": number; "min_t": number; "recovered": boolean; "recovered_s"?: number | null; };

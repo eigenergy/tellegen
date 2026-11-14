@@ -11,13 +11,27 @@ import {
 	lineFault,
 	type DynEvent
 } from './events.js';
-import { coiRelativeDeg, valueAt } from './series.js';
+import { MAX_TRACE_SAMPLES } from '@tellegen/webmcp';
+import { coiRelativeDeg } from './series.js';
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type AgentEvent =
-	| { kind: 'bus_fault'; bus: number; atS: number; clearAfterS: number; xPu: number; rPu: number }
-	| { kind: 'line_fault'; branch: string; nearBus?: number; atS: number; clearAfterS: number }
+	| {
+			kind: 'bus_fault';
+			bus: number;
+			atS: number;
+			clearAfterS: number;
+			xPu: number;
+			rPu: number;
+	  }
+	| {
+			kind: 'line_fault';
+			branch: string;
+			nearBus?: number;
+			atS: number;
+			clearAfterS: number;
+	  }
 	| { kind: 'branch_trip'; branch: string; atS: number }
 	| { kind: 'generator_trip'; unit: string; atS: number }
 	| { kind: 'load_change'; bus: number; atS: number; scale: number };
@@ -112,6 +126,10 @@ export function resolveAgentEvents(ins: RmsInspection, events: readonly AgentEve
 
 const r = (v: number | null | undefined, digits = 5): number | null =>
 	v == null || !Number.isFinite(v) ? null : Number(v.toPrecision(digits));
+/** A time, s, as the traces give it: to 0.1 ms, so a sample's time and a
+ * screening figure's time compare equal. */
+const ts = (t: number | null | undefined): number | null =>
+	t == null || !Number.isFinite(t) ? null : Number(t.toFixed(4));
 
 /** One trace for an agent: `coi:f`, `f:`, `vm:`, `omega:`, `dcoi:` (degrees
  * from the COI) or `pl:` (MW). */
@@ -124,7 +142,75 @@ function trace(run: RmsRun, key: string): ArrayLike<number> | undefined {
 	return run.series(key);
 }
 
-/** The compact summary `simulate_dynamics` returns. */
+/** The indices of at most `n` samples of `d` (over `time`) that keep its
+ * shape: its lowest and highest finite samples first, then the samples
+ * around each event time (the last one at or before it and the first one
+ * after), the ends, and then the lowest and highest sample of each of as
+ * many equal time buckets as fit (M4-style). Sorted, without repeats. */
+export function decimate(
+	time: ArrayLike<number>,
+	d: ArrayLike<number>,
+	n: number,
+	eventTimes: readonly number[] = []
+): number[] {
+	const len = Math.min(time.length, d.length);
+	if (len === 0 || n <= 0) return [];
+	const extrema = (lo: number, hi: number): number[] => {
+		let iMin = -1;
+		let iMax = -1;
+		for (let i = lo; i < hi; i++) {
+			const v = d[i];
+			if (!Number.isFinite(v)) continue;
+			if (iMin < 0 || v < d[iMin]) iMin = i;
+			if (iMax < 0 || v > d[iMax]) iMax = i;
+		}
+		return iMin < 0 ? [] : [iMin, iMax];
+	};
+	const tol = 1e-9;
+	const firstAfter = (t: number): number => {
+		let lo = 0;
+		let hi = len;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (time[mid] <= t + tol) lo = mid + 1;
+			else hi = mid;
+		}
+		return lo;
+	};
+	const must: number[] = [...extrema(0, len)];
+	for (const te of [...eventTimes].sort((a, b) => a - b)) {
+		const k = firstAfter(te);
+		if (k > 0) must.push(k - 1);
+		if (k < len) must.push(k);
+	}
+	must.push(0, len - 1);
+	const kept = [...new Set(must)].slice(0, n);
+	if (kept.length >= n) return kept.sort((a, b) => a - b);
+	const t0 = time[0];
+	const span = time[len - 1] - t0;
+	let best = kept;
+	for (let buckets = 1; buckets <= n; buckets++) {
+		const pick = new Set(kept);
+		let lo = 0;
+		for (let b = 1; b <= buckets; b++) {
+			const hi = b === buckets ? len : firstAfter(t0 + (span * b) / buckets - 2 * tol);
+			for (const i of extrema(lo, Math.max(lo, hi))) pick.add(i);
+			lo = Math.max(lo, hi);
+		}
+		if (pick.size > n) {
+			// Fill the last slots from the finer grid, earliest first.
+			const extra = [...pick].filter((i) => !best.includes(i)).sort((a, b) => a - b);
+			best = [...best, ...extra.slice(0, n - best.length)];
+			break;
+		}
+		best = [...pick];
+	}
+	return best.sort((a, b) => a - b);
+}
+
+/** The compact summary `simulate_dynamics` returns. `budget` is the most
+ * characters its JSON may take: traces shrink (fewer samples each, then
+ * fewer channels) until it fits, and `traces_truncated` says so. */
 export function agentSummary(
 	run: RmsRun,
 	opts: {
@@ -133,6 +219,7 @@ export function agentSummary(
 		wallMs: number;
 		loadModel: string;
 		dtS: number;
+		budget?: number;
 	}
 ): Record<string, JsonValue> {
 	const s = run.screening;
@@ -144,7 +231,7 @@ export function agentSummary(
 		frequency: {
 			nominal_hz: s.frequency.nominal_hz,
 			coi_nadir_hz: r(s.frequency.coi_nadir_hz),
-			nadir_t_s: r(s.frequency.nadir_t, 4),
+			nadir_t_s: ts(s.frequency.nadir_t),
 			max_rocof_hz_s: r(s.frequency.max_rocof_hz_s, 3),
 			final_hz: r(s.frequency.final_hz),
 			settled: s.frequency.settled,
@@ -158,7 +245,7 @@ export function agentSummary(
 			trend: s.angle.trend ?? null
 		},
 		voltage: {
-			min_pu: r(s.voltage.min_pu, 4),
+			min_pu: r(s.voltage.min_pu),
 			min_bus: s.voltage.min_bus ?? null,
 			recovered_s: r(s.voltage.recovered_s, 3)
 		},
@@ -174,15 +261,38 @@ export function agentSummary(
 			load_model: opts.loadModel
 		}
 	};
-	if (opts.tracePoints > 0 && opts.channels.length) {
-		const n = opts.tracePoints;
-		const t = Array.from({ length: n }, (_, k) => r((tEnd * k) / Math.max(1, n - 1), 4)!);
-		const traces: Record<string, (number | null)[]> = { t_s: t };
-		for (const key of opts.channels) {
-			const d = trace(run, key);
-			if (d) traces[key] = t.map((x) => r(valueAt(run.time, d, x), 5));
+	if (opts.tracePoints <= 0 || !opts.channels.length) return out;
+	const data = opts.channels
+		.map((key) => ({ key, d: trace(run, key) }))
+		.filter((c): c is { key: string; d: ArrayLike<number> } => c.d !== undefined);
+	if (!data.length) return out;
+	const eventTimes = (run.request?.events ?? []).map((e) => e.time);
+	const build = (channels: typeof data, n: number) => {
+		const traces: Record<string, JsonValue> = {};
+		for (const { key, d } of channels) {
+			const idx = decimate(run.time, d, n, eventTimes);
+			traces[key] = {
+				t_s: idx.map((i) => ts(run.time[i])),
+				v: idx.map((i) => r(d[i]))
+			};
 		}
-		out.traces = traces;
+		return traces;
+	};
+	const budget = opts.budget ?? Infinity;
+	const fits = (extra: Record<string, JsonValue>) =>
+		JSON.stringify({ ...out, ...extra }).length <= budget;
+	let n = Math.min(opts.tracePoints, Math.floor(MAX_TRACE_SAMPLES / data.length) || 1);
+	let channels = data;
+	let truncated = n < opts.tracePoints;
+	for (;;) {
+		const traces = build(channels, n);
+		const extra: Record<string, JsonValue> = truncated
+			? { traces, traces_truncated: true }
+			: { traces };
+		if (fits(extra)) return { ...out, ...extra };
+		truncated = true;
+		if (n > 2) n--;
+		else if (channels.length > 1) channels = channels.slice(0, -1);
+		else return { ...out, traces_truncated: true };
 	}
-	return out;
 }

@@ -63,13 +63,50 @@ test('an agent attaches .dyr text, runs a trip and reads a compact verdict', asy
 	});
 	if (!r.ok) throw new Error(r.error.message);
 	expect(JSON.stringify(r).length).toBeLessThanOrEqual(1450);
+	type Trace = { t_s: number[]; v: number[] };
 	const data = r.data as {
 		verdict: string;
-		frequency: { coi_nadir_hz: number; nominal_hz: number };
-		traces: Record<string, number[]>;
+		frequency: { coi_nadir_hz: number; nadir_t_s: number; nominal_hz: number };
+		traces: Record<string, Trace>;
 	};
 	expect(['stable', 'not_settled']).toContain(data.verdict);
 	expect(data.frequency.coi_nadir_hz).toBeLessThan(data.frequency.nominal_hz);
-	expect(data.traces['coi:f']).toHaveLength(20);
+	const coi = data.traces['coi:f'];
+	expect(coi.v).toHaveLength(20);
+	expect(coi.t_s).toHaveLength(20);
+	// The trace holds the nadir the summary reports, at its time.
+	expect(Math.min(...coi.v)).toBe(data.frequency.coi_nadir_hz);
+	expect(coi.t_s[coi.v.indexOf(data.frequency.coi_nadir_hz)]).toBe(data.frequency.nadir_t_s);
 	await expect(page.getByTestId('dynamics-panel').getByText('Run by the agent')).toBeVisible();
+
+	// A fault: the voltage trace of the lowest bus holds the dip min_pu reports.
+	const fault = {
+		case_id,
+		expected_revision: revision,
+		events: [{ kind: 'bus_fault', bus: 1101, at_s: 1, clear_after_s: 0.1 }],
+		t_end_s: 4,
+		show_in_app: false
+	};
+	const first = await callTool(page, 'simulate_dynamics', fault);
+	if (!first.ok) throw new Error(first.error.message);
+	const lowest = (first.data as { voltage: { min_bus: number } }).voltage.min_bus;
+	const traced = await callTool(page, 'simulate_dynamics', {
+		...fault,
+		channels: [`vm:${lowest}`],
+		trace_points: 24
+	});
+	if (!traced.ok) throw new Error(traced.error.message);
+	expect(JSON.stringify(traced).length).toBeLessThanOrEqual(1450);
+	const faulted = traced.data as { voltage: { min_pu: number }; traces: Record<string, Trace> };
+	const vm = faulted.traces[`vm:${lowest}`];
+	expect(Math.min(...vm.v)).toBe(faulted.voltage.min_pu);
+	// The samples around the fault and its clearing are there.
+	for (const t of [1, 1.1]) expect(vm.t_s).toContain(t);
+	// A request past the cap is refused before the run.
+	const tooMany = await callTool(page, 'simulate_dynamics', {
+		...fault,
+		channels: ['coi:f', `vm:${lowest}`],
+		trace_points: 13
+	});
+	expect(tooMany).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
 });

@@ -63,14 +63,37 @@ describe("simulate_dynamics input", () => {
     [
       {
         events: [{ kind: "branch_trip", branch: "1-2", at_s: 1 }],
-        trace_points: 41,
+        trace_points: 25,
       },
       /trace_points/,
+    ],
+    [
+      {
+        events: [{ kind: "branch_trip", branch: "1-2", at_s: 1 }],
+        channels: ["coi:f", "vm:1", "f:1"],
+        trace_points: 9,
+      },
+      /channels × trace_points/,
     ],
   ])("refuses %j", (patch, message) => {
     expect(() => validateSimulateDynamics({ ...base, ...patch })).toThrow(
       message,
     );
+  });
+
+  it("accepts the largest trace request", () => {
+    for (const [channels, points] of [
+      [["coi:f"], 24],
+      [["coi:f", "vm:1", "f:1", "pl:1"], 6],
+    ] as const)
+      expect(
+        validateSimulateDynamics({
+          ...base,
+          events: [{ kind: "branch_trip", branch: "1-2", at_s: 1 }],
+          channels,
+          trace_points: points,
+        }),
+      ).toMatchObject({ tracePoints: points });
   });
 
   it("has a response schema", () => {

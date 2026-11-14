@@ -1237,12 +1237,17 @@
         },
         {
           "const": "damped_out",
-          "description": "The swings fell below the floor before the end of the run (or never\nrose above it).",
+          "description": "The swings fell below the floor, and within the settling criterion's\nangle band, before the end of the run (or never rose above them).",
+          "type": "string"
+        },
+        {
+          "const": "sustained",
+          "description": "Three or more counted peaks, the last one still counted, with no\nmonotone trend in the last three: the swings neither grow nor decay.",
           "type": "string"
         },
         {
           "const": "undetermined",
-          "description": "Too few counted peaks, or no monotone trend in the last three.",
+          "description": "Too few counted peaks to tell (such as one large swing cut off by\nthe end of the run), or a last peak below the floor but outside the\nsettling band.",
           "type": "string"
         }
       ]
@@ -1337,5 +1342,5 @@
   ],
   "title": "RmsSchema",
   "type": "object",
-  "x-rust-source-sha256": "a9600ab7abb5c6f2c27c07df1de98457dde7346708dabe7cee407c32fe1ba4c5"
+  "x-rust-source-sha256": "db879ac156cc35cce7fb45b6fc34808dea345fcfea11dac5df8625f9eca0ab47"
 }

@@ -724,6 +724,10 @@ export function validateImportCase(input: unknown): ImportCaseInput {
 export const DYNAMICS_CHANNEL =
   /^(coi:f|f:\d+|vm:\d+|omega:\d+(#\w+)?|dcoi:\d+(#\w+)?|pl:\d+)$/;
 const DYN_DT = [0.001, 0.0025, 0.005] as const;
+/** The most samples `simulate_dynamics` returns over all its traces:
+ * channels × trace_points. Each sample carries its own time, and the whole
+ * response must fit the output budget. */
+export const MAX_TRACE_SAMPLES = 24;
 const LOAD_MODELS = [
   "power_flow",
   "constant_impedance",
@@ -926,7 +930,13 @@ export function validateSimulateDynamics(
   const tracePoints =
     value.trace_points === undefined
       ? 0
-      : integer(value.trace_points, "trace_points", 0, 40);
+      : integer(value.trace_points, "trace_points", 0, MAX_TRACE_SAMPLES);
+  // Each sample carries its own time; the product bounds the response.
+  if (channels.length * tracePoints > MAX_TRACE_SAMPLES)
+    throw new TellegenToolError(
+      "INVALID_INPUT",
+      `channels × trace_points must not exceed ${MAX_TRACE_SAMPLES}, such as 1 × ${MAX_TRACE_SAMPLES} or 4 × ${MAX_TRACE_SAMPLES / 4}`,
+    );
   if (value.show_in_app !== undefined && typeof value.show_in_app !== "boolean")
     throw new TellegenToolError(
       "INVALID_INPUT",

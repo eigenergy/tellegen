@@ -181,14 +181,26 @@ const screening = (over: Partial<RmsScreening> = {}): RmsScreening =>
 			final_min_pu: 0.96,
 			final_max_pu: 1.1
 		},
-		islands: [{ buses: 243, machines: 103, inertia_mws: 1, final_hz: 59.93, runaway: false }],
+		islands: [
+			{
+				buses: 243,
+				machines: 103,
+				inertia_mws: 1,
+				final_hz: 59.93,
+				runaway: false
+			}
+		],
 		held_units: 0,
 		...over
 	}) as RmsScreening;
 
 describe('dynamics verdict wording', () => {
 	it('leads with an icon and a word', () => {
-		expect(headline(screening())).toMatchObject({ icon: '✓', word: 'Stable', tone: 'ok' });
+		expect(headline(screening())).toMatchObject({
+			icon: '✓',
+			word: 'Stable',
+			tone: 'ok'
+		});
 		expect(headline(screening({ verdict: 'loss_of_synchronism' })).word).toBe(
 			'Unstable: loss of synchronism'
 		);
@@ -232,9 +244,12 @@ describe('dynamics verdict wording', () => {
 		);
 		// A 5 mHz dip is not announced as 60.00 Hz.
 		const s = screening();
-		expect(announcement({ ...s, frequency: { ...s.frequency, coi_nadir_hz: 59.995 } })).toContain(
-			'59.995 Hz'
-		);
+		expect(
+			announcement({
+				...s,
+				frequency: { ...s.frequency, coi_nadir_hz: 59.995 }
+			})
+		).toContain('59.995 Hz');
 	});
 
 	it('words the separation against its start and the trend in plain words', () => {
@@ -243,6 +258,8 @@ describe('dynamics verdict wording', () => {
 			rows({ ...s, verdict, angle: { ...s.angle, ...angle } })[2].value;
 		expect(sep({ initial_separation_deg: 86.1 })).toContain('86.1° before the event');
 		expect(sep({ trend: 'undetermined' })).toContain('too few large swing peaks');
+		expect(sep({ trend: 'sustained' })).toContain('swings sustained');
+		expect(sep({ trend: 'sustained' })).not.toContain('too few');
 		expect(sep({ trend: 'damped_out' })).toContain('damped out');
 		expect(sep({ trend: 'growing' })).toContain('extend the run to confirm');
 		expect(rows(s)[5].criterion).toContain('of its final value');
@@ -253,6 +270,11 @@ describe('dynamics verdict wording', () => {
 		const r = rows(s, 0);
 		expect(r[3].value).toBe('59.842 Hz (COI); no events');
 		expect(r[6].value).toBe('no events; lowest 0.410 pu at 1101');
+		// No event to be before, and no event to count the separation from.
+		const sep = rows({ ...s, angle: { ...s.angle, initial_separation_deg: 86.1 } }, 0)[2];
+		expect(sep.value).not.toContain('before the event');
+		expect(sep.criterion).not.toContain('event on');
+		expect(sep.criterion).toContain('no events');
 		expect(announcement(s, 20, 0)).toBe(
 			'Stable. No events applied; lowest COI frequency 59.842 Hz; lowest voltage 0.41 pu.'
 		);
@@ -394,7 +416,12 @@ describe('experimental preference', () => {
 	});
 });
 
-import { agentSummary, AgentInputError, resolveAgentEvents } from '../src/lib/dynamics/agent.js';
+import {
+	agentSummary,
+	AgentInputError,
+	decimate,
+	resolveAgentEvents
+} from '../src/lib/dynamics/agent.js';
 
 describe('agent ids', () => {
 	const ins = {
@@ -422,29 +449,150 @@ describe('agent ids', () => {
 			resolveAgentEvents(ins, [{ kind: 'load_change', bus: 1101, atS: 1, scale: 1.1 }])
 		).toThrow(AgentInputError);
 	});
-	it('fits the summary in the output budget', () => {
-		const n = 2001;
-		const time = Float64Array.from({ length: n }, (_, i) => i * 0.01);
-		const coi = Float64Array.from({ length: n }, (_, i) => 60 - 0.1 * Math.sin(i / 100));
-		const run = {
+	// A fault at 1101 from 1.0 s to 1.1 s (the engine records the sample at an
+	// event time before applying it) on a 20 s run at 2.5 ms: the voltage
+	// dips to 0.41234 pu at 1.0525 s, between any evenly spaced samples, and
+	// the COI frequency swings down to its nadir at 2.3075 s.
+	const faultRun = (reasons: string[] = ['no pole slip', 'settled']) => {
+		const n = 8001;
+		const time = Float64Array.from({ length: n }, (_, i) => i * 0.0025);
+		const vm = Float64Array.from(time, (t) =>
+			t > 1 && t <= 1.1 ? 0.5 - 0.08766 * Math.exp(-(((t - 1.0525) / 0.01) ** 2)) : 1.0
+		);
+		const coi = Float64Array.from(time, (t) =>
+			t < 1 ? 60 : 60 - 0.2 * Math.exp(-(t - 1) / 4) * Math.sin(((t - 1) * Math.PI) / 2.615)
+		);
+		let iv = 0;
+		let ic = 0;
+		for (let i = 1; i < n; i++) {
+			if (vm[i] < vm[iv]) iv = i;
+			if (coi[i] < coi[ic]) ic = i;
+		}
+		const base = screening();
+		return {
 			time,
-			keys: ['coi:f'],
-			series: (k: string) => (k === 'coi:f' ? coi : undefined),
-			screening: screening(),
+			keys: ['coi:f', 'vm:1101', 'vm:1202', 'f:1101', 'pl:1101'],
+			request: {
+				events: [
+					{ kind: 'bus_fault', bus: 1101, time: 1 },
+					{ kind: 'clear_fault', bus: 1101, time: 1.1 }
+				]
+			},
+			series: (k: string) =>
+				k === 'coi:f' || k === 'f:1101'
+					? coi
+					: k.startsWith('vm:')
+						? vm
+						: k === 'pl:1101'
+							? vm
+							: undefined,
+			screening: {
+				...base,
+				reasons: reasons.map((text) => ({ code: 'x', text })),
+				frequency: {
+					...base.frequency,
+					coi_nadir_hz: coi[ic],
+					nadir_t: time[ic]
+				},
+				voltage: {
+					...base.voltage,
+					min_pu: vm[iv],
+					min_bus: 1101,
+					min_t: time[iv]
+				}
+			},
 			notes: ['x'.repeat(500)],
 			steps: 8000,
 			meta: { base_mva: 100 }
 		} as never;
+	};
+	// The local-case context the adapter puts beside the summary.
+	const context = {
+		case_id: 'local-1712345678901',
+		study_id: null,
+		study_revision: null,
+		state_id: null,
+		revision: 'local-1712345678901:r12',
+		formulation: 'acpf',
+		view: 'live_case',
+		units: {
+			demand: 'MW',
+			flow: 'MW',
+			lmp: null,
+			voltage: 'pu',
+			loading: 'fraction',
+			rating: 'MVA'
+		}
+	};
+	const respond = (run: never, channels: string[], tracePoints: number) => {
 		const out = agentSummary(run, {
-			channels: ['coi:f'],
-			tracePoints: 40,
+			channels,
+			tracePoints,
 			wallMs: 1340,
 			loadModel: 'power_flow',
-			dtS: 0.0025
+			dtS: 0.0025,
+			budget: 1450 - JSON.stringify({ ok: true, data: context }).length
 		});
-		expect(
-			JSON.stringify({ ok: true, data: { case_id: 'local-1', revision: 'abc:r12', ...out } }).length
-		).toBeLessThan(1450);
-		expect((out.traces as Record<string, number[]>)['coi:f']).toHaveLength(40);
+		return {
+			out,
+			text: JSON.stringify({ ok: true, data: { ...context, ...out } })
+		};
+	};
+	type Trace = { t_s: number[]; v: number[] };
+
+	it('keeps the fault dip and the nadir in the traces', () => {
+		const { out } = respond(faultRun(), ['vm:1101', 'coi:f'], 12);
+		const traces = out.traces as Record<string, Trace>;
+		const vm = traces['vm:1101'];
+		const coi = traces['coi:f'];
+		const s = out as {
+			voltage: { min_pu: number };
+			frequency: { coi_nadir_hz: number; nadir_t_s: number };
+		};
+		// The trace's lowest sample is the screening's own figure.
+		expect(Math.min(...vm.v)).toBe(s.voltage.min_pu);
+		expect(vm.v).toContain(s.voltage.min_pu);
+		expect(vm.t_s[vm.v.indexOf(s.voltage.min_pu)]).toBe(1.0525);
+		expect(Math.min(...coi.v)).toBe(s.frequency.coi_nadir_hz);
+		expect(coi.t_s[coi.v.indexOf(s.frequency.coi_nadir_hz)]).toBe(s.frequency.nadir_t_s);
+		// The samples around each event, the ends, at their own times.
+		// The engine records the sample at an event time before applying it.
+		for (const t of [1, 1.0025, 1.1, 1.1025, 0, 20]) expect(vm.t_s).toContain(t);
+		expect(vm.t_s).toHaveLength(12);
+		expect([...vm.t_s].sort((a, b) => a - b)).toEqual(vm.t_s);
+		expect(out.traces_truncated).toBeUndefined();
+	});
+
+	it('fits the largest trace request in the output budget', () => {
+		// 1 × 24 and 4 × 6, with the longest reasons and note head.
+		const long = ['r'.repeat(200), 's'.repeat(200), 't'.repeat(200)];
+		for (const [channels, points] of [
+			[['coi:f'], 24],
+			[['coi:f', 'vm:1101', 'f:1101', 'pl:1101'], 6]
+		] as const) {
+			const short = respond(faultRun(), [...channels], points);
+			expect(short.text.length).toBeLessThanOrEqual(1450);
+			expect(short.out.traces_truncated).toBeUndefined();
+			for (const k of channels)
+				expect((short.out.traces as Record<string, Trace>)[k].v).toHaveLength(points);
+			const worst = respond(faultRun(long), [...channels], points);
+			expect(worst.text.length).toBeLessThanOrEqual(1450);
+		}
+		// Past the cap, the traces shrink to fit and say so.
+		const over = respond(faultRun(), ['coi:f'], 40);
+		expect(over.out.traces_truncated).toBe(true);
+		expect((over.out.traces as Record<string, Trace>)['coi:f'].v.length).toBeLessThanOrEqual(24);
+	});
+
+	it('decimates to the requested count, extremes first', () => {
+		const time = Float64Array.from({ length: 101 }, (_, i) => i * 0.1);
+		const d = Float64Array.from(time, (t) => Math.sin(t));
+		expect(decimate(time, d, 0)).toEqual([]);
+		const two = decimate(time, d, 2, [5]);
+		expect(two.map((i) => d[i]).sort()).toEqual([Math.min(...d), Math.max(...d)].sort());
+		const ten = decimate(time, d, 10, [5]);
+		expect(ten).toHaveLength(10);
+		expect(ten).toEqual(expect.arrayContaining([0, 50, 51, 100]));
+		expect(new Set(decimate(time, d, 200)).size).toBe(101);
 	});
 });

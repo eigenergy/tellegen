@@ -141,10 +141,15 @@ pub enum SwingTrend {
     Decaying,
     /// The last three counted peaks each grow by more than 2 %.
     Growing,
-    /// The swings fell below the floor before the end of the run (or never
-    /// rose above it).
+    /// The swings fell below the floor, and within the settling criterion's
+    /// angle band, before the end of the run (or never rose above them).
     DampedOut,
-    /// Too few counted peaks, or no monotone trend in the last three.
+    /// Three or more counted peaks, the last one still counted, with no
+    /// monotone trend in the last three: the swings neither grow nor decay.
+    Sustained,
+    /// Too few counted peaks to tell (such as one large swing cut off by
+    /// the end of the run), or a last peak below the floor but outside the
+    /// settling band.
     Undetermined,
 }
 
@@ -357,8 +362,9 @@ fn peaks(v: &[f64], floor: f64) -> Vec<(usize, f64)> {
 }
 
 /// The trend of `dev`, the distance of the separation from its final value
-/// after the last event, degrees (see [`SwingTrend`]).
-fn swing_trend(dev: &[f64]) -> SwingTrend {
+/// after the last event, degrees (see [`SwingTrend`]). `settle_deg` is the
+/// settling criterion's angle band: a swing larger than it has not damped out.
+fn swing_trend(dev: &[f64], settle_deg: f64) -> SwingTrend {
     let largest = dev.iter().copied().fold(0.0_f64, f64::max);
     let floor = TREND_FLOOR_DEG.max(TREND_FLOOR_FRACTION * largest);
     let all = peaks(dev, 0.0);
@@ -372,10 +378,15 @@ fn swing_trend(dev: &[f64]) -> SwingTrend {
             return SwingTrend::Growing;
         }
     }
-    // Damped out: the last peak is at or below the floor (or there is no
-    // peak at all: `dev` ends at 0 by construction).
-    if all.last().is_none_or(|p| p.1 <= floor) {
+    // Damped out: the last peak is at or below the floor and within the
+    // settling band (or there is no peak at all: `dev` ends at 0 by
+    // construction).
+    let last = all.last().map_or(0.0, |p| p.1);
+    if last <= floor && last <= settle_deg {
         return SwingTrend::DampedOut;
+    }
+    if last > floor && counted.len() >= 3 {
+        return SwingTrend::Sustained;
     }
     SwingTrend::Undetermined
 }
@@ -805,7 +816,7 @@ impl RmsSimulation {
         // Trend and settling.
         let final_sep = sep[ns - 1];
         let dev: Vec<f64> = sep[s0..].iter().map(|v| (v - final_sep).abs()).collect();
-        an.trend = Some(swing_trend(&dev));
+        an.trend = Some(swing_trend(&dev, criteria.settle_angle_deg));
         let t_end = time[ns - 1];
         let w0 = t_end - criteria.settle_window_s;
         let window_ok = w0 >= last_event - tol && w0 >= time[0] - tol;
@@ -1043,20 +1054,40 @@ mod tests {
         for p in [0.061, 0.083, 0.097] {
             dev.extend([p, 0.0]);
         }
-        assert_eq!(swing_trend(&dev), SwingTrend::DampedOut);
+        assert_eq!(swing_trend(&dev, 1.0), SwingTrend::DampedOut);
         // Real swings: 10°, 8°, 6.4° → decaying; 4°, 5°, 6° → growing.
         assert_eq!(
-            swing_trend(&[0.0, 10.0, 0.0, 8.0, 0.0, 6.4, 0.0, 2.0, 1.0]),
+            swing_trend(&[0.0, 10.0, 0.0, 8.0, 0.0, 6.4, 0.0, 2.0, 1.0], 1.0),
             SwingTrend::Decaying
         );
         assert_eq!(
-            swing_trend(&[0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0]),
+            swing_trend(&[0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0], 1.0),
             SwingTrend::Growing
         );
         // One big swing, cut off by the end of the run: undetermined.
         assert_eq!(
-            swing_trend(&[0.0, 30.0, 60.0, 40.0, 0.0]),
+            swing_trend(&[0.0, 30.0, 60.0, 40.0, 0.0], 1.0),
             SwingTrend::Undetermined
+        );
+        // Peaks of 5°, 6°, 5°, 6°: sustained, neither growing nor decaying.
+        assert_eq!(
+            swing_trend(&[0.0, 5.0, 0.0, 6.0, 0.0, 5.0, 0.0, 6.0, 0.0], 1.0),
+            SwingTrend::Sustained
+        );
+    }
+
+    #[test]
+    fn a_swing_outside_the_settling_band_has_not_damped_out() {
+        // A 60° first swing puts the floor at 6°; a last peak of 3° is below
+        // it but three times the 1° settling band: not damped out.
+        let dev = [0.0, 60.0, 0.0, 3.0, 0.0];
+        assert_eq!(swing_trend(&dev, 1.0), SwingTrend::Undetermined);
+        // The same peak within a 5° band has damped out.
+        assert_eq!(swing_trend(&dev, 5.0), SwingTrend::DampedOut);
+        // A last peak of 0.8° within the 1° band has too.
+        assert_eq!(
+            swing_trend(&[0.0, 60.0, 0.0, 0.8, 0.0], 1.0),
+            SwingTrend::DampedOut
         );
     }
 

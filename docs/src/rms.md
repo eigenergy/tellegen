@@ -209,8 +209,10 @@ them) and names any that are missing.
   value after the last event, counting only peaks above 0.5° and above 10 %
   of the largest distance (smaller wiggles are numerical): *decaying* or
   *growing* when the last three counted peaks each shrink or grow by more
-  than 2 %, *damped out* when the last peak is below that floor, otherwise
-  *undetermined*.
+  than 2 %, *damped out* when the last peak is below that floor and within
+  the settling criterion's angle band, *sustained* when three or more peaks
+  count, the last among them, without a monotone trend, otherwise
+  *undetermined* (too few counted peaks to tell).
 
 `derived_series` gives `coi:omega`, `coi:delta`, `coi:f` and `f:<bus>`, each
 bus's frequency estimated as `f0 (ω_ref + (1/ω0) d(va)/dt)` with the

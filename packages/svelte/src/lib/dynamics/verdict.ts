@@ -48,7 +48,12 @@ export function headline(
 				tone: s.voltage.recovered ? 'ok' : 'warning'
 			};
 		case 'loss_of_synchronism':
-			return { icon: '✗', word: 'Unstable: loss of synchronism', detail: null, tone: 'failure' };
+			return {
+				icon: '✗',
+				word: 'Unstable: loss of synchronism',
+				detail: null,
+				tone: 'failure'
+			};
 		case 'island_runaway':
 			return {
 				icon: '✗',
@@ -87,6 +92,8 @@ function trendWords(
 			return verdict === 'stable'
 				? '; swings growing at the end, extend the run to confirm'
 				: '; swings growing';
+		case 'sustained':
+			return '; swings sustained, neither growing nor decaying';
 		case 'undetermined':
 			return '; swing trend: too few large swing peaks to tell';
 		default:
@@ -120,9 +127,11 @@ export function rows(s: RmsScreening, events = 1): DynRow[] {
 		},
 		{
 			metric: 'Max angle separation',
-			value: `${deg(a.max_separation_deg)}${a.pair.length === 2 ? ` (${a.pair[0]} – ${a.pair[1]}, ${sec(a.separation_t)})` : ''}${a.initial_separation_deg != null ? `; ${deg(a.initial_separation_deg)} before the event` : ''}${trendWords(a.trend, s.verdict)}`,
+			value: `${deg(a.max_separation_deg)}${a.pair.length === 2 ? ` (${a.pair[0]} – ${a.pair[1]}, ${sec(a.separation_t)})` : ''}${events > 0 && a.initial_separation_deg != null ? `; ${deg(a.initial_separation_deg)} before the event` : ''}${trendWords(a.trend, s.verdict)}`,
 			criterion:
-				'reported; largest δmax − δmin from the first event on, against the steady-state spread before it',
+				events > 0
+					? 'reported; largest δmax − δmin from the first event on, against the steady-state spread before it'
+					: 'reported; largest δmax − δmin over the run (no events)',
 			status: '–'
 		},
 		{

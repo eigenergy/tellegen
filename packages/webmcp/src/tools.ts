@@ -30,6 +30,7 @@ import {
   validateImportCase,
   IMPORT_EXTENSIONS,
   MAX_IMPORT_TEXT,
+  MAX_TRACE_SAMPLES,
 } from "./validation.js";
 
 /** A tool before its output schema is attached. */
@@ -673,8 +674,8 @@ export function createTellegenTools(
               trace_points: {
                 type: "integer",
                 minimum: 0,
-                maximum: 40,
-                description: "Samples per trace (default 0).",
+                maximum: MAX_TRACE_SAMPLES,
+                description: `Samples per trace (default 0); channels × trace_points at most ${MAX_TRACE_SAMPLES}. Each trace is {t_s, v}: its lowest and highest samples, the samples around each event and per-bucket min/max, at their own times.`,
               },
               show_in_app: {
                 type: "boolean",

@@ -2296,14 +2296,17 @@ export function createTellegenWebMcpAdapter(
 						verdict: 'failed',
 						failure: clip(record.failure?.message ?? 'The run failed.', 400)
 					};
+				const context = displayedContext(ctrl);
 				return {
-					...displayedContext(ctrl),
+					...context,
 					...agentSummary(record.run, {
 						channels: input.channels,
 						tracePoints: input.tracePoints,
 						wallMs: record.wallMs,
 						loadModel: record.options.load_model ?? 'power_flow',
-						dtS: record.dt
+						dtS: record.dt,
+						// What the summary's own JSON may take beside the context.
+						budget: DEFAULT_OUTPUT_BUDGET - JSON.stringify({ ok: true, data: context }).length
 					})
 				};
 			}),
