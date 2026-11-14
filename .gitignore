@@ -7,6 +7,7 @@ apps/web/dist/
 apps/web/.svelte-kit/
 apps/web/playwright-report/
 apps/web/test-results/
+apps/web/static/examples/wecc240/
 examples/browser-minimal/dist/
 examples/svelte-minimal/dist/
 examples/svelte-minimal/.svelte-kit/
