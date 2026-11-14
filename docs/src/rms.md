@@ -177,6 +177,52 @@ its current time; it reproduces a batch run of its event log. It takes the
 same watch set (`set_record`) and gives any channel at its current time
 (`snapshot`).
 
+## Screening
+
+`RmsSimulation::screen(request, result, criteria)` gives a finished run a
+verdict against versioned criteria (`ScreeningCriteria`, version 1 by
+default; every field can be changed), from the run's own samples. It needs
+`omega:`, `delta:`, `vm:` and `va:` recorded (`RecordSpec::display()` records
+them) and names any that are missing.
+
+- **Centre of inertia (COI).** Per island, the machines in service weighted
+  by `H · MBASE`; a tripped machine leaves the COI from its trip, and each
+  island formed by the events is screened on its own COI. An island holding
+  a voltage source (an infinite bus) is referred to the source.
+- **Pole slip.** A machine whose rotor angle relative to its island's COI
+  passes ±180°: *Unstable, loss of synchronism*, naming the unit and time.
+- **Island runaway.** An island whose COI speed ends more than 0.05 pu from
+  1: *Unstable, island frequency runs away*.
+- **Settling.** COI frequency within ±0.01 Hz of its final value and the
+  largest angle separation within ±1° over the last 2 s, which must follow
+  the last event; otherwise *Inconclusive*.
+- **Voltage recovery.** Every live bus at or above 0.8 pu within 1 s of the
+  last event; a miss is reported as a voltage concern.
+- **Reported figures.** COI frequency nadir and peak, RoCoF over a 0.5 s
+  window, the largest angle separation (pair, time, trend over the last three
+  swing peaks), the first swing after the last event, the lowest unit speed
+  and bus frequency, the lowest voltage and the final voltage range.
+
+`derived_series` gives `coi:omega`, `coi:delta`, `coi:f` and `f:<bus>`, each
+bus's frequency estimated as `f0 (ω_ref + (1/ω0) d(va)/dt)` with the
+derivative through a 20 ms first-order filter (the PSS/E `FRQ` convention),
+held over the sample at each event and below 0.2 pu, and NaN while the bus is
+dead.
+
+These are screening criteria chosen by tellegen, not a planning standard.
+
+## In the browser
+
+`tellegen-wasm` exports `RmsCase` (features `rms`, and `rms-experimental` for
+modes, default dynamics and DYR parameters): prepared once from a stored
+module and DYR text, inspected without a run, checked with a flat run, and run
+with the display channels, packed channel-major into one `Float64Array` with
+the screening in a JSON head. The bus angles are replaced by the bus
+frequencies; a run past 4e6 values records at a coarser output step and says
+so. `@tellegen/engine` runs it in a dedicated worker (`openRmsCase`,
+`BrowserRmsCase`, see [Engine API Reference](engine-api.md)); the app's
+[Dynamics mode](dynamics.md) is built on it.
+
 ## Linear analysis
 
 `RmsSimulation::linear_analysis` linearizes `M ẋ = f(x, u)` at the operating

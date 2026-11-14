@@ -153,8 +153,11 @@ license, with the bus coordinates of
 `LICENSE-wecc240-coordinates`); its `psid_reference.json` holds output of
 PowerSimulationsDynamics.jl and the load values of the WECC 240 system of
 PowerSystemCaseBuilder.jl (BSD 3-Clause, `LICENSE-PowerSystemCaseBuilder.jl`).
-It is test data: read at test time, excluded from the published crate, and not
-compiled into any tellegen artifact. Please cite:
+It is test data, excluded from the published crate and not compiled into any
+tellegen artifact. The hosted web app serves `case.raw`, `case.dyr`,
+`case.geo.csv` and their licence files as its dynamics demo, with
+`case-validation.raw`, the same raw file with the PowerSystemCaseBuilder.jl
+load values of the validation study, written at build time. Please cite:
 
 > J. D. Lara, R. Henriquez-Auba, M. Bossart, D. S. Callaway, and C. Barrows,
 > "PowerSimulationsDynamics.jl -- An Open Source Modeling Package for Modern

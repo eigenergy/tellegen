@@ -14,6 +14,7 @@
 - [Multiconductor AC power flow](multiconductor-pf.md)
 - [Settings](settings.md)
 - [RMS dynamic simulation](rms.md)
+  - [Dynamics in the app](dynamics.md)
   - [RMS validation](rms-validation.md)
 - [Transports](transports.md)
 - [Getting Started](getting-started.md)
