@@ -37,8 +37,23 @@ pub fn collection_supported() -> bool {
 }
 mod dist;
 mod geo;
+#[cfg(feature = "rms")]
+pub mod rms;
 #[cfg(feature = "synth")]
 mod synth;
+
+/// Whether this build carries the RMS dynamic simulation.
+#[wasm_bindgen]
+pub fn rms_supported() -> bool {
+    cfg!(feature = "rms")
+}
+
+/// Whether this build carries the experimental RMS tools (small-signal
+/// analysis, default dynamics, DYR parameters).
+#[wasm_bindgen]
+pub fn rms_experimental_supported() -> bool {
+    cfg!(feature = "rms-experimental")
+}
 
 const MAX_INPUT_BYTES: usize = 128 * 1024 * 1024;
 const INPUT_TOO_LARGE: &str = "input exceeds 128 MiB limit";

@@ -118,6 +118,37 @@ PowerIO module onto a disposable host, so the returned
 `CapacityPlanOutcomeJson` is an unapplied proposal and cancellation does not
 invalidate the retained interactive Study.
 
+## RMS Dynamic Simulation
+
+Runs execute in a dedicated worker (`rms-worker.js`) with its own wasm
+instance, so a run never blocks the page or the static-study worker.
+
+- `rmsSupport()`: `{ rms, experimental }` for this engine build.
+- `looksLikeDyr(text)`: whether text reads as PSS/E dynamic data.
+- `openRmsCase(moduleJson, dyrText, options?)`: prepare a case once
+  (`options`: `load_model` and the `RmsOptions` fields). Resolves to a
+  `BrowserRmsCase`.
+- `BrowserRmsCase.inspection`: the linked models, elements, initial residual,
+  reference unit, held units and notes, without a run.
+- `BrowserRmsCase.flatCheck(seconds = 2)`: the largest speed and voltage drift
+  of a run without events.
+- `BrowserRmsCase.run(request, { signal, onProgress, criteria })`: run the
+  events (`RmsEvent[]`, default 20 s at 2.5 ms, recorded every 10 ms) and
+  resolve to an `RmsRun`: `time`, `keys`, `series(key)` (a zero-copy view of
+  one transferred buffer), the Rust `screening`, `notes`, `events`, `steps`,
+  `newtonIterations`, `outputStep` and `workerMs`. Keys are the engine's
+  channels (`vm:`, `omega:`, `delta:`, `pe:`, `pl:`, `ql:`) and the derived
+  `coi:f`, `coi:omega`, `coi:delta` and `f:<bus>`. Aborting `signal`
+  terminates the RMS worker; the case reopens itself on its next call.
+- `BrowserRmsCase.linear(request?, { signal })` (experimental): modes with
+  participation factors; throws `ExperimentalUnavailable` without the feature.
+- `rmsDynamize(moduleJson, dyrText, request)` and `rmsLibrary()`
+  (experimental): default dynamics with typical parameters.
+- `setRmsWorkerFactory(factory)`: supply the worker (tests, custom bundling).
+
+The request, inspection, options and screening types are generated from the
+Rust schema (`src/generated/rms-types.ts`, checked by `npm run types:check`).
+
 ## Synthetic Grid Generation
 
 - `createSynthSession(request, { osm?, places?, signal? })`: opens a staged

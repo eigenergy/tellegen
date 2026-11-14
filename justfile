@@ -26,6 +26,7 @@ fmt-check:
 # CI gate: clippy with warnings denied on the shipping crates.
 clippy:
     cargo clippy -p tellegen -p tellegen-synth -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
+    cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental -- -D warnings
     cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
 
 # CI gate: licenses, advisories, bans, sources.
@@ -34,7 +35,7 @@ deny:
 
 # CI gate: test the wasm adapter as it ships (`default = []`, so `test` skips it).
 wasm-adapter-test:
-    cargo test -p tellegen-wasm --features conic,synth
+    cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental
 
 # CI gate: POUNCE stays out of the ordinary wasm module and native adapters.
 epl-guard:
@@ -55,6 +56,18 @@ mc-opf-test:
     cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
     cargo test -p tellegen --no-default-features --features mc-opf --locked
     cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked -- -D warnings
+
+# CI gate: the RMS dynamic simulation, both feature levels (neither is a
+# default feature, so `test` skips it). The 20 s WECC 240 validation runs
+# against PowerSimulationsDynamics.jl are ignored in the debug profile.
+rms-test:
+    cargo test -p tellegen --no-default-features --features rms
+    cargo test -p tellegen --features rms-experimental
+    cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
+
+# CI gate: every RMS validation, the long WECC 240 runs included (release).
+rms-validation:
+    cargo test --release -p tellegen --features rms --test rms_psid_validation --test rms_physics --test rms_validation -- --include-ignored
 
 # CI gate: the engine's conic path.
 conic-test:
@@ -200,4 +213,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test mc-opf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack analytics-check analytics-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test mc-opf-test conic-test rms-test rms-validation acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack analytics-check analytics-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

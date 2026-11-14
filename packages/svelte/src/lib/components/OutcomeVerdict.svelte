@@ -1,9 +1,13 @@
 <script lang="ts">
-	import { getController } from '../context.svelte.js';
+	import { getAppState, getController } from '../context.svelte.js';
 	import { outcomeVerdict } from '../diagram/verdict.js';
 
 	/** The network summary's lead sentence: what the active result found. */
 	const ctrl = getController();
+	const app = getAppState();
+	/** Dynamics mode on a case with dynamic data: the steady-state result is
+	 * not what the map shows. */
+	const dynamics = $derived(app.mode === 'dynamics' && !!ctrl.dynamics.active);
 	const verdict = $derived.by(() => {
 		const stats = ctrl.networkStats;
 		if (!stats) return null;
@@ -17,7 +21,12 @@
 	});
 </script>
 
-{#if verdict}
+{#if dynamics}
+	<p class="outcome" data-testid="outcome-dynamics">
+		Dynamics mode: the map shows the dynamic simulation. Steady state has the power flow and
+		dispatch results.
+	</p>
+{:else if verdict}
 	<p class={['outcome', verdict.tone]} role="status">{verdict.text}</p>
 {/if}
 

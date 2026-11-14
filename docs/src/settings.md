@@ -22,6 +22,11 @@ All ten multiconductor PF options are described in the [power-flow guide](multic
 
 The Rust resolver owns calculation defaults and validation. Generated TypeScript descriptors expose labels, units, types, defaults and constraints. The running engine's catalog reports its build capabilities. Unknown or unsupported settings and invalid combinations are rejected before selected state changes. A partial nested option object is replaced as a unit and its omitted fields receive that option's typed defaults.
 
+Display preferences also hold `experimental` (default off): it shows the
+experimental dynamics tools of [Dynamics mode](dynamics.md), small-signal modes
+and default dynamics, whose results carry an Experimental label. It is
+validated and saved with the other preferences in this browser.
+
 ## TypeScript
 
 ```ts

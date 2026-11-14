@@ -111,7 +111,9 @@ const PROPERTIES = {
 	'study.export': ['result'],
 	'study.operation': ['operation', 'result', 'duration_ms', 'solve_count', 'trial_count'],
 	'agent.call': ['tool', 'result', 'duration_ms'],
-	'agent.availability': ['result']
+	'agent.availability': ['result'],
+	// A dynamics run: its outcome, length and number of events; no case content.
+	'dynamics.run': ['result', 'duration_ms', 'item_count']
 } as const satisfies Record<string, readonly string[]>;
 export type AnalyticsEvent = keyof typeof PROPERTIES;
 export const VOCABULARY: Vocabulary = {

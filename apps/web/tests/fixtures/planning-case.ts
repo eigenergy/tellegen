@@ -59,7 +59,8 @@ export const BASE_TOOLS = [
 	'record_study_evidence',
 	'revise_study_goal',
 	'edit_demand',
-	'restore_base_case'
+	'restore_base_case',
+	'simulate_dynamics'
 ].sort();
 export const PLANNING_TOOLS = [...BASE_TOOLS, 'propose_capacity_plan'].sort();
 export const PROPOSAL_TOOLS = [...PLANNING_TOOLS, 'apply_capacity_plan'].sort();

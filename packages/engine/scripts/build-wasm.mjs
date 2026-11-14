@@ -10,7 +10,9 @@ for (const feature of optional) {
 const built = spawnSync('wasm-pack', [
   'build', '../../crates/tellegen-wasm', '--target', 'web',
   '--out-dir', '../../packages/engine/src/wasm-pkg', '--out-name', 'tellegen',
-  '--', '--features', ['conic', 'synth', ...optional].join(',')
+  // `rms-experimental` ships in the binary; the app gates its tools behind
+  // the experimental switch.
+  '--', '--features', ['conic', 'synth', 'rms', 'rms-experimental', ...optional].join(',')
 ], { stdio: 'inherit' });
 if (built.error) throw built.error;
 if (built.status !== 0) process.exit(built.status ?? 1);

@@ -18,6 +18,9 @@ export class UserPreferences {
 	coloring = $state<'price' | 'angle' | 'voltage' | 'demand'>('price');
 	/** Zen mode hides the panels; it survives a reload so a presenter keeps the view. */
 	zen = $state(false);
+	/** Show the experimental dynamics tools (small-signal modes, default
+	 * dynamics). Off by default; their results carry an Experimental label. */
+	experimental = $state(false);
 	error = $state<string | null>(null);
 	revision = $state(0);
 	#storage: Storage | undefined;
@@ -39,7 +42,8 @@ export class UserPreferences {
 			theme: this.theme,
 			busSizing: this.busSizing,
 			coloring: this.coloring,
-			zen: this.zen
+			zen: this.zen,
+			experimental: this.experimental
 		};
 	}
 	update(patch: Record<string, unknown>, save = true) {
@@ -51,7 +55,7 @@ export class UserPreferences {
 						? value === 'power' || value === 'uniform'
 						: key === 'coloring'
 							? ['price', 'angle', 'voltage', 'demand'].includes(value as string)
-							: key === 'zen'
+							: key === 'zen' || key === 'experimental'
 								? typeof value === 'boolean'
 								: false;
 			if (!valid) throw new Error(`Invalid display preference: ${key}`);
@@ -60,6 +64,7 @@ export class UserPreferences {
 		if ('busSizing' in patch) this.busSizing = patch.busSizing as typeof this.busSizing;
 		if ('coloring' in patch) this.coloring = patch.coloring as typeof this.coloring;
 		if ('zen' in patch) this.zen = patch.zen as boolean;
+		if ('experimental' in patch) this.experimental = patch.experimental as boolean;
 		this.revision++;
 		if (!save || !this.#storage) return;
 		try {
@@ -77,7 +82,8 @@ export class UserPreferences {
 			theme: null,
 			busSizing: 'power',
 			coloring: 'price',
-			zen: false
+			zen: false,
+			experimental: false
 		});
 	}
 }

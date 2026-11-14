@@ -32,6 +32,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
+				'simulate_dynamics',
 				'export_case',
 				'focus_network',
 				'import_case',
@@ -385,6 +386,7 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
+				'simulate_dynamics',
 				'export_case',
 				'focus_network',
 				'import_case',
