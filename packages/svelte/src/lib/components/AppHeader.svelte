@@ -179,7 +179,7 @@
 		{/each}
 		{#each app.localCases as c (c.id)}
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
-				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
+				<button class="case-activate" title={c.label} onclick={() => ctrl.activateLocal(c)}>
 					<span class="cname">{c.label}</span>
 					<span class="cregion">Local</span>
 				</button>
@@ -506,6 +506,15 @@
 		max-width: 100%;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	/* A local case's name comes from its file header and can be a sentence:
+	   two lines at most, the rest in the tooltip. */
+	.case-chip.local .cname {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 
 	/* Local case chips: dashed border + graphite text, topology only. */

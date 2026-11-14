@@ -8,6 +8,7 @@
 	import DynamicsNotes from './DynamicsNotes.svelte';
 	import EigenPlot from './EigenPlot.svelte';
 	import { headline } from '../../dynamics/verdict.js';
+	import { onTabKey } from '../../dynamics/tabs.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -179,90 +180,125 @@
 			</section>
 
 			{#if experimental}
-				<div class="tabs" role="tablist" aria-label="Dynamics views">
-					<button role="tab" aria-selected={tab === 'run'} onclick={() => (tab = 'run')}>Run</button
+				<div
+					class="tabs"
+					role="tablist"
+					aria-label="Dynamics views"
+					tabindex="-1"
+					onkeydown={(e) => onTabKey(e, ['run', 'modes'] as const, tab, (t) => (tab = t))}
+				>
+					<button
+						role="tab"
+						id="dyn-tab-run"
+						aria-selected={tab === 'run'}
+						aria-controls="dyn-tabpanel"
+						tabindex={tab === 'run' ? 0 : -1}
+						onclick={() => (tab = 'run')}>Run</button
 					>
-					<button role="tab" aria-selected={tab === 'modes'} onclick={() => (tab = 'modes')}
+					<button
+						role="tab"
+						id="dyn-tab-modes"
+						aria-selected={tab === 'modes'}
+						aria-controls="dyn-tabpanel"
+						tabindex={tab === 'modes' ? 0 : -1}
+						onclick={() => (tab = 'modes')}
 						>Modes <span class="pill-experimental">Experimental</span></button
 					>
 				</div>
 			{/if}
 
-			{#if tab === 'modes' && experimental}
-				<section aria-label="Small-signal modes" data-testid="dyn-modes">
-					<p class="dim">
-						Eigenvalues of the system linearized at the operating point, with the states that take
-						part most in each mode. <span class="pill-experimental">Experimental</span>
-					</p>
-					{#if dyn.modes}
-						<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
-					{:else}
-						{#if dyn.dynamicStates > 300}
-							<p class="warn" data-testid="dyn-modes-size">
-								A dense analysis of {dyn.dynamicStates.toLocaleString()} machine states plus the network
-								and plant states: it can take many minutes in the browser. Stop ends it.
-							</p>
-						{/if}
-						{#if dyn.modesBusy}
-							<p role="status">
-								Computing modes… <button class="link" onclick={() => dyn.stopModes()}>Stop</button>
-							</p>
-						{:else}
-							<button disabled={att.status !== 'ready'} onclick={() => dyn.computeModes()}
-								>Compute modes</button
-							>
-						{/if}
-					{/if}
-					{#if dyn.modesError}<p class="err">{dyn.modesError}</p>{/if}
-				</section>
-			{:else if att.status === 'ready'}
-				<DynamicsEventList />
-				<DynamicsRunControls />
-				{#if current}
-					<DynamicsVerdict record={current} experimental={!!att.synthetic} />
-					{#if current.run}
-						<details>
-							<summary>Run notes and events</summary>
-							<DynamicsNotes
-								notes={current.run.notes.slice(ins?.notes.length ?? 0)}
-								events={current.run.events}
-							/>
-						</details>
-						<p class="footer">
-							{current.run.steps.toLocaleString()} steps · {current.run.newtonIterations.toLocaleString()}
-							Newton iterations · engine {(current.run.workerMs / 1000).toFixed(2)} s, end to end {(
-								current.wallMs / 1000
-							).toFixed(2)} s · dt {current.dt * 1000} ms, output every {current.run.outputStep *
-								1000} ms · loads {current.options.load_model ?? 'power_flow'}
-							<button
-								class="link"
-								onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
-								>Copy run as JSON</button
-							>
+			<div
+				class="tabpanel"
+				id="dyn-tabpanel"
+				role={experimental ? 'tabpanel' : undefined}
+				aria-labelledby={experimental
+					? tab === 'modes'
+						? 'dyn-tab-modes'
+						: 'dyn-tab-run'
+					: undefined}
+			>
+				{#if tab === 'modes' && experimental}
+					<section aria-label="Small-signal modes" data-testid="dyn-modes">
+						<p class="dim">
+							Eigenvalues of the system linearized at the operating point, with the states that take
+							part most in each mode. <span class="pill-experimental">Experimental</span>
 						</p>
+						{#if dyn.modes}
+							<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
+						{:else}
+							{#if dyn.dynamicStates > 300}
+								<p class="warn" data-testid="dyn-modes-size">
+									A dense analysis of {dyn.dynamicStates.toLocaleString()} machine states plus the network
+									and plant states: it can take many minutes in the browser. Stop ends it.
+								</p>
+							{/if}
+							{#if dyn.modesBusy}
+								<p role="status">
+									Computing modes… <button class="link" onclick={() => dyn.stopModes()}>Stop</button
+									>
+								</p>
+							{:else}
+								<button
+									disabled={att.status !== 'ready' || dyn.running}
+									title={dyn.running ? 'A run is in progress' : undefined}
+									onclick={() => dyn.computeModes()}>Compute modes</button
+								>
+							{/if}
+						{/if}
+						{#if dyn.modesError}<p class="err">{dyn.modesError}</p>{/if}
+					</section>
+				{:else if att.status === 'ready'}
+					<DynamicsEventList />
+					<DynamicsRunControls />
+					{#if current}
+						<DynamicsVerdict record={current} experimental={!!att.synthetic} />
+						{#if current.run}
+							<details>
+								<summary>Run notes and events</summary>
+								<DynamicsNotes
+									notes={current.run.notes.slice(ins?.notes.length ?? 0)}
+									events={current.run.events}
+								/>
+							</details>
+							<p class="footer">
+								{current.run.steps.toLocaleString()} steps · {current.run.newtonIterations.toLocaleString()}
+								Newton iterations · engine {(current.run.workerMs / 1000).toFixed(2)} s, end to end {(
+									current.wallMs / 1000
+								).toFixed(2)} s · dt {current.dt * 1000} ms, output every {current.run.outputStep *
+									1000} ms · loads {current.options.load_model ?? 'power_flow'}
+								<button
+									class="link"
+									onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
+									>Copy run as JSON</button
+								>
+							</p>
+						{/if}
+					{/if}
+					{#if dyn.runs.length > 1}
+						<div class="history" aria-label="Recent runs">
+							{#each dyn.runs as r (r.id)}
+								{@const h = headline(r.run?.screening ?? null, r.failure, r.tEnd)}
+								<button aria-pressed={r.id === dyn.currentRunId} onclick={() => dyn.select(r.id)}>
+									<span aria-hidden="true">{h.icon}</span>
+									{r.events.length ? dyn.describe(r.events[0]).split(' at ')[0] : 'No events'}{r
+										.events.length > 1
+										? ` +${r.events.length - 1}`
+										: ''}
+									{#if r.agent}<span class="agent">agent</span>{/if}
+								</button>
+							{/each}
+						</div>
 					{/if}
 				{/if}
-				{#if dyn.runs.length > 1}
-					<div class="history" aria-label="Recent runs">
-						{#each dyn.runs as r (r.id)}
-							{@const h = headline(r.run?.screening ?? null, r.failure, r.tEnd)}
-							<button aria-pressed={r.id === dyn.currentRunId} onclick={() => dyn.select(r.id)}>
-								<span aria-hidden="true">{h.icon}</span>
-								{r.events.length ? dyn.describe(r.events[0]).split(' at ')[0] : 'No events'}{r
-									.events.length > 1
-									? ` +${r.events.length - 1}`
-									: ''}
-								{#if r.agent}<span class="agent">agent</span>{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			{/if}
+			</div>
 		{/if}
 	</div>
 </PanelFrame>
 
 <style>
+	.tabpanel {
+		display: contents;
+	}
 	.dyn {
 		display: grid;
 		gap: 12px;

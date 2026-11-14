@@ -669,6 +669,10 @@ export class AppState {
 	 * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,
 	 * so callers that need to clear the header read this rather than a constant. */
 	headerInset = $state(64);
+	/** Height in px the dynamics playback dock covers at the bottom of the
+	 * map, from the viewport's bottom edge; 0 when it is closed. Read by the
+	 * map's camera padding and by chrome anchored at the bottom. */
+	dockInset = $state(0);
 	/** `window.innerHeight`, tracked by the shell. The sheet's snaps and the map's
 	 * chrome lift are both fractions of it; the fallback is a desktop window. */
 	viewportHeight = $state(800);

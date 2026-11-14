@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getController } from '../../context.svelte.js';
 	import { cyclesToSeconds, secondsToCycles, type DynEvent } from '../../dynamics/events.js';
-	import { WECC240_PRESETS } from '../../dynamics/presets.js';
+	import { VALIDATION_DT, WECC240_PRESETS } from '../../dynamics/presets.js';
 
 	const ctrl = getController();
 	const dyn = ctrl.dynamics;
@@ -43,6 +43,14 @@
 			>
 		{/if}
 	</div>
+	{#if dyn.beforePreset}
+		<p class="note" data-testid="dyn-preset-settings">
+			Validated scenarios run with the validation study's settings: a {VALIDATION_DT * 1000} ms step,
+			constant-impedance loads, the exact low-voltage load law, no reactive limits at initialization,
+			and PowerSimulationsDynamics.jl's renewable gain, converter ramps and saturation. Clear events restores
+			your own step, duration and load settings.
+		</p>
+	{/if}
 	{#if dyn.events.length === 0}
 		<p class="dim">
 			No events yet. Select a bus or branch (on the map or with the bus search in the Network panel)
@@ -136,6 +144,12 @@
 	h3 {
 		margin: 0;
 		font-size: var(--fs-heading);
+	}
+	.note {
+		margin: 6px 0 0;
+		font-size: var(--fs-control);
+		line-height: 1.4;
+		color: var(--text-secondary);
 	}
 	.presets {
 		display: flex;

@@ -33,6 +33,23 @@
 	$effect(() => {
 		dyn.theme = config.theme;
 	});
+	// What the playback dock covers, from the bottom edge (it sits 12 px up,
+	// 40 px on the compact layout).
+	$effect(() => {
+		app.dockInset =
+			dynamicsShown && timelineHeight > 0 ? timelineHeight + (app.compactLayout ? 40 : 12) : 0;
+	});
+	// When the dock opens, frame the case in the map above it: the event that
+	// was just simulated must not sit behind the traces.
+	let dockFramed = false;
+	$effect(() => {
+		const open = app.dockInset > 0;
+		if (open && !dockFramed) {
+			const id = untrack(() => app.activeLocal?.id);
+			if (id) void app.requestFrame(id);
+		}
+		dockFramed = open;
+	});
 
 	// The overview and the diagram read the active case's whole operating point once per solve.
 	$effect(() => {
@@ -121,6 +138,7 @@
 	style:--tellegen-dock-bottom={dynamicsShown && !app.compactLayout
 		? `${timelineHeight + 24}px`
 		: undefined}
+	style:--tellegen-timeline-clear={app.dockInset > 0 ? `${app.dockInset + 8}px` : undefined}
 >
 	<TellegenMap
 		onbusclick={ctrl.selectBus}

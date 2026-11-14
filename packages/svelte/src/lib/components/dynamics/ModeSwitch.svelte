@@ -3,16 +3,15 @@
 	const app = getAppState();
 </script>
 
-<div class="mode" role="tablist" aria-label="Analysis mode">
+<!-- A two-way toggle, not tabs: the mode changes the whole app, not one panel. -->
+<div class="mode" role="group" aria-label="Analysis mode">
 	<button
-		role="tab"
-		aria-selected={app.mode === 'steady'}
+		aria-pressed={app.mode === 'steady'}
 		onclick={() => (app.mode = 'steady')}
 		data-testid="mode-steady">Steady state</button
 	>
 	<button
-		role="tab"
-		aria-selected={app.mode === 'dynamics'}
+		aria-pressed={app.mode === 'dynamics'}
 		onclick={() => (app.mode = 'dynamics')}
 		data-testid="mode-dynamics">Dynamics</button
 	>
@@ -36,7 +35,7 @@
 		cursor: pointer;
 		white-space: nowrap;
 	}
-	button[aria-selected='true'] {
+	button[aria-pressed='true'] {
 		background: var(--accent-soft);
 		color: var(--ink);
 		box-shadow: var(--inset-active);

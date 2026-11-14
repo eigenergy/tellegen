@@ -115,3 +115,19 @@ export function valueAt(time: ArrayLike<number>, s: ArrayLike<number>, t: number
 	if (f === 0 || i + 1 >= s.length) return s[i];
 	return s[i] + (s[i + 1] - s[i]) * f;
 }
+
+/** Add a pinned series to `list` unless one with its key is already drawn;
+ * then the drawn one is emphasised instead (keys stay unique for keyed
+ * lists). */
+export function pinInto<T extends { key: string; width?: number; alpha?: number }>(
+	list: T[],
+	s: T
+): void {
+	const drawn = list.find((x) => x.key === s.key);
+	if (!drawn) {
+		list.push(s);
+		return;
+	}
+	drawn.width = Math.max(drawn.width ?? 1.5, s.width ?? 1.5);
+	drawn.alpha = 1;
+}

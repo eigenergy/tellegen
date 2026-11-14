@@ -17,6 +17,7 @@
 </script>
 
 <script lang="ts">
+	import { minSpanFor, tickLabel, ticks, yDomain } from '../../dynamics/axis.js';
 	import { m4 } from '../../dynamics/decimate.js';
 	import { sampleAt } from '../../dynamics/series.js';
 
@@ -90,35 +91,16 @@
 				hi = Math.max(hi, r.value);
 			}
 		}
-		if (!Number.isFinite(lo)) return [0, 1];
-		const span = Math.max(hi - lo, Math.abs(hi) * 1e-6, 1e-6);
-		return [lo - 0.06 * span, hi + 0.06 * span];
+		return yDomain(lo, hi, minSpanFor(unit));
 	});
 
 	const xOf = (t: number) => PAD_L + ((t - xRange[0]) / (xRange[1] - xRange[0])) * plotW;
 	const yOf = (v: number) => PAD_T + (1 - (v - yRange[0]) / (yRange[1] - yRange[0])) * plotH;
 	const tOf = (x: number) => xRange[0] + ((x - PAD_L) / plotW) * (xRange[1] - xRange[0]);
 
-	function ticks(lo: number, hi: number, n: number): number[] {
-		const raw = (hi - lo) / n;
-		const mag = 10 ** Math.floor(Math.log10(raw));
-		const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
-		const out: number[] = [];
-		if (!(step > 0) || !Number.isFinite(lo) || !Number.isFinite(hi)) return out;
-		const first = Math.ceil(lo / step);
-		for (let k = 0; k < 50; k++) {
-			const v = (first + k) * step;
-			if (v > hi + 1e-12) break;
-			out.push(+v.toPrecision(12));
-		}
-		return out;
-	}
 	const yTicks = $derived(ticks(yRange[0], yRange[1], 4));
 	const xTicks = $derived(ticks(xRange[0], xRange[1], Math.max(2, Math.floor(plotW / 80))));
-	const fmt = (v: number, step: number) => {
-		const d = Math.max(0, Math.min(5, -Math.floor(Math.log10(step || 1)) + 1));
-		return v.toFixed(d);
-	};
+	const fmt = tickLabel;
 
 	function cssColor(c: string): string {
 		if (!c.startsWith('--') || !wrap) return c;
@@ -179,7 +161,8 @@
 			(a, b) => (a.key === highlight ? 1 : 0) - (b.key === highlight ? 1 : 0)
 		);
 		for (const s of ordered) {
-			const idx = m4(time, s.data, plotW, xRange[0], xRange[1]);
+			// -1 marks a gap (a dead bus, a tripped unit): lift the pen there.
+			const idx = m4(time, s.data, plotW, xRange[0], xRange[1], true);
 			if (!idx.length) continue;
 			g.strokeStyle = cssColor(s.color);
 			const dim = highlight !== null && s.key !== highlight;
@@ -188,19 +171,16 @@
 			g.lineJoin = 'round';
 			g.beginPath();
 			let pen = false;
-			let prev = -2;
 			for (const i of idx) {
-				const v = s.data[i];
-				if (!Number.isFinite(v)) {
+				if (i < 0) {
 					pen = false;
 					continue;
 				}
 				const x = xOf(time[i]);
-				const y = yOf(v);
-				if (pen && i - prev < 50) g.lineTo(x, y);
+				const y = yOf(s.data[i]);
+				if (pen) g.lineTo(x, y);
 				else g.moveTo(x, y);
 				pen = true;
-				prev = i;
 			}
 			g.stroke();
 		}

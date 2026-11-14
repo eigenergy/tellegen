@@ -158,6 +158,13 @@ export const fmtCycles = (s: number, f0: number) => {
 	return `${Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)} cycles`;
 };
 
+/** Time since an event for the playback readout: cycles while it is a
+ * matter of cycles (under 10), seconds after. */
+export function sinceEvent(s: number, f0: number): string {
+	const c = secondsToCycles(s, f0);
+	return c < 10 ? `+${c.toFixed(1)} cyc` : `+${s.toFixed(2)} s`;
+}
+
 export type BusNames = (bus: number) => string | null | undefined;
 
 const busLabel = (bus: number, names?: BusNames) => {

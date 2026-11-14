@@ -6,7 +6,7 @@
 
 import type { Layer } from '@deck.gl/core';
 import type { NetworkBranch, NetworkBus, RmsRun } from '@tellegen/engine';
-import { DYN_SPEED, dynVoltageColorInto } from '../colors.js';
+import { DYN_SPEED, dynVoltageColorInto, type RGBA } from '../colors.js';
 import type { DynEvent } from './events.js';
 import { sampleAt } from './series.js';
 
@@ -15,9 +15,23 @@ export interface LayerCtors {
 	PathLayer: typeof import('@deck.gl/layers').PathLayer;
 }
 
-/** Ring radius in pixels for a speed deviation of `dfHz`: ∝ √|Δf|, capped. */
+/** Below this speed deviation a unit counts as at nominal speed: a neutral
+ * ring, neither teal nor magenta (1 mHz, far above the numerical drift of a
+ * case at rest). */
+export const AT_NOMINAL_HZ = 1e-3;
+
+/** Ring radius in pixels for a speed deviation of `dfHz`: the minimum ring
+ * up to {@link AT_NOMINAL_HZ}, then ∝ √(|Δf| − threshold), capped. */
 export const haloRadius = (dfHz: number): number =>
-	Math.min(44, 9 + 60 * Math.sqrt(Math.abs(dfHz)));
+	Math.min(44, 9 + 60 * Math.sqrt(Math.max(0, Math.abs(dfHz) - AT_NOMINAL_HZ)));
+
+/** The ring colour of a bus: grey when no unit there is simulated (held or
+ * tripped), faint neutral at nominal speed, else teal below and magenta above. */
+export function haloColor(dfHz: number, live: boolean, pal: (typeof DYN_SPEED)['light']): RGBA {
+	if (!live) return [pal.held[0], pal.held[1], pal.held[2], 150];
+	if (!(Math.abs(dfHz) >= AT_NOMINAL_HZ)) return [...pal.rest];
+	return [...(dfHz < 0 ? pal.under : pal.over)];
+}
 
 interface UnitAt {
 	key: string;
@@ -128,8 +142,7 @@ export class DynamicsFrame {
 			}
 			this.haloDf[h] = live ? df : NaN;
 			this.haloRadii[h] = live ? haloRadius(df) : 9;
-			const c = !live ? pal.held : df < 0 ? pal.under : pal.over;
-			this.haloColors.set(held || !live ? [c[0], c[1], c[2], 150] : c, 4 * h);
+			this.haloColors.set(haloColor(df, live && !held, pal), 4 * h);
 		}
 		const coi = this.run.series('coi:f');
 		this.frame++;

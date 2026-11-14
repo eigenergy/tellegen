@@ -87,7 +87,7 @@ import {
 } from '@tellegen/engine';
 import { browserSolveFailure, errorText, extent, formulationLabel, rgbaCss } from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
-import { DynamicsController } from './dynamics/controller.svelte.js';
+import { DEMO_LABEL, DynamicsController } from './dynamics/controller.svelte.js';
 
 function sameSettings(a: unknown, b: unknown): boolean {
 	if (a && b && typeof a === 'object' && typeof b === 'object') {
@@ -1424,6 +1424,7 @@ export class Controller {
 			this.clearSelection();
 		}
 		this.disposeStudy(c);
+		this.dynamics.forget(c.id);
 		await this.hydrateFallback(this.app.removeLocal(c.id));
 	};
 
@@ -2968,10 +2969,14 @@ export class Controller {
 					continue;
 				}
 				const id = `local-${++this.localSeq}`;
+				// The bundled demo's RAW header is a sentence cut off at its
+				// field width, not a name.
 				const label =
-					summary.name && summary.name !== 'case'
-						? summary.name
-						: file.name.replace(/\.[^.]+$/, '');
+					this.dynamics.attachingDemo && format === 'raw'
+						? DEMO_LABEL
+						: summary.name && summary.name !== 'case'
+							? summary.name
+							: file.name.replace(/\.[^.]+$/, '');
 				this.logImport(file.name, summary, module_json);
 				const local = new LocalCase({
 					id,

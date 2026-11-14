@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../../context.svelte.js';
-	import { markers } from '../../dynamics/events.js';
+	import { markers, sinceEvent } from '../../dynamics/events.js';
 	import { SPEEDS, type Speed } from '../../dynamics/player.svelte.js';
 	import DynamicsTraces from './DynamicsTraces.svelte';
 
@@ -34,7 +34,7 @@
 					: m.kind === 'trip'
 						? 'trip'
 						: 'load step';
-		return { cycles, what, label: m.label };
+		return { cycles, since: sinceEvent(t - m.t, f0), what, label: m.label };
 	});
 	const valueText = $derived.by(() => {
 		const s = dyn.summary;
@@ -104,9 +104,11 @@
 			<label class="slow" title="0.25× from 0.1 s before to 1.5 s after each event"
 				><input type="checkbox" bind:checked={player.slowAroundEvents} /> slow at events</label
 			>
+			<!-- Fixed width, the event on its own line: the scrubber beside it
+			     must not move as the readout grows. -->
 			<output class="time" data-testid="dyn-time"
-				>t = {player.t.toFixed(3)} s{#if after}<span class="dim">
-						(+{after.cycles.toFixed(1)} cyc after {after.what})</span
+				><span>t = {player.t.toFixed(3)} s</span>{#if after}<span class="dim"
+						>{after.since} after {after.what}</span
 					>{/if}</output
 			>
 			<div class="scrub">
@@ -227,12 +229,19 @@
 		white-space: nowrap;
 	}
 	.time {
-		min-width: 15em;
+		display: grid;
+		flex: none;
+		width: 22ch;
 		font-family: var(--font-mono);
 		font-variant-numeric: tabular-nums;
+		line-height: 1.2;
+		white-space: nowrap;
 	}
 	.dim {
+		overflow: hidden;
+		text-overflow: ellipsis;
 		color: var(--text-tertiary);
+		font-size: var(--fs-meta);
 	}
 	.scrub {
 		position: relative;
@@ -295,7 +304,7 @@
 		display: none;
 	}
 	.compact .time {
-		min-width: 0;
+		width: 14ch;
 	}
 	.sr-only {
 		position: absolute;

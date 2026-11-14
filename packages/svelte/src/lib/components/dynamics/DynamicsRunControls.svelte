@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { RmsLoadModel as LoadModel } from '@tellegen/engine';
+	import { tick } from 'svelte';
 	import { getController } from '../../context.svelte.js';
 	import {
 		DURATION_CHOICES,
@@ -14,6 +15,18 @@
 	const pct = $derived(
 		dyn.progress ? Math.min(100, (100 * dyn.progress.t) / dyn.progress.tEnd) : 0
 	);
+
+	/** Run, then bring the verdict (the payoff) into view: it renders below
+	 * these controls, past the panel's fold. */
+	async function run() {
+		const r = await dyn.run();
+		if (!r) return;
+		await tick();
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		document
+			.querySelector('[data-testid="dyn-verdict"]')
+			?.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
+	}
 
 	const LOADS: [LoadModel, string][] = [
 		['power_flow', 'As the power flow solved them'],
@@ -128,18 +141,25 @@
 			<button class="stop" onclick={() => dyn.stop()}>Stop</button>
 		</div>
 	{:else}
-		<button class="run" disabled={!ready} onclick={() => void dyn.run()} title="Ctrl/Cmd+Enter"
+		<button
+			class="run"
+			disabled={!ready || dyn.modesBusy}
+			onclick={() => void run()}
+			title={dyn.modesBusy ? 'Small-signal modes are being computed' : 'Ctrl/Cmd+Enter'}
 			>Run {dyn.tEnd} s simulation</button
 		>
+		{#if dyn.modesBusy}<p class="dim">
+				Small-signal modes are being computed; stop them on the Modes tab to run now.
+			</p>{/if}
 	{/if}
 	{#if dyn.error}<p class="err" role="alert">{dyn.error}</p>{/if}
 </section>
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ready && !dyn.running) {
+		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ready && !dyn.running && !dyn.modesBusy) {
 			e.preventDefault();
-			void dyn.run();
+			void run();
 		}
 	}}
 />
@@ -264,6 +284,11 @@
 	.err {
 		color: var(--text-danger);
 		font-size: var(--fs-label);
+	}
+	.dim {
+		margin: 4px 0 0;
+		color: var(--text-tertiary);
+		font-size: var(--fs-control);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.bar {

@@ -371,9 +371,22 @@ export function dynVoltageGradient(theme: 'light' | 'dark' = 'light'): string {
 }
 
 /** Speed halos: under-speed teal, over-speed magenta. */
-export const DYN_SPEED: Record<'light' | 'dark', { under: RGBA; over: RGBA; held: RGBA }> = {
-	light: { under: [14, 116, 144, 235], over: [176, 38, 132, 235], held: [110, 115, 120, 200] },
-	dark: { under: [141, 231, 247, 235], over: [240, 140, 210, 235], held: [150, 160, 170, 200] }
+export const DYN_SPEED: Record<
+	'light' | 'dark',
+	{ under: RGBA; over: RGBA; held: RGBA; rest: RGBA }
+> = {
+	light: {
+		under: [14, 116, 144, 235],
+		over: [176, 38, 132, 235],
+		held: [110, 115, 120, 200],
+		rest: [110, 115, 120, 110]
+	},
+	dark: {
+		under: [141, 231, 247, 235],
+		over: [240, 140, 210, 235],
+		held: [150, 160, 170, 200],
+		rest: [150, 160, 170, 110]
+	}
 };
 
 /** Relative luminance (WCAG) of an sRGB colour. */

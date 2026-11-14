@@ -787,14 +787,18 @@
 				top: panels.top + 8,
 				left: 24,
 				right: 24,
-				bottom: Math.min(app.sheetInset + clearance, Math.round(height * 0.6))
+				bottom: Math.min(
+					Math.max(app.sheetInset, app.dockInset) + clearance,
+					Math.round(height * 0.6)
+				)
 			};
 		}
 		return {
 			top: panels.top + 16,
 			left: Math.min(panels.dockWidth('left') + 44, width * 0.34),
 			right: Math.min(panels.dockWidth('right') + 44, width * 0.34),
-			bottom: 80
+			// The dynamics dock covers the bottom of the map during playback.
+			bottom: Math.min(Math.max(80, app.dockInset + clearance), Math.round(height * 0.6))
 		};
 	}
 
@@ -2020,7 +2024,7 @@
 
 	.map :global(.maplibregl-ctrl-bottom-right) {
 		right: 20px;
-		bottom: 12px;
+		bottom: max(12px, var(--tellegen-timeline-clear, 0px));
 		display: flex;
 		flex-direction: row;
 		align-items: flex-end;
@@ -2159,7 +2163,7 @@
 
 	@media (max-width: 760px) {
 		.map :global(.maplibregl-ctrl-bottom-right) {
-			bottom: 12px;
+			bottom: max(12px, var(--tellegen-timeline-clear, 0px));
 			right: 12px;
 			gap: 12px;
 		}

@@ -61,6 +61,9 @@ export interface DynRunRecord {
 	dt: number;
 	tEnd: number;
 	badge: { validated: boolean; text: string } | null;
+	/** The network the run used: the case's own, or (for a validated
+	 * scenario on the demo) the validation study's. */
+	network: 'case' | 'validation';
 	/** End-to-end wall time, ms. */
 	wallMs: number;
 	/** Started by an agent (WebMCP). */
@@ -76,6 +79,11 @@ export const STEP_CHOICES = [
 export const DURATION_CHOICES = [5, 10, 20, 30] as const;
 export const MAX_DURATION = 120;
 const HISTORY = 3;
+/** The name of the bundled WECC 240 demo case. */
+export const DEMO_LABEL = 'WECC 240 (dynamics demo)';
+/** How `runJson` names the validation study's network. */
+export const VALIDATION_NETWORK =
+	'wecc240 case-validation.raw (the PSID validation study loads; examples/wecc240)';
 
 const optionsKey = (o: RmsCaseOptions, network: string) => JSON.stringify([network, o]);
 
@@ -92,6 +100,9 @@ export class DynamicsController {
 	/** The validated scenario picked, with its events as picked. */
 	presetId = $state<string | null>(null);
 	presetEvents: DynEvent[] | null = $state.raw(null);
+	/** The step, duration and options before a validated scenario replaced
+	 * them; Clear events restores them. */
+	beforePreset: { options: RmsCaseOptions; dt: number; tEnd: number } | null = $state.raw(null);
 	support: { rms: boolean; experimental: boolean } | null = $state.raw(null);
 	/** Experimental: the modes of the open case. */
 	modes: RmsLinearResult | null = $state.raw(null);
@@ -166,10 +177,7 @@ export class DynamicsController {
 		synthetic = false
 	): Promise<void> {
 		if (!local.studyInputJson) throw new Error(`${local.label} has no network to simulate`);
-		for (const [k, p] of this.#cases)
-			if (k.startsWith(`${local.id}|`)) void p.then((c) => c.free());
-		for (const k of [...this.#cases.keys()])
-			if (k.startsWith(`${local.id}|`)) this.#cases.delete(k);
+		this.#free(local.id);
 		this.#set(local.id, {
 			localId: local.id,
 			fileName,
@@ -203,6 +211,29 @@ export class DynamicsController {
 		}
 	}
 
+	/** Free the worker cases of `localId`. */
+	#free(localId: string): void {
+		for (const [k, p] of [...this.#cases]) {
+			if (!k.startsWith(`${localId}|`)) continue;
+			this.#cases.delete(k);
+			void p.then(
+				(c) => c.free(),
+				() => {}
+			);
+		}
+	}
+
+	/** Forget a closed local case: its attachment, runs and worker cases. */
+	forget(localId: string): void {
+		this.#free(localId);
+		if (!(localId in this.attachments) && !this.runs.some((r) => r.localId === localId)) return;
+		this.attachments = Object.fromEntries(
+			Object.entries(this.attachments).filter(([id]) => id !== localId)
+		);
+		this.runs = this.runs.filter((r) => r.localId !== localId);
+		if (this.current === null) this.currentRunId = null;
+	}
+
 	#set(id: string, a: DynAttachment) {
 		this.attachments = { ...this.attachments, [id]: a };
 	}
@@ -218,6 +249,9 @@ export class DynamicsController {
 		const key = `${local.id}|${optionsKey(this.options, validationNetwork ? 'validation' : 'case')}`;
 		let p = this.#cases.get(key);
 		if (!p) {
+			// One prepared case per local case: a new network or new options
+			// replace the previous one, which the worker frees.
+			this.#free(local.id);
 			const module = validationNetwork
 				? this.#validationNetwork()
 				: Promise.resolve(local.studyInputJson!);
@@ -287,6 +321,13 @@ export class DynamicsController {
 		this.events = [];
 		this.presetId = null;
 		this.presetEvents = null;
+		const before = this.beforePreset;
+		if (before) {
+			this.beforePreset = null;
+			this.setOptions(before.options);
+			this.dt = before.dt;
+			this.tEnd = before.tEnd;
+		}
 	}
 
 	/** Errors per event id. */
@@ -305,6 +346,11 @@ export class DynamicsController {
 		const p = WECC240_PRESETS.find((x) => x.id === id);
 		if (!p) return;
 		const events = p.events();
+		this.beforePreset ??= {
+			options: this.options,
+			dt: this.dt,
+			tEnd: this.tEnd
+		};
 		this.events = events;
 		this.presetId = id;
 		this.presetEvents = events.map((e) => ({ ...e }));
@@ -339,7 +385,15 @@ export class DynamicsController {
 			this.error = 'Attach dynamic data (.dyr) to the case first.';
 			return null;
 		}
-		if (this.running) return null;
+		if (this.running) {
+			this.error = 'A run is already in progress.';
+			return null;
+		}
+		if (this.modesBusy) {
+			this.error =
+				'Small-signal modes are being computed. Wait for them, or stop them, before a run.';
+			return null;
+		}
 		const errs = this.eventErrors;
 		if (errs.size) {
 			this.error = [...errs.values()][0];
@@ -368,6 +422,7 @@ export class DynamicsController {
 			dt,
 			tEnd,
 			badge,
+			network: useValidation ? 'validation' : 'case',
 			wallMs: 0,
 			agent: !!opts.agent,
 			experimental: a.synthetic
@@ -508,7 +563,11 @@ export class DynamicsController {
 
 	async computeModes(): Promise<void> {
 		const local = this.app.activeLocal;
-		if (!local || !this.active) return;
+		if (!local || !this.active || this.modesBusy) return;
+		if (this.running) {
+			this.modesError = 'A run is in progress. Compute the modes after it finishes.';
+			return;
+		}
 		this.modesBusy = true;
 		this.modesError = null;
 		const abort = new AbortController();
@@ -542,7 +601,7 @@ export class DynamicsController {
 		return JSON.stringify(
 			{
 				about: 'tellegen RMS run: RmsRequest and the RmsOptions it was prepared with',
-				...(r.badge && !r.badge.validated ? {} : {}),
+				network: r.network === 'validation' ? VALIDATION_NETWORK : 'the case as loaded',
 				experimental: r.experimental,
 				options: r.options,
 				request: {

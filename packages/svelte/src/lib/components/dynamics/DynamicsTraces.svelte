@@ -7,9 +7,11 @@
 		envelope,
 		largestSwings,
 		lowest,
+		pinInto,
 		sumPrefix,
 		valueAt
 	} from '../../dynamics/series.js';
+	import { onTabKey } from '../../dynamics/tabs.js';
 	import TraceChart, { type TraceBand, type TraceSeries } from './TraceChart.svelte';
 
 	let {
@@ -22,6 +24,12 @@
 	const ctrl = getController();
 	const dyn = ctrl.dynamics;
 	type Tab = 'frequency' | 'angles' | 'voltages' | 'loads';
+	const TABS: [Tab, string][] = [
+		['frequency', 'Frequency'],
+		['angles', 'Rotor angles'],
+		['voltages', 'Voltages'],
+		['loads', 'Loads']
+	];
 	let tab = $state<Tab>('frequency');
 	let pinned = $state.raw<string[]>([]);
 	let zoom = $state.raw<[number, number] | null>(null);
@@ -119,7 +127,7 @@
 					alpha: 0.8
 				}));
 				for (const { id, j } of pin('f:'))
-					series.push({
+					pinInto(series, {
 						key: `f:${id}`,
 						label: `bus ${id}`,
 						data: run.series(`f:${id}`)!,
@@ -187,7 +195,7 @@
 						width: 2
 					}));
 				for (const { id, j } of pin('vm:'))
-					series.push({
+					pinInto(series, {
 						key: `vm:${id}`,
 						label: `bus ${id}`,
 						data: run.series(`vm:${id}`)!,
@@ -215,7 +223,7 @@
 				{ key: 'sum:ql', label: 'total load Q (Mvar)', data: qTotal, color: '--series-3', width: 2 }
 			];
 			for (const { id, j } of pin('pl:'))
-				series.push({
+				pinInto(series, {
 					key: `pl:${id}`,
 					label: `load P at ${id} (MW)`,
 					data: run.series(`pl:${id}`)!.map((v) => v * base),
@@ -259,14 +267,30 @@
 
 <div class="traces" data-testid="dyn-traces">
 	<div class="bar">
-		<div role="tablist" aria-label="Traces">
-			{#each [['frequency', 'Frequency'], ['angles', 'Rotor angles'], ['voltages', 'Voltages'], ['loads', 'Loads']] as [id, name] (id)}
-				<button role="tab" aria-selected={tab === id} onclick={() => (tab = id as Tab)}
-					>{name}</button
+		<div
+			role="tablist"
+			aria-label="Traces"
+			tabindex="-1"
+			onkeydown={(e) =>
+				onTabKey(
+					e,
+					TABS.map(([id]) => id),
+					tab,
+					(t) => (tab = t)
+				)}
+		>
+			{#each TABS as [id, name] (id)}
+				<button
+					role="tab"
+					id="dyn-trace-tab-{id}"
+					aria-selected={tab === id}
+					aria-controls="dyn-trace-panel"
+					tabindex={tab === id ? 0 : -1}
+					onclick={() => (tab = id)}>{name}</button
 				>
 			{/each}
 		</div>
-		<div class="legend">
+		<div class="trace-legend">
 			{#each chart.series.filter((s) => (s.alpha ?? 1) > 0.3).slice(-6) as s (s.key)}
 				<span class="chip"><i style:background="var({s.color})"></i>{s.label}</span>
 			{/each}
@@ -280,53 +304,58 @@
 			<button aria-pressed={asTable} onclick={() => (asTable = !asTable)}>Show as table</button>
 		</div>
 	</div>
-	{#if asTable}
-		<div class="table" style:max-height="{height}px">
-			<table>
-				<caption>{chart.summary}</caption>
-				<thead
-					><tr
-						><th>t (s)</th>{#each tableSeries as s (s.key)}<th>{s.label}</th>{/each}</tr
-					></thead
-				>
-				<tbody>
-					{#each tableRows as r (r.t)}
-						<tr
-							><td>{r.t.toFixed(1)}</td>{#each r.values as v, i (i)}<td
-									>{Number.isFinite(v) ? v.toFixed(4) : '–'}</td
-								>{/each}</tr
-						>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{:else}
-		<TraceChart
-			time={run.time}
-			series={chart.series}
-			band={chart.band}
-			refLines={chart.refLines}
-			unit={chart.unit}
-			{xRange}
-			playhead={dyn.player.t}
-			highlight={hoverKey}
-			ariaLabel={chart.summary}
-			{height}
-			onseek={(t) => {
-				dyn.player.pause();
-				dyn.player.seek(t);
-			}}
-			onhover={(key) => {
-				if (!key || key.startsWith('coi') || key.startsWith('sum')) app.dynamicsHover = null;
-				else {
-					const id = key.split(':')[1];
-					app.dynamicsHover = { kind: key.startsWith('delta') ? 'unit' : 'bus', key: id };
-				}
-			}}
-			onpick={pick}
-			onzoom={(r) => (zoom = r)}
-		/>
-	{/if}
+	<div role="tabpanel" id="dyn-trace-panel" aria-labelledby="dyn-trace-tab-{tab}">
+		{#if asTable}
+			<div class="table" style:max-height="{height}px">
+				<table>
+					<caption>{chart.summary}</caption>
+					<thead
+						><tr
+							><th>t (s)</th>{#each tableSeries as s (s.key)}<th>{s.label}</th>{/each}</tr
+						></thead
+					>
+					<tbody>
+						{#each tableRows as r (r.t)}
+							<tr
+								><td>{r.t.toFixed(1)}</td>{#each r.values as v, i (i)}<td
+										>{Number.isFinite(v) ? v.toFixed(4) : '–'}</td
+									>{/each}</tr
+							>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<TraceChart
+				time={run.time}
+				series={chart.series}
+				band={chart.band}
+				refLines={chart.refLines}
+				unit={chart.unit}
+				{xRange}
+				playhead={dyn.player.t}
+				highlight={hoverKey}
+				ariaLabel={chart.summary}
+				{height}
+				onseek={(t) => {
+					dyn.player.pause();
+					dyn.player.seek(t);
+				}}
+				onhover={(key) => {
+					if (!key || key.startsWith('coi') || key.startsWith('sum')) app.dynamicsHover = null;
+					else {
+						const id = key.split(':')[1];
+						app.dynamicsHover = {
+							kind: key.startsWith('delta') ? 'unit' : 'bus',
+							key: id
+						};
+					}
+				}}
+				onpick={pick}
+				onzoom={(r) => (zoom = r)}
+			/>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -359,7 +388,7 @@
 		border-color: var(--accent);
 		box-shadow: var(--inset-active);
 	}
-	.legend {
+	.trace-legend {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;

@@ -7,7 +7,8 @@
 	const pos = (v: number) => ((v - 0.5) / (1.2 - 0.5)) * 100;
 </script>
 
-<aside class="legend" style:top="{top}px" aria-label="Dynamics map legend">
+<!-- Not `.legend`: the global stylesheet's .legend is the 6px colour-ramp strip. -->
+<aside class="dyn-legend" style:top="{top}px" aria-label="Dynamics map legend">
 	<div class="row">
 		<span class="title">Bus |V| (pu)</span>
 		<div class="bar" style:background={gradient}>
@@ -15,13 +16,15 @@
 		</div>
 	</div>
 	<div class="row halos">
-		<svg width="64" height="30" aria-hidden="true">
-			<circle cx="15" cy="15" r={haloLegendRadius(0.01)} class="under" />
-			<circle cx="45" cy="15" r={haloLegendRadius(0.1)} class="over" />
+		<svg width="94" height="30" aria-hidden="true">
+			<circle cx="15" cy="15" r={haloLegendRadius(0)} class="rest" />
+			<circle cx="45" cy="15" r={haloLegendRadius(0.01)} class="under" />
+			<circle cx="75" cy="15" r={haloLegendRadius(0.1)} class="over" />
 		</svg>
 		<span
 			>Ring size = speed deviation (small: 0.01 Hz, large: 0.1 Hz); <b class="u">teal</b> below,
-			<b class="o">magenta</b> above nominal. Grey: held at power-flow output.</span
+			<b class="o">magenta</b> above nominal. Faint grey: at nominal (within 1 mHz) or held at power-flow
+			output.</span
 		>
 	</div>
 	<details>
@@ -36,7 +39,7 @@
 </aside>
 
 <style>
-	.legend {
+	.dyn-legend {
 		position: fixed;
 		left: 50%;
 		transform: translateX(-50%);
@@ -92,6 +95,10 @@
 	}
 	.over {
 		stroke: var(--dyn-speed-over);
+	}
+	.rest {
+		stroke: var(--text-tertiary);
+		opacity: 0.6;
 	}
 	.u {
 		color: var(--dyn-speed-under);
