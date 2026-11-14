@@ -39,7 +39,7 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await shot(page, '01-demo-loaded');
 
 	// Pick bus 1101 with the keyboard path (the bus search), then fault it.
-	const search = page.locator('#bus-lookup-input');
+	const search = page.getByRole('combobox', { name: 'Bus lookup' });
 	await search.fill('1101');
 	await search.press('Enter');
 	await page.getByRole('button', { name: /Apply a fault here/ }).click();
