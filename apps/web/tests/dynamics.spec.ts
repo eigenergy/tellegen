@@ -35,6 +35,10 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	page
 }) => {
 	const panel = await openDemo(page);
+	// Before a run the map is the case at rest, explained, not the
+	// steady-state dispatch.
+	await expect(page.getByTestId('dyn-legend-rest')).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByTestId('outcome-dynamics')).toBeVisible();
 	await shot(page, '01-demo-loaded');
 
 	// Pick bus 1101 with the keyboard path (the bus search), then fault it.
@@ -61,6 +65,31 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await page.waitForTimeout(1500);
 	await shot(page, '03-playback');
 
+	// The demo has a name, not its RAW header sentence.
+	await expect(
+		page.getByRole('button', { name: /^WECC 240 \(dynamics demo\) Local/ })
+	).toBeVisible();
+	// The legend box holds its ring key (the global .legend strip is 6 px).
+	const legend = page.getByRole('complementary', { name: 'Dynamics map legend' });
+	expect((await legend.boundingBox())!.height).toBeGreaterThan(40);
+	// The scrubber keeps its place as the readout gains an "after the fault" line.
+	const scrubBox = async () => (await page.getByTestId('dyn-scrubber').boundingBox())!.x;
+	await page.getByTestId('dyn-scrubber').evaluate((el: HTMLInputElement) => {
+		el.value = '0.5';
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+	});
+	const before = await scrubBox();
+	await page.getByTestId('dyn-scrubber').evaluate((el: HTMLInputElement) => {
+		el.value = '3';
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+	});
+	await expect(page.getByTestId('dyn-time')).toContainText('after clearing');
+	expect(await scrubBox()).toBe(before);
+
+	// The map's controls stay usable above the dock, beside the panels.
+	await page.getByRole('button', { name: 'Zoom in' }).click({ timeout: 5_000 });
+	await expect(page.getByTestId('dyn-legend-rest')).toHaveCount(0);
+
 	// Scrub to 1.05 s, during the fault: the lowest voltage is deep.
 	const scrub = page.getByTestId('dyn-scrubber');
 	await scrub.evaluate((el: HTMLInputElement) => {
@@ -79,6 +108,9 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await shot(page, '05-traces');
 	await panel.getByTestId('dyn-verdict').scrollIntoViewIfNeeded();
 	await shot(page, '06-verdict');
+	// The single-line diagram draws no dynamics layers: no legend over it.
+	await page.getByRole('button', { name: /single-line diagram/i }).click();
+	await expect(page.getByRole('complementary', { name: 'Dynamics map legend' })).toHaveCount(0);
 });
 
 test('a validated scenario carries its badge', async ({ page }) => {

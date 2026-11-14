@@ -28,6 +28,19 @@ test('an agent attaches .dyr text, runs a trip and reads a compact verdict', asy
 		text: example('case.dyr')
 	});
 	expect(attached).toMatchObject({ ok: true, data: { renewable_plants: 37 } });
+	// A second .dyr never opens a modal mid-call: it is refused unless the
+	// agent says to replace, and then the new file is what is attached.
+	const again = await callTool(page, 'import_case', {
+		file_name: 'other.dyr',
+		text: example('case.dyr')
+	});
+	expect(again).toMatchObject({ ok: false, error: { code: 'DYNAMICS_ATTACHED' } });
+	const replaced = await callTool(page, 'import_case', {
+		file_name: 'wecc240.dyr',
+		text: example('case.dyr'),
+		replace_dynamics: true
+	});
+	expect(replaced).toMatchObject({ ok: true, data: { renewable_plants: 37 } });
 
 	const inspected = await callTool(page, 'inspect_case', {});
 	if (!inspected.ok) throw new Error(inspected.error.message);
