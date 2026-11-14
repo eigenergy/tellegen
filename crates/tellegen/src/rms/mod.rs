@@ -525,8 +525,15 @@ impl RmsSimulation {
     /// When the system is too large for the dense eigensolver or it fails.
     #[cfg(feature = "rms-experimental")]
     pub fn eigenvalues(&self) -> Result<Vec<[f64; 2]>, String> {
-        linear::check_eigen_size(&self.sys)?;
-        let (a, _) = linear::reduced_a(&self.sys, &self.x0);
+        self.eigenvalues_at(models::REST_MARGIN)
+    }
+
+    /// [`Self::eigenvalues`] of [`Self::linearized`]`(rel)`.
+    #[cfg(feature = "rms-experimental")]
+    fn eigenvalues_at(&self, rel: f64) -> Result<Vec<[f64; 2]>, String> {
+        let sys = self.linearized(rel);
+        linear::check_eigen_size(&sys)?;
+        let (a, _) = linear::reduced_a(&sys, &self.x0);
         if a.nrows() == 0 {
             return Ok(Vec::new());
         }
@@ -540,6 +547,20 @@ impl RmsSimulation {
         Ok(eig)
     }
 
+    /// The system as a linearization at the initial point takes it: an
+    /// exciter output clamp a state rests past opens `rel` beyond it
+    /// ([`models::rest_clamp`]), so the forward differences keep the
+    /// coupling through it.
+    #[cfg(feature = "rms-experimental")]
+    fn linearized(&self, rel: f64) -> DynSystem {
+        let mut sys = self.sys.clone();
+        for d in &mut sys.devices {
+            let [_, _, a, g, _] = d.layout();
+            d.avr.rest_at(&self.x0[d.offset + a..d.offset + g], rel);
+        }
+        sys
+    }
+
     /// Modes with participation factors and frequency responses at the
     /// initial operating point.
     ///
@@ -547,8 +568,9 @@ impl RmsSimulation {
     /// When a frequency response names a missing generator or bus.
     #[cfg(feature = "rms-experimental")]
     pub fn linear_analysis(&self, request: &LinearRequest) -> Result<LinearResult, String> {
-        let (states, modes) = linear::modes(&self.sys, &self.x0, request.participation_top)?;
-        let bode = linear::bode(&self.sys, &self.x0, request)?;
+        let sys = self.linearized(models::REST_MARGIN);
+        let (states, modes) = linear::modes(&sys, &self.x0, request.participation_top)?;
+        let bode = linear::bode(&sys, &self.x0, request)?;
         Ok(LinearResult {
             states,
             modes,

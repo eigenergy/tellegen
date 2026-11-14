@@ -541,26 +541,28 @@ impl Avr {
         free
     }
 
-    /// Sets the output clamps for a run from the steady state `x`: SEXS's
-    /// field voltage and ESAC1A's `VA` are their lags' states clamped to
-    /// `[EMIN, EMAX]` (`[VAMIN, VAMAX]`), as PSS/E has it, so a step that
-    /// carries the state past a limit does not pass it on. A state that
-    /// rests past its limit at the dispatch (see [`Avr::limit_breaches`])
-    /// widens the clamp to itself, so the unit starts at rest there as
-    /// PowerSimulationsDynamics.jl, which applies the state unclamped, has it.
-    pub(crate) fn rest_at(&mut self, x: &[f64]) {
+    /// Sets the output clamps from the steady state `x`: SEXS's field voltage
+    /// and ESAC1A's `VA` are their lags' states clamped to `[EMIN, EMAX]`
+    /// (`[VAMIN, VAMAX]`), as PSS/E has it, so a step that carries the state
+    /// past a limit does not pass it on. A state that rests past its limit
+    /// at the dispatch (see [`Avr::limit_breaches`]) widens the clamp to
+    /// itself, so the unit starts at rest there as
+    /// PowerSimulationsDynamics.jl, which applies the state unclamped, has
+    /// it; with `rel > 0` to slightly beyond itself ([`rest_clamp`]), as a
+    /// linearization at the start takes it.
+    pub(crate) fn rest_at(&mut self, x: &[f64], rel: f64) {
         match self {
             #[cfg(feature = "rms-experimental")]
-            Self::Graph(g) => g.rest_at(x),
+            Self::Graph(g) => g.rest_at(x, rel),
             Self::Sexs {
                 v_min, v_max, out, ..
-            } => *out = (v_min.min(x[0]), v_max.max(x[0])),
+            } => *out = rest_clamp(*v_min, *v_max, x[0], rel),
             Self::Esac1a {
                 va_min,
                 va_max,
                 va_out,
                 ..
-            } => *va_out = (va_min.min(x[2]), va_max.max(x[2])),
+            } => *va_out = rest_clamp(*va_min, *va_max, x[2], rel),
             _ => {}
         }
     }
@@ -570,10 +572,13 @@ impl Avr {
     /// field voltage past `EMAX` and ESAC1A's `VA` past `VAMAX` rest there
     /// anyway (the non-windup lag freezes only while it is pushed further)
     /// unless the lag's time constant is zero; the others leave no steady
-    /// state.
+    /// state. A block graph's limited lags are checked as SEXS's field
+    /// voltage is.
     pub(crate) fn limit_breaches(&self, x: &[f64], u: AvrIn) -> Vec<LimitBreach> {
         let mut out = Vec::new();
         match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => out = g.limit_breaches(x),
             // With `TE = 0` (`TA = 0` for ESAC1A) the limited lag is
             // algebraic (`0 = clamp(K·u) − y`): no rest past the limit.
             Self::Sexs {
@@ -751,6 +756,30 @@ impl Avr {
     }
 }
 
+/// The output clamp `[lo, hi]` of a limited lag whose state rests at `v`:
+/// unchanged with `v` inside it; past a side, that side moved to `v`, and
+/// `rel · max(|v|, 1)` beyond it. A run takes `rel = 0`: the non-windup lag
+/// holds a state pushed further out, so the clamp at the state changes
+/// nothing there. A linearization at the start takes [`REST_MARGIN`]: its
+/// forward difference steps the state by [`super::system::FD_REL`]
+/// `· max(|v|, 1)`, outward, and a clamp at `v` itself would give the
+/// output no sensitivity to the state (a mode at the lag's `−1/T` alone,
+/// its coupling lost). The run keeps the clamp at the state because a wider
+/// one changes the Jacobian its Newton iterations use, and with it the
+/// trajectory in the last digits.
+pub(crate) fn rest_clamp(lo: f64, hi: f64, v: f64, rel: f64) -> (f64, f64) {
+    let margin = rel * v.abs().max(1.0);
+    (
+        if v < lo { v - margin } else { lo },
+        if v > hi { v + margin } else { hi },
+    )
+}
+
+/// The relative margin a linearization opens beyond a state resting past
+/// its limit ([`rest_clamp`]): a hundred forward-difference steps.
+#[cfg(feature = "rms-experimental")]
+pub(crate) const REST_MARGIN: f64 = 100.0 * super::system::FD_REL;
+
 /// The bound standing in for a removed limit: finite, so a clamp scaled by
 /// the terminal voltage (EXST1's output) stays ordered even at `VT = 0`.
 const NO_LIMIT: f64 = 1e30;
@@ -766,7 +795,7 @@ pub(crate) struct LimitBreach {
 
 /// `value` against `[lo, hi]` (with a 1e-8 relative slack for the solver):
 /// the breach as `"{what} = value pu is above {hi_name} = hi"`, or below.
-fn breach(
+pub(crate) fn breach(
     out: &mut Vec<LimitBreach>,
     holds: bool,
     what: &str,

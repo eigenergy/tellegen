@@ -125,8 +125,12 @@ pub enum Block {
         t: f64,
     },
     /// `K/(1 + sT)` with non-windup limits on the state. The output is the
-    /// clamped state, or with `clamp_output: false` the state itself (PSS/E
-    /// SEXS: the state can pass a limit within a step).
+    /// state clamped to `[min, max]`, as PSS/E has SEXS's field voltage and
+    /// ESAC1A's `VA` (a step can carry the state past a limit; the output
+    /// stays at it), or with `clamp_output: false` the state itself, as
+    /// PowerSimulationsDynamics.jl has them. A state that rests past a limit
+    /// at initialization widens the clamp to itself, so the unit starts at
+    /// rest there (a linearization at the start opens it slightly beyond).
     LagLimited {
         k: f64,
         t: f64,
@@ -961,8 +965,10 @@ impl CompiledGraph {
     /// Sets each clamped lag's output clamp from the steady state `x`: its
     /// limits, widened to a state that rests past them (a non-windup lag
     /// holds a state it is pushing further out), so the graph starts at
-    /// rest there as the unclamped state would.
-    pub(crate) fn rest_at(&mut self, x: &[f64]) {
+    /// rest there as the unclamped state would; with `rel > 0` to slightly
+    /// beyond it, as a linearization at the start takes it
+    /// ([`super::models::rest_clamp`]).
+    pub(crate) fn rest_at(&mut self, x: &[f64], rel: f64) {
         for op in &mut self.tape {
             if let Op::StateClamped {
                 out,
@@ -975,11 +981,37 @@ impl CompiledGraph {
                     min: lo, max: hi, ..
                 } = self.blocks[*out as usize]
                 {
-                    let v = x[*s as usize];
-                    (*min, *max) = (lo.min(v), hi.max(v));
+                    (*min, *max) = super::models::rest_clamp(lo, hi, x[*s as usize], rel);
                 }
             }
         }
+    }
+
+    /// The limited lags whose steady state `x` stands beyond their limits,
+    /// as [`super::models::Avr::limit_breaches`] has them for the compiled
+    /// exciters: a lag with a time constant rests there anyway (its
+    /// non-windup holds a state pushed further out), one without is
+    /// algebraic and leaves no steady state there.
+    pub(crate) fn limit_breaches(&self, x: &[f64]) -> Vec<super::models::LimitBreach> {
+        let mut out = Vec::new();
+        let graph = if self.graph.name.trim().is_empty() {
+            "block graph"
+        } else {
+            self.graph.name.trim()
+        };
+        for (i, block) in self.blocks.iter().enumerate() {
+            if let Block::LagLimited { t, min, max, .. } = *block {
+                super::models::breach(
+                    &mut out,
+                    t >= f64::EPSILON,
+                    &format!("{graph} lag {}", self.graph.nodes[i].id),
+                    x[self.offset[i]],
+                    ("min", min),
+                    ("max", max),
+                );
+            }
+        }
+        out
     }
 
     pub(crate) fn n_states(&self) -> usize {

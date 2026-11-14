@@ -1034,7 +1034,7 @@ pub(crate) fn init_device(
             dev.v_ref = ua[na];
         }
     }
-    dev.avr.rest_at(&x[a..g]);
+    dev.avr.rest_at(&x[a..g], 0.0);
 
     // Stage 2c: governor states and power reference for the torque.
     match &dev.gov {
@@ -1488,5 +1488,212 @@ mod tests {
             "HYGOV gate opening",
             "above GMAX = 0.6",
         );
+    }
+
+    /// An exciter graph whose lag rests past its limit at the dispatch gives
+    /// the note a compiled exciter gives (SEXS's template past EMAX), and
+    /// with a zero time constant fails by name.
+    #[cfg(feature = "rms-experimental")]
+    #[test]
+    fn exciter_graphs_beyond_their_limits_at_rest_are_named() {
+        let graph = |record: &str| -> Avr {
+            let dyr = powerio::parse_dyr(&format!("102 {record} /\n")).unwrap();
+            let m = powerio::typed_model(&dyr.records()[0]).unwrap();
+            let g = super::super::graph::template(&m).unwrap();
+            Avr::Graph(Box::new(
+                super::super::graph::CompiledGraph::new(&g).unwrap(),
+            ))
+        };
+        let with_graph = |record: &str| {
+            let (_, native) = init_genrou_with(&[record])?;
+            let mut dyr = String::from(
+                "102 'GENROU' 1 7.0 0.03 0.75 0.05 4.0 0.0 1.8 1.75 0.3 0.55 0.25 0.2 0.1 0.3 /\n",
+            );
+            dyr.push_str(&format!("102 {record} /\n"));
+            let case = powerio::parse_dyr(&dyr).unwrap();
+            let m = powerio::typed_model(&case.records()[0]).unwrap();
+            let (machine, shaft) = machine_from_psse(&m, (0.0, 0.25)).unwrap();
+            let mut dev = GenDevice {
+                bus_number: 102,
+                machine_id: "1".into(),
+                bus: 0,
+                scale: 1.0,
+                f0: 60.0,
+                machine,
+                shaft,
+                avr: graph(record),
+                gov: Governor::Fixed,
+                pss: Stabilizer::None,
+                v_ref: 1.0,
+                p_ref: 1.0,
+                offset: 0,
+                tripped: None,
+            };
+            let v = C64::new(1.0, 0.0);
+            let i = (C64::new(0.8, 0.3) / v).conj();
+            init_device(&mut dev, v, i).map(|(_, notes)| (native, notes))
+        };
+        // Within its limits: no note from either.
+        let (native, notes) = with_graph("'SEXS' 1 0.1 10 100 0.1 0 5").unwrap();
+        assert!(
+            native.is_empty() && notes.is_empty(),
+            "{native:?} {notes:?}"
+        );
+        // Past EMAX: a note naming the lag and the limit, as the compiled one.
+        let (native, notes) = with_graph("'SEXS' 1 0.1 10 100 0.1 0 1.5").unwrap();
+        assert_eq!(native.len(), 1, "{native:?}");
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("SEXS lag Vf") && notes[0].contains("above max = 1.5000"),
+            "{notes:?}"
+        );
+        assert!(
+            notes[0].contains("starts, and rests, beyond this limit"),
+            "{notes:?}"
+        );
+        // With TE = 0 the lag is algebraic: no rest past the limit.
+        let e = with_graph("'SEXS' 1 0.1 10 100 0 0 1.5").unwrap_err();
+        assert!(e.starts_with("generator 102-1: "), "{e}");
+    }
+
+    /// The SMIB cases of WECC 240 whose SEXS starts above EMAX (the power
+    /// flow without reactive limits), as compiled and as a block graph.
+    #[cfg(feature = "rms-experimental")]
+    fn smib_sexs_past_emax() -> Vec<(String, RmsSimulation)> {
+        let options = crate::rms::RmsOptions {
+            reactive_limits: false,
+            ..crate::rms::RmsOptions::default()
+        };
+        let mut out = Vec::new();
+        for case in wecc240_smib_cases()
+            .iter()
+            .filter(|c| c.models.iter().any(|m| m == "SEXS"))
+        {
+            let (net, dyr) = smib_study(case);
+            let sim =
+                RmsSimulation::with_options(&net, &dyr, LoadModel::ConstantImpedance, options)
+                    .unwrap();
+            let past = sim.notes.iter().any(|n| n.contains("above EMAX"));
+            if !past {
+                continue;
+            }
+            let sexs = dyr
+                .records()
+                .iter()
+                .filter_map(|r| powerio::typed_model(r).ok())
+                .find_map(|m| {
+                    matches!(m, powerio::DynamicModel::Sexs(_))
+                        .then(|| super::super::graph::template(&m))
+                        .flatten()
+                })
+                .unwrap();
+            let models = [crate::rms::ModelOverride {
+                bus: 102,
+                machine_id: "1".into(),
+                graph: sexs,
+            }];
+            let graph = RmsSimulation::with_models_and_options(
+                &net,
+                &dyr,
+                &models,
+                LoadModel::ConstantImpedance,
+                options,
+            )
+            .unwrap();
+            assert!(
+                graph.notes.iter().any(|n| n.contains("SEXS lag Vf")),
+                "{}: {:?}",
+                case.id,
+                graph.notes
+            );
+            out.push((format!("{} (graph)", case.id), graph));
+            out.push((case.id.clone(), sim));
+        }
+        out
+    }
+
+    /// A unit whose exciter starts past its output limit runs with the
+    /// clamp at its state, the linearization alone opening it beyond: the
+    /// trajectories with the small-signal analysis are those without it, to
+    /// 1e-12 in every channel, through a fault and a line trip. (A run with
+    /// the opened clamp differs by about 3e-11: its Newton iterations use
+    /// the Jacobian the clamp changes.)
+    #[cfg(feature = "rms-experimental")]
+    #[test]
+    fn the_rest_margin_leaves_the_trajectories() {
+        use crate::rms::RmsEvent;
+        if shipped_wecc240().is_none() {
+            return;
+        }
+        let cases = smib_sexs_past_emax();
+        assert!(!cases.is_empty());
+        for (id, sim) in &cases {
+            for events in [
+                vec![
+                    RmsEvent::BusFault {
+                        time: 0.2,
+                        bus: 102,
+                        r: 0.0,
+                        x: 0.01,
+                    },
+                    RmsEvent::ClearFault {
+                        time: 0.3,
+                        bus: 102,
+                    },
+                ],
+                vec![RmsEvent::BranchTrip {
+                    time: 0.2,
+                    from: 101,
+                    to: 102,
+                    circuit: "2".into(),
+                }],
+            ] {
+                let request = |small_signal| RmsRequest {
+                    t_end: 2.0,
+                    dt: 0.002,
+                    output_step: 0.01,
+                    events: events.clone(),
+                    small_signal,
+                    ..RmsRequest::default()
+                };
+                let (a, b) = (
+                    sim.run(&request(true)).unwrap(),
+                    sim.run(&request(false)).unwrap(),
+                );
+                assert!(!a.eigenvalues.is_empty() && b.eigenvalues.is_empty());
+                assert_eq!(a.channels.len(), b.channels.len());
+                for (key, ya) in &a.channels {
+                    let d = ya
+                        .iter()
+                        .zip(&b.channels[key])
+                        .map(|(p, q)| (p - q).abs())
+                        .fold(0.0_f64, f64::max);
+                    assert!(d <= 1e-12, "{id} {key}: {d:e}");
+                }
+            }
+        }
+    }
+
+    /// The linearization at a field voltage resting above EMAX keeps its
+    /// coupling: none of the eigenvalues is the exciter's lag alone
+    /// (`−1/TE = −10`), where the clamp exactly at the state left one, and
+    /// they are those with the clamp far beyond the state (the difference
+    /// quotients stay inside the margin).
+    #[cfg(feature = "rms-experimental")]
+    #[test]
+    fn a_unit_resting_past_its_limit_keeps_its_small_signal_coupling() {
+        if shipped_wecc240().is_none() {
+            return;
+        }
+        let cases = smib_sexs_past_emax();
+        assert!(cases.iter().any(|(id, _)| id == "smib_genrou_hygov_sexs"));
+        let lone = |e: &[[f64; 2]]| e.iter().any(|z| (z[0] + 10.0).abs() < 1e-6 && z[1] == 0.0);
+        for (id, sim) in &cases {
+            let eig = sim.eigenvalues().unwrap();
+            assert!(!lone(&eig), "{id}: {eig:?}");
+            let tight = sim.eigenvalues_at(0.0).unwrap();
+            assert!(lone(&tight), "{id}: {tight:?}");
+            assert_eq!(eig, sim.eigenvalues_at(1.0).unwrap(), "{id}");
+        }
     }
 }
