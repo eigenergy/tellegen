@@ -86,6 +86,9 @@
 		height: 4px;
 		border-left: 1px solid var(--ink-dim);
 	}
+	svg {
+		flex: none;
+	}
 	circle {
 		fill: none;
 		stroke-width: 2;

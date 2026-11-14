@@ -435,7 +435,8 @@
 	}
 	.welcome {
 		position: fixed;
-		bottom: 12px;
+		/* Above the dynamics playback dock while it is open. */
+		bottom: max(12px, var(--tellegen-timeline-clear, 0px));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 30;

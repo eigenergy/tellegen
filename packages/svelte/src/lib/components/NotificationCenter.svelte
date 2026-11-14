@@ -170,8 +170,9 @@
 	.notifications {
 		position: fixed;
 		z-index: 65;
-		/* Above the dynamics playback dock while it is open. */
-		bottom: max(40px, var(--tellegen-timeline-clear, 0px));
+		/* Above the dynamics playback dock while it is open, and above the
+		   host's one-line notice that sits on the dock. */
+		bottom: max(40px, calc(var(--tellegen-timeline-clear, 0px) + 32px));
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(540px, calc(100vw - 200px));
@@ -268,7 +269,7 @@
 	@media (max-width: 960px) {
 		.notifications {
 			width: calc(100vw - 24px);
-			bottom: max(60px, var(--tellegen-timeline-clear, 0px));
+			bottom: max(60px, calc(var(--tellegen-timeline-clear, 0px) + 32px));
 		}
 		button {
 			min-height: 36px;

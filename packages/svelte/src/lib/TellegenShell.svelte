@@ -39,6 +39,14 @@
 		app.dockInset =
 			dynamicsShown && timelineHeight > 0 ? timelineHeight + (app.compactLayout ? 40 : 12) : 0;
 	});
+	// Chrome anchored at the bottom (toasts, map controls, the host app's own
+	// notices outside this shell) clears the dock through this variable.
+	$effect(() => {
+		const root = document.documentElement.style;
+		if (app.dockInset > 0) root.setProperty('--tellegen-timeline-clear', `${app.dockInset + 8}px`);
+		else root.removeProperty('--tellegen-timeline-clear');
+		return () => root.removeProperty('--tellegen-timeline-clear');
+	});
 	// When the dock opens, frame the case in the map above it: the event that
 	// was just simulated must not sit behind the traces.
 	let dockFramed = false;
@@ -138,7 +146,6 @@
 	style:--tellegen-dock-bottom={dynamicsShown && !app.compactLayout
 		? `${timelineHeight + 24}px`
 		: undefined}
-	style:--tellegen-timeline-clear={app.dockInset > 0 ? `${app.dockInset + 8}px` : undefined}
 >
 	<TellegenMap
 		onbusclick={ctrl.selectBus}
