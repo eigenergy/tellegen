@@ -597,11 +597,7 @@ fn compile_inner(
                         ),
                         Some(origin),
                         Rule::Bound {
-                            scale: if tx.tap_inverse {
-                                -bound * bound / tx.tap_nominal
-                            } else {
-                                tx.tap_nominal.recip()
-                            },
+                            scale: tx.calc_tap_multiplier_derivative(tx.calc_physical_tap(bound)),
                             lower,
                         },
                     );

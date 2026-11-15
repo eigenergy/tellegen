@@ -316,13 +316,7 @@ pub(super) fn check(
                 .map(|(k, c)| McOpfCoilAxis::new(prep, k, c.positive, c.negative))
                 .collect(),
             ports,
-            tap: tx.tap_bounds.map(|_| {
-                if tx.tap_inverse {
-                    tx.tap_nominal / alpha
-                } else {
-                    tx.tap_nominal * alpha
-                }
-            }),
+            tap: tx.tap_bounds.map(|_| tx.calc_physical_tap(alpha)),
             coil_current_a: currents.iter().map(|i| array(*i, ib)).collect(),
             coil_power_va: powers,
         });

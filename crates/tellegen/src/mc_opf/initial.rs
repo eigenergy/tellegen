@@ -280,11 +280,7 @@ pub(super) fn apply(
     {
         if let Some(physical) = point.transformer_tap(&tx.identity) {
             if let Some(id) = tap {
-                x[*id] = if tx.tap_inverse {
-                    tx.tap_nominal / physical
-                } else {
-                    physical / tx.tap_nominal
-                };
+                x[*id] = tx.calc_tap_multiplier(physical);
             } else {
                 diagnostics.push(remark(
                     tx.identity.clone(),
