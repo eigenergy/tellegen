@@ -606,7 +606,7 @@ impl McPfSession {
     /// Terminal identities in calculation order, which is also the order of
     /// [`McPfResult::terminals`] and of the interleaved terminal arrays.
     pub fn terminal_ids(&self) -> &[(String, String)] {
-        &self.prepared.index.terminal_ids
+        self.prepared.index.terminal_ids()
     }
 
     /// Terminal voltages as interleaved `[re, im]` pairs, volts.
@@ -1185,7 +1185,7 @@ fn validate_result_against_solution(
     let prepared = PreparedNetwork::prepare(solution.instance())?;
     let prepared_voltage = prepared
         .index
-        .terminal_ids
+        .terminal_ids()
         .iter()
         .map(|(bus, terminal)| {
             terminal_voltages
@@ -1878,7 +1878,7 @@ fn iterate_cancellable(
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<FixedPoint, String> {
     validate_options(options)?;
-    let n = prepared.index.terminal_ids.len();
+    let n = prepared.index.terminal_ids().len();
     let mut voltage = if let Some(initial) = initial_voltage {
         if initial.len() != n {
             return Err(format!(
@@ -2181,7 +2181,7 @@ fn build_result(
     state: &FixedPoint,
 ) -> Result<McPfResult, String> {
     let voltage = &state.voltage;
-    let terminals: Vec<_> = (0..prepared.index.terminal_ids.len())
+    let terminals: Vec<_> = (0..prepared.index.terminal_ids().len())
         .map(|i| terminal_result(prepared, voltage, i))
         .collect();
     let mut element_ports = Vec::new();
@@ -2271,7 +2271,7 @@ fn terminal_result(
     i: usize,
 ) -> McTerminalResult {
     let current = passive_current(prepared, voltage, i);
-    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    let (bus, terminal) = &prepared.index.terminal_ids()[i];
     McTerminalResult {
         bus: bus.clone(),
         terminal: terminal.clone(),
@@ -2291,7 +2291,7 @@ fn load_port(
     branch_current: Complex64,
 ) -> McElementPort {
     let (current, power) = load_port_values(voltage, i, c, branch_current);
-    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    let (bus, terminal) = &prepared.index.terminal_ids()[i];
     McElementPort {
         element: load.name.clone(),
         kind: "load".to_owned(),
@@ -2322,7 +2322,7 @@ fn passive_port(
     row: usize,
 ) -> McElementPort {
     let (i, current, power) = passive_port_values(voltage, element, row);
-    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    let (bus, terminal) = &prepared.index.terminal_ids()[i];
     McElementPort {
         element: element.name.clone(),
         kind: element.kind.clone(),

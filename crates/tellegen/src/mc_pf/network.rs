@@ -10,38 +10,26 @@ use super::linear::RetainedComplexLu;
 use super::loads::{prepare_load, BranchLoad};
 use super::transformer::prepare_transformer;
 
+/// The solver's terminal positions: PowerIO's flat terminal index (every
+/// declared terminal, bus names folded ASCII case insensitively, display
+/// spelling retained), plus the solver's own admission rules.
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkIndex {
-    pub terminal_ids: Vec<(String, String)>,
-    /// Terminal positions by ASCII-folded bus name and exact terminal name.
-    /// PowerIO bus identities are case insensitive; display spelling is retained.
-    positions: BTreeMap<String, BTreeMap<String, usize>>,
+    terminals: powerio_dist::MulticonductorTerminalIndex,
 }
 
 impl NetworkIndex {
     pub(crate) fn new(network: &MulticonductorNetwork) -> Result<Self, String> {
-        let mut terminal_ids = Vec::new();
-        let mut positions = BTreeMap::<String, BTreeMap<String, usize>>::new();
         for bus in network.buses() {
             if bus.terminals.is_empty() {
                 return Err(format!("bus `{}` has no terminals", bus.id));
             }
-            let bus_key = bus.id.to_ascii_lowercase();
-            if positions.contains_key(&bus_key) {
-                return Err(format!("duplicate bus identity {}", bus.id));
-            }
-            let terminals = positions.entry(bus_key).or_default();
-            for terminal in &bus.terminals {
-                if terminals
-                    .insert(terminal.clone(), terminal_ids.len())
-                    .is_some()
-                {
-                    return Err(format!("duplicate terminal identity {}:{terminal}", bus.id));
-                }
-                terminal_ids.push((bus.id.clone(), terminal.clone()));
-            }
+        }
+        let terminals = powerio_dist::MulticonductorTerminalIndex::build(network)
+            .map_err(|error| error.to_string())?;
+        for bus in network.buses() {
             for grounded in &bus.grounded {
-                if !terminals.contains_key(grounded) {
+                if terminals.resolve(&bus.id, grounded).is_none() {
                     return Err(format!(
                         "bus `{}` grounds unknown terminal `{grounded}`",
                         bus.id
@@ -49,31 +37,23 @@ impl NetworkIndex {
                 }
             }
         }
-        Ok(Self {
-            terminal_ids,
-            positions,
-        })
+        Ok(Self { terminals })
+    }
+
+    /// Position to `(bus, terminal)` in the network's own spelling.
+    pub(crate) fn terminal_ids(&self) -> &[(String, String)] {
+        self.terminals.terminals()
     }
 
     pub(crate) fn resolve(&self, identity: (&str, &str)) -> Result<usize, String> {
-        self.positions
-            .get(identity.0)
-            .or_else(|| self.positions.get(&identity.0.to_ascii_lowercase()))
-            .and_then(|terminals| terminals.get(identity.1))
-            .copied()
+        self.terminals
+            .resolve(identity.0, identity.1)
             .ok_or_else(|| format!("unknown terminal identity {}:{}", identity.0, identity.1))
     }
 
     /// Positions of one bus's terminals in calculation order.
     pub(crate) fn bus_terminals(&self, bus: &str) -> Vec<usize> {
-        let mut positions: Vec<usize> = self
-            .positions
-            .get(bus)
-            .or_else(|| self.positions.get(&bus.to_ascii_lowercase()))
-            .map(|terminals| terminals.values().copied().collect())
-            .unwrap_or_default();
-        positions.sort_unstable();
-        positions
+        self.terminals.bus_terminals(bus)
     }
 }
 
@@ -151,20 +131,17 @@ impl CsrMatrix {
     }
 }
 
+/// Scatter a PowerIO primitive onto terminal positions through PowerIO's one
+/// primitive scatter.
 fn stamp_local_values(
     y: &mut StampedMatrix,
     terminals: &[usize],
     local: &[Vec<Complex64>],
 ) -> Result<(), String> {
-    if local.len() != terminals.len() || local.iter().any(|row| row.len() != terminals.len()) {
-        return Err("component primitive and terminal map dimensions differ".to_owned());
-    }
-    for (r, &i) in terminals.iter().enumerate() {
-        for (c, &j) in terminals.iter().enumerate() {
-            y.add(i, j, local[r][c]);
-        }
-    }
-    Ok(())
+    powerio_matrix::scatter_primitive_admittance(terminals, local, |i, j, value| {
+        y.add(i, j, value);
+    })
+    .map_err(|_| "component primitive and terminal map dimensions differ".to_owned())
 }
 
 #[derive(Debug)]
@@ -229,7 +206,7 @@ impl PreparedNetwork {
         }
         super::input::validate_mc_network(network)?;
         let index = NetworkIndex::new(network)?;
-        let n = index.terminal_ids.len();
+        let n = index.terminal_ids().len();
         // Name lookups keep the first matching row, exactly as the linear
         // searches they replace did, without their quadratic cost.
         let mut source_rows = BTreeMap::<&str, &powerio_dist::VoltageSource>::new();
@@ -883,13 +860,13 @@ mod identity_tests {
         assert_eq!(index.resolve(("sourcebus", "a")).unwrap(), 0);
         assert_eq!(index.resolve(("SOURCEBUS", "A")).unwrap(), 1);
         assert_eq!(index.bus_terminals("sOuRcEbUs"), vec![0, 1]);
-        assert_eq!(index.terminal_ids[0].0, "SourceBus");
+        assert_eq!(index.terminal_ids()[0].0, "SourceBus");
         let mut duplicate = powerio_dist::DistBus::default();
         duplicate.id = "sourcebus".into();
         duplicate.terminals = vec!["other".into()];
         network.buses_mut().push(duplicate);
         assert!(NetworkIndex::new(&network)
             .unwrap_err()
-            .contains("duplicate bus"));
+            .contains("duplicated case-insensitively"));
     }
 }
