@@ -353,27 +353,22 @@ pub fn case_equipment(net: &BalancedNetwork) -> EquipmentView {
     }
 }
 
-/// Connected groups of buses over the in-service branches.
+/// Connected groups of buses over the in-service branches: PowerIO's dense
+/// island labels over them, one more than the largest label (every bus
+/// counts, an isolated one as its own island).
 fn islands(net: &BalancedNetwork) -> usize {
     let ids: Vec<usize> = net.buses().iter().map(|b| b.id.0).collect();
     let at = |id: usize| ids.iter().position(|&b| b == id);
-    let mut parent: Vec<usize> = (0..ids.len()).collect();
-    fn root(p: &mut [usize], mut i: usize) -> usize {
-        while p[i] != i {
-            p[i] = p[p[i]];
-            i = p[i];
-        }
-        i
-    }
-    for br in net.branches().iter().filter(|b| b.in_service) {
-        if let (Some(a), Some(b)) = (at(br.from.0), at(br.to.0)) {
-            let (ra, rb) = (root(&mut parent, a), root(&mut parent, b));
-            parent[ra] = rb;
-        }
-    }
-    (0..ids.len())
-        .filter(|&i| root(&mut parent, i) == i)
-        .count()
+    let (from, to): (Vec<usize>, Vec<usize>) = net
+        .branches()
+        .iter()
+        .filter(|b| b.in_service)
+        .filter_map(|br| Some((at(br.from.0)?, at(br.to.0)?)))
+        .unzip();
+    powerio_tx::calc_dense_island_labels(ids.len(), &from, &to)
+        .iter()
+        .max()
+        .map_or(0, |&last| last + 1)
 }
 
 fn finite(values: &[Option<f64>]) -> Result<(), String> {
