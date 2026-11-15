@@ -606,11 +606,39 @@ fn coefficients(
     }
 }
 
+/// Signed rows from the load's terminal voltages to its branch voltages, one
+/// per stated power. PowerIO's connection incidence
+/// (`lindist3flow_connection_incidence`) covers a grounded wye, a single phase
+/// load across two terminals, and a three phase delta. The shapes it does not
+/// state are built here: a wye with an explicit neutral terminal (each phase
+/// to that neutral), a delta stated as terminal pairs, and a delta ring of
+/// other than three terminals.
 fn connection_incidence(
     load: &DistLoad,
     index: &NetworkIndex,
 ) -> Result<Vec<Vec<(usize, Complex64)>>, String> {
     let terminal = |name: &str| index.resolve((&load.bus, name));
+    if let Ok(rows) = powerio_matrix::lindist3flow_connection_incidence(
+        load.configuration,
+        load.terminal_map.len(),
+        load.p_nom.len(),
+    ) {
+        let nodes: Vec<usize> = load
+            .terminal_map
+            .iter()
+            .map(|name| terminal(name))
+            .collect::<Result<_, _>>()?;
+        return Ok(rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(&nodes)
+                    .filter(|(&coefficient, _)| coefficient != 0.0)
+                    .map(|(&coefficient, &node)| (node, Complex64::new(coefficient, 0.0)))
+                    .collect()
+            })
+            .collect());
+    }
     match load.configuration {
         Configuration::Wye => {
             let neutral = if load.terminal_map.len() == load.p_nom.len() + 1 {

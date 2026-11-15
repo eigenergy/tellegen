@@ -10,35 +10,6 @@ use super::linear::RetainedComplexLu;
 use super::loads::{prepare_load, BranchLoad};
 use super::transformer::prepare_transformer;
 
-#[derive(Debug)]
-struct BusComponents {
-    parent: Vec<usize>,
-}
-
-impl BusComponents {
-    fn new(len: usize) -> Self {
-        Self {
-            parent: (0..len).collect(),
-        }
-    }
-
-    fn root(&mut self, index: usize) -> usize {
-        let parent = self.parent[index];
-        if parent != index {
-            self.parent[index] = self.root(parent);
-        }
-        self.parent[index]
-    }
-
-    fn union(&mut self, a: usize, b: usize) {
-        let a = self.root(a);
-        let b = self.root(b);
-        if a != b {
-            self.parent[b] = a;
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkIndex {
     pub terminal_ids: Vec<(String, String)>,
@@ -194,26 +165,6 @@ fn stamp_local_values(
         }
     }
     Ok(())
-}
-
-#[derive(Clone, Debug)]
-struct DenseMatrix {
-    n: usize,
-    values: Vec<Complex64>,
-}
-impl DenseMatrix {
-    fn zeros(n: usize) -> Self {
-        Self {
-            n,
-            values: vec![Complex64::new(0.0, 0.0); n * n],
-        }
-    }
-    fn add(&mut self, row: usize, col: usize, value: Complex64) {
-        self.values[row * self.n + col] += value;
-    }
-    fn get(&self, row: usize, col: usize) -> Complex64 {
-        self.values[row * self.n + col]
-    }
 }
 
 #[derive(Debug)]
@@ -407,26 +358,13 @@ impl PreparedNetwork {
                 .iter()
                 .map(|t| index.resolve((&shunt.bus, t)))
                 .collect::<Result<_, _>>()?;
-            for (r, &i) in map.iter().enumerate() {
-                for (c, &j) in map.iter().enumerate() {
-                    passive.add(i, j, Complex64::new(shunt.g[r][c], shunt.b[r][c]));
-                }
-            }
+            let yprim = powerio_matrix::calc_shunt_primitive_admittance(shunt);
+            stamp_local_values(&mut passive, &map, &yprim)?;
             elements.push(PreparedElement {
                 name: shunt.name.clone(),
                 kind: "shunt".to_owned(),
                 terminals: map,
-                yprim: shunt
-                    .g
-                    .iter()
-                    .zip(&shunt.b)
-                    .map(|(gr, br)| {
-                        gr.iter()
-                            .zip(br)
-                            .map(|(&g, &b)| Complex64::new(g, b))
-                            .collect()
-                    })
-                    .collect(),
+                yprim,
             });
         }
         for capacitor in network.capacitors() {
@@ -444,66 +382,25 @@ impl PreparedNetwork {
                 .iter()
                 .map(|t| index.resolve((&capacitor.bus, t)))
                 .collect::<Result<_, _>>()?;
-            let mut yprim = vec![vec![Complex64::default(); map.len()]; map.len()];
-            let mut add_local_couple = |a: usize, b: usize, susceptance: f64| {
-                let value = Complex64::new(0.0, susceptance);
-                yprim[a][a] += value;
-                yprim[b][b] += value;
-                yprim[a][b] -= value;
-                yprim[b][a] -= value;
-            };
-            match capacitor.configuration {
-                powerio_dist::Configuration::SinglePhase => {
-                    if map.len() != 2 {
-                        return Err(format!(
-                            "single-phase capacitor `{}` requires two terminals",
-                            capacitor.name
-                        ));
-                    }
-                    stamp_couple(
-                        &mut passive,
-                        map[0],
-                        map[1],
-                        capacitor.q_rated / capacitor.v_nom.powi(2),
-                    );
-                    add_local_couple(0, 1, capacitor.q_rated / capacitor.v_nom.powi(2));
-                }
-                powerio_dist::Configuration::Wye => {
-                    if map.len() != 4 {
-                        return Err(format!(
-                            "wye capacitor `{}` requires exactly three phase terminals followed by an explicit neutral",
-                            capacitor.name
-                        ));
-                    }
-                    let b = capacitor.q_rated
-                        / ((map.len() - 1) as f64)
-                        / (capacitor.v_nom / 3f64.sqrt()).powi(2);
-                    for &phase in &map[..map.len() - 1] {
-                        stamp_couple(&mut passive, phase, *map.last().unwrap(), b);
-                        add_local_couple(phase, map.len() - 1, b);
-                    }
-                }
-                powerio_dist::Configuration::Delta => {
-                    if map.len() < 2 {
-                        return Err(format!(
-                            "delta capacitor `{}` maps fewer than two terminals",
-                            capacitor.name
-                        ));
-                    }
-                    let loops = if map.len() == 2 { 1 } else { map.len() };
-                    let b = capacitor.q_rated / loops as f64 / capacitor.v_nom.powi(2);
-                    for a in 0..loops {
-                        stamp_couple(&mut passive, map[a], map[(a + 1) % map.len()], b);
-                        add_local_couple(a, (a + 1) % map.len(), b);
-                    }
-                }
-                _ => {
-                    return Err(format!(
+            // The fixed point snapshot states a wye bank's neutral
+            // explicitly, after exactly three phase terminals.
+            if capacitor.configuration == powerio_dist::Configuration::Wye && map.len() != 4 {
+                return Err(format!(
+                    "wye capacitor `{}` requires exactly three phase terminals followed by an explicit neutral",
+                    capacitor.name
+                ));
+            }
+            // PowerIO's capacitor primitive: nameplate vars at nameplate
+            // voltage over each coil of the configuration.
+            let yprim = powerio_matrix::calc_capacitor_primitive_admittance(capacitor)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| {
+                    format!(
                         "capacitor `{}` uses unsupported configuration",
                         capacitor.name
-                    ))
-                }
-            }
+                    )
+                })?;
+            stamp_local_values(&mut passive, &map, &yprim)?;
             elements.push(PreparedElement {
                 name: capacitor.name.clone(),
                 kind: "capacitor".to_owned(),
@@ -680,33 +577,44 @@ fn infer_missing_load_voltages(
         .enumerate()
         .map(|(index, bus)| (bus.id.to_ascii_lowercase(), index))
         .collect();
-    let mut components = BusComponents::new(network.buses().len());
+    // Voltage zones: the buses lines and closed switches join, labelled by
+    // PowerIO's component labeling.
+    let (mut zone_from, mut zone_to) = (Vec::new(), Vec::new());
     for line in network.lines() {
-        let from = *bus_position
-            .get(&line.bus_from.to_ascii_lowercase())
-            .ok_or_else(|| format!("line `{}` references an unknown from bus", line.name))?;
-        let to = *bus_position
-            .get(&line.bus_to.to_ascii_lowercase())
-            .ok_or_else(|| format!("line `{}` references an unknown to bus", line.name))?;
-        components.union(from, to);
+        zone_from.push(
+            *bus_position
+                .get(&line.bus_from.to_ascii_lowercase())
+                .ok_or_else(|| format!("line `{}` references an unknown from bus", line.name))?,
+        );
+        zone_to.push(
+            *bus_position
+                .get(&line.bus_to.to_ascii_lowercase())
+                .ok_or_else(|| format!("line `{}` references an unknown to bus", line.name))?,
+        );
     }
     for switch in network.switches().iter().filter(|switch| !switch.open) {
-        let from = *bus_position
-            .get(&switch.bus_from.to_ascii_lowercase())
-            .ok_or_else(|| format!("switch `{}` references an unknown from bus", switch.name))?;
-        let to = *bus_position
-            .get(&switch.bus_to.to_ascii_lowercase())
-            .ok_or_else(|| format!("switch `{}` references an unknown to bus", switch.name))?;
-        components.union(from, to);
+        zone_from.push(
+            *bus_position
+                .get(&switch.bus_from.to_ascii_lowercase())
+                .ok_or_else(|| {
+                    format!("switch `{}` references an unknown from bus", switch.name)
+                })?,
+        );
+        zone_to.push(
+            *bus_position
+                .get(&switch.bus_to.to_ascii_lowercase())
+                .ok_or_else(|| format!("switch `{}` references an unknown to bus", switch.name))?,
+        );
     }
+    let zone = powerio_tx::calc_dense_island_labels(network.buses().len(), &zone_from, &zone_to);
 
     let mut rated = BTreeMap::<usize, Vec<(String, f64)>>::new();
     let mut source = BTreeMap::<usize, Vec<(String, f64)>>::new();
     let conventions = network.extras().get("bmopf_terminal_conventions");
-    let mut add = |bus: &str,
-                   label: String,
-                   value: f64,
-                   target: &mut BTreeMap<usize, Vec<(String, f64)>>|
+    let add = |bus: &str,
+               label: String,
+               value: f64,
+               target: &mut BTreeMap<usize, Vec<(String, f64)>>|
      -> Result<(), String> {
         if !value.is_finite() || value <= 0.0 {
             return Err(format!("{label} provides an invalid nominal voltage"));
@@ -715,7 +623,7 @@ fn infer_missing_load_voltages(
             .get(&bus.to_ascii_lowercase())
             .ok_or_else(|| format!("{label} references unknown bus `{bus}`"))?;
         target
-            .entry(components.root(position))
+            .entry(zone[position])
             .or_default()
             .push((label, value));
         Ok(())
@@ -802,8 +710,7 @@ fn infer_missing_load_voltages(
     }
 
     let mut bases = BTreeMap::<usize, f64>::new();
-    for position in 0..network.buses().len() {
-        let root = components.root(position);
+    for &root in &zone {
         if bases.contains_key(&root) {
             continue;
         }
@@ -841,7 +748,7 @@ fn infer_missing_load_voltages(
         let position = *bus_position
             .get(&load.bus.to_ascii_lowercase())
             .ok_or_else(|| format!("load `{}` references an unknown bus", load.name))?;
-        let root = components.root(position);
+        let root = zone[position];
         let line_neutral = *bases.get(&root).ok_or_else(|| {
             format!(
                 "load `{}` omits nominal voltage and bus `{}` has no source, transformer, or nameplate voltage anchor",
@@ -938,108 +845,27 @@ fn stamp_line(
     square(&code.b_from, "b_from")?;
     square(&code.g_to, "g_to")?;
     square(&code.b_to, "b_to")?;
-    let mut z = DenseMatrix::zeros(n);
-    let mut yprim = vec![vec![Complex64::default(); 2 * n]; 2 * n];
-    for r in 0..n {
-        for c in 0..n {
-            z.add(
-                r,
-                c,
-                Complex64::new(
-                    code.r_series[r][c] * line.length,
-                    code.x_series[r][c] * line.length,
-                ),
-            );
-        }
-    }
-    let zinv = invert_dense(&z)?;
-    let from: Vec<_> = line
+    // PowerIO's line primitive: the inverse series impedance over the
+    // length between the two ends, each end with its shunt half.
+    let yprim = powerio_matrix::calc_line_primitive_admittance(line, code)
+        .map_err(|error| error.to_string())?;
+    let terminals: Vec<_> = line
         .terminal_map_from
         .iter()
         .map(|t| index.resolve((&line.bus_from, t)))
+        .chain(
+            line.terminal_map_to
+                .iter()
+                .map(|t| index.resolve((&line.bus_to, t))),
+        )
         .collect::<Result<_, _>>()?;
-    let to: Vec<_> = line
-        .terminal_map_to
-        .iter()
-        .map(|t| index.resolve((&line.bus_to, t)))
-        .collect::<Result<_, _>>()?;
-    for r in 0..n {
-        for c in 0..n {
-            let y = zinv.get(r, c);
-            let yf = Complex64::new(
-                code.g_from[r][c] * line.length,
-                code.b_from[r][c] * line.length,
-            );
-            let yt = Complex64::new(code.g_to[r][c] * line.length, code.b_to[r][c] * line.length);
-            passive.add(from[r], from[c], y + yf);
-            passive.add(to[r], to[c], y + yt);
-            passive.add(from[r], to[c], -y);
-            passive.add(to[r], from[c], -y);
-            yprim[r][c] += y + yf;
-            yprim[n + r][n + c] += y + yt;
-            yprim[r][n + c] -= y;
-            yprim[n + r][c] -= y;
-        }
-    }
-    let mut terminals = from;
-    terminals.extend(to);
+    stamp_local_values(passive, &terminals, &yprim)?;
     Ok(PreparedElement {
         name: line.name.clone(),
         kind: "line".to_owned(),
         terminals,
         yprim,
     })
-}
-
-fn stamp_couple(y: &mut StampedMatrix, a: usize, b: usize, susceptance: f64) {
-    let value = Complex64::new(0.0, susceptance);
-    y.add(a, a, value);
-    y.add(b, b, value);
-    y.add(a, b, -value);
-    y.add(b, a, -value);
-}
-
-fn invert_dense(a: &DenseMatrix) -> Result<DenseMatrix, String> {
-    let n = a.n;
-    let mut m = a.values.clone();
-    let mut out = DenseMatrix::zeros(n);
-    for i in 0..n {
-        out.add(i, i, Complex64::new(1.0, 0.0));
-    }
-    for k in 0..n {
-        let mut pivot = k;
-        for r in k..n {
-            if m[r * n + k].norm() > m[pivot * n + k].norm() {
-                pivot = r;
-            }
-        }
-        if m[pivot * n + k].norm() <= 1e-14 {
-            return Err("line series impedance matrix is singular".to_owned());
-        }
-        if pivot != k {
-            for c in 0..n {
-                m.swap(k * n + c, pivot * n + c);
-                out.values.swap(k * n + c, pivot * n + c);
-            }
-        }
-        let p = m[k * n + k];
-        for c in 0..n {
-            m[k * n + c] /= p;
-            out.values[k * n + c] /= p;
-        }
-        let pivot_row = m[k * n..(k + 1) * n].to_vec();
-        let pivot_inverse = out.values[k * n..(k + 1) * n].to_vec();
-        for r in 0..n {
-            if r != k {
-                let q = m[r * n + k];
-                for c in 0..n {
-                    m[r * n + c] -= q * pivot_row[c];
-                    out.values[r * n + c] -= q * pivot_inverse[c];
-                }
-            }
-        }
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
