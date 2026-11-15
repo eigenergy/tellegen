@@ -24,7 +24,7 @@ ENGINE_VERSION: str
 """The `tellegen` engine crate's version. Can differ from `__version__`."""
 
 POWERIO_IR_VERSION: str
-"""The PowerIO IR `version` this build writes, e.g. `0.12.0`."""
+"""The PowerIO IR `version` this build writes, e.g. `0.12.1`."""
 
 PANIC_CODE: str
 """The `.code` value carried by a TellegenError raised from a Rust panic."""

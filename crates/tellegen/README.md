@@ -104,7 +104,7 @@ dependency line: Rust consumers must pass PowerIO 0.12 types. A branch or
 winding rating of positive infinity means no thermal bound and a numeric zero
 is a zero bound (PowerIO's readers translate each file format's own
 convention). The SOCWR solution names its branch columns `*_flow`. Saved
-`pio-ir` documents state `"version": "0.12.0"`, which PowerIO 0.11 readers
+`pio-ir` documents state `"version": "0.12.1"`, which PowerIO 0.11 readers
 refuse; documents written by 0.11 still load. Raw OpenDSS imports that pass the
 snapshot checks solve as a multiconductor power flow.
 
