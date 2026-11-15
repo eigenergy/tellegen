@@ -323,3 +323,19 @@ Every capped, failed, or caveated case, with its reason (no silent truncation).
 | case78484_epigrids | typ | 78484 | skipped | timed out after 180s |
 
 _198 rows; 55 skipped/failed/caveat._
+
+## RMS dynamic simulation in the browser
+
+WECC 240 (243 buses, 103 machines, 37 renewable plants), measured on an Apple
+silicon laptop, the wasm module the web app ships (`conic`, `synth`, `rms`,
+`rms-experimental`) run single-threaded in Node:
+
+| Stage | wasm | native (release) |
+|---|---|---|
+| Prepare the case (`RmsCase`) | 55 ms | — |
+| 20 s run, 2.5 ms step, display channels and screening | 1.2–1.5 s | 0.67 s |
+| Dense small-signal modes (1,658 states) | many minutes | 8.3 s |
+
+The four validated 20 s scenarios at 5 ms run in about 1.2 s natively in all.
+The RMS features add 0.78 MB to the raw module (17.1 MB) and 285 kB (5.1 %)
+gzipped, so they ship in the main module rather than a separate asset.

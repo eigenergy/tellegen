@@ -23,12 +23,14 @@ import {
   validateListCases,
   validateSelectCase,
   validateSolveMulticonductor,
+  validateSimulateDynamics,
   validateResetCase,
   validateUpdateCase,
   validateExportCase,
   validateImportCase,
   IMPORT_EXTENSIONS,
   MAX_IMPORT_TEXT,
+  MAX_TRACE_SAMPLES,
 } from "./validation.js";
 
 /** A tool before its output schema is attached. */
@@ -553,6 +555,147 @@ export function createTellegenTools(
         annotations: annotations(action === "inspect"),
       }))
     : [];
+  const dynamicsTools: ToolSpec[] = adapter.simulateDynamics
+    ? [
+        {
+          name: "simulate_dynamics",
+          title: "Simulate dynamics",
+          description:
+            "RMS (electromechanical) simulation of the displayed case with its PSS/E .dyr data after events: faults, line faults cleared by opening the line, trips and load steps. Returns a screening verdict (stable, loss_of_synchronism, island_runaway, not_settled) against tellegen's stated criteria, the centre-of-inertia frequency nadir and RoCoF, rotor angle separation and voltage recovery. Not a planning assessment: no protection or UFLS is modelled. Does not change the case. Buses are numbers, branches from-to#circuit, units bus#id.",
+          inputSchema: objectSchema(
+            {
+              case_id: {
+                type: "string",
+                description: "Case ID from inspect_case.",
+              },
+              expected_revision: {
+                type: "string",
+                description: "Displayed revision from inspect_case.",
+              },
+              events: {
+                type: "array",
+                minItems: 1,
+                maxItems: 16,
+                items: {
+                  type: "object",
+                  required: ["kind", "at_s"],
+                  properties: {
+                    kind: {
+                      type: "string",
+                      enum: [
+                        "bus_fault",
+                        "line_fault",
+                        "branch_trip",
+                        "generator_trip",
+                        "load_change",
+                      ],
+                    },
+                    at_s: {
+                      type: "number",
+                      minimum: 0,
+                      description: "Event time, s.",
+                    },
+                    bus: {
+                      type: "integer",
+                      description: "Bus number (bus_fault, load_change).",
+                    },
+                    branch: {
+                      type: "string",
+                      pattern: "^\\d+-\\d+(#\\w+)?$",
+                      description:
+                        "from-to or from-to#circuit (line_fault, branch_trip).",
+                    },
+                    near_bus: {
+                      type: "integer",
+                      description:
+                        "line_fault: the end the fault sits next to.",
+                    },
+                    unit: {
+                      type: "string",
+                      pattern: "^\\d+(#\\w+)?$",
+                      description: "bus or bus#id (generator_trip).",
+                    },
+                    clear_after_s: {
+                      type: "number",
+                      minimum: 0.001,
+                      description: "Faults: clearing time, s (default 0.1).",
+                    },
+                    x_pu: {
+                      type: "number",
+                      minimum: 0,
+                      description:
+                        "bus_fault reactance, system pu (default 1e-4).",
+                    },
+                    r_pu: {
+                      type: "number",
+                      minimum: 0,
+                      description:
+                        "bus_fault resistance, system pu (default 0).",
+                    },
+                    scale: {
+                      type: "number",
+                      minimum: 0,
+                      maximum: 10,
+                      description: "load_change: factor on the bus load.",
+                    },
+                  },
+                },
+              },
+              t_end_s: {
+                type: "number",
+                minimum: 0.1,
+                maximum: 60,
+                description: "Run length, s (default 20).",
+              },
+              dt_s: {
+                type: "number",
+                enum: [0.001, 0.0025, 0.005],
+                description: "Integration step, s (default 0.0025).",
+              },
+              load_model: {
+                type: "string",
+                enum: [
+                  "power_flow",
+                  "constant_impedance",
+                  "constant_current",
+                  "constant_power",
+                ],
+              },
+              channels: {
+                type: "array",
+                maxItems: 4,
+                items: {
+                  type: "string",
+                  pattern:
+                    "^(coi:f|f:\\d+|vm:\\d+|omega:\\d+(#\\w+)?|dcoi:\\d+(#\\w+)?|pl:\\d+)$",
+                },
+                description: "Traces to return (with trace_points > 0).",
+              },
+              trace_points: {
+                type: "integer",
+                minimum: 0,
+                maximum: MAX_TRACE_SAMPLES,
+                description: `Samples per trace (default 0); channels × trace_points at most ${MAX_TRACE_SAMPLES}. Each trace is {t_s, v}: its lowest and highest samples, the samples around each event and per-bucket min/max, at their own times.`,
+              },
+              show_in_app: {
+                type: "boolean",
+                description:
+                  "Show the run in the Dynamics panel (default true).",
+              },
+            },
+            ["case_id", "expected_revision", "events"],
+          ),
+          execute: tracked(
+            "simulate_dynamics",
+            "Simulate dynamics",
+            validateSimulateDynamics,
+            (input, signal) => adapter.simulateDynamics!(input, signal),
+            "abortable",
+          ),
+          annotations: annotations(true),
+        },
+      ]
+    : [];
   const fileTools: ToolSpec[] = adapter.files
     ? createFileTools(adapter.files, tracked)
     : [];
@@ -561,6 +704,7 @@ export function createTellegenTools(
     ...caseTools,
     ...fileTools,
     ...mcTools,
+    ...dynamicsTools,
     {
       name: "inspect_case",
       title: "Inspect network",
@@ -944,6 +1088,11 @@ function createFileTools(
             type: "string",
             maxLength: MAX_IMPORT_TEXT_LENGTH,
             description: "Complete file text.",
+          },
+          replace_dynamics: {
+            type: "boolean",
+            description:
+              "For .dyr text only: replace the dynamic data the displayed case already has. Without it, a case that has dynamic data refuses a second .dyr; ask the user first.",
           },
         },
         ["file_name", "text"],

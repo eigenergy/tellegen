@@ -435,7 +435,9 @@
 	}
 	.welcome {
 		position: fixed;
-		bottom: 12px;
+		/* Above the dynamics playback dock and the map's control row on it
+		   (44 px) while the dock is open; the shell's toasts stack above. */
+		bottom: max(12px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 30;

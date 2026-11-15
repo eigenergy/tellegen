@@ -1,0 +1,1346 @@
+{
+  "$defs": {
+    "AngleScreen": {
+      "description": "Rotor angle figures, degrees.",
+      "properties": {
+        "first_swing_deg": {
+          "description": "The largest first swing: per machine the largest distance of\n`δ − δ_COI` from its value before the first event, up to its first\nextremum after the last event. Compare `max_coi_angle_deg`, not\nthis, with the pole-slip criterion.",
+          "format": "double",
+          "type": "number"
+        },
+        "first_swing_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "initial_separation_deg": {
+          "default": 0.0,
+          "description": "The separation before the first event (at the start without\nevents): the steady-state spread the event starts from.",
+          "format": "double",
+          "type": "number"
+        },
+        "max_coi_angle_deg": {
+          "description": "The largest `|δ − δ_COI|` over the run, which unit and when.",
+          "format": "double",
+          "type": "number"
+        },
+        "max_coi_angle_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "max_coi_angle_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_separation_deg": {
+          "description": "The largest `max δ − min δ` among the machines in service of one\nisland from the first event on (over the whole run without events),\nthe pair and when.",
+          "format": "double",
+          "type": "number"
+        },
+        "pair": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pole_slips": {
+          "items": {
+            "$ref": "#/$defs/PoleSlip"
+          },
+          "type": "array"
+        },
+        "separation_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "settled": {
+          "type": "boolean"
+        },
+        "trend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SwingTrend"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "max_separation_deg",
+        "pair",
+        "separation_t",
+        "max_coi_angle_deg",
+        "max_coi_angle_t",
+        "first_swing_deg",
+        "pole_slips",
+        "settled"
+      ],
+      "type": "object"
+    },
+    "FrequencyScreen": {
+      "description": "Frequency figures, Hz (the COI of the island with the most inertia).",
+      "properties": {
+        "coi_nadir_hz": {
+          "format": "double",
+          "type": "number"
+        },
+        "coi_peak_hz": {
+          "format": "double",
+          "type": "number"
+        },
+        "final_hz": {
+          "format": "double",
+          "type": "number"
+        },
+        "lowest_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lowest_bus_hz": {
+          "description": "The lowest estimated bus frequency and where.",
+          "format": "double",
+          "type": "number"
+        },
+        "lowest_bus_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "lowest_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lowest_unit_hz": {
+          "description": "The lowest unit speed (in service), Hz, and which unit.",
+          "format": "double",
+          "type": "number"
+        },
+        "lowest_unit_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "max_rocof_hz_s": {
+          "description": "Largest `|Δf_COI| / window` over the sliding window, Hz/s.",
+          "format": "double",
+          "type": "number"
+        },
+        "nadir_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "nominal_hz": {
+          "format": "double",
+          "type": "number"
+        },
+        "peak_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "rocof_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "settled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "nominal_hz",
+        "coi_nadir_hz",
+        "nadir_t",
+        "coi_peak_hz",
+        "peak_t",
+        "max_rocof_hz_s",
+        "rocof_t",
+        "final_hz",
+        "settled",
+        "lowest_bus_hz",
+        "lowest_bus_t",
+        "lowest_unit_hz",
+        "lowest_unit_t"
+      ],
+      "type": "object"
+    },
+    "InputSignal": {
+      "description": "A controller reference a [`RmsEvent::SetReference`] sets (and a frequency\nresponse perturbs).",
+      "oneOf": [
+        {
+          "const": "v_ref",
+          "description": "Exciter voltage reference (field voltage for a fixed exciter).",
+          "type": "string"
+        },
+        {
+          "const": "p_ref",
+          "description": "Governor power reference (mechanical torque for a fixed governor).",
+          "type": "string"
+        }
+      ]
+    },
+    "IslandScreen": {
+      "description": "One island with a unit in service at the end of the run.",
+      "properties": {
+        "buses": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "final_hz": {
+          "description": "Its COI frequency at the end (`None` without a synchronous machine).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "inertia_mws": {
+          "description": "`Σ H · MBASE` of its machines in service, MW·s.",
+          "format": "double",
+          "type": "number"
+        },
+        "machines": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runaway": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "buses",
+        "machines",
+        "inertia_mws",
+        "runaway"
+      ],
+      "type": "object"
+    },
+    "LoadModel": {
+      "description": "How static loads respond to voltage during the simulation.\n\nThe default keeps every load's own law: the constant-power part, the ZIP\nconstant-current and constant-impedance parts and exponential loads, the\nsame decomposition the AC power flow solves (each part `P0 (V / V0)^γ`\nwith `P0` its power at the power flow voltage `V0`), so the loads draw\nexactly the power flow demand at `t = 0`. The other variants are a global\noverride: the whole bus demand at `V0`, whatever its parts, follows one\nlaw (PSS/E `CONL` with 100 % of P and Q in one class).",
+      "oneOf": [
+        {
+          "enum": [
+            "constant_current",
+            "constant_power"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "power_flow",
+          "description": "Each load part keeps the voltage law of the static model.",
+          "type": "string"
+        },
+        {
+          "const": "constant_impedance",
+          "description": "Constant admittance at the power flow voltage (PSS/E `CONL` 100% Z).",
+          "type": "string"
+        }
+      ]
+    },
+    "LowVoltageLoad": {
+      "description": "How the constant-power and constant-current load parts (and exponential\nparts with `γ < 2`) behave at low voltage.",
+      "oneOf": [
+        {
+          "description": "PSS/E `PQBRAK`: below `v_break` (pu, absolute; 0.7 by default as in\nPSS/E) each part draws the constant admittance of its power at the\nbreakpoint, `P(V) = P(V_b) (V / V_b)²`, continuous in value at `V_b`.\nA bus whose power flow voltage `V0` is below `v_break` breaks at `V0`\ninstead, so it starts on its own law.",
+          "properties": {
+            "kind": {
+              "const": "break",
+              "type": "string"
+            },
+            "v_break": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "v_break"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The stated law at every voltage down to 20 % of `V0`, below that a\nsmooth floor on the magnitude the parts divide by (as\nPowerSimulationsDynamics.jl applies the law at every voltage; the\nfloor only keeps the current's direction defined at 0 V).",
+          "properties": {
+            "kind": {
+              "const": "exact",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PoleSlip": {
+      "description": "A machine that slipped a pole: the first time its angle relative to its\nisland's COI passed the criterion.",
+      "properties": {
+        "t": {
+          "format": "double",
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "t"
+      ],
+      "type": "object"
+    },
+    "Reason": {
+      "description": "One reason for the verdict: a stable code and a plain sentence.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "text"
+      ],
+      "type": "object"
+    },
+    "RecordSpec": {
+      "description": "What a run records. Without one ([`RmsRequest::record`] `None`) every\nchannel is recorded at every output step.",
+      "properties": {
+        "channels": {
+          "default": [],
+          "description": "Channels recorded at every output step: exact keys (`omega:2178`) or\nprefixes ending in `:` (`omega:` for every unit's speed). Empty: every\nchannel.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "checkpoint_step": {
+          "default": 0.0,
+          "description": "The full state every `checkpoint_step` seconds (0: none), in\n[`RmsResult::checkpoints`]: any channel can be replayed from them\n(`RmsSimulation::replay`). Checkpoints need the `rms-experimental`\nfeature; without it a request for them is noted and none are taken.\nThe field is there under every feature, so the features stay\nadditive.",
+          "format": "double",
+          "type": "number"
+        },
+        "frame_step": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "frames": {
+          "default": [],
+          "description": "Channels recorded besides every `frame_step` seconds, in\n[`RmsResult::frames`] (the map's bus voltages and angles).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "RmsEvent": {
+      "description": "A discrete event at `time` seconds.",
+      "oneOf": [
+        {
+          "description": "Open the branch `(from, to, circuit)`.",
+          "properties": {
+            "circuit": {
+              "default": "1",
+              "type": "string"
+            },
+            "from": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "branch_trip",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "to": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Close the branch `(from, to, circuit)` again.",
+          "properties": {
+            "circuit": {
+              "default": "1",
+              "type": "string"
+            },
+            "from": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "branch_close",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "to": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A balanced fault to ground through `r + jx` (system per unit).",
+          "properties": {
+            "bus": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "bus_fault",
+              "type": "string"
+            },
+            "r": {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "x": {
+              "default": 0.0001,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "bus"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Remove the fault at `bus`.",
+          "properties": {
+            "bus": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "clear_fault",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "bus"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Scale the load at `bus` (all components) by `scale`.",
+          "properties": {
+            "bus": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "load_change",
+              "type": "string"
+            },
+            "scale": {
+              "format": "double",
+              "type": "number"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "bus",
+            "scale"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Set a generator's exciter (`v_ref`) or governor (`p_ref`) reference.",
+          "properties": {
+            "bus": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "set_reference",
+              "type": "string"
+            },
+            "machine_id": {
+              "default": "1",
+              "type": "string"
+            },
+            "signal": {
+              "$ref": "#/$defs/InputSignal"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "value": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "bus",
+            "signal",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Disconnect a generator.",
+          "properties": {
+            "bus": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "generator_trip",
+              "type": "string"
+            },
+            "machine_id": {
+              "default": "1",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "bus"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A balanced fault inside branch `(from, to, circuit)` at `location`\n(0 at `from`, 1 at `to`) of its series impedance, through `r + jx`.\nA transient fault (`permanent: false`) dies out once both ends are\nopen, so an auto-reclose succeeds.",
+          "properties": {
+            "circuit": {
+              "default": "1",
+              "type": "string"
+            },
+            "from": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "line_fault",
+              "type": "string"
+            },
+            "location": {
+              "format": "double",
+              "type": "number"
+            },
+            "permanent": {
+              "default": true,
+              "type": "boolean"
+            },
+            "r": {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "to": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "x": {
+              "default": 0.0001,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "from",
+            "to",
+            "location"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Remove the fault inside a branch.",
+          "properties": {
+            "circuit": {
+              "default": "1",
+              "type": "string"
+            },
+            "from": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "clear_line_fault",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "to": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Open the breaker of branch `(from, to, circuit)` at bus `at` (one\nend; the other stays connected).",
+          "properties": {
+            "at": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "circuit": {
+              "default": "1",
+              "type": "string"
+            },
+            "from": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "breaker_open",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "to": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "from",
+            "to",
+            "at"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Close that breaker again.",
+          "properties": {
+            "at": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "circuit": {
+              "default": "1",
+              "type": "string"
+            },
+            "from": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "breaker_close",
+              "type": "string"
+            },
+            "time": {
+              "format": "double",
+              "type": "number"
+            },
+            "to": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "time",
+            "from",
+            "to",
+            "at"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RmsGenerator": {
+      "description": "One dynamic generator in the result.",
+      "properties": {
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "h": {
+          "default": 0.0,
+          "description": "Inertia constant `H` on the machine base, s (the weight of the\nmachine in a centre of inertia is `H · MBASE`).",
+          "format": "double",
+          "type": "number"
+        },
+        "initial_states": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "mbase": {
+          "format": "double",
+          "type": "number"
+        },
+        "models": {
+          "description": "`[machine, exciter, governor, stabilizer]` model names.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "p_ref": {
+          "format": "double",
+          "type": "number"
+        },
+        "states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "v_ref": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bus",
+        "machine_id",
+        "models",
+        "states",
+        "initial_states",
+        "v_ref",
+        "p_ref",
+        "mbase"
+      ],
+      "type": "object"
+    },
+    "RmsInspection": {
+      "description": "What a case's dynamic data resolves to, for a UI to show before a run.",
+      "properties": {
+        "base_frequency": {
+          "format": "double",
+          "type": "number"
+        },
+        "base_mva": {
+          "format": "double",
+          "type": "number"
+        },
+        "branches": {
+          "description": "`(from, to, circuit)` of every in-service branch.",
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "buses": {
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "dyr_records": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "eigenvalues": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "generators": {
+          "items": {
+            "$ref": "#/$defs/RmsGenerator"
+          },
+          "type": "array"
+        },
+        "held_units": {
+          "default": [],
+          "description": "Units held at their power flow output, not simulated\n([`RmsSimulation::held_units`]).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "initial_residual": {
+          "default": 0.0,
+          "description": "`‖f(x0)‖∞` at the initial point ([`RmsSimulation::initial_residual`]).",
+          "format": "double",
+          "type": "number"
+        },
+        "load_buses": {
+          "description": "Buses carrying load.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "load_model": {
+          "$ref": "#/$defs/LoadModel",
+          "default": "power_flow"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "options": {
+          "$ref": "#/$defs/RmsOptions",
+          "default": {
+            "factorize_by_blocks": true,
+            "low_voltage_load": {
+              "kind": "break",
+              "v_break": 0.7
+            },
+            "psid_converter_ramp": false,
+            "psid_lv_gain": false,
+            "psid_saturation": false,
+            "reactive_limits": true,
+            "renewable_plants": true
+          },
+          "description": "The options the simulation was prepared with."
+        },
+        "plants": {
+          "default": [],
+          "description": "Simulated renewable plants (`REGCA1` + `REECB1` + `REPCA1`), keyed\n`bus` or `bus#id`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reference_unit": {
+          "default": null,
+          "description": "The unit whose speed turns the angle reference frame\n([`RmsSimulation::reference_unit`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "supported_models": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "buses",
+        "base_mva",
+        "base_frequency",
+        "generators",
+        "sources",
+        "branches",
+        "load_buses",
+        "dyr_records",
+        "eigenvalues",
+        "notes",
+        "supported_models"
+      ],
+      "type": "object"
+    },
+    "RmsOptions": {
+      "description": "Choices of one prepared simulation, fixed when it is built. The defaults\nare tellegen's own; the others exist to compare with another tool or\nmethod, and affect only the simulation they are given to.",
+      "properties": {
+        "factorize_by_blocks": {
+          "default": true,
+          "description": "Factorize the step matrices by blocks where every unit allows it, the\ndefault, or always as one sparse LU over all unknowns.",
+          "type": "boolean"
+        },
+        "low_voltage_load": {
+          "$ref": "#/$defs/LowVoltageLoad",
+          "default": {
+            "kind": "break",
+            "v_break": 0.7
+          },
+          "description": "Low-voltage behaviour of the constant-power and constant-current load\nparts: PSS/E's `PQBRAK` conversion at 0.7 pu by default, or the exact\nlaw (PowerSimulationsDynamics.jl)."
+        },
+        "psid_converter_ramp": {
+          "default": false,
+          "description": "Apply a renewable plant's converter ramp limits (`REGCA1` `Rrpwr`,\n`Iqrmax`, `Iqrmin`) to the `Tg` lag's error as\nPowerSimulationsDynamics.jl 0.16.2 does (an effective rate\n`Rrpwr/Tg`) instead of to the currents' rate in pu/s (PSS/E).",
+          "type": "boolean"
+        },
+        "psid_lv_gain": {
+          "default": false,
+          "description": "Use PowerSimulationsDynamics.jl 0.16.2's low-voltage active current\ngain for renewable plants (negative between its two points,\n`get_LV_current_gain`) instead of the PSS/E one.",
+          "type": "boolean"
+        },
+        "psid_saturation": {
+          "default": false,
+          "description": "Evaluate the quadratic saturation of machines and `ESAC1A` below its\nknee `A` as PowerSimulationsDynamics.jl 0.16.2 does (the formula\n`B (x − A)² / x`, which rises again below `A`) instead of PSS/E's\n`Se = 0` there.",
+          "type": "boolean"
+        },
+        "reactive_limits": {
+          "default": true,
+          "description": "Initialize from the AC power flow with the generators' reactive\nlimits enforced (PV→PQ switching), the default and the same solve as\nthe static study, or with every generator at its voltage setpoint\nwhatever reactive power that takes (PowerSimulationsDynamics.jl, and\nPSS/E from a case solved without limits). Either way the result's\nnotes name every unit whose solved reactive power and setpoint\ndisagree, and by how much.",
+          "type": "boolean"
+        },
+        "renewable_plants": {
+          "default": true,
+          "description": "Simulate renewable plants (`REGCA1` + `REECB1` + `REPCA1`), the\ndefault, or hold them at their power flow output as constant currents.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "RmsRequest": {
+      "description": "A simulation request.",
+      "properties": {
+        "dt": {
+          "default": 0.0025,
+          "description": "Integration step in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "events": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RmsEvent"
+          },
+          "type": "array"
+        },
+        "load_model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadModel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The load model: for [`simulate`] the one the simulation is built with\n(default [`LoadModel::PowerFlow`]); for [`RmsSimulation::run`] it\nmust be the prepared simulation's or `None`."
+        },
+        "output_step": {
+          "default": 0.005,
+          "description": "Output sampling interval in seconds, a multiple of `dt`.",
+          "format": "double",
+          "type": "number"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What to record (default: every channel at every output step)."
+        },
+        "small_signal": {
+          "default": false,
+          "description": "Compute the eigenvalues of the linearized system at the initial point\n(dense, `O(n³)` in the differential states). Needs the\n`rms-experimental` feature; without it the request is noted and\nskipped.",
+          "type": "boolean"
+        },
+        "t_end": {
+          "default": 10.0,
+          "description": "End time in seconds.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "RmsScreening": {
+      "description": "The screening of a run.",
+      "properties": {
+        "angle": {
+          "$ref": "#/$defs/AngleScreen"
+        },
+        "criteria": {
+          "$ref": "#/$defs/ScreeningCriteria"
+        },
+        "criteria_name": {
+          "description": "The criteria's name, `tellegen-rms-screening-1`.",
+          "type": "string"
+        },
+        "frequency": {
+          "$ref": "#/$defs/FrequencyScreen"
+        },
+        "held_units": {
+          "description": "Units held at their power flow output (not simulated).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "islands": {
+          "items": {
+            "$ref": "#/$defs/IslandScreen"
+          },
+          "type": "array"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/Reason"
+          },
+          "type": "array"
+        },
+        "reference_unit": {
+          "description": "The unit whose speed turns the reference frame, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/$defs/ScreeningVerdict"
+        },
+        "voltage": {
+          "$ref": "#/$defs/VoltageScreen"
+        }
+      },
+      "required": [
+        "criteria_name",
+        "criteria",
+        "verdict",
+        "reasons",
+        "frequency",
+        "angle",
+        "voltage",
+        "islands",
+        "held_units"
+      ],
+      "type": "object"
+    },
+    "ScreeningCriteria": {
+      "description": "The screening criteria. Every field has a default (`version` 1); a\nrequest may override any of them.",
+      "properties": {
+        "bus_frequency_filter_s": {
+          "default": 0.02,
+          "description": "The time constant of the filter on the bus angle derivative of the\nbus frequency estimate, s (the PSS/E `FRQ` convention).",
+          "format": "double",
+          "type": "number"
+        },
+        "bus_frequency_min_pu": {
+          "default": 0.2,
+          "description": "Below this voltage a bus angle is not used for its frequency (the\nestimate holds its last value), pu.",
+          "format": "double",
+          "type": "number"
+        },
+        "pole_slip_deg": {
+          "default": 180.0,
+          "description": "A machine whose rotor angle relative to its island's COI passes\nthis many degrees has slipped a pole.",
+          "format": "double",
+          "type": "number"
+        },
+        "rocof_window_s": {
+          "default": 0.5,
+          "description": "The sliding window of the rate of change of the COI frequency, s.",
+          "format": "double",
+          "type": "number"
+        },
+        "runaway_pu": {
+          "default": 0.05,
+          "description": "An island whose COI speed ends further than this from 1 pu runs\naway, pu.",
+          "format": "double",
+          "type": "number"
+        },
+        "settle_angle_deg": {
+          "default": 1.0,
+          "description": "Settled: the largest rotor angle separation stays within this of its\nfinal value over the window, degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "settle_frequency_hz": {
+          "default": 0.01,
+          "description": "Settled: the COI frequency stays within this of its final value over\nthe window, Hz.",
+          "format": "double",
+          "type": "number"
+        },
+        "settle_window_s": {
+          "default": 2.0,
+          "description": "The span at the end of the run over which the run must have settled, s.",
+          "format": "double",
+          "type": "number"
+        },
+        "version": {
+          "default": 1,
+          "description": "The version of the defaults, `1`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "voltage_recovery_pu": {
+          "default": 0.8,
+          "description": "Every live bus must be at or above this voltage, pu ...",
+          "format": "double",
+          "type": "number"
+        },
+        "voltage_recovery_s": {
+          "default": 1.0,
+          "description": "... within this long after the last event, s.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "ScreeningVerdict": {
+      "description": "The outcome of a screening.",
+      "oneOf": [
+        {
+          "const": "stable",
+          "description": "No pole slip, no runaway island, settled by the end of the run.",
+          "type": "string"
+        },
+        {
+          "const": "loss_of_synchronism",
+          "description": "A machine slipped a pole.",
+          "type": "string"
+        },
+        {
+          "const": "island_runaway",
+          "description": "An island's COI speed ran away.",
+          "type": "string"
+        },
+        {
+          "const": "not_settled",
+          "description": "Not settled by the end of the run: extend it.",
+          "type": "string"
+        }
+      ]
+    },
+    "SwingTrend": {
+      "description": "The trend of the rotor angle separation after the last event, read from\nthe peaks of its distance to its final value. Only peaks above\n[`TREND_FLOOR_DEG`] and above [`TREND_FLOOR_FRACTION`] of the largest\ndistance count: smaller wiggles are numerical, not swings.",
+      "oneOf": [
+        {
+          "const": "decaying",
+          "description": "The last three counted peaks each shrink by more than 2 %.",
+          "type": "string"
+        },
+        {
+          "const": "growing",
+          "description": "The last three counted peaks each grow by more than 2 %.",
+          "type": "string"
+        },
+        {
+          "const": "damped_out",
+          "description": "The swings fell below the floor, and within the settling criterion's\nangle band, before the end of the run (or never rose above them).",
+          "type": "string"
+        },
+        {
+          "const": "sustained",
+          "description": "Three or more counted peaks, the last one still counted, with no\nmonotone trend in the last three: the swings neither grow nor decay.",
+          "type": "string"
+        },
+        {
+          "const": "undetermined",
+          "description": "Too few counted peaks to tell (such as one large swing cut off by\nthe end of the run), or a last peak below the floor but outside the\nsettling band.",
+          "type": "string"
+        }
+      ]
+    },
+    "VoltageScreen": {
+      "description": "Bus voltage figures, pu.",
+      "properties": {
+        "final_max_pu": {
+          "format": "double",
+          "type": "number"
+        },
+        "final_min_pu": {
+          "format": "double",
+          "type": "number"
+        },
+        "last_event_t": {
+          "description": "The time of the last event, s (0 without events).",
+          "format": "double",
+          "type": "number"
+        },
+        "min_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min_pu": {
+          "format": "double",
+          "type": "number"
+        },
+        "min_t": {
+          "format": "double",
+          "type": "number"
+        },
+        "recovered": {
+          "type": "boolean"
+        },
+        "recovered_s": {
+          "description": "How long after the last event every live bus is back at or above\nthe criterion for good, s; `None`: not by the end of the run.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "min_pu",
+        "min_t",
+        "last_event_t",
+        "recovered",
+        "final_min_pu",
+        "final_max_pu"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "criteria": {
+      "$ref": "#/$defs/ScreeningCriteria"
+    },
+    "event": {
+      "$ref": "#/$defs/RmsEvent"
+    },
+    "generator": {
+      "$ref": "#/$defs/RmsGenerator"
+    },
+    "inspection": {
+      "$ref": "#/$defs/RmsInspection"
+    },
+    "options": {
+      "$ref": "#/$defs/RmsOptions"
+    },
+    "request": {
+      "$ref": "#/$defs/RmsRequest"
+    },
+    "screening": {
+      "$ref": "#/$defs/RmsScreening"
+    }
+  },
+  "required": [
+    "request",
+    "options",
+    "inspection",
+    "criteria",
+    "screening",
+    "generator",
+    "event"
+  ],
+  "title": "RmsSchema",
+  "type": "object",
+  "x-rust-source-sha256": "db879ac156cc35cce7fb45b6fc34808dea345fcfea11dac5df8625f9eca0ab47"
+}

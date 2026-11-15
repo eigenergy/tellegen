@@ -8,7 +8,11 @@ export {
   type CreateTellegenToolsOptions,
 } from "./tools.js";
 export { ERROR_CODES, responseSchema, schemaErrors } from "./output.js";
-export { IMPORT_EXTENSIONS, MAX_IMPORT_TEXT } from "./validation.js";
+export {
+  IMPORT_EXTENSIONS,
+  MAX_IMPORT_TEXT,
+  MAX_TRACE_SAMPLES,
+} from "./validation.js";
 export {
   documentModelContext,
   modelContextFeatures,
@@ -46,6 +50,8 @@ export type {
   ListCasesInput,
   SelectCaseInput,
   SolveMulticonductorInput,
+  SimulateDynamicsInput,
+  SimulateDynamicsEvent,
   TellegenCaseAdapter,
   TellegenFileAdapter,
   RatingEdit,

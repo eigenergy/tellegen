@@ -192,6 +192,8 @@ export interface ExportCaseInput {
 export interface ImportCaseInput {
   fileName: string;
   text: string;
+  /** For .dyr text: replace dynamic data the displayed case already has. */
+  replaceDynamics: boolean;
 }
 
 /** One target `export_case` can write. `token` is the PowerIO format token. */
@@ -217,7 +219,47 @@ export interface TellegenFileAdapter {
   ): MaybePromise<ToolPayload>;
 }
 
+/** One `simulate_dynamics` event, validated. Element ids are as an agent
+ * writes them: buses by number, branches `from-to[#ckt]`, units `bus[#id]`. */
+export type SimulateDynamicsEvent =
+  | {
+      kind: "bus_fault";
+      bus: number;
+      atS: number;
+      clearAfterS: number;
+      xPu: number;
+      rPu: number;
+    }
+  | {
+      kind: "line_fault";
+      branch: string;
+      nearBus?: number;
+      atS: number;
+      clearAfterS: number;
+    }
+  | { kind: "branch_trip"; branch: string; atS: number }
+  | { kind: "generator_trip"; unit: string; atS: number }
+  | { kind: "load_change"; bus: number; atS: number; scale: number };
+
+export interface SimulateDynamicsInput {
+  caseId: string;
+  expectedRevision: string;
+  events: SimulateDynamicsEvent[];
+  tEndS: number;
+  dtS: 0.001 | 0.0025 | 0.005;
+  loadModel?:
+    "power_flow" | "constant_impedance" | "constant_current" | "constant_power";
+  channels: string[];
+  tracePoints: number;
+  showInApp: boolean;
+}
+
 export interface TellegenWebMcpAdapter {
+  /** RMS dynamic simulation of the displayed case with its .dyr data. */
+  simulateDynamics?(
+    input: SimulateDynamicsInput,
+    signal: AbortSignal,
+  ): MaybePromise<ToolPayload>;
   settings?(
     input: SettingsInput,
     signal: AbortSignal,

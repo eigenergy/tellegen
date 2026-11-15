@@ -16,12 +16,56 @@
 	import ShellEnvironment from './components/ShellEnvironment.svelte';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
+	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
+	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
+	import DynamicsLegend from './components/dynamics/DynamicsLegend.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
 
 	let dragDepth = 0;
+	/** Height kept free above the dock for the map's control row (the zoom
+	 * buttons stack two high on desktop). */
+	const MAP_CONTROL_ROW = 64;
+	const dyn = ctrl.dynamics;
+	let timelineHeight = $state(0);
+	const dynamicsShown = $derived(
+		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
+	);
+	// The legend explains the map's dynamics layers: during playback, and at
+	// rest before the first run. The single-line diagram draws neither.
+	const legendShown = $derived(
+		app.mode === 'dynamics' && !!dyn.frame && !app.zen && !ctrl.singleLineShown
+	);
+	$effect(() => {
+		dyn.theme = config.theme;
+	});
+	// What the playback dock covers, from the bottom edge (it sits 12 px up,
+	// 40 px on the compact layout).
+	$effect(() => {
+		app.dockInset =
+			dynamicsShown && timelineHeight > 0 ? timelineHeight + (app.compactLayout ? 40 : 12) : 0;
+	});
+	// Chrome anchored at the bottom (toasts, map controls, the host app's own
+	// notices outside this shell) clears the dock through this variable.
+	$effect(() => {
+		const root = document.documentElement.style;
+		if (app.dockInset > 0) root.setProperty('--tellegen-timeline-clear', `${app.dockInset + 8}px`);
+		else root.removeProperty('--tellegen-timeline-clear');
+		return () => root.removeProperty('--tellegen-timeline-clear');
+	});
+	// When the dock opens, frame the case in the map above it: the event that
+	// was just simulated must not sit behind the traces.
+	let dockFramed = false;
+	$effect(() => {
+		const open = app.dockInset > 0;
+		if (open && !dockFramed) {
+			const id = untrack(() => app.activeLocal?.id);
+			if (id) void app.requestFrame(id);
+		}
+		dockFramed = open;
+	});
 
 	// The overview and the diagram read the active case's whole operating point once per solve.
 	$effect(() => {
@@ -106,7 +150,13 @@
 <ShellEnvironment />
 <CollectionChooser />
 
-<main>
+<!-- The side panels end above the map's control row (zoom, attribution,
+     diagram), which sits on the dock while it is open. -->
+<main
+	style:--tellegen-dock-bottom={dynamicsShown && !app.compactLayout
+		? `${app.dockInset + 8 + MAP_CONTROL_ROW}px`
+		: undefined}
+>
 	<TellegenMap
 		onbusclick={ctrl.selectBus}
 		onlocalbusclick={ctrl.selectLocalBus}
@@ -118,6 +168,8 @@
 		onmapclick={ctrl.clearSelection}
 		theme={config.theme}
 		cartoApiKey={config.cartoApiKey || undefined}
+		dynamicsLayers={dyn.mapLayers}
+		dynamicsTooltip={dyn.tooltip}
 	/>
 
 	<AppHeader />
@@ -125,7 +177,16 @@
 	<NotificationCenter />
 	<CommandPalette />
 	<ControlPanel />
-	<SolveCard />
+	{#if app.mode !== 'dynamics'}<SolveCard />{/if}
+	{#if !app.studyView}<DynamicsPanel />{/if}
+	{#if dynamicsShown}
+		<DynamicsTimeline bind:dockHeight={timelineHeight} />
+	{/if}
+	{#if legendShown}<DynamicsLegend
+			theme={config.theme}
+			top={app.headerInset + 52}
+			atRest={dyn.atRest}
+		/>{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}
@@ -133,7 +194,7 @@
 		<PlacementCue />
 		{#if !app.zen}<RestoreDefaultsButton />{/if}
 	{/if}
-	{#if config.showFooter && !app.compactLayout && !app.zen}
+	{#if config.showFooter && !app.compactLayout && !app.zen && !dynamicsShown}
 		<AppFooter />
 	{/if}
 </main>

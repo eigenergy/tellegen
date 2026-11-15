@@ -27,6 +27,29 @@
 				>example license</a
 			> includes its attribution and reuse terms.
 		</p>
+		<h3>WECC 240 dynamics demo</h3>
+		<p>
+			The dynamics demo is the reduced 240-bus WECC system with its PSS/E dynamic data, from
+			<a
+				href="https://github.com/NREL-Sienna/PowerSimulationsDynamics.jl"
+				target="_blank"
+				rel="noreferrer">PowerSimulationsDynamics.jl</a
+			>
+			(<a href="/examples/wecc240/LICENSE-PowerSimulationsDynamics.jl">BSD-3-Clause</a>), with the
+			load values of the validation study from PowerSystemCaseBuilder.jl (<a
+				href="/examples/wecc240/LICENSE-PowerSystemCaseBuilder.jl">BSD-3-Clause</a
+			>) and bus coordinates from
+			<a href="https://github.com/eudoxys/wecc240" target="_blank" rel="noreferrer"
+				>eudoxys/wecc240</a
+			>
+			(<a href="/examples/wecc240/LICENSE-wecc240-coordinates">MIT</a>). The
+			<a href="/examples/wecc240/SOURCES.md">sources</a> list the exact files. The model is cited as:
+		</p>
+		<p class="citation">
+			H. Yuan, R. S. Biswas, J. Tan, Y. Zhang, "Developing a Reduced 240-Bus WECC Dynamic Model for
+			Frequency Response Study of High Renewable Integration," IEEE PES T&amp;D 2020.
+		</p>
+
 		<h3>ACTIVSg Synthetic Grids</h3>
 		<p>
 			The ACTIVSg cases are synthetic grids from the

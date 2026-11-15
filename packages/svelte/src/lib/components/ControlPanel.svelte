@@ -16,6 +16,7 @@
 	import MulticonductorDetails from './MulticonductorDetails.svelte';
 	import NetworkStats from './NetworkStats.svelte';
 	import PowerFlowDetails from './PowerFlowDetails.svelte';
+	import DynamicsElementActions from './dynamics/DynamicsElementActions.svelte';
 	import RatingSlider from './RatingSlider.svelte';
 	import SensitivityReadout from './SensitivityReadout.svelte';
 	import SizeLegend from './SizeLegend.svelte';
@@ -66,7 +67,9 @@
 <PanelFrame id="network" title="Network" side="left" order={10} width={320} bind:open>
 	<div class="panel-body" id="control-panel-body" bind:this={bodyEl}>
 		{#snippet selectionBlock()}
-			{#if ctrl.activeFormulation === 'acpf'}
+			{#if app.mode === 'dynamics' && app.activeLocal}
+				<DynamicsElementActions />
+			{:else if ctrl.activeFormulation === 'acpf'}
 				<DisplayControls />
 				<PowerFlowDetails />
 			{:else if busReadout}

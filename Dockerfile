@@ -24,7 +24,7 @@ COPY crates /build/crates
 # at the default wasm target, so it validates on Safari. Mirrors the `wasm`
 # script in packages/engine/package.json, including the places table the
 # generator reads beside the module.
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth \
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth,rms,rms-experimental \
     && mkdir -p /out/data \
     && cp /build/crates/tellegen-synth/data/populated_places.json /out/data/
 
@@ -62,6 +62,8 @@ COPY examples/svelte-minimal examples/svelte-minimal
 # TypeScript mirrors: tellegen's api.rs and the synth request/report/error.
 COPY crates/tellegen/src crates/tellegen/src
 COPY crates/tellegen-synth/src crates/tellegen-synth/src
+# The WECC 240 dynamics demo: apps/web copies it into static/examples at build.
+COPY crates/tellegen/tests/data/rms_examples/wecc240 crates/tellegen/tests/data/rms_examples/wecc240
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
 COPY --from=wasm /out/data ./packages/engine/src/data
 COPY --from=acopf /build/target/experimental-acopf ./target/experimental-acopf

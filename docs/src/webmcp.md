@@ -152,6 +152,7 @@ and links to the application changelog.
 | `reset_settings`              | Return the selected calculation's settings to their defaults without solving.                                                        |
 | `run_calculation`             | Calculate with the selected settings; a failed calculation keeps the preceding result.                                               |
 | `solve_multiconductor_pf`     | Solve the displayed distribution case's multiconductor AC power flow.                                                                |
+| `simulate_dynamics`           | Run an RMS simulation of the displayed case with its `.dyr` data after events and return the screening verdict and figures.        |
 | `create_study`                | Save the current case and its results as a Study.                                                                                    |
 | `inspect_study`               | Read a page of a Study's goals, states, or evidence, or open a saved Study.                                                          |
 | `revise_study_goal`           | Save a new goal revision.                                                                                                            |
@@ -174,11 +175,24 @@ returning to the live case through `select_case`.
 `apply_capacity_plan` registers only while a staged proposal matches the current
 state.
 
+`simulate_dynamics` takes up to 16 events (`bus_fault`, `line_fault` cleared
+by opening the line, `branch_trip`, `generator_trip`, `load_change`) with
+buses as numbers, branches as `from-to#circuit` (the circuit may be left out
+when it is unique) and units as `bus#id`; an unknown or ambiguous id returns
+`INVALID_INPUT` naming the candidates. It answers with the verdict, the COI
+frequency nadir, RoCoF and final value, the largest angle separation, the
+lowest voltage and its recovery, counts of islands, held units and notes,
+and, with `trace_points`, up to four traces (`coi:f`, `f:<bus>`, `vm:<bus>`,
+`omega:<unit>`, `dcoi:<unit>`, `pl:<bus>`) of at most 40 points. It does not
+change the case; the run shows in the Dynamics panel, marked as the agent's,
+unless `show_in_app` is false. `import_case` with a `.dyr` file attaches it to
+the displayed case and returns what it linked.
+
 `export_case` downloads the file to the user's computer and returns its name,
 size, and PowerIO's findings about what the target format cannot represent; the
 file text does not go to the agent. `import_case` reads text formats by
 extension (`.m`, `.raw`, `.rawx`, `.aux`, `.epc`, `.dss`, `.json`, `.xml`,
-`.xiidm`, `.uct`, `.ucte`, `.cdf`) up to 4,000,000 characters. Binary
+`.xiidm`, `.uct`, `.ucte`, `.cdf`, `.dyr`) up to 4,000,000 characters. Binary
 formats, archives, and geographic sidecars still need the file picker. A case
 without coordinates opens as a diagram, or waits for placement, exactly as a
 dropped file does; the result reports that as `availability`.

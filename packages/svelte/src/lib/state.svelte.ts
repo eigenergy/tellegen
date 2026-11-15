@@ -585,6 +585,12 @@ export class AppState {
 		units: string;
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
+	/** Steady state (the static calculations) or dynamics (RMS simulation of
+	 * the active local case with its .dyr data). */
+	mode = $state<'steady' | 'dynamics'>('steady');
+	/** The bus or unit hovered in the dynamics traces or on the map; the
+	 * other view highlights it. */
+	dynamicsHover = $state.raw<{ kind: 'bus' | 'unit'; key: string } | null>(null);
 	displayMode = $state<DisplayMode>('price');
 	get busSizing(): BusSizing {
 		return this.preferences.busSizing;
@@ -663,6 +669,10 @@ export class AppState {
 	 * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,
 	 * so callers that need to clear the header read this rather than a constant. */
 	headerInset = $state(64);
+	/** Height in px the dynamics playback dock covers at the bottom of the
+	 * map, from the viewport's bottom edge; 0 when it is closed. Read by the
+	 * map's camera padding and by chrome anchored at the bottom. */
+	dockInset = $state(0);
 	/** `window.innerHeight`, tracked by the shell. The sheet's snaps and the map's
 	 * chrome lift are both fractions of it; the fallback is a desktop window. */
 	viewportHeight = $state(800);

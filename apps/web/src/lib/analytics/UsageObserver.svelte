@@ -11,6 +11,12 @@
 	>();
 	const seenEdits = new WeakMap<object, { demand: unknown; capacity: unknown }>();
 	let selection: object | null = null;
+	ctrl.dynamics.onRun = (r) =>
+		trackUsage('dynamics.run', {
+			result: r.run ? 'completed' : 'failed',
+			duration_ms: r.wallMs,
+			item_count: r.events.length
+		});
 	let display: string | null = null;
 	let importing: { started: number; count: number; errorRevision: number } | null = null;
 	let sensitivity: { started: number; errorRevision: number } | null = null;

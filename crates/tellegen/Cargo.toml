@@ -2,12 +2,19 @@
 name = "tellegen"
 version = "0.7.1"
 edition.workspace = true
-license.workspace = true
+# MIT, with the RMS engine (`src/rms`) a translation of BSD-3-Clause code
+# (PowerSimulationsDynamics.jl, PowerSystems.jl; notices in `licenses/`).
+license = "MIT AND BSD-3-Clause"
 repository.workspace = true
 description = "DC optimal power flow, AC power flow, SOCWR, and sensitivities in Rust."
 readme = "README.md"
 keywords = ["opf", "power-flow", "differentiable", "sensitivity"]
 categories = ["science", "mathematics"]
+# Third-party test data stays in the repository, not in the published crate,
+# and so do the RMS integration tests built on it (the unit tests that read it
+# skip without it). `licenses/` (the BSD-3-Clause notices of the code the RMS
+# engine translates) is packaged.
+exclude = ["tests/data/rms_examples/", "tests/rms_*.rs"]
 
 [dependencies]
 powerio.workspace = true
@@ -68,6 +75,14 @@ mc-opf = ["acopf", "dep:faer"]
 # JSON Schema derives for the CLI's `describe` output. Kept out of the
 # browser and numerical builds.
 schema = ["dep:schemars", "powerio/schema"]
+# RMS (phasor) dynamic simulation of PSS/E RAW + DYR cases: the engine, its
+# initialization from the AC power flow, the integrator, the models validated
+# against PowerSimulationsDynamics.jl, events and recording.
+rms = ["sensitivity"]
+# The RMS product layer on top of `rms`, less validated: controller block
+# graphs, small-signal analysis, live sessions and checkpoints, DYR editing,
+# the model library and "dynamize", and case editing.
+rms-experimental = ["rms"]
 
 [lints]
 workspace = true
@@ -75,6 +90,10 @@ workspace = true
 [[example]]
 name = "study_schema"
 required-features = ["schema"]
+
+[[example]]
+name = "rms_schema"
+required-features = ["schema", "rms-experimental"]
 
 [[example]]
 name = "convex_cost_scenario"
@@ -113,3 +132,31 @@ required-features = ["acopf"]
 [[example]]
 name = "settings_schema"
 required-features = ["schema"]
+
+[[test]]
+name = "rms_events"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_physics"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_screen"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_record"
+required-features = ["rms-experimental"]
+
+[[test]]
+name = "rms_graph"
+required-features = ["rms-experimental"]
+
+[[test]]
+name = "rms_validation"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_psid_validation"
+required-features = ["rms"]

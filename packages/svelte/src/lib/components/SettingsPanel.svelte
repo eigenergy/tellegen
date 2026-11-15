@@ -4,6 +4,10 @@
 	import CalculationSettings from './CalculationSettings.svelte';
 	const app = getAppState();
 	const ctrl = getController();
+	const support = $derived(ctrl.dynamics.support);
+	$effect(() => {
+		if (app.settingsOpen) void ctrl.dynamics.probe();
+	});
 </script>
 
 <PanelFrame
@@ -57,6 +61,23 @@
 			}}>Restore display defaults</button
 		>
 		{#if app.preferences.error}<p role="alert">{app.preferences.error}</p>{/if}
+		<hr />
+		<h3>Experimental <span class="pill-experimental">Experimental</span></h3>
+		<label class="check"
+			><input
+				type="checkbox"
+				checked={app.preferences.experimental}
+				disabled={support !== null && !support.experimental}
+				onchange={(e) => app.preferences.update({ experimental: e.currentTarget.checked })}
+			/>Show experimental dynamics tools</label
+		>
+		<p>
+			Less validated than the RMS engine itself: small-signal modes and default dynamics for a case
+			without .dyr data. Results from these tools are labeled Experimental.
+		</p>
+		{#if support !== null && !support.experimental}
+			<p class="reason">This engine build does not carry the experimental tools.</p>
+		{/if}
 		<p>Camera, selection and panel positions remain in their existing view controls.</p>
 	</div>
 </PanelFrame>
@@ -90,5 +111,12 @@
 	}
 	hr {
 		margin: 20px 0;
+	}
+	label.check {
+		justify-content: flex-start;
+		gap: 8px;
+	}
+	.reason {
+		color: var(--text-tertiary);
 	}
 </style>

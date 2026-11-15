@@ -325,7 +325,7 @@ describe("createTellegenTools", () => {
       await importer.execute({ file_name: "CASE14.M", text: "mpc = struct;" }),
     ).toEqual({ ok: true, data: { case_id: "local-1" } });
     expect(importCase).toHaveBeenCalledWith(
-      { fileName: "CASE14.M", text: "mpc = struct;" },
+      { fileName: "CASE14.M", text: "mpc = struct;", replaceDynamics: false },
       expect.any(AbortSignal),
     );
   });

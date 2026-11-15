@@ -87,6 +87,8 @@
 		hideBasemapLabels = true,
 		cartoApiKey,
 		extraLayers = [],
+		dynamicsLayers = [],
+		dynamicsTooltip,
 		attribution = 'compact',
 		declutterMarkers = true,
 		onMapReady,
@@ -127,6 +129,11 @@
 		cartoApiKey?: string;
 		/** deck.gl layers drawn after tellegen's own, in the same overlay. */
 		extraLayers?: Layer[];
+		/** Dynamics playback layers, drawn over tellegen's own and under
+		 * `extraLayers`. Changing them never rebuilds the static layers. */
+		dynamicsLayers?: Layer[];
+		/** Tooltip HTML for a picked dynamics layer object (layer ids `dyn-`). */
+		dynamicsTooltip?: (info: PickingInfo) => { html: string } | null;
 		/** Attribution control mode. There is no off switch: tile licences
 		 * require the credit on screen. */
 		attribution?: 'compact' | 'full';
@@ -153,6 +160,8 @@
 	const app = getAppState();
 	const ctrl = getController();
 	const panels = getPanelLayout();
+	/** Dynamics mode on a case with dynamic data attached. */
+	const dynamicsView = $derived(app.mode === 'dynamics' && !!ctrl.dynamics.active);
 	const diagramCase = $derived(app.studyView ? null : (app.active ?? app.activeLocal));
 	const diagramMulti = $derived(
 		!app.studyView && app.activeMulti?.coordsKind !== 'geographic' ? app.activeMulti : null
@@ -780,14 +789,18 @@
 				top: panels.top + 8,
 				left: 24,
 				right: 24,
-				bottom: Math.min(app.sheetInset + clearance, Math.round(height * 0.6))
+				bottom: Math.min(
+					Math.max(app.sheetInset, app.dockInset) + clearance,
+					Math.round(height * 0.6)
+				)
 			};
 		}
 		return {
 			top: panels.top + 16,
 			left: Math.min(panels.dockWidth('left') + 44, width * 0.34),
 			right: Math.min(panels.dockWidth('right') + 44, width * 0.34),
-			bottom: 80
+			// The dynamics dock covers the bottom of the map during playback.
+			bottom: Math.min(Math.max(80, app.dockInset + clearance), Math.round(height * 0.6))
 		};
 	}
 
@@ -849,6 +862,7 @@
 	function tooltip(info: PickingInfo): { html: string } | null {
 		const { object } = info;
 		if (!object) return null;
+		if (info.layer?.id.startsWith('dyn-') && dynamicsTooltip) return dynamicsTooltip(info);
 		if (app.studyView && info.layer?.id.startsWith('study-')) {
 			const view = app.studyView.solution;
 			const id = Number((object as { id: number }).id);
@@ -1256,8 +1270,8 @@
 	// short way. On the globe deck.gl ignores `wrapLongitude` and needs the
 	// unwrapped path itself; on the flat map `wrapLongitude` cuts the path at
 	// ±180 so both halves draw in every world copy.
-	$effect(() => {
-		if (!overlay || !layerCtors) return;
+	const baseLayers = $derived.by((): Layer[] => {
+		if (!overlay || !layerCtors) return [];
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
 		const marker = busMarkerRadius(app.busSizing);
@@ -1333,8 +1347,7 @@
 					updateTriggers: { getFillColor: [study, mode, theme], getRadius: [app.busSizing] }
 				})
 			);
-			overlay.setProps({ layers: withGlobeHorizon([...layers, ...extraLayers], globeHorizon) });
-			return;
+			return layers;
 		}
 		for (const c of app.cases) {
 			if (!c.network) continue;
@@ -1416,7 +1429,9 @@
 		// (see busMarkers).
 		for (const c of app.localCases) {
 			if (c.view) {
-				const d = display.get(c.id);
+				// Dynamics draws its own buses; lines stay neutral, not coloured
+				// by the steady-state loading.
+				const d = c.id === app.activeLocalId && dynamicsView ? undefined : display.get(c.id);
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
@@ -1450,8 +1465,8 @@
 							return true;
 						},
 						updateTriggers: {
-							getColor: [display, app.selectedBranch, app.activeLocalId, theme],
-							getWidth: [display, app.selectedBranch, app.activeLocalId]
+							getColor: [display, app.selectedBranch, app.activeLocalId, theme, dynamicsView],
+							getWidth: [display, app.selectedBranch, app.activeLocalId, dynamicsView]
 						}
 					}),
 					new ScatterplotLayer<NetworkBus>({
@@ -1611,7 +1626,26 @@
 				})
 			);
 		}
-		overlay.setProps({ layers: withGlobeHorizon([...layers, ...extraLayers], globeHorizon) });
+		return layers;
+	});
+
+	// The overlay gets tellegen's layers, the dynamics playback layers (a
+	// frame of playback recreates only those) and the host's layers last.
+	$effect(() => {
+		if (!overlay) return;
+		// During playback the dynamics layer draws the buses: the static bus
+		// colours (price, demand) would read as voltages.
+		// In Dynamics mode the steady-state dispatch markers of the case with
+		// dynamic data stay off, before a run too.
+		const hidden = dynamicsView ? `local-buses-${app.activeLocalId}` : null;
+		const base = dynamicsLayers.length
+			? baseLayers.filter((l) => !l.id.startsWith('local-buses-'))
+			: hidden
+				? baseLayers.filter((l) => l.id !== hidden)
+				: baseLayers;
+		overlay.setProps({
+			layers: withGlobeHorizon([...base, ...dynamicsLayers, ...extraLayers], globeHorizon)
+		});
 	});
 
 	$effect(() => {
@@ -1999,7 +2033,7 @@
 
 	.map :global(.maplibregl-ctrl-bottom-right) {
 		right: 20px;
-		bottom: 12px;
+		bottom: max(12px, var(--tellegen-timeline-clear, 0px));
 		display: flex;
 		flex-direction: row;
 		align-items: flex-end;
@@ -2138,7 +2172,7 @@
 
 	@media (max-width: 760px) {
 		.map :global(.maplibregl-ctrl-bottom-right) {
-			bottom: 12px;
+			bottom: max(12px, var(--tellegen-timeline-clear, 0px));
 			right: 12px;
 			gap: 12px;
 		}

@@ -18,7 +18,10 @@
 		"test:browser-support": "node --experimental-strip-types scripts/test-browser-support.mjs",
 		"test:study-goals": "node --experimental-strip-types scripts/test-goal-form.mjs",
 		"format": "prettier --write .",
-		"lint": "prettier --check ."
+		"lint": "prettier --check .",
+		"predev": "node scripts/copy-rms-examples.mjs",
+		"prebuild": "node scripts/copy-rms-examples.mjs",
+		"pretest:browser": "node scripts/copy-rms-examples.mjs"
 	},
 	"dependencies": {
 		"@deck.gl/core": "^9.4.1",
