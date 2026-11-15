@@ -508,7 +508,10 @@ fn add_limits_and_ratings(net: &MulticonductorNetwork, graph: &mut serde_json::V
 /// for calculation. A network PowerIO cannot zone (a line naming an undeclared bus) gets none.
 fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
     use serde_json::{json, Value};
-    let Ok(zones) = powerio_dist::voltage_zones::calc_voltage_zone_labels(net) else {
+    let Ok(zones) = powerio_dist::voltage_zones::calc_voltage_zone_labels(
+        net,
+        powerio_dist::voltage_zones::ZoneSwitches::Closed,
+    ) else {
         return;
     };
     let row_of: std::collections::HashMap<String, usize> = net
