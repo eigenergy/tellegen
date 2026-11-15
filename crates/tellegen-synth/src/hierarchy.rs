@@ -269,7 +269,7 @@ pub fn site_hierarchical(
 
     // Step-down buses at the sites of each level, highest ranked first, a
     // little apart so the triangulation sees distinct points.
-    let offset_deg = t.site_offset_km / 111.0;
+    let offset_deg = t.site_offset_km / crate::geom::KM_PER_DEGREE;
     for k in 0..depth {
         let mut at_level: Vec<usize> = (0..slots.len()).filter(|&i| slots[i].tier == k).collect();
         // Ranked sites (populous places) get transformation first; a light
@@ -287,7 +287,7 @@ pub fn site_hierarchical(
             let (lon, lat, site) = (slots[i].lon, slots[i].lat, slots[i].site);
             let nth = slots.iter().filter(|s| s.site == site).count() as f64;
             slots.push(Slot {
-                lon: lon + offset_deg * nth / lat.to_radians().cos().abs().max(0.05),
+                lon: lon + offset_deg * nth / crate::geom::meridian_scale(lat, 0.05),
                 lat,
                 place: slots[i].place.clone(),
                 tier: lower,
@@ -1108,7 +1108,7 @@ pub fn hierarchical_topology(
                         let up = buses.len();
                         let mut bus = buses[near].clone();
                         bus.lon = buses[v].lon;
-                        bus.lat = buses[v].lat + t.site_offset_km / 111.0;
+                        bus.lat = buses[v].lat + t.site_offset_km / crate::geom::KM_PER_DEGREE;
                         bus.site = buses[v].site;
                         bus.place = buses[v].place.clone();
                         bus.name = format!("{} {} kV", buses[v].name, bus.base_kv);
@@ -1255,7 +1255,7 @@ pub fn hierarchical_topology(
     let n = buses.len();
     let mut uf = UnionFind::new(n);
     for e in edges.iter().chain(&transformers) {
-        uf.union(e.0, e.1);
+        crate::geom::delaunay::join(&mut uf, e.0, e.1);
     }
     let mut by_island: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (i, b) in buses.iter().enumerate() {
@@ -1292,7 +1292,7 @@ pub fn hierarchical_topology(
             }
             let (_, s, m) = best.expect("a main component member");
             edges.insert(Edge::new(s, m));
-            uf.union(s, m);
+            crate::geom::delaunay::join(&mut uf, s, m);
         }
     }
 
@@ -1360,14 +1360,14 @@ mod tests {
         assert!(n > 600, "taps are added");
         let mut uf = UnionFind::new(n);
         for c in &topo.corridors {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
             let (a, b) = (&buses[c.a], &buses[c.b]);
             if (a.base_kv - b.base_kv).abs() > 1e-9 {
                 // Between levels: a site transformer, or a fallback join.
                 assert!(a.site == b.site || c.length_km > SITE_TRANSFORMER_KM);
             }
         }
-        assert_eq!(uf.components(n), 1);
+        assert_eq!(crate::geom::delaunay::component_count(&mut uf, n), 1);
         let taps = buses.iter().filter(|b| b.kind == BusKind::Tap).count();
         assert!(taps > 0);
         // Every level is present and the deepest holds the most buses.

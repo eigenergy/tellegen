@@ -389,7 +389,10 @@ impl Generator {
                 crate::electrical::loads::spill_loads_by_level(&mut self.state.buses);
             loads.capped = capped;
             loads.spilled_mw = spilled;
-            let tan_phi = self.request.power_factor.clamp(1e-6, 1.0).acos().tan();
+            let tan_phi = powerio::electrical::calc_reactive_ratio(
+                self.request.power_factor.clamp(1e-6, 1.0),
+                powerio::electrical::ReactiveRatioForm::Sine,
+            );
             let peak = ctx.peak_demand_mw.max(1e-9);
             for bus in self.state.buses.iter_mut() {
                 bus.load_mvar = bus.load_mw * tan_phi;

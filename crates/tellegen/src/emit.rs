@@ -67,17 +67,14 @@ pub fn emit_dc_opf_solution(
     let economic_outputs = dc.objective == PreparedObjective::NetworkGeneratorCost;
     let mut bus_marginal = economic_outputs.then(|| vec![f64::NAN; n_source_buses]);
     let marginal = economic_outputs.then(|| sol.nodal_marginal_values(base));
-    // Net active injection per dense bus: generation minus served demand
-    // minus the constant shunt withdrawal, plus the fixed HVDC injection, the
-    // DC balance restated.
-    let mut injection = vec![0.0f64; dc.n];
-    for (generator, &bus) in dc.gen_bus.iter().enumerate() {
-        injection[bus] += sol.pg[generator];
-    }
-    for (dense, net_injection) in injection.iter_mut().enumerate() {
-        *net_injection -= (dc.demand[dense] - sol.psh[dense]) + dc.shunt_conductance[dense]
-            - dc.hvdc_injection[dense];
-    }
+    // Net active injection per dense bus, the DC balance restated: generation
+    // and shed load less PowerIO's device withdrawal (the fixed withdrawal
+    // without the phase shift term the branch flows carry).
+    let withdrawal = dc.prep.calc_device_withdrawal();
+    let generation = powerio_matrix::calc_bus_totals(dc.n, &dc.gen_bus, &sol.pg);
+    let injection: Vec<f64> = (0..dc.n)
+        .map(|dense| sol.psh[dense] + generation[dense] - withdrawal[dense])
+        .collect();
     for dense in 0..dc.n {
         let Some(row) = dc.bus_source_rows[dense] else {
             continue;
@@ -330,26 +327,15 @@ fn scatter_bus(
     Ok(out)
 }
 
+/// Terminal flows `[pf, qf, pt, qt]` of every model branch at the solved
+/// voltages, PowerIO's `AcBranchData::calc_branch_flows`.
 #[cfg(feature = "sensitivity")]
 pub(crate) fn ac_terminal_flows(
     model: &crate::model::AcNetwork,
     sol: &crate::problem::AcPfSolution,
 ) -> [Vec<f64>; 4] {
-    use num_complex::Complex;
-    let mut flows: [Vec<f64>; 4] = std::array::from_fn(|_| Vec::with_capacity(model.m));
-    for e in 0..model.m {
-        let f = model.br_from[e];
-        let t = model.br_to[e];
-        let vf = Complex::from_polar(sol.vm[f], sol.va[f]);
-        let vt = Complex::from_polar(sol.vm[t], sol.va[t]);
-        let (yff, yft, ytf, ytt) = model.branch_admittance(e);
-        let sf = vf * (yff * vf + yft * vt).conj();
-        let st = vt * (ytf * vf + ytt * vt).conj();
-        for (column, value) in flows.iter_mut().zip([sf.re, sf.im, st.re, st.im]) {
-            column.push(value);
-        }
-    }
-    flows
+    let flows = model.branches.calc_branch_flows(&sol.vm, &sol.va);
+    [flows.pf, flows.qf, flows.pt, flows.qt]
 }
 
 #[cfg(feature = "sensitivity")]

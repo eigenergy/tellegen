@@ -28,7 +28,6 @@
 //! rejects when closed.
 
 use std::collections::BTreeSet;
-use std::f64::consts::PI;
 
 use powerio_dist::{
     Configuration, DistBus, DistLine, DistLineCode, DistLoad, DistLoadVoltageModel,
@@ -761,7 +760,7 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
     let omitted: BTreeSet<usize> = constant_power.into_iter().take(omit_count).collect();
     let secondary_vll = spec.secondary.as_ref().map(|s| s.kv_ll * 1e3);
     let vll = secondary_vll.unwrap_or(primary_vll);
-    let vln = vll / 3f64.sqrt();
+    let vln = powerio_dist::electrical::calc_wye_phase_voltage(vll);
     let mut single_phase_rotation = 0usize;
 
     let sites = four_wire_sites
@@ -777,7 +776,10 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
         );
     for (index, ((site, three_phase), kind)) in sites.zip(kinds).enumerate() {
         let pf = rng.uniform(0.90, 0.98);
-        let tan_phi = pf.acos().tan();
+        let tan_phi = powerio::electrical::calc_reactive_ratio(
+            pf,
+            powerio::electrical::ReactiveRatioForm::Sine,
+        );
         let (bus, terminal_map, configuration, p_nom, v_nom) = if three_phase {
             let LoadSite::FourWire { bus } = site else {
                 unreachable!("three-phase loads sit on four-wire buses")
@@ -882,13 +884,16 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
     *network.lines_mut() = builder.lines;
     *network.transformers_mut() = builder.transformers;
     *network.loads_mut() = builder.loads;
-    let source_vln = primary_vll / 3f64.sqrt();
+    let source_vln = powerio_dist::electrical::calc_wye_phase_voltage(primary_vll);
     network.sources_mut().push(VoltageSource::new(
         "vs",
         "src",
         four_wire(),
         vec![source_vln, source_vln, source_vln, 0.0],
-        vec![0.0, -2.0 * PI / 3.0, 2.0 * PI / 3.0, 0.0],
+        (0..3)
+            .map(|k| powerio_dist::sequence::calc_balanced_phase_angle(k, 3))
+            .chain([0.0])
+            .collect(),
     ));
     network
 }

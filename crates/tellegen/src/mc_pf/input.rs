@@ -56,9 +56,7 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
     }
 
     let terminal_conventions = object.get("terminal_conventions");
-    let mut terminal_convention_non_phase =
-        terminal_convention_names(terminal_conventions, "neutral");
-    terminal_convention_non_phase.extend(terminal_convention_names(terminal_conventions, "earth"));
+    let declares_non_phase = declares_non_phase_terminals(terminal_conventions);
     if let Some(loads) = object.get("load").and_then(Value::as_object) {
         for (name, load) in loads {
             let Some(load) = load.as_object() else {
@@ -155,16 +153,14 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
                 .get("configuration")
                 .and_then(Value::as_str)
                 .unwrap_or("WYE");
-            if configuration.eq_ignore_ascii_case("WYE")
-                && !terminal_convention_non_phase.is_empty()
-            {
+            if configuration.eq_ignore_ascii_case("WYE") && declares_non_phase {
                 let phases = load.get("p_nom").and_then(Value::as_array).map(Vec::len);
                 validate_wye_terminal_order(
                     "load",
                     name,
                     "terminal_map",
                     load.get("terminal_map"),
-                    &terminal_convention_non_phase,
+                    terminal_conventions,
                     phases,
                 )?;
             }
@@ -281,15 +277,12 @@ fn validate_transformer_terminal_order(
     let Some(record) = raw.as_object() else {
         return Ok(());
     };
-    let neutral_names = terminal_convention_names(terminal_conventions, "neutral");
-    let earth_names = terminal_convention_names(terminal_conventions, "earth");
     let phase_count = terminal_conventions
         .and_then(Value::as_object)
         .and_then(|o| o.get("phase"))
         .and_then(Value::as_array)
         .map(|phases| phases.len().max(1));
-    let mut non_phase = neutral_names;
-    non_phase.extend(earth_names);
+    let declares_non_phase = declares_non_phase_terminals(terminal_conventions);
     if subtype == "single_phase" {
         validate_distinct_terminal_map(
             "transformer",
@@ -328,12 +321,13 @@ fn validate_transformer_terminal_order(
             // checked, and a map such as `[leg 1, leg 2, centre]` would lower
             // to the wrong pair of half windings while still producing
             // plausible voltages, so refuse rather than guess.
-            if non_phase.is_empty() {
+            if !declares_non_phase {
                 return Err(format!(
                     "transformer `{name}` field `terminal_map_to` needs `terminal_conventions` to declare a neutral or earth terminal so the centre tap can be identified"
                 ));
             }
-            let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
+            let is_non_phase =
+                |terminal: &str| is_non_phase_terminal(&terminals, terminal, terminal_conventions);
             if !is_non_phase(terminals[1])
                 || is_non_phase(terminals[0])
                 || is_non_phase(terminals[2])
@@ -345,7 +339,7 @@ fn validate_transformer_terminal_order(
         }
         return Ok(());
     }
-    if non_phase.is_empty() {
+    if !declares_non_phase {
         return Ok(());
     }
     if subtype == "n_winding" {
@@ -367,7 +361,7 @@ fn validate_transformer_terminal_order(
                     name,
                     &format!("windings[{idx}].terminal_map"),
                     winding.get("terminal_map"),
-                    &non_phase,
+                    terminal_conventions,
                     phase_count,
                 )?;
             }
@@ -383,7 +377,7 @@ fn validate_transformer_terminal_order(
             name,
             "terminal_map_from",
             record.get("terminal_map_from"),
-            &non_phase,
+            terminal_conventions,
             Some(if matches!(subtype, "wye_delta" | "delta_wye") {
                 3
             } else {
@@ -397,7 +391,7 @@ fn validate_transformer_terminal_order(
             name,
             "terminal_map_to",
             record.get("terminal_map_to"),
-            &non_phase,
+            terminal_conventions,
             Some(if matches!(subtype, "wye_delta" | "delta_wye") {
                 3
             } else {
@@ -439,16 +433,23 @@ fn validate_distinct_terminal_map<'a>(
     Ok(Some(names))
 }
 
-fn terminal_convention_names(conventions: Option<&Value>, role: &str) -> Vec<String> {
-    conventions
-        .and_then(Value::as_object)
-        .and_then(|o| o.get(role))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect()
+/// Whether the document's `terminal_conventions` name any neutral or earth
+/// terminal: the order checks below run only when they do.
+fn declares_non_phase_terminals(conventions: Option<&Value>) -> bool {
+    ["neutral", "earth"].iter().any(|role| {
+        conventions
+            .and_then(|o| o.get(role))
+            .and_then(Value::as_array)
+            .is_some_and(|names| names.iter().any(Value::is_string))
+    })
+}
+
+/// Whether `terminal` of the map `terminals` is a neutral or earth, by
+/// PowerIO's one terminal classification (`calc_terminal_role`) under the
+/// document's conventions.
+fn is_non_phase_terminal(terminals: &[&str], terminal: &str, conventions: Option<&Value>) -> bool {
+    powerio_dist::calc_terminal_role(terminals, terminal, conventions)
+        != powerio_dist::TerminalRole::Phase
 }
 
 fn validate_numeric_vector(value: &Value, field: &str) -> Result<(), String> {
@@ -469,9 +470,11 @@ fn validate_numeric_vector(value: &Value, field: &str) -> Result<(), String> {
 
 fn validate_vector_arity(value: &Value, field: &str, branches: usize) -> Result<(), String> {
     let length = value.as_array().map_or(0, Vec::len);
-    if length != 1 && length != branches {
+    // One entry per branch, as the BMOPF schema and PowerIO's load law state
+    // every coefficient.
+    if length != branches {
         return Err(format!(
-            "{field} has length {length}; expected 1 or {branches}"
+            "{field} has length {length}; expected one entry per branch ({branches})"
         ));
     }
     Ok(())
@@ -482,7 +485,7 @@ fn validate_wye_terminal_order(
     name: &str,
     field: &str,
     value: Option<&Value>,
-    non_phase: &[String],
+    conventions: Option<&Value>,
     expected_phases: Option<usize>,
 ) -> Result<(), String> {
     let Some(map) = value.and_then(Value::as_array) else {
@@ -492,18 +495,30 @@ fn validate_wye_terminal_order(
     if names.len() != map.len() {
         return Ok(());
     }
-    let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
-    let Some(neutral_position) = names.iter().position(|terminal| is_non_phase(terminal)) else {
-        // An implicit ground has no named neutral in a phase-only map. If the
-        // map has one extra conductor, however, it is an explicit return and
-        // must be named by the declared conventions before the reader can
-        // preserve it safely.
-        if expected_phases.is_some_and(|phases| names.len() == phases + 1) {
-            return Err(format!(
-                "{kind} `{name}` field `{field}` has an explicit WYE return that is not identified as the final neutral/earth terminal"
-            ));
+    // PowerIO's one WYE neutral rule over the map's own terminals: `None`
+    // when every terminal is a phase, an error when more than one is not.
+    let owned: Vec<String> = names.iter().map(|&n| n.to_owned()).collect();
+    let neutral_position = match powerio_dist::calc_mapped_neutral_position(
+        &names,
+        &owned,
+        conventions,
+    ) {
+        Ok(Some(position)) => Some(position),
+        Ok(None) => {
+            // An implicit ground has no named neutral in a phase-only
+            // map. If the map has one extra conductor, however, it is an
+            // explicit return and must be named by the declared
+            // conventions before the reader can preserve it safely.
+            if expected_phases.is_some_and(|phases| names.len() == phases + 1) {
+                return Err(format!(
+                        "{kind} `{name}` field `{field}` has an explicit WYE return that is not identified as the final neutral/earth terminal"
+                    ));
+            }
+            return Ok(());
         }
-        return Ok(());
+        // More than one neutral/earth terminal: at least one sits among
+        // the phase coils.
+        Err(_) => None,
     };
     if let Some(phases) = expected_phases {
         if names.len() != phases + 1 {
@@ -513,12 +528,7 @@ fn validate_wye_terminal_order(
             ));
         }
     }
-    if neutral_position != names.len() - 1
-        || names
-            .iter()
-            .take(names.len() - 1)
-            .any(|terminal| is_non_phase(terminal))
-    {
+    if neutral_position != Some(names.len() - 1) {
         return Err(format!(
             "{kind} `{name}` field `{field}` places an explicit neutral/earth terminal among phase coils; PowerIO v0.11 requires WYE phase terminals first and the neutral last"
         ));
@@ -552,35 +562,9 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
             require_uniform_scalar(value, &format!("transformer `{name}` field `{key}`"))?;
         }
     }
-    // Zero legacy fields carry no placement semantics and are emitted by the
-    // pinned BMOPFTools conversion for otherwise lossless transformers.  The
-    // autotransformer subtype also defines these fields unambiguously across
-    // its from winding, so neither case needs producer-profile normalization.
-    let mut ambiguous_legacy_no_load = false;
-    for key in ["g_no_load", "b_no_load"] {
-        let Some(value) = record.get(key) else {
-            continue;
-        };
-        let Some(value) = value.as_f64().filter(|value| value.is_finite()) else {
-            return Err(format!(
-                "transformer `{name}` field `{key}` must be a finite number"
-            ));
-        };
-        if key == "g_no_load" && value < 0.0 {
-            return Err(format!(
-                "transformer `{name}` field `g_no_load` must be nonnegative"
-            ));
-        }
-        ambiguous_legacy_no_load |= value != 0.0;
-    }
-    if ambiguous_legacy_no_load
-        && !record.contains_key("no_load_shunt")
-        && subtype != "single_phase_autotransformer"
-    {
-        return Err(format!(
-            "transformer `{name}` uses legacy g_no_load/b_no_load without an explicit no_load_shunt; normalize the producer profile before MC PF"
-        ));
-    }
+    // Legacy g_no_load/b_no_load sit where PowerIO's one magnetizing rule
+    // places them (powerio_dist::transformer::calc_transformer_magnetizing),
+    // which also checks their values.
     if subtype == "single_phase_autotransformer" {
         for key in [
             "r_series_from",
@@ -860,7 +844,8 @@ pub(super) fn validate_mc_network(
         }
     }
     for transformer in network.transformers() {
-        super::transformer::prepare_transformer(transformer).map_err(|e| e.to_string())?;
+        powerio_matrix::calc_transformer_primitive_admittance(network, transformer)
+            .map_err(|error| super::network::powerio_message(&error))?;
     }
     let index = super::network::NetworkIndex::new(network)?;
     for load in network.loads() {
@@ -873,7 +858,7 @@ pub(super) fn validate_mc_network(
                 powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
             )
         {
-            super::loads::prepare_load(load, &index, None)?;
+            super::loads::prepare_load(network, load, &index, None)?;
         }
     }
     Ok(())
@@ -1053,7 +1038,10 @@ mod tests {
             }}
         });
         let error = validate_bmopf_json(&wrong_length.to_string()).unwrap_err();
-        assert!(error.contains("expected 1 or 2"), "{error}");
+        assert!(
+            error.contains("expected one entry per branch (2)"),
+            "{error}"
+        );
 
         let nonfinite = json!({
             "load": {"l": {
@@ -1180,16 +1168,17 @@ mod tests {
     }
 
     #[test]
-    fn accepts_zero_legacy_core_fields_as_no_op() {
+    fn accepts_legacy_core_fields_powerio_places() {
+        // PowerIO's magnetizing rule places and checks g_no_load/b_no_load,
+        // so neither a zero nor a nonzero legacy core is refused here.
         let mut raw = json!({
             "transformer": {"single_phase": {
                 "t": {"g_no_load": 0.0, "b_no_load": 0.0}
             }}
         });
         validate_bmopf_json(&raw.to_string()).unwrap();
-        raw["transformer"]["single_phase"]["t"]["g_no_load"] = json!("zero");
-        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
-        assert!(error.contains("must be a finite number"), "{error}");
+        raw["transformer"]["single_phase"]["t"]["g_no_load"] = json!(0.01);
+        validate_bmopf_json(&raw.to_string()).unwrap();
     }
 
     #[test]

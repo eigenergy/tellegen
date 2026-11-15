@@ -40,7 +40,7 @@ pub struct SubdivisionEntry {
 
 impl SubdivisionEntry {
     pub fn average_mw(&self) -> f64 {
-        self.twh * 1e6 / 8760.0
+        crate::demand::calc_average_mw(self.twh)
     }
 }
 

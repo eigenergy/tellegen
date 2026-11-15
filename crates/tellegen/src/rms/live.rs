@@ -696,7 +696,7 @@ impl RmsLive {
     /// Whether the breaker at a branch end is closed (dense branch index).
     #[must_use]
     pub fn end_closed(&self, e: usize, end: End) -> bool {
-        self.sys.ac.sw.get(e).is_some_and(|&s| s != 0.0)
+        self.sys.closed.get(e).is_some_and(|&c| c)
             && !self.sys.end_open[e][usize::from(end == End::To)]
     }
 
@@ -710,7 +710,7 @@ impl RmsLive {
     /// Tap ratio of a branch (dense index; 1 for a line).
     #[must_use]
     pub fn tap(&self, e: usize) -> f64 {
-        self.sys.ac.tap.get(e).copied().unwrap_or(1.0)
+        self.sys.ac.branches.tap.get(e).copied().unwrap_or(1.0)
     }
 
     /// Set a transformer's tap ratio and re-solve.
@@ -722,7 +722,8 @@ impl RmsLive {
             return Err(format!("no branch index {e}"));
         }
         let mut sys = self.sys.clone();
-        sys.ac.tap[e] = tap;
+        // The PowerIO tap column; the re-solve stamps the matrix from it.
+        sys.ac.branches.tap[e] = tap;
         self.resolve_network(sys)
     }
 

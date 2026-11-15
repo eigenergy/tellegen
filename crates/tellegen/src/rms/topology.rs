@@ -127,11 +127,12 @@ impl Topology {
             .ok_or_else(|| format!("no generating unit {bus} '{id}'"))
     }
 
-    /// Impedance base at a dense bus, ohms.
+    /// Impedance base at a dense bus, ohms: PowerIO's `kV² / MVA` (`NaN`
+    /// when the system base is not positive and finite).
     #[must_use]
     pub fn z_base(&self, b: usize) -> f64 {
         let kv = self.base_kv.get(b).copied().unwrap_or(1.0).max(1e-9);
-        kv * kv / self.sbase
+        powerio::electrical::calc_impedance_base(kv, self.sbase).unwrap_or(f64::NAN)
     }
 }
 
@@ -150,12 +151,13 @@ pub(crate) fn topology(network: &BalancedNetwork, sys: &DynSystem, x0: &[f64]) -
         })
         .collect();
     let ac = &sys.ac;
+    let br = &ac.branches;
     let branches = (0..ac.m)
         .map(|e| {
-            let (f, t) = (ac.br_from[e], ac.br_to[e]);
+            let (f, t) = (br.from_bus[e], br.to_bus[e]);
             let key = &sys.branch_keys[e];
-            let y = C64::new(ac.g[e], ac.b[e]);
-            let tap = C64::from_polar(ac.tap[e], ac.shift[e]);
+            let y = C64::new(br.g[e], br.b[e]);
+            let tap = C64::from_polar(br.tap[e], br.shift[e]);
             let rate = ac.rate_a[e];
             TopoBranch {
                 from: f,
@@ -163,17 +165,20 @@ pub(crate) fn topology(network: &BalancedNetwork, sys: &DynSystem, x0: &[f64]) -
                 from_number: key.0,
                 to_number: key.1,
                 circuit: key.2.clone(),
-                transformer: (ac.tap[e] - 1.0).abs() > 1e-9
-                    || ac.shift[e].abs() > 1e-9
-                    || (base_kv[f] - base_kv[t]).abs() > 1e-6,
+                // PowerIO's transformer test on the branch the column came
+                // from (a stated tap or shift), the one `case_edit` reads.
+                transformer: network
+                    .branches()
+                    .get(ac.branch_ids[e] - 1)
+                    .is_some_and(powerio::network::Branch::is_transformer),
                 rate: if rate.is_finite() && rate < 1e3 {
                     rate
                 } else {
                     0.0
                 },
                 z: C64::new(1.0, 0.0) / y,
-                y_fr: C64::new(ac.g_fr[e], ac.b_fr[e]),
-                y_to: C64::new(ac.g_to[e], ac.b_to[e]),
+                y_fr: C64::new(br.g_fr[e], br.b_fr[e]),
+                y_to: C64::new(br.g_to[e], br.b_to[e]),
                 tap,
             }
         })

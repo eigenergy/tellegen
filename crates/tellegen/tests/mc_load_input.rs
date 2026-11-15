@@ -24,18 +24,20 @@ fn document(model: &str, extras: Value) -> String {
     serde_json::to_string(&json!({ "load": { "ld": Value::Object(load) } })).unwrap()
 }
 
-fn scalar(value: f64) -> Value {
-    json!([value])
+/// One coefficient per branch of the two-branch load, as the BMOPF schema
+/// and PowerIO's load law state them.
+fn per_branch(value: f64) -> Value {
+    json!([value, value])
 }
 
 fn zip_fields() -> Map<String, Value> {
     Map::from_iter([
-        ("alpha_z".to_owned(), scalar(0.2)),
-        ("alpha_i".to_owned(), scalar(0.3)),
-        ("alpha_p".to_owned(), scalar(0.5)),
-        ("beta_z".to_owned(), scalar(0.1)),
-        ("beta_i".to_owned(), scalar(0.2)),
-        ("beta_p".to_owned(), scalar(0.7)),
+        ("alpha_z".to_owned(), per_branch(0.2)),
+        ("alpha_i".to_owned(), per_branch(0.3)),
+        ("alpha_p".to_owned(), per_branch(0.5)),
+        ("beta_z".to_owned(), per_branch(0.1)),
+        ("beta_i".to_owned(), per_branch(0.2)),
+        ("beta_p".to_owned(), per_branch(0.7)),
     ])
 }
 
@@ -46,7 +48,10 @@ fn accepts_all_supported_voltage_load_models() {
         ("constant_current", json!({})),
         ("constant_impedance", json!({})),
         ("zip", Value::Object(zip_fields())),
-        ("exponential", json!({ "gamma_p": [1.5], "gamma_q": [2.0] })),
+        (
+            "exponential",
+            json!({ "gamma_p": [1.5, 1.5], "gamma_q": [2.0, 2.0] }),
+        ),
     ];
     for (model, extras) in cases {
         let input = document(model, extras);
@@ -58,7 +63,7 @@ fn accepts_all_supported_voltage_load_models() {
 }
 
 #[test]
-fn accepts_full_branch_coefficients_and_len_one_broadcasts() {
+fn accepts_full_branch_coefficients_and_refuses_len_one_broadcasts() {
     let mut fields = zip_fields();
     fields.insert("alpha_z".to_owned(), json!([0.2, 0.1]));
     fields.insert("alpha_i".to_owned(), json!([0.3, 0.2]));
@@ -68,11 +73,12 @@ fn accepts_full_branch_coefficients_and_len_one_broadcasts() {
     fields.insert("beta_p".to_owned(), json!([0.7, 0.7]));
     assert!(validate_bmopf_json(&document("zip", Value::Object(fields))).is_ok());
 
+    // A single entry is not broadcast over the load's two branches.
     assert!(validate_bmopf_json(&document(
         "exponential",
         json!({ "gamma_p": [1.5], "gamma_q": [2.0] })
     ))
-    .is_ok());
+    .is_err());
 }
 
 #[test]
@@ -95,7 +101,7 @@ fn rejects_unknown_and_conflicting_model_fields() {
 #[test]
 fn rejects_incomplete_nonfinite_and_wrong_length_coefficients() {
     let nonfinite = document("zip", Value::Object(zip_fields()))
-        .replace("\"alpha_z\":[0.2]", "\"alpha_z\":[1e999]");
+        .replace("\"alpha_z\":[0.2,0.2]", "\"alpha_z\":[1e999,0.2]");
     let cases = [
         document("zip", json!({ "alpha_z": [1.0] })),
         document("exponential", json!({ "gamma_p": [1.0] })),

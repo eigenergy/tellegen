@@ -316,13 +316,7 @@ pub(super) fn check(
                 .map(|(k, c)| McOpfCoilAxis::new(prep, k, c.positive, c.negative))
                 .collect(),
             ports,
-            tap: tx.tap_bounds.map(|_| {
-                if tx.tap_inverse {
-                    tx.tap_nominal / alpha
-                } else {
-                    tx.tap_nominal * alpha
-                }
-            }),
+            tap: tx.tap_bounds.map(|_| tx.calc_physical_tap(alpha)),
             coil_current_a: currents.iter().map(|i| array(*i, ib)).collect(),
             coil_power_va: powers,
         });
@@ -376,12 +370,7 @@ pub(super) fn check(
             )?;
             if let Some(law) = &coil.load_law {
                 let ratio = u.norm() / law.nominal;
-                let impedance = law.terms.iter().flatten().all(|t| t[1] == 2.0);
-                if impedance {
-                    let admittance = C::new(
-                        law.terms[0].iter().map(|t| t[0]).sum(),
-                        -law.terms[1].iter().map(|t| t[0]).sum::<f64>(),
-                    ) / law.nominal.powi(2);
+                if let Some(admittance) = law.calc_impedance_admittance() {
                     checks.mismatch("prescribed_power_pu", (current - admittance * u).norm())?;
                 } else {
                     if ratio <= 0.0 && law.terms.iter().flatten().any(|t| t[1] != 0.0) {
@@ -390,10 +379,8 @@ pub(super) fn check(
                             dev.identity
                         )));
                     }
-                    let target = law
-                        .terms
-                        .each_ref()
-                        .map(|terms| terms.iter().map(|t| t[0] * ratio.powf(t[1])).sum::<f64>());
+                    // PowerIO's one load law evaluation.
+                    let target = law.calc_power(u.norm()).map(|(power, _)| power);
                     checks.mismatch(
                         "prescribed_power_pu",
                         (p - C::new(target[0], target[1])).norm(),
@@ -417,24 +404,10 @@ pub(super) fn check(
                 (coil.volt_watt.as_ref(), p.re, true),
             ] {
                 if let Some(curve) = curve {
-                    let mean = curve
-                        .monitors
-                        .iter()
-                        .map(|&(p, q)| {
-                            (voltage[p] - q.map_or(C::new(0.0, 0.0), |n| voltage[n])).norm()
-                        })
-                        .sum::<f64>()
-                        / (curve.monitors.len() as f64);
-                    let relu = |v: f64| {
-                        let z = v / curve.epsilon;
-                        curve.epsilon * (z.max(0.0) + (-z.abs()).exp().ln_1p())
-                    };
-                    let mut target = curve.values[0];
-                    for j in 0..curve.knots.len() - 1 {
-                        target += (curve.values[j + 1] - curve.values[j])
-                            / (curve.knots[j + 1] - curve.knots[j])
-                            * (relu(mean - curve.knots[j]) - relu(mean - curve.knots[j + 1]));
-                    }
+                    // PowerIO's one droop evaluation.
+                    let target = curve
+                        .calc_control(curve.calc_monitored_voltage(&voltage))
+                        .value;
                     checks.mismatch(
                         "prescribed_power_pu",
                         if upper {
@@ -590,15 +563,15 @@ pub(super) fn check_power_factors(
             .iter()
             .find(|d| d.identity == inv.name && d.kind == McOpfDeviceKind::Ibr)
             .ok_or_else(|| checks.failure("missing inverter PF ledger"))?;
-        // Product of square roots is independent of preparation's product form.
-        let a = (1. - pf.abs()).sqrt() * (1. + pf.abs()).sqrt();
+        // PowerIO's fixed power factor row `a P + b Q = 0`, `b = -pf`.
+        let [a, b] = powerio::electrical::calc_power_factor_coefficients(pf);
         for (k, &[p, q]) in device.coil_power_va.iter().enumerate() {
             checks.at(inv.name.clone(), Some(format!("coil:{k}")));
             // OpenDSS and BMOPF sign: pf > 0 puts Q on the same side as P,
             // so the declared relation is `a * P - pf * Q = 0`.
             checks.mismatch(
                 "prescribed_power_pu",
-                a * (p / power_base) - pf * (q / power_base),
+                a * (p / power_base) + b * (q / power_base),
             )?;
             let apparent = p.hypot(q);
             let achieved = (apparent > 0.).then(|| p.abs() / apparent);

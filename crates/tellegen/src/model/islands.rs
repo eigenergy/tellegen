@@ -1,23 +1,20 @@
 //! Island energization: the one place that decides which islands a solve
 //! carries and where each is referenced, before PowerIO prepares the problem.
 //!
-//! An island is a set of non-isolated buses joined by in-service branches and
-//! in-service three-winding transformers. An island with no in-service
-//! generator cannot supply its own load, so it is de-energized: its buses are
-//! typed isolated (and a three-winding transformer touching them is taken out
-//! of service, so its star bus does not survive alone), which removes the
-//! island and every element on it from the numerical problem. A supplied island
-//! that states no reference bus gets one at the bus of its largest generator.
-//! Each decision is reported as a [`SolveDiagnostic`].
+//! PowerIO owns the rule. `BalancedNetwork::calc_islands` partitions the
+//! energized buses (joined by in-service branches, closed switches, and
+//! in-service three-winding transformers), and
+//! `BalancedNetwork::assign_island_references` de-energizes every island no
+//! in-service generator supplies and designates a reference, at the bus of the
+//! largest generator, in each supplied island that has none. This module picks
+//! the policy and reports each decision as a [`SolveDiagnostic`].
 //!
 //! PowerIO's preparation already grounds every reference it is given, so a
-//! network that needs neither decision passes through unchanged and uncopied.
-//! A per-island reference policy in PowerIO itself can replace
-//! [`designate_references`] without touching the solvers.
+//! network that needs neither decision passes through unchanged.
 
-use std::collections::HashMap;
-
-use powerio::{BalancedNetwork, BusId, BusType};
+use powerio::BalancedNetwork;
+use powerio_tx::diagnostics::codes;
+use powerio_tx::IslandReferencePolicy;
 
 use crate::api::SolveDiagnostic;
 
@@ -25,13 +22,23 @@ use crate::api::SolveDiagnostic;
 /// one designated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReferencePolicy {
-    /// Any bus typed reference. The typed-instance preparations use the
-    /// network's bus types as stated.
+    /// Any bus typed reference (PowerIO's `DesignateMissing`). The
+    /// typed-instance preparations use the network's bus types as stated.
     Stated,
-    /// Only a reference bus that hosts an in-service generator. PowerIO
-    /// normalization demotes a generator-less reference to PQ, so the paths
-    /// that normalize first need a generator-hosted one.
+    /// Only a reference bus that hosts an in-service generator (PowerIO's
+    /// `DesignateMissingSupplied`, which demotes one that hosts none to PQ).
+    /// PowerIO normalization demotes a generator-less reference to PQ, so the
+    /// paths that normalize first need a generator-hosted one.
     GeneratorHosted,
+}
+
+impl ReferencePolicy {
+    fn powerio(self) -> IslandReferencePolicy {
+        match self {
+            Self::Stated => IslandReferencePolicy::DesignateMissing,
+            Self::GeneratorHosted => IslandReferencePolicy::DesignateMissingSupplied,
+        }
+    }
 }
 
 /// The outcome of [`energize`]: the adjusted network when anything changed, and
@@ -54,254 +61,56 @@ impl Energized {
     }
 }
 
-/// Find the islands of `network`, de-energize the unsupplied ones, and
-/// designate a reference in each supplied island that has none under `policy`.
+/// De-energize the unsupplied islands of `network` and designate a reference
+/// in each supplied island that has none under `policy`, through PowerIO's
+/// `assign_island_references`.
 pub(crate) fn energize(network: &BalancedNetwork, policy: ReferencePolicy) -> Energized {
-    let islands = Islands::of(network);
-    let supplied = islands.supplied(network);
-    let mut diagnostics = Vec::new();
-    let mut isolate = Vec::new();
-    if supplied.iter().any(|&supplied| !supplied) {
-        let mw = if network.is_normalized() {
-            network.base_mva()
-        } else {
-            1.0
-        };
-        let mut load_mw = vec![0.0; islands.members.len()];
-        for load in network.loads().iter().filter(|load| load.in_service) {
-            if let Some(island) = islands.island_of(load.bus) {
-                load_mw[island] += load.p * mw;
-            }
-        }
-        for (island, buses) in islands.members.iter().enumerate() {
-            if supplied[island] {
-                continue;
-            }
-            let ids: Vec<usize> = buses.iter().map(|&row| network.buses()[row].id.0).collect();
-            diagnostics.push(SolveDiagnostic {
-                code: "island_deenergized".to_owned(),
-                message: format!(
-                    "an island of {} bus(es) has no in-service generator and was left out \
-                     of the solve; its {:.1} MW of load is unserved",
-                    ids.len(),
-                    load_mw[island]
-                ),
-                buses: ids,
-            });
-            isolate.extend_from_slice(buses);
-        }
-    }
-    let designate = designate_references(network, &islands, &supplied, policy);
-    let missing = match policy {
-        ReferencePolicy::Stated => "states no reference bus",
-        ReferencePolicy::GeneratorHosted => "has no reference bus hosting an in-service generator",
-    };
-    for &row in &designate {
-        let bus = network.buses()[row].id.0;
-        diagnostics.push(SolveDiagnostic {
-            code: "island_reference_designated".to_owned(),
-            message: format!(
-                "an island {missing}; bus {bus} hosts its largest generator and became its \
-                 reference"
-            ),
-            buses: vec![bus],
-        });
-    }
-    if isolate.is_empty() && designate.is_empty() {
-        return Energized {
-            network: None,
-            diagnostics,
-        };
-    }
-
     let mut adjusted = network.clone();
-    for &row in &isolate {
-        adjusted.buses_mut()[row].kind = BusType::Isolated;
-    }
-    for &row in &designate {
-        adjusted.buses_mut()[row].kind = BusType::Ref;
-    }
-    let isolated: std::collections::HashSet<BusId> =
-        isolate.iter().map(|&row| network.buses()[row].id).collect();
-    for transformer in adjusted.transformers_3w_mut() {
-        if transformer
-            .windings
-            .iter()
-            .any(|winding| isolated.contains(&winding.bus))
-        {
-            transformer.in_service = false;
-        }
-    }
+    let report = adjusted.assign_island_references(policy.powerio());
+    // PowerIO states one finding per island it changed, in partition order,
+    // with the island's de-energized buses and designated reference recorded
+    // alongside in the same order. Its findings are reported as they stand:
+    // the de-energized finding names the in-service load left unserved and,
+    // for an island an HVDC line fed, the lines taken out of service with it
+    // and the power they scheduled into it. A reference demoted because it
+    // hosts no in-service generator is not reported, as before.
+    let mut de_energized = report.de_energized_islands.iter();
+    let mut designated = report.designated.iter();
+    let diagnostics = report
+        .diagnostics
+        .iter()
+        .filter_map(|finding| {
+            let code = finding.code();
+            if code == codes::CANONICALIZE_ISLAND_DE_ENERGIZED.code
+                || code == codes::CANONICALIZE_ISLAND_HVDC_FED_DE_ENERGIZED.code
+            {
+                let island = de_energized.next()?;
+                Some(SolveDiagnostic {
+                    code: "island_deenergized".to_owned(),
+                    message: finding.message().to_owned(),
+                    buses: island.buses.iter().map(|bus| bus.0).collect(),
+                })
+            } else if code == codes::CANONICALIZE_ISLAND_REFERENCE_DESIGNATED.code {
+                let bus = designated.next()?;
+                Some(SolveDiagnostic {
+                    code: "island_reference_designated".to_owned(),
+                    message: finding.message().to_owned(),
+                    buses: vec![bus.0],
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    // PowerIO's report says whether the assignment changed anything; a
+    // network that needed nothing is prepared as given.
+    let changed = !report.designated.is_empty()
+        || !report.demoted.is_empty()
+        || !report.de_energized.is_empty();
     Energized {
-        network: Some(adjusted),
+        network: changed.then_some(adjusted),
         diagnostics,
     }
-}
-
-/// The source bus row to promote to reference in each supplied island that has
-/// no reference under `policy`: the bus of its largest in-service generator by
-/// `pmax` (the first on a tie, a NaN bound counting as smallest), the rule
-/// PowerIO normalization applies to a whole network.
-fn designate_references(
-    network: &BalancedNetwork,
-    islands: &Islands,
-    supplied: &[bool],
-    policy: ReferencePolicy,
-) -> Vec<usize> {
-    let generator_buses: std::collections::HashSet<BusId> = network
-        .generators()
-        .iter()
-        .filter(|generator| generator.in_service)
-        .map(|generator| generator.bus)
-        .collect();
-    let mut referenced = vec![false; islands.members.len()];
-    for (row, bus) in network.buses().iter().enumerate() {
-        let counts = match policy {
-            ReferencePolicy::Stated => true,
-            ReferencePolicy::GeneratorHosted => generator_buses.contains(&bus.id),
-        };
-        if bus.kind == BusType::Ref && counts {
-            if let Some(island) = islands.island_of_row[row] {
-                referenced[island] = true;
-            }
-        }
-    }
-    let mut largest: Vec<Option<(f64, usize)>> = vec![None; islands.members.len()];
-    for generator in network.generators().iter().filter(|g| g.in_service) {
-        let Some(row) = islands.row_of.get(&generator.bus).copied() else {
-            continue;
-        };
-        let Some(island) = islands.island_of_row[row] else {
-            continue;
-        };
-        let pmax = if generator.pmax.is_nan() {
-            f64::NEG_INFINITY
-        } else {
-            generator.pmax
-        };
-        if largest[island].is_none_or(|(best, _)| pmax > best) {
-            largest[island] = Some((pmax, row));
-        }
-    }
-    (0..islands.members.len())
-        .filter(|&island| supplied[island] && !referenced[island])
-        .filter_map(|island| largest[island].map(|(_, row)| row))
-        .collect()
-}
-
-/// Connected components of the non-isolated buses.
-struct Islands {
-    /// Source bus row by bus id, for every bus.
-    row_of: HashMap<BusId, usize>,
-    /// Island of each source bus row; `None` for an isolated bus.
-    island_of_row: Vec<Option<usize>>,
-    /// Source bus rows of each island, in row order.
-    members: Vec<Vec<usize>>,
-}
-
-impl Islands {
-    fn of(network: &BalancedNetwork) -> Self {
-        let buses = network.buses();
-        let row_of: HashMap<BusId, usize> = buses
-            .iter()
-            .enumerate()
-            .map(|(row, bus)| (bus.id, row))
-            .collect();
-        let active = |id: BusId| {
-            row_of
-                .get(&id)
-                .copied()
-                .filter(|&row| buses[row].kind != BusType::Isolated)
-        };
-        let mut parent: Vec<usize> = (0..buses.len()).collect();
-        let mut join = |a: usize, b: usize| {
-            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
-            if ra != rb {
-                parent[rb] = ra;
-            }
-        };
-        for branch in network.branches().iter().filter(|b| b.in_service) {
-            if let (Some(from), Some(to)) = (active(branch.from), active(branch.to)) {
-                join(from, to);
-            }
-        }
-        for transformer in network.transformers_3w().iter().filter(|t| t.in_service) {
-            let rows: Vec<usize> = transformer
-                .windings
-                .iter()
-                .filter_map(|winding| active(winding.bus))
-                .collect();
-            for pair in rows.windows(2) {
-                join(pair[0], pair[1]);
-            }
-        }
-        let mut island_of_root = HashMap::new();
-        let mut island_of_row = vec![None; buses.len()];
-        let mut members: Vec<Vec<usize>> = Vec::new();
-        for (row, bus) in buses.iter().enumerate() {
-            if bus.kind == BusType::Isolated {
-                continue;
-            }
-            let root = find(&mut parent, row);
-            let island = *island_of_root.entry(root).or_insert_with(|| {
-                members.push(Vec::new());
-                members.len() - 1
-            });
-            members[island].push(row);
-            island_of_row[row] = Some(island);
-        }
-        Islands {
-            row_of,
-            island_of_row,
-            members,
-        }
-    }
-
-    fn island_of(&self, bus: BusId) -> Option<usize> {
-        self.row_of
-            .get(&bus)
-            .and_then(|&row| self.island_of_row[row])
-    }
-
-    /// Whether each island hosts at least one in-service generator.
-    fn supplied(&self, network: &BalancedNetwork) -> Vec<bool> {
-        let mut supplied = vec![false; self.members.len()];
-        for generator in network.generators().iter().filter(|g| g.in_service) {
-            if let Some(island) = self.island_of(generator.bus) {
-                supplied[island] = true;
-            }
-        }
-        supplied
-    }
-}
-
-fn find(parent: &mut [usize], mut node: usize) -> usize {
-    while parent[node] != node {
-        parent[node] = parent[parent[node]];
-        node = parent[node];
-    }
-    node
-}
-
-/// Group dense buses into islands over the branches of a prepared model. Returns
-/// each bus's island label, labels numbered in order of each island's first bus.
-#[cfg(feature = "sensitivity")]
-pub(crate) fn dense_islands(n: usize, br_from: &[usize], br_to: &[usize]) -> Vec<usize> {
-    let mut parent: Vec<usize> = (0..n).collect();
-    for (&from, &to) in br_from.iter().zip(br_to) {
-        let (ra, rb) = (find(&mut parent, from), find(&mut parent, to));
-        if ra != rb {
-            parent[rb] = ra;
-        }
-    }
-    let mut label = HashMap::new();
-    (0..n)
-        .map(|bus| {
-            let root = find(&mut parent, bus);
-            let next = label.len();
-            *label.entry(root).or_insert(next)
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -320,21 +129,28 @@ mod tests {
         assert_eq!(
             codes,
             [
-                ("island_deenergized", &[7, 8][..]),
                 ("island_reference_designated", &[6][..]),
+                ("island_deenergized", &[7, 8][..]),
             ]
         );
-        assert!(energized.diagnostics[0].message.contains("20.0 MW"));
+        // PowerIO reports the islands in partition order.
+        assert!(
+            energized.diagnostics[1]
+                .message
+                .contains("20 MW of in-service load"),
+            "{}",
+            energized.diagnostics[1].message
+        );
         let adjusted = energized.network(&network);
-        let kinds: Vec<BusType> = adjusted.buses().iter().map(|bus| bus.kind).collect();
-        assert_eq!(kinds[0], BusType::Ref);
-        assert_eq!(kinds[5], BusType::Ref);
-        assert_eq!(kinds[6], BusType::Isolated);
-        assert_eq!(kinds[7], BusType::Isolated);
+        let kinds: Vec<powerio::BusType> = adjusted.buses().iter().map(|bus| bus.kind).collect();
+        assert_eq!(kinds[0], powerio::BusType::Ref);
+        assert_eq!(kinds[5], powerio::BusType::Ref);
+        assert_eq!(kinds[6], powerio::BusType::Isolated);
+        assert_eq!(kinds[7], powerio::BusType::Isolated);
     }
 
     #[test]
-    fn a_single_referenced_island_passes_through_uncopied() {
+    fn a_single_referenced_island_passes_through_unchanged() {
         let network = crate::model::parse_matpower(crate::model::CASE3).expect("parse");
         let energized = energize(&network, ReferencePolicy::Stated);
         assert!(energized.diagnostics.is_empty());
@@ -354,12 +170,30 @@ mod tests {
         assert_eq!(hosted.diagnostics[0].buses, [3]);
     }
 
-    #[cfg(feature = "sensitivity")]
     #[test]
-    fn dense_islands_label_components_in_first_bus_order() {
-        assert_eq!(
-            dense_islands(5, &[0, 3, 2], &[1, 4, 4]),
-            vec![0, 0, 1, 1, 1]
+    fn an_island_fed_only_over_hvdc_reports_the_line_it_loses() {
+        // Bus 4 has load and no generator; the line from bus 3 schedules 10 MW
+        // into it. PowerIO de-energizes the island and takes the line out of
+        // service with it, and its finding names the line and the infeed.
+        let case = crate::model::CASE3.replace(
+            " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n",
+            " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n 4 1 5 0  0 0 1 1 0 230 1 1.1 0.9;\n",
         );
+        let mut network = crate::model::parse_matpower(&case).expect("parse");
+        let mut line = powerio::Hvdc::new(powerio::BusId(3), powerio::BusId(4));
+        line.pf = 10.0;
+        line.pt = 10.0;
+        network.hvdc_mut().push(line);
+        let energized = energize(&network, ReferencePolicy::Stated);
+        assert_eq!(energized.diagnostics.len(), 1);
+        let finding = &energized.diagnostics[0];
+        assert_eq!(finding.code, "island_deenergized");
+        assert_eq!(finding.buses, [4]);
+        assert!(
+            finding.message.contains("(3-4) schedule 10 MW into it"),
+            "{}",
+            finding.message
+        );
+        assert!(!energized.network(&network).hvdc()[0].in_service);
     }
 }

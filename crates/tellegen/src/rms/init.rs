@@ -10,6 +10,7 @@
 //! generator is solved for its states and references such that all
 //! derivatives vanish and it injects exactly its power flow current.
 
+use powerio::electrical::{calc_impedance_rebase, RebaseOrder};
 use powerio::{BalancedNetwork, DynamicCase, MachineDynamics};
 
 #[cfg(feature = "rms-experimental")]
@@ -449,7 +450,19 @@ pub(crate) fn build(
             Some(_) => false,
         };
         if as_source {
-            let z = C64::new(m.zsource.0, m.zsource.1) / scale;
+            // ZSORCE from the machine base to the system base: PowerIO's per
+            // unit rebase at one voltage base.
+            let rebase = |value: f64| {
+                calc_impedance_rebase(
+                    value,
+                    1.0,
+                    m.mbase,
+                    1.0,
+                    sbase,
+                    RebaseOrder::InversePowerRatio,
+                )
+            };
+            let z = C64::new(rebase(m.zsource.0), rebase(m.zsource.1));
             let e = v[b] + z * i_sys;
             sources.push(Source {
                 bus_number: m.bus.0,
@@ -576,12 +589,15 @@ pub(crate) fn build(
     });
 
     let m_branches = ac.m;
+    let branches = ac.branches.clone();
     let mut sys = DynSystem {
         n,
         bus_numbers,
         sbase,
         f0,
         ac,
+        closed: vec![true; m_branches],
+        branches,
         branch_keys,
         devices,
         sources,

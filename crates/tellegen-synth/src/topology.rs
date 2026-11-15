@@ -259,9 +259,9 @@ pub(crate) fn island_topology(
     // union-find check is cheap insurance against a degenerate triangulation).
     let mut uf = UnionFind::new(idxs.len());
     for e in &local {
-        uf.union(e.0, e.1);
+        crate::geom::delaunay::join(&mut uf, e.0, e.1);
     }
-    if uf.components(idxs.len()) > 1 {
+    if crate::geom::delaunay::component_count(&mut uf, idxs.len()) > 1 {
         // Attach each extra component to its nearest bus in the first one.
         let root0 = uf.find(0);
         for k in 1..idxs.len() {
@@ -276,7 +276,7 @@ pub(crate) fn island_topology(
                     }
                 }
                 add(&mut local, &mut degree, Edge::new(k, best.1));
-                uf.union(k, best.1);
+                crate::geom::delaunay::join(&mut uf, k, best.1);
             }
         }
     }
@@ -315,7 +315,7 @@ pub(crate) fn corridor_between(
 ) -> Corridor {
     let (ba, bb) = (&buses[a], &buses[b]);
     let length = haversine_km(ba.lon, ba.lat, bb.lon, bb.lat);
-    let reach = jitter * length / 111.0;
+    let reach = jitter * length / crate::geom::KM_PER_DEGREE;
     let frame = &data.shape.frame;
     let straight = straight_route(ba, bb);
     let mid_lon = straight[1].0 + 2.0 * reach * (rng.uniform() - 0.5);
@@ -407,9 +407,13 @@ mod tests {
             let (buses, topo, _) = generate(&req);
             let mut uf = UnionFind::new(n);
             for c in &topo.corridors {
-                uf.union(c.a, c.b);
+                crate::geom::delaunay::join(&mut uf, c.a, c.b);
             }
-            assert_eq!(uf.components(n), 1, "n={n}");
+            assert_eq!(
+                crate::geom::delaunay::component_count(&mut uf, n),
+                1,
+                "n={n}"
+            );
             let deg = corridor_degrees(n, &topo.corridors);
             let avg = 2.0 * topo.corridors.len() as f64 / n as f64;
             assert!((2.2..=3.1).contains(&avg), "n={n} avg degree {avg}");
@@ -472,8 +476,8 @@ mod tests {
         assert!(buses.iter().any(|b| b.island == 1));
         let mut uf = UnionFind::new(40);
         for c in &topo.corridors {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
         }
-        assert_eq!(uf.components(40), 2);
+        assert_eq!(crate::geom::delaunay::component_count(&mut uf, 40), 2);
     }
 }

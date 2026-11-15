@@ -58,8 +58,9 @@ validation-only PowerModels extensions.
   withdrawals, fixed HVDC injections and any caller-supplied constraints.
 - Match preprocessing: zero-impedance handling, three-winding lowering,
   reference angles, missing ratings and unconstrained angle windows.
-  Tellegen's network path applies a ±60° fallback and may synthesize an unrated
-  thermal limit; that is not equivalent to an unlimited MATPOWER branch.
+  Tellegen's network path applies PowerIO's PowerModels ±60° (1.0472 rad) pad
+  and may synthesize an unrated thermal limit over it; that is not equivalent
+  to an unlimited MATPOWER branch.
 - First check primal residuals and solver status, then compare objective using
   an explicit numerical tolerance. Equal objective does not imply unique
   dispatch or prices. Compare dispatch only when uniqueness is established,

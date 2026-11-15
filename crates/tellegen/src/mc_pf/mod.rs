@@ -14,17 +14,12 @@ mod linear;
 mod loads;
 mod network;
 mod tables;
-mod transformer;
 
 pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
     validate_mc_module, validate_mc_module_json,
 };
 pub use tables::McPfResultTables;
-pub use transformer::{
-    build_transformer_yprim, prepare_transformer, ComplexMatrix, PreparedTransformer,
-    TransformerError, TransformerPrimitive, TransformerTerminal,
-};
 
 use num_complex::Complex64;
 use powerio_prob::solution::{McAcPfSolution, Residuals, Termination};
@@ -606,7 +601,7 @@ impl McPfSession {
     /// Terminal identities in calculation order, which is also the order of
     /// [`McPfResult::terminals`] and of the interleaved terminal arrays.
     pub fn terminal_ids(&self) -> &[(String, String)] {
-        &self.prepared.index.terminal_ids
+        self.prepared.index.terminal_ids()
     }
 
     /// Terminal voltages as interleaved `[re, im]` pairs, volts.
@@ -1185,7 +1180,7 @@ fn validate_result_against_solution(
     let prepared = PreparedNetwork::prepare(solution.instance())?;
     let prepared_voltage = prepared
         .index
-        .terminal_ids
+        .terminal_ids()
         .iter()
         .map(|(bus, terminal)| {
             terminal_voltages
@@ -1505,7 +1500,6 @@ type ElementPortKey = (String, String, usize, String, String);
 fn expected_element_port_keys(
     instance: &McAcPfInstance,
 ) -> Result<std::collections::BTreeSet<ElementPortKey>, String> {
-    use powerio_dist::Configuration;
     let network = instance.network();
     let mut expected = std::collections::BTreeSet::new();
     let mut push = |kind: &str, element: &str, branch: usize, bus: &str, terminal: &str| {
@@ -1532,66 +1526,16 @@ fn expected_element_port_keys(
                 )
             })?;
         let terminals = &load_instance.terminals;
-        let neutral = if load.configuration == Configuration::Wye
-            && terminals.len() == load_instance.p_w.len() + 1
-        {
-            load.extras
-                .get("neutral_terminal")
-                .and_then(|value| value.as_str())
-                .or_else(|| terminals.last().map(String::as_str))
-        } else {
-            None
-        };
-        let branches: Vec<Vec<&str>> = match load.configuration {
-            Configuration::Wye => terminals
+        let branches: Vec<Vec<&str>> =
+            crate::mc_pf::loads::load_channels(network, load, terminals, load_instance.p_w.len())?
                 .iter()
-                .filter(|t| Some(t.as_str()) != neutral)
-                .map(|phase| {
-                    let mut row = vec![phase.as_str()];
-                    if let Some(n) = neutral {
-                        row.push(n);
-                    }
-                    row
+                .map(|channel| {
+                    std::iter::once(channel.from)
+                        .chain(channel.to)
+                        .map(|position| terminals[position].as_str())
+                        .collect()
                 })
-                .collect(),
-            Configuration::Delta if terminals.len() == 2 * load_instance.p_w.len() => terminals
-                .chunks_exact(2)
-                .map(|pair| vec![pair[0].as_str(), pair[1].as_str()])
-                .collect(),
-            Configuration::Delta
-                if terminals.len() == load_instance.p_w.len() && !terminals.is_empty() =>
-            {
-                (0..load_instance.p_w.len())
-                    .map(|i| {
-                        vec![
-                            terminals[i].as_str(),
-                            terminals[(i + 1) % terminals.len()].as_str(),
-                        ]
-                    })
-                    .collect()
-            }
-            Configuration::Delta => {
-                return Err(format!(
-                    "load `{}` terminal/power dimensions are inconsistent",
-                    load.name
-                ));
-            }
-            Configuration::SinglePhase if terminals.len() == 2 && load_instance.p_w.len() == 1 => {
-                vec![vec![terminals[0].as_str(), terminals[1].as_str()]]
-            }
-            Configuration::SinglePhase => {
-                return Err(format!(
-                    "load `{}` requires two terminals and one power",
-                    load.name
-                ));
-            }
-            _ => {
-                return Err(format!(
-                    "load `{}` uses unsupported connection configuration",
-                    load.name
-                ))
-            }
-        };
+                .collect();
         if branches.len() != load_instance.p_w.len() {
             return Err(format!(
                 "load `{}` branch count does not match its powers",
@@ -1623,15 +1567,10 @@ fn expected_element_port_keys(
         }
     }
     for transformer in network.transformers() {
-        let primitive = prepare_transformer(transformer).map_err(|error| error.to_string())?;
-        for terminal in primitive.terminals {
-            push(
-                "transformer",
-                &primitive.name,
-                0,
-                &terminal.bus,
-                &terminal.terminal,
-            );
+        let primitive = powerio_matrix::calc_transformer_primitive_admittance(network, transformer)
+            .map_err(|error| network::powerio_message(&error))?;
+        for (bus, terminal) in primitive.terminals {
+            push("transformer", primitive.name, 0, bus, terminal);
         }
     }
     Ok(expected)
@@ -1878,7 +1817,7 @@ fn iterate_cancellable(
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<FixedPoint, String> {
     validate_options(options)?;
-    let n = prepared.index.terminal_ids.len();
+    let n = prepared.index.terminal_ids().len();
     let mut voltage = if let Some(initial) = initial_voltage {
         if initial.len() != n {
             return Err(format!(
@@ -2181,7 +2120,7 @@ fn build_result(
     state: &FixedPoint,
 ) -> Result<McPfResult, String> {
     let voltage = &state.voltage;
-    let terminals: Vec<_> = (0..prepared.index.terminal_ids.len())
+    let terminals: Vec<_> = (0..prepared.index.terminal_ids().len())
         .map(|i| terminal_result(prepared, voltage, i))
         .collect();
     let mut element_ports = Vec::new();
@@ -2271,7 +2210,7 @@ fn terminal_result(
     i: usize,
 ) -> McTerminalResult {
     let current = passive_current(prepared, voltage, i);
-    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    let (bus, terminal) = &prepared.index.terminal_ids()[i];
     McTerminalResult {
         bus: bus.clone(),
         terminal: terminal.clone(),
@@ -2291,7 +2230,7 @@ fn load_port(
     branch_current: Complex64,
 ) -> McElementPort {
     let (current, power) = load_port_values(voltage, i, c, branch_current);
-    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    let (bus, terminal) = &prepared.index.terminal_ids()[i];
     McElementPort {
         element: load.name.clone(),
         kind: "load".to_owned(),
@@ -2322,7 +2261,7 @@ fn passive_port(
     row: usize,
 ) -> McElementPort {
     let (i, current, power) = passive_port_values(voltage, element, row);
-    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    let (bus, terminal) = &prepared.index.terminal_ids()[i];
     McElementPort {
         element: element.name.clone(),
         kind: element.kind.clone(),
@@ -2395,7 +2334,7 @@ pub(crate) fn validate_options(options: &McPfOptions) -> Result<(), String> {
 }
 
 fn passive_current(network: &PreparedNetwork, voltage: &[Complex64], row: usize) -> Complex64 {
-    network.passive.row_mul(row, voltage)
+    network.passive_current(voltage, row)
 }
 
 /// Buffers reused by every KCL evaluation of one solve.
@@ -2779,7 +2718,9 @@ mod tests {
             nominal_admittance: vec![Complex64::new(0.0, 0.0)],
             reference_admittance: vec![Complex64::new(0.0, 0.0)],
             nominal_voltage: vec![1.0],
-            model: crate::mc_pf::loads::BranchVoltageModel::ConstantPower,
+            model: crate::mc_pf::loads::BranchVoltageModel::Law(
+                powerio_dist::DistLoadVoltageModel::ConstantPower { v_nom: vec![1.0] },
+            ),
         };
         let mut actual_values = vec![Complex64::default()];
         load.add_current(&[voltage], &raw_load_options(), &mut actual_values)
@@ -2809,7 +2750,9 @@ mod tests {
         let voltage = [Complex64::new(8.0, 0.0)];
         let expected = [
             (
-                crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent,
+                crate::mc_pf::loads::BranchVoltageModel::Law(
+                    powerio_dist::DistLoadVoltageModel::ConstantCurrent { v_nom: vec![10.0] },
+                ),
                 Complex64::new(1.0, -0.5),
             ),
             (
@@ -2817,21 +2760,27 @@ mod tests {
                 Complex64::new(0.8, -0.4),
             ),
             (
-                crate::mc_pf::loads::BranchVoltageModel::Zip {
-                    alpha_z: vec![0.2],
-                    alpha_i: vec![0.3],
-                    alpha_p: vec![0.5],
-                    beta_z: vec![0.1],
-                    beta_i: vec![0.4],
-                    beta_p: vec![0.5],
-                },
+                crate::mc_pf::loads::BranchVoltageModel::Law(
+                    powerio_dist::DistLoadVoltageModel::Zip {
+                        v_nom: vec![10.0],
+                        alpha_z: vec![0.2],
+                        alpha_i: vec![0.3],
+                        alpha_p: vec![0.5],
+                        beta_z: vec![0.1],
+                        beta_i: vec![0.4],
+                        beta_p: vec![0.5],
+                    },
+                ),
                 Complex64::new(8.68 / 8.0, -4.42 / 8.0),
             ),
             (
-                crate::mc_pf::loads::BranchVoltageModel::Exponential {
-                    gamma_p: vec![0.7],
-                    gamma_q: vec![2.3],
-                },
+                crate::mc_pf::loads::BranchVoltageModel::Law(
+                    powerio_dist::DistLoadVoltageModel::Exponential {
+                        v_nom: vec![10.0],
+                        gamma_p: vec![0.7],
+                        gamma_q: vec![2.3],
+                    },
+                ),
                 Complex64::new(
                     10.0 * 0.8_f64.powf(0.7) / 8.0,
                     -5.0 * 0.8_f64.powf(2.3) / 8.0,
@@ -2852,7 +2801,9 @@ mod tests {
 
     #[test]
     fn opendss_voltage_envelope_matches_each_reference_region() {
-        let load = direct_branch_load(crate::mc_pf::loads::BranchVoltageModel::ConstantPower);
+        let load = direct_branch_load(crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::ConstantPower { v_nom: vec![10.0] },
+        ));
         let options = McPfOptions::default();
         let y_ref = Complex64::new(0.1, -0.05);
         let at_low = y_ref * (10.0 * options.v_low_pu);
@@ -2903,54 +2854,72 @@ mod tests {
             Complex64::default()
         );
 
-        load.model = crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent;
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::ConstantCurrent { v_nom: vec![10.0] },
+        );
         assert!(load.branch_current(0, &zero, &raw_load_options()).is_err());
 
-        load.model = crate::mc_pf::loads::BranchVoltageModel::Zip {
-            alpha_z: vec![0.0],
-            alpha_i: vec![1.0],
-            alpha_p: vec![0.0],
-            beta_z: vec![0.0],
-            beta_i: vec![1.0],
-            beta_p: vec![0.0],
-        };
+        load.model =
+            crate::mc_pf::loads::BranchVoltageModel::Law(powerio_dist::DistLoadVoltageModel::Zip {
+                v_nom: vec![10.0],
+                alpha_z: vec![0.0],
+                alpha_i: vec![1.0],
+                alpha_p: vec![0.0],
+                beta_z: vec![0.0],
+                beta_i: vec![1.0],
+                beta_p: vec![0.0],
+            });
         assert!(load.branch_current(0, &zero, &raw_load_options()).is_err());
 
-        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
-            gamma_p: vec![2.0],
-            gamma_q: vec![2.0],
-        };
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::Exponential {
+                v_nom: vec![10.0],
+                gamma_p: vec![2.0],
+                gamma_q: vec![2.0],
+            },
+        );
         assert_eq!(
             load.branch_current(0, &zero, &raw_load_options()).unwrap(),
             Complex64::default()
         );
 
-        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
-            gamma_p: vec![0.7],
-            gamma_q: vec![2.0],
-        };
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::Exponential {
+                v_nom: vec![10.0],
+                gamma_p: vec![0.7],
+                gamma_q: vec![2.0],
+            },
+        );
         assert!(load.branch_current(0, &zero, &raw_load_options()).is_err());
 
         // A very small nonzero voltage remains evaluable for a bounded
         // current law; the voltage check does not round it to zero.
-        load.model = crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent;
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::ConstantCurrent { v_nom: vec![10.0] },
+        );
         let tiny = [Complex64::new(1e-200, 1e-200)];
         let ci_current = load.branch_current(0, &tiny, &raw_load_options()).unwrap();
         assert!(ci_current.norm() > 0.0);
-        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
-            gamma_p: vec![1.0],
-            gamma_q: vec![1.0],
-        };
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::Exponential {
+                v_nom: vec![10.0],
+                gamma_p: vec![1.0],
+                gamma_q: vec![1.0],
+            },
+        );
         let exp_current = load.branch_current(0, &tiny, &raw_load_options()).unwrap();
         assert!((exp_current - ci_current).norm() < 1e-12);
 
         // An inactive P or Q component must not evaluate its unused exponent:
         // 0 * infinity would otherwise turn a finite current into NaN.
         load.power = vec![Complex64::new(10.0, 0.0)];
-        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
-            gamma_p: vec![2.0],
-            gamma_q: vec![-1_000_000.0],
-        };
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Law(
+            powerio_dist::DistLoadVoltageModel::Exponential {
+                v_nom: vec![10.0],
+                gamma_p: vec![2.0],
+                gamma_q: vec![-1_000_000.0],
+            },
+        );
         let current = load
             .branch_current(0, &[Complex64::new(8.0, 0.0)], &raw_load_options())
             .unwrap();
@@ -3313,6 +3282,20 @@ mod tests {
             .voltage;
         let inferred = load_voltage.re.hypot(load_voltage.im) / result.min_voltage_pu.unwrap();
         assert!((inferred - 10.0).abs() < 1e-9, "{inferred}");
+    }
+
+    /// A load stated single phase carries one power across two terminals; one
+    /// power on one terminal is refused rather than read as a grounded wye leg.
+    #[test]
+    fn a_single_phase_load_on_one_terminal_is_refused() {
+        let mut net = one_phase(1.0).network().clone();
+        net.loads_mut()[0].configuration = Configuration::SinglePhase;
+        let error = solve_mc_ac_pf_instance(
+            &McAcPfInstance::from_network(net).expect("instance"),
+            &McPfOptions::default(),
+        )
+        .unwrap_err();
+        assert!(error.contains("two terminals and one power"), "{error}");
     }
 
     #[test]

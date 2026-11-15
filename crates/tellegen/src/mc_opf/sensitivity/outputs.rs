@@ -229,11 +229,7 @@ impl McOpfSensitivities<'_> {
                 if x[column] <= 0. {
                     return Err(unsupported());
                 }
-                let scale = if tx.tap_inverse {
-                    -tx.tap_nominal / x[column].powi(2)
-                } else {
-                    tx.tap_nominal
-                };
+                let scale = tx.calc_physical_tap_derivative(x[column]);
                 (
                     gradient(&Affine::var(column), x.len()),
                     scale,

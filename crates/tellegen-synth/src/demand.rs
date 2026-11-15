@@ -64,8 +64,15 @@ pub struct AnnualDemand {
 impl AnnualDemand {
     /// The annual average load, MW.
     pub fn average_mw(&self) -> f64 {
-        self.twh * 1e6 / HOURS_PER_YEAR
+        calc_average_mw(self.twh)
     }
+}
+
+/// The average load, MW, of an annual energy `twh` in TWh a year:
+/// `twh · 10⁶ / 8760`. The one annual energy to average load conversion:
+/// national and subdivision demand read it.
+pub(crate) fn calc_average_mw(twh: f64) -> f64 {
+    twh * 1e6 / HOURS_PER_YEAR
 }
 
 #[derive(Deserialize)]

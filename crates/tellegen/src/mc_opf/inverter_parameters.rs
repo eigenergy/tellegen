@@ -9,36 +9,27 @@ use powerio_matrix::{McOpfDevice, McOpfDroop};
 #[derive(Clone, Debug)]
 pub(super) struct DroopParameter {
     columns: Vec<usize>,
-    knots: Vec<f64>,
-    values: Vec<f64>,
-    epsilon: f64,
+    /// The device's curve with its control values replaced by their
+    /// derivatives along the reference: the curve is linear in its values,
+    /// so its value is the control's derivative.
+    curve: McOpfDroop,
 }
 impl DroopParameter {
-    /// c_theta and its exact mixed derivative in the compiler's magnitude lifts.
+    /// c_theta and its exact mixed derivative in the compiler's magnitude
+    /// lifts, by PowerIO's one droop evaluation.
     pub fn evaluate(&self, x: &[f64]) -> Result<(f64, Vec<(usize, f64)>), String> {
         let count = self.columns.len() as f64;
         let mean = self.columns.iter().map(|&c| x[c]).sum::<f64>() / count;
-        let mut value = self.values[0];
-        let mut slope = 0.;
-        for j in 0..self.knots.len() - 1 {
-            let d = (self.values[j + 1] - self.values[j]) / (self.knots[j + 1] - self.knots[j]);
-            for (k, sign) in [(j, 1.), (j + 1, -1.)] {
-                let z = (mean - self.knots[k]) / self.epsilon;
-                value += sign * d * self.epsilon * (z.max(0.) + (-z.abs()).exp().ln_1p());
-                let sigmoid = if z >= 0. {
-                    1. / (1. + (-z).exp())
-                } else {
-                    z.exp() / (1. + z.exp())
-                };
-                slope += sign * d * sigmoid;
-            }
-        }
-        if !value.is_finite() || !slope.is_finite() {
+        let control = self.curve.calc_control(mean);
+        if !control.value.is_finite() || !control.slope.is_finite() {
             return Err("nonfinite inverter control-reference derivative".into());
         }
         Ok((
-            -value,
-            self.columns.iter().map(|&c| (c, -slope / count)).collect(),
+            -control.value,
+            self.columns
+                .iter()
+                .map(|&c| (c, -control.slope / count))
+                .collect(),
         ))
     }
 }
@@ -215,11 +206,11 @@ impl<'a> InverterParameters<'a> {
             map.ensure(self.parameter(axis, kind));
             return;
         }
+        let mut reference = curve.clone();
+        reference.values = values.iter().map(|v| v * factor).collect();
         let rule = Rule::Inverter(DroopParameter {
             columns,
-            knots: curve.knots.clone(),
-            values: values.iter().map(|v| v * factor).collect(),
-            epsilon: curve.epsilon,
+            curve: reference,
         });
         if total {
             for k in 0..self.count {

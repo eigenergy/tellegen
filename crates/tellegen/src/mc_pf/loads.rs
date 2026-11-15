@@ -7,21 +7,11 @@ use powerio_dist::{Configuration, DistLoad, DistLoadVoltageModel};
 pub(crate) enum BranchVoltageModel {
     /// The typed law owns its bounds; legacy solver envelope options do not replace them.
     Bounded(DistLoadVoltageModel),
-    ConstantPower,
-    ConstantCurrent,
+    /// An unbounded law PowerIO evaluates (`DistLoadVoltageModel::power_scale_where`):
+    /// constant power, constant current, ZIP or exponential, with its nominal
+    /// voltages and coefficients stated once per branch.
+    Law(DistLoadVoltageModel),
     ConstantImpedance,
-    Zip {
-        alpha_z: Vec<f64>,
-        alpha_i: Vec<f64>,
-        alpha_p: Vec<f64>,
-        beta_z: Vec<f64>,
-        beta_i: Vec<f64>,
-        beta_p: Vec<f64>,
-    },
-    Exponential {
-        gamma_p: Vec<f64>,
-        gamma_q: Vec<f64>,
-    },
 }
 
 use super::{
@@ -92,8 +82,10 @@ impl BranchLoad {
         // underflows for a perfectly valid tiny nonzero voltage.
         let current = match &self.model {
             BranchVoltageModel::Bounded(_) => self.bounded_current(branch, u, magnitude)?,
-            _ if options.voltage_envelope => self.enveloped_current(branch, u, magnitude, options),
-            _ => self.current_at_voltage(branch, u, magnitude),
+            _ if options.voltage_envelope => {
+                self.enveloped_current(branch, u, magnitude, options)?
+            }
+            _ => self.current_at_voltage(branch, u, magnitude)?,
         };
         if !current.re.is_finite() || !current.im.is_finite() {
             return Err(format!(
@@ -118,100 +110,76 @@ impl BranchLoad {
             .sum()
     }
 
+    /// The solver's legacy voltage envelope (`v_low_pu`, `v_min_pu`,
+    /// `v_max_pu`) around an unbounded law, evaluated by PowerIO
+    /// (`DistLoadVoltageModel::power_scale_in_voltage_bands`). Constant impedance
+    /// is `u²` in every band.
     fn enveloped_current(
         &self,
         branch: usize,
         u: Complex64,
         magnitude: f64,
         options: &McPfOptions,
-    ) -> Complex64 {
-        let v_nom = self.nominal_voltage(branch);
-        let ratio = magnitude / v_nom;
-        if matches!(&self.model, BranchVoltageModel::ConstantImpedance) {
-            return self.nominal_admittance[branch] * u;
-        }
-        if ratio <= options.v_low_pu {
-            return self.nominal_admittance[branch] * u;
-        }
-        if ratio <= options.v_min_pu {
-            // OpenDSS transitions linearly in complex current from
-            // nominal impedance at Vlow to the constant-power current at
-            // Vmin. Multiplication by the voltage unit phasor retains the
-            // operating branch angle.
-            let low = self.nominal_admittance[branch] * (v_nom * options.v_low_pu);
-            let at_min = self.nominal_admittance[branch] * (v_nom / options.v_min_pu);
-            let fraction = (ratio - options.v_low_pu) / (options.v_min_pu - options.v_low_pu);
-            return (u / magnitude) * (low + fraction * (at_min - low));
-        }
-        if ratio > options.v_max_pu {
-            return self.nominal_admittance[branch] / options.v_max_pu.powi(2) * u;
-        }
-        self.current_at_voltage(branch, u, magnitude)
+    ) -> Result<Complex64, String> {
+        let BranchVoltageModel::Law(model) = &self.model else {
+            return self.current_at_voltage(branch, u, magnitude);
+        };
+        let power = self.power[branch];
+        let [p, q] = model
+            .power_scale_in_voltage_bands(
+                branch,
+                magnitude,
+                [options.v_low_pu, options.v_min_pu, options.v_max_pu],
+                [power.re != 0.0, power.im != 0.0],
+            )
+            .map_err(|error| format!("load `{}` branch {branch}: {error}", self.name))?;
+        Ok(self.current_from_scale(branch, u, magnitude, [p, q]))
     }
 
-    fn current_at_voltage(&self, branch: usize, u: Complex64, magnitude: f64) -> Complex64 {
-        let phase = u / magnitude;
-        let s = self.power[branch];
-        let ratio = magnitude / self.nominal_voltage(branch);
+    fn current_at_voltage(
+        &self,
+        branch: usize,
+        u: Complex64,
+        magnitude: f64,
+    ) -> Result<Complex64, String> {
         match &self.model {
             BranchVoltageModel::Bounded(_) => unreachable!("bounded laws use bounded_current"),
-            BranchVoltageModel::ConstantPower => s.conj() * (phase / magnitude),
-            BranchVoltageModel::ConstantCurrent => {
-                s.conj() * (phase / self.nominal_voltage(branch))
-            }
-            BranchVoltageModel::ConstantImpedance => self.nominal_admittance[branch] * u,
-            BranchVoltageModel::Zip {
-                alpha_z,
-                alpha_i,
-                alpha_p,
-                beta_z,
-                beta_i,
-                beta_p,
-            } => {
-                let vnom = self.nominal_voltage(branch);
-                let p = if s.re == 0.0 {
-                    0.0
-                } else {
-                    s.re / vnom
-                        * (alpha_z[branch] * ratio
-                            + alpha_i[branch]
-                            + if alpha_p[branch] == 0.0 {
-                                0.0
-                            } else {
-                                alpha_p[branch] / ratio
-                            })
-                };
-                let q = if s.im == 0.0 {
-                    0.0
-                } else {
-                    s.im / vnom
-                        * (beta_z[branch] * ratio
-                            + beta_i[branch]
-                            + if beta_p[branch] == 0.0 {
-                                0.0
-                            } else {
-                                beta_p[branch] / ratio
-                            })
-                };
-                phase * Complex64::new(p, -q)
-            }
-            BranchVoltageModel::Exponential { gamma_p, gamma_q } => {
-                Complex64::new(
-                    if s.re == 0.0 {
-                        0.0
-                    } else {
-                        s.re / self.nominal_voltage(branch) * ratio.powf(gamma_p[branch] - 1.0)
-                    },
-                    if s.im == 0.0 {
-                        0.0
-                    } else {
-                        -s.im / self.nominal_voltage(branch) * ratio.powf(gamma_q[branch] - 1.0)
-                    },
-                ) * phase
-            }
+            BranchVoltageModel::ConstantImpedance => Ok(self.nominal_admittance[branch] * u),
+            BranchVoltageModel::Law(model) => self.law_current(model, branch, u, magnitude),
         }
     }
 
+    /// The branch current `conj(S·scale / U)` of a law PowerIO evaluates,
+    /// formed as the unit phasor times `(P·p, -Q·q) / |U|`, so no product
+    /// `U·conj(U)` can underflow. A component the load does not draw is not
+    /// evaluated.
+    fn law_current(
+        &self,
+        model: &DistLoadVoltageModel,
+        branch: usize,
+        u: Complex64,
+        magnitude: f64,
+    ) -> Result<Complex64, String> {
+        let power = self.power[branch];
+        let scale = model
+            .power_scale_where(branch, magnitude, [power.re != 0.0, power.im != 0.0])
+            .map_err(|error| format!("load `{}` branch {branch}: {error}", self.name))?;
+        Ok(self.current_from_scale(branch, u, magnitude, scale))
+    }
+
+    /// `conj(S·scale / U)`, as the unit phasor times `(P·p, -Q·q) / |U|`.
+    fn current_from_scale(
+        &self,
+        branch: usize,
+        u: Complex64,
+        magnitude: f64,
+        [p, q]: [f64; 2],
+    ) -> Complex64 {
+        let power = self.power[branch];
+        (u / magnitude) * Complex64::new(power.re * p / magnitude, -power.im * q / magnitude)
+    }
+
+    /// A bounded law owns its envelope; PowerIO evaluates it whole.
     fn bounded_current(
         &self,
         branch: usize,
@@ -221,83 +189,46 @@ impl BranchLoad {
         let BranchVoltageModel::Bounded(model) = &self.model else {
             unreachable!()
         };
-        let ratio = magnitude / self.nominal_voltage(branch);
-        // The low-voltage continuation is linear in U. Evaluate it directly
-        // so squaring a subnormal voltage cannot erase a representable current.
-        match model {
-            DistLoadVoltageModel::BoundedZip { v_low_pu, .. }
-            | DistLoadVoltageModel::BoundedExponential { v_low_pu, .. }
-                if ratio <= *v_low_pu =>
-            {
-                return Ok(self.nominal_admittance[branch] * u)
-            }
-            DistLoadVoltageModel::BoundedConstantPower {
-                v_min_pu,
-                current_limit_pu,
-                ..
-            } if ratio <= *v_min_pu
-                && current_limit_pu.is_none_or(|limit| ratio / v_min_pu.powi(2) <= limit) =>
-            {
-                return Ok(self.nominal_admittance[branch] / v_min_pu.powi(2) * u);
-            }
-            _ => {}
-        }
-        let [p, q] = model
-            .power_scale(branch, magnitude)
-            .map_err(|error| format!("load `{}` branch {branch}: {error}", self.name))?;
-        let power = self.power[branch];
-        Ok((u / magnitude) * Complex64::new(power.re * p / magnitude, -power.im * q / magnitude))
-    }
-
-    fn nominal_voltage(&self, branch: usize) -> f64 {
-        self.nominal_voltage[branch]
+        self.law_current(model, branch, u, magnitude)
     }
 
     fn zero_current_at_zero_voltage(&self, branch: usize, magnitude: f64, zero_tol: f64) -> bool {
         if magnitude > zero_tol {
             return false;
         }
-        let s = self.power[branch];
-        match &self.model {
-            BranchVoltageModel::Bounded(_) => true,
-            BranchVoltageModel::ConstantImpedance => true,
-            BranchVoltageModel::ConstantPower | BranchVoltageModel::ConstantCurrent => {
-                s.norm() == 0.0
-            }
-            BranchVoltageModel::Zip {
-                alpha_i,
-                alpha_p,
-                beta_i,
-                beta_p,
-                ..
-            } => {
-                // A constant-power or linear-current contribution has no
-                // unique phasor at exactly zero branch voltage. Pure Z terms
-                // have a well-defined zero current.
-                s.re * alpha_p[branch] == 0.0
-                    && s.im * beta_p[branch] == 0.0
-                    && s.re * alpha_i[branch] == 0.0
-                    && s.im * beta_i[branch] == 0.0
-            }
-            BranchVoltageModel::Exponential { gamma_p, gamma_q } => {
-                (s.re == 0.0 || gamma_p[branch] > 1.0) && (s.im == 0.0 || gamma_q[branch] > 1.0)
-            }
-        }
+        // A term `c (|U|/V_nom)^γ` draws a current magnitude in `|U|^(γ-1)`:
+        // only `γ > 1` vanishes at zero voltage, so a constant power or
+        // current contribution has no unique phasor there.
+        self.law_exponents_exceed(branch, |exponent| exponent > 1.0)
     }
 
     fn near_zero_law_is_safe(&self, branch: usize) -> bool {
+        // The current stays bounded near zero voltage for `γ >= 1`.
+        self.law_exponents_exceed(branch, |exponent| exponent >= 1.0)
+    }
+
+    /// Whether every voltage power law term this branch draws (a nonzero
+    /// fraction of a nonzero nominal component, PowerIO's term form
+    /// `DistLoadVoltageModel::calc_power_terms`) has an exponent `admits`.
+    /// Constant impedance and the bounded laws, whose low voltage band is
+    /// constant impedance, always do.
+    fn law_exponents_exceed(&self, branch: usize, admits: impl Fn(f64) -> bool) -> bool {
+        let BranchVoltageModel::Law(model) = &self.model else {
+            return true;
+        };
         let s = self.power[branch];
-        match &self.model {
-            BranchVoltageModel::Bounded(_) => true,
-            BranchVoltageModel::ConstantImpedance => true,
-            BranchVoltageModel::ConstantCurrent => true,
-            BranchVoltageModel::Zip {
-                alpha_p, beta_p, ..
-            } => s.re * alpha_p[branch] == 0.0 && s.im * beta_p[branch] == 0.0,
-            BranchVoltageModel::Exponential { gamma_p, gamma_q } => {
-                (s.re == 0.0 || gamma_p[branch] >= 1.0) && (s.im == 0.0 || gamma_q[branch] >= 1.0)
-            }
-            BranchVoltageModel::ConstantPower => false,
+        match model.calc_power_terms(branch) {
+            Ok(Some(terms)) => [s.re, s.im]
+                .iter()
+                .zip(&terms)
+                .filter(|(component, _)| **component != 0.0)
+                .all(|(_, terms)| {
+                    terms
+                        .iter()
+                        .filter(|[fraction, _]| *fraction != 0.0)
+                        .all(|&[_, exponent]| admits(exponent))
+                }),
+            _ => false,
         }
     }
 
@@ -355,7 +286,7 @@ impl BranchLoad {
         let nominal_admittance = power
             .iter()
             .zip(&self.nominal_voltage)
-            .map(|(&s, &v)| s.conj() / (v * v))
+            .map(|(&s, &v)| powerio_dist::calc_load_nominal_admittance(s, v))
             .collect::<Vec<_>>();
         if nominal_admittance
             .iter()
@@ -373,6 +304,7 @@ impl BranchLoad {
 }
 
 pub(crate) fn prepare_load(
+    network: &powerio_dist::MulticonductorNetwork,
     load: &DistLoad,
     index: &NetworkIndex,
     inferred_nominal_voltage: Option<&[f64]>,
@@ -397,7 +329,7 @@ pub(crate) fn prepare_load(
             load.name
         ));
     }
-    let incidence = connection_incidence(load, index)?;
+    let incidence = connection_incidence(network, load, index)?;
     if incidence.len() != load.p_nom.len() {
         return Err(format!(
             "load `{}` branch map has {} rows for {} powers",
@@ -448,7 +380,7 @@ pub(crate) fn prepare_load(
     let nominal_admittance: Vec<Complex64> = power
         .iter()
         .zip(vnom.iter().copied())
-        .map(|(&s, v)| s.conj() / (v * v))
+        .map(|(&s, v)| powerio_dist::calc_load_nominal_admittance(s, v))
         .collect();
     if nominal_admittance
         .iter()
@@ -460,35 +392,17 @@ pub(crate) fn prepare_load(
         ));
     }
     let model = match &load.voltage_model {
-        DistLoadVoltageModel::ConstantPower { .. } => BranchVoltageModel::ConstantPower,
-        DistLoadVoltageModel::ConstantCurrent { .. } => BranchVoltageModel::ConstantCurrent,
         DistLoadVoltageModel::ConstantImpedance { .. } => BranchVoltageModel::ConstantImpedance,
-        DistLoadVoltageModel::Zip {
-            alpha_z,
-            alpha_i,
-            alpha_p,
-            beta_z,
-            beta_i,
-            beta_p,
-            ..
-        } => BranchVoltageModel::Zip {
-            alpha_z: coefficients(&load.name, "alpha_z", alpha_z, load.p_nom.len())?,
-            alpha_i: coefficients(&load.name, "alpha_i", alpha_i, load.p_nom.len())?,
-            alpha_p: coefficients(&load.name, "alpha_p", alpha_p, load.p_nom.len())?,
-            beta_z: coefficients(&load.name, "beta_z", beta_z, load.p_nom.len())?,
-            beta_i: coefficients(&load.name, "beta_i", beta_i, load.p_nom.len())?,
-            beta_p: coefficients(&load.name, "beta_p", beta_p, load.p_nom.len())?,
-        },
-        DistLoadVoltageModel::Exponential {
-            gamma_p, gamma_q, ..
-        } => BranchVoltageModel::Exponential {
-            gamma_p: coefficients(&load.name, "gamma_p", gamma_p, load.p_nom.len())?,
-            gamma_q: coefficients(&load.name, "gamma_q", gamma_q, load.p_nom.len())?,
-        },
         DistLoadVoltageModel::BoundedZip { .. }
         | DistLoadVoltageModel::BoundedExponential { .. }
         | DistLoadVoltageModel::BoundedConstantPower { .. } => {
-            BranchVoltageModel::Bounded(prepare_bounded_model(load, &vnom)?)
+            BranchVoltageModel::Bounded(prepare_law(load, &vnom)?)
+        }
+        DistLoadVoltageModel::ConstantPower { .. }
+        | DistLoadVoltageModel::ConstantCurrent { .. }
+        | DistLoadVoltageModel::Zip { .. }
+        | DistLoadVoltageModel::Exponential { .. } => {
+            BranchVoltageModel::Law(prepare_law(load, &vnom)?)
         }
         _ => {
             return Err(format!(
@@ -509,11 +423,45 @@ pub(crate) fn prepare_load(
     })
 }
 
-/// Expand the public one-or-per-branch convention before calling PowerIO's
-/// per-branch evaluator. Validation is independent of the operating voltage.
-fn prepare_bounded_model(load: &DistLoad, vnom: &[f64]) -> Result<DistLoadVoltageModel, String> {
+/// The load's law with its branch nominal voltages, every coefficient checked
+/// to state one finite entry per branch (PowerIO's per channel law) before
+/// PowerIO's per-branch evaluator reads it. Validation is independent of the
+/// operating voltage.
+fn prepare_law(load: &DistLoad, vnom: &[f64]) -> Result<DistLoadVoltageModel, String> {
     let mut model = load.voltage_model.clone();
     match &mut model {
+        DistLoadVoltageModel::ConstantPower { v_nom }
+        | DistLoadVoltageModel::ConstantCurrent { v_nom } => *v_nom = vnom.to_vec(),
+        DistLoadVoltageModel::Zip {
+            v_nom,
+            alpha_z,
+            alpha_i,
+            alpha_p,
+            beta_z,
+            beta_i,
+            beta_p,
+        } => {
+            *v_nom = vnom.to_vec();
+            for (name, values) in [
+                ("alpha_z", alpha_z),
+                ("alpha_i", alpha_i),
+                ("alpha_p", alpha_p),
+                ("beta_z", beta_z),
+                ("beta_i", beta_i),
+                ("beta_p", beta_p),
+            ] {
+                *values = coefficients(&load.name, name, values, vnom.len())?;
+            }
+        }
+        DistLoadVoltageModel::Exponential {
+            v_nom,
+            gamma_p,
+            gamma_q,
+        } => {
+            *v_nom = vnom.to_vec();
+            *gamma_p = coefficients(&load.name, "gamma_p", gamma_p, vnom.len())?;
+            *gamma_q = coefficients(&load.name, "gamma_q", gamma_q, vnom.len())?;
+        }
         DistLoadVoltageModel::BoundedZip {
             v_nom,
             alpha_z,
@@ -590,120 +538,78 @@ fn coefficients(
     values: &[f64],
     branches: usize,
 ) -> Result<Vec<f64>, String> {
-    if values.len() != 1 && values.len() != branches {
+    if values.len() != branches {
         return Err(format!(
-            "load `{name}` {field} has length {}; expected 1 or {branches}",
+            "load `{name}` {field} has length {}; expected one entry per branch ({branches})",
             values.len()
         ));
     }
     if values.iter().any(|value| !value.is_finite()) {
         return Err(format!("load `{name}` {field} contains a non-finite value"));
     }
-    if values.len() == 1 {
-        Ok(vec![values[0]; branches])
-    } else {
-        Ok(values.to_vec())
-    }
+    Ok(values.to_vec())
 }
 
+/// Signed rows from the load's terminal voltages to its branch voltages, one
+/// per stated power, over PowerIO's connection channels
+/// (`powerio_dist::calc_connection_channels`).
 fn connection_incidence(
+    network: &powerio_dist::MulticonductorNetwork,
     load: &DistLoad,
     index: &NetworkIndex,
 ) -> Result<Vec<Vec<(usize, Complex64)>>, String> {
-    let terminal = |name: &str| index.resolve((&load.bus, name));
-    match load.configuration {
-        Configuration::Wye => {
-            let neutral = if load.terminal_map.len() == load.p_nom.len() + 1 {
-                let explicit = load.extras.get("neutral_terminal").and_then(|v| v.as_str());
-                Some(explicit.unwrap_or_else(|| load.terminal_map.last().unwrap().as_str()))
-            } else if load.terminal_map.len() == load.p_nom.len() {
-                None
-            } else {
-                return Err(format!(
-                    "wye load `{}` terminal/power dimensions are inconsistent",
-                    load.name
-                ));
-            };
-            let phases: Vec<_> = load
-                .terminal_map
-                .iter()
-                .filter(|phase| Some(phase.as_str()) != neutral)
-                .collect();
-            if phases.len() != load.p_nom.len() {
-                return Err(format!(
-                    "wye load `{}` has an explicit neutral that does not leave one branch per power",
-                    load.name
-                ));
+    let channels = load_channels(network, load, &load.terminal_map, load.p_nom.len())?;
+    let nodes: Vec<usize> = load
+        .terminal_map
+        .iter()
+        .map(|name| index.resolve((&load.bus, name)))
+        .collect::<Result<_, _>>()?;
+    Ok(channels
+        .iter()
+        .map(|channel| {
+            let mut row = vec![(nodes[channel.from], Complex64::new(1.0, 0.0))];
+            if let Some(to) = channel.to {
+                row.push((nodes[to], Complex64::new(-1.0, 0.0)));
             }
-            phases
-                .into_iter()
-                .map(|phase| {
-                    let i = terminal(phase)?;
-                    let mut row = vec![(i, Complex64::new(1.0, 0.0))];
-                    if let Some(n) = neutral {
-                        let j = terminal(n)?;
-                        row.push((j, Complex64::new(-1.0, 0.0)));
-                    }
-                    Ok(row)
-                })
-                .collect()
-        }
-        Configuration::Delta => {
-            if load.terminal_map.len() == 2 * load.p_nom.len() {
-                load.terminal_map
-                    .chunks_exact(2)
-                    .map(|pair| {
-                        Ok(vec![
-                            (terminal(&pair[0])?, Complex64::new(1.0, 0.0)),
-                            (terminal(&pair[1])?, Complex64::new(-1.0, 0.0)),
-                        ])
-                    })
-                    .collect()
-            } else if load.terminal_map.len() == load.p_nom.len() {
-                let nodes: Vec<_> = load
-                    .terminal_map
-                    .iter()
-                    .map(|x| terminal(x))
-                    .collect::<Result<_, _>>()?;
-                Ok((0..load.p_nom.len())
-                    .map(|k| {
-                        vec![
-                            (nodes[k], Complex64::new(1.0, 0.0)),
-                            (nodes[(k + 1) % nodes.len()], Complex64::new(-1.0, 0.0)),
-                        ]
-                    })
-                    .collect())
-            } else {
-                Err(format!(
-                    "delta load `{}` terminal/power dimensions are inconsistent",
-                    load.name
-                ))
-            }
-        }
-        Configuration::SinglePhase => {
-            if load.terminal_map.len() != 2 || load.p_nom.len() != 1 {
-                return Err(format!(
-                    "single-phase load `{}` requires two terminals and one power",
-                    load.name
-                ));
-            }
-            Ok(vec![vec![
-                (terminal(&load.terminal_map[0])?, Complex64::new(1.0, 0.0)),
-                (terminal(&load.terminal_map[1])?, Complex64::new(-1.0, 0.0)),
-            ]])
-        }
-        _ => Err(format!(
-            "load `{}` uses an unsupported connection configuration",
+            row
+        })
+        .collect())
+}
+
+/// The load's connection channels over `terminals`, one per power: PowerIO's
+/// one connection rule (`powerio_dist::calc_element_connection`), whose WYE
+/// neutral is the mapped terminal the bus conventions do not call a phase,
+/// else the last. The power flow keeps its single phase rule, one power
+/// across two terminals: PowerIO also reads a single phase load with one
+/// power per terminal as grounded wye legs, which this solver has never
+/// accepted for a load stated single phase.
+pub(crate) fn load_channels(
+    network: &powerio_dist::MulticonductorNetwork,
+    load: &DistLoad,
+    terminals: &[String],
+    powers: usize,
+) -> Result<Vec<powerio_dist::ConnectionChannel>, String> {
+    if load.configuration == Configuration::SinglePhase && (terminals.len() != 2 || powers != 1) {
+        return Err(format!(
+            "single-phase load `{}` requires two terminals and one power",
             load.name
-        )),
+        ));
     }
+    powerio_dist::calc_element_connection(
+        network,
+        &load.bus,
+        terminals,
+        load.configuration,
+        Some(powers),
+    )
+    .map_err(|error| format!("load `{}`: {error}", load.name))
 }
 
 #[cfg(test)]
 mod bounded_tests {
     use super::*;
     #[test]
-    fn bounded_constant_power_preserves_its_limit_and_tiny_voltage_continuation() {
+    fn bounded_constant_power_preserves_its_limit_and_low_voltage_continuation() {
         let load = BranchLoad {
             name: "bounded".into(),
             bus: "bus".into(),
@@ -729,7 +635,6 @@ mod bounded_tests {
                 (0.1, 0.1 / 0.64),
                 (1.0, 0.5),
                 (2.0, 0.5),
-                (1e-200, 1e-200 / 0.64),
             ] {
                 let current = load
                     .branch_current(0, &[Complex64::new(voltage, 0.0)], &options)

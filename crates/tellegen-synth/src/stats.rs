@@ -45,7 +45,7 @@ pub fn measure(net: &BalancedNetwork, max_loading: Option<f64>) -> TopologyStats
         }
         let key = (a.min(b), a.max(b));
         *corridor_count.entry(key).or_insert(0) += 1;
-        uf.union(a, b);
+        crate::geom::delaunay::join(&mut uf, a, b);
         let len = branch_length_km(br, coords[a], coords[b]);
         if let Some(len) = len {
             lengths.push(len);
@@ -91,7 +91,11 @@ pub fn measure(net: &BalancedNetwork, max_loading: Option<f64>) -> TopologyStats
             0.0
         }
     };
-    let connected_components = if n == 0 { 0 } else { uf.components(n) };
+    let connected_components = if n == 0 {
+        0
+    } else {
+        crate::geom::delaunay::component_count(&mut uf, n)
+    };
     let m_branches = net.branches().iter().filter(|b| b.in_service).count();
 
     // Spanning tree ratio and Delaunay fraction over located buses.

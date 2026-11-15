@@ -78,7 +78,7 @@ pub fn mc_unpowered_islands(
             .copied()
             .ok_or_else(|| format!("equipment references unknown bus `{bus}`"))
     };
-    let mut adjacent = vec![Vec::new(); indices.len()];
+    let mut edges = Vec::new();
     let mut equipment = Vec::<(String, String, Vec<usize>)>::new();
     let mut add =
         |kind: &str, name: &str, buses: Vec<&str>, connected: bool| -> Result<(), String> {
@@ -88,10 +88,7 @@ pub fn mc_unpowered_islands(
                 .collect::<Result<Vec<_>, _>>()?;
             if connected {
                 if let Some(&first) = nodes.first() {
-                    for &other in &nodes[1..] {
-                        adjacent[first].push(other);
-                        adjacent[other].push(first);
-                    }
+                    edges.extend(nodes[1..].iter().map(|&other| (first, other)));
                 }
             }
             equipment.push((kind.to_owned(), name.to_owned(), nodes));
@@ -129,41 +126,29 @@ pub fn mc_unpowered_islands(
         .iter()
         .map(|s| index(&s.bus))
         .collect::<Result<BTreeSet<_>, _>>()?;
-    let mut component = vec![usize::MAX; indices.len()];
+    // PowerIO's one component labeling.
+    let component = powerio_tx::union_find::calc_component_labels(indices.len(), edges);
+    let mut members = BTreeMap::<usize, Vec<usize>>::new();
+    for (node, &label) in component.iter().enumerate() {
+        members.entry(label).or_default().push(node);
+    }
     let mut islands = Vec::new();
-    for start in 0..component.len() {
-        if component[start] != usize::MAX {
+    for (id, nodes) in members {
+        if nodes.iter().any(|node| sources.contains(node)) {
             continue;
         }
-        let id = start;
-        let mut stack = vec![start];
-        component[start] = id;
-        let mut nodes = Vec::new();
-        let mut powered = false;
-        while let Some(node) = stack.pop() {
-            nodes.push(node);
-            powered |= sources.contains(&node);
-            for &next in &adjacent[node] {
-                if component[next] == usize::MAX {
-                    component[next] = id;
-                    stack.push(next);
-                }
-            }
-        }
-        if !powered {
-            let mut buses: Vec<_> = nodes
-                .iter()
-                .map(|&i| network.buses()[i].id.clone())
-                .collect();
-            buses.sort();
-            islands.push((
-                id,
-                McExcludedIsland {
-                    buses,
-                    equipment: Vec::new(),
-                },
-            ));
-        }
+        let mut buses: Vec<_> = nodes
+            .iter()
+            .map(|&i| network.buses()[i].id.clone())
+            .collect();
+        buses.sort();
+        islands.push((
+            id,
+            McExcludedIsland {
+                buses,
+                equipment: Vec::new(),
+            },
+        ));
     }
     let by_component: BTreeMap<_, _> = islands
         .iter()

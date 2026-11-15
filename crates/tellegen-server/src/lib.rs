@@ -1597,18 +1597,10 @@ fn network_payload(
         .filter(|bus| bus.kind != powerio::BusType::Isolated)
         .map(|bus| bus.id.0)
         .collect();
-    let editable_branch_rows: HashSet<usize> = net
-        .branches()
-        .iter()
-        .enumerate()
-        .filter(|(_, branch)| {
-            branch.in_service
-                && branch.from != branch.to
-                && branch.r * branch.r + branch.x * branch.x > 0.0
-                && editable_bus_ids.contains(&branch.from.0)
-                && editable_bus_ids.contains(&branch.to.0)
-        })
-        .map(|(row, _)| row)
+    // PowerIO's analysis predicate over the view's source branch rows: the
+    // branches the preparation keeps are the editable ones.
+    let editable_branch_rows: HashSet<usize> = (0..net.branches().len())
+        .filter(|&row| indexed.is_analysis_branch(row))
         .collect();
     let coords = lowered_coords(net, coords);
     let grouping = group_for_display(analysis, stacks, Some(&coords), synthetic_coords);

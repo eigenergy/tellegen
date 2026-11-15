@@ -434,3 +434,172 @@ fn islanding_is_named_and_an_inverter_island_goes_dead() {
     let pe = &r.channels["pe:102"];
     assert!(pe[pe.len() - 1].abs() < 1e-9, "{}", pe[pe.len() - 1]);
 }
+
+/// Circuit 2 of the SMIB case with resistance, an off-nominal tap and
+/// phase shift, and terminal charging `(b_fr, b_to)`; with `split`, the same
+/// line drawn as two branches through a bus 900 at `ALPHA` of its length
+/// from bus 101 (the tap, the shift and the from charging on the first
+/// section, the to charging on the second).
+fn split_line_case(b_fr: f64, b_to: f64, split: bool) -> powerio::BalancedNetwork {
+    const ALPHA: f64 = 0.3;
+    let (mut net, _, _) = smib();
+    let line = &mut net.branches_mut()[1];
+    line.r = 0.002;
+    line.tap = 1.04;
+    line.shift = 4.0;
+    line.b = b_fr + b_to;
+    line.charging = Some(powerio::BranchCharging::new(0.0, b_fr, 0.0, b_to));
+    if !split {
+        return net;
+    }
+    net.buses_mut().push(powerio::Bus::new(
+        powerio::BusId(900),
+        powerio::BusType::Pq,
+        230.0,
+    ));
+    let mut second = net.branches()[1].clone();
+    let first = &mut net.branches_mut()[1];
+    first.to = powerio::BusId(900);
+    first.r *= ALPHA;
+    first.x *= ALPHA;
+    first.b = b_fr;
+    first.charging = Some(powerio::BranchCharging::new(0.0, b_fr, 0.0, 0.0));
+    second.from = powerio::BusId(900);
+    second.r *= 1.0 - ALPHA;
+    second.x *= 1.0 - ALPHA;
+    second.tap = 0.0;
+    second.shift = 0.0;
+    second.b = b_to;
+    second.charging = Some(powerio::BranchCharging::new(0.0, 0.0, 0.0, b_to));
+    second.uid = None;
+    net.branches_mut().push(second);
+    net
+}
+
+/// A fault inside a line, and an open breaker at one of its ends, are the
+/// line's PowerIO pi columns as the engine switches them: they must match
+/// the same line drawn as two branches through a bus at the fault point,
+/// with a bus fault there and the open end's section tripped. Every channel
+/// both runs record (the faulted line's own flows aside) agrees to the
+/// Newton tolerance; the port onto PowerIO's columns showed 3e-11.
+#[test]
+fn a_fault_inside_a_line_is_a_bus_fault_on_the_split_line() {
+    let (_, dyr, _) = smib();
+    let run = |net: &powerio::BalancedNetwork, events: Vec<RmsEvent>| {
+        RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance)
+            .unwrap()
+            .run(&RmsRequest {
+                t_end: 2.0,
+                dt: 0.001,
+                output_step: 0.01,
+                load_model: Some(LoadModel::ConstantImpedance),
+                events,
+                small_signal: false,
+                record: None,
+            })
+            .unwrap()
+    };
+    let ckt = || "2".to_owned();
+    let line_fault = RmsEvent::LineFault {
+        time: 1.0,
+        from: 101,
+        to: 102,
+        circuit: ckt(),
+        location: 0.3,
+        r: 0.0,
+        x: 0.02,
+        permanent: false,
+    };
+    let bus_fault = RmsEvent::BusFault {
+        time: 1.0,
+        bus: 900,
+        r: 0.0,
+        x: 0.02,
+    };
+    // The charging behind an open end stays on the line, so each scenario
+    // leaves none at the end it opens: tripping that section is then the
+    // same network.
+    let scenarios = [
+        (
+            (0.01, 0.015),
+            vec![
+                line_fault.clone(),
+                RmsEvent::ClearLineFault {
+                    time: 1.1,
+                    from: 101,
+                    to: 102,
+                    circuit: ckt(),
+                },
+            ],
+            vec![
+                bus_fault.clone(),
+                RmsEvent::ClearFault {
+                    time: 1.1,
+                    bus: 900,
+                },
+            ],
+        ),
+        (
+            (0.01, 0.0),
+            vec![
+                line_fault.clone(),
+                RmsEvent::BreakerOpen {
+                    time: 1.08,
+                    from: 101,
+                    to: 102,
+                    circuit: ckt(),
+                    at: 102,
+                },
+            ],
+            vec![
+                bus_fault.clone(),
+                RmsEvent::BranchTrip {
+                    time: 1.08,
+                    from: 900,
+                    to: 102,
+                    circuit: ckt(),
+                },
+            ],
+        ),
+        (
+            (0.0, 0.015),
+            vec![
+                line_fault,
+                RmsEvent::BreakerOpen {
+                    time: 1.08,
+                    from: 101,
+                    to: 102,
+                    circuit: ckt(),
+                    at: 101,
+                },
+            ],
+            vec![
+                bus_fault,
+                RmsEvent::BranchTrip {
+                    time: 1.08,
+                    from: 101,
+                    to: 900,
+                    circuit: ckt(),
+                },
+            ],
+        ),
+    ];
+    for ((b_fr, b_to), inside, split) in scenarios {
+        let ours = run(&split_line_case(b_fr, b_to, false), inside);
+        let theirs = run(&split_line_case(b_fr, b_to, true), split);
+        for (key, x) in &ours.channels {
+            if key.contains("101-102#2") {
+                continue;
+            }
+            let Some(y) = theirs.channels.get(key) else {
+                continue;
+            };
+            let d = x
+                .iter()
+                .zip(y)
+                .map(|(p, q)| (p - q).abs())
+                .fold(0.0, f64::max);
+            assert!(d < 1e-8, "charging ({b_fr}, {b_to}), {key}: {d:.2e}");
+        }
+    }
+}

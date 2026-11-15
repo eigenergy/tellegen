@@ -10,9 +10,7 @@ use powerio_matrix::{McAcOpfAssemblyOptions, McOpfDroop};
 pub(super) enum ControlParameter {
     Droop {
         columns: Vec<usize>,
-        knots: Vec<f64>,
-        values: Vec<f64>,
-        epsilon: f64,
+        curve: McOpfDroop,
         d_knots: Vec<f64>,
         d_values: Vec<f64>,
         d_epsilon: f64,
@@ -23,18 +21,6 @@ pub(super) enum ControlParameter {
     },
 }
 
-// Softplus, sigmoid, sigmoid derivative, and softplus(z)-z*sigmoid(z).
-// The entropy form avoids cancellation and overflow in saturated regions.
-fn smooth(z: f64) -> [f64; 4] {
-    let e = (-z.abs()).exp();
-    let sigma = if z >= 0. { 1. / (1. + e) } else { e / (1. + e) };
-    [
-        z.max(0.) + e.ln_1p(),
-        sigma,
-        e / (1. + e).powi(2),
-        e.ln_1p() + z.abs() * e / (1. + e),
-    ]
-}
 impl ControlParameter {
     /// Residual parameter partial and exact mixed state–parameter partial.
     pub fn evaluate(&self, x: &[f64]) -> Result<(f64, Vec<(usize, f64)>), String> {
@@ -45,39 +31,26 @@ impl ControlParameter {
                 columns: [p, q],
                 active_coefficient_derivative: da,
             } => (da * x[*p] - x[*q], vec![(*p, *da), (*q, -1.)]),
+            // PowerIO's droop parameter derivative at the mean monitored
+            // magnitude: its value, and its voltage slope spread over the
+            // averaged magnitude columns.
             Self::Droop {
                 columns,
-                knots,
-                values,
-                epsilon,
+                curve,
                 d_knots,
                 d_values,
                 d_epsilon,
             } => {
                 let count = columns.len() as f64;
                 let mean = columns.iter().map(|&c| x[c]).sum::<f64>() / count;
-                let mut value = d_values[0];
-                let mut mixed = 0.;
-                for j in 0..knots.len() - 1 {
-                    let width = knots[j + 1] - knots[j];
-                    let slope = (values[j + 1] - values[j]) / width;
-                    let ds =
-                        (d_values[j + 1] - d_values[j] - slope * (d_knots[j + 1] - d_knots[j]))
-                            / width;
-                    let z = [(mean - knots[j]) / epsilon, (mean - knots[j + 1]) / epsilon];
-                    let [a, b] = z.map(smooth);
-                    let hinge = epsilon * (a[0] - b[0]);
-                    let dh = d_epsilon * (a[3] - b[3]) - d_knots[j] * a[1] + d_knots[j + 1] * b[1];
-                    let dz = [
-                        (-d_knots[j] - z[0] * d_epsilon) / epsilon,
-                        (-d_knots[j + 1] - z[1] * d_epsilon) / epsilon,
-                    ];
-                    value += ds * hinge + slope * dh;
-                    mixed += ds * (a[1] - b[1]) + slope * (a[2] * dz[0] - b[2] * dz[1]);
-                }
+                let derivative =
+                    curve.calc_parameter_derivative(mean, d_knots, d_values, *d_epsilon);
                 (
-                    -value,
-                    columns.iter().map(|&c| (c, -mixed / count)).collect(),
+                    -derivative.value,
+                    columns
+                        .iter()
+                        .map(|&c| (c, -derivative.slope / count))
+                        .collect(),
                 )
             }
         };
@@ -147,7 +120,7 @@ impl<'a> ControlParameters<'a> {
         if pf.abs() >= 1. || pf == 0. {
             return;
         }
-        let derivative = -pf / ((1. - pf.abs()) * (1. + pf.abs())).sqrt();
+        let [derivative, _] = powerio::electrical::calc_power_factor_coefficients_derivative(pf);
         map.term(
             self.parameter(None, Kind::PowerFactor),
             Some(origin),
@@ -198,10 +171,10 @@ impl<'a> ControlParameters<'a> {
             let mut d_values = vec![0.; n];
             let (parameter, d_epsilon) = if k < n {
                 d_knots[k] = self.bases.voltage_base_v.recip();
-                // Released preparation sets epsilon to .002 * mean(knots).
+                // The preparation sets epsilon to a share of the mean knot.
                 (
                     self.parameter(Some(k), breakpoint),
-                    0.002 / (n as f64 * self.bases.voltage_base_v),
+                    powerio_matrix::MC_OPF_DROOP_SMOOTHING / (n as f64 * self.bases.voltage_base_v),
                 )
             } else {
                 let index = k - n;
@@ -213,9 +186,7 @@ impl<'a> ControlParameters<'a> {
                 Some(origin),
                 Rule::Control(ControlParameter::Droop {
                     columns: columns.clone(),
-                    knots: curve.knots.clone(),
-                    values: curve.values.clone(),
-                    epsilon: curve.epsilon,
+                    curve: curve.clone(),
                     d_knots,
                     d_values,
                     d_epsilon,

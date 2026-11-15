@@ -56,9 +56,9 @@ pub(crate) use pf_ac::ac_pf;
 #[cfg(feature = "rms")]
 pub(crate) use pf_ac::BusKind;
 #[cfg(feature = "sensitivity")]
-pub(crate) use pf_ac::{ac_injections, ac_jacobian, load_jacobian};
-#[cfg(feature = "sensitivity")]
 pub(crate) use pf_ac::{ac_pf_with_start, AcPfLayout, AcPfSolution, AcStart};
+#[cfg(feature = "sensitivity")]
+pub(crate) use pf_ac::{load_jacobian, power_flow_jacobian, reduced_jacobian};
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_dc::dc_pf;
 

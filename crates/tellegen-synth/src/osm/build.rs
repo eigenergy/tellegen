@@ -142,7 +142,7 @@ impl OsmCounts {
 /// Returns, per cluster, its centre and its member indices.
 pub fn cluster_points(points: &[(f64, f64)], radius_km: f64) -> Vec<((f64, f64), Vec<usize>)> {
     let mut clusters: Vec<((f64, f64), Vec<usize>)> = Vec::new();
-    let dlat = radius_km / 111.0;
+    let dlat = radius_km / crate::geom::KM_PER_DEGREE;
     for (i, &(lon, lat)) in points.iter().enumerate() {
         let hit = clusters.iter().position(|((clon, clat), _)| {
             (clat - lat).abs() <= dlat && haversine_km(lon, lat, *clon, *clat) <= radius_km
@@ -173,7 +173,7 @@ pub fn snap(
 ) -> Option<usize> {
     let mut best: Option<(f64, usize)> = None;
     let mut best_at_voltage: Option<(f64, usize)> = None;
-    let dlat = tol_km / 111.0;
+    let dlat = tol_km / crate::geom::KM_PER_DEGREE;
     for (i, b) in buses.iter().enumerate() {
         if (b.lat - lat).abs() > dlat {
             continue;
@@ -209,7 +209,7 @@ pub(crate) struct SnapIndex {
 impl SnapIndex {
     pub(crate) fn new(tol_km: f64) -> Self {
         Self {
-            cell: (tol_km / 111.0).max(1e-6),
+            cell: (tol_km / crate::geom::KM_PER_DEGREE).max(1e-6),
             tol_km,
             bins: BTreeMap::new(),
             indexed: 0,
@@ -236,14 +236,14 @@ impl SnapIndex {
             self.bins.entry(k).or_default().push(i);
         }
         self.indexed = buses.len();
-        let dlat = tol_km / 111.0;
+        let dlat = tol_km / crate::geom::KM_PER_DEGREE;
         let reach_lat = (lat.abs() + dlat).min(89.0);
         if tol_km > self.tol_km || reach_lat >= 89.0 {
             return snap(buses, lon, lat, voltage, tol_km);
         }
         // A conservative longitude window: the great circle between two
         // points is no longer than their parallel arc at the higher latitude.
-        let dlon = 1.05 * dlat / reach_lat.to_radians().cos();
+        let dlon = 1.05 * dlat / crate::geom::meridian_scale(reach_lat, 0.0);
         let mut candidates: Vec<usize> = Vec::new();
         for shift in [0.0, -360.0, 360.0] {
             let (x0, y0) = self.key(lon + shift - dlon, lat - dlat);
@@ -290,7 +290,7 @@ struct StationGrid {
 
 impl StationGrid {
     fn new(points: &[(f64, f64)], radius_km: f64) -> Self {
-        let cell = (radius_km / 111.0).max(1e-4) * 2.0;
+        let cell = (radius_km / crate::geom::KM_PER_DEGREE).max(1e-4) * 2.0;
         let mut cells: BTreeMap<(i64, i64), Vec<(f64, f64)>> = BTreeMap::new();
         for &p in points {
             cells
@@ -306,7 +306,9 @@ impl StationGrid {
             (p.0 / self.cell).floor() as i64,
             (p.1 / self.cell).floor() as i64,
         );
-        let reach = ((radius_km / 111.0) / p.1.to_radians().cos().abs().max(0.05) / self.cell)
+        let reach = ((radius_km / crate::geom::KM_PER_DEGREE)
+            / crate::geom::meridian_scale(p.1, 0.05)
+            / self.cell)
             .ceil() as i64
             + 1;
         for dc in -reach..=reach {
@@ -482,7 +484,7 @@ pub fn split_levels(line: &OsmLine, floor: f64) -> Vec<OsmLine> {
 /// neither joins; a way whose two ends meet each other is left alone.
 pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Vec<OsmLine> {
     let at_station = |p: (f64, f64)| {
-        let dlat = stop_km / 111.0;
+        let dlat = stop_km / crate::geom::KM_PER_DEGREE;
         stops
             .iter()
             .any(|s| (s.1 - p.1).abs() <= dlat && haversine_km(p.0, p.1, s.0, s.1) <= stop_km)
@@ -665,7 +667,7 @@ impl OsmBuild {
             .filter(|l| l.kv >= opts.voltage_floor_kv)
             .collect();
         let mut ends: VoltageGrid = BTreeMap::new();
-        let cell = SUBSTATION_VOLTAGE_REACH_KM / 111.0 * 2.0;
+        let cell = SUBSTATION_VOLTAGE_REACH_KM / crate::geom::KM_PER_DEGREE * 2.0;
         for l in &levels {
             for &(lon, lat) in [l.geometry[0], l.geometry[l.geometry.len() - 1]].iter() {
                 let lon = lift_lon(lon, &frame);
@@ -1224,7 +1226,7 @@ impl OsmBuild {
         // Electrical islands become the buses' island index.
         let mut uf = UnionFind::new(buses.len());
         for c in &corridors {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
         }
         let mut index: BTreeMap<usize, usize> = BTreeMap::new();
         for (i, bus) in buses.iter_mut().enumerate() {
@@ -1261,7 +1263,7 @@ impl OsmBuild {
     ) -> usize {
         let mut uf = UnionFind::new(buses.len());
         for c in corridors.iter() {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
         }
         let mut powered = std::collections::BTreeSet::new();
         for p in &self.plants {
@@ -1320,7 +1322,7 @@ impl OsmBuild {
     fn plant_sites(&self) -> Vec<(f64, f64, Fuel, Option<f64>)> {
         let mut plants: Vec<&OsmPlant> = self.plants.iter().filter(|p| !p.is_generator).collect();
         plants.sort_by(|a, b| a.lat.total_cmp(&b.lat));
-        let dlat = PLANT_UNIT_KM / 111.0;
+        let dlat = PLANT_UNIT_KM / crate::geom::KM_PER_DEGREE;
         let mut unit_mw = vec![0.0; plants.len()];
         let mut sites = Vec::new();
         for u in self.plants.iter().filter(|p| p.is_generator) {
@@ -1700,9 +1702,9 @@ pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> 
     }
     let mut uf = UnionFind::new(n);
     for c in corridors.iter() {
-        uf.union(c.a, c.b);
+        crate::geom::delaunay::join(&mut uf, c.a, c.b);
     }
-    if uf.components(n) <= 1 {
+    if crate::geom::delaunay::component_count(&mut uf, n) <= 1 {
         return 0;
     }
     let original: Vec<usize> = (0..n).map(|i| uf.find(i)).collect();

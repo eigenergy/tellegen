@@ -433,7 +433,7 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
     let (bus_ids, bus_uids) = keyed(&edits.deltas);
     let (_, branch_uids) = keyed(&edits.rates);
     let mut bus_by_id: HashMap<usize, &powerio::Bus> = HashMap::new();
-    if bus_ids || !edits.rates.is_empty() {
+    if bus_ids {
         for bus in net.buses() {
             bus_by_id.entry(bus.id.0).or_insert(bus);
         }
@@ -446,11 +446,11 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             }
         }
     }
-    let mut branch_by_uid: HashMap<&str, &powerio::Branch> = HashMap::new();
+    let mut branch_by_uid: HashMap<&str, usize> = HashMap::new();
     if branch_uids {
-        for branch in net.branches() {
+        for (row, branch) in net.branches().iter().enumerate() {
             if let Some(uid) = branch.uid.as_deref() {
-                branch_by_uid.entry(uid).or_insert(branch);
+                branch_by_uid.entry(uid).or_insert(row);
             }
         }
     }
@@ -474,6 +474,7 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             return Err(format!("demand delta bus {bus} is not editable"));
         }
     }
+    let mut analysis: Option<powerio_tx::IndexedNetwork> = None;
     for (branch, mw) in sorted_deltas(&edits.rates) {
         if !mw.is_finite() {
             return Err(format!("rating delta for branch {branch} must be finite"));
@@ -485,23 +486,16 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
                 .and_then(|id| id.checked_sub(1))
-                .and_then(|row| net.branches().get(row)),
+                .filter(|&row| row < net.branches().len()),
             ElementKey::Uid(uid) => branch_by_uid.get(uid.as_str()).copied(),
         };
-        let Some(target) = target else {
+        let Some(row) = target else {
             return Err(format!("unknown rating delta branch {branch}"));
         };
-        let endpoint_is_editable = |id: powerio::BusId| {
-            bus_by_id
-                .get(&id.0)
-                .is_some_and(|bus| bus.kind != powerio::BusType::Isolated)
-        };
-        if !target.in_service
-            || target.from == target.to
-            || target.r * target.r + target.x * target.x == 0.0
-            || !endpoint_is_editable(target.from)
-            || !endpoint_is_editable(target.to)
-        {
+        // PowerIO's analysis predicate: the branch the preparation keeps.
+        // Source branch rows keep their positions in the lowered view.
+        let view = analysis.get_or_insert_with(|| powerio_tx::IndexedNetwork::new(net));
+        if !view.is_analysis_branch(row) {
             return Err(format!("rating delta branch {branch} is not editable"));
         }
     }
@@ -775,6 +769,9 @@ pub struct ConstraintResult {
 pub struct SolveDiagnostic {
     /// `island_deenergized`: an island with no in-service generator was left
     /// out of the solve; its buses carry no results and its load is unserved.
+    /// The message is PowerIO's finding; for an island an HVDC line fed, it
+    /// names the lines taken out of service with the island and the power
+    /// they scheduled into it.
     /// `island_reference_designated`: a supplied island stated no reference bus,
     /// so the bus of its largest generator became the island's reference.
     /// `island_extra_reference`: the AC power flow found several reference
@@ -1130,7 +1127,7 @@ pub(crate) fn ac_opf_assemble(
     network: &BalancedNetwork,
     solved: &super::model::AcOpfSolved,
 ) -> Result<SolveResponse, String> {
-    use super::model::{stable_source_ids, uids_for_source_rows};
+    use super::model::{branch_source_rows, source_position_ids, uids_for_source_rows};
     let prep = &solved.preparation;
     let base = prep.base_mva;
     let bus_ids = prep.bus_ids.iter().map(|bus| bus.0).collect::<Vec<_>>();
@@ -1142,17 +1139,8 @@ pub(crate) fn ac_opf_assemble(
         &solved.q_injection,
         base,
     );
-    let branch_source_rows = prep
-        .branches
-        .analysis_sources
-        .iter()
-        .map(|source| match source {
-            powerio_matrix::AnalysisBranchSource::Branch { row } => Ok(Some(*row)),
-            powerio_matrix::AnalysisBranchSource::ThreeWindingTransformerWinding { .. } => Ok(None),
-            _ => Err("unknown AC OPF branch source kind".to_owned()),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let branch_ids = stable_source_ids(&branch_source_rows, network.branches().len(), "branch")?;
+    let branch_source_rows = branch_source_rows(&prep.branches.analysis_sources);
+    let branch_ids = source_position_ids(&branch_source_rows, network.branches().len(), "branch")?;
     let branch_uids = uids_for_source_rows(
         &branch_source_rows,
         network.branches(),
@@ -1534,16 +1522,19 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     let base = dc.base_mva;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
 
-    // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
-    // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
-    let mut injection: Vec<f64> = dc.demand.iter().map(|d| -d).collect();
-    let input_power_base = if net.is_normalized() { 1.0 } else { base };
-    for j in 0..dc.k {
-        let source_row = dc.gen_source_rows[j]
-            .ok_or_else(|| format!("generator column {j} has no source row"))?;
-        injection[dc.gen_bus[j]] += net.generators()[source_row].pg / input_power_base;
-    }
-    let sol = super::problem::dc_pf(&dc, &injection)?;
+    // Per-unit generation per dense bus at the generator setpoints. The model
+    // withdraws the (edited) load itself; the slack absorbs the imbalance, and
+    // its generation entry is recomputed, not echoed.
+    let input_power_base = net.per_unit_base();
+    let pg = (0..dc.k)
+        .map(|j| {
+            dc.gen_source_rows[j]
+                .map(|row| net.generators()[row].pg / input_power_base)
+                .ok_or_else(|| format!("generator column {j} has no source row"))
+        })
+        .collect::<Result<Vec<f64>, String>>()?;
+    let generation = powerio_matrix::calc_bus_totals(dc.n, &dc.gen_bus, &pg);
+    let sol = super::problem::dc_pf(&dc, &generation)?;
 
     Ok(SolveResponse {
         branch_susceptance_formula: Some(dc.formula),
@@ -2117,12 +2108,12 @@ fn apply_demand_deltas(
     let base = dc.base_mva;
     let idx = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, deltas);
     for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
-        if dc.demand[i] * base + mw < -1e-9 {
+        if dc.prep.p_d[i] * base + mw < -1e-9 {
             return Err(format!(
                 "demand delta for bus {bus} would make demand negative"
             ));
         }
-        dc.demand[i] += mw / base;
+        dc.prep.p_d[i] += mw / base;
     }
     Ok(())
 }
@@ -2250,7 +2241,6 @@ fn apply_linear_constraints(
     let buses = KeyIndex::with_uids(&dc.bus_ids, &dc.bus_uids, needs_uids);
     let branches = KeyIndex::with_uids(&dc.branch_ids, &dc.branch_uids, needs_uids);
     let generators = KeyIndex::with_uids(&dc.gen_ids, &dc.gen_uids, needs_uids);
-    let mut incident: Option<Vec<Vec<(usize, f64)>>> = None;
     let mut seen = std::collections::HashSet::new();
     let mut rows = Vec::with_capacity(constraints.len());
     for constraint in constraints {
@@ -2309,15 +2299,8 @@ fn apply_linear_constraints(
                         .ok_or_else(|| {
                             format!("constraint \"{id}\": unknown or out-of-service bus {key}")
                         })?;
-                    let incident = incident.get_or_insert_with(|| {
-                        let mut at = vec![Vec::new(); dc.n];
-                        for e in 0..dc.m {
-                            at[dc.br_from[e]].push((e, 1.0));
-                            at[dc.br_to[e]].push((e, -1.0));
-                        }
-                        at
-                    });
-                    for &(e, sign) in &incident[i] {
+                    // Row `i` of PowerIO's incidence lists the bus's branches.
+                    for (e, sign) in crate::model::csr_row(&dc.incidence, i) {
                         *flow.entry(e).or_default() += sign * term.coefficient;
                     }
                 }
@@ -4461,8 +4444,8 @@ mod tests {
         assert_eq!(
             island_codes(&response),
             [
-                ("island_deenergized", vec![7, 8]),
                 ("island_reference_designated", vec![6]),
+                ("island_deenergized", vec![7, 8]),
             ]
         );
     }
@@ -4470,11 +4453,17 @@ mod tests {
     #[test]
     fn a_load_only_island_is_deenergized_with_a_diagnostic() {
         let response = solve_islands(&islands_network(), r#"{"formulation":"dcopf"}"#);
-        let deenergized = &response.diagnostics[0];
-        assert_eq!(deenergized.code, "island_deenergized");
+        // PowerIO reports the islands in partition order.
+        let deenergized = response
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "island_deenergized")
+            .expect("de-energized island");
         assert_eq!(deenergized.buses, [7, 8]);
         assert!(
-            deenergized.message.contains("20.0 MW of load is unserved"),
+            deenergized
+                .message
+                .contains("20 MW of in-service load is no longer served"),
             "{}",
             deenergized.message
         );
@@ -4483,7 +4472,7 @@ mod tests {
         assert_eq!(response.flows.as_ref().unwrap().len(), 6);
         // The JSON names the diagnostic block.
         let json: Value = serde_json::to_value(&response).unwrap();
-        assert_eq!(json["diagnostics"][0]["code"], "island_deenergized");
+        assert_eq!(json["diagnostics"][1]["code"], "island_deenergized");
 
         // A connected case reports nothing and omits the block.
         let connected: Value = serde_json::from_str(
@@ -4544,8 +4533,8 @@ mod tests {
         assert_eq!(
             island_codes(&response),
             [
-                ("island_deenergized", vec![7, 8]),
                 ("island_reference_designated", vec![6]),
+                ("island_deenergized", vec![7, 8]),
             ]
         );
     }
@@ -4601,8 +4590,8 @@ mod tests {
         assert_eq!(
             island_codes(&response),
             [
-                ("island_deenergized", vec![7, 8]),
                 ("island_reference_designated", vec![6]),
+                ("island_deenergized", vec![7, 8]),
             ]
         );
     }
@@ -4632,7 +4621,10 @@ mod tests {
         let lmp = by_bus(response.lmp.as_ref().unwrap());
         assert!(lmp[&2] < lmp[&5], "{lmp:?}");
         assert_eq!(response.w.as_ref().unwrap().len(), 6);
-        assert_eq!(response.diagnostics[0].code, "island_deenergized");
+        assert!(response
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "island_deenergized"));
     }
 
     #[cfg(feature = "sensitivity")]
@@ -5009,8 +5001,8 @@ mod hvdc_tests {
 
     #[test]
     fn a_line_into_a_dead_island_injects_nothing() {
-        // Bus 4 has load and no generator, so its island is de-energized and the
-        // line from bus 3 has no live terminal there: neither end injects.
+        // Bus 4 has load and no generator, so PowerIO de-energizes its island and
+        // takes the line from bus 3 out of service with it: neither end injects.
         let case = CASE3.replace(
             " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n",
             " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n 4 1 5 0  0 0 1 1 0 230 1 1.1 0.9;\n",
@@ -5033,12 +5025,18 @@ mod hvdc_tests {
                 &by_branch(&reference.flows),
                 "flow",
             );
-            let inactive = isolated
+            let dead = isolated
                 .diagnostics
                 .iter()
-                .find(|d| d.code == "BUILD.HVDC.TERMINAL_INACTIVE")
+                .find(|d| d.code == "island_deenergized")
                 .unwrap_or_else(|| panic!("{formulation:?}: {:?}", codes(&isolated)));
-            assert_eq!(inactive.buses, vec![3, 4]);
+            assert_eq!(dead.buses, vec![4]);
+            // PowerIO's finding names the line lost with the island.
+            assert!(
+                dead.message.contains("HVDC line(s) (3-4)"),
+                "{formulation:?}: {}",
+                dead.message
+            );
         }
     }
 

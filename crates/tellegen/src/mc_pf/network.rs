@@ -3,74 +3,33 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use num_complex::Complex64;
-use powerio_dist::{DistLineCode, MulticonductorNetwork};
+use powerio_dist::MulticonductorNetwork;
 use powerio_prob::McAcPfInstance;
 
 use super::linear::RetainedComplexLu;
 use super::loads::{prepare_load, BranchLoad};
-use super::transformer::prepare_transformer;
 
-#[derive(Debug)]
-struct BusComponents {
-    parent: Vec<usize>,
-}
-
-impl BusComponents {
-    fn new(len: usize) -> Self {
-        Self {
-            parent: (0..len).collect(),
-        }
-    }
-
-    fn root(&mut self, index: usize) -> usize {
-        let parent = self.parent[index];
-        if parent != index {
-            self.parent[index] = self.root(parent);
-        }
-        self.parent[index]
-    }
-
-    fn union(&mut self, a: usize, b: usize) {
-        let a = self.root(a);
-        let b = self.root(b);
-        if a != b {
-            self.parent[b] = a;
-        }
-    }
-}
-
+/// The solver's terminal positions: PowerIO's flat terminal index (every
+/// declared terminal, bus names folded ASCII case insensitively, display
+/// spelling retained) and PowerIO's node index over it, which says which
+/// terminals are ground, plus the solver's own admission rules.
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkIndex {
-    pub terminal_ids: Vec<(String, String)>,
-    /// Terminal positions by ASCII-folded bus name and exact terminal name.
-    /// PowerIO bus identities are case insensitive; display spelling is retained.
-    positions: BTreeMap<String, BTreeMap<String, usize>>,
+    nodes: powerio_matrix::MulticonductorNodeIndex,
 }
 
 impl NetworkIndex {
     pub(crate) fn new(network: &MulticonductorNetwork) -> Result<Self, String> {
-        let mut terminal_ids = Vec::new();
-        let mut positions = BTreeMap::<String, BTreeMap<String, usize>>::new();
         for bus in network.buses() {
             if bus.terminals.is_empty() {
                 return Err(format!("bus `{}` has no terminals", bus.id));
             }
-            let bus_key = bus.id.to_ascii_lowercase();
-            if positions.contains_key(&bus_key) {
-                return Err(format!("duplicate bus identity {}", bus.id));
-            }
-            let terminals = positions.entry(bus_key).or_default();
-            for terminal in &bus.terminals {
-                if terminals
-                    .insert(terminal.clone(), terminal_ids.len())
-                    .is_some()
-                {
-                    return Err(format!("duplicate terminal identity {}:{terminal}", bus.id));
-                }
-                terminal_ids.push((bus.id.clone(), terminal.clone()));
-            }
+        }
+        let nodes = powerio_matrix::MulticonductorNodeIndex::build(network)
+            .map_err(|error| error.to_string())?;
+        for bus in network.buses() {
             for grounded in &bus.grounded {
-                if !terminals.contains_key(grounded) {
+                if nodes.terminals().resolve(&bus.id, grounded).is_none() {
                     return Err(format!(
                         "bus `{}` grounds unknown terminal `{grounded}`",
                         bus.id
@@ -78,31 +37,30 @@ impl NetworkIndex {
                 }
             }
         }
-        Ok(Self {
-            terminal_ids,
-            positions,
-        })
+        Ok(Self { nodes })
+    }
+
+    /// Position to `(bus, terminal)` in the network's own spelling.
+    pub(crate) fn terminal_ids(&self) -> &[(String, String)] {
+        self.nodes.terminals().terminals()
     }
 
     pub(crate) fn resolve(&self, identity: (&str, &str)) -> Result<usize, String> {
-        self.positions
-            .get(identity.0)
-            .or_else(|| self.positions.get(&identity.0.to_ascii_lowercase()))
-            .and_then(|terminals| terminals.get(identity.1))
-            .copied()
+        self.nodes
+            .terminals()
+            .resolve(identity.0, identity.1)
             .ok_or_else(|| format!("unknown terminal identity {}:{}", identity.0, identity.1))
     }
 
     /// Positions of one bus's terminals in calculation order.
     pub(crate) fn bus_terminals(&self, bus: &str) -> Vec<usize> {
-        let mut positions: Vec<usize> = self
-            .positions
-            .get(bus)
-            .or_else(|| self.positions.get(&bus.to_ascii_lowercase()))
-            .map(|terminals| terminals.values().copied().collect())
-            .unwrap_or_default();
-        positions.sort_unstable();
-        positions
+        self.nodes.terminals().bus_terminals(bus)
+    }
+
+    /// Whether PowerIO's node index grounds the terminal at this position:
+    /// terminal `0` or a terminal its bus grounds.
+    pub(crate) fn is_ground(&self, position: usize) -> bool {
+        self.nodes.resolve_position(position) == Some(powerio_matrix::NodeRef::Ground)
     }
 }
 
@@ -180,46 +138,100 @@ impl CsrMatrix {
     }
 }
 
-fn stamp_local_values(
-    y: &mut StampedMatrix,
-    terminals: &[usize],
-    local: &[Vec<Complex64>],
-) -> Result<(), String> {
-    if local.len() != terminals.len() || local.iter().any(|row| row.len() != terminals.len()) {
-        return Err("component primitive and terminal map dimensions differ".to_owned());
-    }
-    for (r, &i) in terminals.iter().enumerate() {
-        for (c, &j) in terminals.iter().enumerate() {
-            y.add(i, j, local[r][c]);
-        }
-    }
-    Ok(())
+/// A PowerIO failure as its message alone, without the diagnostic code
+/// prefix its display adds.
+pub(crate) fn powerio_message(error: &powerio::Error) -> String {
+    error
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.severity() == powerio_dist::DiagnosticSeverity::Error)
+        .map_or_else(
+            || error.to_string(),
+            |diagnostic| diagnostic.message().to_owned(),
+        )
 }
 
-#[derive(Clone, Debug)]
-struct DenseMatrix {
-    n: usize,
-    values: Vec<Complex64>,
+/// [`powerio_message`] for a matrix builder failure that carries one.
+pub(crate) fn matrix_message(error: powerio_matrix::Error) -> String {
+    match &error {
+        powerio_matrix::Error::Commit(inner) => powerio_message(inner),
+        _ => error.to_string(),
+    }
 }
-impl DenseMatrix {
-    fn zeros(n: usize) -> Self {
-        Self {
-            n,
-            values: vec![Complex64::new(0.0, 0.0); n * n],
+
+/// PowerIO's assembled passive admittance `G + jB` at the terminal positions
+/// of its nodes. Ground has no row or column in PowerIO's grounded system,
+/// and no closed switch reaches this snapshot, so every node is exactly one
+/// terminal position.
+fn passive_at_positions(
+    admittance: &powerio_matrix::MulticonductorAdmittance,
+    position_of_node: &[usize],
+) -> StampedMatrix {
+    let mut passive = StampedMatrix::zeros(position_of_node.len());
+    for (&value, (row, col)) in admittance.conductance().iter() {
+        passive.add(
+            position_of_node[row],
+            position_of_node[col],
+            Complex64::new(value, 0.0),
+        );
+    }
+    for (&value, (row, col)) in admittance.susceptance().iter() {
+        passive.add(
+            position_of_node[row],
+            position_of_node[col],
+            Complex64::new(0.0, value),
+        );
+    }
+    passive
+}
+
+/// The terminal voltages PowerIO's assembled system prescribes: each source
+/// row and each solidly grounded transformer neutral row fixes one node. A
+/// row over several nodes (an ideal transformer, a floating source
+/// reference) is an exact constraint this fixed-point snapshot does not
+/// solve.
+fn prescribed_voltages(
+    admittance: &powerio_matrix::MulticonductorAdmittance,
+    position_of_node: &[usize],
+) -> Result<Vec<(usize, Complex64)>, String> {
+    let augmented = admittance.augmented();
+    let rows = augmented.labels.len();
+    let mut entries = vec![Vec::<(usize, Complex64)>::new(); rows];
+    for (&value, (row, col)) in augmented.constraint_re.iter() {
+        if row < rows {
+            entries[row].push((col, Complex64::new(value, 0.0)));
         }
     }
-    fn add(&mut self, row: usize, col: usize, value: Complex64) {
-        self.values[row * self.n + col] += value;
+    for (&value, (row, col)) in augmented.constraint_im.iter() {
+        if row < rows {
+            entries[row].push((col, Complex64::new(0.0, value)));
+        }
     }
-    fn get(&self, row: usize, col: usize) -> Complex64 {
-        self.values[row * self.n + col]
-    }
+    entries
+        .iter()
+        .enumerate()
+        .map(|(row, entries)| match entries.as_slice() {
+            [(node, coefficient)] => Ok((
+                position_of_node[*node],
+                Complex64::new(augmented.rhs_re[row], augmented.rhs_im[row]) / coefficient,
+            )),
+            _ => Err(format!(
+                "`{}` constrains several terminals; the fixed-point snapshot prescribes terminal voltages only",
+                augmented.labels[row]
+            )),
+        })
+        .collect()
 }
 
 #[derive(Debug)]
 pub(crate) struct PreparedNetwork {
     pub(crate) index: NetworkIndex,
+    /// PowerIO's assembled passive admittance at terminal positions; ground
+    /// positions have no row ([`Self::passive_current`]).
     pub(crate) passive: CsrMatrix,
+    /// The element ports at each grounded terminal position: `(element,
+    /// row)` into [`Self::elements`].
+    pub(crate) ground_ports: BTreeMap<usize, Vec<(usize, usize)>>,
     pub(crate) yref: CsrMatrix,
     pub(crate) fixed: Vec<Option<Complex64>>,
     pub(crate) unknown: Vec<usize>,
@@ -278,36 +290,33 @@ impl PreparedNetwork {
         }
         super::input::validate_mc_network(network)?;
         let index = NetworkIndex::new(network)?;
-        let n = index.terminal_ids.len();
+        let n = index.terminal_ids().len();
         // Name lookups keep the first matching row, exactly as the linear
         // searches they replace did, without their quadratic cost.
         let mut source_rows = BTreeMap::<&str, &powerio_dist::VoltageSource>::new();
         for source in network.sources() {
             source_rows.entry(source.name.as_str()).or_insert(source);
         }
-        let mut line_codes = BTreeMap::<String, &DistLineCode>::new();
-        for code in network.line_codes() {
-            line_codes
-                .entry(code.name.to_ascii_lowercase())
-                .or_insert(code);
-        }
         let mut load_rows = BTreeMap::<&str, &powerio_dist::DistLoad>::new();
         for load in network.loads() {
             load_rows.entry(load.name.as_str()).or_insert(load);
         }
-        let mut passive = StampedMatrix::zeros(n);
         let mut yref = StampedMatrix::zeros(n);
         let mut elements = Vec::new();
         let mut fixed = vec![None; n];
-        let mut prescribed_source_terminals = BTreeSet::new();
-        for bus in network.buses() {
-            for terminal in &bus.grounded {
-                fixed[index.resolve((&bus.id, terminal))?] = Some(Complex64::new(0.0, 0.0));
+        // PowerIO's node index decides which terminals are ground.
+        for (position, value) in fixed.iter_mut().enumerate() {
+            if index.is_ground(position) {
+                *value = Some(Complex64::new(0.0, 0.0));
             }
         }
 
-        // Ideal sources are exact Dirichlet terminals.  A second source may
-        // share a terminal only when it prescribes the same complex voltage.
+        // The instance's ideal sources. PowerIO's assembled system states
+        // their prescribed voltages (below); the admission rules here are the
+        // solver's own: finite voltages, no finite source impedance, and one
+        // source per terminal, since a shared terminal's reaction current has
+        // no allocation between its sources.
+        let mut prescribed_source_terminals = BTreeSet::new();
         for source in instance.sources() {
             if source.terminals.len() != source.v_magnitude.len()
                 || source.terminals.len() != source.v_angle.len()
@@ -317,38 +326,38 @@ impl PreparedNetwork {
                     source.source
                 ));
             }
-            for ((terminal, &mag), &angle) in source
-                .terminals
-                .iter()
-                .zip(&source.v_magnitude)
-                .zip(&source.v_angle)
-            {
-                if !mag.is_finite() || !angle.is_finite() || mag < 0.0 {
-                    return Err(format!(
-                        "source `{}` has a non-finite or negative prescribed voltage",
+            let source_row = source_rows
+                .get(source.source.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    format!(
+                        "instance source `{}` is absent from its network",
                         source.source
-                    ));
+                    )
+                })?;
+            if source
+                .v_magnitude
+                .iter()
+                .zip(&source.v_angle)
+                .any(|(&mag, &angle)| !mag.is_finite() || !angle.is_finite() || mag < 0.0)
+            {
+                return Err(format!(
+                    "source `{}` has a non-finite or negative prescribed voltage",
+                    source.source
+                ));
+            }
+            // The v0.11 typed source is an ideal prescribed source.  A
+            // finite source impedance retained in raw extras must not be
+            // silently discarded by this ideal-terminal solver.
+            for key in [
+                "r1", "x1", "r0", "x0", "r2", "x2", "isc3", "isc1", "mvasc", "mvasc3", "mvasc1",
+                "z_source", "z1", "z0", "puz1", "puz0", "bus2",
+            ] {
+                if source_row.extras.contains_key(key) {
+                    return Err(format!("source `{}` carries finite impedance metadata `{key}`; normalize it to a Norton source before MC PF", source.source));
                 }
-                let source_row = source_rows
-                    .get(source.source.as_str())
-                    .copied()
-                    .ok_or_else(|| {
-                        format!(
-                            "instance source `{}` is absent from its network",
-                            source.source
-                        )
-                    })?;
-                // The v0.11 typed source is an ideal prescribed source.  A
-                // finite source impedance retained in raw extras must not be
-                // silently discarded by this ideal-terminal solver.
-                for key in [
-                    "r1", "x1", "r0", "x0", "r2", "x2", "isc3", "isc1", "mvasc", "mvasc3",
-                    "mvasc1", "z_source", "z1", "z0", "puz1", "puz0", "bus2",
-                ] {
-                    if source_row.extras.contains_key(key) {
-                        return Err(format!("source `{}` carries finite impedance metadata `{key}`; normalize it to a Norton source before MC PF", source.source));
-                    }
-                }
+            }
+            for terminal in &source.terminals {
                 let i = index.resolve((&source_row.bus, terminal))?;
                 if !prescribed_source_terminals.insert(i) {
                     return Err(format!(
@@ -356,31 +365,9 @@ impl PreparedNetwork {
                         source_row.bus, terminal
                     ));
                 }
-                let value = Complex64::from_polar(mag, angle);
-                if let Some(previous) = fixed[i] {
-                    if (previous - value).norm() > 1e-8 * (1.0 + value.norm()) {
-                        return Err(format!(
-                            "conflicting ideal source prescriptions at terminal `{terminal}`"
-                        ));
-                    }
-                } else {
-                    fixed[i] = Some(value);
-                }
             }
         }
 
-        for line in network.lines() {
-            let code = line_codes
-                .get(&line.linecode.to_ascii_lowercase())
-                .copied()
-                .ok_or_else(|| {
-                    format!(
-                        "line `{}` references unresolved linecode `{}`",
-                        line.name, line.linecode
-                    )
-                })?;
-            elements.push(stamp_line(&mut passive, line, code, &index)?);
-        }
         for switch in network.switches() {
             if !switch.open {
                 return Err(format!(
@@ -389,157 +376,65 @@ impl PreparedNetwork {
                 ));
             }
         }
-        for shunt in network.shunts() {
-            if shunt.g.len() != shunt.b.len()
-                || shunt.g.iter().any(|r| r.len() != shunt.g.len())
-                || shunt.b.iter().any(|r| r.len() != shunt.b.len())
-                || shunt.g.iter().flatten().any(|value| !value.is_finite())
-                || shunt.b.iter().flatten().any(|value| !value.is_finite())
-                || shunt.terminal_map.len() != shunt.g.len()
-            {
-                return Err(format!(
-                    "shunt `{}` has inconsistent matrix dimensions",
-                    shunt.name
-                ));
-            }
-            let map: Vec<_> = shunt
-                .terminal_map
-                .iter()
-                .map(|t| index.resolve((&shunt.bus, t)))
-                .collect::<Result<_, _>>()?;
-            for (r, &i) in map.iter().enumerate() {
-                for (c, &j) in map.iter().enumerate() {
-                    passive.add(i, j, Complex64::new(shunt.g[r][c], shunt.b[r][c]));
-                }
-            }
-            elements.push(PreparedElement {
-                name: shunt.name.clone(),
-                kind: "shunt".to_owned(),
-                terminals: map,
-                yprim: shunt
-                    .g
-                    .iter()
-                    .zip(&shunt.b)
-                    .map(|(gr, br)| {
-                        gr.iter()
-                            .zip(br)
-                            .map(|(&g, &b)| Complex64::new(g, b))
-                            .collect()
-                    })
-                    .collect(),
-            });
+        // PowerIO's element list: lines, shunts, capacitor banks and leakage
+        // transformers with their primitives. An element it cannot stamp, or
+        // an ideal transformer (exact constraints this snapshot does not
+        // solve), would leave the solved network short, so the snapshot
+        // refuses it.
+        let listed = powerio_matrix::calc_passive_primitives(network).map_err(matrix_message)?;
+        if let Some(finding) = listed.diagnostics.first() {
+            return Err(finding.message().to_string());
         }
-        for capacitor in network.capacitors() {
-            if !capacitor.q_rated.is_finite()
-                || capacitor.v_nom <= 0.0
-                || capacitor.terminal_map.len() < 2
-            {
-                return Err(format!(
-                    "capacitor `{}` has invalid fixed shunt data",
-                    capacitor.name
-                ));
-            }
-            let map: Vec<_> = capacitor
-                .terminal_map
-                .iter()
-                .map(|t| index.resolve((&capacitor.bus, t)))
-                .collect::<Result<_, _>>()?;
-            let mut yprim = vec![vec![Complex64::default(); map.len()]; map.len()];
-            let mut add_local_couple = |a: usize, b: usize, susceptance: f64| {
-                let value = Complex64::new(0.0, susceptance);
-                yprim[a][a] += value;
-                yprim[b][b] += value;
-                yprim[a][b] -= value;
-                yprim[b][a] -= value;
-            };
-            match capacitor.configuration {
-                powerio_dist::Configuration::SinglePhase => {
-                    if map.len() != 2 {
-                        return Err(format!(
-                            "single-phase capacitor `{}` requires two terminals",
-                            capacitor.name
-                        ));
-                    }
-                    stamp_couple(
-                        &mut passive,
-                        map[0],
-                        map[1],
-                        capacitor.q_rated / capacitor.v_nom.powi(2),
-                    );
-                    add_local_couple(0, 1, capacitor.q_rated / capacitor.v_nom.powi(2));
-                }
-                powerio_dist::Configuration::Wye => {
-                    if map.len() != 4 {
-                        return Err(format!(
-                            "wye capacitor `{}` requires exactly three phase terminals followed by an explicit neutral",
-                            capacitor.name
-                        ));
-                    }
-                    let b = capacitor.q_rated
-                        / ((map.len() - 1) as f64)
-                        / (capacitor.v_nom / 3f64.sqrt()).powi(2);
-                    for &phase in &map[..map.len() - 1] {
-                        stamp_couple(&mut passive, phase, *map.last().unwrap(), b);
-                        add_local_couple(phase, map.len() - 1, b);
-                    }
-                }
-                powerio_dist::Configuration::Delta => {
-                    if map.len() < 2 {
-                        return Err(format!(
-                            "delta capacitor `{}` maps fewer than two terminals",
-                            capacitor.name
-                        ));
-                    }
-                    let loops = if map.len() == 2 { 1 } else { map.len() };
-                    let b = capacitor.q_rated / loops as f64 / capacitor.v_nom.powi(2);
-                    for a in 0..loops {
-                        stamp_couple(&mut passive, map[a], map[(a + 1) % map.len()], b);
-                        add_local_couple(a, (a + 1) % map.len(), b);
-                    }
-                }
-                _ => {
-                    return Err(format!(
-                        "capacitor `{}` uses unsupported configuration",
-                        capacitor.name
-                    ))
-                }
-            }
-            elements.push(PreparedElement {
-                name: capacitor.name.clone(),
-                kind: "capacitor".to_owned(),
-                terminals: map,
-                yprim,
-            });
+        if let Some(ideal) = listed.ideal_transformers.first() {
+            // The primitive's own refusal names why.
+            powerio_matrix::calc_transformer_primitive_admittance(network, ideal)
+                .map_err(|error| powerio_message(&error))?;
         }
-        for transformer in network.transformers() {
-            let primitive = prepare_transformer(transformer).map_err(|e| e.to_string())?;
-            for grounded in &primitive.grounded_terminals {
-                let i = index.resolve((&grounded.bus, &grounded.terminal))?;
-                if let Some(previous) = fixed[i] {
-                    if previous.norm() > 1e-12 {
-                        return Err(format!(
-                            "solid transformer neutral `{}`:{} conflicts with a prescribed voltage",
-                            grounded.bus, grounded.terminal
-                        ));
-                    }
-                } else {
-                    fixed[i] = Some(Complex64::new(0.0, 0.0));
-                }
+        // PowerIO assembles the nodal system once from that list: the
+        // passive admittance, a row per prescribed source terminal and a row
+        // per solidly grounded transformer neutral that no source fixes.
+        let admittance = powerio_matrix::assemble_multiconductor_admittance(network, &listed)
+            .map_err(matrix_message)?;
+        let mut position_of_node = vec![usize::MAX; admittance.index().len()];
+        for position in 0..n {
+            if let Some(powerio_matrix::NodeRef::Node(node)) =
+                admittance.index().resolve_position(position)
+            {
+                position_of_node[node] = position;
             }
-            let terminals = primitive
+        }
+        let passive = passive_at_positions(&admittance, &position_of_node);
+        for (position, value) in prescribed_voltages(&admittance, &position_of_node)? {
+            fixed[position] = Some(value);
+        }
+        // Each element keeps its own primitive for its port currents.
+        let mut ground_ports = BTreeMap::<usize, Vec<(usize, usize)>>::new();
+        for element in listed.elements {
+            let terminals = element
                 .terminals
                 .iter()
-                .map(|t| index.resolve((&t.bus, &t.terminal)))
+                .map(|&identity| index.resolve(identity))
                 .collect::<Result<Vec<_>, _>>()?;
-            stamp_local_values(&mut passive, &terminals, &primitive.y_prim)?;
+            for (row, &position) in terminals.iter().enumerate() {
+                if index.is_ground(position) {
+                    ground_ports
+                        .entry(position)
+                        .or_default()
+                        .push((elements.len(), row));
+                }
+            }
             elements.push(PreparedElement {
-                name: primitive.name.clone(),
-                kind: "transformer".to_owned(),
+                name: element.name.to_owned(),
+                kind: element.family.noun().to_owned(),
                 terminals,
-                yprim: primitive.y_prim,
+                yprim: element.primitive,
             });
         }
-        let inferred_nominal_voltage = infer_missing_load_voltages(instance)?;
+        // PowerIO infers the branch voltage base of each constant power load
+        // whose source stated none, from its zone's nameplate or source anchor.
+        let inferred_nominal_voltage = instance
+            .calc_inferred_load_nominal_voltages()
+            .map_err(|e| e.to_string())?;
         let loads = instance
             .loads()
             .iter()
@@ -555,6 +450,7 @@ impl PreparedNetwork {
                 effective.terminal_map = l.terminals.clone();
                 effective.voltage_model = l.voltage_model.clone();
                 prepare_load(
+                    network,
                     &effective,
                     &index,
                     inferred_nominal_voltage
@@ -621,6 +517,7 @@ impl PreparedNetwork {
         let mut prepared = Self {
             index,
             passive: CsrMatrix::from_stamped(passive, n),
+            ground_ports,
             yref: CsrMatrix::from_stamped(yref, n),
             fixed,
             unknown,
@@ -637,6 +534,27 @@ impl PreparedNetwork {
             factor_ms: super::elapsed_ms(assembled, factored),
         };
         Ok((prepared, timing))
+    }
+
+    /// The passive current into the network at terminal position `row`: its
+    /// row of the assembled admittance times the voltages, or, at a grounded
+    /// terminal (which has no row), the sum of its element port currents.
+    pub(crate) fn passive_current(&self, voltage: &[Complex64], row: usize) -> Complex64 {
+        match self.ground_ports.get(&row) {
+            Some(ports) => ports
+                .iter()
+                .map(|&(element, port)| {
+                    let element = &self.elements[element];
+                    element.yprim[port]
+                        .iter()
+                        .zip(&element.terminals)
+                        .map(|(&y, &terminal)| y * voltage[terminal])
+                        .sum::<Complex64>()
+                })
+                .sum(),
+            None if self.index.is_ground(row) => Complex64::default(),
+            None => self.passive.row_mul(row, voltage),
+        }
     }
 
     pub(crate) fn fixed_voltage_vector(&self) -> Vec<Complex64> {
@@ -656,392 +574,6 @@ impl PreparedNetwork {
     }
 }
 
-/// Infer the branch-voltage base only for constant-power loads whose source
-/// format did not state one. Voltage levels are propagated through lines;
-/// transformer winding ratings and explicit load nameplates are authoritative
-/// anchors, with source operating voltages used only when a component has no
-/// nameplate anchor.
-fn infer_missing_load_voltages(
-    instance: &McAcPfInstance,
-) -> Result<BTreeMap<String, Vec<f64>>, String> {
-    let network = instance.network();
-    if !network.loads().iter().any(|load| {
-        load.voltage_model.v_nom().is_empty()
-            && matches!(
-                load.voltage_model,
-                powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
-            )
-    }) {
-        return Ok(BTreeMap::new());
-    }
-    let bus_position: BTreeMap<_, _> = network
-        .buses()
-        .iter()
-        .enumerate()
-        .map(|(index, bus)| (bus.id.to_ascii_lowercase(), index))
-        .collect();
-    let mut components = BusComponents::new(network.buses().len());
-    for line in network.lines() {
-        let from = *bus_position
-            .get(&line.bus_from.to_ascii_lowercase())
-            .ok_or_else(|| format!("line `{}` references an unknown from bus", line.name))?;
-        let to = *bus_position
-            .get(&line.bus_to.to_ascii_lowercase())
-            .ok_or_else(|| format!("line `{}` references an unknown to bus", line.name))?;
-        components.union(from, to);
-    }
-    for switch in network.switches().iter().filter(|switch| !switch.open) {
-        let from = *bus_position
-            .get(&switch.bus_from.to_ascii_lowercase())
-            .ok_or_else(|| format!("switch `{}` references an unknown from bus", switch.name))?;
-        let to = *bus_position
-            .get(&switch.bus_to.to_ascii_lowercase())
-            .ok_or_else(|| format!("switch `{}` references an unknown to bus", switch.name))?;
-        components.union(from, to);
-    }
-
-    let mut rated = BTreeMap::<usize, Vec<(String, f64)>>::new();
-    let mut source = BTreeMap::<usize, Vec<(String, f64)>>::new();
-    let conventions = network.extras().get("bmopf_terminal_conventions");
-    let mut add = |bus: &str,
-                   label: String,
-                   value: f64,
-                   target: &mut BTreeMap<usize, Vec<(String, f64)>>|
-     -> Result<(), String> {
-        if !value.is_finite() || value <= 0.0 {
-            return Err(format!("{label} provides an invalid nominal voltage"));
-        }
-        let position = *bus_position
-            .get(&bus.to_ascii_lowercase())
-            .ok_or_else(|| format!("{label} references unknown bus `{bus}`"))?;
-        target
-            .entry(components.root(position))
-            .or_default()
-            .push((label, value));
-        Ok(())
-    };
-
-    for transformer in network.transformers() {
-        for (index, winding) in transformer.windings.iter().enumerate() {
-            let line_neutral = if transformer.phases >= 2 {
-                winding.v_ref / 3f64.sqrt()
-            } else {
-                winding.v_ref
-            };
-            add(
-                &winding.bus,
-                format!("transformer `{}` winding {}", transformer.name, index + 1),
-                line_neutral,
-                &mut rated,
-            )?;
-        }
-    }
-    for capacitor in network.capacitors() {
-        let bus = &network.buses()[*bus_position
-            .get(&capacitor.bus.to_ascii_lowercase())
-            .expect("capacitor bus validated by the network")];
-        let phase_to_phase =
-            terminals_are_phase_to_phase(bus, &capacitor.terminal_map, conventions);
-        let line_neutral =
-            branch_base_to_line_neutral(capacitor.configuration, phase_to_phase, capacitor.v_nom)?;
-        add(
-            &capacitor.bus,
-            format!("capacitor `{}`", capacitor.name),
-            line_neutral,
-            &mut rated,
-        )?;
-    }
-    for load in network.loads() {
-        let values = load.voltage_model.v_nom();
-        if values.is_empty() {
-            continue;
-        }
-        let bus = &network.buses()[*bus_position
-            .get(&load.bus.to_ascii_lowercase())
-            .expect("load bus validated by the network")];
-        let phase_to_phase = terminals_are_phase_to_phase(bus, &load.terminal_map, conventions);
-        for (branch, value) in values.iter().copied().enumerate() {
-            let line_neutral =
-                branch_base_to_line_neutral(load.configuration, phase_to_phase, value)?;
-            add(
-                &load.bus,
-                format!("load `{}` branch {branch}", load.name),
-                line_neutral,
-                &mut rated,
-            )?;
-        }
-    }
-    for prescribed in instance.sources() {
-        let voltage_source = network
-            .sources()
-            .iter()
-            .find(|source| source.name == prescribed.source)
-            .ok_or_else(|| {
-                format!(
-                    "instance voltage source `{}` is absent from its network",
-                    prescribed.source
-                )
-            })?;
-        let mut magnitudes = prescribed
-            .v_magnitude
-            .iter()
-            .copied()
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .collect::<Vec<_>>();
-        if magnitudes.is_empty() {
-            continue;
-        }
-        magnitudes.sort_by(f64::total_cmp);
-        let line_neutral = magnitudes[magnitudes.len() / 2];
-        add(
-            &voltage_source.bus,
-            format!("voltage source `{}`", voltage_source.name),
-            line_neutral,
-            &mut source,
-        )?;
-    }
-
-    let mut bases = BTreeMap::<usize, f64>::new();
-    for position in 0..network.buses().len() {
-        let root = components.root(position);
-        if bases.contains_key(&root) {
-            continue;
-        }
-        let candidates = rated.get(&root).or_else(|| source.get(&root));
-        let Some(candidates) = candidates else {
-            continue;
-        };
-        let base = candidates[0].1;
-        for (label, candidate) in &candidates[1..] {
-            let relative = (candidate - base).abs() / base.max(*candidate);
-            // Ratings imported from different formats commonly mix rounded
-            // line-line and line-neutral values (for example 415/sqrt(3)
-            // versus 240 V). Treat a one-percent difference as the same zone,
-            // while still rejecting genuinely ambiguous voltage levels.
-            if relative > 1e-2 {
-                return Err(format!(
-                    "conflicting nominal voltage anchors in one line-connected component: {} V and {label}={} V",
-                    base, candidate
-                ));
-            }
-        }
-        bases.insert(root, base);
-    }
-
-    let mut inferred = BTreeMap::new();
-    for load in network.loads() {
-        if !load.voltage_model.v_nom().is_empty()
-            || !matches!(
-                load.voltage_model,
-                powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
-            )
-        {
-            continue;
-        }
-        let position = *bus_position
-            .get(&load.bus.to_ascii_lowercase())
-            .ok_or_else(|| format!("load `{}` references an unknown bus", load.name))?;
-        let root = components.root(position);
-        let line_neutral = *bases.get(&root).ok_or_else(|| {
-            format!(
-                "load `{}` omits nominal voltage and bus `{}` has no source, transformer, or nameplate voltage anchor",
-                load.name, load.bus
-            )
-        })?;
-        let bus = &network.buses()[position];
-        let phase_to_phase = terminals_are_phase_to_phase(bus, &load.terminal_map, conventions);
-        let branch_voltage = match load.configuration {
-            powerio_dist::Configuration::Wye => line_neutral,
-            powerio_dist::Configuration::Delta => line_neutral * 3f64.sqrt(),
-            powerio_dist::Configuration::SinglePhase if phase_to_phase => {
-                line_neutral * 3f64.sqrt()
-            }
-            powerio_dist::Configuration::SinglePhase => line_neutral,
-            _ => {
-                return Err(format!(
-                    "load `{}` has an unsupported configuration for nominal-voltage inference",
-                    load.name
-                ))
-            }
-        };
-        inferred.insert(load.name.clone(), vec![branch_voltage; load.p_nom.len()]);
-    }
-    Ok(inferred)
-}
-
-fn terminals_are_phase_to_phase(
-    bus: &powerio_dist::DistBus,
-    terminals: &[String],
-    conventions: Option<&serde_json::Value>,
-) -> bool {
-    let phases: BTreeSet<_> = bus
-        .phase_indices(conventions)
-        .into_iter()
-        .map(|index| bus.terminals[index].as_str())
-        .collect();
-    terminals.len() == 2
-        && terminals
-            .iter()
-            .all(|terminal| phases.contains(terminal.as_str()))
-}
-
-fn branch_base_to_line_neutral(
-    configuration: powerio_dist::Configuration,
-    phase_to_phase: bool,
-    branch_voltage: f64,
-) -> Result<f64, String> {
-    match configuration {
-        powerio_dist::Configuration::Wye => Ok(branch_voltage),
-        powerio_dist::Configuration::Delta => Ok(branch_voltage / 3f64.sqrt()),
-        powerio_dist::Configuration::SinglePhase if phase_to_phase => {
-            Ok(branch_voltage / 3f64.sqrt())
-        }
-        powerio_dist::Configuration::SinglePhase => Ok(branch_voltage),
-        _ => Err("unsupported configuration for nominal-voltage inference".to_owned()),
-    }
-}
-
-fn stamp_line(
-    passive: &mut StampedMatrix,
-    line: &powerio_dist::DistLine,
-    code: &DistLineCode,
-    index: &NetworkIndex,
-) -> Result<PreparedElement, String> {
-    let n = code.n_conductors;
-    if n == 0
-        || line.terminal_map_from.len() != n
-        || line.terminal_map_to.len() != n
-        || line.length <= 0.0
-        || !line.length.is_finite()
-    {
-        return Err(format!(
-            "line `{}` has invalid conductor dimensions or length",
-            line.name
-        ));
-    }
-    let square = |m: &[Vec<f64>], name: &str| -> Result<(), String> {
-        if m.len() != n
-            || m.iter()
-                .any(|r| r.len() != n || r.iter().any(|v| !v.is_finite()))
-        {
-            Err(format!(
-                "linecode `{}` has invalid {name} matrix",
-                code.name
-            ))
-        } else {
-            Ok(())
-        }
-    };
-    square(&code.r_series, "r_series")?;
-    square(&code.x_series, "x_series")?;
-    square(&code.g_from, "g_from")?;
-    square(&code.b_from, "b_from")?;
-    square(&code.g_to, "g_to")?;
-    square(&code.b_to, "b_to")?;
-    let mut z = DenseMatrix::zeros(n);
-    let mut yprim = vec![vec![Complex64::default(); 2 * n]; 2 * n];
-    for r in 0..n {
-        for c in 0..n {
-            z.add(
-                r,
-                c,
-                Complex64::new(
-                    code.r_series[r][c] * line.length,
-                    code.x_series[r][c] * line.length,
-                ),
-            );
-        }
-    }
-    let zinv = invert_dense(&z)?;
-    let from: Vec<_> = line
-        .terminal_map_from
-        .iter()
-        .map(|t| index.resolve((&line.bus_from, t)))
-        .collect::<Result<_, _>>()?;
-    let to: Vec<_> = line
-        .terminal_map_to
-        .iter()
-        .map(|t| index.resolve((&line.bus_to, t)))
-        .collect::<Result<_, _>>()?;
-    for r in 0..n {
-        for c in 0..n {
-            let y = zinv.get(r, c);
-            let yf = Complex64::new(
-                code.g_from[r][c] * line.length,
-                code.b_from[r][c] * line.length,
-            );
-            let yt = Complex64::new(code.g_to[r][c] * line.length, code.b_to[r][c] * line.length);
-            passive.add(from[r], from[c], y + yf);
-            passive.add(to[r], to[c], y + yt);
-            passive.add(from[r], to[c], -y);
-            passive.add(to[r], from[c], -y);
-            yprim[r][c] += y + yf;
-            yprim[n + r][n + c] += y + yt;
-            yprim[r][n + c] -= y;
-            yprim[n + r][c] -= y;
-        }
-    }
-    let mut terminals = from;
-    terminals.extend(to);
-    Ok(PreparedElement {
-        name: line.name.clone(),
-        kind: "line".to_owned(),
-        terminals,
-        yprim,
-    })
-}
-
-fn stamp_couple(y: &mut StampedMatrix, a: usize, b: usize, susceptance: f64) {
-    let value = Complex64::new(0.0, susceptance);
-    y.add(a, a, value);
-    y.add(b, b, value);
-    y.add(a, b, -value);
-    y.add(b, a, -value);
-}
-
-fn invert_dense(a: &DenseMatrix) -> Result<DenseMatrix, String> {
-    let n = a.n;
-    let mut m = a.values.clone();
-    let mut out = DenseMatrix::zeros(n);
-    for i in 0..n {
-        out.add(i, i, Complex64::new(1.0, 0.0));
-    }
-    for k in 0..n {
-        let mut pivot = k;
-        for r in k..n {
-            if m[r * n + k].norm() > m[pivot * n + k].norm() {
-                pivot = r;
-            }
-        }
-        if m[pivot * n + k].norm() <= 1e-14 {
-            return Err("line series impedance matrix is singular".to_owned());
-        }
-        if pivot != k {
-            for c in 0..n {
-                m.swap(k * n + c, pivot * n + c);
-                out.values.swap(k * n + c, pivot * n + c);
-            }
-        }
-        let p = m[k * n + k];
-        for c in 0..n {
-            m[k * n + c] /= p;
-            out.values[k * n + c] /= p;
-        }
-        let pivot_row = m[k * n..(k + 1) * n].to_vec();
-        let pivot_inverse = out.values[k * n..(k + 1) * n].to_vec();
-        for r in 0..n {
-            if r != k {
-                let q = m[r * n + k];
-                for c in 0..n {
-                    m[r * n + c] -= q * pivot_row[c];
-                    out.values[r * n + c] -= q * pivot_inverse[c];
-                }
-            }
-        }
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod identity_tests {
     use super::*;
@@ -1057,13 +589,13 @@ mod identity_tests {
         assert_eq!(index.resolve(("sourcebus", "a")).unwrap(), 0);
         assert_eq!(index.resolve(("SOURCEBUS", "A")).unwrap(), 1);
         assert_eq!(index.bus_terminals("sOuRcEbUs"), vec![0, 1]);
-        assert_eq!(index.terminal_ids[0].0, "SourceBus");
+        assert_eq!(index.terminal_ids()[0].0, "SourceBus");
         let mut duplicate = powerio_dist::DistBus::default();
         duplicate.id = "sourcebus".into();
         duplicate.terminals = vec!["other".into()];
         network.buses_mut().push(duplicate);
         assert!(NetworkIndex::new(&network)
             .unwrap_err()
-            .contains("duplicate bus"));
+            .contains("duplicated case-insensitively"));
     }
 }

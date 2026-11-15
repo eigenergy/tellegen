@@ -184,14 +184,20 @@ fn floating_source_reference_is_rejected_by_capability_and_direct_solver() {
 }
 
 #[test]
-fn unsupported_transformer_properties_and_three_windings_are_view_only() {
+fn unsupported_transformer_properties_and_three_windings_are_view_only_and_leadlag_reads() {
+    let unit = |extra: &str| {
+        module(&format!("new circuit.qc basekv=11\nnew transformer.t phases=3 windings=2 buses=[sourcebus lb] conns=[delta wye] kvs=[11 .4] kvas=[100 100] xhl=4 {extra}\n"))
+    };
     for extra in [
         "windings=3 buses=[sourcebus lb lc] kvs=[11 .4 .4] kvas=[100 100 100]",
-        "leadlag=lead",
         "%imag=garbage",
         "ppm_antifloat=50",
     ] {
-        let input = module(&format!("new circuit.qc basekv=11\nnew transformer.t phases=3 windings=2 buses=[sourcebus lb] conns=[delta wye] kvs=[11 .4] kvas=[100 100] xhl=4 {extra}\n"));
-        assert!(tellegen::validate_mc_module(&input).is_err(), "{extra}");
+        assert!(
+            tellegen::validate_mc_module(&unit(extra)).is_err(),
+            "{extra}"
+        );
     }
+    // PowerIO's delta orientation reads LeadLag: Lead reverses the rotation.
+    tellegen::validate_mc_module(&unit("leadlag=lead")).unwrap();
 }

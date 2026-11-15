@@ -234,7 +234,11 @@ pub fn solve_source_with_regulators(
             .find(|s| s.component.to_string() == c.id)
         {
             let pf = lcc_power_factor(source)?;
-            q = c.ac_power_mw.abs() * (1.0 - pf * pf).sqrt() / pf;
+            q = c.ac_power_mw.abs()
+                * powerio::electrical::calc_reactive_ratio(
+                    pf,
+                    powerio::electrical::ReactiveRatioForm::Sine,
+                );
             let rectifier = source.operating_mode
                 == Some(powerio_tx::LineCommutatedConverterOperatingMode::Rectifier);
             if (rectifier && (c.ac_power_mw < -1e-7 || c.current_ka < -1e-8))

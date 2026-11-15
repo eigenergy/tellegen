@@ -120,7 +120,7 @@ pub(super) fn build_tables(
         iterations: state.iterations,
         ..McPfResultTables::default()
     };
-    for (i, (bus, terminal)) in prepared.index.terminal_ids.iter().enumerate() {
+    for (i, (bus, terminal)) in prepared.index.terminal_ids().iter().enumerate() {
         let current = passive_current(prepared, voltage, i);
         let power = voltage[i] * current.conj();
         finite &= is_finite(voltage[i]) && is_finite(current) && is_finite(power);
@@ -135,7 +135,7 @@ pub(super) fn build_tables(
             let branch_current = load.branch_current(branch, voltage, options)?;
             for &(i, c) in incidence {
                 let (current, power) = load_port_values(voltage, i, c, branch_current);
-                let (bus, terminal) = &prepared.index.terminal_ids[i];
+                let (bus, terminal) = &prepared.index.terminal_ids()[i];
                 finite &= is_finite(current) && is_finite(power);
                 tables.port_element.push(names.index(&load.name));
                 tables.port_kind.push(names.index("load"));
@@ -150,7 +150,7 @@ pub(super) fn build_tables(
     for element in &prepared.elements {
         for row in 0..element.terminals.len() {
             let (i, current, power) = passive_port_values(voltage, element, row);
-            let (bus, terminal) = &prepared.index.terminal_ids[i];
+            let (bus, terminal) = &prepared.index.terminal_ids()[i];
             finite &= is_finite(current) && is_finite(power);
             tables.port_element.push(names.index(&element.name));
             tables.port_kind.push(names.index(&element.kind));

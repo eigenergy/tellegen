@@ -173,7 +173,10 @@ pub fn group_substations(
     let far = |a: usize, b: usize| {
         located
             .and_then(|coords| Some((coords.get(&a)?, coords.get(&b)?)))
-            .is_some_and(|(p, q)| haversine_km(*p, *q) > options.max_transformer_span_km)
+            .is_some_and(|(p, q)| {
+                powerio_tx::geo::calc_haversine_km(p.0, p.1, q.0, q.1)
+                    > options.max_transformer_span_km
+            })
     };
     for (k, br) in net.branches().iter().enumerate() {
         let (Some(&a), Some(&b)) = (rows.get(&br.from.0), rows.get(&br.to.0)) else {
@@ -346,8 +349,8 @@ fn declared_keys(net: &BalancedNetwork, rows: &HashMap<usize, usize>) -> Vec<Opt
 /// Union-find that refuses to merge two components declared in different substations and keeps
 /// the strongest rule that formed each component.
 struct Groups {
-    parent: Vec<usize>,
-    rank: Vec<u8>,
+    /// PowerIO's union-find; this keeps only the per component policy data.
+    sets: powerio_tx::union_find::UnionFind,
     size: Vec<usize>,
     declared: Vec<Option<Declared>>,
     source: Vec<GroupSource>,
@@ -357,8 +360,7 @@ impl Groups {
     fn new(declared: &[Option<Declared>]) -> Self {
         let n = declared.len();
         let mut groups = Self {
-            parent: (0..n).collect(),
-            rank: vec![0; n],
+            sets: powerio_tx::union_find::UnionFind::new(n),
             size: vec![1; n],
             declared: declared.to_vec(),
             source: vec![GroupSource::Single; n],
@@ -378,12 +380,8 @@ impl Groups {
         groups
     }
 
-    fn find(&mut self, mut x: usize) -> usize {
-        while self.parent[x] != x {
-            self.parent[x] = self.parent[self.parent[x]];
-            x = self.parent[x];
-        }
-        x
+    fn find(&mut self, x: usize) -> usize {
+        self.sets.find(x)
     }
 
     fn union(&mut self, a: usize, b: usize, why: GroupSource) {
@@ -396,15 +394,13 @@ impl Groups {
                 return;
             }
         }
-        let (root, child) = if self.rank[ra] >= self.rank[rb] {
+        // The larger component's representative stays the representative.
+        let (root, child) = if self.size[ra] >= self.size[rb] {
             (ra, rb)
         } else {
             (rb, ra)
         };
-        if self.rank[ra] == self.rank[rb] {
-            self.rank[root] += 1;
-        }
-        self.parent[child] = root;
+        self.sets.union(root, child);
         self.size[root] += self.size[child];
         if self.declared[root].is_none() {
             self.declared[root] = self.declared[child].take();
@@ -419,15 +415,6 @@ impl Groups {
             self.union(a, b, why);
         }
     }
-}
-
-fn haversine_km((lon1, lat1): (f64, f64), (lon2, lat2): (f64, f64)) -> f64 {
-    const R: f64 = 6371.0;
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let dp = p2 - p1;
-    let dl = (lon2 - lon1).to_radians();
-    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
-    2.0 * R * a.sqrt().asin()
 }
 
 #[cfg(test)]

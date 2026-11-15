@@ -23,7 +23,9 @@ use faer::Mat;
 use num_complex::Complex;
 
 use crate::model::AcNetwork;
-use crate::problem::{ac_injections, ac_jacobian, load_jacobian, AcPfLayout, AcPfSolution};
+use crate::problem::{
+    load_jacobian, power_flow_jacobian, reduced_jacobian, AcPfLayout, AcPfSolution,
+};
 
 use super::{
     Axis, Differentiable, ElementId, End, Operand, Parameter, Power, Selector, SensError,
@@ -51,9 +53,12 @@ impl<'a> AcNewton<'a> {
     /// the system, which a fixed default typing would miss.
     pub fn new(net: &'a AcNetwork, sol: &AcPfSolution) -> Self {
         let layout = AcPfLayout::with_kinds(net, &sol.kinds);
-        let ybus = net.ybus();
-        let (_, _, i_bus) = ac_injections(&ybus, &sol.vm, &sol.va);
-        let mut jac = ac_jacobian(&ybus, &sol.vm, &sol.va, &i_bus, &layout);
+        // PowerIO's physical Jacobian at the converged voltages, the one the
+        // solve refreshed at every iterate. The model's admittance matrix and
+        // the solution share the model's bus count, so its build cannot fail.
+        let jacobian = power_flow_jacobian(net, &sol.vm, &sol.va)
+            .expect("the solved voltages cover the model's admittance matrix");
+        let mut jac = reduced_jacobian(jacobian.matrix(), &layout);
         jac.extend(load_jacobian(net, &sol.vm, &layout));
         AcNewton {
             net,
@@ -100,35 +105,13 @@ impl<'a> AcNewton<'a> {
     }
 
     /// The from/to complex-power partials of branch `e` w.r.t. `(va_f, vm_f, va_t,
-    /// vm_t)` — the pi-model `dSbr/dV` at the converged voltages. With `S_f = V_f
-    /// conj(Y_ff V_f + Y_ft V_t)` and the polar partials `∂V_k/∂va_k = j V_k`,
-    /// `∂V_k/∂vm_k = V_k/vm_k`, the cross terms collapse to the forms below. Returns
-    /// `([∂S_f/∂…], [∂S_t/∂…])`.
+    /// vm_t)`, the pi-model `dSbr/dV` at the converged voltages: PowerIO's
+    /// `calc_branch_flow_partials` over the block `AcNetwork::ybus` stamps.
+    /// Returns `([∂S_f/∂…], [∂S_t/∂…])`.
     fn flow_partials(&self, e: usize) -> ([Complex<f64>; 4], [Complex<f64>; 4]) {
-        let (f, t) = (self.net.br_from[e], self.net.br_to[e]);
-        let vf = Complex::from_polar(self.vm[f], self.va[f]);
-        let vt = Complex::from_polar(self.vm[t], self.va[t]);
-        let vhat_f = Complex::from_polar(1.0, self.va[f]);
-        let vhat_t = Complex::from_polar(1.0, self.va[t]);
-        // Per-branch pi-model admittance (scaled by the switching state, so an open
-        // branch carries no flow) — shared with `AcNetwork::ybus`.
-        let (yff, yft, ytf, ytt) = self.net.branch_admittance(e);
-        let i_f = yff * vf + yft * vt;
-        let i_t = ytf * vf + ytt * vt;
-        let j = Complex::<f64>::i();
-        let from = [
-            j * vf * (yft * vt).conj(),                       // ∂S_f/∂va_f
-            vhat_f * i_f.conj() + vf * (yff * vhat_f).conj(), // ∂S_f/∂vm_f
-            -j * vf * (yft * vt).conj(),                      // ∂S_f/∂va_t
-            vf * (yft * vhat_t).conj(),                       // ∂S_f/∂vm_t
-        ];
-        let to = [
-            -j * vt * (ytf * vf).conj(),                      // ∂S_t/∂va_f
-            vt * (ytf * vhat_f).conj(),                       // ∂S_t/∂vm_f
-            j * vt * (ytf * vf).conj(),                       // ∂S_t/∂va_t
-            vhat_t * i_t.conj() + vt * (ytt * vhat_t).conj(), // ∂S_t/∂vm_t
-        ];
-        (from, to)
+        self.net
+            .branches
+            .calc_branch_flow_partials(e, &self.vm, &self.va)
     }
 
     /// The branch-flow operand's linear map: for each branch, the gradient of the
@@ -146,7 +129,7 @@ impl<'a> AcNewton<'a> {
                     End::From => from,
                     End::To => to,
                 };
-                let (f, t) = (self.net.br_from[e], self.net.br_to[e]);
+                let (f, t) = (self.net.branches.from_bus[e], self.net.branches.to_bus[e]);
                 let mut entries = Vec::new();
                 for (bus, dva, dvm) in [(f, p4[0], p4[1]), (t, p4[2], p4[3])] {
                     if let Some(c) = self.layout.va_col(bus) {
@@ -415,29 +398,11 @@ mod tests {
     ];
 
     /// Per-branch `(pf, qf, pt, qt)` at the converged voltages, the pi-model branch
-    /// flows the analytic operand differentiates (independent re-derivation for the FD).
+    /// flows the analytic operand differentiates: PowerIO's
+    /// `AcBranchData::calc_branch_flows`.
     fn branch_flows(net: &AcNetwork, vm: &[f64], va: &[f64]) -> [Vec<f64>; 4] {
-        let mut out = [
-            vec![0.0; net.m],
-            vec![0.0; net.m],
-            vec![0.0; net.m],
-            vec![0.0; net.m],
-        ];
-        // `e` is the branch index across several aligned arrays, not a slice walk.
-        #[allow(clippy::needless_range_loop)]
-        for e in 0..net.m {
-            let (f, t) = (net.br_from[e], net.br_to[e]);
-            let vf = Complex::from_polar(vm[f], va[f]);
-            let vt = Complex::from_polar(vm[t], va[t]);
-            let (yff, yft, ytf, ytt) = net.branch_admittance(e);
-            let sf = vf * (yff * vf + yft * vt).conj();
-            let st = vt * (ytf * vf + ytt * vt).conj();
-            out[0][e] = sf.re;
-            out[1][e] = sf.im;
-            out[2][e] = st.re;
-            out[3][e] = st.im;
-        }
-        out
+        let flows = net.branches.calc_branch_flows(vm, va);
+        [flows.pf, flows.qf, flows.pt, flows.qt]
     }
 
     fn flow_index(power: Power, end: End) -> usize {
@@ -577,9 +542,17 @@ mod tests {
         }
     }
 
-    /// Constant-power cases solve bit for bit as before voltage-dependent loads
-    /// entered the Newton iteration: the solution and the AC sensitivities hash to the
-    /// digest recorded from the fixed-point implementation (commit 86708f5e).
+    /// Constant-power cases solve bit for bit as recorded: the solution and the AC
+    /// sensitivities hash to a fixed digest. The digest was re-recorded when the
+    /// injections and the Newton Jacobian moved onto PowerIO's
+    /// `calc_bus_power_injection` and `PowerFlowJacobian`, whose summation order
+    /// differs from the former local assembly in the last bits; again when
+    /// PowerIO 0.12.1 formed every injection entry by entry; and again when the
+    /// model began preparing the caller's network directly instead of a
+    /// normalized copy, which scales the per unit demand and dispatch in one
+    /// step (one ulp on three case9 entries). Forming each Newton injection
+    /// once and refreshing the Jacobian from it changed nothing. Any later
+    /// change to either must show up here.
     #[test]
     fn constant_power_solutions_are_bitwise_unchanged() {
         fn fnv(h: &mut u64, x: f64) {
@@ -613,6 +586,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(h, 0xb573_3495_c6ba_94a5);
+        assert_eq!(h, 0xe268_745c_4a5b_15f3);
     }
 }

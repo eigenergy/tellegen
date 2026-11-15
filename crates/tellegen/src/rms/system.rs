@@ -10,6 +10,10 @@
 
 use num_complex::Complex;
 
+use powerio::electrical::{calc_squared_voltage_admittance, calc_voltage_power_term};
+use powerio_dist::kron::calc_kron_reduced_impedance;
+use powerio_matrix::{AcBranchData, AcBranchFlows};
+
 use super::models::{dq_ri_sc, mag, Avr, Governor, Machine, Shaft, Stabilizer};
 use crate::model::AcNetwork;
 
@@ -310,20 +314,18 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
             }
         }
     };
-    let w = if gamma == 0.0 {
-        1.0 / (u * u)
-    } else if gamma == 1.0 {
-        1.0 / (v0 * u)
-    } else {
-        (u / v0).powf(gamma) / (u * u)
-    };
-    (w, (gamma - 2.0) * w / u * du)
+    // The law `(u / v0)^γ` and its slope in `u / v0`: PowerIO's voltage
+    // power law term.
+    let (law, slope) = calc_voltage_power_term(1.0, gamma, u / v0);
+    let w = law / (u * u);
+    // dw/du = slope / (v0 u²) − 2 w / u.
+    (w, (slope / (v0 * u * u) - 2.0 * w / u) * du)
 }
 
 impl BusLoad {
     /// Constant-impedance part as an admittance (enters `Y`).
     pub(crate) fn admittance(&self) -> C64 {
-        C64::new(self.p_z, -self.q_z) / (self.v0 * self.v0)
+        calc_squared_voltage_admittance(C64::new(self.p_z, -self.q_z), self.v0 * self.v0)
     }
 
     /// `(G, B, dG/dV / V, dB/dV / V)` of the nonlinear parts: their current
@@ -551,7 +553,17 @@ pub(crate) struct DynSystem {
     pub bus_numbers: Vec<usize>,
     pub sbase: f64,
     pub f0: f64,
+    /// The static network. Its PowerIO branch columns (`ac.branches`) are the
+    /// case's branches, with any tap a live session set; [`Self::branches`]
+    /// is what the events made of them. RMS never reads `ac.ybus()`.
     pub ac: AcNetwork,
+    /// Per branch, whether it is in service (a branch trip opens it).
+    pub closed: Vec<bool>,
+    /// The PowerIO branch columns as switched now ([`Self::rebuild_ybus`]):
+    /// `ac.branches` with a tripped branch's admittances zero and the open
+    /// ends and inner fault of a branch folded into its pi columns. The
+    /// admittance matrix and the branch flows are PowerIO's over these.
+    pub branches: AcBranchData,
     /// `(from bus, to bus, circuit)` of each dense branch.
     pub branch_keys: Vec<(usize, usize, String)>,
     pub devices: Vec<GenDevice>,
@@ -616,32 +628,16 @@ impl DynSystem {
         names
     }
 
-    /// Rebuild the admittance matrix after a topology or load change.
+    /// Rebuild the admittance matrix after a topology or load change:
+    /// PowerIO's `AcBranchData::calc_admittance_matrix` over the switched
+    /// branch columns, with the bus shunts of the case plus every fault,
+    /// constant-impedance load part, Thevenin source and dead-bus ground.
     pub(crate) fn rebuild_ybus(&mut self) {
         self.epoch += 1;
-        let mut y = self.ac.ybus();
-        // Branches with an open end or an inner fault: swap their standard
-        // stamp for the reduced one.
-        for e in 0..self.ac.m {
-            if !self.is_special(e) {
-                continue;
-            }
-            let (f, t) = (self.ac.br_from[e], self.ac.br_to[e]);
-            let (yff, yft, ytf, ytt) = self.ac.branch_admittance(e);
-            let r = self.branch_terminal_y(e);
-            for (i, j, std, new) in [
-                (f, f, yff, r[0][0]),
-                (f, t, yft, r[0][1]),
-                (t, f, ytf, r[1][0]),
-                (t, t, ytt, r[1][1]),
-            ] {
-                let d = new - std;
-                if d != C64::new(0.0, 0.0) {
-                    y.push((i, j, d));
-                }
-            }
-        }
+        self.branches = self.switched_branches();
         let dead = self.dead_buses();
+        let mut gs = self.ac.gs.clone();
+        let mut bs = self.ac.bs.clone();
         for b in 0..self.n {
             let mut extra = self.fault_y[b] + self.loads[b].admittance();
             // A bus in an island without a live unit holds 0 V (a unit
@@ -652,11 +648,45 @@ impl DynSystem {
             for s in self.sources.iter().filter(|s| s.bus == b) {
                 extra += s.y;
             }
-            if extra != C64::new(0.0, 0.0) {
-                y.push((b, b, extra));
-            }
+            gs[b] += extra.re;
+            bs[b] += extra.im;
         }
-        self.ybus = y;
+        let y = self.branches.calc_admittance_matrix(self.n, &gs, &bs);
+        let mut entries: std::collections::BTreeMap<(usize, usize), C64> =
+            std::collections::BTreeMap::new();
+        for (&g, (r, c)) in y.g.iter() {
+            entries.entry((r, c)).or_default().re = g;
+        }
+        for (&b, (r, c)) in y.b.iter() {
+            entries.entry((r, c)).or_default().im = b;
+        }
+        self.ybus = entries.into_iter().map(|((r, c), v)| (r, c, v)).collect();
+    }
+
+    /// `ac.branches` as the events left them: a tripped branch's admittances
+    /// zero (its block stamps nothing), and a closed branch with an open end
+    /// or an inner fault carrying its terminal equivalent
+    /// ([`Self::terminal_equivalent`]) in its series and charging columns.
+    /// The tap and shift columns stay the branch's own.
+    fn switched_branches(&self) -> AcBranchData {
+        let mut br = self.ac.branches.clone();
+        for e in 0..self.ac.m {
+            let (series, y_fr, y_to) = if !self.closed[e] {
+                let zero = C64::new(0.0, 0.0);
+                (zero, zero, zero)
+            } else if self.is_special(e) {
+                self.terminal_equivalent(e)
+            } else {
+                continue;
+            };
+            br.g[e] = series.re;
+            br.b[e] = series.im;
+            br.g_fr[e] = y_fr.re;
+            br.b_fr[e] = y_fr.im;
+            br.g_to[e] = y_to.re;
+            br.b_to[e] = y_to.im;
+        }
+        br
     }
 
     pub(crate) fn rebuild_mass(&mut self) {
@@ -864,108 +894,85 @@ impl DynSystem {
         }
     }
 
-    /// Complex power flows `(S_from, S_to)` of dense branch `e`, system base.
-    pub(crate) fn branch_flow(&self, x: &[f64], e: usize) -> (C64, C64) {
-        let (vf, vt, i_f, i_t) = self.branch_currents(x, e);
-        (vf * i_f.conj(), vt * i_t.conj())
-    }
-
-    /// End voltages and the currents into the branch at its ends.
-    pub(crate) fn branch_currents(&self, x: &[f64], e: usize) -> (C64, C64, C64, C64) {
-        let y = self.branch_terminal_y(e);
-        let f = self.ac.br_from[e];
-        let t = self.ac.br_to[e];
-        let vf = C64::new(x[f], x[self.n + f]);
-        let vt = C64::new(x[t], x[self.n + t]);
-        (
-            vf,
-            vt,
-            y[0][0] * vf + y[0][1] * vt,
-            y[1][0] * vf + y[1][1] * vt,
-        )
+    /// The terminal flows of every branch at the state `x`, system base:
+    /// PowerIO's `AcBranchData::calc_branch_flows` over the switched branch
+    /// columns, so an open end carries no flow and a faulted branch the flow
+    /// into its fault.
+    pub(crate) fn branch_flows(&self, x: &[f64]) -> AcBranchFlows {
+        let (vr, rest) = x.split_at(self.n);
+        let vi = &rest[..self.n];
+        let vm: Vec<f64> = vr.iter().zip(vi).map(|(r, i)| r.hypot(*i)).collect();
+        let va: Vec<f64> = vr.iter().zip(vi).map(|(r, i)| i.atan2(*r)).collect();
+        self.branches.calc_branch_flows(&vm, &va)
     }
 
     fn is_special(&self, e: usize) -> bool {
-        self.ac.sw[e] != 0.0
+        self.closed[e]
             && (self.end_open.get(e).is_some_and(|o| o[0] || o[1])
                 || self.branch_faults.get(e).is_some_and(Option::is_some))
     }
 
-    /// The branch's terminal admittance `[[Yff, Yft], [Ytf, Ytt]]` with its
-    /// open ends and inner fault: the series impedance split at the fault
-    /// point (`α z`, `(1 − α) z`, the fault admittance to ground there),
-    /// the inner nodes and open ends eliminated (Kron reduction), then
-    /// referred through the from-end tap.
-    pub(crate) fn branch_terminal_y(&self, e: usize) -> [[C64; 2]; 2] {
+    /// The series admittance and terminal charging `(y, y_fr, y_to)` of the
+    /// pi model whose block is branch `e`'s terminal admittance with its open
+    /// ends and inner fault, before its tap: the series admittance split at
+    /// the fault point into PowerIO pi sections (`y / α` with the from
+    /// charging, `y / (1 − α)` with the to charging), the fault admittance to
+    /// ground there, and the inner nodes and open ends eliminated (PowerIO's
+    /// Kron reduction). The reduction of these reciprocal sections is
+    /// symmetric, so it is a pi model: series `−Y_ft`, charging
+    /// `Y_ff + Y_ft` and `Y_tt + Y_tf`. The branch's own tap
+    /// and shift then refer it to the from bus when PowerIO stamps it.
+    fn terminal_equivalent(&self, e: usize) -> (C64, C64, C64) {
         let zero = C64::new(0.0, 0.0);
-        if !self.is_special(e) {
-            let (yff, yft, ytf, ytt) = self.ac.branch_admittance(e);
-            return [[yff, yft], [ytf, ytt]];
-        }
-        let ac = &self.ac;
-        let y = C64::new(ac.g[e], ac.b[e]);
-        let tap = C64::from_polar(ac.tap[e], ac.shift[e]);
-        let y_fr = C64::new(ac.g_fr[e], ac.b_fr[e]);
-        let y_to = C64::new(ac.g_to[e], ac.b_to[e]);
+        let br = &self.ac.branches;
+        let y = C64::new(br.g[e], br.b[e]);
+        let y_fr = C64::new(br.g_fr[e], br.b_fr[e]);
+        let y_to = C64::new(br.g_to[e], br.b_to[e]);
         let (alpha, yf) =
             self.branch_faults[e].map_or((0.5, zero), |f| (f.alpha.clamp(1e-4, 1.0 - 1e-4), f.y));
-        let y1 = y / alpha;
-        let y2 = y / (1.0 - alpha);
         // Local nodes: 0 from (behind the tap), 1 to, 2 the fault point.
+        let [a_ff, a_fk, a_kf, a_kk] =
+            powerio_tx::PiModel::new(y / alpha, y_fr, zero, 1.0, 0.0).calc_block();
+        let [b_kk, b_kt, b_tk, b_tt] =
+            powerio_tx::PiModel::new(y / (1.0 - alpha), zero, y_to, 1.0, 0.0).calc_block();
         let full = [
-            [y1 + y_fr, zero, -y1],
-            [zero, y2 + y_to, -y2],
-            [-y1, -y2, y1 + y2 + yf],
+            [a_ff, zero, a_fk],
+            [zero, b_tt, b_tk],
+            [a_kf, b_kt, a_kk + b_kk + yf],
         ];
         let open = self.end_open[e];
         let ext: Vec<usize> = (0..2).filter(|&k| !open[k]).collect();
         let int: Vec<usize> = (0..3).filter(|k| !ext.contains(k)).collect();
-        let red = kron(&full, &ext, &int);
+        // PowerIO's Kron reduction `M_kk − M_ke M_ee⁻¹ M_ek` (named for the
+        // conductor impedance it was written for; the algebra is the same
+        // for an admittance). An exactly singular `Y_II` (inner nodes that
+        // float) gives `None`: nothing reaches the terminals.
+        let full: Vec<Vec<C64>> = full.iter().map(|row| row.to_vec()).collect();
+        let red = calc_kron_reduced_impedance(&full, &ext, &int, 0.0)
+            .unwrap_or_else(|| vec![vec![zero; ext.len()]; ext.len()]);
         let mut out = [[zero; 2]; 2];
         for (a, &i) in ext.iter().enumerate() {
             for (b, &j) in ext.iter().enumerate() {
                 out[i][j] = red[a][b];
             }
         }
-        let tap2 = tap.norm_sqr();
-        [
-            [out[0][0] / tap2, out[0][1] / tap.conj()],
-            [out[1][0] / tap, out[1][1]],
-        ]
+        let series = -out[0][1];
+        (series, out[0][0] - series, out[1][1] + out[1][0])
     }
 
     /// The electrical islands over branches closed at both ends, each its
-    /// dense buses in ascending order.
+    /// dense buses in ascending order, in order of each island's first bus:
+    /// PowerIO's dense island labels over those branches.
     pub(crate) fn islands(&self) -> Vec<Vec<usize>> {
-        let n = self.n;
-        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-        for e in 0..self.ac.m {
-            if self.ac.sw[e] != 0.0 && !self.end_open[e][0] && !self.end_open[e][1] {
-                let (f, t) = (self.ac.br_from[e], self.ac.br_to[e]);
-                adj[f].push(t);
-                adj[t].push(f);
-            }
-        }
-        let mut seen = vec![false; n];
-        let mut islands = Vec::new();
-        for start in 0..n {
-            if seen[start] {
-                continue;
-            }
-            let mut stack = vec![start];
-            let mut members = Vec::new();
-            seen[start] = true;
-            while let Some(b) = stack.pop() {
-                members.push(b);
-                for &o in &adj[b] {
-                    if !seen[o] {
-                        seen[o] = true;
-                        stack.push(o);
-                    }
-                }
-            }
-            members.sort_unstable();
-            islands.push(members);
+        let (from, to): (Vec<usize>, Vec<usize>) = (0..self.ac.m)
+            .filter(|&e| self.closed[e] && !self.end_open[e][0] && !self.end_open[e][1])
+            .map(|e| (self.ac.branches.from_bus[e], self.ac.branches.to_bus[e]))
+            .unzip();
+        let labels = powerio_tx::calc_dense_island_labels(self.n, &from, &to);
+        let count = labels.iter().max().map_or(0, |&last| last + 1);
+        let mut islands = vec![Vec::new(); count];
+        for (b, &label) in labels.iter().enumerate() {
+            islands[label].push(b);
         }
         islands
     }
@@ -1048,7 +1055,7 @@ impl DynSystem {
 
     /// Whether every path from the network into branch `e` is open.
     pub(crate) fn branch_isolated(&self, e: usize) -> bool {
-        self.ac.sw[e] == 0.0 || self.end_open[e].iter().all(|&o| o)
+        !self.closed[e] || self.end_open[e].iter().all(|&o| o)
     }
 
     pub(crate) fn dense_bus(&self, number: usize) -> Option<usize> {
@@ -1075,63 +1082,3 @@ pub(crate) fn fd_step(x: f64) -> f64 {
 /// functions summed in another order, depart from the compiled models by up
 /// to 7.5e-6 (`tests/rms_graph.rs`); with `1e-7` they agree to 1e-9.
 pub(crate) const FD_REL: f64 = 1e-7;
-
-/// `Y_EE − Y_EI Y_II⁻¹ Y_IE` of a 3×3 admittance matrix.
-fn kron(y: &[[C64; 3]; 3], ext: &[usize], int: &[usize]) -> Vec<Vec<C64>> {
-    let zero = C64::new(0.0, 0.0);
-    let ni = int.len();
-    // Invert Y_II (at most 3×3) by Gauss–Jordan.
-    let mut a: Vec<Vec<C64>> = int
-        .iter()
-        .map(|&i| int.iter().map(|&j| y[i][j]).collect())
-        .collect();
-    let mut inv: Vec<Vec<C64>> = (0..ni)
-        .map(|i| {
-            (0..ni)
-                .map(|j| if i == j { C64::new(1.0, 0.0) } else { zero })
-                .collect()
-        })
-        .collect();
-    for c in 0..ni {
-        let p = (c..ni)
-            .max_by(|&i, &j| a[i][c].norm().total_cmp(&a[j][c].norm()))
-            .unwrap_or(c);
-        a.swap(c, p);
-        inv.swap(c, p);
-        let d = a[c][c];
-        if d.norm() < 1e-300 {
-            continue;
-        }
-        for k in 0..ni {
-            a[c][k] /= d;
-            inv[c][k] /= d;
-        }
-        for r in 0..ni {
-            if r != c {
-                let fct = a[r][c];
-                if fct != zero {
-                    for k in 0..ni {
-                        let (ack, ick) = (a[c][k], inv[c][k]);
-                        a[r][k] -= fct * ack;
-                        inv[r][k] -= fct * ick;
-                    }
-                }
-            }
-        }
-    }
-    ext.iter()
-        .map(|&i| {
-            ext.iter()
-                .map(|&j| {
-                    let mut v = y[i][j];
-                    for (a_, &p) in int.iter().enumerate() {
-                        for (b_, &q) in int.iter().enumerate() {
-                            v -= y[i][p] * inv[a_][b_] * y[q][j];
-                        }
-                    }
-                    v
-                })
-                .collect()
-        })
-        .collect()
-}

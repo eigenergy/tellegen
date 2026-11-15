@@ -48,7 +48,7 @@ def test_versions_separates_the_binding_from_the_engine():
     assert set(versions) == {"tellegen", "engine", "powerio_ir"}
     # The two can drift: nothing bumps the binding automatically, so they are
     # reported separately rather than conflated into one number.
-    assert versions["powerio_ir"] == "pio-ir/0.12.0"
+    assert versions["powerio_ir"] == "pio-ir/0.12.1"
 
 
 def test_capabilities_reports_acopf_as_unavailable():
@@ -66,7 +66,7 @@ def test_load_infers_the_format_from_the_extension(case3_path: Path):
     case = tellegen.load(case3_path)
     module = json.loads(case.module_json)
     assert module["schema"] == "pio-ir"
-    assert module["version"] == "0.12.0"
+    assert module["version"] == "0.12.1"
     assert module["value"]["type"] == "powerio.BalancedNetwork"
 
 

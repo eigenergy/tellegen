@@ -31,8 +31,7 @@ pub const MAX_OSM_ELEMENTS: usize = 1_000_000;
 /// that needs longer is better split than waited on.
 pub const OVERPASS_TIMEOUT_S: u32 = 60;
 
-/// Kilometres per degree of latitude (mean Earth radius 6371 km).
-const KM_PER_DEGREE: f64 = 111.195;
+use crate::geom::KM_PER_DEGREE;
 
 /// Overpass QL for the request's region: one query per bounding box, two when
 /// the region crosses the antimeridian (split at ±180°). Each query fetches
@@ -50,7 +49,7 @@ pub fn overpass_queries(request: &SynthRequest) -> Result<Vec<String>, SynthErro
         .unwrap_or_else(|| crate::request::OsmOptions::default().clip_buffer_km);
     let f = shape.frame;
     let dlat = buffer_km / KM_PER_DEGREE;
-    let mid = (0.5 * (f.south + f.north)).to_radians().cos().max(0.05);
+    let mid = crate::geom::meridian_scale(0.5 * (f.south + f.north), 0.05);
     let dlon = buffer_km / (KM_PER_DEGREE * mid);
     let south = (f.south - dlat).max(-90.0);
     let north = (f.north + dlat).min(90.0);

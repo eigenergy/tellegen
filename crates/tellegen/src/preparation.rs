@@ -43,12 +43,10 @@ pub fn prepare_costs(
     if method == CostPreparation::Exact {
         return Ok((source.clone(), None));
     }
-    let scale = if source.is_normalized() {
-        1.0
-    } else {
+    if !source.is_normalized() {
         source.check_base_mva().map_err(|e| e.to_string())?;
-        source.base_mva()
-    };
+    }
+    let scale = source.per_unit_base();
     let mut network = source.clone();
     let mut approximations = Vec::new();
     for (row, generator) in network.generators_mut().iter_mut().enumerate() {

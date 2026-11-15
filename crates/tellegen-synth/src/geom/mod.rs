@@ -8,17 +8,26 @@ pub mod region;
 
 use crate::report::BBox;
 
-/// Mean Earth radius, km. source: IUGG 1980 mean radius 6371.0 km.
-pub const EARTH_RADIUS_KM: f64 = 6371.0;
+/// Mean Earth radius, km: PowerIO's (IUGG 1980 mean radius 6371.0 km).
+pub use powerio_tx::geo::EARTH_RADIUS_KM;
 
-/// Great-circle distance in km between two longitude/latitude points.
-pub fn haversine_km(lon1: f64, lat1: f64, lon2: f64, lat2: f64) -> f64 {
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let dp = p2 - p1;
-    let dl = (lon2 - lon1).to_radians();
-    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
-    2.0 * EARTH_RADIUS_KM * a.sqrt().min(1.0).asin()
+/// Kilometres per degree of latitude on PowerIO's mean Earth radius,
+/// `EARTH_RADIUS_KM · π / 180` (about 111.195 km): the one degree to
+/// kilometre scale. [`Projection`] maps by it and every margin, cell and
+/// offset stated in kilometres converts to degrees through it.
+pub const KM_PER_DEGREE: f64 = EARTH_RADIUS_KM * (std::f64::consts::PI / 180.0);
+
+/// The east-west kilometres of one degree of longitude at latitude `lat`
+/// relative to one of latitude: `|cos lat|`, held at or above `floor` so a
+/// division by it stays bounded near the poles. The one meridian
+/// convergence scale of [`Projection`] and the local planar distances.
+pub fn meridian_scale(lat: f64, floor: f64) -> f64 {
+    lat.to_radians().cos().abs().max(floor)
 }
+
+/// Great-circle distance in km between two longitude/latitude points:
+/// PowerIO's one haversine distance.
+pub use powerio_tx::geo::calc_haversine_km as haversine_km;
 
 /// Bring a continuous-frame longitude back into `[-180, 180]`.
 pub fn wrap_lon(lon: f64) -> f64 {
@@ -109,17 +118,17 @@ impl Projection {
     }
 
     pub fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let k = EARTH_RADIUS_KM.to_radians();
-        let x = (lon - self.lon0) * lat.to_radians().cos() * k;
+        let k = KM_PER_DEGREE;
+        let x = (lon - self.lon0) * meridian_scale(lat, 0.0) * k;
         let y = lat * k;
         (x, y)
     }
 
     /// The inverse of [`Projection::project`].
     pub fn unproject(&self, x: f64, y: f64) -> (f64, f64) {
-        let k = EARTH_RADIUS_KM.to_radians();
+        let k = KM_PER_DEGREE;
         let lat = y / k;
-        let lon = self.lon0 + x / (lat.to_radians().cos().abs().max(1e-9) * k);
+        let lon = self.lon0 + x / (meridian_scale(lat, 1e-9) * k);
         (lon, lat)
     }
 }

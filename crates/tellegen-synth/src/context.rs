@@ -532,7 +532,7 @@ fn area_by_country(
         return out;
     }
     let nearest = |lon: f64, lat: f64| -> &str {
-        let k = lat.to_radians().cos();
+        let k = crate::geom::meridian_scale(lat, 0.0);
         let (_, j) = cities
             .iter()
             .enumerate()
@@ -547,10 +547,10 @@ fn area_by_country(
             continue;
         }
         let target = (AREA_SAMPLES * poly.area_km2 / total).max(1.0);
-        let mut dlat = (poly.area_km2 / target).sqrt().max(1e-3) / 111.0;
+        let mut dlat = (poly.area_km2 / target).sqrt().max(1e-3) / crate::geom::KM_PER_DEGREE;
         let bb = *poly.bbox();
         let mid = 0.5 * (bb.south + bb.north);
-        let mut dlon = dlat / mid.to_radians().cos().abs().max(0.05);
+        let mut dlon = dlat / crate::geom::meridian_scale(mid, 0.05);
         let cells = ((bb.north - bb.south) / dlat) * ((bb.east - bb.west) / dlon);
         if cells > MAX_AREA_GRID_CELLS {
             let scale = (cells / MAX_AREA_GRID_CELLS).sqrt();
@@ -572,10 +572,13 @@ fn area_by_country(
         if points.is_empty() {
             points.push(poly.rings[0][0]);
         }
-        let weight: f64 = points.iter().map(|p| p.1.to_radians().cos()).sum();
+        let weight: f64 = points
+            .iter()
+            .map(|p| crate::geom::meridian_scale(p.1, 0.0))
+            .sum();
         for (lon, lat) in points {
             let share = if weight > 0.0 {
-                lat.to_radians().cos() / weight
+                crate::geom::meridian_scale(lat, 0.0) / weight
             } else {
                 1.0
             };
@@ -827,13 +830,16 @@ fn landmass_groups(shape: &RegionShape, kept: &[usize], max_km: f64) -> Vec<Vec<
                 shape.polygons[kept[a]].bbox(),
                 shape.polygons[kept[b]].bbox(),
             );
-            let lat_gap = (ba.south.max(bb.south) - ba.north.min(bb.north)).max(0.0) * 111.0;
+            let lat_gap = (ba.south.max(bb.south) - ba.north.min(bb.north)).max(0.0)
+                * crate::geom::KM_PER_DEGREE;
             if lat_gap > max_km {
                 continue;
             }
             let lon_gap = (ba.west.max(bb.west) - ba.east.min(bb.east)).max(0.0);
             let lat_mid = (ba.south + ba.north + bb.south + bb.north) / 4.0;
-            if lon_gap * 111.0 * lat_mid.to_radians().cos().abs() > max_km * 1.2 {
+            if lon_gap * crate::geom::KM_PER_DEGREE * crate::geom::meridian_scale(lat_mid, 0.0)
+                > max_km * 1.2
+            {
                 continue;
             }
             let mut near = false;
@@ -846,7 +852,7 @@ fn landmass_groups(shape: &RegionShape, kept: &[usize], max_km: f64) -> Vec<Vec<
                 }
             }
             if near {
-                uf.union(a, b);
+                crate::geom::delaunay::join(&mut uf, a, b);
             }
         }
     }
