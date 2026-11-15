@@ -860,7 +860,8 @@ pub(super) fn validate_mc_network(
         }
     }
     for transformer in network.transformers() {
-        super::transformer::prepare_transformer(transformer).map_err(|e| e.to_string())?;
+        powerio_matrix::calc_transformer_primitive_admittance(transformer)
+            .map_err(|e| e.to_string())?;
     }
     let index = super::network::NetworkIndex::new(network)?;
     for load in network.loads() {

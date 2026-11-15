@@ -14,17 +14,12 @@ mod linear;
 mod loads;
 mod network;
 mod tables;
-mod transformer;
 
 pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
     validate_mc_module, validate_mc_module_json,
 };
 pub use tables::McPfResultTables;
-pub use transformer::{
-    build_transformer_yprim, prepare_transformer, ComplexMatrix, PreparedTransformer,
-    TransformerError, TransformerPrimitive, TransformerTerminal,
-};
 
 use num_complex::Complex64;
 use powerio_prob::solution::{McAcPfSolution, Residuals, Termination};
@@ -1572,15 +1567,10 @@ fn expected_element_port_keys(
         }
     }
     for transformer in network.transformers() {
-        let primitive = prepare_transformer(transformer).map_err(|error| error.to_string())?;
-        for terminal in primitive.terminals {
-            push(
-                "transformer",
-                &primitive.name,
-                0,
-                &terminal.bus,
-                &terminal.terminal,
-            );
+        let primitive = powerio_matrix::calc_transformer_primitive_admittance(transformer)
+            .map_err(|error| error.to_string())?;
+        for (bus, terminal) in primitive.terminals {
+            push("transformer", primitive.name, 0, bus, terminal);
         }
     }
     Ok(expected)

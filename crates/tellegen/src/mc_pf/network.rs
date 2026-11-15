@@ -8,7 +8,6 @@ use powerio_prob::McAcPfInstance;
 
 use super::linear::RetainedComplexLu;
 use super::loads::{prepare_load, BranchLoad};
-use super::transformer::prepare_transformer;
 
 /// The solver's terminal positions: PowerIO's flat terminal index (every
 /// declared terminal, bus names folded ASCII case insensitively, display
@@ -330,15 +329,17 @@ impl PreparedNetwork {
                 yprim: element.primitive,
             });
         }
+        // PowerIO's transformer primitive. A solidly grounded neutral is an
+        // exact zero voltage, applied as a prescribed value.
         for transformer in network.transformers() {
-            let primitive = prepare_transformer(transformer).map_err(|e| e.to_string())?;
-            for grounded in &primitive.grounded_terminals {
-                let i = index.resolve((&grounded.bus, &grounded.terminal))?;
+            let primitive = powerio_matrix::calc_transformer_primitive_admittance(transformer)
+                .map_err(|e| e.to_string())?;
+            for &(bus, terminal) in &primitive.grounded {
+                let i = index.resolve((bus, terminal))?;
                 if let Some(previous) = fixed[i] {
                     if previous.norm() > 1e-12 {
                         return Err(format!(
-                            "solid transformer neutral `{}`:{} conflicts with a prescribed voltage",
-                            grounded.bus, grounded.terminal
+                            "solid transformer neutral `{bus}`:{terminal} conflicts with a prescribed voltage"
                         ));
                     }
                 } else {
@@ -348,14 +349,14 @@ impl PreparedNetwork {
             let terminals = primitive
                 .terminals
                 .iter()
-                .map(|t| index.resolve((&t.bus, &t.terminal)))
+                .map(|&identity| index.resolve(identity))
                 .collect::<Result<Vec<_>, _>>()?;
-            stamp_local_values(&mut passive, &terminals, &primitive.y_prim)?;
+            stamp_local_values(&mut passive, &terminals, &primitive.primitive)?;
             elements.push(PreparedElement {
-                name: primitive.name.clone(),
+                name: primitive.name.to_owned(),
                 kind: "transformer".to_owned(),
                 terminals,
-                yprim: primitive.y_prim,
+                yprim: primitive.primitive,
             });
         }
         // PowerIO infers the branch voltage base of each constant power load
