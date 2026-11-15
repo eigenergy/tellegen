@@ -10,6 +10,7 @@
 
 use num_complex::Complex;
 
+use powerio::electrical::{calc_squared_voltage_admittance, calc_voltage_power_term};
 use powerio_dist::kron::calc_kron_reduced_impedance;
 use powerio_matrix::{AcBranchData, AcBranchFlows};
 
@@ -313,20 +314,18 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
             }
         }
     };
-    let w = if gamma == 0.0 {
-        1.0 / (u * u)
-    } else if gamma == 1.0 {
-        1.0 / (v0 * u)
-    } else {
-        (u / v0).powf(gamma) / (u * u)
-    };
-    (w, (gamma - 2.0) * w / u * du)
+    // The law `(u / v0)^γ` and its slope in `u / v0`: PowerIO's voltage
+    // power law term.
+    let (law, slope) = calc_voltage_power_term(1.0, gamma, u / v0);
+    let w = law / (u * u);
+    // dw/du = slope / (v0 u²) − 2 w / u.
+    (w, (slope / (v0 * u * u) - 2.0 * w / u) * du)
 }
 
 impl BusLoad {
     /// Constant-impedance part as an admittance (enters `Y`).
     pub(crate) fn admittance(&self) -> C64 {
-        C64::new(self.p_z, -self.q_z) / (self.v0 * self.v0)
+        calc_squared_voltage_admittance(C64::new(self.p_z, -self.q_z), self.v0 * self.v0)
     }
 
     /// `(G, B, dG/dV / V, dB/dV / V)` of the nonlinear parts: their current
