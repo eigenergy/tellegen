@@ -1,3 +1,13 @@
+<script lang="ts" module>
+	/** A default value in words: null means the case file decides. */
+	function defaultWords(value: unknown): string {
+		if (value === null || value === undefined) return 'use input default';
+		if (value === true) return 'on';
+		if (value === false) return 'off';
+		return String(value);
+	}
+</script>
+
 <script lang="ts">
 	import {
 		FORMULATIONS,
@@ -243,7 +253,7 @@
 		{/if}
 	</label>
 	<small
-		>{field.description} Default: {String(
+		>{field.description} Default: {defaultWords(
 			((selected?.baseline ?? {}) as Record<string, unknown>)[field.key] ?? field.default
 		)}.</small
 	>
@@ -265,8 +275,8 @@
 			/></label
 		>{/if}
 	<p>
-		Changing angle or thermal enforcement changes the optimization model. Results retain these
-		choices.
+		Angle and thermal limits change the optimization problem. Each result records the limits it
+		used.
 	</p>
 {/snippet}
 {#snippet lazyControls()}
@@ -296,8 +306,8 @@
 	<h3>Calculation</h3>
 	{#if current && selected}
 		<p>
-			Run updates the map and exported case together. The displayed result stays until a calculation
-			succeeds.
+			Running a calculation updates the map and any export. The current result stays on screen until
+			a new one succeeds.
 		</p>
 		<label
 			>Calculation
@@ -385,13 +395,13 @@
 				</dl>
 			</details>{/if}
 	{:else if app.studyView}
-		<p>Saved result — calculation settings are read-only.</p>
+		<p>This is a saved result, so its calculation settings can't be changed.</p>
 		{#if recorded}<p>{recorded.calculation}</p>
 			<dl>
 				{#each Object.entries(recorded.effective) as [key, value] (key)}<dt>{key}</dt>
 					<dd>{JSON.stringify(value)}</dd>{/each}
 			</dl>{:else}<p>This saved result has no recorded calculation settings.</p>{/if}
-	{:else}<p>Select an editable case to configure its calculation.</p>{/if}
+	{:else}<p>Open a case to choose how it is calculated.</p>{/if}
 	{#if failure}<p role="alert">{failure}</p>{/if}
 </div>
 
@@ -439,7 +449,7 @@
 	input:not([type='checkbox']) {
 		padding: 4px 6px;
 		border: 1px solid var(--border-strong);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;

@@ -8,18 +8,22 @@ describe('error titles', () => {
 		'map failed to load: Failed to initialize WebGL2. Read more at the browser support page',
 		'the map lost its graphics context repeatedly; reload the page to restore it'
 	])('labels graphics failures as map errors: %s', (details) => {
-		expect(errorNoticeTitle(details)).toBe('Map unavailable');
+		expect(errorNoticeTitle(details)).toBe(
+			'The map could not start. Reload the page or try another browser.'
+		);
 	});
 	it('identifies an unsupported AC power flow boundary as a calculation failure', () => {
 		expect(
 			errorNoticeTitle(
 				'Texas7k: AC power flow reference bus 111333 states angle -11.99 degrees; Tellegen currently requires zero'
 			)
-		).toBe('Calculation did not complete');
+		).toBe(
+			'The calculation did not finish. Try another calculation, or open Details for the reason.'
+		);
 	});
 	it('keeps the file error title for actual parse failures', () => {
 		expect(errorNoticeTitle('Could not parse case.m: invalid bus row')).toBe(
-			'Could not read this file'
+			'Could not read this file. Check that it is a complete case file in a supported format.'
 		);
 	});
 });

@@ -87,17 +87,21 @@ export function getNoticeCenter(): NoticeCenter {
 export function errorNoticeTitle(details: string): string {
 	if (/^ZIP and folder imports are unavailable in this build/.test(details))
 		return 'ZIP and folder imports unavailable';
-	if (/rate limit|limiting requests/i.test(details)) return 'Too many requests';
+	if (/rate limit|limiting requests/i.test(details))
+		return 'Too many requests. Wait a minute, then try again.';
 	if (/detailed DC converter\(s\).*qualified DC-grid/i.test(details))
 		return 'Open Equipment for AC/DC studies';
 	// MapLibre's WebGL failure includes "Read more"; classify our map errors
 	// before the generic file/read fallback so it does not blame a case file.
 	if (/^map failed to load:|^the map lost its graphics context/i.test(details))
-		return 'Map unavailable';
-	if (/storage|quota|space|indexeddb/i.test(details)) return 'Could not save locally';
-	if (/sensitivity|derivative|singular/i.test(details)) return 'Sensitivity unavailable';
+		return 'The map could not start. Reload the page or try another browser.';
+	if (/storage|quota|space|indexeddb/i.test(details))
+		return 'Could not save in this browser. Free some browser storage, then try again.';
+	if (/sensitivity|derivative|singular/i.test(details))
+		return 'Price sensitivity is not available for this result.';
 	if (/infeasib|converg|solver|solving|calculation|compute|webassembly|power flow/i.test(details))
-		return 'Calculation did not complete';
-	if (/parse|read|file|format/i.test(details)) return 'Could not read this file';
-	return 'Operation did not complete';
+		return 'The calculation did not finish. Try another calculation, or open Details for the reason.';
+	if (/parse|read|file|format/i.test(details))
+		return 'Could not read this file. Check that it is a complete case file in a supported format.';
+	return 'That did not finish. Open Details for the reason.';
 }

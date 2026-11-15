@@ -25,7 +25,7 @@
 />
 
 <main class="privacy">
-	<a class="back mono" href="/">Back to Tellegen</a>
+	<a class="back" href="/">Back to tellegen</a>
 	<h1>Privacy</h1>
 	<section>
 		<h2>Case files and saved studies</h2>

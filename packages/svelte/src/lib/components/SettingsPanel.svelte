@@ -22,7 +22,7 @@
 		<CalculationSettings />
 		<hr />
 		<h3>Display preferences</h3>
-		<p>Saved in this browser, independently of calculation results.</p>
+		<p>Saved in this browser. They do not change any result.</p>
 		<label
 			>Theme<select
 				value={app.preferences.theme ?? 'host'}
@@ -74,7 +74,7 @@
 		{#if support !== null && !support.rms}
 			<p class="reason">This engine build does not include dynamics simulation.</p>
 		{/if}
-		<p>Camera, selection and panel positions remain in their existing view controls.</p>
+		<p>To put the panels back where they started, choose Reset layout in the menu.</p>
 	</div>
 </PanelFrame>
 
@@ -99,7 +99,7 @@
 	select {
 		padding: 4px 6px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
