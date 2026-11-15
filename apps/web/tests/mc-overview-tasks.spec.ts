@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { openCaseMenu } from './fixtures/chrome.js';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/page-errors.js';
 
@@ -436,7 +437,8 @@ test('switching between two open diagrams draws each case with its own layout', 
 	await expect(diagram).toBeVisible();
 	await schematicLayout();
 
-	await page.getByRole('button', { name: 'pf_3ph_line Distribution' }).click();
+	await openCaseMenu(page);
+	await page.getByRole('button', { name: /^pf_3ph_line Distribution/ }).click();
 	await expect(diagram).toBeVisible();
 	expect(await schematicLayout()).toEqual(first);
 });

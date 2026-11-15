@@ -7,10 +7,10 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByRole('complementary', { name: 'New to Tellegen' })).toBeVisible();
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toBeVisible();
 	await page.getByRole('button', { name: 'Dismiss introduction' }).click();
 	await page.reload();
-	await expect(page.getByRole('complementary', { name: 'New to Tellegen' })).toHaveCount(0);
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.getByRole('region', { name: 'Use Tellegen with an agent' })).toBeVisible();
 	await expect(page.getByLabel('Agent prompt')).toHaveValue(
@@ -21,7 +21,7 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await page.getByRole('link', { name: 'Changelog', exact: true }).click();
 	await expect(page.getByRole('heading', { name: "What's new in Tellegen" })).toBeVisible();
 	await page.getByRole('link', { name: 'Back to Tellegen' }).click();
-	await expect(page.getByRole('complementary', { name: 'New to Tellegen' })).toHaveCount(0);
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 });
 
 test('default docks keep Studies, Agent, solver and map controls separate', async ({
@@ -76,7 +76,8 @@ test('default docks keep Studies, Agent, solver and map controls separate', asyn
 		await page.screenshot({
 			path: testInfo.outputPath(`panels-${viewport.width}x${viewport.height}.png`)
 		});
-		const panel = (await page.locator('[data-panel="agent"]').boundingBox())!;
+		// One panel shows at a time; the front one (Studies) clears the attribution.
+		const panel = (await page.locator('[data-panel]:visible').first().boundingBox())!;
 		const a = (await attribution.boundingBox())!;
 		expect(panel.y + panel.height).toBeLessThan(a.y);
 	}

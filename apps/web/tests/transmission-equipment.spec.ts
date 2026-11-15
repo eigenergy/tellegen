@@ -18,7 +18,6 @@ for (const width of [1280, 390, 320]) {
 				if ((await networkTab.getAttribute('aria-pressed')) !== 'true') await networkTab.click();
 			}
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			if (width < 600) await page.getByRole('button', { name: 'Close network panel' }).click();
 			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 			await toolbar.getByRole('button', { name: 'Equipment', exact: true }).click();
 			const panel = page.getByRole('region', { name: 'Equipment models' });
@@ -86,7 +85,6 @@ for (const width of [1280, 390, 320]) {
 				if ((await tab.getAttribute('aria-pressed')) !== 'true') await tab.click();
 			}
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			if (width < 600) await page.getByRole('button', { name: 'Close network panel' }).click();
 			await page
 				.getByRole('toolbar', { name: 'Single-line diagram' })
 				.getByRole('button', { name: 'Equipment', exact: true })
@@ -155,7 +153,6 @@ for (const width of [1280, 390, 320]) {
 				if ((await tab.getAttribute('aria-pressed')) !== 'true') await tab.click();
 			}
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			if (width < 600) await page.getByRole('button', { name: 'Close network panel' }).click();
 			await page
 				.getByRole('toolbar', { name: 'Single-line diagram' })
 				.getByRole('button', { name: 'Equipment', exact: true })

@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { openCaseMenu } from './fixtures/chrome.js';
 import {
 	capacityPlanFirstOrderError,
 	capacityPlanPredictedPhiDelta
@@ -418,6 +419,7 @@ test('switching cases expires the staged proposal and its approval', async ({ pa
 	expect(switched.data.staged_proposal).toBeNull();
 
 	// Returning to the original case cannot revive the proposal or approval.
+	await openCaseMenu(page);
 	await page.locator('.case-chip.local .case-activate').first().click();
 	const returned = await callTool(page, 'inspect_case', {});
 	expect(returned).toMatchObject({

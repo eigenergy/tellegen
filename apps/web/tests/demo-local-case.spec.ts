@@ -167,7 +167,8 @@ test('network and solver panel text is at least 12 px', async ({ page }) => {
 	await lookup.press('Enter');
 	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible({ timeout: 30_000 });
 
-	for (const id of ['network', 'solver']) {
+	// The solver's result is part of the Network panel.
+	for (const id of ['network']) {
 		const smallest = await page.locator(`[data-panel="${id}"]`).evaluate((panel) => {
 			const sizes: Array<[number, string]> = [];
 			const walker = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT);

@@ -1,4 +1,5 @@
 import { runCalculation } from './fixtures/calculation.js';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { expect, test } from './fixtures/page-errors.js';
 import type { Route } from '@playwright/test';
 import { createHash } from 'node:crypto';
@@ -104,6 +105,7 @@ for (const mode of ['preview', 'development']) {
 		await runCalculation(page, 'acopf');
 		await expect.poll(() => !!held).toBe(true);
 		await expect.poll(() => workers.length).toBe(4);
+		await openCaseMenu(page);
 		await page.locator('.case-chip.local .case-remove').click();
 		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
 		await held!.abort();

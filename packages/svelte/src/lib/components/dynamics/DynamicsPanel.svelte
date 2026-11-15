@@ -9,6 +9,7 @@
 	import EigenPlot from './EigenPlot.svelte';
 	import { headline } from '../../dynamics/verdict.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
+	import ModeSwitch from './ModeSwitch.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -75,12 +76,14 @@
 	id="dynamics"
 	title="Dynamics"
 	side="right"
-	order={15}
+	order={25}
+	tab
 	width={380}
 	bind:open
 	onopen={() => (app.mode = 'dynamics')}
 >
 	<div class="dyn" data-testid="dynamics-panel">
+		<div class="dyn-mode"><span>Map shows</span><ModeSwitch /></div>
 		{#if hosted}
 			<p>
 				Dynamics needs PSS/E dynamic data (.dyr). Open the WECC 240 demo, or drop a .raw with its
@@ -310,6 +313,12 @@
 	.tabpanel {
 		display: contents;
 	}
+	.dyn-mode {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--text-secondary);
+	}
 	.dyn {
 		display: grid;
 		gap: 12px;
@@ -414,7 +423,7 @@
 	.history button {
 		padding: 2px 8px;
 		border: 1px solid var(--border-default);
-		border-radius: 10px;
+		border-radius: var(--radius-control);
 		background: var(--surface-chip);
 		color: var(--ink);
 		font: inherit;

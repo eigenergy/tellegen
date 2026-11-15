@@ -21,7 +21,7 @@
 	.mode {
 		display: inline-flex;
 		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius-control);
 		overflow: hidden;
 		background: var(--surface-control);
 	}
@@ -35,10 +35,12 @@
 		cursor: pointer;
 		white-space: nowrap;
 	}
+	button + button {
+		border-left: 1px solid var(--border-default);
+	}
 	button[aria-pressed='true'] {
-		background: var(--accent-soft);
-		color: var(--ink);
-		box-shadow: var(--inset-active);
+		background: var(--accent);
+		color: var(--on-accent);
 	}
 	button:focus-visible {
 		outline: 2px solid var(--focus-ring);

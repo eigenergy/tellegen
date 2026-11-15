@@ -9,11 +9,17 @@
 	let {
 		panel,
 		floating = false,
-		mobile = false
+		mobile = false,
+		attached = false,
+		concealed = false
 	}: {
 		panel: PanelRegistration;
 		floating?: boolean;
 		mobile?: boolean;
+		/** Docked under the tab strip, which names the panel. */
+		attached?: boolean;
+		/** Open but behind another panel in its dock: kept mounted, not shown. */
+		concealed?: boolean;
 	} = $props();
 	const layout = getPanelLayout();
 	let menu = $state(false);
@@ -21,12 +27,12 @@
 	let card: HTMLElement;
 	const bounds = $derived(layout.bounds(panel));
 	const preferred = $derived(!floating && !mobile && layout.preferred(panel));
-	const dockReserve = $derived.by(() => {
-		const side = layout.position(panel);
-		return side === 'floating'
-			? 0
-			: Math.max(0, layout.ordered(side).filter((candidate) => candidate.open).length - 1) * 142;
-	});
+	/** The tab strip names a docked panel; only a floating one shows its title,
+	 * which is also the handle that moves it. */
+	const named = $derived(floating || (!mobile && !attached));
+	/** Under the tab strip with nothing of its own to show in a header row: the
+	 * panel's controls sit at the strip's right end instead. */
+	const overlay = $derived((attached || mobile) && !panel.headerActions);
 	function start(event: PointerEvent, kind: 'move' | 'resize') {
 		if (mobile || !event.isPrimary || event.button !== 0) return;
 		const rect = card.getBoundingClientRect();
@@ -143,18 +149,21 @@
 	class:floating
 	class:mobile
 	class:preferred
+	class:attached
+	class:overlay
+	hidden={concealed}
 	data-panel={panel.id}
 	aria-label={panel.title}
 	style:left={floating ? `${bounds.x}px` : undefined}
 	style:top={floating ? `${bounds.y}px` : undefined}
 	style:width={floating ? `${bounds.width}px` : undefined}
 	style:height={floating ? `${bounds.height}px` : undefined}
-	style:max-height={preferred ? `calc(100% - ${dockReserve}px)` : undefined}
 >
 	<header>
 		{#if mobile}
-			<h2 class="title">{panel.title}</h2>
-		{:else}
+			<h2 class="title sr-only">{panel.title}</h2>
+			<span class="spacer"></span>
+		{:else if named}
 			<button
 				class="title"
 				aria-label={`Move ${panel.title} panel`}
@@ -163,6 +172,8 @@
 				onkeydown={key}
 				onclick={() => layout.activate(panel)}>{panel.title}</button
 			>
+		{:else}
+			<span class="spacer"></span>
 		{/if}
 		<div class="header-actions">{@render panel.headerActions?.()}</div>
 		{#if !mobile}<div class="menu-anchor" bind:this={menuAnchor}>
@@ -184,7 +195,7 @@
 				{#if menu}<div class="panel-menu">
 						<button onclick={() => position('left')}>Dock left</button>
 						<button onclick={() => position('right')}>Dock right</button>
-						<button onclick={() => position()}>Detach</button>
+						<button onclick={() => position()}>Float over the map</button>
 					</div>{/if}
 			</div>{/if}
 		<button
@@ -231,21 +242,47 @@
 		max-height: 100%;
 		flex: 0 1 auto;
 		pointer-events: auto;
-		background: var(--paper);
+		background: var(--panel);
 		color: var(--ink);
 		border: 1px solid var(--line);
-		border-radius: 5px;
+		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-1);
-		font: 13px/1.5 var(--font-display);
+		font: var(--fs-body) / 1.5 var(--font-sans);
 		position: relative;
+	}
+	.panel-frame[hidden] {
+		display: none;
+	}
+	/* Continues the tab strip above it. */
+	.attached {
+		border-top: 0;
+		border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 	}
 	header {
 		display: flex;
 		align-items: center;
-		gap: 5px;
-		padding: 8px 10px 8px 14px;
+		gap: 4px;
+		min-height: 36px;
+		padding: 4px 6px 4px 12px;
 		flex: none;
 		border-bottom: 1px solid var(--line);
+	}
+	.attached header {
+		padding-left: 4px;
+	}
+	.overlay > header {
+		position: absolute;
+		z-index: 1;
+		top: calc(-1 * var(--tellegen-strip-height, 36px));
+		right: 0;
+		height: var(--tellegen-strip-height, 36px);
+		min-height: 0;
+		padding: 0 4px;
+		border: 0;
+		background: none;
+	}
+	.overlay > header .spacer {
+		display: none;
 	}
 	button {
 		color: inherit;
@@ -253,10 +290,10 @@
 		cursor: pointer;
 		border: 0;
 		background: transparent;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 	}
 	button:hover {
-		background: var(--accent-soft);
+		background: var(--surface-hover);
 	}
 	button:focus-visible {
 		outline: 2px solid var(--focus-ring);
@@ -266,28 +303,45 @@
 		flex: 1;
 		min-width: 0;
 		text-align: left;
-		font-size: inherit;
+		font-size: var(--fs-title);
 		font-weight: 600;
 		margin: 0;
-		padding: 3px 0;
+		padding: 2px 0;
 		cursor: grab;
 		touch-action: none;
 	}
 	.title:active {
 		cursor: grabbing;
 	}
+	.spacer {
+		flex: 1;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
 	.icon {
 		display: grid;
 		place-items: center;
-		width: 26px;
+		width: 28px;
 		height: 28px;
 		padding: 0;
 		flex: none;
+		color: var(--text-secondary);
+	}
+	.icon:hover {
+		color: var(--ink);
 	}
 	.icon svg {
 		fill: currentColor;
 	}
-	/* Coarse pointers: a 44px hit area around the 26x28 close button. The
+	/* Coarse pointers: a 44px hit area around the close button. The
 	   pseudo-element reaches into the header padding and the gap, so nothing
 	   moves. */
 	@media (pointer: coarse) {
@@ -304,13 +358,14 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		margin-left: auto;
 	}
 	.header-actions :global(button) {
-		font: 11px/1.3 var(--font-display);
-		padding: 4px;
+		font: var(--fs-label) / 1.3 var(--font-sans);
+		padding: 4px 6px;
 		border: 0;
 		background: none;
-		color: var(--text-secondary);
+		color: var(--text-accent);
 	}
 	.panel-content {
 		min-height: 0;
@@ -318,7 +373,7 @@
 		overscroll-behavior: contain;
 		display: flex;
 		flex-direction: column;
-		border-radius: 0 0 5px 5px;
+		border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 	}
 	.panel-content:focus-visible {
 		outline-offset: -2px;
@@ -331,20 +386,20 @@
 		z-index: 3;
 		top: 100%;
 		right: 0;
-		min-width: 130px;
-		padding: 5px;
-		background: var(--paper);
+		min-width: 160px;
+		padding: 4px;
+		background: var(--surface-menu);
 		border: 1px solid var(--line);
-		border-radius: 4px;
-		box-shadow: var(--elev-2);
+		border-radius: var(--radius-control);
+		box-shadow: var(--elev-menu);
 	}
 	.panel-menu button {
 		display: block;
-		padding: 7px 10px;
+		padding: 6px 10px;
 		width: 100%;
 		text-align: left;
 		white-space: nowrap;
-		font-size: 12px;
+		font-size: var(--fs-body);
 	}
 	.preferred {
 		flex-shrink: 0;
@@ -354,7 +409,6 @@
 		min-height: 0;
 		z-index: 40;
 		max-height: none;
-		box-shadow: var(--elev-2);
 	}
 	.floating .panel-content {
 		flex: 1;
@@ -373,12 +427,14 @@
 	.mobile {
 		min-height: 0;
 		height: 100%;
-		border-radius: 10px 10px 0 0;
+		border-top: 0;
+		border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+		box-shadow: none;
+	}
+	.mobile header {
+		min-height: 44px;
 	}
 	.mobile .panel-content {
 		flex: 1;
-	}
-	.mobile .title {
-		cursor: default;
 	}
 </style>

@@ -12,7 +12,7 @@
 	}
 </script>
 
-<PanelFrame id="log" title="Log" side="right" order={40} width={360} bind:open>
+<PanelFrame id="log" title="Log" side="left" order={40} width={360} bind:open>
 	<div class="log-body">
 		<DiagnosticLogView onbus={selectBus} />
 	</div>

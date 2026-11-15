@@ -110,9 +110,9 @@ test('the introduction opens Connect and the explainer remembers being closed', 
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	const welcome = page.getByRole('complementary', { name: 'New to Tellegen' });
-	await expect(welcome).toContainText('New: AI agents can drive this map');
-	await welcome.getByRole('button', { name: 'Show me' }).press('Enter');
+	const welcome = page.getByRole('complementary', { name: 'About AI agents' });
+	await expect(welcome).toContainText('AI agents in Chrome can use this map.');
+	await welcome.getByRole('button', { name: 'How' }).press('Enter');
 	await expect(welcome).toHaveCount(0);
 	// Focus follows the invitation into the panel it opened.
 	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeFocused();

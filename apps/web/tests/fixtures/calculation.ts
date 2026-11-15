@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { openSettings } from './chrome.js';
 import { expect } from '@playwright/test';
 
 /** Select the next calculation, then run it explicitly through common settings. */
@@ -10,7 +11,7 @@ export async function runCalculation(
 	const selection = page.locator('#formulation-select');
 	await expect(selection).toBeEnabled();
 	await selection.selectOption(formulation);
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await expect(panel.getByRole('combobox', { name: 'Calculation', exact: true })).toHaveValue(
 		formulation

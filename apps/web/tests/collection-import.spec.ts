@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/page-errors.js';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { storedZip, day, night, line, comparison } from './fixtures/collection-zip.js';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -113,7 +114,8 @@ test.describe('PowerIO collection build', () => {
 				)
 			]);
 			const chooserEvent = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Open folder' }).click();
+			await openCaseMenu(page);
+			await page.getByRole('button', { name: /^Open folder/ }).click();
 			await (await chooserEvent).setFiles(folder);
 			const dialog = page.getByRole('dialog');
 			await expect(dialog.locator('.candidate')).toHaveCount(2);

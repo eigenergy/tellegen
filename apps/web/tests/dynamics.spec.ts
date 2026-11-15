@@ -29,7 +29,8 @@ async function openDemo(page: import('@playwright/test').Page) {
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
-	await page.getByTestId('mode-dynamics').click();
+	// The Dynamics tab opens the panel and switches the map to dynamics.
+	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
 	const panel = page.getByTestId('dynamics-panel');
 	await panel.getByTestId('dyn-open-demo').click();
 	await expect(panel.getByTestId('dyn-counts')).toContainText(
@@ -77,9 +78,7 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await shot(page, '03-playback');
 
 	// The demo has a name, not its RAW header sentence.
-	await expect(
-		page.getByRole('button', { name: /^WECC 240 \(dynamics demo\) Local/ })
-	).toBeVisible();
+	await expect(page.locator('header .case-button')).toContainText('WECC 240 (dynamics demo)');
 	// The legend box holds its ring key (the global .legend strip is 6 px).
 	const legend = page.getByRole('complementary', { name: 'Dynamics map legend' });
 	expect((await legend.boundingBox())!.height).toBeGreaterThan(40);
@@ -120,7 +119,7 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await panel.getByTestId('dyn-verdict').scrollIntoViewIfNeeded();
 	await shot(page, '06-verdict');
 	// The single-line diagram draws no dynamics layers: no legend over it.
-	await page.getByRole('button', { name: /single-line diagram/i }).click();
+	await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 	await expect(page.getByRole('complementary', { name: 'Dynamics map legend' })).toHaveCount(0);
 });
 
@@ -200,7 +199,8 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
-	await page.getByTestId('mode-dynamics').click();
+	// The Dynamics tab opens the panel and switches the map to dynamics.
+	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
 	await page.getByTestId('dyn-open-demo').click();
 	await expect(page.getByTestId('dyn-counts')).toBeVisible({ timeout: 90_000 });
 	await page.getByRole('combobox', { name: /Validated scenarios/ }).selectOption('fault-1101');

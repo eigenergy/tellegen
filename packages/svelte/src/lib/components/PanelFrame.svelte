@@ -10,7 +10,8 @@
 		open = $bindable(false),
 		children,
 		headerActions,
-		onopen
+		onopen,
+		tab
 	}: {
 		id: string;
 		title: string;
@@ -21,6 +22,8 @@
 		children: Snippet;
 		headerActions?: Snippet;
 		onopen?: () => void;
+		/** List the panel in the tab strip; by default only left-docking panels are. */
+		tab?: boolean;
 	} = $props();
 	const layout = getPanelLayout();
 	onMount(() =>
@@ -34,6 +37,7 @@
 			children,
 			headerActions,
 			onopen,
+			tab,
 			setOpen: (value) => {
 				open = value;
 			}

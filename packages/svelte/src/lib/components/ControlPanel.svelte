@@ -6,7 +6,6 @@
 	import SavedNetworkDetails from './SavedNetworkDetails.svelte';
 	import ModelDetails from './ModelDetails.svelte';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import AppFooter from './AppFooter.svelte';
 	import BindingLines from './BindingLines.svelte';
 	import BusPicker from './BusPicker.svelte';
 	import DemandSlider from './DemandSlider.svelte';
@@ -20,6 +19,7 @@
 	import RatingSlider from './RatingSlider.svelte';
 	import SensitivityReadout from './SensitivityReadout.svelte';
 	import SizeLegend from './SizeLegend.svelte';
+	import SolveCard from './SolveCard.svelte';
 	import TopMovers from './TopMovers.svelte';
 
 	/** Optional host content rendered under a local case's stats. */
@@ -56,6 +56,12 @@
 		if (selection !== null)
 			untrack(() => {
 				open = true;
+				// A selection's readout is in this panel: bring it to the front of its
+				// dock, unless the Agent panel is there, since an agent's own selections
+				// must not hide the panel that reports them.
+				const panel = layout.panels.find((candidate) => candidate.id === 'network');
+				const front = layout.panels.find((candidate) => layout.preferred(candidate));
+				if (panel && front?.id !== 'agent') layout.activate(panel);
 				if (layout.compact) {
 					layout.drawer = 'network';
 					void tick().then(() => bodyEl?.closest('.panel-content')?.scrollTo({ top: 0 }));
@@ -95,6 +101,7 @@
 
 		{#if app.studyView}
 			<SavedNetworkDetails />
+			<SolveCard embedded />
 		{:else}
 			{#if app.parsingFile}
 				<p class="dim blink">Parsing&hellip;</p>
@@ -170,14 +177,18 @@
 						class="reset diagram-toggle"
 						aria-pressed={c.schematic}
 						title="Single-line diagram: voltage levels, transformers and results on a plain canvas"
-						onclick={() => (c.schematic = !c.schematic)}
-						>{c.schematic ? 'Show map' : 'Show diagram'}</button
+						onclick={() => {
+							c.schematic = !c.schematic;
+							// On a phone, the sheet would cover the diagram it opens.
+							if (c.schematic && layout.compact) layout.drawer = null;
+						}}>{c.schematic ? 'Show map' : 'Show diagram'}</button
 					>
 				{/if}
 
 				{#if ctrl.activeSolvable}
 					<FormulationSelector />
 				{/if}
+				{#if app.mode !== 'dynamics'}<SolveCard embedded />{/if}
 
 				<ModelDetails details={ctrl.activeSolvable?.network?.model_details} />
 				<BusPicker inline />
@@ -200,9 +211,6 @@
 				{/if}
 			{/if}
 		{/if}
-		{#if app.compactLayout && config.showFooter}
-			<AppFooter inline />
-		{/if}
 	</div>
 </PanelFrame>
 
@@ -224,7 +232,7 @@
 	}
 	.view-mode button {
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		padding: 5px 10px;
 		font: 12px/1.4 var(--font-display);
 		color: var(--ink);

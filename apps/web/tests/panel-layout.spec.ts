@@ -7,7 +7,7 @@ async function box(locator: Locator) {
 	return value;
 }
 
-test('panels detach, resize, persist, redock and reset without leaving the viewport', async ({
+test('panels float, resize, persist, redock and reset without leaving the viewport', async ({
 	page
 }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
@@ -15,6 +15,11 @@ test('panels detach, resize, persist, redock and reset without leaving the viewp
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const panel = page.locator('[data-panel="agent"]');
+	// Docked panels share the tab strip; a panel floats from its options menu.
+	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Agent panel options' }).click();
+	await page.getByRole('button', { name: 'Float over the map', exact: true }).click();
+	await expect(panel).toHaveClass(/floating/);
 	const handle = page.getByRole('button', { name: 'Move Agent panel', exact: true });
 	const start = await box(handle);
 	await page.mouse.move(start.x + 30, start.y + 10);
@@ -39,12 +44,19 @@ test('panels detach, resize, persist, redock and reset without leaving the viewp
 		expect(clamped.y + clamped.height).toBeLessThanOrEqual(612);
 	}).toPass();
 	await page.getByRole('button', { name: 'Agent panel options' }).click();
-	await page.getByRole('button', { name: 'Dock left', exact: true }).click();
-	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
-	await page.getByRole('button', { name: 'Reset layout', exact: true }).click();
+	await page.getByRole('button', { name: 'Dock right', exact: true }).click();
 	await expect(page.locator('[data-panel-dock="right"] [data-panel="agent"]')).toBeVisible();
-	await page.getByRole('button', { name: 'Move Agent panel', exact: true }).press('ArrowLeft');
+	// Reset layout lives in the header menu.
+	await page.locator('header').getByRole('button', { name: 'Menu', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Reset layout', exact: true }).click();
+	// Back in the left dock, behind the Network tab until its own tab is chosen.
+	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeAttached();
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
+	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Agent panel options' }).click();
+	await page.getByRole('button', { name: 'Float over the map', exact: true }).click();
 	await expect(panel).toHaveClass(/floating/);
+	await page.getByRole('button', { name: 'Move Agent panel', exact: true }).press('ArrowLeft');
 	await expect(page.getByRole('button', { name: 'Move Agent panel', exact: true })).toBeFocused();
 });
 
@@ -129,7 +141,8 @@ test('short desktop windows use one drawer without covering map controls', async
 	const panel = page.locator('[data-panel="studies"]');
 	const bounds = await box(panel);
 	const toolbar = await box(page.locator('.panel-toolbar'));
-	expect(bounds.y).toBeGreaterThan(toolbar.y + toolbar.height + 40);
+	// The tab strip sits on top of the drawer, which continues it.
+	expect(Math.abs(bounds.y - (toolbar.y + toolbar.height))).toBeLessThanOrEqual(1);
 	expect(bounds.y + bounds.height).toBeLessThanOrEqual(362);
 	// MapLibre adds the attribution control once the map loads, which can trail the panel.
 	const credit = page.locator('.maplibregl-ctrl-attrib');

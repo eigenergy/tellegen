@@ -111,7 +111,8 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!focused.ok) return;
 	const focusedRevision = String(focused.data.revision);
 	expect(focusedRevision).not.toBe(revision);
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible();
+	// The readout loads in the Network panel; the Agent panel the test opened stays in front.
+	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeAttached();
 
 	const previewed = await callTool(page, 'preview_case_update', {
 		case_id: caseId,

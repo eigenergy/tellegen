@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
 	import { getCommandRegistry, type Command } from '../commands.svelte.js';
-	import ModeSwitch from './dynamics/ModeSwitch.svelte';
+	import { getPanelLayout } from '../panels.svelte.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+	const layout = getPanelLayout();
 	onMount(() => {
 		void ctrl.probeCollections();
 	});
@@ -23,7 +24,7 @@
 		};
 		input.click();
 	}
-	// Every case chip is also a palette command, so a case can be opened by name.
+	// Every case is also a palette command, so a case can be opened by name.
 	const commands = getCommandRegistry();
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	onDestroy(
@@ -110,153 +111,359 @@
 			}))
 		])
 	);
-	let headerEl = $state.raw<HTMLElement | undefined>(undefined);
-
-	// The case tabs wrap onto their own row on a narrow viewport and unwrap on a
-	// short one, so the height moves with both the breakpoint and the case list.
-	// Publish it for the map chrome and the sheet, which both anchor below it.
-	$effect(() => {
-		const el = headerEl;
-		if (!el) return;
-		const measure = () => (app.headerInset = Math.round(el.getBoundingClientRect().height));
-		measure();
-		const observer = new ResizeObserver(measure);
+	/** Publish the bar's height for the map chrome and the panels, which anchor below it. */
+	function publishHeight(el: HTMLElement) {
+		const observer = new ResizeObserver(() => {
+			app.headerInset = Math.round(el.getBoundingClientRect().height);
+		});
 		observer.observe(el);
+		app.headerInset = Math.round(el.getBoundingClientRect().height);
 		return () => observer.disconnect();
+	}
+
+	/** The open case, named as the case list names it. */
+	const current = $derived.by((): { name: string; detail: string; perturbed: boolean } | null => {
+		const multi = app.activeMulti;
+		if (multi) return { name: multi.label, detail: 'Distribution', perturbed: false };
+		const backend = app.active;
+		if (backend) {
+			const [name, region] = splitName(backend.name);
+			return { name, detail: region, perturbed: backend.perturbed };
+		}
+		const local = app.activeLocal;
+		if (local) return { name: local.label, detail: 'From a file', perturbed: false };
+		return null;
 	});
+	const hostedPending = $derived(
+		app.hostedDistributionCases.filter(
+			(s) => !app.multiCases.some((c) => c.hosted && c.id === s.id)
+		)
+	);
+	const restorable = $derived(
+		config.loadDefaultCases && ctrl.casesLoaded && ctrl.hiddenDefaults.size > 0
+	);
+
+	// Two menus share one pattern: a button that opens a list below it; Escape or
+	// a click outside closes it and focus returns to the button.
+	let caseMenuOpen = $state(false);
+	let appMenuOpen = $state(false);
+	let caseButton = $state.raw<HTMLButtonElement | undefined>(undefined);
+	let caseList = $state.raw<HTMLElement | undefined>(undefined);
+	let appButton = $state.raw<HTMLButtonElement | undefined>(undefined);
+	let appList = $state.raw<HTMLElement | undefined>(undefined);
+
+	async function toggleCaseMenu() {
+		caseMenuOpen = !caseMenuOpen;
+		appMenuOpen = false;
+		if (caseMenuOpen) {
+			await tick();
+			caseList
+				?.querySelector<HTMLElement>('.case-chip.active .case-activate, .case-activate')
+				?.focus();
+		}
+	}
+	async function toggleAppMenu() {
+		appMenuOpen = !appMenuOpen;
+		caseMenuOpen = false;
+		if (appMenuOpen) {
+			await tick();
+			appList?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+		}
+	}
+	function closeMenus(returnFocus = false) {
+		const button = caseMenuOpen ? caseButton : appMenuOpen ? appButton : undefined;
+		caseMenuOpen = false;
+		appMenuOpen = false;
+		if (returnFocus) button?.focus();
+	}
+	/** Arrow keys move through the app menu's items, as in any menu. */
+	function menuKeys(event: KeyboardEvent) {
+		const items = [...(appList?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])].filter(
+			(item) => item.offsetParent !== null
+		);
+		const index = items.indexOf(document.activeElement as HTMLElement);
+		const next =
+			event.key === 'ArrowDown'
+				? items[(index + 1) % items.length]
+				: event.key === 'ArrowUp'
+					? items[(index - 1 + items.length) % items.length]
+					: event.key === 'Home'
+						? items[0]
+						: event.key === 'End'
+							? items[items.length - 1]
+							: null;
+		if (next) {
+			event.preventDefault();
+			next.focus();
+		}
+	}
+	function pick(run: () => unknown) {
+		closeMenus();
+		run();
+	}
+	function openSettings() {
+		closeMenus();
+		app.settingsOpen = true;
+	}
 </script>
 
-<header bind:this={headerEl}>
+<svelte:window
+	onkeydown={(event) => {
+		if (event.key === 'Escape' && (caseMenuOpen || appMenuOpen)) {
+			event.preventDefault();
+			closeMenus(true);
+		}
+	}}
+	onpointerdown={(event) => {
+		const target = event.target as Node;
+		if (caseMenuOpen && !caseList?.contains(target) && !caseButton?.contains(target))
+			caseMenuOpen = false;
+		if (appMenuOpen && !appList?.contains(target) && !appButton?.contains(target))
+			appMenuOpen = false;
+	}}
+/>
+
+<header {@attach publishHeight}>
 	<div class="brand">
-		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-			<path class="brand-accent-stroke" d="M4 18 L12 6 L20 18" stroke-width="1.6" fill="none" />
-			<circle class="brand-accent" cx="4" cy="18" r="2.4" />
-			<circle class="brand-ink" cx="12" cy="6" r="2.4" />
-			<circle class="brand-accent" cx="20" cy="18" r="2.4" />
+		<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+			<path class="brand-stroke" d="M4 18 L12 6 L20 18" stroke-width="1.6" fill="none" />
+			<circle class="brand-node" cx="4" cy="18" r="2.4" />
+			<circle class="brand-node" cx="12" cy="6" r="2.4" />
+			<circle class="brand-node" cx="20" cy="18" r="2.4" />
 		</svg>
 		<h1>tellegen</h1>
 	</div>
-	<nav class="cases" class:zen={app.zen} aria-label="Networks">
-		{#each app.cases as c (c.id)}
-			{@const [cname, cregion] = splitName(c.name)}
-			<div class="case-chip" class:active={app.activeCaseId === c.id}>
-				<button
-					class="case-activate"
-					disabled={!!c.unavailableReason}
-					title={c.unavailableReason ?? undefined}
-					onclick={() => ctrl.activateCase(c.id)}
-				>
-					<span class="cname"
-						>{cname}{#if c.perturbed}<i class="mark" title="Demand changed"></i>{/if}</span
-					>
-					<span class="cregion">{c.unavailableReason ? 'Unavailable' : cregion}</span>
-				</button>
-				<button
-					class="case-remove mono"
-					aria-label="Remove {c.name}"
-					title="Remove {c.name}"
-					onclick={(e) => ctrl.removeBackendCase(c, e)}>&#10005;</button
-				>
-			</div>
-		{/each}
-		{#each app.hostedDistributionCases.filter((s) => !app.multiCases.some((c) => c.hosted && c.id === s.id)) as c (c.id)}
-			<div class="case-chip">
-				<button
-					class="case-activate"
-					disabled={!!c.unavailable_reason}
-					title={c.unavailable_reason ?? undefined}
-					onclick={() => ctrl.activateHostedDistribution(c.id)}
-				>
-					<span class="cname">{c.name}</span>
-					<span class="cregion"
-						>{c.unavailable_reason
-							? 'Unavailable'
-							: ctrl.loadingHostedDistribution === c.id
-								? 'Loading…'
-								: 'Distribution'}</span
-					>
-				</button>
-				<button
-					class="case-remove mono"
-					aria-label="Remove {c.name} from this browser"
-					onclick={() => ctrl.removeHostedDistribution(c.id)}>&#10005;</button
-				>
-			</div>
-		{/each}
-		{#each app.localCases as c (c.id)}
-			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
-				<button class="case-activate" title={c.label} onclick={() => ctrl.activateLocal(c)}>
-					<span class="cname">{c.label}</span>
-					<span class="cregion">Local</span>
-				</button>
-				<button
-					class="case-remove mono"
-					aria-label="Remove {c.label}"
-					title="Remove {c.label}"
-					onclick={(e) => ctrl.removeLocalCase(c, e)}>&#10005;</button
-				>
-			</div>
-		{/each}
-		{#each app.multiCases as c (c.id)}
-			<div
-				class={['case-chip', { local: !c.hosted, active: app.activeMultiId === c.id }]}
-				data-testid="distribution-case-chip"
-			>
-				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
-					<span class="cname">{c.label}</span>
-					<span class="cregion">Distribution</span>
-				</button>
-				<button
-					class="case-remove mono"
-					aria-label="Remove {c.label}"
-					title="Remove {c.label}"
-					onclick={(e) => ctrl.removeMultiCase(c, e)}>&#10005;</button
-				>
-			</div>
-		{/each}
-		<button class="ghost filedrop-ui" onclick={() => fileInput?.click()}>
-			<span class="cname"
-				><span class="arrow">&#8675;</span>{ctrl.showFileDropUi
-					? 'Drop a case file'
-					: 'Open a case file'}</span
-			>
-			<span class="cregion"
-				>{ctrl.collectionsAvailable ? 'Case, ZIP or geo files' : 'Case or geo files'}</span
+
+	<div class="case-menu">
+		<button
+			class="case-button"
+			bind:this={caseButton}
+			aria-expanded={caseMenuOpen}
+			aria-controls="tellegen-case-list"
+			aria-haspopup="true"
+			title="Choose or open a case"
+			onclick={toggleCaseMenu}
+		>
+			{#if current}
+				<span class="case-name">{current.name}</span>
+				{#if current.detail}<span class="case-detail">{current.detail}</span>{/if}
+				{#if current.perturbed}<span class="case-detail">(demand changed)</span>{/if}
+			{:else}
+				<span class="case-name">{ctrl.casesLoaded ? 'Open a case' : 'Loading cases…'}</span>
+			{/if}
+			<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+				><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
 			>
 		</button>
-		{#if ctrl.collectionsAvailable}
-			<button class="ghost filedrop-ui" onclick={openFolder}>
-				<span class="cname">Open folder</span><span class="cregion">Shared case files</span>
-			</button>
-		{/if}
-	</nav>
-	{#if !app.zen && !app.studyView && app.dynamicsEnabled}<div class="mode-switch">
-			<ModeSwitch />
-		</div>{/if}
-	<button
-		class="settings-button commands-button"
-		onclick={() => commands.show()}
-		aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
-		title="Search commands, cases and panels">Commands <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd></button
-	>
-	<button
-		class="settings-button"
-		onclick={() => (app.settingsOpen = !app.settingsOpen)}
-		aria-expanded={app.settingsOpen}>Settings</button
-	>
-	<span class="kicker">
-		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
-		<i class="sep"></i>
-		<a href={config.docsHref} target="_blank" rel="noreferrer">Docs</a>
-	</span>
-	{#if app.zen}
-		<button
-			class="zen-exit"
-			aria-label="Exit zen mode"
-			title="Exit zen mode (Esc)"
-			onclick={() => (app.zen = false)}>Exit zen</button
+		<div
+			class="popover case-list"
+			id="tellegen-case-list"
+			bind:this={caseList}
+			hidden={!caseMenuOpen}
 		>
-	{/if}
+			<nav aria-label="Cases">
+				<ul>
+					{#each app.cases as c (c.id)}
+						{@const [cname, cregion] = splitName(c.name)}
+						<li class="case-chip" class:active={app.activeCaseId === c.id}>
+							<button
+								class="case-activate"
+								disabled={!!c.unavailableReason}
+								title={c.unavailableReason ?? undefined}
+								aria-current={app.activeCaseId === c.id ? 'true' : undefined}
+								onclick={() => pick(() => ctrl.activateCase(c.id))}
+							>
+								<span class="cname">{cname}</span>
+								<span class="cregion"
+									>{c.unavailableReason ? 'Unavailable' : cregion}{c.perturbed
+										? ', demand changed'
+										: ''}</span
+								>
+							</button>
+							<button
+								class="case-remove"
+								aria-label="Remove {c.name}"
+								title="Remove {c.name}"
+								onclick={(e) => ctrl.removeBackendCase(c, e)}
+								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+								></button
+							>
+						</li>
+					{/each}
+					{#each hostedPending as c (c.id)}
+						<li class="case-chip">
+							<button
+								class="case-activate"
+								disabled={!!c.unavailable_reason}
+								title={c.unavailable_reason ?? undefined}
+								onclick={() => pick(() => ctrl.activateHostedDistribution(c.id))}
+							>
+								<span class="cname">{c.name}</span>
+								<span class="cregion"
+									>{c.unavailable_reason
+										? 'Unavailable'
+										: ctrl.loadingHostedDistribution === c.id
+											? 'Loading…'
+											: 'Distribution'}</span
+								>
+							</button>
+							<button
+								class="case-remove"
+								aria-label="Remove {c.name} from this browser"
+								onclick={() => ctrl.removeHostedDistribution(c.id)}
+								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+								></button
+							>
+						</li>
+					{/each}
+					{#each app.localCases as c (c.id)}
+						<li class="case-chip local" class:active={app.activeLocalId === c.id}>
+							<button
+								class="case-activate"
+								title={c.label}
+								aria-current={app.activeLocalId === c.id ? 'true' : undefined}
+								onclick={() => pick(() => ctrl.activateLocal(c))}
+							>
+								<span class="cname">{c.label}</span>
+								<span class="cregion">From a file</span>
+							</button>
+							<button
+								class="case-remove"
+								aria-label="Remove {c.label}"
+								title="Remove {c.label}"
+								onclick={(e) => ctrl.removeLocalCase(c, e)}
+								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+								></button
+							>
+						</li>
+					{/each}
+					{#each app.multiCases as c (c.id)}
+						<li
+							class={['case-chip', { local: !c.hosted, active: app.activeMultiId === c.id }]}
+							data-testid="distribution-case-chip"
+						>
+							<button
+								class="case-activate"
+								aria-current={app.activeMultiId === c.id ? 'true' : undefined}
+								onclick={() => pick(() => ctrl.activateMulti(c))}
+							>
+								<span class="cname">{c.label}</span>
+								<span class="cregion">Distribution{c.hosted ? '' : ', from a file'}</span>
+							</button>
+							<button
+								class="case-remove"
+								aria-label="Remove {c.label}"
+								title="Remove {c.label}"
+								onclick={(e) => ctrl.removeMultiCase(c, e)}
+								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+								></button
+							>
+						</li>
+					{/each}
+				</ul>
+			</nav>
+			<div class="case-actions">
+				<button class="action" onclick={() => pick(() => fileInput?.click())}>
+					<span>Open a file…</span>
+					<span class="action-hint"
+						>{ctrl.collectionsAvailable
+							? 'Case, ZIP or map files.'
+							: 'Case or map files.'}{ctrl.showFileDropUi
+							? ' You can also drop them anywhere on this page.'
+							: ''}</span
+					>
+				</button>
+				{#if ctrl.collectionsAvailable}
+					<button class="action" onclick={() => pick(openFolder)}>
+						<span>Open folder…</span>
+						<span class="action-hint">Every case file in a shared folder.</span>
+					</button>
+				{/if}
+				{#if restorable}
+					<button class="action" onclick={() => pick(ctrl.restoreDefaultCases)}>
+						<span>Restore default cases</span>
+						<span class="action-hint">Bring back the demo cases you removed.</span>
+					</button>
+				{/if}
+			</div>
+		</div>
+	</div>
+
+	<div class="tools">
+		{#if app.zen}
+			<button
+				class="tool"
+				aria-label="Exit zen mode"
+				title="Exit zen mode (Esc)"
+				onclick={() => (app.zen = false)}>Exit zen</button
+			>
+		{/if}
+		<button
+			class="tool wide-only"
+			onclick={() => commands.show()}
+			aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
+			title="Search commands, cases and panels"
+			>Commands <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd></button
+		>
+		<a class="tool wide-only" href={config.docsHref} target="_blank" rel="noreferrer">Docs</a>
+		<div class="app-menu">
+			<button
+				class="tool"
+				bind:this={appButton}
+				aria-expanded={appMenuOpen}
+				aria-haspopup="menu"
+				aria-controls="tellegen-app-menu"
+				onclick={toggleAppMenu}
+				>Menu<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+					><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
+				></button
+			>
+			<div
+				class="popover app-list"
+				id="tellegen-app-menu"
+				role="menu"
+				aria-label="Menu"
+				tabindex="-1"
+				bind:this={appList}
+				hidden={!appMenuOpen}
+				onkeydown={menuKeys}
+			>
+				<button role="menuitem" class="narrow-only" onclick={() => pick(() => commands.show())}
+					>Commands</button
+				>
+				<button role="menuitem" onclick={openSettings}>Settings</button>
+				<button role="menuitem" onclick={() => pick(() => layout.reset())}>Reset layout</button>
+				<hr />
+				<a
+					role="menuitem"
+					class="narrow-only"
+					href={config.docsHref}
+					target="_blank"
+					rel="noreferrer"
+					onclick={() => closeMenus()}>Docs</a
+				>
+				{#if config.showFooter}
+					<a role="menuitem" href="/changelog/" onclick={() => closeMenus()}>What's new</a>
+					<a role="menuitem" href="/credits/" onclick={() => closeMenus()}>Credits</a>
+					<a role="menuitem" href="/privacy/" onclick={() => closeMenus()}>Privacy</a>
+				{/if}
+				{#if config.orgLabel}
+					<a
+						role="menuitem"
+						class="org"
+						href={config.orgHref}
+						target="_blank"
+						rel="noreferrer"
+						onclick={() => closeMenus()}>{config.orgLabel}</a
+					>
+				{/if}
+			</div>
+		</div>
+	</div>
 	<input
 		type="file"
 		accept={`${ctrl.collectionsAvailable ? '.zip,' : ''}.m,.raw,.rawx,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson,.xml,.xiidm,.uct,.ucte,.cdf,.glm,.sinx,.dyr`}
@@ -274,167 +481,167 @@
 </header>
 
 <style>
-	.mode-switch {
-		display: flex;
-		align-items: center;
-		flex-shrink: 0;
-		margin: 0 8px;
-		pointer-events: auto;
-	}
-	.settings-button {
-		border: 1px solid var(--line);
-		border-radius: 4px;
-		padding: 7px 12px;
-		color: var(--ink);
-		background: var(--surface-control);
-		font: inherit;
-		font-size: 12px;
-		cursor: pointer;
-	}
-
-	.commands-button {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-sm, 6px);
-	}
-	.commands-button kbd {
-		font: inherit;
-		font-family: var(--font-mono);
-		font-size: var(--fs-meta, 10px);
-		color: var(--text-secondary);
-		padding: 1px 5px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-sm, 3px);
-		background: var(--paper);
-	}
-	@media (max-width: 960px) {
-		.commands-button {
-			display: none;
-		}
-	}
-
+	/* One quiet bar: the wordmark, the case menu, and the tools. It is opaque,
+	   so the map starts below it. */
 	header {
 		position: absolute;
 		top: 0;
 		left: 0;
 		right: 0;
-		z-index: 10;
+		z-index: 45;
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
-		padding: 10px 20px;
-		background: linear-gradient(rgb(var(--bg-rgb) / 0.95), rgb(var(--bg-rgb) / 0));
-		animation: drop 0.5s ease-out both;
+		gap: 12px;
+		height: 48px;
+		padding: 0 12px 0 16px;
+		background: var(--panel);
+		border-bottom: 1px solid var(--line);
+		font-family: var(--font-sans);
 	}
 
 	.brand {
-		flex: 0 0 auto;
+		flex: none;
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 8px;
 	}
 
-	/* The brand mark follows the theme: accent legs, ink apex. */
-	.brand-accent {
+	.brand-stroke {
+		stroke: var(--ink);
+	}
+
+	.brand-node {
 		fill: var(--accent);
-	}
-
-	.brand-accent-stroke {
-		stroke: var(--accent);
-	}
-
-	.brand-ink {
-		fill: var(--ink);
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 22px;
+		font-size: var(--fs-title);
 		font-weight: 600;
 		letter-spacing: 0;
 	}
 
-	.cases {
-		flex: 1 1 auto;
-		min-width: 0;
-		display: flex;
-		gap: 6px;
-		/* Center small collections without stranding earlier tabs to the left
-		   of the scroll origin once a ZIP imports more cases than fit. */
-		justify-content: safe center;
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.cases::-webkit-scrollbar {
-		display: none;
-	}
-
-	/* Zen mode shows only the active case; hover or keyboard focus reveals the
-	   other cases and the file button so they stay reachable. The hidden chips
-	   keep their space so nothing shifts when they fade in and out. */
-	.cases.zen > :not(.active) {
-		visibility: hidden;
-		opacity: 0;
-		transition:
-			opacity var(--dur-fast) var(--ease-out),
-			visibility 0s var(--dur-fast);
-	}
-
-	.cases.zen:hover > :not(.active),
-	.cases.zen:focus-within > :not(.active) {
-		visibility: visible;
-		opacity: 1;
-		transition: opacity var(--dur-fast) var(--ease-out);
-	}
-
-	.cases > button,
-	.case-chip {
-		display: flex;
-		align-items: flex-start;
-		gap: 1px;
-		padding: 5px 12px 4px;
-		background: var(--surface-chip);
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		cursor: pointer;
-		font-family: var(--font-display);
-		color: var(--ink);
-		transition: border-color 0.15s ease;
-	}
-
-	.cases > button {
-		flex-direction: column;
-	}
-
-	.case-chip {
-		align-items: stretch;
-		flex: 0 0 auto;
-		width: max-content;
-		max-width: 156px;
-		gap: 0;
-		padding: 0;
-		overflow: visible;
-		position: relative;
-	}
-
-	.case-chip button {
-		font-family: var(--font-display);
+	button {
+		font: inherit;
 		color: inherit;
 		cursor: pointer;
 	}
 
-	.case-activate {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 1px;
+	.case-menu,
+	.app-menu {
+		position: relative;
 		min-width: 0;
-		width: 100%;
-		padding: 5px 20px 4px 10px;
-		background: transparent;
+	}
+
+	.case-menu {
+		flex: 0 1 auto;
+		margin-left: 8px;
+	}
+
+	.case-button {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		max-width: 100%;
+		height: 32px;
+		padding: 0 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		background: var(--raised);
+		text-align: left;
+	}
+
+	.case-button:hover,
+	.tool:hover {
+		border-color: var(--border-strong);
+	}
+
+	.case-button[aria-expanded='true'] {
+		border-color: var(--accent);
+	}
+
+	.case-name {
+		align-self: center;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-body);
+		font-weight: 600;
+	}
+
+	.case-detail {
+		align-self: center;
+		flex: none;
+		color: var(--text-secondary);
+		font-size: var(--fs-body);
+		white-space: nowrap;
+	}
+
+	.chevron {
+		align-self: center;
+		flex: none;
+		color: var(--text-secondary);
+	}
+
+	.popover {
+		position: absolute;
+		top: calc(100% + 6px);
+		z-index: 50;
+		background: var(--surface-menu);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-panel);
+		box-shadow: var(--elev-menu);
+		animation: drop var(--dur-fast) var(--ease-out);
+	}
+
+	.popover[hidden] {
+		display: none;
+	}
+
+	.case-list {
+		left: 0;
+		width: 320px;
+		max-width: calc(100vw - 24px);
+		max-height: min(70vh, 560px);
+		overflow: auto;
+		padding: 4px;
+	}
+
+	.case-list ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	/* Dense list: the condensed face fits long case names on one line. */
+	.case-chip {
+		position: relative;
+		display: flex;
+		align-items: stretch;
+		border-radius: var(--radius-control);
+		font-family: var(--font-condensed);
+	}
+
+	.case-chip:hover {
+		background: var(--surface-hover);
+	}
+
+	.case-chip.active {
+		background: var(--accent-soft);
+		box-shadow: inset 2px 0 0 var(--accent);
+	}
+
+	.case-activate {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 7px 8px 7px 10px;
 		border: 0;
+		background: none;
+		text-align: left;
 	}
 
 	.case-activate:disabled {
@@ -442,291 +649,188 @@
 		cursor: not-allowed;
 	}
 
-	.case-remove {
-		position: absolute;
-		top: 1px;
-		right: 1px;
-		display: grid;
-		place-items: center;
-		width: 18px;
-		height: 18px;
-		padding: 0;
-		background: transparent;
-		border: 0;
-		color: var(--text-tertiary);
-		font-size: 9px;
-		line-height: 1;
+	.cname {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-body);
+		font-weight: 600;
 	}
 
-	/* The visible button stays small; this pads the actual tap target out to
-	   at least 44px. .case-chip is overflow: visible so this isn't clipped. */
-	.case-remove::before {
-		content: '';
-		position: absolute;
-		inset: -13px;
+	.cregion {
+		flex: none;
+		color: var(--text-secondary);
+		font-size: var(--fs-label);
+		white-space: nowrap;
+	}
+
+	.case-remove {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		color: var(--text-tertiary);
 	}
 
 	.case-remove:hover,
 	.case-remove:focus-visible {
-		background: var(--accent-soft);
-		border-top-right-radius: 3px;
-		color: var(--red);
+		color: var(--text-danger);
+		background: var(--surface-hover);
 	}
 
-	.cases > button:hover,
-	.case-chip:hover {
-		border-color: var(--accent);
+	.case-actions {
+		display: grid;
+		gap: 2px;
+		margin-top: 4px;
+		padding-top: 4px;
+		border-top: 1px solid var(--line);
 	}
 
-	.case-chip.active {
-		background: var(--panel);
-		border-color: var(--accent);
-		box-shadow: inset 0 -2px 0 var(--accent);
+	.action {
+		display: grid;
+		gap: 2px;
+		padding: 7px 10px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		text-align: left;
+		font-size: var(--fs-body);
+		font-weight: 500;
 	}
 
-	.cname {
-		font-size: 12.5px;
-		font-weight: 600;
-		line-height: 1.2;
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
+	.action:hover {
+		background: var(--surface-hover);
 	}
 
-	.cname .mark {
-		width: 5px;
-		height: 5px;
-		background: var(--accent-bright);
-		transform: rotate(45deg);
-	}
-
-	.cregion {
-		font-size: var(--fs-control, 11px);
+	.action-hint {
 		color: var(--text-secondary);
+		font-size: var(--fs-label);
+		font-weight: 400;
 	}
 
-	.case-chip .cregion {
-		white-space: nowrap;
-	}
-
-	.case-chip .cname,
-	.case-chip .cregion {
-		max-width: 100%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	/* A local case's name comes from its file header and can be a sentence:
-	   two lines at most, the rest in the tooltip. */
-	.case-chip.local .cname {
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-	}
-
-	/* Local case chips: dashed border + graphite text, topology only. */
-	.case-chip.local {
-		border-style: dashed;
-		color: var(--text-secondary);
-	}
-
-	.case-chip.local.active {
-		background: var(--panel);
-		border-color: var(--accent);
-		box-shadow: inset 0 -2px 0 var(--accent);
-	}
-
-	/* Ghost chip: standing invitation to drop or pick a case file. */
-	.cases > button.ghost {
-		background: rgb(var(--paper-rgb) / 0.36);
-		border: 1px dashed rgb(var(--accent-rgb) / 0.55);
-		color: var(--text-secondary);
-		box-shadow: inset 0 0 0 1px rgba(212, 116, 34, 0.08);
-	}
-
-	.cases > button.ghost .cregion {
-		white-space: nowrap;
-	}
-
-	.cases > button.ghost:hover {
-		border-color: var(--accent);
-		background: var(--accent-soft);
-	}
-
-	.cases > button.ghost:hover,
-	.cases > button.ghost:hover .cregion {
-		color: var(--text-accent);
-	}
-
-	.kicker {
-		flex: 0 0 auto;
+	.tools {
+		flex: none;
 		display: flex;
 		align-items: center;
-		font-size: var(--fs-label, 12px);
-		color: var(--text-secondary);
+		gap: 4px;
+		margin-left: auto;
+	}
+
+	.tool {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 32px;
+		padding: 0 10px;
+		border: 1px solid transparent;
+		border-radius: var(--radius-control);
+		background: none;
+		color: var(--ink);
+		font-size: var(--fs-body);
+		text-decoration: none;
 		white-space: nowrap;
 	}
 
-	.kicker a {
+	.tool[aria-expanded='true'] {
+		border-color: var(--accent);
+	}
+
+	kbd {
+		font: inherit;
+		font-size: var(--fs-label);
 		color: var(--text-secondary);
+		padding: 0 4px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+	}
+
+	.app-list {
+		right: 0;
+		min-width: 200px;
+		padding: 4px;
+		display: grid;
+	}
+
+	.app-list [role='menuitem'] {
+		display: block;
+		padding: 7px 10px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		color: var(--ink);
+		font: inherit;
+		font-size: var(--fs-body);
+		text-align: left;
 		text-decoration: none;
 	}
 
-	.kicker a:hover {
-		color: var(--text-accent);
+	.app-list [role='menuitem']:hover,
+	.app-list [role='menuitem']:focus-visible {
+		background: var(--surface-hover);
 	}
 
-	/* Sits with the kicker links and stays when they collapse on narrow screens,
-	   since touch devices have no Escape key. */
-	.zen-exit {
-		flex: 0 0 auto;
-		padding: 0;
-		border: 0;
-		background: none;
-		font: inherit;
-		font-size: var(--fs-label, 12px);
+	.app-list [role='menuitem']:focus-visible {
+		outline-offset: -2px;
+	}
+
+	.app-list .org {
 		color: var(--text-secondary);
-		white-space: nowrap;
-		cursor: pointer;
+		font-size: var(--fs-label);
 	}
 
-	.zen-exit:hover {
-		color: var(--text-accent);
+	.app-list hr {
+		width: 100%;
+		margin: 4px 0;
+		border: 0;
+		border-top: 1px solid var(--line);
 	}
 
-	.zen-exit:focus-visible {
-		outline: 2px solid var(--focus-ring);
-		outline-offset: 2px;
+	.narrow-only {
+		display: none !important;
 	}
 
 	@media (max-width: 760px) {
 		header {
-			align-items: flex-start;
-			flex-wrap: wrap;
 			gap: 8px;
-			padding: 8px 10px 12px;
-			background: linear-gradient(rgb(var(--bg-rgb) / 0.97), rgb(var(--bg-rgb) / 0.72));
+			padding: 0 8px 0 12px;
 		}
 
-		.brand {
-			gap: 8px;
+		.case-menu {
+			flex: 1 1 auto;
+			margin-left: 0;
 		}
 
-		h1 {
-			font-size: 20px;
-		}
-
-		.kicker {
-			margin-left: auto;
-			font-size: 9.5px;
-			letter-spacing: 0;
-			line-height: 2;
-		}
-
-		.cases {
-			order: 3;
-			width: 100%;
-			overflow-x: auto;
-			padding-bottom: 2px;
-			scrollbar-width: none;
-			scroll-padding: 10px;
-			scroll-snap-type: x proximity;
-			-webkit-overflow-scrolling: touch;
-		}
-
-		.cases::-webkit-scrollbar {
+		.case-button .case-detail {
 			display: none;
 		}
 
-		.cases > button,
-		.case-chip {
-			flex: 0 0 auto;
-			max-width: 150px;
-			min-height: 40px;
-			scroll-snap-align: start;
+		.wide-only {
+			display: none;
 		}
 
-		.cases > button {
-			padding: 7px 10px 6px;
+		.narrow-only {
+			display: block !important;
 		}
+	}
 
-		.case-activate {
-			padding: 7px 24px 6px 10px;
+	@media (hover: none), (pointer: coarse) {
+		.case-activate,
+		.action,
+		.app-list [role='menuitem'] {
+			min-height: 44px;
 		}
 
 		.case-remove {
-			width: 22px;
-			height: 22px;
+			width: 44px;
 		}
 
-		.cname,
-		.cregion {
-			max-width: 100%;
-			white-space: nowrap;
-			overflow: hidden;
-			text-overflow: ellipsis;
-		}
-	}
-
-	@media (max-width: 420px) {
-		.kicker {
-			display: none;
-		}
-
-		.cases > button,
-		.case-chip {
-			max-width: 132px;
-		}
-	}
-
-	/* Landscape phone: height is the scarce axis. Keep the case tabs on the
-	   brand's row instead of giving them one of their own, which halves the
-	   header and leaves the map a band worth looking at. */
-	@media (max-width: 760px) and (max-height: 520px) {
-		header {
-			flex-wrap: nowrap;
-			align-items: center;
-			padding: 6px 10px;
-		}
-
-		h1 {
-			font-size: 17px;
-		}
-
-		.cases {
-			order: 0;
-			width: auto;
-			justify-content: flex-start;
-		}
-
-		.kicker {
-			display: none;
-		}
-	}
-
-	/* Touch sizing keys off the pointer, not the breakpoint: a tablet gets the
-	   wide layout and still needs a fingertip's worth of chip. */
-	@media (hover: none), (pointer: coarse) {
-		.cases > button,
-		.case-chip {
-			min-height: 44px;
-		}
-
-		.case-activate {
-			min-height: 44px;
-		}
-
-		.kicker a {
-			display: inline-flex;
-			align-items: center;
-			min-height: 44px;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		header {
-			animation: none;
+		.case-button,
+		.tool {
+			height: 40px;
 		}
 	}
 </style>

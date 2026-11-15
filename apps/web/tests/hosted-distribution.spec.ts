@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { expect, test } from './fixtures/page-errors.js';
 import { callTool, installWebMcpHarness } from './fixtures/planning-case.js';
 
@@ -107,6 +108,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	expect(await callTool(page, 'select_case', { case_id: 'feeder-b' })).toMatchObject({ ok: true });
 	const imported = page.locator('.case-chip.local .case-remove');
 	// Remove only the reopened local case; retain the hosted catalogue entry.
+	await openCaseMenu(page);
 	await imported.last().click();
 	listed = await callTool(page, 'list_cases', {});
 	if (!listed.ok) throw new Error(listed.error.message);
@@ -117,7 +119,8 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	await expect(page.locator('.case-activate').filter({ hasText: 'Hosted feeder-b' })).toHaveCount(
 		0
 	);
-	await page.getByRole('button', { name: 'Restore default cases', exact: true }).click();
+	await openCaseMenu(page);
+	await page.getByRole('button', { name: /^Restore default cases/ }).click();
 	await expect(page.locator('.case-activate').filter({ hasText: 'Hosted feeder-b' })).toHaveCount(
 		1
 	);

@@ -137,7 +137,7 @@
 	commands.register({
 		id: 'reset-layout',
 		title: 'Reset panel layout',
-		hint: 'Put detached or redocked panels back in their default docks',
+		hint: 'Put floating and moved panels back where they started',
 		keywords: ['panels', 'dock', 'float', 'default'],
 		run: () => layout.reset()
 	});

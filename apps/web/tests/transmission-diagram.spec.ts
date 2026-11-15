@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/page-errors.js';
+import { showNetwork } from './fixtures/chrome.js';
 import { runCalculation } from './fixtures/calculation.js';
 import { readFile } from 'node:fs/promises';
 
@@ -126,11 +127,9 @@ for (const touch of [false, true]) {
 				},
 				{ name: 'limited.m', mimeType: 'text/plain', buffer: Buffer.from(limited) }
 			]);
-			if (touch) await page.getByRole('button', { name: 'Solver', exact: true }).tap();
 			await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
-			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
+			if (touch) await showNetwork(page);
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 			await hideBasemap(toolbar);
 			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
@@ -283,16 +282,14 @@ for (const touch of [false, true]) {
 							buffer: Buffer.from('bus_i,lat,lon\n1,34,-81\n2,34,-81\n')
 						}
 					]);
-					if (touch) await page.getByRole('button', { name: 'Solver', exact: true }).tap();
 					await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
-					if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
+					if (touch) await showNetwork(page);
 					const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 					await expect(calculation).toBeEnabled({ timeout: 60000 });
 					await runCalculation(page, 'acpf');
 					if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 					await expect(calculation).toBeEnabled();
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-					if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 					const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 					await expectView(toolbar, 'Operating limits');
 					await hideBasemap(toolbar);
@@ -362,12 +359,10 @@ for (const touch of [false, true]) {
 				{ name: 'txdiagram-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(COORDS) },
 				{ name: 'txdiagram.m', mimeType: 'text/plain', buffer: Buffer.from(CASE) }
 			]);
-			if (touch) await page.getByRole('button', { name: 'Solver', exact: true }).tap();
 			await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
-			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
+			if (touch) await showNetwork(page);
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 			const canvas = page.getByRole('application', { name: 'Single-line diagram' });
 			await expect(canvas).toBeVisible();
 			await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
@@ -474,8 +469,11 @@ for (const touch of [false, true]) {
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
 			expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
 			if (!touch) {
-				const solverBox = (await page.locator('.solvecard').boundingBox())!;
-				expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(solverBox.x);
+				// The key stays clear of the panel, which holds the solver's result.
+				const panelBox = (await page.locator('[data-panel-dock="left"]').boundingBox())!;
+				expect(
+					legendBox.x >= panelBox.x + panelBox.width || legendBox.y >= panelBox.y + panelBox.height
+				).toBe(true);
 			}
 			await page.locator('.tx-stage details.settings summary').click();
 			await expect(page.locator('.tx-stage .legend')).toContainText('|P| / MW rating');
@@ -509,8 +507,8 @@ for (const touch of [false, true]) {
 			await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
 			await expect(canvas).toHaveCount(0);
 			await expect(page.locator('.maplibregl-canvas')).toBeVisible();
-			// The map offers the diagram beside its zoom buttons, not only in the network panel.
-			await expect(page.getByRole('button', { name: 'Single-line diagram' })).toBeVisible();
+			// The network panel's Show diagram is the one diagram toggle; the map has none of its own.
+			await expect(page.getByRole('button', { name: 'Single-line diagram' })).toHaveCount(0);
 			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 			await expect(page.getByRole('button', { name: 'Show diagram', exact: true })).toBeVisible();
 
@@ -520,7 +518,6 @@ for (const touch of [false, true]) {
 			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 			await expectView(toolbar, 'Operating limits');
 			await expandResults(page);
 			await page.locator('.tx-stage details.settings summary').click();

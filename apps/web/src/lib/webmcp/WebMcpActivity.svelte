@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { resolve } from '$app/paths';
 	import AgentGuide from './AgentGuide.svelte';
 	import { PanelFrame, getAppState } from '@tellegen/svelte';
 	import type {
@@ -152,14 +151,7 @@
 	}
 </script>
 
-<PanelFrame id="agent" title="Agent" side="right" order={20} width={370} bind:open onopen={show}>
-	{#snippet headerActions()}
-		{#if experiments.length > 0}<button
-				class="export"
-				data-testid="export-experiment-journal"
-				onclick={exportJournal}>Export</button
-			>{/if}
-	{/snippet}
+<PanelFrame id="agent" title="Agent" side="left" order={30} width={370} bind:open onopen={show}>
 	<div class="activity-panel" data-webmcp-activity="open" aria-label="WebMCP activity">
 		<nav aria-label="Agent panel">
 			<button
@@ -173,6 +165,12 @@
 				aria-pressed={tab === 'connect'}
 				onclick={() => (tab = 'connect')}>Connect</button
 			>
+			{#if experiments.length > 0}<button
+					class="export"
+					data-testid="export-experiment-journal"
+					title="Download the record of every finished tool call"
+					onclick={exportJournal}>Export journal</button
+				>{/if}
 		</nav>
 		<div class="agent-content">
 			{#if tab === 'connect'}<AgentGuide
@@ -358,11 +356,23 @@
 		</div>
 	</div>
 </PanelFrame>
-{#if welcome && !open && !app.zen}<aside class="welcome" aria-label="New to Tellegen">
-		<span>New: AI agents can drive this map</span>
-		<button class="welcome-go" onclick={showConnect}>Show me</button>
-		<a href={resolve('/changelog')}>What's new</a>
-		<button aria-label="Dismiss introduction" onclick={dismiss}>Close</button>
+{#if welcome && !open && !app.zen}<aside
+		class="welcome"
+		class:compact={app.compactLayout}
+		style:--sheet-clear={app.compactLayout ? `${app.sheetInset + 8}px` : undefined}
+		aria-label="About AI agents"
+	>
+		<span>AI agents in Chrome can use this map.</span>
+		<button class="welcome-go" onclick={showConnect}>How</button>
+		<button
+			class="welcome-close"
+			aria-label="Dismiss introduction"
+			title="Dismiss"
+			onclick={dismiss}
+			><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+				><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+			></button
+		>
 	</aside>{/if}
 
 <style>
@@ -376,12 +386,9 @@
 		font: inherit;
 		cursor: pointer;
 	}
-	.export {
-		border: 0;
-		padding: 4px;
-		background: none;
-		color: var(--text-secondary);
-		font-size: 11px;
+	nav .export {
+		margin-left: auto;
+		color: var(--text-accent);
 	}
 
 	nav {
@@ -409,7 +416,7 @@
 	.call-count {
 		margin: 0;
 		padding: 12px 16px;
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-secondary);
 		border-bottom: 1px solid var(--line);
 	}
@@ -429,43 +436,60 @@
 	.copy {
 		padding: 7px 10px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--paper);
 		color: var(--ink);
 	}
+	/* First visit only: a small note in the map's lower left corner, clear of
+	   the panels, the map controls and the data. */
 	.welcome {
 		position: fixed;
-		/* Above the dynamics playback dock and the map's control row on it
-		   (44 px) while the dock is open; the shell's toasts stack above. */
-		bottom: max(12px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
-		left: 50%;
-		transform: translateX(-50%);
+		/* Above the dynamics playback dock while it is open. */
+		bottom: max(16px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
+		left: 16px;
 		z-index: 30;
 		display: flex;
-		gap: 12px;
+		gap: 4px;
 		align-items: center;
-		padding: 5px 10px;
+		max-width: calc(100vw - 32px);
+		padding: 4px 4px 4px 10px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
-		background: var(--paper);
-		font: 11px/1.4 var(--font-display);
+		border-radius: var(--radius-control);
+		background: var(--panel);
+		color: var(--text-secondary);
+		font: var(--fs-label) / 1.4 var(--font-sans);
 	}
-	.welcome a {
-		color: var(--text-accent);
-		text-underline-offset: 3px;
+	.welcome.compact {
+		bottom: var(--sheet-clear);
+		left: 12px;
+		max-width: calc(100vw - 24px);
+	}
+	.welcome button {
+		display: inline-grid;
+		place-items: center;
+		min-height: 24px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		font: inherit;
+		cursor: pointer;
 	}
 	.welcome .welcome-go {
-		padding: 1px 8px;
-		border: 1px solid rgb(var(--agent-rgb) / 0.5);
-		border-radius: 3px;
-		background: var(--agent-soft);
-		color: var(--agent);
+		color: var(--text-accent);
+		font-weight: 500;
 	}
-	.welcome button:not(.welcome-go) {
-		padding: 2px;
-		border: 0;
-		background: none;
+	.welcome .welcome-close {
 		color: var(--text-secondary);
+	}
+	.welcome button:hover {
+		background: var(--surface-hover);
+	}
+	@media (pointer: coarse) {
+		.welcome button {
+			min-width: 44px;
+			min-height: 44px;
+		}
 	}
 
 	.plans {
@@ -483,7 +507,7 @@
 	.section-head h3 {
 		margin: 0;
 		color: var(--text-tertiary);
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 500;
 	}
 
@@ -500,7 +524,7 @@
 		border-radius: 999px;
 		background: var(--surface-control);
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 	}
 
 	.chip-status[data-status='applied'] {
@@ -516,7 +540,7 @@
 	.phi,
 	.phi-detail {
 		margin: 7px 0 0 16px;
-		font-size: 9.5px;
+		font-size: 12px;
 	}
 
 	.phi {
@@ -529,7 +553,7 @@
 		flex-wrap: wrap;
 		gap: 4px 12px;
 		color: var(--text-secondary);
-		font-size: 8.5px;
+		font-size: 12px;
 	}
 
 	.changes {
@@ -538,7 +562,7 @@
 		list-style: none;
 		border-left: 2px solid var(--accent);
 		background: rgb(var(--paper-rgb) / 0.55);
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	.changes li {
@@ -563,7 +587,7 @@
 		border-radius: var(--radius-xs);
 		background: var(--surface-control);
 		color: var(--text-secondary);
-		font-size: 9px;
+		font-size: 12px;
 		cursor: pointer;
 	}
 
@@ -580,7 +604,7 @@
 
 	.approved {
 		color: var(--text-accent);
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	ol {
@@ -640,7 +664,7 @@
 
 	.elapsed {
 		color: var(--text-tertiary);
-		font-size: 8.5px;
+		font-size: 12px;
 	}
 
 	.elapsed {
@@ -659,12 +683,12 @@
 		grid-template-columns: 1fr auto;
 		gap: 3px 10px;
 		padding: 8px 9px;
-		font-size: 10px;
+		font-size: 12px;
 	}
 
 	.preview-result .dim {
 		grid-column: 1 / -1;
-		font-size: 8.5px;
+		font-size: 12px;
 	}
 
 	.label {
@@ -687,7 +711,7 @@
 	.comparison-head {
 		padding-bottom: 5px;
 		color: var(--text-tertiary);
-		font-size: 11px;
+		font-size: 12px;
 	}
 
 	.comparison-head span:first-child,
@@ -698,13 +722,13 @@
 	.metric {
 		padding: 3px 0;
 		border-top: 1px solid rgb(var(--ink-rgb) / 0.06);
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	.error {
 		margin: 7px 0 0 16px;
 		color: var(--text-danger);
-		font-size: 9px;
+		font-size: 12px;
 		line-height: 1.45;
 	}
 	@media (max-width: 960px) {

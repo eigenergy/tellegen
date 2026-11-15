@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { openSettings } from './fixtures/chrome.js';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from './fixtures/page-errors.js';
 import { callTool, installWebMcpHarness } from './fixtures/planning-case';
@@ -64,8 +65,7 @@ test('turning on experimental features brings dynamics back, and off hides it ag
 	page
 }) => {
 	await openPage(page);
-	const header = page.locator('header');
-	await header.getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	const setting = page.getByLabel('Experimental features');
 	await expect(setting).not.toBeChecked();
 	await expect(
@@ -73,20 +73,19 @@ test('turning on experimental features brings dynamics back, and off hides it ag
 	).toBeVisible();
 	await setting.check();
 
-	await expect(page.getByTestId('mode-dynamics')).toBeVisible();
-	await expect(
-		page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' })
-	).toBeVisible();
+	// Dynamics comes back as a panel tab; its steady state / dynamics switch is inside it.
+	const tab = page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' });
+	await expect(tab).toBeVisible();
 	await expect.poll(() => toolList(page)).toContain('simulate_dynamics');
-	await page.getByTestId('mode-dynamics').click();
+	await tab.click();
 	await expect(page.getByTestId('dynamics-panel')).toBeVisible();
+	await expect(page.getByTestId('mode-dynamics')).toHaveAttribute('aria-pressed', 'true');
 
 	// The setting is saved: it survives a reload.
 	await page.reload();
-	await expect(page.getByTestId('mode-dynamics')).toBeVisible();
-	await expect(page.getByTestId('mode-dynamics')).toHaveAttribute('aria-pressed', 'false');
+	await expect(tab).toBeVisible();
 
-	await header.getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	await page.getByLabel('Experimental features').uncheck();
 	await expectNoDynamics(page);
 	await expect.poll(() => toolList(page)).not.toContain('simulate_dynamics');

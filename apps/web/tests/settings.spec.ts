@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/page-errors.js';
+import { openSettings } from './fixtures/chrome.js';
 import type { Page } from '@playwright/test';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
@@ -61,8 +62,8 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 			new URL('./fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json', import.meta.url)
 				.pathname
 		);
-	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible();
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeAttached();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await panel.getByLabel('Maximum iterations', { exact: true }).fill('150');
 	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
@@ -124,7 +125,7 @@ test('an explicit run applies the calculation draft and agent edits retain its o
 	]);
 	const result = page.locator('.solvecard');
 	await expect(result).toContainText('DC OPF', { timeout: 60000 });
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
 	await panel.getByRole('combobox', { name: 'Initial voltages', exact: true }).selectOption('case');
@@ -169,7 +170,7 @@ test('partial lazy options agree with accepted settings and remain clean when sw
 	});
 	expect(updated.ok).toBe(true);
 	expect(updated.data.selected).toMatchObject({ lazy: { near_binding: 0.9, max_rounds: 20 } });
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	await expect(panel.getByLabel('Maximum enforcement rounds')).toHaveValue('20');
 	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
@@ -192,7 +193,7 @@ test('DC conventions share common settings and can return to the input default',
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
 	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	const convention = panel.getByRole('combobox', { name: 'DC convention', exact: true });
 	await expect(convention).toHaveValue('null');

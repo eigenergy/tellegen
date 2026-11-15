@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import AppFooter from './components/AppFooter.svelte';
 	import NotificationCenter from './components/NotificationCenter.svelte';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import AppHeader from './components/AppHeader.svelte';
@@ -8,8 +7,6 @@
 	import DropZone from './components/DropZone.svelte';
 	import CollectionChooser from './components/CollectionChooser.svelte';
 	import PlacementCue from './components/PlacementCue.svelte';
-	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
-	import SolveCard from './components/SolveCard.svelte';
 	import PanelHost from './components/PanelHost.svelte';
 	import LogPanel from './components/LogPanel.svelte';
 	import SettingsPanel from './components/SettingsPanel.svelte';
@@ -181,7 +178,6 @@
 	<NotificationCenter />
 	<CommandPalette />
 	<ControlPanel />
-	{#if app.mode !== 'dynamics'}<SolveCard />{/if}
 	{#if !app.studyView && app.dynamicsEnabled}<DynamicsPanel />{/if}
 	{#if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} />
@@ -196,10 +192,6 @@
 	{#if !app.studyView}
 		<DropZone />
 		<PlacementCue />
-		{#if !app.zen}<RestoreDefaultsButton />{/if}
-	{/if}
-	{#if config.showFooter && !app.compactLayout && !app.zen && !dynamicsShown}
-		<AppFooter />
 	{/if}
 </main>
 

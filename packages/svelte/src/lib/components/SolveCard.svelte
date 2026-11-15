@@ -4,6 +4,10 @@
 	import { iterationCount, savedVerdict, solveVerdict, statusWords } from '../diagram/verdict.js';
 	import Sparkline from '../Sparkline.svelte';
 	import PanelFrame from './PanelFrame.svelte';
+
+	/** Render inside another panel (the shell puts it in the Network panel)
+	 * instead of registering a Solver panel of its own. */
+	let { embedded = false }: { embedded?: boolean } = $props();
 	let open = $state(true);
 
 	const ctrl = getController();
@@ -55,92 +59,106 @@
 	);
 </script>
 
+{#snippet card()}
+	<div class="solvecard">
+		{#if verdict}
+			<p class={['verdict', verdict.tone]} role="status">{verdict.text}</p>
+		{/if}
+		{#if saved}
+			<dl>
+				<div>
+					<dt>Calculation</dt>
+					<dd>{formulationLabel(saved.formulation)}</dd>
+				</div>
+				<div>
+					<dt>Result</dt>
+					<dd>{statusWords(saved.solution?.status)}</dd>
+				</div>
+			</dl>
+		{:else if active}
+			<dl>
+				<div>
+					<dt>Calculation</dt>
+					<dd>{formulationLabel(active.formulation)}</dd>
+				</div>
+				{#if count !== null && count > 1}
+					<div>
+						<dt>Iterations</dt>
+						<dd class="num">{count}</dd>
+					</div>
+				{/if}
+				{#if active.solveDetail}
+					<div>
+						<dt>Solve</dt>
+						<dd>{active.solveDetail}</dd>
+					</div>
+				{/if}
+				{#if active.solveMs != null}
+					<div>
+						<dt>Time</dt>
+						<dd class="num">{active.solveMs} ms</dd>
+					</div>
+				{/if}
+			</dl>
+		{/if}
+		{#if hasDetails}
+			<details class="internals">
+				<summary>Solver details</summary>
+				{#if trace.length > 1}
+					{#key trace}
+						<Sparkline iterations={trace} />
+					{/key}
+				{/if}
+				<dl>
+					{#if status && !failed}
+						<div>
+							<dt>Solver status</dt>
+							<dd class="num">{status}</dd>
+						</div>
+					{/if}
+					{#if saved}
+						<div>
+							<dt>Saved state</dt>
+							<dd>{saved.label}</dd>
+						</div>
+					{/if}
+					{#if server}
+						<div>
+							<dt>Solver</dt>
+							<dd>{server}</dd>
+						</div>
+					{/if}
+					{#if fallback}
+						<div>
+							<dt>Fallback</dt>
+							<dd title={fallback}>{fallback}</dd>
+						</div>
+					{/if}
+				</dl>
+			</details>
+		{/if}
+	</div>
+{/snippet}
+
 {#if saved || (active && (active.solving || active.solveMs != null || failed))}
-	<PanelFrame id="solver" title="Solver" side="right" order={10} width={320} bind:open>
-		<div class="solvecard">
-			{#if verdict}
-				<p class={['verdict', verdict.tone]} role="status">{verdict.text}</p>
-			{/if}
-			{#if saved}
-				<dl>
-					<div>
-						<dt>Calculation</dt>
-						<dd>{formulationLabel(saved.formulation)}</dd>
-					</div>
-					<div>
-						<dt>Result</dt>
-						<dd>{statusWords(saved.solution?.status)}</dd>
-					</div>
-				</dl>
-			{:else if active}
-				<dl>
-					<div>
-						<dt>Calculation</dt>
-						<dd>{formulationLabel(active.formulation)}</dd>
-					</div>
-					{#if count !== null && count > 1}
-						<div>
-							<dt>Iterations</dt>
-							<dd class="num">{count}</dd>
-						</div>
-					{/if}
-					{#if active.solveDetail}
-						<div>
-							<dt>Solve</dt>
-							<dd>{active.solveDetail}</dd>
-						</div>
-					{/if}
-					{#if active.solveMs != null}
-						<div>
-							<dt>Time</dt>
-							<dd class="num">{active.solveMs} ms</dd>
-						</div>
-					{/if}
-				</dl>
-			{/if}
-			{#if hasDetails}
-				<details class="internals">
-					<summary>Solver details</summary>
-					{#if trace.length > 1}
-						{#key trace}
-							<Sparkline iterations={trace} />
-						{/key}
-					{/if}
-					<dl>
-						{#if status && !failed}
-							<div>
-								<dt>Solver status</dt>
-								<dd class="num">{status}</dd>
-							</div>
-						{/if}
-						{#if saved}
-							<div>
-								<dt>Saved state</dt>
-								<dd>{saved.label}</dd>
-							</div>
-						{/if}
-						{#if server}
-							<div>
-								<dt>Solver</dt>
-								<dd>{server}</dd>
-							</div>
-						{/if}
-						{#if fallback}
-							<div>
-								<dt>Fallback</dt>
-								<dd title={fallback}>{fallback}</dd>
-							</div>
-						{/if}
-					</dl>
-				</details>
-			{/if}
-		</div>
-	</PanelFrame>
+	{#if embedded}
+		<section class="embedded" aria-label="Solver">{@render card()}</section>
+	{:else}
+		<PanelFrame id="solver" title="Solver" side="right" order={10} width={320} bind:open>
+			{@render card()}
+		</PanelFrame>
+	{/if}
 {/if}
 
 <style>
 	.solvecard {
 		padding: var(--space-lg) var(--space-xl) var(--space-md);
+	}
+
+	.embedded .solvecard {
+		margin: 4px 0 12px;
+		padding: 8px 0 0;
+		border-top: 1px solid var(--line);
 	}
 
 	.verdict {

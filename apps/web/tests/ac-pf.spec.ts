@@ -1,4 +1,5 @@
 import { runCalculation } from './fixtures/calculation.js';
+import { showNetwork } from './fixtures/chrome.js';
 import { readFile } from 'node:fs/promises';
 import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
@@ -83,6 +84,8 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		page.getByRole('heading', { name: 'Three-bus power flow', exact: true })
 	).toBeVisible();
 	await page.getByRole('button', { name: 'Show on map', exact: true }).click();
+	// The saved result's details are in the Network panel, behind the Studies tab.
+	await showNetwork(page);
 	await expect(page.getByRole('region', { name: 'Saved network details' })).toBeVisible();
 	const saved = await callTool(page, 'query_network', {
 		case_id: caseId,
@@ -104,6 +107,8 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await expect(page.getByRole('button', { name: 'LMP', exact: true })).toBeVisible();
 	await expect(page.locator('.solvecard')).toContainText('DC OPF');
 	await expect(page.locator('.error')).toHaveCount(0);
+	// Export is in the Studies panel.
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const download = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'Export', exact: true }).click();
 	const bundle: StudyBundle = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
@@ -113,6 +118,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundle.artifacts[state.input].text)
 	});
+	await showNetwork(page);
 	await expect(calculation).toHaveValue('acpf');
 	await expect(calculation).toBeEnabled();
 	await expect(page.locator('.solvecard')).toContainText('AC power flow');

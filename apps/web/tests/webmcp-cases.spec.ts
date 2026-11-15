@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { expect, test } from './fixtures/page-errors.js';
 import {
 	CASE3_COORDS,
@@ -182,6 +183,7 @@ test('unavailable configured cases remain visible and cannot replace the display
 	};
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [unavailable] }));
 	await page.goto('/');
+	await openCaseMenu(page);
 	await expect(
 		page.getByRole('button', { name: 'Unavailable demo Unavailable', exact: true })
 	).toBeDisabled();

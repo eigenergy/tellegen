@@ -45,9 +45,10 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3) }
 	]);
-	await page.getByRole('button', { name: 'Solver', exact: true }).click();
+	// The solver's result is part of the Network panel.
+	const networkTab = page.getByRole('button', { name: 'Network', exact: true });
+	if ((await networkTab.getAttribute('aria-pressed')) !== 'true') await networkTab.click();
 	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
-	await page.getByRole('button', { name: 'Network', exact: true }).click();
 
 	// Compact panels share one drawer.
 	const sheet = page.locator('[data-panel="network"].mobile');

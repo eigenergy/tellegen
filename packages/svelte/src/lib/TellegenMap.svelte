@@ -15,6 +15,7 @@
 		busRadiusFor,
 		demandColor,
 		priceColor,
+		scalarColor,
 		scalarDomain,
 		sensColor,
 		sensFlatColor,
@@ -182,20 +183,6 @@
 	/** A balanced case shown as a single-line diagram, likewise replacing the map. */
 	const txCase = $derived(ctrl.singleLineShown);
 	let shownTx: typeof txCase = null;
-	/** Open the active balanced case as a single-line diagram. */
-	function openSingleLine() {
-		const c = ctrl.singleLineCase;
-		if (!c) return;
-		c.schematic = true;
-		// On a phone, the sheet would cover the diagram it opens.
-		if (panels.compact) panels.drawer = null;
-	}
-	/** The map control that opens a balanced case as a single-line diagram. */
-	let diagramControl = $state.raw<HTMLElement | null>(null);
-	const diagramAvailable = $derived(!!ctrl.singleLineCase);
-	$effect(() => {
-		if (diagramControl) diagramControl.hidden = !diagramAvailable;
-	});
 	$effect(() => {
 		const now = txCase;
 		const before = shownTx;
@@ -487,7 +474,10 @@
 			if (d.scalarMode === 'demand')
 				return demandColor(((d.scalar.get(bus.id) ?? 0) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 			const mid = (d.scalarLo + d.scalarHi) / 2;
-			return priceColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
+			return scalarColor(
+				d.scalarMode,
+				((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo)
+			);
 		};
 	}
 
@@ -1068,36 +1058,6 @@
 					if (app.placingId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-				// Beside the zoom buttons, so it moves with them when a sheet opens.
-				m.addControl(
-					{
-						onAdd() {
-							const wrap = document.createElement('div');
-							wrap.className = 'maplibregl-ctrl diagram-ctrl';
-							const button = document.createElement('button');
-							button.type = 'button';
-							button.setAttribute('aria-label', 'Single-line diagram');
-							button.title =
-								'Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows';
-							const full = document.createElement('span');
-							full.className = 'full';
-							full.textContent = 'Single-line diagram';
-							const short = document.createElement('span');
-							short.className = 'short';
-							short.textContent = 'Diagram';
-							button.append(full, short);
-							button.onclick = openSingleLine;
-							wrap.append(button);
-							diagramControl = wrap;
-							return wrap;
-						},
-						onRemove() {
-							diagramControl?.remove();
-							diagramControl = null;
-						}
-					},
-					'bottom-right'
-				);
 
 				// WebGL resilience on Safari. Two failure modes seen in the wild:
 				//   1. The canvas backing store is discarded while the tab is idle or
@@ -1329,9 +1289,7 @@
 						const value = values.get(b.id);
 						return value === undefined
 							? palette.grey
-							: (mode === 'demand' ? demandColor : priceColor)(
-									(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
-								);
+							: scalarColor(mode, (value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12));
 					},
 					pickable: true,
 					stroked: true,
@@ -1362,7 +1320,7 @@
 					// wider, so the price-rating source line reads at a glance.
 					getColor: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBranch
-							? [47, 111, 187, 255]
+							? [39, 71, 184, 255]
 							: branchColor(d?.loading.get(b.id) ?? 0, b.status === 1),
 					getWidth: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBranch
@@ -1440,7 +1398,7 @@
 						wrapLongitude: true,
 						getColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
-								? [47, 111, 187, 255]
+								? [39, 71, 184, 255]
 								: d
 									? branchColor(d.loading.get(b.id) ?? 0, b.status === 1)
 									: palette.greyLine,
@@ -1547,7 +1505,7 @@
 					// The selected edge draws in the selection blue of the branch cue,
 					// wider, so its panel detail has an obvious source on the map.
 					getColor: (e) =>
-						e.id === selectedEdgeId ? [47, 111, 187, 255] : edgeColor(e.kind, e.closed),
+						e.id === selectedEdgeId ? [39, 71, 184, 255] : edgeColor(e.kind, e.closed),
 					getWidth: (e) => edgeWidth(e.kind, e.n_phases) + (e.id === selectedEdgeId ? 2 : 0),
 					widthUnits: 'pixels',
 					widthMinPixels: 1.2,
@@ -1585,7 +1543,7 @@
 					getSize: 16,
 					sizeUnits: 'pixels',
 					getColor: (m) =>
-						m.id === selectedEdgeId ? [47, 111, 187, 255] : edgeColor('transformer', true),
+						m.id === selectedEdgeId ? [39, 71, 184, 255] : edgeColor('transformer', true),
 					pickable: false,
 					updateTriggers: {
 						getColor: [selectedEdgeId]
@@ -1791,7 +1749,6 @@
 		onbusclick={selectDiagramBus}
 		onbranchclick={selectDiagramBranch}
 		onclear={onmapclick}
-		onsingleline={diagramAvailable && !diagramMulti ? openSingleLine : undefined}
 	/>
 {:else}
 	{#key mapGen}
@@ -1851,16 +1808,13 @@
 		width: 28px;
 		height: 28px;
 		margin: -14px 0 0 -14px;
-		border: 2px solid #2f6fbb;
+		border: 2px solid var(--accent);
 		border-radius: 999px;
-		background: rgba(47, 111, 187, 0.1);
-		box-shadow:
-			0 0 0 4px rgba(47, 111, 187, 0.12),
-			0 0 18px rgba(47, 111, 187, 0.24);
+		background: rgb(var(--accent-rgb) / 0.1);
+		box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.14);
 		pointer-events: none;
-		animation:
-			selected-bus-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
-			selected-bus-pulse 1.8s ease-in-out 420ms infinite;
+		/* One pop when the selection is made; nothing loops afterwards. */
+		animation: selected-bus-pop 320ms var(--ease-out);
 	}
 
 	.selected-branch-cue {
@@ -1902,9 +1856,9 @@
 	}
 
 	.multi-detail :global(.mc-term) {
-		fill: var(--ink, #20242b);
+		fill: var(--ink);
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 12px;
 	}
 
 	.selected-branch-cue path {
@@ -1915,18 +1869,16 @@
 	}
 
 	.selected-branch-halo {
-		stroke: rgba(47, 111, 187, 0.2);
+		stroke: rgb(var(--accent-rgb) / 0.22);
 		stroke-width: 14;
-		filter: drop-shadow(0 0 14px rgba(47, 111, 187, 0.2));
-		animation:
-			selected-branch-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
-			selected-branch-pulse 1.8s ease-in-out 420ms infinite;
+		opacity: 0.82;
+		animation: selected-branch-pop 320ms var(--ease-out);
 	}
 
 	.selected-branch-line {
-		stroke: rgba(47, 111, 187, 0.92);
+		stroke: rgb(var(--accent-rgb) / 0.92);
 		stroke-width: 3;
-		animation: selected-branch-line-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+		animation: selected-branch-line-pop 320ms var(--ease-out);
 	}
 
 	@keyframes selected-bus-pop {
@@ -1934,31 +1886,9 @@
 			opacity: 0;
 			transform: scale(0.35);
 		}
-		65% {
-			opacity: 0.95;
-			transform: scale(1.35);
-		}
 		100% {
-			opacity: 0.9;
+			opacity: 1;
 			transform: scale(1);
-		}
-	}
-
-	@keyframes selected-bus-pulse {
-		0%,
-		100% {
-			opacity: 0.9;
-			transform: scale(1);
-			box-shadow:
-				0 0 0 4px rgba(47, 111, 187, 0.12),
-				0 0 18px rgba(47, 111, 187, 0.24);
-		}
-		50% {
-			opacity: 0.48;
-			transform: scale(1.22);
-			box-shadow:
-				0 0 0 8px rgba(47, 111, 187, 0.08),
-				0 0 28px rgba(47, 111, 187, 0.18);
 		}
 	}
 
@@ -1992,20 +1922,6 @@
 		}
 	}
 
-	@keyframes selected-branch-pulse {
-		0%,
-		100% {
-			opacity: 0.82;
-			stroke-width: 14;
-			filter: drop-shadow(0 0 14px rgba(47, 111, 187, 0.2));
-		}
-		50% {
-			opacity: 0.42;
-			stroke-width: 22;
-			filter: drop-shadow(0 0 24px rgba(47, 111, 187, 0.16));
-		}
-	}
-
 	/* Keyboard/touch equivalent to clicking the map while placing a local case;
 	   sits just above PlacementCue's instruction text so the two don't overlap. */
 	.place-at-center {
@@ -2017,10 +1933,10 @@
 		padding: 7px 14px;
 		background: var(--panel);
 		border: 1px solid var(--accent);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		color: var(--text-accent);
 		font-family: inherit;
-		font-size: 11px;
+		font-size: 12px;
 		cursor: pointer;
 		box-shadow: var(--elev-cue);
 	}
@@ -2048,46 +1964,22 @@
 		margin: 0;
 	}
 
-	.map :global(.diagram-ctrl) {
-		order: 1;
-	}
-	.map :global(.diagram-ctrl[hidden]) {
-		display: none;
-	}
-	.map :global(.diagram-ctrl .short) {
-		display: none;
-	}
-	@media (max-width: 760px) {
-		.map :global(.diagram-ctrl .full) {
-			display: none;
-		}
-		.map :global(.diagram-ctrl .short) {
-			display: inline;
-		}
-	}
-	.map :global(.diagram-ctrl button) {
-		white-space: nowrap;
-		padding: 7px 12px;
-		font: 11px var(--font-mono);
-		color: var(--ink);
-		background: var(--panel);
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		box-shadow: var(--elev-tooltip);
-		cursor: pointer;
-	}
-	.map :global(.diagram-ctrl button:hover) {
-		border-color: var(--accent);
-		color: var(--text-accent);
-	}
-	@media (pointer: coarse) {
-		.map :global(.diagram-ctrl button) {
-			min-height: 44px;
-		}
-	}
-
 	.map :global(.maplibregl-ctrl-group) {
 		order: 2;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		box-shadow: none;
+		overflow: hidden;
+	}
+
+	.map :global(.maplibregl-ctrl-group button + button) {
+		border-top-color: var(--line);
+	}
+
+	/* maplibre draws its zoom icons dark; on the dark panel they turn light. */
+	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-group .maplibregl-ctrl-icon) {
+		filter: invert(1);
 	}
 
 	/* Zen mode keeps the basemap attribution (a licensing requirement) and
@@ -2106,12 +1998,11 @@
 		min-width: 0;
 		max-width: calc(100vw - 96px);
 		box-sizing: border-box;
-		background: rgb(var(--paper-rgb) / 0.75);
-		font-family: var(--font-mono);
-		font-size: 10px;
+		background: rgb(var(--paper-rgb) / 0.85);
+		border-radius: var(--radius-control);
+		font-size: 12px;
 		white-space: nowrap;
 		text-align: right;
-		box-shadow: var(--elev-1);
 	}
 
 	.map :global(.maplibregl-ctrl-attrib a) {
@@ -2166,7 +2057,7 @@
 		font-variant-numeric: tabular-nums;
 		line-height: 1.5;
 		padding: 8px 10px !important;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-tooltip);
 	}
 
@@ -2198,7 +2089,7 @@
 	@media (max-width: 460px) {
 		.map :global(.maplibregl-ctrl-attrib) {
 			max-width: calc(100vw - 140px);
-			font-size: 9px;
+			font-size: 12px;
 			white-space: normal;
 		}
 	}
