@@ -49,8 +49,24 @@ const PRICE_STOPS: RGBA[] = [
 	[52, 16, 98, 250]
 ];
 
-export const priceColor = (t: number): RGBA => ramp(PRICE_STOPS, t);
+/** The same magma segment for a dark basemap, run the other way and cut short
+ * of its near-black end: high prices, the ones that matter most, stay the
+ * brightest marks on the map. Every stop has at least 3:1 contrast against the
+ * dark basemap (#0e0e0e); the lowest, magenta, has 3.1:1. */
+const PRICE_STOPS_DARK: RGBA[] = [
+	[168, 50, 125, 246],
+	[215, 69, 107, 244],
+	[243, 105, 92, 240],
+	[254, 159, 109, 238],
+	[252, 236, 178, 235]
+];
+
+export type RampTheme = 'light' | 'dark';
+
+export const priceColor = (t: number, theme: RampTheme = 'light'): RGBA =>
+	ramp(theme === 'dark' ? PRICE_STOPS_DARK : PRICE_STOPS, t);
 export const priceGradient = cssGradient(PRICE_STOPS);
+export const priceGradientDark = cssGradient(PRICE_STOPS_DARK);
 
 /** Diverging voltage angle ramp (ColorBrewer BrBG): brown below the middle of
  * the case's angles, teal above, a near-white neutral between. Colour-blind
@@ -67,13 +83,23 @@ export const angleColor = (t: number): RGBA => ramp(ANGLE_STOPS, t);
 export const angleGradient = cssGradient(ANGLE_STOPS);
 
 /** The colour for a nodal value in `mode` at `t` in [0, 1] of its domain. */
-export function scalarColor(mode: DisplayMode, t: number): RGBA {
-	return mode === 'demand' ? demandColor(t) : mode === 'angle' ? angleColor(t) : priceColor(t);
+export function scalarColor(mode: DisplayMode, t: number, theme: RampTheme = 'light'): RGBA {
+	return mode === 'demand'
+		? demandColor(t)
+		: mode === 'angle'
+			? angleColor(t)
+			: priceColor(t, theme);
 }
 
 /** The legend gradient for `mode`, matching `scalarColor`. */
-export function scalarGradient(mode: DisplayMode): string {
-	return mode === 'demand' ? demandGradient : mode === 'angle' ? angleGradient : priceGradient;
+export function scalarGradient(mode: DisplayMode, theme: RampTheme = 'light'): string {
+	return mode === 'demand'
+		? demandGradient
+		: mode === 'angle'
+			? angleGradient
+			: theme === 'dark'
+				? priceGradientDark
+				: priceGradient;
 }
 
 /** Sequential demand ramp: the upper three quarters of viridis, slate blue

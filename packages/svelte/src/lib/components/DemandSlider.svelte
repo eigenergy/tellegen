@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
-	import { fmt, signed } from '../format.js';
+	import { plain, signed } from '../format.js';
 	import { sliderKeyValue } from '../slider.js';
 
 	const app = getAppState();
@@ -25,7 +25,7 @@
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
 	const sliderTip = 'Drag to preview, release to solve. The tick marks the committed demand.';
 	const disabledTip = 'Display-only bus; demand is fixed';
-	const scoreTip = 'Estimated from the LMP, then checked by solving again.';
+	const scoreTip = 'Estimated from the prices, then checked by solving again.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -57,8 +57,7 @@
 			{#if disabled}
 				<span class="dim">Not adjustable</span>
 			{:else}
-				<span class="mono dim">{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW</span
-				>
+				<span class="mono dim">{plain(ctrl.sliderMin)} to {plain(ctrl.sliderMax)} MW</span>
 			{/if}
 		</div>
 		<div

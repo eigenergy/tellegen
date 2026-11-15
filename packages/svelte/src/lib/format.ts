@@ -57,14 +57,38 @@ export function extent(values: number[]): { min: number; max: number } {
 }
 
 export const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
-export const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
+/** A number for reading: a true minus sign, and never a negative zero. */
+export const plain = (v: number, format: Intl.NumberFormat = fmt) => {
+	const text = format.format(Math.abs(v));
+	return v < 0 && /[1-9]/.test(text) ? `−${text}` : text;
+};
+/** A change with its sign. A change that rounds to zero reads "0", with no sign. */
+export const signed = (v: number, format: Intl.NumberFormat = fmt) => {
+	const text = format.format(Math.abs(v));
+	return /[1-9]/.test(text) ? `${v < 0 ? '−' : '+'}${text}` : '0';
+};
+const twoFigures = new Intl.NumberFormat('en-US', {
+	maximumSignificantDigits: 2
+});
+/** A small signed rate, such as a price change per MW, to two significant
+ * figures in plain decimals (0.0017, not 1.7e-3). */
+export const signedSmall = (v: number) => signed(v, twoFigures);
+/** The same, without a sign. */
+export const small = (v: number) => plain(v, twoFigures);
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 export const displayFmt = (mode: DisplayMode, value: number) =>
 	mode === 'price' || mode === 'demand' ? fmt.format(value) : value.toFixed(3);
 
-const exactNumber = new Intl.NumberFormat('en', { maximumFractionDigits: 6, useGrouping: false });
+const exactNumber = new Intl.NumberFormat('en', {
+	maximumFractionDigits: 6,
+	useGrouping: false
+});
 const decimals = [0, 1, 2, 3, 4].map(
-	(d) => new Intl.NumberFormat('en', { maximumFractionDigits: d, minimumFractionDigits: 0 })
+	(d) =>
+		new Intl.NumberFormat('en', {
+			maximumFractionDigits: d,
+			minimumFractionDigits: 0
+		})
 );
 
 /**

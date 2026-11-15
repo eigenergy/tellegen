@@ -30,7 +30,12 @@ const flow = (loading: number): SolutionFlow => ({
 	branch: 42,
 	mw: 30,
 	loading,
-	loading_info: { basis: 'mva', rating: 100, rating_source: 'stated', limiting_end: 'to' }
+	loading_info: {
+		basis: 'mva',
+		rating: 100,
+		rating_source: 'stated',
+		limiting_end: 'to'
+	}
 });
 
 describe('transmission operating limits', () => {
@@ -143,7 +148,7 @@ describe('transmission operating limits', () => {
 		// A branch point off screen gets no gauge.
 		expect(placeOperatingGauges([at(4, -5, 200)], rect, 10)).toEqual([]);
 		expect(gaugeText(1.003)).toBe('100.3%');
-		expect(gaugeText(0.874)).toBe('87%');
+		expect(gaugeText(0.874)).toBe('87.4%');
 	});
 	it('separates warnings, at-limit values and actual overloads', () => {
 		for (const [loading, expected] of [

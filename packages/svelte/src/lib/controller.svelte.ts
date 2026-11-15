@@ -2452,6 +2452,25 @@ export class Controller {
 		}
 	};
 
+	/** Choose a calculation and run it: the Network panel's Calculation select.
+	 * The current result stays on screen until the new one succeeds. */
+	chooseCalculation = async (c: SolvableCase, next: Formulation) => {
+		try {
+			if (next === 'acopf' && !(await this.loadAcOpf()))
+				throw new Error(
+					'The AC OPF solver could not load in this browser. Reload the page and try again.'
+				);
+			await this.updateSettings(c, next, {}, c.settings.revision);
+			await this.runSettings(c);
+		} catch (error) {
+			if ((error as Error)?.name === 'AbortError') return;
+			this.fail(
+				error instanceof Error ? error.message : String(error),
+				() => void this.chooseCalculation(c, next)
+			);
+		}
+	};
+
 	/** Read selected next-run settings without changing a result or starting work. */
 	inspectSettings = (c: SolvableCase | MulticonductorCase) => {
 		const calculation =

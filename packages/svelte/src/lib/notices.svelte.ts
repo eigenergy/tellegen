@@ -84,7 +84,15 @@ export function getNoticeCenter(): NoticeCenter {
 	if (!value) throw new Error('NoticeCenter requires a Tellegen provider');
 	return value;
 }
+/** Messages that tell the reader what to change: running the same thing
+ * again cannot succeed, so their notices offer no Retry. */
+const INSTRUCTIONS = [/experimental\. Turn it on in Settings/i];
+export function errorNoticeCanRetry(details: string): boolean {
+	return !INSTRUCTIONS.some((pattern) => pattern.test(details));
+}
 export function errorNoticeTitle(details: string): string {
+	if (/dynamics.*is experimental\. Turn it on in Settings/i.test(details))
+		return 'Dynamics is experimental. Turn it on in Settings, under Experimental features.';
 	if (/^ZIP and folder imports are unavailable in this build/.test(details))
 		return 'ZIP and folder imports unavailable';
 	if (/rate limit|limiting requests/i.test(details))
@@ -97,9 +105,15 @@ export function errorNoticeTitle(details: string): string {
 		return 'The map could not start. Reload the page or try another browser.';
 	if (/storage|quota|space|indexeddb/i.test(details))
 		return 'Could not save in this browser. Free some browser storage, then try again.';
-	if (/sensitivity|derivative|singular/i.test(details))
+	// A singular matrix on its own is a solve failure (an AC power flow Jacobian,
+	// say); only a sensitivity that fails is about prices.
+	if (/sensitivity|derivative/i.test(details))
 		return 'Price sensitivity is not available for this result.';
-	if (/infeasib|converg|solver|solving|calculation|compute|webassembly|power flow/i.test(details))
+	if (
+		/infeasib|converg|singular|jacobian|solver|solving|calculation|compute|webassembly|power flow/i.test(
+			details
+		)
+	)
 		return 'The calculation did not finish. Try another calculation, or open Details for the reason.';
 	if (/parse|read|file|format/i.test(details))
 		return 'Could not read this file. Check that it is a complete case file in a supported format.';

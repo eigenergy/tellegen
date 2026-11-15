@@ -310,6 +310,10 @@
 		cursor: grab;
 		touch-action: none;
 	}
+	/* The title is a drag handle, not a field: no fill under the pointer. */
+	.title:hover {
+		background: none;
+	}
 	.title:active {
 		cursor: grabbing;
 	}

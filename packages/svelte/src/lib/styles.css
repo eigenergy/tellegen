@@ -142,6 +142,15 @@
 /* Dark theme: `TellegenProvider theme="dark"` sets the attribute (a host may
    also put it in its template). Ratios are against the panel surface. */
 :root[data-theme='dark'] {
+	/* The price ramp on a dark map runs the other way: see PRICE_STOPS_DARK. */
+	--tellegen-price-ramp: linear-gradient(
+		90deg,
+		rgb(168 50 125),
+		rgb(215 69 107),
+		rgb(243 105 92),
+		rgb(254 159 109),
+		rgb(252 236 178)
+	);
 	--bg: #11161d;
 	--panel: #1b222c;
 	--paper: #1b222c;
@@ -201,6 +210,14 @@
    block only covers first paint. Keep it in step with the block above. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme]) {
+		--tellegen-price-ramp: linear-gradient(
+			90deg,
+			rgb(168 50 125),
+			rgb(215 69 107),
+			rgb(243 105 92),
+			rgb(254 159 109),
+			rgb(252 236 178)
+		);
 		--bg: #11161d;
 		--panel: #1b222c;
 		--paper: #1b222c;
@@ -279,6 +296,42 @@ input,
 select,
 textarea {
 	font-variant-numeric: inherit;
+}
+
+/* One select in every panel: a raised control with a drawn chevron, never the
+   operating system's own. Zero specificity, so a component can still adjust it. */
+:where(.panel-frame) :where(select:not([multiple])) {
+	appearance: none;
+	-webkit-appearance: none;
+	max-width: 100%;
+	padding: 4px 26px 4px 8px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-control);
+	background-color: var(--surface-control);
+	background-image:
+		linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+		linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+	background-position:
+		right 12px center,
+		right 8px center;
+	background-size:
+		4px 4px,
+		4px 4px;
+	background-repeat: no-repeat;
+	color: var(--ink);
+	font: inherit;
+	font-size: var(--fs-body);
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
+
+:where(.panel-frame) :where(select:not([multiple]):hover:not(:disabled)) {
+	border-color: var(--border-strong);
+}
+
+:where(.panel-frame) :where(select:disabled) {
+	cursor: default;
+	opacity: 0.6;
 }
 
 /* Numbers that should line up. The UI face with tabular figures, not monospace. */

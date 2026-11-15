@@ -20,24 +20,23 @@
 			>
 		{/each}
 	</div>
-	<span class="mono dim">{ctrl.activeDisplay?.unit ?? ''}</span>
 	{#if app.sensitivityLoading}
 		<span class="dim blink">Loading&hellip;</span>
 	{/if}
 </div>
 {#if diagramOpen}
 	<p class="dim small diagram-note">
-		Map colours. The diagram uses them only in its <strong>Map display</strong> view; its key shows what
-		each view's colours mean.
+		These colour the map. In the diagram they apply to its Map display view.
 	</p>
 {:else if ctrl.activeDisplay && ctrl.displayStats}
-	<p class="legend-title">{ctrl.activeDisplay.copy}</p>
+	<p class="legend-title">
+		{ctrl.activeDisplay.copy}{ctrl.activeDisplay.unit ? ` (${ctrl.activeDisplay.unit})` : ''}
+	</p>
 	<div class="legend" style:background={ctrl.activeDisplay.gradient}></div>
-	<div class="legend-labels mono">
+	<div class="legend-labels">
 		{#if ctrl.displayStats.uniform !== null}
 			<span>
-				Uniform {displayFmt(ctrl.activeDisplay.mode, ctrl.displayStats.uniform)}
-				{ctrl.activeDisplay.unit}
+				The same at every bus: {displayFmt(ctrl.activeDisplay.mode, ctrl.displayStats.uniform)}
 			</span>
 		{:else}
 			<span>
@@ -45,14 +44,12 @@
 					ctrl.activeDisplay.mode,
 					ctrl.displayStats.lo.value
 				)}
-				{ctrl.activeDisplay.unit}
 			</span>
 			<span>
 				{ctrl.displayStats.hi.clamped ? '≥' : ''}{displayFmt(
 					ctrl.activeDisplay.mode,
 					ctrl.displayStats.hi.value
 				)}
-				{ctrl.activeDisplay.unit}
 			</span>
 		{/if}
 	</div>

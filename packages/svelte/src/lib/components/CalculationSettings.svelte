@@ -1,10 +1,45 @@
 <script lang="ts" module>
-	/** A default value in words: null means the case file decides. */
-	function defaultWords(value: unknown): string {
-		if (value === null || value === undefined) return 'use input default';
-		if (value === true) return 'on';
-		if (value === false) return 'off';
-		return String(value);
+	/** Fields shown elsewhere: the Network panel owns the DC line model. */
+	const HIDDEN = new Set(['branch_susceptance_formula']);
+
+	/** Plain descriptions for the engine's settings, in place of its own notes. */
+	const DESCRIPTIONS: Record<string, string> = {
+		angle_difference:
+			"Keep the voltage angle difference across each line within the case's limits.",
+		start:
+			"Where the iteration starts. If the case's own voltages fail to converge, it starts again from a flat start.",
+		absolute_kcl_tolerance: 'The current mismatch at which the calculation counts as converged.',
+		relative_kcl_tolerance:
+			'Extra current mismatch allowed in proportion to the current through each bus.',
+		tolerance:
+			'The voltage change between iterations at which the calculation counts as converged. The current balance must also pass.',
+		damping: 'The share of each voltage update to apply, above 0 and at most 1.',
+		max_iterations: 'Stop after this many iterations.',
+		v_low_pu:
+			'Below this voltage, loads are modelled as their nominal impedance. Keep 0 < Vlow < Vmin < Vmax.',
+		v_min_pu: 'Lower edge of the band where loads follow their own model. Not a voltage limit.',
+		v_max_pu: 'Upper edge of the band where loads follow their own model. Not a voltage limit.',
+		voltage_envelope:
+			'Change how loads behave outside the Vmin to Vmax band. Results record when this applied.',
+		zero_voltage_tolerance:
+			'Protects the load current calculation from near-zero voltages. Not a convergence tolerance.'
+	};
+
+	/** Plain names for enum choices. */
+	const CHOICES: Record<string, string> = {
+		flat: 'Flat start (1.0 pu, 0°)',
+		case: "The case's voltages"
+	};
+
+	/** A recorded setting in words. */
+	function valueWords(value: unknown): string {
+		if (value === null || value === undefined) return "The case's own choice";
+		if (value === true) return 'On';
+		if (value === false) return 'Off';
+		if (typeof value === 'string') return CHOICES[value] ?? value.replaceAll('_', ' ');
+		if (typeof value === 'number')
+			return value.toLocaleString(undefined, { maximumFractionDigits: 6 });
+		return JSON.stringify(value);
 	}
 </script>
 
@@ -65,9 +100,9 @@
 				: null
 	);
 	const fields = $derived(
-		[...(descriptor?.fields ?? [])].sort(
-			(a, b) => fieldOrder.indexOf(a.key) - fieldOrder.indexOf(b.key)
-		)
+		[...(descriptor?.fields ?? [])]
+			.filter((f) => !HIDDEN.has(f.key))
+			.sort((a, b) => fieldOrder.indexOf(a.key) - fieldOrder.indexOf(b.key))
 	);
 	const unsaved = $derived(
 		selected ? calculation !== selected.calculation || !equal(options(), selected.selected) : false
@@ -145,17 +180,11 @@
 			? 'Distribution AC power flow'
 			: (FORMULATIONS.find((f) => f.id === value)?.label ?? value);
 	}
-	function choose(value: string) {
-		calculation = value;
-		const d = catalog.calculations.find((c) => c.calculation === value);
-		fill(
-			current?.settings.resolved[value]?.effective ?? {
-				...d?.defaults,
-				...current?.settings.baselines[value],
-				...current?.settings.options[value]
-			}
-		);
-		failure = '';
+	/** A setting's name as the form shows it. */
+	function fieldLabel(key: string): string {
+		for (const c of catalog.calculations)
+			for (const field of c.fields) if (field.key === key) return field.label;
+		return key.replaceAll('_', ' ');
 	}
 	function options(): Record<string, unknown> {
 		if (calculation !== 'dcopf') return { ...draft };
@@ -219,7 +248,7 @@
 </script>
 
 {#snippet setting(field: SettingDescriptor)}
-	<label class={{ toggle: field.type === 'boolean' }} title={field.description}>
+	<label class={{ toggle: field.type === 'boolean' }}>
 		<span>{field.label}{field.unit ? ` (${field.unit})` : ''}</span>
 		{#if field.type === 'boolean'}
 			<input
@@ -238,7 +267,7 @@
 						)
 					})}
 				>{#each field.choices ?? [] as choice (choice)}<option value={String(choice)}
-						>{choice ?? 'Use input default'}</option
+						>{valueWords(choice)}</option
 					>{/each}</select
 			>
 		{:else}
@@ -252,11 +281,7 @@
 			/>
 		{/if}
 	</label>
-	<small
-		>{field.description} Default: {defaultWords(
-			((selected?.baseline ?? {}) as Record<string, unknown>)[field.key] ?? field.default
-		)}.</small
-	>
+	<small>{DESCRIPTIONS[field.key] ?? field.description}</small>
 {/snippet}
 
 {#snippet thermalControls()}
@@ -274,10 +299,9 @@
 				placeholder="1, 2, branches:3"
 			/></label
 		>{/if}
-	<p>
-		Angle and thermal limits change the optimization problem. Each result records the limits it
-		used.
-	</p>
+	<small
+		>Which line ratings the optimization enforces. Each result records the limits it used.</small
+	>
 {/snippet}
 {#snippet lazyControls()}
 	<label class="toggle">Lazy thermal enforcement<input type="checkbox" bind:checked={lazy} /></label
@@ -303,34 +327,17 @@
 {/snippet}
 
 <div class="calculation-settings" role="region" aria-label="Calculation settings">
-	<h3>Calculation</h3>
 	{#if current && selected}
-		<p>
-			Running a calculation updates the map and any export. The current result stays on screen until
-			a new one succeeds.
+		<h3>{calculationLabel(calculation)} options</h3>
+		<p class="intro">
+			{current instanceof MulticonductorCase
+				? 'Changes apply the next time the power flow runs.'
+				: 'Choose the calculation in the Network panel. Changes here apply the next time it runs.'}
 		</p>
-		<label
-			>Calculation
-			<select
-				value={calculation}
-				disabled={busy || current.solving}
-				onchange={(e) => choose(e.currentTarget.value)}
-			>
-				{#each catalog.calculations as c (c.calculation)}
-					{#if current instanceof MulticonductorCase ? c.calculation === 'mc_ac_pf' : c.calculation !== 'mc_ac_pf' && c.calculation !== 'dcpf'}
-						<option value={c.calculation} disabled={!canSelect(c.calculation, c.available)}
-							>{calculationLabel(c.calculation)}{!canSelect(c.calculation, c.available)
-								? ' (unavailable)'
-								: ''}</option
-						>
-					{/if}
-				{/each}
-			</select>
-		</label>
 		<fieldset disabled={busy || current.solving}>
 			{#each ['model', 'numerical'] as group (group)}
 				{#if fields.some((f) => f.group === group)}
-					<h4>{group === 'model' ? 'Model behavior' : 'Numerical solver'}</h4>
+					<h4>{group === 'model' ? 'Model' : 'Solver'}</h4>
 					{#each fields.filter((f) => f.group === group && f.type !== 'json' && !f.key.includes('tolerance')) as field (field.key)}
 						{@render setting(field)}
 					{/each}
@@ -348,21 +355,21 @@
 				{/if}
 			{/each}
 		</fieldset>
-		{#if !fields.length}<p>This calculation exposes no additional solver options.</p>{/if}
+		{#if !fields.length}<p>This calculation has no options to set.</p>{/if}
 		{#if current instanceof MulticonductorCase}<McNetworkScope
 				scope={current.mcPreparedScope}
 				islands={current.mcExcludedIslands}
 				preview
 			/>{/if}
 		{#if unsaved}<p role="status">
-				Changes will apply to the next run.
+				You have changes that are not applied yet.
 			</p>{:else if selected.pending}<p role="status">
-				Selected settings differ from the displayed result. Run to update it.
+				The result on screen used other settings. Run the calculation to update it.
 			</p>{/if}
 		{#if unavailable}<p>{unavailable}</p>{/if}
 		{#if calculation === 'acopf'}<p>
-				The experimental AC OPF solver loads on the first run. It supports the unedited base case;
-				prices and case export are unavailable.
+				The AC OPF solver is experimental and loads on the first run. It solves the base case only,
+				without demand changes, and gives no prices or case export.
 			</p>{/if}
 		<div class="actions">
 			<button disabled={busy || current.solving || !unsaved} onclick={() => void apply()}
@@ -372,7 +379,7 @@
 				>Restore case defaults</button
 			>
 			<button
-				class="primary"
+				class={['primary', { busy: current.solving }]}
 				disabled={busy || current.solving || !!unavailable}
 				onclick={() => void run()}
 				>{ctrl.acOpfLoading
@@ -385,46 +392,62 @@
 					onclick={() => ctrl.cancelSettings(current)}>Cancel calculation</button
 				>{/if}
 		</div>
-		{#if selected.accepted}<details>
-				<summary>Settings used for displayed result ({selected.accepted_calculation})</summary>
+		{#if selected.accepted && Object.keys(selected.accepted).length}<details>
+				<summary>Settings behind the result on screen</summary>
 				<dl>
 					{#each Object.entries(selected.accepted) as [key, value] (key)}<dt>
-							{key}
+							{fieldLabel(key)}
 						</dt>
-						<dd>{JSON.stringify(value)}</dd>{/each}
+						<dd>{valueWords(value)}</dd>{/each}
 				</dl>
 			</details>{/if}
 	{:else if app.studyView}
 		<p>This is a saved result, so its calculation settings can't be changed.</p>
-		{#if recorded}<p>{recorded.calculation}</p>
+		{#if recorded}<p>{calculationLabel(recorded.calculation)}</p>
 			<dl>
-				{#each Object.entries(recorded.effective) as [key, value] (key)}<dt>{key}</dt>
-					<dd>{JSON.stringify(value)}</dd>{/each}
+				{#each Object.entries(recorded.effective) as [key, value] (key)}<dt>{fieldLabel(key)}</dt>
+					<dd>{valueWords(value)}</dd>{/each}
 			</dl>{:else}<p>This saved result has no recorded calculation settings.</p>{/if}
-	{:else}<p>Open a case to choose how it is calculated.</p>{/if}
+	{:else}<h3>Calculation options</h3>
+		<p>Open a case to set how it is calculated.</p>{/if}
 	{#if failure}<p role="alert">{failure}</p>{/if}
 </div>
 
 <style>
 	.calculation-settings {
 		padding: var(--tellegen-calculation-padding, 0);
-		font-size: 12px;
+		font-size: var(--fs-body);
 	}
 	h3 {
-		margin: 0 0 10px;
+		margin: 0 0 6px;
+		font-size: var(--fs-title);
+		font-weight: 600;
 	}
 	h4 {
-		margin: 14px 0 8px;
+		margin: 16px 0 4px;
+		font-size: var(--fs-body);
+		font-weight: 600;
 	}
 	p,
 	small {
 		line-height: 1.5;
 	}
+	.intro {
+		margin: 0 0 4px;
+		color: var(--text-secondary);
+	}
 	small {
-		font-size: inherit;
 		display: block;
-		opacity: 0.75;
-		margin-bottom: 10px;
+		font-size: var(--fs-label);
+		color: var(--text-secondary);
+		margin-bottom: 8px;
+	}
+	summary {
+		cursor: pointer;
+		margin-top: 8px;
+	}
+	dt {
+		color: var(--text-secondary);
 	}
 	fieldset {
 		border: 0;
@@ -445,10 +468,9 @@
 	input[type='text'] {
 		width: 160px;
 	}
-	select,
 	input:not([type='checkbox']) {
 		padding: 4px 6px;
-		border: 1px solid var(--border-strong);
+		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
@@ -460,18 +482,20 @@
 	}
 	button {
 		min-height: 28px;
-		padding: 6px 10px;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-sm, 3px);
-		background: var(--paper);
+		padding: 5px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
 		line-height: 1.25;
 		cursor: pointer;
 	}
 	button:not(.primary):hover:not(:disabled) {
-		border-color: var(--accent);
-		background: var(--accent-soft);
+		border-color: var(--border-strong);
+	}
+	button.busy {
+		cursor: progress;
 	}
 	button.primary {
 		border-color: var(--accent);

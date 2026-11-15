@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
-	import { fmt, signed } from '../format.js';
+	import { fmt, plain, signed } from '../format.js';
 	import { sliderKeyValue } from '../slider.js';
 
 	const ctrl = getController();
@@ -47,7 +47,7 @@
 			{#if bounds.disabled}
 				<span class="dim">Not adjustable</span>
 			{:else}
-				<span class="mono dim">{fmt.format(bounds.min)} to +{fmt.format(bounds.max)} MW</span>
+				<span class="mono dim">{signed(bounds.min)} to {signed(bounds.max)} MW</span>
 			{/if}
 		</div>
 		<div

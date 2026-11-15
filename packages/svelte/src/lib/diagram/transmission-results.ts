@@ -22,7 +22,10 @@ export function assessVoltage(
 	bus: Pick<NetworkBus, 'vmin_pu' | 'vmax_pu'>,
 	deenergized = false
 ): VoltageAssessment {
-	const result = (state: VoltageState, exceedance = 0) => ({ state, exceedance });
+	const result = (state: VoltageState, exceedance = 0) => ({
+		state,
+		exceedance
+	});
 	if (deenergized) return result('deenergized');
 	if (value === undefined || !Number.isFinite(value) || value < 0) return result('missing');
 	const { vmin_pu: lo, vmax_pu: hi } = bus;
@@ -126,7 +129,11 @@ export function stationVoltageSummary(
 ) {
 	let min: { bus: number; value: number } | null = null;
 	let max: { bus: number; value: number } | null = null;
-	let worst: { bus: number; value: number; assessment: VoltageAssessment } | null = null;
+	let worst: {
+		bus: number;
+		value: number;
+		assessment: VoltageAssessment;
+	} | null = null;
 	let unknown = 0;
 	let disconnected = 0;
 	for (const bus of buses) {
@@ -166,7 +173,10 @@ export function operatingVoltages(
 		return new Map();
 	const values =
 		formulation === 'socwr'
-			? solution.w.map((v) => ({ bus: v.bus, value: v.value >= 0 ? Math.sqrt(v.value) : NaN }))
+			? solution.w.map((v) => ({
+					bus: v.bus,
+					value: v.value >= 0 ? Math.sqrt(v.value) : NaN
+				}))
 			: (solution.vm ?? []);
 	return new Map(values.map((v) => [v.bus, v.value]));
 }
@@ -285,9 +295,8 @@ export function gaugeLeader(g: OperatingGauge): [number, number] {
 	];
 }
 
-/** A gauge's percentage, with a decimal only near the rating where it decides the state. */
-export const gaugeText = (loading: number) =>
-	`${(loading * 100).toFixed(loading > 0.99 && loading < 1.01 ? 1 : 0)}%`;
+/** A gauge's percentage, to one decimal on every gauge, so neighbours compare at a glance. */
+export const gaugeText = (loading: number) => `${(loading * 100).toFixed(1)}%`;
 
 export const loadingStateText: Record<LoadingState, string> = {
 	deenergized: 'de-energized',

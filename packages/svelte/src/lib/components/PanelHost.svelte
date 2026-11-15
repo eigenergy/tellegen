@@ -20,7 +20,9 @@
 	onDestroy(
 		commands.registerSource(() =>
 			layout.panels.map((panel) => {
-				const open = layout.compact ? layout.drawer === panel.id : panel.open;
+				// A panel open behind another one is not on screen, so the
+				// command offers to show it rather than to close it.
+				const open = layout.shown(panel);
 				return {
 					id: `panel:${panel.id}`,
 					title: `${open ? 'Close' : 'Open'} ${panel.title} panel`,
@@ -39,6 +41,11 @@
 	 * ask for a tab (Dynamics, which docks beside them). Settings opens from the
 	 * header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));
+	/** The tabs of the panel under the strip, then toggles for panels that open
+	 * beside it (Dynamics, on the right): a separate group, so the strip never
+	 * shows two selected tabs. */
+	const dockTabs = $derived(tabs.filter((p) => layout.compact || layout.position(p) === 'left'));
+	const sideTabs = $derived(tabs.filter((p) => !layout.compact && layout.position(p) !== 'left'));
 	const left = $derived(layout.ordered('left').filter((p) => p.open));
 	const right = $derived(layout.ordered('right').filter((p) => p.open));
 	const floating = $derived(
@@ -59,15 +66,57 @@
 	$effect(() => {
 		layout.stripMin = stripShown && !layout.compact ? tabsWidth + 68 + 10 : 0;
 	});
+	/** The tallest the phone sheet may be: up to the top bar. */
+	const sheetMax = $derived(
+		Math.max(1, layout.viewportHeight - toolbarTop - bottomReserve - stripHeight - 8)
+	);
+	/** A height the reader dragged the sheet to; null keeps the default. */
+	let sheetSize = $state<number | null>(null);
 	const drawerHeight = $derived(
 		Math.max(
 			1,
-			Math.min(
-				layout.viewportHeight * 0.55,
-				(layout.viewportHeight - toolbarTop - bottomReserve - stripHeight - 8) * 0.75
-			)
+			Math.min(sheetMax, sheetSize ?? Math.min(layout.viewportHeight * 0.42, sheetMax * 0.7))
 		)
 	);
+	// The sheet's handle: drag to resize, drag down to close, or tap to switch
+	// between a low and a tall sheet. Arrow keys do the same from the keyboard.
+	let drag: { y: number; height: number; moved: boolean } | null = null;
+	const SHEET_MIN = 140;
+	function setSheet(height: number) {
+		if (height < 90) {
+			layout.drawer = null;
+			sheetSize = null;
+			return;
+		}
+		if (!layout.drawer) layout.drawer = layout.lastActive ?? 'network';
+		sheetSize = Math.max(SHEET_MIN, Math.min(sheetMax, height));
+	}
+	function handleDown(event: PointerEvent) {
+		if (!event.isPrimary) return;
+		drag = { y: event.clientY, height: drawer ? drawerHeight : 0, moved: false };
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+	function handleMove(event: PointerEvent) {
+		if (!drag) return;
+		const dy = drag.y - event.clientY;
+		if (!drag.moved && Math.abs(dy) < 4) return;
+		drag.moved = true;
+		setSheet(drag.height + dy);
+	}
+	function handleUp() {
+		const moved = drag?.moved;
+		drag = null;
+		if (moved) return;
+		// A tap: open a closed sheet, else switch between low and tall.
+		if (!drawer) setSheet(sheetMax * 0.42);
+		else setSheet(drawerHeight > sheetMax * 0.6 ? sheetMax * 0.42 : sheetMax * 0.9);
+	}
+	function handleKey(event: KeyboardEvent) {
+		const step = event.key === 'ArrowUp' ? 60 : event.key === 'ArrowDown' ? -60 : 0;
+		if (!step) return;
+		event.preventDefault();
+		setSheet((drawer ? drawerHeight : 0) + step);
+	}
 	/** Compact: the strip sits on top of the sheet, or on the bottom row when no
 	 * panel is open. */
 	const stripBottom = $derived(bottomReserve + (drawer ? drawerHeight : 0));
@@ -104,6 +153,19 @@
 	onpointerup={() => layout.finishGesture()}
 	onpointercancel={() => layout.finishGesture()}
 />
+{#if stripShown && layout.compact}
+	<button
+		class="sheet-handle"
+		style:bottom="{stripBottom + stripHeight}px"
+		aria-label={drawer ? 'Resize the panel' : 'Open the panel'}
+		title="Drag to resize"
+		onpointerdown={handleDown}
+		onpointermove={handleMove}
+		onpointerup={handleUp}
+		onpointercancel={() => (drag = null)}
+		onkeydown={handleKey}><span aria-hidden="true"></span></button
+	>
+{/if}
 {#if stripShown}
 	<div
 		class="panel-toolbar"
@@ -118,10 +180,24 @@
 		bind:offsetHeight={stripHeight}
 	>
 		<div class="tabs" bind:clientWidth={tabsWidth}>
-			{#each tabs as panel (panel.id)}
+			{#each dockTabs as panel (panel.id)}
 				<button
+					aria-label={panel.badge ? `${panel.title}, ${panel.badge} new` : panel.title}
+					aria-pressed={layout.shown(panel)}
+					onclick={() => {
+						if (app.zen) app.zen = false;
+						layout.toggle(panel);
+					}}
+					>{panel.title}{#if panel.badge}<span class="badge">({panel.badge})</span>{/if}</button
+				>
+			{/each}
+			{#if sideTabs.length}<span class="divider" aria-hidden="true"></span>{/if}
+			{#each sideTabs as panel (panel.id)}
+				<button
+					class="side"
 					aria-label={panel.title}
 					aria-pressed={layout.shown(panel)}
+					title="Opens beside the map, on the right"
 					onclick={() => {
 						if (app.zen) app.zen = false;
 						layout.toggle(panel);
@@ -246,8 +322,30 @@
 	button:hover {
 		color: var(--ink);
 	}
+	.badge {
+		margin-left: 4px;
+		color: var(--text-secondary);
+		font-weight: 400;
+	}
 	button[aria-pressed='true'] {
 		color: var(--ink);
+	}
+	.divider {
+		align-self: center;
+		width: 1px;
+		height: 18px;
+		margin: 0 6px;
+		background: var(--line);
+	}
+	/* A panel beside the map is a toggle, not a tab: shown with a tint, not the
+	   tab underline. */
+	button.side[aria-pressed='true'] {
+		background: var(--accent-soft);
+		border-radius: var(--radius-control);
+		margin-block: 5px;
+	}
+	button.side[aria-pressed='true']::after {
+		display: none;
 	}
 	/* The open tab is underlined in the accent, the one place it appears here. */
 	button[aria-pressed='true']::after {
@@ -286,6 +384,31 @@
 		left: 12px;
 		right: 12px;
 		z-index: 25;
+	}
+	/* The phone sheet's grab bar, just above its tabs. */
+	.sheet-handle {
+		position: fixed;
+		z-index: 26;
+		left: 50%;
+		transform: translateX(-50%);
+		display: grid;
+		place-items: center;
+		width: 88px;
+		height: 22px;
+		min-height: 0;
+		padding: 0;
+		touch-action: none;
+		cursor: ns-resize;
+	}
+	.sheet-handle span {
+		width: 40px;
+		height: 5px;
+		border-radius: 3px;
+		background: var(--border-strong);
+		box-shadow: 0 0 0 1px rgb(var(--paper-rgb) / 0.8);
+	}
+	.sheet-handle:focus-visible {
+		outline-offset: -2px;
 	}
 	.layout-error {
 		position: fixed;

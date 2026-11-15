@@ -122,7 +122,7 @@
 		onselectbus: (id: string) => void;
 		onselectedge: (id: string) => void;
 		onclose: () => void;
-		/** The background map under geographic positions: the map's own basemap, light-themed. */
+		/** The background map under geographic positions: the map's own basemap, in its theme. */
 		basemap?: BasemapSpec;
 	} = $props();
 

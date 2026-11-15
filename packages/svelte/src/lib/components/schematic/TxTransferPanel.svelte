@@ -128,8 +128,6 @@
 
 <style>
 	[title] {
-		text-decoration: underline dotted;
-		text-underline-offset: 2px;
 		cursor: help;
 	}
 	.transfer {

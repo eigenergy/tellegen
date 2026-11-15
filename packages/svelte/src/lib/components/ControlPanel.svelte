@@ -57,11 +57,10 @@
 			untrack(() => {
 				open = true;
 				// A selection's readout is in this panel: bring it to the front of its
-				// dock, unless the Agent panel is there, since an agent's own selections
-				// must not hide the panel that reports them.
+				// dock, also when an agent made the selection, so the reader sees what
+				// the agent pointed at. The Agent tab keeps its record of the call.
 				const panel = layout.panels.find((candidate) => candidate.id === 'network');
-				const front = layout.panels.find((candidate) => layout.preferred(candidate));
-				if (panel && front?.id !== 'agent') layout.activate(panel);
+				if (panel) layout.activate(panel);
 				if (layout.compact) {
 					layout.drawer = 'network';
 					void tick().then(() => bodyEl?.closest('.panel-content')?.scrollTo({ top: 0 }));
@@ -171,6 +170,13 @@
 					<NetworkStats />
 				{/if}
 
+				<!-- On a phone the sheet is short: the key to the map's colours comes
+				     right after the result, not below the fold. -->
+				{#if app.compactLayout && !selectionLeads}
+					{@render selectionBlock()}
+					<hr />
+				{/if}
+
 				{#if ctrl.activeSolvable?.network && !app.activeMulti}
 					{@const c = ctrl.activeSolvable}
 					<button
@@ -197,7 +203,7 @@
 					<BindingLines />
 				{/if}
 
-				{#if !selectionLeads}
+				{#if !selectionLeads && !app.compactLayout}
 					<hr />
 
 					{@render selectionBlock()}

@@ -21,6 +21,8 @@ export interface PanelRegistration {
 	onopen?: () => void;
 	/** Listed in the tab strip. Defaults to the panels that dock on the left. */
 	tab?: boolean;
+	/** A count shown beside the tab's name, such as new messages in the Log. */
+	badge?: number;
 }
 interface SavedPanel extends PanelBounds {
 	position: PanelPosition;
@@ -105,19 +107,37 @@ export class PanelLayout {
 			this.panels = this.panels.filter((p) => p.id !== panel.id);
 		};
 	}
-	update(id: string, open: boolean, title: string, width: number) {
+	update(id: string, open: boolean, title: string, width: number, badge?: number) {
 		const previous = this.panels.find((p) => p.id === id);
 		if (
 			!previous ||
-			(previous.open === open && previous.title === title && previous.width === width)
+			(previous.open === open &&
+				previous.title === title &&
+				previous.width === width &&
+				previous.badge === badge)
 		)
 			return;
-		this.panels = this.panels.map((p) => (p.id === id ? { ...p, open, title, width } : p));
+		this.panels = this.panels.map((p) => (p.id === id ? { ...p, open, title, width, badge } : p));
 		if (open && !previous.open) {
 			this.#rememberOpener(id);
 			this.activate(previous);
 			if (this.compact) this.drawer = id;
 		}
+	}
+	/** Bring a panel to the front, opening it first if it is closed: what a
+	 * menu item or command that names the panel should do. Setting a panel's
+	 * open flag alone does nothing when it is already open behind another one. */
+	show(id: string): boolean {
+		const panel = this.panels.find((candidate) => candidate.id === id);
+		if (!panel) return false;
+		this.#rememberOpener(id);
+		this.activate(panel);
+		if (this.compact) this.drawer = id;
+		if (!panel.open) {
+			panel.setOpen(true);
+			panel.onopen?.();
+		}
+		return true;
 	}
 	activate(panel: PanelRegistration) {
 		this.lastActive = panel.id;
@@ -240,9 +260,11 @@ export class PanelLayout {
 				this.placements[id] = { ...this.clamp(panel), position: 'floating' };
 		}
 	}
+	/** One width per dock, the widest panel that docks there, open or not, so
+	 * switching tabs never resizes the panel or rewraps its text. */
 	dockWidth(side: PanelSide) {
-		const panels = this.ordered(side).filter((p) => p.open);
-		if (!panels.length) return 0;
+		const panels = this.ordered(side);
+		if (!panels.some((p) => p.open)) return 0;
 		const width = Math.max(...panels.map((p) => p.width), side === 'left' ? this.stripMin : 0);
 		return Math.min(width, this.viewportWidth * (side === 'left' ? 0.36 : 0.29));
 	}

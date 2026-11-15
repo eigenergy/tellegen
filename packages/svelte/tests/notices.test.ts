@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { errorNoticeTitle, NoticeCenter } from '../src/lib/notices.svelte.js';
+import { errorNoticeCanRetry, errorNoticeTitle, NoticeCenter } from '../src/lib/notices.svelte.js';
 import { AppState } from '../src/lib/state.svelte.js';
 
 afterEach(() => vi.useRealTimers());
@@ -19,6 +19,23 @@ describe('error titles', () => {
 			)
 		).toBe(
 			'The calculation did not finish. Try another calculation, or open Details for the reason.'
+		);
+	});
+	it('says how to turn on dynamics, and offers no retry that cannot succeed', () => {
+		const details =
+			'Dynamics (RMS) simulation is experimental. Turn it on in Settings, under Experimental features.';
+		expect(errorNoticeTitle(details)).toBe(
+			'Dynamics is experimental. Turn it on in Settings, under Experimental features.'
+		);
+		expect(errorNoticeCanRetry(details)).toBe(false);
+		expect(errorNoticeCanRetry('sensitivity rate limit exceeded')).toBe(true);
+	});
+	it('treats a singular Jacobian as a calculation failure, not a price sensitivity one', () => {
+		expect(errorNoticeTitle('AC power flow failed: singular Jacobian at iteration 3')).toBe(
+			'The calculation did not finish. Try another calculation, or open Details for the reason.'
+		);
+		expect(errorNoticeTitle('sensitivity unavailable: singular basis')).toBe(
+			'Price sensitivity is not available for this result.'
 		);
 	});
 	it('keeps the file error title for actual parse failures', () => {

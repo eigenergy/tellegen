@@ -2,12 +2,15 @@
 	import { sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
-	import { signedExp } from '../format.js';
+	import { signedSmall, small } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
-	const reportedUnits = $derived(dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
-	const unitTitle = $derived(`Units: ${reportedUnits}`);
+	/** The engine's units, read out: ($/MWh)/MW becomes "$/MWh per MW", and a
+	 * rating's ($/MWh)/MVA becomes "$/MWh per MVA". */
+	const perMw = (units: string) =>
+		dollarUnits(units).replace(/\(\$\/MWh\)\/(MW|MVA)\b/, '$$/MWh per $1');
+	const reportedUnits = $derived(perMw(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 
 	// Branch mode: the selection is a line and the column is price/rating; the
 	// legend and preview pipeline are identical (both columns are bus-keyed).
@@ -24,69 +27,67 @@
 	// RatingSlider; fall back to the raw branch id while the network loads.
 	const branchLabel = $derived.by(() => {
 		const b = ctrl.selectedBranchData;
-		return b ? `${b.from} – ${b.to}` : String(app.selectedBranch);
+		return b ? `${b.from} – ${b.to}` : String(app.selectedBranch);
 	});
+	const title = $derived(
+		ctrl.previewing
+			? branchMode
+				? `Price preview for line ${branchLabel}`
+				: `Price preview for bus ${app.selectedBus}`
+			: branchMode
+				? `Price change per ${reportedUnits.endsWith('MVA') ? 'MVA' : 'MW'} of rating on line ${branchLabel}`
+				: `Price change per MW of demand at bus ${app.selectedBus}`
+	);
 </script>
 
-<div class="mode">
-	<span class="chip">
-		{ctrl.previewing ? 'LMP preview' : branchMode ? '∂LMP/∂rating' : '∂LMP/∂d'}
-	</span>
-	<span class="dim">
-		{#if branchMode}Line <span class="mono">{branchLabel}</span>{:else}Bus
-			<span class="mono">{app.selectedBus}</span>{/if}
-	</span>
+<div class="mode readout-head">
+	<h3 class="readout-title" data-testid="sensitivity-title">{title}</h3>
 	<button onclick={ctrl.clearSelection} aria-keyshortcuts="Escape" title="Esc">Clear</button>
 </div>
-<div class="sensitivity-readout" aria-live="polite">
+<div class="sensitivity-readout" data-testid="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
 		<p class="dim small">
-			{ctrl.activeSolvable?.solving ? 'Solving…' : 'First-order preview. Release to solve.'}
+			{ctrl.activeSolvable?.solving
+				? 'Solving…'
+				: 'Estimated from the current prices. Release to solve.'}
 		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
-			<div class="legend-labels mono single">
+			<div class="legend-labels single">
 				<span
-					>Uniform {signedExp(ctrl.sensSummary.mean * previewStep)}
+					>Every price changes by {signedSmall(ctrl.sensSummary.mean * previewStep)}
 					{previewUnits}</span
 				>
 			</div>
 		{:else if ctrl.previewScale}
 			<!-- The bounds are fixed for the whole drag (column scale × full slider
 			     deflection), so the ramp ends label the colors: full green/purple is
-			     the predicted LMP change at full deflection, and intensity grows with the
+			     the predicted price change at full deflection, and intensity grows with the
 			     step instead of renormalizing every frame. -->
 			<div class="legend" style:background={sensGradient}></div>
-			<div class="legend-labels mono">
-				<span>&minus;{ctrl.previewScale.toExponential(1)}</span>
-				<span>&Delta; LMP {previewUnits}</span>
-				<span>+{ctrl.previewScale.toExponential(1)}</span>
+			<div class="legend-labels">
+				<span>&minus;{small(ctrl.previewScale)}</span>
+				<span>Price change ({previewUnits})</span>
+				<span>+{small(ctrl.previewScale)}</span>
 			</div>
 		{/if}
 	{:else}
-		<p class="dim small sensitivity-copy" title={unitTitle}>
-			{#if branchMode}
-				LMP response to the rating on line {branchLabel}.
-			{:else}
-				LMP response to demand at bus {app.selectedBus}.
-			{/if}
-			<span class="hint-dot mono" title={unitTitle} aria-label={unitTitle}>i</span>
-		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
-			<div class="legend-labels mono single">
-				<span>Uniform {signedExp(ctrl.sensSummary.mean)} {reportedUnits}</span>
+			<div class="legend-labels single">
+				<span>Every price changes by {signedSmall(ctrl.sensSummary.mean)} {reportedUnits}</span>
 			</div>
 		{:else if ctrl.sensSummary}
 			<div class="legend" style:background={sensGradient}></div>
-			<div class="legend-labels mono">
-				<span>&minus;{ctrl.sensSummary.scale.toExponential(1)}</span>
+			<div class="legend-labels">
+				<span>&minus;{small(ctrl.sensSummary.scale)}</span>
 				<span>0</span>
-				<span>+{ctrl.sensSummary.scale.toExponential(1)}</span>
+				<span>+{small(ctrl.sensSummary.scale)}</span>
 			</div>
+			<p class="dim small units">In {reportedUnits}.</p>
 		{:else if app.sensitivityLoading}
 			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
-			<div class="legend-labels mono single">
+			<div class="legend-labels single">
 				<span class="blink">Computing&hellip;</span>
 			</div>
 		{/if}
@@ -94,15 +95,16 @@
 </div>
 
 <style>
-	.chip {
-		font-family: var(--font-mono);
-		font-size: var(--fs-label);
-		padding: var(--space-3xs) var(--space-sm);
-		border: 1px solid var(--accent);
-		color: var(--text-accent);
-		background: var(--accent-soft);
-		border-radius: var(--radius-xs);
-		white-space: nowrap;
+	.readout-head {
+		align-items: flex-start;
+	}
+
+	.readout-title {
+		margin: 0;
+		font-size: var(--fs-body);
+		font-weight: 600;
+		line-height: var(--lh-snug);
+		color: var(--ink);
 	}
 
 	/* .mode > button lives in the global .mode block in app.css, not here: scoping
@@ -113,9 +115,7 @@
 		min-height: 58px;
 	}
 
-	.sensitivity-copy {
-		font-size: var(--fs-data);
-		line-height: var(--lh-snug);
-		white-space: nowrap;
+	.units {
+		margin: 4px 0 0;
 	}
 </style>

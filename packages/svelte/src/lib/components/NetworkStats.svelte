@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
-	import { fmt, signed, splitName } from '../format.js';
+	import { signed, splitName } from '../format.js';
 	import OutcomeVerdict from './OutcomeVerdict.svelte';
 
 	const app = getAppState();
@@ -27,17 +27,16 @@
 				<dt>{ctrl.bindingRule?.label ?? 'Lines near or above rating'}</dt>
 				<dd class="mono">{stats.binding ?? '…'}</dd>
 			</div>
-			<div>
-				<dt>Generation cost ($/h)</dt>
-				{#if stats.objective === null}
+			<!-- The result sentence above states the cost; the row only marks a solve in progress. -->
+			{#if stats.objective === null}
+				<div>
+					<dt>Generation cost</dt>
 					<dd class="blink">Solving&hellip;</dd>
-				{:else}
-					<dd class="mono">{fmt.format(stats.objective)}</dd>
-				{/if}
-			</div>
+				</div>
+			{/if}
 			{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
 				<div class="delta">
-					<dt>Change from base</dt>
+					<dt>Cost change from the base case ($/h)</dt>
 					<dd class="mono">{signed(deltaObjective)}</dd>
 				</div>
 			{/if}

@@ -66,7 +66,7 @@
 
 	const counts = $derived(
 		ins
-			? `${ins.generators.length} machines, ${ins.plants?.length ?? 0} renewable plants simulated, ${ins.held_units?.length ?? 0} held, ${ins.sources.length} voltage sources · ${ins.dyr_records.toLocaleString()} DYR records`
+			? `${ins.generators.length} machines, ${ins.plants?.length ?? 0} renewable plants simulated, ${ins.held_units?.length ?? 0} held, ${ins.sources.length} voltage sources and ${ins.dyr_records.toLocaleString()} .dyr records.`
 			: ''
 	);
 	const flatOk = $derived(!!att?.flat && att.flat.max_speed_drift <= 1e-6);
@@ -84,26 +84,24 @@
 >
 	<div class="dyn" data-testid="dynamics-panel">
 		<div class="dyn-mode"><span>Map shows</span><ModeSwitch /></div>
-		{#if hosted}
-			<p>
-				Dynamics needs PSS/E dynamic data (.dyr). Open the WECC 240 demo, or drop a .raw with its
-				.dyr.
-			</p>
-		{/if}
 		{#if !att}
 			<section class="empty">
-				<h3>Electromechanical dynamics</h3>
+				<h3>Dynamics simulation</h3>
 				<p>
-					Simulate seconds after a disturbance: a fault, a line or unit trip, a load step. Watch bus
-					voltages and machine speeds swing on the map, then read the verdict: did the machines stay
-					in step, and where did frequency bottom out?
+					Simulate the first seconds after a fault, a line or unit trip, or a load step. The map
+					shows bus voltages and machine speeds as they swing. The result says whether the machines
+					stayed in step and how far frequency fell.
 				</p>
-				<button class="primary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
-					>{demoBusy ? 'Opening WECC 240…' : 'Open the WECC 240 dynamics demo'}</button
+				<p>
+					It needs PSS/E dynamic data (.dyr).{hosted ? ' This case has none.' : ''} Drop a .raw case with
+					its .dyr file on the map, or open the demo.
+				</p>
+				<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
+					>{demoBusy ? 'Opening WECC 240…' : 'Open the WECC 240 demo'}</button
 				>
 				<p class="dim">
-					243 buses of the western US interconnection with machines, exciters, governors and 37
-					renewable plants. Or drop a PSS/E .raw case with its .dyr file on the map.
+					243 buses of the western US grid, with machines, exciters, governors and 37 renewable
+					plants.
 				</p>
 				{#if demoError}<p class="err" role="alert">{demoError}</p>{/if}
 				{#if experimental && local?.studyInputJson}
@@ -275,11 +273,13 @@
 								/>
 							</details>
 							<p class="footer">
-								{current.run.steps.toLocaleString()} steps · {current.run.newtonIterations.toLocaleString()}
-								Newton iterations · engine {(current.run.workerMs / 1000).toFixed(2)} s, end to end {(
+								{current.run.steps.toLocaleString()} steps and {current.run.newtonIterations.toLocaleString()}
+								Newton iterations. Engine time {(current.run.workerMs / 1000).toFixed(2)} s, total {(
 									current.wallMs / 1000
-								).toFixed(2)} s · dt {current.dt * 1000} ms, output every {current.run.outputStep *
-									1000} ms · loads {current.options.load_model ?? 'power_flow'}
+								).toFixed(2)} s. Time step {current.dt * 1000} ms, output every {current.run
+									.outputStep * 1000} ms. Load model: {(
+									current.options.load_model ?? 'power_flow'
+								).replaceAll('_', ' ')}.
 								<button
 									class="link"
 									onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
@@ -337,15 +337,24 @@
 		display: grid;
 		gap: 8px;
 	}
-	.primary {
-		min-height: 40px;
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--paper);
+	.secondary {
+		justify-self: start;
+		min-height: 28px;
+		padding: 5px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		background: var(--surface-control);
+		color: var(--ink);
 		font: inherit;
-		font-weight: 600;
 		cursor: pointer;
+	}
+	.secondary:hover:not(:disabled) {
+		border-color: var(--border-strong);
+	}
+	@media (pointer: coarse) {
+		.secondary {
+			min-height: 44px;
+		}
 	}
 	.dim {
 		color: var(--text-tertiary);

@@ -253,10 +253,9 @@
 	const basemapPrimaryProvider = $derived(basemap.primaryProvider);
 	const basemapFallbackProvider = $derived(basemap.fallbackProvider);
 	const palette = $derived(MAP_PALETTE[theme]);
-	/** The diagram draws on light paper, so its background map is the light basemap whatever the
-	 * map's theme; a host's own style is used as given. */
+	/** The diagram's background map follows the map's theme; a host's own style is used as given. */
 	const diagramBasemap = $derived(
-		resolveBasemap({ mapStyle, fallbackMapStyle, theme: 'light', hideBasemapLabels, cartoApiKey })
+		resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
 	);
 	// Set once a map has existed in this component instance: a rebuild (context
 	// loss or basemap change) restores the camera instead of reframing.
@@ -476,7 +475,8 @@
 			const mid = (d.scalarLo + d.scalarHi) / 2;
 			return scalarColor(
 				d.scalarMode,
-				((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo)
+				((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo),
+				theme
 			);
 		};
 	}
@@ -1289,7 +1289,11 @@
 						const value = values.get(b.id);
 						return value === undefined
 							? palette.grey
-							: scalarColor(mode, (value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12));
+							: scalarColor(
+									mode,
+									(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12),
+									theme
+								);
 					},
 					pickable: true,
 					stroked: true,
@@ -1373,7 +1377,7 @@
 					},
 					updateTriggers: {
 						getRadius: [app.busSizing],
-						getFillColor: [display],
+						getFillColor: [display, theme],
 						getLineColor: [app.selectedBus, app.activeCaseId, theme],
 						getLineWidth: [app.selectedBus, app.activeCaseId]
 					}
@@ -1455,7 +1459,7 @@
 						},
 						updateTriggers: {
 							getRadius: [app.busSizing],
-							getFillColor: [display],
+							getFillColor: [display, theme],
 							getLineColor: [app.selectedBus, app.activeLocalId, theme],
 							getLineWidth: [app.selectedBus, app.activeLocalId]
 						}
@@ -1705,6 +1709,47 @@
 			padding: framePadding(w, h, 'case'),
 			duration: prefersReducedMotion() ? 0 : 1400
 		});
+		lastCaseFit = { target, inset: untrack(() => app.sheetInset) };
+	});
+
+	// On a phone the sheet covers the lower part of the map. When it opens or
+	// closes, a case the reader has not moved since it was framed is framed
+	// again for the space now free, so a closed sheet leaves no empty band.
+	let lastCaseFit: { target: string; inset: number } | null = null;
+	$effect(() => {
+		const m = map;
+		if (!m) return;
+		const forget = (event: { originalEvent?: unknown }) => {
+			if (event.originalEvent) lastCaseFit = null;
+		};
+		m.on('movestart', forget);
+		return () => {
+			m.off('movestart', forget);
+		};
+	});
+	$effect(() => {
+		const inset = app.sheetInset;
+		const m = map;
+		if (!m || !panels.compact) return;
+		// Wait for the sheet to settle, so a drag reframes once, not every frame.
+		const timer = setTimeout(
+			() =>
+				untrack(() => {
+					const fit = lastCaseFit;
+					if (!fit || Math.abs(inset - fit.inset) < 40 || selectedBusCue || selectedBranchCue)
+						return;
+					const bounds = boundsFor(fit.target);
+					if (!bounds) return;
+					fit.inset = inset;
+					const { clientWidth: w, clientHeight: h } = m.getContainer();
+					m.fitBounds(bounds, {
+						padding: framePadding(w, h, 'case'),
+						duration: prefersReducedMotion() ? 0 : 400
+					});
+				}),
+			250
+		);
+		return () => clearTimeout(timer);
 	});
 </script>
 
@@ -1977,8 +2022,24 @@
 		border-top-color: var(--line);
 	}
 
-	/* maplibre draws its zoom icons dark; on the dark panel they turn light. */
-	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-group .maplibregl-ctrl-icon) {
+	/* The group clips its corners, so the focus ring sits inside each button
+	   rather than outside, where the clip would cut it to a sliver. */
+	.map :global(.maplibregl-ctrl-group button:focus) {
+		box-shadow: none;
+	}
+	.map :global(.maplibregl-ctrl-group button:focus-visible) {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: -2px;
+		border-radius: var(--radius-control);
+	}
+	.map :global(.maplibregl-ctrl-group button:hover:not(:disabled)) {
+		background-color: var(--surface-hover);
+	}
+
+	/* maplibre draws its zoom and attribution icons dark; on the dark panel they
+	   turn light. */
+	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-group .maplibregl-ctrl-icon),
+	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-attrib-button) {
 		filter: invert(1);
 	}
 
@@ -2000,7 +2061,8 @@
 		box-sizing: border-box;
 		background: rgb(var(--paper-rgb) / 0.85);
 		border-radius: var(--radius-control);
-		font-size: 12px;
+		color: var(--text-secondary);
+		font: 12px / 20px var(--font-sans);
 		white-space: nowrap;
 		text-align: right;
 	}
@@ -2085,12 +2147,17 @@
 		}
 	}
 
-	/* Attribution shares the bottom row with touch-sized zoom buttons. */
+	/* Attribution shares the bottom row with touch-sized zoom buttons. When it
+	   wraps, its box grows with it, so no provider's name falls outside. */
 	@media (max-width: 460px) {
 		.map :global(.maplibregl-ctrl-attrib) {
 			max-width: calc(100vw - 140px);
 			font-size: 12px;
 			white-space: normal;
+		}
+		.map :global(.maplibregl-ctrl-attrib.maplibregl-compact.maplibregl-compact-show) {
+			height: auto;
+			min-height: 24px;
 		}
 	}
 

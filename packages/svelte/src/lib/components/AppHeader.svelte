@@ -201,9 +201,12 @@
 		closeMenus();
 		run();
 	}
+	/** Open Settings, or bring it to the front when it is open behind another
+	 * panel: on a phone this menu is the only way to reach it. */
 	function openSettings() {
 		closeMenus();
-		app.settingsOpen = true;
+		if (app.zen) app.zen = false;
+		if (!layout.show('settings')) app.settingsOpen = true;
 	}
 </script>
 
@@ -370,11 +373,10 @@
 				<button class="action" onclick={() => pick(() => fileInput?.click())}>
 					<span>Open a file…</span>
 					<span class="action-hint"
-						>{ctrl.collectionsAvailable
-							? 'Case, ZIP or map files.'
-							: 'Case or map files.'}{ctrl.showFileDropUi
-							? ' You can also drop them anywhere on this page.'
-							: ''}</span
+						>{ctrl.collectionsAvailable ? 'Case, ZIP or map files.' : 'Case or map files.'}
+						{#if ctrl.showFileDropUi}<span class="drop-hint"
+								>You can also drop them anywhere on this page.</span
+							>{/if}</span
 					>
 				</button>
 				{#if ctrl.collectionsAvailable}
@@ -451,10 +453,10 @@
 					<a role="menuitem" href="/credits/" onclick={() => closeMenus()}>Credits</a>
 					<a role="menuitem" href="/privacy/" onclick={() => closeMenus()}>Privacy</a>
 				{/if}
-				{#if config.orgLabel}
+				<!-- The Credits page names the lab; a host without it lists the lab here. -->
+				{#if config.orgLabel && !config.showFooter}
 					<a
 						role="menuitem"
-						class="org"
 						href={config.orgHref}
 						target="_blank"
 						rel="noreferrer"
@@ -554,6 +556,12 @@
 	.case-button:hover,
 	.tool:hover {
 		border-color: var(--border-strong);
+		background: var(--surface-hover);
+	}
+
+	.case-button:hover {
+		background: var(--raised);
+		box-shadow: inset 0 0 0 1px var(--border-strong);
 	}
 
 	.case-button[aria-expanded='true'] {
@@ -777,11 +785,6 @@
 		outline-offset: -2px;
 	}
 
-	.app-list .org {
-		color: var(--text-secondary);
-		font-size: var(--fs-label);
-	}
-
 	.app-list hr {
 		width: 100%;
 		margin: 4px 0;
@@ -808,6 +811,17 @@
 			display: none;
 		}
 
+		/* The menu button starts well right of the screen edge; the list spans
+		   the screen instead, inside the page gutters. */
+		.case-list {
+			position: fixed;
+			top: 54px;
+			left: 16px;
+			right: 16px;
+			width: auto;
+			max-width: none;
+		}
+
 		.wide-only {
 			display: none;
 		}
@@ -831,6 +845,11 @@
 		.case-button,
 		.tool {
 			height: 40px;
+		}
+
+		/* Nothing to drop from a touch screen. */
+		.drop-hint {
+			display: none;
 		}
 	}
 </style>

@@ -150,7 +150,7 @@
 		/** The geographic view on screen, as a map camera, so the map can continue from it when the
 		 * diagram closes. */
 		ongeoview?: (view: CameraSnapshot) => void;
-		/** The background map under geographic positions: the map's own basemap, light-themed. */
+		/** The background map under geographic positions: the map's own basemap, in its theme. */
 		basemap?: BasemapSpec;
 	} = $props();
 
@@ -725,15 +725,23 @@
 	const outOfService = $derived(graph.inService.some((on) => !on));
 	const TIER_NAMES = Object.fromEntries(TX_TIERS.map((t) => [t.tier, t.name]));
 
-	/** Screen insets no panel or toolbar covers. */
+	/** Width of the summary docked at the right edge on a wide screen, beside the drawing. */
+	const SUMMARY_WIDTH = 340;
+	const summaryShown = $derived(colour !== 'level' && !equipmentOpen);
+	const summaryDocked = $derived(!panels.compact && summaryShown);
+	/** Screen insets no panel, toolbar or summary covers. */
 	const freeArea = () =>
 		freeInsets({
 			compact: panels.compact,
 			top:
 				panels.top +
 				Math.max(0, toolbarHeight - 48) +
-				(resultsOn || economicsOn || transferOn ? legendHeight + 8 : 0),
-			dockWidth: (side) => panels.dockWidth(side),
+				(panels.compact && (resultsOn || economicsOn || transferOn) ? legendHeight + 8 : 0),
+			dockWidth: (side) =>
+				panels.dockWidth(side) +
+				(side === 'right' && summaryDocked
+					? SUMMARY_WIDTH + (panels.dockWidth('right') ? 16 : 0)
+					: 0),
 			sheetInset: app.sheetInset
 		});
 	/** The deepest zoom for this drawing, whatever its units (see `maxZoomFor`). */
@@ -1670,7 +1678,9 @@
 		class:compact={panels.compact}
 		bind:clientHeight={toolbarHeight}
 		style:max-width="calc(100% - {toolLeft +
-			(panels.compact ? 12 : panels.dockWidth('right') + 24)}px)"
+			(panels.compact
+				? 12
+				: panels.dockWidth('right') + 24 + (summaryDocked ? SUMMARY_WIDTH + 16 : 0))}px)"
 		style:top="{panels.top + 8}px"
 		style:left="{toolLeft}px"
 		role="toolbar"
@@ -1688,7 +1698,7 @@
 					aria-controls="tx-equipment-panel"
 					onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
 				>
-				<button onclick={onclose} title="Return to the map">Close</button>
+				<button onclick={onclose}>Show map</button>
 			</div>
 		{:else}
 			<div
@@ -1709,74 +1719,80 @@
 				{/each}
 			</div>
 		{/if}
-		{#if panels.compact}
-			<select
-				aria-label="Diagram layout"
-				value={layout}
-				onchange={(e) => show(e.currentTarget.value as Layout)}
-			>
-				<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
-				<option value="schematic">Schematic</option>
-			</select>
-		{:else}
-			<div class="segmented" role="group" aria-label="Layout">
-				<button
-					aria-pressed={layout === 'source'}
-					title="Positions from the case data"
-					onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
+		<div class="controls">
+			{#if panels.compact}
+				<select
+					aria-label="Diagram layout"
+					value={layout}
+					onchange={(e) => show(e.currentTarget.value as Layout)}
 				>
-				<button
-					aria-pressed={layout === 'schematic'}
-					title="Substations near their positions, one busbar per bus, lines between them"
-					onclick={() => show('schematic')}>Schematic</button
-				>
-			</div>
-		{/if}
+					<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
+					<option value="schematic">Schematic</option>
+				</select>
+			{:else}
+				<div class="segmented" role="group" aria-label="Layout">
+					<button
+						aria-pressed={layout === 'source'}
+						title="Positions from the case data"
+						onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
+					>
+					<button
+						aria-pressed={layout === 'schematic'}
+						title="Substations near their positions, one busbar per bus, lines between them"
+						onclick={() => show('schematic')}>Schematic</button
+					>
+				</div>
+			{/if}
 
-		{#if !panels.compact}
-			<button
-				aria-expanded={equipmentOpen}
-				aria-controls="tx-equipment-panel"
-				onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
-			>
-		{/if}
-		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
-		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
-		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
-		{#if panels.compact}
-			<button
-				aria-expanded={displayOptions}
-				aria-controls="tx-display-options"
-				onclick={() => (displayOptions = !displayOptions)}>Display</button
-			>
-		{:else}<button onclick={onclose} title="Return to the map">Close</button>{/if}
-		{#if !panels.compact || displayOptions}
-			<div id="tx-display-options" class="display-options">
-				{#if geographic}
-					<label class="check" title="Map tiles under the geographic positions, as on the main map"
-						><input
-							type="checkbox"
-							checked={basemapPref.value}
-							onchange={(e) => basemapPref.set(e.currentTarget.checked)}
-						/> Basemap</label
+			{#if !panels.compact}
+				<button
+					aria-expanded={equipmentOpen}
+					aria-controls="tx-equipment-panel"
+					onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
+				>
+			{/if}
+			<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
+			<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
+			<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
+			{#if panels.compact}
+				<button
+					aria-expanded={displayOptions}
+					aria-controls="tx-display-options"
+					onclick={() => (displayOptions = !displayOptions)}>Display</button
+				>
+			{/if}
+			{#if !panels.compact || displayOptions}
+				<div id="tx-display-options" class="display-options">
+					{#if geographic}
+						<label
+							class="check"
+							title="Map tiles under the geographic positions, as on the main map"
+							><input
+								type="checkbox"
+								checked={basemapPref.value}
+								onchange={(e) => basemapPref.set(e.currentTarget.checked)}
+							/> Basemap</label
+						>
+					{/if}
+					{#if fieldKind}
+						<label
+							class="check"
+							title={fieldKind === 'voltage'
+								? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
+								: 'Interpolate price differences around buses: blue below the median LMP, brown above; bus colours use the fixed price scale'}
+							><input
+								type="checkbox"
+								checked={fieldPref.value}
+								onchange={(e) => fieldPref.set(e.currentTarget.checked)}
+							/> Shading</label
+						>
+					{/if}
+					<button onclick={exportPng} title="A PNG of this view with a title block"
+						>Save image</button
 					>
-				{/if}
-				{#if fieldKind}
-					<label
-						class="check"
-						title={fieldKind === 'voltage'
-							? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
-							: 'Interpolate price differences around buses: blue below the median LMP, brown above; bus colours use the fixed price scale'}
-						><input
-							type="checkbox"
-							checked={fieldPref.value}
-							onchange={(e) => fieldPref.set(e.currentTarget.checked)}
-						/> Shading</label
-					>
-				{/if}
-				<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
-			</div>
-		{/if}
+				</div>
+			{/if}
+		</div>
 	</div>
 	{#if equipmentOpen}
 		<div
@@ -1805,20 +1821,20 @@
 			class="legend"
 			class:operating={panelView}
 			bind:clientHeight={legendHeight}
-			style:top="{panels.top + toolbarHeight + 16}px"
-			style:left="{toolLeft}px"
-			style:right="{panels.compact ? 12 : panels.dockWidth('right') + 24}px"
-			style:max-height="min(38vh, calc(100% - {panels.top +
-				toolbarHeight +
-				32 +
-				app.sheetInset}px))"
+			class:docked={summaryDocked}
+			style:top="{summaryDocked ? panels.top + 8 : panels.top + toolbarHeight + 16}px"
+			style:left={summaryDocked ? undefined : `${toolLeft}px`}
+			style:right="{panels.compact
+				? 12
+				: panels.dockWidth('right') + (panels.dockWidth('right') ? 32 : 16)}px"
+			style:width={summaryDocked ? `${SUMMARY_WIDTH}px` : undefined}
+			style:max-height={summaryDocked
+				? `calc(100% - ${panels.top + 8 + panels.bottom}px)`
+				: `min(38vh, calc(100% - ${panels.top + toolbarHeight + 32 + app.sheetInset}px))`}
 		>
 			{#if panelView}
-				<button
-					class="collapse"
-					aria-expanded={!brief}
-					title={brief ? 'Show the key, settings and lists' : 'Show only the summary'}
-					onclick={() => (brief = !brief)}>{brief ? 'Details ▾' : 'Summary ▴'}</button
+				<button class="collapse" aria-expanded={!brief} onclick={() => (brief = !brief)}
+					>{brief ? 'Show details' : 'Hide details'}</button
 				>
 			{/if}
 			{#if operatingOn}
@@ -1866,13 +1882,13 @@
 			{:else if !solution}
 				No result yet. Solve the case to colour the buses by the map's display series.
 			{:else if display?.mode === 'voltage'}
-				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
-				limits apply ·
+				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>.
+				Case limits apply.
 			{:else if display && uniform !== null}
-				{display.label} uniform at {uniform.toPrecision(4)}
-				{display.unit} · grey ·
+				{display.label} is the same everywhere: {uniform.toPrecision(4)}
+				{display.unit}.
 			{:else if display}
-				{display.label} <i style:background={display.gradient}></i> ·
+				{display.label} <i style:background={display.gradient}></i>
 			{/if}
 			{#if panelView}
 				<TxResultInspection
@@ -1903,8 +1919,8 @@
 					onframe={frameSelection}
 				/>
 			{:else if solution}
-				Branch colour: loading · grey below {warningPref.value} % · amber {warningPref.value}–100 %
-				· red above 100 % · unknown ratings faded
+				Lines are grey below {warningPref.value}% of their rating, amber from {warningPref.value}%
+				to 100%, and red above. Lines with unknown ratings are faded.
 			{/if}
 		</div>
 	{/if}
@@ -2110,7 +2126,7 @@
 		min-height: 44px;
 		font-size: 16px;
 	}
-	.toolbar.compact > select {
+	.toolbar.compact .controls > select {
 		width: 116px;
 		font-size: 13px;
 	}
@@ -2132,6 +2148,15 @@
 		inset: 0;
 		background: var(--bg);
 		color: var(--ink);
+		/* Limit labels on the drawing: dark amber on light, light amber on dark. */
+		--gauge-bg: color-mix(in srgb, var(--raised) 94%, transparent);
+		--gauge-line: var(--line);
+		--gauge-ink: var(--ink);
+		--gauge-warn: #8a5a00;
+		--gauge-track: var(--line);
+	}
+	:global(:root[data-theme='dark']) .tx-stage {
+		--gauge-warn: #f2c14e;
 	}
 	.canvas,
 	canvas {
@@ -2149,29 +2174,54 @@
 		inset: 0;
 		pointer-events: none;
 	}
+	/* Two rows with two weights: the views read as tabs, the drawing controls
+	   below them as quiet buttons. */
 	.toolbar {
 		position: absolute;
 		width: max-content;
-		flex-wrap: wrap;
 		right: 12px;
 		display: flex;
-		gap: 6px;
-		align-items: center;
-		padding: 5px;
-		font-size: 12px;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0;
+		padding: 0;
+		font-size: var(--fs-label);
 		background: var(--surface-panel, var(--paper));
 		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
+		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-1);
+	}
+	.toolbar.compact {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		padding: 5px;
+	}
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 6px;
+	}
+	.compact .controls {
+		display: contents;
 	}
 	.toolbar button {
 		font: inherit;
 		color: var(--ink);
-		background: var(--paper);
-		border: 1px solid var(--line);
+		background: none;
+		border: 1px solid transparent;
 		border-radius: var(--radius-control);
 		padding: 4px 8px;
 		cursor: pointer;
+	}
+	.toolbar button:hover:not(:disabled) {
+		background: var(--surface-hover);
+	}
+	.compact button {
+		border-color: var(--line);
+		background: var(--surface-control);
 	}
 	.toolbar button:disabled {
 		opacity: 0.45;
@@ -2184,9 +2234,12 @@
 	}
 	.segmented {
 		display: flex;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
 	}
 	.segmented button {
 		border-radius: 0;
+		border: 0;
 	}
 	.segmented button:first-child {
 		border-radius: 3px 0 0 3px;
@@ -2195,22 +2248,54 @@
 		border-radius: 0 3px 3px 0;
 	}
 	.segmented button + button {
-		border-left: 0;
+		border-left: 1px solid var(--line);
 	}
-	/* One row of views; on a narrow screen it scrolls sideways instead of taking rows. */
+	/* One row of views, as tabs; on a narrow screen it scrolls sideways. */
 	.views {
 		max-width: 100%;
 		overflow-x: auto;
 		scrollbar-width: none;
+		border: 0;
+		border-bottom: 1px solid var(--line);
+		border-radius: 0;
+		padding: 0 4px;
 	}
 	.views button {
+		position: relative;
 		white-space: nowrap;
 		flex: none;
+		padding: 9px 10px;
+		font-size: var(--fs-body);
+		color: var(--text-secondary);
+		border: 0;
+		border-radius: 0;
 	}
-	.segmented button[aria-pressed='true'],
-	.segmented button[aria-checked='true'] {
+	.views button + button {
+		border-left: 0;
+	}
+	.views button:hover:not(:disabled) {
+		background: none;
+		color: var(--ink);
+	}
+	.views button[aria-checked='true'] {
+		color: var(--ink);
+		background: none;
+	}
+	.views button[aria-checked='true']::after {
+		content: '';
+		position: absolute;
+		left: 10px;
+		right: 10px;
+		bottom: -1px;
+		height: 2px;
+		background: var(--accent);
+	}
+	.views button:focus-visible {
+		outline-offset: -3px;
+	}
+	.segmented button[aria-pressed='true'] {
 		background: var(--accent-soft);
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 	.gauges {
 		position: absolute;
@@ -2229,18 +2314,19 @@
 		align-items: center;
 		justify-content: center;
 		gap: 1px;
-		background: color-mix(in srgb, var(--paper) 92%, transparent);
-		border: 1px solid var(--line);
+		background: var(--gauge-bg);
+		border: 1px solid var(--gauge-line);
 		border-radius: var(--radius-control);
-		color: var(--ink);
-		font: 12px var(--font-mono);
+		color: var(--gauge-ink);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		cursor: pointer;
 		pointer-events: auto;
 		padding: 2px;
 	}
 	.utilization-gauge.warning {
-		color: #925b05;
-		border-color: #925b05;
+		color: var(--gauge-warn);
+		border-color: var(--gauge-warn);
 	}
 	/* At rating: a heavier outline; over rating: filled. Shape and fill, not only hue. */
 	.utilization-gauge.at-limit {
@@ -2271,10 +2357,10 @@
 		fill: #6b665c;
 	}
 	.leaders .warning line {
-		stroke: #925b05;
+		stroke: var(--gauge-warn);
 	}
 	.leaders .warning circle {
-		fill: #925b05;
+		fill: var(--gauge-warn);
 	}
 	.leaders .violation line {
 		stroke: #be2024;
@@ -2283,7 +2369,7 @@
 		fill: #be2024;
 	}
 	.gauge-track {
-		stroke: #c9c4ba;
+		stroke: var(--gauge-track);
 		stroke-width: 3;
 	}
 	.gauge-fill {
@@ -2291,7 +2377,7 @@
 		stroke-width: 3;
 	}
 	.rating-tick {
-		stroke: #252525;
+		stroke: var(--gauge-ink);
 		stroke-width: 1.5;
 	}
 	.legend {
@@ -2305,13 +2391,18 @@
 		right: 12px;
 		gap: 6px;
 		align-items: center;
-		padding: 4px 8px;
-		font: 12px var(--font-mono);
+		padding: 6px 10px;
+		font: var(--fs-label) / 1.5 var(--font-sans);
 		color: var(--text-secondary);
 		/* Chromium's headless shell can occlude the canvases past the scroll clip with a solid colour. */
 		background: linear-gradient(var(--paper), var(--paper));
 		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
+		border-radius: var(--radius-panel);
+	}
+	/* Docked at the right edge beside the drawing, never over it. */
+	.legend.docked {
+		align-content: flex-start;
+		box-shadow: var(--elev-1);
 	}
 	.legend.operating {
 		display: flow-root;
@@ -2321,13 +2412,16 @@
 	.legend .collapse {
 		float: right;
 		margin-left: 8px;
-		padding: 2px 6px;
+		padding: 2px 8px;
 		font: inherit;
 		color: var(--ink);
-		background: var(--paper);
+		background: var(--surface-control);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		cursor: pointer;
+	}
+	.legend .collapse:hover {
+		border-color: var(--border-strong);
 	}
 	@media (pointer: coarse) {
 		.legend .collapse {

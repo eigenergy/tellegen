@@ -3,7 +3,7 @@
 	import { formatPowerIoDiagnostic } from '@tellegen/engine';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { powerIoEntry, type LogEntryInput } from '../log.svelte.js';
-	import { getNoticeCenter, errorNoticeTitle } from '../notices.svelte.js';
+	import { getNoticeCenter, errorNoticeCanRetry, errorNoticeTitle } from '../notices.svelte.js';
 	import LogEntryView from './LogEntryView.svelte';
 	const app = getAppState();
 	const ctrl = getController();
@@ -24,7 +24,7 @@
 					// A message with its own detail is already written for people.
 					title: detail ? message : errorNoticeTitle(message),
 					details: detail ?? message,
-					retry: () => ctrl.retryError(),
+					retry: errorNoticeCanRetry(detail ?? message) ? () => ctrl.retryError() : undefined,
 					canRetry: () =>
 						app.errorRevision === revision && app.error === message && app.errorRetry === retry
 				})
@@ -126,11 +126,14 @@
 				</ol>
 			</div>
 		{/if}
+		<!-- Once a message is dismissed, nothing floats over the map: the Log tab
+		     counts it, and the Log lists it. -->
 		<div
 			class="notice"
 			data-testid="notification-toast"
 			data-kind={notices.active?.kind}
 			class:quiet={!notices.active}
+			hidden={!notices.active && !notices.expanded}
 		>
 			{#if notices.active}
 				<span class="message">{notices.active.title}</span>
@@ -202,6 +205,9 @@
 		flex: 1;
 		padding: 5px 0;
 		overflow-wrap: anywhere;
+	}
+	.notice[hidden] {
+		display: none;
 	}
 	.quiet {
 		width: fit-content;

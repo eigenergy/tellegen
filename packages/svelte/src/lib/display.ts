@@ -26,7 +26,8 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 				c.formulation === 'socwr'
 					? 'Locational marginal price, SOCWR relaxation'
 					: 'Locational marginal price',
-			gradient: priceGradient
+			// The legend follows the map's theme: styles.css sets the dark ramp.
+			gradient: `var(--tellegen-price-ramp, ${priceGradient})`
 		});
 	}
 	if (c.solution.vm?.length || c.solution.w.length > 0) {
