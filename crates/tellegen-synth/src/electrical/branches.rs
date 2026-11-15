@@ -123,7 +123,9 @@ pub fn line_parameters(kv: f64, length_km: f64, spread: f64) -> (f64, f64, f64, 
     } else {
         spread
     };
-    let z_base = kv * kv / BASE_MVA;
+    // A nonpositive voltage has no impedance base; NaN parameters carry that
+    // into validation rather than a finite guess.
+    let z_base = powerio::electrical::calc_impedance_base(kv, BASE_MVA).unwrap_or(f64::NAN);
     let x_ohm = class.x_ohm_per_km * length_km * spread;
     let r_ohm = class.r_ohm_per_km * length_km * spread;
     let b_siemens = class.b_us_per_km * 1e-6 * length_km;
