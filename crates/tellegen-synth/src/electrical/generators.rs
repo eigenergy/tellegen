@@ -16,6 +16,7 @@ use crate::electrical::params::{
     bus_generation_cap_mw, fuel_params, GENERATOR_BUS_SHARE, MIN_UNIT_MW, QMAX_FRACTION,
     QMIN_FRACTION,
 };
+use crate::geom::delaunay::dist2;
 use crate::report::{BusKind, RegionContext, Warning};
 use crate::request::{Fuel, SynthRequest};
 use crate::rng::Stream;
@@ -64,14 +65,13 @@ fn nearest_unit(buses: &[DraftBus], members: &[usize], units: &[usize]) -> Vec<u
         .iter()
         .map(|&i| {
             let (lon, lat) = (buses[i].lon, buses[i].lat);
-            let k = lat.to_radians().cos();
+            let k = crate::geom::meridian_scale(lat, 0.0);
             units
                 .iter()
                 .enumerate()
                 .map(|(slot, &u)| {
-                    let dx = (buses[u].lon - lon) * k;
-                    let dy = buses[u].lat - lat;
-                    (dx * dx + dy * dy, slot)
+                    let offset = ((buses[u].lon - lon) * k, buses[u].lat - lat);
+                    (dist2(offset, (0.0, 0.0)), slot)
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
                 .map_or(0, |(_, slot)| slot)
@@ -92,13 +92,13 @@ fn adequacy_areas(buses: &[DraftBus], units: &[usize], catchment: &[f64]) -> Vec
         return vec![0; m];
     }
     let mean_lat = units.iter().map(|&u| buses[u].lat).sum::<f64>() / m as f64;
-    let k = mean_lat.to_radians().cos();
+    let k = crate::geom::meridian_scale(mean_lat, 0.0);
     let at: Vec<(f64, f64)> = units
         .iter()
         .map(|&u| (buses[u].lon * k, buses[u].lat))
         .collect();
     let weight: Vec<f64> = catchment.iter().map(|&c| c.max(1e-6)).collect();
-    let d2 = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2);
+    let d2 = dist2;
     let first = (0..m)
         .max_by(|&a, &b| weight[a].total_cmp(&weight[b]).then(b.cmp(&a)))
         .expect("a unit");

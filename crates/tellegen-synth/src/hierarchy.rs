@@ -269,7 +269,7 @@ pub fn site_hierarchical(
 
     // Step-down buses at the sites of each level, highest ranked first, a
     // little apart so the triangulation sees distinct points.
-    let offset_deg = t.site_offset_km / 111.0;
+    let offset_deg = t.site_offset_km / crate::geom::KM_PER_DEGREE;
     for k in 0..depth {
         let mut at_level: Vec<usize> = (0..slots.len()).filter(|&i| slots[i].tier == k).collect();
         // Ranked sites (populous places) get transformation first; a light
@@ -287,7 +287,7 @@ pub fn site_hierarchical(
             let (lon, lat, site) = (slots[i].lon, slots[i].lat, slots[i].site);
             let nth = slots.iter().filter(|s| s.site == site).count() as f64;
             slots.push(Slot {
-                lon: lon + offset_deg * nth / lat.to_radians().cos().abs().max(0.05),
+                lon: lon + offset_deg * nth / crate::geom::meridian_scale(lat, 0.05),
                 lat,
                 place: slots[i].place.clone(),
                 tier: lower,
@@ -1108,7 +1108,7 @@ pub fn hierarchical_topology(
                         let up = buses.len();
                         let mut bus = buses[near].clone();
                         bus.lon = buses[v].lon;
-                        bus.lat = buses[v].lat + t.site_offset_km / 111.0;
+                        bus.lat = buses[v].lat + t.site_offset_km / crate::geom::KM_PER_DEGREE;
                         bus.site = buses[v].site;
                         bus.place = buses[v].place.clone();
                         bus.name = format!("{} {} kV", buses[v].name, bus.base_kv);

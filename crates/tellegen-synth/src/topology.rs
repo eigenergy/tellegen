@@ -315,7 +315,7 @@ pub(crate) fn corridor_between(
 ) -> Corridor {
     let (ba, bb) = (&buses[a], &buses[b]);
     let length = haversine_km(ba.lon, ba.lat, bb.lon, bb.lat);
-    let reach = jitter * length / 111.0;
+    let reach = jitter * length / crate::geom::KM_PER_DEGREE;
     let frame = &data.shape.frame;
     let straight = straight_route(ba, bb);
     let mid_lon = straight[1].0 + 2.0 * reach * (rng.uniform() - 0.5);

@@ -307,12 +307,12 @@ impl Places {
     pub fn in_region(&self, shape: &RegionShape) -> Vec<PlacedCity> {
         let frame = &shape.frame;
         let seam = frame.east > 180.0;
-        let margin_lat = PLACE_SNAP_KM / 111.0;
+        let margin_lat = PLACE_SNAP_KM / crate::geom::KM_PER_DEGREE;
         let mut out = Vec::new();
         let mut near = Vec::new();
         for &i in self.lat_window(frame.south - margin_lat, frame.north + margin_lat) {
             let place = &self.rows[i];
-            let margin_lon = margin_lat / place.lat.to_radians().cos().abs().max(0.05);
+            let margin_lon = margin_lat / crate::geom::meridian_scale(place.lat, 0.05);
             let mut lon = place.lon;
             if seam && lon < frame.west - margin_lon {
                 lon += 360.0;
@@ -420,9 +420,9 @@ pub fn demand_partition(points: &[(f64, f64)], cities: &[PlacedCity], radius_km:
     if cities.is_empty() || points.is_empty() {
         return out;
     }
-    let cell_lat = radius_km.max(1e-3) / 111.0;
+    let cell_lat = radius_km.max(1e-3) / crate::geom::KM_PER_DEGREE;
     let key = |lon: f64, lat: f64| -> (i64, i64) {
-        let cell_lon = cell_lat / lat.to_radians().cos().abs().max(0.05);
+        let cell_lon = cell_lat / crate::geom::meridian_scale(lat, 0.05);
         (
             (lon / cell_lon).floor() as i64,
             (lat / cell_lat).floor() as i64,
@@ -472,9 +472,9 @@ pub fn demand_idw(points: &[(f64, f64)], cities: &[PlacedCity], radius_km: f64) 
     if cities.is_empty() || points.is_empty() {
         return out;
     }
-    let cell_lat = radius_km / 111.0;
+    let cell_lat = radius_km / crate::geom::KM_PER_DEGREE;
     let key = |lon: f64, lat: f64| -> (i64, i64) {
-        let cell_lon = cell_lat / lat.to_radians().cos().abs().max(0.05);
+        let cell_lon = cell_lat / crate::geom::meridian_scale(lat, 0.05);
         (
             (lon / cell_lon).floor() as i64,
             (lat / cell_lat).floor() as i64,

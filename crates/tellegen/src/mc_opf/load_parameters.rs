@@ -1,8 +1,9 @@
 //! Nominal P/Q dependence retained independently of preparation's zero-term
 //! elimination. Coefficients and nominal voltage are held fixed.
 use super::model::Pair;
-use powerio::electrical::calc_voltage_power_term;
+use powerio::electrical::{calc_log_voltage_power_term, calc_voltage_power_term};
 use powerio_dist::DistLoad;
+use powerio_matrix::McOpfLoadLaw;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -63,13 +64,14 @@ impl LoadParameter {
             // The compiled residual's own coordinate: the model states each
             // term as `w exp(g ell)` over the log-voltage lift `ell`, which
             // is `w (|U|/V_nom)^g` on the positive voltage domain the lift
-            // defines; this is that expression's exact partial.
+            // defines; PowerIO's log voltage term gives that expression and
+            // its exact partial.
             let mut value = 0.;
             let mut derivative = 0.;
             for &[w, g] in &self.terms {
-                let term = w * (g * x[ell]).exp();
+                let (term, slope) = calc_log_voltage_power_term(w, g, x[ell]);
                 value -= term;
-                derivative -= g * term;
+                derivative -= slope;
             }
             return if value.is_finite() && derivative.is_finite() {
                 Ok((value, vec![(ell, derivative)]))
@@ -114,14 +116,16 @@ impl LoadParameter {
                 let sign = if reactive && part == 1 { 1. } else { -1. };
                 let mut h = 0.;
                 let mut radial = 0.;
-                for &[w, g] in &self.terms {
-                    if magnitude == 0. {
-                        if g == 2. {
-                            h += w / self.nominal.powi(2);
-                        } else {
-                            return Err(invalid());
-                        }
-                    } else {
+                if magnitude == 0. {
+                    // At zero voltage only a constant impedance law has a
+                    // current: PowerIO's one admittance `Σ w / V_nom²` of an
+                    // all exponent two law.
+                    h = McOpfLoadLaw::new(self.nominal, [self.terms.clone(), Vec::new()])
+                        .calc_impedance_admittance()
+                        .ok_or_else(invalid)?
+                        .re;
+                } else {
+                    for &[w, g] in &self.terms {
                         // The admittance form `S / |U|^2` of the same term.
                         let (term, slope) = calc_voltage_power_term(w, g - 2., ratio);
                         h += term / self.nominal.powi(2);

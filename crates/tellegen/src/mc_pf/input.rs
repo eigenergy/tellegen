@@ -495,18 +495,30 @@ fn validate_wye_terminal_order(
     if names.len() != map.len() {
         return Ok(());
     }
-    let is_non_phase = |terminal: &str| is_non_phase_terminal(&names, terminal, conventions);
-    let Some(neutral_position) = names.iter().position(|terminal| is_non_phase(terminal)) else {
-        // An implicit ground has no named neutral in a phase-only map. If the
-        // map has one extra conductor, however, it is an explicit return and
-        // must be named by the declared conventions before the reader can
-        // preserve it safely.
-        if expected_phases.is_some_and(|phases| names.len() == phases + 1) {
-            return Err(format!(
-                "{kind} `{name}` field `{field}` has an explicit WYE return that is not identified as the final neutral/earth terminal"
-            ));
+    // PowerIO's one WYE neutral rule over the map's own terminals: `None`
+    // when every terminal is a phase, an error when more than one is not.
+    let owned: Vec<String> = names.iter().map(|&n| n.to_owned()).collect();
+    let neutral_position = match powerio_dist::calc_mapped_neutral_position(
+        &names,
+        &owned,
+        conventions,
+    ) {
+        Ok(Some(position)) => Some(position),
+        Ok(None) => {
+            // An implicit ground has no named neutral in a phase-only
+            // map. If the map has one extra conductor, however, it is an
+            // explicit return and must be named by the declared
+            // conventions before the reader can preserve it safely.
+            if expected_phases.is_some_and(|phases| names.len() == phases + 1) {
+                return Err(format!(
+                        "{kind} `{name}` field `{field}` has an explicit WYE return that is not identified as the final neutral/earth terminal"
+                    ));
+            }
+            return Ok(());
         }
-        return Ok(());
+        // More than one neutral/earth terminal: at least one sits among
+        // the phase coils.
+        Err(_) => None,
     };
     if let Some(phases) = expected_phases {
         if names.len() != phases + 1 {
@@ -516,12 +528,7 @@ fn validate_wye_terminal_order(
             ));
         }
     }
-    if neutral_position != names.len() - 1
-        || names
-            .iter()
-            .take(names.len() - 1)
-            .any(|terminal| is_non_phase(terminal))
-    {
+    if neutral_position != Some(names.len() - 1) {
         return Err(format!(
             "{kind} `{name}` field `{field}` places an explicit neutral/earth terminal among phase coils; PowerIO v0.11 requires WYE phase terminals first and the neutral last"
         ));

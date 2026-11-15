@@ -362,9 +362,9 @@ impl RegionShape {
         }
         for poly in &self.polygons {
             let bb = poly.bbox();
-            let margin = buffer_km / 111.0 * 1.5;
-            if lon < bb.west - margin / lat.to_radians().cos().abs().max(0.05)
-                || lon > bb.east + margin / lat.to_radians().cos().abs().max(0.05)
+            let margin = buffer_km / crate::geom::KM_PER_DEGREE * 1.5;
+            if lon < bb.west - margin / crate::geom::meridian_scale(lat, 0.05)
+                || lon > bb.east + margin / crate::geom::meridian_scale(lat, 0.05)
                 || lat < bb.south - margin
                 || lat > bb.north + margin
             {
@@ -384,8 +384,8 @@ impl RegionShape {
     /// the nearest point of an outer ring, stepped a few metres inward.
     /// `None` when no outer ring comes that close.
     pub fn inside_near(&self, lon: f64, lat: f64, max_km: f64) -> Option<(f64, f64)> {
-        let margin_lat = max_km / 111.0;
-        let margin_lon = margin_lat / lat.to_radians().cos().abs().max(0.05);
+        let margin_lat = max_km / crate::geom::KM_PER_DEGREE;
+        let margin_lon = margin_lat / crate::geom::meridian_scale(lat, 0.05);
         // The nearest point and the two ends of its segment.
         let mut best: Option<[(f64, f64); 3]> = None;
         let mut best_km = f64::INFINITY;
@@ -408,7 +408,7 @@ impl RegionShape {
         }
         let [q, a, b] = best?;
         // Step off the segment along its normal, on whichever side is inside.
-        let k = q.1.to_radians().cos().abs().max(0.05);
+        let k = crate::geom::meridian_scale(q.1, 0.05);
         let (dx, dy) = ((b.0 - a.0) * k, b.1 - a.1);
         let len = dx.hypot(dy).max(1e-12);
         let (nx, ny) = (-dy / len / k, dx / len);
@@ -493,7 +493,7 @@ pub fn point_segment_km(plon: f64, plat: f64, a: (f64, f64), b: (f64, f64)) -> f
 /// The point of segment `a`-`b` nearest `(plon, plat)` and its distance in
 /// km, with the same planar cos(lat) correction as [`point_segment_km`].
 fn nearest_on_segment(plon: f64, plat: f64, a: (f64, f64), b: (f64, f64)) -> (f64, (f64, f64)) {
-    let k = plat.to_radians().cos().abs().max(1e-6);
+    let k = crate::geom::meridian_scale(plat, 1e-6);
     let (px, py) = (plon * k, plat);
     let (ax, ay) = (a.0 * k, a.1);
     let (bx, by) = (b.0 * k, b.1);
@@ -505,7 +505,7 @@ fn nearest_on_segment(plon: f64, plat: f64, a: (f64, f64), b: (f64, f64)) -> (f6
     };
     let (cx, cy) = (ax + t * dx, ay + t * dy);
     (
-        ((px - cx).powi(2) + (py - cy).powi(2)).sqrt() * 111.0,
+        ((px - cx).powi(2) + (py - cy).powi(2)).sqrt() * crate::geom::KM_PER_DEGREE,
         (cx / k, cy),
     )
 }
