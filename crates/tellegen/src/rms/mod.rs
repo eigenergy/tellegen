@@ -514,10 +514,12 @@ impl RmsSimulation {
     /// [`Self::topology`]).
     #[must_use]
     pub fn branch_loading(&self) -> Vec<f64> {
+        let flows = self.sys.branch_flows(&self.x0);
         (0..self.sys.ac.m)
             .map(|e| {
-                let (from, to) = self.sys.branch_flow(&self.x0, e);
-                from.norm().max(to.norm())
+                flows.pf[e]
+                    .hypot(flows.qf[e])
+                    .max(flows.pt[e].hypot(flows.qt[e]))
             })
             .collect()
     }
@@ -1091,7 +1093,7 @@ fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<S
             circuit,
         } => {
             let e = find_branch(sys, *from, *to, circuit)?;
-            sys.ac.sw[e] = 0.0;
+            sys.closed[e] = false;
             format!("t = {time} s: branch {from}-{to} circuit {circuit} opened")
         }
         RmsEvent::BranchClose {
@@ -1101,7 +1103,7 @@ fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<S
             circuit,
         } => {
             let e = find_branch(sys, *from, *to, circuit)?;
-            sys.ac.sw[e] = 1.0;
+            sys.closed[e] = true;
             format!("t = {time} s: branch {from}-{to} circuit {circuit} closed")
         }
         RmsEvent::BusFault {
@@ -1821,8 +1823,8 @@ impl Recorder {
         {
             sigs = vec![None; sys.devices.len()];
         }
-        let mut flows: std::collections::HashMap<usize, (C64, C64)> =
-            std::collections::HashMap::new();
+        // Every branch's flows at once, PowerIO's, when a flow is recorded.
+        let mut flows: Option<powerio_matrix::AcBranchFlows> = None;
         for &i in sel {
             let v = match self.catalog[i].1 {
                 Source::Vm(b) => Complex::new(x[b], x[n + b]).norm(),
@@ -1885,10 +1887,10 @@ impl Recorder {
                         .power(Complex::new(x[b], x[n + b]), sys.low_voltage)
                         .im
                 }
-                Source::PFrom(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).0.re,
-                Source::QFrom(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).0.im,
-                Source::PTo(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).1.re,
-                Source::QTo(e) => flows.entry(e).or_insert_with(|| sys.branch_flow(x, e)).1.im,
+                Source::PFrom(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).pf[e],
+                Source::QFrom(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).qf[e],
+                Source::PTo(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).pt[e],
+                Source::QTo(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).qt[e],
             };
             out.push(v);
         }

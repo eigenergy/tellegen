@@ -576,12 +576,15 @@ pub(crate) fn build(
     });
 
     let m_branches = ac.m;
+    let branches = ac.branches.clone();
     let mut sys = DynSystem {
         n,
         bus_numbers,
         sbase,
         f0,
         ac,
+        closed: vec![true; m_branches],
+        branches,
         branch_keys,
         devices,
         sources,
