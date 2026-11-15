@@ -30,8 +30,10 @@
 //!
 //! A load's nominal voltage `v_nom` is optional; without one it is the bus
 //! base voltage (`vn = 1` per unit), the convention every PowerIO reader
-//! writes. When a source states one, PowerIO does not state its unit, so
-//! [`nominal_pu`] reads it against the bus base voltage.
+//! writes. When a source states one, PowerIO's `calc_load_nominal_voltage`
+//! reads it against the bus base voltage. Every term, its derivative and the
+//! nominal voltage are PowerIO's (`powerio_tx::load_voltage`); this module
+//! places them on the model's buses.
 
 use std::collections::BTreeMap;
 
@@ -39,14 +41,12 @@ use powerio::{BalancedNetwork, BusType, LoadVoltageModel};
 
 use crate::api::SolveDiagnostic;
 
-/// Below this ratio `vm / vn` a term with exponent below one is continued by
-/// its tangent at the floor (see [`LoadTerm::eval`]): `x^γ` has an unbounded
-/// slope at zero for `γ < 1` (and is itself unbounded for `γ < 0`), and a
-/// Newton iterate can pass near zero on its way to the solution. A converged
-/// point with any voltage-dependent term below the floor is refused rather than
-/// reported: for `γ < 1` it was solved on the continuation, and for `γ ≥ 1`
-/// it is the collapsed root `vm = 0` that such a load admits at any loading.
-pub(crate) const RATIO_FLOOR: f64 = 1e-3;
+/// PowerIO's ratio floor (see [`LoadTerm::eval`]). A converged point with any
+/// voltage-dependent term below the floor is refused rather than reported:
+/// for `γ < 1` it was solved on the continuation, and for `γ ≥ 1` it is the
+/// collapsed root `vm = 0` that such a load admits at any loading.
+#[cfg(test)]
+pub(crate) const RATIO_FLOOR: f64 = powerio_tx::LOAD_VOLTAGE_RATIO_FLOOR;
 
 /// A voltage-dependent part of a bus's demand: `coefficient · (vm / v_nom)^exponent`
 /// in per unit on the system base, added to the bus's active (or reactive) demand.
@@ -65,31 +65,22 @@ pub(crate) struct LoadTerm {
 }
 
 impl LoadTerm {
+    /// PowerIO's term of the same parts.
+    fn powerio(&self) -> powerio_tx::LoadVoltageTerm {
+        powerio_tx::LoadVoltageTerm::new(self.reactive, self.coefficient, self.v_nom, self.exponent)
+    }
+
     /// The term's power at magnitude `vm` (per unit) and its derivative w.r.t. `vm`:
-    /// with `x = vm / v_nom`, `(c x^γ, γ c x^(γ−1) / v_nom)`. Exponents 1 and 2 are
-    /// evaluated without `powf`. For `γ < 1` and `x` below [`RATIO_FLOOR`] the term
-    /// follows its tangent at the floor, `c (f₀ + f₀' (x − x₀))`, so value and slope
-    /// stay finite and consistent as an iterate approaches zero voltage.
+    /// PowerIO's `LoadVoltageTerm::calc_power`, `(c x^γ, γ c x^(γ−1) / v_nom)` with
+    /// `x = vm / v_nom`, continued by its tangent below the ratio floor for `γ < 1`.
     pub(crate) fn eval(&self, vm: f64) -> (f64, f64) {
-        let x = vm / self.v_nom;
-        let (c, g, vn) = (self.coefficient, self.exponent, self.v_nom);
-        if g == 1.0 {
-            (c * x, c / vn)
-        } else if g == 2.0 {
-            (c * x * x, 2.0 * c * x / vn)
-        } else if g < 1.0 && x < RATIO_FLOOR {
-            let f0 = RATIO_FLOOR.powf(g);
-            let d0 = g * RATIO_FLOOR.powf(g - 1.0);
-            (c * (f0 + d0 * (x - RATIO_FLOOR)), c * d0 / vn)
-        } else {
-            (c * x.powf(g), c * g * x.powf(g - 1.0) / vn)
-        }
+        self.powerio().calc_power(vm)
     }
 
     /// Whether `vm` lies below the term's ratio floor: a collapsed voltage, not an
-    /// operating point (see [`RATIO_FLOOR`]).
+    /// operating point (PowerIO's `LoadVoltageTerm::is_below_floor`).
     pub(crate) fn below_floor(&self, vm: f64) -> bool {
-        self.exponent != 0.0 && vm / self.v_nom < RATIO_FLOOR
+        self.powerio().is_below_floor(vm)
     }
 }
 
@@ -110,58 +101,15 @@ pub(crate) fn voltage_dependent(network: &BalancedNetwork) -> Vec<usize> {
         .collect()
 }
 
-/// A load's nominal voltage in per unit on its bus base.
-///
-/// No stated `v_nom` is the bus base voltage (1 per unit). PowerIO's model does
-/// not state the unit of a stated one, and sources use both, so it is read
-/// against the bus base voltage `base_kv`: as kV giving `v_nom / base_kv`, or as
-/// per unit giving `v_nom`. A reading is plausible in `[0.5, 2]` and usual in
-/// `[0.8, 1.25]`. When the two readings agree, or only one is plausible, or only
-/// one is usual (`v_nom = 0.69` on a 0.69 kV bus is 1 pu in kV, not 0.69 pu), that
-/// reading is taken. When both are usual and differ (a 0.9 kV bus with
-/// `v_nom = 1`), both are plausible and neither usual, or neither is plausible, the
-/// load is refused rather than solved at a guessed voltage.
+/// A load's nominal voltage in per unit on its bus base: PowerIO's
+/// `calc_load_nominal_voltage`, its refusal worded for bus `bus`.
 ///
 /// # Errors
-/// A non-positive or non-finite `v_nom`, or one no reading makes plausible or
-/// two readings make plausible differently.
+/// A nominal voltage PowerIO refuses.
+#[cfg(test)]
 pub(crate) fn nominal_pu(v_nom: Option<f64>, base_kv: f64, bus: usize) -> Result<f64, String> {
-    let Some(stated) = v_nom else {
-        return Ok(1.0);
-    };
-    if !(stated.is_finite() && stated > 0.0) {
-        return Err(format!(
-            "the voltage-dependent load at bus {bus} states a nominal voltage of {stated}"
-        ));
-    }
-    let plausible = |ratio: f64| (0.5..=2.0).contains(&ratio);
-    let usual = |ratio: f64| (0.8..=1.25).contains(&ratio);
-    let mut as_kv = (base_kv.is_finite() && base_kv > 0.0)
-        .then(|| stated / base_kv)
-        .filter(|&ratio| plausible(ratio));
-    let mut as_pu = plausible(stated).then_some(stated);
-    if let (Some(kv), Some(pu)) = (as_kv, as_pu) {
-        match (usual(kv), usual(pu)) {
-            (true, false) => as_pu = None,
-            (false, true) => as_kv = None,
-            _ => {}
-        }
-    }
-    match (as_kv, as_pu) {
-        (Some(kv), Some(pu)) if (kv - pu).abs() <= 1e-9 * kv.max(pu) => Ok(kv),
-        (Some(kv), None) => Ok(kv),
-        (None, Some(pu)) => Ok(pu),
-        (Some(kv), Some(pu)) => Err(format!(
-            "the voltage-dependent load at bus {bus} states a nominal voltage of {stated}, \
-             which reads as {kv:.4} pu in kV against the bus base of {base_kv} kV and as \
-             {pu:.4} pu in per unit; state it unambiguously (or leave it out for the bus base \
-             voltage)"
-        )),
-        (None, None) => Err(format!(
-            "the voltage-dependent load at bus {bus} states a nominal voltage of {stated}, \
-             plausible neither in kV against the bus base of {base_kv} kV nor in per unit"
-        )),
-    }
+    powerio_tx::calc_load_nominal_voltage(v_nom, base_kv)
+        .map_err(|error| format!("the voltage-dependent load at bus {bus} {error}"))
 }
 
 /// Resolve load `index` of `network` into its voltage-dependent terms in the AC
@@ -181,77 +129,21 @@ pub(crate) fn resolve(
 ) -> Result<Option<Vec<LoadTerm>>, String> {
     let load = &network.loads()[index];
     let bus = load.bus.0;
-    let finite = |values: &[f64]| -> Result<(), String> {
-        if values.iter().all(|v| v.is_finite()) {
-            Ok(())
-        } else {
-            Err(format!(
-                "the voltage-dependent load at bus {bus} states a non-finite coefficient"
-            ))
-        }
-    };
-    let term = |reactive: bool, coefficient: f64, v_nom: f64, exponent: f64| LoadTerm {
-        bus: usize::MAX,
-        reactive,
-        coefficient: coefficient * scale,
-        v_nom,
-        exponent,
-    };
-    match load.voltage_model.as_ref() {
-        Some(LoadVoltageModel::Zip {
-            p_constant_power,
-            q_constant_power,
-            p_constant_current,
-            q_constant_current,
-            p_constant_impedance,
-            q_constant_impedance,
-            v_nom,
-            ..
-        }) => {
-            finite(&[
-                load.p,
-                load.q,
-                *p_constant_power,
-                *q_constant_power,
-                *p_constant_current,
-                *q_constant_current,
-                *p_constant_impedance,
-                *q_constant_impedance,
-            ])?;
-            let vn = nominal_pu(*v_nom, base_kv, bus)?;
-            Ok(Some(
-                [
-                    (false, *p_constant_current, 1.0),
-                    (true, *q_constant_current, 1.0),
-                    (false, *p_constant_impedance, 2.0),
-                    (true, *q_constant_impedance, 2.0),
-                ]
-                .into_iter()
-                .filter(|&(_, c, _)| c != 0.0)
-                .map(|(reactive, c, g)| term(reactive, c, vn, g))
-                .collect(),
-            ))
-        }
-        Some(LoadVoltageModel::Exponential {
-            p,
-            q,
-            v_nom,
-            gamma_p,
-            gamma_q,
-        }) => {
-            finite(&[load.p, load.q, *p, *q, *gamma_p, *gamma_q])?;
-            let vn = nominal_pu(*v_nom, base_kv, bus)?;
-            // γ = 0 is constant power: it stays in the stated demand.
-            Ok(Some(
-                [(false, *p, *gamma_p), (true, *q, *gamma_q)]
-                    .into_iter()
-                    .filter(|&(_, c, g)| c != 0.0 && g != 0.0)
-                    .map(|(reactive, c, g)| term(reactive, c, vn, g))
-                    .collect(),
-            ))
-        }
-        _ => Ok(None),
-    }
+    let terms = load
+        .calc_voltage_terms(base_kv)
+        .map_err(|error| format!("the voltage-dependent load at bus {bus} {error}"))?;
+    Ok(terms.map(|terms| {
+        terms
+            .into_iter()
+            .map(|term| LoadTerm {
+                bus: usize::MAX,
+                reactive: term.reactive,
+                coefficient: term.coefficient * scale,
+                v_nom: term.v_nom,
+                exponent: term.exponent,
+            })
+            .collect()
+    }))
 }
 
 /// Per dense bus, the change to the prepared demand `(pd, qd)`; and the
