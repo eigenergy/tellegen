@@ -333,7 +333,7 @@ impl DcNetwork {
         let branch_source_rows = super::branch_source_rows(&prep.branches.analysis_sources);
         let gen_source_rows = prep.generators.source_rows.clone();
         let branch_ids = if from_network {
-            network_branch_ids(&prep.branches.analysis_sources, raw)?
+            network_branch_ids(&prep.branches.analysis_rows)?
         } else {
             source_position_ids(&branch_source_rows, prep.n_source_branches, "branch")?
         };

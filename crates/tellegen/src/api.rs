@@ -1525,13 +1525,15 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     // Per-unit generation per dense bus at the generator setpoints. The model
     // withdraws the (edited) load itself; the slack absorbs the imbalance, and
     // its generation entry is recomputed, not echoed.
-    let mut generation = vec![0.0; dc.n];
-    let input_power_base = if net.is_normalized() { 1.0 } else { base };
-    for j in 0..dc.k {
-        let source_row = dc.gen_source_rows[j]
-            .ok_or_else(|| format!("generator column {j} has no source row"))?;
-        generation[dc.gen_bus[j]] += net.generators()[source_row].pg / input_power_base;
-    }
+    let input_power_base = net.per_unit_base();
+    let pg = (0..dc.k)
+        .map(|j| {
+            dc.gen_source_rows[j]
+                .map(|row| net.generators()[row].pg / input_power_base)
+                .ok_or_else(|| format!("generator column {j} has no source row"))
+        })
+        .collect::<Result<Vec<f64>, String>>()?;
+    let generation = powerio_matrix::calc_bus_totals(dc.n, &dc.gen_bus, &pg);
     let sol = super::problem::dc_pf(&dc, &generation)?;
 
     Ok(SolveResponse {

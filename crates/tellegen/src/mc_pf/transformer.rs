@@ -351,109 +351,24 @@ pub fn prepare_transformer(
     })
 }
 
-/// Build OpenDSS's winding-domain `Y_1Volt` matrix. Pairwise short-circuit
-/// impedances are first converted to the reduced `ZB` matrix relative to the
-/// final winding, then lifted back through winding-difference incidence. For a
-/// two-winding unit this reduces exactly to `y * [[1,-1],[-1,1]]`.
+/// OpenDSS's winding-domain `Y_1Volt` matrix: PowerIO's pairwise leakage
+/// impedances, reduced against the final winding, inverted and lifted back
+/// (`powerio_matrix::calc_transformer_winding_admittance`).
 fn winding_admittance(t: &DistTransformer) -> Result<ComplexMatrix, TransformerError> {
-    let count = t.windings.len();
     // `validate_shape` runs first and admits two windings, or three for a
-    // tagged centre tap. Check that bound here too so a new caller cannot
-    // reach the `unreachable!` in `pair_index` by skipping validation.
+    // tagged centre tap.
     debug_assert!(
-        (2..=3).contains(&count),
+        (2..=3).contains(&t.windings.len()),
         "winding_admittance expects a validated two- or three-winding transformer"
     );
-    let reference = count - 1;
-    let zbase = t.phases as f64 / t.windings[0].s_rating;
-    let r_common: Vec<_> = t
-        .windings
-        .iter()
-        .map(|winding| winding.r_pct / 100.0 * t.windings[0].s_rating / winding.s_rating)
-        .collect();
-    let pair_index = |left: usize, right: usize| match (left.min(right), left.max(right)) {
-        (0, 1) => 0,
-        (0, 2) => 1,
-        (1, 2) => 2,
-        _ => unreachable!("shape validation permits at most three windings"),
-    };
-    let pair_impedance = |left: usize, right: usize| {
-        Complex64::new(
-            (r_common[left] + r_common[right]) * zbase,
-            t.xsc_pct[pair_index(left, right)] / 100.0 * zbase,
-        )
-    };
-
-    let mut zb = vec![vec![Complex64::default(); reference]; reference];
-    for (i, row) in zb.iter_mut().enumerate() {
-        for (j, value) in row.iter_mut().enumerate() {
-            let zi_ref = pair_impedance(i, reference);
-            let zj_ref = pair_impedance(j, reference);
-            *value = if i == j {
-                zi_ref
-            } else {
-                (zi_ref + zj_ref - pair_impedance(i, j)) / 2.0
-            };
-        }
-    }
-    let yb = invert_reduced_leakage(&zb, &t.name)?;
-    let mut result = vec![vec![Complex64::default(); count]; count];
-    // A maps winding voltages to differences against the final winding:
-    // row i is `u_i - u_reference`. Y_1Volt = A^T inv(ZB) A.
-    for i in 0..reference {
-        for j in 0..reference {
-            let value = yb[i][j];
-            result[i][j] += value;
-            result[i][reference] -= value;
-            result[reference][j] -= value;
-            result[reference][reference] += value;
-        }
-    }
-    Ok(result)
-}
-
-fn invert_reduced_leakage(
-    matrix: &ComplexMatrix,
-    name: &str,
-) -> Result<ComplexMatrix, TransformerError> {
-    let finite = |value: Complex64| value.re.is_finite() && value.im.is_finite();
-    match matrix.len() {
-        1 if matrix[0].len() == 1 => {
-            let z = matrix[0][0];
-            if !finite(z) || z.norm() == 0.0 {
-                return Err(TransformerError::SingularLeakage {
-                    transformer: name.to_owned(),
-                });
-            }
-            Ok(vec![vec![z.recip()]])
-        }
-        2 if matrix.iter().all(|row| row.len() == 2) => {
-            let determinant = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
-            // Only exact singularity is rejected, matching the two-winding
-            // path: an absolute pivot cutoff would refuse legitimate
-            // high-rating units whose 1 V-base impedances sit far below any
-            // fixed threshold. A nearly singular reduced matrix, such as two
-            // half windings with identical pairwise impedances to the
-            // primary, therefore inverts with reduced accuracy rather than
-            // failing here; the solver's KCL residual check reports it.
-            if matrix.iter().flatten().any(|value| !finite(*value))
-                || !finite(determinant)
-                || determinant.norm() == 0.0
-            {
-                return Err(TransformerError::SingularLeakage {
-                    transformer: name.to_owned(),
-                });
-            }
-            Ok(vec![
-                vec![matrix[1][1] / determinant, -matrix[0][1] / determinant],
-                vec![-matrix[1][0] / determinant, matrix[0][0] / determinant],
-            ])
-        }
-        _ => Err(TransformerError::Unsupported {
-            transformer: name.to_owned(),
-            reason: "only two-winding and BMOPF centre-tap leakage matrices are supported".into(),
-        }),
-    }
+    powerio_matrix::calc_transformer_winding_admittance(t)
+        .map_err(|error| TransformerError::Unsupported {
+            transformer: t.name.clone(),
+            reason: error.to_string(),
+        })?
+        .ok_or_else(|| TransformerError::SingularLeakage {
+            transformer: t.name.clone(),
+        })
 }
 
 /// Prepare the fixed-ratio BMOPF single-phase autotransformer/regulator.

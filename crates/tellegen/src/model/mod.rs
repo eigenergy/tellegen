@@ -400,58 +400,16 @@ pub(super) fn source_position_ids(
         .collect()
 }
 
-/// One based branch ids for a model prepared from a caller's raw network. A
-/// source branch keeps its row position. A lowered winding takes an id after
-/// the branch table fixed by its transformer's ordinal among the network's
-/// in-service transformers and its winding (`ordinal * 3 + winding`), the
-/// numbering of PowerIO's star lowering, so neither a skipped winding nor an
-/// earlier transformer left out renumbers the windings after it.
-pub(super) fn network_branch_ids(
-    sources: &[AnalysisBranchSource],
-    network: &BalancedNetwork,
-) -> Result<Vec<usize>, String> {
-    let n_branches = network.branches().len();
-    let synthetic_base = n_branches
-        .checked_add(1)
-        .ok_or_else(|| "branch synthetic id space exhausted".to_owned())?;
-    let mut ordinals = Vec::with_capacity(network.transformers_3w().len());
-    let mut next = 0usize;
-    for transformer in network.transformers_3w() {
-        ordinals.push(transformer.in_service.then(|| {
-            let ordinal = next;
-            next += 1;
-            ordinal
-        }));
-    }
-    sources
+/// One based branch ids for a model prepared from a caller's raw network:
+/// PowerIO's row in its star-lowered analysis network, plus one. A source
+/// branch keeps its row position and a lowered winding keeps the row PowerIO's
+/// lowering gave it.
+pub(super) fn network_branch_ids(analysis_rows: &[usize]) -> Result<Vec<usize>, String> {
+    analysis_rows
         .iter()
-        .map(|source| match *source {
-            AnalysisBranchSource::Branch { row } => {
-                if row >= n_branches {
-                    return Err(format!(
-                        "branch source row {row} outside source length {n_branches}"
-                    ));
-                }
-                Ok(row + 1)
-            }
-            AnalysisBranchSource::ThreeWindingTransformerWinding {
-                transformer_row,
-                winding,
-            } => {
-                let ordinal = ordinals
-                    .get(transformer_row)
-                    .copied()
-                    .flatten()
-                    .ok_or_else(|| {
-                        format!("branch winding of inactive transformer {transformer_row}")
-                    })?;
-                ordinal
-                    .checked_mul(3)
-                    .and_then(|offset| offset.checked_add(winding))
-                    .and_then(|offset| synthetic_base.checked_add(offset))
-                    .ok_or_else(|| "branch synthetic id space exhausted".to_owned())
-            }
-            _ => Err("branch from a source component this build does not know".to_owned()),
+        .map(|row| {
+            row.checked_add(1)
+                .ok_or_else(|| "branch id space exhausted".to_owned())
         })
         .collect()
 }

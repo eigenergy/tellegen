@@ -12,8 +12,11 @@ use powerio::{BalancedNetwork, LoadVoltageModel};
 use powerio_matrix::matrix::YbusParts;
 #[cfg(feature = "conic")]
 use powerio_matrix::PreparedObjective;
-use powerio_matrix::{build_ac_opf_preparation, AcBranchData, AcOpfAssemblyOptions, Units};
-use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
+use powerio_matrix::{
+    build_ac_opf_preparation, calc_prepared_bus_specifications, AcBranchData, AcOpfAssemblyOptions,
+    PreparedAcBusSpecification, Units,
+};
+use powerio_prob::{AcOpfInstance, AcPfInstance};
 use powerio_tx::calc_dense_island_labels;
 
 use super::islands::{energize, ReferencePolicy};
@@ -278,6 +281,10 @@ impl AcNetwork {
             ));
         }
 
+        // PowerIO converts each specification to per unit power and radian
+        // angles over the instance network's own base and angle unit.
+        let specifications = calc_prepared_bus_specifications(instance, Units::PerUnit)
+            .map_err(|e| format!("{}: {e}", e.code().code))?;
         model.pf_pv.fill(false);
         let mut references = Vec::new();
         let mut stated_va = vec![0.0; model.n];
@@ -296,18 +303,17 @@ impl AcNetwork {
                     model.va_case[dense] = va;
                 }
             }
-            let specification = instance.specifications()[source_row];
-            match specification {
-                AcBusSpecification::Pq { p, q } => {
-                    model.pg[dense] = model.pd[dense] + p / model.base_mva;
-                    model.qg[dense] = model.qd[dense] + q / model.base_mva;
+            match specifications[source_row] {
+                PreparedAcBusSpecification::Pq { p, q } => {
+                    model.pg[dense] = model.pd[dense] + p;
+                    model.qg[dense] = model.qd[dense] + q;
                 }
-                AcBusSpecification::Pv { p, vm } => {
-                    model.pg[dense] = model.pd[dense] + p / model.base_mva;
+                PreparedAcBusSpecification::Pv { p, vm } => {
+                    model.pg[dense] = model.pd[dense] + p;
                     model.vm_set[dense] = vm;
                     model.pf_pv[dense] = true;
                 }
-                AcBusSpecification::Reference { vm, va } => {
+                PreparedAcBusSpecification::Reference { vm, va } => {
                     if !va.is_finite() {
                         return Err(format!(
                             "AC power flow reference bus {source_id} states a non-finite angle"
@@ -315,14 +321,9 @@ impl AcNetwork {
                     }
                     references.push(dense);
                     model.vm_set[dense] = vm;
-                    // The specification carries the network's own angle unit.
-                    stated_va[dense] = if instance.network().is_normalized() {
-                        va
-                    } else {
-                        va.to_radians()
-                    };
+                    stated_va[dense] = va;
                 }
-                AcBusSpecification::Isolated => {
+                PreparedAcBusSpecification::Isolated => {
                     return Err(format!(
                         "isolated AC power flow bus {source_id} entered the analysis preparation"
                     ));
@@ -587,11 +588,7 @@ impl AcNetwork {
             .enumerate()
             .map(|(dense, &id)| (id, dense))
             .collect();
-        let scale = if network.is_normalized() {
-            1.0
-        } else {
-            1.0 / network.base_mva()
-        };
+        let scale = 1.0 / network.per_unit_base();
         let (shift, terms) = super::load_voltage::attach(network, &dense, scale)?;
         for (bus, (dp, dq)) in shift {
             self.pd[bus] += dp;
@@ -682,7 +679,7 @@ impl AcNetwork {
         let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
         let bus_uids =
             uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
-        let branch_ids = network_branch_ids(&prep.branches.analysis_sources, raw)?;
+        let branch_ids = network_branch_ids(&prep.branches.analysis_rows)?;
         let branch_uids = uids_for_source_rows(
             &super::branch_source_rows(&prep.branches.analysis_sources),
             raw.branches(),
@@ -1000,6 +997,25 @@ mod tests {
         net.generators_mut()[0].regulated_bus = None;
         let ac = AcNetwork::from_network(&net).expect("terminal regulation");
         assert!(!ac.has_remote_voltage_control);
+    }
+
+    #[test]
+    fn raw_and_normalized_power_flow_instances_state_the_same_specifications() {
+        // PowerIO scales each specification by the instance network's own
+        // per unit base, which is one for a normalized network.
+        let raw = crate::model::parse_matpower(CASE3).expect("parse case3");
+        let normalized = raw.to_normalized().expect("normalize case3");
+        let a = AcNetwork::from_pf_instance(&AcPfInstance::from_network(raw).unwrap())
+            .expect("build raw");
+        let b = AcNetwork::from_pf_instance(&AcPfInstance::from_network(normalized).unwrap())
+            .expect("build normalized");
+        assert_eq!(a.bus_ids, b.bus_ids);
+        for (left, right) in [(&a.pg, &b.pg), (&a.qg, &b.qg), (&a.vm_set, &b.vm_set)] {
+            for (&actual, &expected) in left.iter().zip(right.iter()) {
+                assert!((actual - expected).abs() < 1e-12, "{left:?} vs {right:?}");
+            }
+        }
+        assert_eq!(a.pf_pv, b.pf_pv);
     }
 
     #[test]

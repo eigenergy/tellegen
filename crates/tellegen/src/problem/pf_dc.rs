@@ -6,7 +6,7 @@
 //! `p_d + g_s + p_shift - p_hvdc`. Gated
 //! behind the faer-pulling `sensitivity` feature.
 
-use powerio_matrix::{ground_at_each, Grounding};
+use powerio_matrix::calc_reference_constrained_system;
 
 use crate::formulation::{Dc, Formulation};
 #[cfg(test)]
@@ -17,9 +17,9 @@ use crate::solve::solve_sparse;
 /// The assembled (grounded) linear system of a power flow, `A x = rhs`. Produced
 /// by [`build_dc_pf`] and solved by [`crate::solve::solve_sparse`]. `triplets` are
 /// the `(row, col, value)` entries of the square `dim x dim` operator (duplicates
-/// summed), PowerIO's Laplacian grounded at every reference bus
-/// (`ground_at_each`). `full_of_reduced[r]` is the dense bus of reduced row `r`
-/// (`Grounding::full_of_reduced`); a reference bus has no row and angle zero.
+/// summed), PowerIO's reference constrained system
+/// (`calc_reference_constrained_system`). `full_of_reduced[r]` is the dense bus
+/// of reduced row `r`; a reference bus has no row and angle zero.
 #[non_exhaustive]
 pub struct DcPfSystem {
     pub(crate) dim: usize,
@@ -101,24 +101,37 @@ pub fn build_dc_pf<F: DcPfFormulation>(f: &F, model: &DcNetwork, generation: &[f
 
 impl DcPfFormulation for Dc {
     fn assemble_pf(&self, dc: &DcNetwork, generation: &[f64]) -> DcPfSystem {
-        // PowerIO grounds the singular Laplacian at every reference: their rows
-        // and columns go, and `theta[ref] = 0`. One reference per island
-        // leaves every island's block nonsingular.
-        let grounding = Grounding::new(&dc.ref_buses);
-        let grounded = ground_at_each(&dc.laplacian, grounding.grounded());
-        let triplets = grounded
+        // PowerIO's reference constrained system: its Laplacian with every
+        // reference row and column removed, and at each retained bus the
+        // generation less PowerIO's fixed nodal withdrawal (demand, shunt,
+        // phase shift, less the fixed HVDC injection). One reference per
+        // island leaves every island's block nonsingular. Tellegen fixes each
+        // reference angle at zero, the PowerModels convention its DC OPF
+        // shares (the DC preparation states no reference angle).
+        let withdrawal = dc.current_fixed_withdrawal();
+        let injection: Vec<f64> = generation
+            .iter()
+            .zip(&withdrawal)
+            .map(|(generation, withdrawal)| generation - withdrawal)
+            .collect();
+        let reference_va = vec![0.0; dc.ref_buses.len()];
+        let system = calc_reference_constrained_system(
+            &dc.laplacian,
+            &dc.ref_buses,
+            &reference_va,
+            &injection,
+        );
+        let triplets = system
+            .matrix
             .iter()
             .map(|(&value, (row, col))| (row, col, value))
             .collect();
-        let full_of_reduced = grounding.full_of_reduced(dc.n);
-        // PowerIO's fixed nodal withdrawal (demand, shunt, phase shift, less
-        // the fixed HVDC injection) sits on the other side of the Laplacian.
-        let withdrawal = dc.current_fixed_withdrawal();
-        let rhs = full_of_reduced
-            .iter()
-            .map(|&bus| generation[bus] - withdrawal[bus])
-            .collect();
-        DcPfSystem::new(grounded.rows(), triplets, rhs, full_of_reduced)
+        DcPfSystem::new(
+            system.matrix.rows(),
+            triplets,
+            system.rhs,
+            system.retained_rows,
+        )
     }
 }
 
