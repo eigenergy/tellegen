@@ -56,9 +56,7 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
     }
 
     let terminal_conventions = object.get("terminal_conventions");
-    let mut terminal_convention_non_phase =
-        terminal_convention_names(terminal_conventions, "neutral");
-    terminal_convention_non_phase.extend(terminal_convention_names(terminal_conventions, "earth"));
+    let declares_non_phase = declares_non_phase_terminals(terminal_conventions);
     if let Some(loads) = object.get("load").and_then(Value::as_object) {
         for (name, load) in loads {
             let Some(load) = load.as_object() else {
@@ -155,16 +153,14 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
                 .get("configuration")
                 .and_then(Value::as_str)
                 .unwrap_or("WYE");
-            if configuration.eq_ignore_ascii_case("WYE")
-                && !terminal_convention_non_phase.is_empty()
-            {
+            if configuration.eq_ignore_ascii_case("WYE") && declares_non_phase {
                 let phases = load.get("p_nom").and_then(Value::as_array).map(Vec::len);
                 validate_wye_terminal_order(
                     "load",
                     name,
                     "terminal_map",
                     load.get("terminal_map"),
-                    &terminal_convention_non_phase,
+                    terminal_conventions,
                     phases,
                 )?;
             }
@@ -281,15 +277,12 @@ fn validate_transformer_terminal_order(
     let Some(record) = raw.as_object() else {
         return Ok(());
     };
-    let neutral_names = terminal_convention_names(terminal_conventions, "neutral");
-    let earth_names = terminal_convention_names(terminal_conventions, "earth");
     let phase_count = terminal_conventions
         .and_then(Value::as_object)
         .and_then(|o| o.get("phase"))
         .and_then(Value::as_array)
         .map(|phases| phases.len().max(1));
-    let mut non_phase = neutral_names;
-    non_phase.extend(earth_names);
+    let declares_non_phase = declares_non_phase_terminals(terminal_conventions);
     if subtype == "single_phase" {
         validate_distinct_terminal_map(
             "transformer",
@@ -328,12 +321,13 @@ fn validate_transformer_terminal_order(
             // checked, and a map such as `[leg 1, leg 2, centre]` would lower
             // to the wrong pair of half windings while still producing
             // plausible voltages, so refuse rather than guess.
-            if non_phase.is_empty() {
+            if !declares_non_phase {
                 return Err(format!(
                     "transformer `{name}` field `terminal_map_to` needs `terminal_conventions` to declare a neutral or earth terminal so the centre tap can be identified"
                 ));
             }
-            let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
+            let is_non_phase =
+                |terminal: &str| is_non_phase_terminal(&terminals, terminal, terminal_conventions);
             if !is_non_phase(terminals[1])
                 || is_non_phase(terminals[0])
                 || is_non_phase(terminals[2])
@@ -345,7 +339,7 @@ fn validate_transformer_terminal_order(
         }
         return Ok(());
     }
-    if non_phase.is_empty() {
+    if !declares_non_phase {
         return Ok(());
     }
     if subtype == "n_winding" {
@@ -367,7 +361,7 @@ fn validate_transformer_terminal_order(
                     name,
                     &format!("windings[{idx}].terminal_map"),
                     winding.get("terminal_map"),
-                    &non_phase,
+                    terminal_conventions,
                     phase_count,
                 )?;
             }
@@ -383,7 +377,7 @@ fn validate_transformer_terminal_order(
             name,
             "terminal_map_from",
             record.get("terminal_map_from"),
-            &non_phase,
+            terminal_conventions,
             Some(if matches!(subtype, "wye_delta" | "delta_wye") {
                 3
             } else {
@@ -397,7 +391,7 @@ fn validate_transformer_terminal_order(
             name,
             "terminal_map_to",
             record.get("terminal_map_to"),
-            &non_phase,
+            terminal_conventions,
             Some(if matches!(subtype, "wye_delta" | "delta_wye") {
                 3
             } else {
@@ -439,16 +433,23 @@ fn validate_distinct_terminal_map<'a>(
     Ok(Some(names))
 }
 
-fn terminal_convention_names(conventions: Option<&Value>, role: &str) -> Vec<String> {
-    conventions
-        .and_then(Value::as_object)
-        .and_then(|o| o.get(role))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect()
+/// Whether the document's `terminal_conventions` name any neutral or earth
+/// terminal: the order checks below run only when they do.
+fn declares_non_phase_terminals(conventions: Option<&Value>) -> bool {
+    ["neutral", "earth"].iter().any(|role| {
+        conventions
+            .and_then(|o| o.get(role))
+            .and_then(Value::as_array)
+            .is_some_and(|names| names.iter().any(Value::is_string))
+    })
+}
+
+/// Whether `terminal` of the map `terminals` is a neutral or earth, by
+/// PowerIO's one terminal classification (`calc_terminal_role`) under the
+/// document's conventions.
+fn is_non_phase_terminal(terminals: &[&str], terminal: &str, conventions: Option<&Value>) -> bool {
+    powerio_dist::calc_terminal_role(terminals, terminal, conventions)
+        != powerio_dist::TerminalRole::Phase
 }
 
 fn validate_numeric_vector(value: &Value, field: &str) -> Result<(), String> {
@@ -484,7 +485,7 @@ fn validate_wye_terminal_order(
     name: &str,
     field: &str,
     value: Option<&Value>,
-    non_phase: &[String],
+    conventions: Option<&Value>,
     expected_phases: Option<usize>,
 ) -> Result<(), String> {
     let Some(map) = value.and_then(Value::as_array) else {
@@ -494,7 +495,7 @@ fn validate_wye_terminal_order(
     if names.len() != map.len() {
         return Ok(());
     }
-    let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
+    let is_non_phase = |terminal: &str| is_non_phase_terminal(&names, terminal, conventions);
     let Some(neutral_position) = names.iter().position(|terminal| is_non_phase(terminal)) else {
         // An implicit ground has no named neutral in a phase-only map. If the
         // map has one extra conductor, however, it is an explicit return and
