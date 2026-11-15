@@ -8,7 +8,7 @@ use std::sync::Arc;
 use clarabel::solver::SupportedConeT::{self, NonnegativeConeT, ZeroConeT};
 
 use crate::formulation::Dc;
-use crate::model::DcNetwork;
+use crate::model::{csr_row, DcNetwork};
 use crate::solve::{run, RawSolution, SolveIteration};
 
 use super::{build_opf, OpfFormulation, OpfProgram, ProgramBuilder};
@@ -324,7 +324,7 @@ impl OpfFormulation for Dc {
             }
         }
 
-        // Power balance: G_inc g + psh - B theta = fixed_withdrawal(sw).
+        // Power balance: G_inc g + psh - L theta = fixed_withdrawal.
         for (i, &withdrawal) in fixed_withdrawal.iter().enumerate() {
             if let Some(column) = lay.col_psh(i) {
                 prog.a(lay.r_pb(i), column, 1.0);
@@ -334,22 +334,22 @@ impl OpfFormulation for Dc {
         for j in 0..dc.k {
             prog.a(lay.r_pb(dc.gen_bus[j]), lay.col_pg(j), 1.0);
         }
-        // Per-branch contributions: -B (power balance), flow definition, line
-        // limits, and phase-angle-difference limits.
+        // Power balance: -L theta, PowerIO's DC bus susceptance matrix.
+        for i in 0..dc.n {
+            for (j, value) in csr_row(&dc.laplacian, i) {
+                prog.a(lay.r_pb(i), lay.col_va(j), -value);
+            }
+        }
+        // Per-branch rows: flow definition, line limits, and
+        // phase-angle-difference limits.
         for e in 0..dc.m {
-            let w = -dc.b[e] * dc.sw[e]; // edge weight (positive for inductive)
-            let (fb, tb) = (dc.br_from[e], dc.br_to[e]);
-            // -B = -A' diag(w) A
-            prog.a(lay.r_pb(fb), lay.col_va(fb), -w);
-            prog.a(lay.r_pb(tb), lay.col_va(tb), -w);
-            prog.a(lay.r_pb(fb), lay.col_va(tb), w);
-            prog.a(lay.r_pb(tb), lay.col_va(fb), w);
-            // Flow definition:
-            // f - w (theta_from - theta_to) = sw * (-b_powerio * shift).
+            // Flow definition: f - Bf theta = flow_offset, with PowerIO's
+            // branch flow matrix `Bf = diag(-b) A'`.
             prog.a(lay.r_fd(e), lay.col_f(e), 1.0);
-            prog.a(lay.r_fd(e), lay.col_va(fb), -w);
-            prog.a(lay.r_fd(e), lay.col_va(tb), w);
-            prog.rhs(lay.r_fd(e), dc.current_flow_offset(e));
+            for (bus, value) in csr_row(&dc.branch_flow_matrix, e) {
+                prog.a(lay.r_fd(e), lay.col_va(bus), -value);
+            }
+            prog.rhs(lay.r_fd(e), dc.flow_offset[e]);
             // An inactive limit has no row (see `OpfLayout`).
             if let (Some(ub), Some(lb)) = (lay.r_lineub(e), lay.r_linelb(e)) {
                 prog.a(ub, lay.col_f(e), 1.0);
@@ -357,15 +357,15 @@ impl OpfFormulation for Dc {
                 prog.a(lb, lay.col_f(e), -1.0);
                 prog.rhs(lb, dc.fmax[e]);
             }
-            // Phase angle difference limits: sw (A theta) within sw [angmin, angmax].
-            let sw = dc.sw[e];
+            // Phase angle difference limits: A' theta within [angmin, angmax],
+            // read from PowerIO's incidence.
             if let (Some(ub), Some(lb)) = (lay.r_phaseub(e), lay.r_phaselb(e)) {
-                prog.a(ub, lay.col_va(fb), sw);
-                prog.a(ub, lay.col_va(tb), -sw);
-                prog.rhs(ub, sw * dc.angmax[e]);
-                prog.a(lb, lay.col_va(fb), -sw);
-                prog.a(lb, lay.col_va(tb), sw);
-                prog.rhs(lb, -sw * dc.angmin[e]);
+                for (bus, sign) in csr_row(&dc.branch_incidence, e) {
+                    prog.a(ub, lay.col_va(bus), sign);
+                    prog.a(lb, lay.col_va(bus), -sign);
+                }
+                prog.rhs(ub, dc.angmax[e]);
+                prog.rhs(lb, -dc.angmin[e]);
             }
         }
         // Reference buses: theta[ref] = 0 in every island.
@@ -590,9 +590,8 @@ mod tests {
 
         // Flows obey the complete affine definition.
         for e in 0..dc.m {
-            let w = -dc.b[e] * dc.sw[e];
-            let expected =
-                w * (sol.va[dc.br_from[e]] - sol.va[dc.br_to[e]]) + dc.current_flow_offset(e);
+            // f = -b (va_from - va_to) + flow_offset.
+            let expected = -dc.b[e] * dc.angle_difference(&sol.va, e) + dc.flow_offset[e];
             assert!(
                 (sol.f[e] - expected).abs() < 1e-6,
                 "flow def mismatch at {e}"

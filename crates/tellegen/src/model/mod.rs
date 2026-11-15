@@ -37,7 +37,7 @@ mod powerio_parity;
 pub(crate) use ac::AcNetwork;
 #[cfg(feature = "acopf")]
 pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
-pub(crate) use dc::{DcNetwork, LinearRow};
+pub(crate) use dc::{csr_row, DcNetwork, LinearRow};
 
 #[cfg(all(test, feature = "sensitivity"))]
 pub(crate) use cases::parse_case3_ac;
@@ -115,29 +115,14 @@ pub(super) fn branch_source_rows(sources: &[AnalysisBranchSource]) -> Vec<Option
 /// Exact 60 degree angle-difference pad used by every Tellegen formulation.
 pub(super) const DEFAULT_ANGLE_BOUND_PAD: f64 = std::f64::consts::PI / 3.0;
 
-/// Default angle-difference bounds (radians in, radians out). A `>= pi/2` half-window
-/// (the MATPOWER "unconstrained" +-360 degree default, or the zero/zero "unset" case)
-/// collapses to the documented +-60 degree MATPOWER/PowerModels convention. Shared by
-/// the DC OPF (which carries these) and the AC model (the AC OPF angle-difference limits
-/// and the conic angle constraints).
-pub(super) fn normalize_angle_bounds(mut amin: f64, mut amax: f64) -> (f64, f64) {
-    if amin <= -std::f64::consts::FRAC_PI_2 {
-        amin = -DEFAULT_ANGLE_BOUND_PAD;
-    }
-    if amax >= std::f64::consts::FRAC_PI_2 {
-        amax = DEFAULT_ANGLE_BOUND_PAD;
-    }
-    if amin == 0.0 && amax == 0.0 {
-        return (-DEFAULT_ANGLE_BOUND_PAD, DEFAULT_ANGLE_BOUND_PAD);
-    }
-    // The two clamps above move each end independently, so a window lying wholly
-    // on one side of zero and reaching past pi/2 comes back inverted: (-180, -70)
-    // degrees collapses to (-60, -70), an empty interval that makes a solvable
-    // case infeasible. powerio's `clamp_angle_bounds` repairs this the same way.
-    if amin > amax {
-        return (-DEFAULT_ANGLE_BOUND_PAD, DEFAULT_ANGLE_BOUND_PAD);
-    }
-    (amin, amax)
+/// Default angle-difference bounds (radians in, radians out): PowerIO's
+/// PowerModels rule (`correct_angle_difference_bounds_with_pad`) with Tellegen's
+/// exact +-60 degree pad centered on zero. A side at or beyond +-90 degrees, the
+/// MATPOWER 0/0 spelling, or a correction that would invert the window becomes
+/// the pad. Shared by the DC OPF (which carries these) and the AC model (the AC
+/// OPF angle-difference limits and the conic angle constraints).
+pub(super) fn normalize_angle_bounds(amin: f64, amax: f64) -> (f64, f64) {
+    powerio_tx::correct_angle_difference_bounds_with_pad(amin, amax, DEFAULT_ANGLE_BOUND_PAD, 0.0)
 }
 
 /// Row provenance for the legacy raw network construction path. Positions are

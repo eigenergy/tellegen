@@ -831,7 +831,7 @@ impl Study {
                     bound(format!("branch:{id}:flow_min"), sol.f[e], -net.fmax[e]);
                 }
                 if net.angle_bound_active[e] {
-                    let angle = sol.va[net.br_from[e]] - sol.va[net.br_to[e]];
+                    let angle = net.angle_difference(&sol.va, e);
                     bound(format!("branch:{id}:angle_min"), angle, net.angmin[e]);
                     bound(format!("branch:{id}:angle_max"), angle, net.angmax[e]);
                 }
@@ -941,7 +941,7 @@ impl Study {
                 bound(
                     format!("branch:{id}:voltage_product_cone"),
                     sol.wr[e].powi(2) + sol.wi[e].powi(2),
-                    sol.w[net.br_from[e]] * sol.w[net.br_to[e]],
+                    sol.w[net.branches.from_bus[e]] * sol.w[net.branches.to_bus[e]],
                 );
             }
         }

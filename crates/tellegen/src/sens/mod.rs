@@ -29,8 +29,6 @@ mod interface;
 pub use ac::AcNewton;
 #[cfg(feature = "conic")]
 pub use conic::ConicKkt;
-#[cfg(test)]
-pub(crate) use dc::incidence_by_bus as incidence_by_bus_for_parity;
 pub use dc::DcKkt;
 pub use interface::{
     functional_gradient, sensitivity, weighted_sensitivity, Axis, Bound, ColMeta, CostTerm,

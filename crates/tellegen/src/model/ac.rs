@@ -8,17 +8,15 @@
 
 use std::collections::BTreeMap;
 
-use num_complex::Complex;
 use powerio::{BalancedNetwork, LoadVoltageModel};
+use powerio_matrix::matrix::YbusParts;
 #[cfg(feature = "conic")]
 use powerio_matrix::PreparedObjective;
-use powerio_matrix::{
-    build_ac_opf_preparation, calc_admittance_matrix, AcOpfAssemblyOptions, BuildOptions, Units,
-};
+use powerio_matrix::{build_ac_opf_preparation, AcBranchData, AcOpfAssemblyOptions, Units};
 use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
-use powerio_tx::IndexedNetwork;
+use powerio_tx::calc_dense_island_labels;
 
-use super::islands::{dense_islands, energize, ReferencePolicy};
+use super::islands::{energize, ReferencePolicy};
 use super::load_voltage::LoadTerm;
 use super::{hvdc_diagnostics, normalize_for_model, reconstruct_ids, HvdcLines, Ids};
 #[cfg(feature = "conic")]
@@ -28,48 +26,32 @@ use super::{
 };
 use crate::api::SolveDiagnostic;
 
-const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
-
-/// Whether a branch with series admittance `g + j b` is a near-ideal jumper
-/// whose terminal charging the model suppresses (Tellegen's CATS stability
-/// policy): `|z|^2 = 1 / (g^2 + b^2)` at most [`NEAR_ZERO_IMPEDANCE_SQUARED`].
-pub(super) fn suppresses_terminal_charging(g: f64, b: f64) -> bool {
-    let admittance_squared = g * g + b * b;
-    admittance_squared > 0.0 && admittance_squared.recip() <= NEAR_ZERO_IMPEDANCE_SQUARED
-}
+/// Tellegen's CATS stability policy: a near-ideal jumper, a branch with
+/// `|z|^2` at most this, keeps its series admittance but loses its terminal
+/// charging (PowerIO's `AcBranchData::clear_jumper_charging`).
+const JUMPER_IMPEDANCE_SQUARED: f64 = 1.0e-10;
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
-/// Each branch contributes the standard pi-model stamp built from its series
-/// admittance `y = g + j b`, the complex tap `t = tap · e^{j·shift}`, and the
-/// from/to line-charging shunts; [`AcNetwork::ybus`] is the bus admittance matrix
-/// `Y`, which PowerIO assembles from the same network. The net injection at bus
-/// `i` is `S_i = V_i · conj((Y V)_i)`, equal to `(pg_i − pd_i) + j(qg_i − qd_i)`.
+/// The branch columns are PowerIO's [`AcBranchData`]: each branch's pi-model
+/// block comes from `AcBranchData::calc_branch_admittance`, its terminal flows
+/// from `AcBranchData::calc_branch_flows`, and [`AcNetwork::ybus`] is the bus
+/// admittance matrix `Y` of the same preparation
+/// (`AcOpfPreparation::calc_admittance_matrix`). The net injection at bus `i`
+/// is `S_i = V_i · conj((Y V)_i)`, equal to `(pg_i − pd_i) + j(qg_i − qd_i)`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub(crate) struct AcNetwork {
     /// Buses and branches after filtering (in-service, non-isolated).
     pub n: usize,
     pub m: usize,
-    /// Branch endpoints in dense bus-index space.
-    pub br_from: Vec<usize>,
-    pub br_to: Vec<usize>,
-    /// Series conductance `g = r/(r²+x²)` and susceptance `b = −x/(r²+x²)` per
-    /// retained branch. A literal zero-impedance row has undefined admittance
-    /// and is rejected at model construction; a tiny but nonzero impedance keeps
-    /// its true, correspondingly large admittance.
-    pub g: Vec<f64>,
-    pub b: Vec<f64>,
-    /// From/to-side shunt admittance (line charging). Carries PowerIO's canonical
-    /// per-terminal values; a legacy MATPOWER `br_b` is derived as the symmetric
-    /// special case.
-    pub g_fr: Vec<f64>,
-    pub b_fr: Vec<f64>,
-    pub g_to: Vec<f64>,
-    pub b_to: Vec<f64>,
-    /// Transformer tap magnitude (`1` for a plain line) and phase shift (radians).
-    pub tap: Vec<f64>,
-    pub shift: Vec<f64>,
+    /// PowerIO's AC branch columns in active branch order: endpoints in dense
+    /// bus space, series admittance `g + j b`, per-terminal charging, tap
+    /// magnitude and phase shift (radians). A literal zero-impedance row is
+    /// rejected at model construction; a tiny but nonzero impedance keeps its
+    /// true, correspondingly large admittance, and a near-ideal jumper has its
+    /// terminal charging cleared.
+    pub branches: AcBranchData,
     /// Per-unit apparent-power thermal limit per branch (`rate_a`; a large sentinel
     /// stands in for an unlimited `rate_a == 0` branch). The conic OPF caps each
     /// branch's `|S|` at this with a second-order cone.
@@ -85,10 +67,6 @@ pub(crate) struct AcNetwork {
     pub angmin: Vec<f64>,
     #[cfg(feature = "conic")]
     pub angmax: Vec<f64>,
-    /// Branch switching state (1 closed, 0 open). All branches start closed.
-    /// It scales [`AcNetwork::branch_admittance`]; [`AcNetwork::ybus`] is fixed at
-    /// construction and assumes every retained branch closed.
-    pub sw: Vec<f64>,
     /// Per-bus shunt admittance (per unit): conductance `gs`, susceptance `bs`.
     /// The SOCWR relaxation reads them; the power flow reads them through
     /// [`AcNetwork::ybus`], whose diagonal PowerIO stamps from the same shunts.
@@ -182,10 +160,10 @@ pub(crate) struct AcNetwork {
     pub has_remote_voltage_control: bool,
     /// How the model treated the network's islands, reported with the solve.
     pub(crate) diagnostics: Vec<SolveDiagnostic>,
-    /// The bus admittance matrix as summed `(row, col, value)` triplets in
-    /// `(row, col)` order, assembled once by [`assemble_ybus`]. Read it through
-    /// [`AcNetwork::ybus`].
-    ybus: Vec<(usize, usize, Complex<f64>)>,
+    /// PowerIO's bus admittance matrix of the preparation the branch columns
+    /// came from, in dense bus order with every diagonal stored. Read it
+    /// through [`AcNetwork::ybus`].
+    ybus: YbusParts,
     /// The voltage-dependent parts of the bus demand (ZIP constant-current and
     /// constant-impedance parts, exponential loads), added to `pd`/`qd` at the bus
     /// voltage: see [`AcNetwork::demand_at`]. Empty unless the AC power flow
@@ -198,14 +176,14 @@ pub(crate) struct AcNetwork {
 /// One slack per island: the first of `references` in each island, in order of
 /// each island's first bus. Every island holds a reference (PowerIO's
 /// preparation refuses an ungrounded one). Later references in an island are
-/// returned separately; the power flow types them by their generators.
+/// returned separately; the power flow types them by their generators. The
+/// islands are PowerIO's dense labels over the prepared branch columns.
 fn island_slacks(
+    branches: &AcBranchData,
     n: usize,
-    br_from: &[usize],
-    br_to: &[usize],
     references: impl IntoIterator<Item = usize>,
 ) -> (Vec<usize>, Vec<usize>) {
-    let island = dense_islands(n, br_from, br_to);
+    let island = calc_dense_island_labels(n, &branches.from_bus, &branches.to_bus);
     let count = island.iter().max().map_or(0, |&last| last + 1);
     let mut slack_of: Vec<Option<usize>> = vec![None; count];
     let mut extra = Vec::new();
@@ -229,97 +207,6 @@ fn extra_reference_diagnostic(bus_ids: &[usize], extra: &[usize]) -> Option<Solv
         ),
         buses: extra.iter().map(|&bus| bus_ids[bus]).collect(),
     })
-}
-
-/// The model's bus admittance matrix: PowerIO's MATPOWER `makeYbus`
-/// ([`calc_admittance_matrix`]) over `network`, the network the AC preparation
-/// read, as `(row, col, value)` triplets in dense `(row, col)` order.
-///
-/// `bus_analysis_rows` is the preparation's dense bus -> analysis row map over
-/// the star-lowered view both PowerIO assemblies index; it is the one index
-/// translation. Two preparation rules `makeYbus` does not apply are stated on
-/// a copy of the view before it assembles, only when they change something:
-///
-/// - the preparation carries only active buses, so an in-service branch with an
-///   endpoint it does not carry (an isolated bus, or an unsupplied island the
-///   model de-energized) is taken out of service;
-/// - `suppressed_rows` lists the view's branch rows whose terminal charging the
-///   model drops (near-ideal jumpers, see [`suppresses_terminal_charging`]).
-///
-/// Every bus keeps a diagonal entry, zero when nothing stamps it. PowerIO prunes
-/// exact zeros, but the polar Jacobian's diagonal terms carry `conj(I_i)` even
-/// when `Y_ii` cancels to zero, so the position must stay.
-pub(super) fn assemble_ybus(
-    network: &BalancedNetwork,
-    bus_analysis_rows: &[usize],
-    suppressed_rows: &[usize],
-) -> Result<Vec<(usize, usize, Complex<f64>)>, String> {
-    let view = IndexedNetwork::new(network);
-    let mut dense_of = vec![None; view.n()];
-    for (dense, &row) in bus_analysis_rows.iter().enumerate() {
-        dense_of[row] = Some(dense);
-    }
-    let carried = |bus| {
-        view.bus_index(bus)
-            .is_some_and(|row| dense_of[row].is_some())
-    };
-    let uncarried: Vec<usize> = view
-        .in_service_branches()
-        .filter(|(_, branch)| !carried(branch.from) || !carried(branch.to))
-        .map(|(row, _)| row)
-        .collect();
-    let edited;
-    let view = if uncarried.is_empty() && suppressed_rows.is_empty() {
-        view
-    } else {
-        let mut lowered = view.network().clone();
-        let branches = lowered.branches_mut();
-        for &row in &uncarried {
-            branches[row].in_service = false;
-        }
-        for &row in suppressed_rows {
-            branches[row].b = 0.0;
-            branches[row].charging = None;
-        }
-        edited = lowered;
-        IndexedNetwork::new(&edited)
-    };
-    let parts = calc_admittance_matrix(&view, &BuildOptions::default())
-        .map_err(|e| format!("{}: {e}", e.code().code))?;
-
-    let mut ybus = Vec::with_capacity(parts.g.nnz().max(parts.b.nnz()) + bus_analysis_rows.len());
-    let mut row_entries: Vec<(usize, Complex<f64>)> = Vec::new();
-    for (dense_row, &row) in bus_analysis_rows.iter().enumerate() {
-        row_entries.clear();
-        row_entries.push((dense_row, Complex::new(0.0, 0.0)));
-        for (matrix, imaginary) in [(&parts.g, false), (&parts.b, true)] {
-            let Some(view_row) = matrix.outer_view(row) else {
-                continue;
-            };
-            for (col, &value) in view_row.iter() {
-                // Unreachable: no in-service branch reaches an uncarried bus.
-                let dense_col = dense_of[col].ok_or_else(|| {
-                    format!("PowerIO's bus admittance matrix couples a carried bus to analysis bus row {col}, which the AC model does not carry")
-                })?;
-                let entry = if imaginary {
-                    Complex::new(0.0, value)
-                } else {
-                    Complex::new(value, 0.0)
-                };
-                row_entries.push((dense_col, entry));
-            }
-        }
-        // The dense map is increasing in the analysis row, so this is also
-        // PowerIO's column order.
-        row_entries.sort_by_key(|&(col, _)| col);
-        for &(col, value) in &row_entries {
-            match ybus.last_mut() {
-                Some((r, c, sum)) if *r == dense_row && *c == col => *sum += value,
-                _ => ybus.push((dense_row, col, value)),
-            }
-        }
-    }
-    Ok(ybus)
 }
 
 /// Refuse a network with in-service voltage-dependent (ZIP or exponential) loads
@@ -358,8 +245,11 @@ impl AcNetwork {
     /// rebuilt on the energized network, so its specifications leave that line out
     /// at both ends.
     pub fn from_pf_instance(instance: &AcPfInstance) -> Result<AcNetwork, String> {
+        let mut energized_diagnostics = Vec::new();
         let rebuilt = if instance.network().hvdc().iter().any(|line| line.in_service) {
-            energize(instance.network(), ReferencePolicy::GeneratorHosted)
+            let energized = energize(instance.network(), ReferencePolicy::GeneratorHosted);
+            energized_diagnostics = energized.diagnostics.clone();
+            energized
                 .into_network()
                 .map(|network| instance.clone().with_network(network))
                 .transpose()
@@ -369,6 +259,10 @@ impl AcNetwork {
         };
         let instance = rebuilt.as_ref().unwrap_or(instance);
         let mut model = Self::from_network_with(instance.network(), HvdcLines::FixedInjection)?;
+        // Energizing the rebuilt network again finds nothing left to do, so
+        // the decisions the first pass made are reported here.
+        energized_diagnostics.append(&mut model.diagnostics);
+        model.diagnostics = energized_diagnostics;
         model
             .diagnostics
             .extend(hvdc_diagnostics(instance.network()));
@@ -443,16 +337,10 @@ impl AcNetwork {
         // island whose stated references the preparation could not use keeps the
         // reference the model designated for it.
         let designated = std::mem::take(&mut model.slacks);
-        let (stated, extra) = island_slacks(
-            model.n,
-            &model.br_from,
-            &model.br_to,
-            references.iter().copied(),
-        );
+        let (stated, extra) = island_slacks(&model.branches, model.n, references.iter().copied());
         let (slacks, _) = island_slacks(
+            &model.branches,
             model.n,
-            &model.br_from,
-            &model.br_to,
             stated.into_iter().chain(designated),
         );
         for &bus in &extra {
@@ -508,7 +396,7 @@ impl AcNetwork {
         assembly.synthesize_unrated_limits = true;
         let prep = build_ac_opf_preparation(instance, &assembly)
             .map_err(|e| format!("{}: {e}", e.code().code))?;
-        let ybus = assemble_ybus(raw, &prep.bus_analysis_rows, &[])?;
+        let ybus = prep.calc_admittance_matrix();
         let n = prep.n_buses;
         let m = prep.n_branches();
         let k = prep.n_generators();
@@ -550,12 +438,7 @@ impl AcNetwork {
             "generator",
         )?;
         // SOCWR has no slack; the field keeps the power flow typing well formed.
-        let (slacks, _) = island_slacks(
-            n,
-            &prep.branches.from_bus,
-            &prep.branches.to_bus,
-            prep.reference_buses.iter().copied(),
-        );
+        let (slacks, _) = island_slacks(&prep.branches, n, prep.reference_buses.iter().copied());
         let mut vm_set = prep.calc_vm_setpoints();
         let mut pg = vec![0.0; n];
         let mut qg = vec![0.0; n];
@@ -588,16 +471,7 @@ impl AcNetwork {
         Ok(AcNetwork {
             n,
             m,
-            br_from: prep.branches.from_bus.clone(),
-            br_to: prep.branches.to_bus.clone(),
-            g: prep.branches.g.clone(),
-            b: prep.branches.b.clone(),
-            g_fr: prep.branches.g_fr.clone(),
-            b_fr: prep.branches.b_fr.clone(),
-            g_to: prep.branches.g_to.clone(),
-            b_to: prep.branches.b_to.clone(),
-            tap: prep.branches.tap.clone(),
-            shift: prep.branches.shift.clone(),
+            branches: prep.branches.clone(),
             rate_a: prep.branches.s_max.clone(),
             thermal_rated: prep
                 .branches
@@ -607,7 +481,6 @@ impl AcNetwork {
                 .collect(),
             angmin: prep.branches.angle_min.clone(),
             angmax: prep.branches.angle_max.clone(),
-            sw: vec![1.0; m],
             gs: prep.buses.g_s.clone(),
             bs: prep.buses.b_s.clone(),
             pd: prep.buses.p_d.clone(),
@@ -798,8 +671,16 @@ impl AcNetwork {
         // terminal charging. Fail closed instead of returning a plausible
         // solve for a different network.
         assembly.skip_zero_impedance = false;
-        let prep = build_ac_opf_preparation(&instance, &assembly)
+        let mut prep = build_ac_opf_preparation(&instance, &assembly)
             .map_err(|e| format!("{}: {e}", e.code().code))?;
+        // Detailed substation cases use near-ideal jumper rows. Retain their
+        // physical series admittance but clear terminal charging, matching
+        // Tellegen's established CATS stability policy. PowerIO edits the
+        // columns before it stamps Y_bus, so the matrix, the branch flows and
+        // the formulations all read the same branches.
+        prep.branches
+            .clear_jumper_charging(JUMPER_IMPEDANCE_SQUARED);
+        let ybus = prep.calc_admittance_matrix();
 
         let Ids {
             n,
@@ -819,12 +700,8 @@ impl AcNetwork {
         )?;
 
         let mut vm_set = prep.calc_vm_setpoints();
-        let (slacks, extra) = island_slacks(
-            n,
-            &prep.branches.from_bus,
-            &prep.branches.to_bus,
-            prep.reference_buses.iter().copied(),
-        );
+        let (slacks, extra) =
+            island_slacks(&prep.branches, n, prep.reference_buses.iter().copied());
         let diagnostics: Vec<SolveDiagnostic> = extra_reference_diagnostic(&bus_ids, &extra)
             .into_iter()
             .collect();
@@ -860,46 +737,6 @@ impl AcNetwork {
         let vm_case = buses.initial_vm;
         let va_case = buses.initial_va;
 
-        let br_from = branches.from_bus;
-        let br_to = branches.to_bus;
-        let suppress_terminal_charging: Vec<bool> = branches
-            .g
-            .iter()
-            .zip(&branches.b)
-            .map(|(&g, &b)| suppresses_terminal_charging(g, b))
-            .collect();
-        // The suppressed jumpers, as rows of the star-lowered view PowerIO
-        // assembles Y_bus over, so Y_bus and the pi columns below drop the same
-        // charging.
-        let suppressed_rows: Vec<usize> = branches
-            .analysis_rows
-            .iter()
-            .zip(&suppress_terminal_charging)
-            .filter_map(|(&row, &suppressed)| suppressed.then_some(row))
-            .collect();
-        let ybus = assemble_ybus(
-            instance.network(),
-            &prep.bus_analysis_rows,
-            &suppressed_rows,
-        )?;
-        let g = branches.g;
-        let b = branches.b;
-        let suppress = |values: Vec<f64>| {
-            values
-                .into_iter()
-                .zip(&suppress_terminal_charging)
-                .map(|(value, &suppressed)| if suppressed { 0.0 } else { value })
-                .collect()
-        };
-        // Detailed substation cases use near-ideal jumper rows. Retain their
-        // physical series admittance but suppress terminal charging, matching
-        // Tellegen's established CATS stability policy.
-        let g_fr = suppress(branches.g_fr);
-        let b_fr = suppress(branches.b_fr);
-        let g_to = suppress(branches.g_to);
-        let b_to = suppress(branches.b_to);
-        let tap = branches.tap;
-        let shift = branches.shift;
         let thermal_rated = branches
             .s_max
             .iter()
@@ -907,17 +744,16 @@ impl AcNetwork {
             .collect();
         let rate_a = branches
             .s_max
-            .into_iter()
-            .map(|rate| if rate > 0.0 { rate } else { 1.0e3 })
+            .iter()
+            .map(|&rate| if rate > 0.0 { rate } else { 1.0e3 })
             .collect();
         #[cfg(feature = "conic")]
         let (angmin, angmax): (Vec<_>, Vec<_>) = branches
             .angle_min
-            .into_iter()
-            .zip(branches.angle_max)
-            .map(|(min, max)| normalize_angle_bounds(min, max))
+            .iter()
+            .zip(&branches.angle_max)
+            .map(|(&min, &max)| normalize_angle_bounds(min, max))
             .unzip();
-        let sw = vec![1.0; m];
 
         // Per-bus scheduled generation for power flow, plus generator-space bounds
         // and costs for SOCWR. PowerIO states the quadratic as `0.5*q*p^2`.
@@ -969,23 +805,13 @@ impl AcNetwork {
         Ok(AcNetwork {
             n,
             m,
-            br_from,
-            br_to,
-            g,
-            b,
-            g_fr,
-            b_fr,
-            g_to,
-            b_to,
-            tap,
-            shift,
+            branches,
             rate_a,
             thermal_rated,
             #[cfg(feature = "conic")]
             angmin,
             #[cfg(feature = "conic")]
             angmax,
-            sw,
             gs,
             bs,
             pd,
@@ -1044,46 +870,13 @@ impl AcNetwork {
         })
     }
 
-    /// The complex bus admittance matrix `Y` as summed `(row, col, value)`
-    /// triplets in `(row, col)` order, one diagonal entry per bus. PowerIO's
-    /// MATPOWER `makeYbus` assembled it from the network this model was built
-    /// from (see [`assemble_ybus`]); each in-service branch stamps the pi-model
-    /// coefficients [`Self::branch_admittance`] returns, and the bus shunt lands
-    /// on the diagonal.
-    pub fn ybus(&self) -> &[(usize, usize, Complex<f64>)] {
+    /// PowerIO's bus admittance matrix `Y = G + jB` of this model's
+    /// preparation (`calc_admittance_matrix`), in dense bus order with every
+    /// diagonal position stored: each branch column stamps its
+    /// `AcBranchData::calc_branch_admittance` block and the bus shunt lands on
+    /// the diagonal.
+    pub fn ybus(&self) -> &YbusParts {
         &self.ybus
-    }
-
-    /// The pi-model branch admittance coefficients `(yff, yft, ytf, ytt)` of branch
-    /// `e`, scaled by the switching state so an open (`sw = 0`) branch returns all
-    /// zeros:
-    ///
-    /// ```text
-    /// yff = (y + y_fr) / tap²     yft = −y / conj(t)
-    /// ytf = −y / t                ytt =  y + y_to
-    /// ```
-    ///
-    /// with `y = g + j b`, `t = tap · e^{j·shift}`, `y_fr = g_fr + j b_fr`,
-    /// `y_to = g_to + j b_to`. The branch flows, the AC flow-operand
-    /// sensitivity, and its finite-difference test read it. PowerIO's `makeYbus`
-    /// stamps the same coefficients into [`Self::ybus`]; the PowerIO parity tests
-    /// hold the two to bitwise equality off the diagonal.
-    pub(crate) fn branch_admittance(
-        &self,
-        e: usize,
-    ) -> (Complex<f64>, Complex<f64>, Complex<f64>, Complex<f64>) {
-        let sw = self.sw[e];
-        let y = Complex::new(self.g[e], self.b[e]);
-        let tapc = Complex::from_polar(self.tap[e], self.shift[e]);
-        let y_fr = Complex::new(self.g_fr[e], self.b_fr[e]);
-        let y_to = Complex::new(self.g_to[e], self.b_to[e]);
-        let tap2 = self.tap[e] * self.tap[e];
-        (
-            (y + y_fr) / tap2 * sw,
-            -y / tapc.conj() * sw,
-            -y / tapc * sw,
-            (y + y_to) * sw,
-        )
     }
 }
 
@@ -1146,12 +939,12 @@ mod tests {
         let z2 = 1e-7_f64.powi(2) + 1e-6_f64.powi(2);
         let expected_g = 1e-7 / z2;
         let expected_b = -1e-6 / z2;
-        approx(ac.g[1], expected_g); // branch index 1 is the 1-3 jumper
-        approx(ac.b[1], expected_b);
+        approx(ac.branches.g[1], expected_g); // branch index 1 is the 1-3 jumper
+        approx(ac.branches.b[1], expected_b);
         assert!(
-            ac.b[1].abs() > 1e5,
+            ac.branches.b[1].abs() > 1e5,
             "jumper susceptance {} should be large, not the near-zero open-circuit value",
-            ac.b[1]
+            ac.branches.b[1]
         );
     }
 
@@ -1164,10 +957,16 @@ mod tests {
         let mut net = crate::model::parse_matpower(&text).expect("parse jumper case3");
         net.branches_mut()[1].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
         let ac = AcNetwork::from_network(&net).expect("build charged jumper");
-        assert!(ac.g[1].abs() > 1.0e4);
-        assert!(ac.b[1].abs() > 1.0e5);
+        let branches = &ac.branches;
+        assert!(branches.g[1].abs() > 1.0e4);
+        assert!(branches.b[1].abs() > 1.0e5);
         assert_eq!(
-            (ac.g_fr[1], ac.b_fr[1], ac.g_to[1], ac.b_to[1]),
+            (
+                branches.g_fr[1],
+                branches.b_fr[1],
+                branches.g_to[1],
+                branches.b_to[1]
+            ),
             (0.0, 0.0, 0.0, 0.0)
         );
     }
@@ -1178,16 +977,11 @@ mod tests {
         net.branches_mut()[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
 
         let ac = AcNetwork::from_network(&net).expect("build charged AC network");
-        approx(ac.g_fr[0], 0.01);
-        approx(ac.b_fr[0], 0.02);
-        approx(ac.g_to[0], 0.03);
-        approx(ac.b_to[0], 0.04);
-
-        let (yff, _, _, ytt) = ac.branch_admittance(0);
-        approx(yff.re, ac.g[0] + 0.01);
-        approx(yff.im, ac.b[0] + 0.02);
-        approx(ytt.re, ac.g[0] + 0.03);
-        approx(ytt.im, ac.b[0] + 0.04);
+        let branches = &ac.branches;
+        approx(branches.g_fr[0], 0.01);
+        approx(branches.b_fr[0], 0.02);
+        approx(branches.g_to[0], 0.03);
+        approx(branches.b_to[0], 0.04);
     }
 
     #[test]
@@ -1249,14 +1043,14 @@ mod tests {
         assert_eq!(a.branch_ids, b.branch_ids);
         assert_eq!(a.gen_ids, b.gen_ids);
         for (left, right) in [
-            (&a.g, &b.g),
-            (&a.b, &b.b),
-            (&a.g_fr, &b.g_fr),
-            (&a.b_fr, &b.b_fr),
-            (&a.g_to, &b.g_to),
-            (&a.b_to, &b.b_to),
-            (&a.tap, &b.tap),
-            (&a.shift, &b.shift),
+            (&a.branches.g, &b.branches.g),
+            (&a.branches.b, &b.branches.b),
+            (&a.branches.g_fr, &b.branches.g_fr),
+            (&a.branches.b_fr, &b.branches.b_fr),
+            (&a.branches.g_to, &b.branches.g_to),
+            (&a.branches.b_to, &b.branches.b_to),
+            (&a.branches.tap, &b.branches.tap),
+            (&a.branches.shift, &b.branches.shift),
             (&a.rate_a, &b.rate_a),
             (&a.angmin, &b.angmin),
             (&a.angmax, &b.angmax),
@@ -1296,7 +1090,10 @@ mod tests {
         assert_eq!(ac.branch_ids, vec![1, 2, 3, 4, 5, 6]);
         assert_eq!(&ac.branch_uids[3..], &[None, None, None]);
         for branch in 3..6 {
-            assert_eq!(ac.br_to[branch], 3, "winding must terminate at star bus");
+            assert_eq!(
+                ac.branches.to_bus[branch], 3,
+                "winding must terminate at star bus"
+            );
             // PowerIO owns the lowered winding rows and pads them with its
             // PowerModels angle window.
             approx(ac.angmin[branch], -powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);

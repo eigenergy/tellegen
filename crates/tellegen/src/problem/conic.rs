@@ -248,40 +248,34 @@ impl ConicOpfFormulation for SocWr {
             prog.a(lay.r_qbal(net.gen_bus[g]), lay.col_qg(g), 1.0);
         }
         for e in 0..m {
-            let (f, t) = (net.br_from[e], net.br_to[e]);
+            let (f, t) = (net.branches.from_bus[e], net.branches.to_bus[e]);
             prog.a(lay.r_pbal(f), lay.col_pf(e), -1.0);
             prog.a(lay.r_pbal(t), lay.col_pt(e), -1.0);
             prog.a(lay.r_qbal(f), lay.col_qf(e), -1.0);
             prog.a(lay.r_qbal(t), lay.col_qt(e), -1.0);
 
-            // Ohm's law in W-space (PowerModels constraint_ohms_yt). tr/ti are the
-            // complex tap, tm2 the squared tap magnitude.
-            let (g, bb) = (net.g[e], net.b[e]);
-            let (gfr, bfr, gto, bto) = (net.g_fr[e], net.b_fr[e], net.g_to[e], net.b_to[e]);
-            let tr = net.tap[e] * net.shift[e].cos();
-            let ti = net.tap[e] * net.shift[e].sin();
-            let tm2 = net.tap[e] * net.tap[e];
-
-            // pf = (g+gfr)/tm2 w_f + (-g tr+b ti)/tm2 wr + (-b tr-g ti)/tm2 wi
+            // Ohm's law in W-space (PowerModels constraint_ohms_yt) over PowerIO's
+            // pi-model block `Y = G + jB` of the branch, with
+            // `wr + j wi = V_f conj(V_t)`:
+            //   pf =  Gff w_f + Gft wr + Bft wi    qf = -Bff w_f - Bft wr + Gft wi
+            //   pt =  Gtt w_t + Gtf wr - Btf wi    qt = -Btt w_t - Btf wr - Gtf wi
+            let [yff, yft, ytf, ytt] = net.branches.calc_branch_admittance(e);
             prog.a(lay.r_ohm_pf(e), lay.col_pf(e), 1.0);
-            prog.a(lay.r_ohm_pf(e), lay.col_w(f), -(g + gfr) / tm2);
-            prog.a(lay.r_ohm_pf(e), lay.col_wr(e), -(-g * tr + bb * ti) / tm2);
-            prog.a(lay.r_ohm_pf(e), lay.col_wi(e), -(-bb * tr - g * ti) / tm2);
-            // qf = -(b+bfr)/tm2 w_f - (-b tr-g ti)/tm2 wr + (-g tr+b ti)/tm2 wi
+            prog.a(lay.r_ohm_pf(e), lay.col_w(f), -yff.re);
+            prog.a(lay.r_ohm_pf(e), lay.col_wr(e), -yft.re);
+            prog.a(lay.r_ohm_pf(e), lay.col_wi(e), -yft.im);
             prog.a(lay.r_ohm_qf(e), lay.col_qf(e), 1.0);
-            prog.a(lay.r_ohm_qf(e), lay.col_w(f), (bb + bfr) / tm2);
-            prog.a(lay.r_ohm_qf(e), lay.col_wr(e), (-bb * tr - g * ti) / tm2);
-            prog.a(lay.r_ohm_qf(e), lay.col_wi(e), -(-g * tr + bb * ti) / tm2);
-            // pt = (g+gto) w_t + (-g tr-b ti)/tm2 wr - (-b tr+g ti)/tm2 wi
+            prog.a(lay.r_ohm_qf(e), lay.col_w(f), yff.im);
+            prog.a(lay.r_ohm_qf(e), lay.col_wr(e), yft.im);
+            prog.a(lay.r_ohm_qf(e), lay.col_wi(e), -yft.re);
             prog.a(lay.r_ohm_pt(e), lay.col_pt(e), 1.0);
-            prog.a(lay.r_ohm_pt(e), lay.col_w(t), -(g + gto));
-            prog.a(lay.r_ohm_pt(e), lay.col_wr(e), -(-g * tr - bb * ti) / tm2);
-            prog.a(lay.r_ohm_pt(e), lay.col_wi(e), (-bb * tr + g * ti) / tm2);
-            // qt = -(b+bto) w_t - (-b tr+g ti)/tm2 wr - (-g tr-b ti)/tm2 wi
+            prog.a(lay.r_ohm_pt(e), lay.col_w(t), -ytt.re);
+            prog.a(lay.r_ohm_pt(e), lay.col_wr(e), -ytf.re);
+            prog.a(lay.r_ohm_pt(e), lay.col_wi(e), ytf.im);
             prog.a(lay.r_ohm_qt(e), lay.col_qt(e), 1.0);
-            prog.a(lay.r_ohm_qt(e), lay.col_w(t), bb + bto);
-            prog.a(lay.r_ohm_qt(e), lay.col_wr(e), (-bb * tr + g * ti) / tm2);
-            prog.a(lay.r_ohm_qt(e), lay.col_wi(e), (-g * tr - bb * ti) / tm2);
+            prog.a(lay.r_ohm_qt(e), lay.col_w(t), ytt.im);
+            prog.a(lay.r_ohm_qt(e), lay.col_wr(e), ytf.im);
+            prog.a(lay.r_ohm_qt(e), lay.col_wi(e), ytf.re);
         }
 
         // Convex piecewise linear generator costs, represented by one
@@ -357,7 +351,7 @@ impl ConicOpfFormulation for SocWr {
         // Jabr cone per branch: ((w_f+w_t)/2, wr, wi, (w_f-w_t)/2) in SOC(4), i.e.
         // (w_f+w_t)/2 >= ||(wr, wi, (w_f-w_t)/2)||  <=>  wr^2 + wi^2 <= w_f w_t.
         for e in 0..m {
-            let (f, t) = (net.br_from[e], net.br_to[e]);
+            let (f, t) = (net.branches.from_bus[e], net.branches.to_bus[e]);
             let r = lay.r_jabr(e);
             prog.a(r, lay.col_w(f), -0.5);
             prog.a(r, lay.col_w(t), -0.5);

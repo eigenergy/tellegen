@@ -433,7 +433,7 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
     let (bus_ids, bus_uids) = keyed(&edits.deltas);
     let (_, branch_uids) = keyed(&edits.rates);
     let mut bus_by_id: HashMap<usize, &powerio::Bus> = HashMap::new();
-    if bus_ids || !edits.rates.is_empty() {
+    if bus_ids {
         for bus in net.buses() {
             bus_by_id.entry(bus.id.0).or_insert(bus);
         }
@@ -446,11 +446,11 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             }
         }
     }
-    let mut branch_by_uid: HashMap<&str, &powerio::Branch> = HashMap::new();
+    let mut branch_by_uid: HashMap<&str, usize> = HashMap::new();
     if branch_uids {
-        for branch in net.branches() {
+        for (row, branch) in net.branches().iter().enumerate() {
             if let Some(uid) = branch.uid.as_deref() {
-                branch_by_uid.entry(uid).or_insert(branch);
+                branch_by_uid.entry(uid).or_insert(row);
             }
         }
     }
@@ -474,6 +474,7 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             return Err(format!("demand delta bus {bus} is not editable"));
         }
     }
+    let mut analysis: Option<powerio_tx::IndexedNetwork> = None;
     for (branch, mw) in sorted_deltas(&edits.rates) {
         if !mw.is_finite() {
             return Err(format!("rating delta for branch {branch} must be finite"));
@@ -485,23 +486,16 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
                 .and_then(|id| id.checked_sub(1))
-                .and_then(|row| net.branches().get(row)),
+                .filter(|&row| row < net.branches().len()),
             ElementKey::Uid(uid) => branch_by_uid.get(uid.as_str()).copied(),
         };
-        let Some(target) = target else {
+        let Some(row) = target else {
             return Err(format!("unknown rating delta branch {branch}"));
         };
-        let endpoint_is_editable = |id: powerio::BusId| {
-            bus_by_id
-                .get(&id.0)
-                .is_some_and(|bus| bus.kind != powerio::BusType::Isolated)
-        };
-        if !target.in_service
-            || target.from == target.to
-            || target.r * target.r + target.x * target.x == 0.0
-            || !endpoint_is_editable(target.from)
-            || !endpoint_is_editable(target.to)
-        {
+        // PowerIO's analysis predicate: the branch the preparation keeps.
+        // Source branch rows keep their positions in the lowered view.
+        let view = analysis.get_or_insert_with(|| powerio_tx::IndexedNetwork::new(net));
+        if !view.is_analysis_branch(row) {
             return Err(format!("rating delta branch {branch} is not editable"));
         }
     }
@@ -2250,7 +2244,6 @@ fn apply_linear_constraints(
     let buses = KeyIndex::with_uids(&dc.bus_ids, &dc.bus_uids, needs_uids);
     let branches = KeyIndex::with_uids(&dc.branch_ids, &dc.branch_uids, needs_uids);
     let generators = KeyIndex::with_uids(&dc.gen_ids, &dc.gen_uids, needs_uids);
-    let mut incident: Option<Vec<Vec<(usize, f64)>>> = None;
     let mut seen = std::collections::HashSet::new();
     let mut rows = Vec::with_capacity(constraints.len());
     for constraint in constraints {
@@ -2309,15 +2302,8 @@ fn apply_linear_constraints(
                         .ok_or_else(|| {
                             format!("constraint \"{id}\": unknown or out-of-service bus {key}")
                         })?;
-                    let incident = incident.get_or_insert_with(|| {
-                        let mut at = vec![Vec::new(); dc.n];
-                        for e in 0..dc.m {
-                            at[dc.br_from[e]].push((e, 1.0));
-                            at[dc.br_to[e]].push((e, -1.0));
-                        }
-                        at
-                    });
-                    for &(e, sign) in &incident[i] {
+                    // Row `i` of PowerIO's incidence lists the bus's branches.
+                    for (e, sign) in crate::model::csr_row(&dc.incidence, i) {
                         *flow.entry(e).or_default() += sign * term.coefficient;
                     }
                 }
@@ -5009,8 +4995,8 @@ mod hvdc_tests {
 
     #[test]
     fn a_line_into_a_dead_island_injects_nothing() {
-        // Bus 4 has load and no generator, so its island is de-energized and the
-        // line from bus 3 has no live terminal there: neither end injects.
+        // Bus 4 has load and no generator, so PowerIO de-energizes its island and
+        // takes the line from bus 3 out of service with it: neither end injects.
         let case = CASE3.replace(
             " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n",
             " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n 4 1 5 0  0 0 1 1 0 230 1 1.1 0.9;\n",
@@ -5033,12 +5019,12 @@ mod hvdc_tests {
                 &by_branch(&reference.flows),
                 "flow",
             );
-            let inactive = isolated
+            let dead = isolated
                 .diagnostics
                 .iter()
-                .find(|d| d.code == "BUILD.HVDC.TERMINAL_INACTIVE")
+                .find(|d| d.code == "island_deenergized")
                 .unwrap_or_else(|| panic!("{formulation:?}: {:?}", codes(&isolated)));
-            assert_eq!(inactive.buses, vec![3, 4]);
+            assert_eq!(dead.buses, vec![4]);
         }
     }
 

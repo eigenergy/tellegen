@@ -1,25 +1,14 @@
-//! Cross-checks of the two assemblies issue #102 moved onto PowerIO.
+//! Checks of how Tellegen's models map PowerIO's operators (issue #102).
 //!
-//! The AC model's bus admittance matrix is PowerIO's MATPOWER `makeYbus`
-//! (`calc_admittance_matrix`). The model's own pi columns (`g`, `b`, the
-//! terminal charging, `tap`, `shift`, `gs`, `bs`), which come from PowerIO's AC
-//! preparation and which the branch flows and flow sensitivities read through
-//! [`AcNetwork::branch_admittance`], must scatter to the same matrix. The
-//! reference below is that scatter, retained from Tellegen's former local
-//! assembly. It sums each diagonal in PowerIO's order (branches in table order,
-//! then the bus shunt), so on the power flow's normalized network the two agree
-//! bitwise everywhere on the whole PGLib corpus; summing the shunt first, as the
-//! former assembly did, moved diagonals by up to 17 ulps (relative 6.2e-16) and
-//! nothing else. The tolerance is the issue's `1e-12` relative, and off-diagonal
-//! entries must agree bitwise.
-//!
-//! The DC KKT keeps its per-bus incidence lists ([`crate::sens`]'s
-//! `incidence_by_bus`, a transpose of PowerIO's preparation endpoint columns):
-//! `DcOperators::calc_incidence_matrix` returns the same entries, checked here,
-//! but builds the full DC operator set to get them, about 27x the cost.
-//! Tellegen's models index dense columns: the preparation's active buses
-//! (`bus_analysis_rows`) and active branches (`branches.analysis_rows`). Those
-//! two row maps are the only index translation the comparisons need.
+//! Every matrix the models read is PowerIO's: the AC model's bus admittance
+//! matrix is its preparation's `calc_admittance_matrix`, its branch blocks and
+//! flows are `AcBranchData`'s, and the DC model's incidence, Laplacian, and
+//! phase shift injection are the DC preparation's. Nothing here re-derives
+//! them. What Tellegen owns is the mapping: which preparation it builds, the
+//! dense bus and branch order its vectors follow, and the jumper-charging edit
+//! it applies before PowerIO stamps the matrix. The checks below hold that
+//! mapping to PowerIO's other entry points (`DcOperators`, the AC power
+//! balance) and to a hand-written three-bus matrix.
 
 use std::collections::BTreeMap;
 
@@ -41,109 +30,81 @@ fn analysis_network(raw: &BalancedNetwork, hvdc: HvdcLines) -> BalancedNetwork {
         .network
 }
 
-/// The bus admittance matrix scattered from the model's own pi columns: every
-/// branch's [`AcNetwork::branch_admittance`] stamp in branch order, then the bus
-/// shunt on the diagonal, with a diagonal entry for every bus.
-fn ybus_from_columns(model: &AcNetwork) -> BTreeMap<(usize, usize), Complex64> {
-    let mut acc: BTreeMap<(usize, usize), Complex64> = BTreeMap::new();
-    for i in 0..model.n {
-        acc.insert((i, i), Complex64::new(0.0, 0.0));
+/// The model's admittance matrix as `(row, col) -> G + jB`, every stored entry.
+fn ybus_entries(model: &AcNetwork) -> BTreeMap<(usize, usize), Complex64> {
+    let ybus = model.ybus();
+    let mut entries: BTreeMap<(usize, usize), Complex64> = BTreeMap::new();
+    for (&g, (r, c)) in ybus.g.iter() {
+        entries.entry((r, c)).or_default().re = g;
     }
+    for (&b, (r, c)) in ybus.b.iter() {
+        entries.entry((r, c)).or_default().im = b;
+    }
+    entries
+}
+
+/// The model's admittance matrix and branch columns must describe the same
+/// network in the same dense order: at an arbitrary voltage, PowerIO's bus
+/// injection `V conj(Y V)` over the matrix equals the sum of PowerIO's branch
+/// terminal flows leaving each bus plus the bus shunt. This holds the dense
+/// bus map, the branch endpoints, and the jumper-charging edit (which must
+/// reach both the matrix and the flows) to each other. Returns the largest
+/// mismatch relative to the bus's largest term.
+fn assert_ac_mapping(name: &str, model: &AcNetwork) -> f64 {
+    let n = model.n;
+    let vm: Vec<f64> = (0..n)
+        .map(|i| 1.0 + 0.05 * ((i * 7 % 11) as f64 / 10.0 - 0.5))
+        .collect();
+    let va: Vec<f64> = (0..n)
+        .map(|i| 0.3 * ((i * 5 % 13) as f64 / 12.0 - 0.5))
+        .collect();
+    let (p, q) = powerio_matrix::calc_bus_power_injection(model.ybus(), &vm, &va)
+        .expect("bus power injection");
+    let flows = model.branches.calc_branch_flows(&vm, &va);
+    let mut p_sum: Vec<f64> = (0..n).map(|i| model.gs[i] * vm[i] * vm[i]).collect();
+    let mut q_sum: Vec<f64> = (0..n).map(|i| -model.bs[i] * vm[i] * vm[i]).collect();
+    let mut scale: Vec<f64> = p_sum
+        .iter()
+        .zip(&q_sum)
+        .map(|(a, b)| a.abs().max(b.abs()))
+        .collect();
     for e in 0..model.m {
-        let (yff, yft, ytf, ytt) = model.branch_admittance(e);
-        let (f, t) = (model.br_from[e], model.br_to[e]);
-        *acc.entry((f, f)).or_default() += yff;
-        *acc.entry((f, t)).or_default() += yft;
-        *acc.entry((t, f)).or_default() += ytf;
-        *acc.entry((t, t)).or_default() += ytt;
-    }
-    for i in 0..model.n {
-        *acc.get_mut(&(i, i)).expect("diagonal") += Complex64::new(model.gs[i], model.bs[i]);
-    }
-    acc
-}
-
-/// Distance in units in the last place between two finite doubles of the
-/// same sign (or both zero); `u64::MAX` across a sign change.
-fn ulps(a: f64, b: f64) -> u64 {
-    if a == b {
-        return 0;
-    }
-    if a.is_sign_negative() != b.is_sign_negative() {
-        return u64::MAX;
-    }
-    a.to_bits().abs_diff(b.to_bits())
-}
-
-#[derive(Debug, Default)]
-struct YbusParity {
-    entries: usize,
-    off_diagonal: usize,
-    bitwise_off_diagonal: usize,
-    diagonal: usize,
-    bitwise_diagonal: usize,
-    max_ulps: u64,
-    max_relative: f64,
-}
-
-/// Compare the model's PowerIO-assembled `ybus()` with the scatter of its pi
-/// columns, entry by entry: the same sparsity pattern, off-diagonal entries
-/// bitwise equal, every entry within `1e-12` relative.
-fn assert_ybus_parity(name: &str, raw: &BalancedNetwork) -> YbusParity {
-    let model = AcNetwork::from_network_pf(raw).expect("ac model");
-    assert_model_ybus_parity(name, &model)
-}
-
-fn assert_model_ybus_parity(name: &str, model: &AcNetwork) -> YbusParity {
-    let assembled = model.ybus();
-    let reference = ybus_from_columns(model);
-    assert_eq!(
-        assembled.len(),
-        reference.len(),
-        "{name}: sparsity pattern size"
-    );
-    let mut stats = YbusParity::default();
-    for (&(r, c, value), (&(rr, rc), &expected)) in assembled.iter().zip(&reference) {
-        assert_eq!((r, c), (rr, rc), "{name}: sparsity pattern or order");
-        stats.entries += 1;
-        let bitwise = value.re.to_bits() == expected.re.to_bits()
-            && value.im.to_bits() == expected.im.to_bits();
-        if r == c {
-            stats.diagonal += 1;
-            stats.bitwise_diagonal += usize::from(bitwise);
-        } else {
-            stats.off_diagonal += 1;
-            stats.bitwise_off_diagonal += usize::from(bitwise);
-            assert!(
-                bitwise,
-                "{name}: off-diagonal ({r}, {c}) PowerIO {value:e} != columns {expected:e}"
-            );
-        }
-        stats.max_ulps = stats
-            .max_ulps
-            .max(ulps(value.re, expected.re))
-            .max(ulps(value.im, expected.im));
-        let scale = value.norm().max(expected.norm());
-        if scale > 0.0 {
-            let relative = (value - expected).norm() / scale;
-            stats.max_relative = stats.max_relative.max(relative);
-            assert!(
-                relative <= 1e-12,
-                "{name}: ({r}, {c}) PowerIO {value:e} vs columns {expected:e}, relative {relative:e}"
-            );
+        let (f, t) = (model.branches.from_bus[e], model.branches.to_bus[e]);
+        p_sum[f] += flows.pf[e];
+        q_sum[f] += flows.qf[e];
+        p_sum[t] += flows.pt[e];
+        q_sum[t] += flows.qt[e];
+        for (bus, values) in [
+            (f, [flows.pf[e], flows.qf[e]]),
+            (t, [flows.pt[e], flows.qt[e]]),
+        ] {
+            scale[bus] = values.iter().fold(scale[bus], |acc, v| acc.max(v.abs()));
         }
     }
-    stats
+    let mut worst = 0.0_f64;
+    for i in 0..n {
+        let tolerance = 1e-9 * scale[i].max(1.0);
+        for (what, injected, summed) in [("P", p[i], p_sum[i]), ("Q", q[i], q_sum[i])] {
+            let error = (injected - summed).abs();
+            assert!(
+                error <= tolerance,
+                "{name}: bus {i} {what} injection {injected:e} vs branch flows + shunt {summed:e}"
+            );
+            worst = worst.max(error / scale[i].max(1.0));
+        }
+    }
+    worst
 }
 
-/// Compare the DC KKT's per-bus incidence lists with PowerIO's incidence
-/// matrix. Branch columns map through the preparation's analysis rows (the
-/// rows `DcOperators::branch_rows` also reports), bus rows through
-/// `bus_analysis_rows`. Incidence entries are exactly `+-1`, so the
-/// comparison is exact.
-fn assert_incidence_parity(name: &str, raw: &BalancedNetwork) -> usize {
+/// Check the DC model's index mapping: the incidence, Laplacian, and nodal
+/// phase shift the model stores (PowerIO's preparation operators, in dense
+/// order) must equal what PowerIO's `DcOperators` reports for the same network
+/// in analysis order, once branch columns map through the preparation's
+/// analysis rows and buses through `bus_analysis_rows`. `DcOperators` states
+/// PowerModels signs, so its bus susceptance matrix is `-L`. Incidence entries
+/// are exactly `+-1`; the weighted entries agree to `1e-12` relative.
+fn assert_dc_operator_mapping(name: &str, raw: &BalancedNetwork) -> usize {
     let dc = DcNetwork::from_network(raw).expect("dc model");
-    let local = crate::sens::incidence_by_bus_for_parity(&dc);
 
     let mut norm = analysis_network(raw, HvdcLines::FixedInjection);
     for branch in norm.branches_mut() {
@@ -180,29 +141,57 @@ fn assert_incidence_parity(name: &str, raw: &BalancedNetwork) -> usize {
     for (dense, &row) in dc.bus_analysis_rows.iter().enumerate() {
         dense_bus[row] = Some(dense);
     }
+    let bus =
+        |row: usize| dense_bus[row].unwrap_or_else(|| panic!("{name}: bus row {row} dropped"));
     assert_eq!(
         operators.branch_rows().len(),
         dc.m,
         "{name}: branch column count"
     );
-    let mut reference: Vec<Vec<(usize, f64)>> = vec![Vec::new(); dc.n];
-    for (value, (k, bus)) in a.iter() {
+    let mut reference: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+    for (value, (k, b)) in a.iter() {
         let row = operators.branch_rows()[k];
         let e = *dense_branch
             .get(&row)
             .unwrap_or_else(|| panic!("{name}: operator branch row {row} has no model column"));
-        let b = dense_bus[bus].unwrap_or_else(|| panic!("{name}: bus row {bus} dropped"));
-        reference[b].push((e, *value));
+        reference.insert((bus(b), e), *value);
     }
-    for list in &mut reference {
-        list.sort_by_key(|&(e, _)| e);
+    let stored: BTreeMap<(usize, usize), f64> = (0..dc.n)
+        .flat_map(|i| crate::model::csr_row(&dc.incidence, i).map(move |(e, v)| ((i, e), v)))
+        .collect();
+    assert_eq!(stored, reference, "{name}: incidence mapping");
+
+    let close = |what: &str, value: f64, expected: f64| {
+        let scale = value.abs().max(expected.abs());
+        assert!(
+            (value - expected).abs() <= 1e-12 * scale,
+            "{name}: {what} model {value:e} vs DcOperators {expected:e}"
+        );
+    };
+    let susceptance = operators.calc_bus_susceptance_matrix();
+    let mut expected: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+    for (value, (r, c)) in susceptance.iter() {
+        if *value != 0.0 {
+            expected.insert((bus(r), bus(c)), -value);
+        }
     }
-    let mut sorted_local = local.clone();
-    for list in &mut sorted_local {
-        list.sort_by_key(|&(e, _)| e);
+    let laplacian: BTreeMap<(usize, usize), f64> = (0..dc.n)
+        .flat_map(|i| crate::model::csr_row(&dc.laplacian, i).map(move |(j, v)| ((i, j), v)))
+        .filter(|(_, v)| *v != 0.0)
+        .collect();
+    assert_eq!(
+        laplacian.keys().collect::<Vec<_>>(),
+        expected.keys().collect::<Vec<_>>(),
+        "{name}: Laplacian pattern"
+    );
+    for ((key, value), want) in laplacian.iter().zip(expected.values()) {
+        close(&format!("L{key:?}"), *value, *want);
     }
-    assert_eq!(sorted_local, reference, "{name}: incidence differs");
-    reference.iter().map(Vec::len).sum()
+    let phase = operators.calc_bus_phase_shift_injection();
+    for (row, want) in phase.iter().enumerate() {
+        close("p_shift", dc.phase_shift[bus(row)], *want);
+    }
+    stored.len()
 }
 
 /// Hand-built stress case: non-contiguous bus numbers, bus shunts, off-nominal
@@ -274,82 +263,43 @@ fn embedded_cases() -> Vec<(&'static str, String)> {
 }
 
 #[test]
-fn powerio_ybus_matches_the_pi_columns_on_the_repository_cases() {
+fn ac_operators_map_to_the_dense_order_on_the_repository_cases() {
     for (name, text) in embedded_cases() {
         let raw = super::parse_matpower(&text).expect("parse");
-        let stats = assert_ybus_parity(name, &raw);
-        assert_eq!(stats.bitwise_diagonal, stats.diagonal, "{name}: {stats:?}");
-        eprintln!("ybus parity {name}: {stats:?}");
+        let model = AcNetwork::from_network_pf(&raw).expect("ac model");
+        let worst = assert_ac_mapping(name, &model);
+        eprintln!("ac mapping {name}: worst relative mismatch {worst:e}");
     }
 }
 
 /// The SOCWR workspace reads a typed instance without normalizing it: the
-/// unsupplied island and the declared isolated bus stay in the network, with
-/// their branches in service, and the preparation leaves them out. Y_bus must
-/// leave them out too. On this raw (MW) network the preparation scales a bus
-/// shunt by `* (1 / baseMVA)` and `makeYbus` by `/ baseMVA`, so a diagonal
-/// with a shunt may differ by an ulp; off-diagonal entries stay bitwise.
+/// unsupplied island and the declared isolated bus stay in the network, and
+/// the preparation leaves them out. STRESS places them mid-table, so the
+/// preparation carries analysis rows `[0, 2, 4, 5]`, a map that is not a
+/// prefix. Its admittance matrix must equal the power flow model's, which
+/// normalizes the dropped buses away first; shunt diagonals scale by
+/// `* (1 / baseMVA)` on one path and `/ baseMVA` on the other, so entries agree
+/// to `1e-12` relative.
 #[cfg(feature = "conic")]
-#[test]
-fn instance_ybus_matches_the_pi_columns_on_the_repository_cases() {
-    for (name, text) in embedded_cases() {
-        let raw = super::parse_matpower(&text).expect("parse");
-        let instance = powerio_prob::AcOpfInstance::from_network(raw).expect("instance");
-        let model = AcNetwork::from_instance(&instance).expect("ac model");
-        assert_model_ybus_parity(name, &model);
-    }
-    // The cases above must reach the mapping with a map that is not a prefix
-    // of the bus table; STRESS does.
-    let raw = super::parse_matpower(STRESS).expect("parse");
-    let (_, rows) = instance_bus_rows(&raw);
-    assert!(
-        rows.iter().enumerate().any(|(dense, &row)| dense != row),
-        "STRESS map {rows:?} is a prefix"
-    );
-}
-
-/// The SOCWR workspace's view of `raw`: energized with the stated references
-/// (de-energized islands typed isolated) and not normalized, with the AC
-/// preparation's dense bus -> analysis row map over it, built the way
-/// `AcNetwork::from_instance` builds them.
-fn instance_bus_rows(raw: &BalancedNetwork) -> (BalancedNetwork, Vec<usize>) {
-    let network = energize(raw, ReferencePolicy::Stated).network(raw).clone();
-    let instance = powerio_prob::AcOpfInstance::from_network(network.clone()).expect("instance");
-    let mut assembly = powerio_matrix::AcOpfAssemblyOptions::default();
-    assembly.units = Units::PerUnit;
-    assembly.skip_zero_impedance = false;
-    assembly.synthesize_unrated_limits = true;
-    let prep = powerio_matrix::build_ac_opf_preparation(&instance, &assembly).expect("preparation");
-    (network, prep.bus_analysis_rows)
-}
-
-/// The bus index mapping, on a map that is not a prefix of the bus table.
-/// STRESS's isolated bus 99 and island bus 50 sit between carried buses, so
-/// over the unnormalized network the preparation carries rows `[0, 2, 4, 5]`.
-/// Assembled through that map, Y_bus must equal the power flow model's, which
-/// normalizes the dropped buses away first and so indexes them through the
-/// identity. A mapping that ignored the map would read the isolated bus's row
-/// as dense bus 1 and fail here.
 #[test]
 fn ybus_maps_buses_dropped_mid_table_to_the_dense_columns() {
     let raw = super::parse_matpower(STRESS).expect("parse");
-    let (network, rows) = instance_bus_rows(&raw);
-    assert_eq!(rows, vec![0, 2, 4, 5], "STRESS map");
-    let mapped = super::ac::assemble_ybus(&network, &rows, &[]).expect("ybus");
+    let network = energize(&raw, ReferencePolicy::Stated)
+        .network(&raw)
+        .clone();
+    let instance = powerio_prob::AcOpfInstance::from_network(network).expect("instance");
+    let mapped = AcNetwork::from_instance(&instance).expect("SOCWR model");
     let model = AcNetwork::from_network_pf(&raw).expect("ac model");
     assert_eq!(model.bus_ids, vec![10, 20, 35, 7]);
-    let reference = model.ybus();
+    assert_eq!(mapped.bus_ids, model.bus_ids);
+    assert_ac_mapping("STRESS instance", &mapped);
+    let (mapped, reference) = (ybus_entries(&mapped), ybus_entries(&model));
     assert_eq!(
-        mapped.iter().map(|&(r, c, _)| (r, c)).collect::<Vec<_>>(),
-        reference
-            .iter()
-            .map(|&(r, c, _)| (r, c))
-            .collect::<Vec<_>>(),
+        mapped.keys().collect::<Vec<_>>(),
+        reference.keys().collect::<Vec<_>>(),
         "sparsity pattern"
     );
-    for (&(r, c, value), &(_, _, expected)) in mapped.iter().zip(reference) {
-        // Shunt diagonals scale by `* (1 / baseMVA)` here and `/ baseMVA` in
-        // the normalized network, so they may differ by an ulp.
+    for (((r, c), value), expected) in mapped.iter().zip(reference.values()) {
         let scale = value.norm().max(expected.norm());
         assert!(
             (value - expected).norm() <= 1e-12 * scale,
@@ -404,23 +354,23 @@ mpc.gencost = [
         ((2, 1), c(0.0, 2.0) * Complex64::from_polar(1.0, -shift)),
         ((2, 2), c(0.05, -4.0 + 0.1)),
     ];
-    let ybus = model.ybus();
+    let ybus = ybus_entries(&model);
     assert_eq!(
-        ybus.iter().map(|&(r, c, _)| (r, c)).collect::<Vec<_>>(),
+        ybus.keys().copied().collect::<Vec<_>>(),
         expected.iter().map(|&(rc, _)| rc).collect::<Vec<_>>(),
         "sparsity pattern"
     );
-    for (&(r, c, value), &(_, want)) in ybus.iter().zip(&expected) {
+    for ((&(r, c), value), &(_, want)) in ybus.iter().zip(&expected) {
         assert!(
             (value - want).norm() <= 1e-12 * want.norm(),
             "({r}, {c}): {value} != {want}"
         );
     }
-    assert_ybus_parity("analytic3", &raw);
+    assert_ac_mapping("analytic3", &model);
 }
 
 /// A near-ideal jumper keeps its series admittance in Y_bus but not its terminal
-/// charging, matching the pi columns the branch flows read.
+/// charging, and the branch flows read the same edited columns.
 #[test]
 fn ybus_drops_jumper_charging_like_the_pi_columns() {
     let text = super::CASE3.replace(
@@ -429,17 +379,21 @@ fn ybus_drops_jumper_charging_like_the_pi_columns() {
     );
     let raw = super::parse_matpower(&text).expect("parse");
     let model = AcNetwork::from_network_pf(&raw).expect("ac model");
-    assert_eq!((model.b_fr[1], model.b_to[1]), (0.0, 0.0));
-    let stats = assert_ybus_parity("jumper", &raw);
-    assert_eq!(stats.bitwise_diagonal, stats.diagonal, "{stats:?}");
+    assert_eq!((model.branches.b_fr[1], model.branches.b_to[1]), (0.0, 0.0));
+    // Bus 1's diagonal carries no jumper charging: the 1-2 line's series and
+    // the jumper's series susceptance only.
+    let ybus = ybus_entries(&model);
+    let series: f64 = model.branches.b[0] + model.branches.b[1];
+    assert!((ybus[&(0, 0)].im - series).abs() <= 1e-9 * series.abs());
+    assert_ac_mapping("jumper", &model);
 }
 
 #[test]
-fn incidence_matches_powerio_on_the_repository_cases() {
+fn dc_operators_map_to_powerio_on_the_repository_cases() {
     for (name, text) in embedded_cases() {
         let raw = super::parse_matpower(&text).expect("parse");
-        let nnz = assert_incidence_parity(name, &raw);
-        eprintln!("incidence parity {name}: {nnz} entries");
+        let nnz = assert_dc_operator_mapping(name, &raw);
+        eprintln!("dc operator mapping {name}: {nnz} incidence entries");
     }
 }
 
@@ -448,7 +402,7 @@ fn incidence_matches_powerio_on_the_repository_cases() {
 /// `cargo test --release -p tellegen powerio_parity -- --ignored --nocapture`.
 #[test]
 #[ignore = "needs the PGLib corpus on disk"]
-fn ybus_and_incidence_parity_on_the_pglib_corpus() {
+fn operator_mapping_on_the_pglib_corpus() {
     let root = std::env::var("PGLIB_OPF_PATH").unwrap_or_else(|_| {
         format!(
             "{}/Datasets/pglib-opf",
@@ -470,17 +424,17 @@ fn ybus_and_incidence_parity_on_the_pglib_corpus() {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let text = std::fs::read_to_string(&path).expect("read case");
         let raw = super::parse_matpower(&text).expect("parse");
-        let stats = assert_ybus_parity(&name, &raw);
-        assert_eq!(stats.bitwise_diagonal, stats.diagonal, "{name}: {stats:?}");
-        let nnz = assert_incidence_parity(&name, &raw);
-        eprintln!("parity {name}: {stats:?}; incidence {nnz} entries");
+        let model = AcNetwork::from_network_pf(&raw).expect("ac model");
+        let worst = assert_ac_mapping(&name, &model);
+        let nnz = assert_dc_operator_mapping(&name, &raw);
+        eprintln!("mapping {name}: ac worst {worst:e}; incidence {nnz} entries");
         #[cfg(feature = "conic")]
         {
             let instance = powerio_prob::AcOpfInstance::from_network(raw).expect("instance");
             match AcNetwork::from_instance(&instance) {
                 Ok(model) => {
-                    let stats = assert_model_ybus_parity(&name, &model);
-                    eprintln!("instance parity {name}: {stats:?}");
+                    let worst = assert_ac_mapping(&name, &model);
+                    eprintln!("instance mapping {name}: ac worst {worst:e}");
                 }
                 Err(error) => eprintln!("{name}: no SOCWR workspace ({error})"),
             }

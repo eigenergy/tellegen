@@ -336,10 +336,11 @@ impl Differentiable for ConicKkt<'_> {
                 // columns (hand-derived from the Ohm assembly). Each accumulates the
                 // dA·x residual term and the dAᵀ·z stationarity term.
                 for (c, &e) in idx.iter().enumerate() {
-                    let (f, t) = (self.net.br_from[e], self.net.br_to[e]);
-                    let tap = self.net.tap[e];
-                    let tr = tap * self.net.shift[e].cos();
-                    let ti = tap * self.net.shift[e].sin();
+                    let branches = &self.net.branches;
+                    let (f, t) = (branches.from_bus[e], branches.to_bus[e]);
+                    let tap = branches.tap[e];
+                    let tr = tap * branches.shift[e].cos();
+                    let ti = tap * branches.shift[e].sin();
                     let tm2 = tap * tap;
                     let (cf, ct) = (lay.col_w(f), lay.col_w(t));
                     let (cwr, cwi) = (lay.col_wr(e), lay.col_wi(e));
@@ -561,8 +562,8 @@ mod tests {
             } => n.qmin[idx] += d,
             Parameter::Cost(CostTerm::Quadratic) => n.cq[idx] += d,
             Parameter::Cost(CostTerm::Linear) => n.cl[idx] += d,
-            Parameter::SeriesAdmittance(GB::Conductance) => n.g[idx] += d,
-            Parameter::SeriesAdmittance(GB::Susceptance) => n.b[idx] += d,
+            Parameter::SeriesAdmittance(GB::Conductance) => n.branches.g[idx] += d,
+            Parameter::SeriesAdmittance(GB::Susceptance) => n.branches.b[idx] += d,
             Parameter::ShuntAdmittance(GB::Conductance) => n.gs[idx] += d,
             Parameter::ShuntAdmittance(GB::Susceptance) => n.bs[idx] += d,
             other => unreachable!("unsupported conic test parameter {other:?}"),

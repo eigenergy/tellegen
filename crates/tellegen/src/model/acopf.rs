@@ -345,13 +345,11 @@ fn branch_flow(
 ) -> BranchFlow {
     let f = prep.branches.from_bus[branch];
     let t = prep.branches.to_bus[branch];
-    let g = prep.branches.g[branch];
-    let b = prep.branches.b[branch];
-    let tap = prep.branches.tap[branch];
-    let shift = prep.branches.shift[branch];
-    let tap_squared = tap * tap;
-    let tr = tap * shift.cos();
-    let ti = tap * shift.sin();
+    // PowerIO's pi-model block `Y = G + jB` of the branch. With
+    // `wr + j wi = V_f conj(V_t)`, the terminal flows are
+    //   pf =  Gff vf^2 + Gft wr + Bft wi    qf = -Bff vf^2 - Bft wr + Gft wi
+    //   pt =  Gtt vt^2 + Gtf wr - Btf wi    qt = -Btt vt^2 - Btf wr - Gtf wi
+    let [yff, yft, ytf, ytt] = prep.branches.calc_branch_admittance(branch);
 
     let vf = variable(columns.vm[f]);
     let vt = variable(columns.vm[t]);
@@ -366,27 +364,24 @@ fn branch_flow(
     let wi = cse(multiply(voltage_product, unary(UnaryOp::Sin, angle)));
 
     let p_from = cse(sum(vec![
-        scaled(
-            (g + prep.branches.g_fr[branch]) / tap_squared,
-            vf_squared.clone(),
-        ),
-        scaled((-g * tr + b * ti) / tap_squared, wr.clone()),
-        scaled((-b * tr - g * ti) / tap_squared, wi.clone()),
+        scaled(yff.re, vf_squared.clone()),
+        scaled(yft.re, wr.clone()),
+        scaled(yft.im, wi.clone()),
     ]));
     let q_from = cse(sum(vec![
-        scaled(-(b + prep.branches.b_fr[branch]) / tap_squared, vf_squared),
-        scaled((b * tr + g * ti) / tap_squared, wr.clone()),
-        scaled((-g * tr + b * ti) / tap_squared, wi.clone()),
+        scaled(-yff.im, vf_squared),
+        scaled(-yft.im, wr.clone()),
+        scaled(yft.re, wi.clone()),
     ]));
     let p_to = cse(sum(vec![
-        scaled(g + prep.branches.g_to[branch], vt_squared.clone()),
-        scaled((-g * tr - b * ti) / tap_squared, wr.clone()),
-        scaled((b * tr - g * ti) / tap_squared, wi.clone()),
+        scaled(ytt.re, vt_squared.clone()),
+        scaled(ytf.re, wr.clone()),
+        scaled(-ytf.im, wi.clone()),
     ]));
     let q_to = cse(sum(vec![
-        scaled(-(b + prep.branches.b_to[branch]), vt_squared),
-        scaled((b * tr - g * ti) / tap_squared, wr),
-        scaled((g * tr + b * ti) / tap_squared, wi),
+        scaled(-ytt.im, vt_squared),
+        scaled(-ytf.im, wr),
+        scaled(-ytf.re, wi),
     ]));
 
     BranchFlow {
@@ -743,22 +738,6 @@ fn compile_ac_opf_model_with(
     })
 }
 
-fn numeric_branch_flow(prep: &AcOpfPreparation, va: &[f64], vm: &[f64], branch: usize) -> [f64; 4] {
-    let f = prep.branches.from_bus[branch];
-    let t = prep.branches.to_bus[branch];
-    // Complex current equations are independent of the polar DAG coefficients.
-    use num_complex::Complex64;
-    let vf = Complex64::from_polar(vm[f], va[f]);
-    let vt = Complex64::from_polar(vm[t], va[t]);
-    let y = Complex64::new(prep.branches.g[branch], prep.branches.b[branch]);
-    let yf = Complex64::new(prep.branches.g_fr[branch], prep.branches.b_fr[branch]);
-    let yt = Complex64::new(prep.branches.g_to[branch], prep.branches.b_to[branch]);
-    let tap = Complex64::from_polar(prep.branches.tap[branch], prep.branches.shift[branch]);
-    let sf = vf * ((y + yf) / tap.norm_sqr() * vf - y / tap.conj() * vt).conj();
-    let st = vt * ((y + yt) * vt - y / tap * vf).conj();
-    [sf.re, sf.im, st.re, st.im]
-}
-
 fn piecewise_value(cost: &powerio_matrix::PiecewiseLinearCost, power: f64) -> f64 {
     PiecewiseCost::from_prepared(cost.clone()).evaluate(power)
 }
@@ -807,13 +786,15 @@ fn validate_primal(
         .map(|&column| x[column])
         .collect::<Vec<_>>();
 
-    let flows = (0..prep.n_branches())
-        .map(|branch| numeric_branch_flow(prep, &va, &vm, branch))
-        .collect::<Vec<_>>();
-    let p_from = flows.iter().map(|flow| flow[0]).collect::<Vec<_>>();
-    let q_from = flows.iter().map(|flow| flow[1]).collect::<Vec<_>>();
-    let p_to = flows.iter().map(|flow| flow[2]).collect::<Vec<_>>();
-    let q_to = flows.iter().map(|flow| flow[3]).collect::<Vec<_>>();
+    // The complex current equations, independent of the polar DAG
+    // coefficients: PowerIO's terminal flows over the same branch columns.
+    let powerio_matrix::AcBranchFlows {
+        pf: p_from,
+        qf: q_from,
+        pt: p_to,
+        qt: q_to,
+        ..
+    } = prep.branches.calc_branch_flows(&vm, &va);
 
     let mut p_injection = (0..prep.n_buses)
         .map(|bus| -prep.buses.p_d[bus] - prep.buses.g_s[bus] * vm[bus].powi(2))
@@ -828,13 +809,13 @@ fn validate_primal(
     }
     let mut p_balance = p_injection.clone();
     let mut q_balance = q_injection.clone();
-    for (branch, flow) in flows.iter().enumerate() {
+    for branch in 0..prep.n_branches() {
         let f = prep.branches.from_bus[branch];
         let t = prep.branches.to_bus[branch];
-        p_balance[f] -= flow[0];
-        q_balance[f] -= flow[1];
-        p_balance[t] -= flow[2];
-        q_balance[t] -= flow[3];
+        p_balance[f] -= p_from[branch];
+        q_balance[f] -= q_from[branch];
+        p_balance[t] -= p_to[branch];
+        q_balance[t] -= q_to[branch];
     }
 
     let variable_bounds = x
@@ -859,14 +840,15 @@ fn validate_primal(
             )
         })
         .fold(0.0, f64::max);
-    let thermal_limits = flows
-        .iter()
-        .enumerate()
-        .filter(|(branch, _)| {
-            prep.branches.thermal_limit_active[*branch] && prep.branches.s_max[*branch] > 0.0
+    let thermal_limits = (0..prep.n_branches())
+        .filter(|&branch| {
+            prep.branches.thermal_limit_active[branch] && prep.branches.s_max[branch] > 0.0
         })
-        .map(|(branch, flow)| {
-            (flow[0].hypot(flow[1]).max(flow[2].hypot(flow[3])) - prep.branches.s_max[branch])
+        .map(|branch| {
+            (p_from[branch]
+                .hypot(q_from[branch])
+                .max(p_to[branch].hypot(q_to[branch]))
+                - prep.branches.s_max[branch])
                 .max(0.0)
         })
         .fold(0.0, f64::max);
@@ -1388,24 +1370,6 @@ mpc.gencost = [
         compile_ac_opf_model(&instance).expect("compile full pi AC OPF")
     }
 
-    fn direct_branch_flow(prep: &AcOpfPreparation, x: &[f64], branch: usize) -> [f64; 4] {
-        let n = prep.n_buses;
-        let f = prep.branches.from_bus[branch];
-        let t = prep.branches.to_bus[branch];
-        use num_complex::Complex64;
-        let vf = Complex64::from_polar(x[n + f], x[f]);
-        let vt = Complex64::from_polar(x[n + t], x[t]);
-        let y = Complex64::new(prep.branches.g[branch], prep.branches.b[branch]);
-        let yf = Complex64::new(prep.branches.g_fr[branch], prep.branches.b_fr[branch]);
-        let yt = Complex64::new(prep.branches.g_to[branch], prep.branches.b_to[branch]);
-        let tap = Complex64::from_polar(prep.branches.tap[branch], prep.branches.shift[branch]);
-        let i_from = (y + yf) / tap.norm_sqr() * vf - y / tap.conj() * vt;
-        let i_to = (y + yt) * vt - y / tap * vf;
-        let sf = vf * i_from.conj();
-        let st = vt * i_to.conj();
-        [sf.re, sf.im, st.re, st.im]
-    }
-
     fn evaluate_constraints(model: &CanonicalAcOpfModel, x: &[f64]) -> Vec<f64> {
         let mut tnlp = model.tnlp().expect("build TNLP");
         let mut values = vec![0.0; model.problem().m];
@@ -1905,8 +1869,20 @@ mpc.gencost = [
         x[model.columns.qg[2]] = 0.06;
 
         let values = evaluate_constraints(&model, &x);
+        // The complex-current flows (PowerIO's `calc_branch_flows`) the polar
+        // DAG rows must reproduce.
+        let vm = model.columns.vm.iter().map(|&c| x[c]).collect::<Vec<_>>();
+        let va = model.columns.va.iter().map(|&c| x[c]).collect::<Vec<_>>();
+        let branch_flows = prep.branches.calc_branch_flows(&vm, &va);
         let flows = (0..prep.n_branches())
-            .map(|branch| direct_branch_flow(prep, &x, branch))
+            .map(|e| {
+                [
+                    branch_flows.pf[e],
+                    branch_flows.qf[e],
+                    branch_flows.pt[e],
+                    branch_flows.qt[e],
+                ]
+            })
             .collect::<Vec<_>>();
         let mut p = (0..prep.n_buses)
             .map(|bus| {

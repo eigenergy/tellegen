@@ -4,12 +4,11 @@
 //! its angle defaults before ordinary limits are synthesized and before lowered
 //! three-winding limits are resynthesized.
 
-use std::collections::BTreeMap;
-
 use powerio::BalancedNetwork;
 use powerio::BranchSusceptanceFormula;
 use powerio_matrix::{
-    build_dc_opf_preparation, AnalysisBranchSource, DcOpfAssemblyOptions, PreparedObjective, Units,
+    build_dc_opf_preparation, calc_solver_branch_flow_matrix, calc_weighted_laplacian,
+    AnalysisBranchSource, DcOpfAssemblyOptions, PreparedObjective, SparseMatrix, Units,
 };
 use powerio_prob::DcOpfInstance;
 use powerio_tx::HvdcTreatment;
@@ -67,9 +66,12 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 /// over the normalized network; `bus_ids`, `branch_ids`, and `gen_ids` map dense
 /// indices back to source ids for output payloads.
 ///
-/// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A`; DC power balance
-/// `G_inc pg + psh - fixed_withdrawal(sw) = B theta`; branch flows
-/// `f = diag(-b .* sw) A theta + sw .* flow_offset`.
+/// Every DC operator comes from PowerIO's preparation unchanged: the signed
+/// bus by branch incidence `A`, the susceptance weighted Laplacian
+/// `L = A diag(-b) A'`, and the branch flow matrix `Bf = diag(-b) A'`. DC
+/// power balance is `G_inc pg + psh - fixed_withdrawal = L theta`; branch
+/// flows are `f = Bf theta + flow_offset`. A branch out of service never
+/// reaches the preparation, so no operator carries a switching multiplier.
 #[derive(Clone)]
 // Every field is derived together by `from_network` from one normalized
 // `BalancedNetwork`: dense reindexing, per unit conversion, and the source row
@@ -80,17 +82,28 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 #[non_exhaustive]
 pub(crate) struct DcNetwork {
     pub formula: crate::DcFormula,
-    /// d(effective signed DC coefficient)/d(raw series susceptance), holding g fixed.
+    /// d(effective signed DC coefficient)/d(raw series susceptance), holding g
+    /// fixed: PowerIO's
+    /// `BranchSusceptanceFormula::calc_susceptance_sensitivity_to_series_susceptance`.
     #[cfg(feature = "sensitivity")]
     pub db_dseries_b: Vec<f64>,
     /// Buses, branches, generators after filtering (in-service, non-isolated).
     pub n: usize,
     pub m: usize,
     pub k: usize,
-    /// Branch endpoints in dense bus-index space (the rows of the incidence
-    /// matrix `A`: `+1` at `from`, `-1` at `to`).
-    pub br_from: Vec<usize>,
-    pub br_to: Vec<usize>,
+    /// PowerIO's signed bus by branch incidence `A` (`n x m` CSR,
+    /// `DcOpfPreparation::calc_bus_branch_incidence`): row `i` lists the
+    /// `(branch, +-1)` pairs at bus `i`, `+1` where the branch leaves.
+    pub(crate) incidence: SparseMatrix,
+    /// The same incidence by branch, `A'` (`m x n` CSR): row `e` holds `+1` at
+    /// the branch's from bus and `-1` at its to bus.
+    pub(crate) branch_incidence: SparseMatrix,
+    /// PowerIO's DC bus susceptance matrix `L = A diag(-b) A'` (`n x n` CSR,
+    /// `calc_weighted_laplacian` over the preparation's positive weights).
+    pub(crate) laplacian: SparseMatrix,
+    /// PowerIO's branch flow matrix `Bf = diag(-b) A'` (`m x n` CSR,
+    /// `calc_solver_branch_flow_matrix`).
+    pub(crate) branch_flow_matrix: SparseMatrix,
     /// Bus each generator injects at, dense index.
     pub gen_bus: Vec<usize>,
     /// Branch susceptance `b = -x / (r^2 + x^2)` (negative for inductive
@@ -98,15 +111,14 @@ pub(crate) struct DcNetwork {
     /// substation bus-splitting jumper, common in detailed synthetic cases —
     /// gets a correspondingly large `|b|` rather than being dropped; it is a
     /// real, near-ideal tie, not an open circuit.
+    #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
     pub b: Vec<f64>,
-    /// Branch switching state (1 closed, 0 open). All branches start closed.
-    pub sw: Vec<f64>,
     /// Branch phase shifts in radians, in the active branch order from the
     /// powerio problem instance.
     #[cfg(feature = "sensitivity")]
     pub shift: Vec<f64>,
-    /// Fixed affine branch flow term `-b_powerio .* shift`. The term is
-    /// multiplied by [`Self::sw`] when a branch status varies.
+    /// Fixed affine branch flow term `-b_powerio .* shift`, PowerIO's
+    /// `calc_branch_flow_offset`.
     pub flow_offset: Vec<f64>,
     /// Per unit thermal limit per branch (`rate_a`, with a fallback synthesized
     /// against the normalized angle window when the source leaves it at 0).
@@ -135,6 +147,9 @@ pub(crate) struct DcNetwork {
     pub demand: Vec<f64>,
     /// Per-unit shunt conductance withdrawal per bus.
     pub shunt_conductance: Vec<f64>,
+    /// Per-unit nodal phase shift withdrawal per bus, PowerIO's `p_shift`
+    /// (`A flow_offset`).
+    pub phase_shift: Vec<f64>,
     /// Per-unit fixed HVDC injection per bus: `-pf` at each in-service line's
     /// from bus and `+pt` at its to bus, PowerIO's `p_hvdc`. An injection, so the
     /// fixed withdrawal subtracts it. All zero without in-service HVDC lines.
@@ -452,6 +467,7 @@ impl DcNetwork {
         let flow_offset = prep.calc_branch_flow_offset();
         let demand = prep.p_d.clone();
         let shunt_conductance = prep.g_s.clone();
+        let phase_shift = prep.p_shift.clone();
         // A preparation document written before PowerIO 0.11.7 carries no
         // `p_hvdc`, which PowerIO reads as zero.
         let hvdc_injection = if prep.p_hvdc.is_empty() {
@@ -465,8 +481,10 @@ impl DcNetwork {
         // inductive branch), so every branch column and affine term negates
         // out of the same assembly. The relation is pinned upstream by
         // powerio-matrix's cross assembly conformance test.
-        let br_from = prep.branches.from_bus.clone();
-        let br_to = prep.branches.to_bus.clone();
+        let operators = ModelOperators::of(
+            prep.calc_bus_branch_incidence(),
+            &prep.branches.susceptance_magnitude,
+        );
         let b = prep
             .branches
             .susceptance_magnitude
@@ -492,7 +510,6 @@ impl DcNetwork {
         // PowerIO synthesizes missing limits for both source and star-lowered
         // branches before returning the aligned preparation.
         let fmax = prep.branches.f_max.clone();
-        let sw = vec![1.0; m];
 
         // powerio states the objective as `0.5*q*p^2 + c*p + c0`; Tellegen's
         // stored `cq` is the coefficient of `p^2` before its solver writes `2*cq`
@@ -530,22 +547,20 @@ impl DcNetwork {
         let formula = crate::DcFormula::try_from(instance.branch_susceptance_formula())?;
         #[cfg(feature = "sensitivity")]
         let db_dseries_b = {
+            // The analysis rows index PowerIO's star-lowered view, which holds
+            // the lowered winding branches as well as the source rows.
             let view = powerio_tx::IndexedNetwork::new(instance.network());
+            let formula = instance.branch_susceptance_formula();
             prep.branches
                 .analysis_rows
                 .iter()
                 .map(|&row| {
                     let branch = &view.network().branches()[row];
-                    let tap = branch.calc_effective_tap();
-                    match formula {
-                        crate::DcFormula::SeriesSusceptance
-                        | crate::DcFormula::SeriesSusceptanceNoPhaseShift => 1.0,
-                        crate::DcFormula::TapAdjustedSeriesSusceptance => 1.0 / tap,
-                        crate::DcFormula::TapAdjustedReactance => {
-                            (1.0 - (branch.r / branch.x).powi(2)) / tap
-                        }
-                        crate::DcFormula::ReactanceOnly => 1.0 - (branch.r / branch.x).powi(2),
-                    }
+                    formula.calc_susceptance_sensitivity_to_series_susceptance(
+                        branch.r,
+                        branch.x,
+                        branch.calc_effective_tap(),
+                    )
                 })
                 .collect()
         };
@@ -556,11 +571,12 @@ impl DcNetwork {
             n,
             m,
             k,
-            br_from,
-            br_to,
+            incidence: operators.incidence,
+            branch_incidence: operators.branch_incidence,
+            laplacian: operators.laplacian,
+            branch_flow_matrix: operators.branch_flow_matrix,
             gen_bus,
             b,
-            sw,
             #[cfg(feature = "sensitivity")]
             shift,
             flow_offset,
@@ -576,6 +592,7 @@ impl DcNetwork {
             c_shed,
             demand,
             shunt_conductance,
+            phase_shift,
             hvdc_injection,
             ref_buses,
             allow_shed: false,
@@ -606,38 +623,26 @@ impl DcNetwork {
         })
     }
 
-    /// Phase shift withdrawal for the current branch statuses. A phase shifter
-    /// on an open branch contributes neither a branch flow offset nor a nodal
-    /// withdrawal.
-    pub fn phase_withdrawal(&self) -> Vec<f64> {
-        let mut withdrawal = vec![0.0; self.n];
-        for e in 0..self.m {
-            let offset = self.sw[e] * self.flow_offset[e];
-            withdrawal[self.br_from[e]] += offset;
-            withdrawal[self.br_to[e]] -= offset;
-        }
-        withdrawal
-    }
-
-    /// Fixed nodal withdrawal other than demand at the current branch statuses:
-    /// shunt conductance and phase shift, less the fixed HVDC injection.
+    /// Fixed nodal withdrawal other than demand: shunt conductance and phase
+    /// shift, less the fixed HVDC injection, in the order PowerIO's
+    /// `calc_fixed_nodal_withdrawal` sums them.
+    #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
     pub fn network_withdrawal(&self) -> Vec<f64> {
-        let phase = self.phase_withdrawal();
         (0..self.n)
-            .map(|i| self.shunt_conductance[i] + phase[i] - self.hvdc_injection[i])
+            .map(|i| self.shunt_conductance[i] + self.phase_shift[i] - self.hvdc_injection[i])
             .collect()
     }
 
-    /// Fixed nodal withdrawal for the current demand and branch statuses:
-    /// `p_d + g_s + p_shift - p_hvdc`, PowerIO's fixed nodal withdrawal.
+    /// Fixed nodal withdrawal at the current demand:
+    /// `p_d + g_s + p_shift - p_hvdc`, PowerIO's `calc_fixed_nodal_withdrawal`
+    /// with the (possibly edited) demand.
     pub fn current_fixed_withdrawal(&self) -> Vec<f64> {
-        let network = self.network_withdrawal();
-        (0..self.n).map(|i| self.demand[i] + network[i]).collect()
-    }
-
-    /// Complete affine branch flow offset at the current status.
-    pub fn current_flow_offset(&self, branch: usize) -> f64 {
-        self.sw[branch] * self.flow_offset[branch]
+        (0..self.n)
+            .map(|i| {
+                self.demand[i] + self.shunt_conductance[i] + self.phase_shift[i]
+                    - self.hvdc_injection[i]
+            })
+            .collect()
     }
 
     /// The shedding upper bound at bus `i`: the curtailable load `max(d, 0)` when
@@ -660,26 +665,68 @@ impl DcNetwork {
         )
     }
 
-    /// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A` as summed,
-    /// deduplicated `(row, col, value)` triplets in `(row, col)` order. Parallel
-    /// branches between the same pair of buses are accumulated. Zero-weight
-    /// (open) branches contribute nothing.
+    /// The angle difference `(A' theta)[e]` across branch `e`, read from
+    /// PowerIO's incidence.
     #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
-    pub fn susceptance_coo(&self) -> Vec<(usize, usize, f64)> {
-        let mut acc: BTreeMap<(usize, usize), f64> = BTreeMap::new();
-        for e in 0..self.m {
-            let w = -self.b[e] * self.sw[e];
-            if w == 0.0 {
-                continue;
-            }
-            let (i, j) = (self.br_from[e], self.br_to[e]);
-            *acc.entry((i, i)).or_default() += w;
-            *acc.entry((j, j)).or_default() += w;
-            *acc.entry((i, j)).or_default() -= w;
-            *acc.entry((j, i)).or_default() -= w;
-        }
-        acc.into_iter().map(|((r, c), v)| (r, c, v)).collect()
+    pub(crate) fn angle_difference(&self, theta: &[f64], e: usize) -> f64 {
+        csr_row(&self.branch_incidence, e)
+            .map(|(bus, sign)| sign * theta[bus])
+            .sum()
     }
+
+    /// Rebuild the weighted operators and the nodal phase shift after a
+    /// numerical test perturbs `b` or `flow_offset`, through the same PowerIO
+    /// calls the constructor makes.
+    #[cfg(test)]
+    pub(crate) fn reweight(&mut self) {
+        let weights: Vec<f64> = self.b.iter().map(|b| -b).collect();
+        let operators = ModelOperators::of(self.incidence.clone(), &weights);
+        self.laplacian = operators.laplacian;
+        self.branch_flow_matrix = operators.branch_flow_matrix;
+        self.phase_shift = (0..self.n)
+            .map(|bus| {
+                csr_row(&self.incidence, bus)
+                    .map(|(e, a)| a * self.flow_offset[e])
+                    .sum()
+            })
+            .collect();
+    }
+}
+
+/// The DC operators a model reads, every one PowerIO's own: the incidence of
+/// a preparation and the weighted matrices `calc_weighted_laplacian` and
+/// `calc_solver_branch_flow_matrix` build over the positive weights.
+struct ModelOperators {
+    incidence: SparseMatrix,
+    branch_incidence: SparseMatrix,
+    laplacian: SparseMatrix,
+    branch_flow_matrix: SparseMatrix,
+}
+
+impl ModelOperators {
+    fn of(incidence: SparseMatrix, weights: &[f64]) -> Self {
+        let laplacian = calc_weighted_laplacian(&incidence, weights);
+        let branch_flow_matrix = calc_solver_branch_flow_matrix(&incidence, weights);
+        let branch_incidence = incidence.transpose_view().to_csr();
+        ModelOperators {
+            incidence,
+            branch_incidence,
+            laplacian,
+            branch_flow_matrix,
+        }
+    }
+}
+
+/// The stored `(column, value)` entries of row `row` of a CSR matrix, in
+/// ascending column order.
+pub(crate) fn csr_row(
+    matrix: &SparseMatrix,
+    row: usize,
+) -> impl Iterator<Item = (usize, f64)> + '_ {
+    let (columns, values) = matrix
+        .outer_view(row)
+        .map_or((&[][..], &[][..]), |view| view.into_raw_storage());
+    columns.iter().copied().zip(values.iter().copied())
 }
 
 #[cfg(test)]
@@ -805,7 +852,7 @@ mod tests {
         for (left, right) in [
             (&a.demand, &b.demand),
             (&a.shunt_conductance, &b.shunt_conductance),
-            (&a.phase_withdrawal(), &b.phase_withdrawal()),
+            (&a.phase_shift, &b.phase_shift),
             (&a.b, &b.b),
             #[cfg(feature = "sensitivity")]
             (&a.shift, &b.shift),
@@ -898,24 +945,28 @@ mod tests {
                 " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
                 " 1 2 0.01 0.1 0 0 0 0 1 15 1 -30 30;",
             );
-        let net = crate::model::parse_matpower(&text).expect("parse affine case");
-        let mut dc = DcNetwork::from_network(&net).expect("build affine case");
+        let mut net = crate::model::parse_matpower(&text).expect("parse affine case");
+        let dc = DcNetwork::from_network(&net).expect("build affine case");
 
         approx(dc.demand[1], 0.9);
         approx(dc.shunt_conductance[1], 0.1);
         approx(dc.flow_offset[0], dc.b[0] * 15.0_f64.to_radians());
-        let phase = dc.phase_withdrawal();
-        approx(phase.iter().sum(), 0.0);
+        // The 1-2 shifter withdraws its offset at bus 1 and injects it at bus 2.
+        let phase = &dc.phase_shift;
+        approx(phase[0], dc.flow_offset[0]);
+        approx(phase[1], -dc.flow_offset[0]);
+        approx(phase[2], 0.0);
         let fixed = dc.current_fixed_withdrawal();
         for i in 0..dc.n {
             approx(fixed[i], dc.demand[i] + dc.shunt_conductance[i] + phase[i]);
         }
         assert!(dc.fmax[0].is_finite() && dc.fmax[0] > 0.0);
 
-        // Opening the phase-shifting branch removes both affine terms. Demand
-        // and shunt withdrawal remain at bus 2.
-        dc.sw[0] = 0.0;
-        approx(dc.current_flow_offset(0), 0.0);
+        // Taking the phase-shifting branch out of service removes both affine
+        // terms. Demand and shunt withdrawal remain at bus 2.
+        net.branches_mut()[0].in_service = false;
+        let dc = DcNetwork::from_network(&net).expect("build without the shifter");
+        assert!(dc.flow_offset.iter().all(|offset| *offset == 0.0));
         let fixed = dc.current_fixed_withdrawal();
         approx(fixed[0], 0.0);
         approx(fixed[1], 1.0);
@@ -934,8 +985,10 @@ mod tests {
         // sums to zero, off-diagonals are -w for each of the three lines, and
         // each bus (degree 2) has diagonal 2w.
         let mut dense = [[0.0f64; 3]; 3];
-        for (r, c, v) in dc.susceptance_coo() {
-            dense[r][c] = v;
+        for (r, row) in dense.iter_mut().enumerate() {
+            for (c, v) in csr_row(&dc.laplacian, r) {
+                row[c] = v;
+            }
         }
         for (i, row) in dense.iter().enumerate() {
             approx(row[i], 2.0 * w);
@@ -1075,10 +1128,9 @@ mod tests {
             assert!(d.is_finite());
         }
         // B is a grounded Laplacian regardless of connectivity: rows sum to zero.
-        let mut row_sum = vec![0.0f64; dc.n];
-        for (r, _c, v) in dc.susceptance_coo() {
-            row_sum[r] += v;
-        }
+        let row_sum: Vec<f64> = (0..dc.n)
+            .map(|r| csr_row(&dc.laplacian, r).map(|(_, v)| v).sum())
+            .collect();
         for (i, s) in row_sum.iter().enumerate() {
             assert!(s.abs() < 1e-5, "B row {i} sums to {s}");
         }

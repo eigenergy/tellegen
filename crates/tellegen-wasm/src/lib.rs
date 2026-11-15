@@ -1417,18 +1417,10 @@ pub(crate) fn ingest_value(
         .filter(|bus| bus.kind != powerio::BusType::Isolated)
         .map(|bus| bus.id.0)
         .collect();
-    let editable_branch_rows: HashSet<usize> = net
-        .branches()
-        .iter()
-        .enumerate()
-        .filter(|(_, branch)| {
-            branch.in_service
-                && branch.from != branch.to
-                && branch.r * branch.r + branch.x * branch.x > 0.0
-                && editable_bus_ids.contains(&branch.from.0)
-                && editable_bus_ids.contains(&branch.to.0)
-        })
-        .map(|(row, _)| row)
+    // PowerIO's analysis predicate over the view's source branch rows: the
+    // branches the preparation keeps are the editable ones.
+    let editable_branch_rows: HashSet<usize> = (0..net.branches().len())
+        .filter(|&row| indexed.is_analysis_branch(row))
         .collect();
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
     for l in analysis.loads().iter().filter(|l| l.in_service) {

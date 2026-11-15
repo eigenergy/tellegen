@@ -18,7 +18,7 @@
 
 use faer::Mat;
 
-use crate::model::DcNetwork;
+use crate::model::{csr_row, DcNetwork};
 use crate::problem::DcOpfSolution;
 
 use super::{
@@ -212,7 +212,7 @@ fn snap_linear(dc: &DcNetwork, sol: &DcOpfSolution) -> Vec<LinearDuals> {
 fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
     let mut s = sol.clone();
     for e in 0..dc.m {
-        let atheta = s.va[dc.br_from[e]] - s.va[dc.br_to[e]];
+        let atheta = dc.angle_difference(&s.va, e);
         if dc.angmax[e] - atheta > SNAP_TOL {
             s.gamma_ub[e] = 0.0;
         } else {
@@ -263,20 +263,6 @@ fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
     s
 }
 
-/// Per-bus incidence list `(branch, sign)` with `+1` at the from-bus and `-1` at
-/// the to-bus — the columns of the incidence matrix `A`. A transpose of
-/// PowerIO's preparation endpoint columns; `DcOperators::calc_incidence_matrix`
-/// returns the same entries (checked in `model::powerio_parity`) but builds the
-/// whole DC operator set to get them.
-pub(crate) fn incidence_by_bus(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
-    let mut inc = vec![Vec::new(); dc.n];
-    for e in 0..dc.m {
-        inc[dc.br_from[e]].push((e, 1.0));
-        inc[dc.br_to[e]].push((e, -1.0));
-    }
-    inc
-}
-
 /// Per-bus generator list.
 fn gens_by_bus(dc: &DcNetwork) -> Vec<Vec<usize>> {
     let mut g = vec![Vec::new(); dc.n];
@@ -284,16 +270,6 @@ fn gens_by_bus(dc: &DcNetwork) -> Vec<Vec<usize>> {
         g[bus].push(j);
     }
     g
-}
-
-/// Columns of the susceptance Laplacian `B`: `b_cols[j] = [(row i, B[i,j])]`.
-/// `B` is symmetric, so a column doubles as the matching row.
-fn susceptance_cols(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
-    let mut cols = vec![Vec::new(); dc.n];
-    for (r, c, v) in dc.susceptance_coo() {
-        cols[c].push((r, v));
-    }
-    cols
 }
 
 /// Assemble the KKT Jacobian `dK/dz` as `(row, col, value)` triplets, hand derived
@@ -305,9 +281,7 @@ fn kkt_triplets(
     idx: &KktIdx,
 ) -> Vec<(usize, usize, f64)> {
     let (n, m, k) = (dc.n, dc.m, dc.k);
-    let inc = incidence_by_bus(dc);
     let gens = gens_by_bus(dc);
-    let bcols = susceptance_cols(dc);
 
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
     macro_rules! e {
@@ -319,16 +293,17 @@ fn kkt_triplets(
         }};
     }
 
-    // va columns: gated angle stationarity, -B (power balance), -W*A (flow def),
-    // and the reference indicator.
+    // va columns: gated angle stationarity (PowerIO's incidence `A`), -L
+    // (power balance), -Bf (flow definition), and the reference indicator.
+    // `L` is symmetric, so its row `j` is its column `j`.
     for j in 0..n {
         let col = idx.va + j;
-        for &(e, aej) in &inc[j] {
-            e!(idx.gamma_lb + e, col, s.gamma_lb[e] * dc.sw[e] * aej);
-            e!(idx.gamma_ub + e, col, -s.gamma_ub[e] * dc.sw[e] * aej);
-            e!(idx.nu_flow + e, col, dc.b[e] * dc.sw[e] * aej);
+        for (e, aej) in csr_row(&dc.incidence, j) {
+            e!(idx.gamma_lb + e, col, s.gamma_lb[e] * aej);
+            e!(idx.gamma_ub + e, col, -s.gamma_ub[e] * aej);
+            e!(idx.nu_flow + e, col, dc.b[e] * aej);
         }
-        for &(i, val) in &bcols[j] {
+        for (i, val) in csr_row(&dc.laplacian, j) {
             e!(idx.nu_bal + i, col, -val);
         }
         if let Some(reference) = dc.ref_buses.iter().position(|&r| r == j) {
@@ -403,21 +378,22 @@ fn kkt_triplets(
     }
 
     // gamma (phase-angle-difference) columns.
+    // Each reads row `e` of `A'`, PowerIO's incidence by branch.
     for e in 0..m {
         let col = idx.gamma_lb + e;
-        let (fb, tb) = (dc.br_from[e], dc.br_to[e]);
-        let atheta = s.va[fb] - s.va[tb];
-        e!(idx.va + fb, col, -dc.sw[e]);
-        e!(idx.va + tb, col, dc.sw[e]);
-        e!(idx.gamma_lb + e, col, dc.sw[e] * (atheta - dc.angmin[e]));
+        let atheta = dc.angle_difference(&s.va, e);
+        for (bus, sign) in csr_row(&dc.branch_incidence, e) {
+            e!(idx.va + bus, col, -sign);
+        }
+        e!(idx.gamma_lb + e, col, atheta - dc.angmin[e]);
     }
     for e in 0..m {
         let col = idx.gamma_ub + e;
-        let (fb, tb) = (dc.br_from[e], dc.br_to[e]);
-        let atheta = s.va[fb] - s.va[tb];
-        e!(idx.va + fb, col, dc.sw[e]);
-        e!(idx.va + tb, col, -dc.sw[e]);
-        e!(idx.gamma_ub + e, col, dc.sw[e] * (dc.angmax[e] - atheta));
+        let atheta = dc.angle_difference(&s.va, e);
+        for (bus, sign) in csr_row(&dc.branch_incidence, e) {
+            e!(idx.va + bus, col, sign);
+        }
+        e!(idx.gamma_ub + e, col, dc.angmax[e] - atheta);
     }
 
     // rho (gen-bound) columns.
@@ -469,24 +445,24 @@ fn kkt_triplets(
         }
     }
 
-    // nu_bal columns: B' (theta), -G_inc' (pg), -I (psh).
-    for i in 0..n {
+    // nu_bal columns: L' = L (theta), -G_inc' (pg), -I (psh).
+    for (i, at_bus) in gens.iter().enumerate() {
         let col = idx.nu_bal + i;
-        for &(r, val) in &bcols[i] {
+        for (r, val) in csr_row(&dc.laplacian, i) {
             e!(idx.va + r, col, val);
         }
-        for &g in &gens[i] {
+        for &g in at_bus {
             e!(idx.pg + g, col, -1.0);
         }
         e!(idx.psh + i, col, -1.0);
     }
 
-    // nu_flow columns: (W*A)' (theta), -I (f).
+    // nu_flow columns: Bf' (theta), -I (f), PowerIO's branch flow matrix.
     for e in 0..m {
         let col = idx.nu_flow + e;
-        let (fb, tb) = (dc.br_from[e], dc.br_to[e]);
-        e!(idx.va + fb, col, -dc.b[e] * dc.sw[e]);
-        e!(idx.va + tb, col, dc.b[e] * dc.sw[e]);
+        for (bus, value) in csr_row(&dc.branch_flow_matrix, e) {
+            e!(idx.va + bus, col, value);
+        }
         e!(idx.f + e, col, -1.0);
     }
 
@@ -611,9 +587,10 @@ impl Differentiable for DcKkt<'_> {
     ///
     /// Demand and cost touch a single residual row each. The line limit touches the
     /// two line-complementarity rows. Susceptance enters through the edge weight
-    /// `w = -b sw`, and switching additionally through the explicit `sw` multiplier on
-    /// the phase-limit rows, so they touch power balance, the flow definition, and
-    /// angle stationarity (and, for switching, the phase-limit rows).
+    /// `w = -b`, and switching (a status multiplier `sw` on the branch, taken at
+    /// the closed state `sw = 1`) additionally through the phase-limit rows, so
+    /// they touch power balance, the flow definition, and angle stationarity
+    /// (and, for switching, the phase-limit rows).
     fn parameter_jacobian(&self, p: Parameter, idx_cols: &[usize]) -> Result<Mat<f64>, SensError> {
         let dc = self.dc;
         if matches!(p, Parameter::Cost(_)) {
@@ -671,40 +648,42 @@ impl Differentiable for DcKkt<'_> {
                     }
                 }
                 Parameter::SeriesAdmittance(GB::Susceptance) => {
-                    let (fb, tb) = (dc.br_from[col], dc.br_to[col]);
-                    let dth = s.va[fb] - s.va[tb];
-                    let dnu = s.nu_bal[fb] - s.nu_bal[tb];
-                    let sw = dc.sw[col] * dc.db_dseries_b[col];
+                    let dth = dc.angle_difference(&s.va, col);
+                    let dnu = dc.angle_difference(&s.nu_bal, col);
+                    let db = dc.db_dseries_b[col];
                     let shift = dc.shift[col];
                     let nf = nu_flow[col];
                     // `dc.b` is the negative inductive susceptance and
                     // `flow_offset = dc.b * shift`. Vary both the Laplacian and
-                    // its affine phase term, as the source branch does.
-                    j[(idx.nu_bal + fb, c)] += sw * (dth - shift);
-                    j[(idx.nu_bal + tb, c)] -= sw * (dth - shift);
-                    j[(idx.nu_flow + col, c)] += sw * (dth - shift);
-                    // Angle stationarity (B nu_bal + w A' nu_flow): d/db.
-                    j[(idx.va + fb, c)] += -sw * dnu - sw * nf;
-                    j[(idx.va + tb, c)] += sw * dnu + sw * nf;
+                    // its affine phase term, as the source branch does; each
+                    // rank one term is column `col` of PowerIO's incidence.
+                    for (bus, sign) in csr_row(&dc.branch_incidence, col) {
+                        j[(idx.nu_bal + bus, c)] += sign * db * (dth - shift);
+                        // Angle stationarity (L nu_bal + Bf' nu_flow): d/db.
+                        j[(idx.va + bus, c)] -= sign * (db * dnu + db * nf);
+                    }
+                    j[(idx.nu_flow + col, c)] += db * (dth - shift);
                 }
                 Parameter::Switching => {
-                    let (fb, tb) = (dc.br_from[col], dc.br_to[col]);
-                    let dth = s.va[fb] - s.va[tb];
-                    let dnu = s.nu_bal[fb] - s.nu_bal[tb];
+                    // The derivative at the closed state: scaling branch `col`
+                    // by `sw` scales its weight, its affine offset, and its
+                    // phase-limit rows.
+                    let dth = dc.angle_difference(&s.va, col);
+                    let dnu = dc.angle_difference(&s.nu_bal, col);
                     let b = dc.b[col];
                     let offset = dc.flow_offset[col];
                     let nf = nu_flow[col];
                     let g = s.gamma_ub[col] - s.gamma_lb[col];
                     // Opening a phase shifter removes both its angle dependent
                     // weight and its affine flow/nodal withdrawal.
-                    j[(idx.nu_bal + fb, c)] += b * dth - offset;
-                    j[(idx.nu_bal + tb, c)] -= b * dth - offset;
+                    for (bus, sign) in csr_row(&dc.branch_incidence, col) {
+                        j[(idx.nu_bal + bus, c)] += sign * (b * dth - offset);
+                        // Angle stationarity: the weight terms (scaled by b)
+                        // plus the phase-limit gradient.
+                        j[(idx.va + bus, c)] -= sign * (b * dnu + b * nf - g);
+                    }
                     j[(idx.nu_flow + col, c)] += b * dth - offset;
-                    // Angle stationarity: the w terms (scaled by b) plus the explicit
-                    // sw multiplier in the phase-limit gradient.
-                    j[(idx.va + fb, c)] += -b * dnu - b * nf + g;
-                    j[(idx.va + tb, c)] += b * dnu + b * nf - g;
-                    // Phase-limit complementarity rows carry sw explicitly.
+                    // Phase-limit complementarity rows.
                     j[(idx.gamma_lb + col, c)] += s.gamma_lb[col] * (dth - dc.angmin[col]);
                     j[(idx.gamma_ub + col, c)] += s.gamma_ub[col] * (dc.angmax[col] - dth);
                 }
@@ -988,8 +967,16 @@ mod tests {
             Parameter::SeriesAdmittance(GB::Susceptance) => {
                 d.b[p] += delta;
                 d.flow_offset[p] += delta * d.shift[p];
+                d.reweight();
             }
-            Parameter::Switching => d.sw[p] += delta,
+            Parameter::Switching => {
+                // A status multiplier `1 + delta` on the branch scales its
+                // weight and its affine offset. Its phase-limit rows scale
+                // too, which moves only their own duals, not the operands.
+                d.b[p] *= 1.0 + delta;
+                d.flow_offset[p] *= 1.0 + delta;
+                d.reweight();
+            }
             Parameter::ConstraintLimit => {
                 let row = &mut d.linear_rows[p];
                 let shift = delta * d.base_mva;
@@ -1582,10 +1569,13 @@ mod tests {
             let dc = DcNetwork::from_network_with_formula(&source, formula).unwrap();
             let sol = dc_opf(&dc).unwrap();
             let sys = DcKkt::new(&dc, &sol);
-            let mut open = dc.clone();
-            open.sw[0] = 0.0;
-            let opened = dc_opf(&open).unwrap();
-            assert!(opened.f[0].abs() < 1e-8);
+            // Opening the branch removes it from PowerIO's preparation, and the
+            // case still solves without it.
+            let mut open = source.clone();
+            open.branches_mut()[0].in_service = false;
+            let open = DcNetwork::from_network_with_formula(&open, formula).unwrap();
+            assert_eq!(open.m, dc.m - 1);
+            dc_opf(&open).unwrap();
             let switching =
                 sensitivity(&sys, PRICE, Parameter::Switching, Some(&[0]), Mode::Forward).unwrap();
             let fd = fd_column(&dc, PRICE, Parameter::Switching, 0, 1e-4);
@@ -1602,8 +1592,10 @@ mod tests {
                 )
                 .unwrap();
                 let branch = &source.branches()[0];
-                let denom = branch.r * branch.r + branch.x * branch.x;
-                let (g, b) = (branch.r / denom, -branch.x / denom);
+                let (g, b) = branch
+                    .calc_series_admittance(0)
+                    .unwrap()
+                    .expect("series admittance");
                 let eps = 1e-4;
                 let perturbed = |delta: f64| {
                     let mut net = source.clone();

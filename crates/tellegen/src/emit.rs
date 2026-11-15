@@ -330,26 +330,15 @@ fn scatter_bus(
     Ok(out)
 }
 
+/// Terminal flows `[pf, qf, pt, qt]` of every model branch at the solved
+/// voltages, PowerIO's `AcBranchData::calc_branch_flows`.
 #[cfg(feature = "sensitivity")]
 pub(crate) fn ac_terminal_flows(
     model: &crate::model::AcNetwork,
     sol: &crate::problem::AcPfSolution,
 ) -> [Vec<f64>; 4] {
-    use num_complex::Complex;
-    let mut flows: [Vec<f64>; 4] = std::array::from_fn(|_| Vec::with_capacity(model.m));
-    for e in 0..model.m {
-        let f = model.br_from[e];
-        let t = model.br_to[e];
-        let vf = Complex::from_polar(sol.vm[f], sol.va[f]);
-        let vt = Complex::from_polar(sol.vm[t], sol.va[t]);
-        let (yff, yft, ytf, ytt) = model.branch_admittance(e);
-        let sf = vf * (yff * vf + yft * vt).conj();
-        let st = vt * (ytf * vf + ytt * vt).conj();
-        for (column, value) in flows.iter_mut().zip([sf.re, sf.im, st.re, st.im]) {
-            column.push(value);
-        }
-    }
-    flows
+    let flows = model.branches.calc_branch_flows(&sol.vm, &sol.va);
+    [flows.pf, flows.qf, flows.pt, flows.qt]
 }
 
 #[cfg(feature = "sensitivity")]
