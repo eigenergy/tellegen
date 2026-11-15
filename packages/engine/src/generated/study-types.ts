@@ -1,5 +1,5 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: 6ef05bb64bd5772d0564bcffb03c5e7b9ae24b25524389631c27ebba2dd2c23f
+// Source SHA256: a4289eabfbd6d25d46845d84a554a7b30c25b6a05c269567ed4fcf7ad39cbe10
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
