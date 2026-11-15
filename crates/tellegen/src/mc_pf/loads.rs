@@ -112,7 +112,7 @@ impl BranchLoad {
 
     /// The solver's legacy voltage envelope (`v_low_pu`, `v_min_pu`,
     /// `v_max_pu`) around an unbounded law, evaluated by PowerIO
-    /// (`DistLoadVoltageModel::power_scale_in_envelope`). Constant impedance
+    /// (`DistLoadVoltageModel::power_scale_in_voltage_bands`). Constant impedance
     /// is `u²` in every band.
     fn enveloped_current(
         &self,
@@ -126,7 +126,7 @@ impl BranchLoad {
         };
         let power = self.power[branch];
         let [p, q] = model
-            .power_scale_in_envelope(
+            .power_scale_in_voltage_bands(
                 branch,
                 magnitude,
                 [options.v_low_pu, options.v_min_pu, options.v_max_pu],
