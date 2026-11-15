@@ -219,7 +219,10 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                 let rectifier = lcc.operating_mode
                     == Some(powerio_tx::LineCommutatedConverterOperatingMode::Rectifier);
                 let slope = (if rectifier { 1.0 } else { -1.0 })
-                    * powerio::electrical::calc_reactive_ratio(pf);
+                    * powerio::electrical::calc_reactive_ratio(
+                        pf,
+                        powerio::electrical::ReactiveRatioForm::Sine,
+                    );
                 let q = column(
                     p,
                     format!("converter_q[{}]", c.id),
@@ -320,7 +323,14 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                     .find(|v| v.component.to_string() == c.id)
                     .unwrap();
                 let pf = ac_dc::lcc_power_factor(lcc)?;
-                if (q - pac.abs() * powerio::electrical::calc_reactive_ratio(pf)).abs() > 1e-6 {
+                if (q - pac.abs()
+                    * powerio::electrical::calc_reactive_ratio(
+                        pf,
+                        powerio::electrical::ReactiveRatioForm::Sine,
+                    ))
+                .abs()
+                    > 1e-6
+                {
                     return Err("Independent LCC reactive power check failed".into());
                 }
             }

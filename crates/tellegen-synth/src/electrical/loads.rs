@@ -157,7 +157,10 @@ pub fn assign_loads(
         })
         .collect();
     let total: f64 = weights.iter().sum::<f64>().max(1e-12);
-    let tan_phi = powerio::electrical::calc_reactive_ratio(power_factor.clamp(1e-6, 1.0));
+    let tan_phi = powerio::electrical::calc_reactive_ratio(
+        power_factor.clamp(1e-6, 1.0),
+        powerio::electrical::ReactiveRatioForm::Sine,
+    );
     for (bus, w) in buses.iter_mut().zip(&weights) {
         bus.population_weight = w / total;
         bus.load_mw = ctx.peak_demand_mw * w / total;

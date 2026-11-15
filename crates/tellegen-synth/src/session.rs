@@ -391,6 +391,7 @@ impl Generator {
             loads.spilled_mw = spilled;
             let tan_phi = powerio::electrical::calc_reactive_ratio(
                 self.request.power_factor.clamp(1e-6, 1.0),
+                powerio::electrical::ReactiveRatioForm::Sine,
             );
             let peak = ctx.peak_demand_mw.max(1e-9);
             for bus in self.state.buses.iter_mut() {

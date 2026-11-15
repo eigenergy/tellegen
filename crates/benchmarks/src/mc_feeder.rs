@@ -777,7 +777,10 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
         );
     for (index, ((site, three_phase), kind)) in sites.zip(kinds).enumerate() {
         let pf = rng.uniform(0.90, 0.98);
-        let tan_phi = powerio::electrical::calc_reactive_ratio(pf);
+        let tan_phi = powerio::electrical::calc_reactive_ratio(
+            pf,
+            powerio::electrical::ReactiveRatioForm::Sine,
+        );
         let (bus, terminal_map, configuration, p_nom, v_nom) = if three_phase {
             let LoadSite::FourWire { bus } = site else {
                 unreachable!("three-phase loads sit on four-wire buses")
