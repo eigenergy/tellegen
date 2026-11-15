@@ -119,8 +119,10 @@ impl LoadParameter {
                 if magnitude == 0. {
                     // At zero voltage only a constant impedance law has a
                     // current: PowerIO's one admittance `Σ w / V_nom²` of an
-                    // all exponent two law.
-                    h = McOpfLoadLaw::new(self.nominal, [self.terms.clone(), Vec::new()])
+                    // all exponent two law. Added to `h = +0.0` so an empty
+                    // term list keeps a positive zero (an empty f64 sum is
+                    // -0.0).
+                    h += McOpfLoadLaw::new(self.nominal, [self.terms.clone(), Vec::new()])
                         .calc_impedance_admittance()
                         .ok_or_else(invalid)?
                         .re;
