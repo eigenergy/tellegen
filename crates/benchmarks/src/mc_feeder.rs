@@ -761,7 +761,7 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
     let omitted: BTreeSet<usize> = constant_power.into_iter().take(omit_count).collect();
     let secondary_vll = spec.secondary.as_ref().map(|s| s.kv_ll * 1e3);
     let vll = secondary_vll.unwrap_or(primary_vll);
-    let vln = vll / 3f64.sqrt();
+    let vln = powerio_dist::electrical::calc_wye_phase_voltage(vll);
     let mut single_phase_rotation = 0usize;
 
     let sites = four_wire_sites
@@ -885,7 +885,7 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
     *network.lines_mut() = builder.lines;
     *network.transformers_mut() = builder.transformers;
     *network.loads_mut() = builder.loads;
-    let source_vln = primary_vll / 3f64.sqrt();
+    let source_vln = powerio_dist::electrical::calc_wye_phase_voltage(primary_vll);
     network.sources_mut().push(VoltageSource::new(
         "vs",
         "src",

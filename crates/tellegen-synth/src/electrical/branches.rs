@@ -149,8 +149,12 @@ pub fn line_parameters(kv: f64, length_km: f64, spread: f64) -> (f64, f64, f64, 
 pub fn transformer_impedance(mva: f64) -> (f64, f64) {
     let class = transformer_class_for(mva);
     let z = class.z_pu_own_base * BASE_MVA / mva;
-    let x = z / (1.0 + 1.0 / (class.x_over_r * class.x_over_r)).sqrt();
-    (x / class.x_over_r, x)
+    // An X/R ratio splits the magnitude as OpenDSS `VSource` does.
+    powerio::electrical::calc_impedance_from_ratio(
+        z,
+        class.x_over_r,
+        powerio::electrical::ImpedanceRatioForm::OpenDssReactanceOverResistance,
+    )
 }
 
 /// The random part of a corridor's design, drawn once so that redesigning a
