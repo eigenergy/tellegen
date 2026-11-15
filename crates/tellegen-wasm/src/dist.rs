@@ -503,8 +503,8 @@ fn add_limits_and_ratings(net: &MulticonductorNetwork, graph: &mut serde_json::V
 /// `calc_voltage_zone_labels`: buses joined by lines and closed switches), so the frontend can
 /// tell voltage levels apart before any solve. A transformer winding declares its rating (line to
 /// line for a polyphase winding, its own for a single-phase one) and a source its line-to-line base
-/// over its phase terminals (`VoltageSource::calc_line_to_line_voltage`, PowerIO's one source
-/// base); the largest declared value in a zone wins. A level for display and grouping, not a base
+/// over its phase terminals (`VoltageSource::calc_line_to_line_voltage` in its positive
+/// sequence form, PowerIO's one source base); the largest declared value in a zone wins. A level for display and grouping, not a base
 /// for calculation. A network PowerIO cannot zone (a line naming an undeclared bus) gets none.
 fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
     use serde_json::{json, Value};
@@ -549,7 +549,13 @@ fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Val
             })
             .map(|(position, _)| position)
             .collect();
-        note(&vs.bus, vs.calc_line_to_line_voltage(&phases));
+        note(
+            &vs.bus,
+            vs.calc_line_to_line_voltage(
+                &phases,
+                powerio_dist::sequence::LineVoltageForm::PositiveSequence,
+            ),
+        );
     }
     let Some(buses) = graph.get_mut("buses").and_then(Value::as_array_mut) else {
         return;

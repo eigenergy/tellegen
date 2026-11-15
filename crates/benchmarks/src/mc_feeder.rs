@@ -28,7 +28,6 @@
 //! rejects when closed.
 
 use std::collections::BTreeSet;
-use std::f64::consts::PI;
 
 use powerio_dist::{
     Configuration, DistBus, DistLine, DistLineCode, DistLoad, DistLoadVoltageModel,
@@ -891,7 +890,10 @@ pub fn generate_spec(spec: &FeederSpec) -> MulticonductorNetwork {
         "src",
         four_wire(),
         vec![source_vln, source_vln, source_vln, 0.0],
-        vec![0.0, -2.0 * PI / 3.0, 2.0 * PI / 3.0, 0.0],
+        (0..3)
+            .map(|k| powerio_dist::sequence::calc_balanced_phase_angle(k, 3))
+            .chain([0.0])
+            .collect(),
     ));
     network
 }
