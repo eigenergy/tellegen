@@ -18,12 +18,18 @@ export class UserPreferences {
 	coloring = $state<'price' | 'angle' | 'voltage' | 'demand'>('price');
 	/** Zen mode hides the panels; it survives a reload so a presenter keeps the view. */
 	zen = $state(false);
-	/** Show the experimental dynamics tools (small-signal modes, default
-	 * dynamics). Off by default; their results carry an Experimental label. */
+	/** Experimental features: dynamics (RMS) simulation, which is still
+	 * being validated. Off by default. */
 	experimental = $state(false);
 	error = $state<string | null>(null);
 	revision = $state(0);
 	#storage: Storage | undefined;
+	#listeners = new Set<() => void>();
+	/** Call `listener` after every change. Returns the unsubscribe function. */
+	subscribe(listener: () => void): () => void {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
+	}
 	initialize(storage?: Storage) {
 		this.#storage = storage;
 		try {
@@ -66,6 +72,7 @@ export class UserPreferences {
 		if ('zen' in patch) this.zen = patch.zen as boolean;
 		if ('experimental' in patch) this.experimental = patch.experimental as boolean;
 		this.revision++;
+		for (const listener of this.#listeners) listener();
 		if (!save || !this.#storage) return;
 		try {
 			this.#storage.setItem(

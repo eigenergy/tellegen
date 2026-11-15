@@ -87,7 +87,7 @@ import {
 } from '@tellegen/engine';
 import { browserSolveFailure, errorText, extent, formulationLabel, rgbaCss } from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
-import { DEMO_LABEL, DynamicsController } from './dynamics/controller.svelte.js';
+import { DEMO_LABEL, DYNAMICS_OFF, DynamicsController } from './dynamics/controller.svelte.js';
 
 function sameSettings(a: unknown, b: unknown): boolean {
 	if (a && b && typeof a === 'object' && typeof b === 'object') {
@@ -2841,7 +2841,11 @@ export class Controller {
 		const dyrFiles: File[] = [];
 		const list: File[] = [];
 		for (const file of all) {
-			if (await this.dynamics.isDyr(file)) dyrFiles.push(file);
+			// With dynamics off, a .txt is never read as dynamic data.
+			const dyr = this.app.dynamicsEnabled
+				? await this.dynamics.isDyr(file)
+				: /\.dyr$/i.test(file.name);
+			if (dyr) dyrFiles.push(file);
 			else list.push(file);
 		}
 		const localsBefore = new Set(this.app.localCases.map((c) => c.id));
@@ -3014,6 +3018,10 @@ export class Controller {
 	 * opened, else to the active local case. A second .dyr replaces the
 	 * first after a confirm. */
 	private attachDynamics = async (files: File[], localsBefore: Set<string>) => {
+		if (!this.app.dynamicsEnabled) {
+			this.app.error = `${files.map((f) => f.name).join(' and ')}: ${DYNAMICS_OFF}`;
+			return;
+		}
 		const added = this.app.localCases.filter((c) => !localsBefore.has(c.id));
 		const target = added.at(-1) ?? this.app.activeLocal;
 		if (!target || !target.studyInputJson) {
@@ -4176,7 +4184,11 @@ export class Controller {
 	writeCaseFile = async (
 		c: SolvableCase,
 		format: string
-	): Promise<{ fileName: string; bytes: number; diagnostics: PowerIoDiagnostic[] }> => {
+	): Promise<{
+		fileName: string;
+		bytes: number;
+		diagnostics: PowerIoDiagnostic[];
+	}> => {
 		const study = await this.syncedStudy(c);
 		if (!study)
 			throw new CaseFileUnavailable(this.app.error ?? `${this.caseName(c)}: export is unavailable`);
@@ -4200,7 +4212,11 @@ export class Controller {
 			);
 		}
 		this.app.error = null;
-		return { fileName, bytes: new TextEncoder().encode(text).length, diagnostics };
+		return {
+			fileName,
+			bytes: new TextEncoder().encode(text).length,
+			diagnostics
+		};
 	};
 
 	/** Export the active study's committed state to `format` and download it.

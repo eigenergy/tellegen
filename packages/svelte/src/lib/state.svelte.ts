@@ -585,9 +585,21 @@ export class AppState {
 		units: string;
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
+	#mode = $state<'steady' | 'dynamics'>('steady');
+	/** Dynamics (RMS simulation) is experimental: it shows only after the
+	 * user turns on Settings → Experimental features. */
+	get dynamicsEnabled(): boolean {
+		return this.preferences.experimental;
+	}
 	/** Steady state (the static calculations) or dynamics (RMS simulation of
-	 * the active local case with its .dyr data). */
-	mode = $state<'steady' | 'dynamics'>('steady');
+	 * the active local case with its .dyr data). Reads as steady state while
+	 * dynamics is off, and a request for dynamics is then ignored. */
+	get mode(): 'steady' | 'dynamics' {
+		return this.dynamicsEnabled ? this.#mode : 'steady';
+	}
+	set mode(value: 'steady' | 'dynamics') {
+		this.#mode = value === 'dynamics' && !this.dynamicsEnabled ? 'steady' : value;
+	}
 	/** The bus or unit hovered in the dynamics traces or on the map; the
 	 * other view highlights it. */
 	dynamicsHover = $state.raw<{ kind: 'bus' | 'unit'; key: string } | null>(null);

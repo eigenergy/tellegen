@@ -11,6 +11,16 @@ const example = (name: string) =>
 
 test.setTimeout(180_000);
 
+// Dynamics is experimental: turn on Settings → Experimental features.
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'tellegen.preferences.v1',
+			JSON.stringify({ version: 1, values: { experimental: true } })
+		)
+	);
+});
+
 test('an agent attaches .dyr text, runs a trip and reads a compact verdict', async ({ page }) => {
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));

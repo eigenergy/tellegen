@@ -62,21 +62,17 @@
 		>
 		{#if app.preferences.error}<p role="alert">{app.preferences.error}</p>{/if}
 		<hr />
-		<h3>Experimental <span class="pill-experimental">Experimental</span></h3>
 		<label class="check"
 			><input
 				type="checkbox"
 				checked={app.preferences.experimental}
-				disabled={support !== null && !support.experimental}
+				disabled={support !== null && !support.rms}
 				onchange={(e) => app.preferences.update({ experimental: e.currentTarget.checked })}
-			/>Show experimental dynamics tools</label
+			/>Experimental features</label
 		>
-		<p>
-			Less validated than the RMS engine itself: small-signal modes and default dynamics for a case
-			without .dyr data. Results from these tools are labeled Experimental.
-		</p>
-		{#if support !== null && !support.experimental}
-			<p class="reason">This engine build does not carry the experimental tools.</p>
+		<p>Adds dynamics (RMS) simulation, which is still being validated.</p>
+		{#if support !== null && !support.rms}
+			<p class="reason">This engine build does not include dynamics simulation.</p>
 		{/if}
 		<p>Camera, selection and panel positions remain in their existing view controls.</p>
 	</div>

@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // The WECC 240 dynamics demo, end to end: open it, run a fault, read the
-// verdict, play it back, and the experimental tools behind their switch.
+// verdict, play it back. Dynamics is experimental, so these tests turn on
+// Settings → Experimental features first; dynamics-off.spec.ts covers the
+// default, with it off.
 // Screenshots land in DYNAMICS_SHOTS when set.
 const SHOTS = process.env.DYNAMICS_SHOTS;
 const shot = async (page: import('@playwright/test').Page, name: string) => {
@@ -13,6 +15,15 @@ const example = (name: string) =>
 	readFileSync(fileURLToPath(new URL(`../static/examples/wecc240/${name}`, import.meta.url)));
 
 test.setTimeout(180_000);
+
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'tellegen.preferences.v1',
+			JSON.stringify({ version: 1, values: { experimental: true } })
+		)
+	);
+});
 
 async function openDemo(page: import('@playwright/test').Page) {
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
@@ -154,13 +165,8 @@ test('a dropped .raw and .dyr attach', async ({ page }) => {
 	await expect(page.getByTestId('dyn-counts')).toContainText('DYR records', { timeout: 90_000 });
 });
 
-test('the experimental switch shows the Modes tab', async ({ page }) => {
+test('with experimental features on, the Modes tab computes and stops', async ({ page }) => {
 	const panel = await openDemo(page);
-	await page
-		.getByRole('button', { name: /^Settings/ })
-		.first()
-		.click();
-	await page.getByLabel('Show experimental dynamics tools').check();
 	await shot(page, '07-experimental-settings');
 	await panel.getByRole('tab', { name: /Modes/ }).click();
 	// WECC 240 is too large for a quick dense eigenanalysis in the browser:

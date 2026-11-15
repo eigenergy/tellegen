@@ -150,20 +150,33 @@ export async function registerTellegenWebMcp(
     signal: lifecycle.signal,
     ...(exposedTo ? { exposedTo } : {}),
   };
+  // A host that gates dynamics registers `simulate_dynamics` on its own,
+  // only while dynamics is available.
+  const gateDynamics = !!adapter.simulateDynamics && !!adapter.dynamicsAvailable;
+  const general = createTellegenTools(adapter, toolOptions);
+  const dynamicsTools = gateDynamics
+    ? general.filter((tool) => tool.name === "simulate_dynamics")
+    : [];
   const tools = [
-    ...createTellegenTools(adapter, toolOptions),
+    ...general.filter((tool) => !dynamicsTools.includes(tool)),
     ...(adapter.studies
       ? createTellegenStudyTools(adapter.studies, toolOptions)
       : []),
   ];
   let dynamicNames: () => string[] = () => [];
+  let dynamicsNames: () => string[] = () => [];
   let unsubscribe: () => void = () => {};
+  let unsubscribeDynamics: () => void = () => {};
   let registrationError: Error | null = null;
   const reportRegistrationError = (error: unknown) => {
     registrationError = asError(error);
     options.onRegistrationError?.(registrationError);
   };
-  const allNames = () => [...tools.map((tool) => tool.name), ...dynamicNames()];
+  const allNames = () => [
+    ...tools.map((tool) => tool.name),
+    ...dynamicsNames(),
+    ...dynamicNames(),
+  ];
   if (options.debugTool) {
     tools.push(
       createTellegenDebugTool(
@@ -182,6 +195,31 @@ export async function registerTellegenWebMcp(
   try {
     for (const tool of tools) {
       await registerOne(modelContext, tool, registration);
+    }
+    const dynamicsAvailable = adapter.dynamicsAvailable?.bind(adapter);
+    if (dynamicsAvailable && dynamicsTools.length > 0) {
+      const dynamicsGroup = new DynamicGroup(
+        modelContext,
+        dynamicsTools,
+        lifecycle.signal,
+        exposedTo,
+      );
+      let tail: Promise<void> = Promise.resolve();
+      const sync = () => {
+        tail = tail
+          .catch(() => undefined)
+          .then(() => dynamicsGroup.sync(dynamicsAvailable()));
+        return tail;
+      };
+      await sync().catch(reportRegistrationError);
+      unsubscribeDynamics =
+        adapter.onDynamicsAvailabilityChange?.(() => {
+          void sync().catch(reportRegistrationError);
+        }) ?? (() => {});
+      lifecycle.signal.addEventListener("abort", () => unsubscribeDynamics(), {
+        once: true,
+      });
+      dynamicsNames = () => dynamicsGroup.names();
     }
     const planning = adapter.planning;
     if (planning) {
@@ -232,6 +270,7 @@ export async function registerTellegenWebMcp(
     lifecycle.abort(error);
     options.signal?.removeEventListener("abort", abort);
     unsubscribe();
+    unsubscribeDynamics();
     throw error;
   }
   return {

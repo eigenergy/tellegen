@@ -303,3 +303,65 @@ describe("registration options and errors", () => {
     expect((failure as Error).message).toContain("name taken");
   });
 });
+
+describe("gated dynamics registration", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  function liveContext() {
+    const registrations = new Map<string, AbortSignal>();
+    const context: ModelContextLike = {
+      async registerTool(tool, options) {
+        registrations.set(tool.name, options?.signal as AbortSignal);
+      },
+    };
+    const live = () =>
+      [...registrations.entries()]
+        .filter(([, signal]) => !signal.aborted)
+        .map(([name]) => name);
+    return { context, live };
+  }
+
+  it("registers simulate_dynamics whenever the host does not gate it", async () => {
+    const { context, live } = liveContext();
+    const handle = await registerTellegenWebMcp(context, {
+      ...adapter,
+      simulateDynamics: () => ({}),
+    });
+    expect(live()).toContain("simulate_dynamics");
+    expect(handle.toolNames).toContain("simulate_dynamics");
+    handle.dispose();
+  });
+
+  it("registers simulate_dynamics only while dynamics is available", async () => {
+    let available = false;
+    const listeners = new Set<() => void>();
+    const { context, live } = liveContext();
+    const handle = await registerTellegenWebMcp(context, {
+      ...adapter,
+      simulateDynamics: () => ({}),
+      dynamicsAvailable: () => available,
+      onDynamicsAvailabilityChange(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    });
+    expect(live()).not.toContain("simulate_dynamics");
+    expect(handle.toolNames).not.toContain("simulate_dynamics");
+    expect(handle.toolNames).toHaveLength(7);
+
+    available = true;
+    for (const listener of listeners) listener();
+    await settle();
+    expect(live()).toContain("simulate_dynamics");
+    expect(handle.toolNames).toContain("simulate_dynamics");
+
+    available = false;
+    for (const listener of listeners) listener();
+    await settle();
+    expect(live()).not.toContain("simulate_dynamics");
+    expect(handle.toolNames).not.toContain("simulate_dynamics");
+
+    handle.dispose();
+    expect(listeners.size).toBe(0);
+  });
+});

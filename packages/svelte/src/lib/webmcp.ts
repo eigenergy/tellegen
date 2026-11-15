@@ -21,6 +21,7 @@ import {
 import { LocalCase, type SolvableCase, type StudyDisplaySnapshot } from './state.svelte.js';
 import type { Controller } from './controller.svelte.js';
 import { AgentInputError, agentSummary, resolveAgentEvents } from './dynamics/agent.js';
+import { DYNAMICS_OFF } from './dynamics/controller.svelte.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
 import {
 	DEFAULT_OUTPUT_BUDGET,
@@ -1954,6 +1955,7 @@ async function importCaseText(
 	ctrl.app.error = null;
 	// PSS/E dynamic data attaches to the displayed local case.
 	if (/\.dyr$/i.test(input.fileName)) {
+		if (!ctrl.app.dynamicsEnabled) throw new TellegenToolError('DYNAMICS_OFF', DYNAMICS_OFF);
 		const target = ctrl.app.activeLocal;
 		if (!target)
 			throw new TellegenToolError(
@@ -2216,9 +2218,21 @@ export function createTellegenWebMcpAdapter(
 			},
 			selectCase: (input, signal) => enqueue(() => selectCase(ctrl, input, signal))
 		},
+		// Dynamics is experimental: simulate_dynamics is registered only while
+		// the user has it on in Settings.
+		dynamicsAvailable: () => ctrl.app.dynamicsEnabled,
+		onDynamicsAvailabilityChange(listener) {
+			let enabled = ctrl.app.dynamicsEnabled;
+			return ctrl.app.preferences.subscribe(() => {
+				if (ctrl.app.dynamicsEnabled === enabled) return;
+				enabled = ctrl.app.dynamicsEnabled;
+				listener();
+			});
+		},
 		simulateDynamics: (input, signal) =>
 			enqueue(async () => {
 				signal.throwIfAborted();
+				if (!ctrl.app.dynamicsEnabled) throw new TellegenToolError('DYNAMICS_OFF', DYNAMICS_OFF);
 				const local = ctrl.app.studyView ? null : ctrl.app.activeLocal;
 				if (!local || local.id !== input.caseId)
 					throw new TellegenToolError(

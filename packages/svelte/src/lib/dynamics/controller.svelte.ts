@@ -112,6 +112,10 @@ const REST_SECONDS = 0.02;
 
 const optionsKey = (o: RmsCaseOptions, network: string) => JSON.stringify([network, o]);
 
+/** Why dynamics is unavailable while the experimental setting is off. */
+export const DYNAMICS_OFF =
+	'Dynamics (RMS) simulation is experimental. Turn it on in Settings, under Experimental features.';
+
 export class DynamicsController {
 	attachments: Record<string, DynAttachment> = $state.raw({});
 	events: DynEvent[] = $state.raw([]);
@@ -384,6 +388,7 @@ export class DynamicsController {
 
 	/** Open the bundled WECC 240 demo: its case, dynamic data and coordinates. */
 	async openDemo(): Promise<void> {
+		if (!this.app.dynamicsEnabled) throw new Error(DYNAMICS_OFF);
 		this.app.mode = 'dynamics';
 		const base = `${this.examplesBase}/wecc240`;
 		const names = ['case.raw', 'case.dyr', 'case.geo.csv'];

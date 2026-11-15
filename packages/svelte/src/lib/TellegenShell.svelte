@@ -41,6 +41,10 @@
 	$effect(() => {
 		dyn.theme = config.theme;
 	});
+	// Turning experimental features off stops any dynamics playback.
+	$effect(() => {
+		if (!app.dynamicsEnabled) untrack(() => dyn.player.pause());
+	});
 	// What the playback dock covers, from the bottom edge (it sits 12 px up,
 	// 40 px on the compact layout).
 	$effect(() => {
@@ -178,7 +182,7 @@
 	<CommandPalette />
 	<ControlPanel />
 	{#if app.mode !== 'dynamics'}<SolveCard />{/if}
-	{#if !app.studyView}<DynamicsPanel />{/if}
+	{#if !app.studyView && app.dynamicsEnabled}<DynamicsPanel />{/if}
 	{#if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} />
 	{/if}

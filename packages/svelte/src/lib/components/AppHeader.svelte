@@ -28,21 +28,27 @@
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	onDestroy(
 		commands.registerSource((): Command[] => [
-			{
-				id: 'dynamics:open',
-				title: () => (app.mode === 'dynamics' ? 'Back to steady state' : 'Open Dynamics'),
-				hint: 'RMS simulation of faults and trips',
-				keywords: ['dynamics', 'rms', 'transient', 'stability', 'mode'],
-				run: () => (app.mode = app.mode === 'dynamics' ? 'steady' : 'dynamics')
-			},
-			{
-				id: 'dynamics:demo',
-				title: 'Open WECC 240 dynamics demo',
-				keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
-				group: 'Cases',
-				run: () => void ctrl.dynamics.openDemo().catch((e) => (app.error = (e as Error).message))
-			},
-			...(ctrl.dynamics.active?.status === 'ready'
+			// Dynamics is experimental: no commands until Settings turns it on.
+			...(app.dynamicsEnabled
+				? ([
+						{
+							id: 'dynamics:open',
+							title: () => (app.mode === 'dynamics' ? 'Back to steady state' : 'Open Dynamics'),
+							hint: 'RMS simulation of faults and trips',
+							keywords: ['dynamics', 'rms', 'transient', 'stability', 'mode'],
+							run: () => (app.mode = app.mode === 'dynamics' ? 'steady' : 'dynamics')
+						},
+						{
+							id: 'dynamics:demo',
+							title: 'Open WECC 240 dynamics demo',
+							keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
+							group: 'Cases',
+							run: () =>
+								void ctrl.dynamics.openDemo().catch((e) => (app.error = (e as Error).message))
+						}
+					] satisfies Command[])
+				: []),
+			...(app.dynamicsEnabled && ctrl.dynamics.active?.status === 'ready'
 				? [
 						{
 							id: 'dynamics:run',
@@ -224,7 +230,9 @@
 			</button>
 		{/if}
 	</nav>
-	{#if !app.zen && !app.studyView}<div class="mode-switch"><ModeSwitch /></div>{/if}
+	{#if !app.zen && !app.studyView && app.dynamicsEnabled}<div class="mode-switch">
+			<ModeSwitch />
+		</div>{/if}
 	<button
 		class="settings-button commands-button"
 		onclick={() => commands.show()}

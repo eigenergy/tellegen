@@ -260,6 +260,15 @@ export interface TellegenWebMcpAdapter {
     input: SimulateDynamicsInput,
     signal: AbortSignal,
   ): MaybePromise<ToolPayload>;
+  /**
+   * Whether `simulate_dynamics` is offered right now, for a host that keeps
+   * dynamics behind a setting. When given, the tool is registered only while
+   * this returns true; without it the tool is registered whenever
+   * `simulateDynamics` exists.
+   */
+  dynamicsAvailable?(): boolean;
+  /** Subscribe to changes of `dynamicsAvailable`. Returns the unsubscribe function. */
+  onDynamicsAvailabilityChange?(listener: () => void): () => void;
   settings?(
     input: SettingsInput,
     signal: AbortSignal,
