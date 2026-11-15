@@ -786,8 +786,8 @@ fn validate_primal(
         .map(|&column| x[column])
         .collect::<Vec<_>>();
 
-    // The complex current equations, independent of the polar DAG
-    // coefficients: PowerIO's terminal flows over the same branch columns.
+    // PowerIO's terminal flows over the same branch columns, for the thermal
+    // limits and the published flows.
     let powerio_matrix::AcBranchFlows {
         pf: p_from,
         qf: q_from,
@@ -796,27 +796,28 @@ fn validate_primal(
         ..
     } = prep.branches.calc_branch_flows(&vm, &va);
 
-    let mut p_injection = (0..prep.n_buses)
-        .map(|bus| -prep.buses.p_d[bus] - prep.buses.g_s[bus] * vm[bus].powi(2))
-        .collect::<Vec<_>>();
-    let mut q_injection = (0..prep.n_buses)
-        .map(|bus| -prep.buses.q_d[bus] + prep.buses.b_s[bus] * vm[bus].powi(2))
-        .collect::<Vec<_>>();
-    for generator in 0..prep.n_generators() {
-        let bus = prep.generators.bus_of_gen[generator];
-        p_injection[bus] += pg[generator];
-        q_injection[bus] += qg[generator];
-    }
-    let mut p_balance = p_injection.clone();
-    let mut q_balance = q_injection.clone();
-    for branch in 0..prep.n_branches() {
-        let f = prep.branches.from_bus[branch];
-        let t = prep.branches.to_bus[branch];
-        p_balance[f] -= p_from[branch];
-        q_balance[f] -= q_from[branch];
-        p_balance[t] -= p_to[branch];
-        q_balance[t] -= q_to[branch];
-    }
+    // The nodal balance from PowerIO's injection `S = V conj(Y V)`: the full
+    // bus admittance (branches and shunts) against generation less demand,
+    // and the branch admittance alone for the power each bus sends into its
+    // branches, which is the injection the solution publishes.
+    let n = prep.n_buses;
+    let injection = |admittance: &powerio_matrix::matrix::YbusParts| {
+        powerio_matrix::calc_bus_power_injection(admittance, &vm, &va)
+            .map_err(|error| error.to_string())
+    };
+    let (p_network, q_network) = injection(&prep.calc_admittance_matrix())?;
+    let zero = vec![0.0; n];
+    let (p_injection, q_injection) =
+        injection(&prep.branches.calc_admittance_matrix(n, &zero, &zero))?;
+    let bus_of_gen = &prep.generators.bus_of_gen;
+    let p_generated = powerio_matrix::calc_bus_totals(n, bus_of_gen, &pg);
+    let q_generated = powerio_matrix::calc_bus_totals(n, bus_of_gen, &qg);
+    let p_balance: Vec<f64> = (0..n)
+        .map(|bus| p_generated[bus] - prep.buses.p_d[bus] - p_network[bus])
+        .collect();
+    let q_balance: Vec<f64> = (0..n)
+        .map(|bus| q_generated[bus] - prep.buses.q_d[bus] - q_network[bus])
+        .collect();
 
     let variable_bounds = x
         .iter()

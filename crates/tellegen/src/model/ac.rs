@@ -439,25 +439,13 @@ impl AcNetwork {
         )?;
         // SOCWR has no slack; the field keeps the power flow typing well formed.
         let (slacks, _) = island_slacks(&prep.branches, n, prep.reference_buses.iter().copied());
-        let mut vm_set = prep.calc_vm_setpoints();
-        let mut pg = vec![0.0; n];
-        let mut qg = vec![0.0; n];
-        let mut pf_pv = vec![false; n];
-        for (generator, &bus) in prep.generators.bus_of_gen.iter().enumerate() {
-            pf_pv[bus] = true;
-            pg[bus] += prep.generators.pg[generator];
-            qg[bus] += prep.generators.qg[generator];
-            let vg = prep.generators.vg[generator];
-            if vg > 0.0 {
-                let lo = prep.buses.vm_min[bus];
-                let hi = prep.buses.vm_max[bus];
-                vm_set[bus] = if lo.is_finite() && hi.is_finite() && lo <= hi {
-                    vg.clamp(lo, hi)
-                } else {
-                    vg
-                };
-            }
-        }
+        // PowerIO's setpoints held inside each regulated bus's band, and its
+        // bus totals of the scheduled generation.
+        let vm_set = prep.calc_banded_vm_setpoints();
+        let bus_of_gen = &prep.generators.bus_of_gen;
+        let pg = powerio_matrix::calc_bus_totals(n, bus_of_gen, &prep.generators.pg);
+        let qg = powerio_matrix::calc_bus_totals(n, bus_of_gen, &prep.generators.qg);
+        let mut pf_pv = powerio_matrix::calc_bus_hosts(n, bus_of_gen);
         for &slack in &slacks {
             pf_pv[slack] = false;
         }
@@ -706,7 +694,8 @@ impl AcNetwork {
             "generator",
         )?;
 
-        let mut vm_set = prep.calc_vm_setpoints();
+        // PowerIO's setpoints held inside each regulated bus's band.
+        let vm_set = prep.calc_banded_vm_setpoints();
         let (slacks, extra) =
             island_slacks(&prep.branches, n, prep.reference_buses.iter().copied());
         let diagnostics: Vec<SolveDiagnostic> = extra_reference_diagnostic(&bus_ids, &extra)
@@ -762,32 +751,10 @@ impl AcNetwork {
 
         // Per-bus scheduled generation for power flow, plus generator-space bounds
         // and costs for SOCWR. PowerIO states the quadratic as `0.5*q*p^2`.
-        let mut pg = vec![0.0; n];
-        let mut qg = vec![0.0; n];
-        let mut pf_pv = vec![false; n];
         let gen_bus = generators.bus_of_gen;
-        for (i, bus) in gen_bus.iter().copied().enumerate() {
-            pf_pv[bus] = true;
-            pg[bus] += generators.pg[i];
-            qg[bus] += generators.qg[i];
-            // Regulate this bus's magnitude to the generator's voltage setpoint, clamped
-            // into the bus magnitude band: the power flow holds PV/slack magnitudes at
-            // `vm_set` with no `vm` column to bound them, so an out-of-band `vg` would pin
-            // the bus at an infeasible magnitude and the sensitivity would linearize there.
-            let vg = generators.vg[i];
-            if vg > 0.0 {
-                // `f64::clamp` panics on an inverted or non-finite band, and nothing
-                // between the case file and here establishes that the bus carries one:
-                // the readers copy VMIN/VMAX verbatim and normalization leaves them
-                // alone. An unusable band means no bound to apply, not a panic.
-                let (lo, hi) = (vm_min[bus], vm_max[bus]);
-                vm_set[bus] = if lo.is_finite() && hi.is_finite() && lo <= hi {
-                    vg.clamp(lo, hi)
-                } else {
-                    vg
-                };
-            }
-        }
+        let pg = powerio_matrix::calc_bus_totals(n, &gen_bus, &generators.pg);
+        let qg = powerio_matrix::calc_bus_totals(n, &gen_bus, &generators.qg);
+        let pf_pv = powerio_matrix::calc_bus_hosts(n, &gen_bus);
         #[cfg(feature = "conic")]
         let cq = generators.q.into_iter().map(|value| value / 2.0).collect();
         #[cfg(feature = "conic")]

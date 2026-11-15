@@ -532,17 +532,13 @@ fn newton<F: AcPfFormulation>(
 /// Aggregate generator reactive limits to buses and flag which buses carry a generator.
 /// Returns `(qmin_bus, qmax_bus, has_gen)`; a bus with no generator has a zero range and is
 /// never a voltage-regulating bus.
+/// The sums are PowerIO's bus totals, the kernel its nodal generator data reads.
 fn aggregate_q(net: &AcNetwork) -> (Vec<f64>, Vec<f64>, Vec<bool>) {
-    let mut qmin_bus = vec![0.0; net.n];
-    let mut qmax_bus = vec![0.0; net.n];
-    let mut has_gen = vec![false; net.n];
-    for g in 0..net.k {
-        let b = net.gen_bus[g];
-        qmin_bus[b] += net.qmin[g];
-        qmax_bus[b] += net.qmax[g];
-        has_gen[b] = true;
-    }
-    (qmin_bus, qmax_bus, has_gen)
+    (
+        powerio_matrix::calc_bus_totals(net.n, &net.gen_bus, &net.qmin),
+        powerio_matrix::calc_bus_totals(net.n, &net.gen_bus, &net.qmax),
+        powerio_matrix::calc_bus_hosts(net.n, &net.gen_bus),
+    )
 }
 
 /// The result of a Q-limited power flow solve: converged `(vm, va)`, the final bus typing,
