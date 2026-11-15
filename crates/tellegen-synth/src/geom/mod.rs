@@ -119,7 +119,7 @@ impl Projection {
 
     pub fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let k = KM_PER_DEGREE;
-        let x = (lon - self.lon0) * lat.to_radians().cos() * k;
+        let x = (lon - self.lon0) * meridian_scale(lat, 0.0) * k;
         let y = lat * k;
         (x, y)
     }
