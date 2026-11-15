@@ -10,9 +10,10 @@
 //! the policy and reports each decision as a [`SolveDiagnostic`].
 //!
 //! PowerIO's preparation already grounds every reference it is given, so a
-//! network that needs neither decision passes through unchanged and uncopied.
+//! network that needs neither decision passes through unchanged.
 
 use powerio::BalancedNetwork;
+use powerio_tx::diagnostics::codes;
 use powerio_tx::IslandReferencePolicy;
 
 use crate::api::SolveDiagnostic;
@@ -64,61 +65,45 @@ impl Energized {
 /// in each supplied island that has none under `policy`, through PowerIO's
 /// `assign_island_references`.
 pub(crate) fn energize(network: &BalancedNetwork, policy: ReferencePolicy) -> Energized {
-    // PowerIO's partition says whether the assignment would change anything,
-    // so a network that needs nothing is not copied.
-    let generators = network.generators();
-    let partition = network.calc_islands();
-    let needs_assignment = partition.islands.iter().any(|island| {
-        let hosts = |bus| {
-            island
-                .generators
-                .iter()
-                .any(|&row| generators[row].bus == bus)
-        };
-        !island.is_supplied()
-            || island.references.is_empty()
-            || (policy == ReferencePolicy::GeneratorHosted
-                && island.references.iter().any(|&bus| !hosts(bus)))
-    });
-    if !needs_assignment {
-        return Energized {
-            network: None,
-            diagnostics: Vec::new(),
-        };
-    }
-
     let mut adjusted = network.clone();
     let report = adjusted.assign_island_references(policy.powerio());
-    let mw = if network.is_normalized() {
-        network.base_mva()
-    } else {
-        1.0
-    };
-    let mut diagnostics: Vec<SolveDiagnostic> = report
-        .de_energized_islands
+    // PowerIO states one finding per island it changed, in partition order,
+    // with the island's de-energized buses and designated reference recorded
+    // alongside in the same order. Its findings are reported as they stand:
+    // the de-energized finding names the in-service load left unserved and,
+    // for an island an HVDC line fed, the lines taken out of service with it
+    // and the power they scheduled into it. A reference demoted because it
+    // hosts no in-service generator is not reported, as before.
+    let mut de_energized = report.de_energized_islands.iter();
+    let mut designated = report.designated.iter();
+    let diagnostics = report
+        .diagnostics
         .iter()
-        .map(|island| SolveDiagnostic {
-            code: "island_deenergized".to_owned(),
-            message: format!(
-                "an island of {} bus(es) has no in-service generator and was left out of the \
-                 solve; its {:.1} MW of load is unserved",
-                island.buses.len(),
-                island.unserved_load * mw
-            ),
-            buses: island.buses.iter().map(|bus| bus.0).collect(),
+        .filter_map(|finding| {
+            let code = finding.code();
+            if code == codes::CANONICALIZE_ISLAND_DE_ENERGIZED.code
+                || code == codes::CANONICALIZE_ISLAND_HVDC_FED_DE_ENERGIZED.code
+            {
+                let island = de_energized.next()?;
+                Some(SolveDiagnostic {
+                    code: "island_deenergized".to_owned(),
+                    message: finding.message().to_owned(),
+                    buses: island.buses.iter().map(|bus| bus.0).collect(),
+                })
+            } else if code == codes::CANONICALIZE_ISLAND_REFERENCE_DESIGNATED.code {
+                let bus = designated.next()?;
+                Some(SolveDiagnostic {
+                    code: "island_reference_designated".to_owned(),
+                    message: finding.message().to_owned(),
+                    buses: vec![bus.0],
+                })
+            } else {
+                None
+            }
         })
         .collect();
-    let missing = match policy {
-        ReferencePolicy::Stated => "states no reference bus",
-        ReferencePolicy::GeneratorHosted => "has no reference bus hosting an in-service generator",
-    };
-    diagnostics.extend(report.designated.iter().map(|bus| SolveDiagnostic {
-        code: "island_reference_designated".to_owned(),
-        message: format!(
-            "an island {missing}; bus {bus} hosts its largest generator and became its reference"
-        ),
-        buses: vec![bus.0],
-    }));
+    // PowerIO's report says whether the assignment changed anything; a
+    // network that needed nothing is prepared as given.
     let changed = !report.designated.is_empty()
         || !report.demoted.is_empty()
         || !report.de_energized.is_empty();
@@ -144,11 +129,18 @@ mod tests {
         assert_eq!(
             codes,
             [
-                ("island_deenergized", &[7, 8][..]),
                 ("island_reference_designated", &[6][..]),
+                ("island_deenergized", &[7, 8][..]),
             ]
         );
-        assert!(energized.diagnostics[0].message.contains("20.0 MW"));
+        // PowerIO reports the islands in partition order.
+        assert!(
+            energized.diagnostics[1]
+                .message
+                .contains("20 MW of in-service load"),
+            "{}",
+            energized.diagnostics[1].message
+        );
         let adjusted = energized.network(&network);
         let kinds: Vec<powerio::BusType> = adjusted.buses().iter().map(|bus| bus.kind).collect();
         assert_eq!(kinds[0], powerio::BusType::Ref);
@@ -158,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn a_single_referenced_island_passes_through_uncopied() {
+    fn a_single_referenced_island_passes_through_unchanged() {
         let network = crate::model::parse_matpower(crate::model::CASE3).expect("parse");
         let energized = energize(&network, ReferencePolicy::Stated);
         assert!(energized.diagnostics.is_empty());
@@ -176,5 +168,32 @@ mod tests {
         let hosted = energize(&network, ReferencePolicy::GeneratorHosted);
         assert_eq!(hosted.diagnostics.len(), 1);
         assert_eq!(hosted.diagnostics[0].buses, [3]);
+    }
+
+    #[test]
+    fn an_island_fed_only_over_hvdc_reports_the_line_it_loses() {
+        // Bus 4 has load and no generator; the line from bus 3 schedules 10 MW
+        // into it. PowerIO de-energizes the island and takes the line out of
+        // service with it, and its finding names the line and the infeed.
+        let case = crate::model::CASE3.replace(
+            " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n",
+            " 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;\n 4 1 5 0  0 0 1 1 0 230 1 1.1 0.9;\n",
+        );
+        let mut network = crate::model::parse_matpower(&case).expect("parse");
+        let mut line = powerio::Hvdc::new(powerio::BusId(3), powerio::BusId(4));
+        line.pf = 10.0;
+        line.pt = 10.0;
+        network.hvdc_mut().push(line);
+        let energized = energize(&network, ReferencePolicy::Stated);
+        assert_eq!(energized.diagnostics.len(), 1);
+        let finding = &energized.diagnostics[0];
+        assert_eq!(finding.code, "island_deenergized");
+        assert_eq!(finding.buses, [4]);
+        assert!(
+            finding.message.contains("(3-4) schedule 10 MW into it"),
+            "{}",
+            finding.message
+        );
+        assert!(!energized.network(&network).hvdc()[0].in_service);
     }
 }

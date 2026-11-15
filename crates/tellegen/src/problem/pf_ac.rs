@@ -16,15 +16,14 @@
 //! paths.
 //!
 //! The polar power injection at bus i is `S_i = V_i conj((Y V)_i)`, `V_i = vm_i
-//! e^{j va_i}`: PowerIO's `calc_bus_power_injection`. The Jacobian is PowerIO's
-//! physical polar `PowerFlowJacobian` over the same admittance matrix, built once
-//! per solve and refreshed in place at every iterate; the Newton system reads its
-//! reduced rows and columns.
+//! e^{j va_i}`: PowerIO's `PowerFlowJacobian::calc_bus_power_injection`. The
+//! Jacobian is PowerIO's physical polar `PowerFlowJacobian` over the model's
+//! admittance matrix, built once per solve and refreshed in place at every
+//! iterate from the injection the mismatch already formed there, so each
+//! Newton step forms one injection; the Newton system reads its reduced rows
+//! and columns.
 
-use powerio_matrix::matrix::YbusParts;
-use powerio_matrix::{
-    calc_bus_power_injection, PowerFlowJacobian, SparseMatrix, VoltageCoordinates,
-};
+use powerio_matrix::{BusPowerInjection, PowerFlowJacobian, SparseMatrix, VoltageCoordinates};
 use powerio_tx::{calc_dense_island_labels, BusId};
 
 use crate::{AcPfInitialization, AcPfStartStrategy, PowerFlowStart};
@@ -246,12 +245,18 @@ pub(crate) fn load_jacobian(
     t
 }
 
-/// Polar bus power injections `S = V conj(Y V)` at state `(vm, va)`, PowerIO's
-/// `calc_bus_power_injection`, as `(p, q)`. Voltages whose length is not the bus
-/// count read as NaN injections, so the iterate is rejected rather than accepted.
-pub(crate) fn ac_injections(ybus: &YbusParts, vm: &[f64], va: &[f64]) -> (Vec<f64>, Vec<f64>) {
-    calc_bus_power_injection(ybus, vm, va)
-        .unwrap_or_else(|_| (vec![f64::NAN; vm.len()], vec![f64::NAN; vm.len()]))
+/// Polar bus power injections `S = V conj(Y V)` at state `(vm, va)` over the
+/// Jacobian's admittance: PowerIO's `PowerFlowJacobian::calc_bus_power_injection`.
+/// Pass the injection to [`ac_jacobian`] to refresh the Jacobian at the same
+/// point.
+pub(crate) fn ac_injections(
+    jacobian: &PowerFlowJacobian,
+    vm: &[f64],
+    va: &[f64],
+) -> Result<BusPowerInjection, String> {
+    jacobian
+        .calc_bus_power_injection(vm, va)
+        .map_err(|e| e.to_string())
 }
 
 /// PowerIO's physical polar power flow Jacobian of `net` at `(vm, va)`, assembled
@@ -266,17 +271,17 @@ pub(crate) fn power_flow_jacobian(
         .map_err(|e| e.to_string())
 }
 
-/// The reduced polar power flow Jacobian `∂(P, Q)/∂(va, vm)` at `(vm, va)` as
-/// `(row, col, value)` triplets over `layout`: PowerIO's physical Jacobian
-/// refreshed in place, then restricted by [`reduced_jacobian`].
+/// The reduced polar power flow Jacobian `∂(P, Q)/∂(va, vm)` as `(row, col,
+/// value)` triplets over `layout`, at the point `injection` was formed at:
+/// PowerIO's physical Jacobian refreshed in place from that injection
+/// (`update_from_injection`), then restricted by [`reduced_jacobian`].
 pub(crate) fn ac_jacobian(
     jacobian: &mut PowerFlowJacobian,
-    vm: &[f64],
-    va: &[f64],
+    injection: &BusPowerInjection,
     layout: &AcPfLayout,
 ) -> Result<Vec<(usize, usize, f64)>, String> {
     jacobian
-        .update_from_voltages(vm, va)
+        .update_from_injection(injection)
         .map_err(|e| e.to_string())?;
     Ok(reduced_jacobian(jacobian.matrix(), layout))
 }
@@ -377,32 +382,40 @@ impl AcPfSolution {
 /// [`DcPfFormulation`](super::DcPfFormulation). The two methods are the polar physics:
 /// the bus injections and the Newton Jacobian. Not sealed.
 pub trait AcPfFormulation: Formulation {
-    /// Bus power injections `(p, q)` at state `(vm, va)`.
-    fn injections(&self, ybus: &YbusParts, vm: &[f64], va: &[f64]) -> (Vec<f64>, Vec<f64>);
+    /// Bus power injections at state `(vm, va)`, over `jacobian`'s admittance.
+    fn injections(
+        &self,
+        jacobian: &PowerFlowJacobian,
+        vm: &[f64],
+        va: &[f64],
+    ) -> Result<BusPowerInjection, String>;
 
     /// The reduced Newton Jacobian `∂(P, Q)/∂(va, vm)` as triplets over `layout`,
-    /// refreshing `jacobian` at `(vm, va)`.
+    /// refreshing `jacobian` at the point `injection` was formed at.
     fn jacobian(
         &self,
         jacobian: &mut PowerFlowJacobian,
-        vm: &[f64],
-        va: &[f64],
+        injection: &BusPowerInjection,
         layout: &AcPfLayout,
     ) -> Result<Vec<(usize, usize, f64)>, String>;
 }
 
 impl AcPfFormulation for AcPolar {
-    fn injections(&self, ybus: &YbusParts, vm: &[f64], va: &[f64]) -> (Vec<f64>, Vec<f64>) {
-        ac_injections(ybus, vm, va)
+    fn injections(
+        &self,
+        jacobian: &PowerFlowJacobian,
+        vm: &[f64],
+        va: &[f64],
+    ) -> Result<BusPowerInjection, String> {
+        ac_injections(jacobian, vm, va)
     }
     fn jacobian(
         &self,
         jacobian: &mut PowerFlowJacobian,
-        vm: &[f64],
-        va: &[f64],
+        injection: &BusPowerInjection,
         layout: &AcPfLayout,
     ) -> Result<Vec<(usize, usize, f64)>, String> {
-        ac_jacobian(jacobian, vm, va, layout)
+        ac_jacobian(jacobian, injection, layout)
     }
 }
 
@@ -449,7 +462,6 @@ fn take_step(
 fn newton<F: AcPfFormulation>(
     f: &F,
     net: &AcNetwork,
-    ybus: &YbusParts,
     jacobian: &mut PowerFlowJacobian,
     layout: &AcPfLayout,
     pg: &[f64],
@@ -457,20 +469,23 @@ fn newton<F: AcPfFormulation>(
     mut vm: Vec<f64>,
     mut va: Vec<f64>,
 ) -> (Vec<f64>, Vec<f64>, usize, f64) {
-    // `r` / `residual` track the *current* iterate: measured once up front and
-    // refreshed from the accepted trial each step, so the returned residual always reflects
-    // the final stepped point (not the pre-step one) and `layout.residual` is built once per
-    // point rather than twice.
+    // `injection` / `r` / `residual` track the *current* iterate: measured once up
+    // front and taken from the accepted trial each step, so the returned residual
+    // always reflects the final stepped point (not the pre-step one), and the
+    // injection the mismatch formed at a point is the one the Jacobian refreshes
+    // from there.
     let mut iters = 0;
-    let (p0, q0) = f.injections(ybus, &vm, &va);
-    let mut r = layout.residual(net, pg, qg, &vm, &p0, &q0);
+    let Ok(mut injection) = f.injections(jacobian, &vm, &va) else {
+        return (vm, va, iters, f64::NAN);
+    };
+    let mut r = layout.residual(net, pg, qg, &vm, &injection.p, &injection.q);
     let mut residual = inf_norm(&r);
     for it in 0..MAX_ITERS {
         iters = it;
         if residual < TOL {
             break;
         }
-        let Ok(mut jac) = f.jacobian(jacobian, &vm, &va, layout) else {
+        let Ok(mut jac) = f.jacobian(jacobian, &injection, layout) else {
             break; // the Jacobian could not be refreshed: stop at the best iterate
         };
         jac.extend(load_jacobian(net, &vm, layout));
@@ -490,12 +505,16 @@ fn newton<F: AcPfFormulation>(
                 alpha *= 0.5;
                 continue;
             }
-            let (tp, tq) = f.injections(ybus, &tvm, &tva);
-            let tr = layout.residual(net, pg, qg, &tvm, &tp, &tq);
+            let Ok(trial) = f.injections(jacobian, &tvm, &tva) else {
+                alpha *= 0.5;
+                continue;
+            };
+            let tr = layout.residual(net, pg, qg, &tvm, &trial.p, &trial.q);
             let tres = inf_norm(&tr);
             if tres < residual {
                 vm = tvm;
                 va = tva;
+                injection = trial;
                 r = tr;
                 residual = tres;
                 accepted = true;
@@ -544,7 +563,6 @@ type QlimSolve = (Vec<f64>, Vec<f64>, Vec<BusKind>, usize, f64);
 fn solve_qlim<F: AcPfFormulation>(
     f: &F,
     net: &AcNetwork,
-    ybus: &YbusParts,
     jacobian: &mut PowerFlowJacobian,
     pg_bus: &[f64],
     qg_bus: &[f64],
@@ -586,7 +604,6 @@ fn solve_qlim<F: AcPfFormulation>(
         let (nvm, nva, iters, residual) = newton(
             f,
             net,
-            ybus,
             jacobian,
             &layout,
             pg_bus,
@@ -608,7 +625,11 @@ fn solve_qlim<F: AcPfFormulation>(
         }
 
         // Recover each regulating bus's reactive generation and switch on a limit violation.
-        let (_, q_calc) = f.injections(ybus, &vm, &va);
+        // A voltage the injection cannot be formed at reads NaN, which switches
+        // nothing.
+        let q_calc = f
+            .injections(jacobian, &vm, &va)
+            .map_or_else(|_| vec![f64::NAN; net.n], |injection| injection.q);
         let (_, qd) = net.demand_at(&vm);
         let mut changed = false;
         for b in 0..net.n {
@@ -750,7 +771,6 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
     net: &AcNetwork,
     start: AcStart,
 ) -> Result<AcPfSolution, String> {
-    let ybus = net.ybus();
     let (qmin_bus, qmax_bus, has_gen) = aggregate_q(net);
     let vm_hold = net.vm_set.clone();
     let flat_vm = net.vm_set.clone();
@@ -791,7 +811,6 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
         let res = solve_qlim(
             f,
             net,
-            ybus,
             &mut jacobian,
             &net.pg,
             &net.qg,
@@ -850,7 +869,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             vm[term.bus], net.bus_ids[term.bus], term.exponent
         ));
     }
-    let (p, q) = f.injections(ybus, &vm, &va);
+    let BusPowerInjection { p, q, .. } = f.injections(&jacobian, &vm, &va)?;
     Ok(AcPfSolution::new(
         vm,
         va,
@@ -928,21 +947,25 @@ mpc.gencost = [
         struct RejectFlat;
         impl Formulation for RejectFlat {}
         impl AcPfFormulation for RejectFlat {
-            fn injections(&self, y: &YbusParts, vm: &[f64], va: &[f64]) -> (Vec<f64>, Vec<f64>) {
-                let (mut p, q) = ac_injections(y, vm, va);
+            fn injections(
+                &self,
+                jacobian: &PowerFlowJacobian,
+                vm: &[f64],
+                va: &[f64],
+            ) -> Result<BusPowerInjection, String> {
+                let mut injection = ac_injections(jacobian, vm, va)?;
                 if va.iter().all(|&v| v == 0.0) {
-                    p.fill(f64::NAN);
+                    injection.p.fill(f64::NAN);
                 }
-                (p, q)
+                Ok(injection)
             }
             fn jacobian(
                 &self,
                 jacobian: &mut PowerFlowJacobian,
-                vm: &[f64],
-                va: &[f64],
+                injection: &BusPowerInjection,
                 layout: &AcPfLayout,
             ) -> Result<Vec<(usize, usize, f64)>, String> {
-                ac_jacobian(jacobian, vm, va, layout)
+                ac_jacobian(jacobian, injection, layout)
             }
         }
         let net = parse_case2();
@@ -1211,7 +1234,6 @@ mpc.gencost = [
         let pv = net.bus_ids.iter().position(|&id| id == 2).expect("bus 2");
         assert!(net.load_terms.iter().any(|t| t.bus == pv));
 
-        let ybus = net.ybus();
         let mut kinds_released = default_kinds(&net);
         assert_eq!(kinds_released[pv], BusKind::Pv);
         kinds_released[pv] = BusKind::Pq;
@@ -1219,12 +1241,14 @@ mpc.gencost = [
             let layout = AcPfLayout::with_kinds(&net, &kinds);
             let vm: Vec<f64> = (0..net.n).map(|b| 1.0 + 0.06 * mix(b as u64, 7)).collect();
             let va: Vec<f64> = (0..net.n).map(|b| 0.2 * mix(b as u64, 11)).collect();
-            let residual = |vm: &[f64], va: &[f64]| {
-                let (p, q) = ac_injections(ybus, vm, va);
-                layout.residual(&net, &net.pg, &net.qg, vm, &p, &q)
-            };
             let mut jacobian = power_flow_jacobian(&net, &vm, &va).expect("jacobian");
-            let mut jac = ac_jacobian(&mut jacobian, &vm, &va, &layout).expect("refresh");
+            let injection = ac_injections(&jacobian, &vm, &va).expect("injection");
+            let mut jac = ac_jacobian(&mut jacobian, &injection, &layout).expect("refresh");
+            let jacobian = jacobian;
+            let residual = |vm: &[f64], va: &[f64]| {
+                let injection = ac_injections(&jacobian, vm, va).expect("injection");
+                layout.residual(&net, &net.pg, &net.qg, vm, &injection.p, &injection.q)
+            };
             jac.extend(load_jacobian(&net, &vm, &layout));
             let dim = layout.dim();
             let mut dense = vec![vec![0.0; dim]; dim];

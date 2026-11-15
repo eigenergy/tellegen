@@ -1,61 +1,27 @@
 //! DC OPF model: the B-theta data — incidence, susceptances, generator bounds,
-//! quadratic costs, and line flow limits — built from a powerio `BalancedNetwork`. The
-//! generation cost rescale to per unit happens in `to_normalized`; Tellegen applies
-//! its angle defaults before ordinary limits are synthesized and before lowered
-//! three-winding limits are resynthesized.
+//! quadratic costs, and line flow limits — read from PowerIO's DC OPF
+//! preparation of a `BalancedNetwork` or a typed `DcOpfInstance`. A network is
+//! prepared with PowerIO's PowerModels angle difference pad, and an unrated
+//! branch's limit is synthesized over the padded window.
 
 use powerio::BalancedNetwork;
 use powerio::BranchSusceptanceFormula;
 use powerio_matrix::{
     build_dc_opf_preparation, calc_solver_branch_flow_matrix, calc_weighted_laplacian,
-    AnalysisBranchSource, DcOpfAssemblyOptions, PreparedObjective, SparseMatrix, Units,
+    AnalysisBranchSource, DcOpfAssemblyOptions, DcOpfPreparation, PreparedObjective, SparseMatrix,
+    SynthesizedLimitWindow, Units,
 };
 use powerio_prob::DcOpfInstance;
-use powerio_tx::HvdcTreatment;
+use powerio_tx::{AngleDifferenceBounds, HvdcTreatment};
 
 use crate::api::SolveDiagnostic;
 
 use super::islands::{energize, ReferencePolicy};
 use super::{
-    branch_ids_for_view_rows, bus_ids_for_source_rows, dc_diagnostics, ids_for_view_rows,
-    normalize_angle_bounds, normalize_for_model, project_source_rows,
-    reject_unsupported_active_elements, uids_for_source_rows, validate_canonical_identity,
-    HvdcLines, PiecewiseCost,
+    dc_diagnostics, network_branch_ids, reject_unsupported_active_elements, source_position_ids,
+    uids_for_source_rows, validate_canonical_identity, validate_model_network, HvdcLines,
+    PiecewiseCost,
 };
-
-/// Legacy numeric IDs exposed by Tellegen's generic solve response. These are
-/// separate from PowerIO's canonical identities and follow source table
-/// positions so filtered rows do not renumber the remaining elements.
-fn source_position_ids(
-    source_rows: &[Option<usize>],
-    source_len: usize,
-    family: &str,
-) -> Result<Vec<usize>, String> {
-    let mut next_synthetic = source_len
-        .checked_add(1)
-        .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
-    source_rows
-        .iter()
-        .map(|source_row| match source_row {
-            Some(row) => {
-                if *row >= source_len {
-                    return Err(format!(
-                        "{family} source row {row} outside source length {source_len}"
-                    ));
-                }
-                row.checked_add(1)
-                    .ok_or_else(|| format!("{family} id space exhausted"))
-            }
-            None => {
-                let id = next_synthetic;
-                next_synthetic = next_synthetic
-                    .checked_add(1)
-                    .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
-                Ok(id)
-            }
-        })
-        .collect()
-}
 
 /// Load-shedding cost = multiplier x peak marginal generation cost, so the
 /// solver only sheds when capacity or the network physically cannot serve the
@@ -63,7 +29,7 @@ fn source_position_ids(
 const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 
 /// B-theta DC OPF model data. Indices are dense `[0, n)` / `[0, m)` / `[0, k)`
-/// over the normalized network; `bus_ids`, `branch_ids`, and `gen_ids` map dense
+/// over PowerIO's preparation; `bus_ids`, `branch_ids`, and `gen_ids` map dense
 /// indices back to source ids for output payloads.
 ///
 /// Every DC operator comes from PowerIO's preparation unchanged: the signed
@@ -73,8 +39,8 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 /// flows are `f = Bf theta + flow_offset`. A branch out of service never
 /// reaches the preparation, so no operator carries a switching multiplier.
 #[derive(Clone)]
-// Every field is derived together by `from_network` from one normalized
-// `BalancedNetwork`: dense reindexing, per unit conversion, and the source row
+// Every field is derived together by `from_network` from one PowerIO
+// preparation: dense reindexing, per unit conversion, and the source row
 // maps only agree with each other as a set. A hand-built literal that got one
 // of them wrong would solve to a wrong answer rather than fail, so the
 // constructor is the only supported way in and new fields can arrive without a
@@ -118,10 +84,10 @@ pub(crate) struct DcNetwork {
     #[cfg(feature = "sensitivity")]
     pub shift: Vec<f64>,
     /// Fixed affine branch flow term `-b_powerio .* shift`, PowerIO's
-    /// `calc_branch_flow_offset`.
+    /// `calc_branch_flow_offset` of [`Self::prep`].
     pub flow_offset: Vec<f64>,
     /// Per unit thermal limit per branch (`rate_a`, with a fallback synthesized
-    /// against the normalized angle window when the source leaves it at 0).
+    /// over the padded angle window when the source leaves it at 0).
     pub fmax: Vec<f64>,
     /// Per-unit generator output bounds.
     pub gmax: Vec<f64>,
@@ -143,17 +109,15 @@ pub(crate) struct DcNetwork {
     pub(crate) piecewise_costs: Vec<Option<PiecewiseCost>>,
     /// Load-shedding penalty per bus.
     pub c_shed: Vec<f64>,
-    /// Per-unit active demand per bus.
-    pub demand: Vec<f64>,
-    /// Per-unit shunt conductance withdrawal per bus.
-    pub shunt_conductance: Vec<f64>,
-    /// Per-unit nodal phase shift withdrawal per bus, PowerIO's `p_shift`
-    /// (`A flow_offset`).
-    pub phase_shift: Vec<f64>,
-    /// Per-unit fixed HVDC injection per bus: `-pf` at each in-service line's
-    /// from bus and `+pt` at its to bus, PowerIO's `p_hvdc`. An injection, so the
-    /// fixed withdrawal subtracts it. All zero without in-service HVDC lines.
-    pub hvdc_injection: Vec<f64>,
+    /// PowerIO's DC OPF preparation the model reads its nodal quantities
+    /// from: per unit demand `p_d` (edited in place by demand deltas), shunt
+    /// conductance withdrawal `g_s`, phase shift withdrawal `p_shift`, and
+    /// fixed HVDC injection `p_hvdc`, with the branch weights and shifts that
+    /// define every flow. The fixed withdrawal, the branch flows, and the
+    /// generator to bus map are its own calculations
+    /// (`calc_fixed_nodal_withdrawal`, `calc_branch_flow`,
+    /// `calc_generator_bus_incidence`).
+    pub(crate) prep: DcOpfPreparation,
     /// Reference buses, dense indices: at least one in every island, each
     /// grounded at angle zero.
     pub ref_buses: Vec<usize>,
@@ -248,15 +212,15 @@ impl LinearRow {
 impl DcNetwork {
     /// Build the DC OPF model from a parsed powerio `BalancedNetwork`.
     ///
-    /// Normalizes through `BalancedNetwork::to_normalized` (per unit, radians, filtered,
-    /// densely reindexed, reference inferred), builds a `powerio-prob`
-    /// [`DcOpfInstance`](powerio_prob::DcOpfInstance) as the owner of the nodal and
-    /// generator interpretation (per unit withdrawal, branch phase terms, generator
-    /// PQ bounds, source rows, synthesized thermal limits, and reference coverage),
-    /// Tellegen's documented +-60 degree default is applied to source branches
-    /// before the instance synthesizes an unrated limit, and again to rows
-    /// created by three-winding lowering. PowerIO preserves quadratic and
-    /// piecewise linear costs as distinct preparation columns.
+    /// Builds a `powerio-prob` [`DcOpfInstance`](powerio_prob::DcOpfInstance)
+    /// over the network as given and reads PowerIO's preparation of it, the
+    /// owner of the nodal and generator interpretation (per unit withdrawal,
+    /// branch phase terms, generator PQ bounds, source rows, synthesized thermal
+    /// limits, and reference coverage). The angle difference bounds are
+    /// PowerIO's PowerModels pad, and an unrated branch, a lowered winding
+    /// included, takes the limit PowerIO synthesizes over the padded window.
+    /// PowerIO preserves quadratic and piecewise linear costs as distinct
+    /// preparation columns.
     #[cfg(test)]
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
         Self::from_network_with_formula(raw, BranchSusceptanceFormula::default())
@@ -266,7 +230,8 @@ impl DcNetwork {
         raw: &BalancedNetwork,
         formula: BranchSusceptanceFormula,
     ) -> Result<DcNetwork, String> {
-        // This path normalizes first, which keeps only generator-hosted references.
+        // A network's references count only where they host an in-service
+        // generator, the rule PowerIO normalization applies.
         let energized = energize(raw, ReferencePolicy::GeneratorHosted);
         let mut model = Self::build(energized.network(raw), formula)?;
         let mut diagnostics = energized.diagnostics;
@@ -290,7 +255,7 @@ impl DcNetwork {
             .map_err(|e| e.to_string())?;
         let instance = adjusted.as_ref().unwrap_or(instance);
         reject_unsupported_active_elements(instance.network(), HvdcLines::FixedInjection)?;
-        let mut model = Self::build_prepared(instance, instance.network(), None)?;
+        let mut model = Self::build_prepared(instance, instance.network(), false)?;
         let mut diagnostics = diagnostics;
         diagnostics.append(&mut model.diagnostics);
         model.diagnostics = diagnostics;
@@ -301,40 +266,43 @@ impl DcNetwork {
         raw: &BalancedNetwork,
         formula: BranchSusceptanceFormula,
     ) -> Result<DcNetwork, String> {
-        let input = normalize_for_model(raw, HvdcLines::FixedInjection)?;
-        let mut norm = input.network;
-        let source_rows = input.source_rows;
-        // Apply the policy before PowerIO synthesizes thermal limits. Doing this
-        // directly avoids allocating normalization diagnostics for every ordinary
-        // MATPOWER branch whose source uses the typical +-360 spelling.
-        for branch in norm.branches_mut() {
-            (branch.angmin, branch.angmax) = normalize_angle_bounds(branch.angmin, branch.angmax);
-        }
+        validate_model_network(raw, HvdcLines::FixedInjection)?;
         // The typed instance owns the case interpretation; the preparation is
         // PowerIO's one numerical assembly (per unit generator PQ bounds and
         // costs, nodal demand, reference coverage, synthesized thermal
-        // limits, source rows). `SeriesSusceptance` is the `x/(r^2+x^2)`
-        // formula whose PowerModels-signed value tellegen stores below.
-        // `PerUnit` is inert: the normalized network is already per unit
-        // (`per_unit_base() == 1`).
-        let instance = DcOpfInstance::from_network(norm)
+        // limits, source rows), read straight from the caller's network.
+        let instance = DcOpfInstance::from_network(raw.clone())
             .map_err(|e| e.to_string())?
             .with_branch_susceptance_formula(formula);
-        Self::build_prepared(&instance, raw, Some(&source_rows))
+        Self::build_prepared(&instance, raw, true)
     }
 
+    /// `from_network` is set when the model comes from a caller's network
+    /// rather than a typed instance: the angle difference bounds are then
+    /// PowerIO's PowerModels pad, unrated limits span the padded window, and
+    /// lowered windings keep Tellegen's legacy branch numbering.
     fn build_prepared(
         instance: &DcOpfInstance,
         raw: &BalancedNetwork,
-        normalized_source_rows: Option<&super::ModelSourceRows>,
+        from_network: bool,
     ) -> Result<DcNetwork, String> {
-        let mut assembly = DcOpfAssemblyOptions::default();
-        assembly.units = Units::PerUnit;
-        assembly.skip_zero_impedance = false;
-        assembly.synthesize_unrated_limits = true;
-        assembly.hvdc_treatment = HvdcTreatment::FixedInjection;
-        let prep = build_dc_opf_preparation(instance, &assembly)
+        let mut assembly = DcOpfAssemblyOptions::default()
+            .with_units(Units::PerUnit)
+            .with_skip_zero_impedance(false)
+            .with_synthesize_unrated_limits(true)
+            .with_hvdc_treatment(HvdcTreatment::FixedInjection);
+        if from_network {
+            assembly = assembly
+                .with_angle_difference_bounds(AngleDifferenceBounds::PowerModelsPad)
+                .with_synthesized_limit_window(SynthesizedLimitWindow::SelectedBounds);
+        }
+        let mut prep = build_dc_opf_preparation(instance, &assembly)
             .map_err(|e| format!("{}: {e}", e.code().code))?;
+        // A preparation document written before PowerIO 0.11.7 carries no
+        // `p_hvdc`, which PowerIO reads as zero; keep one entry per bus.
+        if prep.p_hvdc.is_empty() {
+            prep.p_hvdc = vec![0.0; prep.n_buses];
+        }
         // The analysis sources index the network the preparation read.
         let prepared = instance.network();
         let thermal_rated = prep
@@ -360,71 +328,21 @@ impl DcNetwork {
         let m = prep.n_branches();
         let k = prep.n_generators();
 
-        let (
-            bus_ids,
-            bus_uids,
-            bus_source_rows,
-            branch_source_rows,
-            gen_source_rows,
-            branch_ids,
-            gen_ids,
-        ) = if let Some(source_rows) = normalized_source_rows {
-            if source_rows.buses.len() != n {
-                return Err(format!(
-                    "bus provenance length {} != problem bus count {n}",
-                    source_rows.buses.len()
-                ));
-            }
-            (
-                bus_ids_for_source_rows(&source_rows.buses, &source_rows.transformers_3w, raw)?,
-                uids_for_source_rows(&source_rows.buses, raw.buses(), |bus| &bus.uid, "bus")?,
-                source_rows.buses.clone(),
-                project_source_rows(
-                    &prep.branches.analysis_rows,
-                    &source_rows.branches,
-                    "branch",
-                )?,
-                project_source_rows(
-                    &prep.generators.analysis_rows,
-                    &source_rows.generators,
-                    "generator",
-                )?,
-                branch_ids_for_view_rows(
-                    &prep.branches.analysis_rows,
-                    &source_rows.branches,
-                    &source_rows.transformers_3w,
-                    raw,
-                )?,
-                ids_for_view_rows(
-                    &prep.generators.analysis_rows,
-                    &source_rows.generators,
-                    raw.generators().len(),
-                    "generator",
-                )?,
-            )
+        // PowerIO aligned every source row with the dense preparation, over
+        // the network it read: follow that map instead of rebuilding a bus
+        // index or scanning raw IDs to interpret the prepared columns.
+        let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
+        let bus_uids =
+            uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
+        let bus_source_rows = prep.bus_source_rows.clone();
+        let branch_source_rows = super::branch_source_rows(&prep.branches.analysis_sources);
+        let gen_source_rows = prep.generators.source_rows.clone();
+        let branch_ids = if from_network {
+            network_branch_ids(&prep.branches.analysis_sources, raw)?
         } else {
-            let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
-            // PowerIO already aligned every source row with the dense
-            // preparation. Follow that map instead of rebuilding a bus index
-            // or scanning raw IDs to interpret the prepared columns.
-            let bus_uids =
-                uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
-            let branch_source_rows = super::branch_source_rows(&prep.branches.analysis_sources);
-            let gen_source_rows = prep.generators.source_rows.clone();
-            let branch_ids =
-                source_position_ids(&branch_source_rows, prep.n_source_branches, "branch")?;
-            let gen_ids =
-                source_position_ids(&gen_source_rows, prep.n_source_generators, "generator")?;
-            (
-                bus_ids,
-                bus_uids,
-                prep.bus_source_rows.clone(),
-                branch_source_rows,
-                gen_source_rows,
-                branch_ids,
-                gen_ids,
-            )
+            source_position_ids(&branch_source_rows, prep.n_source_branches, "branch")?
         };
+        let gen_ids = source_position_ids(&gen_source_rows, prep.n_source_generators, "generator")?;
         let branch_uids = uids_for_source_rows(
             &branch_source_rows,
             raw.branches(),
@@ -437,27 +355,10 @@ impl DcNetwork {
             |generator| &generator.uid,
             "generator",
         )?;
+        // PowerIO's canonical identity aligned with every prepared branch
+        // column: `uid` when present, otherwise `branches:{source_row}`.
         #[cfg(feature = "sensitivity")]
-        let branch_identities = if normalized_source_rows.is_none() {
-            // A typed PowerIO instance already carries the canonical identity
-            // aligned with every prepared branch column.
-            prep.branches.identities.clone()
-        } else {
-            // The legacy raw-network path prepares a filtered normalized copy.
-            // Recover source identities there so filtering cannot renumber a
-            // caller's fallback `branches:{row}` keys.
-            branch_source_rows
-                .iter()
-                .enumerate()
-                .map(|(dense, source_row)| match source_row {
-                    Some(row) => raw.branches()[*row]
-                        .uid
-                        .clone()
-                        .unwrap_or_else(|| format!("branches:{row}")),
-                    None => prep.branches.identities[dense].clone(),
-                })
-                .collect()
-        };
+        let branch_identities = prep.branches.identities.clone();
 
         // Per-bus demand and references, moved straight out of the freshly built,
         // locally owned instance: from_network runs per Study commit and preview, so
@@ -465,16 +366,6 @@ impl DcNetwork {
         // reference; the program grounds each one.
         let ref_buses: Vec<usize> = prep.reference_buses.iter().copied().collect();
         let flow_offset = prep.calc_branch_flow_offset();
-        let demand = prep.p_d.clone();
-        let shunt_conductance = prep.g_s.clone();
-        let phase_shift = prep.p_shift.clone();
-        // A preparation document written before PowerIO 0.11.7 carries no
-        // `p_hvdc`, which PowerIO reads as zero.
-        let hvdc_injection = if prep.p_hvdc.is_empty() {
-            vec![0.0; prep.n_buses]
-        } else {
-            prep.p_hvdc.clone()
-        };
 
         // The preparation carries positive solver edge weights; tellegen
         // stores the PowerModels-signed susceptance (negative for an
@@ -493,20 +384,8 @@ impl DcNetwork {
             .collect();
         #[cfg(feature = "sensitivity")]
         let shift = prep.branches.shift.clone();
-        let (angmin, angmax): (Vec<_>, Vec<_>) = prep
-            .branches
-            .angle_min
-            .iter()
-            .copied()
-            .zip(prep.branches.angle_max.iter().copied())
-            .map(|bounds| {
-                if normalized_source_rows.is_some() {
-                    normalize_angle_bounds(bounds.0, bounds.1)
-                } else {
-                    bounds
-                }
-            })
-            .unzip();
+        let angmin = prep.branches.angle_min.clone();
+        let angmax = prep.branches.angle_max.clone();
         // PowerIO synthesizes missing limits for both source and star-lowered
         // branches before returning the aligned preparation.
         let fmax = prep.branches.f_max.clone();
@@ -590,32 +469,29 @@ impl DcNetwork {
             cc,
             piecewise_costs,
             c_shed,
-            demand,
-            shunt_conductance,
-            phase_shift,
-            hvdc_injection,
             ref_buses,
             allow_shed: false,
             objective: prep.objective,
-            generator_capability_active: prep.generators.capability_active,
-            thermal_limit_active: prep.branches.thermal_limit_active,
+            generator_capability_active: prep.generators.capability_active.clone(),
+            thermal_limit_active: prep.branches.thermal_limit_active.clone(),
             thermal_rated,
-            angle_bound_active: prep.branches.angle_bound_active,
+            angle_bound_active: prep.branches.angle_bound_active.clone(),
             bus_ids,
-            bus_analysis_rows: prep.bus_analysis_rows,
+            bus_analysis_rows: prep.bus_analysis_rows.clone(),
             bus_source_rows,
             branch_ids,
             #[cfg(feature = "sensitivity")]
             branch_identities,
             gen_ids,
             branch_source_rows,
-            branch_sources: prep.branches.analysis_sources,
+            branch_sources: prep.branches.analysis_sources.clone(),
             gen_source_rows,
             bus_uids,
             branch_uids,
             gen_uids,
             linear_rows: Vec::new(),
             base_mva: prep.base_mva,
+            prep,
             // `raw` is the caller's network after energizing, in its own units,
             // so the transfer totals read in MW and an HVDC line whose terminal
             // sits in a de-energized island is reported as left out.
@@ -623,26 +499,18 @@ impl DcNetwork {
         })
     }
 
-    /// Fixed nodal withdrawal other than demand: shunt conductance and phase
-    /// shift, less the fixed HVDC injection, in the order PowerIO's
-    /// `calc_fixed_nodal_withdrawal` sums them.
-    #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
-    pub fn network_withdrawal(&self) -> Vec<f64> {
-        (0..self.n)
-            .map(|i| self.shunt_conductance[i] + self.phase_shift[i] - self.hvdc_injection[i])
-            .collect()
+    /// Fixed nodal withdrawal at the current demand,
+    /// `p_d + g_s + p_shift - p_hvdc`: PowerIO's `calc_fixed_nodal_withdrawal`
+    /// over the (possibly edited) preparation.
+    pub fn current_fixed_withdrawal(&self) -> Vec<f64> {
+        self.prep.calc_fixed_nodal_withdrawal()
     }
 
-    /// Fixed nodal withdrawal at the current demand:
-    /// `p_d + g_s + p_shift - p_hvdc`, PowerIO's `calc_fixed_nodal_withdrawal`
-    /// with the (possibly edited) demand.
-    pub fn current_fixed_withdrawal(&self) -> Vec<f64> {
-        (0..self.n)
-            .map(|i| {
-                self.demand[i] + self.shunt_conductance[i] + self.phase_shift[i]
-                    - self.hvdc_injection[i]
-            })
-            .collect()
+    /// Branch flows at the bus angles `theta`, `f = Bf theta + flow_offset`:
+    /// PowerIO's `calc_branch_flow` over the preparation.
+    #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
+    pub(crate) fn branch_flow(&self, theta: &[f64]) -> Vec<f64> {
+        self.prep.calc_branch_flow(theta)
     }
 
     /// The shedding upper bound at bus `i`: the curtailable load `max(d, 0)` when
@@ -651,7 +519,7 @@ impl DcNetwork {
     /// derivation reads the same cap so its linearization matches the solved program.
     pub fn shed_cap(&self, i: usize) -> f64 {
         if self.allow_shed {
-            self.demand[i].max(0.0)
+            self.prep.p_d[i].max(0.0)
         } else {
             0.0
         }
@@ -674,22 +542,21 @@ impl DcNetwork {
             .sum()
     }
 
-    /// Rebuild the weighted operators and the nodal phase shift after a
-    /// numerical test perturbs `b` or `flow_offset`, through the same PowerIO
-    /// calls the constructor makes.
+    /// Rebuild every weighted quantity after a numerical test perturbs `b`:
+    /// the preparation's weights take the perturbed values, and the operators,
+    /// the flow offset, and the nodal phase shift withdrawal come from the
+    /// same PowerIO calls the constructor makes.
     #[cfg(test)]
     pub(crate) fn reweight(&mut self) {
-        let weights: Vec<f64> = self.b.iter().map(|b| -b).collect();
-        let operators = ModelOperators::of(self.incidence.clone(), &weights);
+        self.prep.branches.susceptance_magnitude = self.b.iter().map(|b| -b).collect();
+        let operators = ModelOperators::of(
+            self.incidence.clone(),
+            &self.prep.branches.susceptance_magnitude,
+        );
         self.laplacian = operators.laplacian;
         self.branch_flow_matrix = operators.branch_flow_matrix;
-        self.phase_shift = (0..self.n)
-            .map(|bus| {
-                csr_row(&self.incidence, bus)
-                    .map(|(e, a)| a * self.flow_offset[e])
-                    .sum()
-            })
-            .collect();
+        self.flow_offset = self.prep.calc_branch_flow_offset();
+        self.prep.p_shift = self.prep.calc_phase_shift_withdrawal();
     }
 }
 
@@ -732,7 +599,8 @@ pub(crate) fn csr_row(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{parse_case3, CASE3, DEFAULT_ANGLE_BOUND_PAD};
+    use crate::model::{parse_case3, CASE3};
+    use powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD;
 
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-6, "expected {b}, got {a}");
@@ -774,6 +642,10 @@ mod tests {
         approx(dc.fmax[2], 2.5);
     }
 
+    /// An unconstrained window takes PowerIO's PowerModels pad (1.0472 rad,
+    /// PowerModels' own constant), and an unrated branch's limit is
+    /// synthesized over that padded window: at equal ceilings the widest
+    /// separation is `2 vmax sin(pad / 2)`.
     #[test]
     fn unconstrained_unrated_branches_use_the_sixty_degree_window() {
         for (amin, amax) in [(-360, 360), (0, 0)] {
@@ -784,9 +656,10 @@ mod tests {
             let net = crate::model::parse_matpower(&case).expect("parse");
             let dc = DcNetwork::from_network(&net).expect("build");
 
-            approx(dc.angmin[0], -DEFAULT_ANGLE_BOUND_PAD);
-            approx(dc.angmax[0], DEFAULT_ANGLE_BOUND_PAD);
-            approx(dc.fmax[0], 1.1 * 1.1 / 0.01_f64.hypot(0.1));
+            assert_eq!(dc.angmin[0], -POWER_MODELS_ANGLE_BOUND_PAD);
+            assert_eq!(dc.angmax[0], POWER_MODELS_ANGLE_BOUND_PAD);
+            let separation = 2.0 * 1.1 * (POWER_MODELS_ANGLE_BOUND_PAD / 2.0).sin();
+            approx(dc.fmax[0], 1.1 * separation / 0.01_f64.hypot(0.1));
             approx(dc.fmax[1], 2.5);
             approx(dc.fmax[2], 2.5);
         }
@@ -808,8 +681,8 @@ mod tests {
             assert_eq!(dc.branch_source_rows[branch], None);
             // PowerIO owns the lowered winding rows and pads them with its
             // PowerModels angle window.
-            approx(dc.angmin[branch], -powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
-            approx(dc.angmax[branch], powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
+            approx(dc.angmin[branch], -POWER_MODELS_ANGLE_BOUND_PAD);
+            approx(dc.angmax[branch], POWER_MODELS_ANGLE_BOUND_PAD);
             if branch > 3 {
                 // PowerIO owns star lowering and synthesized limits. Tellegen
                 // checks that every lowered unrated winding receives a finite
@@ -850,9 +723,9 @@ mod tests {
         assert_eq!(a.branch_source_rows, b.branch_source_rows);
         assert_eq!(a.gen_source_rows, b.gen_source_rows);
         for (left, right) in [
-            (&a.demand, &b.demand),
-            (&a.shunt_conductance, &b.shunt_conductance),
-            (&a.phase_shift, &b.phase_shift),
+            (&a.prep.p_d, &b.prep.p_d),
+            (&a.prep.g_s, &b.prep.g_s),
+            (&a.prep.p_shift, &b.prep.p_shift),
             (&a.b, &b.b),
             #[cfg(feature = "sensitivity")]
             (&a.shift, &b.shift),
@@ -948,17 +821,17 @@ mod tests {
         let mut net = crate::model::parse_matpower(&text).expect("parse affine case");
         let dc = DcNetwork::from_network(&net).expect("build affine case");
 
-        approx(dc.demand[1], 0.9);
-        approx(dc.shunt_conductance[1], 0.1);
+        approx(dc.prep.p_d[1], 0.9);
+        approx(dc.prep.g_s[1], 0.1);
         approx(dc.flow_offset[0], dc.b[0] * 15.0_f64.to_radians());
         // The 1-2 shifter withdraws its offset at bus 1 and injects it at bus 2.
-        let phase = &dc.phase_shift;
+        let phase = &dc.prep.p_shift;
         approx(phase[0], dc.flow_offset[0]);
         approx(phase[1], -dc.flow_offset[0]);
         approx(phase[2], 0.0);
         let fixed = dc.current_fixed_withdrawal();
         for i in 0..dc.n {
-            approx(fixed[i], dc.demand[i] + dc.shunt_conductance[i] + phase[i]);
+            approx(fixed[i], dc.prep.p_d[i] + dc.prep.g_s[i] + phase[i]);
         }
         assert!(dc.fmax[0].is_finite() && dc.fmax[0] > 0.0);
 
@@ -1007,9 +880,9 @@ mod tests {
     fn per_unit_demand_and_limits() {
         let dc = parse_case3();
         // 90 MW load at bus 2 (dense index 1), per unit on a 100 MVA base.
-        approx(dc.demand[0], 0.0);
-        approx(dc.demand[1], 0.9);
-        approx(dc.demand[2], 0.0);
+        approx(dc.prep.p_d[0], 0.0);
+        approx(dc.prep.p_d[1], 0.9);
+        approx(dc.prep.p_d[2], 0.0);
         // rate_a 250 MW -> 2.5 per unit on every line.
         for &fm in &dc.fmax {
             approx(fm, 2.5);
@@ -1085,8 +958,9 @@ mod tests {
     #[test]
     fn angle_bounds_default_to_sixty_degrees() {
         let dc = parse_case3();
-        // The +-360 degree MATPOWER default collapses to the +-60 degree window.
-        let pad = 60.0_f64.to_radians();
+        // The +-360 degree MATPOWER default collapses to PowerIO's +-60 degree
+        // PowerModels window.
+        let pad = POWER_MODELS_ANGLE_BOUND_PAD;
         for e in 0..dc.m {
             approx(dc.angmin[e], -pad);
             approx(dc.angmax[e], pad);
@@ -1112,7 +986,7 @@ mod tests {
         assert!(dc.n > 0 && dc.m > 0 && dc.k > 0);
         assert!(dc.ref_buses.iter().all(|&r| r < dc.n));
         assert_eq!(dc.bus_ids.len(), dc.n);
-        assert_eq!(dc.demand.len(), dc.n);
+        assert_eq!(dc.prep.p_d.len(), dc.n);
         assert_eq!(dc.c_shed.len(), dc.n);
         assert_eq!(dc.fmax.len(), dc.m);
         assert_eq!(dc.angmin.len(), dc.m);
@@ -1124,7 +998,7 @@ mod tests {
         for &be in &dc.b {
             assert!(be.is_finite(), "susceptance {be}");
         }
-        for &d in &dc.demand {
+        for &d in &dc.prep.p_d {
             assert!(d.is_finite());
         }
         // B is a grounded Laplacian regardless of connectivity: rows sum to zero.

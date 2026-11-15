@@ -263,15 +263,6 @@ fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
     s
 }
 
-/// Per-bus generator list.
-fn gens_by_bus(dc: &DcNetwork) -> Vec<Vec<usize>> {
-    let mut g = vec![Vec::new(); dc.n];
-    for (j, &bus) in dc.gen_bus.iter().enumerate() {
-        g[bus].push(j);
-    }
-    g
-}
-
 /// Assemble the KKT Jacobian `dK/dz` as `(row, col, value)` triplets, hand derived
 /// column by column. `s` must already be snapped to strict complementarity.
 fn kkt_triplets(
@@ -281,7 +272,8 @@ fn kkt_triplets(
     idx: &KktIdx,
 ) -> Vec<(usize, usize, f64)> {
     let (n, m, k) = (dc.n, dc.m, dc.k);
-    let gens = gens_by_bus(dc);
+    // PowerIO's generator to bus map `Cg`: row `i` lists the generators at bus `i`.
+    let gens = dc.prep.calc_generator_bus_incidence();
 
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
     macro_rules! e {
@@ -446,13 +438,13 @@ fn kkt_triplets(
     }
 
     // nu_bal columns: L' = L (theta), -G_inc' (pg), -I (psh).
-    for (i, at_bus) in gens.iter().enumerate() {
+    for i in 0..n {
         let col = idx.nu_bal + i;
         for (r, val) in csr_row(&dc.laplacian, i) {
             e!(idx.va + r, col, val);
         }
-        for &g in at_bus {
-            e!(idx.pg + g, col, -1.0);
+        for (g, cg) in csr_row(&gens, i) {
+            e!(idx.pg + g, col, -cg);
         }
         e!(idx.psh + i, col, -1.0);
     }
@@ -771,9 +763,9 @@ mod tests {
     /// Central finite difference of `nu_bal` w.r.t. demand at bus `j`.
     fn central_fd(dc: &DcNetwork, j: usize, eps: f64) -> Vec<f64> {
         let mut dp = dc.clone();
-        dp.demand[j] += eps;
+        dp.prep.p_d[j] += eps;
         let mut dm = dc.clone();
-        dm.demand[j] -= eps;
+        dm.prep.p_d[j] -= eps;
         let sp = dc_opf(&dp).expect("solve +eps");
         let sm = dc_opf(&dm).expect("solve -eps");
         (0..dc.n)
@@ -960,21 +952,22 @@ mod tests {
     fn perturbed(dc: &DcNetwork, parameter: Parameter, p: usize, delta: f64) -> DcNetwork {
         let mut d = dc.clone();
         match parameter {
-            Parameter::Demand(Power::Active) => d.demand[p] += delta,
+            Parameter::Demand(Power::Active) => d.prep.p_d[p] += delta,
             Parameter::Cost(CostTerm::Quadratic) => d.cq[p] += delta,
             Parameter::Cost(CostTerm::Linear) => d.cl[p] += delta,
             Parameter::LineLimit => d.fmax[p] += delta,
             Parameter::SeriesAdmittance(GB::Susceptance) => {
+                // The flow offset `b * shift` follows the weight through
+                // `reweight`.
                 d.b[p] += delta;
-                d.flow_offset[p] += delta * d.shift[p];
                 d.reweight();
             }
             Parameter::Switching => {
                 // A status multiplier `1 + delta` on the branch scales its
-                // weight and its affine offset. Its phase-limit rows scale
-                // too, which moves only their own duals, not the operands.
+                // weight and, through `reweight`, its affine offset. Its
+                // phase-limit rows scale too, which moves only their own
+                // duals, not the operands.
                 d.b[p] *= 1.0 + delta;
-                d.flow_offset[p] *= 1.0 + delta;
                 d.reweight();
             }
             Parameter::ConstraintLimit => {

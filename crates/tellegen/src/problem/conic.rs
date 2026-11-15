@@ -144,6 +144,49 @@ impl SocWrLayout {
     pub(crate) fn r_ohm_qt(&self, e: usize) -> usize {
         2 * self.n + 3 * self.m + e
     }
+
+    /// The W-space voltage coefficients of branch `e`'s four Ohm rows for
+    /// the pi model block `[Yff, Yft, Ytf, Ytt]` (PowerModels
+    /// `constraint_ohms_yt`), with `wr + j wi = V_f conj(V_t)` and each
+    /// row's flow column carrying `+1`:
+    ///
+    /// ```text
+    /// pf =  Gff w_f + Gft wr + Bft wi    qf = -Bff w_f - Bft wr + Gft wi
+    /// pt =  Gtt w_t + Gtf wr - Btf wi    qt = -Btt w_t - Btf wr - Gtf wi
+    /// ```
+    ///
+    /// moved to the left side. The coefficients are linear in the block, so
+    /// the sensitivity engine reads the same entries at PowerIO's block
+    /// derivative (`calc_branch_admittance_series_derivative`).
+    pub(crate) fn ohm_voltage_entries(
+        &self,
+        e: usize,
+        f: usize,
+        t: usize,
+        [yff, yft, ytf, ytt]: [num_complex::Complex64; 4],
+    ) -> [(usize, usize, f64); 12] {
+        let (pf, qf, pt, qt) = (
+            self.r_ohm_pf(e),
+            self.r_ohm_qf(e),
+            self.r_ohm_pt(e),
+            self.r_ohm_qt(e),
+        );
+        let (wf, wt, wr, wi) = (self.col_w(f), self.col_w(t), self.col_wr(e), self.col_wi(e));
+        [
+            (pf, wf, -yff.re),
+            (pf, wr, -yft.re),
+            (pf, wi, -yft.im),
+            (qf, wf, yff.im),
+            (qf, wr, yft.im),
+            (qf, wi, -yft.re),
+            (pt, wt, -ytt.re),
+            (pt, wr, -ytf.re),
+            (pt, wi, ytf.im),
+            (qt, wt, ytt.im),
+            (qt, wr, ytf.im),
+            (qt, wi, ytf.re),
+        ]
+    }
     // Inequality rows. Exposed to the sensitivity engine, which reads the bound
     // duals off these rows for the Tier-1 b-only parameter columns.
     pub(crate) fn r_wub(&self, i: usize) -> usize {
@@ -254,28 +297,16 @@ impl ConicOpfFormulation for SocWr {
             prog.a(lay.r_qbal(f), lay.col_qf(e), -1.0);
             prog.a(lay.r_qbal(t), lay.col_qt(e), -1.0);
 
-            // Ohm's law in W-space (PowerModels constraint_ohms_yt) over PowerIO's
-            // pi-model block `Y = G + jB` of the branch, with
-            // `wr + j wi = V_f conj(V_t)`:
-            //   pf =  Gff w_f + Gft wr + Bft wi    qf = -Bff w_f - Bft wr + Gft wi
-            //   pt =  Gtt w_t + Gtf wr - Btf wi    qt = -Btt w_t - Btf wr - Gtf wi
-            let [yff, yft, ytf, ytt] = net.branches.calc_branch_admittance(e);
+            // Ohm's law in W-space over PowerIO's pi-model block of the branch.
             prog.a(lay.r_ohm_pf(e), lay.col_pf(e), 1.0);
-            prog.a(lay.r_ohm_pf(e), lay.col_w(f), -yff.re);
-            prog.a(lay.r_ohm_pf(e), lay.col_wr(e), -yft.re);
-            prog.a(lay.r_ohm_pf(e), lay.col_wi(e), -yft.im);
             prog.a(lay.r_ohm_qf(e), lay.col_qf(e), 1.0);
-            prog.a(lay.r_ohm_qf(e), lay.col_w(f), yff.im);
-            prog.a(lay.r_ohm_qf(e), lay.col_wr(e), yft.im);
-            prog.a(lay.r_ohm_qf(e), lay.col_wi(e), -yft.re);
             prog.a(lay.r_ohm_pt(e), lay.col_pt(e), 1.0);
-            prog.a(lay.r_ohm_pt(e), lay.col_w(t), -ytt.re);
-            prog.a(lay.r_ohm_pt(e), lay.col_wr(e), -ytf.re);
-            prog.a(lay.r_ohm_pt(e), lay.col_wi(e), ytf.im);
             prog.a(lay.r_ohm_qt(e), lay.col_qt(e), 1.0);
-            prog.a(lay.r_ohm_qt(e), lay.col_w(t), ytt.im);
-            prog.a(lay.r_ohm_qt(e), lay.col_wr(e), ytf.im);
-            prog.a(lay.r_ohm_qt(e), lay.col_wi(e), ytf.re);
+            for (row, column, value) in
+                lay.ohm_voltage_entries(e, f, t, net.branches.calc_branch_admittance(e))
+            {
+                prog.a(row, column, value);
+            }
         }
 
         // Convex piecewise linear generator costs, represented by one

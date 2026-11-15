@@ -568,8 +568,13 @@ mod tests {
     /// sensitivities hash to a fixed digest. The digest was re-recorded when the
     /// injections and the Newton Jacobian moved onto PowerIO's
     /// `calc_bus_power_injection` and `PowerFlowJacobian`, whose summation order
-    /// differs from the former local assembly in the last bits; any later change
-    /// to either must show up here.
+    /// differs from the former local assembly in the last bits; again when
+    /// PowerIO 0.12.1 formed every injection entry by entry; and again when the
+    /// model began preparing the caller's network directly instead of a
+    /// normalized copy, which scales the per unit demand and dispatch in one
+    /// step (one ulp on three case9 entries). Forming each Newton injection
+    /// once and refreshing the Jacobian from it changed nothing. Any later
+    /// change to either must show up here.
     #[test]
     fn constant_power_solutions_are_bitwise_unchanged() {
         fn fnv(h: &mut u64, x: f64) {
@@ -603,6 +608,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(h, 0xa4ca_0ef3_8eac_a357);
+        assert_eq!(h, 0xe268_745c_4a5b_15f3);
     }
 }

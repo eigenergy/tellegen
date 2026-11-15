@@ -155,11 +155,12 @@ set to `rated` or a list of `branches`, or with `angle_difference: false`, it
 is the derivative of the reduced program the request asked for: a dropped limit
 stays dropped when the parameters move, even if the flows would then cross it.
 
-Branch angle-difference bounds are enforced in radians after normalization.
-MATPOWER's unconstrained `-360`/`360` spelling and an unset `0`/`0` pair become
-exactly -60/+60 degrees. When a branch has no thermal rating, Tellegen
-synthesizes its fallback rating from that same 60 degree window and the terminal
-voltage bands. Explicit tighter source bounds are preserved.
+Branch angle-difference bounds are enforced in radians, as PowerIO prepares
+them. MATPOWER's unconstrained `-360`/`360` spelling and an unset `0`/`0` pair
+take PowerIO's PowerModels pad, ±1.0472 rad (PowerModels' own constant for 60
+degrees, 2.4e-6 rad wider than π/3). When a branch has no thermal rating,
+PowerIO synthesizes its fallback rating over that padded window and the
+terminal voltage bands. Explicit tighter source bounds are preserved.
 
 ## Islands
 

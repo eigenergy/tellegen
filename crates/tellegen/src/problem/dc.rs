@@ -566,7 +566,7 @@ mod tests {
         // DC power balance is lossless: sum(pg) + sum(psh) == sum(demand).
         let total_pg: f64 = sol.pg.iter().sum();
         let total_psh: f64 = sol.psh.iter().sum();
-        let total_d: f64 = dc.demand.iter().sum();
+        let total_d: f64 = dc.prep.p_d.iter().sum();
         assert!(
             (total_pg + total_psh - total_d).abs() < 1e-6,
             "balance: pg {total_pg} + psh {total_psh} != d {total_d}"
@@ -588,14 +588,11 @@ mod tests {
         );
         assert!((lo - 11.49).abs() < 0.5, "LMP {lo} not near analytic 11.49");
 
-        // Flows obey the complete affine definition.
-        for e in 0..dc.m {
-            // f = -b (va_from - va_to) + flow_offset.
-            let expected = -dc.b[e] * dc.angle_difference(&sol.va, e) + dc.flow_offset[e];
-            assert!(
-                (sol.f[e] - expected).abs() < 1e-6,
-                "flow def mismatch at {e}"
-            );
+        // Flows obey the complete affine definition, PowerIO's
+        // `calc_branch_flow` at the solved angles.
+        let expected = dc.branch_flow(&sol.va);
+        for (e, (flow, expected)) in sol.f.iter().zip(&expected).enumerate() {
+            assert!((flow - expected).abs() < 1e-6, "flow def mismatch at {e}");
         }
     }
 
@@ -696,7 +693,7 @@ mod tests {
 
         let total_pg: f64 = sol.pg.iter().sum();
         let total_psh: f64 = sol.psh.iter().sum();
-        let total_d: f64 = dc.demand.iter().sum();
+        let total_d: f64 = dc.prep.p_d.iter().sum();
         assert!(
             (total_pg + total_psh - total_d).abs() < 1e-6,
             "balance with shedding: pg {total_pg} + psh {total_psh} != d {total_d}"
@@ -732,7 +729,7 @@ mod tests {
         // Power balance identity: sum(pg) + sum(psh) == sum(demand).
         let total_pg: f64 = sol.pg.iter().sum();
         let total_psh: f64 = sol.psh.iter().sum();
-        let total_d: f64 = dc.demand.iter().sum();
+        let total_d: f64 = dc.prep.p_d.iter().sum();
         assert!(
             (total_pg + total_psh - total_d).abs() < 1e-5,
             "balance off: pg {total_pg} + psh {total_psh} vs d {total_d}"

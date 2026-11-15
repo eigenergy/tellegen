@@ -769,6 +769,9 @@ pub struct ConstraintResult {
 pub struct SolveDiagnostic {
     /// `island_deenergized`: an island with no in-service generator was left
     /// out of the solve; its buses carry no results and its load is unserved.
+    /// The message is PowerIO's finding; for an island an HVDC line fed, it
+    /// names the lines taken out of service with the island and the power
+    /// they scheduled into it.
     /// `island_reference_designated`: a supplied island stated no reference bus,
     /// so the bus of its largest generator became the island's reference.
     /// `island_extra_reference`: the AC power flow found several reference
@@ -1124,7 +1127,7 @@ pub(crate) fn ac_opf_assemble(
     network: &BalancedNetwork,
     solved: &super::model::AcOpfSolved,
 ) -> Result<SolveResponse, String> {
-    use super::model::{stable_source_ids, uids_for_source_rows};
+    use super::model::{branch_source_rows, source_position_ids, uids_for_source_rows};
     let prep = &solved.preparation;
     let base = prep.base_mva;
     let bus_ids = prep.bus_ids.iter().map(|bus| bus.0).collect::<Vec<_>>();
@@ -1136,17 +1139,8 @@ pub(crate) fn ac_opf_assemble(
         &solved.q_injection,
         base,
     );
-    let branch_source_rows = prep
-        .branches
-        .analysis_sources
-        .iter()
-        .map(|source| match source {
-            powerio_matrix::AnalysisBranchSource::Branch { row } => Ok(Some(*row)),
-            powerio_matrix::AnalysisBranchSource::ThreeWindingTransformerWinding { .. } => Ok(None),
-            _ => Err("unknown AC OPF branch source kind".to_owned()),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let branch_ids = stable_source_ids(&branch_source_rows, network.branches().len(), "branch")?;
+    let branch_source_rows = branch_source_rows(&prep.branches.analysis_sources);
+    let branch_ids = source_position_ids(&branch_source_rows, network.branches().len(), "branch")?;
     let branch_uids = uids_for_source_rows(
         &branch_source_rows,
         network.branches(),
@@ -1528,16 +1522,17 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     let base = dc.base_mva;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
 
-    // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
-    // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
-    let mut injection: Vec<f64> = dc.demand.iter().map(|d| -d).collect();
+    // Per-unit generation per dense bus at the generator setpoints. The model
+    // withdraws the (edited) load itself; the slack absorbs the imbalance, and
+    // its generation entry is recomputed, not echoed.
+    let mut generation = vec![0.0; dc.n];
     let input_power_base = if net.is_normalized() { 1.0 } else { base };
     for j in 0..dc.k {
         let source_row = dc.gen_source_rows[j]
             .ok_or_else(|| format!("generator column {j} has no source row"))?;
-        injection[dc.gen_bus[j]] += net.generators()[source_row].pg / input_power_base;
+        generation[dc.gen_bus[j]] += net.generators()[source_row].pg / input_power_base;
     }
-    let sol = super::problem::dc_pf(&dc, &injection)?;
+    let sol = super::problem::dc_pf(&dc, &generation)?;
 
     Ok(SolveResponse {
         branch_susceptance_formula: Some(dc.formula),
@@ -2111,12 +2106,12 @@ fn apply_demand_deltas(
     let base = dc.base_mva;
     let idx = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, deltas);
     for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
-        if dc.demand[i] * base + mw < -1e-9 {
+        if dc.prep.p_d[i] * base + mw < -1e-9 {
             return Err(format!(
                 "demand delta for bus {bus} would make demand negative"
             ));
         }
-        dc.demand[i] += mw / base;
+        dc.prep.p_d[i] += mw / base;
     }
     Ok(())
 }
@@ -4447,8 +4442,8 @@ mod tests {
         assert_eq!(
             island_codes(&response),
             [
-                ("island_deenergized", vec![7, 8]),
                 ("island_reference_designated", vec![6]),
+                ("island_deenergized", vec![7, 8]),
             ]
         );
     }
@@ -4456,11 +4451,17 @@ mod tests {
     #[test]
     fn a_load_only_island_is_deenergized_with_a_diagnostic() {
         let response = solve_islands(&islands_network(), r#"{"formulation":"dcopf"}"#);
-        let deenergized = &response.diagnostics[0];
-        assert_eq!(deenergized.code, "island_deenergized");
+        // PowerIO reports the islands in partition order.
+        let deenergized = response
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "island_deenergized")
+            .expect("de-energized island");
         assert_eq!(deenergized.buses, [7, 8]);
         assert!(
-            deenergized.message.contains("20.0 MW of load is unserved"),
+            deenergized
+                .message
+                .contains("20 MW of in-service load is no longer served"),
             "{}",
             deenergized.message
         );
@@ -4469,7 +4470,7 @@ mod tests {
         assert_eq!(response.flows.as_ref().unwrap().len(), 6);
         // The JSON names the diagnostic block.
         let json: Value = serde_json::to_value(&response).unwrap();
-        assert_eq!(json["diagnostics"][0]["code"], "island_deenergized");
+        assert_eq!(json["diagnostics"][1]["code"], "island_deenergized");
 
         // A connected case reports nothing and omits the block.
         let connected: Value = serde_json::from_str(
@@ -4530,8 +4531,8 @@ mod tests {
         assert_eq!(
             island_codes(&response),
             [
-                ("island_deenergized", vec![7, 8]),
                 ("island_reference_designated", vec![6]),
+                ("island_deenergized", vec![7, 8]),
             ]
         );
     }
@@ -4587,8 +4588,8 @@ mod tests {
         assert_eq!(
             island_codes(&response),
             [
-                ("island_deenergized", vec![7, 8]),
                 ("island_reference_designated", vec![6]),
+                ("island_deenergized", vec![7, 8]),
             ]
         );
     }
@@ -4618,7 +4619,10 @@ mod tests {
         let lmp = by_bus(response.lmp.as_ref().unwrap());
         assert!(lmp[&2] < lmp[&5], "{lmp:?}");
         assert_eq!(response.w.as_ref().unwrap().len(), 6);
-        assert_eq!(response.diagnostics[0].code, "island_deenergized");
+        assert!(response
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "island_deenergized"));
     }
 
     #[cfg(feature = "sensitivity")]
@@ -5025,6 +5029,12 @@ mod hvdc_tests {
                 .find(|d| d.code == "island_deenergized")
                 .unwrap_or_else(|| panic!("{formulation:?}: {:?}", codes(&isolated)));
             assert_eq!(dead.buses, vec![4]);
+            // PowerIO's finding names the line lost with the island.
+            assert!(
+                dead.message.contains("HVDC line(s) (3-4)"),
+                "{formulation:?}: {}",
+                dead.message
+            );
         }
     }
 

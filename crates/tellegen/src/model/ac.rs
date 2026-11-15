@@ -18,12 +18,12 @@ use powerio_tx::calc_dense_island_labels;
 
 use super::islands::{energize, ReferencePolicy};
 use super::load_voltage::LoadTerm;
-use super::{hvdc_diagnostics, normalize_for_model, reconstruct_ids, HvdcLines, Ids};
-#[cfg(feature = "conic")]
 use super::{
-    normalize_angle_bounds, reject_unsupported_active_elements, stable_source_ids,
-    uids_for_source_rows, validate_canonical_identity, PiecewiseCost,
+    hvdc_diagnostics, network_branch_ids, source_position_ids, uids_for_source_rows,
+    validate_model_network, HvdcLines,
 };
+#[cfg(feature = "conic")]
+use super::{reject_unsupported_active_elements, validate_canonical_identity, PiecewiseCost};
 use crate::api::SolveDiagnostic;
 
 /// Tellegen's CATS stability policy: a near-ideal jumper, a branch with
@@ -59,8 +59,8 @@ pub(crate) struct AcNetwork {
     /// Whether the source states an equipment rating (excludes numerical sentinels).
     pub(crate) thermal_rated: Vec<bool>,
     /// Per-branch voltage-angle-difference bounds (radians): `va_from − va_to ∈
-    /// [angmin, angmax]`. Normalized to the ±60° MATPOWER/PowerModels convention when
-    /// the source leaves them unset or unconstrained (shared with the DC model). The AC
+    /// [angmin, angmax]`, as PowerIO prepares them: its PowerModels pad replaces a
+    /// side the source leaves unset or unconstrained (shared with the DC model). The AC
     /// OPF enforces these as linear inequalities; the conic SOCWR maps them onto the
     /// W-space products `wr`/`wi`.
     #[cfg(feature = "conic")]
@@ -431,8 +431,8 @@ impl AcNetwork {
             |branch| &branch.uid,
             "branch",
         )?;
-        let branch_ids = stable_source_ids(&branch_source_rows, raw.branches().len(), "branch")?;
-        let gen_ids = stable_source_ids(
+        let branch_ids = source_position_ids(&branch_source_rows, raw.branches().len(), "branch")?;
+        let gen_ids = source_position_ids(
             &prep.generators.source_rows,
             raw.generators().len(),
             "generator",
@@ -550,15 +550,16 @@ impl AcNetwork {
         )
     }
 
-    /// Build the AC model from a parsed powerio `BalancedNetwork`, normalizing through
-    /// `BalancedNetwork::to_normalized` (per unit, radians, filtered, densely reindexed,
-    /// reference inferred) and reading its nodal and generator data from a
-    /// `powerio-prob` [`AcOpfInstance`](powerio_prob::AcOpfInstance): per-unit demand,
+    /// Build the AC model from a parsed powerio `BalancedNetwork`, reading its
+    /// nodal and generator data from PowerIO's preparation of a `powerio-prob`
+    /// [`AcOpfInstance`](powerio_prob::AcOpfInstance) over the network as
+    /// given (per unit, radians, filtered, densely indexed): per-unit demand,
     /// generator PQ bounds and scheduled output, voltage bands and setpoints. The
     /// instance owns the complete complex pi model and preserves its quadratic
     /// or convex piecewise linear objective, including per-terminal charging and
-    /// 3-winding star lowering. Tellegen layers only its `rate_a == 0` cone
-    /// sentinel and angle-bound policy on top.
+    /// 3-winding star lowering, and its angle bounds carry PowerIO's
+    /// PowerModels pad. Tellegen layers only its `rate_a == 0` cone sentinel
+    /// on top.
     ///
     /// The AC preparation has no HVDC term, so a network with an in-service HVDC
     /// line is rejected here; [`Self::from_pf_instance`] carries such lines.
@@ -643,7 +644,8 @@ impl AcNetwork {
     }
 
     fn from_network_with(raw: &BalancedNetwork, hvdc: HvdcLines) -> Result<AcNetwork, String> {
-        // This path normalizes first, which keeps only generator-hosted references.
+        // A network's references count only where they host an in-service
+        // generator, the rule PowerIO normalization applies.
         let energized = energize(raw, ReferencePolicy::GeneratorHosted);
         let mut model = Self::build(energized.network(raw), hvdc)?;
         let mut diagnostics = energized.diagnostics;
@@ -660,11 +662,11 @@ impl AcNetwork {
                     .is_some_and(|regulated| regulated != generator.bus)
         });
         super::reject_active_svcs(raw)?;
-        let input = normalize_for_model(raw, hvdc)?;
-        let norm = input.network;
-        let source_rows = input.source_rows;
+        validate_model_network(raw, hvdc)?;
 
-        let instance = AcOpfInstance::from_network(norm).map_err(|e| e.to_string())?;
+        // PowerIO prepares the caller's network as given, so the
+        // preparation's bus ids and source rows index the caller's tables.
+        let instance = AcOpfInstance::from_network(raw.clone()).map_err(|e| e.to_string())?;
         let mut assembly = AcOpfAssemblyOptions::default();
         assembly.units = Units::PerUnit;
         // Omitting a zero impedance row would also omit its topology and
@@ -682,21 +684,26 @@ impl AcNetwork {
             .clear_jumper_charging(JUMPER_IMPEDANCE_SQUARED);
         let ybus = prep.calc_admittance_matrix();
 
-        let Ids {
-            n,
-            m,
-            k,
-            bus_ids,
-            branch_ids,
-            gen_ids,
-            bus_uids,
-            branch_uids,
-        } = reconstruct_ids(
-            raw,
-            &prep.bus_ids,
-            &prep.branches.analysis_rows,
-            &prep.generators.analysis_rows,
-            &source_rows,
+        let n = prep.n_buses;
+        let m = prep.n_branches();
+        let k = prep.n_generators();
+        if k == 0 {
+            return Err("network has no in-service generators".into());
+        }
+        let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
+        let bus_uids =
+            uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
+        let branch_ids = network_branch_ids(&prep.branches.analysis_sources, raw)?;
+        let branch_uids = uids_for_source_rows(
+            &super::branch_source_rows(&prep.branches.analysis_sources),
+            raw.branches(),
+            |branch| &branch.uid,
+            "branch",
+        )?;
+        let gen_ids = source_position_ids(
+            &prep.generators.source_rows,
+            raw.generators().len(),
+            "generator",
         )?;
 
         let mut vm_set = prep.calc_vm_setpoints();
@@ -713,7 +720,7 @@ impl AcNetwork {
         let buses = prep.buses;
         let generators = prep.generators;
         let branches = prep.branches;
-        let bus_source_rows = source_rows.buses.clone();
+        let bus_source_rows = prep.bus_source_rows.clone();
         #[cfg(feature = "conic")]
         let objective = prep.objective;
         #[cfg(feature = "conic")]
@@ -747,13 +754,11 @@ impl AcNetwork {
             .iter()
             .map(|&rate| if rate > 0.0 { rate } else { 1.0e3 })
             .collect();
+        // PowerIO's PowerModels pad, as the preparation selected it.
         #[cfg(feature = "conic")]
-        let (angmin, angmax): (Vec<_>, Vec<_>) = branches
-            .angle_min
-            .iter()
-            .zip(&branches.angle_max)
-            .map(|(&min, &max)| normalize_angle_bounds(min, max))
-            .unzip();
+        let angmin = branches.angle_min.clone();
+        #[cfg(feature = "conic")]
+        let angmax = branches.angle_max.clone();
 
         // Per-bus scheduled generation for power flow, plus generator-space bounds
         // and costs for SOCWR. PowerIO states the quadratic as `0.5*q*p^2`.

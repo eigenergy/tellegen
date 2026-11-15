@@ -14,20 +14,21 @@ use std::collections::BTreeMap;
 
 use num_complex::Complex64;
 use powerio::BalancedNetwork;
-use powerio_matrix::{build_dc_opf_preparation, DcOperators, DcOpfAssemblyOptions, Units};
+use powerio_matrix::{
+    build_dc_opf_preparation, DcOperators, DcOpfAssemblyOptions, SynthesizedLimitWindow, Units,
+};
 use powerio_prob::{DcOpfInstance, DcPfInstance};
-use powerio_tx::{BranchSusceptanceFormula, HvdcTreatment};
+use powerio_tx::{AngleDifferenceBounds, BranchSusceptanceFormula, HvdcTreatment};
 
 use super::islands::{energize, ReferencePolicy};
-use super::{normalize_angle_bounds, normalize_for_model, AcNetwork, DcNetwork, HvdcLines};
+use super::{AcNetwork, DcNetwork};
 
-/// The network each model reads after energizing and normalizing, built the
-/// way [`DcNetwork::from_network`] builds it.
-fn analysis_network(raw: &BalancedNetwork, hvdc: HvdcLines) -> BalancedNetwork {
-    let energized = energize(raw, ReferencePolicy::GeneratorHosted);
-    normalize_for_model(energized.network(raw), hvdc)
-        .expect("normalize")
-        .network
+/// The network each model reads after energizing, built the way
+/// [`DcNetwork::from_network`] builds it: PowerIO prepares it as given.
+fn analysis_network(raw: &BalancedNetwork) -> BalancedNetwork {
+    energize(raw, ReferencePolicy::GeneratorHosted)
+        .network(raw)
+        .clone()
 }
 
 /// The model's admittance matrix as `(row, col) -> G + jB`, every stored entry.
@@ -106,23 +107,37 @@ fn assert_ac_mapping(name: &str, model: &AcNetwork) -> f64 {
 fn assert_dc_operator_mapping(name: &str, raw: &BalancedNetwork) -> usize {
     let dc = DcNetwork::from_network(raw).expect("dc model");
 
-    let mut norm = analysis_network(raw, HvdcLines::FixedInjection);
-    for branch in norm.branches_mut() {
-        (branch.angmin, branch.angmax) = normalize_angle_bounds(branch.angmin, branch.angmax);
-    }
+    let norm = analysis_network(raw);
     let formula = BranchSusceptanceFormula::SeriesSusceptance;
     let opf = DcOpfInstance::from_network(norm.clone())
         .expect("dc opf instance")
         .with_branch_susceptance_formula(formula);
-    let mut assembly = DcOpfAssemblyOptions::default();
-    assembly.units = Units::PerUnit;
-    assembly.skip_zero_impedance = false;
-    assembly.synthesize_unrated_limits = true;
-    assembly.hvdc_treatment = HvdcTreatment::FixedInjection;
+    let assembly = DcOpfAssemblyOptions::default()
+        .with_units(Units::PerUnit)
+        .with_skip_zero_impedance(false)
+        .with_synthesize_unrated_limits(true)
+        .with_hvdc_treatment(HvdcTreatment::FixedInjection)
+        .with_angle_difference_bounds(AngleDifferenceBounds::PowerModelsPad)
+        .with_synthesized_limit_window(SynthesizedLimitWindow::SelectedBounds);
     let prep = build_dc_opf_preparation(&opf, &assembly).expect("dc preparation");
     assert_eq!(prep.bus_analysis_rows, dc.bus_analysis_rows, "{name}");
 
-    let pf = DcPfInstance::from_network(norm)
+    // `DcOperators` keeps an in-service branch onto a bus typed isolated,
+    // which the preparation (like PowerIO normalization) leaves out with the
+    // bus; take such branches out of service for the reference.
+    let mut operator_network = norm;
+    let isolated: std::collections::BTreeSet<powerio::BusId> = operator_network
+        .buses()
+        .iter()
+        .filter(|bus| bus.kind == powerio::BusType::Isolated)
+        .map(|bus| bus.id)
+        .collect();
+    for branch in operator_network.branches_mut() {
+        if isolated.contains(&branch.from) || isolated.contains(&branch.to) {
+            branch.in_service = false;
+        }
+    }
+    let pf = DcPfInstance::from_network(operator_network)
         .expect("dc pf instance")
         .with_branch_susceptance_formula(formula);
     let operators = DcOperators::build(&pf).expect("dc operators");
@@ -187,9 +202,14 @@ fn assert_dc_operator_mapping(name: &str, raw: &BalancedNetwork) -> usize {
     for ((key, value), want) in laplacian.iter().zip(expected.values()) {
         close(&format!("L{key:?}"), *value, *want);
     }
+    // `DcOperators` keeps a de-energized bus on its axis, typed isolated
+    // with nothing connected; the preparation leaves it out.
     let phase = operators.calc_bus_phase_shift_injection();
     for (row, want) in phase.iter().enumerate() {
-        close("p_shift", dc.phase_shift[bus(row)], *want);
+        match dense_bus[row] {
+            Some(dense) => close("p_shift", dc.prep.p_shift[dense], *want),
+            None => assert_eq!(*want, 0.0, "{name}: dropped bus row {row} shifts phase"),
+        }
     }
     stored.len()
 }
@@ -277,9 +297,8 @@ fn ac_operators_map_to_the_dense_order_on_the_repository_cases() {
 /// the preparation leaves them out. STRESS places them mid-table, so the
 /// preparation carries analysis rows `[0, 2, 4, 5]`, a map that is not a
 /// prefix. Its admittance matrix must equal the power flow model's, which
-/// normalizes the dropped buses away first; shunt diagonals scale by
-/// `* (1 / baseMVA)` on one path and `/ baseMVA` on the other, so entries agree
-/// to `1e-12` relative.
+/// PowerIO prepares from the same energized network; entries agree to `1e-12`
+/// relative.
 #[cfg(feature = "conic")]
 #[test]
 fn ybus_maps_buses_dropped_mid_table_to_the_dense_columns() {

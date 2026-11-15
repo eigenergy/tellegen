@@ -870,7 +870,7 @@ impl Study {
                     bound(
                         format!("bus:{}:shed_max", net.bus_ids[i]),
                         sol.psh[i],
-                        net.demand[i],
+                        net.prep.p_d[i],
                     );
                 }
             }

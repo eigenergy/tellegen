@@ -331,48 +331,23 @@ impl Differentiable for ConicKkt<'_> {
                 }
             }
             Parameter::SeriesAdmittance(gb) => {
-                // The series g / b enter every Ohm coefficient; dA/dp has the ten
-                // entries below over the four Ohm rows and the {w_f, w_t, wr, wi}
-                // columns (hand-derived from the Ohm assembly). Each accumulates the
-                // dA·x residual term and the dAᵀ·z stationarity term.
+                // The series g / b enter every Ohm coefficient through
+                // PowerIO's pi model block. The coefficients are linear in
+                // the block, so dA/dp is the same Ohm entries at PowerIO's
+                // block derivative. Each accumulates the dA·x residual term
+                // and the dAᵀ·z stationarity term.
                 for (c, &e) in idx.iter().enumerate() {
                     let branches = &self.net.branches;
                     let (f, t) = (branches.from_bus[e], branches.to_bus[e]);
-                    let tap = branches.tap[e];
-                    let tr = tap * branches.shift[e].cos();
-                    let ti = tap * branches.shift[e].sin();
-                    let tm2 = tap * tap;
-                    let (cf, ct) = (lay.col_w(f), lay.col_w(t));
-                    let (cwr, cwi) = (lay.col_wr(e), lay.col_wi(e));
-                    let (r1, r2) = (lay.r_ohm_pf(e), lay.r_ohm_qf(e));
-                    let (r3, r4) = (lay.r_ohm_pt(e), lay.r_ohm_qt(e));
-                    let entries: [(usize, usize, f64); 10] = match gb {
-                        GB::Conductance => [
-                            (r1, cf, -1.0 / tm2),
-                            (r1, cwr, tr / tm2),
-                            (r1, cwi, ti / tm2),
-                            (r2, cwr, -ti / tm2),
-                            (r2, cwi, tr / tm2),
-                            (r3, ct, -1.0),
-                            (r3, cwr, tr / tm2),
-                            (r3, cwi, ti / tm2),
-                            (r4, cwr, ti / tm2),
-                            (r4, cwi, -tr / tm2),
-                        ],
-                        GB::Susceptance => [
-                            (r1, cwr, -ti / tm2),
-                            (r1, cwi, tr / tm2),
-                            (r2, cf, 1.0 / tm2),
-                            (r2, cwr, -tr / tm2),
-                            (r2, cwi, -ti / tm2),
-                            (r3, cwr, ti / tm2),
-                            (r3, cwi, -tr / tm2),
-                            (r4, ct, 1.0),
-                            (r4, cwr, -tr / tm2),
-                            (r4, cwi, -ti / tm2),
-                        ],
+                    let [d_g, d_b] = branches.calc_branch_admittance_series_derivative(e);
+                    let derivative = match gb {
+                        GB::Conductance => d_g,
+                        GB::Susceptance => d_b,
                     };
-                    for (r, col, da) in entries {
+                    for (r, col, da) in lay.ohm_voltage_entries(e, f, t, derivative) {
+                        if da == 0.0 {
+                            continue;
+                        }
                         rhs[(nvar + r, c)] += da * x[col];
                         rhs[(col, c)] += da * z[r];
                     }

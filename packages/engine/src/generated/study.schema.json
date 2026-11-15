@@ -1971,7 +1971,7 @@
           "type": "array"
         },
         "code": {
-          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.\n`settings_ignored`: a reopened Study could not apply some or all of the\ncalculation settings its saved module recorded, such as an option this\nengine does not know; engine defaults stand in for what was dropped.",
+          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\nThe message is PowerIO's finding; for an island an HVDC line fed, it\nnames the lines taken out of service with the island and the power\nthey scheduled into it.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.\n`settings_ignored`: a reopened Study could not apply some or all of the\ncalculation settings its saved module recorded, such as an option this\nengine does not know; engine defaults stand in for what was dropped.",
           "type": "string"
         },
         "message": {
@@ -3040,5 +3040,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "c4df980b4404a12f89cfe190cd50a888a5aa2e6a575a90862a7277331fe20102"
+  "x-rust-source-sha256": "6ef05bb64bd5772d0564bcffb03c5e7b9ae24b25524389631c27ebba2dd2c23f"
 }
