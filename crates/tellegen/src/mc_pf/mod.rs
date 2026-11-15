@@ -1527,7 +1527,7 @@ fn expected_element_port_keys(
             })?;
         let terminals = &load_instance.terminals;
         let branches: Vec<Vec<&str>> =
-            crate::mc_pf::loads::load_channels(load, terminals, load_instance.p_w.len())?
+            crate::mc_pf::loads::load_channels(network, load, terminals, load_instance.p_w.len())?
                 .iter()
                 .map(|channel| {
                     std::iter::once(channel.from)

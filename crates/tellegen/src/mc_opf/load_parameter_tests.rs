@@ -242,10 +242,10 @@ fn delta_zip_coefficients_and_nominal_voltages_follow_coils_after_reordering() {
     n.loads_mut()[index].voltage_model = Law::Zip {
         v_nom: vec![360., 390., 420.],
         alpha_z: vec![0.2, 0.3, 0.4],
-        alpha_i: vec![0.3],
+        alpha_i: vec![0.3; 3],
         alpha_p: vec![0.5, 0.4, 0.3],
         beta_z: vec![0.6, 0.5, 0.4],
-        beta_i: vec![0.1],
+        beta_i: vec![0.1; 3],
         beta_p: vec![0.3, 0.4, 0.5],
     };
     n.loads_mut()[index].q_nom[1] = 0.;
@@ -302,7 +302,9 @@ fn delta_zip_coefficients_and_nominal_voltages_follow_coils_after_reordering() {
 }
 
 #[test]
-fn empty_zip_and_exponent_defaults_keep_the_canonical_constant_power_limit() {
+fn a_zip_or_exponential_law_missing_its_coefficients_is_refused() {
+    // PowerIO's load law states every coefficient, one entry per coil, as the
+    // BMOPF schema does; an absent fraction or exponent is not a default.
     for law in [
         Law::Zip {
             v_nom: vec![200.],
@@ -319,21 +321,10 @@ fn empty_zip_and_exponent_defaults_keep_the_canonical_constant_power_limit() {
             gamma_q: vec![],
         },
     ] {
-        for (p, q) in [(100., 20.), (0., 0.)] {
-            let result = solve(one_bus(law.clone(), p, q));
-            close(marginal(&result, &parameter("d", 0, false)), 0.0002);
-            let view = result.sensitivities().unwrap();
-            let f = view
-                .forward(
-                    &[McOpfParameterDirection {
-                        parameter: parameter("d", 0, true),
-                        delta: 1.,
-                    }],
-                    &[load_output(McOpfFlowQuantity::ReactivePower)],
-                )
-                .unwrap();
-            close(f[0].derivative, 1.);
-        }
+        let instance = McAcOpfInstance::from_network(one_bus(law, 100., 20.)).unwrap();
+        let error =
+            solve_mc_ac_opf_instance(Arc::new(instance), &McOpfOptions::default()).unwrap_err();
+        assert!(error.to_string().contains("coefficient"), "{error}");
     }
 }
 

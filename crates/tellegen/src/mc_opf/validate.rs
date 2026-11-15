@@ -384,10 +384,8 @@ pub(super) fn check(
                             dev.identity
                         )));
                     }
-                    let target = law
-                        .terms
-                        .each_ref()
-                        .map(|terms| terms.iter().map(|t| t[0] * ratio.powf(t[1])).sum::<f64>());
+                    // PowerIO's one load law evaluation.
+                    let target = law.calc_power(u.norm()).map(|(power, _)| power);
                     checks.mismatch(
                         "prescribed_power_pu",
                         (p - C::new(target[0], target[1])).norm(),

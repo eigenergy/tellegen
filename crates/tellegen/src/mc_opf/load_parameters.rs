@@ -1,7 +1,8 @@
 //! Nominal P/Q dependence retained independently of preparation's zero-term
 //! elimination. Coefficients and nominal voltage are held fixed.
 use super::model::Pair;
-use powerio_dist::{DistLoad, DistLoadVoltageModel as Law};
+use powerio::electrical::calc_voltage_power_term;
+use powerio_dist::DistLoad;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -19,65 +20,17 @@ pub(super) struct LoadParameter {
     coordinate: Coordinate,
 }
 
-/// Unit-normalized canonical terms, including terms whose nominal P/Q is zero.
-/// Defaults and scalar/per-coil broadcasting match released PowerIO preparation.
-pub(super) fn terms(
-    load: &DistLoad,
-    coil: usize,
-    count: usize,
-    sb: f64,
-) -> Result<[Vec<[f64; 2]>; 2], String> {
-    let at = |v: &[f64], default: f64| -> Result<f64, String> {
-        let value = match v.len() {
-            0 => default,
-            1 => v[0],
-            n if n == count => v[coil],
-            _ => return Err(format!("{}: invalid load parameter axis", load.name)),
-        };
-        if value.is_finite() {
-            Ok(value)
-        } else {
-            Err(format!("{}: nonfinite load parameter", load.name))
-        }
-    };
-    let terms = match &load.voltage_model {
-        Law::ConstantPower { .. } => [vec![[1., 0.]], vec![[1., 0.]]],
-        Law::ConstantCurrent { .. } => [vec![[1., 1.]], vec![[1., 1.]]],
-        Law::ConstantImpedance { .. } => [vec![[1., 2.]], vec![[1., 2.]]],
-        Law::Exponential {
-            gamma_p, gamma_q, ..
-        } => [vec![[1., at(gamma_p, 0.)?]], vec![[1., at(gamma_q, 0.)?]]],
-        Law::Zip {
-            alpha_z,
-            alpha_i,
-            alpha_p,
-            beta_z,
-            beta_i,
-            beta_p,
-            ..
-        } => {
-            let a_empty = alpha_z.is_empty() && alpha_i.is_empty() && alpha_p.is_empty();
-            let b_empty = beta_z.is_empty() && beta_i.is_empty() && beta_p.is_empty();
-            [
-                vec![
-                    [at(alpha_z, 0.)?, 2.],
-                    [at(alpha_i, 0.)?, 1.],
-                    [at(alpha_p, f64::from(a_empty))?, 0.],
-                ],
-                vec![
-                    [at(beta_z, 0.)?, 2.],
-                    [at(beta_i, 0.)?, 1.],
-                    [at(beta_p, f64::from(b_empty))?, 0.],
-                ],
-            ]
-        }
-        _ => {
-            return Err(format!(
-                "{}: unsupported nominal load parameter law",
-                load.name
-            ))
-        }
-    };
+/// Unit-normalized canonical terms of coil `coil`, including terms whose
+/// nominal P/Q is zero: PowerIO's term form of the load law
+/// (`DistLoadVoltageModel::calc_power_terms`), each fraction divided by the
+/// power base. Every coefficient is required, one entry per coil, as the
+/// preparation reads it.
+pub(super) fn terms(load: &DistLoad, coil: usize, sb: f64) -> Result<[Vec<[f64; 2]>; 2], String> {
+    let terms = load
+        .voltage_model
+        .calc_power_terms(coil)
+        .map_err(|error| format!("{}: {error}", load.name))?
+        .ok_or_else(|| format!("{}: unsupported nominal load parameter law", load.name))?;
     Ok(terms.map(|terms| {
         terms
             .into_iter()
@@ -107,6 +60,10 @@ impl LoadParameter {
             log_voltage: Some(ell),
         } = self.coordinate
         {
+            // The compiled residual's own coordinate: the model states each
+            // term as `w exp(g ell)` over the log-voltage lift `ell`, which
+            // is `w (|U|/V_nom)^g` on the positive voltage domain the lift
+            // defines; this is that expression's exact partial.
             let mut value = 0.;
             let mut derivative = 0.;
             for &[w, g] in &self.terms {
@@ -136,9 +93,11 @@ impl LoadParameter {
                             return Err(invalid());
                         }
                     } else {
-                        let term = w * ratio.powf(g);
+                        // PowerIO's one term evaluation; `radial` is the
+                        // slope times the ratio, `|U| d/d|U|`.
+                        let (term, slope) = calc_voltage_power_term(w, g, ratio);
                         value -= term;
-                        radial -= g * term;
+                        radial -= slope * ratio;
                     }
                 }
                 let du = if magnitude == 0. {
@@ -163,9 +122,10 @@ impl LoadParameter {
                             return Err(invalid());
                         }
                     } else {
-                        let term = w * ratio.powf(g - 2.) / self.nominal.powi(2);
-                        h += term;
-                        radial += (g - 2.) * term;
+                        // The admittance form `S / |U|^2` of the same term.
+                        let (term, slope) = calc_voltage_power_term(w, g - 2., ratio);
+                        h += term / self.nominal.powi(2);
+                        radial += slope * ratio / self.nominal.powi(2);
                     }
                 }
                 let mut du = if magnitude == 0. {

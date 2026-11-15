@@ -450,6 +450,7 @@ impl PreparedNetwork {
                 effective.terminal_map = l.terminals.clone();
                 effective.voltage_model = l.voltage_model.clone();
                 prepare_load(
+                    network,
                     &effective,
                     &index,
                     inferred_nominal_voltage

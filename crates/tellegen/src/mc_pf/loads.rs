@@ -196,50 +196,39 @@ impl BranchLoad {
         if magnitude > zero_tol {
             return false;
         }
-        let s = self.power[branch];
-        match &self.model {
-            BranchVoltageModel::Bounded(_) | BranchVoltageModel::ConstantImpedance => true,
-            BranchVoltageModel::Law(
-                DistLoadVoltageModel::ConstantPower { .. }
-                | DistLoadVoltageModel::ConstantCurrent { .. },
-            ) => s.norm() == 0.0,
-            BranchVoltageModel::Law(DistLoadVoltageModel::Zip {
-                alpha_i,
-                alpha_p,
-                beta_i,
-                beta_p,
-                ..
-            }) => {
-                // A constant-power or linear-current contribution has no
-                // unique phasor at exactly zero branch voltage. Pure Z terms
-                // have a well-defined zero current.
-                s.re * alpha_p[branch] == 0.0
-                    && s.im * beta_p[branch] == 0.0
-                    && s.re * alpha_i[branch] == 0.0
-                    && s.im * beta_i[branch] == 0.0
-            }
-            BranchVoltageModel::Law(DistLoadVoltageModel::Exponential {
-                gamma_p, gamma_q, ..
-            }) => (s.re == 0.0 || gamma_p[branch] > 1.0) && (s.im == 0.0 || gamma_q[branch] > 1.0),
-            BranchVoltageModel::Law(_) => false,
-        }
+        // A term `c (|U|/V_nom)^γ` draws a current magnitude in `|U|^(γ-1)`:
+        // only `γ > 1` vanishes at zero voltage, so a constant power or
+        // current contribution has no unique phasor there.
+        self.law_exponents_exceed(branch, |exponent| exponent > 1.0)
     }
 
     fn near_zero_law_is_safe(&self, branch: usize) -> bool {
+        // The current stays bounded near zero voltage for `γ >= 1`.
+        self.law_exponents_exceed(branch, |exponent| exponent >= 1.0)
+    }
+
+    /// Whether every voltage power law term this branch draws (a nonzero
+    /// fraction of a nonzero nominal component, PowerIO's term form
+    /// `DistLoadVoltageModel::calc_power_terms`) has an exponent `admits`.
+    /// Constant impedance and the bounded laws, whose low voltage band is
+    /// constant impedance, always do.
+    fn law_exponents_exceed(&self, branch: usize, admits: impl Fn(f64) -> bool) -> bool {
+        let BranchVoltageModel::Law(model) = &self.model else {
+            return true;
+        };
         let s = self.power[branch];
-        match &self.model {
-            BranchVoltageModel::Bounded(_)
-            | BranchVoltageModel::ConstantImpedance
-            | BranchVoltageModel::Law(DistLoadVoltageModel::ConstantCurrent { .. }) => true,
-            BranchVoltageModel::Law(DistLoadVoltageModel::Zip {
-                alpha_p, beta_p, ..
-            }) => s.re * alpha_p[branch] == 0.0 && s.im * beta_p[branch] == 0.0,
-            BranchVoltageModel::Law(DistLoadVoltageModel::Exponential {
-                gamma_p, gamma_q, ..
-            }) => {
-                (s.re == 0.0 || gamma_p[branch] >= 1.0) && (s.im == 0.0 || gamma_q[branch] >= 1.0)
-            }
-            BranchVoltageModel::Law(_) => false,
+        match model.calc_power_terms(branch) {
+            Ok(Some(terms)) => [s.re, s.im]
+                .iter()
+                .zip(&terms)
+                .filter(|(component, _)| **component != 0.0)
+                .all(|(_, terms)| {
+                    terms
+                        .iter()
+                        .filter(|[fraction, _]| *fraction != 0.0)
+                        .all(|&[_, exponent]| admits(exponent))
+                }),
+            _ => false,
         }
     }
 
@@ -315,6 +304,7 @@ impl BranchLoad {
 }
 
 pub(crate) fn prepare_load(
+    network: &powerio_dist::MulticonductorNetwork,
     load: &DistLoad,
     index: &NetworkIndex,
     inferred_nominal_voltage: Option<&[f64]>,
@@ -339,7 +329,7 @@ pub(crate) fn prepare_load(
             load.name
         ));
     }
-    let incidence = connection_incidence(load, index)?;
+    let incidence = connection_incidence(network, load, index)?;
     if incidence.len() != load.p_nom.len() {
         return Err(format!(
             "load `{}` branch map has {} rows for {} powers",
@@ -433,8 +423,10 @@ pub(crate) fn prepare_load(
     })
 }
 
-/// Expand the public one-or-per-branch convention before calling PowerIO's
-/// per-branch evaluator. Validation is independent of the operating voltage.
+/// The load's law with its branch nominal voltages, every coefficient checked
+/// to state one finite entry per branch (PowerIO's per channel law) before
+/// PowerIO's per-branch evaluator reads it. Validation is independent of the
+/// operating voltage.
 fn prepare_law(load: &DistLoad, vnom: &[f64]) -> Result<DistLoadVoltageModel, String> {
     let mut model = load.voltage_model.clone();
     match &mut model {
@@ -546,30 +538,27 @@ fn coefficients(
     values: &[f64],
     branches: usize,
 ) -> Result<Vec<f64>, String> {
-    if values.len() != 1 && values.len() != branches {
+    if values.len() != branches {
         return Err(format!(
-            "load `{name}` {field} has length {}; expected 1 or {branches}",
+            "load `{name}` {field} has length {}; expected one entry per branch ({branches})",
             values.len()
         ));
     }
     if values.iter().any(|value| !value.is_finite()) {
         return Err(format!("load `{name}` {field} contains a non-finite value"));
     }
-    if values.len() == 1 {
-        Ok(vec![values[0]; branches])
-    } else {
-        Ok(values.to_vec())
-    }
+    Ok(values.to_vec())
 }
 
 /// Signed rows from the load's terminal voltages to its branch voltages, one
 /// per stated power, over PowerIO's connection channels
 /// (`powerio_dist::calc_connection_channels`).
 fn connection_incidence(
+    network: &powerio_dist::MulticonductorNetwork,
     load: &DistLoad,
     index: &NetworkIndex,
 ) -> Result<Vec<Vec<(usize, Complex64)>>, String> {
-    let channels = load_channels(load, &load.terminal_map, load.p_nom.len())?;
+    let channels = load_channels(network, load, &load.terminal_map, load.p_nom.len())?;
     let nodes: Vec<usize> = load
         .terminal_map
         .iter()
@@ -587,13 +576,15 @@ fn connection_incidence(
         .collect())
 }
 
-/// The load's connection channels over `terminals`, one per power. The power
-/// flow keeps its single phase rule, one power across two terminals: PowerIO
-/// also reads a single phase load with one power per terminal as grounded
-/// wye legs, which this solver has never accepted for a load stated single
-/// phase. A wye's explicit neutral is the terminal the load's
-/// `neutral_terminal` extra names, or else its last terminal.
+/// The load's connection channels over `terminals`, one per power: PowerIO's
+/// one connection rule (`powerio_dist::calc_element_connection`), whose WYE
+/// neutral is the mapped terminal the bus conventions do not call a phase,
+/// else the last. The power flow keeps its single phase rule, one power
+/// across two terminals: PowerIO also reads a single phase load with one
+/// power per terminal as grounded wye legs, which this solver has never
+/// accepted for a load stated single phase.
 pub(crate) fn load_channels(
+    network: &powerio_dist::MulticonductorNetwork,
     load: &DistLoad,
     terminals: &[String],
     powers: usize,
@@ -604,26 +595,14 @@ pub(crate) fn load_channels(
             load.name
         ));
     }
-    let neutral = match load
-        .extras
-        .get("neutral_terminal")
-        .and_then(|value| value.as_str())
-    {
-        Some(name) => Some(
-            terminals
-                .iter()
-                .position(|terminal| terminal == name)
-                .ok_or_else(|| {
-                    format!(
-                        "load `{}` names neutral terminal `{name}` it does not connect",
-                        load.name
-                    )
-                })?,
-        ),
-        None => None,
-    };
-    powerio_dist::calc_connection_channels(load.configuration, terminals.len(), powers, neutral)
-        .map_err(|error| format!("load `{}`: {error}", load.name))
+    powerio_dist::calc_element_connection(
+        network,
+        &load.bus,
+        terminals,
+        load.configuration,
+        Some(powers),
+    )
+    .map_err(|error| format!("load `{}`: {error}", load.name))
 }
 
 #[cfg(test)]

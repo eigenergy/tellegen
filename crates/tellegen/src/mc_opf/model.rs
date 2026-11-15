@@ -787,14 +787,7 @@ fn compile_inner(
             let zero_power = coil.current_max == Some(0.0) || coil.apparent_max == Some(0.0);
             if let Some(law) = &coil.load_law {
                 let parameter_terms = canonical_load
-                    .map(|l| {
-                        super::load_parameters::terms(
-                            l,
-                            k,
-                            dev.coils.len(),
-                            prep.bases.power_base_va,
-                        )
-                    })
+                    .map(|l| super::load_parameters::terms(l, k, prep.bases.power_base_va))
                     .transpose()?;
                 let map_parameter = |b: &mut Builder, j: usize, origin: usize, coordinate| {
                     if let Some(terms) = &parameter_terms {

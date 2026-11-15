@@ -469,9 +469,11 @@ fn validate_numeric_vector(value: &Value, field: &str) -> Result<(), String> {
 
 fn validate_vector_arity(value: &Value, field: &str, branches: usize) -> Result<(), String> {
     let length = value.as_array().map_or(0, Vec::len);
-    if length != 1 && length != branches {
+    // One entry per branch, as the BMOPF schema and PowerIO's load law state
+    // every coefficient.
+    if length != branches {
         return Err(format!(
-            "{field} has length {length}; expected 1 or {branches}"
+            "{field} has length {length}; expected one entry per branch ({branches})"
         ));
     }
     Ok(())
@@ -848,7 +850,7 @@ pub(super) fn validate_mc_network(
                 powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
             )
         {
-            super::loads::prepare_load(load, &index, None)?;
+            super::loads::prepare_load(network, load, &index, None)?;
         }
     }
     Ok(())
@@ -1028,7 +1030,10 @@ mod tests {
             }}
         });
         let error = validate_bmopf_json(&wrong_length.to_string()).unwrap_err();
-        assert!(error.contains("expected 1 or 2"), "{error}");
+        assert!(
+            error.contains("expected one entry per branch (2)"),
+            "{error}"
+        );
 
         let nonfinite = json!({
             "load": {"l": {
