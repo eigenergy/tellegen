@@ -53,7 +53,10 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 		.click();
 	// Wait for the settled readout (the chip also renders while loading) before
 	// counting requests, so the assertion doesn't race the in-flight fetch.
-	await expect(page.getByText('LMP response to demand at bus 2')).toBeVisible();
+	await expect(page.getByTestId('sensitivity-title')).toHaveText(
+		'Price change per MW of demand at bus 2'
+	);
+	await expect(page.getByTestId('sensitivity-readout')).toContainText('$/MWh per MW');
 	await expect(
 		page
 			.getByRole('region', { name: 'Notifications' })

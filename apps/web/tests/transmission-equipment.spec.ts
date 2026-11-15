@@ -49,7 +49,7 @@ for (const width of [1280, 390, 320]) {
 			await panel.getByRole('button', { name: 'Close equipment models' }).click();
 			if (width < 600) await toolbar.getByRole('button', { name: 'Display', exact: true }).click();
 			const download = page.waitForEvent('download');
-			await toolbar.getByRole('button', { name: 'PNG', exact: true }).click();
+			await toolbar.getByRole('button', { name: 'Save image', exact: true }).click();
 			const exported = await download;
 			expect(exported.suggestedFilename()).toMatch(/\.png$/);
 			await exported.saveAs(testInfo.outputPath('equipment-export.png'));

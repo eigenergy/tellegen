@@ -99,14 +99,18 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 			);
 		})
 		.toBe(true);
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂rating' })).toBeVisible({
+	await expect(
+		page.getByTestId('sensitivity-title').filter({ hasText: /Price change per (MW|MVA) of rating/ })
+	).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(page.getByText(/LMP response to the rating on line/)).toBeVisible();
+	await expect(page.getByTestId('sensitivity-readout')).toContainText(/\$\/MWh per MVA?\b/);
 	// A binding line's column is structured, not the flat/uniform tint.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).not.toContainText('Uniform');
-	await expect(labels).toContainText(/[+−-]\d\.\de[+-]\d+/);
+	await expect(labels).not.toContainText('Every price changes by');
+	// A signed scale in plain decimals, never e-notation.
+	await expect(labels).toContainText(/[+−][\d.]+/);
+	await expect(labels).not.toContainText(/\de[+-]\d/);
 
 	// Relax the rating to the slider max and commit (change fires the exact solve).
 	const slider = page.getByLabel('Rating delta at selected line');

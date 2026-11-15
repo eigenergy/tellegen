@@ -161,7 +161,7 @@ test('a dropped .raw and .dyr attach', async ({ page }) => {
 		{ name: 'wecc.dyr', mimeType: 'text/plain', buffer: example('case.dyr') },
 		{ name: 'wecc.geo.csv', mimeType: 'text/csv', buffer: example('case.geo.csv') }
 	]);
-	await expect(page.getByTestId('dyn-counts')).toContainText('DYR records', { timeout: 90_000 });
+	await expect(page.getByTestId('dyn-counts')).toContainText('.dyr records', { timeout: 90_000 });
 });
 
 test('with experimental features on, the Modes tab computes and stops', async ({ page }) => {

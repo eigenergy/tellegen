@@ -111,8 +111,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!focused.ok) return;
 	const focusedRevision = String(focused.data.revision);
 	expect(focusedRevision).not.toBe(revision);
-	// The readout loads in the Network panel; the Agent panel the test opened stays in front.
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeAttached();
+	// An agent's focus brings the Network panel, which holds the readout, to the front.
+	await expect(page.locator('[data-panel="network"]')).toBeVisible();
+	await expect(page.getByTestId('sensitivity-readout')).toBeVisible();
 
 	const previewed = await callTool(page, 'preview_case_update', {
 		case_id: caseId,
@@ -126,6 +127,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 	if (!previewed.ok) return;
 	expect(JSON.stringify(previewed).length).toBeLessThanOrEqual(1_450);
+	// The Agent tab keeps the record of each call, a click away from the readout.
+	await page.locator('.panel-toolbar').getByRole('button', { name: 'Agent', exact: true }).click();
+	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
 	await expect(page.getByText('Predicted cost change', { exact: true })).toBeVisible();
 
 	const cancelled = await page.evaluate(
@@ -328,14 +332,22 @@ test('pending formulation settings preserve displayed-case inspection until an e
 		return pending;
 	});
 	expect(raced).toMatchObject({ ok: true, data: { formulation: 'dcopf' } });
+	// Choosing a calculation in the panel runs it.
 	await expect
-		.poll(async () => {
-			const selected = await callTool(page, 'inspect_settings', {});
-			return selected.ok ? selected.data.calculation : null;
-		})
+		.poll(
+			async () => {
+				const current = await callTool(page, 'inspect_case', {});
+				return current.ok ? current.data.formulation : null;
+			},
+			{ timeout: 60_000 }
+		)
 		.toBe('socwr');
+	await expect(page.locator('#formulation-select')).toBeEnabled();
+	await expect(page.locator('#formulation-select')).toHaveValue('socwr');
+	// An agent's explicit run of the same calculation still works.
 	const selected = await callTool(page, 'inspect_settings', {});
 	if (!selected.ok) throw new Error(selected.error.message);
+	expect(selected.data.calculation).toBe('socwr');
 	const run = await callTool(page, 'run_calculation', {
 		case_id: selected.data.case_id,
 		expected_revision: selected.data.revision,

@@ -303,6 +303,8 @@
 		});
 	});
 
+	/** The list's example entry: a distribution case to try a study on. */
+	const EXAMPLE = 'example:four-wire';
 	async function loadMcExample() {
 		const response = await fetch('/examples/four-wire.bmopf.json');
 		if (!response.ok) throw new Error('The example could not be loaded. Try again.');
@@ -456,11 +458,6 @@
 
 <TellegenWebMcp {workspace} studyExpanded={expanded} closeStudy={() => (expanded = false)} />
 <PanelFrame id="studies" title="Studies" side="left" order={20} width={400} bind:open={expanded}>
-	{#snippet headerActions()}<button
-			class="text-button"
-			disabled={workspace.busy || !!multi}
-			onclick={newStudy}>New study</button
-		>{/snippet}
 	<div class="study-workspace">
 		<div class="storage">
 			<label
@@ -475,7 +472,10 @@
 					disabled={workspace.busy}
 					onchange={(event) => {
 						const id = event.currentTarget.value;
-						if (id)
+						if (id === EXAMPLE) {
+							event.currentTarget.value = '';
+							void attempt(loadMcExample);
+						} else if (id)
 							void attempt(async () => {
 								if (id.startsWith('mc:')) await workspace.openMulti(id.slice(3));
 								else await workspace.open(id);
@@ -493,8 +493,10 @@
 					{#each workspace.mcSaved as saved (saved.id)}<option value={`mc:${saved.id}`}
 							>{saved.title}, distribution</option
 						>{/each}
+					<option value={EXAMPLE}>Example: four-wire feeder</option>
 				</select></label
 			>
+			<button disabled={workspace.busy || !!multi} onclick={newStudy}>New study</button>
 			<label class="file-button"
 				>Import<input
 					type="file"
@@ -548,7 +550,7 @@
 				</p>{/if}
 			{#if multi}
 				<h3>{multi.label}</h3>
-				<p class="hint">Distribution case · {MC_PF_NAME}</p>
+				<p class="hint">Distribution case, solved by {MC_PF_NAME.toLowerCase()}</p>
 				<McNetworkScope scope={multi.mcPreparedScope} islands={multi.mcExcludedIslands} preview />
 				{#if multi.result}<McModelQualification model={multi.result.load_model} compact />{/if}
 				<McSolveControls
@@ -604,11 +606,11 @@
 						searchIndex={multi.overviewSearch}
 					/>{/if}
 			{:else if !doc || creating}
-				<h3>Save this case</h3>
-				<p class="hint">A saved case with its changes and results.</p>
-				<button class="text-button" onclick={() => void attempt(loadMcExample)}
-					>Load 4-conductor example</button
-				>
+				<h3>Save a study</h3>
+				<p class="hint">
+					Keeps this case, its demand changes and its results in this browser. Open it again from
+					the list above.
+				</p>
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
 						{network.name}<span>{network.buses.length.toLocaleString()} buses</span>
@@ -1206,6 +1208,7 @@
 		border: 0;
 	}
 	.storage > button {
+		flex: none;
 		padding: 8px;
 	}
 	.file-button {
@@ -1267,15 +1270,21 @@
 		font: inherit;
 		color: inherit;
 	}
-	input,
-	select {
+	input {
 		min-width: 0;
 		width: 100%;
 		box-sizing: border-box;
-		background: white;
+		background: var(--surface-control);
 		border: 1px solid var(--line);
 		padding: 8px 9px;
 		border-radius: var(--radius-control);
+	}
+	/* The panel's shared select, at the input's height. */
+	select {
+		min-width: 0;
+		width: 100%;
+		max-width: none;
+		padding-block: 8px;
 	}
 	button {
 		padding: 8px 12px;
@@ -1289,7 +1298,7 @@
 		cursor: default;
 	}
 	button:hover:enabled {
-		background: var(--accent-soft);
+		border-color: var(--border-strong);
 	}
 	button.primary {
 		background: var(--accent);

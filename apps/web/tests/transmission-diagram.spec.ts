@@ -53,10 +53,10 @@ mpc.gencost = [2 0 0 3 0.1 5 0; 2 0 0 3 0.1 5 0;];
 
 /** The results panel starts collapsed on a phone; open it where a test needs the full panel. */
 async function expandResults(page: import('@playwright/test').Page) {
-	const more = page.locator('.tx-stage .legend').getByRole('button', { name: 'Details ▾' });
+	const more = page.locator('.tx-stage .legend').getByRole('button', { name: 'Show details' });
 	if (await more.isVisible()) await more.click();
 	await expect(
-		page.locator('.tx-stage .legend').getByRole('button', { name: 'Summary ▴' })
+		page.locator('.tx-stage .legend').getByRole('button', { name: 'Hide details' })
 	).toBeVisible();
 }
 
@@ -100,7 +100,7 @@ async function hideBasemap(toolbar: import('@playwright/test').Locator) {
 }
 async function exportPng(toolbar: import('@playwright/test').Locator) {
 	await displayOptions(toolbar, true);
-	await toolbar.getByRole('button', { name: 'PNG', exact: true }).click();
+	await toolbar.getByRole('button', { name: 'Save image', exact: true }).click();
 }
 
 for (const touch of [false, true]) {
@@ -287,7 +287,6 @@ for (const touch of [false, true]) {
 					const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 					await expect(calculation).toBeEnabled({ timeout: 60000 });
 					await runCalculation(page, 'acpf');
-					if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 					await expect(calculation).toBeEnabled();
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 					const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
@@ -331,7 +330,7 @@ for (const touch of [false, true]) {
 						const pending = page.waitForEvent('download');
 						await exportPng(toolbar);
 						await (await pending).saveAs(testInfo.outputPath('station-limits-export.png'));
-						await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
+						await page.getByRole('button', { name: 'Show map', exact: true }).click();
 						await runCalculation(page, 'socwr');
 						await expect(calculation).toBeEnabled();
 						await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
@@ -371,7 +370,7 @@ for (const touch of [false, true]) {
 			await page.emulateMedia({ reducedMotion: 'reduce' });
 			if (touch) {
 				expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
-				for (const name of ['Zoom in', 'Zoom out', 'Fit', 'Close']) {
+				for (const name of ['Zoom in', 'Zoom out', 'Fit', 'Show map']) {
 					const button = toolbar.getByRole('button', { name, exact: true });
 					const bounds = (await button.boundingBox())!;
 					expect(bounds.height).toBeGreaterThanOrEqual(44);
@@ -402,7 +401,7 @@ for (const touch of [false, true]) {
 				const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
 				await expect(economics.getByLabel('Price scale')).toHaveCount(0);
 				await expect(
-					page.locator('.tx-stage .legend').getByRole('button', { name: 'Details ▾' })
+					page.locator('.tx-stage .legend').getByRole('button', { name: 'Show details' })
 				).toBeVisible();
 				await page.screenshot({ path: testInfo.outputPath('mobile-economics-summary.png') });
 				await expandResults(page);
@@ -420,7 +419,10 @@ for (const touch of [false, true]) {
 				await page.locator('.tx-stage .legend').evaluate((el) => {
 					el.scrollTop = 0;
 				});
-				await page.locator('.tx-stage .legend').getByRole('button', { name: 'Summary ▴' }).click();
+				await page
+					.locator('.tx-stage .legend')
+					.getByRole('button', { name: 'Hide details' })
+					.click();
 				await expect(economics.getByLabel('Price scale')).toHaveCount(0);
 				await page.setViewportSize({ width: 320, height: 740 });
 				for (const control of await toolbar.locator('button, select').all()) {
@@ -467,7 +469,17 @@ for (const touch of [false, true]) {
 			await expandResults(page);
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
-			expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+			// The summary never covers the toolbar: below it on a phone, docked beside it on a
+			// wide screen.
+			if (touch) expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+			else
+				await expect
+					.poll(async () => {
+						const bar = (await toolbar.boundingBox())!;
+						const summary = (await page.locator('.tx-stage .legend').boundingBox())!;
+						return summary.x - (bar.x + bar.width);
+					})
+					.toBeGreaterThanOrEqual(0);
 			if (!touch) {
 				// The key stays clear of the panel, which holds the solver's result.
 				const panelBox = (await page.locator('[data-panel-dock="left"]').boundingBox())!;
@@ -504,7 +516,7 @@ for (const touch of [false, true]) {
 			await page.screenshot({ path: testInfo.outputPath('transmission-schematic.png') });
 			await selectLayout(toolbar, 'Geographic');
 
-			await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
+			await page.getByRole('button', { name: 'Show map', exact: true }).click();
 			await expect(canvas).toHaveCount(0);
 			await expect(page.locator('.maplibregl-canvas')).toBeVisible();
 			// The network panel's Show diagram is the one diagram toggle; the map has none of its own.
@@ -515,7 +527,6 @@ for (const touch of [false, true]) {
 			// AC results retain a fixed per-unit key rather than an autoscaled or uniform-grey key.
 			const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 			await runCalculation(page, 'acpf');
-			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			await expectView(toolbar, 'Operating limits');

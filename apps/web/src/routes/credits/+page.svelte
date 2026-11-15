@@ -10,7 +10,7 @@
 />
 
 <main class="credits">
-	<a class="back" href="/">Back to tellegen</a>
+	<a class="back" href="/">Back to the map</a>
 	<h1>Credits</h1>
 	<p>
 		Tellegen is built by the
@@ -18,9 +18,9 @@
 		and Computer Engineering at the University of Michigan.
 	</p>
 	<p>
-		Tellegen uses synthetic public test cases and open source software. ACTIVSg, CATS and Texas7k
-		distribution data are staged by the operator. The small distribution example is included with
-		the app.
+		Tellegen uses synthetic public test cases and open source software. This site serves copies of
+		the ACTIVSg, CATS and Texas7k data, whose sources are listed below. The small distribution
+		example ships with the app.
 	</p>
 
 	<section>
@@ -220,8 +220,8 @@
 	.back {
 		display: inline-block;
 		margin-bottom: 26px;
-		color: var(--accent);
-		font-size: 12px;
+		color: var(--text-accent);
+		font-size: var(--fs-body);
 		text-decoration: none;
 	}
 

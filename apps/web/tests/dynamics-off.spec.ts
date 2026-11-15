@@ -69,7 +69,9 @@ test('turning on experimental features brings dynamics back, and off hides it ag
 	const setting = page.getByLabel('Experimental features');
 	await expect(setting).not.toBeChecked();
 	await expect(
-		page.getByText('Adds dynamics (RMS) simulation, which is still being validated.')
+		page.getByText(
+			'Adds dynamics (RMS) simulation of faults and trips. Its results are still being checked.'
+		)
 	).toBeVisible();
 	await setting.check();
 

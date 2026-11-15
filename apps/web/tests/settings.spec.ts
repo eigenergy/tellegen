@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures/page-errors.js';
 import { openSettings } from './fixtures/chrome.js';
+import { runCalculation } from './fixtures/calculation.js';
 import type { Page } from '@playwright/test';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
@@ -125,17 +126,22 @@ test('an explicit run applies the calculation draft and agent edits retain its o
 	]);
 	const result = page.locator('.solvecard');
 	await expect(result).toContainText('DC OPF', { timeout: 60000 });
+	// Choosing a calculation in the Network panel runs it.
+	await runCalculation(page, 'acpf');
+	await expect(result).toContainText('AC power flow', { timeout: 60000 });
 	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
+	// Settings holds the options for that calculation, not a second calculation select.
+	await expect(panel.getByRole('combobox', { name: 'Calculation', exact: true })).toHaveCount(0);
 	await panel.getByRole('combobox', { name: 'Initial voltages', exact: true }).selectOption('case');
-	await expect(result).toContainText('DC OPF');
+	await expect(panel.getByText('You have changes that are not applied yet.')).toBeVisible();
 	await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
-	await expect(result).toContainText('AC power flow', { timeout: 60000 });
+	await expect
+		.poll(async () => (await tool(page, 'inspect_settings')).data.accepted)
+		.toEqual({ start: 'case' });
 	const inspected = await tool(page, 'inspect_settings');
 	expect(inspected.ok).toBe(true);
 	expect(inspected.data.accepted_calculation).toBe('acpf');
-	expect(inspected.data.accepted).toEqual({ start: 'case' });
 	const current = await tool(page, 'inspect_case');
 	const updated = await tool(page, 'update_case', {
 		case_id: current.data.case_id,
@@ -179,13 +185,12 @@ test('partial lazy options agree with accepted settings and remain clean when sw
 	const accepted = await tool(page, 'inspect_settings');
 	expect(accepted.data.pending).toBe(false);
 	expect(accepted.data.selected).toEqual(accepted.data.accepted);
-	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
-	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('dcopf');
+	await expect(panel.getByRole('combobox', { name: 'Calculation', exact: true })).toHaveCount(0);
 	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
 	await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
 });
 
-test('DC conventions share common settings and can return to the input default', async ({
+test('the DC line model is chosen in one place, shared with WebMCP, and can return to the input default', async ({
 	page
 }) => {
 	await page.locator('header input[type=file]').setInputFiles([
@@ -193,24 +198,43 @@ test('DC conventions share common settings and can return to the input default',
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
 	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+	// Settings does not repeat the Network panel's choice.
 	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	const convention = panel.getByRole('combobox', { name: 'DC convention', exact: true });
-	await expect(convention).toHaveValue('null');
-	for (const [selected, resolved] of [
-		['reactance_only', 'reactance_only'],
-		['null', 'series_susceptance']
-	]) {
-		await convention.selectOption(selected);
-		await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
-		await expect
-			.poll(async () => (await tool(page, 'inspect_case')).data.solution)
-			.toMatchObject({
-				branch_susceptance_formula: resolved
-			});
-		const settings = await tool(page, 'inspect_settings');
-		expect(settings.data.accepted).toMatchObject({
-			branch_susceptance_formula: selected === 'null' ? null : selected
-		});
-	}
+	await expect(panel.getByLabel('Enforce angle-difference limits')).toBeVisible();
+	await expect(panel.getByRole('combobox', { name: 'DC convention' })).toHaveCount(0);
+	await expect(panel).not.toContainText('series_susceptance');
+	await expect(panel).not.toContainText('Default:');
+	const model = page.getByRole('combobox', { name: 'DC line model', exact: true });
+	await expect(model).toHaveValue('series_susceptance');
+	await model.selectOption('reactance_only');
+	await expect
+		.poll(async () => (await tool(page, 'inspect_case')).data.solution)
+		.toMatchObject({ branch_susceptance_formula: 'reactance_only' });
+	expect((await tool(page, 'inspect_settings')).data.accepted).toMatchObject({
+		branch_susceptance_formula: 'reactance_only'
+	});
+	// An agent can hand the choice back to the input, which resolves to the default.
+	let settings = await tool(page, 'inspect_settings');
+	const reset = await tool(page, 'update_settings', {
+		case_id: settings.data.case_id,
+		expected_revision: settings.data.revision,
+		settings_revision: settings.data.settings_revision,
+		patch: { branch_susceptance_formula: null }
+	});
+	expect(reset.ok).toBe(true);
+	settings = await tool(page, 'inspect_settings');
+	const run = await tool(page, 'run_calculation', {
+		case_id: settings.data.case_id,
+		expected_revision: settings.data.revision,
+		settings_revision: settings.data.settings_revision
+	});
+	expect(run.ok).toBe(true);
+	await expect
+		.poll(async () => (await tool(page, 'inspect_case')).data.solution)
+		.toMatchObject({ branch_susceptance_formula: 'series_susceptance' });
+	expect((await tool(page, 'inspect_settings')).data.accepted).toMatchObject({
+		branch_susceptance_formula: null
+	});
+	await expect(model).toHaveValue('series_susceptance');
 });

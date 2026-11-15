@@ -20,7 +20,7 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await expect(page.getByTestId('webmcp-status')).toContainText(/This tab offers \d+ tools/);
 	await page.getByRole('link', { name: 'Changelog', exact: true }).click();
 	await expect(page.getByRole('heading', { name: "What's new in Tellegen" })).toBeVisible();
-	await page.getByRole('link', { name: 'Back to Tellegen' }).click();
+	await page.getByRole('link', { name: 'Back to the map' }).click();
 	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 });
 

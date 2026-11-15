@@ -32,7 +32,7 @@ for (const status of [404, 200]) {
 		await expect(calculation).toBeEnabled();
 		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', true);
 		await expect(page.getByRole('complementary', { name: 'Network', exact: true })).toContainText(
-			'1,234.5'
+			'Generation cost is $1,235/h.'
 		);
 		await expect(page.locator('.error')).toHaveCount(0);
 	});

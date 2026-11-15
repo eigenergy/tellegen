@@ -94,19 +94,21 @@
 	const readyText = $derived(
 		callCount > 0
 			? `Your agent has made ${callCount} ${callCount === 1 ? 'call' : 'calls'}. Watch them in Activity.`
-			: `This tab offers ${toolCount || 'its'} ${toolCount === 1 ? 'tool' : 'tools'} to an AI agent. Pick an agent under Connect your agent, then copy the prompt to it. Calls appear in Activity.`
+			: `This tab offers ${toolCount || 'its'} ${toolCount === 1 ? 'tool' : 'tools'} to an AI agent. Choose an agent below, then give it the prompt. Its calls appear under Activity.`
 	);
+	/** The browser by name, for a sentence: Chrome, Edge, or "this browser". */
 	const brandName = (brand: 'Chrome' | 'Edge' | 'Chromium') =>
-		brand === 'Chromium' ? 'This browser' : brand;
+		brand === 'Chromium' ? 'this browser' : brand;
+	const site = WEBMCP_TRIAL_ORIGIN.slice(8);
 	const flagHint = $derived.by(() => {
 		if (browser?.kind !== 'flag') return '';
 		if (browser.brand === 'Edge')
-			return `Edge runs its own WebMCP trial, and ${WEBMCP_TRIAL_ORIGIN.slice(8)} has joined only Chrome's, so Edge needs this switch everywhere. Chrome needs none on ${WEBMCP_TRIAL_ORIGIN.slice(8)}.`;
+			return `Edge runs its own WebMCP trial, which ${site} has not joined, so Edge needs this setting on every site. Chrome needs none on ${site}.`;
 		if (browser.brand === 'Chromium')
-			return `Brave, Opera and other Chromium browsers need this switch everywhere. Chrome needs none on ${WEBMCP_TRIAL_ORIGIN.slice(8)}.`;
+			return `Brave, Opera and other Chromium browsers need this setting on every site. Chrome needs none on ${site}.`;
 		return onTrialOrigin
-			? "Chrome's trial should switch this on here by itself. It didn't in this browser (a policy, or a build outside the trial), so the switch does it."
-			: `Chrome needs no switch on ${WEBMCP_TRIAL_ORIGIN.slice(8)}, which is in Chrome's trial; local and preview copies of the site do.`;
+			? "Chrome's trial turns WebMCP on here by itself, but a policy or the browser build stopped it. The setting turns it on."
+			: `Chrome needs no setting on ${site}, which is in Chrome's trial. Local and preview copies of the site need it.`;
 	});
 </script>
 
@@ -124,10 +126,10 @@
 <section aria-label="Use Tellegen with an agent">
 	{#if registrationError}
 		<div class="status" data-state="error" role="status" data-testid="webmcp-status">
-			<strong>The tools didn't load</strong>
+			<strong>The tools did not load</strong>
 			<p>
-				The browser turned Tellegen's tools away: {registrationError}. Reload to try again. If it
-				keeps happening, open the page in a new Chrome window.
+				The browser refused Tellegen's tools: {registrationError}. Reload the page. If it happens
+				again, open the page in a new Chrome window.
 			</p>
 		</div>
 	{:else if ready}
@@ -143,28 +145,26 @@
 	{:else if browser?.kind === 'ready'}
 		<div class="status" data-state="pending" role="status" data-testid="webmcp-status">
 			<strong><span class="dot"></span>Getting the tools ready…</strong>
-			<p>Your browser speaks WebMCP. Tellegen is handing it the toolbox now.</p>
+			<p>Your browser supports WebMCP. Tellegen is registering its tools.</p>
 		</div>
 	{:else if browser}
 		<div class="status" data-state="setup" role="status" data-testid="webmcp-status">
 			{#if browser.kind === 'flag'}
-				<strong>One switch away</strong>
+				<strong>Turn on WebMCP in {brandName(browser.brand)}</strong>
 				<p>
-					{brandName(browser.brand)}{browser.version ? ` ${browser.version}` : ''} has WebMCP, but it's
-					off for this page. Paste this into the address bar, set it to Enabled, then relaunch:
+					WebMCP is off for this page. Paste this address into the address bar, set the option to
+					Enabled, then relaunch the browser.
 				</p>
 				{@render copyRow(browser.flagUrl, 'flag address')}
 				<p class="hint">{flagHint}</p>
 			{:else if browser.kind === 'update' || browser.kind === 'legacy'}
-				<strong>Almost there</strong>
+				<strong>Update {brandName(browser.brand)}</strong>
 				<p>
-					{brandName(browser.brand)}{browser.version ? ` ${browser.version}` : ''} is a little too old
-					for WebMCP. Update to version {browser.minVersion} or later (Settings, then About), and reload.
+					WebMCP needs version {browser.minVersion} or later. Update the browser from Settings, then About,
+					and reload this page.
 				</p>
 				{#if browser.brand !== 'Chrome'}
-					<p class="hint">
-						Updated Chrome works on {WEBMCP_TRIAL_ORIGIN.slice(8)} with no switch to flip.
-					</p>
+					<p class="hint">An updated Chrome works on {site} with no setting to change.</p>
 				{/if}
 			{:else if browser.kind === 'mobile'}
 				<strong>Agents work from a computer</strong>
@@ -173,10 +173,10 @@
 					computer. The map works here as usual.
 				</p>
 			{:else if browser.kind === 'other'}
-				<strong>{browser.browser ?? 'This browser'} doesn't speak WebMCP yet</strong>
+				<strong>{browser.browser ?? 'This browser'} does not support WebMCP yet</strong>
 				<p>
-					WebMCP is new enough that only Chrome and Edge know it so far. Open this page in Chrome on
-					a computer, or use an agent below that brings its own browser.
+					Only Chrome and Edge support it so far. Open this page in Chrome on a computer, or use an
+					agent below that brings its own browser.
 				</p>
 			{/if}
 		</div>
@@ -185,31 +185,19 @@
 	<details class="intro" open={introOpen} ontoggle={rememberIntro}>
 		<summary>What is WebMCP?</summary>
 		<p>
-			WebMCP lets a web page hand your AI assistant a toolbox. Instead of squinting at the screen
-			and clicking, the agent calls Tellegen's tools directly, and every call shows up here.
-		</p>
-		<div class="toolbox" aria-hidden="true">
-			<span class="who">Your agent</span>
-			<span class="arrow">→</span>
-			<span class="box">
-				<span>inspect_case</span><span>query_network</span><span>update_case</span>
-			</span>
-			<span class="arrow">→</span>
-			<span class="who">This map</span>
-		</div>
-		<p class="hint">
-			It's a brand-new browser standard, on trial in Chrome. If this is your first time meeting it,
-			you're in good company.
+			WebMCP is a browser feature, on trial in Chrome, that lets a page offer tools to an AI agent.
+			The agent calls Tellegen's tools directly instead of reading the screen and clicking. Each
+			call is listed under Activity.
 		</p>
 	</details>
 
 	<h3>{ready ? '1. ' : ''}Connect your agent</h3>
 	<div class="routes">
 		<details open>
-			<summary>ChatGPT desktop app <span class="tag">No setup</span></summary>
+			<summary>ChatGPT desktop app</summary>
 			<ol>
 				<li>Open {origin} in the app's built-in browser.</li>
-				<li>Ask for what you want. The agent finds the tools itself.</li>
+				<li>Ask for what you want. The agent finds the tools by itself.</li>
 				<li>The <b>Site tools</b> button in the address bar lists them.</li>
 			</ol>
 			<p class="hint">
@@ -235,8 +223,8 @@
 				API key, Bedrock or Vertex, Claude Code keeps the browser off.
 			</p>
 			<p>
-				Claude doesn't look for page tools on its own yet, so start with this prompt. It tells
-				Claude where the toolbox is and how to open it.
+				Claude does not look for page tools by itself yet, so start with this prompt. It tells
+				Claude where the tools are and how to call them.
 			</p>
 			<button class="primary" onclick={() => copy(claudePrompt)}
 				>{copied === claudePrompt ? 'Copied' : 'Copy prompt for Claude'}</button
@@ -263,10 +251,7 @@
 		</details>
 		<details>
 			<summary>Agents built into the browser</summary>
-			<p>
-				Gemini in Chrome and Copilot in Edge don't call page tools yet. When they do, opening this
-				page will be all it takes.
-			</p>
+			<p>Gemini in Chrome and Copilot in Edge do not call page tools yet.</p>
 		</details>
 	</div>
 
@@ -334,19 +319,11 @@
 		margin-bottom: 16px;
 		padding: 10px 12px;
 		border: 1px solid var(--line);
-		border-left: 3px solid var(--ink-dim);
 		border-radius: var(--radius-control);
-		background: var(--paper);
+		background: var(--raised);
 	}
-	.status[data-state='ready'] {
-		border-left-color: var(--agent);
-		background: var(--agent-soft);
-	}
-	.status[data-state='setup'] {
-		border-left-color: var(--accent);
-	}
-	.status[data-state='error'] {
-		border-left-color: var(--text-danger);
+	.status[data-state='error'] strong {
+		color: var(--text-danger);
 	}
 	.status strong {
 		display: flex;
@@ -377,9 +354,6 @@
 	.note {
 		margin-top: 8px;
 	}
-	.status[data-state='pending'] {
-		border-left-color: var(--agent);
-	}
 	.status[data-state='pending'] .dot {
 		background: var(--ink-dim);
 	}
@@ -407,31 +381,6 @@
 	}
 	.intro p {
 		margin: 6px 0 10px;
-	}
-	.toolbox {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		margin: 0 0 10px;
-		font-size: 12px;
-		color: var(--text-secondary);
-	}
-	.toolbox .who {
-		white-space: nowrap;
-	}
-	.toolbox .arrow {
-		color: var(--agent);
-	}
-	.toolbox .box {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		padding: 4px 6px;
-		border: 1px dashed rgb(var(--agent-rgb) / 0.6);
-		border-radius: var(--radius-control);
-		background: var(--agent-soft);
-		color: var(--agent);
-		font: 12px/1.3 var(--font-mono);
 	}
 	label,
 	.label {
@@ -493,15 +442,15 @@
 		flex: none;
 	}
 	.ask-copy:hover {
-		border-color: var(--agent);
-		color: var(--agent);
+		border-color: var(--border-strong);
+		color: var(--ink);
 	}
 	.primary {
 		font: inherit;
-		padding: 7px 12px;
-		color: var(--paper);
-		background: var(--ink);
-		border: 1px solid var(--ink);
+		padding: 6px 12px;
+		color: var(--on-accent);
+		background: var(--accent);
+		border: 1px solid var(--accent);
 		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
@@ -521,7 +470,13 @@
 		overflow-wrap: anywhere;
 		font-size: 12px;
 	}
+	/* Monospace only for text to paste: the flag address and terminal commands.
+	   Names mentioned in a sentence stay in the text face. */
 	code {
+		font: inherit;
+		font-weight: 500;
+	}
+	.cmd code {
 		font: 12px/1.45 var(--font-code);
 	}
 	.routes {
@@ -540,15 +495,6 @@
 	}
 	.routes li {
 		margin-bottom: 2px;
-	}
-	.tag {
-		margin-left: 6px;
-		padding: 1px 6px;
-		border-radius: var(--radius-control);
-		background: var(--agent-soft);
-		color: var(--agent);
-		font-size: 12px;
-		font-weight: 500;
 	}
 	.faq {
 		margin: 0;

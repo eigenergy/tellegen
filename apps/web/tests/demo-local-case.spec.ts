@@ -73,7 +73,9 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('3');
 	await lookup.press('Enter');
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible({ timeout: 30_000 });
+	await expect(
+		page.getByTestId('sensitivity-title').filter({ hasText: 'Price change per MW of demand' })
+	).toBeVisible({ timeout: 30_000 });
 
 	// Drive a preview without committing: set the slider value and fire only an
 	// input event (pointerup/change would trigger the exact re-solve).
@@ -84,12 +86,16 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 	});
 
-	await expect(page.getByText('First-order preview. Release to solve.')).toBeVisible();
+	await expect(
+		page.getByText('Estimated from the current prices. Release to solve.')
+	).toBeVisible();
 	// case14 is uncongested, so the LMP/demand column is flat and the preview legend
 	// shows the uniform predicted shift. The value must scale with the step — the
 	// regression this guards is the step cancelling out of the preview display.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/Uniform [+−-][\d.]+e[+-]\d+\s+\(?\$\/MWh/);
+	await expect(labels).toContainText(/Every price changes by [+−][\d.,]+\s+\$\/MWh/);
+	// Plain decimals, never e-notation.
+	await expect(labels).not.toContainText(/\de[+-]\d/);
 	const atFull = parseShift(await labels.innerText());
 
 	await slider.evaluate((el) => {
@@ -128,7 +134,9 @@ test('arrow keys commit a demand step on a bus under 50 MW', async ({ page }) =>
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('11');
 	await lookup.press('Enter');
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible({ timeout: 30_000 });
+	await expect(
+		page.getByTestId('sensitivity-title').filter({ hasText: 'Price change per MW of demand' })
+	).toBeVisible({ timeout: 30_000 });
 	const slider = page.getByLabel('Demand delta at selected bus');
 	await slider.press('ArrowRight');
 	await expect(page.locator('.slider-head .val')).toHaveText('+0.5 MW');
@@ -165,7 +173,9 @@ test('network and solver panel text is at least 12 px', async ({ page }) => {
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('11');
 	await lookup.press('Enter');
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible({ timeout: 30_000 });
+	await expect(
+		page.getByTestId('sensitivity-title').filter({ hasText: 'Price change per MW of demand' })
+	).toBeVisible({ timeout: 30_000 });
 
 	// The solver's result is part of the Network panel.
 	for (const id of ['network']) {
@@ -184,7 +194,10 @@ test('network and solver panel text is at least 12 px', async ({ page }) => {
 });
 
 function parseShift(text: string): number {
-	const m = text.replace('−', '-').match(/(-?[\d.]+e[+-]\d+)/);
+	const m = text
+		.replace('−', '-')
+		.replace(/,/g, '')
+		.match(/by ([+-]?[\d.]+)/);
 	if (!m) throw new Error(`no shift value in ${JSON.stringify(text)}`);
 	return Number(m[1]);
 }

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/page-errors.js';
 import { CASE3_COORDS, callTool, installWebMcpHarness } from './fixtures/planning-case.js';
 
-test('DC variant selection changes the solved problem and links its compatibility matrix', async ({
+test('DC line model selection changes the solved problem and links its compatibility matrix', async ({
 	page
 }) => {
 	test.setTimeout(120_000);
@@ -18,10 +18,10 @@ test('DC variant selection changes the solved problem and links its compatibilit
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'variants.m', mimeType: 'text/plain', buffer: data }
 	]);
-	const selector = page.getByRole('combobox', { name: 'DC variant', exact: true });
+	const selector = page.getByRole('combobox', { name: 'DC line model', exact: true });
 	await expect(selector).toBeEnabled({ timeout: 60_000 });
 	await expect(selector).toHaveValue('series_susceptance');
-	await expect(page.getByRole('link', { name: 'Compatibility matrix' })).toHaveAttribute(
+	await expect(page.getByRole('link', { name: 'Which tool uses which' })).toHaveAttribute(
 		'href',
 		/dc-compatibility.html$/
 	);

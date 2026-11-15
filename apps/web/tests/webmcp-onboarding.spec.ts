@@ -32,7 +32,7 @@ test('Firefox is pointed at Chrome or Edge, and the setup routes stay visible', 
 		page,
 		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0'
 	);
-	await expect(status).toContainText("Firefox doesn't speak WebMCP yet");
+	await expect(status).toContainText('Firefox does not support WebMCP yet');
 	await expect(status).toContainText('Open this page in Chrome on a computer');
 	// Nothing to prompt yet: the prompt and asks wait until the tools load.
 	await expect(page.getByLabel('Agent prompt')).toHaveCount(0);
@@ -45,10 +45,10 @@ test('Firefox is pointed at Chrome or Edge, and the setup routes stay visible', 
 test('recent Chrome without WebMCP gets the flag to copy', async ({ page, context }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	const status = await asBrowser(page, MAC_CHROME(157));
-	await expect(status).toContainText('One switch away');
-	await expect(status).toContainText('Chrome 157 has WebMCP');
+	await expect(status).toContainText('Turn on WebMCP in Chrome');
+	await expect(status).toContainText('WebMCP is off for this page');
 	// The test server is not tellegen.dev, so the hint says the trial origin needs no switch.
-	await expect(status).toContainText('Chrome needs no switch on tellegen.dev');
+	await expect(status).toContainText('Chrome needs no setting on tellegen.dev');
 	await expect(status.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
 	await status.getByRole('button', { name: 'Copy flag address' }).click();
 	await expect(status.getByRole('button', { name: 'Copied flag address' })).toHaveText('Copied');
@@ -65,14 +65,14 @@ test('Edge gets its own flag scheme and hears that its trial is separate', async
 
 test('Edge 149 is asked for 150, where its trial starts', async ({ page }) => {
 	const status = await asBrowser(page, `${MAC_CHROME(149)} Edg/149.0.0.0`);
-	await expect(status).toContainText('Almost there');
-	await expect(status).toContainText('Update to version 150 or later');
+	await expect(status).toContainText('Update Edge');
+	await expect(status).toContainText('WebMCP needs version 150 or later');
 });
 
 test('Chrome before the trial is asked to update', async ({ page }) => {
 	const status = await asBrowser(page, MAC_CHROME(140));
-	await expect(status).toContainText('Almost there');
-	await expect(status).toContainText('Update to version 149 or later');
+	await expect(status).toContainText('Update Chrome');
+	await expect(status).toContainText('WebMCP needs version 149 or later');
 });
 
 test('a phone hears that agents work from a computer', async ({ page }) => {
@@ -119,9 +119,13 @@ test('the introduction opens Connect and the explainer remembers being closed', 
 	await expect(page.getByTestId('webmcp-status')).toContainText('Ready for agents');
 	const intro = page.locator('details.intro');
 	await expect(intro).toHaveAttribute('open', '');
-	await expect(intro).toContainText('hand your AI assistant a toolbox');
+	await expect(intro).toContainText('lets a page offer tools to an AI agent');
 	await intro.locator('summary').press('Enter');
 	await expect(intro).not.toHaveAttribute('open', '');
+	// The toggle event that stores the choice runs as its own task; wait for it.
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('tellegen.webmcp.intro-closed')))
+		.toBe('1');
 	await page.reload();
 	await expect(welcome).toHaveCount(0);
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
@@ -166,7 +170,7 @@ test('a refused registration shows the error card', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const status = page.getByTestId('webmcp-status');
-	await expect(status).toContainText("The tools didn't load");
+	await expect(status).toContainText('The tools did not load');
 	await expect(status).toContainText('registration refused for inspect_case');
 	await expect(page.getByLabel('Agent prompt')).toHaveCount(0);
 });

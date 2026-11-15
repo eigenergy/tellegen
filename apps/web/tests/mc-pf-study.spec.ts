@@ -169,7 +169,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const study = page.getByRole('region', { name: 'Study workspace' });
 	await expect(
-		study.getByText('Distribution case · Multiconductor power flow', { exact: true })
+		study.getByText('Distribution case, solved by multiconductor power flow', { exact: true })
 	).toBeVisible();
 	await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
 		timeout: 60_000
@@ -274,7 +274,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	await expect(savedDistributionOptions(page)).toHaveCount(2);
 	await reopenedSaved.selectOption(firstSavedValue);
 	await expect(
-		reopened.getByText('Distribution case · Multiconductor power flow', { exact: true })
+		reopened.getByText('Distribution case, solved by multiconductor power flow', { exact: true })
 	).toBeVisible();
 	await expect(reopened.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
 	await expect(reopened.getByText('Goal', { exact: true })).toHaveCount(0);
@@ -287,9 +287,9 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await openApp(page);
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const demoStudy = page.getByRole('region', { name: 'Study workspace' });
-	await demoStudy.getByRole('button', { name: 'Load 4-conductor example' }).click();
+	await page.getByLabel('Saved study').selectOption('example:four-wire');
 	await expect(
-		demoStudy.getByText('Distribution case · Multiconductor power flow', { exact: true })
+		demoStudy.getByText('Distribution case, solved by multiconductor power flow', { exact: true })
 	).toBeVisible({
 		timeout: 60_000
 	});

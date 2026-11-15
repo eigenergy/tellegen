@@ -157,15 +157,16 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 	await expect(calculation).toBeEnabled();
 	const network = page.getByRole('complementary', { name: 'Network', exact: true });
 	for (let attempt = 0; attempt < 2; attempt++) {
-		const panel = await runCalculation(page, 'acpf', { closeSettings: false });
-		await expect(panel.getByRole('alert')).toBeVisible();
-		await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
+		await runCalculation(page, 'acpf');
+		// The failure says so, and the DC OPF result stays on screen and in the select.
+		await expect(page.getByTestId('notification-toast')).toContainText(
+			'The calculation did not finish'
+		);
+		await expect(calculation).toBeEnabled();
+		await expect(calculation).toHaveValue('dcopf');
 		await expect(page.locator('.solvecard')).toContainText('DC OPF');
 		await expect(network).not.toContainText('Solving AC power flow');
-		await page.getByRole('button', { name: 'Close settings panel', exact: true }).click();
-		await runCalculation(page, 'dcopf');
-		await expect(calculation).toBeEnabled();
-		await expect(page.locator('.solvecard')).toContainText('DC OPF');
 		await expect(network).not.toContainText('results available.');
+		await page.getByRole('button', { name: 'Dismiss notification' }).click();
 	}
 });

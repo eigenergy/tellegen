@@ -25,7 +25,7 @@
 />
 
 <main class="privacy">
-	<a class="back" href="/">Back to tellegen</a>
+	<a class="back" href="/">Back to the map</a>
 	<h1>Privacy</h1>
 	<section>
 		<h2>Case files and saved studies</h2>
@@ -130,8 +130,8 @@
 	.back {
 		display: inline-block;
 		margin-bottom: 26px;
-		color: var(--accent);
-		font-size: 12px;
+		color: var(--text-accent);
+		font-size: var(--fs-body);
 		text-decoration: none;
 	}
 
