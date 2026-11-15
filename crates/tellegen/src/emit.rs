@@ -68,16 +68,13 @@ pub fn emit_dc_opf_solution(
     let mut bus_marginal = economic_outputs.then(|| vec![f64::NAN; n_source_buses]);
     let marginal = economic_outputs.then(|| sol.nodal_marginal_values(base));
     // Net active injection per dense bus, the DC balance restated: generation
-    // and shed load less PowerIO's fixed nodal withdrawal, whose phase shift
-    // term the branch flows carry rather than the bus.
-    let withdrawal = dc.current_fixed_withdrawal();
-    let mut injection = sol.psh.clone();
-    for (generator, &bus) in dc.gen_bus.iter().enumerate() {
-        injection[bus] += sol.pg[generator];
-    }
-    for (dense, net_injection) in injection.iter_mut().enumerate() {
-        *net_injection -= withdrawal[dense] - dc.prep.p_shift[dense];
-    }
+    // and shed load less PowerIO's device withdrawal (the fixed withdrawal
+    // without the phase shift term the branch flows carry).
+    let withdrawal = dc.prep.calc_device_withdrawal();
+    let generation = powerio_matrix::calc_bus_totals(dc.n, &dc.gen_bus, &sol.pg);
+    let injection: Vec<f64> = (0..dc.n)
+        .map(|dense| sol.psh[dense] + generation[dense] - withdrawal[dense])
+        .collect();
     for dense in 0..dc.n {
         let Some(row) = dc.bus_source_rows[dense] else {
             continue;

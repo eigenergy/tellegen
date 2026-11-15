@@ -82,6 +82,7 @@ pub(crate) struct AcNetwork {
     pub pg: Vec<f64>,
     pub qg: Vec<f64>,
     /// Generator count.
+    #[cfg_attr(not(feature = "conic"), allow(dead_code))]
     pub k: usize,
     /// Bus each generator injects at, dense index.
     pub gen_bus: Vec<usize>,
@@ -728,7 +729,9 @@ impl AcNetwork {
         let qd = buses.q_d;
         let gs = buses.g_s;
         let bs = buses.b_s;
+        #[cfg(feature = "conic")]
         let vm_min = buses.vm_min;
+        #[cfg(feature = "conic")]
         let vm_max = buses.vm_max;
         let vm_case = buses.initial_vm;
         let va_case = buses.initial_va;

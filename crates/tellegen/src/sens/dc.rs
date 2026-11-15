@@ -599,6 +599,9 @@ impl Differentiable for DcKkt<'_> {
         let s = &self.snapped;
         let idx = &self.idx;
         let nu_flow = &self.nu_flow;
+        // PowerIO's branch flows at the solved angles, for the switching
+        // derivative.
+        let flows = dc.branch_flow(&s.va);
         let mut j = Mat::<f64>::zeros(idx.dim, idx_cols.len());
         for (c, &col) in idx_cols.iter().enumerate() {
             match p {
@@ -640,21 +643,22 @@ impl Differentiable for DcKkt<'_> {
                     }
                 }
                 Parameter::SeriesAdmittance(GB::Susceptance) => {
-                    let dth = dc.angle_difference(&s.va, col);
                     let dnu = dc.angle_difference(&s.nu_bal, col);
                     let db = dc.db_dseries_b[col];
-                    let shift = dc.shift[col];
+                    // PowerIO's derivative of the branch flow with respect
+                    // to its weight, `A' theta - shift`.
+                    let dflow = dc.prep.calc_branch_flow_weight_derivative(&s.va, col);
                     let nf = nu_flow[col];
                     // `dc.b` is the negative inductive susceptance and
                     // `flow_offset = dc.b * shift`. Vary both the Laplacian and
                     // its affine phase term, as the source branch does; each
                     // rank one term is column `col` of PowerIO's incidence.
                     for (bus, sign) in csr_row(&dc.branch_incidence, col) {
-                        j[(idx.nu_bal + bus, c)] += sign * db * (dth - shift);
+                        j[(idx.nu_bal + bus, c)] += sign * db * dflow;
                         // Angle stationarity (L nu_bal + Bf' nu_flow): d/db.
                         j[(idx.va + bus, c)] -= sign * (db * dnu + db * nf);
                     }
-                    j[(idx.nu_flow + col, c)] += db * (dth - shift);
+                    j[(idx.nu_flow + col, c)] += db * dflow;
                 }
                 Parameter::Switching => {
                     // The derivative at the closed state: scaling branch `col`
@@ -663,18 +667,20 @@ impl Differentiable for DcKkt<'_> {
                     let dth = dc.angle_difference(&s.va, col);
                     let dnu = dc.angle_difference(&s.nu_bal, col);
                     let b = dc.b[col];
-                    let offset = dc.flow_offset[col];
+                    // `b A' theta - flow_offset` in the PowerModels sign is
+                    // the negated PowerIO flow of the column.
+                    let negated_flow = -flows[col];
                     let nf = nu_flow[col];
                     let g = s.gamma_ub[col] - s.gamma_lb[col];
                     // Opening a phase shifter removes both its angle dependent
                     // weight and its affine flow/nodal withdrawal.
                     for (bus, sign) in csr_row(&dc.branch_incidence, col) {
-                        j[(idx.nu_bal + bus, c)] += sign * (b * dth - offset);
+                        j[(idx.nu_bal + bus, c)] += sign * negated_flow;
                         // Angle stationarity: the weight terms (scaled by b)
                         // plus the phase-limit gradient.
                         j[(idx.va + bus, c)] -= sign * (b * dnu + b * nf - g);
                     }
-                    j[(idx.nu_flow + col, c)] += b * dth - offset;
+                    j[(idx.nu_flow + col, c)] += negated_flow;
                     // Phase-limit complementarity rows.
                     j[(idx.gamma_lb + col, c)] += s.gamma_lb[col] * (dth - dc.angmin[col]);
                     j[(idx.gamma_ub + col, c)] += s.gamma_ub[col] * (dc.angmax[col] - dth);

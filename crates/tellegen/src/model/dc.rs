@@ -7,9 +7,8 @@
 use powerio::BalancedNetwork;
 use powerio::BranchSusceptanceFormula;
 use powerio_matrix::{
-    build_dc_opf_preparation, calc_solver_branch_flow_matrix, calc_weighted_laplacian,
-    AnalysisBranchSource, DcOpfAssemblyOptions, DcOpfPreparation, PreparedObjective, SparseMatrix,
-    SynthesizedLimitWindow, Units,
+    build_dc_opf_preparation, AnalysisBranchSource, DcOpfAssemblyOptions, DcOpfPreparation,
+    PreparedObjective, SparseMatrix, SynthesizedLimitWindow, Units,
 };
 use powerio_prob::DcOpfInstance;
 use powerio_tx::{AngleDifferenceBounds, HvdcTreatment};
@@ -79,10 +78,6 @@ pub(crate) struct DcNetwork {
     /// real, near-ideal tie, not an open circuit.
     #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
     pub b: Vec<f64>,
-    /// Branch phase shifts in radians, in the active branch order from the
-    /// powerio problem instance.
-    #[cfg(feature = "sensitivity")]
-    pub shift: Vec<f64>,
     /// Fixed affine branch flow term `-b_powerio .* shift`, PowerIO's
     /// `calc_branch_flow_offset` of [`Self::prep`].
     pub flow_offset: Vec<f64>,
@@ -372,18 +367,13 @@ impl DcNetwork {
         // inductive branch), so every branch column and affine term negates
         // out of the same assembly. The relation is pinned upstream by
         // powerio-matrix's cross assembly conformance test.
-        let operators = ModelOperators::of(
-            prep.calc_bus_branch_incidence(),
-            &prep.branches.susceptance_magnitude,
-        );
+        let operators = ModelOperators::of(&prep);
         let b = prep
             .branches
             .susceptance_magnitude
             .iter()
             .map(|value| -value)
             .collect();
-        #[cfg(feature = "sensitivity")]
-        let shift = prep.branches.shift.clone();
         let angmin = prep.branches.angle_min.clone();
         let angmax = prep.branches.angle_max.clone();
         // PowerIO synthesizes missing limits for both source and star-lowered
@@ -456,8 +446,6 @@ impl DcNetwork {
             branch_flow_matrix: operators.branch_flow_matrix,
             gen_bus,
             b,
-            #[cfg(feature = "sensitivity")]
-            shift,
             flow_offset,
             fmax,
             gmax,
@@ -533,13 +521,11 @@ impl DcNetwork {
         )
     }
 
-    /// The angle difference `(A' theta)[e]` across branch `e`, read from
-    /// PowerIO's incidence.
+    /// The angle difference `(A' theta)[e]` across branch `e`: PowerIO's
+    /// `calc_angle_difference`.
     #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
     pub(crate) fn angle_difference(&self, theta: &[f64], e: usize) -> f64 {
-        csr_row(&self.branch_incidence, e)
-            .map(|(bus, sign)| sign * theta[bus])
-            .sum()
+        self.prep.calc_angle_difference(theta, e)
     }
 
     /// Rebuild every weighted quantity after a numerical test perturbs `b`:
@@ -549,10 +535,7 @@ impl DcNetwork {
     #[cfg(test)]
     pub(crate) fn reweight(&mut self) {
         self.prep.branches.susceptance_magnitude = self.b.iter().map(|b| -b).collect();
-        let operators = ModelOperators::of(
-            self.incidence.clone(),
-            &self.prep.branches.susceptance_magnitude,
-        );
+        let operators = ModelOperators::of(&self.prep);
         self.laplacian = operators.laplacian;
         self.branch_flow_matrix = operators.branch_flow_matrix;
         self.flow_offset = self.prep.calc_branch_flow_offset();
@@ -560,9 +543,8 @@ impl DcNetwork {
     }
 }
 
-/// The DC operators a model reads, every one PowerIO's own: the incidence of
-/// a preparation and the weighted matrices `calc_weighted_laplacian` and
-/// `calc_solver_branch_flow_matrix` build over the positive weights.
+/// The DC operators a model reads: the preparation's own operator bundle,
+/// `DcOpfPreparation::calc_matrices`, plus the incidence by branch.
 struct ModelOperators {
     incidence: SparseMatrix,
     branch_incidence: SparseMatrix,
@@ -571,15 +553,14 @@ struct ModelOperators {
 }
 
 impl ModelOperators {
-    fn of(incidence: SparseMatrix, weights: &[f64]) -> Self {
-        let laplacian = calc_weighted_laplacian(&incidence, weights);
-        let branch_flow_matrix = calc_solver_branch_flow_matrix(&incidence, weights);
-        let branch_incidence = incidence.transpose_view().to_csr();
+    fn of(prep: &DcOpfPreparation) -> Self {
+        let matrices = prep.calc_matrices();
+        let branch_incidence = matrices.bus_branch_incidence.transpose_view().to_csr();
         ModelOperators {
-            incidence,
+            incidence: matrices.bus_branch_incidence,
             branch_incidence,
-            laplacian,
-            branch_flow_matrix,
+            laplacian: matrices.laplacian,
+            branch_flow_matrix: matrices.branch_flow_matrix,
         }
     }
 }
@@ -727,8 +708,7 @@ mod tests {
             (&a.prep.g_s, &b.prep.g_s),
             (&a.prep.p_shift, &b.prep.p_shift),
             (&a.b, &b.b),
-            #[cfg(feature = "sensitivity")]
-            (&a.shift, &b.shift),
+            (&a.prep.branches.shift, &b.prep.branches.shift),
             (&a.fmax, &b.fmax),
             (&a.angmin, &b.angmin),
             (&a.angmax, &b.angmax),
