@@ -35,7 +35,7 @@
 		position: absolute;
 		inset: 14px;
 		border: 1.5px dashed var(--accent);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -49,7 +49,7 @@
 	}
 
 	.note {
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 </style>

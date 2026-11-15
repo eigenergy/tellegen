@@ -32,8 +32,8 @@
 	.size i {
 		display: inline-block;
 		border-radius: 50%;
-		background: rgba(212, 116, 34, 0.55);
-		border: 1px solid rgba(46, 42, 34, 0.45);
+		background: rgb(var(--ink-rgb) / 0.12);
+		border: 1px solid rgb(var(--ink-rgb) / 0.45);
 	}
 
 	.caption {

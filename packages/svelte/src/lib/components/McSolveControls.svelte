@@ -65,7 +65,7 @@
 	.note {
 		margin: 0 0 8px;
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 		line-height: 1.5;
 	}
 	.actions {
@@ -79,7 +79,7 @@
 		font: inherit;
 		padding: 7px 11px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: transparent;
 		color: var(--ink);
 		cursor: pointer;
@@ -89,9 +89,9 @@
 		cursor: default;
 	}
 	button.primary {
-		background: var(--ink);
-		border-color: var(--ink);
-		color: var(--paper);
+		background: var(--accent);
+		border-color: var(--accent);
+		color: var(--on-accent);
 	}
 	button.text {
 		border: 0;

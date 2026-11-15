@@ -108,6 +108,9 @@ export default defineConfig({
 		experimentalAcOpf()
 	],
 	build: {
+		// Fonts stay files: the CSP's font-src allows this origin only, and a font
+		// inlined as a data: URL would be blocked.
+		assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
 		// The map is loaded on the client only, but deck.gl/luma.gl are a large
 		// coupled WebGL stack. Keep them together so Rolldown does not split
 		// circular luma.gl modules across chunks, and set the warning threshold

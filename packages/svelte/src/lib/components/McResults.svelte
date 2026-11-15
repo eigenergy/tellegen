@@ -385,7 +385,7 @@
 		margin: 14px 0;
 		padding-top: 12px;
 		border-top: 1px solid var(--line);
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.result-heading,
 	.pagination,
@@ -424,7 +424,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 5px 7px;
 	}
 	button {
@@ -449,7 +449,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 	}
 	th,
 	td {
@@ -492,7 +492,7 @@
 		margin: 8px 0;
 	}
 	dl {
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 	}
 	dl div {
 		padding: 4px 0;

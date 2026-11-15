@@ -84,7 +84,7 @@
 		height: 10px;
 		min-width: 160px;
 		margin-bottom: 12px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 	}
 	.tick {
 		position: absolute;

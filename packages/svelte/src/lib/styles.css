@@ -1,63 +1,67 @@
-/* tellegen design tokens: warm paper ground, burnt amber accent, the physics
-   owns all other saturation. */
+/* tellegen design tokens. The vernacular is the control-room display and the
+   utility one-line diagram: cool grey panels over the map, ink for text, cobalt
+   for interaction and selection, red only for a line at its limit, amber only
+   for one close to it. Map data uses its own colour-blind-safe ramps (colors.ts),
+   which never borrow the interface accent. */
 :root {
-	--bg: #ece9e2;
-	--panel: rgba(252, 251, 247, 0.92);
-	--line: #d9d3c6;
-	--ink: #20242b;
-	--ink-dim: #6e7378;
-	--ink-faint: #989b92;
-	--accent: #b25e00;
-	--accent-bright: #ffb000;
-	--accent-soft: rgba(178, 94, 0, 0.1);
-	--red: #b3261e;
+	/* primitives */
+	--bg: #e3e7eb; /* behind the map while tiles load */
+	--panel: #eef0f2; /* panel surface on the map */
+	--paper: #eef0f2;
+	--raised: #ffffff; /* inputs, menus and other raised controls */
+	--line: #cbd0d6; /* rules */
+	--ink: #18202b;
+	--ink-dim: #4a5563;
+	--ink-faint: #5b6573;
+	--accent: #2747b8; /* cobalt: interaction, focus and selection */
+	--accent-bright: #2747b8;
+	--accent-soft: rgb(39 71 184 / 0.1);
+	--on-accent: #ffffff; /* text on an accent fill, 8.3:1 */
+	--red: #d7261e; /* alarm: a line at its limit, a violation */
+	--amber: #e3a008; /* near a limit */
 	--pos: #762a83;
 	--neg: #1b7837;
 
-	--font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
-	--font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+	--font-sans: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, sans-serif;
+	--font-condensed: 'IBM Plex Sans Condensed', 'IBM Plex Sans Variable', system-ui, sans-serif;
+	--font-display: var(--font-sans);
+	/* Data is set in the UI face with tabular figures; this name stays for hosts
+	   and components that ask for "mono" numbers. Only code uses --font-code. */
+	--font-mono: var(--font-sans);
+	--font-code: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
 	/* channel forms of the grounds, so scrims and shadows derive from one source */
-	--bg-rgb: 236 233 226;
-	--ink-rgb: 32 36 43;
-	--accent-rgb: 178 94 0;
-	--paper: #fcfbf7;
-	--paper-rgb: 252 251 247;
+	--bg-rgb: 227 231 235;
+	--ink-rgb: 24 32 43;
+	--accent-rgb: 39 71 184;
+	--paper-rgb: 238 240 242;
 
-	/* Semantic role + scale layer, kept as the target vocabulary for a future
-	   migration. Most call sites still reference the raw primitives above and
-	   hardcoded values; only a handful of these (e.g. --radius-xs, --shadow-thumb,
-	   --dur-fast, --ease-out, the channel forms) are wired up so far. */
+	/* semantic roles */
 	--surface-page: var(--bg);
 	--surface-panel: var(--panel);
-	--surface-chip: rgb(var(--paper-rgb) / 0.65);
-	--surface-control: rgb(var(--paper-rgb) / 0.55);
-	--surface-menu: #fff;
+	--surface-chip: var(--raised);
+	--surface-control: var(--raised);
+	--surface-menu: var(--raised);
+	--surface-hover: rgb(var(--ink-rgb) / 0.06);
 	--border-default: var(--line);
-	--border-strong: var(--accent);
+	--border-strong: #8a95a3;
 	--text-primary: var(--ink);
-	/* --text-secondary/--text-tertiary/--text-accent are independent from
-	   --ink-dim/--ink-faint/--accent (below) rather than aliased to them:
-	   the primitives stay lighter/warmer for borders, focus rings, and
-	   active-state indicators (3:1 or no minimum applies), while the
-	   text-* tokens are tuned to clear WCAG AA 4.5:1 against --bg. */
-	--text-secondary: #4d5156;
-	--text-tertiary: #636657;
-	--text-accent: #8a4800;
-	--warn: #b7791f; /* caution rule beside a qualified result */
-	--text-danger: var(--red);
+	/* Text tokens clear WCAG AA 4.5:1 on the panel surface. */
+	--text-secondary: var(--ink-dim); /* 6.6:1 on --panel */
+	--text-tertiary: var(--ink-faint); /* 5.0:1 */
+	--text-accent: var(--accent); /* 6.4:1 */
+	--warn: var(--amber); /* caution rule beside a qualified result */
+	--text-danger: #b01e17; /* 5.6:1; --red itself is for marks */
 	/* a result that solved cleanly: the edge mark beside a verdict */
 	--status-ok: var(--neg);
 	--data-pos: var(--pos);
 	--data-neg: var(--neg);
 	--focus-ring: var(--accent);
-	/* Agent activity only: the WebMCP ribbon and the Agent panel's running call.
-	   One hue, apart from the amber accent, so an agent's work reads as its own.
-	   5.17:1 on --paper and 4.6:1 on --agent-soft over --paper. */
-	--agent: #0e7490;
-	--agent-rgb: 14 116 144;
+	/* Agent activity: the WebMCP ribbon and the Agent panel's running call. */
+	--agent: #0e6577;
+	--agent-rgb: 14 101 119;
 	--agent-soft: rgb(var(--agent-rgb) / 0.08);
-	/* Dynamics trace series (each ≥ 3:1 on the panel paper) and playback marks. */
+	/* Dynamics trace series (each 3:1 or more on the panel) and playback marks. */
 	--series-1: #2a5caa;
 	--series-2: #b25e00;
 	--series-3: #a2337a;
@@ -65,27 +69,27 @@
 	--series-5: #7a6a00;
 	--series-6: #4d5156;
 	--dyn-v-low: #a03815;
-	--dyn-v-neutral: rgb(223 219 208 / 0.8);
+	--dyn-v-neutral: rgb(214 219 224 / 0.8);
 	--dyn-v-high: #762a83;
 	--dyn-speed-under: #0e7490;
 	--dyn-speed-over: #b02684;
 	/* unselected bus outline in the plain diagram view */
-	--diagram-bus-stroke: #756a5b;
+	--diagram-bus-stroke: #66707d;
 	/* ground symbol in the multiconductor bus detail */
-	--mc-ground-stroke: #3a3a3a;
+	--mc-ground-stroke: #3a3f46;
 
-	/* type scale, anchored at the 15px body */
-	--fs-display-lg: 33px;
-	--fs-display: 22px;
-	--fs-title: 18px;
-	--fs-heading: 16px;
-	--fs-body: 15px;
-	--fs-data: 12.5px;
+	/* type scale: 12 / 13 / 15 / 20 / 26 */
+	--fs-display-lg: 26px; /* the result sentence */
+	--fs-display: 20px;
+	--fs-title: 15px;
+	--fs-heading: 15px;
+	--fs-body: 13px;
+	--fs-data: 13px;
 	--fs-label: 12px;
-	--fs-control: 11px;
-	--fs-meta: 10px;
-	--fs-micro: 8.5px;
-	--lh-tight: 1.2;
+	--fs-control: 12px;
+	--fs-meta: 12px;
+	--fs-micro: 12px;
+	--lh-tight: 1.15;
 	--lh-snug: 1.35;
 	--lh-normal: 1.5;
 	--lh-relaxed: 1.55;
@@ -101,26 +105,27 @@
 	--space-2xl: 20px;
 	--space-3xl: 24px;
 
-	/* radius and elevation */
-	--radius-xs: 2px;
-	--radius-sm: 3px;
+	/* radius: 6 px for panels, 4 px for controls */
+	--radius-panel: 6px;
+	--radius-control: 4px;
+	--radius-xs: 4px;
+	--radius-sm: 4px;
 	--radius-full: 50%;
-	--elev-1: 0 2px 10px rgb(var(--ink-rgb) / 0.1);
-	--elev-2: 0 4px 24px rgb(var(--ink-rgb) / 0.08);
-	/* floating controls that keep their own light shadows; the dark theme maps
-	   them onto the two steps above */
-	--elev-cue: 0 4px 18px rgb(var(--ink-rgb) / 0.1);
-	--elev-menu: 0 4px 18px rgb(var(--ink-rgb) / 0.14);
-	--elev-tooltip: 0 2px 10px rgb(var(--ink-rgb) / 0.12);
-	--shadow-thumb: 0 1px 4px rgb(var(--ink-rgb) / 0.3);
+	/* elevation: one soft shadow, for panels and menus that float over the map */
+	--elev-1: 0 1px 2px rgb(var(--ink-rgb) / 0.08), 0 4px 16px rgb(var(--ink-rgb) / 0.08);
+	--elev-2: var(--elev-1);
+	--elev-cue: var(--elev-1);
+	--elev-menu: var(--elev-1);
+	--elev-tooltip: var(--elev-1);
+	--shadow-thumb: 0 1px 3px rgb(var(--ink-rgb) / 0.3);
 	--inset-active: inset 0 -2px 0 var(--accent);
 
-	/* motion: durations and easings, zeroed under reduced-motion below */
-	--dur-fast: 0.15s;
-	--dur-med: 0.3s;
-	--dur-slow: 0.5s;
-	--delay-panel: 0.12s;
-	--delay-footer: 0.24s;
+	/* motion: only in answer to an action; zeroed under reduced motion below */
+	--dur-fast: 0.12s;
+	--dur-med: 0.2s;
+	--dur-slow: 0.3s;
+	--delay-panel: 0s;
+	--delay-footer: 0s;
 	--dur-blink: 1.2s;
 	--dur-bob: 1.8s;
 	--ease-out: ease-out;
@@ -135,40 +140,40 @@
 }
 
 /* Dark theme: `TellegenProvider theme="dark"` sets the attribute (a host may
-   also put it in its template). Contrast ratios are measured against the panel
-   composited over #4a4a4a, the darkest grey a dark basemap paints under it:
-   every text token clears 7:1. --border-strong marks a panel's edge over the
-   map, so it clears the 3:1 non-text minimum against that panel and against
-   bare #4a4a4a. The same markup passes WCAG AA on either ground. */
+   also put it in its template). Ratios are against the panel surface. */
 :root[data-theme='dark'] {
-	--bg: #0b1420;
-	--paper: #0f1a27;
-	--panel: rgba(10, 20, 31, 0.92);
-	--line: #34465a; /* decorative separators only */
-	--border-strong: #859cb4; /* 6.30:1 against the panel, 3.13:1 against bare #4a4a4a */
-	--ink: #e8eef4; /* 15.3:1 */
-	--ink-dim: #b4c1cd; /* 9.7:1 */
-	--ink-faint: #95a6b6; /* 7.14:1, and 7.02:1 on the opaque --paper of a panel card */
-	--accent: #ffb24d;
-	--accent-bright: #ffc46e; /* 11.4:1 */
-	--accent-soft: rgba(255, 178, 77, 0.14);
-	--red: #ff9f8b; /* 9.0:1 */
+	--bg: #11161d;
+	--panel: #1b222c;
+	--paper: #1b222c;
+	--raised: #232b36;
+	--line: #3a4452; /* separators */
+	--border-strong: #8794a6; /* 4.6:1 against the panel */
+	--ink: #e6eaf0; /* 13.2:1 */
+	--ink-dim: #b3bdca; /* 8.6:1 */
+	--ink-faint: #9aa5b4; /* 6.5:1 */
+	--accent: #8fa6ff; /* 6.9:1 */
+	--accent-bright: #8fa6ff;
+	--accent-soft: rgb(143 166 255 / 0.16);
+	--on-accent: #10172a;
+	--red: #ff6b5e; /* 5.9:1 */
+	--amber: #f2b53a;
 	--pos: #c9a7e0;
 	--neg: #8fd0a4;
-	--bg-rgb: 11 20 32;
-	--ink-rgb: 232 238 244;
-	--accent-rgb: 255 178 77;
-	--paper-rgb: 15 26 39;
+	--bg-rgb: 17 22 29;
+	--ink-rgb: 230 234 240;
+	--accent-rgb: 143 166 255;
+	--paper-rgb: 27 34 44;
+	--surface-hover: rgb(255 255 255 / 0.06);
 	--text-primary: var(--ink);
 	--text-secondary: var(--ink-dim);
 	--text-tertiary: var(--ink-faint);
-	--text-accent: var(--accent-bright);
-	--warn: #e0a23a; /* caution rule beside a qualified result */
-	--text-danger: var(--red);
-	--focus-ring: #8de7f7; /* 12.7:1 */
-	--agent: #8de7f7; /* 12.4:1 on --paper */
-	--agent-rgb: 141 231 247;
-	--agent-soft: rgb(var(--agent-rgb) / 0.12); /* 9.3:1 for --agent text on it */
+	--text-accent: var(--accent);
+	--warn: var(--amber);
+	--text-danger: #ff8a7e; /* 7.0:1 */
+	--focus-ring: var(--accent);
+	--agent: #7fd6e8; /* 9.0:1 */
+	--agent-rgb: 127 214 232;
+	--agent-soft: rgb(var(--agent-rgb) / 0.12);
 	--series-1: #8ab8f0;
 	--series-2: #ffb24d;
 	--series-3: #f08cd2;
@@ -176,53 +181,59 @@
 	--series-5: #e3d36a;
 	--series-6: #b4c1cd;
 	--dyn-v-low: #e07a4f;
-	--dyn-v-neutral: rgb(223 219 208 / 0.92);
+	--dyn-v-neutral: rgb(214 219 224 / 0.92);
 	--dyn-v-high: #c9a7e0;
 	--dyn-speed-under: #8de7f7;
 	--dyn-speed-over: #f08cd2;
-	--surface-menu: var(--paper);
 	--diagram-bus-stroke: var(--ink-faint);
 	--mc-ground-stroke: var(--ink-dim);
-	--elev-1: 0 2px 10px rgb(0 0 0 / 0.45);
-	--elev-2: 0 4px 24px rgb(0 0 0 / 0.4);
-	--elev-cue: var(--elev-2);
-	--elev-menu: var(--elev-2);
+	--elev-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.35);
+	--elev-2: var(--elev-1);
+	--elev-cue: var(--elev-1);
+	--elev-menu: var(--elev-1);
 	--elev-tooltip: var(--elev-1);
 	/* the light form derives from --ink-rgb, which would glow here */
-	--shadow-thumb: 0 1px 4px rgb(0 0 0 / 0.5);
+	--shadow-thumb: 0 1px 3px rgb(0 0 0 / 0.5);
 }
 
 /* No theme chosen by the host or the viewer: follow the operating system. The
    provider then writes the same choice to the attribute after hydration, so this
-   block only covers first paint (no light flash) and hosts without a provider.
-   Keep it in step with the block above. */
+   block only covers first paint. Keep it in step with the block above. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme]) {
-		--bg: #0b1420;
-		--paper: #0f1a27;
-		--panel: rgba(10, 20, 31, 0.92);
-		--line: #34465a; /* decorative separators only */
-		--border-strong: #859cb4; /* 6.30:1 against the panel, 3.13:1 against bare #4a4a4a */
-		--ink: #e8eef4; /* 15.3:1 */
-		--ink-dim: #b4c1cd; /* 9.7:1 */
-		--ink-faint: #95a6b6; /* 7.14:1, and 7.02:1 on the opaque --paper of a panel card */
-		--accent: #ffb24d;
-		--accent-bright: #ffc46e; /* 11.4:1 */
-		--accent-soft: rgba(255, 178, 77, 0.14);
-		--red: #ff9f8b; /* 9.0:1 */
+		--bg: #11161d;
+		--panel: #1b222c;
+		--paper: #1b222c;
+		--raised: #232b36;
+		--line: #3a4452; /* separators */
+		--border-strong: #8794a6; /* 4.6:1 against the panel */
+		--ink: #e6eaf0; /* 13.2:1 */
+		--ink-dim: #b3bdca; /* 8.6:1 */
+		--ink-faint: #9aa5b4; /* 6.5:1 */
+		--accent: #8fa6ff; /* 6.9:1 */
+		--accent-bright: #8fa6ff;
+		--accent-soft: rgb(143 166 255 / 0.16);
+		--on-accent: #10172a;
+		--on-accent: #10172a;
+		--red: #ff6b5e; /* 5.9:1 */
+		--amber: #f2b53a;
 		--pos: #c9a7e0;
 		--neg: #8fd0a4;
-		--bg-rgb: 11 20 32;
-		--ink-rgb: 232 238 244;
-		--accent-rgb: 255 178 77;
-		--paper-rgb: 15 26 39;
+		--bg-rgb: 17 22 29;
+		--ink-rgb: 230 234 240;
+		--accent-rgb: 143 166 255;
+		--paper-rgb: 27 34 44;
+		--surface-hover: rgb(255 255 255 / 0.06);
 		--text-primary: var(--ink);
 		--text-secondary: var(--ink-dim);
 		--text-tertiary: var(--ink-faint);
-		--text-accent: var(--accent-bright);
-		--warn: #e0a23a; /* caution rule beside a qualified result */
-		--text-danger: var(--red);
-		--focus-ring: #8de7f7; /* 12.7:1 */
+		--text-accent: var(--accent);
+		--warn: var(--amber);
+		--text-danger: #ff8a7e; /* 7.0:1 */
+		--focus-ring: var(--accent);
+		--agent: #7fd6e8; /* 9.0:1 */
+		--agent-rgb: 127 214 232;
+		--agent-soft: rgb(var(--agent-rgb) / 0.12);
 		--series-1: #8ab8f0;
 		--series-2: #ffb24d;
 		--series-3: #f08cd2;
@@ -230,20 +241,19 @@
 		--series-5: #e3d36a;
 		--series-6: #b4c1cd;
 		--dyn-v-low: #e07a4f;
-		--dyn-v-neutral: rgb(223 219 208 / 0.92);
+		--dyn-v-neutral: rgb(214 219 224 / 0.92);
 		--dyn-v-high: #c9a7e0;
 		--dyn-speed-under: #8de7f7;
 		--dyn-speed-over: #f08cd2;
-		--surface-menu: var(--paper);
 		--diagram-bus-stroke: var(--ink-faint);
 		--mc-ground-stroke: var(--ink-dim);
-		--elev-1: 0 2px 10px rgb(0 0 0 / 0.45);
-		--elev-2: 0 4px 24px rgb(0 0 0 / 0.4);
-		--elev-cue: var(--elev-2);
-		--elev-menu: var(--elev-2);
+		--elev-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.35);
+		--elev-2: var(--elev-1);
+		--elev-cue: var(--elev-1);
+		--elev-menu: var(--elev-1);
 		--elev-tooltip: var(--elev-1);
 		/* the light form derives from --ink-rgb, which would glow here */
-		--shadow-thumb: 0 1px 4px rgb(0 0 0 / 0.5);
+		--shadow-thumb: 0 1px 3px rgb(0 0 0 / 0.5);
 	}
 }
 
@@ -257,25 +267,32 @@ body {
 	height: 100%;
 	background: var(--bg);
 	color: var(--ink);
-	font-family: var(--font-display);
+	font-family: var(--font-sans);
 	font-size: 15px;
+	/* Every number lines up in columns: tabular lining figures throughout. */
+	font-variant-numeric: tabular-nums lining-nums;
 	-webkit-font-smoothing: antialiased;
 }
 
-/* faint grain over everything; keeps flat panels from looking sterile */
-body::after {
-	content: '';
-	position: fixed;
-	inset: 0;
-	pointer-events: none;
-	z-index: 9999;
-	opacity: 0.04;
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+button,
+input,
+select,
+textarea {
+	font-variant-numeric: inherit;
 }
 
+/* Numbers that should line up. The UI face with tabular figures, not monospace. */
 .mono {
 	font-family: var(--font-mono);
-	font-variant-numeric: tabular-nums;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+code,
+kbd,
+pre,
+samp {
+	font-family: var(--font-code);
+	font-size: 0.92em;
 }
 
 a {
@@ -283,34 +300,15 @@ a {
 	text-decoration: none;
 }
 
+a:hover {
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
 /* chrome classes shared by more than one split component; kept global so Svelte
-   scoping does not drop them. Moved verbatim from the page <style>. */
+   scoping does not drop them. */
 .dim {
 	color: var(--text-secondary);
-}
-
-.arrow {
-	display: inline-block;
-	animation: bob 1.8s ease-in-out infinite alternate;
-}
-
-.sep {
-	width: 4px;
-	height: 4px;
-	margin: 0 10px;
-	background: var(--accent-bright);
-	opacity: 0.55;
-	transform: rotate(45deg);
-}
-
-@media (max-width: 760px) {
-	.sep {
-		margin: 0 8px;
-	}
-
-	.filedrop-ui {
-		display: none;
-	}
 }
 
 @media (hover: none), (pointer: coarse) {
@@ -319,30 +317,25 @@ a {
 	}
 }
 
-/* shared animations, global so split components can reference them */
+/* shared animations, global so split components can reference them. Each one
+   answers an action (a menu or a palette opening). */
 @keyframes drop {
 	from {
 		opacity: 0;
-		transform: translateY(-8px);
+		transform: translateY(-4px);
 	}
 }
 
 @keyframes rise {
 	from {
 		opacity: 0;
-		transform: translateY(8px);
+		transform: translateY(4px);
 	}
 }
 
 @keyframes blink {
 	50% {
 		opacity: 0.35;
-	}
-}
-
-@keyframes bob {
-	to {
-		transform: translateY(2px);
 	}
 }
 
@@ -356,43 +349,37 @@ a {
 		--delay-panel: 0s;
 		--delay-footer: 0s;
 	}
-
-	.arrow {
-		animation: none;
-	}
 }
 
 /* control panel regions: classes used by more than one split region component
    (NetworkStats, FormulationSelector, SensitivityReadout, DemandSlider,
    TopMovers, DisplayControls, SizeLegend, LocalCaseDetails) plus ControlPanel
-   itself. Kept global so Svelte scoping does not drop them. Moved verbatim from
-   ControlPanel.svelte; the .mode / .display-mode / @media source order is
-   preserved so the cascade resolves exactly as before. */
+   itself. Kept global so Svelte scoping does not drop them; the .mode /
+   .display-mode / @media source order is kept so the cascade resolves as before. */
 .region {
-	font-size: 12px;
+	font-size: var(--fs-label);
 	font-weight: 400;
 	color: var(--text-secondary);
-	margin-left: 4px;
+	margin-left: 6px;
 }
 
 .mode {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	font-size: 12px;
+	font-size: var(--fs-label);
 }
 
 /* Kept global (not scoped into SensitivityReadout) so the @media (max-width: 760px)
-   `.mode button { margin-left: 0 }` override below wins by source order, as it did
-   before the component split. Scoping this would raise its specificity past that rule. */
+   `.mode button { margin-left: 0 }` override below wins by source order. */
 .mode > button {
 	margin-left: auto;
 	font-family: inherit;
-	font-size: 12.5px;
-	padding: 2px 7px;
-	background: none;
+	font-size: var(--fs-label);
+	padding: 3px 8px;
+	background: var(--surface-control);
 	border: 1px solid var(--line);
-	border-radius: 2px;
+	border-radius: var(--radius-control);
 	color: var(--text-secondary);
 	cursor: pointer;
 }
@@ -408,26 +395,26 @@ a {
 }
 
 .display-mode .segment button {
-	font-size: 13px;
-	padding: 2px 9px;
+	font-size: var(--fs-body);
+	padding: 3px 10px;
 }
 
 .small {
-	font-size: 12px;
-	line-height: 1.55;
+	font-size: var(--fs-label);
+	line-height: 1.5;
 }
 
 .legend {
-	height: 6px;
-	border-radius: 3px;
+	height: 8px;
+	border-radius: 2px;
 	margin-top: 6px;
 }
 
 .legend-labels {
 	display: flex;
 	justify-content: space-between;
-	font-size: 12.5px;
-	color: var(--text-tertiary);
+	font-size: var(--fs-label);
+	color: var(--text-secondary);
 	margin-top: 4px;
 }
 
@@ -439,13 +426,13 @@ a {
 .hint-dot {
 	display: inline-grid;
 	place-items: center;
-	width: 15px;
-	height: 15px;
+	width: 16px;
+	height: 16px;
 	border: 1px solid var(--line);
 	border-radius: 999px;
 	color: var(--text-secondary);
 	background: var(--surface-control);
-	font-size: 12px;
+	font-size: var(--fs-label);
 	line-height: 1;
 	cursor: help;
 }
@@ -453,13 +440,13 @@ a {
 .segment {
 	display: inline-flex;
 	border: 1px solid var(--line);
-	border-radius: 2px;
+	border-radius: var(--radius-control);
 	overflow: hidden;
 	background: var(--surface-control);
 }
 
 .segment button {
-	padding: 2px 8px;
+	padding: 3px 9px;
 	border: 0;
 	background: transparent;
 	color: var(--text-secondary);
@@ -471,26 +458,31 @@ a {
 	border-left: 1px solid var(--line);
 }
 
+.segment button:hover {
+	color: var(--ink);
+	background: var(--surface-hover);
+}
+
 .segment button.active {
-	background: var(--accent-soft);
-	color: var(--text-accent);
+	background: var(--accent);
+	color: var(--on-accent);
 }
 
 .reset {
 	margin-top: 10px;
 	font-family: inherit;
-	font-size: 12.5px;
-	padding: 3px 10px;
-	background: none;
+	font-size: var(--fs-label);
+	padding: 4px 10px;
+	background: var(--surface-control);
 	border: 1px solid var(--line);
-	border-radius: 2px;
-	color: var(--text-secondary);
+	border-radius: var(--radius-control);
+	color: var(--ink);
 	cursor: pointer;
 }
 
 .reset:hover {
-	border-color: var(--red);
-	color: var(--red);
+	border-color: var(--accent);
+	color: var(--text-accent);
 }
 
 .blink {
@@ -525,7 +517,7 @@ a {
 	}
 
 	/* Keep the chip visually small next to its short siblings; the ::before pads
-	   the tap target out to 44px, as .case-remove does in AppHeader. */
+	   the tap target out to 44px. */
 	.mode > button {
 		position: relative;
 		min-height: 28px;
@@ -551,17 +543,15 @@ a {
 	}
 }
 
-/* Experimental tools: a pill with the word and a caution rule, never colour alone. */
+/* Experimental tools: a tag with the word and a caution rule, never colour alone. */
 .pill-experimental {
 	display: inline-block;
 	padding: 0 6px;
 	border-left: 3px solid var(--warn);
-	border-radius: var(--radius-sm);
+	border-radius: var(--radius-control);
 	background: rgb(var(--ink-rgb) / 0.06);
 	color: var(--text-secondary);
-	font-size: var(--fs-meta);
-	font-weight: 600;
-	letter-spacing: 0.03em;
-	text-transform: uppercase;
+	font-size: var(--fs-label);
+	font-weight: 500;
 	vertical-align: middle;
 }

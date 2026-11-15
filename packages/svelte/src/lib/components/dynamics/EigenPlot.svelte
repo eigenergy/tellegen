@@ -107,7 +107,7 @@
 	}
 	.tick {
 		fill: var(--text-tertiary);
-		font-size: 9px;
+		font-size: 12px;
 	}
 	.pt {
 		fill: var(--series-1);

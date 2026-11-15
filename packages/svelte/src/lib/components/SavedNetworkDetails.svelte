@@ -172,7 +172,7 @@
 	button,
 	select {
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		color: var(--ink);
 		background: var(--paper);
 		padding: 6px 8px;

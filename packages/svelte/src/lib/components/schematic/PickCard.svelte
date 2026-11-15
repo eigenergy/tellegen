@@ -78,11 +78,11 @@
 		min-width: 280px;
 		max-width: 420px;
 		padding: 4px 6px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	p {
@@ -104,7 +104,7 @@
 		color: var(--ink);
 		background: none;
 		border: 0;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	button:hover,

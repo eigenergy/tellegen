@@ -124,7 +124,7 @@
 	.slider-head {
 		display: flex;
 		justify-content: space-between;
-		font-size: 13.5px;
+		font-size: 13px;
 		color: var(--text-secondary);
 		margin-bottom: 4px;
 	}
@@ -139,7 +139,7 @@
 		justify-content: space-between;
 		gap: 8px;
 		margin: 6px 0 7px;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	.slider-track {

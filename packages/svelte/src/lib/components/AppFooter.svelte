@@ -29,7 +29,7 @@
 		display: flex;
 		align-items: center;
 		padding: 8px 20px;
-		font-size: 10.5px;
+		font-size: 12px;
 		color: var(--text-secondary);
 		background: linear-gradient(rgb(var(--bg-rgb) / 0), rgb(var(--bg-rgb) / 0.9));
 		animation: rise 0.5s 0.24s ease-out both;
@@ -80,7 +80,7 @@
 		footer {
 			padding: 7px 10px;
 			overflow-x: auto;
-			font-size: 9.5px;
+			font-size: 12px;
 			white-space: nowrap;
 			pointer-events: auto;
 			scrollbar-width: none;

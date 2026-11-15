@@ -189,8 +189,6 @@
 	h5 {
 		margin-top: 4px;
 		font-size: var(--fs-control);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
 		color: var(--text-tertiary);
 	}
 	.action {

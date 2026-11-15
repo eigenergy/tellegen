@@ -187,7 +187,7 @@
 	.chips button {
 		padding: 2px 8px;
 		border: 1px solid var(--border-default);
-		border-radius: 10px;
+		border-radius: var(--radius-control);
 		background: var(--surface-chip);
 		color: var(--ink);
 		font: inherit;
@@ -204,7 +204,7 @@
 	input {
 		padding: 3px 5px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;

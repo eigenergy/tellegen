@@ -124,7 +124,7 @@
 		min-width: min(300px, calc(100vw - 32px));
 		padding: 8px 14px 9px 12px;
 		border: 1px solid rgb(var(--agent-rgb) / 0.4);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--paper);
 		box-shadow: var(--elev-cue);
 		color: var(--ink);
@@ -177,7 +177,7 @@
 
 	.time {
 		color: var(--text-secondary);
-		font: 11px/1 var(--font-mono);
+		font: 12px/1 var(--font-mono);
 		font-variant-numeric: tabular-nums;
 	}
 

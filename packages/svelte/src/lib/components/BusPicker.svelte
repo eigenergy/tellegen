@@ -162,7 +162,7 @@
 	input {
 		width: 100%;
 		padding: 4px 8px;
-		font-size: 12.5px;
+		font-size: 13px;
 		background: var(--surface-control);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-xs, 2px);
@@ -186,7 +186,7 @@
 			display: flex;
 			align-items: center;
 			min-height: 44px;
-			font-size: 14px;
+			font-size: 13px;
 		}
 	}
 
@@ -243,7 +243,7 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius-xs, 2px);
 		box-shadow: var(--elev-1);
-		font-size: 12.5px;
+		font-size: 13px;
 		margin: 4px 0 0;
 	}
 

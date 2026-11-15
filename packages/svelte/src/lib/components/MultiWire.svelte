@@ -105,7 +105,7 @@
 		height: auto;
 	}
 	svg text {
-		font: 9px var(--font-mono);
+		font: 12px var(--font-mono);
 		fill: var(--text-secondary);
 	}
 	svg text.bus {
@@ -131,6 +131,6 @@
 	}
 	figcaption {
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 	}
 </style>

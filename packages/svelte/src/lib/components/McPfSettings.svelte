@@ -128,7 +128,7 @@
 	fieldset {
 		margin: 0.75rem 0;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 	}
 	label {
 		display: flex;

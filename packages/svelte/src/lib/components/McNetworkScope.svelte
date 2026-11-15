@@ -69,7 +69,7 @@
 		padding: 0.65rem;
 		border: 1px solid var(--line);
 		border-left: 4px solid var(--warn);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		font-size: 12px;
 		overflow-wrap: anywhere;
 	}

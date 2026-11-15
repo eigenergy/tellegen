@@ -126,7 +126,7 @@
 		border: 1px solid var(--line);
 		background: transparent;
 		padding: 3px 8px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	button:hover {
@@ -141,7 +141,7 @@
 		outline-offset: 2px;
 	}
 	.n {
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 	}
 	.group + .group {

@@ -219,7 +219,7 @@
 		color: var(--ink);
 		background: var(--bg);
 		border: 1px solid var(--border);
-		border-radius: 6px;
+		border-radius: var(--radius-panel);
 		width: min(1000px, calc(100vw - 40px));
 		max-height: calc(100vh - 48px);
 		padding: 20px;
@@ -262,7 +262,7 @@
 		color: inherit;
 		background: var(--surface-chip);
 		border: 1px solid var(--border);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 6px 8px;
 	}
 	button {
@@ -297,7 +297,7 @@
 		width: 100%;
 	}
 	.status {
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.error,
 	.failure {

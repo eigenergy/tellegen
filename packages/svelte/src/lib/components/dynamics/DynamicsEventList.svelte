@@ -177,7 +177,7 @@
 		border-left: 3px solid var(--text-danger);
 	}
 	.icon {
-		font-size: 14px;
+		font-size: 13px;
 	}
 	.body p {
 		margin: 0;
@@ -196,7 +196,7 @@
 		width: 5.5em;
 		padding: 2px 4px;
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;

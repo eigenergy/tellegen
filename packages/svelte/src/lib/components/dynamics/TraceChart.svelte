@@ -358,7 +358,7 @@
 		inset: 0;
 		pointer-events: none;
 		font-family: var(--font-mono);
-		font-size: 9.5px;
+		font-size: 12px;
 		color: var(--text-tertiary);
 	}
 	.ytick {

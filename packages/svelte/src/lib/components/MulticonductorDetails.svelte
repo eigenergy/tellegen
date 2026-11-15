@@ -304,7 +304,7 @@
 
 	dl {
 		margin: 0;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	dl div {
@@ -338,7 +338,7 @@
 		min-width: 18px;
 		height: 20px;
 		padding: 0 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		border: 1px solid color-mix(in srgb, var(--tc) 70%, #20242b);
 		background: color-mix(in srgb, var(--tc) 26%, transparent);
 		color: var(--ink);
@@ -364,7 +364,7 @@
 
 	.badge {
 		padding: 1px 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--bc);
 		color: #fff;
 		font-size: 12px;
@@ -453,7 +453,7 @@
 		display: inline-block;
 		width: 10px;
 		height: 10px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		background: var(--sc);
 	}
 

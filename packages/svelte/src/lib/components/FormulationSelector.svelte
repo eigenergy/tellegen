@@ -79,8 +79,13 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 10px;
-		font-size: 12px;
+		font-size: var(--fs-body);
 		color: var(--ink);
+		white-space: nowrap;
+	}
+
+	.formulation-row select {
+		min-width: 0;
 	}
 
 	.formulation-row select {
@@ -88,7 +93,7 @@
 		font-size: 13px;
 		padding: 3px 22px 3px 8px;
 		border: 1px solid var(--line);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		cursor: pointer;

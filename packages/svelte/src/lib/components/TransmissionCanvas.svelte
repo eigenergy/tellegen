@@ -3,7 +3,14 @@
 	import { tick, untrack } from 'svelte';
 	import { txSchematicLayout } from '@tellegen/engine';
 	import type { Network, Solution } from '../api.js';
-	import { demandColor, priceColor, priceGradient, scalarDomain, type RGBA } from '../colors.js';
+	import {
+		demandColor,
+		priceColor,
+		priceGradient,
+		scalarColor,
+		scalarDomain,
+		type RGBA
+	} from '../colors.js';
 	import {
 		assessLoading,
 		assessVoltage,
@@ -528,10 +535,11 @@
 					display.mode === 'voltage'
 						? operatingVoltageColor(v, network.buses[i], deenergized.has(graph.busId[i]))
 						: v === undefined
-							? [180, 175, 165, 200]
+							? [172, 179, 188, 200]
 							: uniform !== null
 								? UNIFORM_INK
-								: (display.mode === 'demand' ? demandColor : priceColor)(
+								: scalarColor(
+										display.mode,
 										(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
 									);
 			}
@@ -2092,7 +2100,7 @@
 		background: var(--paper);
 		color: var(--ink);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 4px;
 	}
 	.toolbar.compact {
@@ -2150,10 +2158,10 @@
 		gap: 6px;
 		align-items: center;
 		padding: 5px;
-		font-size: 11px;
+		font-size: 12px;
 		background: var(--surface-panel, var(--paper));
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	.toolbar button {
@@ -2161,7 +2169,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 4px 8px;
 		cursor: pointer;
 	}
@@ -2223,9 +2231,9 @@
 		gap: 1px;
 		background: color-mix(in srgb, var(--paper) 92%, transparent);
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		color: var(--ink);
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		cursor: pointer;
 		pointer-events: auto;
 		padding: 2px;
@@ -2298,12 +2306,12 @@
 		gap: 6px;
 		align-items: center;
 		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		/* Chromium's headless shell can occlude the canvases past the scroll clip with a solid colour. */
 		background: linear-gradient(var(--paper), var(--paper));
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 	}
 	.legend.operating {
 		display: flow-root;
@@ -2318,7 +2326,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	@media (pointer: coarse) {
@@ -2331,18 +2339,18 @@
 		display: inline-block;
 		width: 90px;
 		height: 7px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 	}
 	.key {
 		max-height: 40vh;
 		overflow: auto;
 		position: absolute;
 		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	.key summary {
@@ -2397,7 +2405,7 @@
 		color: var(--ink);
 		background: none;
 		border: 1px solid transparent;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	.symbols .level[aria-pressed='true'] {
@@ -2410,18 +2418,16 @@
 	.symbols .tier {
 		margin-top: 4px;
 		color: var(--text-secondary);
-		font-size: 9px;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
+		font-size: 12px;
 	}
 	.attribution {
 		position: absolute;
 		margin: 0;
 		padding: 1px 6px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: color-mix(in srgb, var(--paper) 80%, transparent);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		pointer-events: none;
 	}
 	.status {

@@ -161,7 +161,7 @@
 
 <style>
 	.table {
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.toolbar {
 		display: flex;
@@ -172,11 +172,11 @@
 	.toolbar input[type='search'] {
 		flex: 1;
 		min-width: 0;
-		font: 11px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 5px 7px;
 	}
 	.toolbar label,
@@ -188,8 +188,8 @@
 		position: relative;
 		overflow: auto;
 		border: 1px solid var(--line);
-		border-radius: 3px;
-		font: 10px var(--font-mono);
+		border-radius: var(--radius-control);
+		font: 12px var(--font-mono);
 	}
 	.scroll:focus-visible {
 		outline: 2px solid var(--accent);
@@ -224,7 +224,7 @@
 	}
 	small {
 		display: block;
-		font-size: 9px;
+		font-size: 12px;
 	}
 	.body {
 		position: relative;

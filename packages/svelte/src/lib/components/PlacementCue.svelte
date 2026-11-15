@@ -18,9 +18,9 @@
 		padding: 8px 12px;
 		background: var(--panel);
 		border: 1px solid var(--accent);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		color: var(--text-accent);
-		font-size: 11px;
+		font-size: 12px;
 		box-shadow: var(--elev-cue);
 		pointer-events: none;
 	}

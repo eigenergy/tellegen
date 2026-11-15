@@ -22,7 +22,7 @@ runtime dependencies include `powerio`, `clarabel`, `faer`, `num-complex`,
 
 The web app dependencies are resolved by npm. Direct dependencies include
 SvelteKit, Svelte, Vite, TypeScript, deck.gl, MapLibre GL JS, Prettier,
-`@fontsource-variable/bricolage-grotesque`, and `@fontsource/ibm-plex-mono`.
+`@fontsource-variable/ibm-plex-sans`, and `@fontsource/ibm-plex-sans-condensed`.
 
 The repository does not modify or vendor those dependency sources. License and
 notice files from dependencies are distributed through their normal package
@@ -67,7 +67,7 @@ into the engine: each country's annual electricity demand and population,
 derived by `scripts/derive-national-demand.py` from Our World in Data's
 energy dataset ([github.com/owid/energy-data](https://github.com/owid/energy-data)),
 whose `electricity_demand` column comes from Ember's Yearly Electricity Data.
-Ember, *Yearly Electricity Data*, and Our World in Data, *Energy dataset*, are
+Ember, _Yearly Electricity Data_, and Our World in Data, _Energy dataset_, are
 licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the
 table keeps each country's latest year, so changes were made. The
 `population` column is Our World in Data's population series, compiled from

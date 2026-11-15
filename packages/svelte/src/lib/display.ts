@@ -1,5 +1,5 @@
 import type { BranchRatingDeltas, DemandDeltas } from './api.js';
-import { demandGradient, priceGradient } from './colors.js';
+import { angleGradient, demandGradient, priceGradient } from './colors.js';
 import { CaseState, type DisplayMode, type SolvableCase } from './state.svelte.js';
 
 /** One bus-color variable the panel and map can show, without its per-bus values.
@@ -44,7 +44,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			label: 'Angle',
 			unit: 'rad',
 			copy: 'Voltage angle',
-			gradient: priceGradient
+			gradient: angleGradient
 		});
 	}
 	// Last, so a mode the result cannot show still falls back to a result variable.

@@ -1613,10 +1613,10 @@
 		gap: 6px;
 		align-items: center;
 		padding: 5px;
-		font-size: 11px;
+		font-size: 12px;
 		background: var(--surface-panel, var(--paper));
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	.toolbar button,
@@ -1625,7 +1625,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 4px 8px;
 		cursor: pointer;
 	}
@@ -1661,20 +1661,20 @@
 		gap: 6px;
 		align-items: center;
 		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 	}
 	.key {
 		position: absolute;
 		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	.basemap {
@@ -1686,10 +1686,10 @@
 		position: absolute;
 		margin: 0;
 		padding: 1px 6px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: color-mix(in srgb, var(--paper) 80%, transparent);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		pointer-events: none;
 	}
 	.toolbar .check {
@@ -1740,7 +1740,7 @@
 		display: inline-block;
 		width: 90px;
 		height: 7px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 	}
 	.status {
 		position: absolute;

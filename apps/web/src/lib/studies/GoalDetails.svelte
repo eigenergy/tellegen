@@ -134,7 +134,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 10px;
+		font-size: 12px;
 	}
 	th,
 	td {
@@ -157,14 +157,14 @@
 		justify-content: space-between;
 		gap: 8px;
 		margin: 12px 0;
-		font-size: 11px;
+		font-size: 12px;
 	}
 	button {
 		padding: 4px 6px;
 		font: inherit;
 		border: 1px solid var(--line);
 		background: transparent;
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 		color: inherit;
 	}

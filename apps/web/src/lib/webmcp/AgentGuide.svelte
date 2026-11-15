@@ -335,7 +335,7 @@
 		padding: 10px 12px;
 		border: 1px solid var(--line);
 		border-left: 3px solid var(--ink-dim);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--paper);
 	}
 	.status[data-state='ready'] {
@@ -413,7 +413,7 @@
 		align-items: center;
 		gap: 6px;
 		margin: 0 0 10px;
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.toolbox .who {
@@ -428,10 +428,10 @@
 		gap: 2px;
 		padding: 4px 6px;
 		border: 1px dashed rgb(var(--agent-rgb) / 0.6);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--agent-soft);
 		color: var(--agent);
-		font: 10px/1.3 var(--font-mono);
+		font: 12px/1.3 var(--font-mono);
 	}
 	label,
 	.label {
@@ -449,7 +449,7 @@
 		padding: 10px 12px;
 		resize: vertical;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--paper);
 		color: var(--ink);
 		font: inherit;
@@ -479,16 +479,16 @@
 		align-items: start;
 		padding: 10px 0;
 		border-bottom: 1px solid var(--line);
-		font-size: 12.5px;
+		font-size: 13px;
 		line-height: 1.45;
 	}
 	.ask-copy {
 		padding: 2px 8px;
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: transparent;
 		color: var(--text-secondary);
-		font: 11px/1.4 var(--font-display);
+		font: 12px/1.4 var(--font-display);
 		cursor: pointer;
 		flex: none;
 	}
@@ -502,7 +502,7 @@
 		color: var(--paper);
 		background: var(--ink);
 		border: 1px solid var(--ink);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	.cmd {
@@ -516,13 +516,13 @@
 		min-width: 0;
 		padding: 5px 8px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: var(--paper);
 		overflow-wrap: anywhere;
-		font-size: 11px;
+		font-size: 12px;
 	}
 	code {
-		font: 11px/1.45 var(--font-mono);
+		font: 12px/1.45 var(--font-code);
 	}
 	.routes {
 		border-top: 1px solid var(--line);
@@ -544,10 +544,10 @@
 	.tag {
 		margin-left: 6px;
 		padding: 1px 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--agent-soft);
 		color: var(--agent);
-		font-size: 10.5px;
+		font-size: 12px;
 		font-weight: 500;
 	}
 	.faq {

@@ -1,9 +1,9 @@
 <script lang="ts">
 	// Name the stylesheet, not the package root: a specifier with no extension
 	// cannot match the ambient `*.css` declaration. Same file, via `./*.css`.
-	import '@fontsource-variable/bricolage-grotesque/index.css';
-	import '@fontsource/ibm-plex-mono/400.css';
-	import '@fontsource/ibm-plex-mono/500.css';
+	import '@fontsource-variable/ibm-plex-sans/index.css';
+	import '@fontsource/ibm-plex-sans-condensed/400.css';
+	import '@fontsource/ibm-plex-sans-condensed/600.css';
 	import '@tellegen/svelte/styles.css';
 	import { TellegenProvider } from '@tellegen/svelte';
 	import { PUBLIC_CARTO_BASEMAP_KEY } from '$app/env/public';

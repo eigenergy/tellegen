@@ -1215,7 +1215,7 @@
 		padding: 8px;
 		cursor: pointer;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 	}
 	.file-button input {
 		position: absolute;
@@ -1275,12 +1275,12 @@
 		background: white;
 		border: 1px solid var(--line);
 		padding: 8px 9px;
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 	}
 	button {
 		padding: 8px 12px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: transparent;
 		cursor: pointer;
 	}
@@ -1292,17 +1292,18 @@
 		background: var(--accent-soft);
 	}
 	button.primary {
-		background: var(--ink);
-		border-color: var(--ink);
-		color: white;
+		background: var(--accent);
+		border-color: var(--accent);
+		color: var(--on-accent);
 	}
 	button.primary:hover:enabled {
-		background: #3c4249;
+		background: var(--accent);
+		filter: brightness(1.12);
 	}
 	button.text-button {
 		border: 0;
 		padding: 6px 0;
-		color: var(--text-secondary);
+		color: var(--text-accent);
 		font-size: 12px;
 	}
 	button:focus-visible,
@@ -1340,7 +1341,7 @@
 	}
 	.hint.compact {
 		margin: 10px 0;
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.case-name {
 		display: flex;
@@ -1388,7 +1389,7 @@
 		max-width: 50%;
 		text-align: right;
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 400;
 	}
 	details[open] > summary {
@@ -1418,7 +1419,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 11px;
+		font-size: 12px;
 	}
 	th,
 	td {
@@ -1453,7 +1454,7 @@
 		align-items: center;
 		gap: 8px;
 		margin: 10px 0;
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.pagination button {
@@ -1489,19 +1490,19 @@
 		gap: 3px;
 	}
 	.state-flags small {
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.comparison {
 		margin: 18px 0;
 	}
 	.trial {
-		font-size: 11px;
+		font-size: 12px;
 	}
 	pre {
 		overflow: auto;
 		max-height: 240px;
-		font: 10px/1.5 var(--font-mono);
+		font: 12px/1.5 var(--font-code);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 	}
@@ -1519,7 +1520,7 @@
 		padding: 10px 16px;
 		border-top: 1px solid var(--line);
 		flex: none;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.workspace-status button {

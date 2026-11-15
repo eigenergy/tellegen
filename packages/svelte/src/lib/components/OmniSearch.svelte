@@ -96,11 +96,11 @@
 	input {
 		width: 100%;
 		box-sizing: border-box;
-		font: 11px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 6px 8px;
 	}
 	ul {
@@ -116,7 +116,7 @@
 		overflow: auto;
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
 	}
 	li {
@@ -125,7 +125,7 @@
 		gap: 6px;
 		align-items: baseline;
 		padding: 5px 6px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	li[aria-selected='true'] {
@@ -137,8 +137,7 @@
 		color: var(--text-secondary);
 	}
 	.kind {
-		font: 9px var(--font-mono);
-		text-transform: uppercase;
+		font: 12px var(--font-mono);
 	}
 	.id,
 	.hint {

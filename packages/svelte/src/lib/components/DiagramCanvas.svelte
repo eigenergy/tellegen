@@ -11,6 +11,7 @@
 		busRadiusFor,
 		demandColor,
 		priceColor,
+		scalarColor,
 		scalarDomain
 	} from '../colors.js';
 	import { degrees, quantity, rgbaCss } from '../format.js';
@@ -120,9 +121,7 @@
 		return rgbaCss(
 			value === undefined
 				? busNeutral
-				: (displayMode === 'demand' ? demandColor : priceColor)(
-						(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
-					)
+				: scalarColor(displayMode, (value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12))
 		);
 	}
 	function branchLabel(id: number) {
@@ -333,7 +332,7 @@
 						d={`M${points.map((point) => point.join(',')).join(' L')}`}
 						fill="none"
 						stroke={selectedBranch === branch.id
-							? '#2f6fbb'
+							? 'var(--accent)'
 							: multiconductor?.view?.edges[branch.id]
 								? rgbaCss(edgeColor(multiconductor.view.edges[branch.id].kind, branch.status !== 0))
 								: rgbaCss(branchColor(loading.get(branch.id) ?? 0, branch.status !== 0))}
@@ -366,7 +365,7 @@
 							r={Math.max(5, busRadiusFor(app.busSizing, Math.max(bus.demand_mw, bus.gen_mw))) /
 								scale}
 							fill={color(bus)}
-							style:stroke={selectedBus === bus.id ? '#2f6fbb' : 'var(--diagram-bus-stroke)'}
+							style:stroke={selectedBus === bus.id ? 'var(--accent)' : 'var(--diagram-bus-stroke)'}
 							stroke-width={selectedBus === bus.id ? 3 : 1}
 							vector-effect="non-scaling-stroke"
 						/>
@@ -498,7 +497,7 @@
 	button {
 		padding: 6px 10px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		color: var(--ink);
 		background: var(--paper);
 		font: 12px/1.5 var(--font-display);
@@ -521,7 +520,7 @@
 		bottom: 44px;
 		left: 20px;
 		margin: 0;
-		font: 10px/1.4 var(--font-mono);
+		font: 12px/1.4 var(--font-mono);
 		color: var(--text-secondary);
 	}
 	.empty {

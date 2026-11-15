@@ -89,9 +89,7 @@
 		--log-warning: #f0c36d;
 	}
 	.severity {
-		font: 600 10px/1.9 var(--font-mono);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		font: 600 12px/1.9 var(--font-mono);
 		color: var(--text-secondary);
 	}
 	[data-severity='error'] .severity {
@@ -111,7 +109,7 @@
 	}
 	.count {
 		margin-left: 6px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 	}
 	.meta {
@@ -136,7 +134,7 @@
 	}
 	.mono {
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.buses {
 		display: flex;
@@ -151,9 +149,9 @@
 	}
 	.bus,
 	.buses button {
-		font: 11px var(--font-mono);
+		font: 12px var(--font-mono);
 		padding: 1px 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--surface-chip, var(--accent-soft));
 		color: inherit;
 		border: 0;

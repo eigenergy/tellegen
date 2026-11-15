@@ -185,7 +185,7 @@
 		pointer-events: auto;
 		background: var(--panel);
 		border: 1px solid var(--line);
-		border-radius: 5px;
+		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-2);
 	}
 	.notice {
@@ -215,7 +215,7 @@
 		border: 0;
 		background: transparent;
 		padding: 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 		flex-shrink: 0;
 	}
@@ -229,7 +229,7 @@
 	}
 	.count {
 		margin-left: 5px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 	}
 	.recent {
@@ -262,7 +262,7 @@
 		padding: 6px 0;
 	}
 	pre {
-		font: 11px/1.5 var(--font-mono);
+		font: 12px/1.5 var(--font-mono);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		margin: 10px 0 0;

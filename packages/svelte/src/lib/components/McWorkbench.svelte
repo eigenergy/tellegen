@@ -503,7 +503,7 @@
 		margin: 14px 0;
 		padding-top: 12px;
 		border-top: 1px solid var(--line);
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.heading {
 		display: flex;
@@ -522,7 +522,7 @@
 	}
 	h4 {
 		margin: 12px 0 6px;
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 600;
 	}
 	.kpis {
@@ -531,7 +531,7 @@
 		gap: 1px;
 		background: var(--line);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		overflow: hidden;
 	}
 	.kpi {
@@ -554,9 +554,7 @@
 		cursor: default;
 	}
 	.kpi .label {
-		font: 9px var(--font-mono);
-		letter-spacing: 0.5px;
-		text-transform: uppercase;
+		font: 12px var(--font-mono);
 	}
 	.kpi .value {
 		font: 12px var(--font-mono);
@@ -599,7 +597,7 @@
 		color: var(--ink);
 		background: transparent;
 		border: 0;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	.issues button:hover,
@@ -607,7 +605,7 @@
 		background: var(--accent-soft);
 	}
 	.sev {
-		font: 700 11px var(--font-mono);
+		font: 700 12px var(--font-mono);
 	}
 	.id,
 	.num,
@@ -640,7 +638,7 @@
 		position: relative;
 		height: 9px;
 		background: var(--surface-control);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		overflow: hidden;
 	}
 	.band {
@@ -680,7 +678,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 3px 8px;
 		cursor: pointer;
 	}
@@ -704,9 +702,7 @@
 		margin: 8px 0 6px;
 	}
 	.tabs button {
-		font: 10px var(--font-mono);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: transparent;
 		border: 0;
@@ -728,7 +724,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 5px 7px;
 		cursor: pointer;
 	}

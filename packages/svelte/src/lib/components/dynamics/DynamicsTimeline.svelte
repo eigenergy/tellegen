@@ -215,7 +215,7 @@
 	select {
 		padding: 2px 4px;
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
@@ -261,7 +261,7 @@
 	.mark {
 		position: absolute;
 		transform: translateX(-50%);
-		font-size: 10px;
+		font-size: 12px;
 		line-height: 1;
 	}
 	.mark.fault {

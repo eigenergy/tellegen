@@ -51,7 +51,7 @@
 		margin: 0.75rem 0;
 		padding: 0.65rem;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		font-size: 12px;
 	}
 	.warning {
