@@ -261,7 +261,7 @@ pub(crate) fn island_topology(
     for e in &local {
         uf.union(e.0, e.1);
     }
-    if uf.components(idxs.len()) > 1 {
+    if crate::geom::delaunay::component_count(&mut uf, idxs.len()) > 1 {
         // Attach each extra component to its nearest bus in the first one.
         let root0 = uf.find(0);
         for k in 1..idxs.len() {
@@ -409,7 +409,11 @@ mod tests {
             for c in &topo.corridors {
                 uf.union(c.a, c.b);
             }
-            assert_eq!(uf.components(n), 1, "n={n}");
+            assert_eq!(
+                crate::geom::delaunay::component_count(&mut uf, n),
+                1,
+                "n={n}"
+            );
             let deg = corridor_degrees(n, &topo.corridors);
             let avg = 2.0 * topo.corridors.len() as f64 / n as f64;
             assert!((2.2..=3.1).contains(&avg), "n={n} avg degree {avg}");
@@ -474,6 +478,6 @@ mod tests {
         for c in &topo.corridors {
             uf.union(c.a, c.b);
         }
-        assert_eq!(uf.components(40), 2);
+        assert_eq!(crate::geom::delaunay::component_count(&mut uf, 40), 2);
     }
 }

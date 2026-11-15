@@ -1702,7 +1702,7 @@ pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> 
     for c in corridors.iter() {
         uf.union(c.a, c.b);
     }
-    if uf.components(n) <= 1 {
+    if crate::geom::delaunay::component_count(&mut uf, n) <= 1 {
         return 0;
     }
     let original: Vec<usize> = (0..n).map(|i| uf.find(i)).collect();

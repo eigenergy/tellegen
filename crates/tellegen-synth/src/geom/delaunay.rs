@@ -123,39 +123,12 @@ fn attach_isolated(points: &[(f64, f64)], tri: &mut Triangulation) {
     }
 }
 
-/// Union-find with path halving.
-pub struct UnionFind {
-    parent: Vec<usize>,
-}
+/// PowerIO's one union-find.
+pub use powerio_tx::union_find::UnionFind;
 
-impl UnionFind {
-    pub fn new(n: usize) -> Self {
-        Self {
-            parent: (0..n).collect(),
-        }
-    }
-
-    pub fn find(&mut self, mut x: usize) -> usize {
-        while self.parent[x] != x {
-            self.parent[x] = self.parent[self.parent[x]];
-            x = self.parent[x];
-        }
-        x
-    }
-
-    /// True when the two were in different sets.
-    pub fn union(&mut self, a: usize, b: usize) -> bool {
-        let (ra, rb) = (self.find(a), self.find(b));
-        if ra == rb {
-            return false;
-        }
-        self.parent[ra] = rb;
-        true
-    }
-
-    pub fn components(&mut self, n: usize) -> usize {
-        (0..n).filter(|&i| self.find(i) == i).count()
-    }
+/// The number of components of `sets` over `0..n`.
+pub fn component_count(sets: &mut UnionFind, n: usize) -> usize {
+    (0..n).filter(|&i| sets.find(i) == i).count()
 }
 
 /// Kruskal's minimum spanning forest over `edges` with the given weights;

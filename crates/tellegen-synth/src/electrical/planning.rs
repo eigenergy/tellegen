@@ -425,10 +425,15 @@ fn dc_angles_cg(
     x
 }
 
-/// Series susceptance of a circuit, per unit: `x / (r² + x²)`, the formula
-/// the engine's DC model uses.
+/// Series susceptance of a circuit, per unit: `x / (r² + x²)`, PowerIO's DC
+/// edge weight under the series susceptance formula the engine's DC model
+/// uses.
 fn susceptance(design: &CircuitDesign) -> f64 {
-    design.x_pu / (design.r_pu * design.r_pu + design.x_pu * design.x_pu)
+    powerio_tx::BranchSusceptanceFormula::SeriesSusceptance.calc_solver_edge_weight(
+        design.r_pu,
+        design.x_pu,
+        1.0,
+    )
 }
 
 /// Corridor susceptances (per unit, all circuits) and planning-case bus

@@ -26,17 +26,32 @@ const BRANCH_FEATURES: [&str; 15] = [
 ];
 const GEN_FEATURES: [&str; 7] = ["PG", "MIN_PG", "MAX_PG", "C0", "C1", "C2", "G_ON"];
 
-/// The π-model admittances `(Yff, Yft, Ytf, Ytt)` of a branch with series
-/// `r + jx`, total charging `b`, off-nominal ratio `tap` (0 reads as 1) and
-/// phase shift `shift` (degrees), the MATPOWER convention with the ratio on
-/// the from side.
-pub fn pi_admittances(r: f64, x: f64, b: f64, tap: f64, shift_deg: f64) -> [Complex<f64>; 4] {
-    let y = Complex::new(r, x).inv();
-    let ratio = if tap == 0.0 { 1.0 } else { tap };
-    let (sin, cos) = shift_deg.to_radians().sin_cos();
-    let t = Complex::new(ratio * cos, ratio * sin);
-    let ysh = Complex::new(0.0, b / 2.0);
-    [(y + ysh) / t.norm_sqr(), -y / t.conj(), -y / t, y + ysh]
+/// The π-model admittances `(Yff, Yft, Ytf, Ytt)` of a branch, PowerIO's
+/// one pi model block (`powerio_tx::PiModel::calc_block`) over its series
+/// admittance, terminal charging, effective tap (0 reads as 1) and phase
+/// shift (degrees), the MATPOWER convention with the ratio on the from side.
+/// `None` for a zero impedance branch.
+fn branch_pi_block(
+    branch: &powerio::Branch,
+    row: usize,
+) -> Result<Option<[Complex<f64>; 4]>, SynthError> {
+    let Some((g, b)) = branch
+        .calc_series_admittance(row)
+        .map_err(|error| SynthError::Build(error.to_string()))?
+    else {
+        return Ok(None);
+    };
+    let charging = branch.calc_terminal_charging();
+    Ok(Some(
+        powerio_tx::PiModel::new(
+            Complex::new(g, b),
+            Complex::new(charging.g_fr, charging.b_fr),
+            Complex::new(charging.g_to, charging.b_to),
+            branch.calc_effective_tap(),
+            branch.shift.to_radians(),
+        )
+        .calc_block(),
+    ))
 }
 
 /// The GridFM graphkit document of `net`. `branch_flow_mw`, when given, is
@@ -122,10 +137,9 @@ pub fn gridfm_graphkit_json(
         let (Some(&f), Some(&t)) = (index.get(&br.from.0), index.get(&br.to.0)) else {
             continue;
         };
-        if br.r == 0.0 && br.x == 0.0 {
+        let Some([yff, yft, ytf, ytt]) = branch_pi_block(br, k)? else {
             continue;
-        }
-        let [yff, yft, ytf, ytt] = pi_admittances(br.r, br.x, br.b, br.tap, br.shift);
+        };
         let p = branch_flow_mw
             .and_then(|flows| flows.get(k).copied().flatten())
             .unwrap_or(0.0);
@@ -136,7 +150,7 @@ pub fn gridfm_graphkit_json(
             yff.im,
             yft.re,
             yft.im,
-            if br.tap == 0.0 { 1.0 } else { br.tap },
+            br.calc_effective_tap(),
             br.angmin,
             br.angmax,
             br.rate_a / base,
@@ -241,8 +255,14 @@ mod tests {
 
     #[test]
     fn a_phase_shift_rotates_the_off_diagonal_terms() {
-        let [_, yft, ytf, _] = pi_admittances(0.0, 0.1, 0.0, 1.0, 30.0);
-        let [_, yft0, _, _] = pi_admittances(0.0, 0.1, 0.0, 1.0, 0.0);
+        let branch = |shift: f64| {
+            let mut branch = powerio::Branch::new(powerio::BusId(1), powerio::BusId(2), 0.0, 0.1);
+            branch.tap = 1.0;
+            branch.shift = shift;
+            branch
+        };
+        let [_, yft, ytf, _] = branch_pi_block(&branch(30.0), 0).unwrap().unwrap();
+        let [_, yft0, _, _] = branch_pi_block(&branch(0.0), 0).unwrap().unwrap();
         assert!((yft.norm_sqr() - yft0.norm_sqr()).abs() < 1e-12);
         // With r = 0 and a 30° shift, Yft = 10∠120° and Ytf = 10∠60°.
         assert!((yft.re + 5.0).abs() < 1e-9 && (ytf.re - 5.0).abs() < 1e-9);

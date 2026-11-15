@@ -1367,7 +1367,7 @@ mod tests {
                 assert!(a.site == b.site || c.length_km > SITE_TRANSFORMER_KM);
             }
         }
-        assert_eq!(uf.components(n), 1);
+        assert_eq!(crate::geom::delaunay::component_count(&mut uf, n), 1);
         let taps = buses.iter().filter(|b| b.kind == BusKind::Tap).count();
         assert!(taps > 0);
         // Every level is present and the deepest holds the most buses.

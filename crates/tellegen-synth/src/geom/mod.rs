@@ -8,17 +8,12 @@ pub mod region;
 
 use crate::report::BBox;
 
-/// Mean Earth radius, km. source: IUGG 1980 mean radius 6371.0 km.
-pub const EARTH_RADIUS_KM: f64 = 6371.0;
+/// Mean Earth radius, km: PowerIO's (IUGG 1980 mean radius 6371.0 km).
+pub use powerio_tx::geo::EARTH_RADIUS_KM;
 
-/// Great-circle distance in km between two longitude/latitude points.
-pub fn haversine_km(lon1: f64, lat1: f64, lon2: f64, lat2: f64) -> f64 {
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let dp = p2 - p1;
-    let dl = (lon2 - lon1).to_radians();
-    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
-    2.0 * EARTH_RADIUS_KM * a.sqrt().min(1.0).asin()
-}
+/// Great-circle distance in km between two longitude/latitude points:
+/// PowerIO's one haversine distance.
+pub use powerio_tx::geo::calc_haversine_km as haversine_km;
 
 /// Bring a continuous-frame longitude back into `[-180, 180]`.
 pub fn wrap_lon(lon: f64) -> f64 {
