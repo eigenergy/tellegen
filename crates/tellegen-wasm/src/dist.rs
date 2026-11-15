@@ -282,10 +282,9 @@ fn ingest_dist_value(
 }
 
 /// Add the neutral identity used by the MC Study view to PowerIO's stable
-/// graph projection.  PowerIO deliberately keeps terminal-role conventions in
-/// network extras, so this small presentation field must be derived here. An
-/// explicit bus or BMOPF network convention wins; the familiar `n`, `4`, and
-/// `neutral` aliases are only a fallback when no convention is declared.
+/// graph projection, by PowerIO's terminal classifier ([`neutral_terminal`]):
+/// the network's BMOPF terminal conventions when declared, else `n`/`N` and
+/// the fourth of exactly `1` to `4`.
 fn graph_with_neutral_metadata(
     net: &MulticonductorNetwork,
     graph: &powerio_dist::DistGraph,
@@ -344,7 +343,7 @@ fn add_limits_and_ratings(net: &MulticonductorNetwork, graph: &mut serde_json::V
         .iter()
         .map(|bus| (bus.id.to_ascii_lowercase(), bus))
         .collect();
-    let conventions = net.extras().get("bmopf_terminal_conventions");
+    let conventions = net.terminal_conventions();
     let to_ground =
         |bus: &powerio_dist::DistBus, scalar: Option<f64>, phases: &Option<Vec<f64>>| {
             let indices = bus.phase_indices(conventions);
@@ -500,54 +499,54 @@ fn add_limits_and_ratings(net: &MulticonductorNetwork, graph: &mut serde_json::V
     }
 }
 
-/// Add the declared rated voltage at each bus a transformer winding or a source connects to, so
-/// the frontend can tell voltage levels apart before any solve. A polyphase winding states its
-/// line-to-line rating, a single-phase winding its own; a source with two or more energised
-/// terminals counts as line-to-line from its phasors (the largest difference between terminals,
-/// or √3 times the largest magnitude when the angles do not give one).
-/// A level for display and grouping, not a base for calculation; the largest value at a bus wins.
+/// Add the declared rated voltage of each bus's voltage zone (PowerIO's zones,
+/// `calc_voltage_zone_labels`: buses joined by lines and closed switches), so the frontend can
+/// tell voltage levels apart before any solve. A transformer winding declares its rating (line to
+/// line for a polyphase winding, its own for a single-phase one) and a source its line-to-line base
+/// over its phase terminals (`VoltageSource::calc_line_to_line_voltage`, PowerIO's one source
+/// base); the largest declared value in a zone wins. A level for display and grouping, not a base
+/// for calculation. A network PowerIO cannot zone (a line naming an undeclared bus) gets none.
 fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
     use serde_json::{json, Value};
-    let mut nominal: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    let mut note = |bus: &str, volts: f64| {
+    let Ok(zones) = powerio_dist::voltage_zones::calc_voltage_zone_labels(net) else {
+        return;
+    };
+    let row_of: std::collections::HashMap<String, usize> = net
+        .buses()
+        .iter()
+        .enumerate()
+        .map(|(row, bus)| (bus.id.to_ascii_lowercase(), row))
+        .collect();
+    let mut nominal: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+    let mut note = |bus: &str, volts: Option<f64>| {
+        let (Some(&row), Some(volts)) = (row_of.get(&bus.to_ascii_lowercase()), volts) else {
+            return;
+        };
         if volts.is_finite() && volts > 0.0 {
-            let entry = nominal.entry(bus.to_ascii_lowercase()).or_insert(0.0);
+            let entry = nominal.entry(zones[row]).or_insert(0.0);
             *entry = entry.max(volts);
         }
     };
     for t in net.transformers() {
         for w in &t.windings {
-            note(&w.bus, w.v_ref);
+            note(&w.bus, Some(w.v_ref));
         }
     }
+    let conventions = net.terminal_conventions();
     for vs in net.sources() {
-        // (magnitude, angle) of each energised terminal; NaN where the source states no angle.
-        let energised: Vec<(f64, f64)> = vs
-            .v_magnitude
+        let Some(bus) = net.bus(&vs.bus) else {
+            continue;
+        };
+        let phases: Vec<usize> = vs
+            .terminal_map
             .iter()
             .enumerate()
-            .filter(|&(_, &v)| v > 0.0)
-            .map(|(i, &v)| (v, vs.v_angle.get(i).copied().unwrap_or(f64::NAN)))
+            .filter(|(_, terminal)| {
+                bus.terminal_role(terminal, conventions) == powerio_dist::TerminalRole::Phase
+            })
+            .map(|(position, _)| position)
             .collect();
-        let largest = energised.iter().map(|&(v, _)| v).fold(0.0, f64::max);
-        // Line to line is the largest phasor difference between energised terminals: √3 times the
-        // phase magnitude for three-phase, twice it for a split-phase (180°) source.
-        let mut between = 0.0f64;
-        for (i, &(vi, ai)) in energised.iter().enumerate() {
-            for &(vj, aj) in &energised[i + 1..] {
-                between = between.max((vi * vi + vj * vj - 2.0 * vi * vj * (ai - aj).cos()).sqrt());
-            }
-        }
-        note(
-            &vs.bus,
-            if energised.len() < 2 {
-                largest
-            } else if between.is_finite() && between > 0.0 {
-                between
-            } else {
-                largest * 3f64.sqrt()
-            },
-        );
+        note(&vs.bus, vs.calc_line_to_line_voltage(&phases));
     }
     let Some(buses) = graph.get_mut("buses").and_then(Value::as_array_mut) else {
         return;
@@ -556,7 +555,8 @@ fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Val
         let volts = bus
             .get("id")
             .and_then(Value::as_str)
-            .and_then(|id| nominal.get(&id.to_ascii_lowercase()).copied());
+            .and_then(|id| row_of.get(&id.to_ascii_lowercase()))
+            .and_then(|&row| nominal.get(&zones[row]).copied());
         if let Some(volts) = volts {
             bus["nominal_voltage"] = json!(volts);
         }
@@ -679,70 +679,21 @@ fn add_connections(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
     }
 }
 
+/// The bus's neutral by PowerIO's one terminal classifier
+/// (`DistBus::neutral_indices` over the network's terminal conventions):
+/// `Some(Some(name))` for exactly one neutral, `Some(None)` when the
+/// conventions declare neutrals but none or several are on this bus (or the
+/// classifier finds several), and `None` when nothing names one.
 fn neutral_terminal(
     net: &MulticonductorNetwork,
     bus: &powerio_dist::DistBus,
 ) -> Option<Option<String>> {
-    if let Some(value) = bus.extras.get("neutral_terminal") {
-        return Some(
-            value
-                .as_str()
-                .filter(|name| bus.terminals.iter().any(|t| t == *name))
-                .map(str::to_owned),
-        );
+    let conventions = net.terminal_conventions();
+    match bus.neutral_indices(conventions).as_slice() {
+        [one] => Some(Some(bus.terminals[*one].clone())),
+        [] if conventions.is_none_or(|value| value.get("neutral").is_none()) => None,
+        _ => Some(None),
     }
-    if let Some(value) = bus.extras.get("neutral") {
-        return Some(
-            value
-                .as_str()
-                .filter(|name| bus.terminals.iter().any(|t| t == *name))
-                .map(str::to_owned),
-        );
-    }
-    if let Some(value) = bus.extras.get("terminal_conventions") {
-        if declared_neutral_present(value) {
-            return Some(declared_neutral_name(value, &bus.terminals));
-        }
-    }
-
-    let global = net
-        .extras()
-        .get("bmopf_terminal_conventions")
-        .or_else(|| net.extras().get("terminal_conventions"));
-    if let Some(value) = global {
-        if declared_neutral_present(value) {
-            return Some(declared_neutral_name(value, &bus.terminals));
-        }
-    }
-
-    let aliases = ["n", "4", "neutral"];
-    let mut matches = bus.terminals.iter().filter(|terminal| {
-        aliases
-            .iter()
-            .any(|alias| alias.eq_ignore_ascii_case(terminal.trim()))
-    });
-    let first = matches.next()?.clone();
-    if matches.next().is_some() {
-        Some(None)
-    } else {
-        Some(Some(first))
-    }
-}
-
-fn declared_neutral_name(value: &serde_json::Value, terminals: &[String]) -> Option<String> {
-    let names = value
-        .get("neutral")
-        .and_then(|neutral| neutral.as_array())?;
-    let matches: Vec<_> = names
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .filter(|name| terminals.iter().any(|terminal| terminal == *name))
-        .collect();
-    (matches.len() == 1).then(|| matches[0].to_owned())
-}
-
-fn declared_neutral_present(value: &serde_json::Value) -> bool {
-    value.get("neutral").is_some()
 }
 
 /// The network's declared coordinate space as a stable snake-case token. `none`
