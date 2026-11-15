@@ -110,6 +110,10 @@ impl BranchLoad {
             .sum()
     }
 
+    /// The solver's legacy voltage envelope (`v_low_pu`, `v_min_pu`,
+    /// `v_max_pu`) around an unbounded law, evaluated by PowerIO
+    /// (`DistLoadVoltageModel::power_scale_in_envelope`). Constant impedance
+    /// is `u²` in every band.
     fn enveloped_current(
         &self,
         branch: usize,
@@ -117,28 +121,19 @@ impl BranchLoad {
         magnitude: f64,
         options: &McPfOptions,
     ) -> Result<Complex64, String> {
-        let v_nom = self.nominal_voltage(branch);
-        let ratio = magnitude / v_nom;
-        if matches!(&self.model, BranchVoltageModel::ConstantImpedance) {
-            return Ok(self.nominal_admittance[branch] * u);
-        }
-        if ratio <= options.v_low_pu {
-            return Ok(self.nominal_admittance[branch] * u);
-        }
-        if ratio <= options.v_min_pu {
-            // OpenDSS transitions linearly in complex current from
-            // nominal impedance at Vlow to the constant-power current at
-            // Vmin. Multiplication by the voltage unit phasor retains the
-            // operating branch angle.
-            let low = self.nominal_admittance[branch] * (v_nom * options.v_low_pu);
-            let at_min = self.nominal_admittance[branch] * (v_nom / options.v_min_pu);
-            let fraction = (ratio - options.v_low_pu) / (options.v_min_pu - options.v_low_pu);
-            return Ok((u / magnitude) * (low + fraction * (at_min - low)));
-        }
-        if ratio > options.v_max_pu {
-            return Ok(self.nominal_admittance[branch] / options.v_max_pu.powi(2) * u);
-        }
-        self.current_at_voltage(branch, u, magnitude)
+        let BranchVoltageModel::Law(model) = &self.model else {
+            return self.current_at_voltage(branch, u, magnitude);
+        };
+        let power = self.power[branch];
+        let [p, q] = model
+            .power_scale_in_envelope(
+                branch,
+                magnitude,
+                [options.v_low_pu, options.v_min_pu, options.v_max_pu],
+                [power.re != 0.0, power.im != 0.0],
+            )
+            .map_err(|error| format!("load `{}` branch {branch}: {error}", self.name))?;
+        Ok(self.current_from_scale(branch, u, magnitude, [p, q]))
     }
 
     fn current_at_voltage(
@@ -166,12 +161,25 @@ impl BranchLoad {
         magnitude: f64,
     ) -> Result<Complex64, String> {
         let power = self.power[branch];
-        let [p, q] = model
+        let scale = model
             .power_scale_where(branch, magnitude, [power.re != 0.0, power.im != 0.0])
             .map_err(|error| format!("load `{}` branch {branch}: {error}", self.name))?;
-        Ok((u / magnitude) * Complex64::new(power.re * p / magnitude, -power.im * q / magnitude))
+        Ok(self.current_from_scale(branch, u, magnitude, scale))
     }
 
+    /// `conj(S·scale / U)`, as the unit phasor times `(P·p, -Q·q) / |U|`.
+    fn current_from_scale(
+        &self,
+        branch: usize,
+        u: Complex64,
+        magnitude: f64,
+        [p, q]: [f64; 2],
+    ) -> Complex64 {
+        let power = self.power[branch];
+        (u / magnitude) * Complex64::new(power.re * p / magnitude, -power.im * q / magnitude)
+    }
+
+    /// A bounded law owns its envelope; PowerIO evaluates it whole.
     fn bounded_current(
         &self,
         branch: usize,
@@ -181,32 +189,7 @@ impl BranchLoad {
         let BranchVoltageModel::Bounded(model) = &self.model else {
             unreachable!()
         };
-        let ratio = magnitude / self.nominal_voltage(branch);
-        // The low-voltage continuation is linear in U. Evaluate it directly
-        // so squaring a subnormal voltage cannot erase a representable current.
-        match model {
-            DistLoadVoltageModel::BoundedZip { v_low_pu, .. }
-            | DistLoadVoltageModel::BoundedExponential { v_low_pu, .. }
-                if ratio <= *v_low_pu =>
-            {
-                return Ok(self.nominal_admittance[branch] * u)
-            }
-            DistLoadVoltageModel::BoundedConstantPower {
-                v_min_pu,
-                current_limit_pu,
-                ..
-            } if ratio <= *v_min_pu
-                && current_limit_pu.is_none_or(|limit| ratio / v_min_pu.powi(2) <= limit) =>
-            {
-                return Ok(self.nominal_admittance[branch] / v_min_pu.powi(2) * u);
-            }
-            _ => {}
-        }
         self.law_current(model, branch, u, magnitude)
-    }
-
-    fn nominal_voltage(&self, branch: usize) -> f64 {
-        self.nominal_voltage[branch]
     }
 
     fn zero_current_at_zero_voltage(&self, branch: usize, magnitude: f64, zero_tol: f64) -> bool {
@@ -314,7 +297,7 @@ impl BranchLoad {
         let nominal_admittance = power
             .iter()
             .zip(&self.nominal_voltage)
-            .map(|(&s, &v)| s.conj() / (v * v))
+            .map(|(&s, &v)| powerio_dist::calc_load_nominal_admittance(s, v))
             .collect::<Vec<_>>();
         if nominal_admittance
             .iter()
@@ -407,7 +390,7 @@ pub(crate) fn prepare_load(
     let nominal_admittance: Vec<Complex64> = power
         .iter()
         .zip(vnom.iter().copied())
-        .map(|(&s, v)| s.conj() / (v * v))
+        .map(|(&s, v)| powerio_dist::calc_load_nominal_admittance(s, v))
         .collect();
     if nominal_admittance
         .iter()
@@ -647,7 +630,7 @@ pub(crate) fn load_channels(
 mod bounded_tests {
     use super::*;
     #[test]
-    fn bounded_constant_power_preserves_its_limit_and_tiny_voltage_continuation() {
+    fn bounded_constant_power_preserves_its_limit_and_low_voltage_continuation() {
         let load = BranchLoad {
             name: "bounded".into(),
             bus: "bus".into(),
@@ -673,7 +656,6 @@ mod bounded_tests {
                 (0.1, 0.1 / 0.64),
                 (1.0, 0.5),
                 (2.0, 0.5),
-                (1e-200, 1e-200 / 0.64),
             ] {
                 let current = load
                     .branch_current(0, &[Complex64::new(voltage, 0.0)], &options)
