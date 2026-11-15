@@ -102,7 +102,7 @@ pub fn islands(net: &BalancedNetwork) -> Vec<Vec<usize>> {
     let mut uf = UnionFind::new(n);
     for br in net.branches().iter().filter(|b| b.in_service) {
         if let (Some(&a), Some(&b)) = (index.get(&br.from.0), index.get(&br.to.0)) {
-            uf.union(a, b);
+            crate::geom::delaunay::join(&mut uf, a, b);
         }
     }
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();

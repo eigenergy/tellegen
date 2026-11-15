@@ -18,9 +18,10 @@
 //! factor still leaves to place go where the planned flow is heaviest.
 //!
 //! Ratings stay what the conductor and the line length allow; capacity comes
-//! from circuits. The DC power flow is the grounded Laplacian system solved
-//! by Jacobi-preconditioned conjugate gradients, O(iterations × branches),
-//! with no dependence on platform or clock.
+//! from circuits. The DC power flow is PowerIO's grounded Laplacian factor
+//! (`GroundedLaplacianFactor`), with Jacobi-preconditioned conjugate
+//! gradients over PowerIO's Laplacian product as the fallback, and no
+//! dependence on platform or clock.
 
 use crate::electrical::branches::{design_circuits, CircuitDesign, CorridorDraw, BASE_MVA};
 use crate::electrical::generators::DraftGenerator;
@@ -29,9 +30,10 @@ use crate::electrical::params::{
     STIFFENING_BATCH_SHARE, STIFFENING_BRANCH_BUDGET, STIFFENING_HV_SHARE,
     TRANSFORMER_SIZE_STEP_MVA, UPGRADE_CIRCUITS,
 };
-use crate::geom::delaunay::UnionFind;
+use crate::geom::delaunay::{join, UnionFind};
 use crate::site::DraftBus;
 use crate::topology::Corridor;
+use powerio_matrix::{calc_edge_flows, calc_edge_laplacian_product, GroundedLaplacianFactor};
 
 /// Whether the plan may change the network.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -226,9 +228,9 @@ pub fn economic_dispatch(units: &[(f64, f64, f64, f64)], demand: f64) -> Vec<f64
 /// Bus angles (radians) of a lossless DC power flow. `edges` are
 /// `(a, b, susceptance pu)`, `injection` is per unit, and `grounds` holds one
 /// bus per connected component whose angle is fixed at zero (it absorbs any
-/// imbalance of its component). Solved on the grounded weighted Laplacian,
-/// which is symmetric positive definite on every component with a ground
-/// ([`GroundedLaplacian`]).
+/// imbalance of its component). Solved on PowerIO's grounded weighted
+/// Laplacian ([`GroundedLaplacianFactor`]), which is symmetric positive
+/// definite on every component with a ground.
 pub fn dc_angles(
     n: usize,
     edges: &[(usize, usize, f64)],
@@ -238,85 +240,10 @@ pub fn dc_angles(
     dc_angles_from(n, edges, injection, grounds, None)
 }
 
-/// The grounded weighted Laplacian of a DC power flow, factorised once for
-/// repeated solves (sparse Cholesky). Ground buses, and buses with no
-/// branch, are left out and keep angle zero.
-pub struct GroundedLaplacian {
-    n: usize,
-    /// Row of each bus in the factor, or `usize::MAX` for one left out.
-    row: Vec<usize>,
-    llt: faer::sparse::linalg::solvers::Llt<usize, f64>,
-}
-
-impl GroundedLaplacian {
-    /// `None` when the factorisation fails (a component without a ground,
-    /// or a non-positive susceptance).
-    pub fn new(n: usize, edges: &[(usize, usize, f64)], grounds: &[usize]) -> Option<Self> {
-        let mut grounded = vec![false; n];
-        for &g in grounds {
-            grounded[g] = true;
-        }
-        let mut diag = vec![0.0; n];
-        for &(a, b, w) in edges {
-            if !(w.is_finite() && w > 0.0) {
-                return None;
-            }
-            diag[a] += w;
-            diag[b] += w;
-        }
-        let mut row = vec![usize::MAX; n];
-        let mut dim = 0usize;
-        for i in 0..n {
-            if !grounded[i] && diag[i] > 0.0 {
-                row[i] = dim;
-                dim += 1;
-            }
-        }
-        let mut entries: Vec<faer::sparse::Triplet<usize, usize, f64>> =
-            Vec::with_capacity(dim + edges.len());
-        for i in 0..n {
-            if row[i] != usize::MAX {
-                entries.push(faer::sparse::Triplet::new(row[i], row[i], diag[i]));
-            }
-        }
-        for &(a, b, w) in edges {
-            let (ra, rb) = (row[a], row[b]);
-            if ra != usize::MAX && rb != usize::MAX && ra != rb {
-                // Lower triangle only: the factorisation reads one side.
-                let (r, c) = if ra > rb { (ra, rb) } else { (rb, ra) };
-                entries.push(faer::sparse::Triplet::new(r, c, -w));
-            }
-        }
-        let mat =
-            faer::sparse::SparseColMat::<usize, f64>::try_new_from_triplets(dim, dim, &entries)
-                .ok()?;
-        let llt = mat.sp_cholesky(faer::Side::Lower).ok()?;
-        Some(Self { n, row, llt })
-    }
-
-    /// Angles for `injection` (per unit).
-    pub fn solve(&self, injection: &[f64]) -> Vec<f64> {
-        use faer::linalg::solvers::Solve;
-        let dim = self.row.iter().filter(|&&r| r != usize::MAX).count();
-        let mut x = faer::Mat::<f64>::zeros(dim, 1);
-        for i in 0..self.n {
-            if self.row[i] != usize::MAX {
-                x[(self.row[i], 0)] = injection[i];
-            }
-        }
-        self.llt.solve_in_place(x.as_mut());
-        (0..self.n)
-            .map(|i| match self.row[i] {
-                usize::MAX => 0.0,
-                r => x[(r, 0)],
-            })
-            .collect()
-    }
-}
-
-/// [`dc_angles`], by [`GroundedLaplacian`] when it factorises and otherwise
-/// by Jacobi-preconditioned conjugate gradients started from `guess` (the
-/// previous planning round's angles, which a round changes little).
+/// [`dc_angles`], by PowerIO's [`GroundedLaplacianFactor`] when it factors
+/// and otherwise by Jacobi-preconditioned conjugate gradients started from
+/// `guess` (the previous planning round's angles, which a round changes
+/// little).
 fn dc_angles_from(
     n: usize,
     edges: &[(usize, usize, f64)],
@@ -324,8 +251,8 @@ fn dc_angles_from(
     grounds: &[usize],
     guess: Option<&[f64]>,
 ) -> Vec<f64> {
-    if let Some(l) = GroundedLaplacian::new(n, edges, grounds) {
-        let x = l.solve(injection);
+    if let Ok(factor) = GroundedLaplacianFactor::from_edges(n, edges, grounds) {
+        let x = factor.solve(injection);
         if x.iter().all(|v| v.is_finite()) {
             return x;
         }
@@ -333,6 +260,10 @@ fn dc_angles_from(
     dc_angles_cg(n, edges, injection, grounds, guess)
 }
 
+/// Conjugate gradients on the grounded Laplacian, applied matrix free by
+/// PowerIO's [`calc_edge_laplacian_product`] with the ground rows held at
+/// zero, preconditioned by the Laplacian's diagonal (each bus's total edge
+/// weight).
 fn dc_angles_cg(
     n: usize,
     edges: &[(usize, usize, f64)],
@@ -350,12 +281,7 @@ fn dc_angles_cg(
         diag[b] += w;
     }
     let apply = |x: &[f64], y: &mut [f64]| {
-        y.iter_mut().for_each(|v| *v = 0.0);
-        for &(a, b, w) in edges {
-            let d = w * (x[a] - x[b]);
-            y[a] += d;
-            y[b] -= d;
-        }
+        y.copy_from_slice(&calc_edge_laplacian_product(edges, x));
         for i in 0..n {
             if grounded[i] {
                 y[i] = 0.0;
@@ -480,10 +406,7 @@ fn planning_state(
         .collect();
     let p: Vec<f64> = injection_mw.iter().map(|v| v / BASE_MVA).collect();
     let theta = dc_angles_from(n, &edges, &p, grounds, guess);
-    let flows = edges
-        .iter()
-        .map(|&(a, b, w)| w * (theta[a] - theta[b]) * BASE_MVA)
-        .collect();
+    let flows = corridor_mw(&edges, &theta);
     PlanningCase {
         edges,
         theta,
@@ -501,10 +424,29 @@ fn corridor_flows(
     grounds: &[usize],
 ) -> Vec<f64> {
     let (edges, theta) = planning_angles(n, designs, circuits, injection_mw, grounds);
-    edges
-        .iter()
-        .map(|&(a, b, w)| w * (theta[a] - theta[b]) * BASE_MVA)
+    corridor_mw(&edges, &theta)
+}
+
+/// Corridor flows in MW at `theta`: PowerIO's DC edge flow on the per unit
+/// susceptances, on [`BASE_MVA`].
+fn corridor_mw(edges: &[(usize, usize, f64)], theta: &[f64]) -> Vec<f64> {
+    calc_edge_flows(edges, theta)
+        .into_iter()
+        .map(|flow| flow * BASE_MVA)
         .collect()
+}
+
+/// Each bus's component representative over the corridors `(a, b)`, under
+/// the generator's merge rule ([`join`], which keeps `b`'s representative).
+/// A component with no reference generator is grounded at its
+/// representative, and components are visited in representative order, so
+/// the rule fixes the plan's grounds and their order.
+fn corridor_components(n: usize, ends: impl IntoIterator<Item = (usize, usize)>) -> Vec<usize> {
+    let mut uf = UnionFind::new(n);
+    for (a, b) in ends {
+        join(&mut uf, a, b);
+    }
+    (0..n).map(|i| uf.find(i)).collect()
 }
 
 /// Circuits one corridor may hold. A hierarchical plan cannot raise a
@@ -549,11 +491,7 @@ pub fn plan_corridors(
     let promote = mode == PlanMode::Expand;
     let n = buses.len();
     // Electrical components of the corridor graph; each balances on its own.
-    let mut uf = UnionFind::new(n);
-    for c in corridors.iter() {
-        uf.union(c.a, c.b);
-    }
-    let component: Vec<usize> = (0..n).map(|i| uf.find(i)).collect();
+    let component = corridor_components(n, corridors.iter().map(|c| (c.a, c.b)));
     let mut roots: Vec<usize> = component.clone();
     roots.sort_unstable();
     roots.dedup();
@@ -967,6 +905,19 @@ mod tests {
     }
 
     #[test]
+    fn a_component_without_a_reference_is_grounded_at_its_last_joined_end() {
+        // Each merge keeps its second end's representative: the chain 0-1-2
+        // is represented (and, without a slack generator, grounded) by bus 2
+        // and the pair 3-4 by bus 4, as the generator has always planned.
+        // PowerIO's union keeps the first, which would give 0 and 3.
+        assert_eq!(
+            corridor_components(6, [(0, 1), (1, 2), (3, 4)]),
+            vec![2, 2, 2, 4, 4, 5]
+        );
+        assert_eq!(corridor_components(3, [(2, 0), (1, 0)]), vec![0, 0, 0]);
+    }
+
+    #[test]
     fn dc_angles_solve_a_ring_exactly() {
         // Ring 0-1-2-3-0 with unit susceptances, 1 pu in at 0 and out at 2:
         // each path carries 0.5 pu, so θ1 = θ3 = -0.5 and θ2 = -1 from θ0 = 0.
@@ -994,7 +945,7 @@ mod tests {
         edges.extend((4..9).map(|i| (i, i + 1, 0.3 + i as f64)));
         let injection: Vec<f64> = (0..11).map(|i| ((i * 7 % 5) as f64 - 2.0) * 0.3).collect();
         let grounds = [0, 4, 10];
-        let exact = GroundedLaplacian::new(11, &edges, &grounds)
+        let exact = GroundedLaplacianFactor::from_edges(11, &edges, &grounds)
             .unwrap()
             .solve(&injection);
         let cg = dc_angles_cg(11, &edges, &injection, &grounds, None);
@@ -1003,6 +954,6 @@ mod tests {
         }
         assert_eq!(exact[10], 0.0);
         // A component without a ground cannot be factorised.
-        assert!(GroundedLaplacian::new(3, &[(1, 2, 1.0)], &[0]).is_none());
+        assert!(GroundedLaplacianFactor::from_edges(3, &[(1, 2, 1.0)], &[0]).is_err());
     }
 }

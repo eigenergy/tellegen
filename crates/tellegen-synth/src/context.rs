@@ -846,7 +846,7 @@ fn landmass_groups(shape: &RegionShape, kept: &[usize], max_km: f64) -> Vec<Vec<
                 }
             }
             if near {
-                uf.union(a, b);
+                crate::geom::delaunay::join(&mut uf, a, b);
             }
         }
     }

@@ -1255,7 +1255,7 @@ pub fn hierarchical_topology(
     let n = buses.len();
     let mut uf = UnionFind::new(n);
     for e in edges.iter().chain(&transformers) {
-        uf.union(e.0, e.1);
+        crate::geom::delaunay::join(&mut uf, e.0, e.1);
     }
     let mut by_island: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (i, b) in buses.iter().enumerate() {
@@ -1292,7 +1292,7 @@ pub fn hierarchical_topology(
             }
             let (_, s, m) = best.expect("a main component member");
             edges.insert(Edge::new(s, m));
-            uf.union(s, m);
+            crate::geom::delaunay::join(&mut uf, s, m);
         }
     }
 
@@ -1360,7 +1360,7 @@ mod tests {
         assert!(n > 600, "taps are added");
         let mut uf = UnionFind::new(n);
         for c in &topo.corridors {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
             let (a, b) = (&buses[c.a], &buses[c.b]);
             if (a.base_kv - b.base_kv).abs() > 1e-9 {
                 // Between levels: a site transformer, or a fallback join.

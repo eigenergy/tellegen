@@ -259,7 +259,7 @@ pub(crate) fn island_topology(
     // union-find check is cheap insurance against a degenerate triangulation).
     let mut uf = UnionFind::new(idxs.len());
     for e in &local {
-        uf.union(e.0, e.1);
+        crate::geom::delaunay::join(&mut uf, e.0, e.1);
     }
     if crate::geom::delaunay::component_count(&mut uf, idxs.len()) > 1 {
         // Attach each extra component to its nearest bus in the first one.
@@ -276,7 +276,7 @@ pub(crate) fn island_topology(
                     }
                 }
                 add(&mut local, &mut degree, Edge::new(k, best.1));
-                uf.union(k, best.1);
+                crate::geom::delaunay::join(&mut uf, k, best.1);
             }
         }
     }
@@ -407,7 +407,7 @@ mod tests {
             let (buses, topo, _) = generate(&req);
             let mut uf = UnionFind::new(n);
             for c in &topo.corridors {
-                uf.union(c.a, c.b);
+                crate::geom::delaunay::join(&mut uf, c.a, c.b);
             }
             assert_eq!(
                 crate::geom::delaunay::component_count(&mut uf, n),
@@ -476,7 +476,7 @@ mod tests {
         assert!(buses.iter().any(|b| b.island == 1));
         let mut uf = UnionFind::new(40);
         for c in &topo.corridors {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
         }
         assert_eq!(crate::geom::delaunay::component_count(&mut uf, 40), 2);
     }

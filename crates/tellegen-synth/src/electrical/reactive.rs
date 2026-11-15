@@ -29,11 +29,12 @@ use crate::electrical::params::{
     GENERATOR_Q_PLANNING_SHARE, GENERATOR_VG, MIN_SHUNT_BANK_MVAR, VOLTAGE_SUPPORT_KM,
     VOLTAGE_SUPPORT_Q_SHARE,
 };
-use crate::electrical::planning::{dc_angles, GroundedLaplacian};
+use crate::electrical::planning::dc_angles;
 use crate::report::BusKind;
 use crate::request::Fuel;
 use crate::site::DraftBus;
 use crate::topology::Corridor;
+use powerio_matrix::GroundedLaplacianFactor;
 
 /// Fast decoupled iterations before the angle solve gives up.
 const MAX_ANGLE_ITERATIONS: usize = 40;
@@ -103,7 +104,7 @@ pub fn ac_angles(
         .iter()
         .map(|b| (b.from, b.to, 1.0 / b.x_pu))
         .collect();
-    let factor = GroundedLaplacian::new(n, &edges, grounds);
+    let factor = GroundedLaplacianFactor::from_edges(n, &edges, grounds).ok();
     let solve = |rhs: &[f64]| match &factor {
         Some(f) => f.solve(rhs),
         None => dc_angles(n, &edges, rhs, grounds),

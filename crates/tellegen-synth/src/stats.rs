@@ -45,7 +45,7 @@ pub fn measure(net: &BalancedNetwork, max_loading: Option<f64>) -> TopologyStats
         }
         let key = (a.min(b), a.max(b));
         *corridor_count.entry(key).or_insert(0) += 1;
-        uf.union(a, b);
+        crate::geom::delaunay::join(&mut uf, a, b);
         let len = branch_length_km(br, coords[a], coords[b]);
         if let Some(len) = len {
             lengths.push(len);

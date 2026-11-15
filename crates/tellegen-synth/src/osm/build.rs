@@ -1224,7 +1224,7 @@ impl OsmBuild {
         // Electrical islands become the buses' island index.
         let mut uf = UnionFind::new(buses.len());
         for c in &corridors {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
         }
         let mut index: BTreeMap<usize, usize> = BTreeMap::new();
         for (i, bus) in buses.iter_mut().enumerate() {
@@ -1261,7 +1261,7 @@ impl OsmBuild {
     ) -> usize {
         let mut uf = UnionFind::new(buses.len());
         for c in corridors.iter() {
-            uf.union(c.a, c.b);
+            crate::geom::delaunay::join(&mut uf, c.a, c.b);
         }
         let mut powered = std::collections::BTreeSet::new();
         for p in &self.plants {
@@ -1700,7 +1700,7 @@ pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> 
     }
     let mut uf = UnionFind::new(n);
     for c in corridors.iter() {
-        uf.union(c.a, c.b);
+        crate::geom::delaunay::join(&mut uf, c.a, c.b);
     }
     if crate::geom::delaunay::component_count(&mut uf, n) <= 1 {
         return 0;
