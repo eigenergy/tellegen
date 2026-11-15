@@ -10,7 +10,7 @@
 
 use num_complex::Complex;
 
-use powerio_dist::dense::{invert_dense_matrix, DensePivot};
+use powerio_dist::kron::calc_kron_reduced_impedance;
 use powerio_matrix::{AcBranchData, AcBranchFlows};
 
 use super::models::{dq_ri_sc, mag, Avr, Governor, Machine, Shaft, Stabilizer};
@@ -918,10 +918,10 @@ impl DynSystem {
     /// ends and inner fault, before its tap: the series admittance split at
     /// the fault point into PowerIO pi sections (`y / α` with the from
     /// charging, `y / (1 − α)` with the to charging), the fault admittance to
-    /// ground there, and the inner nodes and open ends eliminated (Kron
-    /// reduction over PowerIO's dense inverse). The reduction of these
-    /// reciprocal sections is symmetric, so it is a pi model: series
-    /// `−Y_ft`, charging `Y_ff + Y_ft` and `Y_tt + Y_tf`. The branch's own tap
+    /// ground there, and the inner nodes and open ends eliminated (PowerIO's
+    /// Kron reduction). The reduction of these reciprocal sections is
+    /// symmetric, so it is a pi model: series `−Y_ft`, charging
+    /// `Y_ff + Y_ft` and `Y_tt + Y_tf`. The branch's own tap
     /// and shift then refer it to the from bus when PowerIO stamps it.
     fn terminal_equivalent(&self, e: usize) -> (C64, C64, C64) {
         let zero = C64::new(0.0, 0.0);
@@ -944,7 +944,13 @@ impl DynSystem {
         let open = self.end_open[e];
         let ext: Vec<usize> = (0..2).filter(|&k| !open[k]).collect();
         let int: Vec<usize> = (0..3).filter(|k| !ext.contains(k)).collect();
-        let red = kron(&full, &ext, &int);
+        // PowerIO's Kron reduction `M_kk − M_ke M_ee⁻¹ M_ek` (named for the
+        // conductor impedance it was written for; the algebra is the same
+        // for an admittance). An exactly singular `Y_II` (inner nodes that
+        // float) gives `None`: nothing reaches the terminals.
+        let full: Vec<Vec<C64>> = full.iter().map(|row| row.to_vec()).collect();
+        let red = calc_kron_reduced_impedance(&full, &ext, &int, 0.0)
+            .unwrap_or_else(|| vec![vec![zero; ext.len()]; ext.len()]);
         let mut out = [[zero; 2]; 2];
         for (a, &i) in ext.iter().enumerate() {
             for (b, &j) in ext.iter().enumerate() {
@@ -1077,38 +1083,3 @@ pub(crate) fn fd_step(x: f64) -> f64 {
 /// functions summed in another order, depart from the compiled models by up
 /// to 7.5e-6 (`tests/rms_graph.rs`); with `1e-7` they agree to 1e-9.
 pub(crate) const FD_REL: f64 = 1e-7;
-
-/// `Y_EE − Y_EI Y_II⁻¹ Y_IE` of a 3×3 admittance matrix, `Y_II⁻¹` by
-/// PowerIO's dense inverse (Gauss–Jordan with partial pivoting). An exactly
-/// singular `Y_II` (inner nodes that float) or no terminal left gives a zero
-/// reduction: nothing reaches the terminals.
-fn kron(y: &[[C64; 3]; 3], ext: &[usize], int: &[usize]) -> Vec<Vec<C64>> {
-    let zero = C64::new(0.0, 0.0);
-    let y_ii: Vec<Vec<C64>> = int
-        .iter()
-        .map(|&i| int.iter().map(|&j| y[i][j]).collect())
-        .collect();
-    let inv = if ext.is_empty() {
-        None
-    } else {
-        invert_dense_matrix(&y_ii, DensePivot::Partial, 0.0, 0.0)
-    };
-    let Some(inv) = inv else {
-        return vec![vec![zero; ext.len()]; ext.len()];
-    };
-    ext.iter()
-        .map(|&i| {
-            ext.iter()
-                .map(|&j| {
-                    let mut v = y[i][j];
-                    for (a_, &p) in int.iter().enumerate() {
-                        for (b_, &q) in int.iter().enumerate() {
-                            v -= y[i][p] * inv[a_][b_] * y[q][j];
-                        }
-                    }
-                    v
-                })
-                .collect()
-        })
-        .collect()
-}
