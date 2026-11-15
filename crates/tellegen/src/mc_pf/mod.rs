@@ -3315,6 +3315,20 @@ mod tests {
         assert!((inferred - 10.0).abs() < 1e-9, "{inferred}");
     }
 
+    /// A load stated single phase carries one power across two terminals; one
+    /// power on one terminal is refused rather than read as a grounded wye leg.
+    #[test]
+    fn a_single_phase_load_on_one_terminal_is_refused() {
+        let mut net = one_phase(1.0).network().clone();
+        net.loads_mut()[0].configuration = Configuration::SinglePhase;
+        let error = solve_mc_ac_pf_instance(
+            &McAcPfInstance::from_network(net).expect("instance"),
+            &McPfOptions::default(),
+        )
+        .unwrap_err();
+        assert!(error.contains("two terminals and one power"), "{error}");
+    }
+
     #[test]
     fn invalid_voltage_envelope_options_are_rejected() {
         let error = solve_mc_ac_pf_instance(

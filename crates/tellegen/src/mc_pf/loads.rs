@@ -618,6 +618,18 @@ fn connection_incidence(
     index: &NetworkIndex,
 ) -> Result<Vec<Vec<(usize, Complex64)>>, String> {
     let terminal = |name: &str| index.resolve((&load.bus, name));
+    // The power flow keeps its single phase rule: one power across two
+    // terminals. PowerIO's incidence also reads a single phase load with one
+    // power per terminal as grounded wye legs, which this solver has never
+    // accepted for a load stated single phase.
+    if load.configuration == Configuration::SinglePhase
+        && (load.terminal_map.len() != 2 || load.p_nom.len() != 1)
+    {
+        return Err(format!(
+            "single-phase load `{}` requires two terminals and one power",
+            load.name
+        ));
+    }
     if let Ok(rows) = powerio_matrix::lindist3flow_connection_incidence(
         load.configuration,
         load.terminal_map.len(),
@@ -707,18 +719,6 @@ fn connection_incidence(
                     load.name
                 ))
             }
-        }
-        Configuration::SinglePhase => {
-            if load.terminal_map.len() != 2 || load.p_nom.len() != 1 {
-                return Err(format!(
-                    "single-phase load `{}` requires two terminals and one power",
-                    load.name
-                ));
-            }
-            Ok(vec![vec![
-                (terminal(&load.terminal_map[0])?, Complex64::new(1.0, 0.0)),
-                (terminal(&load.terminal_map[1])?, Complex64::new(-1.0, 0.0)),
-            ]])
         }
         _ => Err(format!(
             "load `{}` uses an unsupported connection configuration",
