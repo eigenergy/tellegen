@@ -105,35 +105,13 @@ impl<'a> AcNewton<'a> {
     }
 
     /// The from/to complex-power partials of branch `e` w.r.t. `(va_f, vm_f, va_t,
-    /// vm_t)` — the pi-model `dSbr/dV` at the converged voltages. With `S_f = V_f
-    /// conj(Y_ff V_f + Y_ft V_t)` and the polar partials `∂V_k/∂va_k = j V_k`,
-    /// `∂V_k/∂vm_k = V_k/vm_k`, the cross terms collapse to the forms below. Returns
-    /// `([∂S_f/∂…], [∂S_t/∂…])`.
+    /// vm_t)`, the pi-model `dSbr/dV` at the converged voltages: PowerIO's
+    /// `calc_branch_flow_partials` over the block `AcNetwork::ybus` stamps.
+    /// Returns `([∂S_f/∂…], [∂S_t/∂…])`.
     fn flow_partials(&self, e: usize) -> ([Complex<f64>; 4], [Complex<f64>; 4]) {
-        let branches = &self.net.branches;
-        let (f, t) = (branches.from_bus[e], branches.to_bus[e]);
-        let vf = Complex::from_polar(self.vm[f], self.va[f]);
-        let vt = Complex::from_polar(self.vm[t], self.va[t]);
-        let vhat_f = Complex::from_polar(1.0, self.va[f]);
-        let vhat_t = Complex::from_polar(1.0, self.va[t]);
-        // PowerIO's per-branch pi-model block, the one `AcNetwork::ybus` stamps.
-        let [yff, yft, ytf, ytt] = branches.calc_branch_admittance(e);
-        let i_f = yff * vf + yft * vt;
-        let i_t = ytf * vf + ytt * vt;
-        let j = Complex::<f64>::i();
-        let from = [
-            j * vf * (yft * vt).conj(),                       // ∂S_f/∂va_f
-            vhat_f * i_f.conj() + vf * (yff * vhat_f).conj(), // ∂S_f/∂vm_f
-            -j * vf * (yft * vt).conj(),                      // ∂S_f/∂va_t
-            vf * (yft * vhat_t).conj(),                       // ∂S_f/∂vm_t
-        ];
-        let to = [
-            -j * vt * (ytf * vf).conj(),                      // ∂S_t/∂va_f
-            vt * (ytf * vhat_f).conj(),                       // ∂S_t/∂vm_f
-            j * vt * (ytf * vf).conj(),                       // ∂S_t/∂va_t
-            vhat_t * i_t.conj() + vt * (ytt * vhat_t).conj(), // ∂S_t/∂vm_t
-        ];
-        (from, to)
+        self.net
+            .branches
+            .calc_branch_flow_partials(e, &self.vm, &self.va)
     }
 
     /// The branch-flow operand's linear map: for each branch, the gradient of the
