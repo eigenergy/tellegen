@@ -177,7 +177,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(540px, calc(100vw - 200px));
-		font: 12px/1.4 var(--font-display);
+		font: 13px/1.4 var(--font-display);
 		pointer-events: none;
 	}
 	.notice,
@@ -196,12 +196,12 @@
 		padding: 3px 8px 3px 12px;
 		box-sizing: border-box;
 	}
+	/* The message says what to do next, so it wraps instead of being cut off. */
 	.message {
 		min-width: 0;
 		flex: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		padding: 5px 0;
+		overflow-wrap: anywhere;
 	}
 	.quiet {
 		width: fit-content;

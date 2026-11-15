@@ -155,6 +155,12 @@
 		padding: var(--space-lg) var(--space-xl) var(--space-md);
 	}
 
+	/* Beside the Network panel's own result sentence, the solver's line is detail. */
+	.embedded .verdict {
+		font-weight: 400;
+		color: var(--text-secondary);
+	}
+
 	.embedded .solvecard {
 		margin: 4px 0 12px;
 		padding: 8px 0 0;
