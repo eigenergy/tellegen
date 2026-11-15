@@ -2334,7 +2334,7 @@ pub(crate) fn validate_options(options: &McPfOptions) -> Result<(), String> {
 }
 
 fn passive_current(network: &PreparedNetwork, voltage: &[Complex64], row: usize) -> Complex64 {
-    network.passive.row_mul(row, voltage)
+    network.passive_current(voltage, row)
 }
 
 /// Buffers reused by every KCL evaluation of one solve.

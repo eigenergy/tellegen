@@ -138,8 +138,6 @@ impl CsrMatrix {
     }
 }
 
-/// Scatter a PowerIO primitive onto terminal positions through PowerIO's one
-/// primitive scatter.
 /// A PowerIO failure as its message alone, without the diagnostic code
 /// prefix its display adds.
 pub(crate) fn powerio_message(error: &powerio::Error) -> String {
@@ -161,21 +159,79 @@ pub(crate) fn matrix_message(error: powerio_matrix::Error) -> String {
     }
 }
 
-fn stamp_local_values(
-    y: &mut StampedMatrix,
-    terminals: &[usize],
-    local: &[Vec<Complex64>],
-) -> Result<(), String> {
-    powerio_matrix::scatter_primitive_admittance(terminals, local, |i, j, value| {
-        y.add(i, j, value);
-    })
-    .map_err(|_| "component primitive and terminal map dimensions differ".to_owned())
+/// PowerIO's assembled passive admittance `G + jB` at the terminal positions
+/// of its nodes. Ground has no row or column in PowerIO's grounded system,
+/// and no closed switch reaches this snapshot, so every node is exactly one
+/// terminal position.
+fn passive_at_positions(
+    admittance: &powerio_matrix::MulticonductorAdmittance,
+    position_of_node: &[usize],
+) -> StampedMatrix {
+    let mut passive = StampedMatrix::zeros(position_of_node.len());
+    for (&value, (row, col)) in admittance.conductance().iter() {
+        passive.add(
+            position_of_node[row],
+            position_of_node[col],
+            Complex64::new(value, 0.0),
+        );
+    }
+    for (&value, (row, col)) in admittance.susceptance().iter() {
+        passive.add(
+            position_of_node[row],
+            position_of_node[col],
+            Complex64::new(0.0, value),
+        );
+    }
+    passive
+}
+
+/// The terminal voltages PowerIO's assembled system prescribes: each source
+/// row and each solidly grounded transformer neutral row fixes one node. A
+/// row over several nodes (an ideal transformer, a floating source
+/// reference) is an exact constraint this fixed-point snapshot does not
+/// solve.
+fn prescribed_voltages(
+    admittance: &powerio_matrix::MulticonductorAdmittance,
+    position_of_node: &[usize],
+) -> Result<Vec<(usize, Complex64)>, String> {
+    let augmented = admittance.augmented();
+    let rows = augmented.labels.len();
+    let mut entries = vec![Vec::<(usize, Complex64)>::new(); rows];
+    for (&value, (row, col)) in augmented.constraint_re.iter() {
+        if row < rows {
+            entries[row].push((col, Complex64::new(value, 0.0)));
+        }
+    }
+    for (&value, (row, col)) in augmented.constraint_im.iter() {
+        if row < rows {
+            entries[row].push((col, Complex64::new(0.0, value)));
+        }
+    }
+    entries
+        .iter()
+        .enumerate()
+        .map(|(row, entries)| match entries.as_slice() {
+            [(node, coefficient)] => Ok((
+                position_of_node[*node],
+                Complex64::new(augmented.rhs_re[row], augmented.rhs_im[row]) / coefficient,
+            )),
+            _ => Err(format!(
+                "`{}` constrains several terminals; the fixed-point snapshot prescribes terminal voltages only",
+                augmented.labels[row]
+            )),
+        })
+        .collect()
 }
 
 #[derive(Debug)]
 pub(crate) struct PreparedNetwork {
     pub(crate) index: NetworkIndex,
+    /// PowerIO's assembled passive admittance at terminal positions; ground
+    /// positions have no row ([`Self::passive_current`]).
     pub(crate) passive: CsrMatrix,
+    /// The element ports at each grounded terminal position: `(element,
+    /// row)` into [`Self::elements`].
+    pub(crate) ground_ports: BTreeMap<usize, Vec<(usize, usize)>>,
     pub(crate) yref: CsrMatrix,
     pub(crate) fixed: Vec<Option<Complex64>>,
     pub(crate) unknown: Vec<usize>,
@@ -245,11 +301,9 @@ impl PreparedNetwork {
         for load in network.loads() {
             load_rows.entry(load.name.as_str()).or_insert(load);
         }
-        let mut passive = StampedMatrix::zeros(n);
         let mut yref = StampedMatrix::zeros(n);
         let mut elements = Vec::new();
         let mut fixed = vec![None; n];
-        let mut prescribed_source_terminals = BTreeSet::new();
         // PowerIO's node index decides which terminals are ground.
         for (position, value) in fixed.iter_mut().enumerate() {
             if index.is_ground(position) {
@@ -257,8 +311,12 @@ impl PreparedNetwork {
             }
         }
 
-        // Ideal sources are exact Dirichlet terminals.  A second source may
-        // share a terminal only when it prescribes the same complex voltage.
+        // The instance's ideal sources. PowerIO's assembled system states
+        // their prescribed voltages (below); the admission rules here are the
+        // solver's own: finite voltages, no finite source impedance, and one
+        // source per terminal, since a shared terminal's reaction current has
+        // no allocation between its sources.
+        let mut prescribed_source_terminals = BTreeSet::new();
         for source in instance.sources() {
             if source.terminals.len() != source.v_magnitude.len()
                 || source.terminals.len() != source.v_angle.len()
@@ -268,54 +326,44 @@ impl PreparedNetwork {
                     source.source
                 ));
             }
-            for ((terminal, &mag), &angle) in source
-                .terminals
-                .iter()
-                .zip(&source.v_magnitude)
-                .zip(&source.v_angle)
-            {
-                if !mag.is_finite() || !angle.is_finite() || mag < 0.0 {
-                    return Err(format!(
-                        "source `{}` has a non-finite or negative prescribed voltage",
+            let source_row = source_rows
+                .get(source.source.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    format!(
+                        "instance source `{}` is absent from its network",
                         source.source
-                    ));
+                    )
+                })?;
+            if source
+                .v_magnitude
+                .iter()
+                .zip(&source.v_angle)
+                .any(|(&mag, &angle)| !mag.is_finite() || !angle.is_finite() || mag < 0.0)
+            {
+                return Err(format!(
+                    "source `{}` has a non-finite or negative prescribed voltage",
+                    source.source
+                ));
+            }
+            // The v0.11 typed source is an ideal prescribed source.  A
+            // finite source impedance retained in raw extras must not be
+            // silently discarded by this ideal-terminal solver.
+            for key in [
+                "r1", "x1", "r0", "x0", "r2", "x2", "isc3", "isc1", "mvasc", "mvasc3", "mvasc1",
+                "z_source", "z1", "z0", "puz1", "puz0", "bus2",
+            ] {
+                if source_row.extras.contains_key(key) {
+                    return Err(format!("source `{}` carries finite impedance metadata `{key}`; normalize it to a Norton source before MC PF", source.source));
                 }
-                let source_row = source_rows
-                    .get(source.source.as_str())
-                    .copied()
-                    .ok_or_else(|| {
-                        format!(
-                            "instance source `{}` is absent from its network",
-                            source.source
-                        )
-                    })?;
-                // The v0.11 typed source is an ideal prescribed source.  A
-                // finite source impedance retained in raw extras must not be
-                // silently discarded by this ideal-terminal solver.
-                for key in [
-                    "r1", "x1", "r0", "x0", "r2", "x2", "isc3", "isc1", "mvasc", "mvasc3",
-                    "mvasc1", "z_source", "z1", "z0", "puz1", "puz0", "bus2",
-                ] {
-                    if source_row.extras.contains_key(key) {
-                        return Err(format!("source `{}` carries finite impedance metadata `{key}`; normalize it to a Norton source before MC PF", source.source));
-                    }
-                }
+            }
+            for terminal in &source.terminals {
                 let i = index.resolve((&source_row.bus, terminal))?;
                 if !prescribed_source_terminals.insert(i) {
                     return Err(format!(
                         "multiple ideal sources prescribe terminal `{}`:{}; reaction-current allocation is indeterminate",
                         source_row.bus, terminal
                     ));
-                }
-                let value = Complex64::from_polar(mag, angle);
-                if let Some(previous) = fixed[i] {
-                    if (previous - value).norm() > 1e-8 * (1.0 + value.norm()) {
-                        return Err(format!(
-                            "conflicting ideal source prescriptions at terminal `{terminal}`"
-                        ));
-                    }
-                } else {
-                    fixed[i] = Some(value);
                 }
             }
         }
@@ -331,7 +379,7 @@ impl PreparedNetwork {
         // PowerIO's element list: lines, shunts, capacitor banks and leakage
         // transformers with their primitives. An element it cannot stamp, or
         // an ideal transformer (exact constraints this snapshot does not
-        // assemble), would leave the solved network short, so the snapshot
+        // solve), would leave the solved network short, so the snapshot
         // refuses it.
         let listed = powerio_matrix::calc_passive_primitives(network).map_err(matrix_message)?;
         if let Some(finding) = listed.diagnostics.first() {
@@ -342,31 +390,45 @@ impl PreparedNetwork {
             powerio_matrix::calc_transformer_primitive_admittance(network, ideal)
                 .map_err(|error| powerio_message(&error))?;
         }
+        // PowerIO assembles the nodal system once from that list: the
+        // passive admittance, a row per prescribed source terminal and a row
+        // per solidly grounded transformer neutral that no source fixes.
+        let admittance = powerio_matrix::assemble_multiconductor_admittance(network, &listed)
+            .map_err(matrix_message)?;
+        let mut position_of_node = vec![usize::MAX; admittance.index().len()];
+        for position in 0..n {
+            if let Some(powerio_matrix::NodeRef::Node(node)) =
+                admittance.index().resolve_position(position)
+            {
+                position_of_node[node] = position;
+            }
+        }
+        let passive = passive_at_positions(&admittance, &position_of_node);
+        for (position, value) in prescribed_voltages(&admittance, &position_of_node)? {
+            fixed[position] = Some(value);
+        }
+        // Each element keeps its own primitive for its port currents.
+        let mut ground_ports = BTreeMap::<usize, Vec<(usize, usize)>>::new();
         for element in listed.elements {
             let terminals = element
                 .terminals
                 .iter()
                 .map(|&identity| index.resolve(identity))
                 .collect::<Result<Vec<_>, _>>()?;
-            stamp_local_values(&mut passive, &terminals, &element.primitive)?;
+            for (row, &position) in terminals.iter().enumerate() {
+                if index.is_ground(position) {
+                    ground_ports
+                        .entry(position)
+                        .or_default()
+                        .push((elements.len(), row));
+                }
+            }
             elements.push(PreparedElement {
                 name: element.name.to_owned(),
                 kind: element.family.noun().to_owned(),
                 terminals,
                 yprim: element.primitive,
             });
-        }
-        // A solidly grounded transformer neutral is an exact zero voltage,
-        // applied as a prescribed value unless a source already fixes it
-        // (PowerIO's rule for that meeting).
-        for neutral in &listed.grounded {
-            let i = index.resolve((neutral.bus, neutral.terminal))?;
-            if neutral
-                .needs_zero_voltage_row(fixed[i])
-                .map_err(matrix_message)?
-            {
-                fixed[i] = Some(Complex64::new(0.0, 0.0));
-            }
         }
         // PowerIO infers the branch voltage base of each constant power load
         // whose source stated none, from its zone's nameplate or source anchor.
@@ -454,6 +516,7 @@ impl PreparedNetwork {
         let mut prepared = Self {
             index,
             passive: CsrMatrix::from_stamped(passive, n),
+            ground_ports,
             yref: CsrMatrix::from_stamped(yref, n),
             fixed,
             unknown,
@@ -470,6 +533,27 @@ impl PreparedNetwork {
             factor_ms: super::elapsed_ms(assembled, factored),
         };
         Ok((prepared, timing))
+    }
+
+    /// The passive current into the network at terminal position `row`: its
+    /// row of the assembled admittance times the voltages, or, at a grounded
+    /// terminal (which has no row), the sum of its element port currents.
+    pub(crate) fn passive_current(&self, voltage: &[Complex64], row: usize) -> Complex64 {
+        match self.ground_ports.get(&row) {
+            Some(ports) => ports
+                .iter()
+                .map(|&(element, port)| {
+                    let element = &self.elements[element];
+                    element.yprim[port]
+                        .iter()
+                        .zip(&element.terminals)
+                        .map(|(&y, &terminal)| y * voltage[terminal])
+                        .sum::<Complex64>()
+                })
+                .sum(),
+            None if self.index.is_ground(row) => Complex64::default(),
+            None => self.passive.row_mul(row, voltage),
+        }
     }
 
     pub(crate) fn fixed_voltage_vector(&self) -> Vec<Complex64> {
