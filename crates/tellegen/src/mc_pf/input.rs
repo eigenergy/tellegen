@@ -552,35 +552,9 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
             require_uniform_scalar(value, &format!("transformer `{name}` field `{key}`"))?;
         }
     }
-    // Zero legacy fields carry no placement semantics and are emitted by the
-    // pinned BMOPFTools conversion for otherwise lossless transformers.  The
-    // autotransformer subtype also defines these fields unambiguously across
-    // its from winding, so neither case needs producer-profile normalization.
-    let mut ambiguous_legacy_no_load = false;
-    for key in ["g_no_load", "b_no_load"] {
-        let Some(value) = record.get(key) else {
-            continue;
-        };
-        let Some(value) = value.as_f64().filter(|value| value.is_finite()) else {
-            return Err(format!(
-                "transformer `{name}` field `{key}` must be a finite number"
-            ));
-        };
-        if key == "g_no_load" && value < 0.0 {
-            return Err(format!(
-                "transformer `{name}` field `g_no_load` must be nonnegative"
-            ));
-        }
-        ambiguous_legacy_no_load |= value != 0.0;
-    }
-    if ambiguous_legacy_no_load
-        && !record.contains_key("no_load_shunt")
-        && subtype != "single_phase_autotransformer"
-    {
-        return Err(format!(
-            "transformer `{name}` uses legacy g_no_load/b_no_load without an explicit no_load_shunt; normalize the producer profile before MC PF"
-        ));
-    }
+    // Legacy g_no_load/b_no_load sit where PowerIO's one magnetizing rule
+    // places them (powerio_dist::transformer::calc_transformer_magnetizing),
+    // which also checks their values.
     if subtype == "single_phase_autotransformer" {
         for key in [
             "r_series_from",
@@ -860,8 +834,8 @@ pub(super) fn validate_mc_network(
         }
     }
     for transformer in network.transformers() {
-        powerio_matrix::calc_transformer_primitive_admittance(transformer)
-            .map_err(|e| e.to_string())?;
+        powerio_matrix::calc_transformer_primitive_admittance(network, transformer)
+            .map_err(|error| super::network::powerio_message(&error))?;
     }
     let index = super::network::NetworkIndex::new(network)?;
     for load in network.loads() {
@@ -1181,16 +1155,17 @@ mod tests {
     }
 
     #[test]
-    fn accepts_zero_legacy_core_fields_as_no_op() {
+    fn accepts_legacy_core_fields_powerio_places() {
+        // PowerIO's magnetizing rule places and checks g_no_load/b_no_load,
+        // so neither a zero nor a nonzero legacy core is refused here.
         let mut raw = json!({
             "transformer": {"single_phase": {
                 "t": {"g_no_load": 0.0, "b_no_load": 0.0}
             }}
         });
         validate_bmopf_json(&raw.to_string()).unwrap();
-        raw["transformer"]["single_phase"]["t"]["g_no_load"] = json!("zero");
-        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
-        assert!(error.contains("must be a finite number"), "{error}");
+        raw["transformer"]["single_phase"]["t"]["g_no_load"] = json!(0.01);
+        validate_bmopf_json(&raw.to_string()).unwrap();
     }
 
     #[test]

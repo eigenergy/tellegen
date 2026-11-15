@@ -1567,8 +1567,8 @@ fn expected_element_port_keys(
         }
     }
     for transformer in network.transformers() {
-        let primitive = powerio_matrix::calc_transformer_primitive_admittance(transformer)
-            .map_err(|error| error.to_string())?;
+        let primitive = powerio_matrix::calc_transformer_primitive_admittance(network, transformer)
+            .map_err(|error| network::powerio_message(&error))?;
         for (bus, terminal) in primitive.terminals {
             push("transformer", primitive.name, 0, bus, terminal);
         }

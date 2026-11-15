@@ -140,6 +140,27 @@ impl CsrMatrix {
 
 /// Scatter a PowerIO primitive onto terminal positions through PowerIO's one
 /// primitive scatter.
+/// A PowerIO failure as its message alone, without the diagnostic code
+/// prefix its display adds.
+pub(crate) fn powerio_message(error: &powerio::Error) -> String {
+    error
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.severity() == powerio_dist::DiagnosticSeverity::Error)
+        .map_or_else(
+            || error.to_string(),
+            |diagnostic| diagnostic.message().to_owned(),
+        )
+}
+
+/// [`powerio_message`] for a matrix builder failure that carries one.
+pub(crate) fn matrix_message(error: powerio_matrix::Error) -> String {
+    match &error {
+        powerio_matrix::Error::Commit(inner) => powerio_message(inner),
+        _ => error.to_string(),
+    }
+}
+
 fn stamp_local_values(
     y: &mut StampedMatrix,
     terminals: &[usize],
@@ -307,15 +328,21 @@ impl PreparedNetwork {
                 ));
             }
         }
-        // PowerIO's passive element list: lines, shunts and capacitor banks
-        // with their primitives. An element it cannot stamp would leave the
-        // solved network short of that element, so the snapshot refuses it.
-        let (primitives, unstamped) =
-            powerio_matrix::calc_passive_primitives(network).map_err(|e| e.to_string())?;
-        if let Some(finding) = unstamped.first() {
+        // PowerIO's element list: lines, shunts, capacitor banks and leakage
+        // transformers with their primitives. An element it cannot stamp, or
+        // an ideal transformer (exact constraints this snapshot does not
+        // assemble), would leave the solved network short, so the snapshot
+        // refuses it.
+        let listed = powerio_matrix::calc_passive_primitives(network).map_err(matrix_message)?;
+        if let Some(finding) = listed.diagnostics.first() {
             return Err(finding.message().to_string());
         }
-        for element in primitives {
+        if let Some(ideal) = listed.ideal_transformers.first() {
+            // The primitive's own refusal names why.
+            powerio_matrix::calc_transformer_primitive_admittance(network, ideal)
+                .map_err(|error| powerio_message(&error))?;
+        }
+        for element in listed.elements {
             let terminals = element
                 .terminals
                 .iter()
@@ -329,35 +356,17 @@ impl PreparedNetwork {
                 yprim: element.primitive,
             });
         }
-        // PowerIO's transformer primitive. A solidly grounded neutral is an
-        // exact zero voltage, applied as a prescribed value.
-        for transformer in network.transformers() {
-            let primitive = powerio_matrix::calc_transformer_primitive_admittance(transformer)
-                .map_err(|e| e.to_string())?;
-            for &(bus, terminal) in &primitive.grounded {
-                let i = index.resolve((bus, terminal))?;
-                if let Some(previous) = fixed[i] {
-                    if previous.norm() > 1e-12 {
-                        return Err(format!(
-                            "solid transformer neutral `{bus}`:{terminal} conflicts with a prescribed voltage"
-                        ));
-                    }
-                } else {
-                    fixed[i] = Some(Complex64::new(0.0, 0.0));
-                }
+        // A solidly grounded transformer neutral is an exact zero voltage,
+        // applied as a prescribed value unless a source already fixes it
+        // (PowerIO's rule for that meeting).
+        for neutral in &listed.grounded {
+            let i = index.resolve((neutral.bus, neutral.terminal))?;
+            if neutral
+                .needs_zero_voltage_row(fixed[i])
+                .map_err(matrix_message)?
+            {
+                fixed[i] = Some(Complex64::new(0.0, 0.0));
             }
-            let terminals = primitive
-                .terminals
-                .iter()
-                .map(|&identity| index.resolve(identity))
-                .collect::<Result<Vec<_>, _>>()?;
-            stamp_local_values(&mut passive, &terminals, &primitive.primitive)?;
-            elements.push(PreparedElement {
-                name: primitive.name.to_owned(),
-                kind: "transformer".to_owned(),
-                terminals,
-                yprim: primitive.primitive,
-            });
         }
         // PowerIO infers the branch voltage base of each constant power load
         // whose source stated none, from its zone's nameplate or source anchor.
