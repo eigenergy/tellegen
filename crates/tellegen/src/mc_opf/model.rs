@@ -367,20 +367,16 @@ impl Builder {
             columns.push(m);
         }
         let mean = scale(1.0 / (magnitudes.len() as f64), sum(magnitudes));
-        let mut out = vec![Expr::Const(curve.values[0])];
-        for j in 0..curve.knots.len() - 1 {
-            let slope =
-                (curve.values[j + 1] - curve.values[j]) / (curve.knots[j + 1] - curve.knots[j]);
-            if slope == 0.0 {
-                continue;
-            }
-            for (k, sign) in [(j, 1.0), (j + 1, -1.0)] {
-                let z = scale(
-                    1.0 / curve.epsilon,
-                    bin(BinOp::Sub, mean.clone(), Expr::Const(curve.knots[k])),
-                );
-                out.push(scale(sign * slope * curve.epsilon, softplus(z)));
-            }
+        // PowerIO's one statement of the curve: a constant plus softplus
+        // corners (`McOpfDroop::calc_terms`), each written symbolically.
+        let terms = curve.calc_terms();
+        let mut out = vec![Expr::Const(terms.constant)];
+        for hinge in &terms.hinges {
+            let z = scale(
+                1.0 / hinge.width,
+                bin(BinOp::Sub, mean.clone(), Expr::Const(hinge.knot)),
+            );
+            out.push(scale(hinge.coefficient * hinge.width, softplus(z)));
         }
         (sum(out), columns)
     }
@@ -812,13 +808,10 @@ fn compile_inner(
                         );
                     }
                 };
-                let impedance = law.terms.iter().flatten().all(|t| t[1] == 2.0);
-                if impedance {
-                    // Preserve the affine constitutive law even at U = 0.
-                    let g: f64 =
-                        law.terms[0].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
-                    let q: f64 =
-                        law.terms[1].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
+                if let Some(admittance) = law.calc_impedance_admittance() {
+                    // Preserve the affine constitutive law even at U = 0:
+                    // I = Y U with Y = g - j q from PowerIO's one rule.
+                    let (g, q) = (admittance.re, -admittance.im);
                     let real_origin = b.dual_map.origins.len();
                     b.affine_row(
                         format!("{name}:impedance:r"),

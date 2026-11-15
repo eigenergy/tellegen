@@ -370,12 +370,7 @@ pub(super) fn check(
             )?;
             if let Some(law) = &coil.load_law {
                 let ratio = u.norm() / law.nominal;
-                let impedance = law.terms.iter().flatten().all(|t| t[1] == 2.0);
-                if impedance {
-                    let admittance = C::new(
-                        law.terms[0].iter().map(|t| t[0]).sum(),
-                        -law.terms[1].iter().map(|t| t[0]).sum::<f64>(),
-                    ) / law.nominal.powi(2);
+                if let Some(admittance) = law.calc_impedance_admittance() {
                     checks.mismatch("prescribed_power_pu", (current - admittance * u).norm())?;
                 } else {
                     if ratio <= 0.0 && law.terms.iter().flatten().any(|t| t[1] != 0.0) {

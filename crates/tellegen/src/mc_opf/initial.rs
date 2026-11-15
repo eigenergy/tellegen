@@ -348,12 +348,9 @@ pub(super) fn apply(
                     .negative
                     .map_or(C::default(), |n| value(&model.voltage[n], &x));
             let p = if let Some(law) = &coil.load_law {
-                let ratio = u.norm() / law.nominal;
-                let powers = law
-                    .terms
-                    .each_ref()
-                    .map(|terms| terms.iter().map(|t| t[0] * ratio.powf(t[1])).sum::<f64>());
-                C::new(powers[0], powers[1])
+                // PowerIO's one load law evaluation, the law the OPF enforces.
+                let [(active, _), (reactive, _)] = law.calc_power(u.norm());
+                C::new(active, reactive)
             } else {
                 let p = coil.prescribed.unwrap_or([0.0, 0.0]);
                 C::new(p[0], p[1])
