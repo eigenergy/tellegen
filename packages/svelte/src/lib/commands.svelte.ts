@@ -1,7 +1,7 @@
 import { getContext, setContext } from 'svelte';
 
 /** One entry in the command palette. `title` may be a function so a command
- * can describe its next effect ("Enter zen mode" / "Exit zen mode"). */
+ * can describe its next effect ("Hide panels" / "Show panels"). */
 export interface Command {
 	id: string;
 	title: string | (() => string);
@@ -59,7 +59,10 @@ export class CommandRegistry {
 	 * finds "Case Two" but not "network". Results
 	 * keep registration order within each group, and groups keep a fixed order. */
 	matches(): Command[] {
-		const tokens = this.query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+		const tokens = this.query
+			.toLowerCase()
+			.split(/[^\p{L}\p{N}]+/u)
+			.filter(Boolean);
 		const found =
 			tokens.length === 0
 				? this.all()

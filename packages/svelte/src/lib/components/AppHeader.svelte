@@ -2,6 +2,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
+	import { FORMULATIONS } from '@tellegen/engine';
 	import { getCommandRegistry, type Command } from '../commands.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 
@@ -27,6 +28,14 @@
 			if (input.files) void ctrl.ingestFolder(input.files);
 		};
 		input.click();
+	}
+	/** A hosted distribution case named like the other cases: its name, then the region of
+	 * the transmission case it hangs off, when its own name has none. */
+	function distributionTitle(c: (typeof app.hostedDistributionCases)[number]): string {
+		const [name, own] = splitName(c.name);
+		const related = app.cases.find((x) => x.id === c.distribution?.related_case_id);
+		const region = own || (related ? splitName(related.name)[1] : '');
+		return region ? `${name} (${region})` : name;
 	}
 	// Every case is also a palette command, so a case can be opened by name.
 	const commands = getCommandRegistry();
@@ -68,6 +77,25 @@
 						}
 					]
 				: []),
+			// One command per calculation the open case can run, so typing "dc" or "ac" finds it.
+			...(() => {
+				const c = ctrl.activeSolvable;
+				if (!c || c.solving) return [];
+				return FORMULATIONS.filter(
+					(f) =>
+						!(f.disabled && !(f.id === 'acopf' && ctrl.acOpfAvailable && !c.perturbed)) &&
+						!(
+							'declaredFormulation' in c &&
+							c.declaredFormulation != null &&
+							c.declaredFormulation !== f.id
+						)
+				).map((f): Command => ({
+					id: `calculation:${f.id}`,
+					title: `Run ${f.label}`,
+					keywords: ['calculation', 'solve', 'run', f.id],
+					run: () => void ctrl.chooseCalculation(c, f.id)
+				}));
+			})(),
 			{
 				id: 'open-file',
 				title: 'Open case file…',
@@ -75,8 +103,9 @@
 				group: 'Cases',
 				run: () => fileInput?.click()
 			},
+			// The open case is not offered: switching to it would do nothing.
 			...app.cases
-				.filter((c) => !c.unavailableReason)
+				.filter((c) => !c.unavailableReason && c.id !== app.activeCaseId)
 				.map((c): Command => ({
 					id: `case:${c.id}`,
 					title: `Switch to ${c.name}`,
@@ -89,25 +118,29 @@
 				.filter((c) => !app.multiCases.some((m) => m.hosted && m.id === c.id))
 				.map((c): Command => ({
 					id: `case:${c.id}`,
-					title: `Switch to ${splitName(c.name)[0]}`,
+					title: `Switch to ${distributionTitle(c)}`,
 					group: 'Cases',
 					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor', c.name],
 					run: () => void ctrl.activateHostedDistribution(c.id)
 				})),
-			...app.localCases.map((c): Command => ({
-				id: `case:${c.id}`,
-				title: `Switch to ${c.label}`,
-				group: 'Cases',
-				keywords: ['case', 'network', 'open', 'local'],
-				run: () => void ctrl.activateLocal(c)
-			})),
-			...app.multiCases.map((c): Command => ({
-				id: `case:${c.id}`,
-				title: `Switch to ${splitName(c.label)[0]}`,
-				group: 'Cases',
-				keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
-				run: () => void ctrl.activateMulti(c)
-			}))
+			...app.localCases
+				.filter((c) => c !== app.activeLocal)
+				.map((c): Command => ({
+					id: `case:${c.id}`,
+					title: `Switch to ${c.label}`,
+					group: 'Cases',
+					keywords: ['case', 'network', 'open', 'local'],
+					run: () => void ctrl.activateLocal(c)
+				})),
+			...app.multiCases
+				.filter((c) => c !== app.activeMulti)
+				.map((c): Command => ({
+					id: `case:${c.id}`,
+					title: `Switch to ${splitName(c.label)[0]}`,
+					group: 'Cases',
+					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
+					run: () => void ctrl.activateMulti(c)
+				}))
 		])
 	);
 	/** Publish the bar's height for the map chrome and the panels, which anchor below it. */
@@ -395,11 +428,8 @@
 
 	<div class="tools">
 		{#if app.zen}
-			<button
-				class="tool"
-				aria-label="Exit zen mode"
-				title="Exit zen mode (Esc)"
-				onclick={() => (app.zen = false)}>Exit zen</button
+			<button class="tool" title="Show panels (Esc)" onclick={() => (app.zen = false)}
+				>Show panels</button
 			>
 		{/if}
 		<!-- A panel that docks on the right (Dynamics) opens here, apart from the left tabs. -->

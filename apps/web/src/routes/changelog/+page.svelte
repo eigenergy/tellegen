@@ -55,8 +55,8 @@
 	<h2>Find a command, then focus</h2>
 	<p>
 		Press <strong>Cmd+K</strong> (Ctrl+K on Windows and Linux) or <strong>Commands</strong> in the
-		header to run a calculation, switch cases or open a panel by name. <strong>Zen mode</strong>
-		hides the panels so only the map remains, and stays on after a reload until you press Escape.
+		header to run a calculation, switch cases or open a panel by name. <strong>Hide panels</strong>
+		leaves only the map, and stays on after a reload until you press Escape.
 	</p>
 	<h2>Keep maps and drawings</h2>
 	<p>

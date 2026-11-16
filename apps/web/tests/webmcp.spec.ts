@@ -477,16 +477,16 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	await expect(ribbon).toHaveCount(0, { timeout: 12_000 });
 });
 
-test('zen mode keeps the ribbon, and the ribbon leaves zen to open the Agent panel', async ({
+test('Hide panels keeps the ribbon, and the ribbon shows the panels to open the Agent panel', async ({
 	page
 }) => {
 	await installWebMcpHarness(page);
 	await congestCase(page);
 	await page.keyboard.press('ControlOrMeta+k');
 	const dialog = page.getByRole('dialog', { name: 'Command palette' });
-	await dialog.getByRole('combobox').fill('zen');
+	await dialog.getByRole('combobox').fill('hide panels');
 	await page.keyboard.press('Enter');
-	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show panels', exact: true })).toBeVisible();
 	await callTool(page, 'inspect_case', {});
 	const ribbon = page.getByTestId('agent-ribbon');
 	await expect(ribbon).toBeVisible();

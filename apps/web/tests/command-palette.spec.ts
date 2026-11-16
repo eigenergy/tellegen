@@ -2,17 +2,17 @@ import { expect, test } from './fixtures/page-errors.js';
 import { openCaseMenu } from './fixtures/chrome.js';
 import { CASE_SUMMARY, NETWORK, SOLUTION, mockDataRoutes } from './fixtures/backend-case.js';
 
-test('Cmd+K opens the palette and zen mode hides the panels until Escape', async ({ page }) => {
+test('Cmd+K opens the palette and Hide panels hides the panels until Escape', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
 	const dialog = page.getByRole('dialog', { name: 'Command palette' });
-	const pill = page.getByRole('button', { name: 'Exit zen mode', exact: true });
+	const pill = page.getByRole('button', { name: 'Show panels', exact: true });
 	const welcome = page.getByRole('complementary', { name: 'About AI agents' });
 	const toolbar = page.locator('.panel-toolbar');
 	const zoom = page.getByRole('button', { name: 'Zoom in' });
 	const attribution = page.locator('.maplibregl-ctrl-attrib');
 
-	// The introduction note is chrome too: zen hides it and brings it back.
+	// The introduction note is chrome too: hiding panels hides it and brings it back.
 	await expect(welcome).toBeVisible();
 	await expect(zoom).toBeVisible();
 	await expect(attribution).toHaveClass(/maplibregl-compact-show/);
@@ -27,7 +27,7 @@ test('Cmd+K opens the palette and zen mode hides the panels until Escape', async
 	await info.click();
 	await expect(attribution).toHaveClass(/maplibregl-compact-show/);
 	await page.keyboard.press('ControlOrMeta+k');
-	await dialog.getByRole('combobox').fill('zen');
+	await dialog.getByRole('combobox').fill('hide panels');
 	await page.keyboard.press('Enter');
 	await expect(welcome).toHaveCount(0);
 	await expect(toolbar).toHaveCount(0);
@@ -50,8 +50,8 @@ test('Cmd+K opens the palette and zen mode hides the panels until Escape', async
 	const input = dialog.getByRole('combobox');
 	await expect(input).toBeFocused();
 
-	await input.fill('zen');
-	await expect(dialog.getByRole('option', { name: /Enter zen mode/ })).toBeVisible();
+	await input.fill('hide panels');
+	await expect(dialog.getByRole('option', { name: /Hide panels/ })).toBeVisible();
 	await page.keyboard.press('Enter');
 	await expect(dialog).toHaveCount(0);
 	await expect(toolbar).toHaveCount(0);
@@ -59,7 +59,7 @@ test('Cmd+K opens the palette and zen mode hides the panels until Escape', async
 	await expect(pill).toBeVisible();
 
 	await page.keyboard.press('ControlOrMeta+k');
-	await expect(dialog.getByRole('option', { name: /^Exit zen mode/ })).toBeVisible();
+	await expect(dialog.getByRole('option', { name: /^Show panels/ })).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(dialog).toHaveCount(0);
 	await expect(pill).toBeVisible();
@@ -75,7 +75,7 @@ test('Cmd+K opens the palette and zen mode hides the panels until Escape', async
 	await expect(dialog).toHaveCount(0);
 });
 
-test('zen mode keeps the case menu, which still lists every case', async ({ page }) => {
+test('Hide panels keeps the case menu, which still lists every case', async ({ page }) => {
 	await mockDataRoutes(page);
 	await page.route('**/api/cases', (route) =>
 		route.fulfill({
@@ -92,9 +92,12 @@ test('zen mode keeps the case menu, which still lists every case', async ({ page
 	await expect(button).toContainText('Case One');
 
 	await page.keyboard.press('ControlOrMeta+k');
-	await page.getByRole('dialog', { name: 'Command palette' }).getByRole('combobox').fill('zen');
+	await page
+		.getByRole('dialog', { name: 'Command palette' })
+		.getByRole('combobox')
+		.fill('hide panels');
 	await page.keyboard.press('Enter');
-	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show panels', exact: true })).toBeVisible();
 	await expect(button).toBeVisible();
 
 	const menu = await openCaseMenu(page);
@@ -126,7 +129,7 @@ test('the palette can reset the panel layout', async ({ page }) => {
 	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
 });
 
-test('zen mode hides the compact drawer and restores it on exit', async ({ page }) => {
+test('Hide panels hides the compact drawer and Show panels restores it', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
@@ -134,10 +137,10 @@ test('zen mode hides the compact drawer and restores it on exit', async ({ page 
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(1);
 	await page.keyboard.press('ControlOrMeta+k');
 	const dialog = page.getByRole('dialog', { name: 'Command palette' });
-	await dialog.getByRole('combobox').fill('zen');
+	await dialog.getByRole('combobox').fill('hide panels');
 	await page.keyboard.press('Enter');
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(0);
-	await page.getByRole('button', { name: 'Exit zen mode', exact: true }).click();
+	await page.getByRole('button', { name: 'Show panels', exact: true }).click();
 	await expect(page.locator('[data-panel="studies"]')).toBeVisible();
 });
 
@@ -170,6 +173,14 @@ test('the palette switches cases, opens panels and is reachable from the header'
 	await expect(button).toContainText('Case Two');
 	await expect(page.locator('#tellegen-case-list .case-chip.active')).toContainText('Case Two');
 
+	// The open case is not offered again, and each calculation is a command.
+	await page.keyboard.press('ControlOrMeta+k');
+	await dialog.getByRole('combobox').fill('case two');
+	await expect(dialog.getByRole('option', { name: /Switch to Case Two/ })).toHaveCount(0);
+	await dialog.getByRole('combobox').fill('dc');
+	await expect(dialog.getByRole('option', { name: 'Run DC OPF' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
 	await page.keyboard.press('ControlOrMeta+k');
 	await dialog.getByRole('combobox').fill('agent');
 	await expect(dialog.getByRole('option', { name: 'Open Agent panel' })).toBeVisible();
@@ -180,17 +191,20 @@ test('the palette switches cases, opens panels and is reachable from the header'
 	await expect(dialog.getByRole('option', { name: 'Close Agent panel' })).toBeVisible();
 });
 
-test('zen mode survives a reload until it is exited', async ({ page }) => {
+test('hidden panels stay hidden after a reload until shown', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
 	const toolbar = page.locator('.panel-toolbar');
 	await expect(toolbar).toBeVisible();
 	await page.keyboard.press('ControlOrMeta+k');
-	await page.getByRole('dialog', { name: 'Command palette' }).getByRole('combobox').fill('zen');
+	await page
+		.getByRole('dialog', { name: 'Command palette' })
+		.getByRole('combobox')
+		.fill('hide panels');
 	await page.keyboard.press('Enter');
 	await expect(toolbar).toHaveCount(0);
 	await page.reload();
-	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show panels', exact: true })).toBeVisible();
 	await expect(toolbar).toHaveCount(0);
 	await page.keyboard.press('Escape');
 	await expect(toolbar).toBeVisible();

@@ -16,7 +16,7 @@ export class UserPreferences {
 	theme = $state<'light' | 'dark' | null>(null);
 	busSizing = $state<'power' | 'uniform'>('power');
 	coloring = $state<'price' | 'angle' | 'voltage' | 'demand'>('price');
-	/** Zen mode hides the panels; it survives a reload so a presenter keeps the view. */
+	/** Hide panels: only the map shows; it survives a reload so a presenter keeps the view. */
 	zen = $state(false);
 	/** Experimental features: dynamics (RMS) simulation, which is still
 	 * being validated. Off by default. */

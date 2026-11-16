@@ -124,8 +124,8 @@
 	});
 	commands.register({
 		id: 'zen',
-		title: () => (app.zen ? 'Exit zen mode' : 'Enter zen mode'),
-		keywords: ['focus', 'hide panels', 'distraction'],
+		title: () => (app.zen ? 'Show panels' : 'Hide panels'),
+		keywords: ['hide', 'show', 'panels', 'focus', 'present'],
 		run: () => (app.zen = !app.zen)
 	});
 	commands.register({
