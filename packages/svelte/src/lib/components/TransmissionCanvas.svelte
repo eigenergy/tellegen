@@ -733,10 +733,11 @@
 		);
 		return edges.length ? { edges, dir, unit: 5 / 2 ** stepZoom } : null;
 	});
+	/** A line's label state: at its limit is red, as the line is drawn. */
 	const branchState = (k: number): 'normal' | 'warning' | 'violation' | null => {
 		const state = loadingStates[k];
 		return state === 'at-limit'
-			? 'warning'
+			? 'violation'
 			: state === 'violation' || state === 'warning' || state === 'normal'
 				? state
 				: null;
@@ -1384,6 +1385,20 @@
 		});
 	});
 
+	// The summary moves between the right edge and the space under the toolbar as side panels
+	// open and close; it then covers a different part of the drawing, so the drawing refits to
+	// the area left free (after a frame, once the summary's new height is measured).
+	let summaryWasBelow: boolean | null = null;
+	$effect(() => {
+		const below = summaryBelow;
+		if (!deck) return;
+		const changed = summaryWasBelow !== null && summaryWasBelow !== below;
+		summaryWasBelow = below;
+		if (!changed) return;
+		const frame = requestAnimationFrame(() => untrack(() => setCamera(fitAll())));
+		return () => cancelAnimationFrame(frame);
+	});
+
 	// Record the geographic view on the app, so the map continues from it when this closes.
 	$effect(() => {
 		const origin = geometry.mercatorOrigin;
@@ -1483,7 +1498,7 @@
 		{ value: 'operating', label: 'Limits' },
 		{ value: 'economics', label: 'Prices' },
 		{ value: 'transfer', label: 'Flows' },
-		{ value: 'results', label: 'Map colors' }
+		{ value: 'results', label: 'Bus values' }
 	];
 	/** Arrow keys move between views, as in any radio group. */
 	function viewKey(e: KeyboardEvent) {
@@ -1519,7 +1534,7 @@
 					: transferOn
 						? `Flows, ${calculationName}`
 						: resultsOn
-							? `${display?.copy ?? 'Map colors'}, ${calculationName}`
+							? `${display?.copy ?? 'Bus values'}, ${calculationName}`
 							: 'Voltage',
 			camera,
 			result: solution
