@@ -3,7 +3,7 @@
 	import { getUiConfig } from '../../context.svelte.js';
 	import { announcement, headline, rows } from '../../dynamics/verdict.js';
 
-	let { record, experimental = false }: { record: DynRunRecord; experimental?: boolean } = $props();
+	let { record }: { record: DynRunRecord } = $props();
 	const s = $derived(record.run?.screening ?? null);
 	const h = $derived(headline(s, record.failure, record.tEnd));
 	const table = $derived(s ? rows(s, record.events.length) : []);
@@ -34,7 +34,6 @@
 				>Validation loads</span
 			>{/if}
 		{#if record.agent}<span class="badge agent">Agent</span>{/if}
-		{#if experimental}<span class="pill-experimental">Experimental</span>{/if}
 	</div>
 	{#if record.failure}
 		<details class="failure">

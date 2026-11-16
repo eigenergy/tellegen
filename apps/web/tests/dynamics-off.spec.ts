@@ -31,9 +31,7 @@ async function expectNoDynamics(page: import('@playwright/test').Page) {
 	await expect(page.getByTestId('mode-dynamics')).toHaveCount(0);
 	await expect(page.getByRole('group', { name: 'Analysis mode' })).toHaveCount(0);
 	await expect(page.getByTestId('dynamics-panel')).toHaveCount(0);
-	await expect(
-		page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' })
-	).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Dynamics', exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: /^Commands/ }).click();
 	const dialog = page.getByRole('dialog', { name: 'Command palette' });
 	await dialog.getByRole('combobox').fill('dynamics');
@@ -70,13 +68,13 @@ test('turning on experimental features brings dynamics back, and off hides it ag
 	await expect(setting).not.toBeChecked();
 	await setting.check();
 
-	// Dynamics comes back as a panel tab; its steady state / dynamics switch is inside it.
-	const tab = page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' });
+	// Dynamics comes back as a top-bar toggle; its steady state / dynamics switch is inside it.
+	const tab = page.locator('header').getByRole('button', { name: 'Dynamics', exact: true });
 	await expect(tab).toBeVisible();
 	await expect.poll(() => toolList(page)).toContain('simulate_dynamics');
 	await tab.click();
 	await expect(page.getByTestId('dynamics-panel')).toBeVisible();
-	// With no dynamic data yet, there is no steady state / dynamics switch to show.
+	// With no simulation yet, there is no steady state / dynamics switch to show.
 	await expect(page.getByTestId('mode-dynamics')).toHaveCount(0);
 	await expect(page.getByTestId('dyn-open-demo')).toBeVisible();
 

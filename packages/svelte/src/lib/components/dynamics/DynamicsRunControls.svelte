@@ -39,24 +39,27 @@
 <section aria-labelledby="dyn-run-h">
 	<h3 id="dyn-run-h">Run</h3>
 	<div class="grid">
-		<span class="lbl" id="dyn-dur">Duration</span>
-		<div class="chips" role="group" aria-labelledby="dyn-dur">
-			{#each DURATION_CHOICES as d (d)}
-				<button aria-pressed={dyn.tEnd === d} onclick={() => (dyn.tEnd = d)}>{d} s</button>
-			{/each}
+		<label class="lbl" for="dyn-dur">Duration</label>
+		<span class="unit">
 			<input
+				id="dyn-dur"
 				type="number"
 				min="0.1"
 				max={MAX_DURATION}
 				step="1"
+				list="dyn-dur-choices"
 				aria-label="Duration in seconds"
 				value={dyn.tEnd}
 				onchange={(e) => {
 					const v = Number(e.currentTarget.value);
 					if (v > 0 && v <= MAX_DURATION) dyn.tEnd = v;
+					else e.currentTarget.value = String(dyn.tEnd);
 				}}
-			/>
-		</div>
+			/>s
+			<datalist id="dyn-dur-choices">
+				{#each DURATION_CHOICES as d (d)}<option value={d}></option>{/each}
+			</datalist>
+		</span>
 		<label class="lbl" for="dyn-step">Step</label>
 		<select
 			id="dyn-step"
@@ -96,7 +99,7 @@
 					type="checkbox"
 					checked={o.reactive_limits ?? true}
 					onchange={(e) => dyn.setOptions({ ...o, reactive_limits: e.currentTarget.checked })}
-				/> Q limits</label
+				/> Reactive limits</label
 			>
 			<label class="check"
 				><input
@@ -105,30 +108,27 @@
 					onchange={(e) => dyn.setOptions({ ...o, renewable_plants: e.currentTarget.checked })}
 				/> Simulate renewables</label
 			>
-			<fieldset>
-				<legend>PSID compatibility</legend>
-				<label class="check"
-					><input
-						type="checkbox"
-						checked={!!o.psid_lv_gain}
-						onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
-					/> LV current gain</label
-				>
-				<label class="check"
-					><input
-						type="checkbox"
-						checked={!!o.psid_converter_ramp}
-						onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
-					/> Ramp limits</label
-				>
-				<label class="check"
-					><input
-						type="checkbox"
-						checked={!!o.psid_saturation}
-						onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
-					/> Low saturation</label
-				>
-			</fieldset>
+			<label class="check" title="As in PowerSimulationsDynamics"
+				><input
+					type="checkbox"
+					checked={!!o.psid_lv_gain}
+					onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
+				/> Low-voltage current gain</label
+			>
+			<label class="check" title="As in PowerSimulationsDynamics"
+				><input
+					type="checkbox"
+					checked={!!o.psid_converter_ramp}
+					onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
+				/> Ramp limits</label
+			>
+			<label class="check" title="As in PowerSimulationsDynamics"
+				><input
+					type="checkbox"
+					checked={!!o.psid_saturation}
+					onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
+				/> Low saturation</label
+			>
 		</div>
 	</details>
 	{#if dyn.running}
@@ -173,26 +173,16 @@
 	.lbl {
 		color: var(--text-secondary);
 	}
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
+	.unit {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text-secondary);
 	}
-	.chips button {
-		padding: 2px 8px;
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-control);
-		background: var(--surface-chip);
-		color: var(--ink);
-		font: inherit;
-		cursor: pointer;
-	}
-	.chips button[aria-pressed='true'] {
-		border-color: var(--accent);
-		box-shadow: var(--inset-active);
-	}
-	.chips input {
-		width: 4.2em;
+	.unit input {
+		width: 5em;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
 	select,
 	input {
@@ -220,12 +210,6 @@
 	}
 	.adv label.check {
 		justify-content: flex-start;
-	}
-	fieldset {
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		display: grid;
-		gap: 4px;
 	}
 	.run {
 		width: 100%;

@@ -29,8 +29,8 @@ async function openDemo(page: import('@playwright/test').Page) {
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
 	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
-	// The Dynamics tab opens the panel and switches the map to dynamics.
-	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
+	// The Dynamics toggle opens the panel and switches the map to dynamics.
+	await page.locator('header').getByRole('button', { name: 'Dynamics', exact: true }).click();
 	const panel = page.getByTestId('dynamics-panel');
 	await panel.getByTestId('dyn-open-demo').click();
 	const counts = panel.getByTestId('dyn-counts');
@@ -38,7 +38,9 @@ async function openDemo(page: import('@playwright/test').Page) {
 		timeout: 90_000
 	});
 	await expect(counts.locator('.stat').filter({ hasText: 'Machines' })).toContainText(/\d+/);
-	await expect(panel.getByTestId('dyn-flat')).toContainText('✓', { timeout: 60_000 });
+	await expect(panel.getByTestId('dyn-flat')).toHaveText('Yes', { timeout: 60_000 });
+	// The steady state / dynamics switch waits for a simulation to show.
+	await expect(panel.getByTestId('mode-dynamics')).toHaveCount(0);
 	return panel;
 }
 
@@ -67,6 +69,10 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	const word = panel.getByTestId('dyn-verdict-word');
 	await expect(word).toHaveText('Stable', { timeout: 120_000 });
 	await expect(panel.getByTestId('dyn-verdict')).toContainText(/59\.\d{3} Hz at/);
+	// With a simulation to show, the switch appears and returns the map to steady state.
+	await expect(panel.getByTestId('mode-steady')).toBeVisible();
+	// The engine's notes are in the Log, not the panel.
+	await expect(panel.getByText(/RmsOptions|REGCA1/)).toHaveCount(0);
 
 	// Traces render (a canvas with an accessible summary) and the timeline plays.
 	const traces = page.getByTestId('dyn-traces');
@@ -142,8 +148,8 @@ test('stopping a run returns to idle and the static solve still works', async ({
 	await panel.getByRole('button', { name: 'Stop' }).click();
 	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
 	await expect(panel.getByRole('button', { name: /Run 120 s simulation/ })).toBeEnabled();
-	// Back to steady state: the solver still answers.
-	await page.getByTestId('mode-steady').click();
+	// Closing the panel returns the map to steady state: the solver still answers.
+	await page.locator('header').getByRole('button', { name: 'Dynamics', exact: true }).click();
 	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText(
 		/Voltage range|Operational cost/,
 		{ timeout: 60_000 }
@@ -159,7 +165,7 @@ test('a dropped .raw and .dyr attach', async ({ page }) => {
 		{ name: 'wecc.dyr', mimeType: 'text/plain', buffer: example('case.dyr') },
 		{ name: 'wecc.geo.csv', mimeType: 'text/csv', buffer: example('case.geo.csv') }
 	]);
-	await expect(page.getByTestId('dyn-counts')).toContainText('.dyr records', { timeout: 90_000 });
+	await expect(page.getByTestId('dyn-counts')).toContainText('Machines', { timeout: 90_000 });
 });
 
 test('with experimental features on, the Modes tab computes and stops', async ({ page }) => {

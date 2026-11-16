@@ -12,16 +12,16 @@ export interface NoteGroup {
 const GROUPS: { id: NoteGroup['id']; title: string; test: RegExp }[] = [
 	{
 		id: 'not_simulated',
-		title: 'Not simulated (unsupported models)',
+		title: 'Not simulated',
 		test: /not simulated|no model in tellegen|unsupported/i
 	},
 	{
 		id: 'held',
-		title: 'Held at power-flow output',
+		title: 'Held at power flow',
 		test: /held at (its|their) power flow output|constant-current injection/i
 	},
-	{ id: 'limit', title: 'At a limit at rest', test: /\blimit\b|beyond|ceiling|outside \[/i },
-	{ id: 'reactive', title: 'Reactive power vs setpoint', test: /reactive|setpoint|Mvar/i }
+	{ id: 'limit', title: 'At a limit', test: /\blimit\b|beyond|ceiling|outside \[/i },
+	{ id: 'reactive', title: 'Reactive power', test: /reactive|setpoint|Mvar/i }
 ];
 
 export function groupNotes(notes: readonly string[]): NoteGroup[] {
@@ -35,6 +35,3 @@ export function groupNotes(notes: readonly string[]): NoteGroup[] {
 	}
 	return out.filter((g) => g.notes.length > 0);
 }
-
-/** A group collapses past this many notes. */
-export const COLLAPSE_AFTER = 5;

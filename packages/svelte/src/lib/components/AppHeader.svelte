@@ -9,6 +9,10 @@
 	const ctrl = getController();
 	const config = getUiConfig();
 	const layout = getPanelLayout();
+	/** Panels with a tab that dock on the right: on a wide screen their toggle is in the top bar. */
+	const sidePanels = $derived(
+		layout.compact ? [] : layout.ordered().filter((p) => p.tab && layout.position(p) === 'right')
+	);
 	onMount(() => {
 		void ctrl.probeCollections();
 	});
@@ -398,6 +402,17 @@
 				onclick={() => (app.zen = false)}>Exit zen</button
 			>
 		{/if}
+		<!-- A panel that docks on the right (Dynamics) opens here, apart from the left tabs. -->
+		{#each sidePanels as panel (panel.id)}
+			<button
+				class="tool wide-only"
+				aria-pressed={layout.shown(panel)}
+				onclick={() => {
+					if (app.zen) app.zen = false;
+					layout.toggle(panel);
+				}}>{panel.title}</button
+			>
+		{/each}
 		<button
 			class="tool wide-only"
 			onclick={() => commands.show()}
@@ -684,13 +699,14 @@
 		background: var(--surface-hover);
 	}
 
-	/* With a mouse, Remove shows on the row under the pointer or with focus, not on every row. */
+	/* With a mouse, Remove shows on the row under the pointer or with keyboard focus, not on
+	   every row, and not on a row that only holds focus because the menu opened on it. */
 	@media (hover: hover) {
 		.case-remove {
 			opacity: 0;
 		}
 		.case-chip:hover .case-remove,
-		.case-chip:focus-within .case-remove {
+		.case-chip:has(:focus-visible) .case-remove {
 			opacity: 1;
 		}
 	}
@@ -762,6 +778,12 @@
 
 	.tool[aria-expanded='true'] {
 		border-color: var(--accent);
+	}
+
+	.tool[aria-pressed='true'] {
+		border-color: var(--line);
+		background: var(--accent-soft);
+		color: var(--text-accent);
 	}
 
 	kbd {

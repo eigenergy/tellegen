@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { rmsDynamize } from '@tellegen/engine';
+	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';
+	import { getPanelLayout } from '../../panels.svelte.js';
 	import PanelFrame from '../PanelFrame.svelte';
 	import DynamicsEventList from './DynamicsEventList.svelte';
 	import DynamicsRunControls from './DynamicsRunControls.svelte';
 	import DynamicsVerdict from './DynamicsVerdict.svelte';
-	import DynamicsNotes from './DynamicsNotes.svelte';
 	import EigenPlot from './EigenPlot.svelte';
 	import { headline } from '../../dynamics/verdict.js';
+	import { groupNotes } from '../../dynamics/notes.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import ModeSwitch from './ModeSwitch.svelte';
 	import StatBoxes from '../StatBoxes.svelte';
@@ -15,6 +17,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const layout = getPanelLayout();
 	const dyn = ctrl.dynamics;
 
 	let open = $state(false);
@@ -27,13 +30,56 @@
 	const local = $derived(app.activeLocal);
 	const current = $derived(dyn.current);
 
-	// The panel opens with the mode, and the mode follows the panel.
+	// The panel opens with the mode, and closing it returns the map to steady state.
 	$effect(() => {
 		if (app.mode === 'dynamics') open = true;
 	});
 	$effect(() => {
+		if (!open)
+			untrack(() => {
+				if (app.mode === 'dynamics') app.mode = 'steady';
+			});
+	});
+	$effect(() => {
 		void dyn.probe();
 	});
+
+	// The engine's notes go to the Log, where they can be read in full; the panel counts them.
+	$effect(() => {
+		const notes = ins?.notes;
+		const subject = att?.fileName;
+		if (!notes?.length) return;
+		untrack(() =>
+			app.log.record(
+				notes.map((message) => ({
+					severity: 'note' as const,
+					stage: 'Dynamics',
+					source: 'RMS',
+					subject,
+					message
+				}))
+			)
+		);
+	});
+	$effect(() => {
+		const run = current?.run;
+		if (!run) return;
+		const known = untrack(() => ins?.notes.length ?? 0);
+		const messages = [...run.notes.slice(known), ...run.events];
+		if (!messages.length) return;
+		untrack(() =>
+			app.log.record(
+				messages.map((message) => ({
+					severity: 'note' as const,
+					stage: 'Dynamics',
+					source: 'RMS',
+					subject: att?.fileName,
+					message
+				}))
+			)
+		);
+	});
+	const noteGroups = $derived(groupNotes(ins?.notes ?? []));
 
 	async function demo() {
 		demoBusy = true;
@@ -81,13 +127,14 @@
 		ins
 			? [
 					{ label: 'Machines', value: ins.generators.length.toLocaleString() },
-					{ label: 'Renewables', value: (ins.plants?.length ?? 0).toLocaleString() },
-					{ label: 'Held', value: (ins.held_units?.length ?? 0).toLocaleString() },
-					{ label: '.dyr records', value: ins.dyr_records.toLocaleString() }
+					{ label: 'Renewables', value: (ins.plants?.length ?? 0).toLocaleString() }
 				]
 			: []
 	);
 	const flatOk = $derived(!!att?.flat && att.flat.max_speed_drift <= 1e-6);
+	/** A small number in plain decimals, to two significant figures. */
+	const small = (value: number) =>
+		value === 0 ? '0' : value.toLocaleString('en-US', { maximumSignificantDigits: 2 });
 </script>
 
 <PanelFrame
@@ -101,8 +148,8 @@
 	onopen={() => (app.mode = 'dynamics')}
 >
 	<div class="dyn" data-testid="dynamics-panel">
-		<!-- The switch appears once the case has a dynamic model to show. -->
-		{#if att?.status === 'ready'}<div class="dyn-mode">
+		<!-- The switch appears once there is a simulation to show. -->
+		{#if dyn.runs.length > 0}<div class="dyn-mode">
 				<span>Map shows</span><ModeSwitch />
 			</div>{/if}
 		{#if !att}
@@ -131,33 +178,37 @@
 				</div>
 				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
 				{#if experimental && local?.studyInputJson}
-					<div class="dynamize">
-						<h4>Default dynamics <span class="pill-experimental">Synthetic</span></h4>
-						<label
-							>Unit type <select bind:value={preset}>
-								<option value="steam_wscc_192">Steam (WSCC 192 MVA)</option>
-								<option value="hydro_wscc_247">Hydro (WSCC 247 MVA)</option>
+					<div class="row">
+						<label for="dyn-preset">Default dynamics</label>
+						<span class="inline">
+							<select id="dyn-preset" bind:value={preset}>
+								<option value="steam_wscc_192">Steam</option>
+								<option value="hydro_wscc_247">Hydro</option>
 								<option value="gas_turbine">Gas turbine</option>
-								<option value="steam_kundur_555">Steam (Kundur 555 MVA)</option>
-							</select></label
-						>
-						<button disabled={dynamizeBusy} onclick={dynamize}
-							>{dynamizeBusy ? 'Adding…' : 'Add'}</button
-						>
-						{#if dynamizeError}<p class="err" title={dynamizeError}>Failed</p>{/if}
+								<option value="steam_kundur_555">Steam, large</option>
+							</select>
+							<button class="secondary" disabled={dynamizeBusy} onclick={dynamize}
+								>{dynamizeBusy ? 'Adding…' : 'Add'}</button
+							>
+						</span>
 					</div>
+					{#if dynamizeError}<p class="err" title={dynamizeError}>Default dynamics failed</p>{/if}
 				{/if}
 			</section>
 		{:else}
 			<section class="data" aria-label="Dynamic data">
-				<p class="file">
-					<span class="mono">{att.fileName}</span>
-					{#if att.synthetic}<span class="pill-experimental">Synthetic</span>{/if}
-				</p>
+				<dl class="rows">
+					<div>
+						<dt>Dynamic data</dt>
+						<dd>
+							{att.fileName}{#if att.synthetic}<span class="tag">Synthetic</span>{/if}
+						</dd>
+					</div>
+				</dl>
 				{#if att.status === 'opening'}
 					<p class="dim" role="status">Initializing…</p>
 				{:else if att.status === 'failed'}
-					<p class="err" role="alert">{att.error}</p>
+					<p class="err" role="alert" title={att.error ?? undefined}>Dynamic data failed to open</p>
 				{:else if ins}
 					<div data-testid="dyn-counts"><StatBoxes stats={counts} label="Dynamic model" /></div>
 					{#if att.preparing}
@@ -165,36 +216,61 @@
 					{:else if att.prepareError}
 						<p class="err" role="alert" title={att.prepareError}>Initialization failed</p>
 					{/if}
-					<dl class="init" aria-busy={att.preparing}>
-						{#if att.network === 'validation'}
-							<dt>Network</dt>
-							<dd data-testid="dyn-network">Validation loads</dd>
-						{/if}
-						<dt>Initial residual</dt>
-						<dd>{(ins.initial_residual ?? 0).toExponential(1)}</dd>
-						<dt>Power flow</dt>
-						<dd>AC, Q limits {ins.options?.reactive_limits === false ? 'off' : 'on'}</dd>
-						<dt>Angle reference</dt>
-						<dd>{ins.reference_unit ? `Unit ${ins.reference_unit}` : 'System'}</dd>
-						<dt>Flat start</dt>
-						<dd data-testid="dyn-flat">
-							{#if att.flat}
-								Drift {att.flat.max_speed_drift.toExponential(0)} pu
-								{flatOk ? '✓' : '✗'}
-								{#if !flatOk}<span class="chip-warn">Not at rest</span>{/if}
-							{:else if att.flatError}
-								<span class="err" title={att.flatError}>Failed</span>
-							{:else}
-								Checking…
-							{/if}
-						</dd>
-					</dl>
-					{#if dyn.staticEdits > 0}
-						<p class="warn">Edits ignored: {dyn.staticEdits}</p>
+					{#if att.flat && !flatOk}
+						<p class="warn-line" role="status">Not at rest before the event</p>
+					{:else if att.flatError}
+						<p class="err" title={att.flatError}>Rest check failed</p>
 					{/if}
-					<details>
-						<summary>Notes ({ins.notes.length})</summary>
-						<DynamicsNotes notes={ins.notes} />
+					{#if dyn.staticEdits > 0}
+						<p class="warn-line">Edits ignored: {dyn.staticEdits}</p>
+					{/if}
+					<details class="more">
+						<summary>Details</summary>
+						<dl class="rows" aria-busy={att.preparing}>
+							{#if att.network === 'validation'}
+								<div>
+									<dt>Network</dt>
+									<dd data-testid="dyn-network">Validation loads</dd>
+								</div>
+							{/if}
+							<div>
+								<dt>Held units</dt>
+								<dd>{(ins.held_units?.length ?? 0).toLocaleString()}</dd>
+							</div>
+							<div>
+								<dt>Records</dt>
+								<dd>{ins.dyr_records.toLocaleString()}</dd>
+							</div>
+							<div>
+								<dt>Reactive limits</dt>
+								<dd>{ins.options?.reactive_limits === false ? 'Off' : 'On'}</dd>
+							</div>
+							<div>
+								<dt>Angle reference</dt>
+								<dd>{ins.reference_unit ? `Unit ${ins.reference_unit}` : 'System'}</dd>
+							</div>
+							<div>
+								<dt>Initial mismatch</dt>
+								<dd>{small(ins.initial_residual ?? 0)}</dd>
+							</div>
+							<div>
+								<dt>At rest</dt>
+								<dd data-testid="dyn-flat">
+									{#if att.flat}{flatOk
+											? 'Yes'
+											: 'No'}{:else if att.flatError}—{:else}Checking…{/if}
+								</dd>
+							</div>
+							{#each noteGroups as g (g.id)}
+								<div>
+									<dt>{g.title}</dt>
+									<dd>{g.notes.length}</dd>
+								</div>
+							{/each}
+						</dl>
+						{#if ins.notes.length}<button class="link" onclick={() => layout.show('log')}
+								>Notes in Log</button
+							>{/if}
 					</details>
 				{/if}
 			</section>
@@ -221,8 +297,7 @@
 						aria-selected={tab === 'modes'}
 						aria-controls="dyn-tabpanel"
 						tabindex={tab === 'modes' ? 0 : -1}
-						onclick={() => (tab = 'modes')}
-						>Modes <span class="pill-experimental">Experimental</span></button
+						onclick={() => (tab = 'modes')}>Modes</button
 					>
 				</div>
 			{/if}
@@ -238,62 +313,72 @@
 					: undefined}
 			>
 				{#if tab === 'modes' && experimental}
-					<section aria-label="Small-signal modes" data-testid="dyn-modes">
+					<section class="modes" aria-label="Small-signal modes" data-testid="dyn-modes">
 						{#if dyn.modes}
 							<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
 						{:else}
 							{#if dyn.dynamicStates > 300}
-								<p class="warn" data-testid="dyn-modes-size">
+								<p class="dim" data-testid="dyn-modes-size">
 									Slow: {dyn.dynamicStates.toLocaleString()} states
 								</p>
 							{/if}
 							{#if dyn.modesBusy}
-								<p role="status">
-									Computing modes… <button class="link" onclick={() => dyn.stopModes()}>Stop</button
+								<p class="status-row" role="status">
+									Computing modes… <button class="secondary" onclick={() => dyn.stopModes()}
+										>Stop</button
 									>
 								</p>
 							{:else}
 								<button
+									class="secondary"
 									disabled={att.status !== 'ready' || dyn.running}
 									title={dyn.running ? 'Run in progress' : undefined}
 									onclick={() => dyn.computeModes()}>Compute modes</button
 								>
 							{/if}
 						{/if}
-						{#if dyn.modesError}<p class="err">{dyn.modesError}</p>{/if}
+						{#if dyn.modesError}<p class="err" title={dyn.modesError}>
+								{dyn.modesError === 'Stopped' ? 'Stopped' : 'Modes failed'}
+							</p>{/if}
 					</section>
 				{:else if att.status === 'ready'}
 					<DynamicsEventList />
 					<DynamicsRunControls />
 					{#if current}
-						<DynamicsVerdict record={current} experimental={!!att.synthetic} />
+						<DynamicsVerdict record={current} />
 						{#if current.run}
-							<details>
-								<summary>Run notes</summary>
-								<DynamicsNotes
-									notes={current.run.notes.slice(ins?.notes.length ?? 0)}
-									events={current.run.events}
-								/>
+							<details class="more">
+								<summary>Run details</summary>
+								<dl class="rows">
+									<div>
+										<dt>Steps</dt>
+										<dd>{current.run.steps.toLocaleString()}</dd>
+									</div>
+									<div>
+										<dt>Iterations</dt>
+										<dd>{current.run.newtonIterations.toLocaleString()}</dd>
+									</div>
+									<div>
+										<dt>Time</dt>
+										<dd>{(current.wallMs / 1000).toFixed(2)} s</dd>
+									</div>
+									<div>
+										<dt>Step</dt>
+										<dd>{current.dt * 1000} ms</dd>
+									</div>
+									<div>
+										<dt>Loads</dt>
+										<dd>
+											{(current.options.load_model ?? 'power_flow').replaceAll('_', ' ')}
+										</dd>
+									</div>
+								</dl>
+								<button
+									class="link"
+									onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
+									>Copy run as JSON</button
+								>
 							</details>
-							<dl class="init footer">
-								<dt>Steps</dt>
-								<dd>{current.run.steps.toLocaleString()}</dd>
-								<dt>Iterations</dt>
-								<dd>{current.run.newtonIterations.toLocaleString()}</dd>
-								<dt>Time</dt>
-								<dd>
-									{(current.wallMs / 1000).toFixed(2)} s
-								</dd>
-								<dt>Step</dt>
-								<dd>{current.dt * 1000} ms</dd>
-								<dt>Loads</dt>
-								<dd>{(current.options.load_model ?? 'power_flow').replaceAll('_', ' ')}</dd>
-							</dl>
-							<button
-								class="link"
-								onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
-								>Copy run as JSON</button
-							>
 						{/if}
 					{/if}
 					{#if dyn.runs.length > 1}
@@ -306,7 +391,7 @@
 										.events.length > 1
 										? ` +${r.events.length - 1}`
 										: ''}
-									{#if r.agent}<span class="agent">agent</span>{/if}
+									{#if r.agent}<span class="agent">Agent</span>{/if}
 								</button>
 							{/each}
 						</div>
@@ -333,14 +418,13 @@
 		padding: 12px 14px 16px;
 		font-size: var(--fs-label);
 	}
-	h4 {
-		margin: 0 0 6px;
-	}
 	p {
 		margin: 0;
 		line-height: 1.45;
 	}
-	.empty {
+	.empty,
+	.data,
+	.modes {
 		display: grid;
 		gap: 10px;
 	}
@@ -352,6 +436,13 @@
 	}
 	.row select {
 		width: 150px;
+	}
+	.inline {
+		display: inline-flex;
+		gap: 6px;
+	}
+	.inline select {
+		width: 120px;
 	}
 	.actions {
 		display: flex;
@@ -387,6 +478,10 @@
 	.secondary:hover:not(:disabled) {
 		border-color: var(--border-strong);
 	}
+	.secondary:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
 	@media (pointer: coarse) {
 		.secondary,
 		.run {
@@ -394,42 +489,36 @@
 		}
 	}
 	.dim {
-		color: var(--text-tertiary);
+		color: var(--text-secondary);
 	}
 	.err {
 		color: var(--text-danger);
-		overflow-wrap: anywhere;
 	}
-	.warn {
-		border-left: 3px solid var(--warn);
-		padding-left: 6px;
-	}
-	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--fs-data);
-	}
-	.file {
+	.warn-line {
 		display: flex;
-		gap: 6px;
 		align-items: center;
-	}
-	.data {
-		display: grid;
 		gap: 6px;
+		color: var(--ink);
 	}
-	.init {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 2px 10px;
-		margin: 0;
-		font-size: var(--fs-control);
+	.warn-line::before {
+		content: '';
+		flex: none;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--amber);
 	}
-	.init dt {
-		color: var(--text-tertiary);
+	.status-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
-	.init dd {
-		margin: 0;
-		font-variant-numeric: tabular-nums;
+	.tag {
+		margin-left: 6px;
+		padding: 0 6px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		color: var(--text-secondary);
 	}
 	.tabs {
 		display: flex;
@@ -437,22 +526,29 @@
 		border-bottom: 1px solid var(--line);
 	}
 	.tabs button {
+		position: relative;
 		border: none;
 		background: none;
-		padding: 4px 8px;
+		padding: 6px 8px;
 		font: inherit;
 		color: var(--text-secondary);
 		cursor: pointer;
 	}
 	.tabs button[aria-selected='true'] {
 		color: var(--ink);
-		box-shadow: var(--inset-active);
 	}
-	.footer {
-		color: var(--text-secondary);
+	.tabs button[aria-selected='true']::after {
+		content: '';
+		position: absolute;
+		left: 8px;
+		right: 8px;
+		bottom: -1px;
+		height: 2px;
+		background: var(--accent);
 	}
 	.rows {
 		margin: 0;
+		font-variant-numeric: tabular-nums;
 	}
 	.rows div {
 		display: flex;
@@ -466,24 +562,31 @@
 	}
 	.rows dd {
 		margin: 0;
+		min-width: 0;
+		overflow-wrap: anywhere;
+		text-align: right;
 	}
-	.chip-warn {
-		margin-left: 6px;
-		padding: 1px 6px;
-		border-radius: var(--radius-full);
-		box-shadow: inset 3px 0 0 var(--amber);
-		background: var(--surface-chip);
+	.more {
+		display: grid;
+		gap: 6px;
+	}
+	.more summary {
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+	.more .link {
+		margin-top: 6px;
 	}
 	.link {
 		justify-self: start;
-	}
-	.link {
 		border: none;
 		background: none;
 		padding: 0;
 		color: var(--text-accent);
 		cursor: pointer;
 		font: inherit;
+	}
+	.link:hover {
 		text-decoration: underline;
 	}
 	.history {
@@ -493,9 +596,9 @@
 	}
 	.history button {
 		padding: 2px 8px;
-		border: 1px solid var(--border-default);
+		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
-		background: var(--surface-chip);
+		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
 		font-size: var(--fs-control);
@@ -507,16 +610,5 @@
 	.agent {
 		color: var(--agent);
 		font-weight: 600;
-	}
-	.dynamize {
-		display: grid;
-		gap: 6px;
-		padding: 8px;
-		border: 1px dashed var(--border-default);
-		border-radius: var(--radius-sm);
-	}
-	details summary {
-		cursor: pointer;
-		color: var(--text-secondary);
 	}
 </style>
