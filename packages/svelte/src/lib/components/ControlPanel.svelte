@@ -243,6 +243,11 @@
 		padding: 12px 0;
 		border-block: 1px solid var(--line);
 	}
+	/* Under the list of lines at limit, whose own bottom rule is this readout's top rule. */
+	:global(.binding-lines) + .selection-lead {
+		margin-top: calc(-1 * var(--space-lg));
+		border-top: 0;
+	}
 
 	/* The display key under the case stats on a phone: a gap, not touching. */
 	.compact-key {

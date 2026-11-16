@@ -969,7 +969,7 @@ export class Controller {
 				c.solution?.objective != null && c.baseSolution?.objective != null
 					? c.solution.objective - c.baseSolution.objective
 					: null,
-			binding: c.solution && c.formulation !== 'acpf' ? (this.bindingRule?.count ?? null) : null
+			binding: c.solution ? (this.bindingRule?.count ?? null) : null
 		};
 	});
 

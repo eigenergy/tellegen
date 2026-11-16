@@ -53,9 +53,11 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await expect(page.getByTestId('dyn-legend-rest')).toBeVisible({ timeout: 30_000 });
 	// The Network panel keeps the steady-state numbers, as on every other case, and has no
 	// empty placeholder before a bus or line is picked.
-	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText('Operational cost', {
+	// The demo case has no generator costs, so its heaviest line shows instead of a $0 cost.
+	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText('Max loading', {
 		timeout: 60_000
 	});
+	await expect(page.locator('[data-panel="network"] dl.stats')).not.toContainText('$0');
 	await expect(page.locator('[data-panel="network"]')).not.toContainText('Select a bus or line');
 	await shot(page, '01-demo-loaded');
 
@@ -158,7 +160,7 @@ test('stopping a run returns to idle and the static solve still works', async ({
 	// Closing the panel returns the map to steady state: the solver still answers.
 	await page.locator('header').getByRole('button', { name: 'Dynamics', exact: true }).click();
 	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText(
-		/Voltage range|Operational cost/,
+		/Voltage range|Operational cost|Max loading/,
 		{ timeout: 60_000 }
 	);
 });

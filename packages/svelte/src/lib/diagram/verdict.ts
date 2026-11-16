@@ -143,19 +143,31 @@ export interface ResultStatsInput {
 const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
 
 /** The key numbers of a result, chosen per calculation: an OPF reports its operational cost and
- * the lines at their limit; AC power flow its voltage range and losses (the lines at their limit
- * are listed under the boxes); DC power flow its heaviest line and the lines at their limit. */
+ * the lines at their limit; AC power flow its voltage range, losses, heaviest line and lines at
+ * their limit; DC power flow its heaviest line and the lines at their limit. An OPF whose cost is
+ * zero (a case without generator costs) shows its heaviest line in place of a meaningless $0. */
 export function resultStats(input: ResultStatsInput): Stat[] {
 	const missing = input.solving ? '…' : '—';
 	const stats: Stat[] = [];
+	const maxLoading = (): Stat => {
+		const m = input.maxLoading;
+		return {
+			label: 'Max loading',
+			value: m == null ? missing : percent(m),
+			tone: m != null && m >= 1 ? 'failure' : 'ok'
+		};
+	};
 	if (OPF.has(input.formulation)) {
-		const delta = input.objective !== null ? input.deltaObjective : null;
-		// A relaxation's cost is a lower bound on the true operating cost: the label says so.
-		stats.push({
-			label: input.formulation === 'socwr' ? 'Cost lower bound' : 'Operational cost',
-			value: input.objective === null ? missing : costPerHour(input.objective),
-			sub: delta ? `${delta > 0 ? '+' : ''}${costPerHour(delta)}` : undefined
-		});
+		if (input.objective === 0) stats.push(maxLoading());
+		else {
+			const delta = input.objective !== null ? input.deltaObjective : null;
+			// A relaxation's cost is a lower bound on the true operating cost: the label says so.
+			stats.push({
+				label: input.formulation === 'socwr' ? 'Cost lower bound' : 'Operational cost',
+				value: input.objective === null ? missing : costPerHour(input.objective),
+				sub: delta ? `${delta > 0 ? '+' : ''}${costPerHour(delta)}` : undefined
+			});
+		}
 	} else if (input.formulation === 'acpf') {
 		const v = input.voltage;
 		stats.push({
@@ -170,22 +182,16 @@ export function resultStats(input: ResultStatsInput): Stat[] {
 					? missing
 					: `${l.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MW`
 		});
-	} else if (!OPF.has(input.formulation)) {
-		const m = input.maxLoading;
-		stats.push({
-			label: 'Max loading',
-			value: m == null ? missing : percent(m),
-			tone: m != null && m >= 1 ? 'failure' : 'ok'
-		});
+		stats.push(maxLoading());
+	} else {
+		stats.push(maxLoading());
 	}
-	if (input.formulation !== 'acpf') {
-		const n = input.binding;
-		stats.push({
-			label: 'Lines at limit',
-			value: n === null ? missing : n.toLocaleString('en-US'),
-			// A line at its limit is at 100% of its rating: red, as on the map.
-			tone: n ? 'failure' : 'ok'
-		});
-	}
+	const n = input.binding;
+	stats.push({
+		label: 'Lines at limit',
+		value: n === null ? missing : n.toLocaleString('en-US'),
+		// A line at its limit is at 100% of its rating: red, as on the map.
+		tone: n ? 'failure' : 'ok'
+	});
 	return stats;
 }

@@ -136,7 +136,7 @@ describe('resultStats', () => {
 		).toBe('+$120/h');
 	});
 
-	it('gives AC power flow its voltage range and losses', () => {
+	it('gives AC power flow its voltage range, losses, heaviest line and lines at limit', () => {
 		expect(
 			resultStats({
 				formulation: 'acpf',
@@ -148,9 +148,25 @@ describe('resultStats', () => {
 			})
 		).toEqual([
 			{ label: 'Voltage range', value: '0.950–1.050 pu' },
-			{ label: 'Losses', value: '1,234.6 MW' }
+			{ label: 'Losses', value: '1,234.6 MW' },
+			{ label: 'Max loading', value: '102.0%', tone: 'failure' },
+			{ label: 'Lines at limit', value: '0', tone: 'ok' }
 		]);
 		expect(resultStats({ formulation: 'acpf', objective: 0, binding: 0 })[1].value).toBe('—');
+	});
+
+	it('shows the heaviest line, not $0, for an OPF without generator costs', () => {
+		expect(
+			resultStats({
+				formulation: 'dcopf',
+				objective: 0,
+				binding: 0,
+				maxLoading: 0.75
+			}).map((s) => [s.label, s.value])
+		).toEqual([
+			['Max loading', '75.0%'],
+			['Lines at limit', '0']
+		]);
 	});
 
 	it('gives DC power flow its heaviest line and the lines at their limit', () => {
