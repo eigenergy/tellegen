@@ -440,7 +440,7 @@
 		/* Above the dynamics playback dock while it is open, in the map control row below the panels. */
 		bottom: max(16px, calc(var(--tellegen-timeline-clear, -1000px) + 8px));
 		left: 16px;
-		z-index: 30;
+		z-index: var(--z-note);
 		display: flex;
 		gap: 4px;
 		align-items: center;

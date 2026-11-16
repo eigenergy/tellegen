@@ -15,7 +15,7 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		z-index: 10;
+		z-index: var(--z-chrome);
 		display: flex;
 		align-items: center;
 		padding: 8px 20px;

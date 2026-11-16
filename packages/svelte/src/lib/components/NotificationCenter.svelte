@@ -20,7 +20,7 @@
 	onDestroy(close);
 </script>
 
-<div class="announcement" role="status" aria-live="polite" aria-atomic="true">
+<div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
 	{log.announcement}
 </div>
 {#if toast}
@@ -76,16 +76,9 @@
 {/if}
 
 <style>
-	.announcement {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-	}
 	.notifications {
 		position: fixed;
-		z-index: 65;
+		z-index: var(--z-toast);
 		/* While the dynamics playback dock is open: above the dock, the map's
 		   control row on it (44 px) and the host's one-line notice above that
 		   row (32 px). The fallback keeps the closed-dock position. */

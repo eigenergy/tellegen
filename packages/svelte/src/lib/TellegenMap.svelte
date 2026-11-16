@@ -2008,7 +2008,7 @@
 		position: absolute;
 		left: 50%;
 		bottom: 92px;
-		z-index: 15;
+		z-index: var(--z-map-action);
 		transform: translateX(-50%);
 		padding: 7px 14px;
 		background: var(--panel);

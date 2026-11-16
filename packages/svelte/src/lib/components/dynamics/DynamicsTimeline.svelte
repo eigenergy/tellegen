@@ -179,7 +179,7 @@
 		left: var(--tellegen-dock-left, 20px);
 		right: var(--tellegen-dock-right, 20px);
 		bottom: 12px;
-		z-index: 26;
+		z-index: var(--z-dock);
 		display: grid;
 		gap: 6px;
 		padding: 8px 12px 10px;

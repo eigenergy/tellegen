@@ -369,7 +369,7 @@
 	.panel-toolbar {
 		position: fixed;
 		/* Under the docks, so a panel's own controls can sit on the strip's row. */
-		z-index: 24;
+		z-index: var(--z-panel-strip);
 		left: var(--tellegen-dock-left, 16px);
 		display: flex;
 		align-items: stretch;
@@ -491,7 +491,7 @@
 	}
 	.dock {
 		position: fixed;
-		z-index: 25;
+		z-index: var(--z-panel);
 		bottom: var(--tellegen-dock-bottom, 100px);
 		display: flex;
 		flex-direction: column;
@@ -516,12 +516,12 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		z-index: 25;
+		z-index: var(--z-panel);
 	}
 	/* The phone sheet's grab bar, just above its tabs. */
 	.sheet-handle {
 		position: fixed;
-		z-index: 26;
+		z-index: var(--z-dock);
 		left: 50%;
 		transform: translateX(-50%);
 		display: grid;
@@ -547,7 +547,7 @@
 		position: fixed;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 42;
+		z-index: var(--z-notice);
 		max-width: 400px;
 		margin: 0;
 		padding: 8px 12px;
