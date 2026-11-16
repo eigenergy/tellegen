@@ -33,6 +33,14 @@
 		/** Collapsed to the heading and the counts that matter. */
 		brief?: boolean;
 	} = $props();
+	const stationRows = $derived.by(() => {
+		const { min, max, worst } = station ?? {};
+		if (!min || !max || min.bus === max.bus) return [];
+		return [
+			{ label: 'Lowest', entry: min, bad: worst?.bus === min.bus },
+			{ label: 'Highest', entry: max, bad: worst?.bus === max.bus }
+		];
+	});
 	const lead = $derived(
 		operatingLead({
 			hasResult: context.solved,
@@ -56,7 +64,7 @@
 			<ul class="key">
 				<li><i class="swatch normal"></i>Below {warning}%</li>
 				<li><i class="swatch near"></i>Near limit</li>
-				<li><i class="swatch over"></i>At limit</li>
+				<li><i class="swatch over"></i>At or over limit</li>
 				<li><i class="swatch unrated"></i>Unrated</li>
 				<li><i class="swatch dashed"></i>Out of service</li>
 				{#if context.voltage}
@@ -82,47 +90,21 @@
 			>
 		</details>
 	{/if}
-	{#if station && context.voltage && !brief}
-		<details class="station">
-			<summary
-				><strong>{station.name}</strong>
-				{#if station.min && station.max}{station.min.value.toFixed(4)}–{station.max.value.toFixed(
-						4
-					)} pu{:else}—{/if}
-				{#if station.worst}<span class="violation">
-						{station.worst.assessment.state === 'low' ? '↓' : '↑'} bus {station.worst.bus}</span
-					>{/if}</summary
-			>
-			<dl class="station-values" aria-label="Station voltage range">
-				{#if station.min}<div>
-						<dt>Min</dt>
-						<dd>
-							<button onclick={() => onselectbus(station.min!.bus)}
-								>{station.min.value.toFixed(4)} pu, bus {station.min.bus}</button
-							>
-						</dd>
-					</div>{/if}
-				{#if station.max}<div>
-						<dt>Max</dt>
-						<dd>
-							<button onclick={() => onselectbus(station.max!.bus)}
-								>{station.max.value.toFixed(4)} pu, bus {station.max.bus}</button
-							>
-						</dd>
-					</div>{/if}
-				{#if station.worst}<div>
-						<dt>Worst</dt>
-						<dd>
-							<button class="violation" onclick={() => onselectbus(station.worst!.bus)}
-								>{station.worst.assessment.state === 'low'
-									? '−'
-									: '+'}{station.worst.assessment.exceedance.toFixed(4)} pu, bus {station.worst
-									.bus}</button
-							>
-						</dd>
-					</div>{/if}
-			</dl>
-		</details>
+	{#if stationRows.length && context.voltage && !brief}
+		<!-- A substation with several buses: its lowest and highest voltage. A single bus shows
+		     its voltage in the selection below. -->
+		<dl class="station-values" aria-label="{station?.name} voltage">
+			{#each stationRows as { label, entry, bad } (label)}
+				<div>
+					<dt>{label}, bus {entry.bus}</dt>
+					<dd>
+						<button class={{ violation: bad }} onclick={() => onselectbus(entry.bus)}
+							>{entry.value.toFixed(4)} pu</button
+						>
+					</dd>
+				</div>
+			{/each}
+		</dl>
 	{/if}
 </section>
 
@@ -204,7 +186,6 @@
 		border-radius: 0;
 	}
 	.voltage-key span {
-		font-family: var(--font-mono);
 		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 	}
@@ -223,11 +204,20 @@
 		overflow-wrap: anywhere;
 	}
 	.station-values {
-		max-height: 24vh;
-		overflow: auto;
-		padding: var(--space-2xs) var(--space-3xs);
+		border-top: 1px solid var(--line);
+		padding: var(--space-2xs) 0 0;
+		margin-top: var(--space-3xs);
 		display: grid;
-		gap: var(--space-xs);
+		gap: var(--space-3xs);
+	}
+	.station-values button {
+		border: 0;
+		background: none;
+		padding: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.station-values button:hover {
+		text-decoration: underline;
 	}
 	.voltage-key i {
 		display: inline-block;
@@ -242,7 +232,6 @@
 	input {
 		width: 64px;
 		font: inherit;
-		font-family: var(--font-mono);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 		background: var(--paper);

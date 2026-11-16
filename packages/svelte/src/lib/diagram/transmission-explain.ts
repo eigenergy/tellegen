@@ -36,40 +36,32 @@ export interface OperatingLeadInput {
 	warning: number;
 }
 
-/** Operating limits: the lines at or over their rating and near it, the buses outside their
- * voltage limits (AC), and what could not be checked. Zero counts are left out. "Lines at limit"
- * reads 0 with an all-clear tone only when every line and (AC) every bus was checked. */
+/** Operating limits: a few counts, each shown only when it is not zero: lines over and at their
+ * rating, lines at or above the warning level, buses outside their voltage limits (AC), and what
+ * could not be checked. With nothing to count, one short line says so; it reads as an all-clear
+ * only when every line and (AC) every bus was checked. */
 export function operatingLead(input: OperatingLeadInput): Lead {
 	const { counts } = input;
 	if (!input.hasResult) return { stats: [], empty: 'No result' };
 	const stats: Stat[] = [];
-	const over = counts.overload + counts.atLimit;
-	if (over) stats.push({ label: 'Lines at limit', value: n(over), tone: 'failure' });
+	if (counts.overload) stats.push({ label: 'Over limit', value: n(counts.overload), tone: 'failure' });
+	if (counts.atLimit) stats.push({ label: 'At limit', value: n(counts.atLimit), tone: 'failure' });
 	if (counts.warning)
-		stats.push({ label: 'Near limit', value: n(counts.warning), tone: 'warning' });
+		stats.push({ label: `≥${input.warning}%`, value: n(counts.warning), tone: 'warning' });
 	if (input.voltageSolved) {
 		if (counts.low) stats.push({ label: 'Low voltage', value: n(counts.low), tone: 'failure' });
 		if (counts.high) stats.push({ label: 'High voltage', value: n(counts.high), tone: 'failure' });
 	}
 	const voltageUnchecked = input.voltageSolved ? counts.voltageUnknown : 0;
-	if (!stats.length) {
-		const complete =
-			counts.loadingUnknown === 0 &&
-			voltageUnchecked === 0 &&
-			(!input.voltageSolved || counts.voltageChecked > 0);
-		stats.push(
-			counts.loadingChecked
-				? complete
-					? { label: 'Lines at limit', value: '0', tone: 'ok' }
-					: { label: 'Lines at limit', value: '0' }
-				: { label: 'Lines at limit', value: '—' }
-		);
-	}
 	if (voltageUnchecked) stats.push({ label: 'Voltage unchecked', value: n(voltageUnchecked) });
 	if (counts.flowMissing) stats.push({ label: 'No flow', value: n(counts.flowMissing) });
 	if (counts.ratingUnknown) stats.push({ label: 'Unrated', value: n(counts.ratingUnknown) });
 	if (counts.inactive) stats.push({ label: 'Out of service', value: n(counts.inactive) });
-	return { stats };
+	if (stats.length) return { stats };
+	if (!counts.loadingChecked) return { stats: [], empty: 'No line loading' };
+	if (input.voltageSolved && counts.voltageChecked === 0)
+		return { stats: [], empty: 'No voltages checked' };
+	return { stats: [], empty: `All lines below ${input.warning}%` };
 }
 
 export interface EconomicsLeadInput {

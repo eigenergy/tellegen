@@ -73,15 +73,16 @@ const stat = (lead: ReturnType<typeof operatingLead>, label: string) =>
 	lead.stats.find((s) => s.label === label)?.value;
 
 describe('operating limits', () => {
-	it('shows a single clear count when nothing is near or over a limit', () => {
+	it('shows one short line, and no counts, when nothing is near or over a limit', () => {
 		const lead = operatingLead(base);
-		expect(lead.stats).toEqual([{ label: 'Lines at limit', value: '0', tone: 'ok' }]);
+		expect(lead).toEqual({ stats: [], empty: 'All lines below 90%' });
 	});
 	it('counts the lines and buses that need attention, and leaves out zeros', () => {
 		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
 		expect(stat(lead, 'Low voltage')).toBe('1');
 		expect(stat(lead, 'High voltage')).toBeUndefined();
-		expect(stat(lead, 'Lines at limit')).toBeUndefined();
+		expect(stat(lead, 'At limit')).toBeUndefined();
+		expect(stat(lead, 'Over limit')).toBeUndefined();
 	});
 	it('does not count voltage violations for DC, which solves no voltage', () => {
 		const lead = operatingLead({
@@ -91,7 +92,7 @@ describe('operating limits', () => {
 		});
 		expect(stat(lead, 'Low voltage')).toBeUndefined();
 		expect(stat(lead, 'Voltage unchecked')).toBeUndefined();
-		expect(lead.stats[0]).toEqual({ label: 'Lines at limit', value: '0', tone: 'ok' });
+		expect(lead).toEqual({ stats: [], empty: 'All lines below 90%' });
 	});
 	it('does not turn missing voltage, absent bounds or invalid bounds into an all-clear', () => {
 		const net = {
@@ -115,7 +116,7 @@ describe('operating limits', () => {
 		);
 		expect(counts).toMatchObject({ voltageChecked: 1, voltageUnknown: 3 });
 		const lead = operatingLead({ ...base, counts });
-		expect(lead.stats[0]).toEqual({ label: 'Lines at limit', value: '0' });
+		expect(lead.empty).toBeUndefined();
 		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
 		expect(stat(lead, 'Voltage unchecked')).toBe('3');
 	});
@@ -143,18 +144,25 @@ describe('operating limits', () => {
 	});
 	it('does not call zero assessed lines healthy', () => {
 		const lead = operatingLead({ ...base, counts: count(new Map(), { ...result, flows: [] }) });
-		expect(lead.stats[0]).toEqual({ label: 'Lines at limit', value: '—' });
+		expect(lead.empty).toBeUndefined();
+		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
 		expect(stat(lead, 'No flow')).toBe('3');
+		const none = { ...base.counts, loadingChecked: 0, loadingUnknown: 0, flowMissing: 0 };
+		expect(operatingLead({ ...base, voltageSolved: false, counts: none })).toEqual({
+			stats: [],
+			empty: 'No line loading'
+		});
 	});
-	it('counts lines at and over their rating together, apart from those near it', () => {
+	it('counts lines over, at and near their rating apart', () => {
 		const lead = operatingLead({
 			...base,
 			counts: { ...base.counts, warning: 1, atLimit: 1, overload: 2 },
 			warning: 80
 		});
-		expect(lead.stats.slice(0, 2)).toEqual([
-			{ label: 'Lines at limit', value: '3', tone: 'failure' },
-			{ label: 'Near limit', value: '1', tone: 'warning' }
+		expect(lead.stats.slice(0, 3)).toEqual([
+			{ label: 'Over limit', value: '2', tone: 'failure' },
+			{ label: 'At limit', value: '1', tone: 'failure' },
+			{ label: '≥80%', value: '1', tone: 'warning' }
 		]);
 		expect(operatingLead({ ...base, hasResult: false })).toEqual({ stats: [], empty: 'No result' });
 	});

@@ -27,6 +27,10 @@
 		gap: 8px;
 		margin: 0 0 var(--space-lg);
 	}
+	/* An odd box out spans the row, so no half row stays empty. */
+	.stat:last-child:nth-child(odd) {
+		grid-column: 1 / -1;
+	}
 	.stat {
 		min-width: 0;
 		padding: 8px 10px;
