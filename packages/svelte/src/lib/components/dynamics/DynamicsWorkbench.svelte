@@ -212,7 +212,7 @@
 </script>
 
 <section
-	class={['wb', { collapsed }]}
+	class={['wb', 'dyn-form', { collapsed }]}
 	aria-label="Live workbench"
 	data-testid="dyn-workbench"
 	bind:clientHeight={dockHeight}
@@ -611,7 +611,16 @@
 	.picker input {
 		flex: 1;
 		min-width: 200px;
-		font: inherit;
+	}
+	header label {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--text-secondary);
+	}
+	header output {
+		padding: 0 4px;
+		color: var(--text-secondary);
 	}
 	.found,
 	.chosen,
@@ -625,6 +634,9 @@
 		overflow: auto;
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
+	}
+	.found li:hover {
+		background: var(--accent-soft);
 	}
 	.found li {
 		display: flex;
@@ -674,7 +686,24 @@
 		gap: 4px;
 	}
 	h5 {
-		margin: 6px 0 0;
+		margin: 10px 0 2px;
+		padding-top: 8px;
+		border-top: 1px solid var(--border-default);
+		color: var(--text-tertiary);
+		font-size: var(--fs-meta);
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+	h5:first-child {
+		margin-top: 0;
+		padding-top: 0;
+		border-top: none;
+	}
+	h5 .dim {
+		font-weight: normal;
+		letter-spacing: 0;
+		text-transform: none;
 	}
 	.row {
 		display: flex;
@@ -682,18 +711,25 @@
 		flex-wrap: wrap;
 		align-items: center;
 	}
+	.row {
+		color: var(--text-secondary);
+	}
+	.row label {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
 	.row select {
 		max-width: 130px;
-		font: inherit;
 	}
 	.row input[type='number'] {
-		width: 64px;
-		font: inherit;
-	}
-	.act {
-		font: inherit;
+		flex: none;
+		width: calc(9ch + 14px);
+		font-family: var(--font-mono);
+		text-align: right;
 	}
 	.slider {
+		color: var(--text-secondary);
 		display: grid;
 		grid-template-columns: 44px 1fr 52px;
 		gap: 4px;
@@ -702,6 +738,10 @@
 	.log {
 		max-height: 120px;
 		overflow: auto;
+		font-size: var(--fs-meta);
+	}
+	.log li {
+		padding: 1px 0;
 	}
 	.mono {
 		font-family: var(--font-mono);
@@ -713,15 +753,5 @@
 	.err {
 		color: var(--text-danger);
 		margin: 4px 10px;
-	}
-	.primary {
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--paper);
-		font: inherit;
-		font-weight: 600;
-		padding: 2px 10px;
-		cursor: pointer;
 	}
 </style>

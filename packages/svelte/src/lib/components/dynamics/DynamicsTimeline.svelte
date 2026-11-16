@@ -87,7 +87,7 @@
 
 {#if run && record}
 	<section
-		class={['timeline', { compact: app.compactLayout, flush }]}
+		class={['timeline', 'dyn-form', { compact: app.compactLayout, flush }]}
 		aria-label="Dynamics playback"
 		data-dyn-timeline
 		bind:offsetHeight={dockHeight}
