@@ -68,10 +68,14 @@
 <section aria-label="Equipment models" class="equipment-panel">
 	<header>
 		<h3>Equipment</h3>
-		<button onclick={onclose} aria-label="Close equipment models">Close</button>
+		<button class="close" onclick={onclose} aria-label="Close equipment models" title="Close"
+			><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
+				><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg
+			></button
+		>
 	</header>
-	{#if !network.equipment}
-		<p>No equipment data</p>
+	{#if !network.equipment || (!items.length && !dc?.converters && !dc?.nodes && !dc?.lines && !network.equipment.import_notes?.length)}
+		<p class="empty">No equipment</p>
 	{:else}
 		{#if dc && (dc.nodes || dc.lines || dc.converters)}
 			<StatBoxes
@@ -92,7 +96,7 @@
 			</details>
 		{/if}
 		<TxDcTopology equipment={network.equipment} {moduleJson} />
-		{#if moduleJson && !dc?.converters}
+		{#if moduleJson && !dc?.converters && items.length}
 			<details>
 				<summary>Regulators</summary>
 				<button onclick={runRegulators} disabled={controlBusy}
@@ -119,14 +123,12 @@
 				{/if}
 			</details>
 		{/if}
-		<label
-			>Find equipment <input
-				type="search"
-				bind:value={query}
-				placeholder="PST, capacitor, bus…"
-			/></label
-		>
-		<p class="count">{filtered.length} of {items.length}</p>
+		{#if items.length}
+			<label
+				>Find equipment <input type="search" bind:value={query} placeholder="Name or bus" /></label
+			>
+			{#if query}<p class="count">{filtered.length} of {items.length}</p>{/if}
+		{/if}
 		{#if detail}
 			<article aria-label={detail.title}>
 				<h4>{detail.title}</h4>
@@ -151,7 +153,6 @@
 				</li>
 			{/each}
 		</ul>
-		{#if !items.length}<p>No equipment</p>{/if}
 	{/if}
 </section>
 
@@ -241,8 +242,30 @@
 	article ul {
 		padding-left: var(--space-xl);
 	}
-	.count {
+	.count,
+	.empty {
 		color: var(--text-secondary);
+	}
+	.empty {
+		margin: 0;
+	}
+	.close {
+		display: grid;
+		place-items: center;
+		width: 28px;
+		min-height: 28px;
+		padding: 0;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text-secondary);
+	}
+	.close:hover {
+		background: var(--surface-hover);
+		color: var(--ink);
+	}
+	.close svg {
+		stroke-width: 1.6;
 	}
 	@media (max-width: 600px) {
 		button {

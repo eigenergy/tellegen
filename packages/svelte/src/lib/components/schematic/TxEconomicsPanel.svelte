@@ -190,7 +190,7 @@
 		gap: var(--space-2xs) var(--space-md);
 	}
 	.scale > span {
-		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
 		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 	}
@@ -259,7 +259,7 @@
 		text-align: left;
 	}
 	li button span {
-		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
 		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 		text-align: right;

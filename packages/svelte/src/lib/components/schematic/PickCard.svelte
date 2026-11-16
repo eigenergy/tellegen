@@ -78,7 +78,8 @@
 		min-width: 280px;
 		max-width: 420px;
 		padding: 4px 6px;
-		font: 12px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);

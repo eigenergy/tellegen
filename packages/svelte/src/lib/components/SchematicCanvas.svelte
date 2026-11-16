@@ -1350,7 +1350,7 @@
 			</label>
 		{/if}
 		<label class="colour">
-			<span class="sr-only">Colour by</span>
+			<span class="sr-only">Color by</span>
 			<select bind:value={colour} disabled={!snapshot}>
 				{#each Object.entries(COLOURS) as [value, label] (value)}<option {value}>{label}</option
 					>{/each}
@@ -1642,7 +1642,8 @@
 		gap: 6px;
 		align-items: center;
 		padding: 4px 8px;
-		font: 12px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
@@ -1651,7 +1652,8 @@
 	.key {
 		position: absolute;
 		padding: 4px 8px;
-		font: 12px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
@@ -1667,7 +1669,8 @@
 		position: absolute;
 		margin: 0;
 		padding: 1px 6px;
-		font: 12px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: color-mix(in srgb, var(--paper) 80%, transparent);
 		border-radius: var(--radius-control);

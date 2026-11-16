@@ -337,6 +337,12 @@
 		});
 		return index;
 	});
+	/** A substation's name, or the bus it stands for when it has none. */
+	function stationName(station: { name?: string | null; key: string }): string {
+		if (station.name) return station.name;
+		const bus = /^bus:(\d+)$/.exec(station.key)?.[1];
+		return bus ? `Bus ${bus}` : station.key;
+	}
 	const activeStation = $derived.by(() => {
 		if (!voltageView) return null;
 		const index =
@@ -348,7 +354,7 @@
 		return index < 0
 			? null
 			: {
-					name: graph.substations[index].name ?? graph.substations[index].key,
+					name: stationName(graph.substations[index]),
 					...stationSummaries[index]
 				};
 	});
@@ -954,7 +960,7 @@
 			const p = at(selectedBus);
 			const v = resultsOn ? valueText(selectedBus) : null;
 			candidates.push({
-				text: v ? `${name(selectedBus)}, ${v.text}` : name(selectedBus),
+				text: v ? `${name(selectedBus)}  ${v.text}` : name(selectedBus),
 				state: 'normal',
 				priority: 1e9,
 				screen: screen(...p),
@@ -970,7 +976,7 @@
 				if (!inView(sp)) continue;
 				const transfer = transferOn ? valueText(i) : null;
 				candidates.push({
-					text: transfer ? `${name(i)}, ${transfer.text}` : name(i),
+					text: transfer ? `${name(i)}  ${transfer.text}` : name(i),
 					state: 'normal',
 					priority: graph.kv[i],
 					screen: sp,
@@ -1046,7 +1052,7 @@
 					v = solvedVoltages.get(graph.busId[i]);
 				if (!inView(screen(...p))) continue;
 				candidates.push({
-					text: `Bus ${graph.busId[i]}, ${marker.kind === 'deenergized' ? 'off' : v !== undefined ? `${v.toFixed(3)} pu` : marker.kind}`,
+					text: `Bus ${graph.busId[i]}  ${marker.kind === 'deenergized' ? 'De-energized' : v !== undefined ? `${v.toFixed(3)} pu` : marker.kind}`,
 					state: marker.kind === 'deenergized' ? 'normal' : 'violation',
 					priority: 1e6,
 					screen: screen(...p),
@@ -1477,7 +1483,7 @@
 		{ value: 'operating', label: 'Limits' },
 		{ value: 'economics', label: 'Prices' },
 		{ value: 'transfer', label: 'Flows' },
-		{ value: 'results', label: 'Map colours' }
+		{ value: 'results', label: 'Map colors' }
 	];
 	/** Arrow keys move between views, as in any radio group. */
 	function viewKey(e: KeyboardEvent) {
@@ -1513,7 +1519,7 @@
 					: transferOn
 						? `Flows, ${calculationName}`
 						: resultsOn
-							? `${display?.copy ?? 'Map colours'}, ${calculationName}`
+							? `${display?.copy ?? 'Map colors'}, ${calculationName}`
 							: 'Voltage',
 			camera,
 			result: solution
@@ -1564,18 +1570,13 @@
 		}
 		ctx.restore();
 		const lines = transferOn
-			? [`Flows, ${calculationName}`, `Width 0–${transferScale} MW`]
+			? [`Flows, ${calculationName}`, `Width 0 to ${transferScale} MW`]
 			: [
 					`Limits, ${calculationName}`,
-					...(resultContext.voltage ? ['Voltage 0.90–1.10 pu'] : []),
-					`Loading (${resultContext.basis}): amber ≥${warningPref.value}%, red ≥100%`,
-					...(activeStation && activeStation.min && activeStation.max
-						? [
-								`${activeStation.name}: ${activeStation.min.value.toFixed(4)}–${activeStation.max.value.toFixed(4)} pu`
-							]
-						: [])
+					...(resultContext.voltage ? ['Voltage 0.90 to 1.10 pu'] : []),
+					`Loading: amber from ${warningPref.value}%, red at 100%`
 				];
-		ctx.font = '11px "IBM Plex Mono", monospace';
+		ctx.font = '12px "IBM Plex Sans", sans-serif';
 		const wrapped: string[] = [];
 		for (const line of lines) {
 			let current = '';
@@ -2589,7 +2590,8 @@
 		position: absolute;
 		margin: 0;
 		padding: 1px 6px;
-		font: 12px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: color-mix(in srgb, var(--paper) 80%, transparent);
 		border-radius: var(--radius-control);

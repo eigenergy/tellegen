@@ -29,7 +29,7 @@ import {
 	ACCENT,
 	CORRIDOR_PX,
 	INK,
-	MONO,
+	LABEL_FONT,
 	PAPER,
 	PATH,
 	SYMBOL_INK,
@@ -257,7 +257,7 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 			background: true,
 			getBackgroundColor: paperText(220),
 			backgroundPadding: [3, 1],
-			fontFamily: MONO,
+			fontFamily: LABEL_FONT,
 			characterSet: 'auto',
 			updateTriggers: { getColor: s.zones.states }
 		}),
@@ -385,7 +385,7 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 						background: true,
 						getBackgroundColor: paperText(200),
 						backgroundPadding: [2, 0],
-						fontFamily: MONO,
+						fontFamily: LABEL_FONT,
 						characterSet: 'auto'
 					}),
 					// A transformer's vector group and rating, above its symbol: below sits a centre tap.
@@ -405,7 +405,7 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 						background: true,
 						getBackgroundColor: paperText(220),
 						backgroundPadding: [2, 1],
-						fontFamily: MONO,
+						fontFamily: LABEL_FONT,
 						characterSet: 'auto'
 					})
 				]
@@ -492,7 +492,7 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 			background: true,
 			getBackgroundColor: paperText(230),
 			backgroundPadding: [3, 1],
-			fontFamily: MONO,
+			fontFamily: LABEL_FONT,
 			characterSet: 'auto'
 		})
 	];
@@ -600,7 +600,7 @@ function landmarkLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 			background: true,
 			getBackgroundColor: paperText(220),
 			backgroundPadding: [2, 1],
-			fontFamily: MONO,
+			fontFamily: LABEL_FONT,
 			characterSet: 'auto'
 		})
 	];
@@ -704,7 +704,7 @@ function sharedRouteLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 						background: true,
 						getBackgroundColor: paperText(230),
 						backgroundPadding: [3, 1],
-						fontFamily: MONO,
+						fontFamily: LABEL_FONT,
 						characterSet: 'auto',
 						pickable: true
 					})
@@ -919,7 +919,7 @@ function stackLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 						background: true,
 						getBackgroundColor: paperText(220),
 						backgroundPadding: [2, 1],
-						fontFamily: MONO,
+						fontFamily: LABEL_FONT,
 						characterSet: 'auto'
 					})
 				]

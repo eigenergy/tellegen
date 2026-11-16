@@ -82,7 +82,7 @@ test('7. switch to the schematic and between layouts, keeping the selection', as
 	await toolbar.getByRole('button', { name: 'Schematic', exact: true }).click();
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('leaf-order');
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('tidy');
-	await toolbar.getByRole('combobox', { name: 'Colour by' }).selectOption('loading-heat');
+	await toolbar.getByRole('combobox', { name: 'Color by' }).selectOption('loading-heat');
 	await expect(page.getByText('≥ 100%')).toBeVisible();
 	await own.click();
 	await expect(own).toHaveAttribute('aria-pressed', 'true');
@@ -369,7 +369,7 @@ test('the diagram opens before a solve, without results', async ({ page }) => {
 	await page.getByRole('button', { name: 'Show diagram' }).click();
 	const toolbar = page.getByRole('toolbar', { name: 'Schematic' });
 	await expect(page.getByRole('application', { name: 'Schematic diagram' })).toBeVisible();
-	await expect(toolbar.getByRole('combobox', { name: 'Colour by' })).toBeDisabled();
+	await expect(toolbar.getByRole('combobox', { name: 'Color by' })).toBeDisabled();
 	await toolbar.getByRole('button', { name: 'Schematic', exact: true }).click();
 	await expect(page.getByRole('list', { name: 'Symbols' })).toBeVisible();
 	await page.getByRole('button', { name: 'Show map' }).click();

@@ -426,7 +426,7 @@ for (const touch of [false, true]) {
 			await expect(limits.locator('.stat').first()).toBeVisible();
 			await expect(limits).not.toContainText('voltage');
 			// Every view is named in the mobile selector; desktop keeps keyboard-operable radios.
-			const viewNames = ['Voltage', 'Limits', 'Prices', 'Flows', 'Map colours'];
+			const viewNames = ['Voltage', 'Limits', 'Prices', 'Flows', 'Map colors'];
 			if (touch) {
 				const chooser = toolbar.getByRole('combobox', { name: 'Diagram view', exact: true });
 				await expect(chooser).toBeVisible();

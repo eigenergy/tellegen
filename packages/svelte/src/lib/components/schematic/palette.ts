@@ -14,7 +14,8 @@ export const HIDDEN: RGBA = [0, 0, 0, 0];
  * stays the colour of MV and above. */
 export const ZONE_INK: RGBA = [112, 104, 90, 255];
 
-export const MONO = 'IBM Plex Mono, ui-monospace, monospace';
+/** The diagrams' label font: the UI's IBM Plex Sans. */
+export const LABEL_FONT = 'IBM Plex Sans, system-ui, sans-serif';
 
 /** A colour at another opacity. */
 export const alpha = (c: RGBA, a: number): RGBA => [c[0], c[1], c[2], a];
