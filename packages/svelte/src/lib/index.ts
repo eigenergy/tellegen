@@ -1,14 +1,24 @@
 export { getNoticeCenter, errorNoticeTitle } from './notices.svelte.js';
 export {
 	DiagnosticLog,
+	ERROR_TITLE,
 	LOG_SEVERITIES,
+	MessageLog,
 	errorEntry,
 	errorStage,
+	errorTitle,
 	logSeverity,
 	powerIoEntry,
 	solveEntry
 } from './log.svelte.js';
-export type { LogDocument, LogEntry, LogEntryInput, LogSeverity } from './log.svelte.js';
+export type {
+	ErrorContext,
+	LogDocument,
+	LogEntry,
+	LogEntryInput,
+	LogSeverity,
+	LogToast
+} from './log.svelte.js';
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as PanelFrame } from './components/PanelFrame.svelte';
 export { getPanelLayout } from './panels.svelte.js';

@@ -1144,8 +1144,10 @@
 					clearRebuild();
 					if (cancelled || rebuilt) return;
 					if (glRebuilds >= 6) {
-						app.error =
-							'the map lost its graphics context repeatedly; reload the page to restore it';
+						app.reportError(
+							'the map lost its graphics context repeatedly; reload the page to restore it',
+							{ title: 'Map failed to start' }
+						);
 						return;
 					}
 					rebuilt = true;
@@ -1219,7 +1221,11 @@
 				}
 			})
 			.catch((e) => {
-				if (!cancelled) app.error = `map failed to load: ${e instanceof Error ? e.message : e}`;
+				if (!cancelled)
+					app.reportError(e, {
+						title: 'Map failed to start',
+						message: `map failed to load: ${e instanceof Error ? e.message : e}`
+					});
 			});
 		return () => {
 			cancelled = true;

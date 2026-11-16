@@ -11,9 +11,7 @@
 		McNetworkScope,
 		McModelQualification,
 		McWorkbench,
-		McSolveControls,
-		getNoticeCenter,
-		errorNoticeTitle
+		McSolveControls
 	} from '@tellegen/svelte';
 	import type { StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
@@ -35,12 +33,6 @@
 
 	const ctrl = getController();
 	const workspace = new StudyWorkspace(ctrl);
-	const notices = getNoticeCenter();
-	$effect(() => {
-		const details = workspace.error;
-		if (details)
-			untrack(() => notices.push({ kind: 'error', title: errorNoticeTitle(details), details }));
-	});
 	let expanded = $state(false);
 	let tab = $state<'case' | 'history' | 'plan'>('case');
 	let creating = $state(false);

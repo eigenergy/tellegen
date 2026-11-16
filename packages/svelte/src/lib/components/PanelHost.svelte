@@ -2,7 +2,6 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { getAppState } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import { getNoticeCenter } from '../notices.svelte.js';
 	import PanelCard from './PanelCard.svelte';
 	import { getCommandRegistry } from '../commands.svelte.js';
 
@@ -13,7 +12,6 @@
 
 	const app = getAppState();
 	const layout = getPanelLayout();
-	const notices = getNoticeCenter();
 	const commands = getCommandRegistry();
 	// Each registered panel, including host panels such as the Agent panel, is
 	// also a palette command.
@@ -40,7 +38,7 @@
 	 * and the notices sit on the map above it. */
 	const sheetOpen = $derived(layout.compact && !!layout.drawer && !app.zen);
 	// An open sheet stands on the dynamics playback bar, which then sits flush on the bottom edge.
-	const bottomReserve = $derived(sheetOpen ? app.dockInset : notices.entries.length ? 120 : 88);
+	const bottomReserve = $derived(sheetOpen ? app.dockInset : app.log.toast ? 120 : 88);
 	/** The tab strip: the panels that dock on the left by default, plus any that
 	 * ask for a tab (Dynamics). Settings opens from the header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));

@@ -1,13 +1,16 @@
 <script lang="ts">
-	import { logTitle, type LogEntry, type LogEntryInput } from '../log.svelte.js';
+	import type { LogEntry, LogEntryInput } from '../log.svelte.js';
 	let {
 		entry,
 		showSubject = true,
+		open: startOpen = false,
 		onbus
 	}: {
 		entry: LogEntryInput | LogEntry;
 		/** Off inside a group that already names the subject. */
 		showSubject?: boolean;
+		/** Start with Details open. */
+		open?: boolean;
 		/** Makes each named bus a button, for a host that can select it. */
 		onbus?: (bus: number, entry: LogEntryInput) => void;
 	} = $props();
@@ -15,8 +18,9 @@
 	const MAX_BUSES = 12;
 	const count = $derived('count' in entry ? entry.count : 1);
 	const buses = $derived(entry.buses ?? []);
-	const title = $derived(logTitle(entry.message));
-	let open = $state(false);
+	const title = $derived(entry.title ?? entry.message);
+	let open = $derived(startOpen);
+	const retry = $derived(entry.retry && (entry.canRetry?.() ?? true) ? entry.retry : null);
 	const details = $derived(
 		Object.entries(entry.details ?? {}).map(
 			([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)] as const
@@ -32,7 +36,8 @@
 			['Element', entry.target ?? ''],
 			['Suggestion', entry.hint ?? ''],
 			...details.map(
-				([key, value]) => [key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' '), value] as const
+				([key, value]) =>
+					[key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' '), value] as const
 			)
 		].filter(([, value]) => value) as [string, string][]
 	);
@@ -47,6 +52,7 @@
 						>{count} times</span
 					>{/if}
 			</p>
+			{#if retry}<button type="button" class="toggle" onclick={retry}>Retry</button>{/if}
 			{#if rows.length}<button
 					type="button"
 					class="toggle"
@@ -115,13 +121,15 @@
 	}
 	.toggle {
 		flex: none;
-		margin-left: auto;
 		padding: 0;
 		border: 0;
 		background: none;
 		font: inherit;
 		color: var(--text-accent);
 		cursor: pointer;
+	}
+	.toggle:first-of-type {
+		margin-left: auto;
 	}
 	.toggle:hover {
 		text-decoration: underline;

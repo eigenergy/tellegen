@@ -63,7 +63,9 @@
 							keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
 							group: 'Cases',
 							run: () =>
-								void ctrl.dynamics.openDemo().catch((e) => (app.error = (e as Error).message))
+								void ctrl.dynamics
+									.openDemo()
+									.catch((e) => app.reportError(e, { title: 'Could not open the demo' }))
 						}
 					] satisfies Command[])
 				: []),
