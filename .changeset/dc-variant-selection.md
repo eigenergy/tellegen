@@ -3,4 +3,4 @@
 "@tellegen/svelte": minor
 ---
 
-Expose explicit DC branch conventions, including PowerModels DCP and MATPOWER/DCMP compatibility, while retaining the legacy default. Preserve the selected convention in saved instances and studies, report it with results, and offer a DC variant selector.
+Settings > Model > DC line model chooses how DC calculations model a line, with the earlier model as Default. The choice is kept in saved cases and studies and reported with each result.
