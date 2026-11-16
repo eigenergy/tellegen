@@ -23,6 +23,8 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 	});
 
 	const downloadPromise = page.waitForEvent('download');
+	// Save and export sit in the case's File menu.
+	await page.getByRole('button', { name: 'File', exact: true }).click();
 	await page.getByRole('button', { name: 'Save case', exact: true }).click();
 	const download = await downloadPromise;
 	expect(download.suggestedFilename()).toMatch(/\.pio\.json$/);
@@ -34,6 +36,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 	expect(text).not.toContain('tellegen.study');
 
 	const solutionDownloadPromise = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'File', exact: true }).click();
 	await page.getByRole('button', { name: 'Save solution', exact: true }).click();
 	const solutionDownload = await solutionDownloadPromise;
 	expect(solutionDownload.suggestedFilename()).toMatch(/\.solution\.pio\.json$/);

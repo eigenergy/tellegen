@@ -4,7 +4,8 @@
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt } from '../format.js';
 	import type { LocalCase } from '../state.svelte.js';
-	import { formatPowerIoDiagnostic, type PowerIoDiagnostic } from '@tellegen/engine';
+	import type { PowerIoDiagnostic } from '@tellegen/engine';
+	import { getPanelLayout } from '../panels.svelte.js';
 	import OutcomeVerdict from './OutcomeVerdict.svelte';
 
 	/** Optional host content rendered under the case stats; `lead` goes right after
@@ -13,10 +14,14 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const layout = getPanelLayout();
 
 	const EXPORT_FORMATS = CASE_EXPORT_FORMATS;
 
 	let busy = $state(false);
+	/** The File menu: the case's save, export and layout actions in one place. */
+	let fileOpen = $state(false);
+	let fileAnchor = $state<HTMLElement | undefined>();
 	let exportOpen = $state(false);
 	let exportDiagnostics = $state<PowerIoDiagnostic[]>([]);
 
@@ -67,6 +72,13 @@
 		}
 	}
 
+	/** Run a File menu action and close the menu. */
+	function pick(action: () => unknown) {
+		fileOpen = false;
+		exportOpen = false;
+		void action();
+	}
+
 	async function downloadLayout(lc: LocalCase) {
 		busy = true;
 		try {
@@ -76,6 +88,18 @@
 		}
 	}
 </script>
+
+<svelte:window
+	onpointerdown={(event) => {
+		if (fileOpen && !fileAnchor?.contains(event.target as Node)) fileOpen = false;
+	}}
+	onkeydown={(event) => {
+		if (fileOpen && event.key === 'Escape') {
+			event.preventDefault();
+			fileOpen = false;
+		}
+	}}
+/>
 
 {#if app.activeLocal}
 	{@const lc = app.activeLocal}
@@ -104,7 +128,7 @@
 				<dd class="mono">{lc.summary.n_bus}</dd>
 			</div>
 			<div>
-				<dt>Branches</dt>
+				<dt>Lines</dt>
 				<dd class="mono">{lc.summary.n_branch}</dd>
 			</div>
 			<div>
@@ -118,10 +142,6 @@
 			<div>
 				<dt>Generation capacity</dt>
 				<dd class="mono">{fmt.format(lc.summary.gen_mw)} MW</dd>
-			</div>
-			<div>
-				<dt>Base MVA</dt>
-				<dd class="mono">{fmt.format(lc.summary.base_mva)}</dd>
 			</div>
 			{#if lc.displayMode === 'diagram' && lc.diagram}
 				<div>
@@ -149,69 +169,77 @@
 		{/if}
 	{/if}
 	{@render note?.(lc)}
-	{#if lc.summary && lc.studyInputJson}
-		{@const exportUnavailable = ctrl.caseExportUnavailableReason(lc)}
-		<div class="case-actions">
-			<button
-				class="reset"
-				disabled={busy || !!exportUnavailable}
-				title={exportUnavailable ?? undefined}
-				onclick={() => saveCase(lc)}>Save case</button
-			>
-			{#if lc.formulation === 'dcopf' && lc.solution}
-				<button class="reset" disabled={busy} onclick={() => saveSolution(lc)}>Save solution</button
-				>
-			{/if}
-			<button
-				class="reset"
-				disabled={busy || !!exportUnavailable}
-				title={exportUnavailable ?? undefined}
-				aria-expanded={exportOpen}
-				aria-controls="case-export-formats"
-				onclick={() => (exportOpen = !exportOpen)}
-			>
-				Export as
-			</button>
-			{#if lc.view || lc.diagram}
-				<button class="reset" disabled={busy} onclick={() => downloadLayout(lc)}>
-					{lc.displayMode === 'diagram' ? 'Save drawing' : 'Save geography'}
-				</button>
-			{/if}
-		</div>
-		{#if exportUnavailable}
-			<p class="unavailable">{exportUnavailable}</p>
-		{:else if exportOpen}
-			<ul class="case-actions" id="case-export-formats" aria-label="Export formats">
-				{#each EXPORT_FORMATS as f (f.token)}
-					<li>
-						<button class="reset" disabled={busy} onclick={() => exportCase(lc, f.token)}>
-							{f.label}
-						</button>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-		{#if exportDiagnostics.length > 0}
-			<ul class="warnings">
-				{#each exportDiagnostics.slice(0, 4) as diagnostic, i (i)}
-					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
-				{/each}
-				{#if exportDiagnostics.length > 4}
-					<li>+{exportDiagnostics.length - 4} more</li>
-				{/if}
-			</ul>
-		{/if}
-	{/if}
-	{#if lc.displayMode !== 'diagram' && lc.topology && lc.coordsKind !== 'file'}
-		<button class="reset" onclick={() => ctrl.moveLocalCase(lc)}>
-			{lc.coordsKind === 'synthetic_pending'
+	{@const exportUnavailable =
+		lc.summary && lc.studyInputJson ? ctrl.caseExportUnavailableReason(lc) : 'Not available'}
+	{@const canSave = !!(lc.summary && lc.studyInputJson)}
+	{@const placeLabel =
+		lc.displayMode !== 'diagram' && lc.topology && lc.coordsKind !== 'file'
+			? lc.coordsKind === 'synthetic_pending'
 				? 'Place on map'
 				: lc.coordsKind === 'geofile'
 					? 'Place manually'
-					: 'Move layout'}
-		</button>
+					: 'Move layout'
+			: null}
+	<span class="file-menu" bind:this={fileAnchor}>
+		<button
+			class="reset"
+			aria-expanded={fileOpen}
+			aria-controls="case-file-menu"
+			onclick={() => {
+				fileOpen = !fileOpen;
+				exportOpen = false;
+			}}
+			>File<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+				><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
+			></button
+		>
+		<div class="file-list" id="case-file-menu" role="group" aria-label="File" hidden={!fileOpen}>
+			{#if canSave}
+				<button
+					disabled={busy || !!exportUnavailable}
+					title={exportUnavailable ?? undefined}
+					onclick={() => pick(() => saveCase(lc))}>Save case</button
+				>
+				{#if lc.formulation === 'dcopf' && lc.solution}
+					<button disabled={busy} onclick={() => pick(() => saveSolution(lc))}>Save solution</button
+					>
+				{/if}
+				<button
+					disabled={busy || !!exportUnavailable}
+					title={exportUnavailable ?? undefined}
+					aria-expanded={exportOpen}
+					aria-controls="case-export-formats"
+					onclick={() => (exportOpen = !exportOpen)}>Export as</button
+				>
+				{#if exportOpen && !exportUnavailable}
+					<ul id="case-export-formats" aria-label="Export formats">
+						{#each EXPORT_FORMATS as f (f.token)}
+							<li>
+								<button disabled={busy} onclick={() => pick(() => exportCase(lc, f.token))}
+									>{f.label}</button
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if lc.view || lc.diagram}
+					<button disabled={busy} onclick={() => pick(() => downloadLayout(lc))}>
+						{lc.displayMode === 'diagram' ? 'Save drawing' : 'Save geography'}
+					</button>
+				{/if}
+				<hr />
+			{/if}
+			{#if placeLabel}
+				<button onclick={() => pick(() => ctrl.moveLocalCase(lc))}>{placeLabel}</button>
+			{/if}
+			<button onclick={() => pick(() => ctrl.removeLocalCase(lc))}>Remove</button>
+		</div>
+	</span>
+	{#if exportDiagnostics.length > 0}
+		<button class="link" onclick={() => layout.show('log')}
+			>Export notes in Log ({exportDiagnostics.length})</button
+		>
 	{/if}
-	<button class="reset" onclick={() => ctrl.removeLocalCase(lc)}>Remove</button>
 {/if}
 
 <style>
@@ -257,25 +285,86 @@
 		list-style: none;
 		font-size: var(--fs-data);
 		line-height: var(--lh-normal);
-		color: var(--text-accent);
+		color: var(--text-secondary);
 	}
 
-	.case-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-		margin: var(--space-md) 0 0;
-		padding: 0;
+	/* The File list opens in the panel's flow, so the panel's scrolling never clips it. */
+	.file-menu {
+		display: contents;
+	}
+
+	.file-menu > .reset {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-right: var(--space-sm);
+	}
+
+	.file-list[hidden] {
+		display: none;
+	}
+
+	.file-list {
+		display: grid;
+		max-width: 240px;
+		margin: var(--space-xs) 0 var(--space-sm);
+		padding: 4px;
+		background: var(--raised);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+	}
+
+	.file-list ul {
+		margin: 0;
+		padding: 0 0 0 12px;
 		list-style: none;
 	}
 
-	.case-actions .reset {
-		margin-top: 0;
+	.file-list button {
+		display: block;
+		width: 100%;
+		padding: 6px 8px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		color: var(--ink);
+		font: inherit;
+		font-size: var(--fs-label);
+		text-align: left;
+		cursor: pointer;
 	}
 
-	.unavailable {
-		margin: var(--space-sm) 0 0;
+	.file-list button:hover:not(:disabled) {
+		background: var(--surface-hover);
+	}
+
+	.file-list button:disabled {
+		color: var(--text-tertiary);
+		cursor: default;
+	}
+
+	.file-list hr {
+		width: 100%;
+		margin: 4px 0;
+		border: 0;
+		border-top: 1px solid var(--line);
+	}
+
+	.link {
+		display: block;
+		margin-top: var(--space-sm);
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--text-accent);
+		font: inherit;
 		font-size: var(--fs-label);
-		color: var(--text-secondary);
+		cursor: pointer;
+	}
+
+	@media (pointer: coarse) {
+		.file-list button {
+			min-height: 44px;
+		}
 	}
 </style>

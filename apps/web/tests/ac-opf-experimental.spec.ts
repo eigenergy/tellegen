@@ -77,11 +77,12 @@ for (const mode of ['preview', 'development']) {
 		);
 		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveCount(0);
 		await expect(page.locator('.error')).toHaveCount(0);
-		await expect(page.getByRole('button', { name: 'Save case', exact: true })).toBeDisabled();
+		// The File menu's save and export are disabled, with the reason as their tooltip.
+		await page.getByRole('button', { name: 'File', exact: true }).click();
+		const save = page.getByRole('button', { name: 'Save case', exact: true });
+		await expect(save).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'Export as', exact: true })).toBeDisabled();
-		await expect(
-			page.getByText('Saving and exporting AC OPF cases is not supported yet.', { exact: true })
-		).toBeVisible();
+		await expect(save).toHaveAttribute('title', /not supported/);
 		await page.screenshot({ path: testInfo.outputPath('transmission-acopf.png') });
 		await expect.poll(() => workers.length).toBe(2); // probe plus first solve
 		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
