@@ -36,16 +36,20 @@
 			})
 		)
 	);
-	/** Phone with the sheet open: the sheet reaches the bottom edge, and the map's attribution,
-	 * zoom and notices sit above it, so no strip of map shows under the sheet. */
-	const sheetFlush = $derived(layout.compact && !!layout.drawer && !app.zen);
-	const bottomReserve = $derived(sheetFlush ? 0 : notices.entries.length ? 120 : 88);
+	const bottomReserve = $derived(notices.entries.length ? 120 : 88);
+	/** Phone with the sheet open: the strip under it, where the map's attribution and zoom
+	 * stay, is a solid bar rather than a sliver of map. */
+	const sheetFooter = $derived(layout.compact && !!layout.drawer && !app.zen);
 	/** The tab strip: the panels that dock on the left by default, plus any that
 	 * ask for a tab (Dynamics). Settings opens from the header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));
 	/** The tabs of the panel under the strip. A panel that docks elsewhere (Dynamics, on the
 	 * right) opens from the top bar on a wide screen, so the strip has one selected tab. */
 	const dockTabs = $derived(tabs.filter((p) => layout.compact || layout.position(p) === 'left'));
+	/** A panel floated over the map keeps its tab, set apart after a divider. */
+	const floatTabs = $derived(
+		tabs.filter((p) => !layout.compact && layout.position(p) === 'floating')
+	);
 	const left = $derived(layout.ordered('left').filter((p) => p.open));
 	const right = $derived(layout.ordered('right').filter((p) => p.open));
 	const floating = $derived(
@@ -64,7 +68,7 @@
 	/** Height of the tab strip, which the panel below it continues. */
 	let stripHeight = $state(36);
 	const toolbarTop = $derived(app.headerInset + 8);
-	const stripShown = $derived(showToolbar && !app.zen && dockTabs.length > 0);
+	const stripShown = $derived(showToolbar && !app.zen && dockTabs.length + floatTabs.length > 0);
 	const panelTop = $derived(toolbarTop + (stripShown && !layout.compact ? stripHeight : 0));
 	const leftShown = $derived(left.some((p) => layout.preferred(p)));
 	/** The panel under the strip, whose controls may share the strip's row. */
@@ -160,12 +164,7 @@
 	// The main map's attribution and zoom, and the notices, sit above a docked strip.
 	$effect(() => {
 		const root = document.documentElement.style;
-		if (sheetFlush)
-			root.setProperty(
-				'--tellegen-sheet-clear',
-				`${stripBottom + stripHeight + HANDLE_HEIGHT + 4}px`
-			);
-		else if (docked && !app.zen)
+		if (docked && !app.zen)
 			root.setProperty('--tellegen-sheet-clear', `${stripHeight + HANDLE_HEIGHT + 4}px`);
 		else root.removeProperty('--tellegen-sheet-clear');
 		return () => root.removeProperty('--tellegen-sheet-clear');
@@ -232,10 +231,26 @@
 						>{panel.title}{#if panel.badge}<span class="badge">({panel.badge})</span>{/if}</button
 					>
 				{/each}
+				{#if floatTabs.length}<span class="divider" aria-hidden="true"></span>{/if}
+				{#each floatTabs as panel (panel.id)}
+					<button
+						aria-label={panel.title}
+						aria-pressed={layout.shown(panel)}
+						onclick={() => {
+							if (app.zen) app.zen = false;
+							layout.toggle(panel);
+						}}>{panel.title}</button
+					>
+				{/each}
 			</div>
 		{/if}
 	</div>
 {/if}
+{#if sheetFooter}<div
+		class="sheet-footer"
+		style:height="{bottomReserve}px"
+		aria-hidden="true"
+	></div>{/if}
 {#if !app.zen}
 	{#if layout.storageError}<p class="layout-error" role="status" style:top="{panelTop}px">
 			{layout.storageError}
@@ -400,6 +415,13 @@
 		outline-offset: -4px;
 		border-radius: var(--radius-control);
 	}
+	.divider {
+		align-self: center;
+		width: 1px;
+		height: 18px;
+		margin: 0 6px;
+		background: var(--line);
+	}
 	.dock {
 		position: fixed;
 		z-index: 25;
@@ -453,6 +475,17 @@
 	}
 	.sheet-handle:focus-visible {
 		outline-offset: -2px;
+	}
+	/* Behind the map's controls (z-index 2), above the map itself. */
+	.sheet-footer {
+		position: fixed;
+		z-index: 1;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: var(--panel);
+		border-top: 1px solid var(--line);
+		pointer-events: none;
 	}
 	.layout-error {
 		position: fixed;

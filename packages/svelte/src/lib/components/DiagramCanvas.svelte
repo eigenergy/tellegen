@@ -480,8 +480,7 @@
 	.controls {
 		position: absolute;
 		right: 20px;
-		/* Above the phone sheet, as the map's controls are. */
-		bottom: max(12px, var(--tellegen-sheet-clear, 0px));
+		bottom: 12px;
 		display: flex;
 		gap: 12px;
 		align-items: flex-end;

@@ -227,7 +227,7 @@
 						{lc.displayMode === 'diagram' ? 'Save drawing' : 'Save geography'}
 					</button>
 				{/if}
-				<hr />
+				<span class="sep" aria-hidden="true"></span>
 			{/if}
 			{#if placeLabel}
 				<button onclick={() => pick(() => ctrl.moveLocalCase(lc))}>{placeLabel}</button>
@@ -343,10 +343,8 @@
 		cursor: default;
 	}
 
-	.file-list hr {
-		width: 100%;
+	.file-list .sep {
 		margin: 4px 0;
-		border: 0;
 		border-top: 1px solid var(--line);
 	}
 

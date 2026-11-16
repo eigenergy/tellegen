@@ -67,22 +67,15 @@ test('default docks keep Studies, Agent, solver and map controls separate', asyn
 			const a = (await attribution.boundingBox())!,
 				z = (await zoom.boundingBox())!;
 			expect(a.x + a.width).toBeLessThan(z.x - 6);
-			if (viewport.width < 960) {
-				// With the sheet open, the zoom sits just above it rather than under it.
-				const sheet = (await page.locator('[data-panel-drawer]').boundingBox())!;
-				expect(z.y + z.height).toBeLessThanOrEqual(sheet.y);
-				expect(sheet.y + sheet.height).toBeGreaterThan(viewport.height - 2);
-			} else expect(viewport.height - z.y).toBeLessThan(90);
+			expect(viewport.height - z.y).toBeLessThan(90);
 			await zoom.click();
 		}
 		await page.screenshot({
 			path: testInfo.outputPath(`panels-${viewport.width}x${viewport.height}.png`)
 		});
-		// One panel shows at a time; the front one (Studies) clears the attribution: above it on a
-		// wide screen, below it on a phone, where the sheet reaches the bottom edge.
+		// One panel shows at a time; the front one (Studies) clears the attribution.
 		const panel = (await page.locator('[data-panel]:visible').first().boundingBox())!;
 		const a = (await attribution.boundingBox())!;
-		if (viewport.width < 960) expect(a.y + a.height).toBeLessThanOrEqual(panel.y);
-		else expect(panel.y + panel.height).toBeLessThan(a.y);
+		expect(panel.y + panel.height).toBeLessThan(a.y);
 	}
 });

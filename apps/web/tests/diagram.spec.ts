@@ -165,6 +165,5 @@ test('drawing coordinates remain separate from geography and support navigation'
 	await page.screenshot({ path: testInfo.outputPath('diagram-mobile.png') });
 	const zoom = await page.getByRole('button', { name: 'Zoom in', exact: true }).boundingBox();
 	const panel = await page.locator('[data-panel]:visible').boundingBox();
-	// The sheet reaches the bottom edge; the diagram's controls sit above it.
-	expect(zoom!.y + zoom!.height).toBeLessThanOrEqual(panel!.y);
+	expect(zoom!.y).toBeGreaterThan(panel!.y + panel!.height);
 });
