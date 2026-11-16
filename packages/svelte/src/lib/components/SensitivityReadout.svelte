@@ -2,7 +2,7 @@
 	import { sensFlatColor, sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
-	import { lineName, readable, signedSmall, small } from '../format.js';
+	import { lineName, priceText, readable, signedSmall, small } from '../format.js';
 	import { dispatchByBus } from '../diagram/transmission-inspection.js';
 	import { gaugeText } from '../diagram/transmission-results.js';
 
@@ -44,7 +44,7 @@
 			? dispatchByBus(solution.dispatch).get(app.selectedBus!)
 			: undefined;
 		return [
-			['Price', readable(price, '$/MWh').text],
+			['Price', price == null || !Number.isFinite(price) ? '—' : `${priceText(price)} $/MWh`],
 			['Demand', readable(bus ? bus.demand_mw + ctrl.committedDelta : null, 'MW').text],
 			['Generation', readable(generation ?? (solution && bus ? 0 : null), 'MW').text]
 		] as const;

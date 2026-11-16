@@ -13,7 +13,7 @@
 		scalarColor,
 		scalarDomain
 	} from '../colors.js';
-	import { degrees, quantity, rgbaCss } from '../format.js';
+	import { degrees, priceText, quantity, rgbaCss } from '../format.js';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import { edgeColor, attachmentColor } from '../multiconductor.js';
 	import { diagramLabels } from '../diagram-labels.js';
@@ -388,7 +388,7 @@
 							values.has(bus.id)
 								? `, ${
 										displayMode === 'price'
-											? `${values.get(bus.id)!.toFixed(4)} $/MWh price`
+											? `${priceText(values.get(bus.id)!)} $/MWh price`
 											: displayMode === 'voltage'
 												? `${quantity(values.get(bus.id), 'pu')} voltage`
 												: `${degrees(values.get(bus.id))} voltage angle`

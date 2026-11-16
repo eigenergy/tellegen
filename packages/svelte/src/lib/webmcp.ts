@@ -1,2668 +1,2404 @@
-import { tick } from "svelte";
-import { resolveSettings, type ResolvedSettings } from "@tellegen/engine";
+import { tick } from 'svelte';
+import { resolveSettings, type ResolvedSettings } from '@tellegen/engine';
 import type {
-  WebMcpStudyHost as StudyWorkspace,
-  WebMcpPlanningHost as PlanningActivityStore,
-  StagedCapacityProposal,
-} from "./webmcp-hosts.js";
+	WebMcpStudyHost as StudyWorkspace,
+	WebMcpPlanningHost as PlanningActivityStore,
+	StagedCapacityProposal
+} from './webmcp-hosts.js';
 import {
-  FORMULATIONS,
-  createStudy,
-  type BrowserStudy,
-  type CapacityPlanBusWeightJson,
-  type CapacityPlanSpecJson,
-  type Formulation,
-  type NetworkBranch,
-  type NetworkBus,
-  type Solution,
-  type SensitivityColumn,
-  type SolveIteration,
-} from "@tellegen/engine";
+	FORMULATIONS,
+	createStudy,
+	type BrowserStudy,
+	type CapacityPlanBusWeightJson,
+	type CapacityPlanSpecJson,
+	type Formulation,
+	type NetworkBranch,
+	type NetworkBus,
+	type Solution,
+	type SensitivityColumn,
+	type SolveIteration
+} from '@tellegen/engine';
+import { LocalCase, type SolvableCase, type StudyDisplaySnapshot } from './state.svelte.js';
+import type { Controller } from './controller.svelte.js';
+import { AgentInputError, agentSummary, resolveAgentEvents } from './dynamics/agent.js';
+import { DYNAMICS_OFF } from './dynamics/controller.svelte.js';
+import { recordedCalculationSettings } from './settings.svelte.js';
 import {
-  LocalCase,
-  type SolvableCase,
-  type StudyDisplaySnapshot,
-} from "./state.svelte.js";
-import type { Controller } from "./controller.svelte.js";
-import {
-  AgentInputError,
-  agentSummary,
-  resolveAgentEvents,
-} from "./dynamics/agent.js";
-import { DYNAMICS_OFF } from "./dynamics/controller.svelte.js";
-import { recordedCalculationSettings } from "./settings.svelte.js";
-import {
-  DEFAULT_OUTPUT_BUDGET,
-  TellegenToolError,
-  type AnalyzeSensitivityInput,
-  type ApplyCapacityPlanInput,
-  type ExportCaseInput,
-  type ImportCaseInput,
-  type TellegenFileAdapter,
-  type FocusNetworkInput,
-  type ProposeCapacityPlanInput,
-  type PreviewCaseUpdateInput,
-  type QueryNetworkInput,
-  type ListCasesInput,
-  type SelectCaseInput,
-  type ResetCaseInput,
-  type TellegenPlanningAdapter,
-  type TellegenWebMcpAdapter,
-  type ToolPayload,
-  type UpdateCaseInput,
-} from "@tellegen/webmcp";
-import {
-  capacityPlanFirstOrderError,
-  capacityPlanPredictedPhiDelta,
-} from "./webmcp-metrics.js";
-import { CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT } from "./export-formats.js";
-import { lineName } from "./format.js";
+	DEFAULT_OUTPUT_BUDGET,
+	TellegenToolError,
+	type AnalyzeSensitivityInput,
+	type ApplyCapacityPlanInput,
+	type ExportCaseInput,
+	type ImportCaseInput,
+	type TellegenFileAdapter,
+	type FocusNetworkInput,
+	type ProposeCapacityPlanInput,
+	type PreviewCaseUpdateInput,
+	type QueryNetworkInput,
+	type ListCasesInput,
+	type SelectCaseInput,
+	type ResetCaseInput,
+	type TellegenPlanningAdapter,
+	type TellegenWebMcpAdapter,
+	type ToolPayload,
+	type UpdateCaseInput
+} from '@tellegen/webmcp';
+import { capacityPlanFirstOrderError, capacityPlanPredictedPhiDelta } from './webmcp-metrics.js';
+import { CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT } from './export-formats.js';
+import { lineName } from './format.js';
 export type {
-  WebMcpStudyHost,
-  WebMcpPlanningHost,
-  CaseEvidenceContext,
-  CapacityStudyBinding,
-  CapacityPlanActivity,
-  StagedCapacityProposal,
-} from "./webmcp-hosts.js";
+	WebMcpStudyHost,
+	WebMcpPlanningHost,
+	CaseEvidenceContext,
+	CapacityStudyBinding,
+	CapacityPlanActivity,
+	StagedCapacityProposal
+} from './webmcp-hosts.js';
 
 const OUTPUT_ID_LENGTH = 64;
 type FormulationOption = { id: Formulation; disabled?: boolean };
 
 function availableFormulations(c: SolvableCase): Formulation[] {
-  const declared = c instanceof LocalCase ? c.declaredFormulation : undefined;
-  return FORMULATIONS.filter(
-    (entry: FormulationOption) =>
-      !entry.disabled && (!declared || entry.id === declared),
-  ).map((entry: FormulationOption) => entry.id);
+	const declared = c instanceof LocalCase ? c.declaredFormulation : undefined;
+	return FORMULATIONS.filter(
+		(entry: FormulationOption) => !entry.disabled && (!declared || entry.id === declared)
+	).map((entry: FormulationOption) => entry.id);
 }
 
 // Agent calculations follow the accepted result, not a staged next-run draft.
 async function calculationSettings(
-  c: SolvableCase,
-  formulation = c.formulation,
+	c: SolvableCase,
+	formulation = c.formulation
 ): Promise<ResolvedSettings> {
-  if (c.settings.accepted?.calculation === formulation)
-    return c.settings.accepted;
-  return resolveSettings({
-    calculation: formulation,
-    baseline: c.settings.baselines[formulation] ?? {},
-    overrides: c.settings.options[formulation] ?? {},
-  });
+	if (c.settings.accepted?.calculation === formulation) return c.settings.accepted;
+	return resolveSettings({
+		calculation: formulation,
+		baseline: c.settings.baselines[formulation] ?? {},
+		overrides: c.settings.options[formulation] ?? {}
+	});
 }
 
 type QueryRow = Record<string, string | number | boolean | null> & {
-  element_id: string;
-  legacy_id: number;
+	element_id: string;
+	legacy_id: number;
 };
 
-function isDisplayOnlyElement(
-  element: { editable?: boolean } | null | undefined,
-): boolean {
-  return element?.editable === false;
+function isDisplayOnlyElement(element: { editable?: boolean } | null | undefined): boolean {
+	return element?.editable === false;
 }
 
 function clip(value: string, length = OUTPUT_ID_LENGTH): string {
-  return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
+	return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
 }
 
 function withBudgetedRows(
-  base: ToolPayload,
-  rows: ToolPayload[],
-  listKey: string,
-  countKey: string,
-  truncatedKey: string,
+	base: ToolPayload,
+	rows: ToolPayload[],
+	listKey: string,
+	countKey: string,
+	truncatedKey: string
 ): ToolPayload {
-  const selected: ToolPayload[] = [];
-  const output: ToolPayload = {
-    ...base,
-    [countKey]: rows.length,
-    [truncatedKey]: false,
-    [listKey]: selected,
-  };
-  for (const row of rows) {
-    const candidate = {
-      ...output,
-      [listKey]: [...selected, row],
-    };
-    if (
-      JSON.stringify({ ok: true, data: candidate }).length >
-      DEFAULT_OUTPUT_BUDGET
-    )
-      break;
-    selected.push(row);
-  }
-  output[truncatedKey] = selected.length < rows.length;
-  return output;
+	const selected: ToolPayload[] = [];
+	const output: ToolPayload = {
+		...base,
+		[countKey]: rows.length,
+		[truncatedKey]: false,
+		[listKey]: selected
+	};
+	for (const row of rows) {
+		const candidate = {
+			...output,
+			[listKey]: [...selected, row]
+		};
+		if (JSON.stringify({ ok: true, data: candidate }).length > DEFAULT_OUTPUT_BUDGET) break;
+		selected.push(row);
+	}
+	output[truncatedKey] = selected.length < rows.length;
+	return output;
 }
 
 function finite(value: number | null | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function elementId(
-  element: { id: number; uid?: string | null },
-  kind: "bus" | "branch",
-): string {
-  return element.uid ?? `${kind}:${element.id}`;
+function elementId(element: { id: number; uid?: string | null }, kind: 'bus' | 'branch'): string {
+	return element.uid ?? `${kind}:${element.id}`;
 }
 
 function randomId(prefix: string): string {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  if (uuid) return `${prefix}-${uuid}`;
-  if (globalThis.crypto?.getRandomValues) {
-    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
-    return `${prefix}-${[...bytes].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
-  }
-  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `${prefix}-${id}`;
+	const uuid = globalThis.crypto?.randomUUID?.();
+	if (uuid) return `${prefix}-${uuid}`;
+	if (globalThis.crypto?.getRandomValues) {
+		const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+		return `${prefix}-${[...bytes].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+	}
+	const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+	return `${prefix}-${id}`;
 }
 
-const SESSION_ID = randomId("session");
+const SESSION_ID = randomId('session');
 let revisionSequence = 0;
-const revisions = new WeakMap<
-  SolvableCase,
-  { fingerprint: string; revision: string }
->();
+const revisions = new WeakMap<SolvableCase, { fingerprint: string; revision: string }>();
 
 export function webMcpSessionId(): string {
-  return SESSION_ID;
+	return SESSION_ID;
 }
 
 type ReadCase = Pick<
-  SolvableCase,
-  "id" | "network" | "solution" | "formulation" | "deltas" | "ratings"
+	SolvableCase,
+	'id' | 'network' | 'solution' | 'formulation' | 'deltas' | 'ratings'
 >;
 
 interface CaseLookup {
-  network: NonNullable<SolvableCase["network"]>;
-  solution: Solution | null;
-  buses: Map<string, NetworkBus>;
-  branches: Map<string, NetworkBranch>;
-  prices: Map<number, number>;
-  voltages: Map<number, number>;
-  flows: Map<number, Solution["flows"][number]>;
-  generation: Map<number, number> | null;
+	network: NonNullable<SolvableCase['network']>;
+	solution: Solution | null;
+	buses: Map<string, NetworkBus>;
+	branches: Map<string, NetworkBranch>;
+	prices: Map<number, number>;
+	voltages: Map<number, number>;
+	flows: Map<number, Solution['flows'][number]>;
+	generation: Map<number, number> | null;
 }
 
 const lookups = new WeakMap<ReadCase, CaseLookup>();
-const traceDigests = new WeakMap<
-  SolvableCase,
-  { moduleJson: string; digest: Promise<string> }
->();
+const traceDigests = new WeakMap<SolvableCase, { moduleJson: string; digest: Promise<string> }>();
 
 function declaredSourceDigest(moduleJson: string): string | null {
-  try {
-    const stored = JSON.parse(moduleJson) as {
-      sources?: Array<{ digest?: { algorithm?: unknown; value?: unknown } }>;
-    };
-    for (const source of stored.sources ?? []) {
-      const digest = source.digest;
-      if (
-        digest?.algorithm === "sha256" &&
-        typeof digest.value === "string" &&
-        /^[0-9a-f]{64}$/.test(digest.value)
-      ) {
-        return `sha256:${digest.value}`;
-      }
-    }
-  } catch {
-    // Study construction remains the authority for malformed module errors.
-  }
-  return null;
+	try {
+		const stored = JSON.parse(moduleJson) as {
+			sources?: Array<{ digest?: { algorithm?: unknown; value?: unknown } }>;
+		};
+		for (const source of stored.sources ?? []) {
+			const digest = source.digest;
+			if (
+				digest?.algorithm === 'sha256' &&
+				typeof digest.value === 'string' &&
+				/^[0-9a-f]{64}$/.test(digest.value)
+			) {
+				return `sha256:${digest.value}`;
+			}
+		}
+	} catch {
+		// Study construction remains the authority for malformed module errors.
+	}
+	return null;
 }
 
 async function sha256(moduleJson: string): Promise<string> {
-  const declared = declaredSourceDigest(moduleJson);
-  if (declared) return declared;
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) {
-    throw new TellegenToolError(
-      "TRACE_UNAVAILABLE",
-      "This browser cannot compute a SHA-256 source digest. Use a browser with Web Crypto enabled.",
-    );
-  }
-  const bytes = new TextEncoder().encode(moduleJson);
-  const hash = new Uint8Array(await subtle.digest("SHA-256", bytes));
-  return `sha256:${[...hash].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+	const declared = declaredSourceDigest(moduleJson);
+	if (declared) return declared;
+	const subtle = globalThis.crypto?.subtle;
+	if (!subtle) {
+		throw new TellegenToolError(
+			'TRACE_UNAVAILABLE',
+			'This browser cannot compute a SHA-256 source digest. Use a browser with Web Crypto enabled.'
+		);
+	}
+	const bytes = new TextEncoder().encode(moduleJson);
+	const hash = new Uint8Array(await subtle.digest('SHA-256', bytes));
+	return `sha256:${[...hash].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
 async function sourceDigest(
-  ctrl: Controller,
-  c: SolvableCase,
-  knownModuleJson?: string,
+	ctrl: Controller,
+	c: SolvableCase,
+	knownModuleJson?: string
 ): Promise<string> {
-  const moduleJson = knownModuleJson ?? (await ctrl.ensureStudyInputJson(c));
-  if (!moduleJson) {
-    throw new TellegenToolError(
-      "CASE_DATA_UNAVAILABLE",
-      "The case data module is unavailable. Reload the page and try again.",
-    );
-  }
-  const cached = traceDigests.get(c);
-  if (cached?.moduleJson === moduleJson) return cached.digest;
-  const digest = sha256(moduleJson);
-  traceDigests.set(c, { moduleJson, digest });
-  return digest;
+	const moduleJson = knownModuleJson ?? (await ctrl.ensureStudyInputJson(c));
+	if (!moduleJson) {
+		throw new TellegenToolError(
+			'CASE_DATA_UNAVAILABLE',
+			'The case data module is unavailable. Reload the page and try again.'
+		);
+	}
+	const cached = traceDigests.get(c);
+	if (cached?.moduleJson === moduleJson) return cached.digest;
+	const digest = sha256(moduleJson);
+	traceDigests.set(c, { moduleJson, digest });
+	return digest;
 }
 
 function addAliases<T extends { id: number; uid?: string | null }>(
-  map: Map<string, T>,
-  element: T,
-  kind: "bus" | "branch",
+	map: Map<string, T>,
+	element: T,
+	kind: 'bus' | 'branch'
 ): void {
-  map.set(String(element.id), element);
-  map.set(`${kind}:${element.id}`, element);
-  if (element.uid) map.set(element.uid, element);
+	map.set(String(element.id), element);
+	map.set(`${kind}:${element.id}`, element);
+	if (element.uid) map.set(element.uid, element);
 }
 
 function caseLookup(c: ReadCase): CaseLookup {
-  const network = c.network;
-  if (!network)
-    throw new TellegenToolError(
-      "CASE_NOT_READY",
-      "The active case network is still loading. Wait a moment, then call inspect_case again.",
-    );
-  const cached = lookups.get(c);
-  if (cached && cached.network === network && cached.solution === c.solution)
-    return cached;
-  const buses = new Map<string, NetworkBus>();
-  const branches = new Map<string, NetworkBranch>();
-  for (const bus of network.buses) addAliases(buses, bus, "bus");
-  for (const branch of network.branches) addAliases(branches, branch, "branch");
-  const dispatch = c.solution?.dispatch;
-  const generation =
-    dispatch?.length && dispatch.every((entry) => entry.bus !== undefined)
-      ? new Map<number, number>()
-      : null;
-  if (generation && dispatch) {
-    for (const entry of dispatch)
-      generation.set(entry.bus!, (generation.get(entry.bus!) ?? 0) + entry.mw);
-  }
-  const next: CaseLookup = {
-    generation,
-    network,
-    solution: c.solution,
-    buses,
-    branches,
-    prices: new Map(
-      c.solution?.prices.map((entry) => [entry.bus, entry.value]) ?? [],
-    ),
-    voltages: new Map(
-      (
-        c.solution?.vm ??
-        c.solution?.w?.map((entry) => ({
-          bus: entry.bus,
-          value: Math.sqrt(Math.max(0, entry.value)),
-        })) ??
-        []
-      ).map((entry) => [entry.bus, entry.value]),
-    ),
-    flows: new Map(
-      c.solution?.flows.map((entry) => [entry.branch, entry]) ?? [],
-    ),
-  };
-  lookups.set(c, next);
-  return next;
+	const network = c.network;
+	if (!network)
+		throw new TellegenToolError(
+			'CASE_NOT_READY',
+			'The active case network is still loading. Wait a moment, then call inspect_case again.'
+		);
+	const cached = lookups.get(c);
+	if (cached && cached.network === network && cached.solution === c.solution) return cached;
+	const buses = new Map<string, NetworkBus>();
+	const branches = new Map<string, NetworkBranch>();
+	for (const bus of network.buses) addAliases(buses, bus, 'bus');
+	for (const branch of network.branches) addAliases(branches, branch, 'branch');
+	const dispatch = c.solution?.dispatch;
+	const generation =
+		dispatch?.length && dispatch.every((entry) => entry.bus !== undefined)
+			? new Map<number, number>()
+			: null;
+	if (generation && dispatch) {
+		for (const entry of dispatch)
+			generation.set(entry.bus!, (generation.get(entry.bus!) ?? 0) + entry.mw);
+	}
+	const next: CaseLookup = {
+		generation,
+		network,
+		solution: c.solution,
+		buses,
+		branches,
+		prices: new Map(c.solution?.prices.map((entry) => [entry.bus, entry.value]) ?? []),
+		voltages: new Map(
+			(
+				c.solution?.vm ??
+				c.solution?.w?.map((entry) => ({
+					bus: entry.bus,
+					value: Math.sqrt(Math.max(0, entry.value))
+				})) ??
+				[]
+			).map((entry) => [entry.bus, entry.value])
+		),
+		flows: new Map(c.solution?.flows.map((entry) => [entry.branch, entry]) ?? [])
+	};
+	lookups.set(c, next);
+	return next;
 }
 
 function resolveBus(c: ReadCase, id: string): NetworkBus {
-  const bus = caseLookup(c).buses.get(id);
-  if (!bus)
-    throw new TellegenToolError(
-      "ELEMENT_NOT_FOUND",
-      `Bus ${clip(id)} is not in the active case. Use query_network to find a valid bus ID.`,
-    );
-  return bus;
+	const bus = caseLookup(c).buses.get(id);
+	if (!bus)
+		throw new TellegenToolError(
+			'ELEMENT_NOT_FOUND',
+			`Bus ${clip(id)} is not in the active case. Use query_network to find a valid bus ID.`
+		);
+	return bus;
 }
 
 function resolveBranch(c: ReadCase, id: string): NetworkBranch {
-  const branch = caseLookup(c).branches.get(id);
-  if (!branch) {
-    throw new TellegenToolError(
-      "ELEMENT_NOT_FOUND",
-      `Branch ${clip(id)} is not in the active case. Use query_network to find a valid branch ID.`,
-    );
-  }
-  return branch;
+	const branch = caseLookup(c).branches.get(id);
+	if (!branch) {
+		throw new TellegenToolError(
+			'ELEMENT_NOT_FOUND',
+			`Branch ${clip(id)} is not in the active case. Use query_network to find a valid branch ID.`
+		);
+	}
+	return branch;
 }
 
 function sortedEdits(edits: Record<number, number>): Array<[number, number]> {
-  return Object.entries(edits)
-    .map(([id, value]) => [Number(id), value] as [number, number])
-    .sort(([a], [b]) => a - b);
+	return Object.entries(edits)
+		.map(([id, value]) => [Number(id), value] as [number, number])
+		.sort(([a], [b]) => a - b);
 }
 
 function caseFingerprint(c: SolvableCase): string {
-  return JSON.stringify([
-    c.id,
-    c.revisionGeneration,
-    c.settings.revision,
-    c.formulation,
-    sortedEdits(c.deltas),
-    sortedEdits(c.ratings),
-  ]);
+	return JSON.stringify([
+		c.id,
+		c.revisionGeneration,
+		c.settings.revision,
+		c.formulation,
+		sortedEdits(c.deltas),
+		sortedEdits(c.ratings)
+	]);
 }
 
 /** An opaque session-scoped optimistic concurrency token. It advances whenever
  * the mutable case state observed by WebMCP changes. */
 export function caseRevision(c: SolvableCase): string {
-  const fingerprint = caseFingerprint(c);
-  const current = revisions.get(c);
-  if (current?.fingerprint === fingerprint) return current.revision;
-  const revision = `${SESSION_ID}:r${++revisionSequence}`;
-  revisions.set(c, { fingerprint, revision });
-  return revision;
+	const fingerprint = caseFingerprint(c);
+	const current = revisions.get(c);
+	if (current?.fingerprint === fingerprint) return current.revision;
+	const revision = `${SESSION_ID}:r${++revisionSequence}`;
+	revisions.set(c, { fingerprint, revision });
+	return revision;
 }
 
 const savedCases = new WeakMap<StudyDisplaySnapshot, ReadCase>();
 
 function displayedRevision(ctrl: Controller): string {
-  const view = ctrl.app.studyView;
-  if (view) return `${view.studyId}:${view.id}`;
-  const c = ctrl.activeSolvable;
-  const mc = ctrl.app.activeMulti;
-  if (mc) return `mc:${mc.id}:${mc.revisionGeneration}`;
-  return c
-    ? caseRevision(c)
-    : `view:${ctrl.app.activeMultiId ?? ctrl.app.activeLocalId ?? "none"}`;
+	const view = ctrl.app.studyView;
+	if (view) return `${view.studyId}:${view.id}`;
+	const c = ctrl.activeSolvable;
+	const mc = ctrl.app.activeMulti;
+	if (mc) return `mc:${mc.id}:${mc.revisionGeneration}`;
+	return c ? caseRevision(c) : `view:${ctrl.app.activeMultiId ?? ctrl.app.activeLocalId ?? 'none'}`;
 }
 
 function displayedContext(ctrl: Controller): ToolPayload {
-  const mc = ctrl.app.studyView ? null : ctrl.app.activeMulti;
-  if (mc)
-    return {
-      case_id: mc.id,
-      study_id: null,
-      state_id: null,
-      revision: displayedRevision(ctrl),
-      calculation: "multiconductor_ac_pf",
-      view: "live_case",
-      units: {
-        demand: "MW",
-        voltage: "V",
-        current: "A",
-        active_power: "W",
-        reactive_power: "var",
-        angle: "degrees",
-        lmp: null,
-      },
-    };
-  const view = ctrl.app.studyView;
-  const c = ctrl.activeSolvable;
-  return {
-    case_id:
-      view?.caseId ?? c?.id ?? ctrl.app.activeMultiId ?? ctrl.app.activeLocalId,
-    study_id: view?.studyId ?? null,
-    study_revision: view?.revision ?? null,
-    state_id: view?.id ?? null,
-    revision: displayedRevision(ctrl),
-    formulation: view?.formulation ?? c?.formulation ?? null,
-    view: view ? "saved_state" : "live_case",
-    units: {
-      demand: "MW",
-      flow: "MW",
-      lmp:
-        (view?.formulation ?? c?.formulation) === "acpf"
-          ? null
-          : "objective units/MW",
-      voltage: "pu",
-      loading: "fraction",
-      rating: (view?.formulation ?? c?.formulation) === "dcopf" ? "MW" : "MVA",
-    },
-  };
+	const mc = ctrl.app.studyView ? null : ctrl.app.activeMulti;
+	if (mc)
+		return {
+			case_id: mc.id,
+			study_id: null,
+			state_id: null,
+			revision: displayedRevision(ctrl),
+			calculation: 'multiconductor_ac_pf',
+			view: 'live_case',
+			units: {
+				demand: 'MW',
+				voltage: 'V',
+				current: 'A',
+				active_power: 'W',
+				reactive_power: 'var',
+				angle: 'degrees',
+				lmp: null
+			}
+		};
+	const view = ctrl.app.studyView;
+	const c = ctrl.activeSolvable;
+	return {
+		case_id: view?.caseId ?? c?.id ?? ctrl.app.activeMultiId ?? ctrl.app.activeLocalId,
+		study_id: view?.studyId ?? null,
+		study_revision: view?.revision ?? null,
+		state_id: view?.id ?? null,
+		revision: displayedRevision(ctrl),
+		formulation: view?.formulation ?? c?.formulation ?? null,
+		view: view ? 'saved_state' : 'live_case',
+		units: {
+			demand: 'MW',
+			flow: 'MW',
+			lmp: (view?.formulation ?? c?.formulation) === 'acpf' ? null : 'objective units/MW',
+			voltage: 'pu',
+			loading: 'fraction',
+			rating: (view?.formulation ?? c?.formulation) === 'dcopf' ? 'MW' : 'MVA'
+		}
+	};
 }
 
 function displayedCase(ctrl: Controller, expectedCaseId?: string): ReadCase {
-  const view = ctrl.app.studyView;
-  if (!view) return activeCase(ctrl, expectedCaseId);
-  if (expectedCaseId !== undefined && expectedCaseId !== view.caseId) {
-    throw new TellegenToolError(
-      "STALE_CASE",
-      "The displayed case changed. Call inspect_case before retrying.",
-    );
-  }
-  const cached = savedCases.get(view);
-  if (cached) return cached;
-  const result = view.solution;
-  const c: ReadCase = {
-    id: view.caseId,
-    network: view.network,
-    formulation: view.formulation,
-    deltas: {},
-    ratings: {},
-    solution: result
-      ? {
-          branch_susceptance_formula:
-            result.branch_susceptance_formula ?? undefined,
-          objective: result.objective ?? null,
-          prices: result.lmp ?? [],
-          va: result.va ?? [],
-          vm: result.vm ?? undefined,
-          w: result.w ?? [],
-          flows: (result.flows ?? []).map((f) => ({
-            branch: f.branch,
-            mw: f.pf,
-            loading: f.loading,
-          })),
-          dispatch: (result.dispatch ?? []).map((g) => ({
-            gen: g.gen,
-            ...(g.bus === null || g.bus === undefined ? {} : { bus: g.bus }),
-            mw: g.pg,
-          })),
-        }
-      : null,
-  };
-  savedCases.set(view, c);
-  return c;
+	const view = ctrl.app.studyView;
+	if (!view) return activeCase(ctrl, expectedCaseId);
+	if (expectedCaseId !== undefined && expectedCaseId !== view.caseId) {
+		throw new TellegenToolError(
+			'STALE_CASE',
+			'The displayed case changed. Call inspect_case before retrying.'
+		);
+	}
+	const cached = savedCases.get(view);
+	if (cached) return cached;
+	const result = view.solution;
+	const c: ReadCase = {
+		id: view.caseId,
+		network: view.network,
+		formulation: view.formulation,
+		deltas: {},
+		ratings: {},
+		solution: result
+			? {
+					branch_susceptance_formula: result.branch_susceptance_formula ?? undefined,
+					objective: result.objective ?? null,
+					prices: result.lmp ?? [],
+					va: result.va ?? [],
+					vm: result.vm ?? undefined,
+					w: result.w ?? [],
+					flows: (result.flows ?? []).map((f) => ({
+						branch: f.branch,
+						mw: f.pf,
+						loading: f.loading
+					})),
+					dispatch: (result.dispatch ?? []).map((g) => ({
+						gen: g.gen,
+						...(g.bus === null || g.bus === undefined ? {} : { bus: g.bus }),
+						mw: g.pg
+					}))
+				}
+			: null
+	};
+	savedCases.set(view, c);
+	return c;
 }
 
 function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
-  const rows: ToolPayload[] = [
-    ...ctrl.app.cases.map((c) => ({
-      case_id: c.id,
-      name: clip(c.name, 64),
-      kind: "server",
-      availability: c.unavailableReason
-        ? "unavailable"
-        : c.network
-          ? "ready"
-          : "load_on_selection",
-      ...(c.unavailableReason
-        ? { reason: clip(c.unavailableReason, 240) }
-        : {}),
-      calculation: "balanced",
-      selected: !ctrl.app.studyView && ctrl.app.activeCaseId === c.id,
-    })),
-    ...ctrl.app.hostedDistributionCases
-      .filter(
-        (s) => !ctrl.app.multiCases.some((c) => c.hosted && c.id === s.id),
-      )
-      .map((c) => ({
-        case_id: c.id,
-        name: clip(c.name, 64),
-        kind: "server",
-        availability: c.unavailable_reason
-          ? "unavailable"
-          : "load_on_selection",
-        ...(c.unavailable_reason
-          ? { reason: clip(c.unavailable_reason, 240) }
-          : {}),
-        calculation: "multiconductor_ac_pf",
-        selected: false,
-      })),
-    ...ctrl.app.localCases.map((c) => ({
-      case_id: c.id,
-      name: clip(c.label, 64),
-      kind: "local",
-      availability:
-        c.coordsKind === "synthetic_pending" ? "placement_required" : "ready",
-      calculation: c.studyInputJson && c.summary ? "balanced" : "display_only",
-      selected: !ctrl.app.studyView && ctrl.app.activeLocalId === c.id,
-    })),
-    ...ctrl.app.multiCases.map((c) => ({
-      case_id: c.id,
-      name: clip(c.label, 64),
-      kind: c.hosted ? "server" : "distribution",
-      availability: c.placed ? "ready" : "placement_required",
-      calculation: c.mcPfSupported ? "multiconductor_ac_pf" : "display_only",
-      selected: !ctrl.app.studyView && ctrl.app.activeMultiId === c.id,
-    })),
-  ];
-  const selected: ToolPayload[] = [];
-  const output: ToolPayload = {
-    revision: displayedRevision(ctrl),
-    total: rows.length,
-    cases: selected,
-    next_offset: null,
-  };
-  for (const row of rows.slice(input.offset, input.offset + input.limit)) {
-    const next = {
-      ...output,
-      cases: [...selected, row],
-      next_offset: input.offset + selected.length + 1,
-    };
-    if (JSON.stringify({ ok: true, data: next }).length > DEFAULT_OUTPUT_BUDGET)
-      break;
-    selected.push(row);
-  }
-  const nextOffset = input.offset + selected.length;
-  output.next_offset = nextOffset < rows.length ? nextOffset : null;
-  return output;
+	const rows: ToolPayload[] = [
+		...ctrl.app.cases.map((c) => ({
+			case_id: c.id,
+			name: clip(c.name, 64),
+			kind: 'server',
+			availability: c.unavailableReason ? 'unavailable' : c.network ? 'ready' : 'load_on_selection',
+			...(c.unavailableReason ? { reason: clip(c.unavailableReason, 240) } : {}),
+			calculation: 'balanced',
+			selected: !ctrl.app.studyView && ctrl.app.activeCaseId === c.id
+		})),
+		...ctrl.app.hostedDistributionCases
+			.filter((s) => !ctrl.app.multiCases.some((c) => c.hosted && c.id === s.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.name, 64),
+				kind: 'server',
+				availability: c.unavailable_reason ? 'unavailable' : 'load_on_selection',
+				...(c.unavailable_reason ? { reason: clip(c.unavailable_reason, 240) } : {}),
+				calculation: 'multiconductor_ac_pf',
+				selected: false
+			})),
+		...ctrl.app.localCases.map((c) => ({
+			case_id: c.id,
+			name: clip(c.label, 64),
+			kind: 'local',
+			availability: c.coordsKind === 'synthetic_pending' ? 'placement_required' : 'ready',
+			calculation: c.studyInputJson && c.summary ? 'balanced' : 'display_only',
+			selected: !ctrl.app.studyView && ctrl.app.activeLocalId === c.id
+		})),
+		...ctrl.app.multiCases.map((c) => ({
+			case_id: c.id,
+			name: clip(c.label, 64),
+			kind: c.hosted ? 'server' : 'distribution',
+			availability: c.placed ? 'ready' : 'placement_required',
+			calculation: c.mcPfSupported ? 'multiconductor_ac_pf' : 'display_only',
+			selected: !ctrl.app.studyView && ctrl.app.activeMultiId === c.id
+		}))
+	];
+	const selected: ToolPayload[] = [];
+	const output: ToolPayload = {
+		revision: displayedRevision(ctrl),
+		total: rows.length,
+		cases: selected,
+		next_offset: null
+	};
+	for (const row of rows.slice(input.offset, input.offset + input.limit)) {
+		const next = {
+			...output,
+			cases: [...selected, row],
+			next_offset: input.offset + selected.length + 1
+		};
+		if (JSON.stringify({ ok: true, data: next }).length > DEFAULT_OUTPUT_BUDGET) break;
+		selected.push(row);
+	}
+	const nextOffset = input.offset + selected.length;
+	output.next_offset = nextOffset < rows.length ? nextOffset : null;
+	return output;
 }
 
 async function selectCase(
-  ctrl: Controller,
-  input: SelectCaseInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: SelectCaseInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  signal.throwIfAborted();
-  if (
-    input.expectedRevision !== undefined &&
-    input.expectedRevision !== displayedRevision(ctrl)
-  ) {
-    throw new TellegenToolError(
-      "STALE_REVISION",
-      "The displayed state changed. Call list_cases again before retrying.",
-    );
-  }
-  const backend = ctrl.app.byId(input.caseId);
-  const hosted = ctrl.app.hostedDistributionCases.find(
-    (c) => c.id === input.caseId,
-  );
-  const local = ctrl.app.localCases.find((c) => c.id === input.caseId);
-  const multi = ctrl.app.multiCases.find((c) => c.id === input.caseId);
-  if (!backend && !hosted && !local && !multi)
-    throw new TellegenToolError(
-      "CASE_NOT_FOUND",
-      "That case ID is not in list_cases. Call list_cases and use one of its IDs.",
-    );
-  if (backend?.unavailableReason)
-    throw new TellegenToolError(
-      "CASE_UNAVAILABLE",
-      clip(backend.unavailableReason, 240),
-    );
-  if (hosted?.unavailable_reason)
-    throw new TellegenToolError(
-      "CASE_UNAVAILABLE",
-      clip(hosted.unavailable_reason, 240),
-    );
-  if (backend) await ctrl.activateCase(backend.id);
-  else if (hosted) await ctrl.activateHostedDistribution(hosted.id);
-  else if (local) ctrl.activateLocal(local);
-  else if (multi) ctrl.activateMulti(multi);
-  await tick();
-  const context = displayedContext(ctrl);
-  return {
-    ...context,
-    selected: context.case_id === input.caseId && context.state_id === null,
-    network_ready:
-      !!ctrl.activeSolvable?.network || !!ctrl.app.activeMulti?.view,
-  };
+	signal.throwIfAborted();
+	if (input.expectedRevision !== undefined && input.expectedRevision !== displayedRevision(ctrl)) {
+		throw new TellegenToolError(
+			'STALE_REVISION',
+			'The displayed state changed. Call list_cases again before retrying.'
+		);
+	}
+	const backend = ctrl.app.byId(input.caseId);
+	const hosted = ctrl.app.hostedDistributionCases.find((c) => c.id === input.caseId);
+	const local = ctrl.app.localCases.find((c) => c.id === input.caseId);
+	const multi = ctrl.app.multiCases.find((c) => c.id === input.caseId);
+	if (!backend && !hosted && !local && !multi)
+		throw new TellegenToolError(
+			'CASE_NOT_FOUND',
+			'That case ID is not in list_cases. Call list_cases and use one of its IDs.'
+		);
+	if (backend?.unavailableReason)
+		throw new TellegenToolError('CASE_UNAVAILABLE', clip(backend.unavailableReason, 240));
+	if (hosted?.unavailable_reason)
+		throw new TellegenToolError('CASE_UNAVAILABLE', clip(hosted.unavailable_reason, 240));
+	if (backend) await ctrl.activateCase(backend.id);
+	else if (hosted) await ctrl.activateHostedDistribution(hosted.id);
+	else if (local) ctrl.activateLocal(local);
+	else if (multi) ctrl.activateMulti(multi);
+	await tick();
+	const context = displayedContext(ctrl);
+	return {
+		...context,
+		selected: context.case_id === input.caseId && context.state_id === null,
+		network_ready: !!ctrl.activeSolvable?.network || !!ctrl.app.activeMulti?.view
+	};
 }
 
 function activeCase(ctrl: Controller, expectedCaseId?: string): SolvableCase {
-  if (ctrl.app.studyView)
-    throw new TellegenToolError(
-      "SAVED_STATE_READ_ONLY",
-      "A saved state is displayed and cannot be edited. Use the Study tools, or call select_case to return to the live case.",
-    );
-  const c = ctrl.activeSolvable;
-  if (!c)
-    throw new TellegenToolError(
-      "NO_ACTIVE_CASE",
-      "Tellegen has no active solvable case. Call list_cases and select_case to show one.",
-    );
-  if (expectedCaseId !== undefined && c.id !== expectedCaseId) {
-    throw new TellegenToolError(
-      "STALE_CASE",
-      `The active case changed to ${clip(c.id)}. Call inspect_case before retrying.`,
-    );
-  }
-  if (!c.network)
-    throw new TellegenToolError(
-      "CASE_NOT_READY",
-      "The active case network is still loading. Wait a moment, then call inspect_case again.",
-    );
-  return c;
+	if (ctrl.app.studyView)
+		throw new TellegenToolError(
+			'SAVED_STATE_READ_ONLY',
+			'A saved state is displayed and cannot be edited. Use the Study tools, or call select_case to return to the live case.'
+		);
+	const c = ctrl.activeSolvable;
+	if (!c)
+		throw new TellegenToolError(
+			'NO_ACTIVE_CASE',
+			'Tellegen has no active solvable case. Call list_cases and select_case to show one.'
+		);
+	if (expectedCaseId !== undefined && c.id !== expectedCaseId) {
+		throw new TellegenToolError(
+			'STALE_CASE',
+			`The active case changed to ${clip(c.id)}. Call inspect_case before retrying.`
+		);
+	}
+	if (!c.network)
+		throw new TellegenToolError(
+			'CASE_NOT_READY',
+			'The active case network is still loading. Wait a moment, then call inspect_case again.'
+		);
+	return c;
 }
 
 function requireRevision(c: SolvableCase, expected: string): void {
-  const current = caseRevision(c);
-  if (current !== expected) {
-    throw new TellegenToolError(
-      "STALE_REVISION",
-      `The case edits changed; the current revision is ${current}. Call inspect_case before retrying.`,
-    );
-  }
+	const current = caseRevision(c);
+	if (current !== expected) {
+		throw new TellegenToolError(
+			'STALE_REVISION',
+			`The case edits changed; the current revision is ${current}. Call inspect_case before retrying.`
+		);
+	}
 }
 
 function solutionPayload(c: SolvableCase): ToolPayload {
-  return {
-    ...(c.solution?.branch_susceptance_formula
-      ? { branch_susceptance_formula: c.solution.branch_susceptance_formula }
-      : {}),
-    objective: finite(c.solution?.objective),
-    base_objective: finite(c.baseSolution?.objective),
-    objective_delta: finite(
-      c.solution?.objective != null && c.baseSolution?.objective != null
-        ? c.solution.objective - c.baseSolution.objective
-        : null,
-    ),
-    binding_branches:
-      c.formulation === "acpf"
-        ? null
-        : (c.solution?.flows.filter(
-            (flow: Solution["flows"][number]) => flow.loading >= 0.999,
-          ).length ?? 0),
-    solve_backend: c.solveBackend ?? "none",
-    solve_ms: finite(c.solveMs),
-  };
+	return {
+		...(c.solution?.branch_susceptance_formula
+			? { branch_susceptance_formula: c.solution.branch_susceptance_formula }
+			: {}),
+		objective: finite(c.solution?.objective),
+		base_objective: finite(c.baseSolution?.objective),
+		objective_delta: finite(
+			c.solution?.objective != null && c.baseSolution?.objective != null
+				? c.solution.objective - c.baseSolution.objective
+				: null
+		),
+		binding_branches:
+			c.formulation === 'acpf'
+				? null
+				: (c.solution?.flows.filter((flow: Solution['flows'][number]) => flow.loading >= 0.999)
+						.length ?? 0),
+		solve_backend: c.solveBackend ?? 'none',
+		solve_ms: finite(c.solveMs)
+	};
 }
 
 function caseSnapshot(c: SolvableCase): ToolPayload {
-  return {
-    revision: caseRevision(c),
-    formulation: c.formulation,
-    demand_edit_count: Object.keys(c.deltas).length,
-    rating_edit_count: Object.keys(c.ratings).length,
-    objective: finite(c.solution?.objective),
-    objective_delta: finite(
-      c.solution?.objective != null && c.baseSolution?.objective != null
-        ? c.solution.objective - c.baseSolution.objective
-        : null,
-    ),
-    binding_branches:
-      c.formulation === "acpf"
-        ? null
-        : (c.solution?.flows.filter(
-            (flow: Solution["flows"][number]) => flow.loading >= 0.999,
-          ).length ?? 0),
-  };
+	return {
+		revision: caseRevision(c),
+		formulation: c.formulation,
+		demand_edit_count: Object.keys(c.deltas).length,
+		rating_edit_count: Object.keys(c.ratings).length,
+		objective: finite(c.solution?.objective),
+		objective_delta: finite(
+			c.solution?.objective != null && c.baseSolution?.objective != null
+				? c.solution.objective - c.baseSolution.objective
+				: null
+		),
+		binding_branches:
+			c.formulation === 'acpf'
+				? null
+				: (c.solution?.flows.filter((flow: Solution['flows'][number]) => flow.loading >= 0.999)
+						.length ?? 0)
+	};
 }
 
 async function inspect(
-  ctrl: Controller,
-  planning: PlanningActivityStore | undefined,
-  signal: AbortSignal,
+	ctrl: Controller,
+	planning: PlanningActivityStore | undefined,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  if (ctrl.app.studyView) {
-    const c = displayedCase(ctrl);
-    return {
-      active: true,
-      session_id: SESSION_ID,
-      ...displayedContext(ctrl),
-      label: clip(ctrl.app.studyView.label, 80),
-      editable: false,
-      network: {
-        buses: c.network!.buses.length,
-        branches: c.network!.branches.length,
-        base_mva: finite(c.network!.base_mva),
-      },
-      solution: c.solution
-        ? {
-            objective: finite(c.solution.objective),
-            status: ctrl.app.studyView.solution?.status ?? null,
-          }
-        : null,
-    };
-  }
-  if (ctrl.app.activeMulti) {
-    const c = ctrl.app.activeMulti;
-    return {
-      active: true,
-      session_id: SESSION_ID,
-      ...displayedContext(ctrl),
-      label: clip(c.label, 80),
-      editable: false,
-      calculation: "multiconductor_ac_pf",
-      solving: c.solving,
-      can_solve: !!c.mcPfSupported,
-      unavailable_reason: c.mcPfReason ?? null,
-      solution: c.result
-        ? {
-            converged: c.result.converged,
-            network_scope: c.result.network_scope
-              ? { ...c.result.network_scope }
-              : null,
-            load_model: c.result.load_model
-              ? {
-                  ...c.result.load_model,
-                  options: { ...c.result.load_model.options },
-                }
-              : null,
-            iterations: c.result.iterations,
-            kcl_residual_a: c.result.physical_kcl_residual,
-            solve_ms: c.solveMs,
-          }
-        : null,
-      network: {
-        buses: c.graph?.buses.length ?? 0,
-        branches: c.graph?.edges.length ?? 0,
-      },
-    };
-  }
-  const c = ctrl.activeSolvable;
-  if (!c) {
-    return {
-      active: false,
-      session_id: SESSION_ID,
-      message:
-        "Select or load a balanced network case before using case tools.",
-    };
-  }
-  const revision = caseRevision(c);
-  const demand = sortedEdits(c.deltas);
-  const ratings = sortedEdits(c.ratings);
-  let source_digest: string | null = null;
-  try {
-    source_digest = await sourceDigest(ctrl, c);
-  } catch (error) {
-    if (
-      !(error instanceof TellegenToolError) ||
-      error.code !== "CASE_DATA_UNAVAILABLE"
-    )
-      throw error;
-  }
-  signal.throwIfAborted();
-  if (ctrl.activeSolvable !== c || ctrl.app.studyView) {
-    throw new TellegenToolError(
-      "STALE_CASE",
-      "The active case changed while inspect_case was reading it. Call inspect_case again.",
-    );
-  }
-  if (caseRevision(c) !== revision) {
-    throw new TellegenToolError(
-      "STALE_REVISION",
-      "The case changed while inspect_case was reading it. Call inspect_case again.",
-    );
-  }
-  const staged = planning?.proposal;
-  const payload: ToolPayload = {
-    active: true,
-    session_id: SESSION_ID,
-    ...displayedContext(ctrl),
-    source_digest,
-    label: clip(ctrl.caseName(c), 80),
-    revision,
-    formulation: c.formulation,
-    available_formulations: availableFormulations(c),
-    solving: c.solving,
-    network: {
-      buses: c.network?.buses.length ?? 0,
-      branches: c.network?.branches.length ?? 0,
-      base_mva: finite(c.network?.base_mva),
-    },
-    edits: {
-      demand_count: demand.length,
-      rating_count: ratings.length,
-      demand_sample: demand
-        .slice(0, 6)
-        .map(([id, delta]) => ({ bus_id: String(id), delta_mw: delta })),
-      rating_sample: ratings
-        .slice(0, 6)
-        .map(([id, delta]) => ({ branch_id: String(id), delta_mw: delta })),
-    },
-    selection:
-      ctrl.app.selectedBus !== null
-        ? {
-            kind: "bus",
-            element_id: elementId(
-              resolveBus(c, String(ctrl.app.selectedBus)),
-              "bus",
-            ),
-          }
-        : ctrl.app.selectedBranch !== null
-          ? {
-              kind: "branch",
-              element_id: elementId(
-                resolveBranch(c, String(ctrl.app.selectedBranch)),
-                "branch",
-              ),
-            }
-          : null,
-    solution: solutionPayload(c),
-    staged_proposal:
-      staged &&
-      staged.caseId === c.id &&
-      staged.sessionId === SESSION_ID &&
-      staged.revision === revision
-        ? {
-            proposal_id: staged.proposalId,
-            change_count: staged.changes.length,
-            approved: planning?.isApproved(staged) ?? false,
-          }
-        : null,
-  };
-  const edits = payload.edits as ToolPayload;
-  const demandSample = edits.demand_sample as ToolPayload[];
-  const ratingSample = edits.rating_sample as ToolPayload[];
-  while (
-    JSON.stringify({ ok: true, data: payload }).length >
-      DEFAULT_OUTPUT_BUDGET &&
-    (demandSample.length || ratingSample.length)
-  ) {
-    if (demandSample.length >= ratingSample.length) demandSample.pop();
-    else ratingSample.pop();
-  }
-  return payload;
+	if (ctrl.app.studyView) {
+		const c = displayedCase(ctrl);
+		return {
+			active: true,
+			session_id: SESSION_ID,
+			...displayedContext(ctrl),
+			label: clip(ctrl.app.studyView.label, 80),
+			editable: false,
+			network: {
+				buses: c.network!.buses.length,
+				branches: c.network!.branches.length,
+				base_mva: finite(c.network!.base_mva)
+			},
+			solution: c.solution
+				? {
+						objective: finite(c.solution.objective),
+						status: ctrl.app.studyView.solution?.status ?? null
+					}
+				: null
+		};
+	}
+	if (ctrl.app.activeMulti) {
+		const c = ctrl.app.activeMulti;
+		return {
+			active: true,
+			session_id: SESSION_ID,
+			...displayedContext(ctrl),
+			label: clip(c.label, 80),
+			editable: false,
+			calculation: 'multiconductor_ac_pf',
+			solving: c.solving,
+			can_solve: !!c.mcPfSupported,
+			unavailable_reason: c.mcPfReason ?? null,
+			solution: c.result
+				? {
+						converged: c.result.converged,
+						network_scope: c.result.network_scope ? { ...c.result.network_scope } : null,
+						load_model: c.result.load_model
+							? {
+									...c.result.load_model,
+									options: { ...c.result.load_model.options }
+								}
+							: null,
+						iterations: c.result.iterations,
+						kcl_residual_a: c.result.physical_kcl_residual,
+						solve_ms: c.solveMs
+					}
+				: null,
+			network: {
+				buses: c.graph?.buses.length ?? 0,
+				branches: c.graph?.edges.length ?? 0
+			}
+		};
+	}
+	const c = ctrl.activeSolvable;
+	if (!c) {
+		return {
+			active: false,
+			session_id: SESSION_ID,
+			message: 'Select or load a balanced network case before using case tools.'
+		};
+	}
+	const revision = caseRevision(c);
+	const demand = sortedEdits(c.deltas);
+	const ratings = sortedEdits(c.ratings);
+	let source_digest: string | null = null;
+	try {
+		source_digest = await sourceDigest(ctrl, c);
+	} catch (error) {
+		if (!(error instanceof TellegenToolError) || error.code !== 'CASE_DATA_UNAVAILABLE')
+			throw error;
+	}
+	signal.throwIfAborted();
+	if (ctrl.activeSolvable !== c || ctrl.app.studyView) {
+		throw new TellegenToolError(
+			'STALE_CASE',
+			'The active case changed while inspect_case was reading it. Call inspect_case again.'
+		);
+	}
+	if (caseRevision(c) !== revision) {
+		throw new TellegenToolError(
+			'STALE_REVISION',
+			'The case changed while inspect_case was reading it. Call inspect_case again.'
+		);
+	}
+	const staged = planning?.proposal;
+	const payload: ToolPayload = {
+		active: true,
+		session_id: SESSION_ID,
+		...displayedContext(ctrl),
+		source_digest,
+		label: clip(ctrl.caseName(c), 80),
+		revision,
+		formulation: c.formulation,
+		available_formulations: availableFormulations(c),
+		solving: c.solving,
+		network: {
+			buses: c.network?.buses.length ?? 0,
+			branches: c.network?.branches.length ?? 0,
+			base_mva: finite(c.network?.base_mva)
+		},
+		edits: {
+			demand_count: demand.length,
+			rating_count: ratings.length,
+			demand_sample: demand
+				.slice(0, 6)
+				.map(([id, delta]) => ({ bus_id: String(id), delta_mw: delta })),
+			rating_sample: ratings
+				.slice(0, 6)
+				.map(([id, delta]) => ({ branch_id: String(id), delta_mw: delta }))
+		},
+		selection:
+			ctrl.app.selectedBus !== null
+				? {
+						kind: 'bus',
+						element_id: elementId(resolveBus(c, String(ctrl.app.selectedBus)), 'bus')
+					}
+				: ctrl.app.selectedBranch !== null
+					? {
+							kind: 'branch',
+							element_id: elementId(resolveBranch(c, String(ctrl.app.selectedBranch)), 'branch')
+						}
+					: null,
+		solution: solutionPayload(c),
+		staged_proposal:
+			staged &&
+			staged.caseId === c.id &&
+			staged.sessionId === SESSION_ID &&
+			staged.revision === revision
+				? {
+						proposal_id: staged.proposalId,
+						change_count: staged.changes.length,
+						approved: planning?.isApproved(staged) ?? false
+					}
+				: null
+	};
+	const edits = payload.edits as ToolPayload;
+	const demandSample = edits.demand_sample as ToolPayload[];
+	const ratingSample = edits.rating_sample as ToolPayload[];
+	while (
+		JSON.stringify({ ok: true, data: payload }).length > DEFAULT_OUTPUT_BUDGET &&
+		(demandSample.length || ratingSample.length)
+	) {
+		if (demandSample.length >= ratingSample.length) demandSample.pop();
+		else ratingSample.pop();
+	}
+	return payload;
 }
 
-async function queryDistribution(
-  ctrl: Controller,
-  input: QueryNetworkInput,
-): Promise<ToolPayload> {
-  const c = ctrl.app.activeMulti!;
-  if (input.caseId !== c.id)
-    throw new TellegenToolError(
-      "STALE_CASE",
-      "The displayed case changed. Call inspect_case before retrying.",
-    );
-  const graph = c.graph;
-  if (!graph)
-    throw new TellegenToolError(
-      "CASE_NOT_READY",
-      "The distribution network is not available yet. Wait for it to load, then retry.",
-    );
-  const sortBy =
-    input.sortBy ?? (input.elementKind === "bus" ? "demand_mw" : "id");
-  if (
-    sortBy !== "id" &&
-    !(
-      input.elementKind === "bus" && ["demand_mw", "voltage_v"].includes(sortBy)
-    )
-  ) {
-    throw new TellegenToolError(
-      "METRIC_UNAVAILABLE",
-      "Use id, demand_mw, or voltage_v for this multiconductor case. AC power flow does not calculate LMP.",
-    );
-  }
-  if (sortBy === "voltage_v" && !c.result)
-    throw new TellegenToolError(
-      "METRIC_UNAVAILABLE",
-      "Run solve_multiconductor_pf to calculate terminal voltages.",
-    );
-  const values = new Map<string, ToolPayload[]>();
-  // Terminal values cross the worker boundary as numeric arrays, fetched
-  // only for bus queries.
-  const table =
-    input.elementKind === "bus" && c.result
-      ? await ctrl.multiTerminalTable(c)
-      : null;
-  if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
-    throw new TellegenToolError(
-      "STALE_CASE",
-      "The displayed case changed. Call inspect_case before retrying.",
-    );
-  if (c.result && input.elementKind === "bus" && !table)
-    throw new TellegenToolError(
-      "STALE_REVISION",
-      "The calculation changed while it was being read. Call query_network again.",
-    );
-  table?.ids.forEach(([bus, terminal], k) => {
-    const [vr, vi] = [table.voltages[2 * k], table.voltages[2 * k + 1]];
-    const [ir, ii] = [table.currents[2 * k], table.currents[2 * k + 1]];
-    const list = values.get(bus) ?? [];
-    list.push({
-      terminal,
-      voltage_v: round4(Math.hypot(vr, vi)),
-      angle_deg: round4((Math.atan2(vi, vr) * 180) / Math.PI),
-      current_a: round4(Math.hypot(ir, ii)),
-    });
-    values.set(bus, list);
-  });
-  const rows: ToolPayload[] =
-    input.elementKind === "bus"
-      ? graph.buses.map((b) => ({
-          element_id: b.id,
-          demand_mw: b.load_kw / 1000,
-          generation_capacity_mw: b.gen_kw / 1000,
-          terminals: b.terminals,
-          voltage_v: values.has(b.id)
-            ? Math.max(...values.get(b.id)!.map((t) => Number(t.voltage_v)))
-            : null,
-          terminal_values: values.get(b.id) ?? [],
-          editable: false,
-        }))
-      : graph.edges.map((e) => ({
-          element_id: e.id,
-          from_bus: e.from,
-          to_bus: e.to,
-          kind: e.kind,
-          closed: e.closed,
-          editable: false,
-        }));
-  if (
-    input.elementIds?.some((id) => !rows.some((row) => row.element_id === id))
-  )
-    throw new TellegenToolError(
-      "ELEMENT_NOT_FOUND",
-      "A requested element is not in the displayed network. Use query_network without element_ids to list valid IDs.",
-    );
-  const filtered = input.elementIds
-    ? rows.filter((r) => input.elementIds!.includes(String(r.element_id)))
-    : rows;
-  filtered.sort((a, b) => {
-    const value =
-      sortBy === "id"
-        ? String(a.element_id).localeCompare(String(b.element_id))
-        : Number(a[sortBy]) - Number(b[sortBy]);
-    return (
-      (input.direction === "asc" ? value : -value) ||
-      String(a.element_id).localeCompare(String(b.element_id))
-    );
-  });
-  const result = withBudgetedRows(
-    {
-      ...displayedContext(ctrl),
-      element_kind: input.elementKind,
-      total: rows.length,
-      returned: input.limit,
-    },
-    filtered.slice(0, input.limit),
-    "elements",
-    "returned",
-    "truncated",
-  );
-  result.returned = (result.elements as ToolPayload[]).length;
-  return result;
+async function queryDistribution(ctrl: Controller, input: QueryNetworkInput): Promise<ToolPayload> {
+	const c = ctrl.app.activeMulti!;
+	if (input.caseId !== c.id)
+		throw new TellegenToolError(
+			'STALE_CASE',
+			'The displayed case changed. Call inspect_case before retrying.'
+		);
+	const graph = c.graph;
+	if (!graph)
+		throw new TellegenToolError(
+			'CASE_NOT_READY',
+			'The distribution network is not available yet. Wait for it to load, then retry.'
+		);
+	const sortBy = input.sortBy ?? (input.elementKind === 'bus' ? 'demand_mw' : 'id');
+	if (
+		sortBy !== 'id' &&
+		!(input.elementKind === 'bus' && ['demand_mw', 'voltage_v'].includes(sortBy))
+	) {
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'Use id, demand_mw, or voltage_v for this multiconductor case. AC power flow does not calculate LMP.'
+		);
+	}
+	if (sortBy === 'voltage_v' && !c.result)
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'Run solve_multiconductor_pf to calculate terminal voltages.'
+		);
+	const values = new Map<string, ToolPayload[]>();
+	// Terminal values cross the worker boundary as numeric arrays, fetched
+	// only for bus queries.
+	const table = input.elementKind === 'bus' && c.result ? await ctrl.multiTerminalTable(c) : null;
+	if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
+		throw new TellegenToolError(
+			'STALE_CASE',
+			'The displayed case changed. Call inspect_case before retrying.'
+		);
+	if (c.result && input.elementKind === 'bus' && !table)
+		throw new TellegenToolError(
+			'STALE_REVISION',
+			'The calculation changed while it was being read. Call query_network again.'
+		);
+	table?.ids.forEach(([bus, terminal], k) => {
+		const [vr, vi] = [table.voltages[2 * k], table.voltages[2 * k + 1]];
+		const [ir, ii] = [table.currents[2 * k], table.currents[2 * k + 1]];
+		const list = values.get(bus) ?? [];
+		list.push({
+			terminal,
+			voltage_v: round4(Math.hypot(vr, vi)),
+			angle_deg: round4((Math.atan2(vi, vr) * 180) / Math.PI),
+			current_a: round4(Math.hypot(ir, ii))
+		});
+		values.set(bus, list);
+	});
+	const rows: ToolPayload[] =
+		input.elementKind === 'bus'
+			? graph.buses.map((b) => ({
+					element_id: b.id,
+					demand_mw: b.load_kw / 1000,
+					generation_capacity_mw: b.gen_kw / 1000,
+					terminals: b.terminals,
+					voltage_v: values.has(b.id)
+						? Math.max(...values.get(b.id)!.map((t) => Number(t.voltage_v)))
+						: null,
+					terminal_values: values.get(b.id) ?? [],
+					editable: false
+				}))
+			: graph.edges.map((e) => ({
+					element_id: e.id,
+					from_bus: e.from,
+					to_bus: e.to,
+					kind: e.kind,
+					closed: e.closed,
+					editable: false
+				}));
+	if (input.elementIds?.some((id) => !rows.some((row) => row.element_id === id)))
+		throw new TellegenToolError(
+			'ELEMENT_NOT_FOUND',
+			'A requested element is not in the displayed network. Use query_network without element_ids to list valid IDs.'
+		);
+	const filtered = input.elementIds
+		? rows.filter((r) => input.elementIds!.includes(String(r.element_id)))
+		: rows;
+	filtered.sort((a, b) => {
+		const value =
+			sortBy === 'id'
+				? String(a.element_id).localeCompare(String(b.element_id))
+				: Number(a[sortBy]) - Number(b[sortBy]);
+		return (
+			(input.direction === 'asc' ? value : -value) ||
+			String(a.element_id).localeCompare(String(b.element_id))
+		);
+	});
+	const result = withBudgetedRows(
+		{
+			...displayedContext(ctrl),
+			element_kind: input.elementKind,
+			total: rows.length,
+			returned: input.limit
+		},
+		filtered.slice(0, input.limit),
+		'elements',
+		'returned',
+		'truncated'
+	);
+	result.returned = (result.elements as ToolPayload[]).length;
+	return result;
 }
 
-function query(
-  ctrl: Controller,
-  input: QueryNetworkInput,
-): ToolPayload | Promise<ToolPayload> {
-  if (ctrl.app.activeMulti && !ctrl.app.studyView)
-    return queryDistribution(ctrl, input);
-  const c = displayedCase(ctrl, input.caseId);
-  const lookup = caseLookup(c);
-  const requested = input.elementIds
-    ? new Set(
-        input.elementIds.map((id) =>
-          input.elementKind === "bus"
-            ? resolveBus(c, id).id
-            : resolveBranch(c, id).id,
-        ),
-      )
-    : null;
-  const sortBy =
-    input.sortBy ?? (input.elementKind === "bus" ? "demand_mw" : "loading");
-  if (sortBy === "price" && lookup.prices.size === 0) {
-    throw new TellegenToolError(
-      "METRIC_UNAVAILABLE",
-      "The displayed state has no LMP result. Call inspect_case to check its formulation and solve status.",
-    );
-  }
-  if (sortBy === "voltage_v")
-    throw new TellegenToolError(
-      "METRIC_UNAVAILABLE",
-      "Balanced cases report voltage_pu; voltage_v applies to multiconductor cases.",
-    );
-  if (sortBy === "voltage_pu" && lookup.voltages.size === 0) {
-    throw new TellegenToolError(
-      "METRIC_UNAVAILABLE",
-      "The displayed state has no voltage magnitude result. Run an AC calculation first.",
-    );
-  }
-  if (
-    (input.elementKind === "bus" &&
-      ["loading", "flow_mw", "rating_mw"].includes(sortBy)) ||
-    (input.elementKind === "branch" &&
-      ["demand_mw", "generation_mw", "price", "voltage_pu"].includes(sortBy))
-  ) {
-    throw new TellegenToolError(
-      "INVALID_SORT",
-      `Sorting by ${sortBy} does not apply to ${input.elementKind} elements. Choose another sort_by metric.`,
-    );
-  }
+function query(ctrl: Controller, input: QueryNetworkInput): ToolPayload | Promise<ToolPayload> {
+	if (ctrl.app.activeMulti && !ctrl.app.studyView) return queryDistribution(ctrl, input);
+	const c = displayedCase(ctrl, input.caseId);
+	const lookup = caseLookup(c);
+	const requested = input.elementIds
+		? new Set(
+				input.elementIds.map((id) =>
+					input.elementKind === 'bus' ? resolveBus(c, id).id : resolveBranch(c, id).id
+				)
+			)
+		: null;
+	const sortBy = input.sortBy ?? (input.elementKind === 'bus' ? 'demand_mw' : 'loading');
+	if (sortBy === 'price' && lookup.prices.size === 0) {
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'The displayed state has no LMP result. Call inspect_case to check its formulation and solve status.'
+		);
+	}
+	if (sortBy === 'voltage_v')
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'Balanced cases report voltage_pu; voltage_v applies to multiconductor cases.'
+		);
+	if (sortBy === 'voltage_pu' && lookup.voltages.size === 0) {
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'The displayed state has no voltage magnitude result. Run an AC calculation first.'
+		);
+	}
+	if (
+		(input.elementKind === 'bus' && ['loading', 'flow_mw', 'rating_mw'].includes(sortBy)) ||
+		(input.elementKind === 'branch' &&
+			['demand_mw', 'generation_mw', 'price', 'voltage_pu'].includes(sortBy))
+	) {
+		throw new TellegenToolError(
+			'INVALID_SORT',
+			`Sorting by ${sortBy} does not apply to ${input.elementKind} elements. Choose another sort_by metric.`
+		);
+	}
 
-  const rows: QueryRow[] =
-    input.elementKind === "bus"
-      ? c.network!.buses.map((bus: NetworkBus) => ({
-          element_id: elementId(bus, "bus"),
-          legacy_id: bus.id,
-          ...(bus.name ? { name: clip(bus.name) } : {}),
-          ...(bus.area === undefined ? {} : { area: bus.area }),
-          ...(bus.zone === undefined ? {} : { zone: bus.zone }),
-          demand_mw: finite(bus.demand_mw + (c.deltas[bus.id] ?? 0)),
-          base_demand_mw: finite(
-            ctrl.app.studyView
-              ? ctrl.app.studyView.baseDemandMw?.[String(bus.id)]
-              : bus.demand_mw,
-          ),
-          generation_capacity_mw: finite(bus.gen_mw),
-          generation_mw: lookup.generation
-            ? finite(lookup.generation.get(bus.id) ?? 0)
-            : null,
-          price: finite(lookup.prices.get(bus.id)),
-          voltage_pu: finite(lookup.voltages.get(bus.id)),
-          editable: !ctrl.app.studyView && !isDisplayOnlyElement(bus),
-        }))
-      : c.network!.branches.map((branch: NetworkBranch) => {
-          const flow = lookup.flows.get(branch.id);
-          return {
-            element_id: elementId(branch, "branch"),
-            legacy_id: branch.id,
-            from_bus: branch.from,
-            to_bus: branch.to,
-            rating_mw: finite(branch.rate_mw + (c.ratings[branch.id] ?? 0)),
-            flow_mw: finite(flow?.mw),
-            loading: finite(flow?.loading),
-            editable:
-              !ctrl.app.studyView &&
-              !isDisplayOnlyElement(branch) &&
-              branch.rate_mw > 0,
-          };
-        });
+	const rows: QueryRow[] =
+		input.elementKind === 'bus'
+			? c.network!.buses.map((bus: NetworkBus) => ({
+					element_id: elementId(bus, 'bus'),
+					legacy_id: bus.id,
+					...(bus.name ? { name: clip(bus.name) } : {}),
+					...(bus.area === undefined ? {} : { area: bus.area }),
+					...(bus.zone === undefined ? {} : { zone: bus.zone }),
+					demand_mw: finite(bus.demand_mw + (c.deltas[bus.id] ?? 0)),
+					base_demand_mw: finite(
+						ctrl.app.studyView ? ctrl.app.studyView.baseDemandMw?.[String(bus.id)] : bus.demand_mw
+					),
+					generation_capacity_mw: finite(bus.gen_mw),
+					generation_mw: lookup.generation ? finite(lookup.generation.get(bus.id) ?? 0) : null,
+					price: finite(lookup.prices.get(bus.id)),
+					voltage_pu: finite(lookup.voltages.get(bus.id)),
+					editable: !ctrl.app.studyView && !isDisplayOnlyElement(bus)
+				}))
+			: c.network!.branches.map((branch: NetworkBranch) => {
+					const flow = lookup.flows.get(branch.id);
+					return {
+						element_id: elementId(branch, 'branch'),
+						legacy_id: branch.id,
+						from_bus: branch.from,
+						to_bus: branch.to,
+						rating_mw: finite(branch.rate_mw + (c.ratings[branch.id] ?? 0)),
+						flow_mw: finite(flow?.mw),
+						loading: finite(flow?.loading),
+						editable: !ctrl.app.studyView && !isDisplayOnlyElement(branch) && branch.rate_mw > 0
+					};
+				});
 
-  const filtered = requested
-    ? rows.filter((row) => requested.has(row.legacy_id))
-    : rows;
-  const value = (row: (typeof rows)[number]): string | number => {
-    if (sortBy === "id") return row.element_id;
-    const candidate = row[sortBy as keyof typeof row];
-    return typeof candidate === "number" ? candidate : Number.NEGATIVE_INFINITY;
-  };
-  filtered.sort((a, b) => {
-    const left = value(a);
-    const right = value(b);
-    const compared =
-      typeof left === "string" && typeof right === "string"
-        ? left.localeCompare(right)
-        : Number(left) - Number(right);
-    return (
-      (input.direction === "asc" ? compared : -compared) ||
-      a.element_id.localeCompare(b.element_id)
-    );
-  });
-  const result = withBudgetedRows(
-    {
-      ...displayedContext(ctrl),
-      element_kind: input.elementKind,
-      total: rows.length,
-      returned: input.limit,
-    },
-    filtered.slice(0, input.limit),
-    "elements",
-    "matched",
-    "truncated",
-  );
-  result.returned = (result.elements as ToolPayload[]).length;
-  return result;
+	const filtered = requested ? rows.filter((row) => requested.has(row.legacy_id)) : rows;
+	const value = (row: (typeof rows)[number]): string | number => {
+		if (sortBy === 'id') return row.element_id;
+		const candidate = row[sortBy as keyof typeof row];
+		return typeof candidate === 'number' ? candidate : Number.NEGATIVE_INFINITY;
+	};
+	filtered.sort((a, b) => {
+		const left = value(a);
+		const right = value(b);
+		const compared =
+			typeof left === 'string' && typeof right === 'string'
+				? left.localeCompare(right)
+				: Number(left) - Number(right);
+		return (
+			(input.direction === 'asc' ? compared : -compared) || a.element_id.localeCompare(b.element_id)
+		);
+	});
+	const result = withBudgetedRows(
+		{
+			...displayedContext(ctrl),
+			element_kind: input.elementKind,
+			total: rows.length,
+			returned: input.limit
+		},
+		filtered.slice(0, input.limit),
+		'elements',
+		'matched',
+		'truncated'
+	);
+	result.returned = (result.elements as ToolPayload[]).length;
+	return result;
 }
 
 async function sensitivity(
-  ctrl: Controller,
-  input: AnalyzeSensitivityInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: AnalyzeSensitivityInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  const c = displayedCase(ctrl, input.caseId);
-  if (c.formulation === "acpf")
-    throw new TellegenToolError(
-      "SENSITIVITY_UNAVAILABLE",
-      "AC power flow has no LMP sensitivity. Use a saved voltage objective for demand planning.",
-    );
-  const revision = displayedRevision(ctrl);
-  const view = ctrl.app.studyView;
-  signal.throwIfAborted();
-  const resolved =
-    input.target.kind === "bus"
-      ? resolveBus(c, input.target.elementId)
-      : resolveBranch(c, input.target.elementId);
-  const target =
-    input.target.kind === "bus"
-      ? { bus: resolved.id }
-      : { branch: resolved.id };
-  frameElement(ctrl, c.id, target);
-  const studyInputJson = view
-    ? view.inputJson
-    : await ctrl.ensureStudyInputJson(c as SolvableCase);
-  if (!studyInputJson)
-    throw new TellegenToolError(
-      "CASE_DATA_UNAVAILABLE",
-      "The case data module is unavailable. Reload the page and try again.",
-    );
-  const settings = view
-    ? undefined
-    : await calculationSettings(c as SolvableCase);
-  const study = await createStudy(studyInputJson, c.formulation, {
-    isolated: true,
-    signal,
-    ...(settings
-      ? {
-          settings: {
-            calculation: c.formulation,
-            overrides: settings.effective,
-          },
-        }
-      : {}),
-  });
-  let column: SensitivityColumn | null;
-  try {
-    const solved = await study.commit(
-      c.id,
-      c.deltas,
-      c.ratings,
-      target,
-      signal,
-    );
-    column = solved.sensitivity;
-  } finally {
-    study.free();
-  }
-  signal.throwIfAborted();
-  if (displayedRevision(ctrl) !== revision)
-    throw new TellegenToolError(
-      "STALE_REVISION",
-      "The displayed state changed during sensitivity analysis. Call inspect_case, then retry.",
-    );
-  if (!column) {
-    throw new TellegenToolError(
-      "SENSITIVITY_UNAVAILABLE",
-      "The browser engine did not return a sensitivity result. Retry, or check that the case is solved.",
-    );
-  }
-  const values = [...column.values]
-    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-    .slice(0, input.limit)
-    .map((entry) => {
-      const bus = resolveBus(c, String(entry.bus));
-      return {
-        bus_id: elementId(bus, "bus"),
-        legacy_id: bus.id,
-        value: finite(entry.value),
-      };
-    });
-  return {
-    ...displayedContext(ctrl),
-    revision,
-    target: {
-      kind: input.target.kind,
-      element_id: elementId(resolved, input.target.kind),
-    },
-    units: clip(column.units, 48),
-    responses: values,
-  };
+	const c = displayedCase(ctrl, input.caseId);
+	if (c.formulation === 'acpf')
+		throw new TellegenToolError(
+			'SENSITIVITY_UNAVAILABLE',
+			'AC power flow has no LMP sensitivity. Use a saved voltage objective for demand planning.'
+		);
+	const revision = displayedRevision(ctrl);
+	const view = ctrl.app.studyView;
+	signal.throwIfAborted();
+	const resolved =
+		input.target.kind === 'bus'
+			? resolveBus(c, input.target.elementId)
+			: resolveBranch(c, input.target.elementId);
+	const target = input.target.kind === 'bus' ? { bus: resolved.id } : { branch: resolved.id };
+	frameElement(ctrl, c.id, target);
+	const studyInputJson = view ? view.inputJson : await ctrl.ensureStudyInputJson(c as SolvableCase);
+	if (!studyInputJson)
+		throw new TellegenToolError(
+			'CASE_DATA_UNAVAILABLE',
+			'The case data module is unavailable. Reload the page and try again.'
+		);
+	const settings = view ? undefined : await calculationSettings(c as SolvableCase);
+	const study = await createStudy(studyInputJson, c.formulation, {
+		isolated: true,
+		signal,
+		...(settings
+			? {
+					settings: {
+						calculation: c.formulation,
+						overrides: settings.effective
+					}
+				}
+			: {})
+	});
+	let column: SensitivityColumn | null;
+	try {
+		const solved = await study.commit(c.id, c.deltas, c.ratings, target, signal);
+		column = solved.sensitivity;
+	} finally {
+		study.free();
+	}
+	signal.throwIfAborted();
+	if (displayedRevision(ctrl) !== revision)
+		throw new TellegenToolError(
+			'STALE_REVISION',
+			'The displayed state changed during sensitivity analysis. Call inspect_case, then retry.'
+		);
+	if (!column) {
+		throw new TellegenToolError(
+			'SENSITIVITY_UNAVAILABLE',
+			'The browser engine did not return a sensitivity result. Retry, or check that the case is solved.'
+		);
+	}
+	const values = [...column.values]
+		.sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+		.slice(0, input.limit)
+		.map((entry) => {
+			const bus = resolveBus(c, String(entry.bus));
+			return {
+				bus_id: elementId(bus, 'bus'),
+				legacy_id: bus.id,
+				value: finite(entry.value)
+			};
+		});
+	return {
+		...displayedContext(ctrl),
+		revision,
+		target: {
+			kind: input.target.kind,
+			element_id: elementId(resolved, input.target.kind)
+		},
+		units: clip(column.units, 48),
+		responses: values
+	};
 }
 
 async function focus(
-  ctrl: Controller,
-  input: FocusNetworkInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: FocusNetworkInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  signal.throwIfAborted();
-  if (ctrl.app.activeMulti && !ctrl.app.studyView) {
-    const c = ctrl.app.activeMulti;
-    if (c.id !== input.caseId)
-      throw new TellegenToolError(
-        "STALE_CASE",
-        "The displayed case changed. Call inspect_case before retrying.",
-      );
-    const id = input.target.elementId;
-    const found =
-      input.target.kind === "bus"
-        ? c.graph?.buses.some((b) => b.id === id)
-        : c.graph?.edges.some((e) => e.id === id);
-    if (!found)
-      throw new TellegenToolError(
-        "ELEMENT_NOT_FOUND",
-        "The element is not in the displayed network. Use query_network to find a valid ID.",
-      );
-    if (input.target.kind === "bus") ctrl.selectMultiBus(c.id, id);
-    else ctrl.selectMultiEdge(c.id, id);
-    return {
-      ...displayedContext(ctrl),
-      focused: { kind: input.target.kind, element_id: id },
-      sensitivity_loaded: false,
-    };
-  }
-  if (ctrl.app.studyView) {
-    const c = displayedCase(ctrl, input.caseId);
-    const element =
-      input.target.kind === "bus"
-        ? resolveBus(c, input.target.elementId)
-        : resolveBranch(c, input.target.elementId);
-    ctrl.app.selectedBus = null;
-    ctrl.app.selectedBranch = null;
-    if (input.target.kind === "bus") {
-      ctrl.app.selectedBus = element.id;
-      void ctrl.app.requestFrame({ caseId: c.id, busId: element.id });
-    } else {
-      ctrl.app.selectedBranch = element.id;
-      void ctrl.app.requestFrame({ caseId: c.id, branchId: element.id });
-    }
-    return {
-      ...displayedContext(ctrl),
-      focused: {
-        kind: input.target.kind,
-        element_id: elementId(element, input.target.kind),
-        name:
-          input.target.kind === "bus"
-            ? `Bus ${element.id}`
-            : lineName(element as NetworkBranch),
-      },
-      sensitivity_loaded: false,
-    };
-  }
-  const c = activeCase(ctrl, input.caseId);
-  signal.throwIfAborted();
-  let focusedId: string;
-  let focusedName: string;
-  if (input.target.kind === "bus") {
-    const bus = resolveBus(c, input.target.elementId);
-    focusedId = elementId(bus, "bus");
-    focusedName = `Bus ${bus.id}`;
-    // Branch selection frames its target; bus selection does not, so ask.
-    frameElement(ctrl, c.id, { bus: bus.id });
-    if (ctrl.isBackendCase(c)) await ctrl.selectBus(c.id, bus.id);
-    else await ctrl.selectLocalBus(c.id, bus.id);
-  } else {
-    const branch = resolveBranch(c, input.target.elementId);
-    focusedId = elementId(branch, "branch");
-    focusedName = lineName(branch);
-    if (ctrl.isBackendCase(c))
-      await ctrl.selectBranch(c.id, branch.id, { focus: true });
-    else await ctrl.selectLocalBranch(c.id, branch.id, { focus: true });
-  }
-  // Selection commits synchronously when the controller call starts. From
-  // that point this is a definite visible mutation, so a later cancellation
-  // must not report that nothing happened.
-  await tick();
-  return {
-    ...displayedContext(ctrl),
-    focused: {
-      kind: input.target.kind,
-      element_id: focusedId,
-      name: focusedName,
-    },
-    sensitivity_loaded: ctrl.selectedSensitivity !== null,
-  };
+	signal.throwIfAborted();
+	if (ctrl.app.activeMulti && !ctrl.app.studyView) {
+		const c = ctrl.app.activeMulti;
+		if (c.id !== input.caseId)
+			throw new TellegenToolError(
+				'STALE_CASE',
+				'The displayed case changed. Call inspect_case before retrying.'
+			);
+		const id = input.target.elementId;
+		const found =
+			input.target.kind === 'bus'
+				? c.graph?.buses.some((b) => b.id === id)
+				: c.graph?.edges.some((e) => e.id === id);
+		if (!found)
+			throw new TellegenToolError(
+				'ELEMENT_NOT_FOUND',
+				'The element is not in the displayed network. Use query_network to find a valid ID.'
+			);
+		if (input.target.kind === 'bus') ctrl.selectMultiBus(c.id, id);
+		else ctrl.selectMultiEdge(c.id, id);
+		return {
+			...displayedContext(ctrl),
+			focused: { kind: input.target.kind, element_id: id },
+			sensitivity_loaded: false
+		};
+	}
+	if (ctrl.app.studyView) {
+		const c = displayedCase(ctrl, input.caseId);
+		const element =
+			input.target.kind === 'bus'
+				? resolveBus(c, input.target.elementId)
+				: resolveBranch(c, input.target.elementId);
+		ctrl.app.selectedBus = null;
+		ctrl.app.selectedBranch = null;
+		if (input.target.kind === 'bus') {
+			ctrl.app.selectedBus = element.id;
+			void ctrl.app.requestFrame({ caseId: c.id, busId: element.id });
+		} else {
+			ctrl.app.selectedBranch = element.id;
+			void ctrl.app.requestFrame({ caseId: c.id, branchId: element.id });
+		}
+		return {
+			...displayedContext(ctrl),
+			focused: {
+				kind: input.target.kind,
+				element_id: elementId(element, input.target.kind),
+				name: input.target.kind === 'bus' ? `Bus ${element.id}` : lineName(element as NetworkBranch)
+			},
+			sensitivity_loaded: false
+		};
+	}
+	const c = activeCase(ctrl, input.caseId);
+	signal.throwIfAborted();
+	let focusedId: string;
+	let focusedName: string;
+	if (input.target.kind === 'bus') {
+		const bus = resolveBus(c, input.target.elementId);
+		focusedId = elementId(bus, 'bus');
+		focusedName = `Bus ${bus.id}`;
+		// Branch selection frames its target; bus selection does not, so ask.
+		frameElement(ctrl, c.id, { bus: bus.id });
+		if (ctrl.isBackendCase(c)) await ctrl.selectBus(c.id, bus.id);
+		else await ctrl.selectLocalBus(c.id, bus.id);
+	} else {
+		const branch = resolveBranch(c, input.target.elementId);
+		focusedId = elementId(branch, 'branch');
+		focusedName = lineName(branch);
+		if (ctrl.isBackendCase(c)) await ctrl.selectBranch(c.id, branch.id, { focus: true });
+		else await ctrl.selectLocalBranch(c.id, branch.id, { focus: true });
+	}
+	// Selection commits synchronously when the controller call starts. From
+	// that point this is a definite visible mutation, so a later cancellation
+	// must not report that nothing happened.
+	await tick();
+	return {
+		...displayedContext(ctrl),
+		focused: {
+			kind: input.target.kind,
+			element_id: focusedId,
+			name: focusedName
+		},
+		sensitivity_loaded: ctrl.selectedSensitivity !== null
+	};
 }
 
-function validateDemand(
-  ctrl: Controller,
-  c: SolvableCase,
-  id: string,
-  value: number,
-): NetworkBus {
-  const bus = resolveBus(c, id);
-  if (isDisplayOnlyElement(bus)) {
-    throw new TellegenToolError(
-      "EDIT_NOT_SUPPORTED",
-      `Bus ${clip(id)} is display-only and cannot be edited. Choose a bus with editable demand.`,
-    );
-  }
-  const bounds = ctrl.demandBounds("full", bus, value);
-  if (value < bounds.min || value > bounds.max) {
-    throw new TellegenToolError(
-      "EDIT_OUT_OF_RANGE",
-      `The demand change for bus ${clip(id)} must be from ${bounds.min} to ${bounds.max} MW. Choose a value in that range.`,
-    );
-  }
-  return bus;
+function validateDemand(ctrl: Controller, c: SolvableCase, id: string, value: number): NetworkBus {
+	const bus = resolveBus(c, id);
+	if (isDisplayOnlyElement(bus)) {
+		throw new TellegenToolError(
+			'EDIT_NOT_SUPPORTED',
+			`Bus ${clip(id)} is display-only and cannot be edited. Choose a bus with editable demand.`
+		);
+	}
+	const bounds = ctrl.demandBounds('full', bus, value);
+	if (value < bounds.min || value > bounds.max) {
+		throw new TellegenToolError(
+			'EDIT_OUT_OF_RANGE',
+			`The demand change for bus ${clip(id)} must be from ${bounds.min} to ${bounds.max} MW. Choose a value in that range.`
+		);
+	}
+	return bus;
 }
 
 function ratingDeltaBounds(branch: NetworkBranch): {
-  min: number;
-  max: number;
+	min: number;
+	max: number;
 } {
-  const span = Math.min(50, Math.max(5, 0.2 * branch.rate_mw));
-  return { min: Math.max(-(branch.rate_mw - 1), -span), max: span };
+	const span = Math.min(50, Math.max(5, 0.2 * branch.rate_mw));
+	return { min: Math.max(-(branch.rate_mw - 1), -span), max: span };
 }
 
-function validateRating(
-  c: SolvableCase,
-  id: string,
-  value: number,
-): NetworkBranch {
-  const branch = resolveBranch(c, id);
-  if (isDisplayOnlyElement(branch) || branch.rate_mw <= 0) {
-    throw new TellegenToolError(
-      "EDIT_NOT_SUPPORTED",
-      `Branch ${clip(id)} has no editable rating. Choose a branch with a thermal rating.`,
-    );
-  }
-  const bounds = ratingDeltaBounds(branch);
-  if (value < bounds.min || value > bounds.max) {
-    throw new TellegenToolError(
-      "EDIT_OUT_OF_RANGE",
-      `The rating change for branch ${clip(id)} must be from ${bounds.min} to ${bounds.max} MW. Choose a value in that range.`,
-    );
-  }
-  return branch;
+function validateRating(c: SolvableCase, id: string, value: number): NetworkBranch {
+	const branch = resolveBranch(c, id);
+	if (isDisplayOnlyElement(branch) || branch.rate_mw <= 0) {
+		throw new TellegenToolError(
+			'EDIT_NOT_SUPPORTED',
+			`Branch ${clip(id)} has no editable rating. Choose a branch with a thermal rating.`
+		);
+	}
+	const bounds = ratingDeltaBounds(branch);
+	if (value < bounds.min || value > bounds.max) {
+		throw new TellegenToolError(
+			'EDIT_OUT_OF_RANGE',
+			`The rating change for branch ${clip(id)} must be from ${bounds.min} to ${bounds.max} MW. Choose a value in that range.`
+		);
+	}
+	return branch;
 }
 
-function setEdit(
-  edits: Record<number, number>,
-  id: number,
-  value: number,
-): void {
-  // Tool inputs state exact MW deltas. The 0.25 MW slider deadband belongs to
-  // pointer interaction; applying it here can silently erase a valid small
-  // update or an accepted capacity proposal.
-  if (value === 0) delete edits[id];
-  else edits[id] = value;
+function setEdit(edits: Record<number, number>, id: number, value: number): void {
+	// Tool inputs state exact MW deltas. The 0.25 MW slider deadband belongs to
+	// pointer interaction; applying it here can silently erase a valid small
+	// update or an accepted capacity proposal.
+	if (value === 0) delete edits[id];
+	else edits[id] = value;
 }
 
-type CaseEditInput = Pick<
-  PreviewCaseUpdateInput,
-  "mode" | "demand" | "ratings"
->;
+type CaseEditInput = Pick<PreviewCaseUpdateInput, 'mode' | 'demand' | 'ratings'>;
 
 /** Fly the map to the element a tool call works on, so people watching see
  * what the agent touched. Only the camera moves: a selection would advance the
  * case revision and invalidate the token the agent holds. */
 function frameElement(
-  ctrl: Controller,
-  caseId: string,
-  target: { bus: number } | { branch: number },
+	ctrl: Controller,
+	caseId: string,
+	target: { bus: number } | { branch: number }
 ) {
-  void ctrl.app.requestFrame(
-    "bus" in target
-      ? { caseId, busId: target.bus }
-      : { caseId, branchId: target.branch },
-  );
+	void ctrl.app.requestFrame(
+		'bus' in target ? { caseId, busId: target.bus } : { caseId, branchId: target.branch }
+	);
 }
 
 /** The first element an edit names: a demand bus, else a rated branch. */
 function frameEdits(ctrl: Controller, c: SolvableCase, input: CaseEditInput) {
-  const bus = input.demand[0];
-  const branch = input.ratings[0];
-  if (bus) frameElement(ctrl, c.id, { bus: resolveBus(c, bus.busId).id });
-  else if (branch)
-    frameElement(ctrl, c.id, { branch: resolveBranch(c, branch.branchId).id });
+	const bus = input.demand[0];
+	const branch = input.ratings[0];
+	if (bus) frameElement(ctrl, c.id, { bus: resolveBus(c, bus.busId).id });
+	else if (branch) frameElement(ctrl, c.id, { branch: resolveBranch(c, branch.branchId).id });
 }
 
 function proposedEdits(
-  ctrl: Controller,
-  c: SolvableCase,
-  input: CaseEditInput,
+	ctrl: Controller,
+	c: SolvableCase,
+	input: CaseEditInput
 ): { demand: Record<number, number>; ratings: Record<number, number> } {
-  const demand = { ...c.deltas };
-  const ratings = { ...c.ratings };
-  for (const edit of input.demand) {
-    const bus = resolveBus(c, edit.busId);
-    const next =
-      input.mode === "increment"
-        ? (demand[bus.id] ?? 0) + edit.deltaMw
-        : edit.deltaMw;
-    validateDemand(ctrl, c, edit.busId, next);
-    setEdit(demand, bus.id, next);
-  }
-  for (const edit of input.ratings) {
-    const branch = resolveBranch(c, edit.branchId);
-    const next =
-      input.mode === "increment"
-        ? (ratings[branch.id] ?? 0) + edit.deltaMw
-        : edit.deltaMw;
-    validateRating(c, edit.branchId, next);
-    setEdit(ratings, branch.id, next);
-  }
-  return { demand, ratings };
+	const demand = { ...c.deltas };
+	const ratings = { ...c.ratings };
+	for (const edit of input.demand) {
+		const bus = resolveBus(c, edit.busId);
+		const next = input.mode === 'increment' ? (demand[bus.id] ?? 0) + edit.deltaMw : edit.deltaMw;
+		validateDemand(ctrl, c, edit.busId, next);
+		setEdit(demand, bus.id, next);
+	}
+	for (const edit of input.ratings) {
+		const branch = resolveBranch(c, edit.branchId);
+		const next =
+			input.mode === 'increment' ? (ratings[branch.id] ?? 0) + edit.deltaMw : edit.deltaMw;
+		validateRating(c, edit.branchId, next);
+		setEdit(ratings, branch.id, next);
+	}
+	return { demand, ratings };
 }
 
 async function preview(
-  ctrl: Controller,
-  input: PreviewCaseUpdateInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: PreviewCaseUpdateInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  const c = activeCase(ctrl, input.caseId);
-  requireRevision(c, input.expectedRevision);
-  const revision = caseRevision(c);
-  if (c.formulation === "acpf")
-    throw new TellegenToolError(
-      "PREVIEW_UNAVAILABLE",
-      "AC power flow has no LMP preview. Use update_case to solve a demand change.",
-    );
-  if (c.solving) {
-    throw new TellegenToolError(
-      "CASE_SOLVING",
-      "An exact solve is still running. Wait for it to finish, then retry.",
-    );
-  }
-  signal.throwIfAborted();
-  const { demand, ratings } = proposedEdits(ctrl, c, input);
-  frameEdits(ctrl, c, input);
-  const studyInputJson = await ctrl.ensureStudyInputJson(c);
-  if (!studyInputJson)
-    throw new TellegenToolError(
-      "CASE_DATA_UNAVAILABLE",
-      "The case data module is unavailable. Reload the page and try again.",
-    );
-  // A tool preview must not move the shared Study's committed point. Build an
-  // isolated workspace from the retained module, align that clone with the
-  // visible operating point, then discard it after the linearization.
-  const settings = await calculationSettings(c);
-  const study = await createStudy(studyInputJson, c.formulation, {
-    isolated: true,
-    signal,
-    settings: { calculation: c.formulation, overrides: settings.effective },
-  });
-  let predicted: Awaited<ReturnType<BrowserStudy["preview"]>>;
-  try {
-    // Construction already solved the base case. Re-solve only when the
-    // visible operating point contains edits that the clone must reproduce.
-    if (Object.keys(c.deltas).length > 0 || Object.keys(c.ratings).length > 0) {
-      await study.commit(c.id, c.deltas, c.ratings, null, signal);
-    }
-    signal.throwIfAborted();
-    predicted = await study.preview(demand, ratings);
-  } finally {
-    study.free();
-  }
-  signal.throwIfAborted();
-  requireRevision(activeCase(ctrl, input.caseId), revision);
-  const priceChanges = predicted.prices
-    .filter((entry) => Number.isFinite(entry.value))
-    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-    .slice(0, input.limit)
-    .map((entry) => {
-      const bus = resolveBus(c, String(entry.bus));
-      return {
-        bus_id: elementId(bus, "bus"),
-        legacy_id: bus.id,
-        price_delta: entry.value,
-      };
-    });
-  const objectiveDelta = finite(predicted.objectiveDelta);
-  return {
-    case_id: c.id,
-    revision,
-    formulation: c.formulation,
-    committed: false,
-    edits: {
-      demand_count: input.demand.length,
-      rating_count: input.ratings.length,
-    },
-    prediction: {
-      objective: finite(
-        objectiveDelta === null || c.solution?.objective == null
-          ? null
-          : c.solution.objective + objectiveDelta,
-      ),
-      objective_delta: objectiveDelta,
-      price_changes: priceChanges,
-    },
-  };
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	const revision = caseRevision(c);
+	if (c.formulation === 'acpf')
+		throw new TellegenToolError(
+			'PREVIEW_UNAVAILABLE',
+			'AC power flow has no LMP preview. Use update_case to solve a demand change.'
+		);
+	if (c.solving) {
+		throw new TellegenToolError(
+			'CASE_SOLVING',
+			'An exact solve is still running. Wait for it to finish, then retry.'
+		);
+	}
+	signal.throwIfAborted();
+	const { demand, ratings } = proposedEdits(ctrl, c, input);
+	frameEdits(ctrl, c, input);
+	const studyInputJson = await ctrl.ensureStudyInputJson(c);
+	if (!studyInputJson)
+		throw new TellegenToolError(
+			'CASE_DATA_UNAVAILABLE',
+			'The case data module is unavailable. Reload the page and try again.'
+		);
+	// A tool preview must not move the shared Study's committed point. Build an
+	// isolated workspace from the retained module, align that clone with the
+	// visible operating point, then discard it after the linearization.
+	const settings = await calculationSettings(c);
+	const study = await createStudy(studyInputJson, c.formulation, {
+		isolated: true,
+		signal,
+		settings: { calculation: c.formulation, overrides: settings.effective }
+	});
+	let predicted: Awaited<ReturnType<BrowserStudy['preview']>>;
+	try {
+		// Construction already solved the base case. Re-solve only when the
+		// visible operating point contains edits that the clone must reproduce.
+		if (Object.keys(c.deltas).length > 0 || Object.keys(c.ratings).length > 0) {
+			await study.commit(c.id, c.deltas, c.ratings, null, signal);
+		}
+		signal.throwIfAborted();
+		predicted = await study.preview(demand, ratings);
+	} finally {
+		study.free();
+	}
+	signal.throwIfAborted();
+	requireRevision(activeCase(ctrl, input.caseId), revision);
+	const priceChanges = predicted.prices
+		.filter((entry) => Number.isFinite(entry.value))
+		.sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+		.slice(0, input.limit)
+		.map((entry) => {
+			const bus = resolveBus(c, String(entry.bus));
+			return {
+				bus_id: elementId(bus, 'bus'),
+				legacy_id: bus.id,
+				price_delta: entry.value
+			};
+		});
+	const objectiveDelta = finite(predicted.objectiveDelta);
+	return {
+		case_id: c.id,
+		revision,
+		formulation: c.formulation,
+		committed: false,
+		edits: {
+			demand_count: input.demand.length,
+			rating_count: input.ratings.length
+		},
+		prediction: {
+			objective: finite(
+				objectiveDelta === null || c.solution?.objective == null
+					? null
+					: c.solution.objective + objectiveDelta
+			),
+			objective_delta: objectiveDelta,
+			price_changes: priceChanges
+		}
+	};
 }
 
 interface PreparedCaseSolve {
-  settings: ResolvedSettings;
-  study: BrowserStudy;
-  studyInputJson: string;
-  formulation: Formulation;
-  baseSolution: Solution;
-  solution: Solution;
-  iterations: SolveIteration[];
-  sensitivity: SensitivityColumn | null;
-  solveMs: number;
+	settings: ResolvedSettings;
+	study: BrowserStudy;
+	studyInputJson: string;
+	formulation: Formulation;
+	baseSolution: Solution;
+	solution: Solution;
+	iterations: SolveIteration[];
+	sensitivity: SensitivityColumn | null;
+	solveMs: number;
 }
 
 async function prepareExactSolve(
-  ctrl: Controller,
-  c: SolvableCase,
-  demand: Record<number, number>,
-  ratings: Record<number, number>,
-  formulation: Formulation,
-  signal: AbortSignal,
+	ctrl: Controller,
+	c: SolvableCase,
+	demand: Record<number, number>,
+	ratings: Record<number, number>,
+	formulation: Formulation,
+	signal: AbortSignal
 ): Promise<PreparedCaseSolve> {
-  const studyInputJson = await ctrl.ensureStudyInputJson(c);
-  if (!studyInputJson) {
-    throw new TellegenToolError(
-      "CASE_DATA_UNAVAILABLE",
-      "The case data module is unavailable. Reload the page and try again.",
-    );
-  }
-  const started = performance.now();
-  let study: BrowserStudy | null = null;
-  try {
-    const settings = await calculationSettings(c, formulation);
-    study = await createStudy(studyInputJson, formulation, {
-      isolated: true,
-      signal,
-      settings: { calculation: formulation, overrides: settings.effective },
-    });
-    const baseSolution = await study.currentSolution();
-    signal.throwIfAborted();
-    const result = await study.commit(
-      c.id,
-      demand,
-      ratings,
-      ctrl.selectionTarget,
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      settings,
-      study,
-      studyInputJson,
-      formulation,
-      baseSolution,
-      solution: result.solution,
-      iterations: result.iterations,
-      sensitivity: result.sensitivity,
-      solveMs: Math.round(performance.now() - started),
-    };
-  } catch (error) {
-    study?.free();
-    throw error;
-  }
+	const studyInputJson = await ctrl.ensureStudyInputJson(c);
+	if (!studyInputJson) {
+		throw new TellegenToolError(
+			'CASE_DATA_UNAVAILABLE',
+			'The case data module is unavailable. Reload the page and try again.'
+		);
+	}
+	const started = performance.now();
+	let study: BrowserStudy | null = null;
+	try {
+		const settings = await calculationSettings(c, formulation);
+		study = await createStudy(studyInputJson, formulation, {
+			isolated: true,
+			signal,
+			settings: { calculation: formulation, overrides: settings.effective }
+		});
+		const baseSolution = await study.currentSolution();
+		signal.throwIfAborted();
+		const result = await study.commit(c.id, demand, ratings, ctrl.selectionTarget, signal);
+		signal.throwIfAborted();
+		return {
+			settings,
+			study,
+			studyInputJson,
+			formulation,
+			baseSolution,
+			solution: result.solution,
+			iterations: result.iterations,
+			sensitivity: result.sensitivity,
+			solveMs: Math.round(performance.now() - started)
+		};
+	} catch (error) {
+		study?.free();
+		throw error;
+	}
 }
 
 function publishExactSolve(
-  ctrl: Controller,
-  c: SolvableCase,
-  demand: Record<number, number>,
-  ratings: Record<number, number>,
-  prepared: PreparedCaseSolve,
+	ctrl: Controller,
+	c: SolvableCase,
+	demand: Record<number, number>,
+	ratings: Record<number, number>,
+	prepared: PreparedCaseSolve
 ): void {
-  if (ctrl.isBackendCase(c)) {
-    c.closeStream?.();
-    c.closeStream = null;
-  }
-  c.solveSeq += 1;
-  ctrl.disposeStudy(c);
-  c.formulation = prepared.formulation;
-  c.settings.accepted = prepared.settings;
-  ctrl.app.displayMode =
-    prepared.formulation === "acpf" ? "voltage" : ctrl.app.displayMode;
-  c.deltas = demand;
-  c.ratings = ratings;
-  ctrl.bumpRevision(c);
-  c.baseSolution = prepared.baseSolution;
-  c.solution = prepared.solution;
-  c.iterations = prepared.iterations;
-  c.sensitivity = null;
-  c.solving = false;
-  c.solveBackend = "clarabel-wasm";
-  c.solveFallbackReason = null;
-  c.failedCalculation = null;
-  c.solveMs = prepared.solveMs;
-  c.predictedObjective = null;
-  ctrl.app.previewPrices = null;
-  ctrl.previewObjective = null;
-  ctrl.ratingSlope = null;
-  ctrl.app.error = null;
-  ctrl.caseStudies.set(c, {
-    study: prepared.study,
-    studyInputJson: prepared.studyInputJson,
-    formulation: prepared.formulation,
-    baseSolution: prepared.baseSolution,
-    settings: prepared.settings,
-  });
-  ctrl.studyUnavailable.delete(c);
-  if (prepared.sensitivity && ctrl.selectionTarget) {
-    ctrl.acceptSensitivity(c, prepared.sensitivity, ctrl.selectionTarget);
-  }
+	if (ctrl.isBackendCase(c)) {
+		c.closeStream?.();
+		c.closeStream = null;
+	}
+	c.solveSeq += 1;
+	ctrl.disposeStudy(c);
+	c.formulation = prepared.formulation;
+	c.settings.accepted = prepared.settings;
+	ctrl.app.displayMode = prepared.formulation === 'acpf' ? 'voltage' : ctrl.app.displayMode;
+	c.deltas = demand;
+	c.ratings = ratings;
+	ctrl.bumpRevision(c);
+	c.baseSolution = prepared.baseSolution;
+	c.solution = prepared.solution;
+	c.iterations = prepared.iterations;
+	c.sensitivity = null;
+	c.solving = false;
+	c.solveBackend = 'clarabel-wasm';
+	c.solveFallbackReason = null;
+	c.failedCalculation = null;
+	c.solveMs = prepared.solveMs;
+	c.predictedObjective = null;
+	ctrl.app.previewPrices = null;
+	ctrl.previewObjective = null;
+	ctrl.ratingSlope = null;
+	ctrl.app.error = null;
+	ctrl.caseStudies.set(c, {
+		study: prepared.study,
+		studyInputJson: prepared.studyInputJson,
+		formulation: prepared.formulation,
+		baseSolution: prepared.baseSolution,
+		settings: prepared.settings
+	});
+	ctrl.studyUnavailable.delete(c);
+	if (prepared.sensitivity && ctrl.selectionTarget) {
+		ctrl.acceptSensitivity(c, prepared.sensitivity, ctrl.selectionTarget);
+	}
 }
 
 async function update(
-  ctrl: Controller,
-  input: UpdateCaseInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: UpdateCaseInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  const c = activeCase(ctrl, input.caseId);
-  requireRevision(c, input.expectedRevision);
-  if (c.solving)
-    throw new TellegenToolError(
-      "CASE_SOLVING",
-      "An exact solve is still running. Wait for it to finish, then retry.",
-    );
-  signal.throwIfAborted();
-  let formulation: Formulation | undefined;
-  if (input.formulation !== undefined) {
-    const option = FORMULATIONS.find(
-      (entry: FormulationOption) => entry.id === input.formulation,
-    ) as FormulationOption | undefined;
-    if (!option || !availableFormulations(c).includes(option.id)) {
-      throw new TellegenToolError(
-        "FORMULATION_UNAVAILABLE",
-        `Calculation ${clip(input.formulation)} is unavailable for this case. Call inspect_settings to list the available calculations.`,
-      );
-    }
-    formulation = option.id;
-  }
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	if (c.solving)
+		throw new TellegenToolError(
+			'CASE_SOLVING',
+			'An exact solve is still running. Wait for it to finish, then retry.'
+		);
+	signal.throwIfAborted();
+	let formulation: Formulation | undefined;
+	if (input.formulation !== undefined) {
+		const option = FORMULATIONS.find(
+			(entry: FormulationOption) => entry.id === input.formulation
+		) as FormulationOption | undefined;
+		if (!option || !availableFormulations(c).includes(option.id)) {
+			throw new TellegenToolError(
+				'FORMULATION_UNAVAILABLE',
+				`Calculation ${clip(input.formulation)} is unavailable for this case. Call inspect_settings to list the available calculations.`
+			);
+		}
+		formulation = option.id;
+	}
 
-  const { demand, ratings } = proposedEdits(ctrl, c, input);
-  frameEdits(ctrl, c, input);
-  const before = caseSnapshot(c);
-  const targetFormulation = formulation ?? c.formulation;
-  const prepared = await prepareExactSolve(
-    ctrl,
-    c,
-    demand,
-    ratings,
-    targetFormulation,
-    signal,
-  );
-  try {
-    signal.throwIfAborted();
-    requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
-    if (c.solving) {
-      throw new TellegenToolError(
-        "CASE_SOLVING",
-        "The active case began another solve. Wait for it to finish, then retry.",
-      );
-    }
-    publishExactSolve(ctrl, c, demand, ratings, prepared);
-  } catch (error) {
-    prepared.study.free();
-    throw error;
-  }
-  return {
-    case_id: c.id,
-    revision: caseRevision(c),
-    formulation: c.formulation,
-    demand_edit_count: Object.keys(c.deltas).length,
-    rating_edit_count: Object.keys(c.ratings).length,
-    solution: solutionPayload(c),
-    before,
-    after: caseSnapshot(c),
-  };
+	const { demand, ratings } = proposedEdits(ctrl, c, input);
+	frameEdits(ctrl, c, input);
+	const before = caseSnapshot(c);
+	const targetFormulation = formulation ?? c.formulation;
+	const prepared = await prepareExactSolve(ctrl, c, demand, ratings, targetFormulation, signal);
+	try {
+		signal.throwIfAborted();
+		requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
+		if (c.solving) {
+			throw new TellegenToolError(
+				'CASE_SOLVING',
+				'The active case began another solve. Wait for it to finish, then retry.'
+			);
+		}
+		publishExactSolve(ctrl, c, demand, ratings, prepared);
+	} catch (error) {
+		prepared.study.free();
+		throw error;
+	}
+	return {
+		case_id: c.id,
+		revision: caseRevision(c),
+		formulation: c.formulation,
+		demand_edit_count: Object.keys(c.deltas).length,
+		rating_edit_count: Object.keys(c.ratings).length,
+		solution: solutionPayload(c),
+		before,
+		after: caseSnapshot(c)
+	};
 }
 
 async function reset(
-  ctrl: Controller,
-  input: ResetCaseInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: ResetCaseInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  const c = activeCase(ctrl, input.caseId);
-  requireRevision(c, input.expectedRevision);
-  if (c.solving)
-    throw new TellegenToolError(
-      "CASE_SOLVING",
-      "An exact solve is still running. Wait for it to finish, then retry.",
-    );
-  signal.throwIfAborted();
-  const before = caseSnapshot(c);
-  const prepared = await prepareExactSolve(
-    ctrl,
-    c,
-    {},
-    {},
-    c.formulation,
-    signal,
-  );
-  try {
-    signal.throwIfAborted();
-    requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
-    if (c.solving) {
-      throw new TellegenToolError(
-        "CASE_SOLVING",
-        "The active case began another solve. Wait for it to finish, then retry.",
-      );
-    }
-    publishExactSolve(ctrl, c, {}, {}, prepared);
-  } catch (error) {
-    prepared.study.free();
-    throw error;
-  }
-  return {
-    case_id: c.id,
-    revision: caseRevision(c),
-    formulation: c.formulation,
-    demand_edit_count: 0,
-    rating_edit_count: 0,
-    solution: solutionPayload(c),
-    before,
-    after: caseSnapshot(c),
-  };
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	if (c.solving)
+		throw new TellegenToolError(
+			'CASE_SOLVING',
+			'An exact solve is still running. Wait for it to finish, then retry.'
+		);
+	signal.throwIfAborted();
+	const before = caseSnapshot(c);
+	const prepared = await prepareExactSolve(ctrl, c, {}, {}, c.formulation, signal);
+	try {
+		signal.throwIfAborted();
+		requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
+		if (c.solving) {
+			throw new TellegenToolError(
+				'CASE_SOLVING',
+				'The active case began another solve. Wait for it to finish, then retry.'
+			);
+		}
+		publishExactSolve(ctrl, c, {}, {}, prepared);
+	} catch (error) {
+		prepared.study.free();
+		throw error;
+	}
+	return {
+		case_id: c.id,
+		revision: caseRevision(c),
+		formulation: c.formulation,
+		demand_edit_count: 0,
+		rating_edit_count: 0,
+		solution: solutionPayload(c),
+		before,
+		after: caseSnapshot(c)
+	};
 }
 
 /** Round bounded tool payload numbers without changing solver state. */
 function round4(value: number | null | undefined): number | null {
-  const v = finite(value ?? null);
-  return v === null ? null : Math.round(v * 1e4) / 1e4;
+	const v = finite(value ?? null);
+	return v === null ? null : Math.round(v * 1e4) / 1e4;
 }
 
-function fallbackBranchRow(
-  c: SolvableCase,
-  branch: NetworkBranch,
-): number | null {
-  const row = branch.id - 1;
-  return Number.isSafeInteger(row) &&
-    row >= 0 &&
-    c.network?.branches[row] === branch
-    ? row
-    : null;
+function fallbackBranchRow(c: SolvableCase, branch: NetworkBranch): number | null {
+	const row = branch.id - 1;
+	return Number.isSafeInteger(row) && row >= 0 && c.network?.branches[row] === branch ? row : null;
 }
 
 function canonicalBranchIdentity(
-  c: SolvableCase,
-  branch: NetworkBranch,
-  requestedId: string,
+	c: SolvableCase,
+	branch: NetworkBranch,
+	requestedId: string
 ): string {
-  if (branch.uid) return branch.uid;
-  const row = fallbackBranchRow(c, branch);
-  if (row === null) {
-    throw new TellegenToolError(
-      "PLANNING_UNAVAILABLE",
-      `Branch ${clip(requestedId)} does not match a row in the case data, so it cannot be planned. Choose another branch.`,
-    );
-  }
-  return `branches:${row}`;
+	if (branch.uid) return branch.uid;
+	const row = fallbackBranchRow(c, branch);
+	if (row === null) {
+		throw new TellegenToolError(
+			'PLANNING_UNAVAILABLE',
+			`Branch ${clip(requestedId)} does not match a row in the case data, so it cannot be planned. Choose another branch.`
+		);
+	}
+	return `branches:${row}`;
 }
 
 /** `Phi = Σ w · price` over the objective's buses at the case's current
  * solution, or null when a bus or its price cannot be resolved. */
-function phiAt(
-  c: SolvableCase,
-  weights: CapacityPlanBusWeightJson[],
-): number | null {
-  if (!c.solution) return null;
-  const lookup = caseLookup(c);
-  let phi = 0;
-  for (const term of weights) {
-    let bus: NetworkBus;
-    try {
-      bus = resolveBus(c, String(term.bus));
-    } catch {
-      return null;
-    }
-    const value = lookup.prices.get(bus.id);
-    if (value === undefined) return null;
-    phi += term.weight * value;
-  }
-  return phi;
+function phiAt(c: SolvableCase, weights: CapacityPlanBusWeightJson[]): number | null {
+	if (!c.solution) return null;
+	const lookup = caseLookup(c);
+	let phi = 0;
+	for (const term of weights) {
+		let bus: NetworkBus;
+		try {
+			bus = resolveBus(c, String(term.bus));
+		} catch {
+			return null;
+		}
+		const value = lookup.prices.get(bus.id);
+		if (value === undefined) return null;
+		phi += term.weight * value;
+	}
+	return phi;
 }
 
 async function proposeCapacityPlan(
-  ctrl: Controller,
-  activities: PlanningActivityStore,
-  workspace: StudyWorkspace | undefined,
-  input: ProposeCapacityPlanInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	activities: PlanningActivityStore,
+	workspace: StudyWorkspace | undefined,
+	input: ProposeCapacityPlanInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  const startedAt = Date.now();
-  const c = activeCase(ctrl, input.caseId);
-  requireRevision(c, input.expectedRevision);
-  if (c.formulation !== "dcopf") {
-    throw new TellegenToolError(
-      "PLANNING_UNAVAILABLE",
-      "Capacity planning supports DC OPF only. Switch the calculation to dcopf, then retry.",
-    );
-  }
-  if (c.solving) {
-    throw new TellegenToolError(
-      "CASE_SOLVING",
-      "An exact solve is still running. Wait for it to finish, then retry.",
-    );
-  }
-  signal.throwIfAborted();
-  const resolvedWeightBuses = new Set<number>();
-  const weights = input.objective.weights.map((entry) => {
-    const bus = resolveBus(c, entry.busId);
-    if (resolvedWeightBuses.has(bus.id)) {
-      throw new TellegenToolError(
-        "INVALID_INPUT",
-        `Two objective weights refer to the same bus ${clip(entry.busId)}. Give each bus one weight.`,
-      );
-    }
-    resolvedWeightBuses.add(bus.id);
-    if (isDisplayOnlyElement(bus)) {
-      throw new TellegenToolError(
-        "EDIT_NOT_SUPPORTED",
-        `Bus ${clip(entry.busId)} is display-only and cannot be weighted. Choose a bus with editable demand.`,
-      );
-    }
-    return { bus: bus.id, weight: entry.weight };
-  });
-  const candidateBranches = new Map<string, NetworkBranch>();
-  const candidates = input.candidates.map((id) => {
-    const branch = resolveBranch(c, id);
-    if (isDisplayOnlyElement(branch) || branch.rate_mw <= 0) {
-      throw new TellegenToolError(
-        "EDIT_NOT_SUPPORTED",
-        `Branch ${clip(id)} has no editable rating. Choose a branch with a thermal rating.`,
-      );
-    }
-    const availableIncrease =
-      ratingDeltaBounds(branch).max - (c.ratings[branch.id] ?? 0);
-    if (input.maxIncreasePerBranchMw > availableIncrease) {
-      throw new TellegenToolError(
-        "INVALID_INPUT",
-        `max_increase_per_branch_mw must be at most ${availableIncrease} MW for branch ${clip(id)}. Lower the limit and retry.`,
-      );
-    }
-    const identity = canonicalBranchIdentity(c, branch, id);
-    if (candidateBranches.has(identity)) {
-      throw new TellegenToolError(
-        "INVALID_INPUT",
-        `Two candidates refer to the same branch ${clip(id)}. List each branch once.`,
-      );
-    }
-    candidateBranches.set(identity, branch);
-    return identity;
-  });
-  const spec: CapacityPlanSpecJson = {
-    objective: { kind: "weighted_lmp", weights },
-    candidates,
-    max_increase_per_branch_mw: input.maxIncreasePerBranchMw,
-    budget_mw: input.budgetMw,
-    increment_mw: input.incrementMw,
-    max_changed_lines: input.maxChangedLines,
-    exact_solve_budget: input.exactSolveBudget,
-  };
-  const revision = caseRevision(c);
-  const studyInputJson = await ctrl.ensureStudyInputJson(c);
-  if (!studyInputJson)
-    throw new TellegenToolError(
-      "CASE_DATA_UNAVAILABLE",
-      "The case data module is unavailable. Reload the page and try again.",
-    );
-  const source_digest = await sourceDigest(ctrl, c, studyInputJson);
-  signal.throwIfAborted();
-  const cached = ctrl.caseStudies.get(c);
-  if (
-    !workspace &&
-    (!cached ||
-      cached.studyInputJson !== studyInputJson ||
-      cached.formulation !== c.formulation)
-  ) {
-    throw new TellegenToolError(
-      "PLANNING_UNAVAILABLE",
-      "The current exact solve is not ready. Wait for it to finish, then retry.",
-    );
-  }
-  signal.throwIfAborted();
-  const planned = workspace
-    ? await workspace.planCapacity(
-        spec,
-        c.id,
-        revision,
-        signal,
-        Object.fromEntries(
-          [...candidateBranches].map(([identity, branch]) => [
-            identity,
-            branch.id,
-          ]),
-        ),
-      )
-    : { outcome: await cached!.study.plan(spec, signal), binding: undefined };
-  const outcome = planned.outcome;
-  signal.throwIfAborted();
-  const publicProposal = outcome.proposal.map((change) => {
-    const branch = candidateBranches.get(change.branch);
-    if (!branch) {
-      throw new TellegenToolError(
-        "TOOL_FAILED",
-        `The engine proposed an unknown branch ${clip(String(change.branch))}. Run propose_capacity_plan again.`,
-      );
-    }
-    return {
-      branchId: elementId(branch, "branch"),
-      legacyId: branch.id,
-      deltaMw: change.delta_mw,
-    };
-  });
+	const startedAt = Date.now();
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	if (c.formulation !== 'dcopf') {
+		throw new TellegenToolError(
+			'PLANNING_UNAVAILABLE',
+			'Capacity planning supports DC OPF only. Switch the calculation to dcopf, then retry.'
+		);
+	}
+	if (c.solving) {
+		throw new TellegenToolError(
+			'CASE_SOLVING',
+			'An exact solve is still running. Wait for it to finish, then retry.'
+		);
+	}
+	signal.throwIfAborted();
+	const resolvedWeightBuses = new Set<number>();
+	const weights = input.objective.weights.map((entry) => {
+		const bus = resolveBus(c, entry.busId);
+		if (resolvedWeightBuses.has(bus.id)) {
+			throw new TellegenToolError(
+				'INVALID_INPUT',
+				`Two objective weights refer to the same bus ${clip(entry.busId)}. Give each bus one weight.`
+			);
+		}
+		resolvedWeightBuses.add(bus.id);
+		if (isDisplayOnlyElement(bus)) {
+			throw new TellegenToolError(
+				'EDIT_NOT_SUPPORTED',
+				`Bus ${clip(entry.busId)} is display-only and cannot be weighted. Choose a bus with editable demand.`
+			);
+		}
+		return { bus: bus.id, weight: entry.weight };
+	});
+	const candidateBranches = new Map<string, NetworkBranch>();
+	const candidates = input.candidates.map((id) => {
+		const branch = resolveBranch(c, id);
+		if (isDisplayOnlyElement(branch) || branch.rate_mw <= 0) {
+			throw new TellegenToolError(
+				'EDIT_NOT_SUPPORTED',
+				`Branch ${clip(id)} has no editable rating. Choose a branch with a thermal rating.`
+			);
+		}
+		const availableIncrease = ratingDeltaBounds(branch).max - (c.ratings[branch.id] ?? 0);
+		if (input.maxIncreasePerBranchMw > availableIncrease) {
+			throw new TellegenToolError(
+				'INVALID_INPUT',
+				`max_increase_per_branch_mw must be at most ${availableIncrease} MW for branch ${clip(id)}. Lower the limit and retry.`
+			);
+		}
+		const identity = canonicalBranchIdentity(c, branch, id);
+		if (candidateBranches.has(identity)) {
+			throw new TellegenToolError(
+				'INVALID_INPUT',
+				`Two candidates refer to the same branch ${clip(id)}. List each branch once.`
+			);
+		}
+		candidateBranches.set(identity, branch);
+		return identity;
+	});
+	const spec: CapacityPlanSpecJson = {
+		objective: { kind: 'weighted_lmp', weights },
+		candidates,
+		max_increase_per_branch_mw: input.maxIncreasePerBranchMw,
+		budget_mw: input.budgetMw,
+		increment_mw: input.incrementMw,
+		max_changed_lines: input.maxChangedLines,
+		exact_solve_budget: input.exactSolveBudget
+	};
+	const revision = caseRevision(c);
+	const studyInputJson = await ctrl.ensureStudyInputJson(c);
+	if (!studyInputJson)
+		throw new TellegenToolError(
+			'CASE_DATA_UNAVAILABLE',
+			'The case data module is unavailable. Reload the page and try again.'
+		);
+	const source_digest = await sourceDigest(ctrl, c, studyInputJson);
+	signal.throwIfAborted();
+	const cached = ctrl.caseStudies.get(c);
+	if (
+		!workspace &&
+		(!cached || cached.studyInputJson !== studyInputJson || cached.formulation !== c.formulation)
+	) {
+		throw new TellegenToolError(
+			'PLANNING_UNAVAILABLE',
+			'The current exact solve is not ready. Wait for it to finish, then retry.'
+		);
+	}
+	signal.throwIfAborted();
+	const planned = workspace
+		? await workspace.planCapacity(
+				spec,
+				c.id,
+				revision,
+				signal,
+				Object.fromEntries(
+					[...candidateBranches].map(([identity, branch]) => [identity, branch.id])
+				)
+			)
+		: { outcome: await cached!.study.plan(spec, signal), binding: undefined };
+	const outcome = planned.outcome;
+	signal.throwIfAborted();
+	const publicProposal = outcome.proposal.map((change) => {
+		const branch = candidateBranches.get(change.branch);
+		if (!branch) {
+			throw new TellegenToolError(
+				'TOOL_FAILED',
+				`The engine proposed an unknown branch ${clip(String(change.branch))}. Run propose_capacity_plan again.`
+			);
+		}
+		return {
+			branchId: elementId(branch, 'branch'),
+			legacyId: branch.id,
+			deltaMw: change.delta_mw
+		};
+	});
 
-  const activityId = randomId("plan");
-  const proposalId = randomId("proposal");
-  const accepted = outcome.iterations.filter((it) => it.accepted);
-  const last = outcome.iterations[outcome.iterations.length - 1] ?? null;
-  const predictedPhiDelta = capacityPlanPredictedPhiDelta(outcome);
-  // The search ran unqueued beside the interface; a concurrent edit during it
-  // makes the outcome an audit record, never a stageable proposal.
-  const moved =
-    !!ctrl.app.studyView ||
-    ctrl.activeSolvable !== c ||
-    caseRevision(c) !== revision;
-  const staged = !moved && outcome.proposal.length > 0;
-  const activity = {
-    id: activityId,
-    proposalId: staged ? proposalId : null,
-    caseId: c.id,
-    sessionId: SESSION_ID,
-    revision,
-    formulation: c.formulation,
-    sourceDigest: source_digest,
-    spec,
-    outcome,
-    displayProposal: publicProposal.map(({ branchId, deltaMw }) => ({
-      branchId,
-      deltaMw,
-    })),
-    decision:
-      moved && outcome.proposal.length > 0
-        ? ("expired" as const)
-        : staged
-          ? ("pending" as const)
-          : ("no_change" as const),
-    startedAt,
-    durationMs: Date.now() - startedAt,
-  };
-  if (staged) {
-    activities.stage({
-      proposalId,
-      study: planned.binding,
-      activityId,
-      caseId: c.id,
-      sessionId: SESSION_ID,
-      revision,
-      changes: publicProposal,
-      createdAt: Date.now(),
-    });
-  }
-  activities.append(activity);
-  const proposalRows = publicProposal.slice(0, 12).map((change) => ({
-    branch_id: change.branchId,
-    delta_mw: round4(change.deltaMw),
-  }));
-  return withBudgetedRows(
-    {
-      activity_id: activityId,
-      ...(planned.binding ? { study_id: planned.binding.studyId } : {}),
-      proposal_id: staged ? proposalId : null,
-      session_id: SESSION_ID,
-      source_digest,
-      revision,
-      baseline_phi: round4(outcome.baseline_phi),
-      final_phi: round4(outcome.final_phi),
-      baseline: {
-        phi: round4(outcome.baseline.phi),
-        declared_objective: round4(outcome.baseline.declared_objective),
-        exact_solve: outcome.baseline.exact_solve,
-      },
-      exact_verified_result: {
-        phi: round4(outcome.exact_verified_result.phi),
-        declared_objective: round4(
-          outcome.exact_verified_result.declared_objective,
-        ),
-        exact_solve: outcome.exact_verified_result.exact_solve,
-      },
-      exact_phi_delta: round4(outcome.final_phi - outcome.baseline_phi),
-      predicted_phi_delta: round4(predictedPhiDelta),
-      first_order_error: round4(capacityPlanFirstOrderError(outcome)),
-      spent_budget_mw: round4(outcome.spent_budget_mw),
-      exact_solves: outcome.exact_solves,
-      iterations: {
-        total: outcome.iterations.length,
-        accepted: accepted.length,
-      },
-      stop_reason: last ? clip(last.reason, 140) : "no iterations ran",
-    },
-    proposalRows,
-    "proposal",
-    "proposal_count",
-    "proposal_truncated",
-  );
+	const activityId = randomId('plan');
+	const proposalId = randomId('proposal');
+	const accepted = outcome.iterations.filter((it) => it.accepted);
+	const last = outcome.iterations[outcome.iterations.length - 1] ?? null;
+	const predictedPhiDelta = capacityPlanPredictedPhiDelta(outcome);
+	// The search ran unqueued beside the interface; a concurrent edit during it
+	// makes the outcome an audit record, never a stageable proposal.
+	const moved = !!ctrl.app.studyView || ctrl.activeSolvable !== c || caseRevision(c) !== revision;
+	const staged = !moved && outcome.proposal.length > 0;
+	const activity = {
+		id: activityId,
+		proposalId: staged ? proposalId : null,
+		caseId: c.id,
+		sessionId: SESSION_ID,
+		revision,
+		formulation: c.formulation,
+		sourceDigest: source_digest,
+		spec,
+		outcome,
+		displayProposal: publicProposal.map(({ branchId, deltaMw }) => ({
+			branchId,
+			deltaMw
+		})),
+		decision:
+			moved && outcome.proposal.length > 0
+				? ('expired' as const)
+				: staged
+					? ('pending' as const)
+					: ('no_change' as const),
+		startedAt,
+		durationMs: Date.now() - startedAt
+	};
+	if (staged) {
+		activities.stage({
+			proposalId,
+			study: planned.binding,
+			activityId,
+			caseId: c.id,
+			sessionId: SESSION_ID,
+			revision,
+			changes: publicProposal,
+			createdAt: Date.now()
+		});
+	}
+	activities.append(activity);
+	const proposalRows = publicProposal.slice(0, 12).map((change) => ({
+		branch_id: change.branchId,
+		delta_mw: round4(change.deltaMw)
+	}));
+	return withBudgetedRows(
+		{
+			activity_id: activityId,
+			...(planned.binding ? { study_id: planned.binding.studyId } : {}),
+			proposal_id: staged ? proposalId : null,
+			session_id: SESSION_ID,
+			source_digest,
+			revision,
+			baseline_phi: round4(outcome.baseline_phi),
+			final_phi: round4(outcome.final_phi),
+			baseline: {
+				phi: round4(outcome.baseline.phi),
+				declared_objective: round4(outcome.baseline.declared_objective),
+				exact_solve: outcome.baseline.exact_solve
+			},
+			exact_verified_result: {
+				phi: round4(outcome.exact_verified_result.phi),
+				declared_objective: round4(outcome.exact_verified_result.declared_objective),
+				exact_solve: outcome.exact_verified_result.exact_solve
+			},
+			exact_phi_delta: round4(outcome.final_phi - outcome.baseline_phi),
+			predicted_phi_delta: round4(predictedPhiDelta),
+			first_order_error: round4(capacityPlanFirstOrderError(outcome)),
+			spent_budget_mw: round4(outcome.spent_budget_mw),
+			exact_solves: outcome.exact_solves,
+			iterations: {
+				total: outcome.iterations.length,
+				accepted: accepted.length
+			},
+			stop_reason: last ? clip(last.reason, 140) : 'no iterations ran'
+		},
+		proposalRows,
+		'proposal',
+		'proposal_count',
+		'proposal_truncated'
+	);
 }
 
 async function applyCapacityPlan(
-  ctrl: Controller,
-  activities: PlanningActivityStore,
-  workspace: StudyWorkspace | undefined,
-  input: ApplyCapacityPlanInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	activities: PlanningActivityStore,
+	workspace: StudyWorkspace | undefined,
+	input: ApplyCapacityPlanInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  const c = activeCase(ctrl, input.caseId);
-  requireRevision(c, input.expectedRevision);
-  if (c.solving)
-    throw new TellegenToolError(
-      "CASE_SOLVING",
-      "An exact solve is still running. Wait for it to finish, then retry.",
-    );
-  signal.throwIfAborted();
-  const staged = activities.proposal;
-  if (!staged || staged.proposalId !== input.proposalId) {
-    throw new TellegenToolError(
-      "UNKNOWN_PROPOSAL",
-      `Proposal ${clip(input.proposalId)} is not staged. Run propose_capacity_plan first.`,
-    );
-  }
-  if (
-    staged.caseId !== c.id ||
-    staged.sessionId !== SESSION_ID ||
-    staged.revision !== caseRevision(c)
-  ) {
-    throw new TellegenToolError(
-      "STALE_PROPOSAL",
-      "The session or case changed after this proposal was computed. Run propose_capacity_plan again.",
-    );
-  }
-  // Validate the composed edits through the exact same path as update_case
-  // before consuming anything, so a refusal burns neither proposal nor approval.
-  const { demand, ratings } = proposedEdits(ctrl, c, {
-    mode: "increment",
-    demand: [],
-    ratings: staged.changes.map((change) => ({
-      branchId: change.branchId,
-      deltaMw: change.deltaMw,
-    })),
-  });
-  signal.throwIfAborted();
-  if (!activities.isApproved(staged)) {
-    throw new TellegenToolError(
-      "APPROVAL_REQUIRED",
-      "A person must press Approve on this proposal in the Agent panel before apply_capacity_plan can run. Ask them to review it.",
-    );
-  }
-  const source_digest =
-    activities.entries.find((entry) => entry.id === staged.activityId)
-      ?.sourceDigest ?? (await sourceDigest(ctrl, c));
-  signal.throwIfAborted();
-  const before = caseSnapshot(c);
-  const prepared = await prepareExactSolve(
-    ctrl,
-    c,
-    demand,
-    ratings,
-    c.formulation,
-    signal,
-  );
-  let published = false;
-  try {
-    signal.throwIfAborted();
-    requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
-    if (
-      activities.proposal?.proposalId !== staged.proposalId ||
-      !activities.isApproved(staged)
-    ) {
-      throw new TellegenToolError(
-        "STALE_PROPOSAL",
-        "The proposal or approval changed during the exact solve. Inspect the case and propose again.",
-      );
-    }
-    if (c.solving)
-      throw new TellegenToolError(
-        "CASE_SOLVING",
-        "The case began another solve. Wait for it to finish, then retry.",
-      );
-    const publish = () => {
-      // A different live case may finish loading while storage commits. Its edits remain independent.
-      if (
-        ctrl.activeSolvable === c &&
-        caseRevision(c) === input.expectedRevision &&
-        !c.solving
-      ) {
-        publishExactSolve(ctrl, c, demand, ratings, prepared);
-        published = true;
-      }
-      activities.commitApplied(staged);
-      return published;
-    };
-    if (staged.study) {
-      if (!workspace) throw new Error("The proposal Study is unavailable");
-      await workspace.applyCapacity(staged.study, publish, signal);
-    } else publish();
-  } finally {
-    if (!published) prepared.study.free();
-  }
-  const weights = activities.entries.find(
-    (entry) => entry.id === staged.activityId,
-  )?.spec.objective.weights;
-  const exactPhi = weights ? phiAt(c, weights) : null;
-  const appliedRows = staged.changes.slice(0, 12).map((change) => ({
-    branch_id: change.branchId,
-    delta_mw: round4(change.deltaMw),
-  }));
-  return withBudgetedRows(
-    {
-      case_id: c.id,
-      case_updated: published,
-      ...(staged.study ? { study_id: staged.study.studyId } : {}),
-      session_id: SESSION_ID,
-      source_digest,
-      revision: caseRevision(c),
-      formulation: c.formulation,
-      proposal_id: staged.proposalId,
-      activity_id: staged.activityId,
-      exact_phi: round4(exactPhi),
-      solution: solutionPayload(c),
-      before,
-      after: caseSnapshot(c),
-    },
-    appliedRows,
-    "applied",
-    "applied_count",
-    "applied_truncated",
-  );
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	if (c.solving)
+		throw new TellegenToolError(
+			'CASE_SOLVING',
+			'An exact solve is still running. Wait for it to finish, then retry.'
+		);
+	signal.throwIfAborted();
+	const staged = activities.proposal;
+	if (!staged || staged.proposalId !== input.proposalId) {
+		throw new TellegenToolError(
+			'UNKNOWN_PROPOSAL',
+			`Proposal ${clip(input.proposalId)} is not staged. Run propose_capacity_plan first.`
+		);
+	}
+	if (
+		staged.caseId !== c.id ||
+		staged.sessionId !== SESSION_ID ||
+		staged.revision !== caseRevision(c)
+	) {
+		throw new TellegenToolError(
+			'STALE_PROPOSAL',
+			'The session or case changed after this proposal was computed. Run propose_capacity_plan again.'
+		);
+	}
+	// Validate the composed edits through the exact same path as update_case
+	// before consuming anything, so a refusal burns neither proposal nor approval.
+	const { demand, ratings } = proposedEdits(ctrl, c, {
+		mode: 'increment',
+		demand: [],
+		ratings: staged.changes.map((change) => ({
+			branchId: change.branchId,
+			deltaMw: change.deltaMw
+		}))
+	});
+	signal.throwIfAborted();
+	if (!activities.isApproved(staged)) {
+		throw new TellegenToolError(
+			'APPROVAL_REQUIRED',
+			'A person must press Approve on this proposal in the Agent panel before apply_capacity_plan can run. Ask them to review it.'
+		);
+	}
+	const source_digest =
+		activities.entries.find((entry) => entry.id === staged.activityId)?.sourceDigest ??
+		(await sourceDigest(ctrl, c));
+	signal.throwIfAborted();
+	const before = caseSnapshot(c);
+	const prepared = await prepareExactSolve(ctrl, c, demand, ratings, c.formulation, signal);
+	let published = false;
+	try {
+		signal.throwIfAborted();
+		requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
+		if (activities.proposal?.proposalId !== staged.proposalId || !activities.isApproved(staged)) {
+			throw new TellegenToolError(
+				'STALE_PROPOSAL',
+				'The proposal or approval changed during the exact solve. Inspect the case and propose again.'
+			);
+		}
+		if (c.solving)
+			throw new TellegenToolError(
+				'CASE_SOLVING',
+				'The case began another solve. Wait for it to finish, then retry.'
+			);
+		const publish = () => {
+			// A different live case may finish loading while storage commits. Its edits remain independent.
+			if (ctrl.activeSolvable === c && caseRevision(c) === input.expectedRevision && !c.solving) {
+				publishExactSolve(ctrl, c, demand, ratings, prepared);
+				published = true;
+			}
+			activities.commitApplied(staged);
+			return published;
+		};
+		if (staged.study) {
+			if (!workspace) throw new Error('The proposal Study is unavailable');
+			await workspace.applyCapacity(staged.study, publish, signal);
+		} else publish();
+	} finally {
+		if (!published) prepared.study.free();
+	}
+	const weights = activities.entries.find((entry) => entry.id === staged.activityId)?.spec.objective
+		.weights;
+	const exactPhi = weights ? phiAt(c, weights) : null;
+	const appliedRows = staged.changes.slice(0, 12).map((change) => ({
+		branch_id: change.branchId,
+		delta_mw: round4(change.deltaMw)
+	}));
+	return withBudgetedRows(
+		{
+			case_id: c.id,
+			case_updated: published,
+			...(staged.study ? { study_id: staged.study.studyId } : {}),
+			session_id: SESSION_ID,
+			source_digest,
+			revision: caseRevision(c),
+			formulation: c.formulation,
+			proposal_id: staged.proposalId,
+			activity_id: staged.activityId,
+			exact_phi: round4(exactPhi),
+			solution: solutionPayload(c),
+			before,
+			after: caseSnapshot(c)
+		},
+		appliedRows,
+		'applied',
+		'applied_count',
+		'applied_truncated'
+	);
 }
 
 const MAX_REPORTED_DIAGNOSTICS = 6;
 
 function diagnosticRows(
-  diagnostics: readonly { code?: string; severity: string; message: string }[],
+	diagnostics: readonly { code?: string; severity: string; message: string }[]
 ): ToolPayload[] {
-  // Errors first, then warnings, so a bounded list keeps what matters most.
-  const rank = (severity: string) =>
-    severity === "error" ? 0 : severity === "warning" ? 1 : 2;
-  return [...diagnostics]
-    .sort((a, b) => rank(a.severity) - rank(b.severity))
-    .slice(0, MAX_REPORTED_DIAGNOSTICS)
-    .map((d) => ({
-      code: d.code ?? "UNCODED",
-      severity: d.severity,
-      message: clip(d.message, 160),
-    }));
+	// Errors first, then warnings, so a bounded list keeps what matters most.
+	const rank = (severity: string) => (severity === 'error' ? 0 : severity === 'warning' ? 1 : 2);
+	return [...diagnostics]
+		.sort((a, b) => rank(a.severity) - rank(b.severity))
+		.slice(0, MAX_REPORTED_DIAGNOSTICS)
+		.map((d) => ({
+			code: d.code ?? 'UNCODED',
+			severity: d.severity,
+			message: clip(d.message, 160)
+		}));
 }
 
 async function exportCaseFile(
-  ctrl: Controller,
-  input: ExportCaseInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: ExportCaseInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  signal.throwIfAborted();
-  const c = activeCase(ctrl, input.caseId);
-  requireRevision(c, input.expectedRevision);
-  const unavailable = ctrl.caseExportUnavailableReason(c);
-  if (unavailable)
-    throw new TellegenToolError("EXPORT_UNAVAILABLE", clip(unavailable, 240));
-  signal.throwIfAborted();
-  let written: Awaited<ReturnType<Controller["writeCaseFile"]>>;
-  try {
-    written = await ctrl.writeCaseFile(c, input.format);
-  } catch (error) {
-    throw new TellegenToolError(
-      "EXPORT_UNAVAILABLE",
-      clip(error instanceof Error ? error.message : String(error), 240),
-    );
-  }
-  return withBudgetedRows(
-    {
-      ...displayedContext(ctrl),
-      format: input.format,
-      file_name: clip(written.fileName, 128),
-      bytes: written.bytes,
-      downloaded: true,
-    },
-    diagnosticRows(written.diagnostics),
-    "diagnostics",
-    "diagnostic_count",
-    "diagnostics_truncated",
-  );
+	signal.throwIfAborted();
+	const c = activeCase(ctrl, input.caseId);
+	requireRevision(c, input.expectedRevision);
+	const unavailable = ctrl.caseExportUnavailableReason(c);
+	if (unavailable) throw new TellegenToolError('EXPORT_UNAVAILABLE', clip(unavailable, 240));
+	signal.throwIfAborted();
+	let written: Awaited<ReturnType<Controller['writeCaseFile']>>;
+	try {
+		written = await ctrl.writeCaseFile(c, input.format);
+	} catch (error) {
+		throw new TellegenToolError(
+			'EXPORT_UNAVAILABLE',
+			clip(error instanceof Error ? error.message : String(error), 240)
+		);
+	}
+	return withBudgetedRows(
+		{
+			...displayedContext(ctrl),
+			format: input.format,
+			file_name: clip(written.fileName, 128),
+			bytes: written.bytes,
+			downloaded: true
+		},
+		diagnosticRows(written.diagnostics),
+		'diagnostics',
+		'diagnostic_count',
+		'diagnostics_truncated'
+	);
 }
 
 async function importCaseText(
-  ctrl: Controller,
-  input: ImportCaseInput,
-  signal: AbortSignal,
+	ctrl: Controller,
+	input: ImportCaseInput,
+	signal: AbortSignal
 ): Promise<ToolPayload> {
-  signal.throwIfAborted();
-  if (ctrl.app.studyView)
-    throw new TellegenToolError(
-      "SAVED_STATE_READ_ONLY",
-      "A saved state is displayed. Call select_case to return to a live case before opening a file.",
-    );
-  const before = new Set([
-    ...ctrl.app.localCases.map((c) => c.id),
-    ...ctrl.app.multiCases.map((c) => c.id),
-  ]);
-  const lastLogId = ctrl.app.log.entries.at(-1)?.id ?? 0;
-  ctrl.app.error = null;
-  // PSS/E dynamic data attaches to the displayed local case.
-  if (/\.dyr$/i.test(input.fileName)) {
-    if (!ctrl.app.dynamicsEnabled)
-      throw new TellegenToolError("DYNAMICS_OFF", DYNAMICS_OFF);
-    const target = ctrl.app.activeLocal;
-    if (!target)
-      throw new TellegenToolError(
-        "NO_ACTIVE_CASE",
-        "Dynamic data attaches to the displayed local case. Import its .raw case first.",
-      );
-    if (!target.studyInputJson)
-      throw new TellegenToolError(
-        "NO_ACTIVE_CASE",
-        `${target.label} has no network to simulate. Import its .raw case first.`,
-      );
-    // Never a modal in the middle of a tool call: replacing the user's
-    // dynamic data takes an explicit flag, after asking them.
-    const previous = ctrl.dynamics.attachments[target.id];
-    if (previous && !input.replaceDynamics)
-      throw new TellegenToolError(
-        "DYNAMICS_ATTACHED",
-        `${target.label} already has dynamic data (${previous.fileName}). Ask the user, then call import_case again with replace_dynamics: true.`,
-      );
-    ctrl.app.mode = "dynamics";
-    await ctrl.dynamics.attach(target, input.fileName, input.text);
-    const a = ctrl.dynamics.attachments[target.id];
-    // The attachment must be this file, not one that was there before.
-    if (
-      !a ||
-      a.text !== input.text ||
-      a.fileName !== input.fileName ||
-      a.status !== "ready"
-    )
-      throw new TellegenToolError(
-        "IMPORT_FAILED",
-        clip(
-          a?.error ??
-            ctrl.app.error ??
-            "The dynamic data could not be attached.",
-          240,
-        ),
-      );
-    const ins = a.inspection!;
-    return {
-      ...displayedContext(ctrl),
-      attached_to: target.id,
-      machines: ins.generators.length,
-      renewable_plants: ins.plants?.length ?? 0,
-      held_units: ins.held_units?.length ?? 0,
-      voltage_sources: ins.sources.length,
-      dyr_records: ins.dyr_records,
-      notes: ins.notes.length,
-    };
-  }
-  // The same path as a dropped file: PowerIO picks the reader by extension.
-  await ctrl.ingestFiles([new File([input.text], input.fileName)]);
-  await tick();
-  const opened = [
-    ...ctrl.app.localCases
-      .filter((c) => !before.has(c.id))
-      .map((c) => ({
-        case_id: c.id,
-        name: clip(c.label, 64),
-        kind: "local",
-        calculation:
-          c.studyInputJson && c.summary ? "balanced" : "display_only",
-        availability:
-          c.coordsKind === "synthetic_pending" ? "placement_required" : "ready",
-      })),
-    ...ctrl.app.multiCases
-      .filter((c) => !before.has(c.id))
-      .map((c) => ({
-        case_id: c.id,
-        name: clip(c.label, 64),
-        kind: "distribution",
-        calculation: c.mcPfSupported ? "multiconductor_ac_pf" : "display_only",
-        availability: c.placed ? "ready" : "placement_required",
-      })),
-  ];
-  if (opened.length === 0)
-    throw new TellegenToolError(
-      "IMPORT_FAILED",
-      clip(
-        ctrl.app.error ??
-          "No case could be read from the file. Check its format and try again.",
-        240,
-      ),
-    );
-  const findings = ctrl.app.log.entries.filter((entry) => entry.id > lastLogId);
-  return withBudgetedRows(
-    { ...displayedContext(ctrl), opened },
-    diagnosticRows(findings),
-    "diagnostics",
-    "diagnostic_count",
-    "diagnostics_truncated",
-  );
+	signal.throwIfAborted();
+	if (ctrl.app.studyView)
+		throw new TellegenToolError(
+			'SAVED_STATE_READ_ONLY',
+			'A saved state is displayed. Call select_case to return to a live case before opening a file.'
+		);
+	const before = new Set([
+		...ctrl.app.localCases.map((c) => c.id),
+		...ctrl.app.multiCases.map((c) => c.id)
+	]);
+	const lastLogId = ctrl.app.log.entries.at(-1)?.id ?? 0;
+	ctrl.app.error = null;
+	// PSS/E dynamic data attaches to the displayed local case.
+	if (/\.dyr$/i.test(input.fileName)) {
+		if (!ctrl.app.dynamicsEnabled) throw new TellegenToolError('DYNAMICS_OFF', DYNAMICS_OFF);
+		const target = ctrl.app.activeLocal;
+		if (!target)
+			throw new TellegenToolError(
+				'NO_ACTIVE_CASE',
+				'Dynamic data attaches to the displayed local case. Import its .raw case first.'
+			);
+		if (!target.studyInputJson)
+			throw new TellegenToolError(
+				'NO_ACTIVE_CASE',
+				`${target.label} has no network to simulate. Import its .raw case first.`
+			);
+		// Never a modal in the middle of a tool call: replacing the user's
+		// dynamic data takes an explicit flag, after asking them.
+		const previous = ctrl.dynamics.attachments[target.id];
+		if (previous && !input.replaceDynamics)
+			throw new TellegenToolError(
+				'DYNAMICS_ATTACHED',
+				`${target.label} already has dynamic data (${previous.fileName}). Ask the user, then call import_case again with replace_dynamics: true.`
+			);
+		ctrl.app.mode = 'dynamics';
+		await ctrl.dynamics.attach(target, input.fileName, input.text);
+		const a = ctrl.dynamics.attachments[target.id];
+		// The attachment must be this file, not one that was there before.
+		if (!a || a.text !== input.text || a.fileName !== input.fileName || a.status !== 'ready')
+			throw new TellegenToolError(
+				'IMPORT_FAILED',
+				clip(a?.error ?? ctrl.app.error ?? 'The dynamic data could not be attached.', 240)
+			);
+		const ins = a.inspection!;
+		return {
+			...displayedContext(ctrl),
+			attached_to: target.id,
+			machines: ins.generators.length,
+			renewable_plants: ins.plants?.length ?? 0,
+			held_units: ins.held_units?.length ?? 0,
+			voltage_sources: ins.sources.length,
+			dyr_records: ins.dyr_records,
+			notes: ins.notes.length
+		};
+	}
+	// The same path as a dropped file: PowerIO picks the reader by extension.
+	await ctrl.ingestFiles([new File([input.text], input.fileName)]);
+	await tick();
+	const opened = [
+		...ctrl.app.localCases
+			.filter((c) => !before.has(c.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.label, 64),
+				kind: 'local',
+				calculation: c.studyInputJson && c.summary ? 'balanced' : 'display_only',
+				availability: c.coordsKind === 'synthetic_pending' ? 'placement_required' : 'ready'
+			})),
+		...ctrl.app.multiCases
+			.filter((c) => !before.has(c.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.label, 64),
+				kind: 'distribution',
+				calculation: c.mcPfSupported ? 'multiconductor_ac_pf' : 'display_only',
+				availability: c.placed ? 'ready' : 'placement_required'
+			}))
+	];
+	if (opened.length === 0)
+		throw new TellegenToolError(
+			'IMPORT_FAILED',
+			clip(
+				ctrl.app.error ?? 'No case could be read from the file. Check its format and try again.',
+				240
+			)
+		);
+	const findings = ctrl.app.log.entries.filter((entry) => entry.id > lastLogId);
+	return withBudgetedRows(
+		{ ...displayedContext(ctrl), opened },
+		diagnosticRows(findings),
+		'diagnostics',
+		'diagnostic_count',
+		'diagnostics_truncated'
+	);
 }
 
 /** Case export and import over the controller's file paths. */
 function fileAdapter(
-  ctrl: Controller,
-  enqueue: <T>(operation: () => Promise<T>) => Promise<T>,
+	ctrl: Controller,
+	enqueue: <T>(operation: () => Promise<T>) => Promise<T>
 ): TellegenFileAdapter {
-  return {
-    exportFormats: [...CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT],
-    exportCase: (input, signal) =>
-      enqueue(() => exportCaseFile(ctrl, input, signal)),
-    importCase: (input, signal) =>
-      enqueue(() => importCaseText(ctrl, input, signal)),
-  };
+	return {
+		exportFormats: [...CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT],
+		exportCase: (input, signal) => enqueue(() => exportCaseFile(ctrl, input, signal)),
+		importCase: (input, signal) => enqueue(() => importCaseText(ctrl, input, signal))
+	};
 }
 
 /** Bind WebMCP to a controller. Planning and evidence are opt-in host capabilities.
  * Mutations are serialized and re-check revisions in queue order. Import this entry point only
  * in hosts that install the optional @tellegen/webmcp peer. */
 export function createTellegenWebMcpAdapter(
-  ctrl: Controller,
-  activities?: PlanningActivityStore,
-  workspace?: StudyWorkspace,
+	ctrl: Controller,
+	activities?: PlanningActivityStore,
+	workspace?: StudyWorkspace
 ): TellegenWebMcpAdapter {
-  let mutationTail: Promise<void> = Promise.resolve();
-  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
-    const next = mutationTail.then(operation, operation);
-    mutationTail = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
-  };
-  const observe = async (
-    tool: string,
-    input: unknown,
-    signal: AbortSignal,
-    run: () => ToolPayload | Promise<ToolPayload>,
-  ) => {
-    const context = workspace?.captureCaseEvidence();
-    const result = await run();
-    if (context) {
-      await workspace!.recordCaseEvidence(context, tool, input, result, signal);
-      const document = workspace!.document;
-      if (document && result.study_id === document.id)
-        result.study_revision = document.revision;
-    }
-    return result;
-  };
-  let planning: TellegenPlanningAdapter | undefined;
-  if (activities) {
-    planning = {
-      proposeCapacityPlan: (input, signal) =>
-        proposeCapacityPlan(ctrl, activities, workspace, input, signal),
-      applyCapacityPlan: (input, signal) =>
-        enqueue(() =>
-          applyCapacityPlan(ctrl, activities, workspace, input, signal),
-        ),
-      planningAvailable() {
-        if (ctrl.app.studyView) return false;
-        const c = ctrl.activeSolvable;
-        if (!c || !c.network || c.formulation !== "dcopf" || c.solving)
-          return false;
-        const cached = ctrl.caseStudies.get(c);
-        const ready = workspace
-          ? !!c.solution &&
-            !ctrl.studyUnavailable.has(c) &&
-            (!!c.studyInputJson || ctrl.isBackendCase(c))
-          : !!cached &&
-            cached.formulation === c.formulation &&
-            cached.studyInputJson === c.studyInputJson;
-        return (
-          ready &&
-          c.network.branches.every(
-            (branch) =>
-              branch.editable === false ||
-              !!branch.uid ||
-              fallbackBranchRow(c, branch) !== null,
-          )
-        );
-      },
-      proposalAvailable() {
-        if (ctrl.app.studyView) return false;
-        const c = ctrl.activeSolvable;
-        const staged = activities.proposal;
-        return (
-          !!c &&
-          !!staged &&
-          staged.caseId === c.id &&
-          staged.sessionId === SESSION_ID &&
-          staged.revision === caseRevision(c)
-        );
-      },
-      onAvailabilityChange: (listener) => activities.subscribe(listener),
-    };
-  }
-  return {
-    settings: (input, signal) =>
-      enqueue(async () => {
-        signal.throwIfAborted();
-        if (input.scope === "display") {
-          const prefs = ctrl.app.preferences;
-          if (
-            input.action !== "inspect" &&
-            input.settingsRevision !== prefs.revision
-          )
-            throw new TellegenToolError(
-              "STALE_REVISION",
-              "Display preferences changed. Call inspect_settings before retrying.",
-            );
-          if (input.action === "update") prefs.update(input.patch ?? {});
-          if (input.action === "reset") prefs.reset();
-          const color = prefs.coloring;
-          if (
-            input.action !== "inspect" &&
-            ctrl.displayOptions.some((x) => x.mode === color)
-          )
-            ctrl.app.displayMode = color;
-          return {
-            scope: "display",
-            settings_revision: prefs.revision,
-            selected: prefs.inspect(),
-            storage_error: prefs.error,
-          };
-        }
-        if (ctrl.app.studyView && input.action === "inspect") {
-          const recorded = recordedCalculationSettings(
-            ctrl.app.studyView.inputJson,
-          );
-          return {
-            ...displayedContext(ctrl),
-            editable: false,
-            calculation: ctrl.app.studyView.formulation,
-            accepted: recorded?.effective
-              ? JSON.parse(JSON.stringify(recorded.effective))
-              : null,
-            provenance: recorded ? "recorded" : "unavailable",
-          };
-        }
-        const c = ctrl.app.studyView
-          ? null
-          : (ctrl.app.activeMulti ?? ctrl.activeSolvable);
-        if (!c || (input.caseId && c.id !== input.caseId))
-          throw new TellegenToolError(
-            "STALE_CASE",
-            "The displayed case cannot be edited. Call select_case to show an editable case before changing its settings.",
-          );
-        if (
-          input.action !== "inspect" &&
-          displayedRevision(ctrl) !== input.expectedRevision
-        )
-          throw new TellegenToolError(
-            "STALE_REVISION",
-            "The case changed. Call inspect_case before retrying.",
-          );
-        if (
-          input.action !== "inspect" &&
-          c.settings.revision !== input.settingsRevision
-        )
-          throw new TellegenToolError(
-            "STALE_REVISION",
-            "Settings changed. Call inspect_settings before retrying.",
-          );
-        const selected = ctrl.inspectSettings(c);
-        if (input.action === "update" || input.action === "reset")
-          await ctrl.updateSettings(
-            c,
-            input.calculation ?? selected.calculation,
-            input.patch ?? {},
-            input.settingsRevision!,
-            input.action === "reset",
-          );
-        if (input.action === "run") await ctrl.runSettings(c, signal);
-        const snapshot = ctrl.inspectSettings(c);
-        if (input.field) {
-          const field = snapshot.fields.find((f) => f.key === input.field);
-          if (!field)
-            throw new TellegenToolError(
-              "INVALID_INPUT",
-              "That setting is not available for this calculation. Call inspect_settings to list valid fields.",
-            );
-          return JSON.parse(
-            JSON.stringify({
-              ...displayedContext(ctrl),
-              settings_revision: snapshot.settings_revision,
-              calculation: snapshot.calculation,
-              field,
-            }),
-          );
-        }
-        return JSON.parse(
-          JSON.stringify({
-            ...displayedContext(ctrl),
-            settings_revision: snapshot.settings_revision,
-            calculation: snapshot.calculation,
-            selected: snapshot.selected,
-            accepted: snapshot.accepted,
-            accepted_calculation: snapshot.accepted_calculation,
-            pending: snapshot.pending,
-          }),
-        );
-      }),
-    cases: {
-      listCases(input, signal) {
-        signal.throwIfAborted();
-        return listCases(ctrl, input);
-      },
-      selectCase: (input, signal) =>
-        enqueue(() => selectCase(ctrl, input, signal)),
-    },
-    // Dynamics is experimental: simulate_dynamics is registered only while
-    // the user has it on in Settings.
-    dynamicsAvailable: () => ctrl.app.dynamicsEnabled,
-    onDynamicsAvailabilityChange(listener) {
-      let enabled = ctrl.app.dynamicsEnabled;
-      return ctrl.app.preferences.subscribe(() => {
-        if (ctrl.app.dynamicsEnabled === enabled) return;
-        enabled = ctrl.app.dynamicsEnabled;
-        listener();
-      });
-    },
-    simulateDynamics: (input, signal) =>
-      enqueue(async () => {
-        signal.throwIfAborted();
-        if (!ctrl.app.dynamicsEnabled)
-          throw new TellegenToolError("DYNAMICS_OFF", DYNAMICS_OFF);
-        const local = ctrl.app.studyView ? null : ctrl.app.activeLocal;
-        if (!local || local.id !== input.caseId)
-          throw new TellegenToolError(
-            "STALE_CASE",
-            "The displayed case is not the one named. Call inspect_case before retrying.",
-          );
-        if (input.expectedRevision !== displayedRevision(ctrl))
-          throw new TellegenToolError(
-            "STALE_REVISION",
-            "The displayed case changed. Call inspect_case before retrying.",
-          );
-        const dyn = ctrl.dynamics;
-        const a = dyn.attachments[local.id];
-        if (!a || a.status !== "ready" || !a.inspection)
-          throw new TellegenToolError(
-            "INVALID_INPUT",
-            "The displayed case has no dynamic data. Import its .dyr with import_case, or open the WECC 240 dynamics demo.",
-          );
-        // One RMS worker: refuse rather than queue behind (or overwrite) the
-        // user's own run or modes.
-        if (dyn.running || dyn.modesBusy)
-          throw new TellegenToolError(
-            "BUSY",
-            dyn.running
-              ? "A dynamics run is in progress in the app. Wait for it to finish, then retry."
-              : "The app is computing small-signal modes. Wait for them to finish, or ask the user to stop them, then retry.",
-          );
-        let events;
-        try {
-          events = resolveAgentEvents(a.inspection, input.events);
-        } catch (e) {
-          if (e instanceof AgentInputError)
-            throw new TellegenToolError("INVALID_INPUT", e.message);
-          throw e;
-        }
-        const saved = {
-          events: dyn.events,
-          tEnd: dyn.tEnd,
-          dt: dyn.dt,
-          options: dyn.options,
-          current: dyn.currentRunId,
-          presetId: dyn.presetId,
-          mode: ctrl.app.mode,
-        };
-        dyn.events = events;
-        dyn.tEnd = input.tEndS;
-        dyn.dt = input.dtS;
-        dyn.presetId = null;
-        if (input.loadModel)
-          dyn.setOptions({ ...dyn.options, load_model: input.loadModel });
-        ctrl.app.mode = "dynamics";
-        const abort = () => dyn.stop();
-        signal.addEventListener("abort", abort, { once: true });
-        let record;
-        try {
-          record = await dyn.run({ agent: true });
-        } finally {
-          signal.removeEventListener("abort", abort);
-          if (!input.showInApp) {
-            dyn.events = saved.events;
-            dyn.tEnd = saved.tEnd;
-            dyn.dt = saved.dt;
-            dyn.options = saved.options;
-            dyn.presetId = saved.presetId;
-            if (saved.current !== null) dyn.select(saved.current);
-            else dyn.currentRunId = null;
-            ctrl.app.mode = saved.mode;
-          }
-        }
-        signal.throwIfAborted();
-        if (!record)
-          throw new TellegenToolError(
-            "INVALID_INPUT",
-            clip(dyn.error ?? "The run did not start.", 240),
-          );
-        if (!record.run)
-          return {
-            ...displayedContext(ctrl),
-            verdict: "failed",
-            failure: clip(record.failure?.message ?? "The run failed.", 400),
-          };
-        const context = displayedContext(ctrl);
-        return {
-          ...context,
-          ...agentSummary(record.run, {
-            channels: input.channels,
-            tracePoints: input.tracePoints,
-            wallMs: record.wallMs,
-            loadModel: record.options.load_model ?? "power_flow",
-            dtS: record.dt,
-            // What the summary's own JSON may take beside the context.
-            budget:
-              DEFAULT_OUTPUT_BUDGET -
-              JSON.stringify({ ok: true, data: context }).length,
-          }),
-        };
-      }),
-    solveMulticonductorPowerFlow: (input, signal) =>
-      enqueue(async () => {
-        signal.throwIfAborted();
-        const c = ctrl.app.studyView ? null : ctrl.app.activeMulti;
-        if (!c || c.id !== input.caseId)
-          throw new TellegenToolError(
-            "STALE_CASE",
-            "The displayed case is not multiconductor. Call select_case to show the multiconductor case before solving.",
-          );
-        if (displayedRevision(ctrl) !== input.expectedRevision)
-          throw new TellegenToolError(
-            "STALE_REVISION",
-            "The displayed case changed. Call inspect_case before solving.",
-          );
-        // Same scope as the Studies and details solve actions: a case with
-        // source-less islands is solved energized-only.
-        const result = await ctrl.solveMultiCase(
-          c,
-          input.maxIterations === undefined
-            ? {}
-            : { max_iterations: input.maxIterations },
-          signal,
-          c.mcEnergizedOnly || c.mcRequiresEnergizedSolve,
-        );
-        signal.throwIfAborted();
-        if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
-          throw new TellegenToolError(
-            "STALE_CASE",
-            "The displayed case changed during the calculation. Call inspect_case and retry.",
-          );
-        return {
-          ...displayedContext(ctrl),
-          converged: result.converged,
-          network_scope: result.network_scope
-            ? { ...result.network_scope }
-            : null,
-          load_model: result.load_model
-            ? {
-                ...result.load_model,
-                options: { ...result.load_model.options },
-              }
-            : null,
-          iterations: result.iterations,
-          terminal_count: result.terminal_count,
-          kcl_residual_a: result.physical_kcl_residual,
-          scaled_kcl_residual: result.scaled_kcl_residual,
-          solve_ms: c.solveMs,
-        };
-      }),
-    ...(planning ? { planning } : {}),
-    files: fileAdapter(ctrl, enqueue),
-    inspectCase(signal) {
-      signal.throwIfAborted();
-      return observe("inspect_case", {}, signal, () =>
-        inspect(ctrl, activities, signal),
-      );
-    },
-    queryNetwork(input, signal) {
-      signal.throwIfAborted();
-      return observe("query_network", input, signal, () => query(ctrl, input));
-    },
-    analyzeSensitivity: (input, signal) =>
-      observe("analyze_sensitivity", input, signal, () =>
-        sensitivity(ctrl, input, signal),
-      ),
-    focusNetwork: (input, signal) => enqueue(() => focus(ctrl, input, signal)),
-    previewCaseUpdate: (input, signal) => preview(ctrl, input, signal),
-    updateCase: (input, signal) => enqueue(() => update(ctrl, input, signal)),
-    resetCase: (input, signal) => enqueue(() => reset(ctrl, input, signal)),
-  };
+	let mutationTail: Promise<void> = Promise.resolve();
+	const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
+		const next = mutationTail.then(operation, operation);
+		mutationTail = next.then(
+			() => undefined,
+			() => undefined
+		);
+		return next;
+	};
+	const observe = async (
+		tool: string,
+		input: unknown,
+		signal: AbortSignal,
+		run: () => ToolPayload | Promise<ToolPayload>
+	) => {
+		const context = workspace?.captureCaseEvidence();
+		const result = await run();
+		if (context) {
+			await workspace!.recordCaseEvidence(context, tool, input, result, signal);
+			const document = workspace!.document;
+			if (document && result.study_id === document.id) result.study_revision = document.revision;
+		}
+		return result;
+	};
+	let planning: TellegenPlanningAdapter | undefined;
+	if (activities) {
+		planning = {
+			proposeCapacityPlan: (input, signal) =>
+				proposeCapacityPlan(ctrl, activities, workspace, input, signal),
+			applyCapacityPlan: (input, signal) =>
+				enqueue(() => applyCapacityPlan(ctrl, activities, workspace, input, signal)),
+			planningAvailable() {
+				if (ctrl.app.studyView) return false;
+				const c = ctrl.activeSolvable;
+				if (!c || !c.network || c.formulation !== 'dcopf' || c.solving) return false;
+				const cached = ctrl.caseStudies.get(c);
+				const ready = workspace
+					? !!c.solution &&
+						!ctrl.studyUnavailable.has(c) &&
+						(!!c.studyInputJson || ctrl.isBackendCase(c))
+					: !!cached &&
+						cached.formulation === c.formulation &&
+						cached.studyInputJson === c.studyInputJson;
+				return (
+					ready &&
+					c.network.branches.every(
+						(branch) =>
+							branch.editable === false || !!branch.uid || fallbackBranchRow(c, branch) !== null
+					)
+				);
+			},
+			proposalAvailable() {
+				if (ctrl.app.studyView) return false;
+				const c = ctrl.activeSolvable;
+				const staged = activities.proposal;
+				return (
+					!!c &&
+					!!staged &&
+					staged.caseId === c.id &&
+					staged.sessionId === SESSION_ID &&
+					staged.revision === caseRevision(c)
+				);
+			},
+			onAvailabilityChange: (listener) => activities.subscribe(listener)
+		};
+	}
+	return {
+		settings: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				if (input.scope === 'display') {
+					const prefs = ctrl.app.preferences;
+					if (input.action !== 'inspect' && input.settingsRevision !== prefs.revision)
+						throw new TellegenToolError(
+							'STALE_REVISION',
+							'Display preferences changed. Call inspect_settings before retrying.'
+						);
+					if (input.action === 'update') prefs.update(input.patch ?? {});
+					if (input.action === 'reset') prefs.reset();
+					const color = prefs.coloring;
+					if (input.action !== 'inspect' && ctrl.displayOptions.some((x) => x.mode === color))
+						ctrl.app.displayMode = color;
+					return {
+						scope: 'display',
+						settings_revision: prefs.revision,
+						selected: prefs.inspect(),
+						storage_error: prefs.error
+					};
+				}
+				if (ctrl.app.studyView && input.action === 'inspect') {
+					const recorded = recordedCalculationSettings(ctrl.app.studyView.inputJson);
+					return {
+						...displayedContext(ctrl),
+						editable: false,
+						calculation: ctrl.app.studyView.formulation,
+						accepted: recorded?.effective ? JSON.parse(JSON.stringify(recorded.effective)) : null,
+						provenance: recorded ? 'recorded' : 'unavailable'
+					};
+				}
+				const c = ctrl.app.studyView ? null : (ctrl.app.activeMulti ?? ctrl.activeSolvable);
+				if (!c || (input.caseId && c.id !== input.caseId))
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'The displayed case cannot be edited. Call select_case to show an editable case before changing its settings.'
+					);
+				if (input.action !== 'inspect' && displayedRevision(ctrl) !== input.expectedRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'The case changed. Call inspect_case before retrying.'
+					);
+				if (input.action !== 'inspect' && c.settings.revision !== input.settingsRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'Settings changed. Call inspect_settings before retrying.'
+					);
+				const selected = ctrl.inspectSettings(c);
+				if (input.action === 'update' || input.action === 'reset')
+					await ctrl.updateSettings(
+						c,
+						input.calculation ?? selected.calculation,
+						input.patch ?? {},
+						input.settingsRevision!,
+						input.action === 'reset'
+					);
+				if (input.action === 'run') await ctrl.runSettings(c, signal);
+				const snapshot = ctrl.inspectSettings(c);
+				if (input.field) {
+					const field = snapshot.fields.find((f) => f.key === input.field);
+					if (!field)
+						throw new TellegenToolError(
+							'INVALID_INPUT',
+							'That setting is not available for this calculation. Call inspect_settings to list valid fields.'
+						);
+					return JSON.parse(
+						JSON.stringify({
+							...displayedContext(ctrl),
+							settings_revision: snapshot.settings_revision,
+							calculation: snapshot.calculation,
+							field
+						})
+					);
+				}
+				return JSON.parse(
+					JSON.stringify({
+						...displayedContext(ctrl),
+						settings_revision: snapshot.settings_revision,
+						calculation: snapshot.calculation,
+						selected: snapshot.selected,
+						accepted: snapshot.accepted,
+						accepted_calculation: snapshot.accepted_calculation,
+						pending: snapshot.pending
+					})
+				);
+			}),
+		cases: {
+			listCases(input, signal) {
+				signal.throwIfAborted();
+				return listCases(ctrl, input);
+			},
+			selectCase: (input, signal) => enqueue(() => selectCase(ctrl, input, signal))
+		},
+		// Dynamics is experimental: simulate_dynamics is registered only while
+		// the user has it on in Settings.
+		dynamicsAvailable: () => ctrl.app.dynamicsEnabled,
+		onDynamicsAvailabilityChange(listener) {
+			let enabled = ctrl.app.dynamicsEnabled;
+			return ctrl.app.preferences.subscribe(() => {
+				if (ctrl.app.dynamicsEnabled === enabled) return;
+				enabled = ctrl.app.dynamicsEnabled;
+				listener();
+			});
+		},
+		simulateDynamics: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				if (!ctrl.app.dynamicsEnabled) throw new TellegenToolError('DYNAMICS_OFF', DYNAMICS_OFF);
+				const local = ctrl.app.studyView ? null : ctrl.app.activeLocal;
+				if (!local || local.id !== input.caseId)
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'The displayed case is not the one named. Call inspect_case before retrying.'
+					);
+				if (input.expectedRevision !== displayedRevision(ctrl))
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'The displayed case changed. Call inspect_case before retrying.'
+					);
+				const dyn = ctrl.dynamics;
+				const a = dyn.attachments[local.id];
+				if (!a || a.status !== 'ready' || !a.inspection)
+					throw new TellegenToolError(
+						'INVALID_INPUT',
+						'The displayed case has no dynamic data. Import its .dyr with import_case, or open the WECC 240 dynamics demo.'
+					);
+				// One RMS worker: refuse rather than queue behind (or overwrite) the
+				// user's own run or modes.
+				if (dyn.running || dyn.modesBusy)
+					throw new TellegenToolError(
+						'BUSY',
+						dyn.running
+							? 'A dynamics run is in progress in the app. Wait for it to finish, then retry.'
+							: 'The app is computing small-signal modes. Wait for them to finish, or ask the user to stop them, then retry.'
+					);
+				let events;
+				try {
+					events = resolveAgentEvents(a.inspection, input.events);
+				} catch (e) {
+					if (e instanceof AgentInputError) throw new TellegenToolError('INVALID_INPUT', e.message);
+					throw e;
+				}
+				const saved = {
+					events: dyn.events,
+					tEnd: dyn.tEnd,
+					dt: dyn.dt,
+					options: dyn.options,
+					current: dyn.currentRunId,
+					presetId: dyn.presetId,
+					mode: ctrl.app.mode
+				};
+				dyn.events = events;
+				dyn.tEnd = input.tEndS;
+				dyn.dt = input.dtS;
+				dyn.presetId = null;
+				if (input.loadModel) dyn.setOptions({ ...dyn.options, load_model: input.loadModel });
+				ctrl.app.mode = 'dynamics';
+				const abort = () => dyn.stop();
+				signal.addEventListener('abort', abort, { once: true });
+				let record;
+				try {
+					record = await dyn.run({ agent: true });
+				} finally {
+					signal.removeEventListener('abort', abort);
+					if (!input.showInApp) {
+						dyn.events = saved.events;
+						dyn.tEnd = saved.tEnd;
+						dyn.dt = saved.dt;
+						dyn.options = saved.options;
+						dyn.presetId = saved.presetId;
+						if (saved.current !== null) dyn.select(saved.current);
+						else dyn.currentRunId = null;
+						ctrl.app.mode = saved.mode;
+					}
+				}
+				signal.throwIfAborted();
+				if (!record)
+					throw new TellegenToolError(
+						'INVALID_INPUT',
+						clip(dyn.error ?? 'The run did not start.', 240)
+					);
+				if (!record.run)
+					return {
+						...displayedContext(ctrl),
+						verdict: 'failed',
+						failure: clip(record.failure?.message ?? 'The run failed.', 400)
+					};
+				const context = displayedContext(ctrl);
+				return {
+					...context,
+					...agentSummary(record.run, {
+						channels: input.channels,
+						tracePoints: input.tracePoints,
+						wallMs: record.wallMs,
+						loadModel: record.options.load_model ?? 'power_flow',
+						dtS: record.dt,
+						// What the summary's own JSON may take beside the context.
+						budget: DEFAULT_OUTPUT_BUDGET - JSON.stringify({ ok: true, data: context }).length
+					})
+				};
+			}),
+		solveMulticonductorPowerFlow: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				const c = ctrl.app.studyView ? null : ctrl.app.activeMulti;
+				if (!c || c.id !== input.caseId)
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'The displayed case is not multiconductor. Call select_case to show the multiconductor case before solving.'
+					);
+				if (displayedRevision(ctrl) !== input.expectedRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'The displayed case changed. Call inspect_case before solving.'
+					);
+				// Same scope as the Studies and details solve actions: a case with
+				// source-less islands is solved energized-only.
+				const result = await ctrl.solveMultiCase(
+					c,
+					input.maxIterations === undefined ? {} : { max_iterations: input.maxIterations },
+					signal,
+					c.mcEnergizedOnly || c.mcRequiresEnergizedSolve
+				);
+				signal.throwIfAborted();
+				if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'The displayed case changed during the calculation. Call inspect_case and retry.'
+					);
+				return {
+					...displayedContext(ctrl),
+					converged: result.converged,
+					network_scope: result.network_scope ? { ...result.network_scope } : null,
+					load_model: result.load_model
+						? {
+								...result.load_model,
+								options: { ...result.load_model.options }
+							}
+						: null,
+					iterations: result.iterations,
+					terminal_count: result.terminal_count,
+					kcl_residual_a: result.physical_kcl_residual,
+					scaled_kcl_residual: result.scaled_kcl_residual,
+					solve_ms: c.solveMs
+				};
+			}),
+		...(planning ? { planning } : {}),
+		files: fileAdapter(ctrl, enqueue),
+		inspectCase(signal) {
+			signal.throwIfAborted();
+			return observe('inspect_case', {}, signal, () => inspect(ctrl, activities, signal));
+		},
+		queryNetwork(input, signal) {
+			signal.throwIfAborted();
+			return observe('query_network', input, signal, () => query(ctrl, input));
+		},
+		analyzeSensitivity: (input, signal) =>
+			observe('analyze_sensitivity', input, signal, () => sensitivity(ctrl, input, signal)),
+		focusNetwork: (input, signal) => enqueue(() => focus(ctrl, input, signal)),
+		previewCaseUpdate: (input, signal) => preview(ctrl, input, signal),
+		updateCase: (input, signal) => enqueue(() => update(ctrl, input, signal)),
+		resetCase: (input, signal) => enqueue(() => reset(ctrl, input, signal))
+	};
 }
 
 export {
-  capacityPlanExactPhiDelta,
-  capacityPlanPredictedPhiDelta,
-  capacityPlanFirstOrderError,
-} from "./webmcp-metrics.js";
+	capacityPlanExactPhiDelta,
+	capacityPlanPredictedPhiDelta,
+	capacityPlanFirstOrderError
+} from './webmcp-metrics.js';
