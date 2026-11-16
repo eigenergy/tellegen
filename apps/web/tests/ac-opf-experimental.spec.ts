@@ -68,14 +68,14 @@ for (const mode of ['preview', 'development']) {
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
 		await runCalculation(page, 'acopf');
-		await expect(page.locator('.solvecard')).toContainText('AC OPF');
+		await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'acopf');
 		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 		await expect(calculation).toBeEnabled();
 		await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 			'aria-pressed',
 			'true'
 		);
-		await expect(page.getByRole('button', { name: 'LMP', exact: true })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveCount(0);
 		await expect(page.locator('.error')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'Save case', exact: true })).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'Export as', exact: true })).toBeDisabled();

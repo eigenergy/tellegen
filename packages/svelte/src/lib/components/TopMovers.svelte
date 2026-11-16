@@ -4,10 +4,11 @@
 	import { signedSmall } from '../format.js';
 
 	const ctrl = getController();
+	// Per MW, as the readout above: a rating moves in MW on its slider.
 	const units = $derived(
 		dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW').replace(
 			/\(\$\/MWh\)\/(MW|MVA)\b/,
-			'$$/MWh per $1'
+			'$$/MWh per MW'
 		)
 	);
 </script>

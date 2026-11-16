@@ -48,7 +48,9 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	// The solver's result is part of the Network panel.
 	const networkTab = page.getByRole('button', { name: 'Network', exact: true });
 	if ((await networkTab.getAttribute('aria-pressed')) !== 'true') await networkTab.click();
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	// Compact panels share one drawer.
 	const sheet = page.locator('[data-panel="network"].mobile');

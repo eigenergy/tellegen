@@ -433,7 +433,7 @@
 				scalarLo,
 				scalarHi,
 				scalarMode,
-				scalarLabel: activeMeta?.label ?? 'LMP',
+				scalarLabel: activeMeta?.label ?? 'Price',
 				scalarUnit: activeMeta?.unit ?? '$/MWh',
 				loading,
 				mode,

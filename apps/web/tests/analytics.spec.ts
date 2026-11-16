@@ -43,7 +43,9 @@ test('public-host usage counts post only approved fields, carry the cache token 
 		{ name: 'PRIVATE_SECRET.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'PRIVATE_SECRET.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	await expect
 		.poll(() => collected.map((event) => event.body.payload.name))
 		.toContain('case.select');

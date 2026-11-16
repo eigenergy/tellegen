@@ -20,12 +20,9 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 	if (c.formulation !== 'acpf' && c.solution.prices.length > 0) {
 		options.push({
 			mode: 'price',
-			label: 'LMP',
+			label: 'Price',
 			unit: '$/MWh',
-			copy:
-				c.formulation === 'socwr'
-					? 'Locational marginal price, SOCWR relaxation'
-					: 'Locational marginal price',
+			copy: 'Price',
 			// The legend follows the map's theme: styles.css sets the dark ramp.
 			gradient: `var(--tellegen-price-ramp, ${priceGradient})`
 		});
@@ -35,7 +32,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			mode: 'voltage',
 			label: 'Voltage',
 			unit: 'pu',
-			copy: c.formulation === 'socwr' ? 'Voltage magnitude, SOCWR relaxation' : 'Voltage magnitude',
+			copy: 'Voltage',
 			gradient: priceGradient
 		});
 	}

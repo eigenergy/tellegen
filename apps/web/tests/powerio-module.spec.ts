@@ -18,7 +18,9 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) },
 		{ name: 'case14synthetic.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	const downloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'Save case', exact: true }).click();
@@ -51,7 +53,9 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		.setInputFiles([
 			{ name: 'saved.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
 		]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	await expect(page.locator('p.error')).toHaveCount(0);
 });
 

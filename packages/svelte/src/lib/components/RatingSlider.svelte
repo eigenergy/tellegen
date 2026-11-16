@@ -34,11 +34,7 @@
 		</div>
 		<div class="line-row">
 			{#if branch}
-				<span class="dim"
-					>Line <span class="mono"
-						>{branch.from}&#8201;&ndash;&#8201;{branch.to}, {fmt.format(branch.rate_mw)} MW</span
-					></span
-				>
+				<span class="dim">Rating <span class="mono">{fmt.format(branch.rate_mw)} MW</span></span>
 			{/if}
 			{#if bounds.disabled}
 				<span class="dim">Not adjustable</span>
@@ -269,5 +265,9 @@
 
 	.reset-row {
 		min-height: 28px;
+	}
+
+	.rating-feedback.idle .reset-row {
+		display: none;
 	}
 </style>

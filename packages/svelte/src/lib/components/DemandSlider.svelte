@@ -284,4 +284,8 @@
 	.reset-row {
 		min-height: 28px;
 	}
+
+	.demand-feedback.idle .reset-row {
+		display: none;
+	}
 </style>

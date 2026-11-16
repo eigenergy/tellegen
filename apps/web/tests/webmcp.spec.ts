@@ -71,7 +71,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected.ok).toBe(true);
@@ -314,7 +316,9 @@ test('pending formulation settings preserve displayed-case inspection until an e
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	// The card names the calculation while its import solve is still running.
 	// Race a permitted settings change with inspection, not a synthetic event on a disabled control.
 	await expect(page.locator('#formulation-select')).toBeEnabled();
@@ -381,7 +385,9 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'error');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();

@@ -2,14 +2,14 @@
 	import { sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
-	import { signedSmall, small } from '../format.js';
+	import { lineName, signedSmall, small } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
-	/** The engine's units, read out: ($/MWh)/MW becomes "$/MWh per MW", and a
-	 * rating's ($/MWh)/MVA becomes "$/MWh per MVA". */
+	/** The engine's units, read out: ($/MWh)/MW becomes "$/MWh per MW". A rating's
+	 * ($/MWh)/MVA is read per MW too, the unit the rating slider beside it moves in. */
 	const perMw = (units: string) =>
-		dollarUnits(units).replace(/\(\$\/MWh\)\/(MW|MVA)\b/, '$$/MWh per $1');
+		dollarUnits(units).replace(/\(\$\/MWh\)\/(MW|MVA)\b/, '$$/MWh per MW');
 	const reportedUnits = $derived(perMw(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 
 	// Branch mode: the selection is a line and the column is price/rating; the
@@ -23,13 +23,13 @@
 			: ctrl.sliderValue - ctrl.committedDelta
 	);
 
-	// Label the selected line by its bus pair, matching BindingLines and
-	// RatingSlider; fall back to the raw branch id while the network loads.
-	const branchLabel = $derived.by(() => {
+	// Name the selected line as BindingLines and the diagram do; fall back to the raw
+	// branch id while the network loads.
+	const title = $derived.by(() => {
+		if (!branchMode) return `Bus ${app.selectedBus}`;
 		const b = ctrl.selectedBranchData;
-		return b ? `${b.from} – ${b.to}` : String(app.selectedBranch);
+		return b ? lineName(b) : `Line ${app.selectedBranch}`;
 	});
-	const title = $derived(branchMode ? `Line ${branchLabel}` : `Bus ${app.selectedBus}`);
 </script>
 
 <div class="mode readout-head">
@@ -82,8 +82,11 @@
 </div>
 
 <style>
+	/* The title on the left and Clear on the right, on a phone too. */
 	.readout-head {
 		align-items: flex-start;
+		justify-content: space-between;
+		flex-wrap: nowrap;
 	}
 
 	.readout-title {
@@ -99,6 +102,6 @@
 	   override and break the mobile layout. See the note by .mode in app.css. */
 
 	.sensitivity-readout {
-		min-height: 58px;
+		margin-bottom: 4px;
 	}
 </style>

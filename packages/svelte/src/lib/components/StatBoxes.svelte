@@ -11,7 +11,7 @@
 			<div class={['stat', stat.tone]}>
 				<dt>{stat.label}</dt>
 				<dd>
-					<span class="value">{stat.value}</span>
+					<span class="value" title={stat.value}>{stat.value}</span>
 					{#if stat.sub}<span class="sub">{stat.sub}</span>{/if}
 				</dd>
 			</div>
@@ -20,9 +20,10 @@
 {/if}
 
 <style>
+	/* Two equal columns wherever the boxes appear, so the Network panel and the diagram match. */
 	.stats {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 8px;
 		margin: 0 0 var(--space-lg);
 	}
@@ -34,6 +35,9 @@
 		background: var(--surface-panel);
 	}
 	dt {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 		font-size: var(--fs-label);
 		color: var(--text-secondary);
 		white-space: nowrap;
@@ -45,10 +49,14 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 2px 8px;
+		min-width: 0;
 		margin: 2px 0 0;
 		font-variant-numeric: tabular-nums lining-nums;
 	}
 	.value {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		font-size: var(--fs-display);
 		font-weight: 600;
 		line-height: var(--lh-tight);
@@ -60,14 +68,16 @@
 		color: var(--text-secondary);
 		white-space: nowrap;
 	}
-	/* A count that needs attention carries a coloured edge: amber near a limit, red over it. */
-	.warning {
-		box-shadow: inset 3px 0 0 var(--amber);
-	}
-	.failure {
-		box-shadow: inset 3px 0 0 var(--red);
-	}
+	/* Colour by tone, the same as the map: red at or over a limit, an amber dot near one. */
 	.failure .value {
-		color: var(--text-danger);
+		color: var(--red);
+	}
+	.warning dt::before {
+		content: '';
+		flex: none;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--amber);
 	}
 </style>

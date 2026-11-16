@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
+	import { lineName } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -36,7 +37,7 @@
 						aria-pressed={app.selectedBranch === branch.id}
 						onclick={() => select(branch.id)}
 					>
-						Line <span class="mono">{branch.from}&#8201;&ndash;&#8201;{branch.to}</span>
+						<span>{lineName(branch)}</span>
 						<span class="mono load">{Math.round(loading * 100)}%</span>
 					</button>
 				</li>

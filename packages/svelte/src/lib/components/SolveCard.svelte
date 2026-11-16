@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
 	import {
+		cleanStatus,
 		duration,
 		iterationCount,
 		savedVerdict,
@@ -54,6 +55,10 @@
 	);
 	const status = $derived(saved ? saved.solution?.status : active?.solution?.status);
 	const calculation = $derived(saved ? saved.formulation : (active?.formulation ?? null));
+	/** A power flow that solves is "Converged"; "Feasible" is an optimiser's word. */
+	const statusText = $derived(
+		calculation === 'acpf' && cleanStatus(status) ? 'Converged' : statusWords(status)
+	);
 	const ms = $derived(saved ? null : (active?.solveMs ?? null));
 	const failure = $derived(failed ? app.error : null);
 	const hasDetails = $derived(
@@ -68,7 +73,10 @@
 </script>
 
 {#snippet card()}
-	<div class="solvecard">
+	<div
+		class="solvecard"
+		data-calculation={active?.solving ? undefined : (calculation ?? undefined)}
+	>
 		<!-- In the Network panel the Calculation row already says "Solving…". -->
 		{#if verdict && !(embedded && verdict.tone === 'pending' && !saved)}
 			<p class={['verdict', verdict.tone]} role="status">{verdict.text}</p>
@@ -82,7 +90,7 @@
 					{/key}
 				{/if}
 				<dl>
-					{#if calculation}
+					{#if calculation && (saved || !embedded)}
 						<div>
 							<dt>Calculation</dt>
 							<dd>{formulationLabel(calculation)}</dd>
@@ -91,7 +99,7 @@
 					{#if status && !failed}
 						<div>
 							<dt>Status</dt>
-							<dd>{statusWords(status)}</dd>
+							<dd>{statusText}</dd>
 						</div>
 					{/if}
 					{#if count !== null}

@@ -58,10 +58,10 @@
 			<label class="map-values"
 				>{saved.network.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}
 				<select bind:value={app.displayMode}>
-					{#if saved.solution.lmp?.length}<option value="price">LMP</option>{/if}
-					{#if saved.solution.va?.length}<option value="angle">Voltage angle</option>{/if}
+					{#if saved.solution.lmp?.length}<option value="price">Price</option>{/if}
+					{#if saved.solution.va?.length}<option value="angle">Angle</option>{/if}
 					{#if saved.solution.vm?.length || saved.solution.w?.length}<option value="voltage"
-							>Voltage magnitude</option
+							>Voltage</option
 						>{/if}
 				</select>
 			</label>

@@ -175,7 +175,8 @@ export function resultStats(input: ResultStatsInput): Stat[] {
 		stats.push({
 			label: 'Lines at limit',
 			value: n === null ? missing : n.toLocaleString('en-US'),
-			tone: n ? 'warning' : 'ok'
+			// A line at its limit is at 100% of its rating: red, as on the map.
+			tone: n ? 'failure' : 'ok'
 		});
 	}
 	return stats;

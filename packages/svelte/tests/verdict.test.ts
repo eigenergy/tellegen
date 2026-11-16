@@ -85,7 +85,7 @@ describe('solveVerdict', () => {
 			})?.text
 		).toBe('DC OPF infeasible');
 		expect(solveVerdict({ formulation: 'socwr', solving: false, failed: true })?.text).toBe(
-			'SOCWR failed'
+			'Relaxed AC OPF failed'
 		);
 	});
 });
@@ -109,7 +109,7 @@ describe('resultStats', () => {
 	it('gives an OPF its operational cost and the lines at their limit', () => {
 		expect(resultStats({ formulation: 'dcopf', objective: 1234.5, binding: 2 })).toEqual([
 			{ label: 'Operational cost', value: '$1,235/h', sub: undefined },
-			{ label: 'Lines at limit', value: '2', tone: 'warning' }
+			{ label: 'Lines at limit', value: '2', tone: 'failure' }
 		]);
 		expect(resultStats({ formulation: 'dcopf', objective: 10, binding: 0 })[1].tone).toBe('ok');
 	});

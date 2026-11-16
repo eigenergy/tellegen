@@ -44,7 +44,10 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeVisible();
 	await expect(solveCard.locator('dt', { hasText: 'Iterations' })).toBeVisible();
 	await expect(solveCard.locator('dt', { hasText: 'Time' })).toBeVisible();
-	await expect(solveCard.locator('dd').first()).toHaveText('DC OPF');
+	await expect(solveCard).toHaveAttribute('data-calculation', 'dcopf');
+	// The Calculation select sits right above: Details does not repeat it.
+	await expect(solveCard.locator('dt', { hasText: 'Calculation' })).toHaveCount(0);
+	await expect(solveCard.locator('dd').first()).toHaveText('Optimal');
 	await expect(solveCard).not.toContainText('Server');
 	await expect(solveCard).not.toContainText('Fallback');
 });
@@ -71,7 +74,9 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	// Select a bus through the keyboard path and wait for the browser column.
 	const lookup = page.locator('#bus-lookup-input');
@@ -128,7 +133,9 @@ test('arrow keys commit a demand step on a bus under 50 MW', async ({ page }) =>
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	// Bus 11 carries 3.5 MW, so its nearby range spans 8 MW. The native 1%
 	// arrow step of 0.08 MW stayed inside the 0.25 MW dead zone and committed
@@ -171,7 +178,9 @@ test('network and solver panel text is at least 12 px', async ({ page }) => {
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('11');
 	await lookup.press('Enter');

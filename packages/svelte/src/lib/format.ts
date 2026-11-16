@@ -11,6 +11,11 @@ export function formulationLabel(id: Formulation): string {
 	return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
 }
 
+/** A line's name everywhere it is listed: its id and the buses it joins. */
+export function lineName(line: { id: number; from: number; to: number }): string {
+	return `Line ${line.id} (${line.from}–${line.to})`;
+}
+
 export function formulationHint(id: Formulation): string {
 	return FORMULATIONS.find((f) => f.id === id)?.hint ?? id;
 }

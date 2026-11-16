@@ -50,12 +50,15 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_CONGESTED) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	// The tightened line binds, so the panel lists it as the selection target.
 	const bindingLine = page.locator('.binding-lines button');
 	await expect(bindingLine).toHaveCount(1);
-	await expect(bindingLine).toContainText('Line 2');
+	// Named as everywhere else: the line's id and the buses it joins.
+	await expect(bindingLine).toContainText('Line 3 (2–3)');
 	await expect(bindingLine).toContainText('100%');
 
 	const mapCanvas = page.locator('.map canvas').first();
@@ -102,7 +105,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await expect(page.getByTestId('sensitivity-title').filter({ hasText: /^Line / })).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(page.getByTestId('sensitivity-readout')).toContainText(/\$\/MWh per MVA?\b/);
+	await expect(page.getByTestId('sensitivity-readout')).toContainText(/\$\/MWh per MW\b/);
 	// A binding line's column is structured, not the flat/uniform tint.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
 	await expect(labels).not.toContainText('Uniform:');
