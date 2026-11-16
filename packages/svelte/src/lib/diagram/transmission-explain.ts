@@ -2,7 +2,7 @@
  * the choice of numbers is tested without a renderer. The docs page explains the quantities. */
 
 import type { operatingExceptions } from './transmission-inspection.js';
-import type { Stat } from './verdict.js';
+import { limitWords, type Stat } from './verdict.js';
 
 /** A view's summary: labelled numbers, or one short line when there is nothing to count. */
 export interface Lead {
@@ -28,6 +28,8 @@ export function docsLink(root: string, view: keyof typeof DOC_SECTIONS): string 
 const n = (value: number) => value.toLocaleString('en-US');
 
 export interface OperatingLeadInput {
+	/** The calculation, which names lines at or over their rating as the Network panel does. */
+	formulation?: string;
 	hasResult: boolean;
 	/** The calculation solves voltage magnitudes (AC); DC does not. */
 	voltageSolved: boolean;
@@ -46,7 +48,12 @@ export function operatingLead(input: OperatingLeadInput): Lead {
 	const stats: Stat[] = [];
 	// One name for a line at or over its rating, as in the Network panel.
 	const atLimit = counts.overload + counts.atLimit;
-	if (atLimit) stats.push({ label: 'Lines at limit', value: n(atLimit), tone: 'failure' });
+	if (atLimit)
+		stats.push({
+			label: limitWords(input.formulation).lines,
+			value: n(atLimit),
+			tone: 'failure'
+		});
 	if (counts.warning)
 		stats.push({
 			label: `${input.warning}–100%`,

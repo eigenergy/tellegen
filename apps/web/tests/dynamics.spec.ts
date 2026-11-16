@@ -56,13 +56,10 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await expect(key).toContainText('Generator speed');
 	// The Network panel keeps the steady-state numbers, as on every other case, and has no
 	// empty placeholder before a bus or line is picked.
-	// The demo case has no generator costs: the cost box says so, in place of a $0 cost, and the
-	// heaviest line shows.
+	// The demo case has no generator costs: no $0 cost box, and the heaviest line shows.
 	const stats = page.locator('[data-panel="network"] dl.stats');
 	await expect(stats).toContainText('Max loading', { timeout: 60_000 });
-	await expect(stats.locator('.stat', { hasText: 'Operational cost' })).toContainText(
-		'No costs in case'
-	);
+	await expect(stats.locator('.stat', { hasText: 'Operational cost' })).toHaveCount(0);
 	await expect(stats).not.toContainText('$0');
 	await expect(page.locator('[data-panel="network"]')).not.toContainText('Select a bus or line');
 	await shot(page, '01-demo-loaded');

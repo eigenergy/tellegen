@@ -145,9 +145,21 @@ describe("resultStats", () => {
     expect(
       resultStats({ formulation: "socwr", objective: 1300, binding: 0 })[0],
     ).toMatchObject({
-      label: "Cost lower bound",
+      label: "Operational cost",
       value: "$1,300/h",
+      sub: "lower bound",
     });
+    expect(
+      resultStats({
+        formulation: "socwr",
+        objective: 1300,
+        binding: 0,
+        deltaObjective: 120,
+      })[0].sub,
+    ).toBe("lower bound, +$120/h");
+    expect(
+      resultStats({ formulation: "dcopf", objective: 1300, binding: 0 })[0].sub,
+    ).toBeUndefined();
   });
 
   it("shows the change from the base case under the cost", () => {
@@ -202,13 +214,13 @@ describe("resultStats", () => {
       }).map((s) => s.label),
     ).toEqual([
       "Losses",
-      "Lines at limit",
+      "Lines over limit",
       "Lowest voltage",
       "Highest voltage",
     ]);
   });
 
-  it("says an OPF case has no costs, not $0, and shows its heaviest line", () => {
+  it("leaves out a $0 cost for an OPF case without costs and shows its heaviest line", () => {
     expect(
       resultStats({
         formulation: "dcopf",
@@ -217,7 +229,6 @@ describe("resultStats", () => {
         maxLoading: 0.75,
       }).map((s) => [s.label, s.value]),
     ).toEqual([
-      ["Operational cost", "No costs in case"],
       ["Max loading", "75.0%"],
       ["Lines at limit", "0"],
     ]);
@@ -233,7 +244,7 @@ describe("resultStats", () => {
       }).map((s) => [s.label, s.value]),
     ).toEqual([
       ["Max loading", "50.0%"],
-      ["Lines at limit", "0"],
+      ["Lines over limit", "0"],
     ]);
   });
 

@@ -65,6 +65,17 @@ export function duration(ms: number): string {
 
 const OPF = new Set<string>(["dcopf", "socwr", "acopf"]);
 
+/** The names for lines at or over their rating. An OPF holds a line at its limit; a power flow
+ * can load it past its rating, so its results say "over limit". */
+export function limitWords(formulation: string | null | undefined): {
+  lines: string;
+  key: string;
+} {
+  return formulation && OPF.has(formulation)
+    ? { lines: "Lines at limit", key: "At limit" }
+    : { lines: "Lines over limit", key: "Over limit" };
+}
+
 export interface SolveVerdictInput {
   formulation: Formulation;
   solving: boolean;
@@ -148,10 +159,10 @@ export interface ResultStatsInput {
 const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
 
 /** The key numbers of a result, chosen per calculation: an OPF reports its operational cost and
- * the lines at their limit; AC power flow its losses, heaviest line (or, with lines at their
+ * the lines at their limit; AC power flow its losses, heaviest line (or, with lines over their
  * limit, how many), and lowest and highest voltage, four boxes in two even rows; DC power flow its
- * heaviest line and the lines at their limit. An OPF whose cost is zero (a case without generator
- * costs) says so in place of a meaningless $0 and adds its heaviest line. With lines at their
+ * heaviest line and the lines over their limit. An OPF whose cost is zero (a case without generator
+ * costs) leaves out a meaningless $0 and shows its heaviest line. With lines at their
  * limit, the heaviest line is one of them and the list under the boxes gives its loading, so the
  * box is left out. */
 export function resultStats(input: ResultStatsInput): Stat[] {
@@ -169,31 +180,28 @@ export function resultStats(input: ResultStatsInput): Stat[] {
   const linesAtLimit = () => {
     const n = input.binding;
     stats.push({
-      label: "Lines at limit",
+      label: limitWords(input.formulation).lines,
       value: n === null ? missing : n.toLocaleString("en-US"),
       // A line at its limit is at 100% of its rating: red, as on the map.
       tone: n ? "failure" : "ok",
     });
   };
   if (OPF.has(input.formulation)) {
-    if (input.objective === 0) {
+    // A case without generator costs solves to $0: no cost to show, so the box is left out and
+    // the heaviest line takes its place.
+    if (input.objective === 0) maxLoading();
+    else {
+      const delta = input.objective !== null ? input.deltaObjective : null;
+      const change = delta
+        ? `${delta > 0 ? "+" : ""}${costPerHour(delta)}`
+        : undefined;
+      // A relaxation's cost is a lower bound on the true operating cost: the box says so.
+      const bound = input.formulation === "socwr" ? "lower bound" : undefined;
       stats.push({
         label: "Operational cost",
-        value: "No costs in case",
-        tone: "pending",
-      });
-      maxLoading();
-    } else {
-      const delta = input.objective !== null ? input.deltaObjective : null;
-      // A relaxation's cost is a lower bound on the true operating cost: the label says so.
-      stats.push({
-        label:
-          input.formulation === "socwr"
-            ? "Cost lower bound"
-            : "Operational cost",
         value:
           input.objective === null ? missing : costPerHour(input.objective),
-        sub: delta ? `${delta > 0 ? "+" : ""}${costPerHour(delta)}` : undefined,
+        sub: [bound, change].filter(Boolean).join(", ") || undefined,
       });
     }
   } else if (input.formulation === "acpf") {

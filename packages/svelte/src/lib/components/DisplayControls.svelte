@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
 	import { displayFmt } from '../format.js';
+	import { limitWords } from '../diagram/verdict.js';
 	import { LOADING_AMBER, LOADING_ATTENTION, LOADING_BASE, LOADING_RED } from '../colors.js';
 
 	const app = getAppState();
@@ -10,11 +11,11 @@
 	const diagramOpen = $derived(!!ctrl.singleLineShown);
 	const rgb = (c: readonly number[]) => `rgb(${c.slice(0, 3).join(' ')})`;
 	/** The map's line colours, in the same three steps as the diagram's Limits key. */
-	const LINE_KEY = [
+	const LINE_KEY = $derived([
 		{ label: `Below ${Math.round(LOADING_ATTENTION * 100)}%`, color: rgb(LOADING_BASE) },
 		{ label: 'Near limit', color: rgb(LOADING_AMBER) },
-		{ label: 'At limit', color: rgb(LOADING_RED) }
-	];
+		{ label: limitWords(ctrl.activeFormulation).key, color: rgb(LOADING_RED) }
+	]);
 	/** The last calculation failed: the status line above already says so. */
 	const failed = $derived.by(() => {
 		const c = ctrl.activeSolvable;

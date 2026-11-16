@@ -167,6 +167,7 @@ describe('operating limits', () => {
 	it('counts lines at or over their rating together, and lines near it apart', () => {
 		const lead = operatingLead({
 			...base,
+			formulation: 'dcopf',
 			counts: { ...base.counts, warning: 1, atLimit: 1, overload: 2 },
 			warning: 80
 		});
@@ -174,6 +175,14 @@ describe('operating limits', () => {
 			{ label: 'Lines at limit', value: '3', tone: 'failure' },
 			{ label: '80–100%', value: '1', tone: 'warning' }
 		]);
+		// A power flow can load a line past its rating: its lines are over the limit.
+		expect(
+			operatingLead({
+				...base,
+				formulation: 'acpf',
+				counts: { ...base.counts, overload: 1 }
+			}).stats[0]
+		).toEqual({ label: 'Lines over limit', value: '1', tone: 'failure' });
 		expect(operatingLead({ ...base, hasResult: false })).toEqual({
 			stats: [],
 			empty: 'No result'

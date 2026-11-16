@@ -105,6 +105,7 @@ import {
   formulationLabel,
 } from "./format.js";
 import { DEAD_ZONE_MW } from "./slider.js";
+import { limitWords } from "./diagram/verdict.js";
 import {
   DEMO_LABEL,
   DYNAMICS_OFF,
@@ -1101,7 +1102,7 @@ export class Controller {
     const binds = (flow: { branch: number; loading: number }) =>
       flagged ? flagged.has(flow.branch) : flow.loading >= 0.999;
     return {
-      label: "Lines at limit",
+      label: limitWords(this.activeFormulation).lines,
       flagged: !!constraints,
       binds,
       count: constraints

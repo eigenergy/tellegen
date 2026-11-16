@@ -7,6 +7,7 @@
 		type stationVoltageSummary
 	} from '../../diagram/transmission-results.js';
 	import { operatingLead } from '../../diagram/transmission-explain.js';
+	import { limitWords } from '../../diagram/verdict.js';
 	import TxPanelHead from './TxPanelHead.svelte';
 	let {
 		formulation,
@@ -43,6 +44,7 @@
 	});
 	const lead = $derived(
 		operatingLead({
+			formulation,
 			hasResult: context.solved,
 			voltageSolved: context.voltage,
 			counts,
@@ -64,7 +66,7 @@
 			<ul class="key">
 				<li><i class="swatch normal"></i>Below {warning}%</li>
 				<li><i class="swatch near"></i>Near limit</li>
-				<li><i class="swatch over"></i>At limit</li>
+				<li><i class="swatch over"></i>{limitWords(formulation).key}</li>
 				<li><i class="swatch unrated"></i>Unrated</li>
 				<li><i class="swatch dashed"></i>Out of service</li>
 				{#if context.voltage}
