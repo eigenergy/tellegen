@@ -199,6 +199,38 @@ pack-local dest:
     npm --workspace @tellegen/engine pack --pack-destination {{dest}}
     npm --workspace @tellegen/svelte pack --pack-destination {{dest}}
 
+# ---- run locally ----
+
+# Once, and after pulling: install, then build the wasm modules and the packages
+# the demo imports. The AC OPF build needs Python 3.11 or later and takes the
+# newest one it finds unless PYTHON names another.
+dev-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    npm ci
+    npm run wasm
+    rustup target add wasm32-wasip1
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
+        if command -v "$candidate" > /dev/null; then
+            export PYTHON="${PYTHON:-$candidate}"
+            break
+        fi
+    done
+    npm run wasm:acopf
+    npm run build:engine
+    npm run build:webmcp
+    npm run build:analytics
+    npm run build:svelte
+
+# Run the demo: the case server on :8000 and the app on http://localhost:5173.
+# Ctrl-C stops both.
+dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT
+    TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server &
+    npm --workspace tellegen-frontend run dev -- --port 5173 --strictPort
+
 # ---- release ----
 
 # Record an npm package change; commit the file it writes. The crate needs none.
