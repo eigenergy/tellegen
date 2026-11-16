@@ -487,9 +487,15 @@ test('buses at the same point spread apart for the keyboard cursor', async ({ pa
 	await page.getByRole('button', { name: 'Show diagram' }).click();
 	const schematic = page.getByRole('application', { name: 'Schematic diagram' });
 	await expect(schematic).toBeVisible();
-	await schematic.focus();
-	await page.keyboard.press('ArrowRight');
-	await expect(schematic.locator('[aria-live]')).toContainText('One of 2 buses at this point');
+	// The drawing can show before its layout is ready for the cursor; a key pressed earlier is
+	// ignored, so press again until the cursor lands. Either bus opens the stack.
+	await expect(async () => {
+		await schematic.focus();
+		await page.keyboard.press('ArrowRight');
+		await expect(schematic.locator('[aria-live]')).toContainText('One of 2 buses at this point', {
+			timeout: 2_000
+		});
+	}).toPass({ timeout: 30_000 });
 	const card = page.getByRole('list', { name: 'Buses at this point' });
 	await expect(card.getByRole('listitem')).toHaveCount(2);
 	await expect(card).toContainText('src');
