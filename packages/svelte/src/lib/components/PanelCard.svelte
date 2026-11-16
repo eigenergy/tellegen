@@ -116,8 +116,14 @@
 	// Keyboard users can scroll an overflowing panel only through focus, so the
 	// content becomes a labelled, focusable region exactly while it overflows.
 	let overflowing = $state(false);
+	/** Content is hidden below the panel's bottom edge: a fade there says so. */
+	let moreBelow = $state(false);
 	function trackOverflow(content: HTMLElement) {
-		const sync = () => (overflowing = content.scrollHeight > content.clientHeight + 1);
+		const sync = () => {
+			overflowing = content.scrollHeight > content.clientHeight + 1;
+			moreBelow = content.scrollTop + content.clientHeight < content.scrollHeight - 1;
+		};
+		content.addEventListener('scroll', sync, { passive: true });
 		const resize = new ResizeObserver(sync);
 		const observe = () => {
 			resize.disconnect();
@@ -129,6 +135,7 @@
 		children.observe(content, { childList: true });
 		observe();
 		return () => {
+			content.removeEventListener('scroll', sync);
 			resize.disconnect();
 			children.disconnect();
 		};
@@ -221,6 +228,7 @@
 	>
 		{@render panel.children()}
 	</div>
+	{#if moreBelow}<div class="more-below" aria-hidden="true"></div>{/if}
 	{#if floating}<button
 			class="resize"
 			aria-label={`Resize ${panel.title} panel`}
@@ -378,6 +386,16 @@
 		display: flex;
 		flex-direction: column;
 		border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+	}
+	.more-below {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		height: 28px;
+		border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+		background: linear-gradient(to bottom, transparent, var(--panel));
+		pointer-events: none;
 	}
 	.panel-content:focus-visible {
 		outline-offset: -2px;

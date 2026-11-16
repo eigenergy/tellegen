@@ -13,6 +13,7 @@ export interface Lead {
 
 /** Sections of the transmission diagrams page each view links to. */
 export const DOC_SECTIONS = {
+	voltage: 'voltage-levels',
 	operating: 'results',
 	economics: 'opf-economics',
 	transfer: 'power-transfers'

@@ -11,6 +11,7 @@
 	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
 	import {
 		assessVoltage,
+		gaugeText,
 		hasStatedRating,
 		isRated,
 		loadingStateText,
@@ -282,8 +283,9 @@
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
-								><strong>{lineName(b)}</strong><span class={{ over: b.state !== 'warning' }}
-									>{@render q(b.loading * 100, '%')}</span
+								><strong>{lineName(b)}</strong><span
+									class={{ over: b.state !== 'warning' }}
+									title="Exact: {(b.loading * 100).toPrecision(6)}%">{gaugeText(b.loading)}</span
 								></button
 							>
 						</li>
@@ -392,8 +394,9 @@
 		margin: var(--space-2xs) 0;
 	}
 	ol {
-		padding-left: var(--space-3xl);
+		padding: 0;
 		margin: var(--space-2xs) 0;
+		list-style: none;
 	}
 	li {
 		padding: var(--space-3xs) 0;

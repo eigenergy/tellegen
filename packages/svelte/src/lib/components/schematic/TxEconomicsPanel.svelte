@@ -28,7 +28,6 @@
 		flow,
 		onbranch,
 		onpreview,
-		shadingCentre = null,
 		brief = false
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
@@ -45,8 +44,6 @@
 		flow?: SolutionFlow;
 		onbranch: (id: number) => void;
 		onpreview?: (item: PreviewItem | null) => void;
-		/** The median LMP when the area shading shows price separation around it. */
-		shadingCentre?: number | null;
 		/** Collapsed to the heading, the price scale and the binding count. */
 		brief?: boolean;
 	} = $props();
@@ -92,12 +89,6 @@
 					{/each}
 				</select>
 			</label>{/if}
-		{#if shadingCentre !== null && !brief}
-			<ul class="key">
-				<li><i class="swatch cheap"></i>Below median</li>
-				<li><i class="swatch dear"></i>Above median</li>
-			</ul>
-		{/if}
 	{/if}
 	{#if !brief}
 		{#if bus || branch}
@@ -205,30 +196,6 @@
 	}
 	strong {
 		color: var(--ink);
-	}
-	.key {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2xs) var(--space-lg);
-		margin: var(--space-2xs) 0;
-		padding: 0;
-		list-style: none;
-	}
-	.key li {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-	.swatch {
-		width: 18px;
-		height: 8px;
-		border-radius: 2px;
-	}
-	.swatch.cheap {
-		background: #2166ac;
-	}
-	.swatch.dear {
-		background: #9a5a2c;
 	}
 	.swatch.binding {
 		display: inline-block;

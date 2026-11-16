@@ -477,6 +477,8 @@ for (const touch of [false, true]) {
 			}
 
 			await selectView(toolbar, 'Voltage');
+			// The Voltage card collapses like the others: its levels stay, the rest opens with it.
+			await expandResults(page);
 			// The key sits in the right-hand card, as on every other view. It names the levels
 			// drawn, the transformer, and the engine's substation grouping: buses 1 and 2 share a
 			// coordinate, so four buses make three substations.

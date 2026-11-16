@@ -68,16 +68,9 @@
 		color: var(--text-secondary);
 		white-space: nowrap;
 	}
-	/* Colour by tone, the same as the map: red at or over a limit, an amber dot near one. */
+	/* Colour by tone, the same as the map: red at or over a limit. A box near a limit
+	   keeps the ink colour, so every label in a row reads alike. */
 	.failure .value {
 		color: var(--red);
-	}
-	.warning dt::before {
-		content: '';
-		flex: none;
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		background: var(--amber);
 	}
 </style>

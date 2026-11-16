@@ -47,9 +47,9 @@
 {/if}
 
 <style>
-	/* Right under the stat boxes, which count these lines. */
+	/* Under the stat boxes, which count these lines, at the boxes' own gap. */
 	.binding-lines {
-		margin: calc(-1 * var(--space-sm)) 0 var(--space-lg);
+		margin: calc(var(--space-sm) - var(--space-lg)) 0 var(--space-lg);
 		border-bottom: 1px solid var(--line);
 	}
 
@@ -61,11 +61,14 @@
 		overflow-y: auto;
 	}
 
+	/* The same row height as the key and value rows below. */
 	li button {
 		display: flex;
+		align-items: center;
 		gap: var(--space-2xs);
 		width: 100%;
-		padding: var(--space-3xs) var(--space-xs) var(--space-3xs) var(--space-sm);
+		min-height: 23px;
+		padding: 0 var(--space-xs) 0 var(--space-sm);
 		text-align: left;
 		font-size: var(--fs-label);
 		color: var(--ink);
@@ -84,7 +87,12 @@
 	}
 
 	li button:hover {
-		background: var(--accent-soft);
+		background: var(--surface-hover);
+		text-decoration: none;
+		box-shadow: none;
+	}
+	li button.selected:hover {
+		box-shadow: inset 3px 0 0 var(--accent);
 	}
 
 	li button.selected {

@@ -33,7 +33,8 @@
 		voltageGradient,
 		VOLTAGE_DOMAIN
 	} from '../diagram/transmission-results.js';
-	import { getAppState, getController } from '../context.svelte.js';
+	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
+	import { docsLink } from '../diagram/transmission-explain.js';
 	import { displayFmt, formulationLabel } from '../format.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
@@ -203,6 +204,7 @@
 	const transferOn = $derived(colour === 'transfer');
 	/** A view with its own results panel (key, settings and lists). */
 	const panelView = $derived(operatingOn || economicsOn || transferOn);
+	const uiConfig = getUiConfig();
 	/** The calculation's name as the export title block reads it. */
 	const calculationName = $derived(formulationLabel(formulation));
 	let transferScale = $state(500);
@@ -1654,8 +1656,17 @@
 
 {#snippet voltageKey()}
 	<section class="voltage-key" aria-label="Voltage">
-		<strong class="key-title">Voltage</strong>
-		{#if graph.grouped}
+		<div class="key-heading">
+			<strong>Voltage</strong>
+			<a
+				class="docs"
+				href={docsLink(uiConfig.docsHref, 'voltage')}
+				target="_blank"
+				rel="noreferrer"
+				aria-label="Voltage docs">Docs</a
+			>
+		</div>
+		{#if graph.grouped && !brief}
 			<StatBoxes
 				label="Network size"
 				stats={[
@@ -1696,45 +1707,50 @@
 				</li>
 			{/each}
 		</ul>
-		<ul class="symbols" aria-label="Equipment">
-			{#if transformerEdges.length}
-				<li>
-					<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
-						><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
-					>Transformer
-				</li>
-			{/if}
-			{#if outOfService}
+		{#if !brief}
+			<ul class="symbols" aria-label="Equipment">
+				{#if transformerEdges.length}
+					<li>
+						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
+						>Transformer
+					</li>
+				{/if}
+				{#if outOfService}
+					<li>
+						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
+						>Out of service
+					</li>
+				{/if}
 				<li>
 					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-						><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
-					>Out of service
+						><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
+					>Load
 				</li>
-			{/if}
-			<li>
-				<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-					><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
-				>Load
-			</li>
-			<li>
-				<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-					><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
-				>Generator
-			</li>
-			{#if landmarkPool.length}
 				<li>
-					<label class="toggle"
-						><input
-							type="checkbox"
-							checked={landmarksPref.value}
-							onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
-						/><svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
-						>Power plants</label
-					>
+					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
+					>Generator
 				</li>
+				{#if landmarkPool.length}
+					<li>
+						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
+						>Power plant
+					</li>
+				{/if}
+			</ul>
+			{#if landmarkPool.length}
+				<label class="setting-toggle"
+					>Show power plants<input
+						type="checkbox"
+						checked={landmarksPref.value}
+						onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
+					/></label
+				>
 			{/if}
-		</ul>
+		{/if}
 	</section>
 {/snippet}
 
@@ -1849,15 +1865,15 @@
 							/> Basemap</label
 						>
 					{/if}
-					{#if fieldKind}
-						<label class="check"
-							><input
-								type="checkbox"
-								checked={fieldPref.value}
-								onchange={(e) => fieldPref.set(e.currentTarget.checked)}
-							/> Shading</label
-						>
-					{/if}
+					<!-- Always present, so the toolbar keeps one width from view to view. -->
+					<label class="check" class:off={!fieldKind}
+						><input
+							type="checkbox"
+							checked={fieldPref.value}
+							disabled={!fieldKind}
+							onchange={(e) => fieldPref.set(e.currentTarget.checked)}
+						/> Shading</label
+					>
 					<button onclick={exportPng}>Save image</button>
 				</div>
 			</div>
@@ -1901,26 +1917,26 @@
 				? `calc(100% - ${panels.top + 8 + panels.bottom}px)`
 				: `min(38vh, calc(100% - ${panels.top + toolbarHeight + 32 + app.sheetInset}px))`}
 		>
+			{#if colour === 'level' || panelView}
+				<button
+					class="collapse"
+					aria-expanded={!brief}
+					aria-label={brief ? 'Show details' : 'Hide details'}
+					title={brief ? 'Show details' : 'Hide details'}
+					onclick={() => (brief = !brief)}
+					><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+						><path
+							d={brief ? 'm3 4.5 3 3 3-3' : 'm3 7.5 3-3 3 3'}
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+						/></svg
+					></button
+				>
+			{/if}
 			{#if colour === 'level'}
 				{@render voltageKey()}
 			{:else}
-				{#if panelView}
-					<button
-						class="collapse"
-						aria-expanded={!brief}
-						aria-label={brief ? 'Show details' : 'Hide details'}
-						title={brief ? 'Show details' : 'Hide details'}
-						onclick={() => (brief = !brief)}
-						><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
-							><path
-								d={brief ? 'm3 4.5 3 3 3-3' : 'm3 7.5 3-3 3 3'}
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.5"
-							/></svg
-						></button
-					>
-				{/if}
 				{#if operatingOn}
 					<TxOperatingPanel
 						{formulation}
@@ -1948,7 +1964,6 @@
 						flow={flows.get(network.branches[selectedEdge]?.id)}
 						onbranch={inspectListedBranch}
 						onpreview={setPreview}
-						shadingCentre={field ? priceCentre : null}
 						{brief}
 					/>
 				{:else if transferOn}
@@ -2272,6 +2287,9 @@
 		gap: 4px;
 		align-items: center;
 	}
+	.toolbar .check.off {
+		color: var(--text-tertiary);
+	}
 	.segmented {
 		display: flex;
 		border: 1px solid var(--line);
@@ -2494,20 +2512,42 @@
 		min-width: 0;
 		color: var(--text-primary);
 	}
-	.key-title {
-		display: block;
+	/* The same heading row as the result cards: the name, then Docs, clear of the collapse toggle. */
+	.key-heading {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		min-height: 24px;
 		margin-bottom: var(--space-xs);
+		padding-right: 32px;
+		font-size: var(--fs-label);
+	}
+	.key-heading strong {
 		color: var(--ink);
 		font-size: var(--fs-body);
 	}
-	.voltage-key .toggle {
+	.key-heading .docs {
+		margin-left: auto;
+		color: var(--text-accent);
+		text-decoration: none;
+	}
+	.key-heading .docs:hover {
+		text-decoration: underline;
+	}
+	.setting-toggle {
 		display: flex;
-		gap: 4px;
 		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		min-height: 34px;
+		margin-top: 6px;
+		border-top: 1px solid var(--line);
 		cursor: pointer;
 	}
-	.voltage-key .toggle input {
-		margin: 0 4px 0 0;
+	.setting-toggle input {
+		width: 16px;
+		height: 16px;
+		margin: 0;
 		accent-color: var(--accent);
 	}
 	.symbols {
@@ -2533,9 +2573,8 @@
 		.toolbar button,
 		.toolbar .check,
 		.symbols .level,
-		.voltage-key .toggle {
+		.setting-toggle {
 			min-height: 44px;
-			min-width: 44px;
 		}
 	}
 	.symbols .level {

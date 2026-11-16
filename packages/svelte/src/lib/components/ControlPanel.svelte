@@ -50,6 +50,16 @@
 					(app.selectedBus !== null || app.selectedBranch !== null)))
 	);
 
+	/** The diagram has its own colour tabs and key: the map's colour switch would only
+	 * repeat them, so it steps aside while the diagram is shown. */
+	const mapKeyOnly = $derived(
+		!!ctrl.singleLineShown &&
+			!(app.mode === 'dynamics' && app.activeLocal) &&
+			!busReadout &&
+			!branchReadout
+	);
+	const blockEmpty = $derived(mapKeyOnly && ctrl.activeFormulation !== 'acpf');
+
 	/** The case list failed to load: a case file still opens. */
 	function openFile() {
 		const input = document.createElement('input');
@@ -84,7 +94,7 @@
 			{#if app.mode === 'dynamics' && app.activeLocal}
 				<DynamicsElementActions />
 			{:else if ctrl.activeFormulation === 'acpf'}
-				<DisplayControls />
+				{#if !mapKeyOnly}<DisplayControls />{/if}
 				<PowerFlowDetails />
 			{:else if busReadout}
 				<SensitivityReadout />
@@ -102,7 +112,7 @@
 				{#if ctrl.showMoverSlot}
 					<TopMovers />
 				{/if}
-			{:else}
+			{:else if !mapKeyOnly}
 				<DisplayControls />
 			{/if}
 		{/snippet}
@@ -182,7 +192,7 @@
 
 				<!-- On a phone the sheet is short: the key to the map's colours comes
 				     right after the result, not below the fold. -->
-				{#if app.compactLayout && !selectionLeads}
+				{#if app.compactLayout && !selectionLeads && !blockEmpty}
 					<div class="compact-key">{@render selectionBlock()}</div>
 					<hr />
 				{/if}
@@ -203,12 +213,13 @@
 				{#if ctrl.activeSolvable}
 					<FormulationSelector />
 				{/if}
-				{#if app.mode !== 'dynamics'}<SolveCard embedded />{/if}
+				<!-- The steady-state solve keeps its Details in both modes, so the panel does not jump. -->
+				<SolveCard embedded />
 
 				<ModelDetails details={ctrl.activeSolvable?.network?.model_details} />
 				<BusPicker inline />
 
-				{#if !selectionLeads && !app.compactLayout}
+				{#if !selectionLeads && !app.compactLayout && !blockEmpty}
 					<hr />
 
 					{@render selectionBlock()}
