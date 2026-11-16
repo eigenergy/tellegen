@@ -124,8 +124,9 @@ it('the branch loading key matches the grey, amber and red thresholds', () => {
 		const rgb = branchColor(loading, true).slice(0, 3).join(' ');
 		expect(branchLoadingGradient).toContain(`rgb(${rgb}) ${stop}`);
 	}
-	const amber = branchColor(0.9 - Number.EPSILON, true)
-		.slice(0, 3)
-		.join(' ');
-	expect(branchLoadingGradient).toContain(`rgb(${amber}) 90%`);
+	const amber = branchColor(0.92, true).slice(0, 3).join(' ');
+	expect(amber).toBe('227 160 8');
+	expect(branchLoadingGradient).toContain(`rgb(${amber}) 100%`);
+	expect(branchColor(0.99999999, true).slice(0, 3).join(' ')).toBe('215 38 30');
+	expect(branchColor(1, true).slice(0, 3).join(' ')).toBe('215 38 30');
 });

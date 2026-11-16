@@ -150,6 +150,27 @@ describe('transmission operating limits', () => {
 		expect(gaugeText(1.003)).toBe('100.3%');
 		expect(gaugeText(0.874)).toBe('87.4%');
 	});
+
+	it('keeps gauges off obstacles, and still places one when every spot is covered', () => {
+		const g: GaugeCandidate = {
+			edge: 1,
+			ax: 200,
+			ay: 200,
+			state: 'warning',
+			loading: 0.92,
+			selected: false
+		};
+		const rect = { left: 0, top: 0, right: 400, bottom: 400 };
+		const [free] = placeOperatingGauges([g], rect, 10);
+		// An obstacle where the first spot would go pushes the gauge to another spot.
+		const obstacle: [number, number] = [free.x + GAUGE_WIDTH / 2, free.y + GAUGE_HEIGHT / 2];
+		const [moved] = placeOperatingGauges([g], rect, 10, [obstacle]);
+		expect([moved.x, moved.y]).not.toEqual([free.x, free.y]);
+		// Obstacles everywhere: the gauge still shows.
+		const crowd: [number, number][] = [];
+		for (let x = 0; x <= 400; x += 8) for (let y = 0; y <= 400; y += 8) crowd.push([x, y]);
+		expect(placeOperatingGauges([g], rect, 10, crowd)).toHaveLength(1);
+	});
 	it('separates warnings, at-limit values and actual overloads', () => {
 		for (const [loading, expected] of [
 			[0, 'normal'],

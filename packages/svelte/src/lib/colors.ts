@@ -277,13 +277,14 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 	};
 }
 
-/** Loading, as a fraction of rating, from which a branch needs attention. Both loading scales
- * share it. An optimal power flow enforces ratings, so its map draws congestion: red from here,
- * because it cannot exceed 1. A multiconductor power flow does not enforce them, so its overview
- * warns from here and calls a violation only above 1 (`LOADING_LIMIT` in `diagram/summary.ts`). */
+/** Loading, as a fraction of rating, from which a branch is near its limit: amber from here,
+ * red only at the rating itself (`LOADING_AT_LIMIT`), on the map and the diagram alike. */
 export const LOADING_ATTENTION = 0.9;
-/** Where the optimal power flow map starts shading a branch towards congestion. */
+/** Where the map starts shading a branch towards amber. */
 const LOADING_ELEVATED = 0.6;
+/** Loading from which a branch is drawn red: at its rating, less display rounding noise
+ * (the diagram's `LOADING_TOLERANCE`). */
+const LOADING_AT_LIMIT = 1 - 1e-5;
 
 const LOADING_BASE: RGBA = [124, 132, 143, 200];
 const LOADING_AMBER: RGBA = [227, 160, 8, 240];
@@ -292,15 +293,15 @@ const LOADING_STOPS: [RGBA, number][] = [
 	[LOADING_BASE, 0],
 	[LOADING_BASE, LOADING_ELEVATED],
 	[LOADING_AMBER, LOADING_ATTENTION],
-	[LOADING_RED, LOADING_ATTENTION],
+	[LOADING_AMBER, 1],
 	[LOADING_RED, 1]
 ];
-/** Same thresholds and RGB values as branchColor, including the step to red at 90%. */
+/** Same thresholds and RGB values as branchColor, including the step to red at 100%. */
 export const branchLoadingGradient = `linear-gradient(90deg, ${LOADING_STOPS.map(
 	([c, stop]) => `rgb(${c.slice(0, 3).join(' ')}) ${stop * 100}%`
 ).join(', ')})`;
 
-/** Branch color by loading fraction: warm gray, amber past 0.6, red from `LOADING_ATTENTION`. */
+/** Branch color by loading fraction: grey, shading to amber by `LOADING_ATTENTION`, red at the rating. */
 export function branchColor(loading: number, inService: boolean): RGBA {
 	if (!inService) return [190, 196, 204, 110];
 	if (loading < LOADING_ELEVATED) return LOADING_BASE;
@@ -310,6 +311,7 @@ export function branchColor(loading: number, inService: boolean): RGBA {
 			LOADING_AMBER,
 			(loading - LOADING_ELEVATED) / (LOADING_ATTENTION - LOADING_ELEVATED)
 		);
+	if (loading < LOADING_AT_LIMIT) return LOADING_AMBER;
 	return LOADING_RED;
 }
 

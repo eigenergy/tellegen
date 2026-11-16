@@ -254,13 +254,15 @@ const GAUGE_OFFSETS: [number, number][] = [10, 36, 64].flatMap((d) => [
 const GAUGE_GAP = 6;
 
 /** Fixed-size, local gauges. Selection wins, followed by violations and warnings. Each gauge
- * takes the first free spot around its branch point that covers neither another gauge nor
- * any flagged branch point; the available canvas rectangle, collisions and the budget limit
- * clutter independently of network size. */
+ * takes the first free spot around its branch point that covers no other gauge, no other branch
+ * point and no `obstacles` point (such as a generator symbol); a gauge with no such spot takes the
+ * first one that covers no other gauge. The available canvas rectangle, collisions and the budget
+ * limit clutter independently of network size. */
 export function placeOperatingGauges(
 	candidates: GaugeCandidate[],
 	rect: { left: number; top: number; right: number; bottom: number },
-	budget: number
+	budget: number,
+	obstacles: readonly (readonly [number, number])[] = []
 ): OperatingGauge[] {
 	if (budget <= 0) return [];
 	const rank = (g: GaugeCandidate) =>
@@ -279,30 +281,41 @@ export function placeOperatingGauges(
 		.filter((g) => [g.ax, g.ay, g.loading].every(Number.isFinite) && inside(g.ax, g.ay, 0, 0))
 		.sort((a, b) => rank(b) - rank(a) || a.edge - b.edge)
 		.slice(0, budget * 4);
-	const covers = (x: number, y: number, px: number, py: number) =>
-		px > x - GAUGE_GAP &&
-		px < x + GAUGE_WIDTH + GAUGE_GAP &&
-		py > y - GAUGE_GAP &&
-		py < y + GAUGE_HEIGHT + GAUGE_GAP;
+	const covers = (x: number, y: number, px: number, py: number, pad = GAUGE_GAP) =>
+		px > x - pad && px < x + GAUGE_WIDTH + pad && py > y - pad && py < y + GAUGE_HEIGHT + pad;
 	const placed: OperatingGauge[] = [];
-	for (const g of sorted) {
+	const clearOfGauges = (x: number, y: number) =>
+		!placed.some(
+			(p) =>
+				Math.abs(p.x - x) < GAUGE_WIDTH + GAUGE_GAP && Math.abs(p.y - y) < GAUGE_HEIGHT + GAUGE_GAP
+		);
+	const spot = (g: GaugeCandidate, strict: boolean): [number, number] | null => {
 		for (const [dx, dy] of GAUGE_OFFSETS) {
 			const x = g.ax + dx;
 			const y = g.ay + dy;
-			if (!inside(x, y, GAUGE_WIDTH, GAUGE_HEIGHT)) continue;
+			if (!inside(x, y, GAUGE_WIDTH, GAUGE_HEIGHT) || !clearOfGauges(x, y)) continue;
 			if (
-				placed.some(
-					(p) =>
-						Math.abs(p.x - x) < GAUGE_WIDTH + GAUGE_GAP &&
-						Math.abs(p.y - y) < GAUGE_HEIGHT + GAUGE_GAP
-				)
+				strict &&
+				(sorted.some((o) => covers(x, y, o.ax, o.ay)) ||
+					obstacles.some(([ox, oy]) => covers(x, y, ox, oy, GAUGE_GAP + 6)))
 			)
 				continue;
-			if (sorted.some((o) => covers(x, y, o.ax, o.ay))) continue;
-			placed.push({ ...g, x, y });
-			break;
+			return [x, y];
 		}
+		return null;
+	};
+	const left: GaugeCandidate[] = [];
+	for (const g of sorted) {
 		if (placed.length >= budget) break;
+		const at = spot(g, true);
+		if (at) placed.push({ ...g, x: at[0], y: at[1] });
+		else left.push(g);
+	}
+	// A crowded branch still gets its gauge, over a neighbour's point if it must.
+	for (const g of left) {
+		if (placed.length >= budget) break;
+		const at = spot(g, false);
+		if (at) placed.push({ ...g, x: at[0], y: at[1] });
 	}
 	return placed;
 }

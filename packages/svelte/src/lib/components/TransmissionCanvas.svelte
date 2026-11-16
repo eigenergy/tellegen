@@ -1086,14 +1086,22 @@
 			});
 		};
 		const isPointed = (edge: number) => edge === selectedEdge || edge === hoveredEdge;
+		// Gauges mark the flagged lines, the same set the panel counts; any other line shows its
+		// gauge only while selected or hovered.
 		for (const edge of gaugePool.busy) {
 			const selected = isPointed(edge);
-			if (!selected && loadingStates[edge] === 'normal' && !symbolsOn) continue;
+			if (!selected && loadingStates[edge] === 'normal') continue;
 			addGauge(edge, selected);
 		}
 		// A quiet branch shows its gauge only while selected or hovered.
 		for (const edge of new Set([selectedEdge, hoveredEdge]))
 			if (edge >= 0 && gaugePool.quiet.has(edge)) addGauge(edge, true);
+		if (!symbolsOn && landmarksPref.value && landmarkPool.length) {
+			const placed = placeLandmarks(landmarkPool, screen, { width, height });
+			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
+		} else marks = null;
+		// Gauges stay clear of the generator and transformer symbols where they can.
+		const obstacles = (marks?.placed ?? []).map((m) => screen(m.x, m.y));
 		gauges = placeOperatingGauges(
 			gaugeCandidates,
 			{
@@ -1102,13 +1110,9 @@
 				right: width - inset.right,
 				bottom: height - inset.bottom
 			},
-			panels.compact ? 10 : 32
+			panels.compact ? 10 : 32,
+			obstacles
 		);
-
-		if (!symbolsOn && landmarksPref.value && landmarkPool.length) {
-			const placed = placeLandmarks(landmarkPool, screen, { width, height });
-			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
-		} else marks = null;
 	}
 
 	/** The bus row or branch a deck.gl pick stands for, from whichever layer was hit; -1 for
