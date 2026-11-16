@@ -637,18 +637,28 @@
 					>
 					<button onclick={() => workspace.closeView()}>Live case</button>
 				</div>
-				{#if ctrl.app.studyView}<label
-						>{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}<select
-							bind:value={ctrl.app.displayMode}
-							><option value="price" disabled={!ctrl.app.studyView.solution?.lmp?.length}
-								>Price</option
-							><option value="voltage" disabled={!ctrl.app.studyView.solution?.vm?.length}
-								>Voltage</option
-							><option value="angle" disabled={!ctrl.app.studyView.solution?.va?.length}
-								>Angle</option
-							></select
-						></label
-					>{/if}
+				{#if ctrl.app.studyView}
+					{@const solved = ctrl.app.studyView.solution}
+					<!-- The same switch as the Network panel's map colours. -->
+					<div class="values-row">
+						<span id="study-map-values"
+							>{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}</span
+						>
+						<div class="segment" role="group" aria-labelledby="study-map-values">
+							{#each [{ mode: 'price', label: 'Price', on: !!solved?.lmp?.length }, { mode: 'voltage', label: 'Voltage', on: !!solved?.vm?.length }, { mode: 'angle', label: 'Angle', on: !!solved?.va?.length }] as option (option.mode)}
+								<button
+									type="button"
+									class={{ active: ctrl.app.displayMode === option.mode }}
+									aria-pressed={ctrl.app.displayMode === option.mode}
+									disabled={!option.on}
+									onclick={() =>
+										(ctrl.app.displayMode = option.mode as typeof ctrl.app.displayMode)}
+									>{option.label}</button
+								>
+							{/each}
+						</div>
+					</div>
+				{/if}
 				{#if latestProposal && doc.recommended_state !== doc.applied_state}<div
 						class="recommendation"
 					>
@@ -1190,7 +1200,6 @@
 	}
 	.storage > button {
 		flex: none;
-		padding: 8px;
 	}
 	.file-button {
 		position: relative;
@@ -1198,11 +1207,12 @@
 		display: inline-flex;
 		align-items: center;
 		overflow: hidden;
-		padding: 8px 12px;
+		padding: 4px 10px;
 		font-size: var(--fs-label);
 		cursor: pointer;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
+		background: var(--surface-control);
 	}
 	.file-button input {
 		position: absolute;
@@ -1261,7 +1271,7 @@
 		box-sizing: border-box;
 		background: var(--surface-control);
 		border: 1px solid var(--line);
-		padding: 8px 9px;
+		padding: 5px 8px;
 		border-radius: var(--radius-control);
 	}
 	/* The panel's shared select, at the input's height. */
@@ -1269,15 +1279,15 @@
 		min-width: 0;
 		width: 100%;
 		max-width: none;
-		padding-block: 8px;
+		padding-block: 5px;
 	}
-	/* One size for every button here, the file button included: the panels' control text. */
+	/* One size for every button here, the file button included: the Network panel's buttons. */
 	button {
-		padding: 8px 12px;
+		padding: 4px 10px;
 		font-size: var(--fs-label);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
-		background: transparent;
+		background: var(--surface-control);
 		cursor: pointer;
 	}
 	button:disabled {
@@ -1321,12 +1331,10 @@
 		flex: 1;
 		margin: 0;
 	}
-	/* Selects and buttons in a toolbar share one height. */
-	.toolbar select,
+	/* Inputs and buttons in a toolbar share one baseline. */
 	.toolbar button {
 		box-sizing: border-box;
-		height: 36px;
-		padding-block: 0;
+		min-height: 30px;
 	}
 	.toolbar label:has(input[type='number']) {
 		max-width: 132px;
@@ -1357,14 +1365,54 @@
 		gap: 8px;
 		margin: 0 0 18px;
 	}
+	/* Label left, value right, as in the Network panel. */
 	.facts > div {
-		display: grid;
-		grid-template-columns: 105px minmax(0, 1fr);
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
 		gap: 12px;
 	}
 	.facts dd {
 		margin: 0;
+		min-width: 0;
+		text-align: right;
 		overflow-wrap: anywhere;
+	}
+	/* A finger's worth of height on a phone, as the Network panel's buttons have. */
+	@media (max-width: 760px) {
+		.storage > button,
+		.file-button,
+		.toolbar button {
+			min-height: 44px;
+		}
+	}
+	.values-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 0 0 16px;
+		font-size: 12px;
+	}
+	/* The shared segmented control; the panel's own button rule would box each segment. */
+	.segment button {
+		padding: 3px 10px;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		font-size: var(--fs-body);
+		color: var(--text-secondary);
+	}
+	.segment button + button {
+		border-left: 1px solid var(--line);
+	}
+	.segment button.active {
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+	.segment button:hover:enabled:not(.active) {
+		color: var(--ink);
+		background: var(--surface-hover);
 	}
 	.recommendation {
 		display: grid;

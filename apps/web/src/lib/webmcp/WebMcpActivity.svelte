@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import AgentGuide from './AgentGuide.svelte';
 	import { PanelFrame, getAppState } from '@tellegen/svelte';
 	import type {
@@ -69,6 +69,10 @@
 			/* Dismissal applies to this visit. */
 		}
 	}
+	// Once the Agent tab has been seen, by any route, the hint has done its job.
+	$effect(() => {
+		if (open && welcome) untrack(dismiss);
+	});
 	// The welcome pill disappears once the panel opens, taking focus with it,
 	// so "Show me" asks for the Connect tab to take focus when it is attached.
 	let focusRequest = $state(0);
@@ -370,7 +374,8 @@
 		</div>
 	</div>
 </PanelFrame>
-{#if welcome && hint && !open && !app.zen}<aside
+<!-- Not while an agent is already calling tools, nor over the dynamics timeline. -->
+{#if welcome && hint && !open && !app.zen && !activities.length && app.mode !== 'dynamics'}<aside
 		class="welcome"
 		class:compact={app.compactLayout}
 		style:--sheet-clear={app.compactLayout ? `${app.sheetInset + 8}px` : undefined}
