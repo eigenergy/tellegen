@@ -15,27 +15,27 @@ export function formulationHint(id: Formulation): string {
 	return FORMULATIONS.find((f) => f.id === id)?.hint ?? id;
 }
 
+/** A case name and its detail: "IEEE 118 (Region)" -> ["IEEE 118", "Region"]. A trailing
+ * file-style identifier ("Texas7k distribution p1uhs0_1247") becomes the detail, spaced. */
 export function splitName(name: string): [string, string] {
 	const m = name.match(/^(.*?)\s*\((.*)\)$/);
-	return m ? [m[1], m[2]] : [name, ''];
+	if (m) return [m[1], m[2]];
+	const id = name.match(/^(.*\S)\s+(\S*_\S*)$/);
+	return id ? [id[1], id[2].replace(/_/g, ' ')] : [name, ''];
 }
 
-export const INFEASIBLE_DISPATCH =
-	'No feasible dispatch: demand cannot be served within line and generator limits';
+export const INFEASIBLE_DISPATCH = 'Infeasible';
 
-/** The message for a local case whose browser solve failed, and the
- * technical detail to disclose behind it. An infeasible DC OPF means the
- * network cannot carry the demand, which deserves plain words. The engine
- * spells it `DC OPF solve infeasible`, and an unbounded one as `unbounded`. */
+/** The short message for a local case whose browser solve failed, and the technical
+ * detail to disclose behind it. The engine spells an infeasible solve
+ * `DC OPF solve infeasible`, and an unbounded one as `unbounded`. */
 export function browserSolveFailure(
 	label: string,
 	reason: string | null
 ): { message: string; detail: string | null } {
 	const technical = `${label}: browser solve unavailable${reason ? `: ${reason}` : ''}`;
-	if (reason && /\binfeasible\b/i.test(reason)) {
-		return { message: INFEASIBLE_DISPATCH, detail: technical };
-	}
-	return { message: technical, detail: null };
+	const infeasible = !!reason && /\binfeasible\b/i.test(reason);
+	return { message: `${label}: ${infeasible ? 'infeasible' : 'solve failed'}`, detail: technical };
 }
 
 export function rgbaCss([r, g, b, a]: RGBA): string {
@@ -101,8 +101,7 @@ export function readable(
 	unit: string,
 	signed = false
 ): { text: string; exact: string } {
-	if (value == null || !Number.isFinite(value))
-		return { text: 'Unavailable', exact: 'Unavailable' };
+	if (value == null || !Number.isFinite(value)) return { text: '—', exact: '—' };
 	const magnitude = Math.abs(value);
 	const places =
 		unit === 'pu' ? 4 : unit === '%' ? 1 : magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : 2;

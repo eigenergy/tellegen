@@ -83,7 +83,6 @@
 	);
 	/** Declared voltage limits the overview does not rank: sequence or neutral-to-ground bounds, a
 	 * bound without its other side, or non-uniform phase–phase bounds without named pairs. */
-	const unrankedLimits = $derived(!limitsDeclared && graph.buses.some((b) => b.voltage_limits));
 	const busIndex = $derived(new Map(graph.buses.map((b, i) => [b.id, i])));
 	/** The first edge of each id: a multi-winding transformer's winding-pair edges share its id, and
 	 * the selection, tables and conductor panel show its first (primary) edge. */
@@ -239,7 +238,7 @@
 <section class="workbench" aria-label="Operating point overview">
 	<div class="heading">
 		<h4>Overview</h4>
-		{#if loading}<span role="status">Reading the full operating point…</span>{/if}
+		{#if loading}<span role="status">Loading…</span>{/if}
 		{#if onschematic}<button
 				class="schematic-toggle"
 				aria-pressed={schematic}
@@ -271,16 +270,11 @@
 					>{warning
 						? `+ ${warning} warning${warning === 1 ? '' : 's'}`
 						: limitsDeclared
-							? 'within declared limits'
-							: unrankedLimits
-								? 'no ranked limits'
-								: 'no limits declared'}</span
+							? 'OK'
+							: '—'}</span
 				>
 			</button>
-			<div
-				class="kpi"
-				title="Lines, switches and transformers: both end powers into the equipment, summed over the energized branches"
-			>
+			<div class="kpi">
 				<span class="label">Branch losses</span>
 				<span class="value">{quantity(summary.loss.p, 'kW')}</span>
 				<span class="sub">{quantity(summary.loss.q, 'kvar')}</span>
@@ -300,7 +294,7 @@
 				>
 					<span class="label">{zoneLabel(zone.zone)}</span>
 					<span class="value">{quantityRange(zone.min.volts, zone.max.volts, 'V')}</span>
-					<span class="sub">{bad ? 'limit violated' : `${zone.buses.toLocaleString()} buses`}</span>
+					<span class="sub">{bad ? 'Violated' : `${zone.buses.toLocaleString()} buses`}</span>
 				</button>
 			{/each}
 			{#if summary.loading}
@@ -334,17 +328,10 @@
 		</div>
 
 		<h4>Issues <span class="count">{issues.length.toLocaleString()}</span></h4>
-		{#if unrankedLimits}
-			<p class="hint">
-				This case declares no ratings, and none of its voltage limits is a band the overview ranks
-				(phase–neutral, phase–phase or phase–ground), so nothing is ranked against them.
-			</p>
-		{:else if !limitsDeclared}
-			<p class="hint">
-				This case declares no voltage limits or ratings, so nothing is ranked against them.
-			</p>
+		{#if !limitsDeclared}
+			<p class="hint">No limits</p>
 		{:else if !issues.length}
-			<p class="hint ok">No limit violations or loading warnings.</p>
+			<p class="hint ok">No violations</p>
 		{:else}
 			<ol class="issues">
 				{#each issues.slice(0, ISSUE_LIMIT) as issue (`${issue.target.kind}:${issue.target.index}`)}
@@ -366,7 +353,7 @@
 				{/each}
 			</ol>
 			{#if issues.length > ISSUE_LIMIT}<p class="hint">
-					Showing the worst {ISSUE_LIMIT} of {issues.length.toLocaleString()}; the CSV has all rows.
+					Top {ISSUE_LIMIT} of {issues.length.toLocaleString()}
 				</p>{/if}
 		{/if}
 
@@ -396,18 +383,16 @@
 						</div>
 					{/each}
 				</div>
-				<p class="hint">
-					Track: the declared band ± 25%{busSelection.unbalance
-						? ` · unbalance ${quantity(busSelection.unbalance.percent, '%')} (${busSelection.unbalance.definition})`
-						: ''}{busSpread
-						? ` · magnitude spread ${quantity(busSpread.percent, '%')} (${busSpread.definition})`
-						: ''}
-				</p>
-				{#if busSelection.unbalance && busSpread && busSpread.percent > 2 * busSelection.unbalance.percent}
-					<p class="hint">
-						The spread is mostly neutral shift (zero sequence), which VUF excludes.
-					</p>
-				{/if}
+				{#if busSelection.unbalance || busSpread}<dl class="hint pairs">
+						{#if busSelection.unbalance}<div title={busSelection.unbalance.definition}>
+								<dt>Unbalance</dt>
+								<dd>{quantity(busSelection.unbalance.percent, '%')}</dd>
+							</div>{/if}
+						{#if busSpread}<div>
+								<dt>Spread</dt>
+								<dd>{quantity(busSpread.percent, '%')}</dd>
+							</div>{/if}
+					</dl>{/if}
 			{:else}<p class="hint">No terminal-pair voltages at this bus.</p>{/if}
 		{:else if edgeSelection}
 			<h4>Conductors on {selectedEdge}</h4>
@@ -440,14 +425,9 @@
 					</div>
 				{/if}
 			{/each}
-			<p class="hint">
-				One scale for both ends (max {quantity(
-					edgeSelection.scaleAmps,
-					'A'
-				)}){edgeSelection.neutralShare !== null
-					? ` · neutral carries ${quantity(edgeSelection.neutralShare, '%')} of the largest phase current`
-					: ''}
-			</p>
+			{#if edgeSelection.neutralShare !== null}<p class="hint">
+					Neutral: {quantity(edgeSelection.neutralShare, '%')}
+				</p>{/if}
 			{#if multiWire}
 				<h4>Multi-wire view</h4>
 				<MultiWire view={multiWire} />
@@ -489,12 +469,9 @@
 			<button onclick={() => exportCsv('branch')}>Branch CSV</button>
 		</div>
 	{:else if !loading && onanalyse}
-		<p class="hint">
-			This case is large, so the overview reads the full operating point on request.
-		</p>
-		<div class="actions"><button onclick={onanalyse}>Analyse operating point</button></div>
+		<div class="actions"><button onclick={onanalyse}>Load overview</button></div>
 	{:else if !loading}
-		<p class="hint">Run the power flow to see the overview.</p>
+		<p class="hint">No result</p>
 	{/if}
 </section>
 

@@ -22,10 +22,6 @@
 	const neutralPos = $derived(thumbAlignedPos(neutralFrac));
 	const fillLo = $derived(valFrac < neutralFrac ? valPos : neutralPos);
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
-	const sliderTip = 'Drag to preview, release to solve. The tick marks the committed rating.';
-	const disabledTip = 'Synthesized rating; not adjustable';
-	const scoreTip =
-		'Estimated from the sensitivities at the current solution, then checked by solving again.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -53,7 +49,7 @@
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
-			title={bounds.disabled ? disabledTip : sliderTip}
+			title={bounds.disabled ? 'Fixed' : undefined}
 		>
 			<input
 				type="range"
@@ -81,17 +77,15 @@
 		<div class="rating-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
 			<p class="pred dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
 				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					Predicted cost change <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
+					Predicted <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
 				{:else}
 					&nbsp;
 				{/if}
 			</p>
 			<p class="score" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
-					<span title={scoreTip}>
-						Cost change: estimated <span class="mono">{signed(ctrl.gradientScore.pred)}</span>,
-						solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h
-					</span>
+					<span>Predicted <span class="mono">{signed(ctrl.gradientScore.pred)}</span> $/h</span>
+					<span>Solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h</span>
 				{:else}
 					&nbsp;
 				{/if}
@@ -249,6 +243,8 @@
 	}
 
 	.score {
+		display: flex;
+		gap: 16px;
 		margin: 8px 0 0;
 		font-size: 13px;
 		color: var(--ink);

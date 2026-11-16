@@ -233,17 +233,14 @@ export class CollectionImport {
 					const reason =
 						result.kind === 'multiconductor' ? result.payload.mc_pf_unavailable_reason : null;
 					row.outcome = result.incomplete ? 'incomplete' : reason ? 'view-only' : 'imported';
-					row.message = result.incomplete
-						? 'Missing dependencies; view-only. See case diagnostics.'
-						: reason ||
-							'Imported. Close this chooser to inspect the case and choose a calculation.';
+					row.message = result.incomplete ? 'View only' : reason || 'Imported';
 				} catch (error) {
 					this.check(generation);
 					row.outcome = 'failed';
 					row.message = error instanceof Error ? error.message : String(error);
 				}
 			}
-			this.progress = 'Import finished. Successful cases are kept independently.';
+			this.progress = 'Done';
 		} catch (error) {
 			this.recordError('Import', error, generation);
 		} finally {

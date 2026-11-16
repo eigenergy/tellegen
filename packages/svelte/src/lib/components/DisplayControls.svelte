@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
-	import { displayFmt, formulationLabel } from '../format.js';
+	import { displayFmt } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -25,9 +25,7 @@
 	{/if}
 </div>
 {#if diagramOpen}
-	<p class="dim small diagram-note">
-		These colour the map. In the diagram they apply to its Map display view.
-	</p>
+	<!-- The diagram carries its own key. -->
 {:else if ctrl.activeDisplay && ctrl.displayStats}
 	<p class="legend-title">
 		{ctrl.activeDisplay.copy}{ctrl.activeDisplay.unit ? ` (${ctrl.activeDisplay.unit})` : ''}
@@ -36,7 +34,7 @@
 	<div class="legend-labels">
 		{#if ctrl.displayStats.uniform !== null}
 			<span>
-				The same at every bus: {displayFmt(ctrl.activeDisplay.mode, ctrl.displayStats.uniform)}
+				Uniform: {displayFmt(ctrl.activeDisplay.mode, ctrl.displayStats.uniform)}
 			</span>
 		{:else}
 			<span>
@@ -54,20 +52,12 @@
 		{/if}
 	</div>
 {:else if ctrl.activeSolvable?.solving}
-	<p class="dim small blink">
-		Solving {formulationLabel(ctrl.activeFormulation)}&hellip;
-	</p>
+	<p class="dim small blink">Solving&hellip;</p>
 {:else}
-	<p class="dim small">
-		No {formulationLabel(ctrl.activeFormulation)} results available.
-	</p>
+	<p class="dim small">No result</p>
 {/if}
 
 <style>
-	.diagram-note {
-		margin: 8px 0 0;
-		line-height: 1.4;
-	}
 	.legend-title {
 		margin: 10px 0 0;
 		font-size: 12px;

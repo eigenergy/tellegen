@@ -1994,7 +1994,7 @@
 
 	.map :global(.maplibregl-ctrl-bottom-right) {
 		right: 20px;
-		bottom: max(12px, var(--tellegen-timeline-clear, 0px));
+		bottom: max(12px, var(--tellegen-timeline-clear, 0px), var(--tellegen-sheet-clear, 0px));
 		display: flex;
 		flex-direction: row;
 		align-items: flex-end;
@@ -2125,7 +2125,7 @@
 
 	@media (max-width: 760px) {
 		.map :global(.maplibregl-ctrl-bottom-right) {
-			bottom: max(12px, var(--tellegen-timeline-clear, 0px));
+			bottom: max(12px, var(--tellegen-timeline-clear, 0px), var(--tellegen-sheet-clear, 0px));
 			right: 12px;
 			gap: 12px;
 		}

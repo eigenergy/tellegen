@@ -101,18 +101,15 @@ function sameSettings(a: unknown, b: unknown): boolean {
 	return Object.is(a, b);
 }
 
-/** Notices the controller raises from more than one place. Each says what happened and what to
- * do next, as full sentences, so the notification center reads the same wherever it came from. */
+/** Notices the controller raises from more than one place, in a few words each, so the
+ * notification center reads the same wherever it came from. */
 export const NOTICES = {
-	caseChanged:
-		'The selected case changed before the coordinates were attached. Attach the coordinates again.',
-	caseChangedWhileLoading:
-		'The selected case changed while the coordinates loaded. Attach the coordinates again.',
-	selectMatchingCase: 'Select the case these coordinates belong to, then attach them again.',
-	returnToLiveCase: 'Coordinates attach to the live case. Close the saved study, then attach them.',
-	batchBusy:
-		'Another set of files is still being read. Wait for it to finish, then add these again.',
-	collectionOpen: 'A collection is still open. Finish or close it before opening another.',
+	caseChanged: 'Case changed; attach again',
+	caseChangedWhileLoading: 'Case changed; attach again',
+	selectMatchingCase: 'Wrong case',
+	returnToLiveCase: 'Close the study first',
+	batchBusy: 'Still reading files',
+	collectionOpen: 'Collection still open',
 	rateLimited: RATE_LIMITED
 } as const;
 
@@ -222,10 +219,8 @@ function mcInputJson(input: McModuleInput): Promise<string> {
 /** Terminal copy when nothing can solve. Two facts decide the wording: whether
  * this browser's engine failure is known permanent, and that the server
  * declines compute. */
-const WASM_REQUIRED_NOTICE =
-	'This browser cannot run the WebAssembly engine, and server compute is disabled';
-const COMPUTE_OFF_NOTICE =
-	'The browser solve did not complete, and server compute is disabled. Retry to run it again';
+const WASM_REQUIRED_NOTICE = 'Engine unavailable';
+const COMPUTE_OFF_NOTICE = 'Solve failed';
 
 /** Upper bound on waiting for a camera fly-to before the sensitivity solve
  * starts anyway: a missing map or a cue that never appears must not stall the
@@ -453,6 +448,8 @@ export class Controller {
 	// Default cases the user has closed; drives the restore affordance. Seeded in load().
 	hiddenDefaults = $state<Set<string>>(new Set());
 	casesLoaded = $state(false);
+	/** The last attempt to fetch the case list failed. */
+	casesFailed = $state(false);
 	loadingBackendCase = $state<string | null>(null);
 	showFileDropUi = $state(true);
 	// Predicted objective change vs the committed point for the live preview. The
@@ -976,9 +973,9 @@ export class Controller {
 		};
 	});
 
-	/** Which lines the active result treats as binding: the solver's own binding flags when it
-	 * reports them, else lines loaded to 99.9% of rating (legacy and non-DC results), with the
-	 * label that says which. */
+	/** Which lines the active result treats as at their limit: the solver's own binding flags
+	 * when it reports them (`flagged`), else lines loaded to 99.9% of rating (legacy and non-DC
+	 * results). */
 	bindingRule = $derived.by(() => {
 		const solution = this.activeSolvable?.solution;
 		if (!solution) return null;
@@ -989,7 +986,8 @@ export class Controller {
 		const binds = (flow: { branch: number; loading: number }) =>
 			flagged ? flagged.has(flow.branch) : flow.loading >= 0.999;
 		return {
-			label: constraints ? 'Binding lines' : 'Lines near or above rating',
+			label: 'Lines at limit',
+			flagged: !!constraints,
 			binds,
 			count: constraints
 				? constraints.filter((row) => row.binding).length
@@ -1241,7 +1239,14 @@ export class Controller {
 				})
 				.catch(() => {});
 			try {
-				const summaries = await api.getCases();
+				let summaries: Awaited<ReturnType<typeof api.getCases>>;
+				this.casesFailed = false;
+				try {
+					summaries = await api.getCases();
+				} catch (e) {
+					this.casesFailed = true;
+					throw new Error(`Case list: ${errorText(e)}`, { cause: e });
+				}
 				const hidden = this.readHiddenDefaultCases();
 				this.hiddenDefaults = new Set(hidden);
 				// Tear down the cases being replaced so their wasm Studies are freed and any
@@ -1953,7 +1958,7 @@ export class Controller {
 		sensitivitySeq: number
 	) => {
 		if (c.resultDcFormula && c.resultDcFormula !== 'series_susceptance') {
-			this.fail('Sensitivity for the selected DC variant requires the browser engine.');
+			this.fail('Needs browser engine');
 			return;
 		}
 		const retryOp =
@@ -1961,10 +1966,7 @@ export class Controller {
 				? () => this.selectBus(c.id, target.bus)
 				: () => this.selectBranch(c.id, target.branch);
 		if (hasCustomCalculationSettings(c)) {
-			this.fail(
-				'The legacy server sensitivity endpoint cannot apply these calculation settings. Retry the browser calculation.',
-				retryOp
-			);
+			this.fail("Server can't apply settings", retryOp);
 			return;
 		}
 		const api = this.api;
@@ -2204,19 +2206,19 @@ export class Controller {
 				}
 				if (this.isBackendCase(c)) return this.serverSolve(c, target, seq);
 				c.solving = false;
-				this.app.error = `${c.label}: the calculation cannot run because the case's PowerIO module was not kept. Add the case again.`;
+				this.app.error = `${c.label}: re-add the case`;
 				return;
 			}
 			const t0 = performance.now();
 			if (c.formulation === 'acopf') {
 				if (!this.acOpfAvailable || !this.acOpfWasmUrl) {
 					c.solving = false;
-					this.app.error = `${this.caseName(c)}: the experimental AC OPF worker is unavailable in this build. Choose DC OPF or SOCWR instead.`;
+					this.app.error = `${this.caseName(c)}: AC OPF unavailable`;
 					return;
 				}
 				if (c.perturbed) {
 					c.solving = false;
-					this.app.error = `${this.caseName(c)}: AC OPF solves the unedited base case only. Reset the demand and rating edits, then solve again.`;
+					this.app.error = `${this.caseName(c)}: AC OPF needs the unedited case`;
 					return;
 				}
 				const cancellation = new AbortController();
@@ -2331,9 +2333,7 @@ export class Controller {
 		if (hasCustomCalculationSettings(c)) {
 			if (seq !== c.solveSeq) return;
 			c.solving = false;
-			this.fail(
-				'The legacy server solve stream cannot apply these calculation settings. Retry the browser calculation.'
-			);
+			this.fail("Server can't apply settings");
 			return;
 		}
 		// Known-disabled server compute (or no backend at all): show the notice
@@ -2532,8 +2532,7 @@ export class Controller {
 		reset = false
 	) => {
 		if (c.solving) throw new Error('Settings cannot change during a calculation.');
-		if (c.settings.revision !== expectedRevision)
-			throw new Error('The settings changed during the check. Review them and try again.');
+		if (c.settings.revision !== expectedRevision) throw new Error('Settings changed; run again');
 		if (
 			!isCalculation(calculation) ||
 			(c instanceof MulticonductorCase
@@ -2579,9 +2578,7 @@ export class Controller {
 			c.revisionGeneration !== caseRevision ||
 			c.settings.revision !== expectedRevision
 		)
-			throw new Error(
-				'The case or its settings changed during the check. Review them and try again.'
-			);
+			throw new Error('Settings changed; run again');
 		c.settings.options = {
 			...c.settings.options,
 			[calculation]: { ...resolved.overrides }
@@ -2603,8 +2600,7 @@ export class Controller {
 	/** Explicit solve. A candidate Study replaces the accepted Study only after success. */
 	runSettings = async (c: SolvableCase | MulticonductorCase, signal?: AbortSignal) => {
 		signal?.throwIfAborted();
-		if (c.solving)
-			throw new Error('A calculation is already running for this case. Wait for it to finish.');
+		if (c.solving) throw new Error('Already running');
 		const snapshot = this.inspectSettings(c);
 		const initialRevision = c.revisionGeneration;
 		if (c instanceof MulticonductorCase) {
@@ -2617,9 +2613,7 @@ export class Controller {
 				c.revisionGeneration !== initialRevision ||
 				c.settings.revision !== snapshot.settings_revision
 			)
-				throw new Error(
-					'The case or its settings changed before the calculation started. Run it again.'
-				);
+				throw new Error('Settings changed; run again');
 			const result = await this.solveMultiCase(
 				c,
 				resolved.effective as McPfOptions,
@@ -2646,15 +2640,12 @@ export class Controller {
 						overrides: c.settings.options[formulation] ?? {}
 					});
 		signal?.throwIfAborted();
-		if (c.solving)
-			throw new Error('A calculation is already running for this case. Wait for it to finish.');
+		if (c.solving) throw new Error('Already running');
 		if (
 			c.revisionGeneration !== initialRevision ||
 			c.settings.revision !== snapshot.settings_revision
 		)
-			throw new Error(
-				'The case or its settings changed before the calculation started. Run it again.'
-			);
+			throw new Error('Settings changed; run again');
 		const sequence = ++c.solveSeq;
 		const revision = c.revisionGeneration;
 		const settingsRevision = c.settings.revision;
@@ -2980,7 +2971,7 @@ export class Controller {
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				this.app.error = `${file.name} is not a case or geographic file. Open a .m, .raw, .aux, .epc, .pwb, .dss, .pwd, .csv, .json or .geojson file.`;
+				this.app.error = `${file.name}: unsupported format`;
 				continue;
 			}
 			this.app.parsingFile = true;
@@ -2988,7 +2979,7 @@ export class Controller {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				const { module_json, topology, view, ...summary } = await ingestCase(bytes, format);
 				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
-					this.app.error = `${file.name} was read, but it does not hold a complete network. Add the matching .m or .raw case file.`;
+					this.app.error = `${file.name}: incomplete network`;
 					continue;
 				}
 				const id = `local-${++this.localSeq}`;
@@ -3029,7 +3020,7 @@ export class Controller {
 		} else {
 			const unmatchedDisplays = displays.filter((display) => !display.consumed);
 			if (unmatchedDisplays.length)
-				this.app.error = `No drawing objects in ${unmatchedDisplays.map((display) => display.file.name).join(' and ')} matched the case. Check that the drawing belongs to this case.`;
+				this.app.error = `${unmatchedDisplays.map((display) => display.file.name).join(' and ')}: drawing does not match case`;
 		}
 	};
 
@@ -3123,7 +3114,7 @@ export class Controller {
 			view,
 			layer,
 			name: 'Network diagram',
-			warnings: ['No geographic coordinates; positions follow network connectivity.']
+			warnings: ['No coordinates']
 		};
 		local.displayMode = 'diagram';
 	}
@@ -3177,7 +3168,7 @@ export class Controller {
 			const result = await ingestJsonDrop(bytes, { retain: true });
 			if (result.kind === 'unknown') return { outcome: 'unrouted', bytes };
 			if (result.kind === 'ambiguous') {
-				this.app.error = `${file.name} has markers for both a transmission and a distribution format, so its type is unclear. Remove one set of markers and open it again.`;
+				this.app.error = `${file.name}: ambiguous format`;
 				return { outcome: 'failed' };
 			}
 			if (result.kind === 'transmission') {
@@ -3281,8 +3272,7 @@ export class Controller {
 	): Promise<McPfSummary> => {
 		if (signal?.aborted || this.disposed)
 			throw new DOMException('Calculation cancelled', 'AbortError');
-		if (c.solving)
-			throw new Error('A calculation is already running for this case. Wait for it to finish.');
+		if (c.solving) throw new Error('Already running');
 		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
 		const settingsError = validateMcPfOptions(options);
 		if (settingsError) throw new Error(settingsError);
@@ -3294,10 +3284,7 @@ export class Controller {
 		// The retained input keeps its energized-network selection record, and
 		// there is no engine operation to remove it, so a full-network run here
 		// would still exclude the islands while claiming otherwise.
-		if (c.mcInputSelected && !energizedOnly)
-			throw new Error(
-				'This case already solves only its energized network; re-import it to solve the full network'
-			);
+		if (c.mcInputSelected && !energizedOnly) throw new Error('Already energized only');
 		// Rejected requests change nothing. Accepted settings persist even if
 		// the solver then fails, so a retry runs with them.
 		if (!sameSettings(c.mcOptions, options)) {
@@ -3674,7 +3661,7 @@ export class Controller {
 		q_var: number
 	) => {
 		if (!c.mcSession) {
-			this.app.error = 'Run AC power flow once before editing loads.';
+			this.app.error = 'Run power flow first';
 			return;
 		}
 		if (!Number.isFinite(p_w) || !Number.isFinite(q_var)) {
@@ -3959,9 +3946,7 @@ export class Controller {
 			Object.values(this.caseDeltas(c)).some((v) => v !== 0) ||
 			Object.values(this.caseRatings(c)).some((v) => v !== 0)
 		) {
-			throw new Error(
-				'The displayed edits have no matching saved result. Finish solving before saving them.'
-			);
+			throw new Error('Wait for the solve');
 		}
 		const api = this.api;
 		if (
@@ -3985,9 +3970,7 @@ export class Controller {
 			c.resultDcFormula &&
 			c.resultDcFormula !== 'series_susceptance'
 		) {
-			throw new Error(
-				'The selected DC variant has no matching saved result. Finish solving before saving it.'
-			);
+			throw new Error('Wait for the solve');
 		}
 		return { input: base };
 	}
@@ -4149,7 +4132,7 @@ export class Controller {
 		}
 		const studyInputJson = await this.ensureStudyInputJson(c);
 		if (!studyInputJson) {
-			this.app.error = `${this.caseName(c)}: there is no PowerIO module to save. Add the case again.`;
+			this.app.error = `${this.caseName(c)}: re-add the case`;
 			return null;
 		}
 		const study = await this.getStudy(c, studyInputJson);
@@ -4180,7 +4163,7 @@ export class Controller {
 	/** Save the exact DC OPF result with the materialized problem instance it solved. */
 	saveSolutionModule = async (c: SolvableCase): Promise<void> => {
 		if (c.formulation !== 'dcopf') {
-			this.app.error = `${this.caseName(c)}: exact solution modules need a DC OPF result. Choose DC OPF, solve, then save.`;
+			this.app.error = `${this.caseName(c)}: needs a DC OPF result`;
 			return;
 		}
 		const study = await this.syncedStudy(c);

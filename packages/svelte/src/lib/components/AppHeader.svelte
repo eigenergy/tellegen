@@ -35,7 +35,6 @@
 						{
 							id: 'dynamics:open',
 							title: () => (app.mode === 'dynamics' ? 'Back to steady state' : 'Open Dynamics'),
-							hint: 'RMS simulation of faults and trips',
 							keywords: ['dynamics', 'rms', 'transient', 'stability', 'mode'],
 							run: () => (app.mode = app.mode === 'dynamics' ? 'steady' : 'dynamics')
 						},
@@ -68,7 +67,6 @@
 			{
 				id: 'open-file',
 				title: 'Open case file…',
-				hint: 'MATPOWER, PSS/E, OpenDSS, CIM and other formats',
 				keywords: ['import', 'upload', 'load'],
 				group: 'Cases',
 				run: () => fileInput?.click()
@@ -88,7 +86,6 @@
 				.map((c): Command => ({
 					id: `case:${c.id}`,
 					title: `Switch to ${c.name}`,
-					hint: 'Distribution case',
 					group: 'Cases',
 					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
 					run: () => void ctrl.activateHostedDistribution(c.id)
@@ -96,7 +93,6 @@
 			...app.localCases.map((c): Command => ({
 				id: `case:${c.id}`,
 				title: `Switch to ${c.label}`,
-				hint: 'Opened from a file',
 				group: 'Cases',
 				keywords: ['case', 'network', 'open', 'local'],
 				run: () => void ctrl.activateLocal(c)
@@ -104,7 +100,6 @@
 			...app.multiCases.map((c): Command => ({
 				id: `case:${c.id}`,
 				title: `Switch to ${c.label}`,
-				hint: 'Distribution case',
 				group: 'Cases',
 				keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
 				run: () => void ctrl.activateMulti(c)
@@ -124,14 +119,14 @@
 	/** The open case, named as the case list names it. */
 	const current = $derived.by((): { name: string; detail: string; perturbed: boolean } | null => {
 		const multi = app.activeMulti;
-		if (multi) return { name: multi.label, detail: 'Distribution', perturbed: false };
+		if (multi) return { name: splitName(multi.label)[0], detail: 'Distribution', perturbed: false };
 		const backend = app.active;
 		if (backend) {
 			const [name, region] = splitName(backend.name);
 			return { name, detail: region, perturbed: backend.perturbed };
 		}
 		const local = app.activeLocal;
-		if (local) return { name: local.label, detail: 'From a file', perturbed: false };
+		if (local) return { name: local.label, detail: 'Local', perturbed: false };
 		return null;
 	});
 	const hostedPending = $derived(
@@ -250,9 +245,11 @@
 			{#if current}
 				<span class="case-name">{current.name}</span>
 				{#if current.detail}<span class="case-detail">{current.detail}</span>{/if}
-				{#if current.perturbed}<span class="case-detail">(demand changed)</span>{/if}
+				{#if current.perturbed}<span class="edited" title="Edited">Edited</span>{/if}
 			{:else}
-				<span class="case-name">{ctrl.casesLoaded ? 'Open a case' : 'Loading cases…'}</span>
+				<span class="case-name"
+					>{ctrl.casesLoaded ? 'Open a case' : ctrl.casesFailed ? 'No cases' : 'Loading…'}</span
+				>
 			{/if}
 			<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
 				><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
@@ -278,9 +275,9 @@
 							>
 								<span class="cname">{cname}</span>
 								<span class="cregion"
-									>{c.unavailableReason ? 'Unavailable' : cregion}{c.perturbed
-										? ', demand changed'
-										: ''}</span
+									>{c.unavailableReason ? 'Unavailable' : cregion}{#if c.perturbed}<span
+											class="edited">Edited</span
+										>{/if}</span
 								>
 							</button>
 							<button
@@ -302,7 +299,7 @@
 								title={c.unavailable_reason ?? undefined}
 								onclick={() => pick(() => ctrl.activateHostedDistribution(c.id))}
 							>
-								<span class="cname">{c.name}</span>
+								<span class="cname">{splitName(c.name)[0]}</span>
 								<span class="cregion"
 									>{c.unavailable_reason
 										? 'Unavailable'
@@ -330,7 +327,7 @@
 								onclick={() => pick(() => ctrl.activateLocal(c))}
 							>
 								<span class="cname">{c.label}</span>
-								<span class="cregion">From a file</span>
+								<span class="cregion">Local</span>
 							</button>
 							<button
 								class="case-remove"
@@ -353,8 +350,8 @@
 								aria-current={app.activeMultiId === c.id ? 'true' : undefined}
 								onclick={() => pick(() => ctrl.activateMulti(c))}
 							>
-								<span class="cname">{c.label}</span>
-								<span class="cregion">Distribution{c.hosted ? '' : ', from a file'}</span>
+								<span class="cname">{splitName(c.label)[0]}</span>
+								<span class="cregion">Distribution</span>
 							</button>
 							<button
 								class="case-remove"
@@ -372,23 +369,15 @@
 			<div class="case-actions">
 				<button class="action" onclick={() => pick(() => fileInput?.click())}>
 					<span>Open a file…</span>
-					<span class="action-hint"
-						>{ctrl.collectionsAvailable ? 'Case, ZIP or map files.' : 'Case or map files.'}
-						{#if ctrl.showFileDropUi}<span class="drop-hint"
-								>You can also drop them anywhere on this page.</span
-							>{/if}</span
-					>
 				</button>
 				{#if ctrl.collectionsAvailable}
 					<button class="action" onclick={() => pick(openFolder)}>
 						<span>Open folder…</span>
-						<span class="action-hint">Every case file in a shared folder.</span>
 					</button>
 				{/if}
 				{#if restorable}
 					<button class="action" onclick={() => pick(ctrl.restoreDefaultCases)}>
 						<span>Restore default cases</span>
-						<span class="action-hint">Bring back the demo cases you removed.</span>
 					</button>
 				{/if}
 			</div>
@@ -699,8 +688,8 @@
 	}
 
 	.action {
-		display: grid;
-		gap: 2px;
+		display: flex;
+		align-items: center;
 		padding: 7px 10px;
 		border: 0;
 		border-radius: var(--radius-control);
@@ -714,10 +703,22 @@
 		background: var(--surface-hover);
 	}
 
-	.action-hint {
-		color: var(--text-secondary);
+	/* An edited case: a small accent dot and the word. */
+	.edited {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-left: 6px;
+		color: var(--text-accent);
 		font-size: var(--fs-label);
-		font-weight: 400;
+		font-weight: 500;
+	}
+	.edited::before {
+		content: '';
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: currentColor;
 	}
 
 	.tools {
@@ -842,14 +843,14 @@
 			width: 44px;
 		}
 
+		/* Taller rows: the name sits in the middle, level with the remove button. */
+		.case-activate {
+			align-items: center;
+		}
+
 		.case-button,
 		.tool {
 			height: 40px;
-		}
-
-		/* Nothing to drop from a touch screen. */
-		.drop-hint {
-			display: none;
 		}
 	}
 </style>

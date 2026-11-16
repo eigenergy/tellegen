@@ -23,9 +23,6 @@
 	const neutralPos = $derived(thumbAlignedPos(neutralFrac));
 	const fillLo = $derived(valFrac < neutralFrac ? valPos : neutralPos);
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
-	const sliderTip = 'Drag to preview, release to solve. The tick marks the committed demand.';
-	const disabledTip = 'Display-only bus; demand is fixed';
-	const scoreTip = 'Estimated from the prices, then checked by solving again.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -42,7 +39,6 @@
 					class:active={app.demandRangeMode === 'local'}
 					aria-pressed={app.demandRangeMode === 'local'}
 					{disabled}
-					title="Range near the committed demand"
 					onclick={() => ctrl.setDemandRangeMode('local')}>Nearby</button
 				>
 				<button
@@ -50,7 +46,6 @@
 					class:active={app.demandRangeMode === 'full'}
 					aria-pressed={app.demandRangeMode === 'full'}
 					{disabled}
-					title="Zero load to the local physical limit"
 					onclick={() => ctrl.setDemandRangeMode('full')}>Full range</button
 				>
 			</div>
@@ -63,7 +58,7 @@
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
-			title={disabled ? disabledTip : sliderTip}
+			title={disabled ? 'Fixed' : undefined}
 		>
 			<input
 				type="range"
@@ -91,17 +86,15 @@
 		<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
 			<p class="pred dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
 				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					Predicted cost change <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
+					Predicted <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
 				{:else}
 					&nbsp;
 				{/if}
 			</p>
 			<p class="score" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
-					<span title={scoreTip}>
-						Cost change: estimated <span class="mono">{signed(ctrl.gradientScore.pred)}</span>,
-						solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h
-					</span>
+					<span>Predicted <span class="mono">{signed(ctrl.gradientScore.pred)}</span> $/h</span>
+					<span>Solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h</span>
 				{:else}
 					&nbsp;
 				{/if}
@@ -264,6 +257,8 @@
 	}
 
 	.score {
+		display: flex;
+		gap: 16px;
 		margin: 8px 0 0;
 		font-size: 13px;
 		color: var(--ink);

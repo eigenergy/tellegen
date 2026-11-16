@@ -31,34 +31,19 @@
 
 <details class="settings">
 	<summary>Power flow settings</summary>
-	<p>
-		These settings apply to both Run power flow and Solve energized network. Editing them does not
-		start a calculation. A failed run retains the previous result and the settings used for that
-		result.
-	</p>
 	<fieldset {disabled}>
-		<legend>Load-model envelope</legend>
+		<legend>Load envelope</legend>
 		<label class="toggle"
-			><input type="checkbox" bind:checked={options.voltage_envelope} />Use load-model envelope</label
+			><input type="checkbox" bind:checked={options.voltage_envelope} />Load envelope</label
 		>
-		<p>
-			Outside the normal band, the envelope changes the load equations to help convergence. Modified
-			results are labelled explicitly. These thresholds are not operating voltage limits. Loads with
-			explicit source voltage bounds always use those bounds and their original cutoff or current
-			limit; this setting does not replace them.
-		</p>
-		<label>Vlow (pu)<input type="number" step="any" bind:value={options.v_low_pu} /></label>
-		<label>Vmin (pu)<input type="number" step="any" bind:value={options.v_min_pu} /></label>
-		<label>Vmax (pu)<input type="number" step="any" bind:value={options.v_max_pu} /></label>
-		<p>
-			With the envelope disabled, the original load equations are used at every voltage; convergence
-			is not guaranteed.
-		</p>
+		<label>Low voltage (pu)<input type="number" step="any" bind:value={options.v_low_pu} /></label>
+		<label>Min voltage (pu)<input type="number" step="any" bind:value={options.v_min_pu} /></label>
+		<label>Max voltage (pu)<input type="number" step="any" bind:value={options.v_max_pu} /></label>
 	</fieldset>
 	<fieldset {disabled}>
-		<legend>Numerical solver</legend>
+		<legend>Solver</legend>
 		<label
-			>Maximum iterations<input
+			>Max iterations<input
 				type="number"
 				min="1"
 				step="1"
@@ -69,30 +54,30 @@
 			>Damping<input type="number" min="0" max="1" step="any" bind:value={options.damping} /></label
 		>
 		<details>
-			<summary>Advanced tolerances</summary>
+			<summary>Tolerances</summary>
 			<label
-				>Voltage-change tolerance (V)<input
+				>Voltage tolerance (V)<input
 					type="number"
 					step="any"
 					bind:value={options.tolerance}
 				/></label
 			>
 			<label
-				>Zero-voltage tolerance (V)<input
+				>Zero-voltage floor (V)<input
 					type="number"
 					step="any"
 					bind:value={options.zero_voltage_tolerance}
 				/></label
 			>
 			<label
-				>Absolute KCL tolerance (A)<input
+				>Current tolerance (A)<input
 					type="number"
 					step="any"
 					bind:value={options.absolute_kcl_tolerance}
 				/></label
 			>
 			<label
-				>Relative KCL tolerance<input
+				>Relative tolerance<input
 					type="number"
 					step="any"
 					bind:value={options.relative_kcl_tolerance}
@@ -104,7 +89,7 @@
 	{#if failure}<p role="alert">{failure}</p>{/if}
 	<div class="actions">
 		{#if onapply}<button disabled={disabled || !!validation} onclick={() => void apply()}
-				>Apply settings and run</button
+				>Run</button
 			>{/if}
 		<button
 			{disabled}

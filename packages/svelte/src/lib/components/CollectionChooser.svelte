@@ -59,10 +59,6 @@
 		<button onclick={() => model.close()}>{model.busy ? 'Cancel import' : 'Close'}</button>
 	</div>
 	<p class="progress" role="status">{model.progress}</p>
-	<p>
-		Each selection becomes an independent case. Importing does not run a calculation. Unsupported
-		snapshots remain view-only with an explanation.
-	</p>
 	{#each model.errors as error, index (index)}<p class="error" role="alert">{error}</p>{/each}
 	{#if model.collections.length}
 		<details>
@@ -77,10 +73,6 @@
 						>{/if}
 				</p>
 			{/each}
-			<p>
-				Original ZIP downloads preserve the uploaded bytes. Source exports create a new ZIP.
-				“Project” includes all files within the selected scope, possibly other cases.
-			</p>
 			<label
 				>Source export scope <select bind:value={exportScope}
 					><option value="selected">Selected members only</option><option value="project"
@@ -143,9 +135,7 @@
 				{#if row.message}<p class:failure={row.outcome === 'failed'}>{row.message}</p>{/if}
 			</div>
 		{/each}
-		{#if !visible.length && !model.busy}<p>
-				No candidates match. Use the inventory below to select a nonstandard entry explicitly.
-			</p>{/if}
+		{#if !visible.length && !model.busy}<p>No matches</p>{/if}
 	</div>
 	{#if matching.length > 100}<div class="toolbar">
 			<button disabled={page === 0} onclick={() => page--}>Previous candidates</button><span
@@ -161,11 +151,7 @@
 	>
 	{#if model.collections.length}
 		<details>
-			<summary>Choose a nonstandard entry or document group</summary>
-			<p>
-				ZIP entries and XML documents may need an explicit format. Nested transport ZIPs are not
-				expanded automatically. Group only documents belonging to the same case.
-			</p>
+			<summary>Other files</summary>
 			<label
 				>Collection <select
 					bind:value={explicitSession}
@@ -200,13 +186,8 @@
 			</div>
 		</details>
 	{/if}
-	<p class="hint">
-		Companion files remain available to their selected master. Separate geographic sidecars are not
-		applied to every case: import first, then select a case and attach its sidecar.
-	</p>
 	<div class="footer">
-		<span>{selected.length} selected; {importable.length} to import (up to 32 per import)</span
-		><button
+		<span>{selected.length} selected, {importable.length} to import</span><button
 			class="primary"
 			disabled={model.busy || !importable.length || importable.length > 32}
 			onclick={() => model.importSelected()}>Import selected cases</button
@@ -302,10 +283,6 @@
 	.error,
 	.failure {
 		color: var(--error, #b33);
-	}
-	.hint {
-		font-size: 12px;
-		color: var(--text-secondary);
 	}
 	details {
 		margin: 10px 0;

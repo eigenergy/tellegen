@@ -29,15 +29,7 @@
 		const b = ctrl.selectedBranchData;
 		return b ? `${b.from} – ${b.to}` : String(app.selectedBranch);
 	});
-	const title = $derived(
-		ctrl.previewing
-			? branchMode
-				? `Price preview for line ${branchLabel}`
-				: `Price preview for bus ${app.selectedBus}`
-			: branchMode
-				? `Price change per ${reportedUnits.endsWith('MVA') ? 'MVA' : 'MW'} of rating on line ${branchLabel}`
-				: `Price change per MW of demand at bus ${app.selectedBus}`
-	);
+	const title = $derived(branchMode ? `Line ${branchLabel}` : `Bus ${app.selectedBus}`);
 </script>
 
 <div class="mode readout-head">
@@ -46,16 +38,12 @@
 </div>
 <div class="sensitivity-readout" data-testid="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
-		<p class="dim small">
-			{ctrl.activeSolvable?.solving
-				? 'Solving…'
-				: 'Estimated from the current prices. Release to solve.'}
-		</p>
+		<p class="dim small">{ctrl.activeSolvable?.solving ? 'Solving…' : 'Estimate'}</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels single">
 				<span
-					>Every price changes by {signedSmall(ctrl.sensSummary.mean * previewStep)}
+					>Uniform: {signedSmall(ctrl.sensSummary.mean * previewStep)}
 					{previewUnits}</span
 				>
 			</div>
@@ -75,16 +63,15 @@
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels single">
-				<span>Every price changes by {signedSmall(ctrl.sensSummary.mean)} {reportedUnits}</span>
+				<span>Uniform: {signedSmall(ctrl.sensSummary.mean)} {reportedUnits}</span>
 			</div>
 		{:else if ctrl.sensSummary}
 			<div class="legend" style:background={sensGradient}></div>
 			<div class="legend-labels">
 				<span>&minus;{small(ctrl.sensSummary.scale)}</span>
-				<span>0</span>
+				<span>Price change ({reportedUnits})</span>
 				<span>+{small(ctrl.sensSummary.scale)}</span>
 			</div>
-			<p class="dim small units">In {reportedUnits}.</p>
 		{:else if app.sensitivityLoading}
 			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
 			<div class="legend-labels single">
@@ -113,9 +100,5 @@
 
 	.sensitivity-readout {
 		min-height: 58px;
-	}
-
-	.units {
-		margin: 4px 0 0;
 	}
 </style>

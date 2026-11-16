@@ -30,13 +30,11 @@
 
 <div class="mc-solve">
 	{#if !mc.mcPfSupported && mc.mcPfReason}<p class="note">{mc.mcPfReason}</p>{/if}
-	{#if invalid}<p class="note">
-			{invalid} Open the power flow settings to change it before solving.
-		</p>{/if}
+	{#if invalid}<p class="note">{invalid}</p>{/if}
 	<button class="quiet" onclick={onsettings}>Power flow settings</button>
 	<div class="actions">
 		{#if mc.solving}
-			<span role="status">Calculating…</span>{#if mc.solveAbort}<button
+			<span role="status">Solving…</span>{#if mc.solveAbort}<button
 					class="quiet"
 					onclick={() => mc.solveAbort?.abort()}>Cancel</button
 				>{/if}

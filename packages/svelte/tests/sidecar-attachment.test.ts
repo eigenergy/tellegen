@@ -253,7 +253,7 @@ describe('coordinate attachments', () => {
 			} as never;
 		});
 		await ctrl.ingestFiles(files().slice(1, 2));
-		expect(app.error).toContain('selected case changed');
+		expect(app.error).toContain('Case changed');
 		expect(source.studyInputJson).toBe(input);
 		expect(source.view).toBe(view);
 		expect(app.localCases).toHaveLength(1);
@@ -286,7 +286,7 @@ describe('coordinate attachments', () => {
 		await ctrl.ingestFiles(files().slice(1, 2));
 		const copy = app.activeLocal!;
 		copy.deltas = { 2: 9 };
-		await expect(ctrl.captureSavedCase(copy)).rejects.toThrow('no matching saved result');
+		await expect(ctrl.captureSavedCase(copy)).rejects.toThrow('Wait for the solve');
 		expect(source.deltas).toEqual({});
 	});
 
@@ -311,7 +311,7 @@ describe('coordinate attachments', () => {
 			return { layer: '{}', diagnostics: [], n_points: 1, n_routes: 0 };
 		});
 		await ctrl.ingestFiles(files().slice(1, 2));
-		expect(app.error).toContain('selected case changed');
+		expect(app.error).toContain('Case changed');
 		expect(applyGeo).not.toHaveBeenCalled();
 		expect(original.studyInputJson).toBe('a');
 		expect(other.studyInputJson).toBe('b');
@@ -342,7 +342,7 @@ describe('coordinate attachments', () => {
 			return { kind: 'balanced', payload: payload('base') } as never;
 		});
 		await ctrl.ingestFiles(files().slice(1));
-		expect(app.error).toContain('selected case changed');
+		expect(app.error).toContain('Case changed');
 		expect(app.localCases).toHaveLength(0);
 		expect(applyDisplayGeo).not.toHaveBeenCalled();
 	});

@@ -33,7 +33,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 	if (c.solution.vm?.length || c.solution.w.length > 0) {
 		options.push({
 			mode: 'voltage',
-			label: '|V|',
+			label: 'Voltage',
 			unit: 'pu',
 			copy: c.formulation === 'socwr' ? 'Voltage magnitude, SOCWR relaxation' : 'Voltage magnitude',
 			gradient: priceGradient

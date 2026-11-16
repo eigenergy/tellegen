@@ -86,36 +86,46 @@ export function getNoticeCenter(): NoticeCenter {
 }
 /** Messages that tell the reader what to change: running the same thing
  * again cannot succeed, so their notices offer no Retry. */
-const INSTRUCTIONS = [/experimental\. Turn it on in Settings/i];
+const INSTRUCTIONS = [
+	/experimental\. Turn it on in Settings/i,
+	/is not a case or geographic file|does not hold a complete network|could not (parse|read)|unsupported format|incomplete network|ambiguous format/i
+];
 export function errorNoticeCanRetry(details: string): boolean {
 	return !INSTRUCTIONS.some((pattern) => pattern.test(details));
 }
+/** The case or map file a message names, if any. */
+function fileOf(details: string): string | null {
+	return (
+		/([\w.-]+\.(?:m|raw|rawx|aux|epc|pwb|pwd|dss|dyr|csv|json|geojson|xml|zip))\b/i.exec(
+			details
+		)?.[1] ?? null
+	);
+}
+/** A notice's title: a few words naming what failed. The full message is in Details. */
 export function errorNoticeTitle(details: string): string {
+	if (/^Case list:/.test(details)) return 'Could not load the case list';
 	if (/dynamics.*is experimental\. Turn it on in Settings/i.test(details))
-		return 'Dynamics is experimental. Turn it on in Settings, under Experimental features.';
+		return 'Turn on Experimental features in Settings';
 	if (/^ZIP and folder imports are unavailable in this build/.test(details))
-		return 'ZIP and folder imports unavailable';
-	if (/rate limit|limiting requests/i.test(details))
-		return 'Too many requests. Wait a minute, then try again.';
-	if (/detailed DC converter\(s\).*qualified DC-grid/i.test(details))
-		return 'Open Equipment for AC/DC studies';
+		return 'Imports unavailable';
+	if (/rate limit|limiting requests/i.test(details)) return 'Rate limited';
 	// MapLibre's WebGL failure includes "Read more"; classify our map errors
 	// before the generic file/read fallback so it does not blame a case file.
 	if (/^map failed to load:|^the map lost its graphics context/i.test(details))
-		return 'The map could not start. Reload the page or try another browser.';
-	if (/storage|quota|space|indexeddb/i.test(details))
-		return 'Could not save in this browser. Free some browser storage, then try again.';
+		return 'Map failed to start';
+	if (/storage|quota|space|indexeddb/i.test(details)) return 'Storage full';
 	// A singular matrix on its own is a solve failure (an AC power flow Jacobian,
 	// say); only a sensitivity that fails is about prices.
-	if (/sensitivity|derivative/i.test(details))
-		return 'Price sensitivity is not available for this result.';
+	if (/sensitivity|derivative/i.test(details)) return 'No price sensitivity';
 	if (
 		/infeasib|converg|singular|jacobian|solver|solving|calculation|compute|webassembly|power flow/i.test(
 			details
 		)
 	)
-		return 'The calculation did not finish. Try another calculation, or open Details for the reason.';
-	if (/parse|read|file|format/i.test(details))
-		return 'Could not read this file. Check that it is a complete case file in a supported format.';
-	return 'That did not finish. Open Details for the reason.';
+		return 'Calculation failed';
+	if (/parse|read|file|format/i.test(details)) {
+		const file = fileOf(details);
+		return file ? `Could not open ${file}` : 'Unreadable file';
+	}
+	return 'Failed';
 }

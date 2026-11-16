@@ -6,8 +6,8 @@
 	const ctrl = getController();
 	const units = $derived(
 		dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW').replace(
-			'($/MWh)/MW',
-			'$/MWh per MW'
+			/\(\$\/MWh\)\/(MW|MVA)\b/,
+			'$$/MWh per $1'
 		)
 	);
 </script>
@@ -16,7 +16,7 @@
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 		<table>
 			<caption class="dim">
-				Largest price changes <span class="unit">({units})</span>
+				Top price changes <span class="unit">({units})</span>
 			</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}

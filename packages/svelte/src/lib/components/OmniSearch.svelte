@@ -80,10 +80,10 @@
 					{#if h}<span class="hint {h.state ?? ''}">{h.text}</span>{/if}
 				</li>
 			{:else}
-				<li class="empty" role="presentation">No bus or branch ID contains that text.</li>
+				<li class="empty" role="presentation">No matches</li>
 			{/each}
 			{#if found.total > found.matches.length}<li class="more" role="presentation">
-					{found.total.toLocaleString()} matches · keep typing to narrow
+					{found.total.toLocaleString()} matches
 				</li>{/if}
 		</ul>
 	{/if}

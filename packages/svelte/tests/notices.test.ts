@@ -8,40 +8,40 @@ describe('error titles', () => {
 		'map failed to load: Failed to initialize WebGL2. Read more at the browser support page',
 		'the map lost its graphics context repeatedly; reload the page to restore it'
 	])('labels graphics failures as map errors: %s', (details) => {
-		expect(errorNoticeTitle(details)).toBe(
-			'The map could not start. Reload the page or try another browser.'
-		);
+		expect(errorNoticeTitle(details)).toBe('Map failed to start');
 	});
 	it('identifies an unsupported AC power flow boundary as a calculation failure', () => {
 		expect(
 			errorNoticeTitle(
 				'Texas7k: AC power flow reference bus 111333 states angle -11.99 degrees; Tellegen currently requires zero'
 			)
-		).toBe(
-			'The calculation did not finish. Try another calculation, or open Details for the reason.'
-		);
+		).toBe('Calculation failed');
 	});
 	it('says how to turn on dynamics, and offers no retry that cannot succeed', () => {
 		const details =
 			'Dynamics (RMS) simulation is experimental. Turn it on in Settings, under Experimental features.';
-		expect(errorNoticeTitle(details)).toBe(
-			'Dynamics is experimental. Turn it on in Settings, under Experimental features.'
-		);
+		expect(errorNoticeTitle(details)).toBe('Turn on Experimental features in Settings');
 		expect(errorNoticeCanRetry(details)).toBe(false);
 		expect(errorNoticeCanRetry('sensitivity rate limit exceeded')).toBe(true);
 	});
 	it('treats a singular Jacobian as a calculation failure, not a price sensitivity one', () => {
 		expect(errorNoticeTitle('AC power flow failed: singular Jacobian at iteration 3')).toBe(
-			'The calculation did not finish. Try another calculation, or open Details for the reason.'
+			'Calculation failed'
 		);
 		expect(errorNoticeTitle('sensitivity unavailable: singular basis')).toBe(
-			'Price sensitivity is not available for this result.'
+			'No price sensitivity'
 		);
 	});
-	it('keeps the file error title for actual parse failures', () => {
+	it('names the file in a file error, and offers no retry for one', () => {
 		expect(errorNoticeTitle('Could not parse case.m: invalid bus row')).toBe(
-			'Could not read this file. Check that it is a complete case file in a supported format.'
+			'Could not open case.m'
 		);
+		expect(errorNoticeTitle('notes.txt: unsupported format')).toBe('Unreadable file');
+		expect(errorNoticeCanRetry('grid.raw: unsupported format')).toBe(false);
+	});
+	it('names a failed case list', () => {
+		expect(errorNoticeTitle('Case list: Server error')).toBe('Could not load the case list');
+		expect(errorNoticeCanRetry('Case list: Server error')).toBe(true);
 	});
 });
 describe('recent messages', () => {

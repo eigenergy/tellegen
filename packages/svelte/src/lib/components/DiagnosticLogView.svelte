@@ -13,7 +13,7 @@
 		log = getAppState().log,
 		onbus,
 		filename = 'tellegen-log.json',
-		empty = 'Nothing to report. Findings from opening, solving and exporting a case appear here.'
+		empty = 'No messages'
 	}: {
 		log?: DiagnosticLog;
 		/** Makes each named bus a button, for a host that can select it. */

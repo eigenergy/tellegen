@@ -74,7 +74,8 @@ describe('a controller without a backend', () => {
 		// The solve started by activation runs to its terminal local-case state.
 		await vi.waitFor(() => expect(local.solving).toBe(false));
 		expect(local.solveBackend).toBe('clarabel-wasm');
-		expect(app.error).toMatch(/browser solve unavailable/);
+		expect(app.error).toBe('synth: solve failed');
+		expect(app.errorDetail).toMatch(/browser solve unavailable/);
 
 		await ctrl.selectLocalBus(local.id, 2);
 		expect(app.selectedBus).toBe(2);

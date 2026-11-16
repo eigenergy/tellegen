@@ -40,7 +40,7 @@ it('an input change during asynchronous settings validation prevents a stale pat
 	const pending = ctrl.updateSettings(c, 'acpf', { start: 'case' }, 0);
 	c.revisionGeneration++;
 	finish(resolved);
-	await expect(pending).rejects.toThrow('The case or its settings changed');
+	await expect(pending).rejects.toThrow('Settings changed; run again');
 	expect(c.settings.revision).toBe(0);
 	expect(c.settings.calculation).toBeNull();
 	expect(c.formulation).toBe('dcopf');
@@ -91,7 +91,7 @@ it('a legacy server fallback never silently replaces custom calculation settings
 	ctrl.serverSolve(c, null);
 	expect(c.solution).toBe(previous);
 	expect(c.solving).toBe(false);
-	expect(ctrl.app.error).toContain('cannot apply these calculation settings');
+	expect(ctrl.app.error).toBe("Server can't apply settings");
 	ctrl.dispose();
 });
 
@@ -290,6 +290,6 @@ it('server paths and saves follow the displayed DC convention, not a pending one
 	await ctrl.updateSettings(c, 'dcopf', { branch_susceptance_formula: null }, c.settings.revision);
 	expect(c.branchSusceptanceFormula).toBeUndefined();
 	expect(c.resultDcFormula).toBe('tap_adjusted_reactance');
-	await expect(ctrl.captureSavedCase(c)).rejects.toThrow('selected DC variant');
+	await expect(ctrl.captureSavedCase(c)).rejects.toThrow('Wait for the solve');
 	ctrl.dispose();
 });

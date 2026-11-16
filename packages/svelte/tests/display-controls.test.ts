@@ -26,13 +26,13 @@ describe('display controls without a result', () => {
 	it('shows progress only while the calculation is still running', () => {
 		state.ctrl.activeSolvable.solving = true;
 		const { body } = render(DisplayControls);
-		expect(body).toContain('Solving AC power flow');
-		expect(body).not.toContain('results available');
+		expect(body).toContain('Solving…');
+		expect(body).not.toContain('No result');
 	});
 	it('stops reporting progress when the calculation ends without a result', () => {
 		const { body } = render(DisplayControls);
-		expect(body).not.toContain('Solving AC power flow');
-		expect(body).toContain('No AC power flow results available.');
+		expect(body).not.toContain('Solving…');
+		expect(body).toContain('No result');
 		expect(body).not.toContain('blink');
 	});
 });

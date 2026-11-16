@@ -17,6 +17,6 @@ describe('readable quantities', () => {
 		expect(readable(-80, 'MW', true).text).toBe('-80 MW');
 		expect(readable(0.0001, 'MW', true).text).toBe('0 MW');
 		expect(readable(-0.0001, 'MW').text).toBe('0 MW');
-		expect(readable(undefined, 'MW').text).toBe('Unavailable');
+		expect(readable(undefined, 'MW').text).toBe('—');
 	});
 });

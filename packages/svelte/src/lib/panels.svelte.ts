@@ -295,7 +295,7 @@ export class PanelLayout {
 				};
 			}
 		} catch {
-			this.storageError = 'Panel layout could not be restored. Reset layout to use the defaults.';
+			this.storageError = 'Layout reset';
 		}
 	}
 	save() {
@@ -310,7 +310,7 @@ export class PanelLayout {
 			);
 			this.storageError = null;
 		} catch {
-			this.storageError = 'Panel layout could not be saved. Changes last for this visit.';
+			this.storageError = 'Layout not saved';
 		}
 	}
 }

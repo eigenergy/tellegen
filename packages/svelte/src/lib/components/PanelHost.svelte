@@ -52,6 +52,15 @@
 		layout.ordered().filter((p) => p.open && layout.position(p) === 'floating')
 	);
 	const drawer = $derived(layout.panels.find((p) => p.id === layout.drawer));
+	/** Phone: a panel with no tab of its own (Settings, from the menu) is open in the
+	 * sheet. The strip then names it and offers a way back to the tabs. */
+	const away = $derived(layout.compact && !!drawer && !dockTabs.some((p) => p.id === drawer.id));
+	/** The last tab shown in the sheet: where Back returns. */
+	let lastTab = $state('network');
+	$effect(() => {
+		const id = drawer?.id;
+		if (id && dockTabs.some((p) => p.id === id)) lastTab = id;
+	});
 	/** Height of the tab strip, which the panel below it continues. */
 	let stripHeight = $state(36);
 	const toolbarTop = $derived(app.headerInset + 8);
@@ -117,9 +126,14 @@
 		event.preventDefault();
 		setSheet((drawer ? drawerHeight : 0) + step);
 	}
-	/** Compact: the strip sits on top of the sheet, or on the bottom row when no
+	/** Compact with no panel open: the tab strip sits on the bottom edge (unless the
+	 * dynamics playback dock is there), and the map's bottom controls clear it. */
+	const docked = $derived(layout.compact && stripShown && !drawer && app.dockInset === 0);
+	/** The sheet's grab bar above the strip: map labels must clear it too. */
+	const HANDLE_HEIGHT = 22;
+	/** Compact: the strip sits on top of the sheet, or on the bottom edge when no
 	 * panel is open. */
-	const stripBottom = $derived(bottomReserve + (drawer ? drawerHeight : 0));
+	const stripBottom = $derived(drawer ? bottomReserve + drawerHeight : docked ? 0 : bottomReserve);
 	function resize() {
 		layout.resizeViewport(window.innerWidth, window.innerHeight, panelTop);
 	}
@@ -141,9 +155,15 @@
 	});
 	$effect(() => {
 		app.sheetInset =
-			!app.zen && layout.compact
-				? (drawer ? drawerHeight : 0) + bottomReserve + (stripShown ? stripHeight : 0)
-				: 0;
+			!app.zen && layout.compact ? stripBottom + (stripShown ? stripHeight + HANDLE_HEIGHT : 0) : 0;
+	});
+	// The main map's attribution and zoom, and the notices, sit above a docked strip.
+	$effect(() => {
+		const root = document.documentElement.style;
+		if (docked && !app.zen)
+			root.setProperty('--tellegen-sheet-clear', `${stripHeight + HANDLE_HEIGHT + 4}px`);
+		else root.removeProperty('--tellegen-sheet-clear');
+		return () => root.removeProperty('--tellegen-sheet-clear');
 	});
 </script>
 
@@ -170,6 +190,7 @@
 	<div
 		class="panel-toolbar"
 		class:compact={layout.compact}
+		class:docked
 		class:attached={layout.compact ? !!drawer : leftShown}
 		style:top={layout.compact ? undefined : `${toolbarTop}px`}
 		style:bottom={layout.compact ? `${stripBottom}px` : undefined}
@@ -179,32 +200,47 @@
 		aria-label="Panels"
 		bind:offsetHeight={stripHeight}
 	>
-		<div class="tabs" bind:clientWidth={tabsWidth}>
-			{#each dockTabs as panel (panel.id)}
-				<button
-					aria-label={panel.badge ? `${panel.title}, ${panel.badge} new` : panel.title}
-					aria-pressed={layout.shown(panel)}
-					onclick={() => {
-						if (app.zen) app.zen = false;
-						layout.toggle(panel);
-					}}
-					>{panel.title}{#if panel.badge}<span class="badge">({panel.badge})</span>{/if}</button
+		{#if away && drawer}
+			<div class="away">
+				<button class="back" onclick={() => layout.show(lastTab)}
+					><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+						><path
+							d="M7.5 2.5 4 6l3.5 3.5"
+							stroke="currentColor"
+							stroke-width="1.5"
+							fill="none"
+						/></svg
+					>Back</button
 				>
-			{/each}
-			{#if sideTabs.length}<span class="divider" aria-hidden="true"></span>{/if}
-			{#each sideTabs as panel (panel.id)}
-				<button
-					class="side"
-					aria-label={panel.title}
-					aria-pressed={layout.shown(panel)}
-					title="Opens beside the map, on the right"
-					onclick={() => {
-						if (app.zen) app.zen = false;
-						layout.toggle(panel);
-					}}>{panel.title}</button
-				>
-			{/each}
-		</div>
+				<h2>{drawer.title}</h2>
+			</div>
+		{:else}
+			<div class="tabs" bind:clientWidth={tabsWidth}>
+				{#each dockTabs as panel (panel.id)}
+					<button
+						aria-label={panel.badge ? `${panel.title}, ${panel.badge} new` : panel.title}
+						aria-pressed={layout.shown(panel)}
+						onclick={() => {
+							if (app.zen) app.zen = false;
+							layout.toggle(panel);
+						}}
+						>{panel.title}{#if panel.badge}<span class="badge">({panel.badge})</span>{/if}</button
+					>
+				{/each}
+				{#if sideTabs.length}<span class="divider" aria-hidden="true"></span>{/if}
+				{#each sideTabs as panel (panel.id)}
+					<button
+						class="side"
+						aria-label={panel.title}
+						aria-pressed={layout.shown(panel)}
+						onclick={() => {
+							if (app.zen) app.zen = false;
+							layout.toggle(panel);
+						}}>{panel.title}</button
+					>
+				{/each}
+			</div>
+		{/if}
 	</div>
 {/if}
 {#if !app.zen}
@@ -305,6 +341,15 @@
 		right: var(--tellegen-dock-right, 12px);
 		max-width: none;
 	}
+	/* Closed sheet: the tabs are a bar on the bottom edge, not a card floating
+	   above dead map. */
+	.panel-toolbar.compact.docked {
+		left: 0;
+		right: 0;
+		border-width: 1px 0 0;
+		border-radius: 0;
+		box-shadow: none;
+	}
 	.panel-toolbar.compact.attached {
 		border-radius: var(--radius-panel) var(--radius-panel) 0 0;
 		border-bottom-color: var(--line);
@@ -329,6 +374,23 @@
 	}
 	button[aria-pressed='true'] {
 		color: var(--ink);
+	}
+	.away {
+		display: flex;
+		align-items: stretch;
+		gap: 4px;
+	}
+	.away h2 {
+		align-self: center;
+		margin: 0 0 0 6px;
+		font: 600 var(--fs-title) / 1 var(--font-sans);
+		color: var(--ink);
+	}
+	button.back {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--text-accent);
 	}
 	.divider {
 		align-self: center;

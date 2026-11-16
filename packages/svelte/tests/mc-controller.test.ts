@@ -703,7 +703,7 @@ describe('multiconductor calculation and coordinates', () => {
 		expect(c.mcInput).toBe('full-with-selection');
 		const count = solve.mock.calls.length;
 		await expect(ctrl.solveMultiCase(c, {}, undefined, false)).rejects.toThrow(
-			'already solves only its energized network'
+			'Already energized only'
 		);
 		expect(solve.mock.calls.length).toBe(count);
 		expect(c.mcEnergizedOnly).toBe(true);
@@ -713,7 +713,7 @@ describe('multiconductor calculation and coordinates', () => {
 	it('an imported input that carries the selection cannot be solved as the full network', async () => {
 		const { ctrl, c, solve } = host({ mc_energized_only: true });
 		await expect(ctrl.solveMultiCase(c, {}, undefined, false)).rejects.toThrow(
-			'already solves only its energized network'
+			'Already energized only'
 		);
 		expect(solve).not.toHaveBeenCalled();
 		ctrl.dispose();
@@ -722,7 +722,7 @@ describe('multiconductor calculation and coordinates', () => {
 	it('records terminal results and rejects concurrent work', async () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });
-		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('already running');
+		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('Already running');
 		expect(await pending).toEqual(summary);
 		expect(solve).toHaveBeenCalledWith(
 			'input',
@@ -928,7 +928,7 @@ describe('multiconductor calculation and coordinates', () => {
 		app.activeMultiId = null;
 		await expect(
 			ctrl.applyMultiGeoLayers(c, [{ name: 'other', layer: 'other', diagnostics: [] }])
-		).rejects.toThrow('Select the case these coordinates belong to');
+		).rejects.toThrow('Wrong case');
 		expect(app.activeMultiId).toBeNull();
 		expect(apply).toHaveBeenCalledTimes(1);
 	});

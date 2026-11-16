@@ -4,7 +4,7 @@
 	const SIZE_SAMPLES = [10, 100, 500];
 </script>
 
-<p class="caption">Bus size: the larger of load and generation (MW)</p>
+<p class="caption">Bus size (MW)</p>
 <div class="sizes">
 	{#each SIZE_SAMPLES as mw (mw)}
 		<span class="size">

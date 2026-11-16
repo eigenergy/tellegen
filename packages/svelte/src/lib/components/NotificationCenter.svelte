@@ -277,7 +277,11 @@
 		.notifications {
 			width: calc(100vw - 24px);
 			/* The host's notice is hidden here: clear the control row only. */
-			bottom: max(60px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
+			bottom: max(
+				60px,
+				calc(var(--tellegen-timeline-clear, -1000px) + 44px),
+				calc(var(--tellegen-sheet-clear, -1000px) + 52px)
+			);
 		}
 		button {
 			min-height: 36px;
