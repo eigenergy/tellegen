@@ -30,6 +30,39 @@ gates and the image build skip only changes known not to reach them, such as
 documentation for all three, or the web app for the Rust gates. The release
 workflows always run every gate.
 
+## Rules CI checks on every pull request
+
+`.github/scripts/pr-rules.py` fails a pull request that breaks one of these.
+A maintainer can lift a rule with a label.
+
+- **Releases are patches.** A changeset declares `patch`, and no commit
+  subject, commit body or pull request title marks a breaking change (`feat!:`,
+  `BREAKING CHANGE:`). Additions are patches too: a new export, option or
+  field that leaves existing code working. A change that breaks existing code
+  needs the `release:minor` label, so talk to a maintainer first.
+- **At most 1,500 added lines**, not counting lockfiles, changelogs, generated
+  files and test data. Split a larger change into pull requests that each do
+  one thing. The `large-pr` label lifts this.
+- **An owner reviews it** (`.github/CODEOWNERS`).
+
+## What reviewers look for
+
+- **Reuse before adding.** Look for an existing helper, component or solver
+  before writing one. Number and unit formatting is in
+  `packages/svelte/src/lib/format.ts`, colour scales in `colors.ts`, time
+  series charts in `components/dynamics/TraceChart.svelte`, the list of
+  calculations in `@tellegen/engine`. In the engine, case parsing, admittance
+  matrices and branch flows come from PowerIO, and sensitivities go through
+  `crates/tellegen/src/sens`.
+- **The library does not depend on the demo.** `packages/*` is what other
+  people build apps with; `apps/web` is one app built with it. Anything a
+  second app would need belongs in a package, and anything specific to
+  tellegen.dev belongs in `apps/web`.
+- **Experimental features stay off by default** and behind their feature flag
+  or setting until a maintainer turns them on.
+- **Docs describe the code as it is.** Update the page under `docs/src/` in the
+  same pull request, in plain words, without version numbers typed by hand.
+
 ## Changesets
 
 A pull request that changes `packages/engine`, `packages/svelte`,
@@ -40,13 +73,12 @@ ships in no package release:
 npm run changeset
 ```
 
-Commit the file it writes. Use a `minor` changeset for a new or incompatible
-public API while a package is on `0.x`, and `patch` for compatible fixes. A
-pull request that changes only `apps/web`, `examples/`, or the Rust crates
-needs none: the `tellegen` crate's changelog lists each merged pull request
-under its title, so write the title for a reader of the changelog. Start it
-with `feat:` for something new or `fix:` for a fix to file it under Added or
-Fixed; anything else goes under Changed.
+Commit the file it writes, with `patch` as the bump. A pull request that
+changes only `apps/web`, `examples/`, or the Rust crates needs none: the
+`tellegen` crate's changelog lists each merged pull request under its title, so
+write the title for a reader of the changelog. Start it with `feat:` for
+something new or `fix:` for a fix to file it under Added or Fixed; anything
+else goes under Changed.
 
 ## Merging
 

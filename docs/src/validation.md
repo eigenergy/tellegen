@@ -262,7 +262,7 @@ python3 scripts/enwl_ivr_study.py --cases /path/to/selected-cases.json \
 The case list is a JSON array of BMOPF file paths. Existing `--case-root` ENWL
 selection and independent oracle comparison remain available. No dataset or
 Julia process is invoked by ordinary CI tests. Regenerate only the new feeder
-reference with `scripts/mc_opf_oracle.jl feeder` in the pinned oracle environment.
+reference with `validation/mc-opf/mc_opf_oracle.jl feeder` in the pinned oracle environment.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
@@ -272,7 +272,7 @@ Ordinary Rust tests consume the frozen results without Julia, network access
 or an external feeder dataset. Intentional regeneration uses:
 
 ```sh
-julia --project=/path/to/BMOPFTools.jl/test scripts/mc_opf_oracle.jl
+julia --project=/path/to/BMOPFTools.jl/test validation/mc-opf/mc_opf_oracle.jl
 ```
 
 The script requires a clean BMOPFTools checkout at

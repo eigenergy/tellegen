@@ -10,8 +10,8 @@ import argparse
 import hashlib
 import json
 import math
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import opendssdirect as dss
 

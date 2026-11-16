@@ -8,7 +8,7 @@
 //! The defaults were calibrated against the California Test System (Taylor
 //! et al., IEEE TEMPR 2(1), 2024) through the generic quantities below (shares
 //! per ladder depth, per-level densities, capacity credit per fuel), never
-//! through anything specific to one region; `docs/evidence/synth/cats/`
+//! through anything specific to one region; `validation/evidence/synth/cats/`
 //! records the calibration.
 
 use std::sync::OnceLock;

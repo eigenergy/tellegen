@@ -69,7 +69,7 @@ With `source: "osm"` the buses, lines and plants come from an Overpass
 document of OpenStreetMap `power=*` features (ODbL) instead, and the same
 planning and validation run on the mapped network. How close California comes
 to the California Test System in both modes is measured in
-`docs/evidence/synth/cats/`.
+`validation/evidence/synth/cats/`.
 
 Features: `schema` derives JSON Schema for the generated TypeScript
 types; `embedded-places` bundles `data/populated_places.json` for the

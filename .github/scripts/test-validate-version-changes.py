@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).with_name("validate-version-changes.py")
 SPEC = importlib.util.spec_from_file_location("version_validator", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None

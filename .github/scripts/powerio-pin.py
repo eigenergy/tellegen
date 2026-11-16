@@ -7,7 +7,7 @@ import argparse
 import re
 import tomllib
 from pathlib import Path
-
+from typing import NoReturn
 
 POWERIO_REPOSITORY = "https://github.com/eigenergy/powerio.git"
 POWERIO_CRATES = (

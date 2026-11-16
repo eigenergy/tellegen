@@ -5,10 +5,11 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
+
 if sys.version_info < (3, 11):
     raise SystemExit("POUNCE release verification requires Python 3.11+; set PYTHON to a supported interpreter for build-acopf-wasi.sh")
 import tomllib

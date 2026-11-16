@@ -3,7 +3,7 @@
 Tellegen builds against PowerIO 0.12, starting with 0.12.0. The workspace
 requires `0.12`, so any later 0.12 release satisfies it, and the lockfile
 records one checksummed crates.io release for every PowerIO component.
-`docs/evidence/webmcp/powerio-releases.json` maps each published release tag to
+`validation/evidence/capacity-plan/powerio-releases.json` maps each published release tag to
 its commit.
 
 Pull requests that change the dependency manifests, lockfile, or pin scripts

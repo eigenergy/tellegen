@@ -3,9 +3,9 @@
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location("pack_acopf", Path(__file__).with_name("pack-acopf-release.py"))
 PACK = importlib.util.module_from_spec(SPEC)

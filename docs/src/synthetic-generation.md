@@ -120,7 +120,7 @@ by module hash.
   of 0.005 of the densest cell's on land with no place near it. These are
   the `fill_*` constants of `crates/tellegen-synth/src/tuning.rs`,
   calibrated on California
-  ([CATS comparison](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/synth/cats)).
+  ([CATS comparison](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/synth/cats)).
 - **Load cap.** No bus carries more than the load cap of the highest
   modelled level (7 GW at 500 kV, 2.9 GW at 400 kV). The excess of a metropolitan bus moves
   to the nearest buses of its island with room, and
@@ -441,18 +441,18 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
   and 1.5 s in wasm (Node, Apple M5 Pro), end to end with both validations;
   the United States takes 1.4–1.5 s and 2.0 s, about 0.9 s of it an AC power
   flow that does not converge over five starts. A 500-bus country takes
-  under 0.1 s. `docs/evidence/synth` records the measurements.
+  under 0.1 s. `validation/evidence/synth` records the measurements.
 - Whether the AC power flow converges inside the band depends on the seed
-  for several countries. `docs/evidence/synth` sweeps three seeds on two
+  for several countries. `validation/evidence/synth` sweeps three seeds on two
   outlines (Natural Earth 1:50m and the MapToGrid app's 1:110m layer):
   every run passes DC. The warm-start evaluation passes AC inside the band
   in 53 of 54 and 49 of 51 runs. The United States passes all six runs;
   Australia's three remaining failures depend on seed and outline. See
-  `docs/evidence/synth/warm-start-262` for timings and numerical comparisons.
+  `validation/evidence/synth/warm-start-262` for timings and numerical comparisons.
 - Clustering in generated grids runs higher than in the ACTIVSg200 and
   GOC500 references, because the Gabriel mesh is rich in triangles. Their
   highest nodal degree is also lower, since the mesh caps it at 8.
-  `docs/evidence/synth` measures both against the references.
+  `validation/evidence/synth` measures both against the references.
 - Continental regions span several thousand kilometres as one AC island.
   Their planning-case angle spread stays well above 44° within the branch
   budget, so the plan reports `planning_incomplete`. Real systems of that

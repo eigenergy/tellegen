@@ -1,8 +1,29 @@
-# Lint gate for the pure-Python layer. Scoped by `include` because a bare
-# `ruff check .` at the repo root would walk node_modules and the npm workspaces.
-include = ["python/**/*.py", "python/**/*.pyi"]
+# Lint gate for the Python package and the repository's Python scripts. Scoped
+# by `include` because a bare `ruff check .` at the repo root would walk
+# node_modules and the npm workspaces.
+include = [
+    "python/**/*.py",
+    "python/**/*.pyi",
+    "scripts/**/*.py",
+    "validation/**/*.py",
+    ".github/scripts/*.py",
+    "crates/tellegen/tests/*.py",
+]
 # The wheel is abi3-py311, so the lint floor matches the install floor.
 target-version = "py311"
 
 [lint]
 select = ["E4", "E7", "E9", "F", "B", "I", "PLE", "PLW", "RUF022", "RUF100"]
+
+# Scripts outside the package keep their compact numeric style; the rules that
+# find real errors (undefined names, unused imports, import order) still apply.
+[lint.per-file-ignores]
+"{scripts,validation,.github/scripts,crates/tellegen/tests}/**" = [
+    "B023",
+    "B905",
+    "E701",
+    "E702",
+    "E741",
+    "PLW1510",
+    "PLW2901",
+]

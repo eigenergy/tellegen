@@ -273,7 +273,7 @@ fn embedded_cases() -> Vec<(&'static str, String)> {
             "crates/tellegen-server/fixtures/pglib/pglib_opf_case500_goc.m",
         ),
         ("europe3809", "apps/web/static/examples/europe3809.m"),
-        ("docs_case3", "docs/evidence/studies/case3.m"),
+        ("docs_case3", "validation/evidence/studies/case3.m"),
     ] {
         let text = std::fs::read_to_string(format!("{root}/{path}"))
             .unwrap_or_else(|e| panic!("read {path}: {e}"));

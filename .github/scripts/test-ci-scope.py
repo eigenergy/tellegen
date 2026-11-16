@@ -67,10 +67,22 @@ CASES = {
         ["docs/src/architecture.md", "docs/assets/hero.svg", "README.md", "CONTRIBUTING.md"],
         gates("docs"),
     ),
-    "evidence data": (["docs/evidence/synth/README.md", "docs/evidence/synth/cats/runs.json"], gates()),
-    "evidence script": (["docs/evidence/synth/run.py"], gates()),
-    "webmcp evidence harness": (["docs/evidence/webmcp/run.mjs"], gates("js")),
-    "the wheel's test case": (["docs/evidence/studies/case3.m"], gates("python", "macos")),
+    "evidence data": (["validation/evidence/synth/README.md", "validation/evidence/synth/cats/runs.json"], gates()),
+    "evidence script": (["validation/evidence/synth/run.py"], gates()),
+    "capacity plan evidence harness": (
+        ["validation/evidence/capacity-plan/run.mjs"],
+        gates("js"),
+    ),
+    "validation harness": (
+        ["validation/dc-variants/compare.py", "validation/mc-opf/mc_opf_oracle.jl"],
+        gates(),
+    ),
+    "pull request rules": (
+        [".github/workflows/pr-rules.yml", ".github/CODEOWNERS"],
+        gates(),
+    ),
+    "pull request rules script": ([".github/scripts/pr-rules.py"], gates("image")),
+    "the wheel's test case": (["validation/evidence/studies/case3.m"], gates("python", "macos")),
     "python-only PR": (
         ["python/tellegen/__init__.py", "python/tests/test_tellegen.py"],
         gates("python", "macos"),

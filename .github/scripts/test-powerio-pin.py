@@ -5,7 +5,6 @@ import importlib.util
 import tempfile
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).with_name("powerio-pin.py")
 SPEC = importlib.util.spec_from_file_location("powerio_pin", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None

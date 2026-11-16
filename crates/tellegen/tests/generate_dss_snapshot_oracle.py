@@ -4,8 +4,8 @@
 No external feeder data. Exercise actual finite sources, load voltage bands,
 ZIP dropout, an explicit fourth wire, and a finite-leakage transformer.
 """
-import json
 from pathlib import Path
+
 import opendssdirect as dss
 from generate_mc_load_oracle import stable_float, write_report
 

@@ -27,7 +27,7 @@ from mcp.server.mcpserver.exceptions import (  # noqa: E402
 from tellegen.mcp import server  # noqa: E402
 
 CASE3 = (
-    Path(__file__).resolve().parents[2] / "docs" / "evidence" / "studies" / "case3.m"
+    Path(__file__).resolve().parents[2] / "validation" / "evidence" / "studies" / "case3.m"
 )
 
 #: The nine tools this server registers. `contract` and `study_contract` are
