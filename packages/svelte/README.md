@@ -281,6 +281,13 @@ reported while reading a case or a geographic layer, what each solve reported
 (islands, HVDC transfers), what each export's writer reported, and every
 `app.error`. A finding reported again counts up in place.
 
+The toast shows the same entries: `log.notify(entry)` records one and shows
+it, `log.record(entry)` records it only. An entry's `title` is the few words
+the toast and the Log show; its `retry` puts a Retry button beside it. To
+report a caught error, call `app.reportError(error, { title, stage, retry })`:
+without a `title`, an error's `code` picks one, and an error without a code
+reads "Something went wrong".
+
 `DiagnosticLogView` (from `@tellegen/svelte/components`) shows the log grouped
 by step and file, with severity filters, Copy, Download (`tellegen.log` JSON)
 and Clear; pass `onbus` to make the named buses selectable. The default shell

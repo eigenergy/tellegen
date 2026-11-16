@@ -429,8 +429,9 @@ export class Controller {
 			.catch(() => false));
 	};
 	private openCollection = async (read: Parameters<CollectionImport['start']>[0]) => {
-		if (!(await this.probeCollections())) throw new Error(COLLECTION_UNAVAILABLE);
-		if (!this.disposed) await this.collectionImport.start(read);
+		if (!(await this.probeCollections()))
+			this.fail(COLLECTION_UNAVAILABLE, null, { title: 'Imports unavailable', stage: 'Open' });
+		else if (!this.disposed) await this.collectionImport.start(read);
 	};
 	readonly collectionImport = new CollectionImport((label, result) => {
 		if (this.disposed) return;
@@ -3144,7 +3145,10 @@ export class Controller {
 	 * first after a confirm. */
 	private attachDynamics = async (files: File[], localsBefore: Set<string>) => {
 		if (!this.app.dynamicsEnabled) {
-			this.app.error = `${files.map((f) => f.name).join(' and ')} not opened: dynamics is off`;
+			this.fail(`${files.map((f) => f.name).join(' and ')} not opened: dynamics is off`, null, {
+				title: 'Turn on Experimental features in Settings',
+				stage: 'Open'
+			});
 			return;
 		}
 		const added = this.app.localCases.filter((c) => !localsBefore.has(c.id));

@@ -266,7 +266,7 @@
 	}}
 />
 
-<header {@attach publishHeight}>
+<header {@attach publishHeight} style:--header-height="{app.headerInset}px">
 	<div class="brand">
 		<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 			<path class="brand-stroke" d="M4 18 L12 6 L20 18" stroke-width="1.6" fill="none" />
@@ -878,7 +878,7 @@
 		   the screen instead, inside the page gutters. */
 		.case-list {
 			position: fixed;
-			top: 54px;
+			top: calc(var(--header-height) + 6px);
 			left: 16px;
 			right: 16px;
 			width: auto;

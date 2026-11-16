@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Attachment } from 'svelte/attachments';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import DiagnosticLogView from './DiagnosticLogView.svelte';
@@ -13,11 +14,19 @@
 		const panel = layout.panels.find((candidate) => candidate.id === 'log');
 		return !!panel && layout.shown(panel);
 	});
-	$effect(() => {
-		if (!shown) return;
-		app.log.markSeen();
-		return () => app.log.markSeen();
-	});
+	/** Whatever the Log has on screen is seen, when it comes into view and when it leaves. */
+	const seen: Attachment = (node) => {
+		let visible = false;
+		const observer = new IntersectionObserver(([entry]) => {
+			if (visible || entry.isIntersecting) app.log.markSeen();
+			visible = entry.isIntersecting;
+		});
+		observer.observe(node);
+		return () => {
+			observer.disconnect();
+			if (visible) app.log.markSeen();
+		};
+	};
 	// A bus named in a finding selects that bus on the case on screen.
 	function selectBus(bus: number) {
 		if (app.activeLocal) void ctrl.selectLocalBus(app.activeLocal.id, bus);
@@ -34,7 +43,7 @@
 	badge={shown ? undefined : app.log.unseen || undefined}
 	bind:open
 >
-	<div class="log-body">
+	<div class="log-body" {@attach seen}>
 		<DiagnosticLogView onbus={selectBus} />
 	</div>
 </PanelFrame>

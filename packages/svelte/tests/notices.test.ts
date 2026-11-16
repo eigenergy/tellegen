@@ -32,7 +32,9 @@ describe('one store behind the toast and the Log', () => {
 
 	it('counts a repeat on the same entry and in the toast', () => {
 		const log = new MessageLog();
-		for (let i = 0; i < 2; i++) log.notify({ severity: 'error', message: 'Rate limited' });
+		// A title that only repeats the message is the same report as no title.
+		log.notify({ severity: 'error', message: 'Rate limited' });
+		log.notify({ severity: 'error', title: 'Rate limited', message: 'Rate limited' });
 		expect(log.entries).toHaveLength(1);
 		expect(log.toast?.entries[0].count).toBe(2);
 		expect(log.announcement).toBe('Rate limited, repeated 2 times');

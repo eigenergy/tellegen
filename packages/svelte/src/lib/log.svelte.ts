@@ -66,17 +66,9 @@ export interface LogToast {
 const MAX_ENTRIES = 500;
 const TOAST_MS = 6500;
 
+/** What makes two reports the same message; taken from the entry as stored. */
 const keyOf = (e: LogEntryInput) =>
-	JSON.stringify([
-		e.severity,
-		e.stage ?? 'App',
-		e.source ?? 'tellegen',
-		e.code,
-		e.subject,
-		e.target,
-		e.title,
-		e.message
-	]);
+	JSON.stringify([e.severity, e.stage, e.source, e.code, e.subject, e.target, e.title, e.message]);
 
 /** Every message of the session, in the order each first appeared: errors,
  * warnings and notes from the app, the readers and the solvers. The Log lists
@@ -116,20 +108,21 @@ export class MessageLog {
 		const next = [...this.entries];
 		const index = new Map(next.map((entry, i) => [keyOf(entry), i]));
 		const ids: number[] = [];
-		for (const item of inputs) {
-			if (!item.message) continue;
+		for (const input of inputs) {
+			if (!input.message) continue;
+			const item = clean(input);
 			const key = keyOf(item);
 			const at = index.get(key);
 			const previous = at === undefined ? undefined : next[at];
 			const entry: LogEntry = previous
 				? {
 						...previous,
-						...clean(item),
+						...item,
 						count: previous.count + (repeat ? 1 : 0),
 						last: now
 					}
 				: {
-						...clean(item),
+						...item,
 						id: ++this.#nextId,
 						count: 1,
 						first: now,

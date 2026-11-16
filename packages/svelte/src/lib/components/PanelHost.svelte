@@ -38,7 +38,7 @@
 	 * and the notices sit on the map above it. */
 	const sheetOpen = $derived(layout.compact && !!layout.drawer && !app.zen);
 	// An open sheet stands on the dynamics playback bar, which then sits flush on the bottom edge.
-	const bottomReserve = $derived(sheetOpen ? app.dockInset : app.log.toast ? 120 : 88);
+	const bottomReserve = $derived(sheetOpen ? app.dockInset : 88);
 	/** The tab strip: the panels that dock on the left by default, plus any that
 	 * ask for a tab (Dynamics). Settings opens from the header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));
@@ -72,11 +72,15 @@
 	const leftShown = $derived(left.some((p) => layout.preferred(p)));
 	/** The panel under the strip, whose controls may share the strip's row. */
 	const front = $derived(layout.compact ? drawer : left.find((p) => layout.preferred(p)));
-	const reserve = $derived(front && !front.headerActions ? (layout.compact ? 52 : 68) : 0);
+	/** Room on the strip's row for the front panel's own controls. */
+	const STRIP_CONTROLS = 68;
+	const reserve = $derived(
+		front && !front.headerActions ? (layout.compact ? 52 : STRIP_CONTROLS) : 0
+	);
 	/** The tabs' natural width; the left dock grows to fit them and the controls. */
 	let tabsWidth = $state(0);
 	$effect(() => {
-		layout.stripMin = stripShown && !layout.compact ? tabsWidth + 68 + 10 : 0;
+		layout.stripMin = stripShown && !layout.compact ? tabsWidth + STRIP_CONTROLS + 10 : 0;
 	});
 	/** The shortest the phone sheet is while open. */
 	const SHEET_MIN = 140;

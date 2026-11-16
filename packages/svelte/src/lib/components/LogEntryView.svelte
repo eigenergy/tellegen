@@ -3,14 +3,14 @@
 	let {
 		entry,
 		showSubject = true,
-		open: startOpen = false,
+		bare = false,
 		onbus
 	}: {
 		entry: LogEntryInput | LogEntry;
 		/** Off inside a group that already names the subject. */
 		showSubject?: boolean;
-		/** Start with Details open. */
-		open?: boolean;
+		/** Only the details, open: for a toast whose title is already on screen. */
+		bare?: boolean;
 		/** Makes each named bus a button, for a host that can select it. */
 		onbus?: (bus: number, entry: LogEntryInput) => void;
 	} = $props();
@@ -19,7 +19,7 @@
 	const count = $derived('count' in entry ? entry.count : 1);
 	const buses = $derived(entry.buses ?? []);
 	const title = $derived(entry.title ?? entry.message);
-	let open = $derived(startOpen);
+	let open = $derived(bare);
 	const retry = $derived(entry.retry && (entry.canRetry?.() ?? true) ? entry.retry : null);
 	const details = $derived(
 		Object.entries(entry.details ?? {}).map(
@@ -43,24 +43,26 @@
 	);
 </script>
 
-<div class="entry" data-severity={entry.severity} data-testid="log-entry">
-	<span class="severity">{LABEL[entry.severity]}</span>
+<div class={['entry', { bare }]} data-severity={entry.severity} data-testid="log-entry">
+	{#if !bare}<span class="severity">{LABEL[entry.severity]}</span>{/if}
 	<div class="body">
-		<div class="line">
-			<p class="message" title={entry.message}>
-				{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
-						>{count} times</span
+		{#if !bare}
+			<div class="line">
+				<p class="message" title={entry.message}>
+					{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
+							>{count} times</span
+						>{/if}
+				</p>
+				{#if retry}<button type="button" class="toggle" onclick={retry}>Retry</button>{/if}
+				{#if rows.length}<button
+						type="button"
+						class="toggle"
+						aria-label="Details, {title}"
+						aria-expanded={open}
+						onclick={() => (open = !open)}>Details</button
 					>{/if}
-			</p>
-			{#if retry}<button type="button" class="toggle" onclick={retry}>Retry</button>{/if}
-			{#if rows.length}<button
-					type="button"
-					class="toggle"
-					aria-label="Details, {title}"
-					aria-expanded={open}
-					onclick={() => (open = !open)}>Details</button
-				>{/if}
-		</div>
+			</div>
+		{/if}
 		{#if buses.length}
 			<p class="buses">
 				<span class="label">{buses.length === 1 ? 'Bus' : 'Buses'}</span>
@@ -94,6 +96,9 @@
 		gap: 8px;
 		font: var(--fs-meta, 12px) / 1.45 var(--font-display);
 		color: var(--text-primary, var(--ink));
+	}
+	.bare {
+		grid-template-columns: minmax(0, 1fr);
 	}
 	:global(:root[data-theme='dark']) .entry {
 		--log-warning: #f0c36d;

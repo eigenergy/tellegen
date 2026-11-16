@@ -1,12 +1,24 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { getAppState } from '../context.svelte.js';
+	import { getPanelLayout } from '../panels.svelte.js';
 	import LogEntryView from './LogEntryView.svelte';
 	// The toast: the latest messages sent to the Log with `notify`, until they
 	// time out or are closed. The Log panel lists them all.
-	const log = getAppState().log;
+	const app = getAppState();
+	const log = app.log;
+	const layout = getPanelLayout();
 	const toast = $derived(log.toast);
 	const only = $derived(toast?.entries.length === 1 ? toast.entries[0] : null);
+	/** Details has something to add: a group's entries, or more than the title. */
+	const more = $derived(
+		!only || !!(only.title || only.details || only.code || only.hint || only.buses?.length)
+	);
+	/** The toast sits over the map, between the docked panels. */
+	const inset = (side: 'left' | 'right') => {
+		const width = layout.compact || app.zen ? 0 : layout.dockWidth(side);
+		return `${width ? width + 16 : 0}px`;
+	};
 	let expanded = $state(false);
 	let focused = false;
 	let hovered = false;
@@ -27,6 +39,8 @@
 	<section
 		class="notifications"
 		aria-label="Notifications"
+		style:--left={inset('left')}
+		style:--right={inset('right')}
 		onfocusin={() => {
 			focused = true;
 			hold();
@@ -46,28 +60,26 @@
 	>
 		<div class="notice" data-testid="notification-toast" data-kind={toast.severity}>
 			<div class="row">
-				<span class="message"
-					>{toast.title}{#if only?.title}<span class="text">{only.message}</span>{/if}</span
-				>
+				<span class="message">{toast.title}</span>
 				{#if only && only.count > 1}<span class="count" aria-label={`${only.count} occurrences`}
 						>{only.count}</span
 					>{/if}
 				{#if only?.retry && (only.canRetry?.() ?? true)}<button onclick={only.retry}>Retry</button
 					>{/if}
-				<button
-					aria-expanded={expanded}
-					aria-controls="notice-details"
-					onclick={() => {
-						expanded = !expanded;
-						hold();
-					}}>Details</button
-				>
+				{#if more}<button
+						aria-expanded={expanded}
+						aria-controls="notice-details"
+						onclick={() => {
+							expanded = !expanded;
+							hold();
+						}}>Details</button
+					>{/if}
 				<button aria-label="Dismiss notification" onclick={close}>Close</button>
 			</div>
-			{#if expanded}
+			{#if expanded && more}
 				<ol class="inline" id="notice-details" data-testid="notification-details">
 					{#each toast.entries as entry (entry.id)}
-						<li><LogEntryView {entry} open={!!only} /></li>
+						<li><LogEntryView {entry} bare={!!only} /></li>
 					{/each}
 				</ol>
 			{/if}
@@ -79,13 +91,13 @@
 	.notifications {
 		position: fixed;
 		z-index: var(--z-toast);
-		/* While the dynamics playback dock is open: above the dock, the map's
-		   control row on it (44 px) and the host's one-line notice above that
-		   row (32 px). The fallback keeps the closed-dock position. */
-		bottom: max(40px, calc(var(--tellegen-timeline-clear, -1000px) + 76px));
-		left: 50%;
-		transform: translateX(-50%);
-		width: min(540px, calc(100vw - 200px));
+		/* Above the map's control row (44 px), which sits on the dynamics playback
+		   dock while that is open. The fallback keeps the closed-dock position. */
+		bottom: max(40px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
+		left: var(--left);
+		right: var(--right);
+		width: min(540px, calc(100vw - var(--left) - var(--right) - 24px));
+		margin-inline: auto;
 		font: 13px/1.4 var(--font-display);
 		pointer-events: none;
 	}
@@ -122,16 +134,6 @@
 		padding: 5px 0;
 		overflow-wrap: anywhere;
 	}
-	/* What the error itself said, under the title; Details has all of it. */
-	.text {
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		overflow: hidden;
-		color: var(--text-secondary);
-		font-size: 12px;
-	}
 	button {
 		font: inherit;
 		color: var(--ink);
@@ -156,8 +158,7 @@
 	}
 	@media (max-width: 960px) {
 		.notifications {
-			width: calc(100vw - 24px);
-			/* The host's notice is hidden here: clear the control row only. */
+			/* Above the control row, on the dock or on the open sheet. */
 			bottom: max(
 				60px,
 				calc(var(--tellegen-timeline-clear, -1000px) + 44px),
