@@ -37,13 +37,13 @@
 		role="img"
 		aria-label="Error by iteration, {iterations.length} iterations"
 	>
-		<text class="label" x={L} y="11">Error</text>
+		<text class="label" x={L} y="11">Error by iteration</text>
 		<line class="axis" x1={L} y1={T} x2={L} y2={H - B} />
 		<line class="axis" x1={L} y1={H - B} x2={W - R} y2={H - B} />
-		<text class="label" x={L - 5} y={T + 4} text-anchor="end">High</text>
-		<text class="label" x={L - 5} y={H - B + 4} text-anchor="end">Solved</text>
+		<!-- The scale is logarithmic, from 1 down to the solver's tolerance. -->
+		<text class="label" x={L - 5} y={T + 4} text-anchor="end">1</text>
+		<text class="label" x={L - 5} y={H - B + 4} text-anchor="end">10⁻⁹</text>
 		<text class="label" x={L} y={H - 6} text-anchor="middle">1</text>
-		<text class="label" x={(L + W - R) / 2} y={H - 6} text-anchor="middle">Iteration</text>
 		<text class="label" x={W - R} y={H - 6} text-anchor="end">{iterations.length}</text>
 		<polyline {points} pathLength="1" />
 	</svg>

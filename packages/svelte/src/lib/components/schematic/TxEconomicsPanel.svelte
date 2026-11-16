@@ -50,8 +50,14 @@
 	const preview = (id: number) => previewHandlers(onpreview, { kind: 'branch', id });
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
-	/** The scale's ends to the same number of decimals. */
-	const scaleDigits = $derived(Math.max(Math.abs(domain.lo), Math.abs(domain.hi)) >= 100 ? 0 : 1);
+	/** The scale's ends to the same decimals as the price boxes; a preset scale is whole numbers. */
+	const scaleDigits = $derived(
+		Number.isInteger(domain.lo) && Number.isInteger(domain.hi)
+			? 0
+			: Math.max(Math.abs(domain.lo), Math.abs(domain.hi)) >= 100
+				? 0
+				: 2
+	);
 	/** A signed whole number with a true minus sign. */
 	const signed = (value: number) => (value < 0 ? `−${-value}` : String(value));
 	const lead = $derived(

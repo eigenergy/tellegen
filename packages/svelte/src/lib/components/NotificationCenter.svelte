@@ -53,10 +53,12 @@
 		/** A coordinate note that only reports success: every bus placed, nothing unmatched. */
 		const clean = (note: string) =>
 			/^(\d+) of \1 buses placed from /.test(note) || /; 0 unmatched objects$/.test(note);
+		const count = (n: number, what: string) => `${n} ${what} note${n === 1 ? '' : 's'}`;
+		const geoCount = geo?.length ?? 0;
 		for (const [identity, title, details, items, quiet] of [
 			[
 				summary,
-				'Case import notes',
+				count(entries.length, 'import'),
 				summary
 					? [
 							...summary.diagnostics.map(formatPowerIoDiagnostic),
@@ -67,7 +69,7 @@
 			],
 			[
 				geo,
-				'Coordinate import notes',
+				count(geoCount, 'coordinate'),
 				geo?.join('\n\n') ?? '',
 				(geo ?? []).map((message) => ({
 					severity: 'note' as const,

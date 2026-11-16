@@ -1927,23 +1927,21 @@
 				? `calc(100% - ${panels.top + 8 + panels.bottom}px)`
 				: `min(38vh, calc(100% - ${panels.top + toolbarHeight + 32 + app.sheetInset}px))`}
 		>
-			{#if colour === 'level' || panelView}
-				<button
-					class="collapse"
-					aria-expanded={!brief}
-					aria-label={brief ? 'Show details' : 'Hide details'}
-					title={brief ? 'Show details' : 'Hide details'}
-					onclick={() => (brief = !brief)}
-					><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
-						><path
-							d={brief ? 'm3 4.5 3 3 3-3' : 'm3 7.5 3-3 3 3'}
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.5"
-						/></svg
-					></button
-				>
-			{/if}
+			<button
+				class="collapse"
+				aria-expanded={!brief}
+				aria-label={brief ? 'Show details' : 'Hide details'}
+				title={brief ? 'Show details' : 'Hide details'}
+				onclick={() => (brief = !brief)}
+				><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+					><path
+						d={brief ? 'm3 4.5 3 3 3-3' : 'm3 7.5 3-3 3 3'}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+					/></svg
+				></button
+			>
 			{#if colour === 'level'}
 				{@render voltageKey()}
 			{:else}
@@ -2042,7 +2040,7 @@
 						{onclear}
 						onframe={frameSelection}
 					/>
-				{:else if solution}
+				{:else if solution && !brief}
 					<ul class="loading-key" aria-label="Line loading">
 						<li><i class="swatch normal"></i>Below {warningPref.value}%</li>
 						<li><i class="swatch near"></i>Near limit</li>
@@ -2545,7 +2543,11 @@
 	.values-heading {
 		flex: 0 0 100%;
 		margin-bottom: 0;
-		padding-right: 0;
+	}
+	@media (pointer: coarse) {
+		.values-heading {
+			padding-right: 40px;
+		}
 	}
 	.key-heading .docs {
 		margin-left: auto;

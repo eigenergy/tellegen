@@ -131,9 +131,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	const shown = await tabs.locator('button[aria-pressed="true"]').first().innerText();
 	await expect(await openLog(page)).toContainText('2 buses, 1 routes matched; 0 unmatched objects');
 	await expect(
-		page
-			.getByRole('region', { name: 'Notifications' })
-			.getByText('Coordinate import notes', { exact: true })
+		page.getByRole('region', { name: 'Notifications' }).getByText(/^\d+ coordinate notes?$/)
 	).toHaveCount(0);
 	// The Log shares the dock: return to the panel that was showing.
 	await tabs.getByRole('button', { name: shown.trim(), exact: true }).click();
