@@ -1230,6 +1230,7 @@
 	}
 	nav button {
 		font-size: inherit;
+		background: none;
 		border: 0;
 		border-bottom: 2px solid transparent;
 		border-radius: 0;
@@ -1307,6 +1308,7 @@
 		filter: brightness(1.12);
 	}
 	button.text-button {
+		background: none;
 		border: 0;
 		padding: 6px 0;
 		color: var(--text-accent);

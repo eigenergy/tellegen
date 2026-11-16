@@ -349,12 +349,14 @@
 	.counts :global(dl.stats) {
 		margin: 4px 0 0;
 	}
-	/* The case actions share the Run button's width, in equal columns; on a narrow panel they
-	   wrap to rows of their own. */
+	/* The case actions share the Run button's width, two to a row; one left alone takes the row. */
 	.actions {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 8px;
+	}
+	.actions > :last-child:nth-child(odd) {
+		grid-column: 1 / -1;
 	}
 	.actions .secondary {
 		justify-self: stretch;
