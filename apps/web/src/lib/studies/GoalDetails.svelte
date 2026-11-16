@@ -26,7 +26,7 @@
 						const key = String(weight.element);
 						const quantity =
 							'Price' in objective.operand
-								? 'LMP'
+								? 'Price'
 								: 'Voltage' in objective.operand
 									? 'Voltage'
 									: 'Flow' in objective.operand

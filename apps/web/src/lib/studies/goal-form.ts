@@ -104,11 +104,9 @@ export function candidateBounds(element: GoalBus | GoalBranch, form: GoalForm) {
 
 export function buildGoal(network: Network, form: GoalForm, formulation: string) {
 	if (form.objective === 'price' && formulation === 'acpf')
-		throw new Error('AC power flow does not calculate LMPs. Choose a voltage target.');
+		throw new Error('AC power flow has no prices');
 	if (form.objective === 'voltage' && formulation === 'dcopf')
-		throw new Error(
-			'DC OPF does not calculate voltage magnitudes. Use AC power flow or SOCWR OPF.'
-		);
+		throw new Error('DC OPF has no voltages');
 	if (form.intervention === 'capacity' && formulation === 'acpf')
 		throw new Error('AC power flow does not enforce line ratings. Choose a demand change.');
 	if (!Number.isFinite(form.budget) || form.budget <= 0)
@@ -210,7 +208,7 @@ export function objectiveLabel(objective: StudyObjective): string {
 			const operand = objective.operand;
 			const label =
 				'Price' in operand
-					? 'LMP'
+					? 'price'
 					: 'Voltage' in operand
 						? 'voltage'
 						: 'Dispatch' in operand

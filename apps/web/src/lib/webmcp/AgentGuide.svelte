@@ -80,7 +80,7 @@
 
 {#snippet copyRow(text: string, label: string)}
 	<div class="cmd">
-		<code>{text}</code>
+		<code title={text}>{text}</code>
 		<button
 			class="ask-copy"
 			aria-label={copied === text ? `Copied ${label}` : `Copy ${label}`}
@@ -145,7 +145,7 @@
 			{#if ready && !pageToolCalls}
 				<p class="hint" data-testid="page-tool-calls-missing">Use DevTools MCP</p>
 			{:else}
-				<button class="primary" onclick={() => copy(claudePrompt)}
+				<button class="secondary" onclick={() => copy(claudePrompt)}
 					>{copied === claudePrompt ? 'Copied' : 'Copy prompt for Claude'}</button
 				>
 			{/if}
@@ -162,7 +162,7 @@
 	{#if ready}
 		<h3>Prompt</h3>
 		<div class="actions">
-			<button class="primary" onclick={() => copy(prompt)}
+			<button class="secondary" onclick={() => copy(prompt)}
 				>{copied === prompt ? 'Copied' : 'Copy prompt'}</button
 			>
 		</div>
@@ -321,14 +321,18 @@
 		border-color: var(--border-strong);
 		color: var(--ink);
 	}
-	.primary {
+	.secondary {
 		font: inherit;
-		padding: 6px 12px;
-		color: var(--on-accent);
-		background: var(--accent);
-		border: 1px solid var(--accent);
+		font-size: 12px;
+		padding: 4px 10px;
+		color: var(--ink);
+		background: var(--surface-control);
+		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		cursor: pointer;
+	}
+	.secondary:hover {
+		border-color: var(--border-strong);
 	}
 	.cmd {
 		display: flex;
@@ -343,7 +347,8 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--paper);
-		overflow-x: auto;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 12px;
 	}
@@ -367,7 +372,11 @@
 		margin-bottom: 6px;
 	}
 	a {
-		color: var(--text-secondary);
+		color: var(--text-accent);
+		text-decoration: none;
+	}
+	a:hover {
+		text-decoration: underline;
 		text-underline-offset: 3px;
 	}
 	.links a {

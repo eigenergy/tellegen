@@ -194,10 +194,7 @@
 				{/if}
 
 				{#if activities.length === 0 && planning.entries.length === 0}
-					<div class="empty">
-						<p>No activity</p>
-						<button class="copy" onclick={() => (tab = 'connect')}>Connect</button>
-					</div>
+					<p class="empty">No activity</p>
 				{/if}
 
 				{#if planning.entries.length > 0}
@@ -419,6 +416,11 @@
 		color: var(--text-secondary);
 		border-bottom: 1px solid var(--line);
 	}
+	/* The live region stays in place for announcements, but takes no room while empty. */
+	.call-count:empty {
+		padding: 0;
+		border: 0;
+	}
 	.registration-error {
 		margin: 0;
 		padding: 16px;
@@ -426,18 +428,9 @@
 		font-size: 12px;
 	}
 	.empty {
-		padding: 24px 20px;
-	}
-	.empty p {
-		margin: 0 0 12px;
+		margin: 0;
+		padding: 16px;
 		color: var(--text-secondary);
-	}
-	.copy {
-		padding: 7px 10px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
-		background: var(--paper);
-		color: var(--ink);
 	}
 	/* First visit only: a small note in the map's lower left corner, clear of
 	   the panels, the map controls and the data. */

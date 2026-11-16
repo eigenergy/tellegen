@@ -306,7 +306,7 @@
 	const EXAMPLE = 'example:four-wire';
 	async function loadMcExample() {
 		const response = await fetch('/examples/four-wire.bmopf.json');
-		if (!response.ok) throw new Error('The example could not be loaded. Try again.');
+		if (!response.ok) throw new Error('Example failed to load');
 		await ctrl.ingestFiles([
 			new File([await response.text()], 'four-wire.bmopf.json', { type: 'application/json' })
 		]);
@@ -640,11 +640,11 @@
 						>{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}<select
 							bind:value={ctrl.app.displayMode}
 							><option value="price" disabled={!ctrl.app.studyView.solution?.lmp?.length}
-								>LMP</option
+								>Price</option
 							><option value="voltage" disabled={!ctrl.app.studyView.solution?.vm?.length}
-								>Voltage magnitude</option
+								>Voltage</option
 							><option value="angle" disabled={!ctrl.app.studyView.solution?.va?.length}
-								>Voltage angle</option
+								>Angle</option
 							></select
 						></label
 					>{/if}
