@@ -43,6 +43,16 @@
 	let tab = $state<'activity' | 'connect'>('connect');
 	const app = getAppState();
 	let welcome = $state(false);
+	/** The first-visit hint follows the Connect tab's status: tools to connect, a browser setting
+	 * to turn on, or nothing where this browser cannot run them. */
+	const hint = $derived.by(() => {
+		if (registrationError) return null;
+		if (supported || browser?.kind === 'ready')
+			return { text: 'Agent tools available', action: 'Connect' };
+		if (browser?.kind === 'flag' || browser?.kind === 'update' || browser?.kind === 'legacy')
+			return { text: 'Agent tools off', action: 'Set up' };
+		return null;
+	});
 	const welcomeKey = 'tellegen.welcome.webmcp-v1';
 	onMount(() => {
 		try {
@@ -352,14 +362,14 @@
 		</div>
 	</div>
 </PanelFrame>
-{#if welcome && !open && !app.zen}<aside
+{#if welcome && hint && !open && !app.zen}<aside
 		class="welcome"
 		class:compact={app.compactLayout}
 		style:--sheet-clear={app.compactLayout ? `${app.sheetInset + 8}px` : undefined}
 		aria-label="About AI agents"
 	>
-		<span>Agent tools available</span>
-		<button class="welcome-go" onclick={showConnect}>Connect</button>
+		<span>{hint.text}</span>
+		<button class="welcome-go" onclick={showConnect}>{hint.action}</button>
 		<button
 			class="welcome-close"
 			aria-label="Dismiss introduction"

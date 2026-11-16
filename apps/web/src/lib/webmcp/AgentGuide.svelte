@@ -78,8 +78,8 @@
 		brand === 'Chromium' ? 'this browser' : brand;
 </script>
 
-{#snippet copyRow(text: string, label: string)}
-	<div class="cmd">
+{#snippet copyRow(text: string, label: string, wrap = false)}
+	<div class={['cmd', wrap && 'wrap']}>
 		<code title={text}>{text}</code>
 		<button
 			class="ask-copy"
@@ -121,8 +121,7 @@
 		<div class="status" data-state="setup" role="status" data-testid="webmcp-status">
 			{#if browser.kind === 'flag'}
 				<strong>WebMCP off</strong>
-				<p class="label">Enable at</p>
-				{@render copyRow(browser.flagUrl, 'flag address')}
+				{@render copyRow(browser.flagUrl, 'flag address', true)}
 			{:else if browser.kind === 'update' || browser.kind === 'legacy'}
 				<strong>Needs {brandName(browser.brand)} {browser.minVersion}+</strong>
 			{:else if browser.kind === 'mobile'}
@@ -223,7 +222,13 @@
 		margin-bottom: 0;
 	}
 	.status .cmd {
-		margin-bottom: 6px;
+		margin-bottom: 0;
+	}
+	/* A value the reader must read in full, such as the flag address, wraps instead of clipping. */
+	.cmd.wrap code {
+		white-space: normal;
+		overflow-wrap: anywhere;
+		text-overflow: clip;
 	}
 	.visually-hidden {
 		position: absolute;

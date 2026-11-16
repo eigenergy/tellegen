@@ -323,10 +323,9 @@
 	}
 	async function create() {
 		const active = ctrl.activeSolvable;
-		if (!active) throw new Error('Select a case first.');
-		if (active.formulation === 'acopf')
-			throw new Error('Saving AC OPF cases is not yet supported.');
-		if (!title.trim()) throw new Error('Enter a study name.');
+		if (!active) throw new Error('No case open');
+		if (active.formulation === 'acopf') throw new Error('AC OPF studies cannot be saved');
+		if (!title.trim()) throw new Error('Name the study');
 		await workspace.create(
 			{ title: title.trim(), formulation: active.formulation },
 			active.id,
@@ -495,7 +494,9 @@
 					<option value={EXAMPLE}>Example: four-wire feeder</option>
 				</select></label
 			>
-			<button disabled={workspace.busy || !!multi} onclick={newStudy}>New study</button>
+			{#if doc && !creating && !multi}<button disabled={workspace.busy} onclick={newStudy}
+					>New study</button
+				>{/if}
 			<label class="file-button"
 				>Import<input
 					type="file"
@@ -505,7 +506,7 @@
 						const file = event.currentTarget.files?.[0];
 						if (file)
 							void attempt(async () => {
-								if (file.size > 512 * 1024 * 1024) throw new Error('Study bundle exceeds 512 MiB.');
+								if (file.size > 512 * 1024 * 1024) throw new Error('File over 512 MiB');
 								const text = await file.text();
 								if (JSON.parse(text)?.schema === 'tellegen-mc-pf-study')
 									await workspace.importMulti(text);
@@ -602,7 +603,6 @@
 						searchIndex={multi.overviewSearch}
 					/>{/if}
 			{:else if !doc || creating}
-				<h3>Save a study</h3>
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
 						{network.name}<span>{network.buses.length.toLocaleString()} buses</span>
@@ -613,6 +613,7 @@
 					title={ctrl.activeSolvable?.formulation === 'acopf' ? 'Not for AC OPF' : undefined}
 					onclick={() => void attempt(create)}>Save study</button
 				>
+				{#if doc && creating}<button onclick={() => (creating = false)}>Cancel</button>{/if}
 			{:else if tab === 'case'}
 				<h3>{doc.title}</h3>
 				<dl class="facts">

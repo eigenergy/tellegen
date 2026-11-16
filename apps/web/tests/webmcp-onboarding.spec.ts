@@ -42,13 +42,53 @@ test('recent Chrome without WebMCP gets the flag to copy', async ({ page, contex
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	const status = await asBrowser(page, MAC_CHROME(157));
 	await expect(status).toContainText('WebMCP off');
-	await expect(status).toContainText('Enable at');
 	await expect(status.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
+	// The flag address is shown in full, not cut off.
+	await expect
+		.poll(() => status.locator('code').evaluate((el) => el.scrollWidth <= el.clientWidth))
+		.toBe(true);
 	await status.getByRole('button', { name: 'Copy flag address' }).click();
 	await expect(status.getByRole('button', { name: 'Copied flag address' })).toHaveText('Copied');
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
 		'chrome://flags/#enable-webmcp-testing'
 	);
+});
+
+test('the first-visit hint follows what this browser can do', async ({ page }) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(Document.prototype, 'modelContext', { get: () => undefined });
+		delete (Navigator.prototype as { modelContext?: unknown }).modelContext;
+	});
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	const welcome = page.getByRole('complementary', { name: 'About AI agents' });
+	await page.addInitScript(
+		(ua) => Object.defineProperty(Navigator.prototype, 'userAgent', { get: () => ua }),
+		MAC_CHROME(157)
+	);
+	await page.addInitScript(() =>
+		Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined })
+	);
+	await page.goto('/');
+	// Chrome with WebMCP off: the hint says so and leads to the setting.
+	await expect(welcome).toContainText('Agent tools off');
+	await welcome.getByRole('button', { name: 'Set up' }).click();
+	await expect(page.getByTestId('webmcp-status')).toContainText('WebMCP off');
+});
+
+test('Firefox gets no first-visit hint', async ({ page }) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(Navigator.prototype, 'userAgent', {
+			get: () =>
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0'
+		});
+		Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined });
+		Object.defineProperty(Document.prototype, 'modelContext', { get: () => undefined });
+		delete (Navigator.prototype as { modelContext?: unknown }).modelContext;
+	});
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	await page.goto('/');
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 });
 
 test('Edge gets its own flag scheme', async ({ page }) => {

@@ -108,16 +108,15 @@ export function buildGoal(network: Network, form: GoalForm, formulation: string)
 	if (form.objective === 'voltage' && formulation === 'dcopf')
 		throw new Error('DC OPF has no voltages');
 	if (form.intervention === 'capacity' && formulation === 'acpf')
-		throw new Error('AC power flow does not enforce line ratings. Choose a demand change.');
-	if (!Number.isFinite(form.budget) || form.budget <= 0)
-		throw new Error('Enter a positive change budget.');
+		throw new Error('Line capacity needs an OPF');
+	if (!Number.isFinite(form.budget) || form.budget <= 0) throw new Error('Budget must be positive');
 	if (!Number.isFinite(form.increment) || form.increment <= 0 || form.increment > form.budget)
-		throw new Error('The increment must be positive and no larger than the change budget.');
+		throw new Error('Step must be within the budget');
 	if (!Number.isInteger(form.cardinality) || form.cardinality < 1)
-		throw new Error('Enter a positive whole number for maximum changed elements.');
-	if (form.scope === 'area' && !form.area) throw new Error('Choose an area.');
+		throw new Error('Max changes must be a whole number');
+	if (form.scope === 'area' && !form.area) throw new Error('Choose an area');
 	if (Object.values(form.weights).some((weight) => !Number.isFinite(weight) || weight < 0))
-		throw new Error('Bus weights must be finite and nonnegative.');
+		throw new Error('Weights must be 0 or more');
 	const { buses, candidates } = resolveEquipment(network, form);
 	if (!buses.length) throw new Error('Needs ≥1 bus');
 	if (!candidates.length) throw new Error('Needs ≥1 candidate');
@@ -127,9 +126,9 @@ export function buildGoal(network: Network, form: GoalForm, formulation: string)
 		form.intervention === 'placement' &&
 		(!Number.isFinite(form.increase) || form.increase <= 0 || form.increase > form.budget)
 	)
-		throw new Error('Added demand must be positive and within the change budget.');
+		throw new Error('Added demand must be within the budget');
 	if (form.objective === 'voltage' && (!Number.isFinite(form.target) || form.target <= 0))
-		throw new Error('Enter a positive voltage target in pu.');
+		throw new Error('Voltage target must be positive');
 	const objective: StudyObjective =
 		form.objective === 'price'
 			? {
