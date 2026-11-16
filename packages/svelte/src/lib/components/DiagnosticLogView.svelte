@@ -143,7 +143,7 @@
 		outline-offset: 2px;
 	}
 	.n {
-		font: 12px var(--font-mono);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 	}
 	.group + .group {

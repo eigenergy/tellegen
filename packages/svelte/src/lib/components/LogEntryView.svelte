@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { LogEntry, LogEntryInput } from '../log.svelte.js';
+	import { logTitle, type LogEntry, type LogEntryInput } from '../log.svelte.js';
 	let {
 		entry,
 		showSubject = true,
@@ -15,40 +15,36 @@
 	const MAX_BUSES = 12;
 	const count = $derived('count' in entry ? entry.count : 1);
 	const buses = $derived(entry.buses ?? []);
+	const title = $derived(logTitle(entry.message));
 	const details = $derived(
 		Object.entries(entry.details ?? {}).map(
 			([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)] as const
 		)
+	);
+	/** Everything past the title, for Details: the reader's own words and identifiers. */
+	const rows = $derived(
+		[
+			['Message', title !== entry.message ? entry.message : ''],
+			['From', entry.source !== 'tellegen' ? entry.source : ''],
+			['Code', entry.code ?? ''],
+			['In', showSubject ? (entry.subject ?? '') : ''],
+			['Element', entry.target ?? ''],
+			['Suggestion', entry.hint ?? ''],
+			...details.map(
+				([key, value]) => [key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' '), value] as const
+			)
+		].filter(([, value]) => value) as [string, string][]
 	);
 </script>
 
 <div class="entry" data-severity={entry.severity} data-testid="log-entry">
 	<span class="severity">{LABEL[entry.severity]}</span>
 	<div class="body">
-		<p class="message">
-			{entry.message}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
-					>{count}×</span
+		<p class="message" title={entry.message}>
+			{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
+					>{count} times</span
 				>{/if}
 		</p>
-		<dl class="meta">
-			<!-- The app's own findings need no source; a reader's or engine's name says whose they are. -->
-			{#if entry.source !== 'tellegen'}<div>
-					<dt>From</dt>
-					<dd>{entry.source}</dd>
-				</div>{/if}
-			{#if entry.code}<div>
-					<dt>Code</dt>
-					<dd class="mono">{entry.code}</dd>
-				</div>{/if}
-			{#if showSubject && entry.subject}<div>
-					<dt>In</dt>
-					<dd>{entry.subject}</dd>
-				</div>{/if}
-			{#if entry.target}<div>
-					<dt>Element</dt>
-					<dd class="mono">{entry.target}</dd>
-				</div>{/if}
-		</dl>
 		{#if buses.length}
 			<p class="buses">
 				<span class="label">{buses.length === 1 ? 'Bus' : 'Buses'}</span>
@@ -60,15 +56,14 @@
 					>{/if}
 			</p>
 		{/if}
-		{#if entry.hint}<p class="hint">{entry.hint}</p>{/if}
-		{#if details.length}
+		{#if rows.length}
 			<details>
 				<summary>Details</summary>
 				<dl class="details">
-					{#each details as [key, value] (key)}
+					{#each rows as [key, value] (key)}
 						<div>
-							<dt>{key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' ')}</dt>
-							<dd class="mono">{value}</dd>
+							<dt>{key}</dt>
+							<dd>{value}</dd>
 						</div>
 					{/each}
 				</dl>
@@ -90,7 +85,7 @@
 		--log-warning: #f0c36d;
 	}
 	.severity {
-		font: 600 12px/1.9 var(--font-mono);
+		font: 600 var(--fs-meta, 12px) / 1.45 var(--font-display);
 		color: var(--text-secondary);
 	}
 	[data-severity='error'] .severity {
@@ -106,24 +101,19 @@
 		margin: 0;
 	}
 	.message {
-		overflow-wrap: anywhere;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.count {
 		margin-left: 6px;
-		font: 12px var(--font-mono);
 		color: var(--text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
-	.meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 2px 12px;
-		margin: 3px 0 0;
-		color: var(--text-secondary);
-	}
-	.meta div,
 	.details div {
-		display: flex;
-		gap: 4px;
+		display: grid;
+		grid-template-columns: 76px minmax(0, 1fr);
+		gap: 8px;
 		min-width: 0;
 	}
 	dt {
@@ -132,10 +122,6 @@
 	dd {
 		margin: 0;
 		overflow-wrap: anywhere;
-	}
-	.mono {
-		font-family: var(--font-mono);
-		font-size: 12px;
 	}
 	.buses {
 		display: flex;
@@ -150,7 +136,8 @@
 	}
 	.bus,
 	.buses button {
-		font: 12px var(--font-mono);
+		font: inherit;
+		font-variant-numeric: tabular-nums;
 		padding: 1px 6px;
 		border-radius: var(--radius-control);
 		background: var(--surface-chip, var(--accent-soft));
@@ -168,10 +155,6 @@
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
-	.hint {
-		margin-top: 4px;
-		color: var(--text-secondary);
-	}
 	details {
 		margin-top: 4px;
 	}
@@ -183,5 +166,6 @@
 		display: grid;
 		gap: 2px;
 		margin: 4px 0 0;
+		color: var(--text-secondary);
 	}
 </style>

@@ -213,3 +213,25 @@ export function errorEntry(message: string, detail?: string | null): LogEntryInp
 		details: Object.keys(details).length ? details : undefined
 	};
 }
+
+/** A finding's one-line title: its first clause, without the parenthesized
+ * figures, the reader's identifiers and the explanation after a colon. The full
+ * message stays in the entry for Details. */
+export function logTitle(message: string): string {
+	let text = message.split('\n')[0];
+	// Drop parenthesized asides, innermost first, so "(1 record line(s))" goes whole.
+	for (let i = 0; i < 4; i++) text = text.replace(/\s*\([^()]*\)/g, '');
+	const clauses = text.split(/:\s|;\s|\s[—–]\s|(?<=[a-z0-9])\.\s/i);
+	// "Case list: 502 Bad Gateway" names a subject first; the title is what happened.
+	const lead = clauses[0].trim().split(/\s+/).length < 3 && clauses[1] ? clauses[1] : clauses[0];
+	text = lead
+		.replace(/[.:;,]+$/, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (!text) text = message.trim();
+	text = text.charAt(0).toUpperCase() + text.slice(1);
+	if (text.length <= 72) return text;
+	const cut = text.slice(0, 71);
+	const space = cut.lastIndexOf(' ');
+	return `${(space > 40 ? cut.slice(0, space) : cut).replace(/[\s,;:]+$/, '')}…`;
+}
