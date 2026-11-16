@@ -129,7 +129,7 @@ async function copyPrompt(page: Page) {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
-	await expect(page.getByTestId('webmcp-status')).toContainText('Ready');
+	await expect(page.getByTestId('webmcp-status')).toContainText('Connected');
 	await page.getByRole('button', { name: 'Copy prompt', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
 	return page.evaluate(() => navigator.clipboard.readText());
@@ -169,7 +169,7 @@ test('the introduction opens Connect and stays dismissed', async ({ page }) => {
 	await expect(welcome).toHaveCount(0);
 	// Focus follows the invitation into the panel it opened.
 	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeFocused();
-	await expect(page.getByTestId('webmcp-status')).toContainText('Ready');
+	await expect(page.getByTestId('webmcp-status')).toContainText('Connected');
 	await page.reload();
 	await expect(welcome).toHaveCount(0);
 });
@@ -193,7 +193,7 @@ test('a browser with WebMCP sees a loading card while the tools register', async
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const status = page.getByTestId('webmcp-status');
 	await expect(status).toContainText('Loading…');
-	await expect(status).toContainText('Ready');
+	await expect(status).toContainText('Connected');
 	// Once ready, the prompt to copy and the docs; nothing else.
 	const guide = page.getByRole('region', { name: 'Use Tellegen with an agent' });
 	await expect(guide.getByRole('button', { name: 'Copy prompt', exact: true })).toBeVisible();
@@ -212,7 +212,7 @@ test('a refused registration shows the error card', async ({ page }) => {
 	await expect(page.getByRole('button', { name: 'Copy prompt', exact: true })).toHaveCount(0);
 });
 
-test('a finished call turns the card into Connected', async ({ page }) => {
+test('a finished call is counted on the card', async ({ page }) => {
 	await installWebMcpHarness(page);
 	await congestCase(page);
 	await callTool(page, 'inspect_case', {});

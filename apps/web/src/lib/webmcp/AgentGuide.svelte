@@ -86,7 +86,7 @@
 		{:else}
 			<div class="status" role="status" data-testid="webmcp-status">
 				{#if ready}
-					<strong><span class="dot"></span>{callCount > 0 ? 'Connected' : 'Ready'}</strong>
+					<strong><span class="dot"></span>Connected</strong>
 					<dl class="counts">
 						<div>
 							<dt>Tools</dt>
@@ -189,7 +189,7 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: var(--agent);
+		background: var(--accent);
 	}
 	summary {
 		cursor: pointer;

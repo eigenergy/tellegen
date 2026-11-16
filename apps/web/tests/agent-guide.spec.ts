@@ -15,7 +15,7 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await expect(page.getByRole('region', { name: 'Use Tellegen with an agent' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Copy prompt', exact: true })).toBeVisible();
 	const status = page.getByTestId('webmcp-status');
-	await expect(status).toContainText('Ready');
+	await expect(status).toContainText('Connected');
 	await expect(status.getByRole('definition').first()).toHaveText(/^[1-9]\d*$/);
 	await page.reload();
 	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);

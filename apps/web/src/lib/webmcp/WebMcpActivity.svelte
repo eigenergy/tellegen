@@ -190,9 +190,17 @@
 					{toolCount}
 					callCount={experiments.length}
 				/>{:else}
-				<p class="call-count" role="status">
-					{activities.length ? `Calls: ${experiments.length}` : ''}
-				</p>
+				<!-- The same label-above-value count as on Connect. -->
+				<div class="call-count" role="status">
+					{#if activities.length}
+						<dl>
+							<div>
+								<dt>Calls</dt>
+								<dd>{experiments.length}</dd>
+							</div>
+						</dl>
+					{/if}
+				</div>
 				{#if registrationError}
 					<p
 						class="registration-error"
@@ -422,12 +430,23 @@
 	.call-count {
 		margin: 0;
 		padding: 12px 18px;
-		font-size: 12px;
-		color: var(--text-secondary);
 		border-bottom: 1px solid var(--line);
 	}
+	.call-count dl {
+		margin: 0;
+	}
+	.call-count dt {
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
+	.call-count dd {
+		margin: 0;
+		font-size: 18px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
 	/* The live region stays in place for announcements, but takes no room while empty. */
-	.call-count:empty {
+	.call-count:not(:has(dl)) {
 		padding: 0;
 		border: 0;
 	}
