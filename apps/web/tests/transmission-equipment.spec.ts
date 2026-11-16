@@ -10,9 +10,9 @@ for (const width of [1280, 390, 320]) {
 			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 			await page.goto('/');
 			await page.emulateMedia({ reducedMotion: 'reduce' });
-			await expect(page.getByText('no default cases loaded')).toBeVisible();
+			await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 			await page.locator('input[type="file"]').setInputFiles([fixture]);
-			await expect(page.getByText('no default cases loaded')).toBeHidden();
+			await expect(page.getByText('No cases', { exact: true })).toBeHidden();
 			if (width < 600) {
 				const networkTab = page.getByRole('button', { name: 'Network', exact: true });
 				if ((await networkTab.getAttribute('aria-pressed')) !== 'true') await networkTab.click();
@@ -23,24 +23,25 @@ for (const width of [1280, 390, 320]) {
 			const panel = page.getByRole('region', { name: 'Equipment models' });
 			await expect(panel).toBeVisible();
 			await panel.getByRole('button', { name: /PST on branch 1/ }).click();
-			await expect(panel.getByRole('article')).toContainText('Phase setting 0°');
-			await expect(panel.getByRole('article')).toContainText('separate automatic regulator study');
+			await expect(panel.getByRole('article')).toContainText('Phase: 0°');
+			await expect(panel.getByRole('article')).toContainText('Model: Fixed tap');
 			await panel.getByRole('button', { name: /Capacitor bank 1/ }).click();
-			await expect(panel.getByRole('article')).toContainText('2 sections connected');
-			await expect(panel.getByRole('article')).toContainText('voltage squared');
+			await expect(panel.getByRole('article')).toContainText('Sections on: 2');
+			await expect(panel.getByRole('article')).toContainText('Model: Conductance only (DC)');
 			await panel.getByLabel('Find equipment').fill('HVDC');
 			await panel.getByRole('button', { name: /HVDC link 1/ }).click();
-			await expect(panel.getByRole('article')).toContainText('Net input loss: 0.5 MW');
-			await expect(panel.getByRole('article')).toContainText('not an HVDC-network simulation');
+			await expect(panel.getByRole('article')).toContainText('Loss: 0.5 MW');
+			await expect(panel.getByRole('article')).toContainText('Model: Fixed injection');
 			const bounds = await panel.boundingBox();
 			expect(bounds!.x).toBeGreaterThanOrEqual(0);
 			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
 			await page.screenshot({ path: testInfo.outputPath('equipment-models.png') });
-			await panel.getByText('Automatic regulator study', { exact: true }).click();
 			await panel
-				.getByRole('button', { name: 'Solve with automatic regulators', exact: true })
+				.locator('summary')
+				.filter({ hasText: /^Regulators$/ })
 				.click();
-			await expect(panel.getByRole('status')).toContainText('AC power flow completed');
+			await panel.getByRole('button', { name: 'Solve with regulators', exact: true }).click();
+			await expect(panel.locator('.stat').filter({ hasText: 'Passes' })).toContainText(/\d+/);
 			await expect(panel.getByRole('region', { name: 'Regulator results' })).toContainText(
 				'transformer:1'
 			);
@@ -68,7 +69,7 @@ for (const width of [1280, 390, 320]) {
 			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 			await page.goto('/');
 			await page.emulateMedia({ reducedMotion: 'reduce' });
-			await expect(page.getByText('no default cases loaded')).toBeVisible();
+			await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 			await page
 				.locator('input[type="file"]')
 				.setInputFiles([
@@ -79,7 +80,7 @@ for (const width of [1280, 390, 320]) {
 						)
 					)
 				]);
-			await expect(page.getByText('no default cases loaded')).toBeHidden();
+			await expect(page.getByText('No cases', { exact: true })).toBeHidden();
 			if (width < 600) {
 				const tab = page.getByRole('button', { name: 'Network', exact: true });
 				if ((await tab.getAttribute('aria-pressed')) !== 'true') await tab.click();
@@ -90,31 +91,34 @@ for (const width of [1280, 390, 320]) {
 				.getByRole('button', { name: 'Equipment', exact: true })
 				.click();
 			const panel = page.getByRole('region', { name: 'Equipment models' });
-			await panel.getByText('Detailed DC network (4 nodes)', { exact: true }).click();
+			await panel.getByText('DC network (4 nodes)', { exact: true }).click();
 			await expect(
 				panel.getByRole('img', { name: 'Detailed DC nodes, branches and converters' })
 			).toBeVisible();
 			await panel.getByRole('button', { name: 'Solve DC network', exact: true }).click();
-			await expect(panel.getByRole('region', { name: 'DC network results' })).toContainText(
-				'0 limit violations'
-			);
+			await expect(
+				panel
+					.getByRole('region', { name: 'DC network results' })
+					.locator('.stat')
+					.filter({ hasText: 'Violations' })
+			).toContainText('0');
 			await expect(panel.getByRole('region', { name: 'DC network results' })).toContainText(
 				'a: 320 kV'
 			);
-			await panel.getByRole('button', { name: 'Solve with AC power flow', exact: true }).click();
-			await expect(panel.getByRole('region', { name: 'AC/DC study results' })).toContainText(
-				'AC ACPF calculation completed'
-			);
+			await panel.getByRole('button', { name: 'AC power flow', exact: true }).click();
+			await expect(
+				panel.getByRole('region', { name: 'AC/DC study results' }).locator('.stat').first()
+			).toContainText('Violations');
 			await expect(panel.getByRole('region', { name: 'AC/DC study results' })).toContainText(
 				'AC bus 2:'
 			);
-			await panel.getByRole('button', { name: 'Dispatch AC generation', exact: true }).click();
-			await expect(panel.getByRole('region', { name: 'AC/DC study results' })).toContainText(
-				'AC DCOPF calculation completed'
-			);
-			await expect(panel.getByRole('region', { name: 'AC/DC study results' })).toContainText(
-				'AC generation objective:'
-			);
+			await panel.getByRole('button', { name: 'DC OPF', exact: true }).click();
+			await expect(
+				panel
+					.getByRole('region', { name: 'AC/DC study results' })
+					.locator('.stat')
+					.filter({ hasText: 'Cost' })
+			).toBeVisible();
 			await panel
 				.getByRole('img', { name: 'Detailed DC nodes, branches and converters' })
 				.scrollIntoViewIfNeeded();
@@ -141,13 +145,13 @@ for (const width of [1280, 390, 320]) {
 			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 			await page.goto('/');
 			await page.emulateMedia({ reducedMotion: 'reduce' });
-			await expect(page.getByText('no default cases loaded')).toBeVisible();
+			await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 			await page
 				.locator('input[type="file"]')
 				.setInputFiles(
 					fileURLToPath(new URL('./fixtures/transmission-acdc-controls.json', import.meta.url))
 				);
-			await expect(page.getByText('no default cases loaded')).toBeHidden();
+			await expect(page.getByText('No cases', { exact: true })).toBeHidden();
 			if (width < 600) {
 				const tab = page.getByRole('button', { name: 'Network', exact: true });
 				if ((await tab.getAttribute('aria-pressed')) !== 'true') await tab.click();
@@ -158,8 +162,8 @@ for (const width of [1280, 390, 320]) {
 				.getByRole('button', { name: 'Equipment', exact: true })
 				.click();
 			const panel = page.getByRole('region', { name: 'Equipment models' });
-			await panel.getByText('Detailed DC network (4 nodes)', { exact: true }).click();
-			await panel.getByRole('button', { name: 'Solve with AC power flow', exact: true }).click();
+			await panel.getByText('DC network (4 nodes)', { exact: true }).click();
+			await panel.getByRole('button', { name: 'AC power flow', exact: true }).click();
 			await expect(panel.getByRole('region', { name: 'Regulator results' })).toContainText(
 				'regulated'
 			);
@@ -169,18 +173,22 @@ for (const width of [1280, 390, 320]) {
 			await panel.getByRole('region', { name: 'Regulator results' }).scrollIntoViewIfNeeded();
 			await page.screenshot({ path: testInfo.outputPath('converter-voltage.png') });
 			const joint = panel.getByRole('button', {
-				name: 'Optimize joint AC/DC dispatch',
+				name: 'Joint AC/DC OPF',
 				exact: true
 			});
 			await expect(joint).toBeEnabled({ timeout: 30000 });
 			await joint.click();
 			const result = panel.getByRole('region', { name: 'AC/DC study results' });
-			await expect(result).toContainText('AC ACOPF calculation completed', { timeout: 60000 });
-			await expect(result).toContainText('0 reported limit violations');
+			await expect(result.locator('.stat').filter({ hasText: 'Cost' })).toBeVisible({
+				timeout: 60000
+			});
+			await expect(result.locator('.stat').filter({ hasText: 'Violations' })).toContainText('0');
 			await expect(result).toContainText('AC bus 2: 1.02 pu');
-			await expect(panel.getByRole('region', { name: 'DC network results' })).toContainText(
-				'12 declared bounds checked; 6 bounds unspecified'
+			const dcResult = panel.getByRole('region', { name: 'DC network results' });
+			await expect(dcResult.locator('.stat').filter({ hasText: 'Bounds checked' })).toContainText(
+				'12'
 			);
+			await expect(dcResult.locator('.stat').filter({ hasText: 'Unspecified' })).toContainText('6');
 			await result.scrollIntoViewIfNeeded();
 			await page.screenshot({ path: testInfo.outputPath('joint-acdc.png') });
 			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(

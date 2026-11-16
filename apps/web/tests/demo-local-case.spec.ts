@@ -10,7 +10,7 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a
 	// drop fired earlier is lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{
@@ -30,17 +30,21 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	});
 	await expect(page.getByText('From case14-coords.csv', { exact: true })).toBeVisible();
 
+	// The result is labelled numbers; the solver's trace and timing wait behind Details.
+	const stats = page
+		.getByRole('complementary', { name: 'Network', exact: true })
+		.locator('dl.stats');
+	await expect(stats).toContainText('Operational cost', { timeout: 60_000 });
+	await expect(stats).toContainText(/\$[\d,.]+\/h/);
+	await expect(stats).toContainText('Lines at limit');
 	const solveCard = page.locator('.solvecard');
-	await expect(solveCard).toContainText('DC OPF', { timeout: 60_000 });
-	await expect(solveCard).toContainText(/Iterations\s*\d+/);
-	await expect(solveCard.getByRole('status')).toHaveText(
-		/^DC OPF found the cheapest dispatch in \d+ iterations \([\d.]+ m?s\)\.$/
-	);
-	// The convergence trace is a solver internal, behind the disclosure.
+	await expect(solveCard.getByText('Details', { exact: true })).toBeVisible();
 	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeHidden();
-	await solveCard.getByText('Solver details', { exact: true }).click();
+	await solveCard.getByText('Details', { exact: true }).click();
 	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeVisible();
-	await expect(solveCard).toContainText(/\d+ ms/);
+	await expect(solveCard.locator('dt', { hasText: 'Iterations' })).toBeVisible();
+	await expect(solveCard.locator('dt', { hasText: 'Time' })).toBeVisible();
+	await expect(solveCard.locator('dd').first()).toHaveText('DC OPF');
 	await expect(solveCard).not.toContainText('Server');
 	await expect(solveCard).not.toContainText('Fallback');
 });
@@ -53,7 +57,7 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a
 	// drop fired earlier is lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{
@@ -73,9 +77,9 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('3');
 	await lookup.press('Enter');
-	await expect(
-		page.getByTestId('sensitivity-title').filter({ hasText: 'Price change per MW of demand' })
-	).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByTestId('sensitivity-title').filter({ hasText: /^Bus / })).toBeVisible({
+		timeout: 30_000
+	});
 
 	// Drive a preview without committing: set the slider value and fire only an
 	// input event (pointerup/change would trigger the exact re-solve).
@@ -86,14 +90,12 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 	});
 
-	await expect(
-		page.getByText('Estimated from the current prices. Release to solve.')
-	).toBeVisible();
+	await expect(page.getByText('Estimate', { exact: true })).toBeVisible();
 	// case14 is uncongested, so the LMP/demand column is flat and the preview legend
 	// shows the uniform predicted shift. The value must scale with the step — the
 	// regression this guards is the step cancelling out of the preview display.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/Every price changes by [+−][\d.,]+\s+\$\/MWh/);
+	await expect(labels).toContainText(/Uniform: [+−][\d.,]+\s+\$\/MWh/);
 	// Plain decimals, never e-notation.
 	await expect(labels).not.toContainText(/\de[+-]\d/);
 	const atFull = parseShift(await labels.innerText());
@@ -113,7 +115,7 @@ test('arrow keys commit a demand step on a bus under 50 MW', async ({ page }) =>
 	});
 
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
@@ -134,9 +136,9 @@ test('arrow keys commit a demand step on a bus under 50 MW', async ({ page }) =>
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('11');
 	await lookup.press('Enter');
-	await expect(
-		page.getByTestId('sensitivity-title').filter({ hasText: 'Price change per MW of demand' })
-	).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByTestId('sensitivity-title').filter({ hasText: /^Bus / })).toBeVisible({
+		timeout: 30_000
+	});
 	const slider = page.getByLabel('Demand delta at selected bus');
 	await slider.press('ArrowRight');
 	await expect(page.locator('.slider-head .val')).toHaveText('+0.5 MW');
@@ -156,7 +158,7 @@ test('network and solver panel text is at least 12 px', async ({ page }) => {
 	});
 
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
@@ -173,9 +175,9 @@ test('network and solver panel text is at least 12 px', async ({ page }) => {
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('11');
 	await lookup.press('Enter');
-	await expect(
-		page.getByTestId('sensitivity-title').filter({ hasText: 'Price change per MW of demand' })
-	).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByTestId('sensitivity-title').filter({ hasText: /^Bus / })).toBeVisible({
+		timeout: 30_000
+	});
 
 	// The solver's result is part of the Network panel.
 	for (const id of ['network']) {
@@ -197,7 +199,7 @@ function parseShift(text: string): number {
 	const m = text
 		.replace('−', '-')
 		.replace(/,/g, '')
-		.match(/by ([+-]?[\d.]+)/);
+		.match(/Uniform: ([+-]?[\d.]+)/);
 	if (!m) throw new Error(`no shift value in ${JSON.stringify(text)}`);
 	return Number(m[1]);
 }

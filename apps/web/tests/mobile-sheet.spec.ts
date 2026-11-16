@@ -40,7 +40,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	// Touch sizing keys off the pointer, so a run without one silently skips half
 	// of what this file covers.
 	expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3) }

@@ -83,7 +83,7 @@ test('a stray JSON object is not swallowed as an empty multiconductor case', asy
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a
 	// drop fired earlier is lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{
@@ -105,7 +105,7 @@ test('a balanced JSON case consumes a co-dropped geographic sidecar', async ({ p
 	});
 
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{

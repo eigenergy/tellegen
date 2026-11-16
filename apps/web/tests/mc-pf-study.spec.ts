@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
  * attaches its listener, so a file set earlier is lost. The empty-cases panel renders only after load. */
 async function openApp(page: Page) {
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 }
 
 const typedCase = 'tests/fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json';
@@ -85,7 +85,7 @@ async function pickBus(scope: Locator, id: string) {
 	const find = scope.getByRole('combobox', { name: 'Find a bus or equipment' });
 	await find.fill(id);
 	await find.press('Enter');
-	await expect(scope.getByText(`Bus result ${id}`)).toBeVisible();
+	await expect(scope.locator('.current').filter({ hasText: `Bus ${id}` })).toBeVisible();
 }
 
 function savedDistributionOptions(scope: Locator | Page) {
@@ -168,9 +168,6 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const study = page.getByRole('region', { name: 'Study workspace' });
-	await expect(
-		study.getByText('Distribution case, solved by multiconductor power flow', { exact: true })
-	).toBeVisible();
 	await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
 		timeout: 60_000
 	});
@@ -273,9 +270,6 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	const reopenedSaved = page.getByLabel('Saved study');
 	await expect(savedDistributionOptions(page)).toHaveCount(2);
 	await reopenedSaved.selectOption(firstSavedValue);
-	await expect(
-		reopened.getByText('Distribution case, solved by multiconductor power flow', { exact: true })
-	).toBeVisible();
 	await expect(reopened.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
 	await expect(reopened.getByText('Goal', { exact: true })).toHaveCount(0);
 });
@@ -288,11 +282,6 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const demoStudy = page.getByRole('region', { name: 'Study workspace' });
 	await page.getByLabel('Saved study').selectOption('example:four-wire');
-	await expect(
-		demoStudy.getByText('Distribution case, solved by multiconductor power flow', { exact: true })
-	).toBeVisible({
-		timeout: 60_000
-	});
 	await expect(demoStudy.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
 		timeout: 60_000
 	});
@@ -522,26 +511,39 @@ test('settings reruns qualify modified results and preserve provenance through e
 	const study = page.getByRole('region', { name: 'Study workspace' });
 	const settings = page.getByRole('region', { name: 'Common settings' });
 	await study.getByText('Power flow settings', { exact: true }).click();
-	await expect(settings.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('0.85');
-	await expect(settings.getByLabel('Vmax (pu)', { exact: true })).toHaveValue('1.15');
+	await expect(settings.getByLabel('Min voltage (pu)', { exact: true })).toHaveValue('0.85');
+	await expect(settings.getByLabel('Max voltage (pu)', { exact: true })).toHaveValue('1.15');
 	const initialSettings = await callTool(page, 'inspect_settings', {});
 	expect(initialSettings).toMatchObject({ ok: true });
-	await settings.getByLabel('Vmin (pu)', { exact: true }).fill('0.4');
-	// Run validates and applies the draft. Invalid input must leave the selected
+	const vmin = settings.getByLabel('Min voltage (pu)', { exact: true });
+	await vmin.fill('0.4');
+	await vmin.press('Tab');
+	// A change applies and reruns, but only when valid. Invalid input must leave the selected
 	// settings, their revision and the accepted operating point unchanged.
-	await settings.getByRole('button', { name: 'Run power flow', exact: true }).click();
-	await expect(settings.getByRole('alert')).toBeVisible();
+	await expect(settings.getByRole('alert')).toHaveText('Need low < min < max voltage');
 	expect(await callTool(page, 'inspect_settings', {})).toEqual(initialSettings);
 	// Put every non-impedance load outside the normal band without changing the fixture.
-	await settings.getByLabel('Vmin (pu)', { exact: true }).fill('1.01');
-	await settings.getByLabel('Maximum iterations', { exact: true }).fill('200');
-	await settings.getByRole('button', { name: 'Apply settings', exact: true }).click();
+	await vmin.fill('1.01');
+	await vmin.press('Tab');
+	await expect(settings.getByRole('alert')).toHaveCount(0);
+	const iterations = settings.getByLabel('Max iterations', { exact: true });
+	await expect(iterations).toBeEnabled({ timeout: 60_000 });
+	await iterations.fill('200');
+	await iterations.press('Tab');
+	await expect
+		.poll(
+			async () => {
+				const r = await callTool(page, 'inspect_settings', {});
+				return r.ok ? (r.data.accepted as { max_iterations?: number })?.max_iterations : null;
+			},
+			{ timeout: 60_000 }
+		)
+		.toBe(200);
+	await expect(iterations).toBeEnabled({ timeout: 60_000 });
 	await page.getByRole('button', { name: 'Close settings panel', exact: true }).click();
 	await study.getByRole('button', { name: 'Run power flow', exact: true }).click();
 	const results = study.getByRole('region', { name: 'Multiconductor power flow results' });
-	await expect(
-		results.getByText('Modified load model — non-canonical result', { exact: true })
-	).toBeVisible();
+	await expect(results.getByText(/^Load envelope used \(\d+\)$/)).toBeVisible();
 	await expect(results.getByText('Converged', { exact: true })).toBeVisible();
 	await expect(
 		study
@@ -579,23 +581,18 @@ test('settings reruns qualify modified results and preserve provenance through e
 	});
 
 	// A true numerical failure keeps the previous, visibly qualified operating point.
-	await settings.getByLabel('Maximum iterations', { exact: true }).fill('1');
-	await settings.getByRole('button', { name: 'Apply settings', exact: true }).click();
-	await settings.getByRole('button', { name: 'Run power flow', exact: true }).click();
-	await expect(settings.getByRole('alert').filter({ hasText: 'did not converge' })).toBeVisible();
-	await expect(
-		results.getByText('Modified load model — non-canonical result', { exact: true })
-	).toBeVisible();
+	await settings.getByLabel('Max iterations', { exact: true }).fill('1');
+	await settings.getByLabel('Max iterations', { exact: true }).press('Tab');
+	await expect(settings.getByRole('alert')).toHaveText('Did not converge', { timeout: 60_000 });
+	await expect(results.getByText(/^Load envelope used \(\d+\)$/)).toBeVisible();
 
 	await openApp(page);
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	await page.getByLabel('Saved study').selectOption(`mc:${saved.id}`);
-	await expect(
-		results.getByText('Modified load model — non-canonical result', { exact: true })
-	).toBeVisible();
+	await expect(results.getByText(/^Load envelope used \(\d+\)$/)).toBeVisible();
 	await study.getByText('Power flow settings', { exact: true }).click();
-	await expect(settings.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('1.01');
-	await expect(settings.getByLabel('Maximum iterations', { exact: true })).toHaveValue('200');
+	await expect(settings.getByLabel('Min voltage (pu)', { exact: true })).toHaveValue('1.01');
+	await expect(settings.getByLabel('Max iterations', { exact: true })).toHaveValue('200');
 	const restored = await callTool(page, 'inspect_settings', {});
 	if (!restored.ok) throw new Error('Restored settings could not be inspected');
 	const binding = {
@@ -617,22 +614,18 @@ test('settings reruns qualify modified results and preserve provenance through e
 		ok: true,
 		data: { selected: { damping: 1, v_min_pu: 1.01, max_iterations: 200 }, pending: false }
 	});
-	await expect(settings.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('1.01');
-	await expect(settings.getByLabel('Maximum iterations', { exact: true })).toHaveValue('200');
-	await settings.getByRole('button', { name: 'Run power flow', exact: true }).click();
-	await expect(settings.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
-	await expect(
-		results.getByText('Modified load model — non-canonical result', { exact: true })
-	).toBeVisible();
+	await expect(settings.getByLabel('Min voltage (pu)', { exact: true })).toHaveValue('1.01');
+	await expect(settings.getByLabel('Max iterations', { exact: true })).toHaveValue('200');
+	await expect(settings.getByText('Not applied', { exact: true })).toHaveCount(0);
+	await expect(results.getByText(/^Load envelope used \(\d+\)$/)).toBeVisible();
 
 	await page.setViewportSize({ width: 390, height: 844 });
-	await expect(settings.getByRole('button', { name: 'Run power flow', exact: true })).toBeVisible();
+	const restore = settings.getByRole('button', { name: 'Restore defaults', exact: true });
 	// The resize re-renders the panel, which can detach the button mid-scroll; retry until it settles.
 	await expect(async () => {
-		await settings
-			.getByRole('button', { name: 'Run power flow', exact: true })
-			.scrollIntoViewIfNeeded({ timeout: 2_000 });
+		await restore.scrollIntoViewIfNeeded({ timeout: 2_000 });
 	}).toPass();
+	await expect(restore).toBeVisible();
 	await page.screenshot({
 		path: testInfo.outputPath('modified-model-settings-mobile.png'),
 		fullPage: true
@@ -659,8 +652,8 @@ test('energized-network selection retains excluded islands through solve, CSV an
 		page.getByRole('button', { name: 'Solve energized network', exact: true })
 	).toHaveCount(1);
 	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toHaveCount(0);
-	await expect(page.getByText('Unpowered islands detected', { exact: true })).toBeVisible();
-	await page.getByText('Islands and equipment to exclude', { exact: true }).click();
+	await expect(page.getByText('Unpowered islands', { exact: true })).toBeVisible();
+	await page.getByText('Excluded islands', { exact: true }).click();
 	await expect(page.getByText('load: unsupplied', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const study = page.getByRole('region', { name: 'Study workspace' });
@@ -668,36 +661,44 @@ test('energized-network selection retains excluded islands through solve, CSV an
 	await expect(
 		study.getByRole('button', { name: 'Solve energized network', exact: true })
 	).toHaveCount(1);
-	await expect(study.getByText('Unpowered islands detected', { exact: true })).toBeVisible();
-	await study.getByText('Islands and equipment to exclude', { exact: true }).click();
+	await expect(study.getByText('Unpowered islands', { exact: true })).toBeVisible();
+	await study.getByText('Excluded islands', { exact: true }).click();
 	await expect(study.getByText('load: unsupplied', { exact: true })).toBeVisible();
 	await expect(study.getByRole('button', { name: 'Save result', exact: true })).toBeDisabled();
 	await study.getByText('Power flow settings', { exact: true }).click();
 	const settings = page.getByRole('region', { name: 'Common settings' });
-	await expect(settings.getByLabel('Maximum iterations', { exact: true })).toHaveValue('100');
+	await expect(settings.getByLabel('Max iterations', { exact: true })).toHaveValue('100');
 	const initialSettings = await callTool(page, 'inspect_settings', {});
 	expect(initialSettings).toMatchObject({ ok: true });
-	await settings.getByLabel('Maximum iterations', { exact: true }).fill('0');
-	await settings.getByRole('button', { name: 'Solve energized network', exact: true }).click();
+	await settings.getByLabel('Max iterations', { exact: true }).fill('0');
+	await settings.getByLabel('Max iterations', { exact: true }).press('Tab');
 	await expect(settings.getByRole('alert')).toBeVisible();
 	expect(await callTool(page, 'inspect_settings', {})).toEqual(initialSettings);
 	await expect(study.getByRole('button', { name: 'Save result', exact: true })).toBeDisabled();
 	await expect(study.getByRole('button', { name: 'Apply settings and run' })).toHaveCount(0);
-	await settings.getByLabel('Maximum iterations', { exact: true }).fill('500');
-	await settings.getByText('Advanced tolerances', { exact: true }).click();
-	await expect(settings.getByLabel('Voltage-change tolerance (V)', { exact: true })).toHaveValue(
-		'0.0001'
-	);
-	await expect(settings.getByLabel('Absolute KCL tolerance (A)', { exact: true })).toHaveValue(
-		'0.0001'
-	);
-	await expect(settings.getByLabel('Relative KCL tolerance', { exact: true })).toHaveValue(
-		'0.00001'
-	);
-	await settings.getByLabel('Voltage-change tolerance (V)', { exact: true }).fill('1e-7');
-	await settings.getByLabel('Absolute KCL tolerance (A)', { exact: true }).fill('1e-5');
-	// Apply first; both original solve actions use the selected settings.
-	await settings.getByRole('button', { name: 'Apply settings', exact: true }).click();
+	await settings.getByLabel('Max iterations', { exact: true }).fill('500');
+	await settings.getByLabel('Max iterations', { exact: true }).press('Tab');
+	await settings.getByText('Tolerances', { exact: true }).click();
+	const voltageTolerance = settings.getByLabel('Voltage tolerance (V)', { exact: true });
+	const currentTolerance = settings.getByLabel('Current tolerance (A)', { exact: true });
+	await expect(voltageTolerance).toHaveValue('0.0001');
+	await expect(currentTolerance).toHaveValue('0.0001');
+	await expect(settings.getByLabel('Relative tolerance', { exact: true })).toHaveValue('0.00001');
+	// Each change applies and reruns; both solve actions then use the selected settings.
+	await voltageTolerance.fill('1e-7');
+	await voltageTolerance.press('Tab');
+	await currentTolerance.fill('1e-5');
+	await currentTolerance.press('Tab');
+	await expect
+		.poll(
+			async () => {
+				const r = await callTool(page, 'inspect_settings', {});
+				return r.ok ? r.data.selected : null;
+			},
+			{ timeout: 60_000 }
+		)
+		.toMatchObject({ tolerance: 1e-7, absolute_kcl_tolerance: 1e-5, max_iterations: 500 });
+	await expect(currentTolerance).toBeEnabled({ timeout: 60_000 });
 	await page.getByRole('button', { name: 'Close settings panel', exact: true }).click();
 	await study.getByRole('button', { name: 'Solve energized network', exact: true }).click();
 	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
@@ -707,8 +708,12 @@ test('energized-network selection retains excluded islands through solve, CSV an
 			.getByText('Violations', { exact: true })
 	).toBeInViewport();
 	await expect(
-		study.getByText('1 load has no voltage source and is absent from solved totals.').first()
-	).toBeVisible();
+		study
+			.getByRole('complementary', { name: 'Network calculation scope' })
+			.first()
+			.locator('div')
+			.filter({ hasText: 'Excluded loads' })
+	).toContainText('1');
 	const results = study.getByRole('region', { name: 'Multiconductor power flow results' });
 	await pickBus(results, 'unpowered');
 	await expect(results.getByText('0 terminals at bus unpowered', { exact: true })).toBeVisible();
@@ -756,7 +761,7 @@ test('energized-network selection retains excluded islands through solve, CSV an
 		study.getByRole('button', { name: 'Solve energized network', exact: true })
 	).toBeEnabled();
 	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
-	await results.getByText('Excluded islands and equipment', { exact: true }).click();
+	await results.getByText('Excluded islands', { exact: true }).click();
 	await expect(results.getByText('load: unsupplied', { exact: true })).toBeVisible();
 	await page.screenshot({ path: 'test-results/mc-energized-network.png', fullPage: true });
 });
@@ -777,7 +782,7 @@ test('a case without voltage sources remains inspectable with solving disabled',
 		page.getByRole('button', { name: 'Solve energized network', exact: true })
 	).toBeDisabled();
 	await expect(page.getByText(/No energized network: no bus island/)).toBeVisible();
-	await page.getByText('Islands and equipment to exclude', { exact: true }).click();
+	await page.getByText('Excluded islands', { exact: true }).click();
 	await expect(page.getByText('load: ld1', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const study = page.getByRole('region', { name: 'Study workspace' });

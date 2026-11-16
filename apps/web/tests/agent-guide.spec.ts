@@ -13,14 +13,11 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.getByRole('region', { name: 'Use Tellegen with an agent' })).toBeVisible();
-	await expect(page.getByLabel('Agent prompt')).toHaveValue(
-		/Use the WebMCP tools in this Tellegen tab/
-	);
-	await expect(page.getByTestId('webmcp-status')).toContainText('Ready for agents');
-	await expect(page.getByTestId('webmcp-status')).toContainText(/This tab offers \d+ tools/);
-	await page.getByRole('link', { name: 'Changelog', exact: true }).click();
-	await expect(page.getByRole('heading', { name: "What's new in Tellegen" })).toBeVisible();
-	await page.getByRole('link', { name: 'Back to the map' }).click();
+	await expect(page.getByRole('button', { name: 'Copy prompt', exact: true })).toBeVisible();
+	const status = page.getByTestId('webmcp-status');
+	await expect(status).toContainText('Ready');
+	await expect(status.getByRole('definition').first()).toHaveText(/^[1-9]\d*$/);
+	await page.reload();
 	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 });
 

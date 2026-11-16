@@ -38,7 +38,7 @@ test('public-host usage counts post only approved fields, carry the cache token 
 	});
 	await page.route('https://tellegen.dev/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('https://tellegen.dev/?PRIVATE_SECRET#PRIVATE_SECRET');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles([
 		{ name: 'PRIVATE_SECRET.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'PRIVATE_SECRET.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
@@ -78,7 +78,7 @@ test('public-host usage counts post only approved fields, carry the cache token 
 	const count = collected.length;
 	// A reload would report a page view if the choice were not kept.
 	await page.goto('https://tellegen.dev/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.waitForTimeout(500);
 	expect(collected).toHaveLength(count);
 });

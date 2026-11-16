@@ -216,7 +216,7 @@ export async function congestCase(page: Page): Promise<{
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await expect.poll(() => listTools(page)).toEqual(BASE_TOOLS);
 
 	await page.locator('input[type="file"]').setInputFiles([

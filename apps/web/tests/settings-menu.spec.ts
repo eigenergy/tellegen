@@ -10,14 +10,14 @@ test('on a phone, Menu > Settings brings Settings back after another tab took th
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await openSettings(page);
 	const experimental = page.getByLabel('Experimental features');
 	await expect(experimental).toBeVisible();
-	await page
-		.locator('.panel-toolbar')
-		.getByRole('button', { name: 'Network', exact: true })
-		.click();
+	// The sheet names Settings and offers a way back to the tabs.
+	const strip = page.locator('.panel-toolbar');
+	await expect(strip.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+	await strip.getByRole('button', { name: 'Back', exact: true }).click();
 	await expect(page.locator('[data-panel="network"]')).toBeVisible();
 	await expect(experimental).toBeHidden();
 	await openSettings(page);
@@ -30,7 +30,7 @@ test('on a wide screen, Menu > Settings brings Settings to the front of its dock
 }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await openSettings(page);
 	const experimental = page.getByLabel('Experimental features');
 	await expect(experimental).toBeVisible();

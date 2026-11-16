@@ -12,7 +12,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) },
@@ -60,7 +60,7 @@ test('the retired tellegen.study envelope is rejected', async ({ page }) => {
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{

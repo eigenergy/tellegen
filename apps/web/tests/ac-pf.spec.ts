@@ -18,7 +18,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"][multiple]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3pf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
@@ -30,7 +30,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await runCalculation(page, 'acpf');
 	await expect(page.locator('.solvecard')).toContainText('AC power flow');
 	await expect(calculation).toBeEnabled();
-	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+	await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
@@ -122,7 +122,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await expect(calculation).toHaveValue('acpf');
 	await expect(calculation).toBeEnabled();
 	await expect(page.locator('.solvecard')).toContainText('AC power flow');
-	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+	await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
@@ -141,7 +141,7 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	// A reactive demand no AC operating point can carry, so the AC power flow
 	// does not converge, while DC OPF ignores reactive power and still solves.
 	const reactiveOverload = CASE3_PLANNING.replace(
@@ -159,14 +159,12 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		await runCalculation(page, 'acpf');
 		// The failure says so, and the DC OPF result stays on screen and in the select.
-		await expect(page.getByTestId('notification-toast')).toContainText(
-			'The calculation did not finish'
-		);
+		await expect(page.getByTestId('notification-toast')).toContainText('Calculation failed');
 		await expect(calculation).toBeEnabled();
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(page.locator('.solvecard')).toContainText('DC OPF');
-		await expect(network).not.toContainText('Solving AC power flow');
-		await expect(network).not.toContainText('results available.');
+		await expect(network).not.toContainText('Solving…');
+		await expect(network).not.toContainText('No result');
 		await page.getByRole('button', { name: 'Dismiss notification' }).click();
 	}
 });

@@ -23,7 +23,7 @@ async function openPage(page: import('@playwright/test').Page) {
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
 }
 
@@ -68,11 +68,6 @@ test('turning on experimental features brings dynamics back, and off hides it ag
 	await openSettings(page);
 	const setting = page.getByLabel('Experimental features');
 	await expect(setting).not.toBeChecked();
-	await expect(
-		page.getByText(
-			'Adds dynamics (RMS) simulation of faults and trips. Its results are still being checked.'
-		)
-	).toBeVisible();
 	await setting.check();
 
 	// Dynamics comes back as a panel tab; its steady state / dynamics switch is inside it.
@@ -81,7 +76,9 @@ test('turning on experimental features brings dynamics back, and off hides it ag
 	await expect.poll(() => toolList(page)).toContain('simulate_dynamics');
 	await tab.click();
 	await expect(page.getByTestId('dynamics-panel')).toBeVisible();
-	await expect(page.getByTestId('mode-dynamics')).toHaveAttribute('aria-pressed', 'true');
+	// With no dynamic data yet, there is no steady state / dynamics switch to show.
+	await expect(page.getByTestId('mode-dynamics')).toHaveCount(0);
+	await expect(page.getByTestId('dyn-open-demo')).toBeVisible();
 
 	// The setting is saved: it survives a reload.
 	await page.reload();

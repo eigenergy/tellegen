@@ -19,7 +19,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await expect
 		.poll(() =>
 			page.evaluate(() =>
@@ -130,7 +130,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	// The Agent tab keeps the record of each call, a click away from the readout.
 	await page.locator('.panel-toolbar').getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
-	await expect(page.getByText('Predicted cost change', { exact: true })).toBeVisible();
+	await expect(
+		page.locator('[data-webmcp-activity="open"]').getByText('Predicted', { exact: true }).first()
+	).toBeVisible();
 
 	const cancelled = await page.evaluate(
 		async ({ caseId, focusedRevision, busId }) =>
@@ -216,8 +218,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!updated.ok) return;
 	expect(String(updated.data.revision)).not.toBe(focusedRevision);
 	expect(JSON.stringify(updated).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('Solved', { exact: true })).toBeVisible();
-	await expect(page.getByText('Lines at limit')).toBeVisible();
+	const activity = page.locator('[data-webmcp-activity="open"]');
+	await expect(activity.getByText('Operational cost ($/h)', { exact: true })).toBeVisible();
+	await expect(activity.getByText('Lines at limit', { exact: true })).toBeVisible();
 
 	// Tool deltas are exact values, not slider gestures. A valid update below
 	// the UI slider's deadband must survive the transactional solve.
@@ -275,14 +278,14 @@ test('a full page reload creates a new WebMCP session id', async ({ page }) => {
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const first = await callTool(page, 'inspect_case', {});
 	expect(first.ok).toBe(true);
 	if (!first.ok) return;
 	expect(String(first.data.session_id)).toMatch(/^session-/);
 
 	await page.reload();
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const second = await callTool(page, 'inspect_case', {});
 	expect(second.ok).toBe(true);
 	if (!second.ok) return;
@@ -298,7 +301,7 @@ test('pending formulation settings preserve displayed-case inspection until an e
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
@@ -364,7 +367,7 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
@@ -383,8 +386,11 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'error');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await page.getByRole('button', { name: 'Activity', exact: true }).click();
-	await expect(page.getByTestId('webmcp-registration-error')).toContainText(
-		'registration refused for propose_capacity_plan'
+	const registrationError = page.getByTestId('webmcp-registration-error');
+	await expect(registrationError).toHaveText('Tools failed to load');
+	await expect(registrationError).toHaveAttribute(
+		'title',
+		/registration refused for propose_capacity_plan/
 	);
 	await expect
 		.poll(() =>
@@ -443,7 +449,7 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	await expect(ribbon).toBeVisible();
 	await expect(ribbon).toHaveAttribute('data-status', 'done');
 	await expect(ribbon).toContainText('Query network elements');
-	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('Returned 2 of 3 branches.');
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('2 of 3 lines');
 
 	// A failure stays on screen with the tool's own sentence.
 	const failed = await callTool(page, 'focus_network', {

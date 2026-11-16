@@ -15,20 +15,18 @@ test('temporary errors group repeats, pause during interaction, and retain full 
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible();
 	await lookupBus(page, 1);
 	const toast = page.getByTestId('notification-toast');
-	await expect(toast).toContainText('Too many requests');
+	await expect(toast).toContainText('Rate limited');
 	await expect(page.getByRole('complementary', { name: 'Network', exact: true })).not.toContainText(
-		'limiting requests'
+		'Rate limited'
 	);
 	await toast.getByRole('button', { name: 'Retry', exact: true }).click();
 	await expect.poll(() => requests).toBe(2);
 	await expect(toast.getByLabel('2 occurrences')).toBeVisible();
 	const details = await noticeDetails(page);
-	await expect(details).toContainText(
-		'The server is limiting requests. Wait a few seconds and try again.'
-	);
+	await expect(details).toContainText('Rate limited');
 	await page.clock.install();
 	await page.clock.fastForward(10_000);
-	await expect(toast).toContainText('Too many requests');
+	await expect(toast).toContainText('Rate limited');
 	await page.setViewportSize({ width: 390, height: 844 });
 	const box = await toast.boundingBox();
 	const zoom = await page.getByRole('button', { name: 'Zoom in', exact: true }).boundingBox();
@@ -44,7 +42,7 @@ test('temporary errors group repeats, pause during interaction, and retain full 
 	await page.mouse.move(2, 2);
 	await page.clock.fastForward(7000);
 	await expect(toast.locator('.message')).toHaveCount(0);
-	await expect(await noticeDetails(page)).toContainText('limiting requests');
+	await expect(await noticeDetails(page)).toContainText('Rate limited');
 });
 
 test('local previews never request analytics and the preference persists', async ({ page }) => {

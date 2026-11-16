@@ -75,6 +75,7 @@ async function expectView(toolbar: import('@playwright/test').Locator, label: st
 		);
 }
 async function selectLayout(toolbar: import('@playwright/test').Locator, label: string) {
+	await displayOptions(toolbar, true);
 	const select = toolbar.getByRole('combobox', { name: 'Diagram layout', exact: true });
 	if (await select.isVisible()) {
 		await select.selectOption({ label });
@@ -84,6 +85,13 @@ async function selectLayout(toolbar: import('@playwright/test').Locator, label: 
 		await button.click();
 		await expect(button).toHaveAttribute('aria-pressed', 'true');
 	}
+	await displayOptions(toolbar, false);
+}
+/** On a phone the drawing controls (layout, fit, zoom) are behind Display. */
+async function fit(toolbar: import('@playwright/test').Locator) {
+	await displayOptions(toolbar, true);
+	await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
+	await displayOptions(toolbar, false);
 }
 async function displayOptions(toolbar: import('@playwright/test').Locator, open: boolean) {
 	const toggle = toolbar.getByRole('button', { name: 'Display', exact: true });
@@ -108,7 +116,7 @@ for (const touch of [false, true]) {
 		test.use(
 			touch ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true } : {}
 		);
-		test('utilization at the rating remains amber and selectable', async ({ page }, testInfo) => {
+		test('utilization at the rating is red and selectable', async ({ page }, testInfo) => {
 			test.setTimeout(120_000);
 			const limited = voltageCase(false)
 				.replace('2 2 0 0 0 0 1', '2 2 90 0 0 0 1')
@@ -118,7 +126,7 @@ for (const touch of [false, true]) {
 			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 			await page.goto('/');
 			await page.emulateMedia({ reducedMotion: 'reduce' });
-			await expect(page.getByText('no default cases loaded')).toBeVisible();
+			await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 			await page.locator('input[type="file"]').setInputFiles([
 				{
 					name: 'limited-coords.csv',
@@ -132,12 +140,15 @@ for (const touch of [false, true]) {
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 			await hideBasemap(toolbar);
-			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
-			const panel = page.getByRole('region', { name: 'Operating limits', exact: true });
-			await expect(panel).toContainText('1 at rating');
-			await expect(panel).toContainText('0 overloads');
+			await fit(toolbar);
+			const panel = page.getByRole('region', { name: 'Limits', exact: true });
+			await expect(panel.locator('.stat').filter({ hasText: 'At rating' })).toContainText('1');
+			// Counts are listed only when they are not zero.
+			await expect(panel).not.toContainText('Overloaded');
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
-			await expect(gauge).toHaveClass(/warning/);
+			// At rating is red (a heavy outline), not amber; only an overload is filled.
+			await expect(gauge).toHaveClass(/at-limit/);
+			await expect(gauge).not.toHaveClass(/warning/);
 			await expect(gauge).not.toHaveClass(/violation/);
 			await page.screenshot({ path: testInfo.outputPath('at-rating-gauge.png') });
 			if (touch) await gauge.tap();
@@ -151,7 +162,7 @@ for (const touch of [false, true]) {
 				).toBeVisible();
 				await page.getByRole('button', { name: 'Close network panel' }).tap();
 			}
-			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
+			await fit(toolbar);
 			await expect(gauge).toHaveAttribute('aria-pressed', 'true');
 			const diagram = page.locator('.tx-stage');
 			const inspector = diagram.getByRole('region', { name: 'Selected equipment' });
@@ -160,59 +171,67 @@ for (const touch of [false, true]) {
 			await expect(inspector).toContainText('0 MW');
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await expect(inspector).toHaveCount(0);
-			const exceptions = diagram.getByText('Exceptions (1)', { exact: true });
+			const exceptions = diagram.getByText('Violations (1)', { exact: true });
 			if (touch) await exceptions.tap();
 			else await exceptions.press('Enter');
-			const search = diagram.getByRole('searchbox', { name: 'Search exceptions' });
+			const search = diagram.getByRole('searchbox', { name: 'Search' });
 			await search.fill('branch 99');
-			await expect(diagram.getByText('No matching exceptions.')).toBeVisible();
+			await expect(diagram.getByText('No matches', { exact: true })).toBeVisible();
 			await search.fill('branch 1');
-			const row = diagram.getByRole('button', { name: /Branch 1, 1 → 2/ });
+			const row = diagram.getByRole('button', { name: /Line 1, 1 → 2/ });
 			if (touch) await row.tap();
 			else await row.press('Enter');
-			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeFocused();
-			await expect(inspector).toContainText('Effective rating');
-			await expect(inspector).toContainText('Unavailable');
+			await expect(inspector.getByRole('heading', { name: 'Line 1' })).toBeFocused();
+			await expect(inspector.locator('dl div').filter({ hasText: /^Rating/ })).toContainText(
+				'80 MW'
+			);
+			// DC reports no limiting end, so the row is left out rather than marked unavailable.
+			await expect(inspector.locator('dl div').filter({ hasText: 'Limiting end' })).toHaveCount(0);
 			await inspector.getByRole('button', { name: 'Frame', exact: true }).click();
 			if (touch) await inspector.getByRole('button', { name: 'Clear selection' }).tap();
 			else await inspector.getByRole('button', { name: 'Frame', exact: true }).press('Escape');
 			await expect(inspector).toHaveCount(0);
 
-			await selectView(toolbar, 'OPF economics');
-			const economics = diagram.getByRole('region', { name: 'OPF economics' });
-			await expect(economics).toContainText('Total LMP');
-			await expect(economics).toContainText('$/MWh');
-			await economics.getByLabel('Price scale').selectOption('3');
+			await selectView(toolbar, 'Prices');
+			const economics = diagram.getByRole('region', { name: 'Prices' });
+			await expect(economics.locator('.stat').filter({ hasText: 'Price' })).toContainText('$/MWh');
+			await expect(economics).toContainText('LMP');
+			await economics.getByLabel('Scale').selectOption('3');
 			await expect(economics).toContainText('200 $/MWh');
-			await economics.getByText('Binding thermal limits (1)', { exact: true }).click();
-			const binding = economics.getByRole('button', { name: /Branch 1.*marginal relief/ });
+			await economics.getByText('Lines at limit (1)', { exact: true }).click();
+			const binding = economics.getByRole('button', { name: /Line 1.*\/MW/ });
 			if (touch) await binding.tap();
 			else await binding.press('Enter');
-			const heading = inspector.getByRole('heading', { name: 'Branch 1' });
+			const heading = inspector.getByRole('heading', { name: 'Line 1' });
 			await expect(heading).toBeFocused();
 			await expect(heading).toBeInViewport({ ratio: 1 });
-			await expect(economics).toContainText('Binding, with positive marginal relief');
-			await expect(economics).toContainText(/Marginal rating relief [1-9]/);
+			await expect(economics.locator('.pick div').filter({ hasText: 'Line 1' })).toContainText(
+				'At limit'
+			);
+			await expect(
+				economics.locator('.pick div').filter({ hasText: 'Value of rating' })
+			).toContainText(/[1-9]/);
 			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('opf-economics.png') });
 
-			await selectView(toolbar, 'Power transfers');
-			const transfers = diagram.getByRole('region', { name: 'Power transfers' });
-			await expect(transfers).toContainText('0 to 500 MW');
-			await transfers.getByLabel('Width scale').selectOption('100');
-			await expect(transfers).toContainText('0 to 100 MW');
+			await selectView(toolbar, 'Flows');
+			const transfers = diagram.getByRole('region', { name: 'Flows' });
+			const widthScale = transfers.getByLabel('Width scale');
+			await expect(widthScale).toHaveValue('500');
+			await widthScale.selectOption('100');
+			await expect(widthScale).toHaveValue('100');
 			await expect(inspector.getByRole('row', { name: /From bus 1/ })).toContainText('+80 MW');
 			await expect(inspector.getByRole('row', { name: /To bus 2/ })).toContainText('-80 MW');
 			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toHaveCount(0);
-			await expect(inspector).toContainText('Bus 1 → bus 2');
+			await expect(inspector).toContainText('1 → 2');
 			await expect(diagram.getByText('Overloads (0)', { exact: true })).toBeVisible();
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
-			await transfers.getByText('Largest active transfers', { exact: true }).click();
-			const ranked = transfers.getByRole('button', { name: /Branch 1.*Bus 1 → bus 2.*80 MW/ });
+			await transfers.getByText('Largest flows', { exact: true }).click();
+			const ranked = transfers.getByRole('button', { name: /Line 1.*80 MW.*1 → 2/ });
 			if (touch) await ranked.tap();
 			else await ranked.press('Enter');
-			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeVisible();
-			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeFocused();
+			await expect(inspector.getByRole('heading', { name: 'Line 1' })).toBeVisible();
+			await expect(inspector.getByRole('heading', { name: 'Line 1' })).toBeFocused();
 			await page.screenshot({ path: testInfo.outputPath('power-transfers-dc.png') });
 			if (touch) {
 				// Record the text painted into the exported PNG, including lines wrapped on a phone.
@@ -232,10 +251,9 @@ for (const touch of [false, true]) {
 				const text = await page.evaluate(() =>
 					(Reflect.get(window, 'exportedCanvasText') as string[]).join(' ')
 				);
-				expect(text).toContain('Power transfers · dcopf · Result available');
-				expect(text).toContain('Blue line width: 0–100 MW');
-				expect(text).toContain('Red gauges show overload in percent of rating');
-				expect(text).not.toContain('Operating limits');
+				expect(text).toContain('Flows, DC OPF');
+				expect(text).toContain('Width: 0–100 MW');
+				expect(text).not.toContain('Limits,');
 			}
 
 			const closeNetwork = page.getByRole('button', { name: 'Close network panel', exact: true });
@@ -246,15 +264,15 @@ for (const touch of [false, true]) {
 			await lookup.press('Enter');
 			if (touch && (await closeNetwork.isVisible())) await closeNetwork.tap();
 			await expect(inspector.getByRole('heading', { name: 'Bus 2' })).toBeVisible();
-			await expect(
-				inspector.locator('dl div').filter({ hasText: 'Solved generation' })
-			).toContainText('10 MW');
-			await expect(inspector.locator('dl div').filter({ hasText: 'Model demand' })).toContainText(
+			await expect(inspector.locator('dl div').filter({ hasText: 'Generation' })).toContainText(
+				'10 MW'
+			);
+			await expect(inspector.locator('dl div').filter({ hasText: 'Demand' })).toContainText(
 				'90 MW'
 			);
-			await expect(
-				inspector.locator('dl div').filter({ hasText: 'Installed capacity' })
-			).toContainText('100 MW');
+			await expect(inspector.locator('dl div').filter({ hasText: 'Capacity' })).toContainText(
+				'100 MW'
+			);
 		});
 		for (const uniform of [false, true])
 			test(
@@ -269,7 +287,7 @@ for (const touch of [false, true]) {
 					await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 					await page.goto('/');
 					await page.emulateMedia({ reducedMotion: 'reduce' });
-					await expect(page.getByText('no default cases loaded')).toBeVisible();
+					await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 					await page.locator('input[type="file"]').setInputFiles([
 						{
 							name: 'stationlimits.m',
@@ -290,27 +308,29 @@ for (const touch of [false, true]) {
 					await expect(calculation).toBeEnabled();
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 					const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
-					await expectView(toolbar, 'Operating limits');
+					await expectView(toolbar, 'Limits');
 					await hideBasemap(toolbar);
 					await selectLayout(toolbar, 'Schematic');
 					await expect(page.locator('.tx-stage .status')).toHaveCount(0);
-					const panel = page.getByRole('region', { name: 'Operating limits', exact: true });
-					await expect(panel).toContainText(uniform ? '↑ 2 high' : '↑ 1 high');
+					const panel = page.getByRole('region', { name: 'Limits', exact: true });
+					await expect(panel.locator('.stat').filter({ hasText: 'High voltage' })).toContainText(
+						uniform ? '2' : '1'
+					);
 					await expandResults(page);
 					await expect(panel).toContainText(uniform ? '1.0800–1.0800 pu' : '1.0200–1.0800 pu');
 					const diagram = page.locator('.tx-stage');
-					const exceptions = diagram.getByText(`Exceptions (${uniform ? 2 : 1})`, { exact: true });
+					const exceptions = diagram.getByText(`Violations (${uniform ? 2 : 1})`, { exact: true });
 					await exceptions.click();
 					await expect(
-						diagram.getByRole('listitem').filter({ hasText: 'above maximum' }).first()
+						diagram.getByRole('listitem').filter({ hasText: 'high' }).first()
 					).toContainText('Bus 1');
 					await exceptions.click();
 					await panel.locator('details.station summary').click();
-					await expect(panel.getByRole('button', { name: /Worst violation: bus 1/ })).toBeVisible();
+					await expect(panel.getByRole('button', { name: /pu, bus 1$/ }).last()).toBeVisible();
 					await expect(
-						panel.getByRole('button', { name: /Maximum: bus 1, 1.0800 pu/ })
+						panel.getByRole('button', { name: /^1\.0800 pu, bus \d+$/ }).first()
 					).toBeVisible();
-					await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
+					await fit(toolbar);
 					await page.evaluate(
 						() =>
 							new Promise<void>((resolve) =>
@@ -322,7 +342,7 @@ for (const touch of [false, true]) {
 							uniform ? 'uniform-voltage-violation.png' : 'station-voltage-range.png'
 						)
 					});
-					await panel.getByRole('button', { name: /Worst violation: bus 1/ }).click();
+					await panel.getByRole('button', { name: /^\+[\d.]+ pu, bus 1$/ }).click();
 					await expect(
 						page.getByRole('region', { name: 'Power-flow equipment results' })
 					).toContainText('Voltage (pu) 1.0800');
@@ -334,15 +354,14 @@ for (const touch of [false, true]) {
 						await runCalculation(page, 'socwr');
 						await expect(calculation).toBeEnabled();
 						await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+						await expect(page.getByRole('region', { name: 'Limits', exact: true })).toBeVisible();
+						await selectView(toolbar, 'Prices');
+						const economics = page.getByRole('region', { name: 'Prices' });
+						await expect(economics.locator('.stat').filter({ hasText: 'Price' })).toBeVisible();
+						// SOCWR reports no thermal binding data: no count of lines at limit.
 						await expect(
-							page.getByRole('region', { name: 'Operating limits', exact: true })
-						).toContainText('Relaxation');
-						await selectView(toolbar, 'OPF economics');
-						const economics = page.getByRole('region', { name: 'OPF economics' });
-						await expect(economics).toContainText('Relaxation');
-						await expect(economics).toContainText(
-							'Thermal enforcement and marginal relief unavailable'
-						);
+							economics.locator('.stat').filter({ hasText: 'Lines at limit' })
+						).toHaveCount(0);
 					}
 				}
 			);
@@ -353,7 +372,7 @@ for (const touch of [false, true]) {
 			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 			await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 			await page.goto('/');
-			await expect(page.getByText('no default cases loaded')).toBeVisible();
+			await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 			await page.locator('input[type="file"]').setInputFiles([
 				{ name: 'txdiagram-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(COORDS) },
 				{ name: 'txdiagram.m', mimeType: 'text/plain', buffer: Buffer.from(CASE) }
@@ -366,11 +385,12 @@ for (const touch of [false, true]) {
 			await expect(canvas).toBeVisible();
 			await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
 			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
+			await displayOptions(toolbar, true);
 			await expect(toolbar).toContainText('Geographic');
 			await page.emulateMedia({ reducedMotion: 'reduce' });
 			if (touch) {
 				expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
-				for (const name of ['Zoom in', 'Zoom out', 'Fit', 'Show map']) {
+				for (const name of ['Zoom in', 'Zoom out', 'Fit', 'Show map', 'Display']) {
 					const button = toolbar.getByRole('button', { name, exact: true });
 					const bounds = (await button.boundingBox())!;
 					expect(bounds.height).toBeGreaterThanOrEqual(44);
@@ -378,44 +398,36 @@ for (const touch of [false, true]) {
 					expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
 				}
 			}
+			await displayOptions(toolbar, false);
 
-			await expectView(toolbar, 'Operating limits');
-			await expect(
-				page.getByRole('region', { name: 'Operating limits', exact: true })
-			).toContainText('Voltage not solved (DC)');
+			await expectView(toolbar, 'Limits');
+			// DC solves no voltage magnitudes, so the limits view counts lines only.
+			const limits = page.getByRole('region', { name: 'Limits', exact: true });
+			await expect(limits.locator('.stat').first()).toBeVisible();
+			await expect(limits).not.toContainText('voltage');
 			// Every view is named in the mobile selector; desktop keeps keyboard-operable radios.
-			const viewNames = [
-				'Voltage levels',
-				'Operating limits',
-				'OPF economics',
-				'Power transfers',
-				'Map display'
-			];
+			const viewNames = ['Voltage', 'Limits', 'Prices', 'Flows', 'Map colours'];
 			if (touch) {
 				const chooser = toolbar.getByRole('combobox', { name: 'Diagram view', exact: true });
 				await expect(chooser).toBeVisible();
 				await expect(chooser.locator('option')).toHaveText(viewNames);
-				expect((await toolbar.boundingBox())!.height).toBeLessThan(125);
+				expect((await toolbar.boundingBox())!.height).toBeLessThan(70);
 				await expect(toolbar.getByLabel('Basemap')).toHaveCount(0);
-				await selectView(toolbar, 'OPF economics');
-				const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
-				await expect(economics.getByLabel('Price scale')).toHaveCount(0);
+				await selectView(toolbar, 'Prices');
+				const economics = page.getByRole('region', { name: 'Prices', exact: true });
+				await expect(economics.getByLabel('Scale')).toHaveCount(0);
 				await expect(
 					page.locator('.tx-stage .legend').getByRole('button', { name: 'Show details' })
 				).toBeVisible();
 				await page.screenshot({ path: testInfo.outputPath('mobile-economics-summary.png') });
 				await expandResults(page);
-				await expect(economics.getByLabel('Price scale')).toBeVisible();
-				await economics
-					.getByText('Loading, binding and marginal relief explained', { exact: true })
-					.click();
-				await expect(
-					economics.getByText(/A binding limit can have zero marginal value/)
-				).toBeVisible();
-				await economics
-					.locator('details.concepts')
-					.evaluate((el) => el.scrollIntoView({ block: 'start' }));
-				await page.screenshot({ path: testInfo.outputPath('mobile-economics-explained.png') });
+				await expect(economics.getByLabel('Scale')).toBeVisible();
+				// The explanations live in the docs, one link away.
+				await expect(economics.getByRole('link', { name: 'Prices docs' })).toHaveAttribute(
+					'href',
+					/transmission-diagrams\.html#opf-economics$/
+				);
+				await page.screenshot({ path: testInfo.outputPath('mobile-economics-expanded.png') });
 				await page.locator('.tx-stage .legend').evaluate((el) => {
 					el.scrollTop = 0;
 				});
@@ -423,7 +435,7 @@ for (const touch of [false, true]) {
 					.locator('.tx-stage .legend')
 					.getByRole('button', { name: 'Hide details' })
 					.click();
-				await expect(economics.getByLabel('Price scale')).toHaveCount(0);
+				await expect(economics.getByLabel('Scale')).toHaveCount(0);
 				await page.setViewportSize({ width: 320, height: 740 });
 				for (const control of await toolbar.locator('button, select').all()) {
 					const box = (await control.boundingBox())!;
@@ -434,22 +446,23 @@ for (const touch of [false, true]) {
 				await page.setViewportSize({ width: 390, height: 844 });
 			} else {
 				await expect(toolbar.getByRole('radio')).toHaveText(viewNames);
-				await toolbar.getByRole('radio', { name: 'Operating limits', exact: true }).focus();
+				// The views fit on one row: none is clipped.
+				for (const radio of await toolbar.getByRole('radio').all())
+					expect(await radio.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+				await toolbar.getByRole('radio', { name: 'Limits', exact: true }).focus();
 				await page.keyboard.press('ArrowRight');
-				await expect(
-					toolbar.getByRole('radio', { name: 'OPF economics', exact: true })
-				).toBeFocused();
-				await expectView(toolbar, 'OPF economics');
+				await expect(toolbar.getByRole('radio', { name: 'Prices', exact: true })).toBeFocused();
+				await expectView(toolbar, 'Prices');
 			}
 
-			await selectView(toolbar, 'Voltage levels');
+			await selectView(toolbar, 'Voltage');
 			// The key names the levels drawn, the transformer, and the engine's substation grouping:
 			// buses 1 and 2 share a coordinate, so four buses make three substations.
 			const key = page.locator('.tx-stage details.key');
 			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
 			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
-			await expect(key).toContainText('transformer');
-			await expect(key).toContainText('out of service');
+			await expect(key).toContainText('Transformer');
+			await expect(key).toContainText('Out of service');
 			// Levels are grouped under their tier.
 			await expect(key).toContainText(/extra high voltage/i);
 			await expect(key).toContainText(/high voltage/i);
@@ -460,12 +473,14 @@ for (const touch of [false, true]) {
 			await expect(level).toHaveAttribute('aria-pressed', 'true');
 			await level.click();
 			await expect(level).toHaveAttribute('aria-pressed', 'false');
+			await displayOptions(toolbar, true);
 			await toolbar.getByRole('button', { name: 'Fit', exact: true }).focus();
+			await displayOptions(toolbar, false);
 			await page.mouse.move(0, 0);
 
 			// Once solved, the drawing can colour by results: the bus series and branch loading.
 			await page.screenshot({ path: testInfo.outputPath('transmission-voltage.png') });
-			await selectView(toolbar, 'Operating limits');
+			await selectView(toolbar, 'Limits');
 			await expandResults(page);
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
@@ -488,13 +503,11 @@ for (const touch of [false, true]) {
 				).toBe(true);
 			}
 			await page.locator('.tx-stage details.settings summary').click();
-			await expect(page.locator('.tx-stage .legend')).toContainText('|P| / MW rating');
-			const warning = page.getByRole('spinbutton', { name: 'Loading warning percent' });
+			const warning = page.getByRole('spinbutton', { name: 'Warn at (%)' });
 			await warning.fill('10');
 			await warning.press('Tab');
-			await expect(page.locator('.tx-stage .legend')).toContainText(
-				'Lines are grey below 10% of their rating'
-			);
+			await expect(page.locator('.tx-stage .legend .key')).toContainText('<10%');
+			await expect(page.locator('.tx-stage .legend .key')).toContainText('≥10%');
 			await page.locator('.tx-stage details.settings summary').click();
 			await canvas.press('f');
 			await expect(
@@ -529,23 +542,20 @@ for (const touch of [false, true]) {
 			await runCalculation(page, 'acpf');
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-			await expectView(toolbar, 'Operating limits');
+			await expectView(toolbar, 'Limits');
 			await expandResults(page);
 			await page.locator('.tx-stage details.settings summary').click();
-			await expect(page.getByRole('spinbutton', { name: 'Loading warning percent' })).toHaveValue(
-				'10'
-			);
-			await page.getByRole('spinbutton', { name: 'Loading warning percent' }).fill('90');
-			await page.getByRole('spinbutton', { name: 'Loading warning percent' }).press('Tab');
+			await expect(page.getByRole('spinbutton', { name: 'Warn at (%)' })).toHaveValue('10');
+			await page.getByRole('spinbutton', { name: 'Warn at (%)' }).fill('90');
+			await page.getByRole('spinbutton', { name: 'Warn at (%)' }).press('Tab');
 			await expect(page.locator('.tx-stage .legend')).toContainText('0.90');
 			await expect(page.locator('.tx-stage .legend')).toContainText('1.10 pu');
-			await expect(page.locator('.tx-stage .legend')).toContainText('its case voltage limits');
-			await expect(page.locator('.tx-stage .legend')).toContainText(
-				'max(|S from|, |S to|) / MVA rating'
-			);
+			// AC results key the voltage markers too.
+			await expect(page.locator('.tx-stage .legend .key')).toContainText('Low voltage');
+			await expect(page.locator('.tx-stage .legend .key')).toContainText('High voltage');
 			await page.locator('.tx-stage details.settings summary').click();
 			await hideBasemap(toolbar);
-			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
+			await fit(toolbar);
 			await page.evaluate(
 				() =>
 					new Promise<void>((resolve) =>
@@ -562,23 +572,23 @@ for (const touch of [false, true]) {
 			expect(png.readUInt32BE(16)).toBeGreaterThanOrEqual(page.viewportSize()!.width);
 			expect(png.readUInt32BE(20)).toBeGreaterThan(page.viewportSize()!.height);
 
-			await selectView(toolbar, 'Power transfers');
-			const transfer = page.getByRole('region', { name: 'Power transfers' });
-			await expect(transfer).toContainText('AC power flow');
+			await selectView(toolbar, 'Flows');
+			const transfer = page.getByRole('region', { name: 'Flows' });
+			await expect(transfer.locator('.stat').filter({ hasText: 'Largest flow' })).toBeVisible();
 			const overloads = page.getByText('Overloads (1)', { exact: true });
 			await expect(overloads).toBeVisible();
 			await overloads.click();
-			await expect(page.getByRole('button', { name: /Branch 1.*overload/ }).first()).toBeVisible();
+			await expect(page.getByRole('button', { name: /Line 1.*overload/ }).first()).toBeVisible();
 			await overloads.click();
-			await transfer.getByText('Largest active transfers', { exact: true }).click();
+			await transfer.getByText('Largest flows', { exact: true }).click();
 			await transfer
-				.getByRole('button', { name: /^Branch / })
+				.getByRole('button', { name: /^Line / })
 				.first()
 				.click();
 			const inspector = page.getByRole('region', { name: 'Selected equipment' });
 			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toBeVisible();
 			await expect(inspector.getByRole('cell', { name: /[+-]?[0-9.]+ MVAr/ })).toHaveCount(2);
-			await expect(inspector).toContainText('Active magnitude');
+			await expect(inspector.locator('dl div').filter({ hasText: /^Flow/ })).toContainText('MW');
 			await page.screenshot({ path: testInfo.outputPath('power-transfers-ac.png') });
 		});
 	});
@@ -603,23 +613,21 @@ for (const previousFormulation of [false, true]) {
 		await page.goto('/');
 		await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 		const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
-		const operating = page.getByRole('region', { name: 'Operating limits', exact: true });
-		await expect(operating).toContainText('No line loading could be assessed.');
-		await expect(operating).toContainText('1 line has no usable flow value.');
-		await expect(operating.locator('.lead')).not.toHaveClass(/\bok\b/);
-		await selectView(toolbar, 'Power transfers');
-		const transfer = page.getByRole('region', { name: 'Power transfers', exact: true });
-		await expect(transfer).toContainText(
-			previousFormulation
-				? 'Awaiting a result for this calculation.'
-				: 'Flow values are unavailable for 1 in-service line.'
-		);
-		await expect(transfer).not.toContainText('No line carries power');
+		const operating = page.getByRole('region', { name: 'Limits', exact: true });
+		// No line could be checked: the count is a dash, not a healthy zero.
+		await expect(operating.locator('.stat').filter({ hasText: 'Over limit' })).toContainText('—');
+		await expect(operating.locator('.stat').filter({ hasText: 'No data' })).toContainText('1');
+		await expect(operating.locator('.stat.ok')).toHaveCount(0);
+		await selectView(toolbar, 'Flows');
+		const transfer = page.getByRole('region', { name: 'Flows', exact: true });
+		if (previousFormulation) await expect(transfer).toContainText('No result');
+		else await expect(transfer.locator('.stat').filter({ hasText: 'No data' })).toContainText('1');
+		await expect(transfer).not.toContainText('Zero flow');
 		if (!previousFormulation) {
-			await selectView(toolbar, 'OPF economics');
-			const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
-			await expect(economics).toContainText('Thermal binding information is unavailable');
-			await expect(economics).not.toContainText('No reported thermal limit binds');
+			await selectView(toolbar, 'Prices');
+			const economics = page.getByRole('region', { name: 'Prices', exact: true });
+			// No thermal binding data: no count of lines at limit is claimed.
+			await expect(economics.locator('.stat').filter({ hasText: 'Lines at limit' })).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('unknown-thermal-status.png') });
 		}
 	});

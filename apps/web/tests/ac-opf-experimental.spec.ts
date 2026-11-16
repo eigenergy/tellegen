@@ -31,9 +31,9 @@ for (const status of [404, 200]) {
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(calculation).toBeEnabled();
 		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', true);
-		await expect(page.getByRole('complementary', { name: 'Network', exact: true })).toContainText(
-			'Generation cost is $1,235/h.'
-		);
+		await expect(
+			page.getByRole('complementary', { name: 'Network', exact: true }).locator('dl.stats')
+		).toContainText('$1,235/h');
 		await expect(page.locator('.error')).toHaveCount(0);
 	});
 }
@@ -58,7 +58,7 @@ for (const mode of ['preview', 'development']) {
 			process.env.TELLEGEN_KEYED_PORT ?? Number(process.env.TELLEGEN_PREVIEW_PORT ?? 4173) + 2
 		);
 		await page.goto(mode === 'preview' ? '/' : `http://127.0.0.1:${keyedPort}/`);
-		await expect(page.getByText('no default cases loaded')).toBeVisible();
+		await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 		await page.locator('input[type="file"][multiple]').setInputFiles([
 			{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 			{ name: 'case3opf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
@@ -71,7 +71,7 @@ for (const mode of ['preview', 'development']) {
 		await expect(page.locator('.solvecard')).toContainText('AC OPF');
 		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 		await expect(calculation).toBeEnabled();
-		await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 			'aria-pressed',
 			'true'
 		);
@@ -185,7 +185,7 @@ test('imports and solves a retained canonical AC OPF instance', async ({ page })
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"][multiple]').setInputFiles([
 		{ name: 'canonical.pio.json', mimeType: 'application/json', buffer: Buffer.from(moduleJson) },
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) }

@@ -59,9 +59,7 @@ test('Cmd+K opens the palette and zen mode hides the panels until Escape', async
 	await expect(pill).toBeVisible();
 
 	await page.keyboard.press('ControlOrMeta+k');
-	await expect(
-		dialog.getByRole('option', { name: 'Exit zen mode Bring the panels back' })
-	).toBeVisible();
+	await expect(dialog.getByRole('option', { name: /^Exit zen mode/ })).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(dialog).toHaveCount(0);
 	await expect(pill).toBeVisible();

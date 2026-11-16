@@ -28,17 +28,16 @@ test.beforeEach(async ({ page }) => {
 async function openDemo(page: import('@playwright/test').Page) {
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	// The Dynamics tab opens the panel and switches the map to dynamics.
 	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
 	const panel = page.getByTestId('dynamics-panel');
 	await panel.getByTestId('dyn-open-demo').click();
-	await expect(panel.getByTestId('dyn-counts')).toContainText(
-		/\d+ machines, 37 renewable plants simulated/,
-		{
-			timeout: 90_000
-		}
-	);
+	const counts = panel.getByTestId('dyn-counts');
+	await expect(counts.locator('.stat').filter({ hasText: 'Renewables' })).toContainText('37', {
+		timeout: 90_000
+	});
+	await expect(counts.locator('.stat').filter({ hasText: 'Machines' })).toContainText(/\d+/);
 	await expect(panel.getByTestId('dyn-flat')).toContainText('✓', { timeout: 60_000 });
 	return panel;
 }
@@ -50,7 +49,8 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	// Before a run the map is the case at rest, explained, not the
 	// steady-state dispatch.
 	await expect(page.getByTestId('dyn-legend-rest')).toBeVisible({ timeout: 30_000 });
-	await expect(page.getByTestId('outcome-dynamics')).toBeVisible();
+	// The steady-state numbers step aside while the map shows the dynamic case.
+	await expect(page.locator('[data-panel="network"] dl.stats')).toHaveCount(0);
 	await shot(page, '01-demo-loaded');
 
 	// Pick bus 1101 with the keyboard path (the bus search), then fault it.
@@ -128,7 +128,7 @@ test('a validated scenario carries its badge', async ({ page }) => {
 	await panel.getByRole('combobox', { name: /Validated scenarios/ }).selectOption('trip-1431-N');
 	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
-	await expect(panel.getByTestId('dyn-badge')).toContainText('Validated scenario');
+	await expect(panel.getByTestId('dyn-badge')).toContainText('Validated');
 	await expect(panel.getByTestId('dyn-verdict')).toContainText(/59\.\d{2}\d? Hz/);
 });
 
@@ -140,22 +140,20 @@ test('stopping a run returns to idle and the static solve still works', async ({
 	await panel.getByRole('button', { name: /Run 120 s simulation/ }).click();
 	await expect(panel.getByText(/Simulating…/)).toBeVisible();
 	await panel.getByRole('button', { name: 'Stop' }).click();
-	await expect(panel.getByText('Run stopped.')).toBeVisible();
+	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
 	await expect(panel.getByRole('button', { name: /Run 120 s simulation/ })).toBeEnabled();
 	// Back to steady state: the solver still answers.
 	await page.getByTestId('mode-steady').click();
-	await expect(page.locator('.solvecard')).toContainText(
-		/AC power flow|DC OPF|converged|cheapest/i,
-		{
-			timeout: 60_000
-		}
+	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText(
+		/Voltage range|Operational cost/,
+		{ timeout: 60_000 }
 	);
 });
 
 test('a dropped .raw and .dyr attach', async ({ page }) => {
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'wecc.raw', mimeType: 'text/plain', buffer: example('case.raw') },
 		{ name: 'wecc.dyr', mimeType: 'text/plain', buffer: example('case.dyr') },
@@ -170,12 +168,12 @@ test('with experimental features on, the Modes tab computes and stops', async ({
 	await panel.getByRole('tab', { name: /Modes/ }).click();
 	// WECC 240 is too large for a quick dense eigenanalysis in the browser:
 	// the tab says so, and Stop ends the analysis without losing the case.
-	await expect(panel.getByTestId('dyn-modes-size')).toContainText('many minutes');
+	await expect(panel.getByTestId('dyn-modes-size')).toContainText(/^Slow: [\d,]+ states$/);
 	await panel.getByRole('button', { name: 'Compute modes' }).click();
 	await expect(panel.getByText('Computing modes…')).toBeVisible();
 	await shot(page, '08-modes');
 	await panel.getByRole('button', { name: 'Stop' }).click();
-	await expect(panel.getByText('Stopped.')).toBeVisible();
+	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
 	await panel.getByRole('tab', { name: 'Run' }).click();
 	await expect(panel.getByRole('button', { name: /Run 20 s simulation/ })).toBeEnabled({
 		timeout: 30_000
@@ -187,7 +185,7 @@ test('reduced motion parks the playhead instead of playing', async ({ page }) =>
 	const panel = await openDemo(page);
 	await panel.getByRole('combobox', { name: /Validated scenarios/ }).selectOption('trip-1101-1401');
 	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
-	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText(/Stable|Inconclusive/, {
+	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText(/Stable|Not settled/, {
 		timeout: 120_000
 	});
 	await expect(page.getByTestId('dyn-play')).toHaveAttribute('aria-label', 'Play');
@@ -198,7 +196,7 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	// The Dynamics tab opens the panel and switches the map to dynamics.
 	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
 	await page.getByTestId('dyn-open-demo').click();

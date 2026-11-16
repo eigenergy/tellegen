@@ -48,7 +48,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles([
 		{ name: 'private-feeder.json', mimeType: 'application/json', buffer: await readFile(fixture) },
 		{
@@ -172,7 +172,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 			.getByText('Import', { exact: true })
 			.locator('input')
 			.setInputFiles({ name: 'same.json', mimeType: 'application/json', buffer: exported });
-		await expect(await noticeDetails(imported)).toContainText('This study is already saved');
+		await expect(await noticeDetails(imported)).toContainText('Already saved');
 		await expect(imported.getByLabel('Saved study').locator('option[value^="mc:"]')).toHaveCount(1);
 	} finally {
 		await fresh.close();

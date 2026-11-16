@@ -12,7 +12,7 @@ test('a geographic feeder opens at a useful size after zooming the map out', asy
 		route.fulfill({ json: style })
 	);
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles([
 		{
 			name: 'four-wire-limits.bmopf.json',

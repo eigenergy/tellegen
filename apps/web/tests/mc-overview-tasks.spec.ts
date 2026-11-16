@@ -13,7 +13,7 @@ async function solvedOverview(page: Page) {
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire-limits.bmopf.json',
 		mimeType: 'application/json',
@@ -55,7 +55,7 @@ test('protocol tasks stay within their interaction budgets', async ({ page }) =>
 		await expect(
 			overview.getByRole('list', { name: 'From end conductor currents' }).getByRole('listitem')
 		).toHaveCount(4);
-		await expect(overview).toContainText('neutral carries');
+		await expect(overview).toContainText('Neutral:');
 	});
 	await test.step('6. find a named bus: type and Enter', async () => {
 		await overview.getByRole('combobox', { name: 'Find a bus or branch' }).fill('src');
@@ -256,7 +256,7 @@ test('the schematic layout file loads back with the case as its diagram', async 
 	await fresh.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(fresh.getByText('no default cases loaded')).toBeVisible();
+	await expect(fresh.getByText('No cases', { exact: true })).toBeVisible();
 	await fresh.locator('input[type=file]').setInputFiles([
 		{
 			name: 'four-wire-limits.bmopf.json',
@@ -299,7 +299,7 @@ test('a balanced case without limits does not break the overview', async ({ page
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire.bmopf.json',
 		mimeType: 'application/json',
@@ -329,7 +329,7 @@ test('a center-tap transformer (one id, several graph edges) does not break the 
 	// its id; the equipment list was keyed by id and threw `each_key_duplicate` (a 500 page).
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'center-tap.bmopf.json',
 		mimeType: 'application/json',
@@ -360,7 +360,7 @@ test('the diagram opens before a solve, without results', async ({ page }) => {
 	// Cases that do not solve yet (generators, IBRs) can still be inspected as a diagram.
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire-limits.bmopf.json',
 		mimeType: 'application/json',
@@ -381,7 +381,7 @@ test('a second case opens its own diagram while the first one is showing', async
 	// diagram stale, so the second case's Show diagram did nothing.
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const load = async (name: string) =>
 		page
 			.locator('input[type=file]')
@@ -408,7 +408,7 @@ test('switching between two open diagrams draws each case with its own layout', 
 	// both open, and served the other case's cached schematic for this one.
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const centreTap = new URL(
 		'../../../crates/tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json',
 		import.meta.url
@@ -446,7 +446,7 @@ test('switching between two open diagrams draws each case with its own layout', 
 test('perfectly grounded terminals show as a solid earth', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'pf_1ph_line.bmopf.json',
 		mimeType: 'application/json',
@@ -478,7 +478,7 @@ test('buses at the same point spread apart for the keyboard cursor', async ({ pa
 	for (const bus of Object.values(data.bus) as object[]) Object.assign(bus, at);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'stacked.bmopf.json',
 		mimeType: 'application/json',

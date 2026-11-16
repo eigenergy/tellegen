@@ -32,16 +32,12 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// of the same doomed request.
 	await lookupBus(page, 1);
 	const error = await noticeDetails(page);
-	await expect(error).toHaveText(
-		'The server is limiting requests. Wait a few seconds and try again.'
-	);
+	await expect(error).toHaveText('Rate limited');
 	expect(sensitivityFetches).toBe(1);
 
 	// The cooldown suppresses the server call for the next selection entirely.
 	await lookupBus(page, 2);
-	await expect(error).toHaveText(
-		'The server is limiting requests. Wait a few seconds and try again.'
-	);
+	await expect(error).toHaveText('Rate limited');
 	expect(sensitivityFetches).toBe(1);
 
 	// Retry re-runs the failed bus selection (not a case list reload) and the
@@ -53,9 +49,7 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 		.click();
 	// Wait for the settled readout (the chip also renders while loading) before
 	// counting requests, so the assertion doesn't race the in-flight fetch.
-	await expect(page.getByTestId('sensitivity-title')).toHaveText(
-		'Price change per MW of demand at bus 2'
-	);
+	await expect(page.getByTestId('sensitivity-title')).toHaveText('Bus 2');
 	await expect(page.getByTestId('sensitivity-readout')).toContainText('$/MWh per MW');
 	await expect(
 		page

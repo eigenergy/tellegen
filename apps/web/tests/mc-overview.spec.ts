@@ -13,7 +13,7 @@ test('multiconductor overview ranks declared-limit issues and links them to the 
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire-limits.bmopf.json',
 		mimeType: 'application/json',
@@ -43,14 +43,14 @@ test('multiconductor overview ranks declared-limit issues and links them to the 
 			.getByRole('list', { name: 'Pair voltages against declared limits' })
 			.getByRole('listitem')
 	).toHaveCount(3);
-	await expect(overview).toContainText('(VUF)');
+	await expect(overview.locator('dt', { hasText: 'Unbalance' })).toBeVisible();
 
 	const search = overview.getByRole('combobox', { name: 'Find a bus or branch' });
 	await search.fill('l1');
 	await expect(overview.getByRole('option')).toContainText(['l1']);
 	await search.press('Enter');
 	await expect(overview.getByRole('heading', { name: 'Conductors on l1' })).toBeVisible();
-	await expect(overview).toContainText('neutral carries');
+	await expect(overview).toContainText('Neutral:');
 
 	await overview.getByText('Results table').click();
 	await overview.getByRole('tab', { name: 'Branches' }).click();
@@ -68,7 +68,7 @@ test('multiconductor overview ranks declared-limit issues and links them to the 
 async function solveDocument(page: Page, name: string, doc: unknown) {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name,
 		mimeType: 'application/json',
@@ -94,9 +94,7 @@ test('phase-to-ground bounds are ranked like the other references', async ({ pag
 	await expect(issues).toHaveCount(2);
 	await expect(issues.nth(0)).toContainText('lb');
 	await expect(issues.nth(0)).toContainText('C–G below 216.0 V by 1.1%');
-	await expect(overview.getByRole('button', { name: /V phase–ground/ })).toContainText(
-		'limit violated'
-	);
+	await expect(overview.getByRole('button', { name: /V phase–ground/ })).toContainText('Violated');
 	await issues.nth(0).click();
 	const bars = overview
 		.getByRole('list', { name: 'Pair voltages against declared limits' })
@@ -115,18 +113,12 @@ test('the overview says whether a case declares limits it does not rank', async 
 	const doc = JSON.parse(await readFile(example, 'utf8'));
 	delete doc.linecode['4w'].i_max;
 	const plain = await solveDocument(page, 'four-wire-plain.bmopf.json', doc);
-	await expect(plain).toContainText(
-		'This case declares no voltage limits or ratings, so nothing is ranked against them.'
-	);
-	await expect(plain.getByRole('button', { name: /Violations/ })).toContainText(
-		'no limits declared'
-	);
+	await expect(plain).toContainText('No limits');
+	await expect(plain.getByRole('button', { name: /Violations/ })).toContainText('—');
 
 	// A neutral-to-ground cap is declared but not a band the overview ranks.
 	doc.bus.lb.vn_max = 10;
 	const capped = await solveDocument(page, 'four-wire-capped.bmopf.json', doc);
-	await expect(capped).toContainText('none of its voltage limits is a band the overview ranks');
-	await expect(capped.getByRole('button', { name: /Violations/ })).toContainText(
-		'no ranked limits'
-	);
+	await expect(capped).toContainText('No limits');
+	await expect(capped.getByRole('button', { name: /Violations/ })).toContainText('—');
 });
