@@ -6,19 +6,15 @@
 
 {#if controls.length}
 	<section aria-label="Regulator results">
-		<h4>Regulator outcomes</h4>
-		<p>
-			A reached target is inside its deadband. At a limit, the setting stays bounded and the target
-			may be missed. Discrete steps may straddle a narrow deadband.
-		</p>
+		<h4>Regulators</h4>
 		<ul>
 			{#each controls as c (c.id)}
 				<li>
-					<strong>{c.id}</strong>: {c.status.replaceAll('_', ' ')}.
+					<strong>{c.id}</strong>: {c.status.replaceAll('_', ' ')}
 					<span class="reading"
 						>Setting {number(c.setting)}
-						{c.units}; measured {number(c.measured)}
-						{c.measured_units}, target {number(c.target_low)}–{number(c.target_high)}.</span
+						{c.units}, measured {number(c.measured)}
+						{c.measured_units}, target {number(c.target_low)}–{number(c.target_high)}</span
 					>
 				</li>
 			{/each}

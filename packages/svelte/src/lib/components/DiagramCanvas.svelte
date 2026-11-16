@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { mcNetworkScopeLabel, mcLoadModelLabel } from '@tellegen/engine';
 	import { untrack } from 'svelte';
 	import { on } from 'svelte/events';
 	import type { Network, NetworkBus } from '../api.js';
@@ -396,13 +395,10 @@
 			</g>
 		</svg>
 	</div>
-	{#if !buses.length}<p class="empty">This drawing has no matched bus positions.</p>{/if}
+	{#if !buses.length}<p class="empty">No positions</p>{/if}
 	<div class="controls" aria-label="Diagram controls">
 		{#if onsingleline}
-			<button
-				onclick={onsingleline}
-				aria-label="Single-line diagram"
-				title="Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows"
+			<button onclick={onsingleline} aria-label="Single-line diagram"
 				><span class="full">Single-line diagram</span><span class="short">Diagram</span></button
 			>
 		{/if}
@@ -414,12 +410,7 @@
 			>
 		</div>
 	</div>
-	<p class="coordinate-label">
-		Diagram coordinates{#if multiconductor?.result}
-			· {mcLoadModelLabel(multiconductor.result.load_model)} · {mcNetworkScopeLabel(
-				multiconductor.result.network_scope
-			)}{/if}
-	</p>
+	<p class="coordinate-label">Diagram coordinates</p>
 </div>
 
 <style>

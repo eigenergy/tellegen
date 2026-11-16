@@ -55,7 +55,7 @@
 		if (e.key === 'Escape') pin.close();
 	}}
 >
-	<p>{heading}{pin.pinned !== null ? '' : ' · click to keep open'}</p>
+	<p>{heading}</p>
 	<ul aria-label={label}>
 		{#each rows as row, i (i)}
 			<li>

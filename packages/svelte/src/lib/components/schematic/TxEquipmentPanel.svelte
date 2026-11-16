@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StatBoxes from '../StatBoxes.svelte';
 	import TxDcTopology from './TxDcTopology.svelte';
 	import TxControlResults from './TxControlResults.svelte';
 	import { solveRegulated, type RegulatedSolution } from '@tellegen/engine';
@@ -66,31 +67,25 @@
 
 <section aria-label="Equipment models" class="equipment-panel">
 	<header>
-		<h3>Equipment models</h3>
+		<h3>Equipment</h3>
 		<button onclick={onclose} aria-label="Close equipment models">Close</button>
 	</header>
-	<p class="intro">Source settings and their treatment in this calculation.</p>
 	{#if !network.equipment}
-		<p>
-			Equipment metadata is unavailable in this saved view. Reimport the source to identify shunts,
-			controls and HVDC.
-		</p>
+		<p>No equipment data</p>
 	{:else}
 		{#if dc && (dc.nodes || dc.lines || dc.converters)}
-			<p class="notice">
-				Detailed DC data retained: {dc.nodes} nodes, {dc.lines} lines, {dc.converters} converters.
-				{network.equipment.hvdc.length
-					? 'The main diagram shows reduced links.'
-					: 'Detailed DC connections are not drawn as AC branches.'}
-				Expand the detailed network below.
-			</p>
+			<StatBoxes
+				label="DC network"
+				stats={[
+					{ label: 'DC nodes', value: dc.nodes.toLocaleString() },
+					{ label: 'DC lines', value: dc.lines.toLocaleString() },
+					{ label: 'Converters', value: dc.converters.toLocaleString() }
+				]}
+			/>
 		{/if}
 		{#if network.equipment.import_notes?.length}
 			<details>
-				<summary
-					>Import coverage ({network.equipment.import_notes.length}
-					{network.equipment.import_notes.length === 1 ? 'note' : 'notes'})</summary
-				>
+				<summary>Import notes ({network.equipment.import_notes.length})</summary>
 				<ul>
 					{#each network.equipment.import_notes as note, index (index)}<li>{note}</li>{/each}
 				</ul>
@@ -99,30 +94,25 @@
 		<TxDcTopology equipment={network.equipment} {moduleJson} />
 		{#if moduleJson && !dc?.converters}
 			<details>
-				<summary>Automatic regulator study</summary>
-				<p>
-					Run AC power flow with enabled source tap, PST and shunt controls. Settings stay within
-					their declared ranges and discrete positions. Each control tries to reach its target band;
-					conflicting controls can fail to settle.
-				</p>
-				<p>
-					This uses the original imported case and reports a separate study. Main-diagram settings
-					and results stay at their current values.
-				</p>
+				<summary>Regulators</summary>
 				<button onclick={runRegulators} disabled={controlBusy}
-					>{controlBusy ? 'Solving regulator study…' : 'Solve with automatic regulators'}</button
+					>{controlBusy ? 'Solving…' : 'Solve with regulators'}</button
 				>
 				{#if controlError}<p role="alert">{controlError}</p>{/if}
 				{#if regulated}
-					<p role="status">
-						AC power flow completed in {regulated.passes} regulator passes with {regulated.controls
-							.length} active controls.
-					</p>
+					<StatBoxes
+						label="Regulator result"
+						stats={[
+							{ label: 'Passes', value: String(regulated.passes) },
+							{ label: 'Controls', value: String(regulated.controls.length) },
+							{
+								label: 'Violations',
+								value: String(regulated.violations.length),
+								tone: regulated.violations.length ? 'warning' : 'ok'
+							}
+						]}
+					/>
 					<TxControlResults controls={regulated.controls} />
-					<p>
-						{regulated.violations.length} reported operating-limit violations. Power-flow convergence
-						does not certify feasibility.
-					</p>
 					{#each regulated.violations as violation, index (index)}<p class="notice">
 							{violation}
 						</p>{/each}
@@ -136,18 +126,15 @@
 				placeholder="PST, capacitor, bus…"
 			/></label
 		>
-		<p class="count">{filtered.length} of {items.length} devices</p>
+		<p class="count">{filtered.length} of {items.length}</p>
 		{#if detail}
 			<article aria-label={detail.title}>
 				<h4>{detail.title}</h4>
 				<p><strong>{detail.state}</strong></p>
-				<p class="notice">
-					{formulation.toUpperCase()}: {equipmentTreatment(detail.kind, formulation)}
-				</p>
 				<ul>
+					<li>Model: {equipmentTreatment(detail.kind, formulation)}</li>
 					{#each detail.facts as fact, index (index)}<li>{fact}</li>{/each}
 				</ul>
-				<p>{detail.explanation}</p>
 			</article>
 		{/if}
 		<ul class="devices" aria-label="Equipment inventory">
@@ -164,9 +151,7 @@
 				</li>
 			{/each}
 		</ul>
-		{#if !items.length}<p>
-				No transformer settings, shunts or reduced HVDC links are recorded in this payload.
-			</p>{/if}
+		{#if !items.length}<p>No equipment</p>{/if}
 	{/if}
 </section>
 
@@ -256,8 +241,7 @@
 	article ul {
 		padding-left: var(--space-xl);
 	}
-	.count,
-	.intro {
+	.count {
 		color: var(--text-secondary);
 	}
 	@media (max-width: 600px) {

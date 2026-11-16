@@ -30,12 +30,12 @@ export function transferDirectionText(
 	reading: TransferReading,
 	branch: Pick<NetworkBranch, 'from' | 'to'>
 ) {
-	if (reading.from === undefined || reading.to === undefined) return 'Direction unavailable';
-	if (reading.direction === 1) return `Bus ${branch.from} → bus ${branch.to}`;
-	if (reading.direction === -1) return `Bus ${branch.to} → bus ${branch.from}`;
-	if (reading.magnitude === 0) return 'Zero active flow';
-	if (reading.from >= 0 && reading.to >= 0) return 'Active power enters the branch';
-	return 'Active power leaves the branch';
+	if (reading.from === undefined || reading.to === undefined) return '—';
+	if (reading.direction === 1) return `${branch.from} → ${branch.to}`;
+	if (reading.direction === -1) return `${branch.to} → ${branch.from}`;
+	if (reading.magnitude === 0) return 'No flow';
+	if (reading.from >= 0 && reading.to >= 0) return 'Into line';
+	return 'Out of line';
 }
 
 /** Line width in pixels for an active-power magnitude: area-like (square root) and capped at

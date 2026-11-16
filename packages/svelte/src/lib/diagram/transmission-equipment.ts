@@ -22,30 +22,21 @@ export interface EquipmentItem {
 	bus?: number;
 	branch?: number;
 	facts: string[];
-	explanation: string;
 }
 const number = (n: number) => Number(n.toPrecision(6)).toString();
 
-/** Treatment is tied to the selected formulation, separately from equipment identity/state. */
+/** How the selected calculation treats a device, in a word or two. */
 export function equipmentTreatment(kind: EquipmentKind, formulation: string): string {
+	const dc = formulation === 'dcopf' || formulation === 'dcpf';
 	if (kind === 'hvdc')
-		return formulation === 'acopf' || formulation === 'socwr'
-			? 'Active links are unsupported in this formulation.'
-			: 'Fixed terminal injections; DC voltages, currents and controls are not solved in this formulation.';
-	if (kind === 'svc')
-		return formulation === 'dcopf' || formulation === 'dcpf'
-			? 'DC approximation: static VAR compensator reactive controls are omitted and reported in diagnostics.'
-			: 'Active static VAR compensator controls are unsupported in AC calculations.';
-	if (kind === 'storage') return 'Active devices are unsupported; the solve must reject them.';
-	if (kind === 'switch')
-		return 'Open switches isolate their terminals; closed switches require topology reduction.';
-	if (kind === 'three_winding')
-		return 'Modeled by a three-branch star equivalent with an internal analysis bus.';
+		return formulation === 'acopf' || formulation === 'socwr' ? 'Unsupported' : 'Fixed injection';
+	if (kind === 'svc') return dc ? 'Omitted (DC)' : 'Unsupported';
+	if (kind === 'storage') return 'Unsupported';
+	if (kind === 'switch') return 'Open or closed';
+	if (kind === 'three_winding') return 'Star equivalent';
 	if (kind === 'capacitor' || kind === 'reactor' || kind === 'shunt')
-		return formulation === 'dcopf' || formulation === 'dcpf'
-			? 'DC approximation: conductance enters active balance; reactive susceptance is omitted.'
-			: 'Fixed admittance; active/reactive contribution depends on voltage squared. Use the separate automatic regulator study to switch declared sections.';
-	return 'Fixed tap ratio and phase setting; use the separate automatic regulator study to adjust enabled source controls.';
+		return dc ? 'Conductance only (DC)' : 'Fixed';
+	return 'Fixed tap';
 }
 
 /** Infer only a pure reactive bank. Mixed conductive or mixed-step devices stay generic. */
@@ -66,16 +57,14 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			key: `three-winding:${t.id}`,
 			kind: 'three_winding',
 			title: t.name ?? `Three-winding transformer ${t.id}`,
-			state: t.in_service ? 'In service, star equivalent' : 'Out of service',
+			state: t.in_service ? 'In service' : 'Out of service',
 			bus: t.buses[0],
 			facts: [
-				`Winding buses: ${t.buses.join(', ')}`,
+				`Buses: ${t.buses.join(', ')}`,
 				...(t.star_bus === null
 					? []
-					: [`Analysis-only star bus ${t.star_bus}; winding branches ${t.branches.join(', ')}`])
-			],
-			explanation:
-				'Three windings belong to one physical transformer. The calculation uses an internal star equivalent; its star bus is not a physical substation bus.'
+					: [`Star bus: ${t.star_bus}`, `Windings: ${t.branches.join(', ')}`])
+			]
 		})),
 		...(e.devices ?? []).map((d): EquipmentItem => ({
 			key: d.key,
@@ -84,21 +73,15 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			state:
 				d.kind === 'switch'
 					? d.in_service
-						? 'Closed, topology reduction required'
+						? 'Closed'
 						: 'Open'
 					: d.in_service
 						? d.kind === 'svc'
-							? 'In service, formulation-dependent treatment'
-							: 'In service, unsupported by this solver'
+							? 'In service'
+							: 'Unsupported'
 						: 'Out of service',
 			bus: d.buses[0],
-			facts: [`Terminal buses: ${d.buses.join(', ')}`, `Calculation treatment: ${d.treatment}`],
-			explanation:
-				d.kind === 'svc'
-					? 'A controllable reactive-power device. DC calculations omit its reactive controls and report that approximation; AC calculations reject active SVCs.'
-					: d.kind === 'storage'
-						? 'Storage can charge and discharge. Its energy balance and operating limits are not represented by these solvers; active devices are rejected.'
-						: 'A switch connects or isolates its terminals. Closed switches require an explicit topology reduction before calculation.'
+			facts: [`Buses: ${d.buses.join(', ')}`]
 		})),
 		...e.transformers.map((t): EquipmentItem => {
 			const branch = branches.get(t.branch);
@@ -106,30 +89,24 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 				key: `transformer:${t.branch}`,
 				kind: t.phase_shifter ? 'pst' : 'transformer',
 				title: `${t.phase_shifter ? 'PST' : 'Transformer'} on branch ${t.branch}`,
-				state: branch
-					? branch.status
-						? 'In service'
-						: 'Out of service'
-					: 'Outside displayed network',
+				state: branch ? (branch.status ? 'In service' : 'Out of service') : 'Not shown',
 				branch: branch?.id,
 				facts: [
-					...(branch ? [`Bus ${branch.from} ↔ bus ${branch.to}`] : []),
-					`Phase setting ${number(t.phase_shift_deg)}°, tap ratio ${number(t.tap_ratio)}`,
+					...(branch ? [`Buses: ${branch.from} ↔ ${branch.to}`] : []),
+					`Phase: ${number(t.phase_shift_deg)}°`,
+					`Tap: ${number(t.tap_ratio)}`,
 					...(t.tap_changers ?? []).map(
 						(tap) =>
-							`${tap.kind === 'phase' ? 'Phase' : 'Ratio'} tap changer on winding ${tap.winding}: assigned position ${tap.tap_position ?? 'unknown'}, ${tap.steps.length} recorded steps, source regulation ${tap.regulating ? 'enabled' : 'disabled'}`
+							`${tap.kind === 'phase' ? 'Phase' : 'Ratio'} taps, winding ${tap.winding}: position ${tap.tap_position ?? '—'} of ${tap.steps.length}${tap.regulating ? ', regulating' : ''}`
 					),
-					`Source control: ${t.control_mode?.replaceAll('_', ' ') ?? 'not specified'}${t.control_enabled === null ? '' : t.control_enabled ? ' (enabled in source)' : ' (disabled in source)'}`,
+					`Control: ${t.control_mode?.replaceAll('_', ' ') ?? '—'}${t.control_enabled === null ? '' : t.control_enabled ? ', on' : ', off'}`,
 					...(t.setting_min !== null && t.setting_max !== null
 						? [
-								`Setting range ${number(t.setting_min)} to ${number(t.setting_max)} ${t.phase_shifter ? 'degrees' : 'ratio'}`
+								`Range: ${number(t.setting_min)} to ${number(t.setting_max)}${t.phase_shifter ? '°' : ''}`
 							]
 						: []),
-					...(t.controlled_bus !== null ? [`Regulated bus ${t.controlled_bus}`] : [])
-				],
-				explanation: t.phase_shifter
-					? 'A phase-shifting transformer changes phase angle to influence active-power sharing. This calculation uses the stated setting; the separate automatic regulator study can adjust a declared discrete phase control.'
-					: 'A transformer changes voltage ratio and may introduce a winding phase shift. These calculations use fixed tap and phase settings. A phase shift alone does not identify a PST.'
+					...(t.controlled_bus !== null ? [`Regulated bus: ${t.controlled_bus}`] : [])
+				]
 			};
 		}),
 		...e.shunts.map((s): EquipmentItem => {
@@ -141,18 +118,15 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 				title: `${kind === 'capacitor' ? 'Capacitor bank' : kind === 'reactor' ? 'Shunt reactor' : 'Shunt admittance'} ${s.id}`,
 				state: s.in_service ? 'In service' : 'Out of service',
 				facts: [
-					`Bus ${s.bus}`,
-					`At 1 pu: B = ${number(s.b_mvar)} Mvar, G = ${number(s.g_mw)} MW`,
-					...(s.section_count === null ? [] : [`${s.section_count} sections connected`]),
+					`Bus: ${s.bus}`,
+					`B at 1 pu: ${number(s.b_mvar)} Mvar`,
+					`G at 1 pu: ${number(s.g_mw)} MW`,
+					...(s.section_count === null ? [] : [`Sections on: ${s.section_count}`]),
 					...(s.blocks.length
-						? [
-								`Step blocks: ${s.blocks.map((b) => `${b.steps} × ${number(b.b_mvar)} Mvar`).join('; ')}`
-							]
+						? [`Steps: ${s.blocks.map((b) => `${b.steps} × ${number(b.b_mvar)} Mvar`).join('; ')}`]
 						: []),
-					`Source switching: ${s.control_mode ?? 'not specified'}`
-				],
-				explanation:
-					'Positive B supplies reactive power; negative B absorbs it. In AC calculations the contribution varies with voltage squared. DC power flow omits reactive power. Bank settings are fixed in the main calculation. The separate automatic regulator study can switch declared sections to reach a voltage band.'
+					`Switching: ${s.control_mode ?? '—'}`
+				]
 			};
 		}),
 		...e.hvdc.map((h): EquipmentItem => ({
@@ -160,17 +134,15 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			kind: 'hvdc',
 			bus: h.from,
 			title: `HVDC link ${h.id}`,
-			state: h.in_service ? 'In service, fixed-transfer input' : 'Out of service',
+			state: h.in_service ? 'In service' : 'Out of service',
 			facts: [
-				`Bus ${h.from} ↔ bus ${h.to}`,
-				`Input withdrawal at bus ${h.from}: ${number(h.pf_mw)} MW`,
-				`Input injection at bus ${h.to}: ${number(h.pt_mw)} MW`,
-				`Net input loss: ${number(h.pf_mw - h.pt_mw)} MW`,
-				`Converters: ${h.from_converter?.toUpperCase() ?? 'unspecified'} / ${h.to_converter?.toUpperCase() ?? 'unspecified'}`,
-				...(h.nominal_kv ? [`Nominal DC voltage ${number(h.nominal_kv)} kV`] : [])
-			],
-			explanation:
-				'DC PF, DC OPF and AC PF use fixed terminal injections; AC OPF and SOCWR reject active links. An excluded terminal can omit the whole transfer: check solve diagnostics. These are input powers, not solved DC voltages or currents. DC power flow is an AC-network approximation, not an HVDC-network simulation.'
+				`Buses: ${h.from} ↔ ${h.to}`,
+				`From: ${number(h.pf_mw)} MW`,
+				`To: ${number(h.pt_mw)} MW`,
+				`Loss: ${number(h.pf_mw - h.pt_mw)} MW`,
+				`Converters: ${h.from_converter?.toUpperCase() ?? '—'} / ${h.to_converter?.toUpperCase() ?? '—'}`,
+				...(h.nominal_kv ? [`DC voltage: ${number(h.nominal_kv)} kV`] : [])
+			]
 		}))
 	];
 }

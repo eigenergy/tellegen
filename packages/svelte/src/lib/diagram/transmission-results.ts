@@ -1,5 +1,6 @@
 import type { BranchLoading, NetworkBus, SolutionFlow, Solution } from '@tellegen/engine';
 import type { RGBA } from '../colors.js';
+import { cleanStatus, statusWords } from './verdict.js';
 
 /** Display tolerances suppress rounding noise; they are not solver feasibility tolerances. */
 export const VOLTAGE_TOLERANCE_PU = 1e-5;
@@ -87,9 +88,10 @@ export const isRated = (state: LoadingState | undefined) => !!state && RATED_STA
 /** DC power flow and DC OPF solve angles only, never voltage magnitudes. */
 export const isDc = (formulation: string) => formulation === 'dcopf' || formulation === 'dcpf';
 
+/** Alarm red (#D7261E) for a line at or over its rating; amber only for one near it. */
 export function operatingLoadingColor(state: LoadingState): RGBA {
-	if (state === 'violation') return [190, 32, 36, 255];
-	if (state === 'warning' || state === 'at-limit') return [210, 137, 27, 245];
+	if (state === 'violation' || state === 'at-limit') return [215, 38, 30, 255];
+	if (state === 'warning') return [210, 137, 27, 245];
 	if (state === 'normal') return [158, 153, 144, 190];
 	return [155, 150, 140, 130];
 }
@@ -191,33 +193,36 @@ export function operatingContext(
 	const dcBasis = isDc(solution?.formulation ?? formulation);
 	const mismatch = !!solution?.formulation && solution.formulation !== formulation;
 	return {
-		status: solution?.status ?? 'status unavailable',
+		status: solution?.status ?? '',
 		voltage: !dc,
 		relaxed: formulation === 'socwr',
+		/** The result's state in a word or two; empty when it is current. */
 		freshness: mismatch
-			? `Previous ${solution!.formulation} result, awaiting ${formulation}`
+			? 'Stale'
 			: solving
-				? solution
-					? 'Updating, showing the previous result'
-					: 'Calculating, no result yet'
+				? 'Solving…'
 				: error
 					? solution
-						? 'Error, result may be stale'
-						: 'Calculation unavailable, no result'
+						? 'Stale'
+						: 'No result'
 					: solution
-						? 'Result available'
-						: 'Not solved',
+						? ''
+						: 'No result',
 		stale: solving || error || mismatch,
 		/** A result is shown, current or not. */
 		solved: !!solution,
 		/** The result when it is for the chosen calculation; null for another calculation's. */
 		current: mismatch ? null : solution,
-		basis: dcBasis ? '|P| / MW rating' : 'max(|S from|, |S to|) / MVA rating',
-		/** `basis` in words. */
-		basisText: dcBasis
-			? 'MW flow as a percentage of the MW rating'
-			: "the larger end's apparent power (MVA) as a percentage of the MVA rating"
+		/** What loading is measured against. */
+		basis: dcBasis ? 'MW / rating' : 'MVA / rating'
 	};
+}
+
+/** A short status for a diagram panel: the result's state when it is not current, else the
+ * solver's status when it did not fully succeed; null when there is nothing to flag. */
+export function freshnessNote(context: ReturnType<typeof operatingContext>): string | null {
+	if (context.stale || !context.solved) return context.freshness || null;
+	return !context.status || cleanStatus(context.status) ? null : statusWords(context.status);
 }
 
 /** A gauge to place: the branch's screen point it describes (`ax`, `ay`). */
@@ -255,9 +260,9 @@ export function placeOperatingGauges(
 	const rank = (g: GaugeCandidate) =>
 		(g.selected
 			? 1e9
-			: g.state === 'violation'
+			: g.state === 'violation' || g.state === 'at-limit'
 				? 1e6
-				: g.state === 'warning' || g.state === 'at-limit'
+				: g.state === 'warning'
 					? 1e4
 					: 0) + g.loading;
 	const inside = (x: number, y: number, w: number, h: number) =>
@@ -301,10 +306,10 @@ export const gaugeText = (loading: number) => `${(loading * 100).toFixed(1)}%`;
 export const loadingStateText: Record<LoadingState, string> = {
 	deenergized: 'de-energized',
 	inactive: 'out of service',
-	missing: 'result missing',
-	unknown: 'rating unknown',
-	unrated: 'no stated rating',
-	normal: 'below warning',
+	missing: 'no data',
+	unknown: 'unrated',
+	unrated: 'unrated',
+	normal: 'normal',
 	warning: 'warning',
 	'at-limit': 'at rating',
 	violation: 'overload'

@@ -87,12 +87,12 @@
 	);
 	const voltageText = {
 		deenergized: 'De-energized',
-		missing: 'Voltage unavailable',
-		unbounded: 'Bounds unavailable',
-		'invalid-limits': 'Invalid bounds',
-		normal: 'Within available bounds',
-		low: 'Below minimum',
-		high: 'Above maximum'
+		missing: '—',
+		unbounded: 'No limits',
+		'invalid-limits': 'Invalid limits',
+		normal: 'Within limits',
+		low: 'Low',
+		high: 'High'
 	};
 	/** The flow along the branch in words, when one end supplies the other. */
 	const flowSentence = $derived.by(() => {
@@ -131,15 +131,15 @@
 	<section class="inspection" aria-label="Selected equipment">
 		<header>
 			<h3 tabindex="-1" bind:this={heading}>
-				{#if bus}Bus {bus.id}{bus.name ? ` (${bus.name})` : ''}{:else if branch}Branch {branch.id}{/if}
+				{#if bus}Bus {bus.id}{bus.name ? ` (${bus.name})` : ''}{:else if branch}Line {branch.id}{/if}
 			</h3>
 			<button onclick={onframe}>Frame</button>
 			<button onclick={clear} aria-label="Clear selection">Clear</button>
 		</header>
-		{#if stale}<p>Showing previous or incomplete results.</p>{/if}
+		{#if stale}<span class="chip">Stale</span>{/if}
 		{#if brief}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}.
+					<strong>{flowSentence.mw}</strong>, {flowSentence.from} → {flowSentence.to}
 				</p>{/if}
 		{:else if bus}
 			<dl>
@@ -147,43 +147,39 @@
 					<div>
 						<dt>Voltage</dt>
 						<dd>
-							{#if voltageSolved}{@render q(
-									deenergized ? undefined : voltage,
-									'pu'
-								)}{:else}Unavailable in DC{/if}
+							{#if voltageSolved}{@render q(deenergized ? undefined : voltage, 'pu')}{:else}—{/if}
 						</dd>
 					</div>
 					<div>
-						<dt>Minimum</dt>
+						<dt>Min</dt>
 						<dd>{@render q(bus.vmin_pu, 'pu')}</dd>
 					</div>
 					<div>
-						<dt>Maximum</dt>
+						<dt>Max</dt>
 						<dd>{@render q(bus.vmax_pu, 'pu')}</dd>
 					</div>
 					{#if voltageSolved}<div>
-							<dt>Voltage status</dt>
+							<dt>Status</dt>
 							<dd>{voltageText[voltageStatus]}</dd>
 						</div>{/if}
 				{/if}
 				<div>
-					<dt>Solved generation</dt>
+					<dt>Generation</dt>
 					<dd>{@render q(generation, 'MW')}</dd>
 				</div>
 				<div>
-					<dt>Model demand</dt>
+					<dt>Demand</dt>
 					<dd>{@render q(demand, 'MW')}</dd>
 				</div>
 				<div>
-					<dt>Installed capacity</dt>
+					<dt>Capacity</dt>
 					<dd>{@render q(bus.gen_mw, 'MW')}</dd>
 				</div>
 			</dl>
 		{:else if branch}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}.
+					<strong>{flowSentence.mw}</strong>, {flowSentence.from} → {flowSentence.to}
 				</p>{/if}
-			<p class="convention">Signs at each end: positive where power enters the branch.</p>
 			<table>
 				<thead>
 					<tr>
@@ -207,30 +203,26 @@
 			<dl>
 				{#if transfer}
 					<div>
-						<dt>Active magnitude</dt>
+						<dt>Flow</dt>
 						<dd>{@render q(transfer.reading?.magnitude, 'MW')}</dd>
 					</div>
 					<div>
 						<dt>Direction</dt>
 						<dd>
-							{transfer.reading ? transferDirectionText(transfer.reading, branch) : 'Unavailable'}
+							{transfer.reading ? transferDirectionText(transfer.reading, branch) : '—'}
 						</dd>
 					</div>
 				{/if}
 				<div>
-					<dt>Utilization</dt>
+					<dt>Loading</dt>
 					<dd>{@render q(rated && flow ? flow.loading * 100 : undefined, '%')}</dd>
 				</div>
 				<div>
-					<dt>Loading status</dt>
-					<dd>{loading ? loadingStateText[loading] : 'Unavailable'}</dd>
+					<dt>Status</dt>
+					<dd>{loading ? loadingStateText[loading] : '—'}</dd>
 				</div>
 				<div>
-					<dt>Rating basis</dt>
-					<dd>{info?.basis.toUpperCase() ?? 'Unavailable'}</dd>
-				</div>
-				<div>
-					<dt>Effective rating</dt>
+					<dt>Rating</dt>
 					<dd>{@render q(rated ? info?.rating : undefined, info?.basis.toUpperCase() ?? '')}</dd>
 				</div>
 				<div>
@@ -243,10 +235,10 @@
 						)}
 					</dd>
 				</div>
-				<div>
-					<dt>Limiting end</dt>
-					<dd>{info?.limiting_end ?? (info?.basis === 'mw' ? 'DC magnitude' : 'Unavailable')}</dd>
-				</div>
+				{#if info?.limiting_end}<div>
+						<dt>Limiting end</dt>
+						<dd>{info.limiting_end}</dd>
+					</div>{/if}
 			</dl>
 		{/if}
 	</section>
@@ -254,23 +246,19 @@
 
 {#if showExceptions && !brief}
 	<details bind:open>
-		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Exceptions'} ({total})</summary>
+		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Violations'} ({total})</summary>
 		{#if open}
 			<label>
-				Search exceptions
+				Search
 				<input
 					type="search"
 					bind:value={query}
 					oninput={() => (limit = batch)}
-					placeholder="Bus, station or branch ID"
+					placeholder="Bus, station or line"
 				/>
 			</label>
 			{#if !buses.length && !branches.length}<p>
-					{needle
-						? 'No matching exceptions.'
-						: transfer
-							? 'No reported overloads.'
-							: 'No reported operating exceptions.'}
+					{needle ? 'No matches' : 'None'}
 				</p>{/if}
 			{#if buses.length}
 				<h3>Voltage ({buses.length} {buses.length === 1 ? 'bus' : 'buses'})</h3>
@@ -279,8 +267,7 @@
 						<li>
 							<button onclick={() => inspect('bus', b.id)} {...preview('bus', b.id)}
 								><strong>Bus {b.id}{b.name ? ` (${b.name})` : ''}</strong><span
-									>{@render q(b.value, 'pu')}, {@render q(b.exceedance, 'pu')}
-									{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
+									>{@render q(b.value, 'pu')}, {b.state === 'low' ? 'low' : 'high'}</span
 								></button
 							>
 						</li>
@@ -289,14 +276,14 @@
 			{/if}
 			{#if branches.length}
 				<h3>
-					Branch loading ({branches.length}
-					{branches.length === 1 ? 'branch' : 'branches'})
+					Loading ({branches.length}
+					{branches.length === 1 ? 'line' : 'lines'})
 				</h3>
 				<ol>
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
-								><strong>Branch {b.id}, {b.from} → {b.to}</strong><span
+								><strong>Line {b.id}, {b.from} → {b.to}</strong><span
 									>{@render q(b.loading * 100, '%')}, {loadingStateText[b.state]}</span
 								></button
 							>
@@ -305,7 +292,7 @@
 				</ol>
 			{/if}
 			{#if Math.max(buses.length, branches.length) > limit}
-				<button onclick={() => (limit += batch)}>Show more exceptions</button>
+				<button onclick={() => (limit += batch)}>Show more</button>
 			{/if}
 		{/if}
 	</details>
@@ -345,7 +332,12 @@
 		color: var(--ink);
 		font-size: var(--fs-data);
 	}
-	.convention,
+	.chip {
+		padding: 1px 8px;
+		border-radius: var(--radius-full);
+		background: var(--accent-soft);
+		color: var(--text-accent);
+	}
 	dt,
 	th {
 		color: var(--text-secondary);

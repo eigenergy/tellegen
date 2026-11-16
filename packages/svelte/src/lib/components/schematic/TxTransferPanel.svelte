@@ -7,7 +7,7 @@
 		transferDirectionText,
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
-	import { TERMS, transferLead } from '../../diagram/transmission-explain.js';
+	import { transferLead } from '../../diagram/transmission-explain.js';
 	import TxPanelHead from './TxPanelHead.svelte';
 	import { previewHandlers, type PreviewItem } from './preview.js';
 
@@ -45,60 +45,28 @@
 		const first = transfers[0];
 		return transferLead({
 			hasResult: !!context.current,
-			awaiting: context.solved && !context.current,
 			missing,
 			zero,
-			top: first
-				? {
-						id: first.branch.id,
-						mw: readable(first.reading.magnitude, 'MW').text,
-						direction: transferDirectionText(first.reading, first.branch)
-					}
-				: null,
-			scale
+			top: first ? { id: first.branch.id, mw: readable(first.reading.magnitude, 'MW').text } : null
 		});
 	});
 </script>
 
-<section class="transfer" aria-label="Power transfers">
-	<TxPanelHead title="Power transfers" {formulation} {context} {lead} view="transfer" {brief} />
-	<p>
-		<span class="blue">Blue line width</span> shows
-		<span
-			title="{TERMS.activePower} Each line shows the larger of its two ends' |P| (the ends differ by the losses)."
-			>active power</span
-		>, from 0 to {scale} MW.
-	</p>
-	{#if !brief}<label>
-			Width scale
-			<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
+<section class="transfer" aria-label="Flows">
+	<TxPanelHead title="Flows" {context} {lead} view="transfer" />
+	<label>
+		<span><i class="swatch"></i>Width: 0–</span>
+		{#if brief}{scale} MW{:else}<select
+				aria-label="Width scale"
+				value={scale}
+				onchange={(event) => onscale(Number(event.currentTarget.value))}
+			>
 				{#each TRANSFER_SCALES as value (value)}<option {value}>{value} MW</option>{/each}
-			</select>
-			<span>Lines stop widening at the selected MW.</span>
-		</label>
-		<p>
-			Chevrons show the flow direction when you zoom in. Red gauges show overload as a percentage of
-			rating.
-		</p>
-		<p>
-			{zero}
-			{zero === 1 ? 'line carries' : 'lines carry'} no power, and {missing}
-			{missing === 1 ? 'has' : 'have'} no flow value.
-			{#if dc}
-				DC flows are <span title={TERMS.lossless}>lossless</span>.{/if}
-		</p>
-		<p>
-			{hasDispatch
-				? 'Bus readouts show solved generation and model demand.'
-				: 'Solved generation unavailable. Bus readouts show model demand.'}
-		</p>
-		<details>
-			<summary>MW, MVAr and MVA explained</summary>
-			<p>{TERMS.activePower}</p>
-			<p>{TERMS.lossless}</p>
-		</details>
+			</select>{/if}
+	</label>
+	{#if !brief}
 		<details bind:open>
-			<summary>Largest active transfers</summary>
+			<summary>Largest flows</summary>
 			{#if transfers.length}
 				<ol>
 					{#each transfers as { branch, reading } (branch.id)}
@@ -114,22 +82,21 @@
 									id: branch.id
 								})}
 							>
-								<strong>Branch {branch.id}</strong><span
-									>{transferDirectionText(reading, branch)}, {readable(reading.magnitude, 'MW')
-										.text}</span
+								<strong>Line {branch.id}</strong><span
+									>{readable(reading.magnitude, 'MW').text}, {transferDirectionText(
+										reading,
+										branch
+									)}</span
 								>
 							</button>
 						</li>
 					{/each}
 				</ol>
-			{:else}<p>No nonzero transfers reported.</p>{/if}
+			{:else}<p>None</p>{/if}
 		</details>{/if}
 </section>
 
 <style>
-	[title] {
-		cursor: help;
-	}
 	.transfer {
 		width: 100%;
 		min-width: 0;
@@ -146,9 +113,16 @@
 	strong {
 		color: var(--ink);
 	}
-	.blue {
-		color: #1b6c97;
-		font-weight: 600;
+	label span {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.swatch {
+		width: 18px;
+		height: 4px;
+		border-radius: 2px;
+		background: #1b6c97;
 	}
 	p {
 		margin: var(--space-2xs) 0;

@@ -34,6 +34,7 @@
 		VOLTAGE_DOMAIN
 	} from '../diagram/transmission-results.js';
 	import { getAppState, getController } from '../context.svelte.js';
+	import { formulationLabel } from '../format.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { basemapCredit, type BasemapSpec } from '../basemap.js';
@@ -195,7 +196,7 @@
 	/** A view with its own results panel (key, settings and lists). */
 	const panelView = $derived(operatingOn || economicsOn || transferOn);
 	/** The calculation's name as the export title block reads it. */
-	const calculationName = $derived(`${formulation}${resultContext.relaxed ? ' relaxation' : ''}`);
+	const calculationName = $derived(formulationLabel(formulation));
 	let transferScale = $state(500);
 	const dcTransfer = $derived(!resultContext.voltage);
 	const transferSolution = $derived(resultContext.current);
@@ -358,7 +359,7 @@
 				: [];
 		});
 	});
-	let status = $state<string | null>('Loading the diagram renderer…');
+	let status = $state<string | null>('Loading…');
 	let hoveredBus = $state(-1);
 	let hoveredEdge = $state(-1);
 	/** Equipment hovered or focused in a result list: highlighted on the diagram. */
@@ -421,7 +422,7 @@
 			? resultContext.voltage
 				? {
 						mode: 'voltage' as const,
-						label: '|V|',
+						label: 'Voltage',
 						unit: 'pu',
 						copy: 'Voltage magnitude',
 						gradient: voltageGradient,
@@ -511,10 +512,10 @@
 			if (economicsOn) {
 				widths[k] = marginal ? Math.max(5, level.widths[k] + 2) : quiet(k);
 				if (marginal) raised[k] = 1;
-			} else if (f && state === 'violation') {
+			} else if (f && (state === 'violation' || state === 'at-limit')) {
 				widths[k] = Math.max(6, level.widths[k] + 3);
 				raised[k] = 1;
-			} else if (f && (state === 'warning' || state === 'at-limit')) {
+			} else if (f && state === 'warning') {
 				widths[k] = Math.max(4.5, level.widths[k] + 1.5);
 				raised[k] = 1;
 			} else widths[k] = quiet(k);
@@ -1020,7 +1021,7 @@
 			if (inView(sp)) {
 				const magnitude = transferReadings[edge].magnitude;
 				candidates.push({
-					text: magnitude === undefined ? 'Active flow unavailable' : `${magnitude.toFixed(1)} MW`,
+					text: magnitude === undefined ? '—' : `${magnitude.toFixed(1)} MW`,
 					state: 'normal',
 					priority: 1e9,
 					screen: sp,
@@ -1171,10 +1172,10 @@
 				});
 				status = null;
 			})
-			.catch(
-				(e: unknown) =>
-					(status = `The diagram could not load: ${e instanceof Error ? e.message : e}`)
-			);
+			.catch((e: unknown) => {
+				console.error(e);
+				status = 'Diagram failed';
+			});
 		return () => {
 			cancelled = true;
 		};
@@ -1207,7 +1208,7 @@
 	async function show(next: Layout) {
 		const seq = ++showSeq;
 		const slow = setTimeout(() => {
-			if (seq === showSeq) status = 'Laying out the substations…';
+			if (seq === showSeq) status = 'Laying out…';
 		}, 150);
 		let drawing: {
 			geometry: SchematicGeometry;
@@ -1216,7 +1217,8 @@
 		try {
 			drawing = await target(next);
 		} catch (e) {
-			status = `The substations could not be laid out: ${e instanceof Error ? e.message : e}`;
+			console.error(e);
+			status = 'Layout failed';
 			return;
 		} finally {
 			clearTimeout(slow);
@@ -1427,32 +1429,12 @@
 	}
 
 	/** The diagram's views, always visible so users can see what the diagram offers. */
-	const VIEWS: { value: Colour; label: string; hint: string }[] = [
-		{
-			value: 'level',
-			label: 'Voltage levels',
-			hint: 'Nominal voltage of each line and busbar; no results needed'
-		},
-		{
-			value: 'operating',
-			label: 'Operating limits',
-			hint: 'Branch loading against ratings and bus voltage against limits'
-		},
-		{
-			value: 'economics',
-			label: 'OPF economics',
-			hint: 'Locational marginal prices and binding thermal limits from an OPF'
-		},
-		{
-			value: 'transfer',
-			label: 'Power transfers',
-			hint: 'Active power flow: line width by MW, chevrons for direction'
-		},
-		{
-			value: 'results',
-			label: 'Map display',
-			hint: "The map's own display series on the buses (LMP, angle, voltage or demand)"
-		}
+	const VIEWS: { value: Colour; label: string }[] = [
+		{ value: 'level', label: 'Voltage' },
+		{ value: 'operating', label: 'Limits' },
+		{ value: 'economics', label: 'Prices' },
+		{ value: 'transfer', label: 'Flows' },
+		{ value: 'results', label: 'Map colours' }
 	];
 	/** Arrow keys move between views, as in any radio group. */
 	function viewKey(e: KeyboardEvent) {
@@ -1474,11 +1456,7 @@
 	}
 	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
 	const layoutName = $derived(
-		layout === 'schematic'
-			? `Substation schematic (${network.synthetic_coords ? 'laid out by connection' : `seeded by ${geographic ? 'geography' : 'the drawing'}`})`
-			: geographic
-				? 'Geographic positions (Web Mercator)'
-				: 'Drawing positions'
+		layout === 'schematic' ? 'Schematic' : geographic ? 'Geographic' : 'Drawing'
 	);
 	async function exportPng() {
 		if (!deck || !canvas) return;
@@ -1486,14 +1464,14 @@
 			dataset: label,
 			layout: layoutName,
 			view: operatingOn
-				? `Operating limits · ${resultContext.freshness} · ${calculationName}`
+				? `Limits, ${calculationName}`
 				: economicsOn
-					? `OPF economics · ${calculationName} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
+					? `Prices, ${calculationName}`
 					: transferOn
-						? `Power transfers · ${calculationName}`
+						? `Flows, ${calculationName}`
 						: resultsOn
-							? `Buses: ${display?.copy ?? 'results'} · branches: loading`
-							: 'Voltage levels',
+							? `${display?.copy ?? 'Map colours'}, ${calculationName}`
+							: 'Voltage',
 			camera,
 			result: solution
 				? {
@@ -1520,10 +1498,12 @@
 			const { x, y } = gauge;
 			const over = gauge.state === 'violation';
 			const colour = over
-				? '#be2024'
-				: gauge.state === 'warning' || gauge.state === 'at-limit'
-					? '#925b05'
-					: '#252525';
+				? '#d7261e'
+				: gauge.state === 'at-limit'
+					? '#b01e17'
+					: gauge.state === 'warning'
+						? '#925b05'
+						: '#252525';
 			const [lx, ly] = gaugeLeader(gauge);
 			ctx.strokeStyle = colour;
 			ctx.lineWidth = 1.2;
@@ -1535,7 +1515,7 @@
 			ctx.beginPath();
 			ctx.arc(gauge.ax, gauge.ay, 2.5, 0, 2 * Math.PI);
 			ctx.fill();
-			ctx.fillStyle = over ? '#be2024' : '#fcfbf7';
+			ctx.fillStyle = over ? '#d7261e' : '#fcfbf7';
 			ctx.fillRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
 			ctx.lineWidth = gauge.state === 'at-limit' ? 2 : 1;
 			ctx.strokeRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
@@ -1562,22 +1542,15 @@
 			ctx.stroke();
 		}
 		ctx.restore();
-		const context = `${calculationName} · ${resultContext.freshness} · ${resultContext.status} · base case`;
 		const lines = transferOn
-			? [
-					`Power transfers · ${context}`,
-					`Blue line width: 0–${transferScale} MW · Largest reported endpoint |P|`,
-					'Chevrons show direction · Red gauges show overload in percent of rating'
-				]
+			? [`Flows, ${calculationName}`, `Width: 0–${transferScale} MW`]
 			: [
-					`Operating limits · ${context}`,
-					resultContext.voltage
-						? 'Voltage 0.90–1.10 pu · ↓ below / ↑ above case limits'
-						: 'DC: voltage magnitude not solved',
-					`Loading ${resultContext.basis} · warning ${warningPref.value}% · tick 100% · red: overload`,
-					...(activeStation
+					`Limits, ${calculationName}`,
+					...(resultContext.voltage ? ['Voltage 0.90–1.10 pu'] : []),
+					`Loading (${resultContext.basis}): amber ≥${warningPref.value}%, red ≥100%`,
+					...(activeStation && activeStation.min && activeStation.max
 						? [
-								`Station ${activeStation.name}: ${activeStation.min?.value.toFixed(4) ?? 'unknown'}–${activeStation.max?.value.toFixed(4) ?? 'unknown'} pu${activeStation.worst ? ` · worst bus ${activeStation.worst.bus}` : ''}`
+								`${activeStation.name}: ${activeStation.min.value.toFixed(4)}–${activeStation.max.value.toFixed(4)} pu`
 							]
 						: [])
 				];
@@ -1603,13 +1576,10 @@
 		if (!voltageView) return '';
 		const s = stationSummaries[graph.substation[i]];
 		return [
-			s.min && s.max
-				? `Station range ${s.min.value.toFixed(4)}–${s.max.value.toFixed(4)} pu (min bus ${s.min.bus}, max bus ${s.max.bus})`
-				: 'Station voltage unavailable',
+			s.min && s.max ? `Range: ${s.min.value.toFixed(4)}–${s.max.value.toFixed(4)} pu` : '',
 			s.worst
-				? `Worst violation: bus ${s.worst.bus}, ${s.worst.assessment.state === 'low' ? 'below' : 'above'} limit by ${s.worst.assessment.exceedance.toFixed(4)} pu`
-				: '',
-			`${s.unknown} missing values or limits; ${s.disconnected} de-energized`
+				? `Worst: bus ${s.worst.bus}, ${s.worst.assessment.state === 'low' ? '−' : '+'}${s.worst.assessment.exceedance.toFixed(4)} pu`
+				: ''
 		]
 			.filter(Boolean)
 			.join('\n');
@@ -1617,8 +1587,8 @@
 	function busTooltip(i: number): string {
 		return [
 			txBusText(graph, network, i, valueText(i)),
-			voltageView
-				? `Operating band: ${network.buses[i].vmin_pu ?? 'unknown'}–${network.buses[i].vmax_pu ?? 'unknown'} pu`
+			voltageView && network.buses[i].vmin_pu != null && network.buses[i].vmax_pu != null
+				? `Limits: ${network.buses[i].vmin_pu}–${network.buses[i].vmax_pu} pu`
 				: '',
 			stationText(i)
 		]
@@ -1629,19 +1599,22 @@
 		const branch = network.branches[k];
 		const f = transferOn ? transferFlow(branch) : flows.get(branch.id);
 		const info = f?.loading_info;
+		const kv = (bus: number) => (bus >= 0 ? graph.kv[bus] : '—');
 		return [
-			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: bus ${network.branches[k].from} to bus ${network.branches[k].to}`,
-			`Nominal ${graph.from[k] >= 0 ? graph.kv[graph.from[k]] : 'unknown'} / ${graph.to[k] >= 0 ? graph.kv[graph.to[k]] : 'unknown'} kV`,
+			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: ${network.branches[k].from} → ${network.branches[k].to}`,
+			`kV: ${kv(graph.from[k])} / ${kv(graph.to[k])}`,
 			f && (!transferOn || transferReadings[k].from !== undefined)
-				? `From-end active power ${f.mw.toFixed(2)} MW`
-				: 'Flow result missing',
-			...(transferOn ? [transferDirectionText(transferReadings[k], network.branches[k])] : []),
-			...(economicsOn ? [thermalStatus(economics.branches.get(network.branches[k].id))] : []),
-			`Loading: ${loadingStateText[loadingStates[k]]}`,
+				? `P: ${f.mw.toFixed(2)} MW${transferOn ? `, ${transferDirectionText(transferReadings[k], network.branches[k])}` : ''}`
+				: '',
+			...(economicsOn
+				? [`Status: ${thermalStatus(economics.branches.get(network.branches[k].id))}`]
+				: []),
 			hasStatedRating(info) && f && isRated(loadingStates[k])
-				? `${(f.loading * 100).toFixed(2)}% of ${info!.rating} ${info!.basis.toUpperCase()} rating${info!.limiting_end ? ` · limiting end: ${info!.limiting_end}` : ''}`
-				: 'Equipment utilization unavailable'
-		].join('\n');
+				? `Loading: ${(f.loading * 100).toFixed(1)}% of ${info!.rating} ${info!.basis.toUpperCase()}`
+				: `Loading: ${loadingStateText[loadingStates[k]]}`
+		]
+			.filter(Boolean)
+			.join('\n');
 	}
 	const rgb = (c: RGBA) => `rgb(${c.slice(0, 3).join(' ')})`;
 	const casingColour = (c: RGBA): RGBA => [
@@ -1687,19 +1660,14 @@
 		aria-label="Single-line diagram"
 	>
 		{#if panels.compact}
-			<div class="mobile-view">
-				<label
-					>View <select aria-label="Diagram view" bind:value={colour}>
-						{#each VIEWS as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
-					</select></label
-				>
-				<button
-					aria-expanded={equipmentOpen}
-					aria-controls="tx-equipment-panel"
-					onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
-				>
-				<button onclick={onclose}>Show map</button>
-			</div>
+			<select class="view-select" aria-label="Diagram view" bind:value={colour}>
+				{#each VIEWS as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
+			</select>
+			<button
+				aria-expanded={equipmentOpen}
+				aria-controls="tx-equipment-panel"
+				onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
+			>
 		{:else}
 			<div
 				class="segmented views"
@@ -1713,60 +1681,54 @@
 						role="radio"
 						aria-checked={colour === v.value}
 						tabindex={colour === v.value ? 0 : -1}
-						title={v.hint}
 						onclick={() => (colour = v.value)}>{v.label}</button
 					>
 				{/each}
 			</div>
 		{/if}
-		<div class="controls">
-			{#if panels.compact}
-				<select
-					aria-label="Diagram layout"
-					value={layout}
-					onchange={(e) => show(e.currentTarget.value as Layout)}
-				>
-					<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
-					<option value="schematic">Schematic</option>
-				</select>
-			{:else}
-				<div class="segmented" role="group" aria-label="Layout">
-					<button
-						aria-pressed={layout === 'source'}
-						title="Positions from the case data"
-						onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
-					>
-					<button
-						aria-pressed={layout === 'schematic'}
-						title="Substations near their positions, one busbar per bus, lines between them"
-						onclick={() => show('schematic')}>Schematic</button
-					>
-				</div>
-			{/if}
-
-			{#if !panels.compact}
-				<button
-					aria-expanded={equipmentOpen}
-					aria-controls="tx-equipment-panel"
-					onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
-				>
-			{/if}
-			<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
-			<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
-			<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
-			{#if panels.compact}
+		{#if panels.compact}
+			<!-- On a phone the drawing controls wait behind Display, so the toolbar is one row. -->
+			<div class="mobile-view">
 				<button
 					aria-expanded={displayOptions}
 					aria-controls="tx-display-options"
 					onclick={() => (displayOptions = !displayOptions)}>Display</button
 				>
-			{/if}
-			{#if !panels.compact || displayOptions}
-				<div id="tx-display-options" class="display-options">
+				<button onclick={onclose}>Show map</button>
+			</div>
+		{/if}
+		{#if !panels.compact || displayOptions}
+			<div class="controls" id={panels.compact ? 'tx-display-options' : undefined}>
+				{#if panels.compact}
+					<select
+						aria-label="Diagram layout"
+						value={layout}
+						onchange={(e) => show(e.currentTarget.value as Layout)}
+					>
+						<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
+						<option value="schematic">Schematic</option>
+					</select>
+				{:else}
+					<div class="segmented" role="group" aria-label="Layout">
+						<button aria-pressed={layout === 'source'} onclick={() => show('source')}
+							>{geographic ? 'Geographic' : 'Drawing'}</button
+						>
+						<button aria-pressed={layout === 'schematic'} onclick={() => show('schematic')}
+							>Schematic</button
+						>
+					</div>
+					<button
+						aria-expanded={equipmentOpen}
+						aria-controls="tx-equipment-panel"
+						onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
+					>
+				{/if}
+				<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
+				<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
+				<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
+				<div class="display-options" id={panels.compact ? undefined : 'tx-display-options'}>
 					{#if geographic}
-						<label
-							class="check"
-							title="Map tiles under the geographic positions, as on the main map"
+						<label class="check"
 							><input
 								type="checkbox"
 								checked={basemapPref.value}
@@ -1775,11 +1737,7 @@
 						>
 					{/if}
 					{#if fieldKind}
-						<label
-							class="check"
-							title={fieldKind === 'voltage'
-								? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
-								: 'Interpolate price differences around buses: blue below the median LMP, brown above; bus colours use the fixed price scale'}
+						<label class="check"
 							><input
 								type="checkbox"
 								checked={fieldPref.value}
@@ -1787,12 +1745,10 @@
 							/> Shading</label
 						>
 					{/if}
-					<button onclick={exportPng} title="A PNG of this view with a title block"
-						>Save image</button
-					>
+					<button onclick={exportPng}>Save image</button>
 				</div>
-			{/if}
-		</div>
+			</div>
+		{/if}
 	</div>
 	{#if equipmentOpen}
 		<div
@@ -1880,13 +1836,12 @@
 					{brief}
 				/>
 			{:else if !solution}
-				No result yet. Solve the case to colour the buses by the map's display series.
+				No result
 			{:else if display?.mode === 'voltage'}
-				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>.
-				Case limits apply.
+				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
 			{:else if display && uniform !== null}
-				{display.label} is the same everywhere: {uniform.toPrecision(4)}
-				{display.unit}.
+				{display.label}: {uniform.toPrecision(4)}
+				{display.unit}
 			{:else if display}
 				{display.label} <i style:background={display.gradient}></i>
 			{/if}
@@ -1919,8 +1874,12 @@
 					onframe={frameSelection}
 				/>
 			{:else if solution}
-				Lines are grey below {warningPref.value}% of their rating, amber from {warningPref.value}%
-				to 100%, and red above. Lines with unknown ratings are faded.
+				<ul class="loading-key" aria-label="Line loading">
+					<li><i class="swatch normal"></i>&lt;{warningPref.value}%</li>
+					<li><i class="swatch near"></i>≥{warningPref.value}%</li>
+					<li><i class="swatch over"></i>≥100%</li>
+					<li><i class="swatch unrated"></i>Unrated</li>
+				</ul>
 			{/if}
 		</div>
 	{/if}
@@ -1934,8 +1893,8 @@
 				{#each gauges as gauge (gauge.edge)}
 					{@const [lx, ly] = gaugeLeader(gauge)}
 					<g
-						class:violation={gauge.state === 'violation'}
-						class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
+						class:violation={gauge.state === 'violation' || gauge.state === 'at-limit'}
+						class:warning={gauge.state === 'warning'}
 					>
 						<line x1={gauge.ax} y1={gauge.ay} x2={lx} y2={ly} />
 						<circle cx={gauge.ax} cy={gauge.ay} r="2.5" />
@@ -1947,7 +1906,7 @@
 				<button
 					class="utilization-gauge"
 					class:violation={gauge.state === 'violation'}
-					class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
+					class:warning={gauge.state === 'warning'}
 					class:at-limit={gauge.state === 'at-limit'}
 					style:left="{gauge.x}px"
 					style:top="{gauge.y}px"
@@ -1978,7 +1937,6 @@
 			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
 		>
 			<summary>Key</summary>
-			<p class="hint">Line colour and width: voltage level</p>
 			<ul class="symbols" aria-label="Voltage levels">
 				{#each levelsPresent as l, j (l.label)}
 					{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
@@ -1989,9 +1947,6 @@
 							class="level"
 							class:dim={focusEntry >= 0 && focusEntry !== j}
 							aria-pressed={pinnedEntry === j}
-							title="Highlight {l.label} ({l.branches.toLocaleString()} branch{l.branches === 1
-								? ''
-								: 'es'}); click to keep it highlighted"
 							onpointerenter={() => (hoveredEntry = j)}
 							onpointerleave={() => (hoveredEntry = -1)}
 							onfocus={() => (hoveredEntry = j)}
@@ -2017,14 +1972,14 @@
 					<li>
 						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
 							><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
-						>transformer
+						>Transformer
 					</li>
 				{/if}
 				{#if outOfService}
 					<li>
 						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
 							><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
-						>out of service
+						>Out of service
 					</li>
 				{/if}
 			</ul>
@@ -2032,12 +1987,12 @@
 				<li>
 					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
 						><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
-					>load (demand arrow)
+					>Load
 				</li>
 				<li>
 					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
 						><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
-					>generator
+					>Generator
 				</li>
 			</ul>
 			<label class="toggle"
@@ -2045,14 +2000,14 @@
 					type="checkbox"
 					checked={landmarksPref.value}
 					onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
-				/> Landmarks when zoomed out</label
+				/> Landmarks</label
 			>
 			{#if landmarksPref.value && landmarkPool.length}
 				<ul class="symbols" aria-label="Landmarks">
 					<li>
 						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
 							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
-						>generator, largest first
+						>Generator
 					</li>
 				</ul>
 			{/if}
@@ -2096,20 +2051,37 @@
 		width: 370px;
 	}
 	.mobile-view {
-		display: flex;
-		width: 100%;
-		gap: 6px;
+		display: contents;
 	}
-	.mobile-view label {
+	.loading-key {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.loading-key li {
 		display: flex;
 		align-items: center;
-		flex: 1;
 		gap: 6px;
-		min-width: 0;
 	}
-	.mobile-view select {
-		flex: 1;
-		min-width: 0;
+	.loading-key .swatch {
+		width: 18px;
+		height: 3px;
+		border-radius: 2px;
+	}
+	.swatch.normal {
+		background: rgb(158 153 144);
+	}
+	.swatch.near {
+		background: var(--amber);
+	}
+	.swatch.over {
+		background: var(--red);
+	}
+	.swatch.unrated {
+		background: rgb(155 150 140 / 0.45);
 	}
 	.toolbar select {
 		font: inherit;
@@ -2119,27 +2091,59 @@
 		border-radius: var(--radius-control);
 		padding: 4px;
 	}
+	/* Phone: one row. The view select is the panels' shared select at touch size;
+	   the buttons beside it are quiet text buttons of the same height and size. */
 	.toolbar.compact {
-		gap: 5px;
+		gap: 2px;
+		font-size: 15px;
 	}
 	.toolbar.compact select {
-		min-height: 44px;
+		appearance: none;
+		-webkit-appearance: none;
+		min-width: 0;
+		height: 44px;
+		padding: 0 26px 0 8px;
 		font-size: 16px;
+		background-color: var(--surface-control);
+		background-image:
+			linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+			linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+		background-position:
+			right 12px center,
+			right 8px center;
+		background-size:
+			4px 4px,
+			4px 4px;
+		background-repeat: no-repeat;
+		text-overflow: ellipsis;
 	}
-	.toolbar.compact .controls > select {
-		width: 116px;
-		font-size: 13px;
+	.toolbar.compact .view-select {
+		flex: 1 1 0;
+	}
+	.toolbar.compact button {
+		height: 44px;
+		padding: 0 8px;
+		white-space: nowrap;
+	}
+	.toolbar.compact button[aria-expanded='true'] {
+		color: var(--text-accent);
+		background: var(--accent-soft);
+	}
+	.compact .controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 2px 4px;
+		width: 100%;
+		padding: 4px 0 0;
+		margin-top: 4px;
+		border-top: 1px solid var(--line);
 	}
 	.display-options {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		flex-wrap: wrap;
-	}
-	.compact .display-options {
-		width: 100%;
-		border-top: 1px solid var(--line);
-		padding-top: 6px;
 	}
 
 	/* The multiconductor schematic's look, so both diagrams read as one tool. */
@@ -2153,10 +2157,12 @@
 		--gauge-line: var(--line);
 		--gauge-ink: var(--ink);
 		--gauge-warn: #8a5a00;
+		--gauge-alarm-ink: var(--text-danger);
 		--gauge-track: var(--line);
 	}
 	:global(:root[data-theme='dark']) .tx-stage {
 		--gauge-warn: #f2c14e;
+		--gauge-alarm-ink: #ff8a80;
 	}
 	.canvas,
 	canvas {
@@ -2204,9 +2210,6 @@
 		gap: 4px;
 		padding: 4px 6px;
 	}
-	.compact .controls {
-		display: contents;
-	}
 	.toolbar button {
 		font: inherit;
 		color: var(--ink);
@@ -2218,10 +2221,6 @@
 	}
 	.toolbar button:hover:not(:disabled) {
 		background: var(--surface-hover);
-	}
-	.compact button {
-		border-color: var(--line);
-		background: var(--surface-control);
 	}
 	.toolbar button:disabled {
 		opacity: 0.45;
@@ -2250,11 +2249,11 @@
 	.segmented button + button {
 		border-left: 1px solid var(--line);
 	}
-	/* One row of views, as tabs; on a narrow screen it scrolls sideways. */
+	/* The views, as tabs. When the toolbar is squeezed between panels they wrap
+	   to a second row, so every view stays readable. */
 	.views {
 		max-width: 100%;
-		overflow-x: auto;
-		scrollbar-width: none;
+		flex-wrap: wrap;
 		border: 0;
 		border-bottom: 1px solid var(--line);
 		border-radius: 0;
@@ -2330,12 +2329,14 @@
 	}
 	/* At rating: a heavier outline; over rating: filled. Shape and fill, not only hue. */
 	.utilization-gauge.at-limit {
+		color: var(--gauge-alarm-ink);
+		border-color: var(--red);
 		border-width: 2px;
 	}
 	.utilization-gauge.violation {
 		color: #fff;
-		background: #be2024;
-		border-color: #be2024;
+		background: var(--red);
+		border-color: var(--red);
 		font-weight: 600;
 	}
 	.utilization-gauge.violation .gauge-track {
@@ -2363,10 +2364,10 @@
 		fill: var(--gauge-warn);
 	}
 	.leaders .violation line {
-		stroke: #be2024;
+		stroke: var(--red);
 	}
 	.leaders .violation circle {
-		fill: #be2024;
+		fill: var(--red);
 	}
 	.gauge-track {
 		stroke: var(--gauge-track);
