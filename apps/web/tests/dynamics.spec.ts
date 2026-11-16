@@ -60,15 +60,18 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await search.fill('1101');
 	await search.press('Enter');
 	await page.getByRole('button', { name: /Apply a fault here/ }).click();
-	await expect(
-		panel.getByText(/Three-phase fault at bus 1101.*1\.000 s, cleared after 6 cycles/)
-	).toBeVisible();
+	const fault = panel.getByRole('listitem', { name: 'Fault at bus 1101' });
+	await expect(fault.getByLabel('Start')).toHaveValue('1');
+	await expect(fault.getByLabel('Clear after')).toHaveValue('6');
 	await shot(page, '02-fault-chosen');
 
 	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
 	const word = panel.getByTestId('dyn-verdict-word');
 	await expect(word).toHaveText('Stable', { timeout: 120_000 });
-	await expect(panel.getByTestId('dyn-verdict')).toContainText(/59\.\d{3} Hz at/);
+	// Key results are labelled numbers, with no notation or sentence fragments.
+	const lowest = panel.getByTestId('dyn-verdict').locator('.stat', { hasText: 'Lowest frequency' });
+	await expect(lowest.locator('.value')).toHaveText(/^59\.\d{3} Hz$/);
+	await expect(panel.getByTestId('dyn-verdict')).not.toContainText(/COI|δ|RoCoF|nadir/);
 	// With a simulation to show, the switch appears and returns the map to steady state.
 	await expect(panel.getByTestId('mode-steady')).toBeVisible();
 	// The engine's notes are in the Log, not the panel.
@@ -78,7 +81,7 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	const traces = page.getByTestId('dyn-traces');
 	await expect(traces.getByRole('img').first()).toHaveAttribute(
 		'aria-label',
-		/COI nadir 59\.\d+ Hz/
+		/^Frequency, lowest 59\.\d+ Hz$/
 	);
 	await page.waitForTimeout(1500);
 	await shot(page, '03-playback');
@@ -131,7 +134,7 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 
 test('a validated scenario carries its badge', async ({ page }) => {
 	const panel = await openDemo(page);
-	await panel.getByRole('combobox', { name: /Validated scenarios/ }).selectOption('trip-1431-N');
+	await panel.getByRole('combobox', { name: 'Scenario' }).selectOption('trip-1431-N');
 	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
 	await expect(panel.getByTestId('dyn-badge')).toContainText('Validated');
@@ -141,8 +144,8 @@ test('a validated scenario carries its badge', async ({ page }) => {
 test('stopping a run returns to idle and the static solve still works', async ({ page }) => {
 	const panel = await openDemo(page);
 	await panel.getByRole('button', { name: '120' }).count();
-	await panel.getByLabel('Duration in seconds').fill('120');
-	await panel.getByLabel('Duration in seconds').blur();
+	await panel.getByLabel('Duration', { exact: true }).fill('120');
+	await panel.getByLabel('Duration', { exact: true }).blur();
 	await panel.getByRole('button', { name: /Run 120 s simulation/ }).click();
 	await expect(panel.getByText(/Simulating…/)).toBeVisible();
 	await panel.getByRole('button', { name: 'Stop' }).click();
@@ -174,13 +177,13 @@ test('with experimental features on, the Modes tab computes and stops', async ({
 	await panel.getByRole('tab', { name: /Modes/ }).click();
 	// WECC 240 is too large for a quick dense eigenanalysis in the browser:
 	// the tab says so, and Stop ends the analysis without losing the case.
-	await expect(panel.getByTestId('dyn-modes-size')).toContainText(/^Slow: [\d,]+ states$/);
+	await expect(panel.getByTestId('dyn-modes-size')).toHaveText('May take a few minutes');
 	await panel.getByRole('button', { name: 'Compute modes' }).click();
 	await expect(panel.getByText('Computing modes…')).toBeVisible();
 	await shot(page, '08-modes');
 	await panel.getByRole('button', { name: 'Stop' }).click();
 	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
-	await panel.getByRole('tab', { name: 'Run' }).click();
+	await panel.getByRole('tab', { name: 'Simulation' }).click();
 	await expect(panel.getByRole('button', { name: /Run 20 s simulation/ })).toBeEnabled({
 		timeout: 30_000
 	});
@@ -189,7 +192,7 @@ test('with experimental features on, the Modes tab computes and stops', async ({
 test('reduced motion parks the playhead instead of playing', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' });
 	const panel = await openDemo(page);
-	await panel.getByRole('combobox', { name: /Validated scenarios/ }).selectOption('trip-1101-1401');
+	await panel.getByRole('combobox', { name: 'Scenario' }).selectOption('trip-1101-1401');
 	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText(/Stable|Not settled/, {
 		timeout: 120_000
@@ -207,7 +210,7 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
 	await page.getByTestId('dyn-open-demo').click();
 	await expect(page.getByTestId('dyn-counts')).toBeVisible({ timeout: 90_000 });
-	await page.getByRole('combobox', { name: /Validated scenarios/ }).selectOption('fault-1101');
+	await page.getByRole('combobox', { name: 'Scenario' }).selectOption('fault-1101');
 	await page.getByRole('button', { name: /Run 20 s simulation/ }).click();
 	await expect(page.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
 	await expect(page.getByTestId('dyn-scrubber')).toBeVisible();

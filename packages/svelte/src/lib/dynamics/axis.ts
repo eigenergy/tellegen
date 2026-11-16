@@ -41,8 +41,11 @@ export function ticks(lo: number, hi: number, n: number): number[] {
 	return out;
 }
 
-/** A tick label with as many decimals as the tick step needs. */
+/** A tick label with as many decimals as the tick step needs, and no more:
+ * a 0.005 step prints 60.005, not 60.0050. */
 export function tickLabel(v: number, step: number): string {
-	const d = Math.max(0, Math.min(5, -Math.floor(Math.log10(step || 1)) + 1));
+	let d = 0;
+	const s = Math.abs(step) || 1;
+	while (d < 5 && Math.abs(s * 10 ** d - Math.round(s * 10 ** d)) > 1e-9 * 10 ** d) d++;
 	return v.toFixed(d);
 }

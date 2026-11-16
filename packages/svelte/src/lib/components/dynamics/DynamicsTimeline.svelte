@@ -102,7 +102,7 @@
 				</select></label
 			>
 			<label class="slow" title="0.25× from 0.1 s before to 1.5 s after each event"
-				><input type="checkbox" bind:checked={player.slowAroundEvents} /> slow at events</label
+				><input type="checkbox" bind:checked={player.slowAroundEvents} /> Slow at events</label
 			>
 			<!-- Fixed width, the event on its own line: the scrubber beside it
 			     must not move as the readout grows. -->
@@ -129,14 +129,7 @@
 				<div class="marks" aria-hidden="true">
 					{#each marks as m, i (i)}
 						<span class={['mark', m.kind]} style:left="{(100 * m.t) / tEnd}%" title={m.label}
-							>{m.kind === 'fault'
-								? '⚡'
-								: m.kind === 'clear'
-									? '|'
-									: m.kind === 'trip'
-										? '✂'
-										: '±'}</span
-						>
+						></span>
 					{/each}
 				</div>
 			</div>
@@ -258,18 +251,20 @@
 		height: 12px;
 		pointer-events: none;
 	}
+	/* An event is a short tick on the track: red for a fault, grey for clearing,
+	   ink for a trip or a load change. */
 	.mark {
 		position: absolute;
+		width: 2px;
+		height: 10px;
 		transform: translateX(-50%);
-		font-size: 12px;
-		line-height: 1;
+		background: var(--ink);
 	}
 	.mark.fault {
-		color: var(--text-danger);
+		background: var(--red);
 	}
 	.mark.clear {
-		color: var(--status-ok);
-		font-weight: 700;
+		background: var(--text-tertiary);
 	}
 	.end {
 		color: var(--text-tertiary);

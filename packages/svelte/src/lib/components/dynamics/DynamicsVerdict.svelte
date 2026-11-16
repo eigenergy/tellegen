@@ -1,69 +1,79 @@
 <script lang="ts">
 	import type { DynRunRecord } from '../../dynamics/controller.svelte.js';
 	import { getUiConfig } from '../../context.svelte.js';
-	import { announcement, headline, rows } from '../../dynamics/verdict.js';
+	import { announcement, checks, details, headline, stats } from '../../dynamics/verdict.js';
+	import StatBoxes from '../StatBoxes.svelte';
 
 	let { record }: { record: DynRunRecord } = $props();
 	const s = $derived(record.run?.screening ?? null);
 	const h = $derived(headline(s, record.failure, record.tEnd));
-	const table = $derived(s ? rows(s, record.events.length) : []);
-	const said = $derived(announcement(s, record.tEnd, record.events.length));
+	const numbers = $derived(s ? stats(s) : []);
+	const passes = $derived(s ? checks(s) : []);
+	const more = $derived(s ? details(s, record.events.length) : []);
+	const said = $derived(announcement(s, record.tEnd));
 	const config = getUiConfig();
 	const docs = $derived(`${config.docsHref.replace(/\/?$/, '/')}rms-validation.html`);
 </script>
 
 <section class="verdict" aria-labelledby="dyn-verdict-h" data-testid="dyn-verdict">
 	<p class="sr-only" role="status">{record.failure ? h.word : said}</p>
-	<h3 id="dyn-verdict-h" class={['headline', h.tone]}>
-		<span aria-hidden="true" class="icon">{h.icon}</span>
-		<span data-testid="dyn-verdict-word">{h.word}</span>
-		{#if h.detail}<span class="detail">{h.detail}</span>{/if}
-	</h3>
-	{#if s}<a class="caveat" data-testid="dyn-caveat" href={docs} target="_blank" rel="noreferrer"
-			>Screening only</a
-		>{/if}
-	<div class="badges">
+	<div class="head">
+		<h3 id="dyn-verdict-h" class={['headline', h.tone]}>
+			<span aria-hidden="true" class="icon">{h.icon}</span>
+			<span data-testid="dyn-verdict-word">{h.word}</span>
+			{#if h.detail}<span class="detail">{h.detail}</span>{/if}
+		</h3>
 		{#if record.badge}
 			<span
 				class={['badge', record.badge.validated ? 'validated' : 'differs']}
 				data-testid="dyn-badge"
-				title={record.badge.detail}>{record.badge.validated ? '✓ ' : ''}{record.badge.text}</span
+				title={record.badge.detail}>{record.badge.text}</span
 			>
 		{/if}
-		{#if record.network === 'validation'}<span class="badge" data-testid="dyn-network"
-				>Validation loads</span
-			>{/if}
 		{#if record.agent}<span class="badge agent">Agent</span>{/if}
+		{#if s}<a class="docs" href={docs} target="_blank" rel="noreferrer">Docs</a>{/if}
 	</div>
 	{#if record.failure}
-		<details class="failure">
+		<details>
 			<summary>Details</summary>
-			<p>{record.failure.message}</p>
+			<p class="raw">{record.failure.message}</p>
 		</details>
 	{:else if s}
-		<table>
-			<thead><tr><th>Metric</th><th>Value</th><th><span class="sr-only">Pass</span></th></tr></thead
-			>
-			<tbody>
-				{#each table as r (r.metric)}
-					<tr>
-						<th scope="row">{r.metric}</th>
-						<td>{r.value}</td>
-						<td
-							class={['mark', r.status === '✓' ? 'ok' : r.status === '✗' ? 'bad' : '']}
-							aria-label={r.status === '✓' ? 'meets' : r.status === '✗' ? 'fails' : 'reported'}
-							>{r.status}</td
-						>
-					</tr>
+		<StatBoxes stats={numbers} label="Simulation result" />
+		<dl class="rows" aria-label="Checks">
+			{#each passes as c (c.label)}
+				<div>
+					<dt>{c.label}</dt>
+					<dd class={c.ok ? 'ok' : 'bad'}>{c.ok ? 'Yes' : 'No'}</dd>
+				</div>
+			{/each}
+		</dl>
+		<details>
+			<summary>Details</summary>
+			<dl class="rows">
+				{#each more as d (d.label)}
+					<div>
+						<dt>{d.label}</dt>
+						<dd>{d.value}</dd>
+					</div>
 				{/each}
-			</tbody>
-		</table>
+			</dl>
+		</details>
 	{/if}
 </section>
 
 <style>
 	.verdict {
 		display: grid;
+		gap: 8px;
+	}
+	.verdict :global(dl.stats) {
+		margin: 0;
+	}
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: 6px;
 	}
 	.headline {
@@ -72,98 +82,91 @@
 		align-items: baseline;
 		gap: 6px;
 		margin: 0;
-		padding: 6px 8px;
-		border-left: 4px solid var(--line);
+		margin-right: auto;
 		font-size: var(--fs-title);
-	}
-	.headline.ok {
-		border-left-color: var(--status-ok);
-	}
-	.headline.warning {
-		border-left-color: var(--warn);
-	}
-	.headline.failure {
-		border-left-color: var(--text-danger);
-	}
-	.headline.failure .icon {
-		color: var(--text-danger);
+		color: var(--text-primary);
 	}
 	.headline.ok .icon {
 		color: var(--status-ok);
 	}
-	.detail {
-		font-size: var(--fs-label);
-		color: var(--text-secondary);
+	.headline.warning .icon {
+		color: var(--amber);
 	}
-	.badges {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-	}
-	.badge {
-		padding: 2px 6px;
-		border-radius: var(--radius-sm);
-		font-size: var(--fs-control);
-		line-height: 1.35;
-		background: rgb(var(--ink-rgb) / 0.05);
-		border-left: 3px solid var(--line);
-	}
-	.badge.validated {
-		border-left-color: var(--status-ok);
-	}
-	.badge.differs {
-		border-left-color: var(--warn);
-	}
-	.badge.agent {
-		border-left-color: var(--agent);
-		background: var(--agent-soft);
-	}
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: var(--fs-control);
-	}
-	th,
-	td {
-		padding: 3px 4px;
-		text-align: left;
-		vertical-align: top;
-		border-bottom: 1px solid var(--line);
-	}
-	thead th {
-		color: var(--text-tertiary);
-		font-weight: 500;
-	}
-	tbody th {
-		font-weight: 600;
-		white-space: nowrap;
-	}
-	td {
-		font-variant-numeric: tabular-nums;
-	}
-	.mark {
-		font-weight: 700;
-	}
-	.mark.ok {
-		color: var(--status-ok);
-	}
-	.mark.bad {
+	.headline.failure .icon {
 		color: var(--text-danger);
 	}
-	.failure p {
+	.detail {
+		font-size: var(--fs-label);
+		font-weight: 400;
+		color: var(--text-secondary);
+	}
+	.badge {
+		padding: 1px 8px;
+		border-radius: var(--radius-full);
+		font-size: var(--fs-label);
+		background: var(--surface-chip);
+		color: var(--text-primary);
+	}
+	.badge.differs {
+		color: var(--text-secondary);
+	}
+	.badge.agent {
+		background: var(--agent-soft);
+		color: var(--agent);
+	}
+	.docs {
+		font-size: var(--fs-label);
+		color: var(--text-accent);
+		text-decoration: none;
+	}
+	.docs:hover {
+		text-decoration: underline;
+	}
+	.rows {
+		margin: 0;
+		font-size: var(--fs-label);
+		font-variant-numeric: tabular-nums;
+	}
+	.rows div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		min-height: 28px;
+		align-items: center;
+		border-bottom: 1px solid var(--line);
+	}
+	.rows dt {
+		color: var(--text-primary);
+	}
+	.rows dd {
+		margin: 0;
+		min-width: 0;
+		text-align: right;
+		color: var(--text-secondary);
+		overflow-wrap: anywhere;
+	}
+	.rows dd.ok {
+		color: var(--text-primary);
+	}
+	.rows dd.bad {
+		color: var(--red);
+		font-weight: 600;
+	}
+	details {
+		font-size: var(--fs-label);
+	}
+	summary {
+		line-height: 28px;
+		cursor: pointer;
+		color: var(--text-primary);
+	}
+	.raw {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--fs-control);
-		white-space: pre-wrap;
-	}
-	details {
-		font-size: var(--fs-control);
 		color: var(--text-secondary);
-	}
-	.caveat {
-		justify-self: start;
-		font-size: var(--fs-control);
-		color: var(--text-accent);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 	.sr-only {
 		position: absolute;

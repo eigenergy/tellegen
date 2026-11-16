@@ -19,7 +19,7 @@ import {
 } from '@tellegen/engine';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { AppState, LocalCase } from '../state.svelte.js';
-import { allRmsEvents, markers, MAX_EVENTS, sentence, validate, type DynEvent } from './events.js';
+import { allRmsEvents, markers, MAX_EVENTS, title, validate, type DynEvent } from './events.js';
 import {
 	DynamicsFrame,
 	openBranchText,
@@ -424,8 +424,12 @@ export class DynamicsController {
 	update(id: string, patch: Partial<DynEvent>): void {
 		this.events = this.events.map((e) => (e.id === id ? ({ ...e, ...patch } as DynEvent) : e));
 	}
+	/** Remove one event. Removing the last one clears the list as
+	 * {@link clearEvents} does, restoring any settings a scenario changed. */
 	remove(id: string): void {
-		this.events = this.events.filter((e) => e.id !== id);
+		const rest = this.events.filter((e) => e.id !== id);
+		if (rest.length === 0) this.clearEvents();
+		else this.events = rest;
 	}
 	clearEvents(): void {
 		this.events = [];
@@ -757,6 +761,6 @@ export class DynamicsController {
 	}
 
 	describe(e: DynEvent): string {
-		return sentence(e, this.f0);
+		return title(e);
 	}
 }

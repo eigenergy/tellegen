@@ -151,7 +151,7 @@ export const allRmsEvents = (events: readonly DynEvent[]): RmsEvent[] =>
 export const unitKey = (bus: number, id: string): string =>
 	id.trim() === '1' ? String(bus) : `${bus}#${id.trim()}`;
 
-const fmtS = (s: number) => `${s.toFixed(3)} s`;
+const fmtS = (s: number) => `${Number(s.toFixed(3))} s`;
 export const fmtCycles = (s: number, f0: number) => {
 	const c = secondsToCycles(s, f0);
 	const r = Math.round(c * 10) / 10;
@@ -171,24 +171,22 @@ const busLabel = (bus: number, names?: BusNames) => {
 	const n = names?.(bus);
 	return n ? `bus ${bus} ${n}` : `bus ${bus}`;
 };
+const circuit = (c: string) => (c.trim() === '1' ? '' : ` circuit ${c.trim()}`);
 
-/** The event in one plain sentence. */
-export function sentence(e: DynEvent, f0: number, names?: BusNames): string {
+/** The event's short name: what happens and where. Its times and sizes are
+ * shown beside it as values. */
+export function title(e: DynEvent, names?: BusNames): string {
 	switch (e.kind) {
-		case 'bus_fault': {
-			const z = e.r === 0 && e.x <= DEFAULT_FAULT_X ? '' : ` through ${e.r} + j${e.x} pu`;
-			return `Three-phase fault at ${busLabel(e.bus, names)}${z} at ${fmtS(e.at)}, cleared after ${fmtCycles(e.clearAfter, f0)}`;
-		}
+		case 'bus_fault':
+			return `Fault at ${busLabel(e.bus, names)}`;
 		case 'line_fault':
-			return `Three-phase fault on line ${e.from}–${e.to} circuit ${e.circuit} near bus ${e.nearBus} at ${fmtS(e.at)}, cleared by opening the line after ${fmtCycles(e.clearAfter, f0)}`;
+			return `Fault on line ${e.from}–${e.to}${circuit(e.circuit)}`;
 		case 'branch_trip':
-			return `Trip of branch ${e.from}–${e.to} circuit ${e.circuit} at ${fmtS(e.at)}`;
+			return `Trip line ${e.from}–${e.to}${circuit(e.circuit)}`;
 		case 'generator_trip':
-			return `Trip of unit ${e.bus} '${e.machineId}' at ${fmtS(e.at)}`;
-		case 'load_change': {
-			const pct = Math.round((e.scale - 1) * 1000) / 10;
-			return `Load at ${busLabel(e.bus, names)} ${pct >= 0 ? '+' : ''}${pct} % at ${fmtS(e.at)}`;
-		}
+			return `Trip unit ${e.bus} ${e.machineId.trim()}`;
+		case 'load_change':
+			return `Load change at ${busLabel(e.bus, names)}`;
 	}
 }
 
@@ -204,25 +202,24 @@ const sameBranch = (b: [number, number, string], from: number, to: number, ckt: 
 /** Why an event cannot run, mirroring the engine's checks; null when it can. */
 export function validate(e: DynEvent, ctx: EventContext): string | null {
 	const { tEnd, inspection } = ctx;
-	if (!Number.isFinite(e.at) || e.at < 0 || e.at >= tEnd)
-		return `the time must lie in [0, ${tEnd}) s`;
+	if (!Number.isFinite(e.at) || e.at < 0 || e.at >= tEnd) return `Start must be before ${tEnd} s`;
 	if (e.kind === 'bus_fault' || e.kind === 'line_fault') {
-		if (!(e.clearAfter > 0)) return 'the fault must clear after it starts';
-		if (e.at + e.clearAfter >= tEnd) return 'the fault must clear before the run ends';
+		if (!(e.clearAfter > 0)) return 'Clear time must be above 0';
+		if (e.at + e.clearAfter >= tEnd) return 'Must clear before the run ends';
 	}
 	const hasBus = (b: number) => inspection.buses.includes(b);
 	switch (e.kind) {
 		case 'bus_fault':
-			if (!hasBus(e.bus)) return `no bus ${e.bus}`;
-			if (!(e.r >= 0 && e.x >= 0)) return 'the fault impedance needs r ≥ 0 and x ≥ 0';
-			if (!(Math.hypot(e.r, e.x) > 0)) return 'the fault needs a nonzero impedance';
+			if (!hasBus(e.bus)) return `No bus ${e.bus}`;
+			if (!(e.r >= 0 && e.x >= 0)) return 'Resistance and reactance must be 0 or more';
+			if (!(Math.hypot(e.r, e.x) > 0)) return 'Reactance must be above 0';
 			return null;
 		case 'line_fault':
 		case 'branch_trip':
 			if (!inspection.branches.some((b) => sameBranch(b, e.from, e.to, e.circuit)))
-				return `no branch ${e.from}–${e.to} circuit ${e.circuit}`;
+				return `No line ${e.from}–${e.to} circuit ${e.circuit}`;
 			if (e.kind === 'line_fault' && e.nearBus !== e.from && e.nearBus !== e.to)
-				return `bus ${e.nearBus} is not an end of ${e.from}–${e.to}`;
+				return `Bus ${e.nearBus} is not on line ${e.from}–${e.to}`;
 			return null;
 		case 'generator_trip': {
 			const key = unitKey(e.bus, e.machineId);
@@ -232,11 +229,11 @@ export function validate(e: DynEvent, ctx: EventContext): string | null {
 				) ||
 				(inspection.held_units ?? []).includes(key) ||
 				(inspection.plants ?? []).includes(key);
-			return known ? null : `no unit ${e.bus} '${e.machineId}'`;
+			return known ? null : `No unit ${e.bus} ${e.machineId.trim()}`;
 		}
 		case 'load_change':
-			if (!inspection.load_buses.includes(e.bus)) return `bus ${e.bus} carries no load`;
-			if (!(Number.isFinite(e.scale) && e.scale >= 0)) return 'the load scale must be ≥ 0';
+			if (!inspection.load_buses.includes(e.bus)) return `No load at bus ${e.bus}`;
+			if (!(Number.isFinite(e.scale) && e.scale >= 0)) return 'Load scale must be 0 or more';
 			return null;
 	}
 }
@@ -252,7 +249,7 @@ export interface EventMarker {
 export function markers(events: readonly DynEvent[], f0: number, names?: BusNames): EventMarker[] {
 	const out: EventMarker[] = [];
 	for (const e of events) {
-		const label = sentence(e, f0, names);
+		const label = `${title(e, names)}, ${fmtS(e.at)}`;
 		if (e.kind === 'bus_fault' || e.kind === 'line_fault') {
 			out.push({ t: e.at, kind: 'fault', label, eventId: e.id });
 			out.push({

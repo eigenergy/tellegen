@@ -50,7 +50,7 @@
 	let message = $state<string | null>(null);
 
 	function add(e: DynEvent) {
-		message = dyn.add(e) ?? `Added: ${dyn.describe(e)}`;
+		message = dyn.add(e) ?? `Added ${dyn.describe(e).toLowerCase()}`;
 	}
 </script>
 
@@ -66,11 +66,11 @@
 		{#if !hasBus}
 			<p class="dim">Not in simulation</p>
 		{:else}
-			<button class="action" onclick={() => add(busFault(bus, f0))}>⚡ Apply a fault here</button>
+			<button class="action" onclick={() => add(busFault(bus, f0))}>Apply a fault here</button>
 			{#if hasLoad}
 				<div class="row">
 					<button class="action" onclick={() => add(loadStep(bus, loadPct))}
-						>Step load {loadPct >= 0 ? '+' : ''}{loadPct} %</button
+						>Change load {loadPct >= 0 ? '+' : ''}{loadPct}%</button
 					>
 					<label
 						><span class="sr-only">Load step in percent</span><input
@@ -89,8 +89,8 @@
 					{#each units as g (g.machine_id)}
 						<li>
 							<span class="mono"
-								>{g.bus} #{g.machine_id.trim()}
-								<span class="dim">{g.models.map((m) => m || '—').join(' · ')}</span>
+								>Unit {g.bus}
+								{g.machine_id.trim()}
 								<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
 							>
 							<button onclick={() => add(generatorTrip(g.bus, g.machine_id.trim()))}>Trip</button>
@@ -99,7 +99,7 @@
 					{#each held as k (k)}
 						<li>
 							<span class="mono"
-								>{k}
+								>Unit {k.replace('#', ' ')}
 								<span class="dim">{inspection?.plants?.includes(k) ? 'Renewable' : 'Fixed'}</span
 								></span
 							>
@@ -113,13 +113,13 @@
 			{/if}
 		{/if}
 	{:else if branch}
-		<h4>Branch {branch.from}–{branch.to}</h4>
+		<h4>Line {branch.from}–{branch.to}</h4>
 		{#if circuits.length === 0}
 			<p class="dim">Not in simulation</p>
 		{:else}
 			{#if circuits.length > 1}
 				<fieldset>
-					<legend>{branch.from}–{branch.to} · circuits {circuits.join(', ')}</legend>
+					<legend>Circuit</legend>
 					{#each circuits as c (c)}
 						<label
 							><input
@@ -151,7 +151,7 @@
 								nearEnd === 'from' ? branch.from : branch.to,
 								f0
 							)
-						)}>⚡ Fault on this line</button
+						)}>Fault on this line</button
 				>
 				<label
 					>near <select bind:value={nearEnd}

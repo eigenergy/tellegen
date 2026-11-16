@@ -9,7 +9,6 @@
 	import DynamicsVerdict from './DynamicsVerdict.svelte';
 	import EigenPlot from './EigenPlot.svelte';
 	import { headline } from '../../dynamics/verdict.js';
-	import { groupNotes } from '../../dynamics/notes.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import ModeSwitch from './ModeSwitch.svelte';
 	import StatBoxes from '../StatBoxes.svelte';
@@ -79,7 +78,6 @@
 			)
 		);
 	});
-	const noteGroups = $derived(groupNotes(ins?.notes ?? []));
 
 	async function demo() {
 		demoBusy = true;
@@ -132,9 +130,6 @@
 			: []
 	);
 	const flatOk = $derived(!!att?.flat && att.flat.max_speed_drift <= 1e-6);
-	/** A small number in plain decimals, to two significant figures. */
-	const small = (value: number) =>
-		value === 0 ? '0' : value.toLocaleString('en-US', { maximumSignificantDigits: 2 });
 </script>
 
 <PanelFrame
@@ -147,25 +142,21 @@
 	bind:open
 	onopen={() => (app.mode = 'dynamics')}
 >
-	<div class="dyn" data-testid="dynamics-panel">
+	<div class="dyn settings-list" data-testid="dynamics-panel">
 		<!-- The switch appears once there is a simulation to show. -->
-		{#if dyn.runs.length > 0}<div class="dyn-mode">
+		{#if dyn.runs.length > 0}<div class="setting">
 				<span>Map shows</span><ModeSwitch />
 			</div>{/if}
 		{#if !att}
-			<section class="empty">
-				<dl class="rows">
-					<div>
-						<dt>Case</dt>
-						<dd>{caseName ?? 'None'}</dd>
-					</div>
-					<div>
-						<dt>Dynamic data</dt>
-						<dd>None</dd>
-					</div>
-				</dl>
+			<section class="block" aria-label="Case">
+				<div class="setting">
+					<span>Case</span><span class="value">{caseName ?? 'None'}</span>
+				</div>
+				<div class="setting">
+					<span>Dynamic data</span><span class="value">None</span>
+				</div>
 				<!-- The controls a run takes, disabled until the case has dynamic data. -->
-				<div class="row">
+				<div class="setting">
 					<label for="dyn-event-empty">Event</label>
 					<select id="dyn-event-empty" disabled><option>Bus fault</option></select>
 				</div>
@@ -178,7 +169,7 @@
 				</div>
 				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
 				{#if experimental && local?.studyInputJson}
-					<div class="row">
+					<div class="setting">
 						<label for="dyn-preset">Default dynamics</label>
 						<span class="inline">
 							<select id="dyn-preset" bind:value={preset}>
@@ -196,25 +187,25 @@
 				{/if}
 			</section>
 		{:else}
-			<section class="data" aria-label="Dynamic data">
-				<dl class="rows">
-					<div>
-						<dt>Dynamic data</dt>
-						<dd>
-							{att.fileName}{#if att.synthetic}<span class="tag">Synthetic</span>{/if}
-						</dd>
-					</div>
-				</dl>
+			<section class="block" aria-label="Dynamic data">
+				<div class="setting">
+					<span>Dynamic data</span>
+					<span class="value"
+						>{att.fileName}{#if att.synthetic}<span class="tag">Synthetic</span>{/if}</span
+					>
+				</div>
 				{#if att.status === 'opening'}
-					<p class="dim" role="status">Initializing…</p>
+					<p class="dim" role="status">Opening…</p>
 				{:else if att.status === 'failed'}
 					<p class="err" role="alert" title={att.error ?? undefined}>Dynamic data failed to open</p>
 				{:else if ins}
-					<div data-testid="dyn-counts"><StatBoxes stats={counts} label="Dynamic model" /></div>
+					<div class="counts" data-testid="dyn-counts">
+						<StatBoxes stats={counts} label="Dynamic model" />
+					</div>
 					{#if att.preparing}
-						<p class="dim" role="status" data-testid="dyn-preparing">Initializing…</p>
+						<p class="dim" role="status" data-testid="dyn-preparing">Preparing…</p>
 					{:else if att.prepareError}
-						<p class="err" role="alert" title={att.prepareError}>Initialization failed</p>
+						<p class="err" role="alert" title={att.prepareError}>Preparation failed</p>
 					{/if}
 					{#if att.flat && !flatOk}
 						<p class="warn-line" role="status">Not at rest before the event</p>
@@ -224,54 +215,23 @@
 					{#if dyn.staticEdits > 0}
 						<p class="warn-line">Edits ignored: {dyn.staticEdits}</p>
 					{/if}
-					<details class="more">
-						<summary>Details</summary>
-						<dl class="rows" aria-busy={att.preparing}>
-							{#if att.network === 'validation'}
-								<div>
-									<dt>Network</dt>
-									<dd data-testid="dyn-network">Validation loads</dd>
-								</div>
-							{/if}
-							<div>
-								<dt>Held units</dt>
-								<dd>{(ins.held_units?.length ?? 0).toLocaleString()}</dd>
-							</div>
-							<div>
-								<dt>Records</dt>
-								<dd>{ins.dyr_records.toLocaleString()}</dd>
-							</div>
-							<div>
-								<dt>Reactive limits</dt>
-								<dd>{ins.options?.reactive_limits === false ? 'Off' : 'On'}</dd>
-							</div>
-							<div>
-								<dt>Angle reference</dt>
-								<dd>{ins.reference_unit ? `Unit ${ins.reference_unit}` : 'System'}</dd>
-							</div>
-							<div>
-								<dt>Initial mismatch</dt>
-								<dd>{small(ins.initial_residual ?? 0)}</dd>
-							</div>
-							<div>
-								<dt>At rest</dt>
-								<dd data-testid="dyn-flat">
-									{#if att.flat}{flatOk
-											? 'Yes'
-											: 'No'}{:else if att.flatError}—{:else}Checking…{/if}
-								</dd>
-							</div>
-							{#each noteGroups as g (g.id)}
-								<div>
-									<dt>{g.title}</dt>
-									<dd>{g.notes.length}</dd>
-								</div>
-							{/each}
-						</dl>
-						{#if ins.notes.length}<button class="link" onclick={() => layout.show('log')}
-								>Notes in Log</button
-							>{/if}
-					</details>
+					<div class="setting" aria-busy={att.preparing}>
+						<span>At rest</span>
+						<span class="value" data-testid="dyn-flat"
+							>{#if att.flat}{flatOk
+									? 'Yes'
+									: 'No'}{:else if att.flatError}—{:else}Checking…{/if}</span
+						>
+					</div>
+					{#if ins.notes.length}
+						<div class="setting">
+							<span>Notes</span>
+							<span class="value"
+								>{ins.notes.length.toLocaleString()}
+								<button class="link" onclick={() => layout.show('log')}>Show in Log</button></span
+							>
+						</div>
+					{/if}
 				{/if}
 			</section>
 
@@ -289,7 +249,7 @@
 						aria-selected={tab === 'run'}
 						aria-controls="dyn-tabpanel"
 						tabindex={tab === 'run' ? 0 : -1}
-						onclick={() => (tab = 'run')}>Run</button
+						onclick={() => (tab = 'run')}>Simulation</button
 					>
 					<button
 						role="tab"
@@ -313,14 +273,12 @@
 					: undefined}
 			>
 				{#if tab === 'modes' && experimental}
-					<section class="modes" aria-label="Small-signal modes" data-testid="dyn-modes">
+					<section class="block" aria-label="Small-signal modes" data-testid="dyn-modes">
 						{#if dyn.modes}
 							<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
 						{:else}
 							{#if dyn.dynamicStates > 300}
-								<p class="dim" data-testid="dyn-modes-size">
-									Slow: {dyn.dynamicStates.toLocaleString()} states
-								</p>
+								<p class="warn-line" data-testid="dyn-modes-size">May take a few minutes</p>
 							{/if}
 							{#if dyn.modesBusy}
 								<p class="status-row" role="status">
@@ -347,37 +305,23 @@
 					{#if current}
 						<DynamicsVerdict record={current} />
 						{#if current.run}
-							<details class="more">
+							<details>
 								<summary>Run details</summary>
-								<dl class="rows">
-									<div>
-										<dt>Steps</dt>
-										<dd>{current.run.steps.toLocaleString()}</dd>
-									</div>
-									<div>
-										<dt>Iterations</dt>
-										<dd>{current.run.newtonIterations.toLocaleString()}</dd>
-									</div>
-									<div>
-										<dt>Time</dt>
-										<dd>{(current.wallMs / 1000).toFixed(2)} s</dd>
-									</div>
-									<div>
-										<dt>Step</dt>
-										<dd>{current.dt * 1000} ms</dd>
-									</div>
-									<div>
-										<dt>Loads</dt>
-										<dd>
-											{(current.options.load_model ?? 'power_flow').replaceAll('_', ' ')}
-										</dd>
-									</div>
-								</dl>
-								<button
-									class="link"
-									onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
-									>Copy run as JSON</button
-								>
+								<div class="setting">
+									<span>Steps</span><span class="value">{current.run.steps.toLocaleString()}</span>
+								</div>
+								<div class="setting">
+									<span>Compute time</span><span class="value"
+										>{(current.wallMs / 1000).toFixed(1)} s</span
+									>
+								</div>
+								<div class="setting">
+									<button
+										class="link"
+										onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
+										>Copy as JSON</button
+									>
+								</div>
 							</details>
 						{/if}
 					{/if}
@@ -387,9 +331,8 @@
 								{@const h = headline(r.run?.screening ?? null, r.failure, r.tEnd)}
 								<button aria-pressed={r.id === dyn.currentRunId} onclick={() => dyn.select(r.id)}>
 									<span aria-hidden="true">{h.icon}</span>
-									{r.events.length ? dyn.describe(r.events[0]).split(' at ')[0] : 'No events'}{r
-										.events.length > 1
-										? ` +${r.events.length - 1}`
+									{r.events.length ? dyn.describe(r.events[0]) : 'No events'}{r.events.length > 1
+										? ` and ${r.events.length - 1} more`
 										: ''}
 									{#if r.agent}<span class="agent">Agent</span>{/if}
 								</button>
@@ -406,43 +349,28 @@
 	.tabpanel {
 		display: contents;
 	}
-	.dyn-mode {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		color: var(--text-secondary);
-	}
 	.dyn {
 		display: grid;
 		gap: 12px;
-		padding: 12px 14px 16px;
-		font-size: var(--fs-label);
+		padding: 12px 16px 16px;
+		font-size: var(--fs-body);
 	}
 	p {
 		margin: 0;
-		line-height: 1.45;
 	}
-	.empty,
-	.data,
-	.modes {
+	.block {
 		display: grid;
-		gap: 10px;
+		gap: 8px;
 	}
-	.row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-	}
-	.row select {
-		width: 150px;
+	.counts :global(dl.stats) {
+		margin: 4px 0 0;
 	}
 	.inline {
 		display: inline-flex;
 		gap: 6px;
 	}
 	.inline select {
-		width: 120px;
+		width: 110px;
 	}
 	.actions {
 		display: flex;
@@ -450,24 +378,25 @@
 		gap: 8px;
 	}
 	.run {
-		justify-self: start;
-		min-height: 28px;
-		padding: 5px 14px;
+		min-height: 36px;
 		border: 1px solid var(--accent);
-		border-radius: var(--radius-control);
+		border-radius: var(--radius-sm);
 		background: var(--accent);
 		color: var(--on-accent);
 		font: inherit;
 		font-weight: 600;
 	}
+	/* Disabled reads as a quiet control in both themes, not a faded blue one. */
 	.run:disabled {
-		opacity: 0.45;
+		border-color: var(--line);
+		background: var(--surface-control);
+		color: var(--text-tertiary);
 		cursor: default;
 	}
 	.secondary {
 		justify-self: start;
 		min-height: 28px;
-		padding: 5px 10px;
+		padding: 4px 10px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--surface-control);
@@ -479,7 +408,7 @@
 		border-color: var(--border-strong);
 	}
 	.secondary:disabled {
-		opacity: 0.45;
+		color: var(--text-tertiary);
 		cursor: default;
 	}
 	@media (pointer: coarse) {
@@ -546,45 +475,17 @@
 		height: 2px;
 		background: var(--accent);
 	}
-	.rows {
-		margin: 0;
-		font-variant-numeric: tabular-nums;
-	}
-	.rows div {
-		display: flex;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 4px 0;
-		border-bottom: 1px solid var(--line);
-	}
-	.rows dt {
-		color: var(--text-secondary);
-	}
-	.rows dd {
-		margin: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-		text-align: right;
-	}
-	.more {
-		display: grid;
-		gap: 6px;
-	}
-	.more summary {
-		cursor: pointer;
-		color: var(--text-secondary);
-	}
-	.more .link {
-		margin-top: 6px;
-	}
 	.link {
-		justify-self: start;
+		margin-left: 8px;
 		border: none;
 		background: none;
 		padding: 0;
 		color: var(--text-accent);
 		cursor: pointer;
 		font: inherit;
+	}
+	.setting > .link {
+		margin-left: 0;
 	}
 	.link:hover {
 		text-decoration: underline;
@@ -601,7 +502,7 @@
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
-		font-size: var(--fs-control);
+		font-size: var(--fs-label);
 		cursor: pointer;
 	}
 	.history button[aria-pressed='true'] {

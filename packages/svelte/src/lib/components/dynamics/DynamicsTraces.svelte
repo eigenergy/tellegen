@@ -94,13 +94,13 @@
 	const label = (key: string) => {
 		const [q, id] = key.split(':');
 		const names: Record<string, string> = {
-			f: 'bus',
-			vm: 'bus',
-			pl: 'load P',
-			ql: 'load Q',
-			delta: 'unit'
+			f: 'Bus',
+			vm: 'Bus',
+			pl: 'Load at bus',
+			ql: 'Reactive load at bus',
+			delta: 'Unit'
 		};
-		return `${names[q] ?? q} ${id}`;
+		return `${names[q] ?? q} ${id.replace('#', ' ')}`;
 	};
 
 	const chart = $derived.by(
@@ -129,14 +129,14 @@
 				for (const { id, j } of pin('f:'))
 					pinInto(series, {
 						key: `f:${id}`,
-						label: `bus ${id}`,
+						label: `Bus ${id}`,
 						data: run.series(`f:${id}`)!,
 						color: PALETTE[j % 6],
 						width: 2
 					});
 				series.push({
 					key: 'coi:f',
-					label: 'centre of inertia',
+					label: 'System',
 					data: run.series('coi:f')!,
 					color: '--ink',
 					width: 2.5
@@ -147,12 +147,11 @@
 						lo: freqBand.lo,
 						hi: freqBand.hi,
 						color: '--series-1',
-						label: 'range of all bus frequencies'
+						label: 'All buses'
 					},
-					refLines:
-						f0 === 60 ? [{ value: 59.5, label: '59.5 Hz (illustrative; UFLS not modelled)' }] : [],
+					refLines: f0 === 60 ? [{ value: 59.5, label: '59.5 Hz' }] : [],
 					unit: 'Hz',
-					summary: `Frequency: COI nadir ${s.frequency.coi_nadir_hz.toFixed(3)} Hz at ${s.frequency.nadir_t.toFixed(2)} s; ends at ${s.frequency.final_hz.toFixed(3)} Hz`
+					summary: `Frequency, lowest ${s.frequency.coi_nadir_hz.toFixed(3)} Hz`
 				};
 			}
 			if (tab === 'angles') {
@@ -161,7 +160,7 @@
 					if (!swings.includes(u))
 						series.push({
 							key: `delta:${u}`,
-							label: `unit ${u}`,
+							label: `Unit ${u.replace('#', ' ')}`,
 							data: d,
 							color: '--ink-faint',
 							width: 1,
@@ -170,7 +169,7 @@
 				swings.forEach((u, j) =>
 					series.push({
 						key: `delta:${u}`,
-						label: `unit ${u}`,
+						label: `Unit ${u.replace('#', ' ')}`,
 						data: angles.get(u)!,
 						color: PALETTE[j],
 						width: 2
@@ -180,8 +179,8 @@
 					series,
 					band: null,
 					refLines: [],
-					unit: '° from COI',
-					summary: `Rotor angles relative to the centre of inertia: largest separation ${s.angle.max_separation_deg.toFixed(1)}°${s.angle.pole_slips.length ? `; ${s.angle.pole_slips.length} unit(s) slip a pole` : ''}`
+					unit: '°',
+					summary: `Rotor angles, largest spread ${s.angle.max_separation_deg.toFixed(1)}°`
 				};
 			}
 			if (tab === 'voltages') {
@@ -189,7 +188,7 @@
 					.filter((b) => run.series(`vm:${b}`))
 					.map((b, j) => ({
 						key: `vm:${b}`,
-						label: `bus ${b} (faulted)`,
+						label: `Faulted bus ${b}`,
 						data: run.series(`vm:${b}`)!,
 						color: PALETTE[j % 6],
 						width: 2
@@ -197,7 +196,7 @@
 				for (const { id, j } of pin('vm:'))
 					pinInto(series, {
 						key: `vm:${id}`,
-						label: `bus ${id}`,
+						label: `Bus ${id}`,
 						data: run.series(`vm:${id}`)!,
 						color: PALETTE[(j + 2) % 6],
 						width: 2
@@ -208,24 +207,30 @@
 						lo: vBand.lo,
 						hi: vBand.hi,
 						color: '--series-2',
-						label: 'range of all bus voltages'
+						label: 'All buses'
 					},
 					refLines: [
 						{ value: 0.8, label: '0.8 pu' },
 						{ value: 0.9, label: '0.9 pu' }
 					],
 					unit: 'pu',
-					summary: `Voltages: lowest ${s.voltage.min_pu.toFixed(3)} pu at bus ${s.voltage.min_bus ?? '–'}; final range ${s.voltage.final_min_pu.toFixed(3)}–${s.voltage.final_max_pu.toFixed(3)} pu`
+					summary: `Voltages, lowest ${s.voltage.min_pu.toFixed(3)} pu`
 				};
 			}
 			const series: TraceSeries[] = [
-				{ key: 'sum:pl', label: 'total load P (MW)', data: pTotal, color: '--series-1', width: 2 },
-				{ key: 'sum:ql', label: 'total load Q (Mvar)', data: qTotal, color: '--series-3', width: 2 }
+				{ key: 'sum:pl', label: 'Total load (MW)', data: pTotal, color: '--series-1', width: 2 },
+				{
+					key: 'sum:ql',
+					label: 'Total reactive load (Mvar)',
+					data: qTotal,
+					color: '--series-3',
+					width: 2
+				}
 			];
 			for (const { id, j } of pin('pl:'))
 				pinInto(series, {
 					key: `pl:${id}`,
-					label: `load P at ${id} (MW)`,
+					label: `Load at bus ${id} (MW)`,
 					data: run.series(`pl:${id}`)!.map((v) => v * base),
 					color: PALETTE[(j + 3) % 6],
 					width: 1.5
@@ -235,7 +240,7 @@
 				band: null,
 				refLines: [],
 				unit: 'MW / Mvar',
-				summary: `Loads: total P from ${pTotal[0].toFixed(0)} MW to ${pTotal[pTotal.length - 1].toFixed(0)} MW`
+				summary: `Loads, total ${pTotal[pTotal.length - 1].toFixed(0)} MW at the end`
 			};
 		}
 	);
@@ -307,18 +312,17 @@
 	<div role="tabpanel" id="dyn-trace-panel" aria-labelledby="dyn-trace-tab-{tab}">
 		{#if asTable}
 			<div class="table" style:max-height="{height}px">
-				<table>
-					<caption>{chart.summary}</caption>
+				<table aria-label={chart.summary}>
 					<thead
 						><tr
-							><th>t (s)</th>{#each tableSeries as s (s.key)}<th>{s.label}</th>{/each}</tr
+							><th>Time (s)</th>{#each tableSeries as s (s.key)}<th>{s.label}</th>{/each}</tr
 						></thead
 					>
 					<tbody>
 						{#each tableRows as r (r.t)}
 							<tr
 								><td>{r.t.toFixed(1)}</td>{#each r.values as v, i (i)}<td
-										>{Number.isFinite(v) ? v.toFixed(4) : '–'}</td
+										>{Number.isFinite(v) ? v.toFixed(3) : '–'}</td
 									>{/each}</tr
 							>
 						{/each}
@@ -422,10 +426,6 @@
 	table {
 		border-collapse: collapse;
 		font-variant-numeric: tabular-nums;
-	}
-	caption {
-		text-align: left;
-		color: var(--text-secondary);
 	}
 	th,
 	td {

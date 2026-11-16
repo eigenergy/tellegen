@@ -37,10 +37,10 @@
 </script>
 
 <section aria-labelledby="dyn-run-h">
-	<h3 id="dyn-run-h">Run</h3>
-	<div class="grid">
-		<label class="lbl" for="dyn-dur">Duration</label>
-		<span class="unit">
+	<h3 id="dyn-run-h">Options</h3>
+	<div class="setting">
+		<label for="dyn-dur">Duration</label>
+		<span class="with-unit">
 			<input
 				id="dyn-dur"
 				type="number"
@@ -48,7 +48,6 @@
 				max={MAX_DURATION}
 				step="1"
 				list="dyn-dur-choices"
-				aria-label="Duration in seconds"
 				value={dyn.tEnd}
 				onchange={(e) => {
 					const v = Number(e.currentTarget.value);
@@ -60,7 +59,9 @@
 				{#each DURATION_CHOICES as d (d)}<option value={d}></option>{/each}
 			</datalist>
 		</span>
-		<label class="lbl" for="dyn-step">Step</label>
+	</div>
+	<div class="setting">
+		<label for="dyn-step">Step</label>
 		<select
 			id="dyn-step"
 			value={String(dyn.dt)}
@@ -68,7 +69,9 @@
 		>
 			{#each STEP_CHOICES as s (s.dt)}<option value={String(s.dt)}>{s.label}</option>{/each}
 		</select>
-		<label class="lbl" for="dyn-load">Loads</label>
+	</div>
+	<div class="setting">
+		<label for="dyn-load">Loads</label>
 		<select
 			id="dyn-load"
 			value={o.load_model ?? 'power_flow'}
@@ -79,56 +82,65 @@
 	</div>
 	<details>
 		<summary>Advanced</summary>
-		<div class="adv">
-			<label
-				>Low-voltage load
-				<select
-					value={o.low_voltage_load?.kind ?? 'break'}
-					onchange={(e) =>
-						dyn.setOptions({
-							...o,
-							low_voltage_load:
-								e.currentTarget.value === 'exact'
-									? { kind: 'exact' }
-									: { kind: 'break', v_break: 0.7 }
-						})}><option value="break">PSS/E</option><option value="exact">Exact</option></select
-				></label
+		<div class="setting">
+			<label for="dyn-lv">Low-voltage load</label>
+			<select
+				id="dyn-lv"
+				value={o.low_voltage_load?.kind ?? 'break'}
+				onchange={(e) =>
+					dyn.setOptions({
+						...o,
+						low_voltage_load:
+							e.currentTarget.value === 'exact'
+								? { kind: 'exact' }
+								: { kind: 'break', v_break: 0.7 }
+					})}><option value="break">PSS/E</option><option value="exact">Exact</option></select
 			>
-			<label class="check"
-				><input
-					type="checkbox"
-					checked={o.reactive_limits ?? true}
-					onchange={(e) => dyn.setOptions({ ...o, reactive_limits: e.currentTarget.checked })}
-				/> Reactive limits</label
-			>
-			<label class="check"
-				><input
-					type="checkbox"
-					checked={o.renewable_plants ?? true}
-					onchange={(e) => dyn.setOptions({ ...o, renewable_plants: e.currentTarget.checked })}
-				/> Simulate renewables</label
-			>
-			<label class="check" title="As in PowerSimulationsDynamics"
-				><input
-					type="checkbox"
-					checked={!!o.psid_lv_gain}
-					onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
-				/> Low-voltage current gain</label
-			>
-			<label class="check" title="As in PowerSimulationsDynamics"
-				><input
-					type="checkbox"
-					checked={!!o.psid_converter_ramp}
-					onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
-				/> Ramp limits</label
-			>
-			<label class="check" title="As in PowerSimulationsDynamics"
-				><input
-					type="checkbox"
-					checked={!!o.psid_saturation}
-					onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
-				/> Low saturation</label
-			>
+		</div>
+		<div class="setting">
+			<label for="dyn-qlim">Reactive limits</label>
+			<input
+				id="dyn-qlim"
+				type="checkbox"
+				checked={o.reactive_limits ?? true}
+				onchange={(e) => dyn.setOptions({ ...o, reactive_limits: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting">
+			<label for="dyn-ren">Simulate renewables</label>
+			<input
+				id="dyn-ren"
+				type="checkbox"
+				checked={o.renewable_plants ?? true}
+				onchange={(e) => dyn.setOptions({ ...o, renewable_plants: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting" title="As in PowerSimulationsDynamics">
+			<label for="dyn-lvg">Low-voltage current gain</label>
+			<input
+				id="dyn-lvg"
+				type="checkbox"
+				checked={!!o.psid_lv_gain}
+				onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting" title="As in PowerSimulationsDynamics">
+			<label for="dyn-ramp">Ramp limits</label>
+			<input
+				id="dyn-ramp"
+				type="checkbox"
+				checked={!!o.psid_converter_ramp}
+				onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting" title="As in PowerSimulationsDynamics">
+			<label for="dyn-sat">Low saturation</label>
+			<input
+				id="dyn-sat"
+				type="checkbox"
+				checked={!!o.psid_saturation}
+				onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
+			/>
 		</div>
 	</details>
 	{#if dyn.running}
@@ -159,62 +171,10 @@
 />
 
 <style>
-	h3 {
-		margin: 0 0 6px;
-		font-size: var(--fs-heading);
-	}
-	.grid {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 6px 10px;
-		align-items: center;
-		font-size: var(--fs-label);
-	}
-	.lbl {
-		color: var(--text-secondary);
-	}
-	.unit {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		color: var(--text-secondary);
-	}
-	.unit input {
-		width: 5em;
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-	}
-	select,
-	input {
-		padding: 3px 5px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
-		background: var(--surface-control);
-		color: var(--ink);
-		font: inherit;
-	}
-	details {
-		margin: 8px 0;
-		font-size: var(--fs-label);
-	}
-	.adv {
-		display: grid;
-		gap: 6px;
-		margin-top: 6px;
-	}
-	.adv label {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		justify-content: space-between;
-	}
-	.adv label.check {
-		justify-content: flex-start;
-	}
 	.run {
 		width: 100%;
 		min-height: 36px;
-		margin-top: 6px;
+		margin-top: 12px;
 		border: 1px solid var(--accent);
 		border-radius: var(--radius-sm);
 		background: var(--accent);
@@ -223,8 +183,11 @@
 		font-weight: 600;
 		cursor: pointer;
 	}
+	/* Disabled reads as a quiet control in both themes, not a faded blue one. */
 	.run:disabled {
-		opacity: 0.5;
+		border-color: var(--line);
+		background: var(--surface-control);
+		color: var(--text-tertiary);
 		cursor: not-allowed;
 	}
 	.progress {

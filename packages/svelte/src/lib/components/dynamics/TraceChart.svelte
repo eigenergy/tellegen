@@ -302,7 +302,7 @@
 				>{fmt(v, xTicks[1] - xTicks[0])} s</span
 			>
 		{/each}
-		<span class="unit">{unit}</span>
+		<span class="unit" style:left="{PAD_L + 6}px" style:top="{PAD_T + 2}px">{unit}</span>
 		{#each refLines as r (r.label)}
 			{#if r.value >= yRange[0] && r.value <= yRange[1]}
 				<span class="ref" style:top="{yOf(r.value) - 12}px" style:right="{PAD_R + 2}px"
@@ -371,11 +371,13 @@
 		transform: translateX(-50%);
 		white-space: nowrap;
 	}
+	/* The unit sits inside the plot's top-left corner, clear of the y ticks. */
 	.unit {
 		position: absolute;
-		left: 2px;
-		top: -2px;
-		font-weight: 600;
+		padding: 0 3px;
+		border-radius: 2px;
+		background: var(--surface-panel);
+		color: var(--text-secondary);
 	}
 	.ref {
 		position: absolute;

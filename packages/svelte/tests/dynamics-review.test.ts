@@ -68,6 +68,10 @@ describe('trace axes', () => {
 		expect(labels.length).toBeGreaterThan(1);
 		expect(lo).toBeLessThan(60);
 		expect(hi).toBeGreaterThan(60);
+		// No trailing zero past what the step needs.
+		expect(tickLabel(60.01, 0.005)).toBe('60.010');
+		expect(tickLabel(60.05, 0.05)).toBe('60.05');
+		expect(tickLabel(2, 2)).toBe('2');
 	});
 	it('leave a real range alone', () => {
 		expect(yDomain(59.8, 60, minSpanFor('Hz'))[0]).toBeCloseTo(59.8 - 0.012);

@@ -38,22 +38,22 @@ export interface Preset {
 export const WECC240_PRESETS: Preset[] = [
 	{
 		id: 'trip-1101-1401',
-		title: 'Trip line 1101–1401 circuit 1 (of 2) at 1 s',
+		title: 'Trip line 1101–1401',
 		events: () => [branchTrip(1101, 1401, '1')]
 	},
 	{
 		id: 'trip-1431-N',
-		title: 'Trip Palo Verde 1431 N (2,355 MW)',
+		title: 'Trip Palo Verde unit',
 		events: () => [generatorTrip(1431, 'N')]
 	},
 	{
 		id: 'fault-1032',
-		title: 'Fault at 1032 through j0.05, 1.0–1.1 s',
+		title: 'Fault at bus 1032',
 		events: () => [busFault(1032, 60, { x: 0.05, clearAfter: 0.1 } as Partial<DynEvent>)]
 	},
 	{
 		id: 'fault-1101',
-		title: 'Fault at 1101 through j0.01, 1.0–1.1 s',
+		title: 'Fault at bus 1101',
 		events: () => [busFault(1101, 60, { x: 0.01, clearAfter: 0.1 } as Partial<DynEvent>)]
 	}
 ];

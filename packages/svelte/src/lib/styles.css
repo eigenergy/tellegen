@@ -334,6 +334,107 @@ textarea {
 	opacity: 0.6;
 }
 
+/* Settings-style rows, shared by Settings and the Dynamics panel: a small grey group
+   heading, then one row per setting with its name on the left and its control on the
+   right, every control one width. Zero specificity, so a panel can still adjust it. */
+:where(.settings-list) :where(h3, h4) {
+	margin: 16px 0 2px;
+	font-size: var(--fs-label);
+	font-weight: 600;
+	color: var(--text-secondary);
+}
+:where(.settings-list) :where(h3:first-child, h4:first-child) {
+	margin-top: 0;
+}
+:where(.settings-list) :where(.setting) {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 34px;
+	border-bottom: 1px solid var(--line);
+}
+:where(.settings-list) :where(.setting > label, .setting > span:first-child, .setting > dt) {
+	min-width: 0;
+	color: var(--text-primary);
+}
+:where(.settings-list) :where(.setting > dd, .setting > .value) {
+	margin: 0;
+	min-width: 0;
+	color: var(--text-secondary);
+	text-align: right;
+	overflow-wrap: anywhere;
+	font-variant-numeric: tabular-nums;
+}
+:where(.settings-list) :where(.setting select, .setting input:not([type='checkbox'])) {
+	flex: none;
+	width: var(--settings-control-width, 150px);
+	box-sizing: border-box;
+	min-height: 28px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-control);
+	background-color: var(--surface-control);
+	color: var(--ink);
+	font: inherit;
+}
+:where(.settings-list) :where(.setting input:not([type='checkbox'])) {
+	padding: 3px 8px;
+}
+:where(.settings-list) :where(.setting input[type='number']) {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+/* A control with a unit after it: the pair takes the control's width, and the unit has a
+   fixed slot, so inputs with different units line up. */
+:where(.settings-list) :where(.setting .with-unit) {
+	flex: none;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 3.6em;
+	align-items: center;
+	gap: 6px;
+	width: var(--settings-control-width, 150px);
+	color: var(--text-secondary);
+}
+:where(.settings-list) :where(.setting .with-unit input) {
+	width: 100%;
+	min-width: 0;
+}
+:where(.settings-list) :where(.setting input[type='checkbox']) {
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	accent-color: var(--accent);
+}
+:where(.settings-list) :where(details) {
+	border-bottom: 1px solid var(--line);
+}
+:where(.settings-list) :where(details .setting:last-child) {
+	border-bottom: 0;
+}
+:where(.settings-list) :where(summary) {
+	display: list-item;
+	line-height: 34px;
+	cursor: pointer;
+	color: var(--text-primary);
+	list-style-position: inside;
+}
+:where(.settings-list) :where(select, input, summary, button):focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+@media (pointer: coarse) {
+	:where(.settings-list) :where(.setting) {
+		min-height: 44px;
+	}
+	:where(.settings-list) :where(summary) {
+		line-height: 44px;
+	}
+	:where(.settings-list) :where(.setting select, .setting input:not([type='checkbox'])) {
+		min-height: 36px;
+		font-size: 16px;
+	}
+}
+
 /* Numbers that should line up. The UI face with tabular figures, not monospace. */
 .mono {
 	font-family: var(--font-mono);
