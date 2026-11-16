@@ -4,6 +4,24 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.8.0](https://github.com/eigenergy/tellegen/compare/v0.7.1...v0.8.0) - 2026-11-16
+
+### Breaking
+
+- Every network calculation from PowerIO 0.12.1 ([#398](https://github.com/eigenergy/tellegen/pull/398))
+
+### Added
+
+- Solve-mc profile and compact output views ([#389](https://github.com/eigenergy/tellegen/pull/389))
+- AC power flow with ZIP and exponential loads ([#391](https://github.com/eigenergy/tellegen/pull/391))
+- Select explicit DC OPF branch-susceptance conventions ([#396](https://github.com/eigenergy/tellegen/pull/396))
+- RMS dynamic simulation and the Dynamics mode ([#397](https://github.com/eigenergy/tellegen/pull/397))
+
+### Changed
+
+- Bump pounce-nl and pounce-rs to 0.16.0 ([#387](https://github.com/eigenergy/tellegen/pull/387))
+- Move to PowerIO 0.12.0 ([#376](https://github.com/eigenergy/tellegen/pull/376))
+
 ## [0.7.1](https://github.com/eigenergy/tellegen/compare/v0.7.0...v0.7.1) - 2026-11-13
 
 ### Changed
