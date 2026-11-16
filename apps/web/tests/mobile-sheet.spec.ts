@@ -110,3 +110,67 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 		.evaluate((el) => el.getBoundingClientRect().top);
 	expect(sliderBox.y).toBeLessThan(ruleTop);
 });
+
+/** How many distinct colours a screenshot holds, decoded in the page: a blank map is one or two. */
+async function colourCount(page: import('@playwright/test').Page, png: Buffer): Promise<number> {
+	return page.evaluate(async (data) => {
+		const img = new Image();
+		img.src = `data:image/png;base64,${data}`;
+		await img.decode();
+		const canvas = document.createElement('canvas');
+		canvas.width = img.width;
+		canvas.height = img.height;
+		const ctx = canvas.getContext('2d')!;
+		ctx.drawImage(img, 0, 0);
+		const px = ctx.getImageData(0, 0, img.width, img.height).data;
+		const seen = new Set<number>();
+		for (let i = 0; i < px.length; i += 16) seen.add((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+		return seen.size;
+	}, png.toString('base64'));
+}
+
+test('the map draws again after the diagram and the other tabs', async ({ page }) => {
+	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
+	await page.goto('/');
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
+	await page.locator('input[type="file"]').setInputFiles([
+		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
+		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3) }
+	]);
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
+	const strip = page.locator('.panel-toolbar');
+	// Settings, the diagram's Limits view, back to the map, then Studies and Agent.
+	await page.locator('header').getByRole('button', { name: 'Menu', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+	await strip.getByRole('button', { name: 'Back' }).click();
+	await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+	const view = page.getByRole('combobox').filter({ hasText: 'Limits' });
+	if (await view.count()) await view.first().selectOption({ label: 'Limits' });
+	else await page.getByRole('radio', { name: 'Limits' }).click();
+	await strip.getByRole('button', { name: 'Network', exact: true }).click();
+	await page.getByRole('button', { name: 'Show map', exact: true }).first().click();
+	await strip.getByRole('button', { name: /^Studies/ }).click();
+	await strip.getByRole('button', { name: /^Agent/ }).click();
+	// The map fills the screen behind the sheet and has drawn its basemap and network.
+	const canvas = page.locator('.maplibregl-canvas');
+	await expect(canvas).toBeVisible();
+	const box = (await canvas.boundingBox())!;
+	const viewport = page.viewportSize()!;
+	expect(box.width).toBe(viewport.width);
+	expect(box.height).toBeGreaterThan(viewport.height / 2);
+	const sheetTop = (await strip.boundingBox())!.y;
+	await expect
+		.poll(
+			async () =>
+				colourCount(
+					page,
+					await page.screenshot({
+						clip: { x: 0, y: 80, width: viewport.width, height: sheetTop - 100 }
+					})
+				),
+			{ timeout: 20_000 }
+		)
+		.toBeGreaterThan(20);
+});

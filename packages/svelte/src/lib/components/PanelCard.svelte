@@ -449,8 +449,8 @@
 	.mobile {
 		min-height: 0;
 		height: 100%;
-		border-top: 0;
-		border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+		border-width: 0;
+		border-radius: 0;
 		box-shadow: none;
 	}
 	.mobile header {

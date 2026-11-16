@@ -79,22 +79,76 @@
 	$effect(() => {
 		layout.stripMin = stripShown && !layout.compact ? tabsWidth + 68 + 10 : 0;
 	});
+	/** The shortest the phone sheet is while open. */
+	const SHEET_MIN = 140;
 	/** The tallest the phone sheet may be: up to the top bar. */
 	const sheetMax = $derived(
 		Math.max(1, layout.viewportHeight - toolbarTop - bottomReserve - stripHeight - 8)
 	);
 	/** A height the reader dragged the sheet to; null keeps the default. */
 	let sheetSize = $state<number | null>(null);
+	/** The open panel's own height in the sheet, so a short panel gets a short sheet. */
+	let natural = $state<number | null>(null);
+	let drawerEl = $state<HTMLElement | null>(null);
 	const drawerHeight = $derived(
 		Math.max(
 			1,
-			Math.min(sheetMax, sheetSize ?? Math.min(layout.viewportHeight * 0.42, sheetMax * 0.7))
+			Math.min(
+				sheetMax,
+				sheetSize ??
+					Math.min(
+						layout.viewportHeight * 0.42,
+						sheetMax * 0.7,
+						natural === null ? Infinity : Math.max(96, natural)
+					)
+			)
 		)
 	);
+	// Measure the panel's content (not its scroll box, which fills the sheet) whenever the
+	// content or its children change.
+	$effect(() => {
+		const el = drawerEl;
+		const id = drawer?.id;
+		if (!el || !id) {
+			natural = null;
+			return;
+		}
+		const content = el.querySelector<HTMLElement>('.panel-content');
+		if (!content) return;
+		const measure = () => {
+			const kids = [...content.children] as HTMLElement[];
+			if (!kids.length) return;
+			const first = kids[0].getBoundingClientRect();
+			const last = kids[kids.length - 1].getBoundingClientRect();
+			const style = getComputedStyle(content);
+			const margins =
+				parseFloat(getComputedStyle(kids[0]).marginTop) +
+				parseFloat(getComputedStyle(kids[kids.length - 1]).marginBottom);
+			natural = Math.ceil(
+				last.bottom -
+					first.top +
+					margins +
+					parseFloat(style.paddingTop) +
+					parseFloat(style.paddingBottom)
+			);
+		};
+		const sizes = new ResizeObserver(measure);
+		const watch = () => {
+			sizes.disconnect();
+			for (const kid of content.children) sizes.observe(kid);
+			measure();
+		};
+		const children = new MutationObserver(watch);
+		children.observe(content, { childList: true });
+		watch();
+		return () => {
+			sizes.disconnect();
+			children.disconnect();
+		};
+	});
 	// The sheet's handle: drag to resize, drag down to close, or tap to switch
 	// between a low and a tall sheet. Arrow keys do the same from the keyboard.
 	let drag: { y: number; height: number; moved: boolean } | null = null;
-	const SHEET_MIN = 140;
 	function setSheet(height: number) {
 		if (height < 90) {
 			layout.drawer = null;
@@ -262,6 +316,7 @@
 	{#if layout.compact}
 		<div
 			class="drawer"
+			bind:this={drawerEl}
 			data-panel-drawer
 			role="region"
 			aria-label="Panels"
@@ -358,9 +413,15 @@
 		border-radius: 0;
 		box-shadow: none;
 	}
+	/* Open sheet: edge to edge, so no sliver of map shows beside it, and continuous with the
+	   strip under it that holds the map's credit and zoom. */
 	.panel-toolbar.compact.attached {
+		left: 0;
+		right: 0;
+		border-width: 1px 0;
 		border-radius: var(--radius-panel) var(--radius-panel) 0 0;
 		border-bottom-color: var(--line);
+		box-shadow: none;
 	}
 	button {
 		flex: none;
@@ -447,8 +508,8 @@
 	.drawer {
 		position: fixed;
 		bottom: 88px;
-		left: 12px;
-		right: 12px;
+		left: 0;
+		right: 0;
 		z-index: 25;
 	}
 	/* The phone sheet's grab bar, just above its tabs. */
@@ -486,7 +547,6 @@
 		/* A gradient, not a plain colour: Chromium paints a plain-colour fixed layer as an
 		   occluder, and its headless shell then blanks a band of the map canvas above. */
 		background: linear-gradient(var(--panel), var(--panel));
-		border-top: 1px solid var(--line);
 		pointer-events: none;
 	}
 	.layout-error {

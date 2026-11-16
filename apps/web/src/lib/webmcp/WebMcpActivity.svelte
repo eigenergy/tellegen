@@ -458,7 +458,8 @@
 		padding: 4px 4px 4px 10px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
-		background: var(--panel);
+		/* A gradient, not a plain colour: headless Chromium blanks a band of map under a plain-colour fixed layer. */
+		background: linear-gradient(var(--panel), var(--panel));
 		color: var(--text-secondary);
 		font: var(--fs-label) / 1.4 var(--font-sans);
 	}
