@@ -3,8 +3,9 @@
 	import { formatPowerIoDiagnostic } from '@tellegen/engine';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { powerIoEntry, type LogEntryInput } from '../log.svelte.js';
-	import { getNoticeCenter, errorNoticeTitle } from '../notices.svelte.js';
+	import { getNoticeCenter, errorNoticeCanRetry, errorNoticeTitle } from '../notices.svelte.js';
 	import LogEntryView from './LogEntryView.svelte';
+	import { DEMO_LABEL } from '../dynamics/controller.svelte.js';
 	const app = getAppState();
 	const ctrl = getController();
 	const notices = getNoticeCenter();
@@ -24,7 +25,9 @@
 					// A message with its own detail is already written for people.
 					title: detail ? message : errorNoticeTitle(message),
 					details: detail ?? message,
-					retry: () => ctrl.retryError(),
+					retry: errorNoticeCanRetry(detail ?? message) ? () => ctrl.retryError() : undefined,
+					// The Network panel shows a failed case list with its own Retry.
+					quiet: /^Case list:/.test(message),
 					canRetry: () =>
 						app.errorRevision === revision && app.error === message && app.errorRetry === retry
 				})
@@ -48,24 +51,50 @@
 					}))
 				]
 			: [];
-		for (const [identity, title, details, items] of [
+		/** A coordinate note that only reports success: every bus placed, nothing unmatched. */
+		const clean = (note: string) =>
+			/^(\d+) of \1 buses placed from /.test(note) || /; 0 unmatched objects$/.test(note);
+		const count = (n: number, what: string) => `${n} ${what} note${n === 1 ? '' : 's'}`;
+		const problems = entries.filter((entry) => entry.severity !== 'note').length;
+		const geoCount = geo?.length ?? 0;
+		for (const [identity, title, details, items, quiet] of [
 			[
 				summary,
-				'Case import notes',
+				`${problems} import ${problems === 1 ? 'warning' : 'warnings'}`,
 				summary
 					? [
 							...summary.diagnostics.map(formatPowerIoDiagnostic),
 							...('warnings' in summary ? summary.warnings : [])
 						].join('\n\n')
 					: '',
-				entries
+				entries,
+				// Notes alone are not a notice: the Log keeps them. The dynamics demo's notes are
+				// counted in the Dynamics panel's Notes row instead.
+				entries.every((entry) => entry.severity === 'note') || local?.label === DEMO_LABEL
 			],
-			[geo, 'Coordinate import notes', geo?.join('\n\n') ?? '', undefined]
-		] as Array<[object | undefined, string, string, LogEntryInput[] | undefined]>) {
+			[
+				geo,
+				count(geoCount, 'coordinate'),
+				geo?.join('\n\n') ?? '',
+				(geo ?? []).map((message) => ({
+					severity: 'note' as const,
+					stage: 'Coordinates',
+					source: 'tellegen',
+					subject,
+					message
+				})),
+				// A success is not a notice: the Log keeps it.
+				!!geo && geo.every(clean)
+			]
+		] as Array<[object | undefined, string, string, LogEntryInput[] | undefined, boolean?]>) {
 			if (identity && !observed.has(identity)) {
 				observed.add(identity);
 				if (details)
-					untrack(() => notices.push({ kind: 'warning', title, details, entries: items }));
+					untrack(() => {
+						if (!quiet) notices.push({ kind: 'warning', title, details, entries: items });
+						// The notice closes itself; the Log keeps what it said.
+						if (items?.length) app.log.record(items, { repeat: false });
+					});
 			}
 		}
 	});
@@ -90,7 +119,9 @@
 		onpointerenter={() => (hovered = true)}
 		onpointerleave={() => (hovered = false)}
 	>
-		{#if notices.expanded}
+		<!-- The open notice's details expand inside it; the list of past messages is for
+		     after it closes. -->
+		{#if notices.expanded && !notices.active}
 			<div class="recent" id="recent-notifications">
 				<header>
 					<strong>Recent messages</strong><button
@@ -102,9 +133,10 @@
 					>
 				</header>
 				<ol>
-					{#each notices.entries as entry (entry.id)}
+					{#each notices.entries as entry, i (entry.id)}
 						<li>
-							<details>
+							<!-- The latest message opens with its full text: Details shows it at once. -->
+							<details open={i === 0}>
 								<summary
 									>{entry.title}{#if entry.count > 1}<span class="count">{entry.count}</span
 										>{/if}</summary
@@ -126,35 +158,53 @@
 				</ol>
 			</div>
 		{/if}
+		<!-- Once a message is dismissed, nothing floats over the map: the Log tab
+		     counts it, and the Log lists it. -->
 		<div
 			class="notice"
 			data-testid="notification-toast"
 			data-kind={notices.active?.kind}
 			class:quiet={!notices.active}
+			hidden={!notices.active && !notices.expanded}
 		>
-			{#if notices.active}
-				<span class="message">{notices.active.title}</span>
-				{#if notices.active.count > 1}<span
-						class="count"
-						aria-label={`${notices.active.count} occurrences`}>{notices.active.count}</span
+			<div class="row">
+				{#if notices.active}
+					<span class="message">{notices.active.title}</span>
+					{#if notices.active.count > 1}<span
+							class="count"
+							aria-label={`${notices.active.count} occurrences`}>{notices.active.count}</span
+						>{/if}
+					{#if notices.active.retry && notices.active.canRetry?.()}<button
+							onclick={notices.active.retry}>Retry</button
+						>{/if}
+				{/if}
+				<button
+					class="history"
+					aria-expanded={notices.expanded}
+					aria-controls={notices.active ? 'notice-details' : 'recent-notifications'}
+					onclick={() => (notices.expanded = !notices.expanded)}
+					>{notices.active ? 'Details' : 'Messages'}{#if !notices.active}<span class="count"
+							>{notices.entries.length}</span
+						>{/if}</button
+				>
+				{#if notices.active}<button
+						aria-label="Dismiss notification"
+						onclick={() => notices.dismiss()}>Close</button
 					>{/if}
-				{#if notices.active.retry && notices.active.canRetry?.()}<button
-						onclick={notices.active.retry}>Retry</button
-					>{/if}
+			</div>
+			{#if notices.active && notices.expanded}
+				<div class="inline" id="notice-details">
+					{#if notices.active.entries?.length}
+						<ol class="entries" data-testid="notification-details">
+							{#each notices.active.entries as item, i (i)}
+								<li><LogEntryView entry={item} showSubject={false} /></li>
+							{/each}
+						</ol>
+					{:else}
+						<pre data-testid="notification-details">{notices.active.details}</pre>
+					{/if}
+				</div>
 			{/if}
-			<button
-				class="history"
-				aria-expanded={notices.expanded}
-				aria-controls="recent-notifications"
-				onclick={() => (notices.expanded = !notices.expanded)}
-				>{notices.active ? 'Details' : 'Messages'}{#if !notices.active}<span class="count"
-						>{notices.entries.length}</span
-					>{/if}</button
-			>
-			{#if notices.active}<button
-					aria-label="Dismiss notification"
-					onclick={() => notices.dismiss()}>Close</button
-				>{/if}
 		</div>
 	</section>
 {/if}
@@ -177,7 +227,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(540px, calc(100vw - 200px));
-		font: 12px/1.4 var(--font-display);
+		font: 13px/1.4 var(--font-display);
 		pointer-events: none;
 	}
 	.notice,
@@ -185,10 +235,10 @@
 		pointer-events: auto;
 		background: var(--panel);
 		border: 1px solid var(--line);
-		border-radius: 5px;
+		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-2);
 	}
-	.notice {
+	.row {
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -196,12 +246,25 @@
 		padding: 3px 8px 3px 12px;
 		box-sizing: border-box;
 	}
+	.inline {
+		max-height: min(240px, 36dvh);
+		overflow-y: auto;
+		padding: 0 12px 10px;
+		border-top: 1px solid var(--line);
+	}
+	.inline pre {
+		margin-top: 8px;
+		color: var(--text-secondary);
+	}
+	/* The message says what to do next, so it wraps instead of being cut off. */
 	.message {
 		min-width: 0;
 		flex: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		padding: 5px 0;
+		overflow-wrap: anywhere;
+	}
+	.notice[hidden] {
+		display: none;
 	}
 	.quiet {
 		width: fit-content;
@@ -215,7 +278,7 @@
 		border: 0;
 		background: transparent;
 		padding: 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 		flex-shrink: 0;
 	}
@@ -229,7 +292,7 @@
 	}
 	.count {
 		margin-left: 5px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 	}
 	.recent {
@@ -262,7 +325,7 @@
 		padding: 6px 0;
 	}
 	pre {
-		font: 11px/1.5 var(--font-mono);
+		font: 12px/1.5 var(--font-mono);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		margin: 10px 0 0;
@@ -271,7 +334,11 @@
 		.notifications {
 			width: calc(100vw - 24px);
 			/* The host's notice is hidden here: clear the control row only. */
-			bottom: max(60px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
+			bottom: max(
+				60px,
+				calc(var(--tellegen-timeline-clear, -1000px) + 44px),
+				calc(var(--tellegen-sheet-clear, -1000px) + 52px)
+			);
 		}
 		button {
 			min-height: 36px;

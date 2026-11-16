@@ -5,7 +5,7 @@
 </script>
 
 {#if app.placingId}
-	<div class="placement-cue">Click the map to place the topology layout</div>
+	<div class="placement-cue">Click to place</div>
 {/if}
 
 <style>
@@ -18,9 +18,9 @@
 		padding: 8px 12px;
 		background: var(--panel);
 		border: 1px solid var(--accent);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		color: var(--text-accent);
-		font-size: 11px;
+		font-size: 12px;
 		box-shadow: var(--elev-cue);
 		pointer-events: none;
 	}

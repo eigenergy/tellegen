@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { getAppState } from '../context.svelte.js';
-	import { degrees, fmt, formulationLabel, quantity, signed } from '../format.js';
+	import { flowSummary, resultStats } from '../diagram/verdict.js';
+	import { degrees, fmt, formulationLabel, quantity, signed, splitName } from '../format.js';
 	import BusPicker from './BusPicker.svelte';
 	import ModelDetails from './ModelDetails.svelte';
+	import SolveCard from './SolveCard.svelte';
+	import StatBoxes from './StatBoxes.svelte';
 
 	const app = getAppState();
 	const saved = $derived(app.studyView);
@@ -16,6 +19,50 @@
 	const angle = $derived(saved?.solution?.va?.find((value) => value.bus === bus?.id)?.value);
 	const flow = $derived(saved?.solution?.flows?.find((value) => value.branch === branch?.id));
 	const baseDemand = $derived(bus ? saved?.baseDemandMw?.[String(bus.id)] : undefined);
+
+	/** The case's display name, as in the header: the hosted or local case it was saved from,
+	 * else the network's own name without a file prefix. */
+	const name = $derived.by((): [string, string] => {
+		if (!saved) return ['', ''];
+		const hosted = app.cases.find((c) => c.id === saved.caseId);
+		if (hosted) return splitName(hosted.name);
+		const local = app.localCases.find((c) => c.id === saved.caseId);
+		if (local) return [local.label, ''];
+		return splitName(saved.network.name.replace(/^case_?/i, ''));
+	});
+
+	/** The same boxes as the live result: an OPF's operational cost and lines at limit, a power
+	 * flow's losses, heaviest line and voltage range. */
+	const stats = $derived.by(() => {
+		const solution = saved?.solution;
+		if (!saved || !solution) return [];
+		const constraints = solution.branch_constraints;
+		const flows = solution.flows ?? [];
+		const binding = constraints
+			? constraints.filter((row) => row.binding).length
+			: flows.filter((f) => f.loading >= 0.999).length;
+		return resultStats({
+			formulation: saved.formulation,
+			objective: solution.objective ?? null,
+			binding,
+			...flowSummary(
+				solution.vm,
+				flows.map((f) => ({ loading: f.loading, from: f.pf, to: f.pt }))
+			)
+		});
+	});
+
+	/** Every bus colouring a saved state can have; the ones its result lacks are disabled. */
+	const modes = $derived([
+		{ mode: 'price' as const, label: 'Price', available: !!saved?.solution?.lmp?.length },
+		{ mode: 'angle' as const, label: 'Angle', available: !!saved?.solution?.va?.length },
+		{
+			mode: 'voltage' as const,
+			label: 'Voltage',
+			available: !!(saved?.solution?.vm?.length || saved?.solution?.w?.length)
+		}
+	]);
+
 	function live() {
 		app.studyView = null;
 		app.selectedBus = null;
@@ -25,9 +72,17 @@
 
 {#if saved}
 	<section aria-label="Saved network details">
-		<h2>{saved.network.name}</h2>
-		<p class="state-label">{saved.label}<span>Saved state</span></p>
+		<h2>{name[0]}{#if name[1]}<span class="region">{name[1]}</span>{/if}</h2>
+		<StatBoxes {stats} />
 		<dl>
+			<div>
+				<dt>Saved state</dt>
+				<dd>{saved.label}</dd>
+			</div>
+			<div>
+				<dt>Calculation</dt>
+				<dd>{formulationLabel(saved.formulation)}</dd>
+			</div>
 			<div>
 				<dt>Buses</dt>
 				<dd>{saved.network.buses.length.toLocaleString()}</dd>
@@ -36,35 +91,25 @@
 				<dt>Lines</dt>
 				<dd>{saved.network.branches.length.toLocaleString()}</dd>
 			</div>
-			<div>
-				<dt>Calculation</dt>
-				<dd>{formulationLabel(saved.formulation)}</dd>
-			</div>
-			<div>
-				<dt>Result</dt>
-				<dd>{saved.solution?.status ?? 'Not solved'}</dd>
-			</div>
-			{#if saved.solution?.objective != null}
-				<div>
-					<dt>Generation cost ($/h)</dt>
-					<dd>{fmt.format(saved.solution.objective)}</dd>
-				</div>
-			{/if}
 		</dl>
-		<button class="live" onclick={live}>Return to live case</button>
+		<SolveCard embedded />
+		<button class="reset live" onclick={live}>Return to live case</button>
 		<ModelDetails details={saved.network.model_details} />
 		<BusPicker inline />
-		{#if saved.solution}
-			<label class="map-values"
-				>{saved.network.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}
-				<select bind:value={app.displayMode}>
-					{#if saved.solution.lmp?.length}<option value="price">LMP</option>{/if}
-					{#if saved.solution.va?.length}<option value="angle">Voltage angle</option>{/if}
-					{#if saved.solution.vm?.length || saved.solution.w?.length}<option value="voltage"
-							>Voltage magnitude</option
-						>{/if}
-				</select>
-			</label>
+		{#if saved.solution && modes.some((m) => m.available)}
+			<div class="mode display-mode values">
+				<div class="segment" aria-label="Bus color variable">
+					{#each modes as option (option.mode)}
+						<button
+							type="button"
+							class={{ active: app.displayMode === option.mode }}
+							aria-pressed={app.displayMode === option.mode}
+							disabled={!option.available}
+							onclick={() => (app.displayMode = option.mode)}>{option.label}</button
+						>
+					{/each}
+				</div>
+			</div>
 		{/if}
 		{#if bus}
 			<div class="equipment">
@@ -85,7 +130,7 @@
 							<dd>{signed(bus.demand_mw - baseDemand)} MW</dd>
 						</div>{/if}
 					{#if lmp != null}<div>
-							<dt>LMP</dt>
+							<dt>Price</dt>
 							<dd>{fmt.format(lmp)}<small>$/MWh</small></dd>
 						</div>{/if}
 					{#if voltage != null || squaredVoltage != null}<div>
@@ -126,33 +171,21 @@
 
 <style>
 	h2 {
-		margin: 0 0 8px;
-		font-size: 15px;
+		margin: 0 0 var(--space-lg);
+		font-size: var(--fs-heading);
 		font-weight: 600;
-	}
-	.state-label {
-		display: flex;
-		justify-content: space-between;
-		gap: 12px;
-		margin: 0 0 16px;
-		font-size: 12px;
-	}
-	.state-label span {
-		flex: none;
-		color: var(--text-secondary);
-		font-size: 13px;
 	}
 	dl {
 		margin: 0;
-		display: grid;
-		gap: 6px;
-		font: 12px/1.5 var(--font-mono);
+		font-size: var(--fs-data);
+		font-variant-numeric: tabular-nums;
 	}
 	dl > div {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
-		gap: 12px;
+		gap: var(--space-lg);
+		padding: var(--space-3xs) 0;
 	}
 	dt {
 		color: var(--text-secondary);
@@ -167,32 +200,15 @@
 		color: var(--text-secondary);
 	}
 	.live {
+		margin: 0 0 16px;
+	}
+	.values {
 		margin: 16px 0;
 	}
-	button,
-	select {
-		border: 1px solid var(--line);
-		border-radius: 4px;
-		color: var(--ink);
-		background: var(--paper);
-		padding: 6px 8px;
-		font: 12px/1.4 var(--font-display);
-	}
-	button {
-		cursor: pointer;
-	}
-	button:focus-visible,
-	select:focus-visible {
-		outline: 2px solid var(--focus-ring);
-		outline-offset: 2px;
-	}
-	.map-values {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 12px;
-		margin: 16px 0;
-		font-size: 12px;
+	.segment button:disabled {
+		color: var(--text-tertiary);
+		background: none;
+		cursor: not-allowed;
 	}
 	.equipment {
 		border-top: 1px solid var(--line);

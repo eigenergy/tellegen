@@ -48,7 +48,7 @@ function plural(count: number, one: string, many: string): string {
 function element(kind: JsonValue | undefined, id: JsonValue | undefined): string | null {
 	const name = text(id);
 	if (!name) return null;
-	return `${kind === 'branch' ? 'branch' : 'bus'} ${name}`;
+	return `${kind === 'branch' ? 'line' : 'bus'} ${name}`;
 }
 
 /** How long a call took, or has taken so far. */
@@ -57,61 +57,66 @@ export function formatElapsed(ms: number): string {
 	return clamped < 1_000 ? `${Math.round(clamped)} ms` : `${(clamped / 1_000).toFixed(1)} s`;
 }
 
-/** One sentence for a finished call: what it found or changed, or why it failed. */
+/** A failure in a word or two. The tool's own message is written for the agent: the Agent
+ * panel keeps it behind Details. */
+const FAILURES: Record<string, string> = {
+	INVALID_INPUT: 'Invalid input',
+	CASE_NOT_FOUND: 'Case not found',
+	ELEMENT_NOT_FOUND: 'Not found',
+	NO_ACTIVE_CASE: 'No case open',
+	CASE_SOLVING: 'Busy solving',
+	CASE_NOT_READY: 'Case not ready',
+	STALE_CASE: 'Case changed',
+	STALE_REVISION: 'Case changed',
+	STALE_PROPOSAL: 'Plan changed',
+	APPROVAL_REQUIRED: 'Needs approval',
+	CANCELLED: 'Cancelled',
+	TIMEOUT: 'Timed out',
+	DYNAMICS_OFF: 'Dynamics is off'
+};
+
+/** A few words for a finished call: what it found or changed, or that it failed. */
 export function activitySummary(event: Finished): string {
 	const { response } = event;
-	if (!response.ok) return response.error.message;
-	if (event.callerCancelled) return 'Completed, but the agent stopped waiting for the result.';
+	if (!response.ok) return FAILURES[response.error.code] ?? 'Failed';
+	if (event.callerCancelled) return 'Cancelled after completing';
 	const data = response.data;
-	if (data.output_truncated) return 'Completed. Details are in the Agent panel.';
+	if (data.output_truncated) return 'Done';
 	switch (event.toolName) {
 		case 'list_cases': {
 			const total = number(data.total);
-			return total === null
-				? 'Listed the available cases.'
-				: `${plural(total, 'case', 'cases')} available.`;
+			return total === null ? 'Done' : plural(total, 'case', 'cases');
 		}
 		case 'select_case':
 		case 'inspect_case': {
 			const id = text(data.case_id);
 			const state = text(data.state_id);
-			if (state) return `Showing saved state ${state}.`;
-			return id ? `Showing case ${id}.` : 'Read the displayed case.';
+			if (state) return `Saved state ${state}`;
+			return id ? `Case ${id}` : 'Done';
 		}
 		case 'query_network': {
 			const returned = number(data.returned);
 			const matched = number(data.total) ?? number(data.matched);
 			const branch = data.element_kind === 'branch';
-			if (returned === null) return 'Read network elements.';
-			const noun = branch
-				? returned === 1
-					? 'branch'
-					: 'branches'
-				: returned === 1
-					? 'bus'
-					: 'buses';
+			if (returned === null) return 'Done';
+			const noun = branch ? (returned === 1 ? 'line' : 'lines') : returned === 1 ? 'bus' : 'buses';
 			return matched !== null && matched > returned
-				? `Returned ${format(returned, 0)} of ${format(matched, 0)} ${branch ? 'branches' : 'buses'}.`
-				: `Returned ${format(returned, 0)} ${noun}.`;
+				? `${format(returned, 0)} of ${format(matched, 0)} ${branch ? 'lines' : 'buses'}`
+				: `${format(returned, 0)} ${noun}`;
 		}
 		case 'focus_network': {
 			const focused = record(data.focused);
-			const name = element(focused?.kind, focused?.element_id);
-			return name ? `Showing ${name} on the map.` : 'Moved the map to the element.';
+			const name = text(focused?.name) ?? element(focused?.kind, focused?.element_id);
+			return name ? `Showing ${name}` : 'Done';
 		}
 		case 'analyze_sensitivity': {
 			const target = record(data.target);
 			const name = element(target?.kind, target?.element_id);
-			const responses = Array.isArray(data.responses) ? data.responses.length : null;
-			return name && responses !== null
-				? `Sensitivity of ${name} at ${plural(responses, 'bus', 'buses')}.`
-				: 'Computed a sensitivity.';
+			return name ? `Sensitivity: ${name}` : 'Done';
 		}
 		case 'preview_case_update': {
 			const delta = number(record(data.prediction)?.objective_delta);
-			return delta === null
-				? 'Previewed the change. Nothing was applied.'
-				: `Predicted cost change ${signed(delta)} $/h. Nothing was applied.`;
+			return delta === null ? 'Preview only' : `Predicted ${signed(delta)} $/h`;
 		}
 		case 'update_case':
 		case 'reset_case': {
@@ -121,34 +126,30 @@ export function activitySummary(event: Finished): string {
 			const to = number(after?.objective);
 			const lines = number(after?.binding_branches);
 			const parts: string[] = [];
-			if (from !== null && to !== null) parts.push(`cost ${formatChange(from, to)} $/h`);
-			if (lines !== null) parts.push(plural(lines, 'line at its limit', 'lines at their limit'));
-			if (!parts.length)
-				return event.toolName === 'reset_case' ? 'Reset the case.' : 'Solved the change.';
-			const sentence = parts.join(', ');
-			return `${sentence[0].toUpperCase()}${sentence.slice(1)}.`;
+			if (from !== null && to !== null) parts.push(`Cost ${formatChange(from, to)} $/h`);
+			if (lines !== null) parts.push(`${plural(lines, 'line', 'lines')} at limit`);
+			if (!parts.length) return event.toolName === 'reset_case' ? 'Reset' : 'Solved';
+			return parts.join(', ');
 		}
 		case 'run_calculation':
-			return 'Calculation finished.';
+			return 'Done';
 		case 'propose_capacity_plan':
-			return 'Proposal ready. Review it in the Agent panel.';
+			return 'Needs approval';
 		case 'apply_capacity_plan': {
 			const count = number(data.applied_count);
-			return count === null
-				? 'Applied the approved proposal.'
-				: `Applied ${plural(count, 'rating change', 'rating changes')}.`;
+			return count === null ? 'Applied' : `Applied ${format(count, 0)}`;
 		}
 		case 'solve_multiconductor_pf':
-			return data.converged === false ? 'Power flow did not converge.' : 'Power flow converged.';
+			return data.converged === false ? 'Did not converge' : 'Converged';
 		case 'export_case': {
 			const name = text(data.file_name);
-			return name ? `Exported ${name}.` : 'Exported the case.';
+			return name ? `Exported ${name}` : 'Exported';
 		}
 		case 'import_case': {
 			const opened = Array.isArray(data.opened) ? data.opened.length : null;
-			return opened === null ? 'Opened the file.' : `Opened ${plural(opened, 'case', 'cases')}.`;
+			return opened === null ? 'Opened' : `Opened ${format(opened, 0)}`;
 		}
 		default:
-			return `Done in ${formatElapsed(event.finishedAt - event.startedAt)}.`;
+			return `Done, ${formatElapsed(event.finishedAt - event.startedAt)}`;
 	}
 }

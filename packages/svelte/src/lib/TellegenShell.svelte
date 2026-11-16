@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import AppFooter from './components/AppFooter.svelte';
 	import NotificationCenter from './components/NotificationCenter.svelte';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import AppHeader from './components/AppHeader.svelte';
@@ -8,8 +7,6 @@
 	import DropZone from './components/DropZone.svelte';
 	import CollectionChooser from './components/CollectionChooser.svelte';
 	import PlacementCue from './components/PlacementCue.svelte';
-	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
-	import SolveCard from './components/SolveCard.svelte';
 	import PanelHost from './components/PanelHost.svelte';
 	import LogPanel from './components/LogPanel.svelte';
 	import SettingsPanel from './components/SettingsPanel.svelte';
@@ -18,11 +15,12 @@
 	import TellegenMap from './TellegenMap.svelte';
 	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
 	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
-	import DynamicsLegend from './components/dynamics/DynamicsLegend.svelte';
+	import { getPanelLayout } from './panels.svelte.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+	const layout = getPanelLayout();
 
 	let dragDepth = 0;
 	/** Height kept free above the dock for the map's control row (the zoom
@@ -33,19 +31,21 @@
 	const dynamicsShown = $derived(
 		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
 	);
-	// The legend explains the map's dynamics layers: during playback, and at
-	// rest before the first run. The single-line diagram draws neither.
-	const legendShown = $derived(
-		app.mode === 'dynamics' && !!dyn.frame && !app.zen && !ctrl.singleLineShown
-	);
 	$effect(() => {
 		dyn.theme = config.theme;
 	});
-	// What the playback dock covers, from the bottom edge (it sits 12 px up,
-	// 40 px on the compact layout).
+	// Turning experimental features off stops any dynamics playback.
 	$effect(() => {
-		app.dockInset =
-			dynamicsShown && timelineHeight > 0 ? timelineHeight + (app.compactLayout ? 40 : 12) : 0;
+		if (!app.dynamicsEnabled) untrack(() => dyn.player.pause());
+	});
+	/** Phone with a panel open: the playback bar sits flush on the bottom edge and the
+	 * sheet stands on top of it, so the bar never covers the sheet's content. */
+	const sheetOpen = $derived(app.compactLayout && !!layout.drawer && !app.zen);
+	// What the playback dock covers, from the bottom edge (it sits 12 px up,
+	// 40 px on the compact layout, flush under an open sheet).
+	$effect(() => {
+		const gap = app.compactLayout ? (sheetOpen ? 0 : 40) : 12;
+		app.dockInset = dynamicsShown && timelineHeight > 0 ? timelineHeight + gap : 0;
 	});
 	// Chrome anchored at the bottom (toasts, map controls, the host app's own
 	// notices outside this shell) clears the dock through this variable.
@@ -177,25 +177,15 @@
 	<NotificationCenter />
 	<CommandPalette />
 	<ControlPanel />
-	{#if app.mode !== 'dynamics'}<SolveCard />{/if}
-	{#if !app.studyView}<DynamicsPanel />{/if}
+	{#if !app.studyView && app.dynamicsEnabled}<DynamicsPanel />{/if}
 	{#if dynamicsShown}
-		<DynamicsTimeline bind:dockHeight={timelineHeight} />
+		<DynamicsTimeline bind:dockHeight={timelineHeight} flush={sheetOpen} />
 	{/if}
-	{#if legendShown}<DynamicsLegend
-			theme={config.theme}
-			top={app.headerInset + 52}
-			atRest={dyn.atRest}
-		/>{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}
 		<DropZone />
 		<PlacementCue />
-		{#if !app.zen}<RestoreDefaultsButton />{/if}
-	{/if}
-	{#if config.showFooter && !app.compactLayout && !app.zen && !dynamicsShown}
-		<AppFooter />
 	{/if}
 </main>
 

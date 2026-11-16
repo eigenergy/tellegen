@@ -6,8 +6,6 @@
 	import SavedNetworkDetails from './SavedNetworkDetails.svelte';
 	import ModelDetails from './ModelDetails.svelte';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import AppFooter from './AppFooter.svelte';
-	import BindingLines from './BindingLines.svelte';
 	import BusPicker from './BusPicker.svelte';
 	import DemandSlider from './DemandSlider.svelte';
 	import DisplayControls from './DisplayControls.svelte';
@@ -17,9 +15,11 @@
 	import NetworkStats from './NetworkStats.svelte';
 	import PowerFlowDetails from './PowerFlowDetails.svelte';
 	import DynamicsElementActions from './dynamics/DynamicsElementActions.svelte';
+	import DynamicsLegend from './dynamics/DynamicsLegend.svelte';
 	import RatingSlider from './RatingSlider.svelte';
 	import SensitivityReadout from './SensitivityReadout.svelte';
 	import SizeLegend from './SizeLegend.svelte';
+	import SolveCard from './SolveCard.svelte';
 	import TopMovers from './TopMovers.svelte';
 
 	/** Optional host content rendered under a local case's stats. */
@@ -28,6 +28,15 @@
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+
+	/** Dynamics colours the map (at rest or playing back): its key replaces the steady-state one.
+	 * The single-line diagram draws no dynamics layers. */
+	const dynamicsKey = $derived(ctrl.dynamics.mapLayers.length > 0 && !ctrl.singleLineShown);
+	const dynamicsSelection = $derived(
+		app.mode === 'dynamics' &&
+			!!app.activeLocal &&
+			(app.selectedBus !== null || app.selectedBranch !== null)
+	);
 
 	const layout = getPanelLayout();
 	let open = $state(true);
@@ -40,26 +49,59 @@
 	const branchReadout = $derived(
 		app.selectedBranch !== null && (ctrl.selectedSensitivity || app.sensitivityLoading)
 	);
-	/** Compact only: a resolved selection outranks the case stats it was read
-	 * against. Gated on networkStats because that is what renders the readout. */
+	/** A resolved selection comes right after the result sentence, so it opens in
+	 * view instead of at the foot of a long panel. Gated on networkStats because
+	 * that is what renders the readout. */
 	const selectionLeads = $derived(
-		app.compactLayout &&
-			!!ctrl.networkStats &&
+		!!ctrl.networkStats &&
 			(busReadout ||
 				branchReadout ||
 				(ctrl.activeFormulation === 'acpf' &&
 					(app.selectedBus !== null || app.selectedBranch !== null)))
 	);
 
+	/** The diagram has its own colour tabs and key: the map's colour switch would only
+	 * repeat them, so it steps aside while the diagram is shown. */
+	const mapKeyOnly = $derived(
+		!!ctrl.singleLineShown && !dynamicsSelection && !busReadout && !branchReadout
+	);
+	const blockEmpty = $derived(mapKeyOnly && ctrl.activeFormulation !== 'acpf');
+
+	/** The case list failed to load: a case file still opens. */
+	function openFile() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.multiple = true;
+		input.onchange = () => {
+			if (input.files) void ctrl.ingestFiles(input.files);
+		};
+		input.click();
+	}
+
+	function showSelection() {
+		const scroller = bodyEl?.closest('.panel-content');
+		if (!scroller) return;
+		const lead = layout.compact ? bodyEl?.querySelector<HTMLElement>('.selection-lead') : null;
+		const top = lead
+			? lead.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+			: 0;
+		scroller.scrollTo({ top: Math.max(0, top - 8) });
+	}
+
 	$effect(() => {
 		const selection = app.selectedBus ?? app.selectedBranch;
 		if (selection !== null)
 			untrack(() => {
 				open = true;
-				if (layout.compact) {
-					layout.drawer = 'network';
-					void tick().then(() => bodyEl?.closest('.panel-content')?.scrollTo({ top: 0 }));
-				}
+				// A selection's readout is in this panel: bring it to the front of its
+				// dock, also when an agent made the selection, so the reader sees what
+				// the agent pointed at. The Agent tab keeps its record of the call.
+				const panel = layout.panels.find((candidate) => candidate.id === 'network');
+				if (panel) layout.activate(panel);
+				if (layout.compact) layout.drawer = 'network';
+				// The readout sits near the top: scroll the panel back so it is in view. The
+				// phone sheet is short, so it scrolls to the readout itself.
+				void tick().then(() => requestAnimationFrame(showSelection));
 			});
 	});
 </script>
@@ -67,10 +109,13 @@
 <PanelFrame id="network" title="Network" side="left" order={10} width={320} bind:open>
 	<div class="panel-body" id="control-panel-body" bind:this={bodyEl}>
 		{#snippet selectionBlock()}
-			{#if app.mode === 'dynamics' && app.activeLocal}
+			{#if dynamicsSelection}
 				<DynamicsElementActions />
+				{#if dynamicsKey}<div class="dyn-key"><DynamicsLegend theme={config.theme} /></div>{/if}
+			{:else if dynamicsKey}
+				<DynamicsLegend theme={config.theme} />
 			{:else if ctrl.activeFormulation === 'acpf'}
-				<DisplayControls />
+				{#if !mapKeyOnly}<DisplayControls />{/if}
 				<PowerFlowDetails />
 			{:else if busReadout}
 				<SensitivityReadout />
@@ -88,7 +133,7 @@
 				{#if ctrl.showMoverSlot}
 					<TopMovers />
 				{/if}
-			{:else}
+			{:else if !mapKeyOnly}
 				<DisplayControls />
 			{/if}
 		{/snippet}
@@ -100,12 +145,11 @@
 				<p class="dim blink">Parsing&hellip;</p>
 			{/if}
 
-			<!-- Selected equipment leads on narrow screens. -->
-			{#if selectionLeads}
-				{@render selectionBlock()}
-
-				<hr />
-			{/if}
+			{#snippet lead()}
+				{#if selectionLeads}
+					<div class="selection-lead">{@render selectionBlock()}</div>
+				{/if}
+			{/snippet}
 
 			{#if app.activeLocal}
 				{#if app.activeLocal.diagram && app.activeLocal.view?.buses.length}
@@ -120,7 +164,7 @@
 						>
 					</div>
 				{/if}
-				<LocalCaseDetails note={caseNote} />
+				<LocalCaseDetails note={caseNote} {lead} />
 			{/if}
 			{#each app.hostedDistributionCases.filter((c) => c.distribution?.related_case_id === app.activeCaseId) as related (related.id)}
 				<button
@@ -129,9 +173,7 @@
 					title={related.unavailable_reason ?? related.name}
 					onclick={() => ctrl.activateHostedDistribution(related.id)}
 				>
-					{ctrl.loadingHostedDistribution === related.id
-						? 'Loading distribution…'
-						: 'Explore associated distribution'}
+					{ctrl.loadingHostedDistribution === related.id ? 'Loading…' : 'Open distribution'}
 				</button>
 			{/each}
 			{#if app.activeMulti}
@@ -140,28 +182,38 @@
 			{#if !ctrl.networkStats}
 				{#if !app.activeLocal && !app.activeMulti}
 					{#if ctrl.loadingHostedDistribution}
-						<p class="dim mono blink">Loading selected case&hellip;</p>
+						<p class="dim blink">Loading&hellip;</p>
 					{:else if ctrl.casesLoaded && app.cases.length === 0}
-						<p class="dim mono">
+						<p class="dim">
 							{app.hostedDistributionCases.length
-								? 'No distribution case selected'
+								? 'No case'
 								: config.loadDefaultCases
-									? 'No default cases loaded'
-									: 'Drop a case file to begin'}
+									? 'No cases'
+									: 'Drop a case file'}
 						</p>
 						{#if config.loadDefaultCases}
 							<button class="reset" onclick={ctrl.restoreDefaultCases}>Restore default cases</button
 							>
 						{/if}
-					{:else if ctrl.loadingBackendCase}
-						<p class="dim blink">Loading case&hellip;</p>
+					{:else if ctrl.casesFailed}
+						<p class="load-failed" role="alert">Could not load the case list</p>
+						{#if ctrl.casesError}
+							<details class="load-details">
+								<summary>Details</summary>
+								<pre>{ctrl.casesError}</pre>
+							</details>
+						{/if}
+						<div class="load-actions">
+							<button class="reset" onclick={() => void ctrl.load()}>Retry</button>
+							<button class="reset" onclick={openFile}>Open case file</button>
+						</div>
 					{:else}
-						<p class="dim blink">Loading cases&hellip;</p>
+						<p class="dim blink">Loading&hellip;</p>
 					{/if}
 				{/if}
 			{:else}
 				{#if !app.activeLocal}
-					<NetworkStats />
+					<NetworkStats {lead} />
 				{/if}
 
 				{#if ctrl.activeSolvable?.network && !app.activeMulti}
@@ -169,52 +221,102 @@
 					<button
 						class="reset diagram-toggle"
 						aria-pressed={c.schematic}
-						title="Single-line diagram: voltage levels, transformers and results on a plain canvas"
-						onclick={() => (c.schematic = !c.schematic)}
-						>{c.schematic ? 'Show map' : 'Show diagram'}</button
+						onclick={() => {
+							c.schematic = !c.schematic;
+							// On a phone, the sheet would cover the diagram it opens.
+							if (c.schematic && layout.compact) layout.drawer = null;
+						}}>{c.schematic ? 'Show map' : 'Show diagram'}</button
 					>
+				{/if}
+
+				<!-- On a phone the sheet is short: the key to the map's colours comes right after the
+				     result and its File and Show diagram row, not below the fold. -->
+				{#if app.compactLayout && !selectionLeads && !blockEmpty}
+					<div class="compact-key">{@render selectionBlock()}</div>
 				{/if}
 
 				{#if ctrl.activeSolvable}
 					<FormulationSelector />
 				{/if}
+				<!-- The steady-state solve keeps its Details in both modes, so the panel does not jump. -->
+				<SolveCard embedded />
 
 				<ModelDetails details={ctrl.activeSolvable?.network?.model_details} />
 				<BusPicker inline />
 
-				{#if !app.placingLocalId && ctrl.activeFormulation !== 'acpf'}
-					<BindingLines />
-				{/if}
-
-				{#if !selectionLeads}
-					<hr />
-
-					{@render selectionBlock()}
+				<!-- Each section brings its own rule, and an empty one shows nothing, rule included. -->
+				{#if !selectionLeads && !app.compactLayout && !blockEmpty}
+					<div class="section">{@render selectionBlock()}</div>
 				{/if}
 
 				<!-- The diagram does not size buses by power, so the map's size key would mislead. -->
 				{#if app.busSizing === 'power' && !ctrl.singleLineShown}
-					<hr />
-
-					<SizeLegend />
+					<div class="section"><SizeLegend /></div>
 				{/if}
 			{/if}
-		{/if}
-		{#if app.compactLayout && config.showFooter}
-			<AppFooter inline />
 		{/if}
 	</div>
 </PanelFrame>
 
 <style>
+	/* The key under a selection's dynamics actions, set off by the panel's own rule. */
+	.dyn-key {
+		margin-top: var(--space-lg);
+		padding-top: var(--space-lg);
+		border-top: 1px solid var(--line);
+	}
+
 	.panel-body {
 		padding: 16px 18px;
 	}
 
-	hr {
-		border: 0;
-		border-top: 1px solid var(--line);
+	/* The selection readout, set off from the result sentence above it. */
+	.selection-lead {
 		margin: 12px 0;
+		padding: 12px 0;
+		border-block: 1px solid var(--line);
+	}
+
+	/* The display key under the case stats on a phone: a gap, not touching. */
+	.compact-key {
+		margin-top: 12px;
+	}
+	.compact-key:not(:has(> *)) {
+		display: none;
+	}
+
+	.section {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--line);
+	}
+	.section:not(:has(> *)) {
+		display: none;
+	}
+
+	.load-failed {
+		margin: 0 0 8px;
+		font-weight: 600;
+		color: var(--text-danger);
+	}
+	.load-actions {
+		display: flex;
+		gap: 8px;
+	}
+	.load-details {
+		margin: 0 0 8px;
+		font-size: var(--fs-label);
+	}
+	.load-details summary {
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+	.load-details pre {
+		margin: 4px 0 0;
+		font: var(--fs-control) / var(--lh-snug) var(--font-mono);
+		color: var(--text-secondary);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.view-mode {
@@ -224,7 +326,7 @@
 	}
 	.view-mode button {
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		padding: 5px 10px;
 		font: 12px/1.4 var(--font-display);
 		color: var(--ink);

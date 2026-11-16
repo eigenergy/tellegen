@@ -166,6 +166,27 @@ describe("dynamic planning registration", () => {
     handle.dispose();
   });
 
+  it("reports the tool names when a planning tool comes or goes", async () => {
+    const { capability, set } = planningCapability({
+      planning: false,
+      proposal: false,
+    });
+    const { context } = trackingContext();
+    const counts: number[] = [];
+    const handle = await registerTellegenWebMcp(
+      context,
+      { ...adapter, planning: capability },
+      { onToolsChange: (names) => counts.push(names.length) },
+    );
+    set({ planning: true });
+    await settle();
+    expect(counts.at(-1)).toBe(8);
+    set({ planning: false });
+    await settle();
+    expect(counts.at(-1)).toBe(7);
+    handle.dispose();
+  });
+
   it("tears down dynamic tools with the lifecycle", async () => {
     const { capability } = planningCapability({
       planning: true,
@@ -301,5 +322,67 @@ describe("registration options and errors", () => {
     });
     expect((failure as Error).message).toContain("already registered");
     expect((failure as Error).message).toContain("name taken");
+  });
+});
+
+describe("gated dynamics registration", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  function liveContext() {
+    const registrations = new Map<string, AbortSignal>();
+    const context: ModelContextLike = {
+      async registerTool(tool, options) {
+        registrations.set(tool.name, options?.signal as AbortSignal);
+      },
+    };
+    const live = () =>
+      [...registrations.entries()]
+        .filter(([, signal]) => !signal.aborted)
+        .map(([name]) => name);
+    return { context, live };
+  }
+
+  it("registers simulate_dynamics whenever the host does not gate it", async () => {
+    const { context, live } = liveContext();
+    const handle = await registerTellegenWebMcp(context, {
+      ...adapter,
+      simulateDynamics: () => ({}),
+    });
+    expect(live()).toContain("simulate_dynamics");
+    expect(handle.toolNames).toContain("simulate_dynamics");
+    handle.dispose();
+  });
+
+  it("registers simulate_dynamics only while dynamics is available", async () => {
+    let available = false;
+    const listeners = new Set<() => void>();
+    const { context, live } = liveContext();
+    const handle = await registerTellegenWebMcp(context, {
+      ...adapter,
+      simulateDynamics: () => ({}),
+      dynamicsAvailable: () => available,
+      onDynamicsAvailabilityChange(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    });
+    expect(live()).not.toContain("simulate_dynamics");
+    expect(handle.toolNames).not.toContain("simulate_dynamics");
+    expect(handle.toolNames).toHaveLength(7);
+
+    available = true;
+    for (const listener of listeners) listener();
+    await settle();
+    expect(live()).toContain("simulate_dynamics");
+    expect(handle.toolNames).toContain("simulate_dynamics");
+
+    available = false;
+    for (const listener of listeners) listener();
+    await settle();
+    expect(live()).not.toContain("simulate_dynamics");
+    expect(handle.toolNames).not.toContain("simulate_dynamics");
+
+    handle.dispose();
+    expect(listeners.size).toBe(0);
   });
 });

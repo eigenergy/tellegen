@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import { priceGradient } from '../../colors.js';
-	import { formulationLabel, readable } from '../../format.js';
+	import { formulationLabel, priceText, readable } from '../../format.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -11,7 +11,7 @@
 		type economicsFor
 	} from '../../diagram/transmission-economics.js';
 	import type { operatingContext } from '../../diagram/transmission-results.js';
-	import { TERMS, economicsLead } from '../../diagram/transmission-explain.js';
+	import { economicsLead } from '../../diagram/transmission-explain.js';
 	import TxPanelHead from './TxPanelHead.svelte';
 	import { previewHandlers, type PreviewItem } from './preview.js';
 
@@ -21,125 +21,99 @@
 		economics,
 		scale,
 		onscale,
+		domain,
 		bus,
 		branch,
 		busPrice,
 		flow,
 		onbranch,
 		onpreview,
-		shadingCentre = null,
 		brief = false
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
 		economics: ReturnType<typeof economicsFor>;
+		/** The chosen scale: -1 fits it to the prices, as the map's legend does. */
 		scale: number;
 		onscale: (scale: number) => void;
+		/** The colour scale's ends in $/MWh. */
+		domain: { lo: number; hi: number };
 		bus?: NetworkBus;
 		branch?: NetworkBranch;
 		busPrice?: number;
 		flow?: SolutionFlow;
 		onbranch: (id: number) => void;
 		onpreview?: (item: PreviewItem | null) => void;
-		/** The median LMP when the area shading shows price separation around it. */
-		shadingCentre?: number | null;
 		/** Collapsed to the heading, the price scale and the binding count. */
 		brief?: boolean;
 	} = $props();
 	const preview = (id: number) => previewHandlers(onpreview, { kind: 'branch', id });
-	const domain = $derived(PRICE_SCALES[scale]);
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
+	/** A signed whole number with a true minus sign. */
+	const signed = (value: number) => (value < 0 ? `−${-value}` : String(value));
 	const lead = $derived(
 		economicsLead({
 			opf: isOpf(formulation),
-			ac: formulation === 'acopf' || formulation === 'socwr',
 			range: economics.range,
-			uniform: economics.uniform,
-			binding: economics.binding.length,
-			thermalAvailable: economics.thermalAvailable
+			uniform: economics.uniform
 		})
 	);
 </script>
 
-<section class="economics" aria-label="OPF economics">
-	<TxPanelHead title="OPF economics" {formulation} {context} {lead} view="economics" {brief} />
-	{#if economics.uniform !== null}
-		<p>
-			<abbr title={TERMS.lmp}>Total LMP</abbr> is uniform at
-			<span title={TERMS.objectiveUnits}>{economicAmount(economics.uniform)}</span>.
-		</p>
-	{:else if economics.prices.length}
+<section class="economics" aria-label="Prices">
+	<TxPanelHead title="Prices" {context} {lead} view="economics" />
+	{#if economics.uniform === null && economics.prices.length}
 		<div class="scale">
-			<abbr title={TERMS.lmp}>Total LMP</abbr><span>{domain.lo}</span><i
-				style:background={priceGradient}
-			></i>
 			<span
-				>{domain.hi}
-				<span title={TERMS.objectiveUnits}>{PRICE_UNIT}</span></span
+				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{priceText(domain.lo)}</span
+			><i style:background={priceGradient}></i><span
+				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{priceText(domain.hi)}
+				{PRICE_UNIT}</span
 			>
 		</div>
 		{#if !brief}<label>
-				Price scale
+				Scale
 				<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
+					<option value={-1}>Fit to prices</option>
 					{#each PRICE_SCALES as entry, index (index)}
-						<option value={index}>{entry.lo} to {entry.hi}</option>
+						<option value={index}>{signed(entry.lo)} to {signed(entry.hi)}</option>
 					{/each}
 				</select>
-				<span>Values outside the scale use its end colours.</span>
 			</label>{/if}
-		{#if shadingCentre !== null && !brief}
-			<p>
-				Interpolated shading: <span class="cheap">cheaper</span> or
-				<span class="dear">dearer</span>
-				than the median LMP of {economicAmount(shadingCentre)}.
-			</p>
-		{/if}
-	{:else if !isOpf(formulation)}
-		<!-- The lead says where prices come from. -->
-	{:else}
-		<p>Total LMP unavailable for this result.</p>
 	{/if}
-	{#if brief}
-		{#if economics.thermalAvailable}<p>
-				Binding thermal limits ({economics.binding.length})
-			</p>{/if}
-	{:else}
-		<details class="concepts">
-			<summary>Loading, binding and marginal relief explained</summary>
-			<p>
-				<strong>At rating:</strong>
-				{TERMS.atRating} This is a flow measurement, not a statement about solver enforcement.
-			</p>
-			<p><strong>Binding:</strong> {TERMS.binding}</p>
-			<p><strong>Marginal relief:</strong> {TERMS.relief}</p>
-			<p><strong>LMP:</strong> {TERMS.lmp} {TERMS.objectiveUnits}</p>
-		</details>
-		{#if bus}
-			<p>
-				<strong>Bus {bus.id}</strong>: total LMP {economicAmount(busPrice)}
-			</p>
-		{/if}
-		{#if branch}
-			<p><strong>Branch {branch.id}</strong>: {thermalStatus(branchResult)}</p>
-			<p>
-				<span title={TERMS.relief}>Marginal rating relief</span>
-				{economicAmount(branchResult?.relief_per_mw)}
-				{#if flow?.loading_info?.rating_source === 'synthesized'}
-					(synthesized solver bound){/if}
-			</p>
+	{#if !brief}
+		{#if bus || branch}
+			<dl class="pick">
+				{#if bus}
+					<div>
+						<dt>Bus {bus.id}</dt>
+						<dd>{economicAmount(busPrice)}</dd>
+					</div>
+				{/if}
+				{#if branch}
+					<div>
+						<dt>Line {branch.id}</dt>
+						<dd>{thermalStatus(branchResult)}</dd>
+					</div>
+					<div>
+						<dt>Value of rating</dt>
+						<dd>{economicAmount(branchResult?.relief_per_mw)} per MW</dd>
+					</div>
+				{/if}
+			</dl>
 		{/if}
 		{#if economics.thermalAvailable}
-			<p>
-				A <span class="accent">wide purple line</span> marks a
-				<span title={TERMS.binding}>binding</span> line limit with positive
-				<span title={TERMS.relief}>marginal relief</span>: increasing its rating can lower the
-				optimal cost.
-			</p>
 			<details>
-				<summary>Binding thermal limits ({economics.binding.length})</summary>
+				<summary
+					><i class="swatch binding" aria-hidden="true"></i>Lines at limit ({economics.binding
+						.length})</summary
+				>
 				{#if economics.binding.length}
-					<ol>
+					<div class="list-head" aria-hidden="true">
+						<span>Line</span><span>Value of rating</span>
+					</div>
+					<ol aria-label="Value of rating, {PRICE_UNIT} per MW">
 						{#each economics.binding.slice(0, limit) as row (row.branch)}
 							<li>
 								<button
@@ -147,43 +121,45 @@
 									onclick={() => onbranch(row.branch)}
 									{...preview(row.branch)}
 								>
-									<strong>Branch {row.branch}</strong>
-									<span title={TERMS.relief}
-										>{economicAmount(row.relief_per_mw)} marginal relief</span
-									>
+									<strong>Line {row.branch}</strong>
+									<span>{economicAmount(row.relief_per_mw)} per MW</span>
 								</button>
 							</li>
 						{/each}
 					</ol>
 					{#if economics.binding.length > limit}<button onclick={() => (limit += 12)}
-							>Show more thermal limits</button
+							>Show more</button
 						>{/if}
-				{:else}<p>No binding thermal limits in this result.</p>{/if}
+				{:else}<p class="dim">None</p>{/if}
 			</details>
-		{:else if isOpf(formulation)}
-			<p>Thermal enforcement and marginal relief unavailable for this result.</p>
 		{/if}
 		{#if economics.constraints.length}
 			<details>
-				<summary>Interface and linear constraints ({economics.constraints.length})</summary>
+				<summary>Constraints ({economics.constraints.length})</summary>
 				{#each economics.constraints as row (row.id)}
 					<details>
-						<summary
-							>{row.id}: {row.binding ? 'binding' : 'not binding'}, {economicAmount(
-								row.shadow_price
-							)}</summary
-						>
-						<p>
-							Enforced at {readable(row.value, 'MW').text}, lower bound {row.lower ?? 'none'}, upper
-							bound {row.upper ?? 'none'}.
-						</p>
-						<p>
-							Signed shadow price {economicAmount(row.shadow_price)}: the objective reduction for an
-							increase in the signed limit.
-						</p>
+						<summary>{row.id}{row.binding ? ', at limit' : ''}</summary>
+						<dl class="pick">
+							<div>
+								<dt>Value</dt>
+								<dd>{readable(row.value, 'MW').text}</dd>
+							</div>
+							<div>
+								<dt>Min</dt>
+								<dd>{row.lower ?? '—'}</dd>
+							</div>
+							<div>
+								<dt>Max</dt>
+								<dd>{row.upper ?? '—'}</dd>
+							</div>
+							<div>
+								<dt>Shadow price</dt>
+								<dd>{economicAmount(row.shadow_price)}</dd>
+							</div>
+						</dl>
 						{#each row.branches ?? [] as id (id)}
 							<button aria-pressed={id === branch?.id} onclick={() => onbranch(id)}
-								>Frame branch {id}</button
+								>Line {id}</button
 							>
 						{/each}
 					</details>
@@ -194,12 +170,6 @@
 </section>
 
 <style>
-	abbr,
-	[title] {
-		text-decoration: underline dotted;
-		text-underline-offset: 2px;
-		cursor: help;
-	}
 	.economics {
 		width: 100%;
 		min-width: 0;
@@ -215,23 +185,40 @@
 		gap: var(--space-2xs) var(--space-md);
 	}
 	.scale > span {
-		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
 		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 	}
 	strong {
 		color: var(--ink);
 	}
-	.accent {
-		color: var(--data-pos);
+	.swatch.binding {
+		display: inline-block;
+		width: 18px;
+		height: 4px;
+		margin-right: 6px;
+		vertical-align: middle;
+		background: var(--red);
 	}
-	.cheap {
-		color: #2166ac;
-		font-weight: 600;
+	.pick {
+		margin: var(--space-2xs) 0;
+		font-variant-numeric: tabular-nums;
 	}
-	.dear {
-		color: #9a5a2c;
-		font-weight: 600;
+	.pick div {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		padding: 2px 0;
+	}
+	dt {
+		color: var(--text-secondary);
+	}
+	dd {
+		margin: 0;
+		text-align: right;
+	}
+	.dim {
+		color: var(--text-secondary);
 	}
 	p {
 		margin: var(--space-2xs) 0;
@@ -253,27 +240,50 @@
 	}
 	ol {
 		margin: var(--space-2xs) 0;
-		padding-left: var(--space-3xl);
+		padding: 0;
+		list-style: none;
 	}
+	.list-head {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-lg);
+		padding: 0 var(--space-2xs) var(--space-3xs);
+		color: var(--text-secondary);
+	}
+	/* Plain rows with a rule between, as the Network panel lists lines. */
 	li {
-		padding: var(--space-3xs) 0;
+		padding: 0;
+		border-top: 1px solid var(--line);
 	}
 	li button {
 		width: 100%;
 		display: flex;
 		flex-wrap: wrap;
+		align-items: baseline;
 		gap: var(--space-2xs) var(--space-lg);
 		justify-content: space-between;
+		padding: var(--space-3xs) var(--space-2xs);
 		text-align: left;
+		font-size: var(--fs-data);
+		color: var(--ink);
+		background: none;
+		border: 0;
+		border-radius: 0;
+	}
+	li button:hover {
+		background: var(--surface-hover);
+	}
+	li button[aria-pressed='true'] {
+		background: var(--accent-soft);
+	}
+	li button > strong {
+		font-weight: 400;
 	}
 	li button span {
-		font-family: var(--font-mono);
-		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 	}
-	button,
-	select {
+	button {
 		padding: var(--space-2xs) var(--space-xs);
 		font: inherit;
 		color: var(--ink);

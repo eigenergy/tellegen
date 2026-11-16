@@ -66,7 +66,7 @@ const escapeXml = (v: string) =>
 const rgb = (c: ArrayLike<number>, i = 0) => `rgb(${c[i]} ${c[i + 1]} ${c[i + 2]})`;
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
-/** Fit a title-block line into its column; monospace makes character count a safe width proxy. */
+/** Fit a title-block line into its column; a monospace character width is a safe upper bound for Plex Sans. */
 export function fitText(text: string, px: number): string {
 	const n = Math.max(4, Math.floor((px - 24) / CHAR_PX));
 	return text.length > n ? `${text.slice(0, n - 1)}…` : text;
@@ -151,7 +151,7 @@ export function viewportSvg(view: SvgView): string {
 	];
 	const total = height + TITLE_BLOCK_HEIGHT;
 	return (
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${total}" viewBox="0 0 ${width} ${total}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11">` +
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${total}" viewBox="0 0 ${width} ${total}" font-family="IBM Plex Sans, system-ui, sans-serif" font-size="11">` +
 		`<style>path{fill:none;stroke-linecap:round}.muted{fill:${view.muted}}.strong{fill:${view.ink};font-size:12px;font-weight:600}</style>` +
 		`<rect width="${width}" height="${height}" fill="${view.background}"/>` +
 		`<g>${paths.join('')}</g><g>${dots.join('')}</g><g>${arrows.join('')}</g><g>${labels.join('')}</g>${block.join('')}</svg>`
@@ -178,13 +178,13 @@ export function titleBlock(t: {
 			t.dataset,
 			t.layout,
 			t.view,
-			`Centre ${t.camera.target[0].toFixed(1)}, ${t.camera.target[1].toFixed(1)} · ${(2 ** t.camera.zoom).toPrecision(3)}×`
+			`Centre ${t.camera.target[0].toFixed(1)}, ${t.camera.target[1].toFixed(1)}, zoom ${(2 ** t.camera.zoom).toPrecision(3)}×`
 		],
 		right: [
 			r?.kind === 'stress'
 				? 'ARTIFICIAL STRESS: NOT A SOLUTION'
 				: r
-					? `${r.label}${r.iterations === null ? '' : ` · ${r.iterations} iterations`}`
+					? `${r.label}${r.iterations === null ? '' : `, ${r.iterations} iterations`}`
 					: 'No result snapshot',
 			r ? `Result revision ${r.revision.slice(0, 16)}${r.revision.length > 16 ? '…' : ''}` : '',
 			'P/Q positive into equipment at each end',

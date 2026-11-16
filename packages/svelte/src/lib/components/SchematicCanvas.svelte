@@ -122,7 +122,7 @@
 		onselectbus: (id: string) => void;
 		onselectedge: (id: string) => void;
 		onclose: () => void;
-		/** The background map under geographic positions: the map's own basemap, light-themed. */
+		/** The background map under geographic positions: the map's own basemap, in its theme. */
 		basemap?: BasemapSpec;
 	} = $props();
 
@@ -280,7 +280,7 @@
 		})
 	);
 	const edgeMv = $derived(Uint8Array.from(edgeClass, (c) => (c === 'lv' ? 0 : 1)));
-	/** The levels in the drawing, per class, for the key: "MV · 11 kV". */
+	/** The levels in the drawing, per class, for the key: "MV 11 kV". */
 	const levelKey = $derived(
 		VOLTAGE_CLASSES.flatMap(({ cls, name }) => {
 			if (!zoneClass.includes(cls)) return [];
@@ -289,7 +289,7 @@
 					zoneVolts.flatMap((v, z) => (zoneClass[z] === cls && v !== null ? [levelLabel(v)] : []))
 				)
 			];
-			return [{ cls, label: levels.length ? `${name} · ${levels.slice(0, 3).join(', ')}` : name }];
+			return [{ cls, label: levels.length ? `${name} ${levels.slice(0, 3).join(', ')}` : name }];
 		})
 	);
 	/** Zoomed out, LV detail fades so the MV backbone, zone outlines and states read first. */
@@ -323,7 +323,7 @@
 				`${zone.buses.length} buses`,
 				...(minVolts === null ? [] : [`min ${quantity(minVolts, 'V')}`]),
 				...(maxLoading === null ? [] : [quantity(maxLoading, '%')])
-			].join(' · ');
+			].join(', ');
 			return {
 				z,
 				text,
@@ -1314,7 +1314,6 @@
 			<button
 				aria-pressed={layout === 'source'}
 				disabled={!source}
-				title={source ? 'Positions from the case data' : 'This case has no source positions'}
 				onclick={() => show('source', strategy)}
 				>{mc.coordsKind === 'geographic' ? 'Geographic' : 'Source positions'}</button
 			>
@@ -1323,7 +1322,7 @@
 			>
 		</div>
 		{#if layout === 'source' && mc.coordsKind === 'geographic'}
-			<label class="check" title="Map tiles under the geographic positions, as on the main map"
+			<label class="check"
 				><input
 					type="checkbox"
 					checked={basemapPref.value}
@@ -1331,7 +1330,7 @@
 				/> Basemap</label
 			>
 		{/if}
-		<label class="check" title="Hovering also traces the drawn path back to the source"
+		<label class="check"
 			><input
 				type="checkbox"
 				checked={pathPref.value}
@@ -1343,7 +1342,6 @@
 				<span class="sr-only">Schematic arrangement</span>
 				<select
 					value={strategy}
-					title="Tidy packs subtrees closely; leaf order gives every leaf its own row"
 					onchange={(e) => show('schematic', e.currentTarget.value as SchematicStrategy)}
 				>
 					<option value="tidy">Tidy</option>
@@ -1352,49 +1350,33 @@
 			</label>
 		{/if}
 		<label class="colour">
-			<span class="sr-only">Colour by</span>
-			<select
-				bind:value={colour}
-				disabled={!snapshot}
-				title={snapshot ? 'Colour by' : 'Run the power flow to colour by results'}
-			>
+			<span class="sr-only">Color by</span>
+			<select bind:value={colour} disabled={!snapshot}>
 				{#each Object.entries(COLOURS) as [value, label] (value)}<option {value}>{label}</option
 					>{/each}
 			</select>
 		</label>
 		<button onclick={() => setCamera(fitCamera(geometry))} title="Fit the drawing (F)">Fit</button>
-		{#if live.deadBuses}<span
-				class="note"
-				role="status"
-				title="Buses with no path to a source through closed branches are drawn faint"
-				>{live.deadBuses.toLocaleString()} bus{live.deadBuses === 1 ? '' : 'es'} not energized</span
+		{#if live.deadBuses}<span class="note" role="status"
+				>Not energized: {live.deadBuses.toLocaleString()}</span
 			>{/if}
-		{#if unplaced}<span
-				class="note"
-				role="status"
-				title="The case gives these buses no position; each is drawn next to a bus it connects to"
-				>{unplaced.toLocaleString()} bus{unplaced === 1 ? '' : 'es'} without a position</span
+		{#if unplaced}<span class="note" role="status">No position: {unplaced.toLocaleString()}</span
 			>{/if}
-		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
-		<button onclick={exportSvg} title="Vector SVG of the visible region with a title block"
-			>SVG</button
-		>
-		<button onclick={onclose} title="Return to the map">Close</button>
-		{#if layout === 'schematic'}<button
-				onclick={exportLayer}
-				title="Download this schematic as a PowerIO diagram layer (.geo.json) to reuse with the case"
-				>Layout</button
-			>{/if}
+		<button onclick={exportPng}>PNG</button>
+		<button onclick={exportSvg}>SVG</button>
+		<button onclick={onclose}>Close</button>
+		{#if layout === 'schematic'}<button onclick={exportLayer}>Layout</button>{/if}
 	</div>
 	{#if colour !== 'none' && snapshot}
 		<div class="legend" style:top="{panels.top + 50}px" style:left="{toolLeft}px">
 			{#if colour === 'loading-heat'}
 				Loading <span>0%</span><i style:background={priceGradient}></i><span>≥ 100%</span>
 			{:else}
-				Voltage <span>min</span><i style:background={sensGradient}></i><span>max</span> of each declared
-				band, worst pair
+				Voltage <span>min</span><i style:background={sensGradient}></i><span>max</span>
 			{/if}
-			· grey: no limit or rating{live.deadBuses ? ' · faint: not energized' : ''}
+			<span class="grey">Grey: no limit</span>{#if live.deadBuses}<span class="grey"
+					>Faint: not energized</span
+				>{/if}
 		</div>
 	{/if}
 	{#if colour === 'none' && zoomedOut && landmarkPool.length}
@@ -1440,7 +1422,6 @@
 						{/if}
 					{/each}
 				</ul>
-				<p class="hint">More appear as you zoom in.</p>
 			{/if}
 		</details>
 	{/if}
@@ -1476,7 +1457,7 @@
 								type="checkbox"
 								checked={separatePref.value}
 								onchange={(e) => separatePref.set(e.currentTarget.checked)}
-							/> Separate overlapping buses and lines</label
+							/> Spread overlaps</label
 						>
 					</li>
 				{/if}
@@ -1613,10 +1594,10 @@
 		gap: 6px;
 		align-items: center;
 		padding: 5px;
-		font-size: 11px;
+		font-size: 12px;
 		background: var(--surface-panel, var(--paper));
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	.toolbar button,
@@ -1625,7 +1606,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 4px 8px;
 		cursor: pointer;
 	}
@@ -1661,20 +1642,22 @@
 		gap: 6px;
 		align-items: center;
 		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 	}
 	.key {
 		position: absolute;
 		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-1);
 	}
 	.basemap {
@@ -1686,10 +1669,11 @@
 		position: absolute;
 		margin: 0;
 		padding: 1px 6px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: color-mix(in srgb, var(--paper) 80%, transparent);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		pointer-events: none;
 	}
 	.toolbar .check {
@@ -1703,9 +1687,6 @@
 		align-items: center;
 		margin-top: 4px;
 		color: var(--ink);
-	}
-	.key .hint {
-		margin: 2px 0 0;
 	}
 	.key summary {
 		cursor: pointer;
@@ -1736,11 +1717,15 @@
 	.symbols path.wire {
 		stroke: var(--text-secondary);
 	}
+	.legend .grey {
+		margin-left: 8px;
+		color: var(--text-secondary);
+	}
 	.legend i {
 		display: inline-block;
 		width: 90px;
 		height: 7px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 	}
 	.status {
 		position: absolute;

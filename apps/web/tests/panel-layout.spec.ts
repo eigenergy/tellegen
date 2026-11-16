@@ -7,14 +7,19 @@ async function box(locator: Locator) {
 	return value;
 }
 
-test('panels detach, resize, persist, redock and reset without leaving the viewport', async ({
+test('panels float, resize, persist, redock and reset without leaving the viewport', async ({
 	page
 }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const panel = page.locator('[data-panel="agent"]');
+	// Docked panels share the tab strip; a panel floats from its options menu.
+	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Agent panel options' }).click();
+	await page.getByRole('button', { name: 'Float over the map', exact: true }).click();
+	await expect(panel).toHaveClass(/floating/);
 	const handle = page.getByRole('button', { name: 'Move Agent panel', exact: true });
 	const start = await box(handle);
 	await page.mouse.move(start.x + 30, start.y + 10);
@@ -27,7 +32,7 @@ test('panels detach, resize, persist, redock and reset without leaving the viewp
 	await expect.poll(async () => (await box(panel)).width).toBeCloseTo(floated.width + 10);
 	const resized = await box(panel);
 	await page.reload();
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect.poll(async () => await box(panel)).toEqual(resized);
 	await page.setViewportSize({ width: 1024, height: 700 });
@@ -39,12 +44,19 @@ test('panels detach, resize, persist, redock and reset without leaving the viewp
 		expect(clamped.y + clamped.height).toBeLessThanOrEqual(612);
 	}).toPass();
 	await page.getByRole('button', { name: 'Agent panel options' }).click();
-	await page.getByRole('button', { name: 'Dock left', exact: true }).click();
-	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
-	await page.getByRole('button', { name: 'Reset layout', exact: true }).click();
+	await page.getByRole('button', { name: 'Dock right', exact: true }).click();
 	await expect(page.locator('[data-panel-dock="right"] [data-panel="agent"]')).toBeVisible();
-	await page.getByRole('button', { name: 'Move Agent panel', exact: true }).press('ArrowLeft');
+	// Reset layout lives in the header menu.
+	await page.locator('header').getByRole('button', { name: 'Menu', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Reset layout', exact: true }).click();
+	// Back in the left dock, behind the Network tab until its own tab is chosen.
+	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeAttached();
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
+	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Agent panel options' }).click();
+	await page.getByRole('button', { name: 'Float over the map', exact: true }).click();
 	await expect(panel).toHaveClass(/floating/);
+	await page.getByRole('button', { name: 'Move Agent panel', exact: true }).press('ArrowLeft');
 	await expect(page.getByRole('button', { name: 'Move Agent panel', exact: true })).toBeFocused();
 });
 
@@ -52,7 +64,7 @@ test('narrow screens show one drawer and keep panel controls reachable', async (
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	for (const title of ['Studies', 'Agent', 'Network']) {
 		await page.getByRole('button', { name: title, exact: true }).click();
 		await expect(page.locator('[data-panel]:visible')).toHaveCount(1);
@@ -61,7 +73,8 @@ test('narrow screens show one drawer and keep panel controls reachable', async (
 		const bounds = await box(active);
 		expect(bounds.x).toBeGreaterThanOrEqual(0);
 		expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-		expect(bounds.y + bounds.height).toBeLessThanOrEqual(756);
+		// The sheet runs to the bottom edge.
+		expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
 	}
 	await page.getByRole('button', { name: 'Close network panel' }).click();
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(0);
@@ -73,7 +86,7 @@ test('a panel opened from outside the toolbar hands focus back to that control',
 }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	// A host shell that hides the toolbar and opens panels from its own rail.
 	await page.locator('.panel-toolbar').evaluate((toolbar: HTMLElement) => {
 		toolbar.style.display = 'none';
@@ -94,7 +107,7 @@ test('a panel opened from outside the toolbar hands focus back to that control',
 test('a panel closed with no toolbar and no opener hands focus to its dock', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	// What `PanelHost showToolbar={false}` renders: no toolbar at all. The
 	// Network panel opened with the page, so no control opened it.
 	await page.locator('.panel-toolbar').evaluate((toolbar) => toolbar.remove());
@@ -105,7 +118,7 @@ test('a panel closed with no toolbar and no opener hands focus to its dock', asy
 test('panel content takes keyboard focus only while it overflows', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const content = page.locator('[data-panel="network"] .panel-content');
 	await expect(content).not.toHaveAttribute('tabindex');
 	const body = page.locator('#control-panel-body');
@@ -123,25 +136,31 @@ test('short desktop windows use one drawer without covering map controls', async
 	await page.setViewportSize({ width: 1280, height: 450 });
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(1);
 	const panel = page.locator('[data-panel="studies"]');
 	const bounds = await box(panel);
 	const toolbar = await box(page.locator('.panel-toolbar'));
-	expect(bounds.y).toBeGreaterThan(toolbar.y + toolbar.height + 40);
-	expect(bounds.y + bounds.height).toBeLessThanOrEqual(362);
+	// The tab strip sits on top of the drawer, which continues it.
+	expect(Math.abs(bounds.y - (toolbar.y + toolbar.height))).toBeLessThanOrEqual(1);
+	expect(bounds.y + bounds.height).toBeLessThanOrEqual(450);
 	// MapLibre adds the attribution control once the map loads, which can trail the panel.
+	// It sits on the map above the sheet, clear of the tab strip.
 	const credit = page.locator('.maplibregl-ctrl-attrib');
 	await expect(credit).toBeVisible();
-	const attribution = await box(credit);
-	expect(bounds.y + bounds.height).toBeLessThan(attribution.y);
+	await expect
+		.poll(async () => {
+			const attribution = await box(credit);
+			return attribution.y + attribution.height <= toolbar.y;
+		})
+		.toBe(true);
 });
 
 test('switching to a narrow window retains the most recently opened panel', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(1);

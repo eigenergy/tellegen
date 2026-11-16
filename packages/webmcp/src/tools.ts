@@ -447,7 +447,7 @@ export function createTellegenTools(
     ? [
         {
           name: "solve_multiconductor_pf",
-          title: "Solve multiconductor AC power flow",
+          title: "Solve distribution",
           description:
             "Calculate terminal voltages, currents, and powers for the displayed multiconductor case. Uses prescribed demand and source voltages. Rejects unsupported equipment physics. Does not optimize dispatch or change electrical inputs. Use query_network for terminal results.",
           inputSchema: objectSchema(
@@ -472,7 +472,7 @@ export function createTellegenTools(
           ),
           execute: tracked(
             "solve_multiconductor_pf",
-            "Solve multiconductor AC power flow",
+            "Solve distribution",
             validateSolveMulticonductor,
             (input, signal) =>
               adapter.solveMulticonductorPowerFlow!(input, signal),
@@ -486,7 +486,7 @@ export function createTellegenTools(
     inspect: "Inspect settings",
     update: "Update settings",
     reset: "Reset settings",
-    run: "Run selected calculation",
+    run: "Run calculation",
   } as const;
   const settingsTools: ToolSpec[] = adapter.settings
     ? (["inspect", "update", "reset", "run"] as const).map((action) => ({

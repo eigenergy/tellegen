@@ -14,7 +14,7 @@ it('display preference patches are atomic and storage errors retain current sess
 	expect(preferences.theme).toBeNull();
 	preferences.update({ theme: 'dark' });
 	expect(preferences.theme).toBe('dark');
-	expect(preferences.error).toContain('could not be saved');
+	expect(preferences.error).toBe('Display settings not saved');
 	preferences.reset();
 	expect(preferences.theme).toBeNull();
 });
@@ -25,7 +25,7 @@ it('a corrupt preference record does not partially change the defaults', () => {
 	} as unknown as Storage);
 	expect(preferences.theme).toBeNull();
 	expect(preferences.busSizing).toBe('power');
-	expect(preferences.error).toContain('could not be restored');
+	expect(preferences.error).toBe('Display settings reset');
 });
 
 it('saved settings read as overrides of the engine defaults, dropping options this engine lacks', () => {

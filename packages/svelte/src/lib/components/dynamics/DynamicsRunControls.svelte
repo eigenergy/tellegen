@@ -10,7 +10,8 @@
 
 	const ctrl = getController();
 	const dyn = ctrl.dynamics;
-	const ready = $derived(dyn.active?.status === 'ready');
+	/** A run needs dynamic data and at least one event: with none, nothing moves. */
+	const ready = $derived(dyn.active?.status === 'ready' && dyn.events.length > 0);
 	const o = $derived(dyn.options);
 	const pct = $derived(
 		dyn.progress ? Math.min(100, (100 * dyn.progress.t) / dyn.progress.tEnd) : 0
@@ -29,35 +30,39 @@
 	}
 
 	const LOADS: [LoadModel, string][] = [
-		['power_flow', 'As the power flow solved them'],
-		['constant_impedance', 'Constant impedance (Z)'],
-		['constant_current', 'Constant current (I)'],
-		['constant_power', 'Constant power (P)']
+		['power_flow', 'Power flow'],
+		['constant_impedance', 'Impedance (Z)'],
+		['constant_current', 'Current (I)'],
+		['constant_power', 'Power (P)']
 	];
 </script>
 
 <section aria-labelledby="dyn-run-h">
-	<h3 id="dyn-run-h">Run</h3>
-	<div class="grid">
-		<span class="lbl" id="dyn-dur">Duration</span>
-		<div class="chips" role="group" aria-labelledby="dyn-dur">
-			{#each DURATION_CHOICES as d (d)}
-				<button aria-pressed={dyn.tEnd === d} onclick={() => (dyn.tEnd = d)}>{d} s</button>
-			{/each}
+	<h3 id="dyn-run-h">Options</h3>
+	<div class="setting">
+		<label for="dyn-dur">Duration</label>
+		<span class="with-unit">
 			<input
+				id="dyn-dur"
 				type="number"
 				min="0.1"
 				max={MAX_DURATION}
 				step="1"
-				aria-label="Duration in seconds"
+				list="dyn-dur-choices"
 				value={dyn.tEnd}
 				onchange={(e) => {
 					const v = Number(e.currentTarget.value);
 					if (v > 0 && v <= MAX_DURATION) dyn.tEnd = v;
+					else e.currentTarget.value = String(dyn.tEnd);
 				}}
-			/>
-		</div>
-		<label class="lbl" for="dyn-step">Step</label>
+			/>s
+			<datalist id="dyn-dur-choices">
+				{#each DURATION_CHOICES as d (d)}<option value={d}></option>{/each}
+			</datalist>
+		</span>
+	</div>
+	<div class="setting">
+		<label for="dyn-step">Step</label>
 		<select
 			id="dyn-step"
 			value={String(dyn.dt)}
@@ -65,7 +70,9 @@
 		>
 			{#each STEP_CHOICES as s (s.dt)}<option value={String(s.dt)}>{s.label}</option>{/each}
 		</select>
-		<label class="lbl" for="dyn-load">Loads</label>
+	</div>
+	<div class="setting">
+		<label for="dyn-load">Loads</label>
 		<select
 			id="dyn-load"
 			value={o.load_model ?? 'power_flow'}
@@ -76,64 +83,70 @@
 	</div>
 	<details>
 		<summary>Advanced</summary>
-		<div class="adv">
-			<label
-				>Low-voltage load
-				<select
-					value={o.low_voltage_load?.kind ?? 'break'}
-					onchange={(e) =>
-						dyn.setOptions({
-							...o,
-							low_voltage_load:
-								e.currentTarget.value === 'exact'
-									? { kind: 'exact' }
-									: { kind: 'break', v_break: 0.7 }
-						})}
-					><option value="break">PQBRAK at 0.7 pu (PSS/E)</option><option value="exact"
-						>Exact law</option
-					></select
-				></label
+		<div class="setting">
+			<label for="dyn-lv">Low-voltage load</label>
+			<select
+				id="dyn-lv"
+				value={o.low_voltage_load?.kind ?? 'break'}
+				onchange={(e) =>
+					dyn.setOptions({
+						...o,
+						low_voltage_load:
+							e.currentTarget.value === 'exact'
+								? { kind: 'exact' }
+								: { kind: 'break', v_break: 0.7 }
+					})}><option value="break">PSS/E</option><option value="exact">Exact</option></select
 			>
-			<label class="check"
-				><input
-					type="checkbox"
-					checked={o.reactive_limits ?? true}
-					onchange={(e) => dyn.setOptions({ ...o, reactive_limits: e.currentTarget.checked })}
-				/> Reactive limits at initialization</label
-			>
-			<label class="check"
-				><input
-					type="checkbox"
-					checked={o.renewable_plants ?? true}
-					onchange={(e) => dyn.setOptions({ ...o, renewable_plants: e.currentTarget.checked })}
-				/> Simulate renewable plants (else held at power-flow output)</label
-			>
-			<fieldset>
-				<legend>Compare with PowerSimulationsDynamics.jl</legend>
-				<label class="check"
-					><input
-						type="checkbox"
-						checked={!!o.psid_lv_gain}
-						onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
-					/> Its renewable low-voltage current gain</label
-				>
-				<label class="check"
-					><input
-						type="checkbox"
-						checked={!!o.psid_converter_ramp}
-						onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
-					/> Its converter ramp limits</label
-				>
-				<label class="check"
-					><input
-						type="checkbox"
-						checked={!!o.psid_saturation}
-						onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
-					/> Its saturation below the knee</label
-				>
-			</fieldset>
+		</div>
+		<div class="setting">
+			<label for="dyn-qlim">Reactive limits</label>
+			<input
+				id="dyn-qlim"
+				type="checkbox"
+				checked={o.reactive_limits ?? true}
+				onchange={(e) => dyn.setOptions({ ...o, reactive_limits: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting">
+			<label for="dyn-ren">Simulate renewables</label>
+			<input
+				id="dyn-ren"
+				type="checkbox"
+				checked={o.renewable_plants ?? true}
+				onchange={(e) => dyn.setOptions({ ...o, renewable_plants: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting" title="As in PowerSimulationsDynamics">
+			<label for="dyn-lvg">Low-voltage current gain</label>
+			<input
+				id="dyn-lvg"
+				type="checkbox"
+				checked={!!o.psid_lv_gain}
+				onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting" title="As in PowerSimulationsDynamics">
+			<label for="dyn-ramp">Ramp limits</label>
+			<input
+				id="dyn-ramp"
+				type="checkbox"
+				checked={!!o.psid_converter_ramp}
+				onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
+			/>
+		</div>
+		<div class="setting" title="As in PowerSimulationsDynamics">
+			<label for="dyn-sat">Low saturation</label>
+			<input
+				id="dyn-sat"
+				type="checkbox"
+				checked={!!o.psid_saturation}
+				onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
+			/>
 		</div>
 	</details>
+</section>
+<!-- The Run button stays in view at the panel's bottom edge while the options above scroll. -->
+<div class="foot">
 	{#if dyn.running}
 		<div class="progress" role="status">
 			<div class="bar" style:width="{pct}%"></div>
@@ -145,15 +158,16 @@
 			class="run"
 			disabled={!ready || dyn.modesBusy}
 			onclick={() => void run()}
-			title={dyn.modesBusy ? 'Small-signal modes are being computed' : 'Ctrl/Cmd+Enter'}
-			>Run {dyn.tEnd} s simulation</button
+			title={dyn.modesBusy
+				? 'Modes running'
+				: dyn.events.length === 0
+					? 'Choose an event'
+					: 'Ctrl/Cmd+Enter'}>Run simulation</button
 		>
-		{#if dyn.modesBusy}<p class="dim">
-				Small-signal modes are being computed; stop them on the Modes tab to run now.
-			</p>{/if}
+		{#if dyn.modesBusy}<p class="dim">Modes running</p>{/if}
 	{/if}
 	{#if dyn.error}<p class="err" role="alert">{dyn.error}</p>{/if}
-</section>
+</div>
 
 <svelte:window
 	onkeydown={(e) => {
@@ -165,88 +179,31 @@
 />
 
 <style>
-	h3 {
-		margin: 0 0 6px;
-		font-size: var(--fs-heading);
-	}
-	.grid {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 6px 10px;
-		align-items: center;
-		font-size: var(--fs-label);
-	}
-	.lbl {
-		color: var(--text-secondary);
-	}
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-	}
-	.chips button {
-		padding: 2px 8px;
-		border: 1px solid var(--border-default);
-		border-radius: 10px;
-		background: var(--surface-chip);
-		color: var(--ink);
-		font: inherit;
-		cursor: pointer;
-	}
-	.chips button[aria-pressed='true'] {
-		border-color: var(--accent);
-		box-shadow: var(--inset-active);
-	}
-	.chips input {
-		width: 4.2em;
-	}
-	select,
-	input {
-		padding: 3px 5px;
-		border: 1px solid var(--line);
-		border-radius: 4px;
-		background: var(--surface-control);
-		color: var(--ink);
-		font: inherit;
-	}
-	details {
-		margin: 8px 0;
-		font-size: var(--fs-label);
-	}
-	.adv {
-		display: grid;
-		gap: 6px;
-		margin-top: 6px;
-	}
-	.adv label {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		justify-content: space-between;
-	}
-	.adv label.check {
-		justify-content: flex-start;
-	}
-	fieldset {
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		display: grid;
-		gap: 4px;
+	/* Above the panel's scroll fade, on the panel's own fill. */
+	.foot {
+		position: sticky;
+		bottom: 0;
+		z-index: 1;
+		margin: -4px 0 0;
+		padding: 8px 0;
+		background: var(--panel);
 	}
 	.run {
 		width: 100%;
 		min-height: 36px;
-		margin-top: 6px;
-		border: 1px solid var(--accent);
+		border: 1px solid var(--accent-fill);
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--paper);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
 	}
+	/* Disabled is a flat grey fill with no border, unlike any enabled button. */
 	.run:disabled {
-		opacity: 0.5;
+		border-color: transparent;
+		background: var(--surface-hover);
+		color: var(--text-tertiary);
 		cursor: not-allowed;
 	}
 	.progress {
@@ -255,7 +212,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-		margin-top: 6px;
 		padding: 6px 8px;
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);

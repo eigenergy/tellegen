@@ -4,14 +4,14 @@
 	const SIZE_SAMPLES = [10, 100, 500];
 </script>
 
+<p class="caption">Bus size (MW)</p>
 <div class="sizes">
 	{#each SIZE_SAMPLES as mw (mw)}
-		<span class="size mono">
+		<span class="size">
 			<i style:width="{2 * busRadius(mw)}px" style:height="{2 * busRadius(mw)}px"></i>
 			{mw}
 		</span>
 	{/each}
-	<span class="dim caption">MW of load or generation, whichever is larger</span>
 </div>
 
 <style>
@@ -32,24 +32,14 @@
 	.size i {
 		display: inline-block;
 		border-radius: 50%;
-		background: rgba(212, 116, 34, 0.55);
-		border: 1px solid rgba(46, 42, 34, 0.45);
+		background: rgb(var(--ink-rgb) / 0.12);
+		border: 1px solid rgb(var(--ink-rgb) / 0.45);
 	}
 
 	.caption {
-		margin-left: auto;
+		margin: 0 0 6px;
 		font-size: 12px;
-	}
-
-	@media (max-width: 760px) {
-		.sizes {
-			flex-wrap: wrap;
-			gap: 8px 12px;
-		}
-
-		.caption {
-			margin-left: 0;
-			flex-basis: 100%;
-		}
+		font-weight: 600;
+		color: var(--ink);
 	}
 </style>

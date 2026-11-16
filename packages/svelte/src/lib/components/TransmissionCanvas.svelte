@@ -3,7 +3,14 @@
 	import { tick, untrack } from 'svelte';
 	import { txSchematicLayout } from '@tellegen/engine';
 	import type { Network, Solution } from '../api.js';
-	import { demandColor, priceColor, priceGradient, scalarDomain, type RGBA } from '../colors.js';
+	import {
+		demandColor,
+		priceColor,
+		priceGradient,
+		scalarColor,
+		scalarDomain,
+		type RGBA
+	} from '../colors.js';
 	import {
 		assessLoading,
 		assessVoltage,
@@ -26,7 +33,10 @@
 		voltageGradient,
 		VOLTAGE_DOMAIN
 	} from '../diagram/transmission-results.js';
-	import { getAppState, getController } from '../context.svelte.js';
+	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
+	import { docsLink } from '../diagram/transmission-explain.js';
+	import { displayFmt, extent, formulationLabel } from '../format.js';
+	import { limitWords } from '../diagram/verdict.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { basemapCredit, type BasemapSpec } from '../basemap.js';
@@ -81,6 +91,7 @@
 	import type { DeckKit } from './schematic/layers.js';
 	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
+	import StatBoxes from './StatBoxes.svelte';
 	import TxResultInspection from './schematic/TxResultInspection.svelte';
 	import TxEquipmentPanel from './schematic/TxEquipmentPanel.svelte';
 	import { equipmentDrawing, equipmentItems } from '../diagram/transmission-equipment.js';
@@ -143,7 +154,7 @@
 		/** The geographic view on screen, as a map camera, so the map can continue from it when the
 		 * diagram closes. */
 		ongeoview?: (view: CameraSnapshot) => void;
-		/** The background map under geographic positions: the map's own basemap, light-themed. */
+		/** The background map under geographic positions: the map's own basemap, in its theme. */
 		basemap?: BasemapSpec;
 	} = $props();
 
@@ -175,20 +186,28 @@
 	);
 	let gauges = $state.raw<OperatingGauge[]>([]);
 	const formulation = $derived(ctrl.activeFormulation);
+	/** The active case's last solve ended without a result. An unrelated error elsewhere in
+	 * the app does not make this result out of date. */
+	const solveFailed = $derived.by(() => {
+		const active = ctrl.activeSolvable;
+		return !!active && !active.solving && active.solveBackend !== null && active.solveMs == null;
+	});
 	const resultContext = $derived(
-		operatingContext(formulation, solution, !!ctrl.activeSolvable?.solving, !!app.error)
+		operatingContext(formulation, solution, !!ctrl.activeSolvable?.solving, solveFailed)
 	);
 	const operatingOn = $derived(colour === 'operating');
 	const economicsOn = $derived(colour === 'economics');
 	/** Operating limits with solved voltage magnitudes (AC). */
 	const voltageView = $derived(operatingOn && resultContext.voltage);
 	const economics = $derived(economicsFor(solution, formulation));
-	let priceScale = $state(0);
+	/** -1 fits the price scale to the prices, as the Network panel's legend does. */
+	let priceScale = $state(-1);
 	const transferOn = $derived(colour === 'transfer');
 	/** A view with its own results panel (key, settings and lists). */
 	const panelView = $derived(operatingOn || economicsOn || transferOn);
+	const uiConfig = getUiConfig();
 	/** The calculation's name as the export title block reads it. */
-	const calculationName = $derived(`${formulation}${resultContext.relaxed ? ' relaxation' : ''}`);
+	const calculationName = $derived(formulationLabel(formulation));
 	let transferScale = $state(500);
 	const dcTransfer = $derived(!resultContext.voltage);
 	const transferSolution = $derived(resultContext.current);
@@ -319,6 +338,12 @@
 		});
 		return index;
 	});
+	/** A substation's name, or the bus it stands for when it has none. */
+	function stationName(station: { name?: string | null; key: string }): string {
+		if (station.name) return station.name;
+		const bus = /^bus:(\d+)$/.exec(station.key)?.[1];
+		return bus ? `Bus ${bus}` : station.key;
+	}
 	const activeStation = $derived.by(() => {
 		if (!voltageView) return null;
 		const index =
@@ -330,7 +355,7 @@
 		return index < 0
 			? null
 			: {
-					name: graph.substations[index].name ?? graph.substations[index].key,
+					name: stationName(graph.substations[index]),
 					...stationSummaries[index]
 				};
 	});
@@ -351,7 +376,7 @@
 				: [];
 		});
 	});
-	let status = $state<string | null>('Loading the diagram renderer…');
+	let status = $state<string | null>('Loading…');
 	let hoveredBus = $state(-1);
 	let hoveredEdge = $state(-1);
 	/** Equipment hovered or focused in a result list: highlighted on the diagram. */
@@ -397,7 +422,6 @@
 
 	const basemapPref = new StoredFlag('tellegen.schematic.basemap', ['on', 'off'], true);
 	const landmarksPref = new StoredFlag('tellegen.schematic.landmarks', ['on', 'off'], true);
-	const keyPref = new StoredFlag('tellegen.schematic.key', ['open', 'closed'], true);
 	const fieldPref = new StoredFlag('tellegen.transmission.field', ['on', 'off'], true);
 	const underlay = new BasemapUnderlay(() => ({
 		wanted: basemapPref.value && geographic && !!geometry.mercatorOrigin,
@@ -414,9 +438,9 @@
 			? resultContext.voltage
 				? {
 						mode: 'voltage' as const,
-						label: '|V|',
+						label: 'Voltage',
 						unit: 'pu',
-						copy: 'Voltage magnitude',
+						copy: 'Voltage',
 						gradient: voltageGradient,
 						values: [...solvedVoltages].map(([bus, value]) => ({ bus, value }))
 					}
@@ -424,9 +448,9 @@
 			: economicsOn
 				? {
 						mode: 'price' as const,
-						label: 'Total LMP',
+						label: 'Price',
 						unit: PRICE_UNIT,
-						copy: 'Total locational marginal price',
+						copy: 'Price',
 						gradient: priceGradient,
 						values: economics.prices
 					}
@@ -436,9 +460,29 @@
 	);
 	const resultsOn = $derived(colour !== 'level' && !!solution);
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
+	/** The Bus values view's key numbers: the lowest and highest value, as the other views lead
+	 * with two numbers. */
+	const valueExtent = $derived.by(() => {
+		const values = (display?.values ?? []).map((v) => v.value).filter(Number.isFinite);
+		return values.length ? extent(values) : null;
+	});
+	const valueStats = $derived.by(() => {
+		if (!display || !valueExtent) return [];
+		const { min, max } = valueExtent;
+		const box = (label: string, value: number) => ({
+			label,
+			value: displayFmt(display.mode, value),
+			sub: display.unit
+		});
+		return uniform !== null
+			? [box(display.label, uniform)]
+			: [box('Lowest', min), box('Highest', max)];
+	});
 	const domain = $derived(
 		economicsOn
-			? PRICE_SCALES[priceScale]
+			? priceScale < 0
+				? scalarDomain('price', economics.prices.map((v) => v.value).filter(Number.isFinite))
+				: PRICE_SCALES[priceScale]
 			: display?.mode === 'voltage'
 				? VOLTAGE_DOMAIN
 				: display
@@ -492,7 +536,7 @@
 					? [120, 116, 108, 200]
 					: economicsOn
 						? marginal
-							? [118, 42, 131, 250]
+							? [215, 38, 30, 250]
 							: [150, 146, 137, 150]
 						: f
 							? operatingLoadingColor(state)
@@ -504,10 +548,10 @@
 			if (economicsOn) {
 				widths[k] = marginal ? Math.max(5, level.widths[k] + 2) : quiet(k);
 				if (marginal) raised[k] = 1;
-			} else if (f && state === 'violation') {
+			} else if (f && (state === 'violation' || state === 'at-limit')) {
 				widths[k] = Math.max(6, level.widths[k] + 3);
 				raised[k] = 1;
-			} else if (f && (state === 'warning' || state === 'at-limit')) {
+			} else if (f && state === 'warning') {
 				widths[k] = Math.max(4.5, level.widths[k] + 1.5);
 				raised[k] = 1;
 			} else widths[k] = quiet(k);
@@ -528,10 +572,11 @@
 					display.mode === 'voltage'
 						? operatingVoltageColor(v, network.buses[i], deenergized.has(graph.busId[i]))
 						: v === undefined
-							? [180, 175, 165, 200]
+							? [172, 179, 188, 200]
 							: uniform !== null
 								? UNIFORM_INK
-								: (display.mode === 'demand' ? demandColor : priceColor)(
+								: scalarColor(
+										display.mode,
 										(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
 									);
 			}
@@ -575,7 +620,17 @@
 			if (priceCentre === null) return null;
 			const spread = priceSpread(values, priceCentre);
 			for (let i = 0; i < n; i++) values[i] -= priceCentre;
-			colourOf = (v: number) => priceFieldColour(v, spread, 130 * fade);
+			// The hue comes from the price ramp the buses and the legend use; the deviation from
+			// the median only sets how strong the shading is.
+			const centre = priceCentre;
+			const lo = domain?.lo ?? centre - spread;
+			const span = Math.max((domain?.hi ?? centre + spread) - lo, 1e-12);
+			colourOf = (v: number) => {
+				const strength = priceFieldColour(v, spread, 130 * fade);
+				if (!strength) return null;
+				const [r, g, b] = scalarColor('price', Math.min(1, Math.max(0, (v + centre - lo) / span)));
+				return [r, g, b, strength[3]];
+			};
 		}
 		const image = fieldImage(geometry.positions, values, colourOf, {
 			reach: typical * 1.4,
@@ -697,10 +752,11 @@
 		);
 		return edges.length ? { edges, dir, unit: 5 / 2 ** stepZoom } : null;
 	});
+	/** A line's label state: at its limit is red, as the line is drawn. */
 	const branchState = (k: number): 'normal' | 'warning' | 'violation' | null => {
 		const state = loadingStates[k];
 		return state === 'at-limit'
-			? 'warning'
+			? 'violation'
 			: state === 'violation' || state === 'warning' || state === 'normal'
 				? state
 				: null;
@@ -717,15 +773,39 @@
 	const outOfService = $derived(graph.inService.some((on) => !on));
 	const TIER_NAMES = Object.fromEntries(TX_TIERS.map((t) => [t.tier, t.name]));
 
-	/** Screen insets no panel or toolbar covers. */
+	/** Width of the summary docked at the right edge on a wide screen, beside the drawing. */
+	const SUMMARY_WIDTH = 340;
+	const summaryShown = $derived((colour !== 'level' || levelsPresent.length > 0) && !equipmentOpen);
+	/** The toolbar's width on one wide screen: two rows of views and drawing controls. */
+	const TOOLBAR_WIDTH = 600;
+	/** The width between the left and right docks. */
+	const freeWidth = $derived(
+		width -
+			(panels.dockWidth('left') + 24) -
+			(panels.dockWidth('right') ? panels.dockWidth('right') + 24 : 12)
+	);
+	/** The summary docks at the right edge when the toolbar still fits beside it; between two
+	 * open panels it sits under the toolbar instead. */
+	const summaryDocked = $derived(
+		!panels.compact && summaryShown && freeWidth >= TOOLBAR_WIDTH + SUMMARY_WIDTH + 16
+	);
+	/** On a wide screen, an undocked summary sits under the toolbar at the left. */
+	const summaryBelow = $derived(!panels.compact && summaryShown && !summaryDocked);
+	/** Screen insets no panel, toolbar or summary covers. */
 	const freeArea = () =>
 		freeInsets({
 			compact: panels.compact,
 			top:
 				panels.top +
 				Math.max(0, toolbarHeight - 48) +
-				(resultsOn || economicsOn || transferOn ? legendHeight + 8 : 0),
-			dockWidth: (side) => panels.dockWidth(side),
+				((panels.compact && (resultsOn || economicsOn || transferOn)) || summaryBelow
+					? legendHeight + 8
+					: 0),
+			dockWidth: (side) =>
+				panels.dockWidth(side) +
+				(side === 'right' && summaryDocked
+					? SUMMARY_WIDTH + (panels.dockWidth('right') ? 16 : 0)
+					: 0),
 			sheetInset: app.sheetInset
 		});
 	/** The deepest zoom for this drawing, whatever its units (see `maxZoomFor`). */
@@ -864,9 +944,9 @@
 			const generation = transferSolution ? dispatch.get(bus.id) : undefined;
 			const demand = modelDemand(bus, caseDemandDeltas);
 			const parts = [];
-			if (generation !== undefined) parts.push(`Gen ${generation.toFixed(1)} MW`);
+			if (generation !== undefined) parts.push(`Generation ${generation.toFixed(1)} MW`);
 			if (demand !== 0) parts.push(`Load ${demand.toFixed(1)} MW`);
-			return parts.length ? { label: 'Power', text: parts.join(' · ') } : null;
+			return parts.length ? { label: 'Power', text: parts.join(', ') } : null;
 		}
 		if (!display) return null;
 		const v = busValues.get(graph.busId[i]);
@@ -888,7 +968,7 @@
 		const name = (i: number) =>
 			internalStarRows.has(i)
 				? `Analysis star ${network.buses[i].id}`
-				: (network.buses[i].name ?? `bus ${network.buses[i].id}`);
+				: (network.buses[i].name ?? `Bus ${network.buses[i].id}`);
 		const candidates: (LabelCandidate & { position: [number, number] })[] = [];
 		const at = (i: number): [number, number] => [
 			geometry.positions[i * 3],
@@ -898,7 +978,7 @@
 			const p = at(selectedBus);
 			const v = resultsOn ? valueText(selectedBus) : null;
 			candidates.push({
-				text: v ? `${name(selectedBus)} · ${v.text}` : name(selectedBus),
+				text: v ? `${name(selectedBus)}  ${v.text}` : name(selectedBus),
 				state: 'normal',
 				priority: 1e9,
 				screen: screen(...p),
@@ -914,7 +994,7 @@
 				if (!inView(sp)) continue;
 				const transfer = transferOn ? valueText(i) : null;
 				candidates.push({
-					text: transfer ? `${name(i)} · ${transfer.text}` : name(i),
+					text: transfer ? `${name(i)}  ${transfer.text}` : name(i),
 					state: 'normal',
 					priority: graph.kv[i],
 					screen: sp,
@@ -950,7 +1030,7 @@
 					const level = graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : '';
 					if (!level && !transfer) continue;
 					candidates.push({
-						text: transfer ? [level, transfer.text].filter(Boolean).join(' · ') : level,
+						text: transfer ? [level, transfer.text].filter(Boolean).join(', ') : level,
 						state: 'normal',
 						priority: -1,
 						screen: sp,
@@ -974,8 +1054,9 @@
 				const a = { x: anchors[k * 4], y: anchors[k * 4 + 1] };
 				const sp = screen(a.x, a.y);
 				if (!inView(sp)) return;
+				// Named, so a loading tag beside a bus is not read as that bus's value.
 				candidates.push({
-					text: `${(f.loading * 100).toFixed(0)} %`,
+					text: `Line ${br.id}  ${(f.loading * 100).toFixed(0)}%`,
 					state,
 					priority: 1000 + f.loading,
 					screen: sp,
@@ -990,7 +1071,7 @@
 					v = solvedVoltages.get(graph.busId[i]);
 				if (!inView(screen(...p))) continue;
 				candidates.push({
-					text: `${marker.kind === 'low' ? '↓' : marker.kind === 'high' ? '↑' : '×'} bus ${graph.busId[i]}${v !== undefined ? ` · ${v.toFixed(4)} pu` : ''}`,
+					text: `Bus ${graph.busId[i]}  ${marker.kind === 'deenergized' ? 'De-energized' : v !== undefined ? `${v.toFixed(3)} pu` : marker.kind}`,
 					state: marker.kind === 'deenergized' ? 'normal' : 'violation',
 					priority: 1e6,
 					screen: screen(...p),
@@ -1004,7 +1085,7 @@
 			if (inView(sp)) {
 				const magnitude = transferReadings[edge].magnitude;
 				candidates.push({
-					text: magnitude === undefined ? 'Active flow unavailable' : `${magnitude.toFixed(1)} MW`,
+					text: magnitude === undefined ? '—' : `${magnitude.toFixed(1)} MW`,
 					state: 'normal',
 					priority: 1e9,
 					screen: sp,
@@ -1030,14 +1111,31 @@
 			});
 		};
 		const isPointed = (edge: number) => edge === selectedEdge || edge === hoveredEdge;
+		// Gauges mark the flagged lines, the same set the panel counts; any other line shows its
+		// gauge only while selected or hovered.
 		for (const edge of gaugePool.busy) {
 			const selected = isPointed(edge);
-			if (!selected && loadingStates[edge] === 'normal' && !symbolsOn) continue;
+			if (!selected && loadingStates[edge] === 'normal') continue;
 			addGauge(edge, selected);
 		}
 		// A quiet branch shows its gauge only while selected or hovered.
 		for (const edge of new Set([selectedEdge, hoveredEdge]))
 			if (edge >= 0 && gaugePool.quiet.has(edge)) addGauge(edge, true);
+		if (!symbolsOn && landmarksPref.value && landmarkPool.length) {
+			const placed = placeLandmarks(landmarkPool, screen, { width, height });
+			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
+		} else marks = null;
+		// Gauges stay clear of the generator and transformer symbols, and of the value labels,
+		// where they can. A label is a row of points along its text (11px type, offset 6, -5).
+		const obstacles: (readonly [number, number])[] = (marks?.placed ?? []).map((m) =>
+			screen(m.x, m.y)
+		);
+		for (const label of labels) {
+			const [lx, ly] = label.screen;
+			const end = lx + 6 + label.text.length * 6;
+			for (let x = lx + 6; x <= end; x += 16) obstacles.push([x, ly - 11]);
+			obstacles.push([end, ly - 11]);
+		}
 		gauges = placeOperatingGauges(
 			gaugeCandidates,
 			{
@@ -1046,13 +1144,9 @@
 				right: width - inset.right,
 				bottom: height - inset.bottom
 			},
-			panels.compact ? 10 : 32
+			panels.compact ? 10 : 32,
+			obstacles
 		);
-
-		if (!symbolsOn && landmarksPref.value && landmarkPool.length) {
-			const placed = placeLandmarks(landmarkPool, screen, { width, height });
-			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
-		} else marks = null;
 	}
 
 	/** The bus row or branch a deck.gl pick stands for, from whichever layer was hit; -1 for
@@ -1155,10 +1249,10 @@
 				});
 				status = null;
 			})
-			.catch(
-				(e: unknown) =>
-					(status = `The diagram could not load: ${e instanceof Error ? e.message : e}`)
-			);
+			.catch((e: unknown) => {
+				console.error(e);
+				status = 'Diagram failed';
+			});
 		return () => {
 			cancelled = true;
 		};
@@ -1191,7 +1285,7 @@
 	async function show(next: Layout) {
 		const seq = ++showSeq;
 		const slow = setTimeout(() => {
-			if (seq === showSeq) status = 'Laying out the substations…';
+			if (seq === showSeq) status = 'Laying out…';
 		}, 150);
 		let drawing: {
 			geometry: SchematicGeometry;
@@ -1200,7 +1294,8 @@
 		try {
 			drawing = await target(next);
 		} catch (e) {
-			status = `The substations could not be laid out: ${e instanceof Error ? e.message : e}`;
+			console.error(e);
+			status = 'Layout failed';
 			return;
 		} finally {
 			clearTimeout(slow);
@@ -1317,6 +1412,20 @@
 		});
 	});
 
+	// The summary moves between the right edge and the space under the toolbar as side panels
+	// open and close; it then covers a different part of the drawing, so the drawing refits to
+	// the area left free (after a frame, once the summary's new height is measured).
+	let summaryWasBelow: boolean | null = null;
+	$effect(() => {
+		const below = summaryBelow;
+		if (!deck) return;
+		const changed = summaryWasBelow !== null && summaryWasBelow !== below;
+		summaryWasBelow = below;
+		if (!changed) return;
+		const frame = requestAnimationFrame(() => untrack(() => setCamera(fitAll())));
+		return () => cancelAnimationFrame(frame);
+	});
+
 	// Record the geographic view on the app, so the map continues from it when this closes.
 	$effect(() => {
 		const origin = geometry.mercatorOrigin;
@@ -1411,32 +1520,12 @@
 	}
 
 	/** The diagram's views, always visible so users can see what the diagram offers. */
-	const VIEWS: { value: Colour; label: string; hint: string }[] = [
-		{
-			value: 'level',
-			label: 'Voltage levels',
-			hint: 'Nominal voltage of each line and busbar; no results needed'
-		},
-		{
-			value: 'operating',
-			label: 'Operating limits',
-			hint: 'Branch loading against ratings and bus voltage against limits'
-		},
-		{
-			value: 'economics',
-			label: 'OPF economics',
-			hint: 'Locational marginal prices and binding thermal limits from an OPF'
-		},
-		{
-			value: 'transfer',
-			label: 'Power transfers',
-			hint: 'Active power flow: line width by MW, chevrons for direction'
-		},
-		{
-			value: 'results',
-			label: 'Map display',
-			hint: "The map's own display series on the buses (LMP, angle, voltage or demand)"
-		}
+	const VIEWS: { value: Colour; label: string }[] = [
+		{ value: 'level', label: 'Voltage' },
+		{ value: 'operating', label: 'Limits' },
+		{ value: 'economics', label: 'Prices' },
+		{ value: 'transfer', label: 'Flows' },
+		{ value: 'results', label: 'Bus values' }
 	];
 	/** Arrow keys move between views, as in any radio group. */
 	function viewKey(e: KeyboardEvent) {
@@ -1458,11 +1547,7 @@
 	}
 	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
 	const layoutName = $derived(
-		layout === 'schematic'
-			? `Substation schematic (${network.synthetic_coords ? 'laid out by connection' : `seeded by ${geographic ? 'geography' : 'the drawing'}`})`
-			: geographic
-				? 'Geographic positions (Web Mercator)'
-				: 'Drawing positions'
+		layout === 'schematic' ? 'Schematic' : geographic ? 'Geographic' : 'Drawing'
 	);
 	async function exportPng() {
 		if (!deck || !canvas) return;
@@ -1470,14 +1555,14 @@
 			dataset: label,
 			layout: layoutName,
 			view: operatingOn
-				? `Operating limits · ${resultContext.freshness} · ${calculationName}`
+				? `Limits, ${calculationName}`
 				: economicsOn
-					? `OPF economics · ${calculationName} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
+					? `Prices, ${calculationName}`
 					: transferOn
-						? `Power transfers · ${calculationName}`
+						? `Flows, ${calculationName}`
 						: resultsOn
-							? `Buses: ${display?.copy ?? 'results'} · branches: loading`
-							: 'Voltage levels',
+							? `${display?.copy ?? 'Bus values'}, ${calculationName}`
+							: 'Voltage',
 			camera,
 			result: solution
 				? {
@@ -1502,12 +1587,8 @@
 		ctx.globalAlpha = resultContext.stale ? 0.4 : 1;
 		for (const gauge of gauges) {
 			const { x, y } = gauge;
-			const over = gauge.state === 'violation';
-			const colour = over
-				? '#be2024'
-				: gauge.state === 'warning' || gauge.state === 'at-limit'
-					? '#925b05'
-					: '#252525';
+			const over = gauge.state === 'violation' || gauge.state === 'at-limit';
+			const colour = over ? '#d7261e' : gauge.state === 'warning' ? '#e3a008' : '#4a5563';
 			const [lx, ly] = gaugeLeader(gauge);
 			ctx.strokeStyle = colour;
 			ctx.lineWidth = 1.2;
@@ -1519,53 +1600,25 @@
 			ctx.beginPath();
 			ctx.arc(gauge.ax, gauge.ay, 2.5, 0, 2 * Math.PI);
 			ctx.fill();
-			ctx.fillStyle = over ? '#be2024' : '#fcfbf7';
+			ctx.fillStyle = over ? '#d7261e' : '#ffffff';
 			ctx.fillRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
-			ctx.lineWidth = gauge.state === 'at-limit' ? 2 : 1;
+			ctx.lineWidth = 1;
 			ctx.strokeRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
-			ctx.font = '10px "IBM Plex Mono", monospace';
+			ctx.font = `${over ? '600 ' : ''}12px "IBM Plex Sans", sans-serif`;
 			ctx.textAlign = 'center';
-			ctx.fillStyle = over ? '#ffffff' : colour;
-			ctx.fillText(gaugeText(gauge.loading), x + 32, y + 20);
-			ctx.strokeStyle = over ? '#f2b8b5' : '#c9c4ba';
-			ctx.lineWidth = 3;
-			ctx.beginPath();
-			ctx.moveTo(x + 10, y + 31);
-			ctx.lineTo(x + 54, y + 31);
-			ctx.stroke();
-			ctx.strokeStyle = over ? '#ffffff' : colour;
-			ctx.beginPath();
-			ctx.moveTo(x + 10, y + 31);
-			ctx.lineTo(x + 10 + (Math.min(1.25, gauge.loading) / 1.25) * 44, y + 31);
-			ctx.stroke();
-			ctx.strokeStyle = over ? '#ffffff' : '#252525';
-			ctx.lineWidth = 1.5;
-			ctx.beginPath();
-			ctx.moveTo(x + 45.2, y + 27);
-			ctx.lineTo(x + 45.2, y + 35);
-			ctx.stroke();
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = over ? '#ffffff' : gauge.state === 'warning' ? '#8a5a00' : '#18202b';
+			ctx.fillText(gaugeText(gauge.loading), x + GAUGE_WIDTH / 2, y + GAUGE_HEIGHT / 2);
 		}
 		ctx.restore();
-		const context = `${calculationName} · ${resultContext.freshness} · ${resultContext.status} · base case`;
 		const lines = transferOn
-			? [
-					`Power transfers · ${context}`,
-					`Blue line width: 0–${transferScale} MW · Largest reported endpoint |P|`,
-					'Chevrons show direction · Red gauges show overload in percent of rating'
-				]
+			? [`Flows, ${calculationName}`, `Width 0 to ${transferScale} MW`]
 			: [
-					`Operating limits · ${context}`,
-					resultContext.voltage
-						? 'Voltage 0.90–1.10 pu · ↓ below / ↑ above case limits'
-						: 'DC: voltage magnitude not solved',
-					`Loading ${resultContext.basis} · warning ${warningPref.value}% · tick 100% · red: overload`,
-					...(activeStation
-						? [
-								`Station ${activeStation.name}: ${activeStation.min?.value.toFixed(4) ?? 'unknown'}–${activeStation.max?.value.toFixed(4) ?? 'unknown'} pu${activeStation.worst ? ` · worst bus ${activeStation.worst.bus}` : ''}`
-							]
-						: [])
+					`Limits, ${calculationName}`,
+					...(resultContext.voltage ? ['Voltage 0.90 to 1.10 pu'] : []),
+					`Loading: amber from ${warningPref.value}%, red at 100%`
 				];
-		ctx.font = '11px "IBM Plex Mono", monospace';
+		ctx.font = '12px "IBM Plex Sans", sans-serif';
 		const wrapped: string[] = [];
 		for (const line of lines) {
 			let current = '';
@@ -1587,13 +1640,10 @@
 		if (!voltageView) return '';
 		const s = stationSummaries[graph.substation[i]];
 		return [
-			s.min && s.max
-				? `Station range ${s.min.value.toFixed(4)}–${s.max.value.toFixed(4)} pu (min bus ${s.min.bus}, max bus ${s.max.bus})`
-				: 'Station voltage unavailable',
+			s.min && s.max ? `Range: ${s.min.value.toFixed(4)}–${s.max.value.toFixed(4)} pu` : '',
 			s.worst
-				? `Worst violation: bus ${s.worst.bus}, ${s.worst.assessment.state === 'low' ? 'below' : 'above'} limit by ${s.worst.assessment.exceedance.toFixed(4)} pu`
-				: '',
-			`${s.unknown} missing values or limits; ${s.disconnected} de-energized`
+				? `Worst: bus ${s.worst.bus}, ${s.worst.assessment.state === 'low' ? '−' : '+'}${s.worst.assessment.exceedance.toFixed(4)} pu`
+				: ''
 		]
 			.filter(Boolean)
 			.join('\n');
@@ -1601,8 +1651,8 @@
 	function busTooltip(i: number): string {
 		return [
 			txBusText(graph, network, i, valueText(i)),
-			voltageView
-				? `Operating band: ${network.buses[i].vmin_pu ?? 'unknown'}–${network.buses[i].vmax_pu ?? 'unknown'} pu`
+			voltageView && network.buses[i].vmin_pu != null && network.buses[i].vmax_pu != null
+				? `Limits: ${network.buses[i].vmin_pu}–${network.buses[i].vmax_pu} pu`
 				: '',
 			stationText(i)
 		]
@@ -1613,19 +1663,22 @@
 		const branch = network.branches[k];
 		const f = transferOn ? transferFlow(branch) : flows.get(branch.id);
 		const info = f?.loading_info;
+		const kv = (bus: number) => (bus >= 0 ? graph.kv[bus] : '—');
 		return [
-			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: bus ${network.branches[k].from} to bus ${network.branches[k].to}`,
-			`Nominal ${graph.from[k] >= 0 ? graph.kv[graph.from[k]] : 'unknown'} / ${graph.to[k] >= 0 ? graph.kv[graph.to[k]] : 'unknown'} kV`,
+			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: ${network.branches[k].from}–${network.branches[k].to}`,
+			`kV: ${kv(graph.from[k])} / ${kv(graph.to[k])}`,
 			f && (!transferOn || transferReadings[k].from !== undefined)
-				? `From-end active power ${f.mw.toFixed(2)} MW`
-				: 'Flow result missing',
-			...(transferOn ? [transferDirectionText(transferReadings[k], network.branches[k])] : []),
-			...(economicsOn ? [thermalStatus(economics.branches.get(network.branches[k].id))] : []),
-			`Loading: ${loadingStateText[loadingStates[k]]}`,
+				? `P: ${f.mw.toFixed(2)} MW${transferOn ? `, ${transferDirectionText(transferReadings[k], network.branches[k])}` : ''}`
+				: '',
+			...(economicsOn
+				? [`Status: ${thermalStatus(economics.branches.get(network.branches[k].id))}`]
+				: []),
 			hasStatedRating(info) && f && isRated(loadingStates[k])
-				? `${(f.loading * 100).toFixed(2)}% of ${info!.rating} ${info!.basis.toUpperCase()} rating${info!.limiting_end ? ` · limiting end: ${info!.limiting_end}` : ''}`
-				: 'Equipment utilization unavailable'
-		].join('\n');
+				? `Loading: ${(f.loading * 100).toFixed(1)}% of ${info!.rating} ${info!.basis.toUpperCase()}`
+				: `Loading: ${loadingStateText[loadingStates[k]]}`
+		]
+			.filter(Boolean)
+			.join('\n');
 	}
 	const rgb = (c: RGBA) => `rgb(${c.slice(0, 3).join(' ')})`;
 	const casingColour = (c: RGBA): RGBA => [
@@ -1635,6 +1688,106 @@
 		c[3]
 	];
 </script>
+
+{#snippet voltageKey()}
+	<section class="voltage-key" aria-label="Voltage">
+		<div class="key-heading">
+			<strong>Voltage</strong>
+			<a
+				class="docs"
+				href={docsLink(uiConfig.docsHref, 'voltage')}
+				target="_blank"
+				rel="noreferrer"
+				aria-label="Voltage docs">Docs</a
+			>
+		</div>
+		{#if graph.grouped && !brief}
+			<StatBoxes
+				label="Network size"
+				stats={[
+					{ label: 'Substations', value: graph.substations.length.toLocaleString('en-US') },
+					{ label: 'Buses', value: graph.busId.length.toLocaleString('en-US') }
+				]}
+			/>
+		{/if}
+		<ul class="symbols" aria-label="Voltage levels">
+			{#each levelsPresent as l, j (l.label)}
+				{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
+					<li class="tier">{TIER_NAMES[l.tier]}</li>
+				{/if}
+				<li>
+					<button
+						class="level"
+						class:dim={focusEntry >= 0 && focusEntry !== j}
+						aria-pressed={pinnedEntry === j}
+						onpointerenter={() => (hoveredEntry = j)}
+						onpointerleave={() => (hoveredEntry = -1)}
+						onfocus={() => (hoveredEntry = j)}
+						onblur={() => (hoveredEntry = -1)}
+						onclick={() => (pinnedEntry = pinnedEntry === j ? -1 : j)}
+					>
+						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path
+								style:stroke={rgb(casingColour(entryColour(l)))}
+								style:stroke-width={entryWidth(l) + 1.4}
+								d="M-2 0H26"
+							/>
+							<path
+								style:stroke={rgb(entryColour(l))}
+								style:stroke-width={entryWidth(l)}
+								d="M-2 0H26"
+							/></svg
+						>{l.label}
+					</button>
+				</li>
+			{/each}
+		</ul>
+		{#if !brief}
+			<ul class="symbols" aria-label="Equipment">
+				{#if transformerEdges.length}
+					<li>
+						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
+						>Transformer
+					</li>
+				{/if}
+				{#if outOfService}
+					<li>
+						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
+						>Out of service
+					</li>
+				{/if}
+				<li>
+					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
+					>Load
+				</li>
+				<li>
+					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
+					>Generator
+				</li>
+				{#if landmarkPool.length}
+					<li>
+						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
+						>Power plant
+					</li>
+				{/if}
+			</ul>
+			{#if landmarkPool.length}
+				<label class="setting-toggle"
+					>Show power plants<input
+						type="checkbox"
+						checked={landmarksPref.value}
+						onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
+					/></label
+				>
+			{/if}
+		{/if}
+	</section>
+{/snippet}
 
 <div class="tx-stage" bind:clientWidth={width} bind:clientHeight={height}>
 	<p id="tx-keys" class="sr-only">
@@ -1662,26 +1815,23 @@
 		class:compact={panels.compact}
 		bind:clientHeight={toolbarHeight}
 		style:max-width="calc(100% - {toolLeft +
-			(panels.compact ? 12 : panels.dockWidth('right') + 24)}px)"
+			(panels.compact
+				? 12
+				: panels.dockWidth('right') + 24 + (summaryDocked ? SUMMARY_WIDTH + 16 : 0))}px)"
 		style:top="{panels.top + 8}px"
 		style:left="{toolLeft}px"
 		role="toolbar"
 		aria-label="Single-line diagram"
 	>
 		{#if panels.compact}
-			<div class="mobile-view">
-				<label
-					>View <select aria-label="Diagram view" bind:value={colour}>
-						{#each VIEWS as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
-					</select></label
-				>
-				<button
-					aria-expanded={equipmentOpen}
-					aria-controls="tx-equipment-panel"
-					onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
-				>
-				<button onclick={onclose} title="Return to the map">Close</button>
-			</div>
+			<select class="view-select" aria-label="Diagram view" bind:value={colour}>
+				{#each VIEWS as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
+			</select>
+			<button
+				aria-expanded={equipmentOpen}
+				aria-controls="tx-equipment-panel"
+				onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
+			>
 		{:else}
 			<div
 				class="segmented views"
@@ -1695,78 +1845,73 @@
 						role="radio"
 						aria-checked={colour === v.value}
 						tabindex={colour === v.value ? 0 : -1}
-						title={v.hint}
 						onclick={() => (colour = v.value)}>{v.label}</button
 					>
 				{/each}
 			</div>
 		{/if}
 		{#if panels.compact}
-			<select
-				aria-label="Diagram layout"
-				value={layout}
-				onchange={(e) => show(e.currentTarget.value as Layout)}
-			>
-				<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
-				<option value="schematic">Schematic</option>
-			</select>
-		{:else}
-			<div class="segmented" role="group" aria-label="Layout">
+			<!-- On a phone the drawing controls wait behind Display, so the toolbar is one row. -->
+			<div class="mobile-view">
 				<button
-					aria-pressed={layout === 'source'}
-					title="Positions from the case data"
-					onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
+					aria-expanded={displayOptions}
+					aria-controls="tx-display-options"
+					onclick={() => (displayOptions = !displayOptions)}>Display</button
 				>
-				<button
-					aria-pressed={layout === 'schematic'}
-					title="Substations near their positions, one busbar per bus, lines between them"
-					onclick={() => show('schematic')}>Schematic</button
-				>
+				<button onclick={onclose}>Show map</button>
 			</div>
 		{/if}
-
-		{#if !panels.compact}
-			<button
-				aria-expanded={equipmentOpen}
-				aria-controls="tx-equipment-panel"
-				onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
-			>
-		{/if}
-		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
-		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
-		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
-		{#if panels.compact}
-			<button
-				aria-expanded={displayOptions}
-				aria-controls="tx-display-options"
-				onclick={() => (displayOptions = !displayOptions)}>Display</button
-			>
-		{:else}<button onclick={onclose} title="Return to the map">Close</button>{/if}
 		{#if !panels.compact || displayOptions}
-			<div id="tx-display-options" class="display-options">
-				{#if geographic}
-					<label class="check" title="Map tiles under the geographic positions, as on the main map"
-						><input
-							type="checkbox"
-							checked={basemapPref.value}
-							onchange={(e) => basemapPref.set(e.currentTarget.checked)}
-						/> Basemap</label
+			<div class="controls" id={panels.compact ? 'tx-display-options' : undefined}>
+				{#if panels.compact}
+					<select
+						aria-label="Diagram layout"
+						value={layout}
+						onchange={(e) => show(e.currentTarget.value as Layout)}
+					>
+						<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
+						<option value="schematic">Schematic</option>
+					</select>
+				{:else}
+					<div class="segmented" role="group" aria-label="Layout">
+						<button aria-pressed={layout === 'source'} onclick={() => show('source')}
+							>{geographic ? 'Geographic' : 'Drawing'}</button
+						>
+						<button aria-pressed={layout === 'schematic'} onclick={() => show('schematic')}
+							>Schematic</button
+						>
+					</div>
+					<button
+						aria-expanded={equipmentOpen}
+						aria-controls="tx-equipment-panel"
+						onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
 					>
 				{/if}
-				{#if fieldKind}
-					<label
-						class="check"
-						title={fieldKind === 'voltage'
-							? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
-							: 'Interpolate price differences around buses: blue below the median LMP, brown above; bus colours use the fixed price scale'}
-						><input
-							type="checkbox"
-							checked={fieldPref.value}
-							onchange={(e) => fieldPref.set(e.currentTarget.checked)}
-						/> Shading</label
-					>
-				{/if}
-				<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
+				<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
+				<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
+				<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
+				<div class="display-options" id={panels.compact ? undefined : 'tx-display-options'}>
+					{#if geographic}
+						<label class="check"
+							><input
+								type="checkbox"
+								checked={basemapPref.value}
+								onchange={(e) => basemapPref.set(e.currentTarget.checked)}
+							/> Basemap</label
+						>
+					{/if}
+					<!-- Only the views with a shaded field (Voltage, Prices) offer it. -->
+					{#if fieldKind}
+						<label class="check"
+							><input
+								type="checkbox"
+								checked={fieldPref.value}
+								onchange={(e) => fieldPref.set(e.currentTarget.checked)}
+							/> Shading</label
+						>
+					{/if}
+					<button onclick={exportPng}>Save image</button>
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -1792,111 +1937,156 @@
 			/>
 		</div>
 	{/if}
-	{#if colour !== 'level' && !equipmentOpen}
+	{#if summaryShown}
 		<div
-			class="legend"
+			class="legend panel-select"
 			class:operating={panelView}
 			bind:clientHeight={legendHeight}
-			style:top="{panels.top + toolbarHeight + 16}px"
-			style:left="{toolLeft}px"
-			style:right="{panels.compact ? 12 : panels.dockWidth('right') + 24}px"
-			style:max-height="min(38vh, calc(100% - {panels.top +
-				toolbarHeight +
-				32 +
-				app.sheetInset}px))"
+			class:docked={summaryDocked}
+			style:top="{summaryDocked ? panels.top + 8 : panels.top + toolbarHeight + 16}px"
+			style:left={summaryDocked ? undefined : `${toolLeft}px`}
+			style:right={summaryBelow
+				? undefined
+				: `${panels.compact ? 12 : panels.dockWidth('right') + (panels.dockWidth('right') ? 32 : 16)}px`}
+			style:width={panels.compact ? undefined : `${Math.min(SUMMARY_WIDTH, freeWidth)}px`}
+			style:max-height={summaryDocked
+				? `calc(100% - ${panels.top + 8 + panels.bottom}px)`
+				: `min(38vh, calc(100% - ${panels.top + toolbarHeight + 32 + app.sheetInset}px))`}
 		>
-			{#if panelView}
-				<button
-					class="collapse"
-					aria-expanded={!brief}
-					title={brief ? 'Show the key, settings and lists' : 'Show only the summary'}
-					onclick={() => (brief = !brief)}>{brief ? 'Details ▾' : 'Summary ▴'}</button
-				>
-			{/if}
-			{#if operatingOn}
-				<TxOperatingPanel
-					{formulation}
-					context={resultContext}
-					voltageAvailable={solvedVoltages.size > 0}
-					counts={exceptions.counts}
-					warning={warningPref.value}
-					onwarning={(value) => warningPref.set(value)}
-					station={activeStation}
-					shading={!!field}
-					{brief}
-					{onselectbus}
-				/>
-			{:else if economicsOn}
-				<TxEconomicsPanel
-					{formulation}
-					context={resultContext}
-					{economics}
-					scale={priceScale}
-					onscale={(scale) => (priceScale = scale)}
-					bus={network.buses[selectedBus]}
-					branch={network.branches[selectedEdge]}
-					busPrice={busValues.get(graph.busId[selectedBus])}
-					flow={flows.get(network.branches[selectedEdge]?.id)}
-					onbranch={inspectListedBranch}
-					onpreview={setPreview}
-					shadingCentre={field ? priceCentre : null}
-					{brief}
-				/>
-			{:else if transferOn}
-				<TxTransferPanel
-					{formulation}
-					context={resultContext}
-					dc={dcTransfer}
-					scale={transferScale}
-					onscale={(scale) => (transferScale = scale)}
-					{...transferSummary}
-					hasDispatch={!!transferSolution && dispatch.size > 0}
-					onbranch={inspectListedBranch}
-					onpreview={setPreview}
-					{brief}
-				/>
-			{:else if !solution}
-				No result yet. Solve the case to colour the buses by the map's display series.
-			{:else if display?.mode === 'voltage'}
-				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
-				limits apply ·
-			{:else if display && uniform !== null}
-				{display.label} uniform at {uniform.toPrecision(4)}
-				{display.unit} · grey ·
-			{:else if display}
-				{display.label} <i style:background={display.gradient}></i> ·
-			{/if}
-			{#if panelView}
-				<TxResultInspection
-					bind:this={resultInspector}
-					exceptions={transferOn ? overloadExceptions : exceptions}
-					transfer={transferOn
-						? { dc: dcTransfer, reading: transferReadings[selectedEdge] }
-						: undefined}
-					bus={network.buses[selectedBus]}
-					branch={network.branches[selectedEdge]}
-					voltage={solvedVoltages.get(graph.busId[selectedBus])}
-					voltageSolved={resultContext.voltage}
-					deenergized={deenergized.has(graph.busId[selectedBus])}
-					generation={!transferOn || transferSolution
-						? dispatch.get(graph.busId[selectedBus])
-						: undefined}
-					demand={selectedDemand}
-					flow={transferOn
-						? transferFlow(network.branches[selectedEdge])
-						: flows.get(network.branches[selectedEdge]?.id)}
-					loading={!transferOn || transferSolution ? loadingStates[selectedEdge] : undefined}
-					stale={resultContext.stale}
-					showExceptions={operatingOn || transferOn}
-					oninspect={inspectResult}
-					onpreview={setPreview}
-					{brief}
-					{onclear}
-					onframe={frameSelection}
-				/>
-			{:else if solution}
-				Branch colour: loading · grey below {warningPref.value} % · amber {warningPref.value}–100 %
-				· red above 100 % · unknown ratings faded
+			<button
+				class="collapse"
+				aria-expanded={!brief}
+				aria-label={brief ? 'Show details' : 'Hide details'}
+				title={brief ? 'Show details' : 'Hide details'}
+				onclick={() => (brief = !brief)}
+				><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+					><path
+						d={brief ? 'm3 4.5 3 3 3-3' : 'm3 7.5 3-3 3 3'}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+					/></svg
+				></button
+			>
+			{#if colour === 'level'}
+				{@render voltageKey()}
+			{:else}
+				{#if operatingOn}
+					<TxOperatingPanel
+						{formulation}
+						context={resultContext}
+						voltageAvailable={solvedVoltages.size > 0}
+						counts={exceptions.counts}
+						warning={warningPref.value}
+						onwarning={(value) => warningPref.set(value)}
+						station={activeStation}
+						shading={!!field}
+						{brief}
+						{onselectbus}
+					/>
+				{:else if economicsOn}
+					<TxEconomicsPanel
+						{formulation}
+						context={resultContext}
+						{economics}
+						scale={priceScale}
+						onscale={(scale) => (priceScale = scale)}
+						domain={domain ?? PRICE_SCALES[0]}
+						bus={network.buses[selectedBus]}
+						branch={network.branches[selectedEdge]}
+						busPrice={busValues.get(graph.busId[selectedBus])}
+						flow={flows.get(network.branches[selectedEdge]?.id)}
+						onbranch={inspectListedBranch}
+						onpreview={setPreview}
+						{brief}
+					/>
+				{:else if transferOn}
+					<TxTransferPanel
+						{formulation}
+						context={resultContext}
+						dc={dcTransfer}
+						scale={transferScale}
+						onscale={(scale) => (transferScale = scale)}
+						{...transferSummary}
+						hasDispatch={!!transferSolution && dispatch.size > 0}
+						onbranch={inspectListedBranch}
+						onpreview={setPreview}
+						{brief}
+					/>
+				{:else}
+					<div class="key-heading values-heading">
+						<strong>Bus values</strong>
+						<a
+							class="docs"
+							href={docsLink(uiConfig.docsHref, 'operating')}
+							target="_blank"
+							rel="noreferrer"
+							aria-label="Bus values docs">Docs</a
+						>
+					</div>
+					{#if solution && valueStats.length}
+						<div class="values-stats"><StatBoxes stats={valueStats} label="Bus values" /></div>
+					{/if}
+					{#if !solution}
+						No result
+					{:else if display?.mode === 'voltage'}
+						Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
+					{:else if display && uniform !== null}
+						<!-- One value at every bus: the box above says it. -->
+					{:else if display && domain}
+						<!-- As the Prices view's scale: an end that cuts values off is marked ≤ or ≥. -->
+						{display.label}
+						<span
+							>{valueExtent && valueExtent.min < domain.lo ? '≤' : ''}{displayFmt(
+								display.mode,
+								domain.lo
+							)}</span
+						><i style:background={display.gradient}></i><span
+							>{valueExtent && valueExtent.max > domain.hi ? '≥' : ''}{displayFmt(
+								display.mode,
+								domain.hi
+							)}
+							{display.unit}</span
+						>
+					{/if}
+				{/if}
+				{#if panelView}
+					<TxResultInspection
+						bind:this={resultInspector}
+						exceptions={transferOn ? overloadExceptions : exceptions}
+						transfer={transferOn
+							? { dc: dcTransfer, reading: transferReadings[selectedEdge] }
+							: undefined}
+						bus={network.buses[selectedBus]}
+						branch={network.branches[selectedEdge]}
+						voltage={solvedVoltages.get(graph.busId[selectedBus])}
+						voltageSolved={resultContext.voltage}
+						deenergized={deenergized.has(graph.busId[selectedBus])}
+						generation={!transferOn || transferSolution
+							? dispatch.get(graph.busId[selectedBus])
+							: undefined}
+						demand={selectedDemand}
+						flow={transferOn
+							? transferFlow(network.branches[selectedEdge])
+							: flows.get(network.branches[selectedEdge]?.id)}
+						loading={!transferOn || transferSolution ? loadingStates[selectedEdge] : undefined}
+						stale={resultContext.stale}
+						showExceptions={operatingOn || transferOn}
+						limitName={limitWords(formulation).lines}
+						oninspect={inspectResult}
+						onpreview={setPreview}
+						{brief}
+						{onclear}
+						onframe={frameSelection}
+					/>
+				{:else if solution && !brief}
+					<ul class="loading-key" aria-label="Line loading">
+						<li><i class="swatch normal"></i>Below {warningPref.value}%</li>
+						<li><i class="swatch near"></i>Near limit</li>
+						<li><i class="swatch over"></i>{limitWords(formulation).key}</li>
+						<li><i class="swatch unrated"></i>Unrated</li>
+					</ul>
+				{/if}
 			{/if}
 		</div>
 	{/if}
@@ -1910,8 +2100,8 @@
 				{#each gauges as gauge (gauge.edge)}
 					{@const [lx, ly] = gaugeLeader(gauge)}
 					<g
-						class:violation={gauge.state === 'violation'}
-						class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
+						class:violation={gauge.state === 'violation' || gauge.state === 'at-limit'}
+						class:warning={gauge.state === 'warning'}
 					>
 						<line x1={gauge.ax} y1={gauge.ay} x2={lx} y2={ly} />
 						<circle cx={gauge.ax} cy={gauge.ay} r="2.5" />
@@ -1922,9 +2112,8 @@
 				{@const branch = network.branches[gauge.edge]}
 				<button
 					class="utilization-gauge"
-					class:violation={gauge.state === 'violation'}
-					class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
-					class:at-limit={gauge.state === 'at-limit'}
+					class:over={gauge.state === 'violation' || gauge.state === 'at-limit'}
+					class:warning={gauge.state === 'warning'}
 					style:left="{gauge.x}px"
 					style:top="{gauge.y}px"
 					title={branchTooltip(gauge.edge)}
@@ -1934,111 +2123,10 @@
 					)} percent, {loadingStateText[gauge.state]}"
 					onclick={() => onselectbranch(branch.id)}
 				>
-					<span>{gaugeText(gauge.loading)}</span>
-					<svg width="48" height="10" viewBox="0 0 48 10" aria-hidden="true"
-						><path d="M2 5H46" class="gauge-track" /><path
-							d="M2 5H{2 + (Math.min(1.25, gauge.loading) / 1.25) * 44}"
-							class="gauge-fill"
-						/><path d="M37.2 1V9" class="rating-tick" /></svg
-					>
+					<span class="pill">{gaugeText(gauge.loading)}</span>
 				</button>
 			{/each}
 		</div>
-	{/if}
-	{#if colour === 'level' && levelsPresent.length}
-		<details
-			class="key"
-			style:bottom="{panels.compact ? app.sheetInset + 12 : 24}px"
-			style:left="{toolLeft}px"
-			open={keyPref.value}
-			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
-		>
-			<summary>Key</summary>
-			<p class="hint">Line colour and width: voltage level</p>
-			<ul class="symbols" aria-label="Voltage levels">
-				{#each levelsPresent as l, j (l.label)}
-					{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
-						<li class="tier">{TIER_NAMES[l.tier]}</li>
-					{/if}
-					<li>
-						<button
-							class="level"
-							class:dim={focusEntry >= 0 && focusEntry !== j}
-							aria-pressed={pinnedEntry === j}
-							title="Highlight {l.label} ({l.branches.toLocaleString()} branch{l.branches === 1
-								? ''
-								: 'es'}); click to keep it highlighted"
-							onpointerenter={() => (hoveredEntry = j)}
-							onpointerleave={() => (hoveredEntry = -1)}
-							onfocus={() => (hoveredEntry = j)}
-							onblur={() => (hoveredEntry = -1)}
-							onclick={() => (pinnedEntry = pinnedEntry === j ? -1 : j)}
-						>
-							<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-								><path
-									style:stroke={rgb(casingColour(entryColour(l)))}
-									style:stroke-width={entryWidth(l) + 1.4}
-									d="M-2 0H26"
-								/>
-								<path
-									style:stroke={rgb(entryColour(l))}
-									style:stroke-width={entryWidth(l)}
-									d="M-2 0H26"
-								/></svg
-							>{l.label}
-						</button>
-					</li>
-				{/each}
-				{#if transformerEdges.length}
-					<li>
-						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
-						>transformer
-					</li>
-				{/if}
-				{#if outOfService}
-					<li>
-						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
-						>out of service
-					</li>
-				{/if}
-			</ul>
-			<ul class="symbols" aria-label="Equipment">
-				<li>
-					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-						><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
-					>load (demand arrow)
-				</li>
-				<li>
-					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-						><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
-					>generator
-				</li>
-			</ul>
-			<label class="toggle"
-				><input
-					type="checkbox"
-					checked={landmarksPref.value}
-					onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
-				/> Landmarks when zoomed out</label
-			>
-			{#if landmarksPref.value && landmarkPool.length}
-				<ul class="symbols" aria-label="Landmarks">
-					<li>
-						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
-						>generator, largest first
-					</li>
-				</ul>
-			{/if}
-			{#if graph.grouped}
-				<p class="hint">
-					{graph.substations.length.toLocaleString()} substations, {graph.busId.length.toLocaleString()}
-					buses
-				</p>
-			{/if}
-		</details>
 	{/if}
 	{#if underlay.opacity > 0}
 		<p
@@ -2072,50 +2160,99 @@
 		width: 370px;
 	}
 	.mobile-view {
-		display: flex;
-		width: 100%;
-		gap: 6px;
+		display: contents;
 	}
-	.mobile-view label {
+	.loading-key {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.loading-key li {
 		display: flex;
 		align-items: center;
-		flex: 1;
 		gap: 6px;
-		min-width: 0;
 	}
-	.mobile-view select {
-		flex: 1;
-		min-width: 0;
+	.loading-key .swatch {
+		width: 18px;
+		height: 3px;
+		border-radius: 2px;
+	}
+	.swatch.normal {
+		background: rgb(158 153 144);
+	}
+	.swatch.near {
+		background: var(--amber);
+	}
+	.swatch.over {
+		background: var(--red);
+	}
+	.swatch.unrated {
+		background: rgb(155 150 140 / 0.45);
 	}
 	.toolbar select {
 		font: inherit;
 		background: var(--paper);
 		color: var(--ink);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 4px;
 	}
+	/* Phone: one row. The view select is the panels' shared select at touch size;
+	   the buttons beside it are quiet text buttons of the same height and size. */
 	.toolbar.compact {
-		gap: 5px;
+		gap: 2px;
+		font-size: 15px;
 	}
 	.toolbar.compact select {
-		min-height: 44px;
+		appearance: none;
+		-webkit-appearance: none;
+		min-width: 0;
+		height: 44px;
+		padding: 0 26px 0 8px;
 		font-size: 16px;
+		background-color: var(--surface-control);
+		background-image:
+			linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+			linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+		background-position:
+			right 12px center,
+			right 8px center;
+		background-size:
+			4px 4px,
+			4px 4px;
+		background-repeat: no-repeat;
+		text-overflow: ellipsis;
 	}
-	.toolbar.compact > select {
-		width: 116px;
-		font-size: 13px;
+	.toolbar.compact .view-select {
+		flex: 1 1 0;
+	}
+	.toolbar.compact button {
+		height: 44px;
+		padding: 0 8px;
+		white-space: nowrap;
+	}
+	.toolbar.compact button[aria-expanded='true'] {
+		color: var(--text-accent);
+		background: var(--accent-soft);
+	}
+	.compact .controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 2px 4px;
+		width: 100%;
+		padding: 4px 0 0;
+		margin-top: 4px;
+		border-top: 1px solid var(--line);
 	}
 	.display-options {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		flex-wrap: wrap;
-	}
-	.compact .display-options {
-		width: 100%;
-		border-top: 1px solid var(--line);
-		padding-top: 6px;
 	}
 
 	/* The multiconductor schematic's look, so both diagrams read as one tool. */
@@ -2124,6 +2261,14 @@
 		inset: 0;
 		background: var(--bg);
 		color: var(--ink);
+		/* Limit labels on the drawing: dark amber on light, light amber on dark. */
+		--gauge-bg: color-mix(in srgb, var(--raised) 94%, transparent);
+		--gauge-line: var(--line);
+		--gauge-ink: var(--ink);
+		--gauge-warn: #8a5a00;
+	}
+	:global(:root[data-theme='dark']) .tx-stage {
+		--gauge-warn: #f2c14e;
 	}
 	.canvas,
 	canvas {
@@ -2141,29 +2286,47 @@
 		inset: 0;
 		pointer-events: none;
 	}
+	/* Two rows with two weights: the views read as tabs, the drawing controls
+	   below them as quiet buttons. */
 	.toolbar {
 		position: absolute;
 		width: max-content;
-		flex-wrap: wrap;
 		right: 12px;
 		display: flex;
-		gap: 6px;
-		align-items: center;
-		padding: 5px;
-		font-size: 11px;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0;
+		padding: 0;
+		font-size: var(--fs-label);
 		background: var(--surface-panel, var(--paper));
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-1);
+	}
+	.toolbar.compact {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		padding: 5px;
+	}
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 6px;
 	}
 	.toolbar button {
 		font: inherit;
 		color: var(--ink);
-		background: var(--paper);
-		border: 1px solid var(--line);
-		border-radius: 3px;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: var(--radius-control);
 		padding: 4px 8px;
 		cursor: pointer;
+	}
+	.toolbar button:hover:not(:disabled) {
+		background: var(--surface-hover);
 	}
 	.toolbar button:disabled {
 		opacity: 0.45;
@@ -2176,9 +2339,12 @@
 	}
 	.segmented {
 		display: flex;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
 	}
 	.segmented button {
 		border-radius: 0;
+		border: 0;
 	}
 	.segmented button:first-child {
 		border-radius: 3px 0 0 3px;
@@ -2187,22 +2353,54 @@
 		border-radius: 0 3px 3px 0;
 	}
 	.segmented button + button {
-		border-left: 0;
+		border-left: 1px solid var(--line);
 	}
-	/* One row of views; on a narrow screen it scrolls sideways instead of taking rows. */
+	/* The views, as tabs. When the toolbar is squeezed between panels they wrap
+	   to a second row, so every view stays readable. */
 	.views {
 		max-width: 100%;
-		overflow-x: auto;
-		scrollbar-width: none;
+		flex-wrap: wrap;
+		border: 0;
+		border-bottom: 1px solid var(--line);
+		border-radius: 0;
+		padding: 0 4px;
 	}
 	.views button {
+		position: relative;
 		white-space: nowrap;
 		flex: none;
+		padding: 9px 10px;
+		font-size: var(--fs-body);
+		color: var(--text-secondary);
+		border: 0;
+		border-radius: 0;
 	}
-	.segmented button[aria-pressed='true'],
-	.segmented button[aria-checked='true'] {
+	.views button + button {
+		border-left: 0;
+	}
+	.views button:hover:not(:disabled) {
+		background: none;
+		color: var(--ink);
+	}
+	.views button[aria-checked='true'] {
+		color: var(--ink);
+		background: none;
+	}
+	.views button[aria-checked='true']::after {
+		content: '';
+		position: absolute;
+		left: 10px;
+		right: 10px;
+		bottom: -1px;
+		height: 2px;
+		background: var(--accent);
+	}
+	.views button:focus-visible {
+		outline-offset: -3px;
+	}
+	.segmented button[aria-pressed='true'] {
 		background: var(--accent-soft);
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 	.gauges {
 		position: absolute;
@@ -2212,43 +2410,62 @@
 	.gauges.stale {
 		opacity: 0.4;
 	}
+	/* One style per severity: red fill at or over the rating, amber outline near it. The
+	   button is the hit area; on a touch screen it grows to 44px around the same label. */
 	.utilization-gauge {
 		position: absolute;
-		width: 64px;
-		height: 44px;
+		width: 54px;
+		height: 22px;
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		justify-content: center;
-		gap: 1px;
-		background: color-mix(in srgb, var(--paper) 92%, transparent);
-		border: 1px solid var(--line);
-		border-radius: 4px;
-		color: var(--ink);
-		font: 10px var(--font-mono);
+		padding: 0;
+		border: 0;
+		background: none;
 		cursor: pointer;
 		pointer-events: auto;
-		padding: 2px;
 	}
-	.utilization-gauge.warning {
-		color: #925b05;
-		border-color: #925b05;
+	.pill {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		height: 22px;
+		box-sizing: border-box;
+		background: var(--gauge-bg);
+		border: 1px solid var(--gauge-line);
+		border-radius: var(--radius-control);
+		color: var(--gauge-ink);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 	}
-	/* At rating: a heavier outline; over rating: filled. Shape and fill, not only hue. */
-	.utilization-gauge.at-limit {
-		border-width: 2px;
+	.utilization-gauge.warning .pill {
+		color: var(--gauge-warn);
+		border-color: var(--amber);
 	}
-	.utilization-gauge.violation {
+	/* The light theme's red in both themes: white text on the dark theme's lighter red is too
+	   faint to read. */
+	.utilization-gauge.over .pill {
 		color: #fff;
-		background: #be2024;
-		border-color: #be2024;
+		background: #d7261e;
+		border-color: #d7261e;
 		font-weight: 600;
 	}
-	.utilization-gauge.violation .gauge-track {
-		stroke: #f2b8b5;
+	.utilization-gauge[aria-pressed='true'] .pill {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
 	}
-	.utilization-gauge.violation .rating-tick {
-		stroke: #fff;
+	.utilization-gauge:focus-visible {
+		outline: none;
+	}
+	.utilization-gauge:focus-visible .pill {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 1px;
+	}
+	@media (pointer: coarse) {
+		.utilization-gauge {
+			height: 44px;
+			margin-top: -11px;
+		}
 	}
 	.leaders {
 		position: absolute;
@@ -2263,28 +2480,16 @@
 		fill: #6b665c;
 	}
 	.leaders .warning line {
-		stroke: #925b05;
+		stroke: var(--gauge-warn);
 	}
 	.leaders .warning circle {
-		fill: #925b05;
+		fill: var(--gauge-warn);
 	}
 	.leaders .violation line {
-		stroke: #be2024;
+		stroke: var(--red);
 	}
 	.leaders .violation circle {
-		fill: #be2024;
-	}
-	.gauge-track {
-		stroke: #c9c4ba;
-		stroke-width: 3;
-	}
-	.gauge-fill {
-		stroke: currentColor;
-		stroke-width: 3;
-	}
-	.rating-tick {
-		stroke: #252525;
-		stroke-width: 1.5;
+		fill: var(--red);
 	}
 	.legend {
 		overflow: auto;
@@ -2297,67 +2502,120 @@
 		right: 12px;
 		gap: 6px;
 		align-items: center;
-		padding: 4px 8px;
-		font: 10px var(--font-mono);
+		padding: 6px 10px;
+		font: var(--fs-label) / 1.5 var(--font-sans);
 		color: var(--text-secondary);
 		/* Chromium's headless shell can occlude the canvases past the scroll clip with a solid colour. */
 		background: linear-gradient(var(--paper), var(--paper));
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-panel);
+	}
+	/* Docked at the right edge beside the drawing, never over it. */
+	.legend.docked {
+		align-content: flex-start;
+		box-shadow: var(--elev-1);
 	}
 	.legend.operating {
 		display: flow-root;
 		max-width: 720px;
-		padding-right: 8px;
 	}
+	/* The details toggle sits in the heading row's right corner, after the Docs link. */
 	.legend .collapse {
-		float: right;
-		margin-left: 8px;
-		padding: 2px 6px;
-		font: inherit;
+		position: absolute;
+		top: 6px;
+		right: 8px;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
 		color: var(--ink);
-		background: var(--paper);
+		background: var(--surface-control);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
+	}
+	.legend .collapse:hover {
+		border-color: var(--border-strong);
+	}
+	.legend.operating :global(.heading) {
+		min-height: 24px;
+		padding-right: 32px;
 	}
 	@media (pointer: coarse) {
 		.legend .collapse {
-			min-height: 44px;
-			min-width: 44px;
+			width: 32px;
+			height: 32px;
+		}
+		.legend.operating :global(.heading) {
+			min-height: 32px;
+			padding-right: 40px;
 		}
 	}
 	.legend i {
 		display: inline-block;
 		width: 90px;
 		height: 7px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 	}
-	.key {
-		max-height: 40vh;
-		overflow: auto;
-		position: absolute;
-		padding: 4px 8px;
-		font: 10px var(--font-mono);
-		color: var(--text-secondary);
-		background: var(--paper);
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		box-shadow: var(--elev-1);
+	.voltage-key {
+		width: 100%;
+		min-width: 0;
+		color: var(--text-primary);
 	}
-	.key summary {
-		cursor: pointer;
-		color: var(--ink);
-	}
-	.key .toggle {
+	/* The same heading row as the result cards: the name, then Docs, clear of the collapse toggle. */
+	.key-heading {
 		display: flex;
-		gap: 4px;
 		align-items: center;
-		margin-top: 4px;
-		color: var(--ink);
+		gap: var(--space-sm);
+		min-height: 24px;
+		margin-bottom: var(--space-xs);
+		padding-right: 32px;
+		font-size: var(--fs-label);
 	}
-	.key .hint {
-		margin: 2px 0 0;
+	.key-heading strong {
+		color: var(--ink);
+		font-size: var(--fs-body);
+	}
+	.values-stats {
+		flex: 0 0 100%;
+	}
+	.values-stats :global(dl.stats) {
+		margin-bottom: var(--space-xs);
+	}
+	/* A heading row of its own in the legend's wrapping row of keys. */
+	.values-heading {
+		flex: 0 0 100%;
+		margin-bottom: 0;
+	}
+	@media (pointer: coarse) {
+		.values-heading {
+			padding-right: 40px;
+		}
+	}
+	.key-heading .docs {
+		margin-left: auto;
+		color: var(--text-accent);
+		text-decoration: none;
+	}
+	.key-heading .docs:hover {
+		text-decoration: underline;
+	}
+	.setting-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		min-height: 34px;
+		margin-top: 6px;
+		border-top: 1px solid var(--line);
+		cursor: pointer;
+	}
+	.setting-toggle input {
+		width: 16px;
+		height: 16px;
+		margin: 0;
+		accent-color: var(--accent-fill);
 	}
 	.symbols {
 		margin: 4px 0 0;
@@ -2382,10 +2640,8 @@
 		.toolbar button,
 		.toolbar .check,
 		.symbols .level,
-		.key summary,
-		.key .toggle {
+		.setting-toggle {
 			min-height: 44px;
-			min-width: 44px;
 		}
 	}
 	.symbols .level {
@@ -2397,7 +2653,7 @@
 		color: var(--ink);
 		background: none;
 		border: 1px solid transparent;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	.symbols .level[aria-pressed='true'] {
@@ -2410,18 +2666,17 @@
 	.symbols .tier {
 		margin-top: 4px;
 		color: var(--text-secondary);
-		font-size: 9px;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
+		font-size: 12px;
 	}
 	.attribution {
 		position: absolute;
 		margin: 0;
 		padding: 1px 6px;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-sans);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 		background: color-mix(in srgb, var(--paper) 80%, transparent);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		pointer-events: none;
 	}
 	.status {

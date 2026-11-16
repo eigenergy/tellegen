@@ -4,7 +4,14 @@
 	import { SPEEDS, type Speed } from '../../dynamics/player.svelte.js';
 	import DynamicsTraces from './DynamicsTraces.svelte';
 
-	let { dockHeight = $bindable(0) }: { dockHeight?: number } = $props();
+	let {
+		dockHeight = $bindable(0),
+		flush = false
+	}: {
+		dockHeight?: number;
+		/** Sit flush on the bottom edge, under an open phone sheet. */
+		flush?: boolean;
+	} = $props();
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -80,10 +87,10 @@
 
 {#if run && record}
 	<section
-		class={['timeline', { compact: app.compactLayout }]}
+		class={['timeline', { compact: app.compactLayout, flush }]}
 		aria-label="Dynamics playback"
 		data-dyn-timeline
-		bind:clientHeight={dockHeight}
+		bind:offsetHeight={dockHeight}
 	>
 		<div class="controls">
 			<button
@@ -102,12 +109,12 @@
 				</select></label
 			>
 			<label class="slow" title="0.25× from 0.1 s before to 1.5 s after each event"
-				><input type="checkbox" bind:checked={player.slowAroundEvents} /> slow at events</label
+				><input type="checkbox" bind:checked={player.slowAroundEvents} /> Slow at events</label
 			>
 			<!-- Fixed width, the event on its own line: the scrubber beside it
 			     must not move as the readout grows. -->
 			<output class="time" data-testid="dyn-time"
-				><span>t = {player.t.toFixed(3)} s</span>{#if after}<span class="dim"
+				><span>Time {player.t.toFixed(3)} s</span>{#if after}<span class="dim"
 						>{after.since} after {after.what}</span
 					>{/if}</output
 			>
@@ -129,14 +136,7 @@
 				<div class="marks" aria-hidden="true">
 					{#each marks as m, i (i)}
 						<span class={['mark', m.kind]} style:left="{(100 * m.t) / tEnd}%" title={m.label}
-							>{m.kind === 'fault'
-								? '⚡'
-								: m.kind === 'clear'
-									? '|'
-									: m.kind === 'trip'
-										? '✂'
-										: '±'}</span
-						>
+						></span>
 					{/each}
 				</div>
 			</div>
@@ -197,6 +197,15 @@
 		bottom: 40px;
 		padding: 4px 8px;
 	}
+	.timeline.compact.flush {
+		left: 0;
+		right: 0;
+		bottom: 0;
+		border-width: 1px 0 0;
+		border-radius: 0;
+		box-shadow: none;
+		backdrop-filter: none;
+	}
 	.controls {
 		display: flex;
 		align-items: center;
@@ -205,17 +214,17 @@
 	.play {
 		width: 34px;
 		height: 30px;
-		border: 1px solid var(--accent);
+		border: 1px solid var(--accent-fill);
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--paper);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		cursor: pointer;
 		font-size: 12px;
 	}
 	select {
 		padding: 2px 4px;
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
@@ -250,7 +259,7 @@
 	}
 	.scrub input {
 		width: 100%;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.marks {
 		position: absolute;
@@ -258,18 +267,20 @@
 		height: 12px;
 		pointer-events: none;
 	}
+	/* An event is a short tick on the track: red for a fault, grey for clearing,
+	   ink for a trip or a load change. */
 	.mark {
 		position: absolute;
+		width: 2px;
+		height: 10px;
 		transform: translateX(-50%);
-		font-size: 10px;
-		line-height: 1;
+		background: var(--ink);
 	}
 	.mark.fault {
-		color: var(--text-danger);
+		background: var(--red);
 	}
 	.mark.clear {
-		color: var(--status-ok);
-		font-weight: 700;
+		background: var(--text-tertiary);
 	}
 	.end {
 		color: var(--text-tertiary);

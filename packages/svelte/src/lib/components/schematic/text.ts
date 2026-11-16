@@ -74,10 +74,10 @@ export class SchematicText {
 	/** Where a bus sits: on a feeder, or as the bus a network is supplied at. */
 	networkNote(i: number): string {
 		const f = this.c.feeders.busFeeder[i];
-		if (f >= 0) return ` · ${this.feederName(f)}`;
+		if (f >= 0) return `, ${this.feederName(f)}`;
 		return this.c.tree.parentEdge[i] >= 0
-			? ` · supply bus of the network fed by ${this.supplyName(i)}`
-			: ' · source bus';
+			? `, supply bus of the network fed by ${this.supplyName(i)}`
+			: ', source bus';
 	}
 
 	/** A bus's worst pair voltage against its band, for announcements and the stack card. */
@@ -99,9 +99,9 @@ export class SchematicText {
 		const how = this.c.inferred?.[i] ?? 0;
 		const id = this.c.graph.buses[i].id + this.networkNote(i);
 		return how === 1
-			? `${id} · no position in the case data; drawn next to a connected bus`
+			? `${id}, no position in the case data; drawn next to a connected bus`
 			: how === 2
-				? `${id} · no position in the case data`
+				? `${id}, no position in the case data`
 				: id;
 	}
 
@@ -118,11 +118,11 @@ export class SchematicText {
 		const shared = equipment?.sharedRoute[k] ?? 1;
 		const route =
 			shared > 1
-				? ` · drawn on a route shared with ${shared - 1} other branch${shared > 2 ? 'es' : ''}`
+				? `, drawn on a route shared with ${shared - 1} other branch${shared > 2 ? 'es' : ''}`
 				: '';
 		const f = this.c.feeders.edgeFeeder[k];
-		const feeder = f >= 0 ? ` · ${this.feederName(f)}` : '';
-		return `${e.kind} ${e.id} · ${wires}${e.closed ? '' : ' · open'}${live.edges[k] ? '' : ' · not energized'}${feeder}${route}`;
+		const feeder = f >= 0 ? `, ${this.feederName(f)}` : '';
+		return `${e.kind} ${e.id}, ${wires}${e.closed ? '' : ', open'}${live.edges[k] ? '' : ', not energized'}${feeder}${route}`;
 	}
 
 	item(d: EquipmentItem): string {
@@ -130,8 +130,8 @@ export class SchematicText {
 		const name = d.kind in ATTACHMENT_NAMES ? ATTACHMENT_NAMES[d.kind as 'load'] : d.kind;
 		if (d.kind === 'ground')
 			return `solid earth: terminal${d.ids.length > 1 ? 's' : ''} ${d.ids.join(', ')} of ${graph.buses[d.bus].id} perfectly grounded`;
-		const terminals = d.terminals ? ` · terminals ${terminalLabel(d.terminals, d.connection)}` : '';
-		const label = d.label ? ` · ${d.label}` : '';
+		const terminals = d.terminals ? `, terminals ${terminalLabel(d.terminals, d.connection)}` : '';
+		const label = d.label ? `, ${d.label}` : '';
 		return d.bus >= 0
 			? `${counted(d.ids.length, name)} ${list(d.ids)} at ${graph.buses[d.bus].id}${terminals}${this.networkNote(d.bus)}`
 			: `${name} ${list(d.ids)}${label}${graph.edges[d.edge].closed ? '' : ' (open)'}`;
@@ -246,11 +246,9 @@ export function tooltip(
 	// A stack's ring opens its card, which says the rest; inside an open stack the card names the
 	// buses, and a tooltip would cover them. A fanned route's card names its branches.
 	if (id === 'stack-rings' || picks.inOpenStack(info) || id === 'fan-branches') return null;
-	if (id === 'route-badges')
-		return `${(info.object as { n: number }).n} branches share this route. Hover to separate them; click to keep them open.`;
+	if (id === 'route-badges') return `${(info.object as { n: number }).n} branches on this route`;
 	if (id === 'landmark-halos') return text.landmark(info.object as Landmark);
-	if (id.startsWith('zones'))
-		return `${text.zone((info.object as { z: number }).z)}. Click to fit.`;
+	if (id.startsWith('zones')) return text.zone((info.object as { z: number }).z);
 	if (id.startsWith('buses-')) return text.bus(info.object as number);
 	if (id.startsWith('branches-')) {
 		const k = picks.segmentEdge(info.index);

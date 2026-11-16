@@ -37,19 +37,70 @@ function cssGradient(stops: RGBA[]): string {
 	return `linear-gradient(90deg, ${parts.join(', ')})`;
 }
 
-/** Sequential nodal value ramp: pale straw darkening through
- * amber and rust to near-black maroon. Lightness falls monotonically, so the
- * ordering survives every kind of color vision deficiency. */
+/** Sequential nodal value ramp: a segment of magma, pale cream through
+ * orange and magenta to deep violet. Lightness falls monotonically, so the
+ * ordering survives every kind of colour vision deficiency, and no stop is
+ * the interface's cobalt or the line-limit red and amber. */
 const PRICE_STOPS: RGBA[] = [
-	[246, 227, 180, 235],
-	[236, 178, 66, 235],
-	[212, 116, 34, 240],
-	[160, 56, 21, 245],
-	[84, 18, 7, 250]
+	[252, 236, 178, 235],
+	[253, 168, 115, 238],
+	[227, 80, 98, 242],
+	[146, 41, 129, 246],
+	[52, 16, 98, 250]
 ];
 
-export const priceColor = (t: number): RGBA => ramp(PRICE_STOPS, t);
+/** The same magma segment for a dark basemap, run the other way and cut short
+ * of its near-black end: high prices, the ones that matter most, stay the
+ * brightest marks on the map. Every stop has at least 3:1 contrast against the
+ * dark basemap (#0e0e0e); the lowest, magenta, has 3.1:1. */
+const PRICE_STOPS_DARK: RGBA[] = [
+	[168, 50, 125, 246],
+	[215, 69, 107, 244],
+	[243, 105, 92, 240],
+	[254, 159, 109, 238],
+	[252, 236, 178, 235]
+];
+
+export type RampTheme = 'light' | 'dark';
+
+export const priceColor = (t: number, theme: RampTheme = 'light'): RGBA =>
+	ramp(theme === 'dark' ? PRICE_STOPS_DARK : PRICE_STOPS, t);
 export const priceGradient = cssGradient(PRICE_STOPS);
+export const priceGradientDark = cssGradient(PRICE_STOPS_DARK);
+
+/** Diverging voltage angle ramp (ColorBrewer BrBG): brown below the middle of
+ * the case's angles, teal above, a near-white neutral between. Colour-blind
+ * safe, and its hues are apart from the price ramp and the interface colours. */
+const ANGLE_STOPS: RGBA[] = [
+	[140, 81, 10, 240],
+	[216, 179, 101, 235],
+	[236, 236, 230, 220],
+	[90, 180, 172, 235],
+	[1, 102, 94, 240]
+];
+
+export const angleColor = (t: number): RGBA => ramp(ANGLE_STOPS, t);
+export const angleGradient = cssGradient(ANGLE_STOPS);
+
+/** The colour for a nodal value in `mode` at `t` in [0, 1] of its domain. */
+export function scalarColor(mode: DisplayMode, t: number, theme: RampTheme = 'light'): RGBA {
+	return mode === 'demand'
+		? demandColor(t)
+		: mode === 'angle'
+			? angleColor(t)
+			: priceColor(t, theme);
+}
+
+/** The legend gradient for `mode`, matching `scalarColor`. */
+export function scalarGradient(mode: DisplayMode, theme: RampTheme = 'light'): string {
+	return mode === 'demand'
+		? demandGradient
+		: mode === 'angle'
+			? angleGradient
+			: theme === 'dark'
+				? priceGradientDark
+				: priceGradient;
+}
 
 /** Sequential demand ramp: the upper three quarters of viridis, slate blue
  * through teal and green to yellow. Lightness rises monotonically, the dimmest
@@ -123,7 +174,7 @@ export function scalarDomain(mode: DisplayMode, values: number[]): { lo: number;
 const SENS_STOPS: RGBA[] = [
 	[27, 120, 55, 240],
 	[127, 191, 123, 230],
-	[223, 219, 208, 160],
+	[214, 219, 224, 160],
 	[194, 165, 207, 230],
 	[118, 42, 131, 240]
 ];
@@ -132,7 +183,7 @@ const SENS_STOPS: RGBA[] = [
 export const sensColor = (t: number): RGBA => ramp(SENS_STOPS, (t + 1) / 2);
 export const sensGradient = cssGradient(SENS_STOPS);
 export const sensNeutral: RGBA = SENS_STOPS[2];
-export const busNeutral: RGBA = [180, 175, 165, 200];
+export const busNeutral: RGBA = [172, 179, 188, 200];
 
 /** Overlay colours that depend on the basemap's lightness: bus outlines,
  * hover highlights, the selected outline, the "not yet solved" grey, and
@@ -154,13 +205,13 @@ export interface MapPalette {
 
 export const MAP_PALETTE: Record<'light' | 'dark', MapPalette> = {
 	light: {
-		outline: [46, 42, 34, 110],
-		outlineStrong: [46, 42, 34, 120],
-		highlight: [32, 36, 43, 90],
-		highlightSoft: [32, 36, 43, 70],
-		selected: [32, 36, 43, 255],
-		grey: [110, 115, 120, 200],
-		greyLine: [138, 131, 117, 150],
+		outline: [24, 32, 43, 110],
+		outlineStrong: [24, 32, 43, 120],
+		highlight: [24, 32, 43, 90],
+		highlightSoft: [24, 32, 43, 70],
+		selected: [39, 71, 184, 255],
+		grey: [110, 117, 126, 200],
+		greyLine: [124, 132, 143, 150],
 		substation: [70, 92, 124, 190],
 		substationLine: [38, 52, 78, 220],
 		neutral: [120, 114, 102, 255]
@@ -170,7 +221,7 @@ export const MAP_PALETTE: Record<'light' | 'dark', MapPalette> = {
 		outlineStrong: [232, 238, 244, 130],
 		highlight: [232, 238, 244, 90],
 		highlightSoft: [232, 238, 244, 70],
-		selected: [255, 255, 255, 255],
+		selected: [143, 166, 255, 255],
 		grey: [150, 160, 170, 200],
 		greyLine: [150, 160, 170, 150],
 		substation: [120, 150, 200, 190],
@@ -182,7 +233,8 @@ export const MAP_PALETTE: Record<'light' | 'dark', MapPalette> = {
 const FLAT_SENSITIVITY_TINT = 0.55;
 
 export function sensFlatColor(domain: Pick<SensitivityDomain, 'mean'>): RGBA {
-	if (domain.mean === 0) return sensNeutral;
+	// Noise around zero is no change: the neutral colour, as the readout's 0 says.
+	if (Math.abs(domain.mean) < 1e-4) return sensNeutral;
 	return sensColor(domain.mean > 0 ? FLAT_SENSITIVITY_TINT : -FLAT_SENSITIVITY_TINT);
 }
 
@@ -215,7 +267,8 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 	// very large cases).
 	const absMax = Math.max(Math.abs(min), Math.abs(max));
 	const robust = Math.max(Math.abs(q(0.01)), Math.abs(q(0.99)));
-	const flat = max - min <= Math.max(1e-7, 0.01 * absMax);
+	// Below a hundredth of a cent per MWh the spread is solver noise, not a pattern to colour.
+	const flat = max - min <= Math.max(1e-4, 0.01 * absMax);
 	return {
 		min,
 		max,
@@ -226,39 +279,34 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 	};
 }
 
-/** Loading, as a fraction of rating, from which a branch needs attention. Both loading scales
- * share it. An optimal power flow enforces ratings, so its map draws congestion: red from here,
- * because it cannot exceed 1. A multiconductor power flow does not enforce them, so its overview
- * warns from here and calls a violation only above 1 (`LOADING_LIMIT` in `diagram/summary.ts`). */
+/** Loading, as a fraction of rating, from which a branch is near its limit: amber from here,
+ * red only at the rating itself (`LOADING_AT_LIMIT`), on the map and the diagram alike. */
 export const LOADING_ATTENTION = 0.9;
-/** Where the optimal power flow map starts shading a branch towards congestion. */
-const LOADING_ELEVATED = 0.6;
+/** Loading from which a branch is drawn red: at its rating, less display rounding noise
+ * (the diagram's `LOADING_TOLERANCE`). */
+const LOADING_AT_LIMIT = 1 - 1e-5;
 
-const LOADING_BASE: RGBA = [138, 131, 117, 200];
-const LOADING_AMBER: RGBA = [212, 116, 34, 240];
-const LOADING_RED: RGBA = [179, 38, 30, 250];
+export const LOADING_BASE: RGBA = [124, 132, 143, 200];
+export const LOADING_AMBER: RGBA = [227, 160, 8, 240];
+export const LOADING_RED: RGBA = [215, 38, 30, 250];
 const LOADING_STOPS: [RGBA, number][] = [
 	[LOADING_BASE, 0],
-	[LOADING_BASE, LOADING_ELEVATED],
+	[LOADING_BASE, LOADING_ATTENTION],
 	[LOADING_AMBER, LOADING_ATTENTION],
-	[LOADING_RED, LOADING_ATTENTION],
+	[LOADING_AMBER, 1],
 	[LOADING_RED, 1]
 ];
-/** Same thresholds and RGB values as branchColor, including the step to red at 90%. */
+/** Same thresholds and RGB values as branchColor, including the step to red at 100%. */
 export const branchLoadingGradient = `linear-gradient(90deg, ${LOADING_STOPS.map(
 	([c, stop]) => `rgb(${c.slice(0, 3).join(' ')}) ${stop * 100}%`
 ).join(', ')})`;
 
-/** Branch color by loading fraction: warm gray, amber past 0.6, red from `LOADING_ATTENTION`. */
+/** Branch color by loading fraction, in the diagram's three steps: grey below
+ * `LOADING_ATTENTION`, amber near the rating, red at it. */
 export function branchColor(loading: number, inService: boolean): RGBA {
-	if (!inService) return [197, 191, 178, 110];
-	if (loading < LOADING_ELEVATED) return LOADING_BASE;
-	if (loading < LOADING_ATTENTION)
-		return lerpColor(
-			[138, 131, 117, 210],
-			LOADING_AMBER,
-			(loading - LOADING_ELEVATED) / (LOADING_ATTENTION - LOADING_ELEVATED)
-		);
+	if (!inService) return [190, 196, 204, 110];
+	if (loading < LOADING_ATTENTION) return LOADING_BASE;
+	if (loading < LOADING_AT_LIMIT) return LOADING_AMBER;
 	return LOADING_RED;
 }
 

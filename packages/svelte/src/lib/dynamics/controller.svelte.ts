@@ -19,7 +19,7 @@ import {
 } from '@tellegen/engine';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { AppState, LocalCase } from '../state.svelte.js';
-import { allRmsEvents, markers, MAX_EVENTS, sentence, validate, type DynEvent } from './events.js';
+import { allRmsEvents, markers, MAX_EVENTS, title, validate, type DynEvent } from './events.js';
 import {
 	DynamicsFrame,
 	openBranchText,
@@ -78,7 +78,7 @@ export interface DynRunRecord {
 	options: RmsCaseOptions;
 	dt: number;
 	tEnd: number;
-	badge: { validated: boolean; text: string } | null;
+	badge: { validated: boolean; text: string; detail?: string } | null;
 	/** The network the run used: the case's own, or (for a validated
 	 * scenario on the demo) the validation study's. */
 	network: 'case' | 'validation';
@@ -111,6 +111,9 @@ export const VALIDATION_NETWORK =
 const REST_SECONDS = 0.02;
 
 const optionsKey = (o: RmsCaseOptions, network: string) => JSON.stringify([network, o]);
+
+/** Why dynamics is unavailable while the experimental setting is off. */
+export const DYNAMICS_OFF = 'Dynamics is off: turn on Experimental features in Settings';
 
 export class DynamicsController {
 	attachments: Record<string, DynAttachment> = $state.raw({});
@@ -384,6 +387,7 @@ export class DynamicsController {
 
 	/** Open the bundled WECC 240 demo: its case, dynamic data and coordinates. */
 	async openDemo(): Promise<void> {
+		if (!this.app.dynamicsEnabled) throw new Error(DYNAMICS_OFF);
 		this.app.mode = 'dynamics';
 		const base = `${this.examplesBase}/wecc240`;
 		const names = ['case.raw', 'case.dyr', 'case.geo.csv'];
@@ -419,8 +423,12 @@ export class DynamicsController {
 	update(id: string, patch: Partial<DynEvent>): void {
 		this.events = this.events.map((e) => (e.id === id ? ({ ...e, ...patch } as DynEvent) : e));
 	}
+	/** Remove one event. Removing the last one clears the list as
+	 * {@link clearEvents} does, restoring any settings a scenario changed. */
 	remove(id: string): void {
-		this.events = this.events.filter((e) => e.id !== id);
+		const rest = this.events.filter((e) => e.id !== id);
+		if (rest.length === 0) this.clearEvents();
+		else this.events = rest;
 	}
 	clearEvents(): void {
 		this.events = [];
@@ -490,16 +498,15 @@ export class DynamicsController {
 		const local = this.app.activeLocal;
 		const a = this.active;
 		if (!local || !a || a.status !== 'ready') {
-			this.error = 'Attach dynamic data (.dyr) to the case first.';
+			this.error = 'No dynamic data';
 			return null;
 		}
 		if (this.running) {
-			this.error = 'A run is already in progress.';
+			this.error = 'Run in progress';
 			return null;
 		}
 		if (this.modesBusy) {
-			this.error =
-				'Small-signal modes are being computed. Wait for them, or stop them, before a run.';
+			this.error = 'Modes running';
 			return null;
 		}
 		const errs = this.eventErrors;
@@ -555,7 +562,7 @@ export class DynamicsController {
 			if (err.name === 'AbortError') {
 				this.running = false;
 				this.progress = null;
-				this.error = 'Run stopped.';
+				this.error = 'Stopped';
 				return null;
 			}
 			record.failure = { message: err.message, at: failureTime(err.message) };
@@ -664,11 +671,9 @@ export class DynamicsController {
 		const esc = (x: string) => x.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 		if (info.layer?.id === 'dyn-bus-v' && info.index >= 0) {
 			const v = f.vNow[info.index];
-			const when = this.atRest
-				? 'at rest, before any event'
-				: `at t = ${this.player.t.toFixed(3)} s`;
+			const when = this.atRest ? 'Before any event' : `Time ${this.player.t.toFixed(3)} s`;
 			return {
-				html: `<b>Bus ${f.busIds[info.index]}</b><br>|V| ${v.toFixed(4)} pu ${when}`
+				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu<br>${when}`
 			};
 		}
 		if (info.layer?.id === 'dyn-halos' && info.index >= 0) {
@@ -676,11 +681,11 @@ export class DynamicsController {
 			const df = f.haloDf[info.index];
 			const units = h.units
 				.map((u) =>
-					u.held ? `${esc(u.key)}: held at power-flow output, not simulated` : esc(u.key)
+					u.held ? `${esc(u.key)}: not simulated` : esc(u.key)
 				)
 				.join('<br>');
 			return {
-				html: `<b>Units at bus ${h.bus}</b><br>${units}${Number.isFinite(df) ? `<br>largest speed deviation ${(df * 1000).toFixed(1)} mHz` : ''}`
+				html: `<b>Generators at bus ${h.bus}</b><br>${units}${Number.isFinite(df) ? `<br>Largest speed change ${(df * 1000).toFixed(1)} mHz` : ''}`
 			};
 		}
 		if (
@@ -699,7 +704,7 @@ export class DynamicsController {
 		const local = this.app.activeLocal;
 		if (!local || !this.active || this.modesBusy) return;
 		if (this.running) {
-			this.modesError = 'A run is in progress. Compute the modes after it finishes.';
+			this.modesError = 'Run in progress';
 			return;
 		}
 		this.modesBusy = true;
@@ -711,7 +716,7 @@ export class DynamicsController {
 			this.modes = await c.linear({ participation_top: 3 }, { signal: abort.signal });
 		} catch (e) {
 			const err = e as Error;
-			this.modesError = err.name === 'AbortError' ? 'Stopped.' : err.message;
+			this.modesError = err.name === 'AbortError' ? 'Stopped' : err.message;
 		} finally {
 			this.modesBusy = false;
 			this.#modesAbort = null;
@@ -753,6 +758,6 @@ export class DynamicsController {
 	}
 
 	describe(e: DynEvent): string {
-		return sentence(e, this.f0);
+		return title(e);
 	}
 }

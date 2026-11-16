@@ -38,28 +38,28 @@ export interface Preset {
 export const WECC240_PRESETS: Preset[] = [
 	{
 		id: 'trip-1101-1401',
-		title: 'Trip line 1101–1401 circuit 1 (of 2) at 1 s',
+		title: 'Trip line 1101–1401',
 		events: () => [branchTrip(1101, 1401, '1')]
 	},
 	{
 		id: 'trip-1431-N',
-		title: 'Trip Palo Verde 1431 N (2,355 MW)',
+		title: 'Trip Palo Verde unit',
 		events: () => [generatorTrip(1431, 'N')]
 	},
 	{
 		id: 'fault-1032',
-		title: 'Fault at 1032 through j0.05, 1.0–1.1 s',
+		title: 'Fault at bus 1032',
 		events: () => [busFault(1032, 60, { x: 0.05, clearAfter: 0.1 } as Partial<DynEvent>)]
 	},
 	{
 		id: 'fault-1101',
-		title: 'Fault at 1101 through j0.01, 1.0–1.1 s',
+		title: 'Fault at bus 1101',
 		events: () => [busFault(1101, 60, { x: 0.01, clearAfter: 0.1 } as Partial<DynEvent>)]
 	}
 ];
 
-export const VALIDATED_CLAIM =
-	'Validated scenario: trajectories match PowerSimulationsDynamics.jl 0.16.2 within 3.2e-6 pu speed, 1.2e-5 pu |V|';
+/** The run repeats the validation study's scenario and settings. */
+export const VALIDATED_CLAIM = 'Matches';
 
 const sameOptions = (o: RmsCaseOptions): string[] => {
 	const diff: string[] = [];
@@ -84,7 +84,7 @@ export function validationBadge(input: {
 	dt: number;
 	tEnd: number;
 	validationNetwork: boolean;
-}): { validated: boolean; text: string } | null {
+}): { validated: boolean; text: string; detail?: string } | null {
 	if (!input.presetId || !input.presetEvents) return null;
 	const diff = sameOptions(input.options);
 	if (Math.abs(input.dt - VALIDATION_DT) > 1e-12) diff.push('step');
@@ -96,8 +96,5 @@ export function validationBadge(input: {
 		input.events.every((e, i) => strip(e) === strip(input.presetEvents![i]));
 	if (!same) diff.push('events');
 	if (diff.length === 0) return { validated: true, text: VALIDATED_CLAIM };
-	return {
-		validated: false,
-		text: `Scenario of the validation study; settings differ: ${diff.join(', ')}`
-	};
+	return { validated: false, text: 'Settings differ', detail: diff.join(', ') };
 }

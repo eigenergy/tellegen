@@ -1,6 +1,10 @@
 import type { Solution } from '@tellegen/engine';
 import { describe, expect, it } from 'vitest';
-import { economicsFor, pricedBranch, thermalStatus } from '../src/lib/diagram/transmission-economics.js';
+import {
+	economicsFor,
+	pricedBranch,
+	thermalStatus
+} from '../src/lib/diagram/transmission-economics.js';
 
 const solution: Solution = {
 	formulation: 'dcopf',
@@ -35,7 +39,8 @@ describe('OPF economics', () => {
 		expect(pricedBranch(result.branches.get(1))).toBe(false);
 		expect(pricedBranch(result.branches.get(4))).toBe(true);
 		expect(thermalStatus(result.branches.get(2))).toBe('Not enforced');
-		expect(thermalStatus(result.branches.get(5))).toContain('unavailable');
+		expect(thermalStatus(result.branches.get(5))).toBe('At limit');
+		expect(result.branches.get(5)?.relief_per_mw ?? null).toBeNull();
 	});
 
 	it('keeps legacy and other formulation constraint economics unavailable', () => {

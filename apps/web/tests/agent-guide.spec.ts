@@ -7,21 +7,21 @@ test('first-visit introduction dismisses persistently and agent help stays avail
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByRole('complementary', { name: 'New to Tellegen' })).toBeVisible();
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toBeVisible();
 	await page.getByRole('button', { name: 'Dismiss introduction' }).click();
 	await page.reload();
-	await expect(page.getByRole('complementary', { name: 'New to Tellegen' })).toHaveCount(0);
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.getByRole('region', { name: 'Use Tellegen with an agent' })).toBeVisible();
-	await expect(page.getByLabel('Agent prompt')).toHaveValue(
-		/Use the WebMCP tools in this Tellegen tab/
+	await expect(page.getByRole('button', { name: 'Copy prompt', exact: true })).toBeVisible();
+	const status = page.getByTestId('webmcp-status');
+	await expect(status).toContainText('Connected');
+	const counts = page.locator('dl[aria-label="Agent tools"]');
+	await expect(counts.locator('.stat', { hasText: 'Tools' }).locator('.value')).toHaveText(
+		/^[1-9]\d*$/
 	);
-	await expect(page.getByTestId('webmcp-status')).toContainText('Ready for agents');
-	await expect(page.getByTestId('webmcp-status')).toContainText(/This tab offers \d+ tools/);
-	await page.getByRole('link', { name: 'Changelog', exact: true }).click();
-	await expect(page.getByRole('heading', { name: "What's new in Tellegen" })).toBeVisible();
-	await page.getByRole('link', { name: 'Back to Tellegen' }).click();
-	await expect(page.getByRole('complementary', { name: 'New to Tellegen' })).toHaveCount(0);
+	await page.reload();
+	await expect(page.getByRole('complementary', { name: 'About AI agents' })).toHaveCount(0);
 });
 
 test('default docks keep Studies, Agent, solver and map controls separate', async ({
@@ -65,19 +65,24 @@ test('default docks keep Studies, Agent, solver and map controls separate', asyn
 			)
 			.toBe(true);
 		const zoom = page.getByRole('button', { name: 'Zoom in', exact: true });
-		await expect(zoom).toBeVisible();
-		{
-			const a = (await attribution.boundingBox())!,
-				z = (await zoom.boundingBox())!;
+		const panel = (await page.locator('[data-panel]:visible').first().boundingBox())!;
+		const a = (await attribution.boundingBox())!;
+		if (viewport.width < 960) {
+			// On a phone the open sheet runs to the bottom edge: the credit sits on the map
+			// above it, and the zoom buttons step aside (pinch still zooms).
+			await expect(zoom).toBeHidden();
+			expect(a.y + a.height).toBeLessThanOrEqual(panel.y);
+		} else {
+			await expect(zoom).toBeVisible();
+			const z = (await zoom.boundingBox())!;
 			expect(a.x + a.width).toBeLessThan(z.x - 6);
 			expect(viewport.height - z.y).toBeLessThan(90);
 			await zoom.click();
+			// The docked panels clear the attribution.
+			expect(panel.y + panel.height).toBeLessThan(a.y);
 		}
 		await page.screenshot({
 			path: testInfo.outputPath(`panels-${viewport.width}x${viewport.height}.png`)
 		});
-		const panel = (await page.locator('[data-panel="agent"]').boundingBox())!;
-		const a = (await attribution.boundingBox())!;
-		expect(panel.y + panel.height).toBeLessThan(a.y);
 	}
 });

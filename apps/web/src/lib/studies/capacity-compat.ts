@@ -11,9 +11,8 @@ export function capacityGoal(
 	return {
 		title: 'Capacity upgrade study',
 		formulation: 'dcopf',
-		request: 'Lower the specified weighted marginal prices within the capacity upgrade limits.',
-		interpretation:
-			'Minimize the weighted active-power prices. Branch rating changes use MW relative to the captured starting point.',
+		request: 'Lower price',
+		interpretation: `Lower weighted price at ${spec.objective.weights.length} buses with line capacity upgrades.`,
 		objective: {
 			kind: 'weighted_observable',
 			operand: { Price: 'Active' },

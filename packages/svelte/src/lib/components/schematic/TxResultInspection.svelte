@@ -5,12 +5,13 @@
 		transferReading,
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
-	import { readable } from '../../format.js';
+	import { lineName, readable } from '../../format.js';
 	import { previewHandlers, type PreviewItem } from './preview.js';
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
 	import {
 		assessVoltage,
+		gaugeText,
 		hasStatedRating,
 		isRated,
 		loadingStateText,
@@ -35,7 +36,8 @@
 		onframe,
 		onclear,
 		onpreview,
-		brief = false
+		brief = false,
+		limitName = 'Lines at limit'
 	}: {
 		exceptions: ReturnType<typeof operatingExceptions>;
 		showExceptions?: boolean;
@@ -57,6 +59,8 @@
 		onpreview?: (item: PreviewItem | null) => void;
 		/** Collapsed: the selection's heading and flow only, no exception list. */
 		brief?: boolean;
+		/** The name for lines at or over their rating, which depends on the calculation. */
+		limitName?: string;
 	} = $props();
 	const preview = (kind: PreviewItem['kind'], id: number) =>
 		previewHandlers(onpreview, { kind, id });
@@ -76,10 +80,17 @@
 	);
 	const branches = $derived(
 		exceptions.branches.filter(
-			(b) => !needle || `branch ${b.id} · bus ${b.from} to bus ${b.to}`.includes(needle)
+			(b) =>
+				!needle ||
+				`line ${b.id} branch ${b.id} bus ${b.from} bus ${b.to} ${b.from}–${b.to}`.includes(needle)
 		)
 	);
 	const total = $derived(exceptions.buses.length + exceptions.branches.length);
+	/** Both kinds in the list: a heading for each. One kind: the summary names it. */
+	const mixed = $derived(exceptions.buses.length > 0 && exceptions.branches.length > 0);
+	const listName = $derived(
+		transfer ? limitName : mixed ? 'Buses and lines' : exceptions.buses.length ? 'Buses' : 'Lines'
+	);
 	const info = $derived(flow?.loading_info);
 	const rated = $derived(hasStatedRating(info) && isRated(loading));
 	const voltageStatus = $derived(
@@ -87,12 +98,12 @@
 	);
 	const voltageText = {
 		deenergized: 'De-energized',
-		missing: 'Voltage unavailable',
-		unbounded: 'Bounds unavailable',
-		'invalid-limits': 'Invalid bounds',
-		normal: 'Within available bounds',
-		low: 'Below minimum',
-		high: 'Above maximum'
+		missing: '—',
+		unbounded: 'No limits',
+		'invalid-limits': 'Invalid limits',
+		normal: 'Within limits',
+		low: 'Low',
+		high: 'High'
 	};
 	/** The flow along the branch in words, when one end supplies the other. */
 	const flowSentence = $derived.by(() => {
@@ -131,15 +142,15 @@
 	<section class="inspection" aria-label="Selected equipment">
 		<header>
 			<h3 tabindex="-1" bind:this={heading}>
-				{#if bus}Bus {bus.id}{bus.name ? ` (${bus.name})` : ''}{:else if branch}Branch {branch.id}{/if}
+				{#if bus}Bus {bus.id}{bus.name ? ` (${bus.name})` : ''}{:else if branch}Line {branch.id}{/if}
 			</h3>
 			<button onclick={onframe}>Frame</button>
 			<button onclick={clear} aria-label="Clear selection">Clear</button>
 		</header>
-		{#if stale}<p>Showing previous or incomplete results.</p>{/if}
+		{#if stale}<span class="chip">Stale</span>{/if}
 		{#if brief}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}.
+					<strong>{flowSentence.mw}</strong> from bus {flowSentence.from} to bus {flowSentence.to}
 				</p>{/if}
 		{:else if bus}
 			<dl>
@@ -147,43 +158,39 @@
 					<div>
 						<dt>Voltage</dt>
 						<dd>
-							{#if voltageSolved}{@render q(
-									deenergized ? undefined : voltage,
-									'pu'
-								)}{:else}Unavailable in DC{/if}
+							{#if voltageSolved}{@render q(deenergized ? undefined : voltage, 'pu')}{:else}—{/if}
 						</dd>
 					</div>
 					<div>
-						<dt>Minimum</dt>
+						<dt>Min</dt>
 						<dd>{@render q(bus.vmin_pu, 'pu')}</dd>
 					</div>
 					<div>
-						<dt>Maximum</dt>
+						<dt>Max</dt>
 						<dd>{@render q(bus.vmax_pu, 'pu')}</dd>
 					</div>
 					{#if voltageSolved}<div>
-							<dt>Voltage status</dt>
+							<dt>Status</dt>
 							<dd>{voltageText[voltageStatus]}</dd>
 						</div>{/if}
 				{/if}
 				<div>
-					<dt>Solved generation</dt>
+					<dt>Generation</dt>
 					<dd>{@render q(generation, 'MW')}</dd>
 				</div>
 				<div>
-					<dt>Model demand</dt>
+					<dt>Demand</dt>
 					<dd>{@render q(demand, 'MW')}</dd>
 				</div>
 				<div>
-					<dt>Installed capacity</dt>
+					<dt>Capacity</dt>
 					<dd>{@render q(bus.gen_mw, 'MW')}</dd>
 				</div>
 			</dl>
 		{:else if branch}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}.
+					<strong>{flowSentence.mw}</strong> from bus {flowSentence.from} to bus {flowSentence.to}
 				</p>{/if}
-			<p class="convention">Signs at each end: positive where power enters the branch.</p>
 			<table>
 				<thead>
 					<tr>
@@ -207,30 +214,26 @@
 			<dl>
 				{#if transfer}
 					<div>
-						<dt>Active magnitude</dt>
+						<dt>Flow</dt>
 						<dd>{@render q(transfer.reading?.magnitude, 'MW')}</dd>
 					</div>
 					<div>
 						<dt>Direction</dt>
 						<dd>
-							{transfer.reading ? transferDirectionText(transfer.reading, branch) : 'Unavailable'}
+							{transfer.reading ? transferDirectionText(transfer.reading, branch) : '—'}
 						</dd>
 					</div>
 				{/if}
 				<div>
-					<dt>Utilization</dt>
+					<dt>Loading</dt>
 					<dd>{@render q(rated && flow ? flow.loading * 100 : undefined, '%')}</dd>
 				</div>
 				<div>
-					<dt>Loading status</dt>
-					<dd>{loading ? loadingStateText[loading] : 'Unavailable'}</dd>
+					<dt>Status</dt>
+					<dd>{loading ? loadingStateText[loading] : '—'}</dd>
 				</div>
 				<div>
-					<dt>Rating basis</dt>
-					<dd>{info?.basis.toUpperCase() ?? 'Unavailable'}</dd>
-				</div>
-				<div>
-					<dt>Effective rating</dt>
+					<dt>Rating</dt>
 					<dd>{@render q(rated ? info?.rating : undefined, info?.basis.toUpperCase() ?? '')}</dd>
 				</div>
 				<div>
@@ -243,44 +246,39 @@
 						)}
 					</dd>
 				</div>
-				<div>
-					<dt>Limiting end</dt>
-					<dd>{info?.limiting_end ?? (info?.basis === 'mw' ? 'DC magnitude' : 'Unavailable')}</dd>
-				</div>
+				{#if info?.limiting_end}<div>
+						<dt>Limiting end</dt>
+						<dd>{info.limiting_end}</dd>
+					</div>{/if}
 			</dl>
 		{/if}
 	</section>
 {/if}
 
-{#if showExceptions && !brief}
+{#if showExceptions && !brief && total > 0}
 	<details bind:open>
-		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Exceptions'} ({total})</summary>
+		<summary bind:this={summary}>{listName} ({total})</summary>
 		{#if open}
 			<label>
-				Search exceptions
+				Search
 				<input
 					type="search"
 					bind:value={query}
 					oninput={() => (limit = batch)}
-					placeholder="Bus, station or branch ID"
+					placeholder="Bus, station or line"
 				/>
 			</label>
 			{#if !buses.length && !branches.length}<p>
-					{needle
-						? 'No matching exceptions.'
-						: transfer
-							? 'No reported overloads.'
-							: 'No reported operating exceptions.'}
+					{needle ? 'No matches' : 'None'}
 				</p>{/if}
 			{#if buses.length}
-				<h3>Voltage ({buses.length} {buses.length === 1 ? 'bus' : 'buses'})</h3>
+				{#if mixed}<h3>Buses ({buses.length})</h3>{/if}
 				<ol>
 					{#each buses.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('bus', b.id)} {...preview('bus', b.id)}
-								><strong>Bus {b.id}{b.name ? ` (${b.name})` : ''}</strong><span
-									>{@render q(b.value, 'pu')}, {@render q(b.exceedance, 'pu')}
-									{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
+								><strong>Bus {b.id}{b.name ? ` (${b.name})` : ''}</strong><span class="over"
+									>{@render q(b.value, 'pu')} {b.state === 'low' ? 'Low' : 'High'}</span
 								></button
 							>
 						</li>
@@ -288,16 +286,14 @@
 				</ol>
 			{/if}
 			{#if branches.length}
-				<h3>
-					Branch loading ({branches.length}
-					{branches.length === 1 ? 'branch' : 'branches'})
-				</h3>
+				{#if mixed}<h3>Lines ({branches.length})</h3>{/if}
 				<ol>
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
-								><strong>Branch {b.id}, {b.from} → {b.to}</strong><span
-									>{@render q(b.loading * 100, '%')}, {loadingStateText[b.state]}</span
+								><strong>{lineName(b)}</strong><span
+									class={b.state === 'warning' ? 'near' : 'over'}
+									title="Exact: {(b.loading * 100).toPrecision(6)}%">{gaugeText(b.loading)}</span
 								></button
 							>
 						</li>
@@ -305,7 +301,7 @@
 				</ol>
 			{/if}
 			{#if Math.max(buses.length, branches.length) > limit}
-				<button onclick={() => (limit += batch)}>Show more exceptions</button>
+				<button onclick={() => (limit += batch)}>Show more</button>
 			{/if}
 		{/if}
 	</details>
@@ -345,7 +341,12 @@
 		color: var(--ink);
 		font-size: var(--fs-data);
 	}
-	.convention,
+	.chip {
+		padding: 1px 8px;
+		border-radius: var(--radius-full);
+		background: var(--accent-soft);
+		color: var(--text-accent);
+	}
 	dt,
 	th {
 		color: var(--text-secondary);
@@ -362,7 +363,7 @@
 	dd,
 	td,
 	li button > span {
-		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
 		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
@@ -401,20 +402,39 @@
 		margin: var(--space-2xs) 0;
 	}
 	ol {
-		padding-left: var(--space-3xl);
+		padding: 0;
 		margin: var(--space-2xs) 0;
+		list-style: none;
 	}
+	/* Plain rows with a rule between, as the Network panel lists lines. */
 	li {
-		padding: var(--space-3xs) 0;
+		padding: 0;
+		border-top: 1px solid var(--line);
 	}
 	li button {
 		width: 100%;
-		text-align: left;
 		display: flex;
 		flex-wrap: wrap;
+		align-items: baseline;
 		gap: var(--space-2xs) var(--space-lg);
 		justify-content: space-between;
+		padding: var(--space-3xs) var(--space-2xs);
+		text-align: left;
+		font-size: var(--fs-data);
+		color: var(--ink);
+		background: none;
+		border: 0;
+		border-radius: 0;
 		overflow-wrap: anywhere;
+	}
+	li button:hover {
+		background: var(--surface-hover);
+	}
+	li button[aria-pressed='true'] {
+		background: var(--accent-soft);
+	}
+	li button > strong {
+		font-weight: 400;
 	}
 	button,
 	input {
@@ -427,6 +447,14 @@
 	}
 	button {
 		cursor: pointer;
+	}
+	/* At or over a limit: red, as on the drawing. */
+	li button > span.over {
+		color: var(--red);
+	}
+	/* Near a limit: amber, as on the drawing. */
+	li button > span.near {
+		color: var(--text-warning);
 	}
 	@media (pointer: coarse) {
 		button,

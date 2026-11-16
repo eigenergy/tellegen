@@ -61,7 +61,8 @@
 	let drag = $state<{ x0: number; x1: number } | null>(null);
 	const PAD_L = 44;
 	const PAD_R = 8;
-	const PAD_T = 6;
+	/** Room above the plot for the unit, which heads the y ticks. */
+	const PAD_T = 22;
 	const PAD_B = 18;
 	const plotW = $derived(Math.max(10, width - PAD_L - PAD_R));
 	const plotH = $derived(Math.max(10, height - PAD_T - PAD_B));
@@ -358,7 +359,7 @@
 		inset: 0;
 		pointer-events: none;
 		font-family: var(--font-mono);
-		font-size: 9.5px;
+		font-size: 12px;
 		color: var(--text-tertiary);
 	}
 	.ytick {
@@ -371,11 +372,14 @@
 		transform: translateX(-50%);
 		white-space: nowrap;
 	}
+	/* The unit heads the y ticks, above the plot. */
 	.unit {
 		position: absolute;
-		left: 2px;
-		top: -2px;
-		font-weight: 600;
+		top: 0;
+		left: 0;
+		color: var(--text-secondary);
+		font-family: var(--font-sans);
+		white-space: nowrap;
 	}
 	.ref {
 		position: absolute;

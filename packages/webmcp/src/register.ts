@@ -20,6 +20,9 @@ export interface RegisterOptions extends CreateTellegenToolsOptions {
   signal?: AbortSignal;
   /** Reports a dynamic registration error, then `null` after a later retry succeeds. */
   onRegistrationError?: (error: Error | null) => void;
+  /** Reports the registered tool names whenever a tool that registers on its own (dynamics,
+   * capacity planning) comes or goes. */
+  onToolsChange?: (names: string[]) => void;
   /**
    * Origins, other than this document's, allowed to discover and call the
    * tools: for example the page that embeds tellegen in an iframe. The
@@ -150,20 +153,33 @@ export async function registerTellegenWebMcp(
     signal: lifecycle.signal,
     ...(exposedTo ? { exposedTo } : {}),
   };
+  // A host that gates dynamics registers `simulate_dynamics` on its own,
+  // only while dynamics is available.
+  const gateDynamics = !!adapter.simulateDynamics && !!adapter.dynamicsAvailable;
+  const general = createTellegenTools(adapter, toolOptions);
+  const dynamicsTools = gateDynamics
+    ? general.filter((tool) => tool.name === "simulate_dynamics")
+    : [];
   const tools = [
-    ...createTellegenTools(adapter, toolOptions),
+    ...general.filter((tool) => !dynamicsTools.includes(tool)),
     ...(adapter.studies
       ? createTellegenStudyTools(adapter.studies, toolOptions)
       : []),
   ];
   let dynamicNames: () => string[] = () => [];
+  let dynamicsNames: () => string[] = () => [];
   let unsubscribe: () => void = () => {};
+  let unsubscribeDynamics: () => void = () => {};
   let registrationError: Error | null = null;
   const reportRegistrationError = (error: unknown) => {
     registrationError = asError(error);
     options.onRegistrationError?.(registrationError);
   };
-  const allNames = () => [...tools.map((tool) => tool.name), ...dynamicNames()];
+  const allNames = () => [
+    ...tools.map((tool) => tool.name),
+    ...dynamicsNames(),
+    ...dynamicNames(),
+  ];
   if (options.debugTool) {
     tools.push(
       createTellegenDebugTool(
@@ -183,6 +199,32 @@ export async function registerTellegenWebMcp(
     for (const tool of tools) {
       await registerOne(modelContext, tool, registration);
     }
+    const dynamicsAvailable = adapter.dynamicsAvailable?.bind(adapter);
+    if (dynamicsAvailable && dynamicsTools.length > 0) {
+      const dynamicsGroup = new DynamicGroup(
+        modelContext,
+        dynamicsTools,
+        lifecycle.signal,
+        exposedTo,
+      );
+      dynamicsNames = () => dynamicsGroup.names();
+      let tail: Promise<void> = Promise.resolve();
+      const sync = () => {
+        tail = tail
+          .catch(() => undefined)
+          .then(() => dynamicsGroup.sync(dynamicsAvailable()))
+          .then(() => options.onToolsChange?.(allNames()));
+        return tail;
+      };
+      await sync().catch(reportRegistrationError);
+      unsubscribeDynamics =
+        adapter.onDynamicsAvailabilityChange?.(() => {
+          void sync().catch(reportRegistrationError);
+        }) ?? (() => {});
+      lifecycle.signal.addEventListener("abort", () => unsubscribeDynamics(), {
+        once: true,
+      });
+    }
     const planning = adapter.planning;
     if (planning) {
       const groups = createTellegenPlanningTools(planning, toolOptions);
@@ -198,6 +240,7 @@ export async function registerTellegenWebMcp(
         lifecycle.signal,
         exposedTo,
       );
+      dynamicNames = () => [...planningGroup.names(), ...proposalGroup.names()];
       // Serialize syncs: availability can change while a registration is in
       // flight, and interleaved register/abort calls on one group would race.
       let tail: Promise<void> = Promise.resolve();
@@ -213,6 +256,7 @@ export async function registerTellegenWebMcp(
               registrationError = null;
               options.onRegistrationError?.(null);
             }
+            options.onToolsChange?.(allNames());
           });
         return tail;
       };
@@ -226,12 +270,12 @@ export async function registerTellegenWebMcp(
       lifecycle.signal.addEventListener("abort", () => unsubscribe(), {
         once: true,
       });
-      dynamicNames = () => [...planningGroup.names(), ...proposalGroup.names()];
     }
   } catch (error) {
     lifecycle.abort(error);
     options.signal?.removeEventListener("abort", abort);
     unsubscribe();
+    unsubscribeDynamics();
     throw error;
   }
   return {

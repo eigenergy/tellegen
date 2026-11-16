@@ -24,15 +24,15 @@ describe('transmission transfers', () => {
 		const branch = { from: 2, to: 8 };
 		const forward = transferReading(flow(45, -42), false);
 		expect(forward.magnitude).toBe(45);
-		expect(transferDirectionText(forward, branch)).toBe('Bus 2 → bus 8');
+		expect(transferDirectionText(forward, branch)).toBe('2 to 8');
 		const reverse = transferReading(flow(-42, 45), false);
-		expect(transferDirectionText(reverse, branch)).toBe('Bus 8 → bus 2');
+		expect(transferDirectionText(reverse, branch)).toBe('8 to 2');
 		const both = transferReading(flow(3, 1), false);
 		expect(both.direction).toBe(0);
-		expect(transferDirectionText(both, branch)).toBe('Active power enters the branch');
+		expect(transferDirectionText(both, branch)).toBe('Into line');
 		const legacy = transferReading(flow(42), false);
 		expect(legacy.magnitude).toBe(42);
-		expect(transferDirectionText(legacy, branch)).toBe('Direction unavailable');
+		expect(transferDirectionText(legacy, branch)).toBe('—');
 	});
 
 	it('caps halo width independently of equipment utilization', () => {

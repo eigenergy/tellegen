@@ -9,21 +9,21 @@
 	description="Tellegen updates: simpler saved Studies, Texas7k, movable panels, preserved maps and drawings, and agent tools."
 />
 <main>
-	<a href={resolve('/')}>Back to Tellegen</a>
+	<a class="back" href={resolve('/')}>Back to the map</a>
 	<h1>What's new in Tellegen</h1>
 	<p class="date">September 2026 preview</p>
 	<h2>Distribution AC power flow</h2>
 	<p>
 		Calculate terminal voltages and currents, compare voltages to ground or neutral, and save or
-		export the result. Start with the 4-conductor example. This extends <a
+		export the result. Open the four-wire example from the list in Studies. This extends <a
 			href="https://github.com/eigenergy/tellegen/pull/109"
 			>Frederik Geth's multiconductor power-flow work</a
 		>.
 	</p>
 	<h2>Quieter messages</h2>
 	<p>
-		Calculation and import errors appear briefly at the bottom. Repeated messages stay together;
-		expand the recent list for details or retry.
+		Calculation and import errors appear briefly at the bottom of the map. Repeated messages stay
+		together, and the Log keeps every message after it closes.
 	</p>
 	<h2>Usage measurements</h2>
 	<p>
@@ -55,8 +55,8 @@
 	<h2>Find a command, then focus</h2>
 	<p>
 		Press <strong>Cmd+K</strong> (Ctrl+K on Windows and Linux) or <strong>Commands</strong> in the
-		header to run a calculation, switch cases or open a panel by name. <strong>Zen mode</strong>
-		hides the panels so only the map remains, and stays on after a reload until you press Escape.
+		header to run a calculation, switch cases or open a panel by name. <strong>Hide panels</strong>
+		leaves only the map, and stays on after a reload until you press Escape.
 	</p>
 	<h2>Keep maps and drawings</h2>
 	<p>
@@ -89,7 +89,7 @@
 	h1 {
 		font-size: clamp(28px, 5vw, 40px);
 		line-height: 1.2;
-		margin: 28px 0 8px;
+		margin: 26px 0 8px;
 	}
 	h2 {
 		font-size: 21px;
@@ -99,12 +99,17 @@
 		margin: 10px 0;
 	}
 	a {
-		color: #365747;
+		color: var(--text-accent);
 		text-underline-offset: 3px;
+	}
+	.back {
+		display: inline-block;
+		font-size: var(--fs-body);
+		text-decoration: none;
 	}
 	.date {
 		color: var(--text-secondary);
-		font: 12px var(--font-mono);
+		font-size: var(--fs-label);
 	}
 	.links {
 		display: flex;

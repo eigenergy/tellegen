@@ -9,7 +9,11 @@ const state = vi.hoisted(() => ({
 		activeDisplay: null,
 		displayStats: null,
 		activeFormulation: 'acpf',
-		activeSolvable: { solving: false }
+		activeSolvable: { solving: false } as {
+			solving: boolean;
+			solveBackend?: string | null;
+			solveMs?: number | null;
+		}
 	}
 }));
 
@@ -19,20 +23,25 @@ vi.mock('../src/lib/context.svelte.js', () => ({
 }));
 
 beforeEach(() => {
-	state.ctrl.activeSolvable.solving = false;
+	state.ctrl.activeSolvable = { solving: false };
 });
 
 describe('display controls without a result', () => {
 	it('shows progress only while the calculation is still running', () => {
 		state.ctrl.activeSolvable.solving = true;
 		const { body } = render(DisplayControls);
-		expect(body).toContain('Solving AC power flow');
-		expect(body).not.toContain('results available');
+		expect(body).toContain('Solving…');
+		expect(body).not.toContain('No result');
 	});
 	it('stops reporting progress when the calculation ends without a result', () => {
 		const { body } = render(DisplayControls);
-		expect(body).not.toContain('Solving AC power flow');
-		expect(body).toContain('No AC power flow results available.');
+		expect(body).not.toContain('Solving…');
+		expect(body).toContain('No result');
 		expect(body).not.toContain('blink');
+	});
+	it('leaves a failed calculation to the status line above', () => {
+		state.ctrl.activeSolvable = { solving: false, solveBackend: 'clarabel-wasm', solveMs: null };
+		const { body } = render(DisplayControls);
+		expect(body).not.toContain('No result');
 	});
 });

@@ -129,8 +129,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 70;
-		background: rgb(var(--ink-rgb) / 0.22);
-		backdrop-filter: blur(3px);
+		background: rgb(var(--ink-rgb) / 0.2);
 		display: flex;
 		justify-content: center;
 		align-items: flex-start;
@@ -140,9 +139,9 @@
 		width: 100%;
 		max-width: 560px;
 		overflow: hidden;
-		background: var(--paper);
+		background: var(--raised);
 		border: 1px solid var(--line);
-		border-radius: 8px;
+		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-menu);
 		font: var(--fs-body) / var(--lh-tight, 1.2) var(--font-display);
 		color: var(--ink);
@@ -193,7 +192,7 @@
 		padding: 8px 10px;
 		border: 0;
 		border-left: 2px solid transparent;
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: transparent;
 		color: inherit;
 		font: inherit;

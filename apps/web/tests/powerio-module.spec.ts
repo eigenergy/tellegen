@@ -12,15 +12,19 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) },
 		{ name: 'case14synthetic.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	const downloadPromise = page.waitForEvent('download');
+	// Save and export sit in the case's File menu.
+	await page.getByRole('button', { name: 'File', exact: true }).click();
 	await page.getByRole('button', { name: 'Save case', exact: true }).click();
 	const download = await downloadPromise;
 	expect(download.suggestedFilename()).toMatch(/\.pio\.json$/);
@@ -32,6 +36,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 	expect(text).not.toContain('tellegen.study');
 
 	const solutionDownloadPromise = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'File', exact: true }).click();
 	await page.getByRole('button', { name: 'Save solution', exact: true }).click();
 	const solutionDownload = await solutionDownloadPromise;
 	expect(solutionDownload.suggestedFilename()).toMatch(/\.solution\.pio\.json$/);
@@ -51,7 +56,9 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		.setInputFiles([
 			{ name: 'saved.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
 		]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	await expect(page.locator('p.error')).toHaveCount(0);
 });
 
@@ -60,7 +67,7 @@ test('the retired tellegen.study envelope is rejected', async ({ page }) => {
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{

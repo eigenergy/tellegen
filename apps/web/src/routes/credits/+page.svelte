@@ -10,16 +10,21 @@
 />
 
 <main class="credits">
-	<a class="back mono" href="/">back to tellegen</a>
+	<a class="back" href="/">Back to the map</a>
 	<h1>Credits</h1>
 	<p>
-		Tellegen uses synthetic public test cases and open source software. ACTIVSg, CATS and Texas7k
-		distribution data are staged by the operator. The small distribution example is included with
-		the app.
+		Tellegen is built by the
+		<a href="https://github.com/eigenergy" target="_blank" rel="noreferrer">Eigenergy Group</a> in Electrical
+		and Computer Engineering at the University of Michigan.
+	</p>
+	<p>
+		Tellegen uses synthetic public test cases and open source software. This site serves copies of
+		the ACTIVSg, CATS and Texas7k data, whose sources are listed below. The small distribution
+		example ships with the app.
 	</p>
 
 	<section>
-		<h2>Case Data</h2>
+		<h2>Case data</h2>
 		<h3>Distribution example and power flow</h3>
 		<p>
 			Frederik Geth at the University of Queensland contributed the multiconductor AC power-flow
@@ -50,7 +55,7 @@
 			Frequency Response Study of High Renewable Integration," IEEE PES T&amp;D 2020.
 		</p>
 
-		<h3>ACTIVSg Synthetic Grids</h3>
+		<h3>ACTIVSg synthetic grids</h3>
 		<p>
 			The ACTIVSg cases are synthetic grids from the
 			<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer"
@@ -63,7 +68,7 @@
 			Systems, 2017.
 		</p>
 
-		<h3>CATS California Test System</h3>
+		<h3>CATS California test system</h3>
 		<p>
 			CATS is published by WISPO POP as a geographically accurate synthetic California grid. The
 			source repository requests this citation:
@@ -85,7 +90,7 @@
 			<li>CATS is distributed under the BSD 3 Clause license in its repository.</li>
 		</ul>
 
-		<h3>Texas7k Distribution Example</h3>
+		<h3>Texas7k distribution example</h3>
 		<p>
 			The <code>texas7k-p1uhs0_1247</code> example, when a deployment stages it, is derived from the
 			SMART-DS synthetic distribution substation that the
@@ -117,7 +122,7 @@
 	</section>
 
 	<section>
-		<h2>Software And Maps</h2>
+		<h2>Software and maps</h2>
 		<ul>
 			<li>
 				<a href="https://github.com/eigenergy/powerio" target="_blank" rel="noreferrer">powerio</a>
@@ -165,7 +170,7 @@
 	</section>
 
 	<section>
-		<h2>Synthetic Grid Data</h2>
+		<h2>Synthetic grid data</h2>
 		<p>
 			The engine's synthetic grid generator is compiled into this site's WebAssembly with these
 			tables:
@@ -215,8 +220,8 @@
 	.back {
 		display: inline-block;
 		margin-bottom: 26px;
-		color: var(--accent);
-		font-size: 12px;
+		color: var(--text-accent);
+		font-size: var(--fs-body);
 		text-decoration: none;
 	}
 

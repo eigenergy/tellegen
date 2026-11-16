@@ -1,13 +1,18 @@
 <script lang="ts">
-	import { sensGradient } from '../colors.js';
+	import { sensFlatColor, sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
-	import { signedExp } from '../format.js';
+	import { lineName, priceText, readable, signedSmall, small } from '../format.js';
+	import { dispatchByBus } from '../diagram/transmission-inspection.js';
+	import { gaugeText } from '../diagram/transmission-results.js';
 
 	const app = getAppState();
 	const ctrl = getController();
-	const reportedUnits = $derived(dollarUnits(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
-	const unitTitle = $derived(`Units: ${reportedUnits}`);
+	/** The engine's units, read out: ($/MWh)/MW becomes "$/MWh per MW". A rating's
+	 * ($/MWh)/MVA is read per MW too, the unit the rating slider beside it moves in. */
+	const perMw = (units: string) =>
+		dollarUnits(units).replace(/\(\$\/MWh\)\/(MW|MVA)\b/, '$$/MWh per MW');
+	const reportedUnits = $derived(perMw(ctrl.selectedSensitivity?.units ?? '($/MWh)/MW'));
 
 	// Branch mode: the selection is a line and the column is price/rating; the
 	// legend and preview pipeline are identical (both columns are bus-keyed).
@@ -20,89 +25,128 @@
 			: ctrl.sliderValue - ctrl.committedDelta
 	);
 
-	// Label the selected line by its bus pair, matching BindingLines and
-	// RatingSlider; fall back to the raw branch id while the network loads.
-	const branchLabel = $derived.by(() => {
+	/** The selection's own numbers from the solved case, as labelled values. */
+	const values = $derived.by(() => {
+		const solution = ctrl.activeSolvable?.solution;
+		if (branchMode) {
+			const b = ctrl.selectedBranchData;
+			const flow = solution?.flows.find((f) => f.branch === app.selectedBranch);
+			return [
+				['Flow', readable(flow ? Math.abs(flow.mw) : null, 'MW').text],
+				// One decimal, as in the list of lines at their limit.
+				['Loading', flow && b && b.rate_mw > 0 ? gaugeText(flow.loading) : '—'],
+				['Rating', readable(b && b.rate_mw > 0 ? b.rate_mw : null, 'MW').text]
+			] as const;
+		}
+		const bus = ctrl.selectedBusData;
+		const price = solution?.prices.find((p) => p.bus === app.selectedBus)?.value;
+		const generation = solution
+			? dispatchByBus(solution.dispatch).get(app.selectedBus!)
+			: undefined;
+		return [
+			['Price', price == null || !Number.isFinite(price) ? '—' : `${priceText(price)} $/MWh`],
+			['Demand', readable(bus ? bus.demand_mw + ctrl.committedDelta : null, 'MW').text],
+			['Generation', readable(generation ?? (solution && bus ? 0 : null), 'MW').text]
+		] as const;
+	});
+
+	// Name the selected line as BindingLines and the diagram do; fall back to the raw
+	// branch id while the network loads.
+	const title = $derived.by(() => {
+		if (!branchMode) return `Bus ${app.selectedBus}`;
 		const b = ctrl.selectedBranchData;
-		return b ? `${b.from} – ${b.to}` : String(app.selectedBranch);
+		return b ? lineName(b) : `Line ${app.selectedBranch}`;
 	});
 </script>
 
-<div class="mode">
-	<span class="chip">
-		{ctrl.previewing ? 'LMP preview' : branchMode ? '∂LMP/∂rating' : '∂LMP/∂d'}
-	</span>
-	<span class="dim">
-		{#if branchMode}Line <span class="mono">{branchLabel}</span>{:else}Bus
-			<span class="mono">{app.selectedBus}</span>{/if}
-	</span>
+<div class="mode readout-head">
+	<h3 class="readout-title" data-testid="sensitivity-title">{title}</h3>
 	<button onclick={ctrl.clearSelection} aria-keyshortcuts="Escape" title="Esc">Clear</button>
 </div>
-<div class="sensitivity-readout" aria-live="polite">
+<dl class="values" aria-label="Selection values">
+	{#each values as [label, value] (label)}
+		<div>
+			<dt>{label}</dt>
+			<dd>{value}</dd>
+		</div>
+	{/each}
+</dl>
+<!-- The same change at every bus: one labelled value, not a colour bar. Its swatch is the one
+     colour every bus on the map takes. -->
+{#snippet uniform(value: string, units: string)}
+	<dl class="values uniform" data-testid="uniform-shift">
+		<div>
+			<dt title="The same at every bus">
+				{#if ctrl.sensSummary}<i
+						class="swatch"
+						aria-hidden="true"
+						style:background="rgb({sensFlatColor(ctrl.sensSummary).slice(0, 3).join(' ')})"
+					></i>{/if}Price change
+			</dt>
+			<dd>{value} {units}</dd>
+		</div>
+	</dl>
+{/snippet}
+<div class="sensitivity-readout" data-testid="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
-		<p class="dim small">
-			{ctrl.activeSolvable?.solving ? 'Solving…' : 'First-order preview. Release to solve.'}
-		</p>
+		<p class="dim small">{ctrl.activeSolvable?.solving ? 'Solving…' : 'Estimate'}</p>
 		{#if ctrl.sensSummary?.flat}
-			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
-			<div class="legend-labels mono single">
-				<span
-					>Uniform {signedExp(ctrl.sensSummary.mean * previewStep)}
-					{previewUnits}</span
-				>
-			</div>
+			{@render uniform(signedSmall(ctrl.sensSummary.mean * previewStep), previewUnits)}
 		{:else if ctrl.previewScale}
 			<!-- The bounds are fixed for the whole drag (column scale × full slider
 			     deflection), so the ramp ends label the colors: full green/purple is
-			     the predicted LMP change at full deflection, and intensity grows with the
+			     the predicted price change at full deflection, and intensity grows with the
 			     step instead of renormalizing every frame. -->
+			<p class="legend-caption">Price change ({previewUnits})</p>
 			<div class="legend" style:background={sensGradient}></div>
-			<div class="legend-labels mono">
-				<span>&minus;{ctrl.previewScale.toExponential(1)}</span>
-				<span>&Delta; LMP {previewUnits}</span>
-				<span>+{ctrl.previewScale.toExponential(1)}</span>
+			<div class="legend-labels">
+				<span>&minus;{small(ctrl.previewScale)}</span>
+				<span>+{small(ctrl.previewScale)}</span>
 			</div>
 		{/if}
 	{:else}
-		<p class="dim small sensitivity-copy" title={unitTitle}>
-			{#if branchMode}
-				LMP response to the rating on line {branchLabel}.
-			{:else}
-				LMP response to demand at bus {app.selectedBus}.
-			{/if}
-			<span class="hint-dot mono" title={unitTitle} aria-label={unitTitle}>i</span>
-		</p>
 		{#if ctrl.sensSummary?.flat}
-			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
-			<div class="legend-labels mono single">
-				<span>Uniform {signedExp(ctrl.sensSummary.mean)} {reportedUnits}</span>
-			</div>
+			{@render uniform(signedSmall(ctrl.sensSummary.mean), reportedUnits)}
 		{:else if ctrl.sensSummary}
+			<p class="legend-caption">Price change ({reportedUnits})</p>
 			<div class="legend" style:background={sensGradient}></div>
-			<div class="legend-labels mono">
-				<span>&minus;{ctrl.sensSummary.scale.toExponential(1)}</span>
-				<span>0</span>
-				<span>+{ctrl.sensSummary.scale.toExponential(1)}</span>
+			<div class="legend-labels">
+				<span>&minus;{small(ctrl.sensSummary.scale)}</span>
+				<span>+{small(ctrl.sensSummary.scale)}</span>
 			</div>
 		{:else if app.sensitivityLoading}
-			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
-			<div class="legend-labels mono single">
-				<span class="blink">Computing&hellip;</span>
-			</div>
+			<!-- The row the result fills, with its value still on the way. -->
+			<dl class="values uniform" aria-busy="true">
+				<div>
+					<dt>Price change</dt>
+					<dd class="pending">&hellip;</dd>
+				</div>
+			</dl>
 		{/if}
 	{/if}
 </div>
 
 <style>
-	.chip {
-		font-family: var(--font-mono);
+	/* The colour bar's name on its own line, so its two ends read as the only values under it. */
+	.legend-caption {
+		margin: var(--space-xs) 0 0;
 		font-size: var(--fs-label);
-		padding: var(--space-3xs) var(--space-sm);
-		border: 1px solid var(--accent);
-		color: var(--text-accent);
-		background: var(--accent-soft);
-		border-radius: var(--radius-xs);
-		white-space: nowrap;
+		color: var(--text-secondary);
+	}
+
+	/* The title on the left and Clear on the right, on a phone too. */
+	.readout-head {
+		align-items: flex-start;
+		justify-content: space-between;
+		flex-wrap: nowrap;
+	}
+
+	.readout-title {
+		margin: 0;
+		font-size: var(--fs-body);
+		font-weight: 600;
+		line-height: var(--lh-snug);
+		color: var(--ink);
 	}
 
 	/* .mode > button lives in the global .mode block in app.css, not here: scoping
@@ -110,12 +154,38 @@
 	   override and break the mobile layout. See the note by .mode in app.css. */
 
 	.sensitivity-readout {
-		min-height: 58px;
+		margin-bottom: 4px;
 	}
-
-	.sensitivity-copy {
-		font-size: var(--fs-data);
-		line-height: var(--lh-snug);
-		white-space: nowrap;
+	.values {
+		display: grid;
+		gap: 2px;
+		margin: 6px 0 8px;
+		font-size: var(--fs-label);
+	}
+	.values.uniform {
+		margin-top: 0;
+	}
+	.values div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.values dt {
+		color: var(--text-secondary);
+	}
+	.swatch {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		margin-right: 6px;
+		border-radius: 50%;
+		vertical-align: baseline;
+	}
+	.values dd {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.values dd.pending {
+		color: var(--text-secondary);
 	}
 </style>

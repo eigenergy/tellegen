@@ -18,7 +18,7 @@ import {
 	ACCENT,
 	DANGER,
 	INK,
-	MONO,
+	LABEL_FONT,
 	PAPER,
 	SYMBOL_INK,
 	WARNING,
@@ -726,7 +726,7 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 						: [120, 116, 108, 255],
 			getSize: 18,
 			getPixelOffset: [-8, -10],
-			fontFamily: MONO,
+			fontFamily: LABEL_FONT,
 			background: true,
 			getBackgroundColor: alpha(PAPER, 230),
 			backgroundPadding: [2, 0],
@@ -808,7 +808,7 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 						background: true,
 						getBackgroundColor: PAPER,
 						backgroundPadding: [3, 2],
-						fontFamily: MONO,
+						fontFamily: LABEL_FONT,
 						characterSet: 'auto',
 						pickable: true
 					})
@@ -825,10 +825,11 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 			getTextAnchor: 'start',
 			getAlignmentBaseline: 'bottom',
 			getPixelOffset: [6, -5],
+			// Opaque, so a value stays readable over the voltage shading.
 			background: true,
-			getBackgroundColor: alpha(PAPER, 230),
-			backgroundPadding: [3, 1],
-			fontFamily: MONO,
+			getBackgroundColor: PAPER,
+			backgroundPadding: [4, 2],
+			fontFamily: LABEL_FONT,
 			characterSet: 'auto'
 		})
 	];

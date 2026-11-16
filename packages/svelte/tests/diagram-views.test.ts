@@ -289,7 +289,7 @@ describe('svg export', () => {
 			result: { kind: 'solved', label: 'PF', iterations: 16, revision: 'abcdef0123456789abcdef' },
 			exported: 'now'
 		});
-		expect(t.right[0]).toBe('PF · 16 iterations');
+		expect(t.right[0]).toBe('PF, 16 iterations');
 		expect(t.right[1]).toBe('Result revision abcdef0123456789…');
 		expect(t.left[3]).toContain('2.00×');
 		expect(

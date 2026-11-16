@@ -35,9 +35,7 @@ export interface TellegenApiClient {
 	getNetwork(caseId: string): Promise<Network>;
 	getCaseModuleJson(caseId: string, signal?: AbortSignal): Promise<string>;
 	getSolution(caseId: string): Promise<Solution>;
-	getSavedCase?(
-		caseId: string
-	): Promise<{
+	getSavedCase?(caseId: string): Promise<{
 		base_input: string;
 		input: string;
 		solution: string;
@@ -107,13 +105,13 @@ export class ApiError extends Error {
 }
 
 /** The notice for a rate-limited request, shared with the controller's own cooldown. */
-export const RATE_LIMITED = 'The server is limiting requests. Wait a few seconds and try again.';
+export const RATE_LIMITED = 'Rate limited';
 
 function userMessage(status: number, serverMessage: string | null): string {
-	if (status === 0) return 'The server is unreachable. Check your connection and try again.';
+	if (status === 0) return 'Server unreachable';
 	if (status === 429) return RATE_LIMITED;
-	if (status >= 500) return 'The server reported an error. Try again.';
-	return serverMessage ?? `The request failed (HTTP ${status}). Try again.`;
+	if (status >= 500) return 'Server error';
+	return serverMessage ?? `Request failed (HTTP ${status})`;
 }
 
 async function checkedFetch(

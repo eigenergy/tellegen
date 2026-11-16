@@ -30,7 +30,12 @@ const flow = (loading: number): SolutionFlow => ({
 	branch: 42,
 	mw: 30,
 	loading,
-	loading_info: { basis: 'mva', rating: 100, rating_source: 'stated', limiting_end: 'to' }
+	loading_info: {
+		basis: 'mva',
+		rating: 100,
+		rating_source: 'stated',
+		limiting_end: 'to'
+	}
 });
 
 describe('transmission operating limits', () => {
@@ -54,27 +59,27 @@ describe('transmission operating limits', () => {
 		expect(operatingContext('socwr', solution, false, false)).toMatchObject({
 			relaxed: true,
 			voltage: true,
-			freshness: 'Result available'
+			freshness: ''
 		});
 		expect(operatingContext('acpf', solution, true, false)).toMatchObject({
 			stale: true,
-			freshness: 'Updating, showing the previous result'
+			freshness: 'Solving…'
 		});
 		expect(operatingContext('acpf', solution, false, true)).toMatchObject({
 			stale: true,
-			freshness: 'Error, result may be stale'
+			freshness: 'Out of date'
 		});
 		expect(operatingContext('dcopf', null, false, false)).toMatchObject({
 			voltage: false,
-			freshness: 'Not solved'
+			freshness: 'No result'
 		});
-		expect(operatingContext('acpf', null, false, true).freshness).toContain('no result');
+		expect(operatingContext('acpf', null, false, true).freshness).toBe('No result');
 		const previous = { ...solution, formulation: 'dcopf', status: 'optimal' };
 		expect(operatingContext('acpf', previous, false, false)).toMatchObject({
 			stale: true,
 			status: 'optimal'
 		});
-		expect(operatingContext('acpf', previous, false, false).freshness).toContain('Previous dcopf');
+		expect(operatingContext('acpf', previous, false, false).freshness).toBe('Out of date');
 		expect(operatingVoltages(previous, 'acpf').size).toBe(0);
 	});
 
@@ -143,7 +148,28 @@ describe('transmission operating limits', () => {
 		// A branch point off screen gets no gauge.
 		expect(placeOperatingGauges([at(4, -5, 200)], rect, 10)).toEqual([]);
 		expect(gaugeText(1.003)).toBe('100.3%');
-		expect(gaugeText(0.874)).toBe('87%');
+		expect(gaugeText(0.874)).toBe('87.4%');
+	});
+
+	it('keeps gauges off obstacles, and still places one when every spot is covered', () => {
+		const g: GaugeCandidate = {
+			edge: 1,
+			ax: 200,
+			ay: 200,
+			state: 'warning',
+			loading: 0.92,
+			selected: false
+		};
+		const rect = { left: 0, top: 0, right: 400, bottom: 400 };
+		const [free] = placeOperatingGauges([g], rect, 10);
+		// An obstacle where the first spot would go pushes the gauge to another spot.
+		const obstacle: [number, number] = [free.x + GAUGE_WIDTH / 2, free.y + GAUGE_HEIGHT / 2];
+		const [moved] = placeOperatingGauges([g], rect, 10, [obstacle]);
+		expect([moved.x, moved.y]).not.toEqual([free.x, free.y]);
+		// Obstacles everywhere: the gauge still shows.
+		const crowd: [number, number][] = [];
+		for (let x = 0; x <= 400; x += 8) for (let y = 0; y <= 400; y += 8) crowd.push([x, y]);
+		expect(placeOperatingGauges([g], rect, 10, crowd)).toHaveLength(1);
 	});
 	it('separates warnings, at-limit values and actual overloads', () => {
 		for (const [loading, expected] of [
@@ -158,7 +184,9 @@ describe('transmission operating limits', () => {
 			expect(assessLoading(flow(loading), true)).toBe(expected);
 		expect(assessLoading(flow(0.85), true, 0.8)).toBe('warning');
 		expect(() => assessLoading(flow(0.5), true, 1)).toThrow(RangeError);
-		expect(operatingLoadingColor('at-limit')).not.toEqual(operatingLoadingColor('violation'));
+		// Red marks a line at or over its rating; amber is only for one near it.
+		expect(operatingLoadingColor('at-limit')).toEqual(operatingLoadingColor('violation'));
+		expect(operatingLoadingColor('at-limit')).not.toEqual(operatingLoadingColor('warning'));
 	});
 
 	it('does not turn unknown, unrated or inactive equipment into normal zero utilization', () => {

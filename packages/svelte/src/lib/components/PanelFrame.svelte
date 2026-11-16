@@ -10,7 +10,9 @@
 		open = $bindable(false),
 		children,
 		headerActions,
-		onopen
+		onopen,
+		tab,
+		badge
 	}: {
 		id: string;
 		title: string;
@@ -21,6 +23,10 @@
 		children: Snippet;
 		headerActions?: Snippet;
 		onopen?: () => void;
+		/** List the panel in the tab strip; by default only left-docking panels are. */
+		tab?: boolean;
+		/** A count shown beside the tab's name. */
+		badge?: number;
 	} = $props();
 	const layout = getPanelLayout();
 	onMount(() =>
@@ -34,13 +40,15 @@
 			children,
 			headerActions,
 			onopen,
+			tab,
+			badge,
 			setOpen: (value) => {
 				open = value;
 			}
 		})
 	);
 	$effect(() => {
-		const values = { id, open, title, width };
-		untrack(() => layout.update(values.id, values.open, values.title, values.width));
+		const values = { id, open, title, width, badge };
+		untrack(() => layout.update(values.id, values.open, values.title, values.width, values.badge));
 	});
 </script>

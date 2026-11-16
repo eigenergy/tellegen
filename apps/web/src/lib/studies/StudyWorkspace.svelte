@@ -12,7 +12,6 @@
 		McModelQualification,
 		McWorkbench,
 		McSolveControls,
-		MC_PF_NAME,
 		getNoticeCenter,
 		errorNoticeTitle
 	} from '@tellegen/svelte';
@@ -303,9 +302,11 @@
 		});
 	});
 
+	/** The list's example entry: a distribution case to try a study on. */
+	const EXAMPLE = 'example:four-wire';
 	async function loadMcExample() {
 		const response = await fetch('/examples/four-wire.bmopf.json');
-		if (!response.ok) throw new Error('The example could not be loaded. Try again.');
+		if (!response.ok) throw new Error('Example failed to load');
 		await ctrl.ingestFiles([
 			new File([await response.text()], 'four-wire.bmopf.json', { type: 'application/json' })
 		]);
@@ -322,10 +323,9 @@
 	}
 	async function create() {
 		const active = ctrl.activeSolvable;
-		if (!active) throw new Error('Select a case first.');
-		if (active.formulation === 'acopf')
-			throw new Error('Saving AC OPF cases is not yet supported.');
-		if (!title.trim()) throw new Error('Enter a study name.');
+		if (!active) throw new Error('No case open');
+		if (active.formulation === 'acopf') throw new Error('AC OPF studies cannot be saved');
+		if (!title.trim()) throw new Error('Name the study');
 		await workspace.create(
 			{ title: title.trim(), formulation: active.formulation },
 			active.id,
@@ -456,11 +456,6 @@
 
 <TellegenWebMcp {workspace} studyExpanded={expanded} closeStudy={() => (expanded = false)} />
 <PanelFrame id="studies" title="Studies" side="left" order={20} width={400} bind:open={expanded}>
-	{#snippet headerActions()}<button
-			class="text-button"
-			disabled={workspace.busy || !!multi}
-			onclick={newStudy}>New study</button
-		>{/snippet}
 	<div class="study-workspace">
 		<div class="storage">
 			<label
@@ -475,7 +470,10 @@
 					disabled={workspace.busy}
 					onchange={(event) => {
 						const id = event.currentTarget.value;
-						if (id)
+						if (id === EXAMPLE) {
+							event.currentTarget.value = '';
+							void attempt(loadMcExample);
+						} else if (id)
 							void attempt(async () => {
 								if (id.startsWith('mc:')) await workspace.openMulti(id.slice(3));
 								else await workspace.open(id);
@@ -493,8 +491,12 @@
 					{#each workspace.mcSaved as saved (saved.id)}<option value={`mc:${saved.id}`}
 							>{saved.title}, distribution</option
 						>{/each}
+					<option value={EXAMPLE}>Example: four-wire feeder</option>
 				</select></label
 			>
+			{#if doc && !creating && !multi}<button disabled={workspace.busy} onclick={newStudy}
+					>New study</button
+				>{/if}
 			<label class="file-button"
 				>Import<input
 					type="file"
@@ -504,7 +506,7 @@
 						const file = event.currentTarget.files?.[0];
 						if (file)
 							void attempt(async () => {
-								if (file.size > 512 * 1024 * 1024) throw new Error('Study bundle exceeds 512 MiB.');
+								if (file.size > 512 * 1024 * 1024) throw new Error('File over 512 MiB');
 								const text = await file.text();
 								if (JSON.parse(text)?.schema === 'tellegen-mc-pf-study')
 									await workspace.importMulti(text);
@@ -548,7 +550,6 @@
 				</p>{/if}
 			{#if multi}
 				<h3>{multi.label}</h3>
-				<p class="hint">Distribution case · {MC_PF_NAME}</p>
 				<McNetworkScope scope={multi.mcPreparedScope} islands={multi.mcExcludedIslands} preview />
 				{#if multi.result}<McModelQualification model={multi.result.load_model} compact />{/if}
 				<McSolveControls
@@ -566,9 +567,7 @@
 							disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
 							onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
 						>
-						{#if linkable}<button
-								title="A link back to this saved study, its selection and view. It opens only in a browser that holds the study, saved there or imported from an export; it does not carry the data."
-								onclick={() => void attempt(copyLink)}
+						{#if linkable}<button onclick={() => void attempt(copyLink)}
 								>{linkCopied ? 'Link copied' : 'Copy view link'}</button
 							>{/if}
 					{/snippet}
@@ -604,11 +603,6 @@
 						searchIndex={multi.overviewSearch}
 					/>{/if}
 			{:else if !doc || creating}
-				<h3>Save this case</h3>
-				<p class="hint">A saved case with its changes and results.</p>
-				<button class="text-button" onclick={() => void attempt(loadMcExample)}
-					>Load 4-conductor example</button
-				>
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
 						{network.name}<span>{network.buses.length.toLocaleString()} buses</span>
@@ -616,11 +610,10 @@
 				<button
 					class="primary"
 					disabled={workspace.busy || !supportedSave}
+					title={ctrl.activeSolvable?.formulation === 'acopf' ? 'Not for AC OPF' : undefined}
 					onclick={() => void attempt(create)}>Save study</button
 				>
-				{#if ctrl.activeSolvable?.formulation === 'acopf'}<p class="hint compact">
-						Saving AC OPF cases is not yet supported.
-					</p>{/if}
+				{#if doc && creating}<button onclick={() => (creating = false)}>Cancel</button>{/if}
 			{:else if tab === 'case'}
 				<h3>{doc.title}</h3>
 				<dl class="facts">
@@ -644,18 +637,28 @@
 					>
 					<button onclick={() => workspace.closeView()}>Live case</button>
 				</div>
-				{#if ctrl.app.studyView}<label
-						>{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}<select
-							bind:value={ctrl.app.displayMode}
-							><option value="price" disabled={!ctrl.app.studyView.solution?.lmp?.length}
-								>LMP</option
-							><option value="voltage" disabled={!ctrl.app.studyView.solution?.vm?.length}
-								>Voltage magnitude</option
-							><option value="angle" disabled={!ctrl.app.studyView.solution?.va?.length}
-								>Voltage angle</option
-							></select
-						></label
-					>{/if}
+				{#if ctrl.app.studyView}
+					{@const solved = ctrl.app.studyView.solution}
+					<!-- The same switch as the Network panel's map colours. -->
+					<div class="values-row">
+						<span id="study-map-values"
+							>{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}</span
+						>
+						<div class="segment" role="group" aria-labelledby="study-map-values">
+							{#each [{ mode: 'price', label: 'Price', on: !!solved?.lmp?.length }, { mode: 'voltage', label: 'Voltage', on: !!solved?.vm?.length }, { mode: 'angle', label: 'Angle', on: !!solved?.va?.length }] as option (option.mode)}
+								<button
+									type="button"
+									class={{ active: ctrl.app.displayMode === option.mode }}
+									aria-pressed={ctrl.app.displayMode === option.mode}
+									disabled={!option.on}
+									onclick={() =>
+										(ctrl.app.displayMode = option.mode as typeof ctrl.app.displayMode)}
+									>{option.label}</button
+								>
+							{/each}
+						</div>
+					</div>
+				{/if}
 				{#if latestProposal && doc.recommended_state !== doc.applied_state}<div
 						class="recommendation"
 					>
@@ -728,7 +731,6 @@
 								onclick={() => demandPage++}>Next</button
 							>
 						</div>{/if}
-					<p class="hint compact">All demand values in MW.</p>
 				</details>
 				<div class="toolbar">
 					<button
@@ -736,14 +738,11 @@
 						onclick={() => void attempt(() => workspace.resetFromUser())}>Reset to base case</button
 					>
 				</div>
-				{#if !doc.base_input}<p class="hint">
-						Original network data is unavailable in this import.
-					</p>{/if}
+				{#if !doc.base_input}<p class="hint">No base data</p>{/if}
 				{#if !goal}<button class="text-button" onclick={startGoal}>Add a planning goal</button>{/if}
 			{:else if tab === 'plan'}
 				{#if editingGoal || !goal}
 					{#if !editingGoal}<h3>Explore a change</h3>
-						<p class="hint">Choose an objective and the equipment that can change.</p>
 						<button class="primary" onclick={startGoal}>Set a goal</button>
 					{:else}
 						<h3>{goal ? 'New goal revision' : 'Planning goal'}</h3>
@@ -753,9 +752,9 @@
 								onchange={() => {
 									busPage = 0;
 								}}
-								><option value="price" disabled={formulation === 'acpf'}>Reduce average LMP</option
-								><option value="voltage" disabled={formulation === 'dcopf'}
-									>Reach a voltage target</option
+								><option value="price" disabled={formulation === 'acpf'}>Lower price</option><option
+									value="voltage"
+									disabled={formulation === 'dcopf'}>Voltage target</option
 								></select
 							></label
 						>
@@ -815,7 +814,7 @@
 									class="text-button"
 									disabled={ctrl.app.selectedBus == null}
 									onclick={() => addMapSelection('buses')}
-									>Add selected map bus{ctrl.app.selectedBus != null
+									>Add selected{ctrl.app.selectedBus != null
 										? ` ${ctrl.app.selectedBus}`
 										: ''}</button
 								>{/if}
@@ -857,10 +856,9 @@
 						</details>
 						<label
 							>Allowed changes<select bind:value={form.intervention} onchange={changeIntervention}
-								><option value="capacity" disabled={formulation === 'acpf'}
-									>Increase line capacity</option
-								><option value="redistribution">Redistribute demand</option><option
-									value="placement">Add demand</option
+								><option value="capacity" disabled={formulation === 'acpf'}>Line capacity</option
+								><option value="redistribution">Move demand</option><option value="placement"
+									>Add demand</option
 								></select
 							></label
 						>
@@ -880,7 +878,7 @@
 								/></label
 							>
 							<label
-								>Maximum changed {form.intervention === 'capacity' ? 'lines' : 'buses'}<input
+								>Max changes<input
 									type="number"
 									min="1"
 									step="1"
@@ -895,20 +893,12 @@
 									/></label
 								>{/if}
 						</div>
-						{#if form.intervention === 'redistribution'}<p class="hint compact">
-								Total demand stays constant. Moving 1 MW uses 2 MW of the change budget.
-							</p>{/if}
 						<details>
 							<summary
 								>Candidate {form.intervention === 'capacity' ? 'lines' : 'buses'}<span
 									>{equipment.candidates.length.toLocaleString()}</span
 								></summary
 							>
-							{#if form.scope === 'area' && form.intervention === 'capacity'}<p
-									class="hint compact"
-								>
-									Includes lines connected to this area.
-								</p>{/if}
 							<label class="search"
 								>Find candidate<input
 									type="search"
@@ -1008,18 +998,17 @@
 					{/if}
 				{:else}
 					<h3>{goal.request}</h3>
-					<p class="hint">{goal.interpretation}</p>
 					<dl class="facts">
 						<div>
 							<dt>Objective</dt>
 							<dd>{objectiveLabel(goal.objective)}</dd>
 						</div>
 						<div>
-							<dt>Candidate elements</dt>
+							<dt>Candidates</dt>
 							<dd>{goal.decisions.variables.length.toLocaleString()}</dd>
 						</div>
 						<div>
-							<dt>Maximum changes</dt>
+							<dt>Max changes</dt>
 							<dd>{goal.decisions.max_changed_elements}</dd>
 						</div>
 						<div>
@@ -1061,7 +1050,6 @@
 								)}>Find a proposal</button
 						>
 					</div>
-					<p class="hint compact">Review the result before applying it.</p>
 					{#if latestProposal && doc.recommended_state !== doc.applied_state}<button
 							disabled={workspace.busy}
 							onclick={() => {
@@ -1121,10 +1109,8 @@
 									workspace.comparison.right_value
 								)}, improvement {number(workspace.comparison.improvement)}
 							</p>{/if}
-						{#if consequences.length}<p class="hint compact">
-								Largest {workspace.comparison.right_view?.lmp ? 'LMP' : 'voltage magnitude'} changes.
-							</p>
-							<table>
+						{#if consequences.length}<table>
+								<caption>Top changes</caption>
 								<thead><tr><th>Bus</th><th>Before</th><th>After</th><th>Change</th></tr></thead
 								><tbody
 									>{#each consequences as row (row.bus)}<tr
@@ -1135,9 +1121,7 @@
 							</table>{/if}
 					</div>{/if}
 				<h3>Activity</h3>
-				{#if !doc.experiment_order.length}<p class="hint">
-						Edits, solves and observations appear here.
-					</p>{/if}
+				{#if !doc.experiment_order.length}<p class="hint">No activity</p>{/if}
 				{#each doc.experiment_order.toReversed().slice(0, historyLimit) as id (id)}{@const event =
 						doc.experiments[id]}
 					<details>
@@ -1146,7 +1130,16 @@
 							></summary
 						>
 						<p>{event.rationale}</p>
-						<p class="hint compact">{event.solve_count} solves, {event.trials.length} trials</p>
+						<dl class="facts">
+							<div>
+								<dt>Solves</dt>
+								<dd>{event.solve_count}</dd>
+							</div>
+							<div>
+								<dt>Trials</dt>
+								<dd>{event.trials.length}</dd>
+							</div>
+						</dl>
 						{#each event.trials as trial, index (index)}<p class="trial">
 								Trial {index + 1}: {trial.failure ??
 									(trial.accepted ? 'Retained' : 'Rejected')}{#if trial.exact_value != null},
@@ -1184,7 +1177,7 @@
 		display: flex;
 		align-items: flex-end;
 		gap: 8px;
-		padding: 10px 16px;
+		padding: 10px 18px;
 		flex: none;
 	}
 	.storage label:first-child {
@@ -1206,16 +1199,20 @@
 		border: 0;
 	}
 	.storage > button {
-		padding: 8px;
+		flex: none;
 	}
 	.file-button {
 		position: relative;
 		flex: none;
+		display: inline-flex;
+		align-items: center;
 		overflow: hidden;
-		padding: 8px;
+		padding: 4px 10px;
+		font-size: var(--fs-label);
 		cursor: pointer;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
+		background: var(--surface-control);
 	}
 	.file-button input {
 		position: absolute;
@@ -1227,11 +1224,13 @@
 	nav {
 		display: flex;
 		gap: 24px;
-		padding: 0 16px;
+		padding: 0 18px;
 		border-bottom: 1px solid var(--line);
 		flex: none;
 	}
 	nav button {
+		font-size: inherit;
+		background: none;
 		border: 0;
 		border-bottom: 2px solid transparent;
 		border-radius: 0;
@@ -1243,7 +1242,7 @@
 		color: var(--ink);
 	}
 	.workspace-content {
-		padding: 18px 16px;
+		padding: 16px 18px;
 		overflow: auto;
 		min-height: 0;
 		overscroll-behavior: contain;
@@ -1267,21 +1266,29 @@
 		font: inherit;
 		color: inherit;
 	}
-	input,
-	select {
+	input {
 		min-width: 0;
 		width: 100%;
 		box-sizing: border-box;
-		background: white;
+		background: var(--surface-control);
 		border: 1px solid var(--line);
-		padding: 8px 9px;
-		border-radius: 4px;
+		padding: 5px 8px;
+		border-radius: var(--radius-control);
 	}
+	/* The panel's shared select, at the input's height. */
+	select {
+		min-width: 0;
+		width: 100%;
+		max-width: none;
+		padding-block: 5px;
+	}
+	/* One size for every button here, the file button included: the Network panel's buttons. */
 	button {
-		padding: 8px 12px;
+		padding: 4px 10px;
+		font-size: var(--fs-label);
 		border: 1px solid var(--line);
-		border-radius: 4px;
-		background: transparent;
+		border-radius: var(--radius-control);
+		background: var(--surface-control);
 		cursor: pointer;
 	}
 	button:disabled {
@@ -1289,20 +1296,22 @@
 		cursor: default;
 	}
 	button:hover:enabled {
-		background: var(--accent-soft);
+		border-color: var(--border-strong);
 	}
 	button.primary {
-		background: var(--ink);
-		border-color: var(--ink);
-		color: white;
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	button.primary:hover:enabled {
-		background: #3c4249;
+		background: var(--accent-fill);
+		filter: brightness(1.12);
 	}
 	button.text-button {
+		background: none;
 		border: 0;
 		padding: 6px 0;
-		color: var(--text-secondary);
+		color: var(--text-accent);
 		font-size: 12px;
 	}
 	button:focus-visible,
@@ -1324,6 +1333,11 @@
 		flex: 1;
 		margin: 0;
 	}
+	/* Inputs and buttons in a toolbar share one baseline. */
+	.toolbar button {
+		box-sizing: border-box;
+		min-height: 30px;
+	}
 	.toolbar label:has(input[type='number']) {
 		max-width: 132px;
 	}
@@ -1337,10 +1351,6 @@
 		color: var(--text-secondary);
 		font-size: 12px;
 		line-height: 1.5;
-	}
-	.hint.compact {
-		margin: 10px 0;
-		font-size: 11px;
 	}
 	.case-name {
 		display: flex;
@@ -1357,14 +1367,54 @@
 		gap: 8px;
 		margin: 0 0 18px;
 	}
+	/* Label left, value right, as in the Network panel. */
 	.facts > div {
-		display: grid;
-		grid-template-columns: 105px minmax(0, 1fr);
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
 		gap: 12px;
 	}
 	.facts dd {
 		margin: 0;
+		min-width: 0;
+		text-align: right;
 		overflow-wrap: anywhere;
+	}
+	/* A finger's worth of height on a phone, as the Network panel's buttons have. */
+	@media (max-width: 760px) {
+		.storage > button,
+		.file-button,
+		.toolbar button {
+			min-height: 44px;
+		}
+	}
+	.values-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 0 0 16px;
+		font-size: 12px;
+	}
+	/* The shared segmented control; the panel's own button rule would box each segment. */
+	.segment button {
+		padding: 3px 10px;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		font-size: var(--fs-body);
+		color: var(--text-secondary);
+	}
+	.segment button + button {
+		border-left: 1px solid var(--line);
+	}
+	.segment button.active {
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	.segment button:hover:enabled:not(.active) {
+		color: var(--ink);
+		background: var(--surface-hover);
 	}
 	.recommendation {
 		display: grid;
@@ -1388,7 +1438,7 @@
 		max-width: 50%;
 		text-align: right;
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 400;
 	}
 	details[open] > summary {
@@ -1409,7 +1459,7 @@
 		height: 15px;
 		flex: none;
 		padding: 0;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.table-scroll {
 		max-height: 255px;
@@ -1418,7 +1468,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 11px;
+		font-size: 12px;
 	}
 	th,
 	td {
@@ -1453,7 +1503,7 @@
 		align-items: center;
 		gap: 8px;
 		margin: 10px 0;
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.pagination button {
@@ -1489,19 +1539,19 @@
 		gap: 3px;
 	}
 	.state-flags small {
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.comparison {
 		margin: 18px 0;
 	}
 	.trial {
-		font-size: 11px;
+		font-size: 12px;
 	}
 	pre {
 		overflow: auto;
 		max-height: 240px;
-		font: 10px/1.5 var(--font-mono);
+		font: 12px/1.5 var(--font-code);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 	}
@@ -1516,10 +1566,10 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		padding: 10px 16px;
+		padding: 10px 18px;
 		border-top: 1px solid var(--line);
 		flex: none;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.workspace-status button {

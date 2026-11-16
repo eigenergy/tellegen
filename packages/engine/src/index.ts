@@ -2077,8 +2077,8 @@ export const FORMULATIONS: ReadonlyArray<{
   { id: "acpf", label: "AC power flow", hint: "Balanced AC power flow" },
   {
     id: "socwr",
-    label: "SOCWR",
-    hint: "Jabr second-order-cone relaxation of AC OPF",
+    label: "Relaxed AC OPF",
+    hint: "Second-order-cone relaxation of AC OPF",
   },
   {
     id: "acopf",

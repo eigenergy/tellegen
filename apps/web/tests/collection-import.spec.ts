@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/page-errors.js';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { storedZip, day, night, line, comparison } from './fixtures/collection-zip.js';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,7 @@ import { join } from 'node:path';
 test.beforeEach(async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 });
 
 const collectionsEnabled = (process.env.TELLEGEN_POWERIO_FEATURES ?? '')
@@ -25,14 +26,9 @@ test('the baseline build hides collection controls and explains unsupported ZIP 
 		buffer: storedZip({ 'case.m': comparison })
 	});
 	const notices = page.getByRole('region', { name: 'Notifications' });
-	await expect(
-		notices.getByText('ZIP and folder imports unavailable', { exact: true })
-	).toBeVisible();
+	await expect(notices.getByText('Imports unavailable', { exact: true })).toBeVisible();
+	// Details opens the latest message with its full text at once.
 	await notices.getByRole('button', { name: 'Details', exact: true }).click();
-	await notices
-		.locator('summary')
-		.filter({ hasText: 'ZIP and folder imports unavailable' })
-		.click();
 	await expect(
 		page.getByText(
 			'ZIP and folder imports are unavailable in this build. Open a single case file instead.'
@@ -72,7 +68,7 @@ test.describe('PowerIO collection build', () => {
 		await expect(page.locator('.case-chip.local')).toHaveCount(0);
 		await dialog.getByRole('button', { name: 'Select all matching' }).click();
 		await dialog.getByRole('button', { name: 'Import selected cases' }).click();
-		await expect(dialog.getByRole('status')).toContainText('Import finished', { timeout: 30_000 });
+		await expect(dialog.getByRole('status')).toHaveText('Done', { timeout: 30_000 });
 		await expect(dialog.locator('[data-outcome="failed"]')).toHaveCount(1);
 		await expect(page.locator('.case-chip.local')).toHaveCount(3);
 		// Imported rows remain selectable for source export, without being imported twice.
@@ -113,13 +109,14 @@ test.describe('PowerIO collection build', () => {
 				)
 			]);
 			const chooserEvent = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Open folder' }).click();
+			await openCaseMenu(page);
+			await page.getByRole('button', { name: /^Open folder/ }).click();
 			await (await chooserEvent).setFiles(folder);
 			const dialog = page.getByRole('dialog');
 			await expect(dialog.locator('.candidate')).toHaveCount(2);
 			await dialog.getByRole('button', { name: 'Select all matching' }).click();
 			await dialog.getByRole('button', { name: 'Import selected cases' }).click();
-			await expect(dialog.getByRole('status')).toContainText('Import finished');
+			await expect(dialog.getByRole('status')).toHaveText('Done');
 			await expect(dialog.locator('[data-outcome="failed"]')).toHaveCount(0);
 			await expect(page.locator('.case-chip.local')).toHaveCount(2);
 		} finally {
@@ -234,9 +231,7 @@ test.describe('PowerIO collection build', () => {
 		await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled();
 		await study.getByRole('button', { name: 'Run power flow' }).click();
 		await expect(study.getByText('Converged', { exact: true })).toBeVisible();
-		await expect(
-			study.getByText('Original load model verified', { exact: true }).first()
-		).toBeVisible();
+		await expect(study.getByText('Load model verified', { exact: true }).first()).toBeVisible();
 		await expect(study.getByRole('button', { name: 'Save result' })).toBeEnabled();
 	});
 

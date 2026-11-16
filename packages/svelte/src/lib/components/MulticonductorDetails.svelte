@@ -51,7 +51,6 @@
 	<h2>{mc.label}</h2>
 	{#if mc.distribution}
 		<p class="footnote">
-			{mc.distribution.description ?? ''}
 			{#if mc.distribution.source_url}<a
 					href={mc.distribution.source_url}
 					target="_blank"
@@ -127,7 +126,7 @@
 			}}
 		/>
 		{#if mc.result}<McModelQualification model={mc.result.load_model} compact />
-			<p class="footnote">Converged, {mc.result.iterations} iterations</p>
+			<p class="footnote">{mc.result.iterations} iterations</p>
 			<button class="reset" onclick={openResults}>View results in Studies</button>{/if}
 	{/if}
 
@@ -217,7 +216,6 @@
 						>
 					</div>
 				{/each}
-				<p class="footnote">Changes solve automatically.</p>
 			</div>
 		{/if}
 	{:else if mc.selectedEdge}
@@ -270,7 +268,6 @@
 	{#if mc.graph}<button
 			class="reset"
 			aria-pressed={mc.schematic}
-			title="Symbols and the engine's schematic; results once solved"
 			onclick={() => (mc.schematic = !mc.schematic)}
 			>{mc.schematic ? 'Show map' : 'Show diagram'}</button
 		>{/if}
@@ -304,7 +301,7 @@
 
 	dl {
 		margin: 0;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	dl div {
@@ -338,7 +335,7 @@
 		min-width: 18px;
 		height: 20px;
 		padding: 0 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		border: 1px solid color-mix(in srgb, var(--tc) 70%, #20242b);
 		background: color-mix(in srgb, var(--tc) 26%, transparent);
 		color: var(--ink);
@@ -364,7 +361,7 @@
 
 	.badge {
 		padding: 1px 6px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		background: var(--bc);
 		color: #fff;
 		font-size: 12px;
@@ -453,7 +450,7 @@
 		display: inline-block;
 		width: 10px;
 		height: 10px;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		background: var(--sc);
 	}
 

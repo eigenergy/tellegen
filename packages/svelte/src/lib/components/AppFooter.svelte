@@ -1,8 +1,4 @@
 <script lang="ts">
-	import { getController } from '../context.svelte.js';
-
-	const ctrl = getController();
-
 	/** Render in the parent's flow instead of pinned to the bottom of the map. */
 	let { inline = false }: { inline?: boolean } = $props();
 </script>
@@ -11,12 +7,6 @@
 	<a href="/credits/">Credits</a>
 	<i class="sep"></i>
 	<a href="/privacy/">Privacy</a>
-	{#if ctrl.showFileDropUi}
-		<i class="sep filedrop-ui"></i>
-		<span class="drophint filedrop-ui"
-			><span class="arrow">&#8675;</span> Drop a case or geographic file anywhere</span
-		>
-	{/if}
 </footer>
 
 <style>
@@ -29,7 +19,7 @@
 		display: flex;
 		align-items: center;
 		padding: 8px 20px;
-		font-size: 10.5px;
+		font-size: 12px;
 		color: var(--text-secondary);
 		background: linear-gradient(rgb(var(--bg-rgb) / 0), rgb(var(--bg-rgb) / 0.9));
 		animation: rise 0.5s 0.24s ease-out both;
@@ -42,14 +32,6 @@
 	}
 
 	footer a:hover {
-		color: var(--text-accent);
-	}
-
-	.drophint {
-		color: var(--text-tertiary);
-	}
-
-	.drophint .arrow {
 		color: var(--text-accent);
 	}
 
@@ -80,7 +62,7 @@
 		footer {
 			padding: 7px 10px;
 			overflow-x: auto;
-			font-size: 9.5px;
+			font-size: 12px;
 			white-space: nowrap;
 			pointer-events: auto;
 			scrollbar-width: none;

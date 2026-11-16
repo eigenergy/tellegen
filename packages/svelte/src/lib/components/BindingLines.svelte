@@ -1,20 +1,40 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
+	import { lineName } from '../format.js';
+	import { gaugeText } from '../diagram/transmission-results.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 
 	// The active result's binding lines (see `ctrl.bindingRule`), joined to the network for
-	// identity. Each row is a button: the keyboard path for branch selection.
+	// identity, heaviest first. Each row is a button: the keyboard path for branch selection.
 	const bindingLines = $derived.by(() => {
 		const c = ctrl.activeSolvable;
 		const rule = ctrl.bindingRule;
 		if (!c?.network || !c.solution || !rule) return [];
 		const byId = new Map(c.network.branches.map((b) => [b.id, b]));
-		return c.solution.flows.filter(rule.binds).flatMap((f) => {
-			const branch = byId.get(f.branch);
-			return branch ? [{ branch, loading: f.loading }] : [];
-		});
+		return c.solution.flows
+			.filter(rule.binds)
+			.flatMap((f) => {
+				const branch = byId.get(f.branch);
+				return branch ? [{ branch, loading: f.loading }] : [];
+			})
+			.sort((a, b) => b.loading - a.loading);
+	});
+
+	/** Rows shown before "Show all": the panel scrolls as one, with no list scrolling inside it. */
+	const FIRST = 5;
+	/** The case whose list is unfolded: another case starts folded again. */
+	let expandedFor = $state<string | null>(null);
+	const expanded = $derived(!!ctrl.activeSolvable && expandedFor === ctrl.activeSolvable.id);
+	const shown = $derived.by(() => {
+		if (expanded || bindingLines.length <= FIRST) return bindingLines;
+		const first = bindingLines.slice(0, FIRST);
+		// The selected line stays in view, even when it is further down the list.
+		const selected = bindingLines.find(
+			(row, i) => i >= FIRST && row.branch.id === app.selectedBranch
+		);
+		return selected ? [...first, selected] : first;
 	});
 
 	function select(branchId: number) {
@@ -26,86 +46,121 @@
 </script>
 
 {#if bindingLines.length > 0}
-	<div class="binding-lines">
-		<p class="dim head">{ctrl.bindingRule?.label}</p>
+	<section class="binding-lines" aria-label={ctrl.bindingRule?.label}>
 		<ul>
-			{#each bindingLines as { branch, loading } (branch.id)}
+			{#each shown as { branch, loading } (branch.id)}
 				<li>
 					<button
-						class={{ selected: app.selectedBranch === branch.id }}
-						aria-pressed={app.selectedBranch === branch.id}
+						class={{ selected: branch.id === app.selectedBranch }}
+						aria-current={branch.id === app.selectedBranch ? 'true' : undefined}
 						onclick={() => select(branch.id)}
 					>
-						Line <span class="mono">{branch.from}&#8201;&ndash;&#8201;{branch.to}</span>
-						<span class="mono load">{Math.round(loading * 100)}%</span>
+						<span>{lineName(branch)}</span>
+						<span class="load">{gaugeText(loading)}</span>
 					</button>
 				</li>
 			{/each}
 		</ul>
-	</div>
+		{#if bindingLines.length > FIRST}
+			<button
+				class="more"
+				aria-expanded={expanded}
+				onclick={() => (expandedFor = expanded ? null : (ctrl.activeSolvable?.id ?? null))}
+			>
+				{expanded ? 'Show fewer' : `Show all ${bindingLines.length.toLocaleString('en-US')}`}
+			</button>
+		{/if}
+	</section>
 {/if}
 
 <style>
+	/* Under the stat boxes, at the panel's own edge, like the rows below it. */
 	.binding-lines {
-		margin-top: var(--space-md);
+		margin: 0 0 var(--space-lg);
 	}
 
-	.head {
-		font-size: var(--fs-data);
-		margin: 0 0 var(--space-2xs);
-	}
-
+	/* Rows reach past the text by a few pixels, so a hover or selection has room. */
 	ul {
-		margin: 0;
+		margin: 0 calc(-1 * var(--space-xs));
 		padding: 0;
 		list-style: none;
-		max-height: 118px;
-		overflow-y: auto;
 	}
 
 	li button {
 		display: flex;
-		gap: var(--space-2xs);
+		align-items: baseline;
+		gap: var(--space-lg);
 		width: 100%;
-		padding: var(--space-3xs) var(--space-xs) var(--space-3xs) var(--space-sm);
+		min-height: 24px;
+		padding: var(--space-3xs) var(--space-xs);
 		text-align: left;
-		font-size: var(--fs-label);
+		font-size: var(--fs-data);
 		color: var(--ink);
 		background: none;
 		border: 0;
-		border-top: 1px solid var(--line);
 		border-radius: 0;
 		cursor: pointer;
+	}
+
+	/* The rule above each row spans the text column, as the panel's other rules do; the
+	   button's hover area reaches past it. */
+	li {
+		position: relative;
+	}
+
+	li::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: var(--space-xs);
+		right: var(--space-xs);
+		border-top: 1px solid var(--line);
+		pointer-events: none;
 	}
 
 	.load {
 		margin-left: auto;
 		text-align: right;
+		color: var(--text-danger);
+		font-variant-numeric: tabular-nums;
 	}
 
 	li button:hover {
-		background: var(--accent-soft);
+		background: var(--surface-hover);
+		text-decoration: none;
+		box-shadow: none;
 	}
 
 	li button.selected {
-		color: var(--text-accent);
-		background:
-			linear-gradient(90deg, rgb(var(--accent-rgb) / 0.16), rgb(var(--accent-rgb) / 0.05)),
-			var(--accent-soft);
-		box-shadow: inset 3px 0 0 var(--accent);
-		font-weight: 600;
+		background: var(--surface-hover);
+		box-shadow: inset 2px 0 0 var(--accent);
+	}
+
+	.more {
+		margin-top: var(--space-2xs);
+		padding: 0;
+		font-size: var(--fs-label);
+		color: var(--accent);
+		background: none;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.more:hover {
+		text-decoration: underline;
 	}
 
 	/* Each row is a tap target that reframes the map, so give it a finger's worth
-	   of height and show a couple more rows before the list scrolls. */
+	   of height. */
 	@media (hover: none), (pointer: coarse) {
-		ul {
-			max-height: 176px;
-		}
-
 		li button {
 			min-height: 44px;
+			align-items: center;
 			padding-block: var(--space-xs);
+		}
+
+		.more {
+			min-height: 44px;
 		}
 	}
 </style>

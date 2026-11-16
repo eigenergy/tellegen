@@ -1,16 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/page-errors.js';
 import { CASE3_COORDS, callTool, installWebMcpHarness } from './fixtures/planning-case.js';
+import { openSettings } from './fixtures/chrome.js';
 
-test('DC variant selection changes the solved problem and links its compatibility matrix', async ({
-	page
-}) => {
+test('DC line model selection in Settings changes the solved problem', async ({ page }) => {
 	test.setTimeout(120_000);
 	await installWebMcpHarness(page);
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const data = await readFile(
 		new URL('../../../crates/tellegen/tests/data/dc_variants/case3_variants.m', import.meta.url)
 	);
@@ -18,13 +17,13 @@ test('DC variant selection changes the solved problem and links its compatibilit
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'variants.m', mimeType: 'text/plain', buffer: data }
 	]);
-	const selector = page.getByRole('combobox', { name: 'DC variant', exact: true });
+	await expect(page.locator('dl.stats')).toContainText(/\$[\d,.]+\/h/, { timeout: 60_000 });
+	await openSettings(page);
+	const selector = page
+		.getByRole('region', { name: 'Common settings' })
+		.getByRole('combobox', { name: 'DC line model', exact: true });
 	await expect(selector).toBeEnabled({ timeout: 60_000 });
-	await expect(selector).toHaveValue('series_susceptance');
-	await expect(page.getByRole('link', { name: 'Compatibility matrix' })).toHaveAttribute(
-		'href',
-		/dc-compatibility.html$/
-	);
+	await expect(selector).toHaveValue('null');
 	const baseline = await callTool(page, 'inspect_case', {});
 	if (!baseline.ok) throw new Error('No base solve');
 	for (const formula of [
@@ -34,6 +33,15 @@ test('DC variant selection changes the solved problem and links its compatibilit
 		'reactance_only'
 	]) {
 		await selector.selectOption(formula);
+		await expect
+			.poll(async () => {
+				const inspected = await callTool(page, 'inspect_case', {});
+				return inspected.ok
+					? (inspected.data.solution as { branch_susceptance_formula?: string })
+							.branch_susceptance_formula
+					: null;
+			})
+			.toBe(formula);
 		await expect(selector).toBeEnabled();
 		const result = await callTool(page, 'inspect_case', {});
 		expect(result).toMatchObject({

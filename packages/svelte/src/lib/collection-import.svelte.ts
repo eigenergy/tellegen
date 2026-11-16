@@ -106,7 +106,7 @@ export class CollectionImport {
 						});
 					}
 					this.check(generation);
-					this.progress = 'Inspecting folder/files…';
+					this.progress = 'Inspecting files…';
 					await this.admit(
 						'Folder/files',
 						await this.acquire.files('Folder/files', loaded, abort.signal),
@@ -117,7 +117,7 @@ export class CollectionImport {
 				}
 			}
 			this.check(generation);
-			this.progress = `${this.rows.length} candidates in ${this.entries} files. Choose cases to import.`;
+			this.progress = `${plural(this.rows.length, 'case')} found in ${plural(this.entries, 'file')}`;
 		} catch (error) {
 			this.recordError('Collection', error, generation);
 		} finally {
@@ -233,17 +233,14 @@ export class CollectionImport {
 					const reason =
 						result.kind === 'multiconductor' ? result.payload.mc_pf_unavailable_reason : null;
 					row.outcome = result.incomplete ? 'incomplete' : reason ? 'view-only' : 'imported';
-					row.message = result.incomplete
-						? 'Missing dependencies; view-only. See case diagnostics.'
-						: reason ||
-							'Imported. Close this chooser to inspect the case and choose a calculation.';
+					row.message = result.incomplete ? 'View only' : reason || 'Imported';
 				} catch (error) {
 					this.check(generation);
 					row.outcome = 'failed';
 					row.message = error instanceof Error ? error.message : String(error);
 				}
 			}
-			this.progress = 'Import finished. Successful cases are kept independently.';
+			this.progress = 'Done';
 		} catch (error) {
 			this.recordError('Import', error, generation);
 		} finally {
@@ -302,3 +299,6 @@ export class CollectionImport {
 		this.errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
+
+const plural = (n: number, noun: string) =>
+	`${n.toLocaleString('en-US')} ${noun}${n === 1 ? '' : 's'}`;

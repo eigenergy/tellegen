@@ -43,7 +43,11 @@ export {
 } from './basemap.js';
 export { MAP_PALETTE } from './colors.js';
 export { Controller, createController } from './controller.svelte.js';
-export { DynamicsController, type DynAttachment, type DynRunRecord } from './dynamics/controller.svelte.js';
+export {
+	DynamicsController,
+	type DynAttachment,
+	type DynRunRecord
+} from './dynamics/controller.svelte.js';
 export type { DynEvent } from './dynamics/events.js';
 export {
 	AppState,
@@ -170,6 +174,7 @@ export { default as McResults } from './components/McResults.svelte';
 export { default as McWorkbench } from './components/McWorkbench.svelte';
 
 export { default as McPfSettings } from './components/McPfSettings.svelte';
+export { default as StatBoxes } from './components/StatBoxes.svelte';
 export { default as McSolveControls } from './components/McSolveControls.svelte';
 export { default as McModelQualification } from './components/McModelQualification.svelte';
 

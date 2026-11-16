@@ -57,7 +57,7 @@ export function canvasPng(
 	for (const [col, lines] of [title.left, title.right].entries())
 		lines.forEach((line, i) => {
 			const lead = col === 0 && i === 0;
-			ctx.font = `${lead ? '600 ' : ''}${(lead ? 12 : 11) * k}px "IBM Plex Mono", monospace`;
+			ctx.font = `${lead ? '600 ' : ''}${(lead ? 12 : 11) * k}px "IBM Plex Sans", sans-serif`;
 			ctx.fillStyle = lead ? 'rgb(32 36 43)' : 'rgb(77 81 86)';
 			ctx.fillText(
 				fitText(line, canvas.clientWidth / 2),

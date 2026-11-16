@@ -1,5 +1,6 @@
 import type { BranchLoading, NetworkBus, SolutionFlow, Solution } from '@tellegen/engine';
 import type { RGBA } from '../colors.js';
+import { cleanStatus, percent, statusWords } from './verdict.js';
 
 /** Display tolerances suppress rounding noise; they are not solver feasibility tolerances. */
 export const VOLTAGE_TOLERANCE_PU = 1e-5;
@@ -22,7 +23,10 @@ export function assessVoltage(
 	bus: Pick<NetworkBus, 'vmin_pu' | 'vmax_pu'>,
 	deenergized = false
 ): VoltageAssessment {
-	const result = (state: VoltageState, exceedance = 0) => ({ state, exceedance });
+	const result = (state: VoltageState, exceedance = 0) => ({
+		state,
+		exceedance
+	});
 	if (deenergized) return result('deenergized');
 	if (value === undefined || !Number.isFinite(value) || value < 0) return result('missing');
 	const { vmin_pu: lo, vmax_pu: hi } = bus;
@@ -84,9 +88,10 @@ export const isRated = (state: LoadingState | undefined) => !!state && RATED_STA
 /** DC power flow and DC OPF solve angles only, never voltage magnitudes. */
 export const isDc = (formulation: string) => formulation === 'dcopf' || formulation === 'dcpf';
 
+/** Alarm red (#D7261E) for a line at or over its rating; amber only for one near it. */
 export function operatingLoadingColor(state: LoadingState): RGBA {
-	if (state === 'violation') return [190, 32, 36, 255];
-	if (state === 'warning' || state === 'at-limit') return [210, 137, 27, 245];
+	if (state === 'violation' || state === 'at-limit') return [215, 38, 30, 255];
+	if (state === 'warning') return [210, 137, 27, 245];
 	if (state === 'normal') return [158, 153, 144, 190];
 	return [155, 150, 140, 130];
 }
@@ -126,7 +131,11 @@ export function stationVoltageSummary(
 ) {
 	let min: { bus: number; value: number } | null = null;
 	let max: { bus: number; value: number } | null = null;
-	let worst: { bus: number; value: number; assessment: VoltageAssessment } | null = null;
+	let worst: {
+		bus: number;
+		value: number;
+		assessment: VoltageAssessment;
+	} | null = null;
 	let unknown = 0;
 	let disconnected = 0;
 	for (const bus of buses) {
@@ -166,7 +175,10 @@ export function operatingVoltages(
 		return new Map();
 	const values =
 		formulation === 'socwr'
-			? solution.w.map((v) => ({ bus: v.bus, value: v.value >= 0 ? Math.sqrt(v.value) : NaN }))
+			? solution.w.map((v) => ({
+					bus: v.bus,
+					value: v.value >= 0 ? Math.sqrt(v.value) : NaN
+				}))
 			: (solution.vm ?? []);
 	return new Map(values.map((v) => [v.bus, v.value]));
 }
@@ -181,33 +193,36 @@ export function operatingContext(
 	const dcBasis = isDc(solution?.formulation ?? formulation);
 	const mismatch = !!solution?.formulation && solution.formulation !== formulation;
 	return {
-		status: solution?.status ?? 'status unavailable',
+		status: solution?.status ?? '',
 		voltage: !dc,
 		relaxed: formulation === 'socwr',
+		/** The result's state in a word or two; empty when it is current. */
 		freshness: mismatch
-			? `Previous ${solution!.formulation} result, awaiting ${formulation}`
+			? 'Out of date'
 			: solving
-				? solution
-					? 'Updating, showing the previous result'
-					: 'Calculating, no result yet'
+				? 'Solving…'
 				: error
 					? solution
-						? 'Error, result may be stale'
-						: 'Calculation unavailable, no result'
+						? 'Out of date'
+						: 'No result'
 					: solution
-						? 'Result available'
-						: 'Not solved',
+						? ''
+						: 'No result',
 		stale: solving || error || mismatch,
 		/** A result is shown, current or not. */
 		solved: !!solution,
 		/** The result when it is for the chosen calculation; null for another calculation's. */
 		current: mismatch ? null : solution,
-		basis: dcBasis ? '|P| / MW rating' : 'max(|S from|, |S to|) / MVA rating',
-		/** `basis` in words. */
-		basisText: dcBasis
-			? 'MW flow as a percentage of the MW rating'
-			: "the larger end's apparent power (MVA) as a percentage of the MVA rating"
+		/** What loading is measured against. */
+		basis: dcBasis ? 'MW / rating' : 'MVA / rating'
 	};
+}
+
+/** A short status for a diagram panel: the result's state when it is not current, else the
+ * solver's status when it did not fully succeed; null when there is nothing to flag. */
+export function freshnessNote(context: ReturnType<typeof operatingContext>): string | null {
+	if (context.stale || !context.solved) return context.freshness || null;
+	return !context.status || cleanStatus(context.status) ? null : statusWords(context.status);
 }
 
 /** A gauge to place: the branch's screen point it describes (`ax`, `ay`). */
@@ -222,32 +237,40 @@ export type GaugeCandidate = {
 /** A placed gauge: its box's top-left corner (`x`, `y`), joined to its branch by a leader. */
 export type OperatingGauge = GaugeCandidate & { x: number; y: number };
 
-export const GAUGE_WIDTH = 64;
-export const GAUGE_HEIGHT = 44;
-/** Box offsets from the branch point, tried in order: above right, above left, below right,
- * below left. A gap keeps the leader visible. */
-const GAUGE_OFFSETS: [number, number][] = [
-	[10, -GAUGE_HEIGHT - 14],
-	[-GAUGE_WIDTH - 10, -GAUGE_HEIGHT - 14],
-	[10, 14],
-	[-GAUGE_WIDTH - 10, 14]
-];
+export const GAUGE_WIDTH = 54;
+export const GAUGE_HEIGHT = 22;
+/** Box offsets from the branch point, tried in order: the four corners close in, then the
+ * sides, then the same again further out, so a cluster of flagged branches fans out instead
+ * of stacking. A gap keeps the leader visible. */
+const GAUGE_OFFSETS: [number, number][] = [10, 36, 64].flatMap((d) => [
+	[d, -GAUGE_HEIGHT - d],
+	[-GAUGE_WIDTH - d, -GAUGE_HEIGHT - d],
+	[d, d],
+	[-GAUGE_WIDTH - d, d],
+	[d + 6, -GAUGE_HEIGHT / 2],
+	[-GAUGE_WIDTH - d - 6, -GAUGE_HEIGHT / 2]
+]);
+/** Clear space kept between two gauges, and around every flagged branch point. */
+const GAUGE_GAP = 6;
 
 /** Fixed-size, local gauges. Selection wins, followed by violations and warnings. Each gauge
- * takes the first free spot around its branch point; the available canvas rectangle, collisions
- * and the budget limit clutter independently of network size. */
+ * takes the first free spot around its branch point that covers no other gauge, no other branch
+ * point and no `obstacles` point (such as a generator symbol); a gauge with no such spot takes the
+ * first one that covers no other gauge. The available canvas rectangle, collisions and the budget
+ * limit clutter independently of network size. */
 export function placeOperatingGauges(
 	candidates: GaugeCandidate[],
 	rect: { left: number; top: number; right: number; bottom: number },
-	budget: number
+	budget: number,
+	obstacles: readonly (readonly [number, number])[] = []
 ): OperatingGauge[] {
 	if (budget <= 0) return [];
 	const rank = (g: GaugeCandidate) =>
 		(g.selected
 			? 1e9
-			: g.state === 'violation'
+			: g.state === 'violation' || g.state === 'at-limit'
 				? 1e6
-				: g.state === 'warning' || g.state === 'at-limit'
+				: g.state === 'warning'
 					? 1e4
 					: 0) + g.loading;
 	const inside = (x: number, y: number, w: number, h: number) =>
@@ -256,23 +279,43 @@ export function placeOperatingGauges(
 	// the rest before sorting keeps the sort to what is on screen.
 	const sorted = candidates
 		.filter((g) => [g.ax, g.ay, g.loading].every(Number.isFinite) && inside(g.ax, g.ay, 0, 0))
-		.sort((a, b) => rank(b) - rank(a) || a.edge - b.edge);
+		.sort((a, b) => rank(b) - rank(a) || a.edge - b.edge)
+		.slice(0, budget * 4);
+	const covers = (x: number, y: number, px: number, py: number, pad = GAUGE_GAP) =>
+		px > x - pad && px < x + GAUGE_WIDTH + pad && py > y - pad && py < y + GAUGE_HEIGHT + pad;
 	const placed: OperatingGauge[] = [];
-	for (const g of sorted) {
+	const clearOfGauges = (x: number, y: number) =>
+		!placed.some(
+			(p) =>
+				Math.abs(p.x - x) < GAUGE_WIDTH + GAUGE_GAP && Math.abs(p.y - y) < GAUGE_HEIGHT + GAUGE_GAP
+		);
+	const spot = (g: GaugeCandidate, strict: boolean): [number, number] | null => {
 		for (const [dx, dy] of GAUGE_OFFSETS) {
 			const x = g.ax + dx;
 			const y = g.ay + dy;
-			if (!inside(x, y, GAUGE_WIDTH, GAUGE_HEIGHT)) continue;
+			if (!inside(x, y, GAUGE_WIDTH, GAUGE_HEIGHT) || !clearOfGauges(x, y)) continue;
 			if (
-				placed.some(
-					(p) => Math.abs(p.x - x) < GAUGE_WIDTH + 6 && Math.abs(p.y - y) < GAUGE_HEIGHT + 4
-				)
+				strict &&
+				(sorted.some((o) => covers(x, y, o.ax, o.ay)) ||
+					obstacles.some(([ox, oy]) => covers(x, y, ox, oy, GAUGE_GAP + 6)))
 			)
 				continue;
-			placed.push({ ...g, x, y });
-			break;
+			return [x, y];
 		}
+		return null;
+	};
+	const left: GaugeCandidate[] = [];
+	for (const g of sorted) {
 		if (placed.length >= budget) break;
+		const at = spot(g, true);
+		if (at) placed.push({ ...g, x: at[0], y: at[1] });
+		else left.push(g);
+	}
+	// A crowded branch still gets its gauge, over a neighbour's point if it must.
+	for (const g of left) {
+		if (placed.length >= budget) break;
+		const at = spot(g, false);
+		if (at) placed.push({ ...g, x: at[0], y: at[1] });
 	}
 	return placed;
 }
@@ -285,17 +328,16 @@ export function gaugeLeader(g: OperatingGauge): [number, number] {
 	];
 }
 
-/** A gauge's percentage, with a decimal only near the rating where it decides the state. */
-export const gaugeText = (loading: number) =>
-	`${(loading * 100).toFixed(loading > 0.99 && loading < 1.01 ? 1 : 0)}%`;
+/** A gauge's percentage, to one decimal on every gauge, so neighbours compare at a glance. */
+export const gaugeText = percent;
 
 export const loadingStateText: Record<LoadingState, string> = {
 	deenergized: 'de-energized',
 	inactive: 'out of service',
-	missing: 'result missing',
-	unknown: 'rating unknown',
-	unrated: 'no stated rating',
-	normal: 'below warning',
+	missing: 'no data',
+	unknown: 'unrated',
+	unrated: 'unrated',
+	normal: 'normal',
 	warning: 'warning',
 	'at-limit': 'at rating',
 	violation: 'overload'

@@ -143,3 +143,42 @@ test('with a CARTO key, OpenFreeMap paints, with its credit, when CARTO cannot b
 		.toBeGreaterThan(0.25);
 	await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenFreeMap');
 });
+
+// Headless Chromium culls a WebGL canvas under an opaque plain-colour layer in flipped rows, so
+// the header once left a blank band across the bottom of the map. With no case loaded nothing
+// repaints over it, so the band stayed; the whole viewport, as a person sees it, shows the map.
+test('with no case loaded, the map paints to the bottom edge', async ({ page }) => {
+	await stubApi(page);
+	await page.route('https://tiles.openfreemap.org/styles/*', (route: Route) =>
+		route.fulfill({ json: stubStyle('#14a0c8') })
+	);
+	await page.goto('/');
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
+	await expect.poll(() => paintedFraction(page, [20, 160, 200])).toBeGreaterThan(0.25);
+	const viewport = page.viewportSize()!;
+	const png = await page.screenshot();
+	const painted = await page.evaluate(
+		async ({ base64, y }) => {
+			const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+			const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+			const pixels = new OffscreenCanvas(image.width, image.height);
+			const context = pixels.getContext('2d')!;
+			context.drawImage(image, 0, 0);
+			// The middle of the row, clear of the corner hint and the map controls.
+			const x0 = Math.round(image.width * 0.3);
+			const { data } = context.getImageData(x0, y, Math.round(image.width * 0.4), 1);
+			let hits = 0;
+			for (let i = 0; i < data.length; i += 4)
+				if (
+					Math.abs(data[i] - 20) < 3 &&
+					Math.abs(data[i + 1] - 160) < 3 &&
+					Math.abs(data[i + 2] - 200) < 3
+				)
+					hits++;
+			image.close();
+			return hits / (data.length / 4);
+		},
+		{ base64: png.toString('base64'), y: viewport.height - 12 }
+	);
+	expect(painted).toBeGreaterThan(0.9);
+});

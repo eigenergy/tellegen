@@ -1,4 +1,6 @@
 import { expect, test } from './fixtures/page-errors.js';
+import { openSettings } from './fixtures/chrome.js';
+import { runCalculation } from './fixtures/calculation.js';
 import type { Page } from '@playwright/test';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
@@ -49,7 +51,7 @@ test.beforeEach(async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 });
 
 test('common settings stage changes, share them with WebMCP, reject stale writes and retain a failed result', async ({
@@ -61,16 +63,18 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 			new URL('./fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json', import.meta.url)
 				.pathname
 		);
-	await expect(page.getByTestId('distribution-case-chip').first()).toBeVisible();
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await expect(page.getByTestId('distribution-case-chip').first()).toBeAttached();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	await panel.getByLabel('Maximum iterations', { exact: true }).fill('150');
-	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
-	await panel.getByRole('button', { name: 'Apply settings', exact: true }).click();
-	await expect(panel.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
-	await expect(page.getByRole('region', { name: 'Multiconductor power flow results' })).toHaveCount(
-		0
-	);
+	const iterations = panel.getByLabel('Max iterations', { exact: true });
+	// A change applies and reruns at once: there is no Apply or Run button.
+	await expect(panel.getByRole('button', { name: /^(Apply|Run)/ })).toHaveCount(0);
+	await iterations.fill('150');
+	await iterations.press('Tab');
+	await expect
+		.poll(async () => (await tool(page, 'inspect_settings')).data.accepted, { timeout: 60_000 })
+		.toMatchObject({ max_iterations: 150 });
+	await expect(iterations).toBeEnabled({ timeout: 60_000 });
 	let inspected = await tool(page, 'inspect_settings');
 	expect(inspected.ok).toBe(true);
 	expect(inspected.data.selected).toMatchObject({ max_iterations: 150 });
@@ -87,7 +91,7 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 		patch: { max_iterations: 200 }
 	});
 	expect(update.ok).toBe(true);
-	await expect(panel.getByLabel('Maximum iterations', { exact: true })).toHaveValue('200');
+	await expect(iterations).toHaveValue('200');
 	const stale = await tool(page, 'update_settings', { ...binding, patch: { max_iterations: 100 } });
 	expect(stale.ok).toBe(false);
 	expect(stale.error?.code).toBe('STALE_REVISION');
@@ -100,10 +104,10 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 	expect(run.ok).toBe(true);
 	expect(run.data.accepted).toMatchObject({ max_iterations: 200 });
 	await page.screenshot({ path: testInfo.outputPath('settings-desktop.png'), fullPage: true });
-	await panel.getByLabel('Maximum iterations', { exact: true }).fill('1');
-	await panel.getByRole('button', { name: 'Apply settings', exact: true }).click();
-	await panel.getByRole('button', { name: 'Run power flow', exact: true }).click();
-	await expect(panel.getByRole('alert')).toContainText('did not converge');
+	await expect(iterations).toBeEnabled({ timeout: 60_000 });
+	await iterations.fill('1');
+	await iterations.press('Tab');
+	await expect(panel.getByRole('alert')).toHaveText('Did not converge', { timeout: 60_000 });
 	inspected = await tool(page, 'inspect_settings');
 	expect(inspected.data.accepted).toMatchObject({ max_iterations: 200 });
 	expect(inspected.data.pending).toBe(true);
@@ -123,18 +127,25 @@ test('an explicit run applies the calculation draft and agent edits retain its o
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
 	const result = page.locator('.solvecard');
-	await expect(result).toContainText('DC OPF', { timeout: 60000 });
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await expect(result).toHaveAttribute('data-calculation', 'dcopf', { timeout: 60000 });
+	// Choosing a calculation in the Network panel runs it.
+	await runCalculation(page, 'acpf');
+	await expect(result).toHaveAttribute('data-calculation', 'acpf', { timeout: 60000 });
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
-	await panel.getByRole('combobox', { name: 'Initial voltages', exact: true }).selectOption('case');
-	await expect(result).toContainText('DC OPF');
-	await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
-	await expect(result).toContainText('AC power flow', { timeout: 60000 });
+	// The Network panel chooses the calculation; Settings shows that calculation's options only.
+	await expect(panel.getByRole('combobox', { name: 'Type', exact: true })).toHaveCount(0);
+	await expect(panel.getByText('Line limits', { exact: true })).toHaveCount(0);
+	// Choosing an option applies it and reruns.
+	await panel
+		.getByRole('combobox', { name: 'Starting voltages', exact: true })
+		.selectOption('case');
+	await expect
+		.poll(async () => (await tool(page, 'inspect_settings')).data.accepted)
+		.toEqual({ start: 'case' });
 	const inspected = await tool(page, 'inspect_settings');
 	expect(inspected.ok).toBe(true);
 	expect(inspected.data.accepted_calculation).toBe('acpf');
-	expect(inspected.data.accepted).toEqual({ start: 'case' });
 	const current = await tool(page, 'inspect_case');
 	const updated = await tool(page, 'update_case', {
 		case_id: current.data.case_id,
@@ -159,7 +170,9 @@ test('partial lazy options agree with accepted settings and remain clean when sw
 		{ name: 'case14.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60000
+	});
 	const inspected = await tool(page, 'inspect_settings');
 	const updated = await tool(page, 'update_settings', {
 		case_id: inspected.data.case_id,
@@ -169,47 +182,76 @@ test('partial lazy options agree with accepted settings and remain clean when sw
 	});
 	expect(updated.ok).toBe(true);
 	expect(updated.data.selected).toMatchObject({ lazy: { near_binding: 0.9, max_rounds: 20 } });
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	await expect(panel.getByLabel('Maximum enforcement rounds')).toHaveValue('20');
-	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
-	await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
-	await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
+	await expect(panel.getByLabel('Max rounds', { exact: true })).toHaveValue('20');
+	await expect(panel.getByLabel('Add above (%)', { exact: true })).toHaveValue('90');
+	// The agent's change is not applied yet: Settings says so and offers to run it.
+	await expect(panel.getByText('Not applied', { exact: true })).toBeVisible();
+	await panel.getByRole('button', { name: 'Run', exact: true }).click();
+	await expect
+		.poll(async () => (await tool(page, 'inspect_settings')).data.pending, { timeout: 60_000 })
+		.toBe(false);
 	const accepted = await tool(page, 'inspect_settings');
-	expect(accepted.data.pending).toBe(false);
 	expect(accepted.data.selected).toEqual(accepted.data.accepted);
-	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
-	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('dcopf');
-	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
-	await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
+	await expect(panel.getByText('Not applied', { exact: true })).toHaveCount(0);
 });
 
-test('DC conventions share common settings and can return to the input default', async ({
+test('the DC line model is chosen in one place, shared with WebMCP, and can return to the input default', async ({
 	page
 }) => {
 	await page.locator('header input[type=file]').setInputFiles([
 		{ name: 'case14.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
-	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60000
+	});
+	// Settings holds the DC line model, under Calculation; the Network panel does not repeat it.
+	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	const convention = panel.getByRole('combobox', { name: 'DC convention', exact: true });
-	await expect(convention).toHaveValue('null');
-	for (const [selected, resolved] of [
-		['reactance_only', 'reactance_only'],
-		['null', 'series_susceptance']
-	]) {
-		await convention.selectOption(selected);
-		await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
-		await expect
-			.poll(async () => (await tool(page, 'inspect_case')).data.solution)
-			.toMatchObject({
-				branch_susceptance_formula: resolved
-			});
-		const settings = await tool(page, 'inspect_settings');
-		expect(settings.data.accepted).toMatchObject({
-			branch_susceptance_formula: selected === 'null' ? null : selected
-		});
-	}
+	await expect(panel.getByLabel('Angle limits', { exact: true })).toBeVisible();
+	await expect(panel).not.toContainText('series_susceptance');
+	await expect(page.getByRole('combobox', { name: 'DC line model', exact: true })).toHaveCount(1);
+	const model = panel.getByRole('combobox', { name: 'DC line model', exact: true });
+	await expect(model).toHaveValue('null');
+	// One default entry, and plain names for the rest.
+	await expect(model.locator('option')).toHaveText([
+		'Default',
+		'Series impedance',
+		'Reactance with taps',
+		'Reactance only',
+		'Series impedance with taps',
+		'Series impedance, no phase shift'
+	]);
+	await model.selectOption('reactance_only');
+	await expect
+		.poll(async () => (await tool(page, 'inspect_case')).data.solution)
+		.toMatchObject({ branch_susceptance_formula: 'reactance_only' });
+	expect((await tool(page, 'inspect_settings')).data.accepted).toMatchObject({
+		branch_susceptance_formula: 'reactance_only'
+	});
+	// An agent can hand the choice back to the input, which resolves to the default.
+	let settings = await tool(page, 'inspect_settings');
+	const reset = await tool(page, 'update_settings', {
+		case_id: settings.data.case_id,
+		expected_revision: settings.data.revision,
+		settings_revision: settings.data.settings_revision,
+		patch: { branch_susceptance_formula: null }
+	});
+	expect(reset.ok).toBe(true);
+	settings = await tool(page, 'inspect_settings');
+	const run = await tool(page, 'run_calculation', {
+		case_id: settings.data.case_id,
+		expected_revision: settings.data.revision,
+		settings_revision: settings.data.settings_revision
+	});
+	expect(run.ok).toBe(true);
+	await expect
+		.poll(async () => (await tool(page, 'inspect_case')).data.solution)
+		.toMatchObject({ branch_susceptance_formula: 'series_susceptance' });
+	expect((await tool(page, 'inspect_settings')).data.accepted).toMatchObject({
+		branch_susceptance_formula: null
+	});
+	await expect(model).toHaveValue('null');
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { errorNoticeTitle, NoticeCenter } from '../src/lib/notices.svelte.js';
+import { errorNoticeCanRetry, errorNoticeTitle, NoticeCenter } from '../src/lib/notices.svelte.js';
 import { AppState } from '../src/lib/state.svelte.js';
 
 afterEach(() => vi.useRealTimers());
@@ -8,19 +8,89 @@ describe('error titles', () => {
 		'map failed to load: Failed to initialize WebGL2. Read more at the browser support page',
 		'the map lost its graphics context repeatedly; reload the page to restore it'
 	])('labels graphics failures as map errors: %s', (details) => {
-		expect(errorNoticeTitle(details)).toBe('Map unavailable');
+		expect(errorNoticeTitle(details)).toBe('Map failed to start');
 	});
-	it('identifies an unsupported AC power flow boundary as a calculation failure', () => {
+	it('names the calculation when an AC power flow boundary is unsupported', () => {
 		expect(
 			errorNoticeTitle(
 				'Texas7k: AC power flow reference bus 111333 states angle -11.99 degrees; Tellegen currently requires zero'
 			)
-		).toBe('Calculation did not complete');
+		).toBe('AC power flow failed');
 	});
-	it('keeps the file error title for actual parse failures', () => {
-		expect(errorNoticeTitle('Could not parse case.m: invalid bus row')).toBe(
-			'Could not read this file'
+	it('names the calculation an engine id refers to', () => {
+		expect(errorNoticeTitle('branch rating edits are not supported by acpf')).toBe(
+			'AC power flow failed'
 		);
+		expect(errorNoticeTitle('case3: branch rating edits are not supported by dcpf')).toBe(
+			'DC power flow failed'
+		);
+	});
+	it('names the calculation that did not converge', () => {
+		expect(
+			errorNoticeTitle('AC power flow did not converge: best mismatch 2.007e1 over 5 starts')
+		).toBe('AC power flow failed');
+		expect(errorNoticeTitle('case3: DC OPF failed in the browser')).toBe('DC OPF failed');
+	});
+	it('says how to turn on dynamics, and offers no retry that cannot succeed', () => {
+		const details = 'case.dyr not opened: dynamics is off';
+		expect(errorNoticeTitle(details)).toBe('Turn on Experimental features in Settings');
+		expect(errorNoticeCanRetry(details)).toBe(false);
+		expect(errorNoticeTitle('Dynamics is off: turn on Experimental features in Settings')).toBe(
+			'Turn on Experimental features in Settings'
+		);
+		expect(errorNoticeCanRetry('sensitivity rate limit exceeded')).toBe(true);
+	});
+	it('names a DC line model the case file fixes, and offers no retry', () => {
+		const details = 'The case file sets its own DC line model, so Settings cannot change it.';
+		expect(errorNoticeTitle(details)).toBe('DC line model change failed');
+		expect(errorNoticeCanRetry(details)).toBe(false);
+	});
+	it('treats a singular Jacobian as a calculation failure, not a price sensitivity one', () => {
+		expect(errorNoticeTitle('AC power flow failed: singular Jacobian at iteration 3')).toBe(
+			'AC power flow failed'
+		);
+		expect(errorNoticeTitle('sensitivity unavailable: singular basis')).toBe(
+			'No price sensitivity'
+		);
+	});
+	it('names the file in a file error, and offers no retry for one', () => {
+		expect(errorNoticeTitle('Could not parse case.m: invalid bus row')).toBe(
+			'Could not open case.m'
+		);
+		expect(errorNoticeTitle('notes.txt: unsupported format')).toBe('Unreadable file');
+		expect(errorNoticeCanRetry('grid.raw: unsupported format')).toBe(false);
+		// A file that could not be opened opens the same way again: no Retry.
+		expect(errorNoticeCanRetry('thing.json: JSON parse error: unexpected token')).toBe(false);
+		// A malformed file fails the same way again: no Retry.
+		expect(
+			errorNoticeCanRetry(
+				'broken.m: PARSE.MATPOWER.MALFORMED: missing required MATPOWER field `baseMVA`'
+			)
+		).toBe(false);
+	});
+	it('names the calculation that has no solution', () => {
+		expect(errorNoticeTitle('Portugal: DC OPF has no solution at this demand')).toBe(
+			'DC OPF has no solution'
+		);
+		expect(errorNoticeTitle('AC OPF: problem infeasible')).toBe('AC OPF has no solution');
+	});
+	it('titles a case message with what happened, not the case name', () => {
+		expect(errorNoticeTitle('IEEE 14: solve again before saving')).toBe(
+			'Solve again before saving'
+		);
+	});
+	it('names a failed case list', () => {
+		expect(errorNoticeTitle('Case list: Server error')).toBe('Could not load the case list');
+		expect(errorNoticeCanRetry('Case list: Server error')).toBe(true);
+	});
+	it('never titles a notice with a bare "Failed"', () => {
+		expect(errorNoticeTitle('PowerIO balanced_network input cannot start a DcPf Study')).toBe(
+			'Calculation failed'
+		);
+		expect(errorNoticeTitle('Clipboard denied. The page lost focus')).toBe('Clipboard denied');
+		expect(
+			errorNoticeTitle('An unclassified message that runs on far longer than a notice title should')
+		).toBe('An unclassified message that runs on far longer…');
 	});
 });
 describe('recent messages', () => {
@@ -45,6 +115,17 @@ describe('recent messages', () => {
 		for (let index = 0; index < 40; index++)
 			notices.push({ title: 'Message', details: `Details ${index}` });
 		expect(notices.entries).toHaveLength(30);
+		notices.dispose();
+	});
+	it('records a quiet message in the Log without a toast', () => {
+		const notices = new NoticeCenter();
+		notices.push({
+			title: 'Could not load the case list',
+			details: 'Case list: 502',
+			quiet: true
+		});
+		expect(notices.entries).toHaveLength(1);
+		expect(notices.active).toBeNull();
 		notices.dispose();
 	});
 	it('pauses dismissal during interaction and restarts the remaining time', () => {

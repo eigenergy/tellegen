@@ -112,13 +112,13 @@ test('custom bounds remain visible and cannot create negative demand', () => {
 test('unsupported physics and incomplete selected equipment fail before execution', () => {
 	assert.throws(
 		() => buildGoal(network, defaultGoalForm('dcopf'), 'acpf'),
-		/does not calculate LMPs/
+		/AC power flow has no prices/
 	);
 	const form = defaultGoalForm('dcopf');
 	form.scope = 'selected';
-	assert.throws(() => buildGoal(network, form, 'dcopf'), /at least one bus/);
+	assert.throws(() => buildGoal(network, form, 'dcopf'), /Needs ≥1 bus/);
 	form.buses = ['bus:2'];
-	assert.throws(() => buildGoal(network, form, 'dcopf'), /at least one line or bus/);
+	assert.throws(() => buildGoal(network, form, 'dcopf'), /Needs ≥1 candidate/);
 	assert.equal(resolveEquipment(network, form).candidates.length, 0);
 });
 

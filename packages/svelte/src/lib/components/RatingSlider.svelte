@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
-	import { fmt, signed } from '../format.js';
+	import { signed } from '../format.js';
 	import { sliderKeyValue } from '../slider.js';
 
 	const ctrl = getController();
@@ -22,38 +22,19 @@
 	const neutralPos = $derived(thumbAlignedPos(neutralFrac));
 	const fillLo = $derived(valFrac < neutralFrac ? valPos : neutralPos);
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
-	const sliderTip = 'Drag to preview, release to solve. The tick marks the committed rating.';
-	const disabledTip = 'Synthesized rating; not adjustable';
-	const scoreTip =
-		'Estimated from the sensitivities at the current solution, then checked by solving again.';
 </script>
 
 {#if ctrl.activeSolvable}
 	{@const c = ctrl.activeSolvable}
-	{@const branch = ctrl.selectedBranchData}
 	<div class="slider-block">
 		<div class="slider-head">
 			<span>Rating change</span>
 			<span class="val mono">{signed(ctrl.ratingSliderValue)} MW</span>
 		</div>
-		<div class="line-row">
-			{#if branch}
-				<span class="dim"
-					>Line <span class="mono"
-						>{branch.from}&#8201;&ndash;&#8201;{branch.to}, {fmt.format(branch.rate_mw)} MW</span
-					></span
-				>
-			{/if}
-			{#if bounds.disabled}
-				<span class="dim">Not adjustable</span>
-			{:else}
-				<span class="mono dim">{fmt.format(bounds.min)} to +{fmt.format(bounds.max)} MW</span>
-			{/if}
-		</div>
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
-			title={bounds.disabled ? disabledTip : sliderTip}
+			title={bounds.disabled ? 'Fixed' : undefined}
 		>
 			<input
 				type="range"
@@ -78,29 +59,28 @@
 				onchange={(e) => ctrl.finishRatingInput(Number(e.currentTarget.value))}
 			/>
 		</div>
-		<div class="rating-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
-			<p class="pred dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
-				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					Predicted cost change <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
-				{:else}
-					&nbsp;
-				{/if}
-			</p>
-			<p class="score" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
-				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
-					<span title={scoreTip}>
-						Cost change: estimated <span class="mono">{signed(ctrl.gradientScore.pred)}</span>,
-						solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h
-					</span>
-				{:else}
-					&nbsp;
-				{/if}
-			</p>
-			<div class="reset-row">
-				{#if ctrl.isPerturbed(c)}
-					<button class="reset" onclick={() => ctrl.resetCase(c)}>Reset rating</button>
-				{/if}
-			</div>
+		<!-- The slider's ends, as ticks under the track. -->
+		<div class="ticks mono" aria-hidden={!bounds.disabled}>
+			{#if bounds.disabled}
+				<span class="dim">Not adjustable</span>
+			{:else}
+				<span>{signed(bounds.min)}</span><span>{signed(bounds.max)} MW</span>
+			{/if}
+		</div>
+		<div class="rating-feedback">
+			{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
+				<p class="pred dim">
+					Predicted <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
+				</p>
+			{:else if ctrl.gradientScore && ctrl.isPerturbed(c)}
+				<p class="score">
+					<span>Predicted <span class="mono">{signed(ctrl.gradientScore.pred)}</span> $/h</span>
+					<span>Solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h</span>
+				</p>
+			{/if}
+			{#if ctrl.committedRating !== 0}
+				<button class="reset" onclick={() => ctrl.resetRating(c)}>Reset rating</button>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -113,7 +93,7 @@
 	.slider-head {
 		display: flex;
 		justify-content: space-between;
-		font-size: 13.5px;
+		font-size: 13px;
 		color: var(--text-secondary);
 		margin-bottom: 4px;
 	}
@@ -122,13 +102,14 @@
 		color: var(--ink);
 	}
 
-	.line-row {
+	.ticks {
 		display: flex;
-		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-		margin: 6px 0 7px;
-		font-size: 12.5px;
+		margin: -2px 0 6px;
+		font-size: var(--fs-label);
+		font-variant-numeric: tabular-nums;
+		color: var(--text-secondary);
 	}
 
 	.slider-track {
@@ -242,36 +223,21 @@
 		}
 	}
 
-	.pred {
+	.pred,
+	.score {
 		margin: 2px 0 0;
 		font-size: 13px;
-		min-height: 16px;
 	}
 
 	.score {
-		margin: 8px 0 0;
-		font-size: 13px;
+		display: flex;
+		gap: 16px;
 		color: var(--ink);
-		min-height: 16px;
 	}
 
 	.rating-feedback {
-		min-height: 78px;
-	}
-
-	/* On a fresh selection (no preview, no perturbation) the predicted/gradient/
-	   reset rows are empty; collapse the reserved block so the panel isn't padded
-	   with whitespace. The reservation returns during interaction to avoid jumps. */
-	.rating-feedback.idle {
-		min-height: 0;
-	}
-
-	.rating-feedback.idle .pred,
-	.rating-feedback.idle .score {
-		display: none;
-	}
-
-	.reset-row {
-		min-height: 28px;
+		display: grid;
+		justify-items: start;
+		gap: 6px;
 	}
 </style>

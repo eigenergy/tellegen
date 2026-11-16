@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { expect, test } from './fixtures/page-errors.js';
 import {
 	CASE3_COORDS,
@@ -106,11 +107,11 @@ test('WebMCP switches cases without cursor input and keeps saved work', async ({
 		.locator('dl > div')
 		.filter({ has: page.locator('dt', { hasText: 'Current demand' }) });
 	await expect(demandRow.locator('dd')).toHaveText(`${bus.demand_mw} MW`);
-	const lmpRow = details
+	const priceRow = details
 		.locator('dl > div')
-		.filter({ has: page.locator('dt', { hasText: /^LMP$/ }) });
+		.filter({ has: page.locator('dt', { hasText: /^Price$/ }) });
 	const shownPrice = Number.parseFloat(
-		(await lmpRow.locator('dd').innerText()).replaceAll(',', '')
+		(await priceRow.locator('dd').innerText()).replaceAll(',', '')
 	);
 	expect(shownPrice).toBeCloseTo(bus.price, 1);
 	await expect(page.locator('input[type="range"]')).toHaveCount(0);
@@ -182,6 +183,7 @@ test('unavailable configured cases remain visible and cannot replace the display
 	};
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [unavailable] }));
 	await page.goto('/');
+	await openCaseMenu(page);
 	await expect(
 		page.getByRole('button', { name: 'Unavailable demo Unavailable', exact: true })
 	).toBeDisabled();

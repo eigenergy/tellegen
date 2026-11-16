@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { openCaseMenu } from './fixtures/chrome.js';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/page-errors.js';
 
@@ -12,7 +13,7 @@ async function solvedOverview(page: Page) {
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire-limits.bmopf.json',
 		mimeType: 'application/json',
@@ -54,7 +55,7 @@ test('protocol tasks stay within their interaction budgets', async ({ page }) =>
 		await expect(
 			overview.getByRole('list', { name: 'From end conductor currents' }).getByRole('listitem')
 		).toHaveCount(4);
-		await expect(overview).toContainText('neutral carries');
+		await expect(overview).toContainText('Neutral:');
 	});
 	await test.step('6. find a named bus: type and Enter', async () => {
 		await overview.getByRole('combobox', { name: 'Find a bus or branch' }).fill('src');
@@ -81,7 +82,7 @@ test('7. switch to the schematic and between layouts, keeping the selection', as
 	await toolbar.getByRole('button', { name: 'Schematic', exact: true }).click();
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('leaf-order');
 	await toolbar.getByRole('combobox', { name: 'Schematic arrangement' }).selectOption('tidy');
-	await toolbar.getByRole('combobox', { name: 'Colour by' }).selectOption('loading-heat');
+	await toolbar.getByRole('combobox', { name: 'Color by' }).selectOption('loading-heat');
 	await expect(page.getByText('≥ 100%')).toBeVisible();
 	await own.click();
 	await expect(own).toHaveAttribute('aria-pressed', 'true');
@@ -255,7 +256,7 @@ test('the schematic layout file loads back with the case as its diagram', async 
 	await fresh.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(fresh.getByText('no default cases loaded')).toBeVisible();
+	await expect(fresh.getByText('No cases', { exact: true })).toBeVisible();
 	await fresh.locator('input[type=file]').setInputFiles([
 		{
 			name: 'four-wire-limits.bmopf.json',
@@ -298,7 +299,7 @@ test('a balanced case without limits does not break the overview', async ({ page
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a file set earlier is
 	// lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire.bmopf.json',
 		mimeType: 'application/json',
@@ -328,7 +329,7 @@ test('a center-tap transformer (one id, several graph edges) does not break the 
 	// its id; the equipment list was keyed by id and threw `each_key_duplicate` (a 500 page).
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'center-tap.bmopf.json',
 		mimeType: 'application/json',
@@ -359,7 +360,7 @@ test('the diagram opens before a solve, without results', async ({ page }) => {
 	// Cases that do not solve yet (generators, IBRs) can still be inspected as a diagram.
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'four-wire-limits.bmopf.json',
 		mimeType: 'application/json',
@@ -368,7 +369,7 @@ test('the diagram opens before a solve, without results', async ({ page }) => {
 	await page.getByRole('button', { name: 'Show diagram' }).click();
 	const toolbar = page.getByRole('toolbar', { name: 'Schematic' });
 	await expect(page.getByRole('application', { name: 'Schematic diagram' })).toBeVisible();
-	await expect(toolbar.getByRole('combobox', { name: 'Colour by' })).toBeDisabled();
+	await expect(toolbar.getByRole('combobox', { name: 'Color by' })).toBeDisabled();
 	await toolbar.getByRole('button', { name: 'Schematic', exact: true }).click();
 	await expect(page.getByRole('list', { name: 'Symbols' })).toBeVisible();
 	await page.getByRole('button', { name: 'Show map' }).click();
@@ -380,7 +381,7 @@ test('a second case opens its own diagram while the first one is showing', async
 	// diagram stale, so the second case's Show diagram did nothing.
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const load = async (name: string) =>
 		page
 			.locator('input[type=file]')
@@ -407,7 +408,7 @@ test('switching between two open diagrams draws each case with its own layout', 
 	// both open, and served the other case's cached schematic for this one.
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const centreTap = new URL(
 		'../../../crates/tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json',
 		import.meta.url
@@ -436,7 +437,8 @@ test('switching between two open diagrams draws each case with its own layout', 
 	await expect(diagram).toBeVisible();
 	await schematicLayout();
 
-	await page.getByRole('button', { name: 'pf_3ph_line Distribution' }).click();
+	await openCaseMenu(page);
+	await page.getByRole('button', { name: /^pf_3ph_line Distribution/ }).click();
 	await expect(diagram).toBeVisible();
 	expect(await schematicLayout()).toEqual(first);
 });
@@ -444,7 +446,7 @@ test('switching between two open diagrams draws each case with its own layout', 
 test('perfectly grounded terminals show as a solid earth', async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'pf_1ph_line.bmopf.json',
 		mimeType: 'application/json',
@@ -476,7 +478,7 @@ test('buses at the same point spread apart for the keyboard cursor', async ({ pa
 	for (const bus of Object.values(data.bus) as object[]) Object.assign(bus, at);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'stacked.bmopf.json',
 		mimeType: 'application/json',
@@ -485,9 +487,15 @@ test('buses at the same point spread apart for the keyboard cursor', async ({ pa
 	await page.getByRole('button', { name: 'Show diagram' }).click();
 	const schematic = page.getByRole('application', { name: 'Schematic diagram' });
 	await expect(schematic).toBeVisible();
-	await schematic.focus();
-	await page.keyboard.press('ArrowRight');
-	await expect(schematic.locator('[aria-live]')).toContainText('One of 2 buses at this point');
+	// The drawing can show before its layout is ready for the cursor; a key pressed earlier is
+	// ignored, so press again until the cursor lands. Either bus opens the stack.
+	await expect(async () => {
+		await schematic.focus();
+		await page.keyboard.press('ArrowRight');
+		await expect(schematic.locator('[aria-live]')).toContainText('One of 2 buses at this point', {
+			timeout: 2_000
+		});
+	}).toPass({ timeout: 30_000 });
 	const card = page.getByRole('list', { name: 'Buses at this point' });
 	await expect(card.getByRole('listitem')).toHaveCount(2);
 	await expect(card).toContainText('src');

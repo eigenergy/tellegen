@@ -19,10 +19,9 @@ import { extent, rgbaCss } from './format.js';
  * and the literature name it. */
 export const MC_PF_NAME = 'Multiconductor power flow';
 export const MC_PF_UNAVAILABLE_TITLE = 'Multiconductor power flow unavailable';
-export const MC_PF_UNAVAILABLE = 'This case cannot run multiconductor power flow.';
+export const MC_PF_UNAVAILABLE = 'Unavailable for this case';
 /** The one wording for a bus left out because its island has no voltage source. */
-export const EXCLUDED_ISLAND_BUS =
-	'This bus is in an island with no voltage source, so the calculation leaves it out and it has no result.';
+export const EXCLUDED_ISLAND_BUS = 'No source (excluded)';
 
 /** A bus positioned on the map, carrying its terminal-level detail. */
 export interface PlacedMultiBus {

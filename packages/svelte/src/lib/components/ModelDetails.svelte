@@ -147,7 +147,7 @@
     background: var(--paper);
     border: 1px solid var(--line);
     padding: 6px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-control);
     color: inherit;
     font: inherit;
   }
@@ -202,7 +202,7 @@
     font: inherit;
     border: 1px solid var(--line);
     background: transparent;
-    border-radius: 4px;
+    border-radius: var(--radius-control);
     cursor: pointer;
     color: inherit;
   }

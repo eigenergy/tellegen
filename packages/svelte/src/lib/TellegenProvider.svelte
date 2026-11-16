@@ -93,30 +93,30 @@
 	const layout = setPanelLayout(new PanelLayout());
 	const notices = setNoticeCenter(new NoticeCenter());
 	const commands = setCommandRegistry(new CommandRegistry());
-	commands.register({
-		id: 'run-calculation',
-		title: 'Run calculation',
-		hint: () => {
-			const c = ctrl.activeSolvable ?? app.activeMulti;
-			return c ? 'Solve the displayed case with its selected settings' : 'Open a case first';
-		},
-		keywords: ['solve', 'power flow', 'opf', 'compute'],
-		run: () => {
-			const c = ctrl.activeSolvable ?? app.activeMulti;
-			if (!c) return;
-			ctrl.runSettings(c).catch((error: unknown) =>
-				notices.push({
-					kind: 'error',
-					title: 'Calculation failed',
-					details: error instanceof Error ? error.message : String(error)
-				})
-			);
-		}
+	// A transmission case gets one command per calculation (AppHeader); a distribution
+	// case has one calculation, its power flow.
+	commands.registerSource(() => {
+		const c = app.activeMulti;
+		if (ctrl.activeSolvable || !c) return [];
+		return [
+			{
+				id: 'run-calculation',
+				title: 'Run power flow',
+				keywords: ['solve', 'power flow', 'calculation', 'compute'],
+				run: () =>
+					void ctrl.runSettings(c).catch((error: unknown) =>
+						notices.push({
+							kind: 'error',
+							title: 'Power flow failed',
+							details: error instanceof Error ? error.message : String(error)
+						})
+					)
+			}
+		];
 	});
 	commands.register({
 		id: 'fit-view',
 		title: 'Fit network to view',
-		hint: 'Reframe the map on the displayed case',
 		keywords: ['zoom', 'frame', 'center'],
 		run: () =>
 			void app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? app.activeMultiId ?? 'all')
@@ -129,15 +129,13 @@
 	});
 	commands.register({
 		id: 'zen',
-		title: () => (app.zen ? 'Exit zen mode' : 'Enter zen mode'),
-		hint: () => (app.zen ? 'Bring the panels back' : 'Hide the panels and focus on the map'),
-		keywords: ['focus', 'hide panels', 'distraction'],
+		title: () => (app.zen ? 'Show panels' : 'Hide panels'),
+		keywords: ['hide', 'show', 'panels', 'focus', 'present'],
 		run: () => (app.zen = !app.zen)
 	});
 	commands.register({
 		id: 'reset-layout',
 		title: 'Reset panel layout',
-		hint: 'Put detached or redocked panels back in their default docks',
 		keywords: ['panels', 'dock', 'float', 'default'],
 		run: () => layout.reset()
 	});

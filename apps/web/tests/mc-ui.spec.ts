@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/page-errors.js';
 import { installWebMcpHarness, callTool } from './fixtures/planning-case.js';
-import { noticeDetails } from './fixtures/notices.js';
+import { noticeDetails, openLog } from './fixtures/notices.js';
 
 const fixture = new URL(
 	'./fixtures/mc-pf-browser/public/mc-pf-three-phase.bmopf.json',
@@ -48,7 +48,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles([
 		{ name: 'private-feeder.json', mimeType: 'application/json', buffer: await readFile(fixture) },
 		{
@@ -126,13 +126,15 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		0
 	);
 	await expect.poll(() => table.innerText()).toBe(before);
-	await expect(await noticeDetails(page)).toContainText(
-		'2 buses, 1 routes matched; 0 unmatched objects'
-	);
-	await page
-		.getByRole('region', { name: 'Notifications' })
-		.getByRole('button', { name: 'Details', exact: true })
-		.click();
+	// A clean match raises no notice; the Log keeps the note.
+	const tabs = page.locator('.panel-toolbar');
+	const shown = await tabs.locator('button[aria-pressed="true"]').first().innerText();
+	await expect(await openLog(page)).toContainText('2 buses, 1 routes matched; 0 unmatched objects');
+	await expect(
+		page.getByRole('region', { name: 'Notifications' }).getByText(/^\d+ coordinate notes?$/)
+	).toHaveCount(0);
+	// The Log shares the dock: return to the panel that was showing.
+	await tabs.getByRole('button', { name: shown.trim(), exact: true }).click();
 	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeVisible();
 	await page.screenshot({ path: testInfo.outputPath('mc-results-mobile.png') });
@@ -172,7 +174,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 			.getByText('Import', { exact: true })
 			.locator('input')
 			.setInputFiles({ name: 'same.json', mimeType: 'application/json', buffer: exported });
-		await expect(await noticeDetails(imported)).toContainText('This study is already saved');
+		await expect(await noticeDetails(imported)).toContainText('Already saved');
 		await expect(imported.getByLabel('Saved study').locator('option[value^="mc:"]')).toHaveCount(1);
 	} finally {
 		await fresh.close();

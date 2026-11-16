@@ -45,18 +45,21 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await page.goto('/');
 	// The prerendered input exists before hydration attaches its listener; a
 	// drop fired earlier is lost. The empty-cases panel renders only after load.
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_CONGESTED) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	// The tightened line binds, so the panel lists it as the selection target.
-	const bindingLine = page.locator('.binding-lines button');
+	const bindingLine = page.locator('.binding-lines li button');
 	await expect(bindingLine).toHaveCount(1);
-	await expect(bindingLine).toContainText('Line 2');
-	await expect(bindingLine).toContainText('100%');
+	// Named as everywhere else: the line's id and the buses it joins.
+	await expect(bindingLine).toContainText('Line 3 (2–3)');
+	await expect(bindingLine).toContainText('100.0%');
 
 	const mapCanvas = page.locator('.map canvas').first();
 	await expect(mapCanvas).toBeVisible();
@@ -70,8 +73,9 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await page.mouse.up();
 
 	await bindingLine.click();
-	await expect(bindingLine).toHaveClass(/selected/);
-	await expect(bindingLine).toHaveAttribute('aria-pressed', 'true');
+	// The selected line stays in the list, marked; the inspector names it.
+	await expect(page.getByTestId('sensitivity-title')).toHaveText('Line 3 (2–3)');
+	await expect(bindingLine).toHaveAttribute('aria-current', 'true');
 	const selectedBranchCue = page.locator('.selected-branch-cue');
 	const selectedBranchPath = selectedBranchCue.locator('.selected-branch-line');
 	await expect(selectedBranchCue).toBeVisible();
@@ -99,14 +103,16 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 			);
 		})
 		.toBe(true);
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂rating' })).toBeVisible({
+	await expect(page.getByTestId('sensitivity-title').filter({ hasText: /^Line / })).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(page.getByText(/LMP response to the rating on line/)).toBeVisible();
+	await expect(page.getByTestId('sensitivity-readout')).toContainText(/\$\/MWh per MW\b/);
 	// A binding line's column is structured, not the flat/uniform tint.
+	await expect(page.getByTestId('uniform-shift')).toHaveCount(0);
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).not.toContainText('Uniform');
-	await expect(labels).toContainText(/[+−-]\d\.\de[+-]\d+/);
+	// A signed scale in plain decimals, never e-notation.
+	await expect(labels).toContainText(/[+−][\d.]+/);
+	await expect(labels).not.toContainText(/\de[+-]\d/);
 
 	// Relax the rating to the slider max and commit (change fires the exact solve).
 	const slider = page.getByLabel('Rating delta at selected line');
@@ -122,7 +128,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	// value comes from the re-solve (a local case has no server fallback).
 	const panel = page.getByRole('complementary', { name: 'Network', exact: true });
 	await expect(panel).toContainText('+8 MW', { timeout: 30_000 });
-	await expect(panel).toContainText(/estimated −[\d.,]+,\s*solved −[\d.,]+/, {
+	await expect(panel).toContainText(/Predicted −[\d.,]+ \$\/h\s*Solved −[\d.,]+ \$\/h/, {
 		timeout: 30_000
 	});
 });

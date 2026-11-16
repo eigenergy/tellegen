@@ -1,5 +1,5 @@
 import type { BranchRatingDeltas, DemandDeltas } from './api.js';
-import { demandGradient, priceGradient } from './colors.js';
+import { angleGradient, demandGradient, priceGradient } from './colors.js';
 import { CaseState, type DisplayMode, type SolvableCase } from './state.svelte.js';
 
 /** One bus-color variable the panel and map can show, without its per-bus values.
@@ -20,21 +20,19 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 	if (c.formulation !== 'acpf' && c.solution.prices.length > 0) {
 		options.push({
 			mode: 'price',
-			label: 'LMP',
+			label: 'Price',
 			unit: '$/MWh',
-			copy:
-				c.formulation === 'socwr'
-					? 'Locational marginal price, SOCWR relaxation'
-					: 'Locational marginal price',
-			gradient: priceGradient
+			copy: 'Price',
+			// The legend follows the map's theme: styles.css sets the dark ramp.
+			gradient: `var(--tellegen-price-ramp, ${priceGradient})`
 		});
 	}
 	if (c.solution.vm?.length || c.solution.w.length > 0) {
 		options.push({
 			mode: 'voltage',
-			label: '|V|',
+			label: 'Voltage',
 			unit: 'pu',
-			copy: c.formulation === 'socwr' ? 'Voltage magnitude, SOCWR relaxation' : 'Voltage magnitude',
+			copy: 'Voltage',
 			gradient: priceGradient
 		});
 	}
@@ -44,7 +42,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			label: 'Angle',
 			unit: 'rad',
 			copy: 'Voltage angle',
-			gradient: priceGradient
+			gradient: angleGradient
 		});
 	}
 	// Last, so a mode the result cannot show still falls back to a result variable.

@@ -19,10 +19,10 @@ compatibility**; optimal-objective agreement also requires the checklist below.
 
 | UI selection / API token | Active branch flow | PowerModels DCP / PGLib DC | MATPOWER DC / PowerModels DCMP | AC OPF objective |
 | --- | --- | --- | --- | --- |
-| **Legacy Tellegen (default)** — `series_susceptance` | `k(Δθ−φ)` | When all shifts are zero | When `r=0` and `τ=1` | No equality guarantee |
-| **PowerModels DCP / PGLib DC** — `series_susceptance_no_phase_shift` | `kΔθ` | Exact equations | When `r=0`, `τ=1`, `φ=0` | No equality guarantee |
-| **MATPOWER / PowerModels DCMP** — `tap_adjusted_reactance` | `(Δθ−φ)/(xτ)` | When `r=0`, `τ=1`, `φ=0` | Exact equations | No equality guarantee |
-| **Tap-adjusted series susceptance** — `tap_adjusted_series_susceptance` | `k(Δθ−φ)/τ` | When `τ=1`, `φ=0` | When `r=0` | No equality guarantee |
+| **Tellegen (default)** — `series_susceptance` | `k(Δθ−φ)` | When all shifts are zero | When `r=0` and `τ=1` | No equality guarantee |
+| **PowerModels DCP** — `series_susceptance_no_phase_shift` | `kΔθ` | Exact equations | When `r=0`, `τ=1`, `φ=0` | No equality guarantee |
+| **MATPOWER** — `tap_adjusted_reactance` | `(Δθ−φ)/(xτ)` | When `r=0`, `τ=1`, `φ=0` | Exact equations | No equality guarantee |
+| **Susceptance with taps** — `tap_adjusted_series_susceptance` | `k(Δθ−φ)/τ` | When `τ=1`, `φ=0` | When `r=0` | No equality guarantee |
 | **Reactance only (1/x)** — `reactance_only` | `Δθ/x` | When `r=0` | When `τ=1`, `φ=0` | No equality guarantee |
 
 Conditional entries are sufficient conditions on every active branch, not an

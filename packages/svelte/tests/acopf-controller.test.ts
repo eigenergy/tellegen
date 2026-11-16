@@ -204,7 +204,7 @@ describe('AC OPF controller boundary', () => {
 			await vi.waitFor(() => expect(c.solving).toBe(false));
 			expect(solveAcOpfModule).not.toHaveBeenCalled();
 			expect(app.error).toContain(
-				reason === 'unavailable' ? 'worker is unavailable' : 'base case only'
+				reason === 'unavailable' ? 'AC OPF unavailable' : 'needs the unedited case'
 			);
 		}
 	);

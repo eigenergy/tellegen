@@ -11,31 +11,36 @@ export function formulationLabel(id: Formulation): string {
 	return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
 }
 
+/** A line's name everywhere it is listed: its id and the buses it joins. */
+export function lineName(line: { id: number; from: number; to: number }): string {
+	return `Line ${line.id} (${line.from}–${line.to})`;
+}
+
 export function formulationHint(id: Formulation): string {
 	return FORMULATIONS.find((f) => f.id === id)?.hint ?? id;
 }
 
+/** A case name and its detail: "IEEE 118 (Region)" -> ["IEEE 118", "Region"]. A trailing
+ * file-style identifier ("Texas7k distribution p1uhs0_1247") becomes the detail, spaced. */
 export function splitName(name: string): [string, string] {
 	const m = name.match(/^(.*?)\s*\((.*)\)$/);
-	return m ? [m[1], m[2]] : [name, ''];
+	if (m) return [m[1], m[2]];
+	const id = name.match(/^(.*\S)\s+(\S*_\S*)$/);
+	return id ? [id[1], id[2].replace(/_/g, ' ')] : [name, ''];
 }
 
-export const INFEASIBLE_DISPATCH =
-	'No feasible dispatch: demand cannot be served within line and generator limits';
+export const INFEASIBLE_DISPATCH = 'Infeasible';
 
-/** The message for a local case whose browser solve failed, and the
- * technical detail to disclose behind it. An infeasible DC OPF means the
- * network cannot carry the demand, which deserves plain words. The engine
- * spells it `DC OPF solve infeasible`, and an unbounded one as `unbounded`. */
+/** The short message for a local case whose browser solve failed, and the technical
+ * detail to disclose behind it. The engine spells an infeasible solve
+ * `DC OPF solve infeasible`, and an unbounded one as `unbounded`. */
 export function browserSolveFailure(
 	label: string,
 	reason: string | null
 ): { message: string; detail: string | null } {
 	const technical = `${label}: browser solve unavailable${reason ? `: ${reason}` : ''}`;
-	if (reason && /\binfeasible\b/i.test(reason)) {
-		return { message: INFEASIBLE_DISPATCH, detail: technical };
-	}
-	return { message: technical, detail: null };
+	const infeasible = !!reason && /\binfeasible\b/i.test(reason);
+	return { message: `${label}: ${infeasible ? 'infeasible' : 'solve failed'}`, detail: technical };
 }
 
 export function rgbaCss([r, g, b, a]: RGBA): string {
@@ -57,14 +62,55 @@ export function extent(values: number[]): { min: number; max: number } {
 }
 
 export const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
-export const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
+/** A number for reading: a true minus sign, and never a negative zero. */
+export const plain = (v: number, format: Intl.NumberFormat = fmt) => {
+	const text = format.format(Math.abs(v));
+	return v < 0 && /[1-9]/.test(text) ? `−${text}` : text;
+};
+/** A change with its sign. A change that rounds to zero reads "0", with no sign. */
+export const signed = (v: number, format: Intl.NumberFormat = fmt) => {
+	const text = format.format(Math.abs(v));
+	return /[1-9]/.test(text) ? `${v < 0 ? '−' : '+'}${text}` : '0';
+};
+const twoFigures = new Intl.NumberFormat('en-US', {
+	maximumSignificantDigits: 2
+});
+/** A small signed rate, such as a price change per MW, to two significant
+ * figures in plain decimals (0.0017, not 1.7e-3). */
+export const signedSmall = (v: number) => signed(Math.abs(v) < SMALL_FLOOR ? 0 : v, twoFigures);
+/** The same, without a sign. */
+export const small = (v: number) => plain(Math.abs(v) < SMALL_FLOOR ? 0 : v, twoFigures);
+/** Below this a rate is solver noise, and reads 0: a price change of a hundredth of a cent
+ * per MWh for each MW. */
+export const SMALL_FLOOR = 1e-4;
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
+const twoDecimals = new Intl.NumberFormat('en-US', {
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 2
+});
+/** A price in $/MWh, the same wherever it shows: two decimals, so 22 reads 22.00 beside 20.70. */
+export const priceText = (value: number) => plain(value, twoDecimals);
 export const displayFmt = (mode: DisplayMode, value: number) =>
-	mode === 'price' || mode === 'demand' ? fmt.format(value) : value.toFixed(3);
+	mode === 'price'
+		? priceText(value)
+		: mode === 'demand'
+			? plain(value)
+			: plain(value, threeDecimals);
+const threeDecimals = new Intl.NumberFormat('en-US', {
+	minimumFractionDigits: 3,
+	maximumFractionDigits: 3
+});
 
-const exactNumber = new Intl.NumberFormat('en', { maximumFractionDigits: 6, useGrouping: false });
+const exactNumber = new Intl.NumberFormat('en', {
+	maximumFractionDigits: 6,
+	useGrouping: false
+});
 const decimals = [0, 1, 2, 3, 4].map(
-	(d) => new Intl.NumberFormat('en', { maximumFractionDigits: d, minimumFractionDigits: 0 })
+	(d) =>
+		new Intl.NumberFormat('en', {
+			maximumFractionDigits: d,
+			minimumFractionDigits: 0
+		})
 );
 
 /**
@@ -77,11 +123,20 @@ export function readable(
 	unit: string,
 	signed = false
 ): { text: string; exact: string } {
-	if (value == null || !Number.isFinite(value))
-		return { text: 'Unavailable', exact: 'Unavailable' };
+	if (value == null || !Number.isFinite(value)) return { text: '—', exact: '—' };
 	const magnitude = Math.abs(value);
 	const places =
-		unit === 'pu' ? 4 : unit === '%' ? 1 : magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : 2;
+		unit === 'pu'
+			? 4
+			: unit === '%'
+				? 1
+				: unit === '$/MWh'
+					? 2
+					: magnitude >= 100
+						? 0
+						: magnitude >= 10
+							? 1
+							: 2;
 	const rounded = decimals[places].format(magnitude);
 	const zero = Number(rounded.replace(/,/g, '')) === 0;
 	const sign = !signed || zero ? (value < 0 && !zero ? '-' : '') : value < 0 ? '-' : '+';

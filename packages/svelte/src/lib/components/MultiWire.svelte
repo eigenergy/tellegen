@@ -86,13 +86,7 @@
 			{/if}
 		{/each}
 	</svg>
-	<figcaption>
-		Every conductor between the two terminal sets{view.winding
-			? '; transformer windings couple magnetically, with no conductor continuity across them'
-			: ''}{view.closed ? '' : '; open'}. Currents are magnitudes at the from end{view.winding
-			? ' and the to end'
-			: ''}. Hover a terminal for its attachments.
-	</figcaption>
+	{#if !view.closed}<figcaption>Open</figcaption>{/if}
 </figure>
 
 <style>
@@ -105,7 +99,7 @@
 		height: auto;
 	}
 	svg text {
-		font: 9px var(--font-mono);
+		font: 12px var(--font-mono);
 		fill: var(--text-secondary);
 	}
 	svg text.bus {
@@ -131,6 +125,6 @@
 	}
 	figcaption {
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 	}
 </style>

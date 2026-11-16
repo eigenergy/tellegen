@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StatBoxes from '../StatBoxes.svelte';
 	import { onDestroy } from 'svelte';
 	import { getUiConfig } from '../../context.svelte.js';
 	import TxControlResults from './TxControlResults.svelte';
@@ -88,13 +89,9 @@
 {#if topology && topology.nodes.length}
 	<details class="dc-topology">
 		<summary
-			>Detailed DC network ({topology.nodes.length}
+			>DC network ({topology.nodes.length}
 			{topology.nodes.length === 1 ? 'node' : 'nodes'})</summary
 		>
-		<p>
-			Source connections, including converter terminals. This DC graph is separate from AC
-			synchronous islands. Crossings without a node dot are not connections.
-		</p>
 		{#if topology.nodes.length <= 48}
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users need to scroll the topology horizontally.) -->
 			<div class="drawing" tabindex="0" role="region" aria-label="Scrollable DC topology">
@@ -181,88 +178,57 @@
 		</ul>
 		{#if equipment.dc_model}
 			<button onclick={() => solve()} disabled={busy}
-				>{busy ? 'Solving DC network…' : 'Solve DC network'}</button
+				>{busy ? 'Solving…' : 'Solve DC network'}</button
 			>
 			{#if moduleJson}
 				<label class="control-option"
-					><input type="checkbox" bind:checked={automaticRegulators} disabled={busy} />Include
-					automatic tap, PST and shunt regulators in AC power flow</label
+					><input
+						type="checkbox"
+						bind:checked={automaticRegulators}
+						disabled={busy}
+					/>Regulators</label
 				>
-				<button onclick={() => solve('acpf')} disabled={busy}>Solve with AC power flow</button>
-				<button onclick={() => solve('dcopf')} disabled={busy}>Dispatch AC generation</button>
-				<button onclick={() => solve('acopf')} disabled={busy || !jointAvailable}
-					>Optimize joint AC/DC dispatch</button
+				<button onclick={() => solve('acpf')} disabled={busy}>AC power flow</button>
+				<button onclick={() => solve('dcopf')} disabled={busy}>DC OPF</button>
+				<button
+					onclick={() => solve('acopf')}
+					disabled={busy || !jointAvailable}
+					title={jointAvailable ? undefined : 'Not in this build'}>Joint AC/DC OPF</button
 				>
-				{#if !jointAvailable}<p>
-						Joint dispatch needs the optional nonlinear solver, which is unavailable in this
-						session.
-					</p>{/if}
 				{#if busy && jointAvailable}<button
 						onclick={() => {
 							generation++;
 							abort?.abort();
 							busy = false;
-						}}>Cancel study</button
+						}}>Cancel</button
 					>{/if}
-				<p>
-					Studies use the original imported case. Diagram edits are not applied, and results below
-					do not replace the main diagram result.
-				</p>
 			{/if}
-			<details>
-				<summary>Choosing a study: controls and limits</summary>
-				<ul>
-					<li><strong>DC network:</strong> DC voltages, currents and losses only.</li>
-					<li>
-						<strong>AC power flow:</strong> applies converter P and Q to the AC network. A VSC voltage
-						regulator adjusts Q; at a Q limit, voltage can miss its target. Optional tap and shunt controls
-						use their declared ranges and steps.
-					</li>
-					<li>
-						<strong>AC generation dispatch:</strong> a DC approximation of the AC network, with converter
-						transfers fixed. It does not calculate AC voltage magnitudes or reactive power.
-					</li>
-					<li>
-						<strong>Joint AC/DC dispatch:</strong> optimizes generation and converter active-power transfers
-						together. DC voltage/current schedules and VSC AC-voltage targets are hard constraints; incompatible
-						targets and limits can prevent a solution. Taps and shunt sections remain fixed.
-					</li>
-				</ul>
-				<p>
-					LCCs use an explicitly selected fixed power factor: Q = |P| tan(acos(pf)). Both rectifier
-					and inverter absorb reactive power. This steady-state approximation does not model
-					firing-angle control, commutation failure or transients.
-				</p>
-				<p>
-					Joint dispatch finds a local nonlinear solution, not a guaranteed global optimum. It
-					requires explicit converter P, DC-voltage and VSC Q bounds. Missing line ratings remain
-					unchecked.
-				</p>
-			</details>
 		{:else}
-			<p class="notice">
-				DC-network solve unavailable: {equipment.dc_model_unavailable ??
-					'Required model data is missing'}.
-			</p>
+			<p class="notice" title={equipment.dc_model_unavailable ?? undefined}>Unavailable</p>
 		{/if}
 		{#if error}<p role="alert">{error}</p>{/if}
 		{#if coupled}
 			<section aria-label="AC/DC study results">
-				<p>
-					AC {coupled.ac.formulation?.toUpperCase() ?? 'network'} calculation completed with {coupled
-						.violations.length} reported limit violations.
-				</p>
-				<p>{coupled.scope}</p>
+				<StatBoxes
+					label="AC/DC study"
+					stats={[
+						{
+							label: 'Violations',
+							value: String(coupled.violations.length),
+							tone: coupled.violations.length ? 'warning' : 'ok'
+						},
+						...(coupled.ac.objective != null
+							? [{ label: 'Cost', value: String(num(coupled.ac.objective)) }]
+							: [])
+					]}
+				/>
 				<TxControlResults controls={coupled.controls} />
-				<p>Positive converter Mvar is absorbed from AC; negative Mvar is supplied to AC.</p>
+				<h4>Converter Mvar (absorbed)</h4>
 				<ul>
 					{#each coupled.converter_reactive as [id, q] (id)}<li>
 							{short(id)}: {num(q)} Mvar
 						</li>{/each}
 				</ul>
-				{#if coupled.ac.objective != null}<p>
-						AC generation objective: {num(coupled.ac.objective)}
-					</p>{/if}
 				<ul>
 					{#each coupled.ac.vm ?? [] as v (v.bus)}<li>AC bus {v.bus}: {num(v.value)} pu</li>{/each}
 				</ul>
@@ -273,14 +239,19 @@
 		{/if}
 		{#if result}
 			<section aria-label="DC network results" aria-live="polite">
-				<p>
-					Converged in {result.iterations} iterations with {result.violations.length} limit violations.
-				</p>
-				<p>
-					{result.limits_checked} declared bounds checked; {result.limits_unspecified} bounds unspecified.
-					Convergence does not certify equipment feasibility.
-				</p>
-				<p>Positive converter MW is taken from the AC bus; negative MW is supplied to it.</p>
+				<StatBoxes
+					label="DC network result"
+					stats={[
+						{ label: 'Iterations', value: String(result.iterations) },
+						{
+							label: 'Violations',
+							value: String(result.violations.length),
+							tone: result.violations.length ? 'warning' : 'ok'
+						},
+						{ label: 'Bounds checked', value: String(result.limits_checked) },
+						{ label: 'Unspecified', value: String(result.limits_unspecified) }
+					]}
+				/>
 				{#each result.violations as violation, index (index)}<p class="notice">
 						{violation}
 					</p>{/each}
@@ -291,11 +262,10 @@
 				</ul>
 				<ul>
 					{#each result.branches as b (b.id)}<li>
-							{short(b.id)}: {num(b.current_ka)} kA; {num(b.loss_mw)} MW line loss
+							{short(b.id)}: {num(b.current_ka)} kA, loss {num(b.loss_mw)} MW
 						</li>{/each}
 					{#each result.converters as c (c.id)}<li>
-							{short(c.id)}: {num(c.ac_power_mw)} MW from AC bus {c.ac_bus}; {num(c.loss_mw)} MW converter
-							loss
+							{short(c.id)}: {num(c.ac_power_mw)} MW from AC bus {c.ac_bus}, loss {num(c.loss_mw)} MW
 						</li>{/each}
 				</ul>
 			</section>

@@ -96,10 +96,9 @@ describe('transmission equipment semantics', () => {
 		const items = equipmentItems(network);
 		expect(items).toHaveLength(4);
 		expect(items[0].title).toContain('PST');
-		expect(items[0].facts.join(' ')).toContain('Phase setting 0°');
+		expect(items[0].facts).toContain('Phase: 0°');
 		expect(items[2].state).toBe('Out of service');
-		expect(items[3].facts).toContain('Net input loss: 5 MW');
-		expect(items[3].explanation).toContain('not solved DC voltages');
+		expect(items[3].facts).toContain('Loss: 5 MW');
 	});
 	it('retains metadata through synthetic placement without making HVDC an AC edge', () => {
 		const placed = placeSyntheticTopology(network, { lon: 0, lat: 0 });
@@ -118,17 +117,17 @@ describe('transmission equipment semantics', () => {
 			5,
 			true
 		);
-		expect(drawing.labels.map((l) => l.text)).toEqual(['S1', 'OFF · S2', 'PST 0°', 'DC 1 · input']);
+		expect(drawing.labels.map((l) => l.text)).toEqual(['S1', 'S2 off', 'PST 0°', 'DC 1 input']);
 		expect(drawing.strokes.every((s) => [...s.from, ...s.to].every(Number.isFinite))).toBe(true);
 		expect(graph.from.length).toBe(1);
 		expect(equipmentGlyph('capacitor')).not.toEqual(equipmentGlyph('reactor'));
 	});
 	it('keeps switch state and formulation capability independent of device identity', () => {
 		expect(equipmentGlyph('switch', true)).not.toEqual(equipmentGlyph('switch', false));
-		expect(equipmentTreatment('hvdc', 'socwr')).toContain('unsupported');
-		expect(equipmentTreatment('hvdc', 'acpf')).toContain('Fixed terminal injections');
-		expect(equipmentTreatment('capacitor', 'dcpf')).toContain('susceptance is omitted');
-		expect(equipmentTreatment('capacitor', 'acpf')).toContain('voltage squared');
+		expect(equipmentTreatment('hvdc', 'socwr')).toBe('Unsupported');
+		expect(equipmentTreatment('hvdc', 'acpf')).toBe('Fixed injection');
+		expect(equipmentTreatment('capacitor', 'dcpf')).toBe('Conductance only (DC)');
+		expect(equipmentTreatment('capacitor', 'acpf')).toBe('Fixed');
 	});
 	it('omits drawing paths with unavailable terminals, retaining the inventory', () => {
 		const missing = { ...network, buses: network.buses.slice(0, 1) };
@@ -140,13 +139,12 @@ describe('transmission equipment semantics', () => {
 	});
 });
 
-it('explains the formulation-specific SVC approximation', () => {
+it('names the formulation-specific SVC treatment', () => {
 	for (const mode of ['dcpf', 'dcopf']) {
-		expect(equipmentTreatment('svc', mode)).toContain('omitted');
-		expect(equipmentTreatment('svc', mode)).toContain('diagnostics');
+		expect(equipmentTreatment('svc', mode)).toBe('Omitted (DC)');
 	}
 	for (const mode of ['acpf', 'acopf', 'socwr']) {
-		expect(equipmentTreatment('svc', mode)).toContain('unsupported');
+		expect(equipmentTreatment('svc', mode)).toBe('Unsupported');
 	}
-	expect(equipmentTreatment('storage', 'dcopf')).toContain('reject');
+	expect(equipmentTreatment('storage', 'dcopf')).toBe('Unsupported');
 });

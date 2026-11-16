@@ -6,48 +6,48 @@ const noop = () => {};
 describe('command registry', () => {
 	it('replaces a command by id and unregisters it', () => {
 		const registry = new CommandRegistry();
-		registry.register({ id: 'zen', title: 'Enter zen mode', run: noop });
+		registry.register({ id: 'panels', title: 'Hide panels', run: noop });
 		const unregister = registry.register({
-			id: 'zen',
-			title: 'Exit zen mode',
+			id: 'panels',
+			title: 'Show panels',
 			run: noop
 		});
-		expect(registry.commands.map(commandTitle)).toEqual(['Exit zen mode']);
+		expect(registry.commands.map(commandTitle)).toEqual(['Show panels']);
 		unregister();
 		expect(registry.commands).toHaveLength(0);
 	});
 	it('matches every query token against the title and keywords, ignoring case', () => {
 		const registry = new CommandRegistry();
 		registry.register({
-			id: 'zen',
-			title: 'Enter zen mode',
-			keywords: ['focus', 'hide panels'],
+			id: 'panels',
+			title: 'Hide panels',
+			keywords: ['focus', 'present'],
 			run: noop
 		});
 		registry.register({ id: 'reset', title: 'Reset panel layout', run: noop });
-		expect(registry.matches().map((c) => c.id)).toEqual(['zen', 'reset']);
-		registry.query = 'ZEN';
-		expect(registry.matches().map((c) => c.id)).toEqual(['zen']);
+		expect(registry.matches().map((c) => c.id)).toEqual(['panels', 'reset']);
+		registry.query = 'FOCUS';
+		expect(registry.matches().map((c) => c.id)).toEqual(['panels']);
 		registry.query = 'hide pan';
-		expect(registry.matches().map((c) => c.id)).toEqual(['zen']);
+		expect(registry.matches().map((c) => c.id)).toEqual(['panels']);
 		registry.query = 'panel';
-		expect(registry.matches().map((c) => c.id)).toEqual(['zen', 'reset']);
+		expect(registry.matches().map((c) => c.id)).toEqual(['panels', 'reset']);
 		registry.query = 'panel reset';
 		expect(registry.matches().map((c) => c.id)).toEqual(['reset']);
 		registry.query = 'nothing';
 		expect(registry.matches()).toEqual([]);
 	});
 	it('resolves dynamic titles and hints', () => {
-		let zen = false;
+		let hidden = false;
 		const command = {
-			id: 'zen',
-			title: () => (zen ? 'Exit' : 'Enter'),
-			hint: () => (zen ? 'Restore' : 'Hide'),
+			id: 'panels',
+			title: () => (hidden ? 'Exit' : 'Enter'),
+			hint: () => (hidden ? 'Restore' : 'Hide'),
 			run: noop
 		};
 		expect(commandTitle(command)).toBe('Enter');
 		expect(commandHint(command)).toBe('Hide');
-		zen = true;
+		hidden = true;
 		expect(commandTitle(command)).toBe('Exit');
 		expect(commandHint(command)).toBe('Restore');
 		expect(commandHint({ id: 'x', title: 'X', run: noop })).toBeUndefined();
@@ -72,7 +72,7 @@ describe('command registry', () => {
 	it('lists sources after static commands, grouped Actions, Cases, Panels', () => {
 		const registry = new CommandRegistry();
 		const cases = ['IEEE 14', 'IEEE 118'];
-		registry.register({ id: 'zen', title: 'Enter zen mode', run: noop });
+		registry.register({ id: 'panels', title: 'Hide panels', run: noop });
 		registry.registerSource(() => [
 			{ id: 'panel:agent', title: 'Open Agent panel', group: 'Panels', run: noop }
 		]);
@@ -86,7 +86,7 @@ describe('command registry', () => {
 		);
 		registry.register({ id: 'run', title: 'Run calculation', run: noop });
 		expect(registry.matches().map((c) => c.id)).toEqual([
-			'zen',
+			'panels',
 			'run',
 			'case:IEEE 14',
 			'case:IEEE 118',
@@ -101,8 +101,8 @@ describe('command registry', () => {
 	});
 	it('ignores a stale unregister after a command is replaced', () => {
 		const registry = new CommandRegistry();
-		const stale = registry.register({ id: 'zen', title: 'Old', run: noop });
-		registry.register({ id: 'zen', title: 'New', run: noop });
+		const stale = registry.register({ id: 'panels', title: 'Old', run: noop });
+		registry.register({ id: 'panels', title: 'New', run: noop });
 		stale();
 		expect(registry.commands.map(commandTitle)).toEqual(['New']);
 	});

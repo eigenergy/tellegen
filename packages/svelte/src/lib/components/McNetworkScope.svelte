@@ -1,9 +1,5 @@
 <script lang="ts">
-	import {
-		mcNetworkScopeLabel,
-		type McNetworkScope as NetworkScope,
-		type McExcludedIsland
-	} from '@tellegen/engine';
+	import type { McNetworkScope as NetworkScope, McExcludedIsland } from '@tellegen/engine';
 	let {
 		scope,
 		islands = [],
@@ -17,40 +13,30 @@
 
 {#if scope}
 	<aside aria-label="Network calculation scope">
-		<strong>{preview ? 'Unpowered islands detected' : mcNetworkScopeLabel(scope)}</strong>
-		{#if preview}<p>
-				{scope.excluded_island_count}
-				{scope.excluded_island_count === 1 ? 'island has' : 'islands have'} no voltage source.
-			</p>{/if}
-		<p>
-			{scope.excluded_bus_count}
-			{scope.excluded_bus_count === 1 ? 'bus' : 'buses'} and {scope.excluded_equipment_count}
-			equipment
-			{scope.excluded_equipment_count === 1 ? 'record' : 'records'}
-			{preview
-				? 'will be excluded when you solve the energized network'
-				: 'are excluded from the calculation'}
-			because their {scope.excluded_island_count === 1 ? 'island has' : 'islands have'} no voltage source.
-			The full network remains available for inspection. Excluded equipment has no calculated result;
-			its voltage and power are not reported as zero.
-		</p>
-		{#if scope.excluded_load_count}<p>
-				{scope.excluded_load_count}
-				{scope.excluded_load_count === 1 ? 'load has' : 'loads have'} no voltage source and {preview
-					? 'will be omitted'
-					: scope.excluded_load_count === 1
-						? 'is absent'
-						: 'are absent'} from solved totals.
-			</p>{/if}
+		<strong>{preview ? 'Unpowered islands' : 'Energized network only'}</strong>
+		<dl>
+			<div>
+				<dt>Islands</dt>
+				<dd>{scope.excluded_island_count}</dd>
+			</div>
+			<div>
+				<dt>Excluded buses</dt>
+				<dd>{scope.excluded_bus_count}</dd>
+			</div>
+			<div>
+				<dt>Excluded equipment</dt>
+				<dd>{scope.excluded_equipment_count}</dd>
+			</div>
+			{#if scope.excluded_load_count}<div>
+					<dt>Excluded loads</dt>
+					<dd>{scope.excluded_load_count}</dd>
+				</div>{/if}
+		</dl>
 		{#if islands.length}
 			<details>
-				<summary
-					>{preview
-						? 'Islands and equipment to exclude'
-						: 'Excluded islands and equipment'}</summary
-				>
+				<summary>Excluded islands</summary>
 				{#each islands as island, i (i)}
-					<h4>Island {i + 1}: no voltage source</h4>
+					<h4>Island {i + 1}</h4>
 					<p>Buses: {island.buses.join(', ')}</p>
 					<ul>
 						{#each island.equipment as item, k (k)}<li>
@@ -69,13 +55,27 @@
 		padding: 0.65rem;
 		border: 1px solid var(--line);
 		border-left: 4px solid var(--warn);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		font-size: 12px;
 		overflow-wrap: anywhere;
 	}
 	p {
 		margin: 0.4rem 0;
-		line-height: 1.5;
+	}
+	dl {
+		margin: 0.4rem 0 0;
+	}
+	dl div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	dt {
+		color: var(--text-secondary);
+	}
+	dd {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
 	}
 	summary {
 		cursor: pointer;

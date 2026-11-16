@@ -179,18 +179,14 @@
 				{quantity(sourcePower.re / 1000, 'kW')} / {quantity(sourcePower.im / 1000, 'kvar')}
 			</dd>
 		</div>
-		<div title="V·conj(I) summed over the ports of lines, switches, transformers and shunts">
+		<div>
 			<dt>Passive loss</dt>
 			<dd>{quantity(passiveLoss / 1000, 'kW')}</dd>
 		</div>
 	</dl>
-	<p class="convention">
-		Source power is positive into the network; equipment P and Q are positive into the equipment.
-		Passive loss includes shunts, so it can exceed the overview's branch losses.
-	</p>
 	<div class="search">
 		<span class="current"
-			>Bus result <strong class="mono">{busId || MISSING}</strong>{#if edgeId}&nbsp;· equipment
+			>Bus <strong class="mono">{busId || MISSING}</strong>{#if edgeId}, equipment
 				<strong class="mono">{edgeId}</strong>{/if}</span
 		>
 		{#if index}<OmniSearch
@@ -289,9 +285,8 @@
 						selectedEdge = null;
 						portPage = 0;
 					}}>Show all equipment</button
-				>{:else}All equipment; find one above to narrow the table.{/if}
+				>{:else}All equipment{/if}
 		</p>
-		<p>Current enters the named equipment at each bus terminal.</p>
 		<!-- Scrollable result tables accept keyboard navigation. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 		<div class="scroll" role="region" aria-label="Equipment current columns" tabindex="0">
@@ -373,10 +368,6 @@
 				</div>
 			{/if}
 		</dl>
-		<p>
-			Voltage is measured to ground. Net current is the injection into the network. The calculation
-			checks current balance at unconstrained terminals.
-		</p>
 	</details>
 </section>
 
@@ -385,7 +376,7 @@
 		margin: 14px 0;
 		padding-top: 12px;
 		border-top: 1px solid var(--line);
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.result-heading,
 	.pagination,
@@ -424,7 +415,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 5px 7px;
 	}
 	button {
@@ -449,7 +440,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 	}
 	th,
 	td {
@@ -492,7 +483,7 @@
 		margin: 8px 0;
 	}
 	dl {
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 	}
 	dl div {
 		padding: 4px 0;

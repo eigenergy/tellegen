@@ -15,6 +15,7 @@
 		busRadiusFor,
 		demandColor,
 		priceColor,
+		scalarColor,
 		scalarDomain,
 		sensColor,
 		sensFlatColor,
@@ -61,7 +62,7 @@
 	import { foldMapBounds } from './map-bounds.js';
 	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
-	import { displayFmt, fmt, quantity, rgbaCss } from './format.js';
+	import { displayFmt, priceText, quantity, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
@@ -182,20 +183,6 @@
 	/** A balanced case shown as a single-line diagram, likewise replacing the map. */
 	const txCase = $derived(ctrl.singleLineShown);
 	let shownTx: typeof txCase = null;
-	/** Open the active balanced case as a single-line diagram. */
-	function openSingleLine() {
-		const c = ctrl.singleLineCase;
-		if (!c) return;
-		c.schematic = true;
-		// On a phone, the sheet would cover the diagram it opens.
-		if (panels.compact) panels.drawer = null;
-	}
-	/** The map control that opens a balanced case as a single-line diagram. */
-	let diagramControl = $state.raw<HTMLElement | null>(null);
-	const diagramAvailable = $derived(!!ctrl.singleLineCase);
-	$effect(() => {
-		if (diagramControl) diagramControl.hidden = !diagramAvailable;
-	});
 	$effect(() => {
 		const now = txCase;
 		const before = shownTx;
@@ -266,10 +253,9 @@
 	const basemapPrimaryProvider = $derived(basemap.primaryProvider);
 	const basemapFallbackProvider = $derived(basemap.fallbackProvider);
 	const palette = $derived(MAP_PALETTE[theme]);
-	/** The diagram draws on light paper, so its background map is the light basemap whatever the
-	 * map's theme; a host's own style is used as given. */
+	/** The diagram's background map follows the map's theme; a host's own style is used as given. */
 	const diagramBasemap = $derived(
-		resolveBasemap({ mapStyle, fallbackMapStyle, theme: 'light', hideBasemapLabels, cartoApiKey })
+		resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
 	);
 	// Set once a map has existed in this component instance: a rebuild (context
 	// loss or basemap change) restores the camera instead of reframing.
@@ -289,6 +275,14 @@
 	// never thins them again. A zoom gesture reads it at most every
 	// MARKER_ZOOM_SAMPLE_MS, and the end of every zoom reads it at once.
 	let markerZoom = $state(declutterZoom(DEFAULT_CAMERA.zoom));
+	/** On a phone a whole country fits in a few hundred pixels, so buses sized for the desktop
+	 * would merge into one disc and hide the lines: they draw smaller there until the reader zooms
+	 * in. Uniform sizing is in metres and shrinks with the map on its own. */
+	const phoneBusScale = $derived(
+		app.compactLayout && app.busSizing === 'power'
+			? Math.min(1, Math.max(0.3, 0.3 + 0.15 * (markerZoom - 4)))
+			: 1
+	);
 	const MARKER_ZOOM_SAMPLE_MS = 150;
 
 	type LayerCtors = {
@@ -447,7 +441,7 @@
 				scalarLo,
 				scalarHi,
 				scalarMode,
-				scalarLabel: activeMeta?.label ?? 'LMP',
+				scalarLabel: activeMeta?.label ?? 'Price',
 				scalarUnit: activeMeta?.unit ?? '$/MWh',
 				loading,
 				mode,
@@ -487,7 +481,11 @@
 			if (d.scalarMode === 'demand')
 				return demandColor(((d.scalar.get(bus.id) ?? 0) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 			const mid = (d.scalarLo + d.scalarHi) / 2;
-			return priceColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
+			return scalarColor(
+				d.scalarMode,
+				((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo),
+				theme
+			);
 		};
 	}
 
@@ -875,7 +873,7 @@
 			const p = view?.lmp?.find((v) => v.bus === id),
 				v = view?.vm?.find((v) => v.bus === id);
 			return {
-				html: `<b>Bus ${id}</b><br>Saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>Voltage ${v.value.toFixed(5)} pu` : ''}`
+				html: `<b>Bus ${id}</b><br>Saved state: ${esc(app.studyView.label)}${p ? `<br>Price ${p.value.toFixed(2)} $/MWh` : ''}${v ? `<br>Voltage ${v.value.toFixed(5)} pu` : ''}`
 			};
 		}
 		if (info.layer?.id.startsWith('local-subs-')) {
@@ -932,18 +930,18 @@
 		const sensRow =
 			sens === undefined
 				? ''
-				: `<br>&part;price/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
+				: `<br>Price change per MW ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
 		const previewRow =
 			preview === undefined
 				? ''
-				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
-		// Demand already has its own row below, so the demand colouring shows LMP here alone.
+				: `<br>Price change ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
+		// Demand already has its own row below, so the demand colouring shows the price here alone.
 		const scalarRow =
 			!d || d.scalarMode === 'price' || d.scalarMode === 'demand'
-				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`
+				? `Price ${price === undefined ? '&mdash;' : priceText(price)} $/MWh`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`;
+					} ${d.scalarUnit}<br>Price ${price === undefined ? '&mdash;' : priceText(price)} $/MWh`;
 		return {
 			html: `<div class="tt"><b>Bus ${bus.id}</b><br>${scalarRow}<br>${loadRow}<br>Generation ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}</div>`
 		};
@@ -1003,14 +1001,26 @@
 		});
 	}
 
-	// Zen collapses the compact attribution to its (i) button; maplibre opens it
-	// by default on wide maps. The button still expands it on demand. Leaving zen
-	// restores the open state.
+	// Zen and the phone layout collapse the compact attribution to its (i) button;
+	// maplibre opens it once its credits arrive. The button still expands it on
+	// demand. Leaving zen restores the open state on a wide screen.
 	$effect(() => {
-		const zen = app.zen;
+		const collapsed = app.zen || app.compactLayout;
 		const attrib = map?.getContainer().querySelector('.maplibregl-ctrl-attrib');
 		if (!attrib) return;
-		attrib.classList.toggle('maplibregl-compact-show', !zen);
+		const apply = () => attrib.classList.toggle('maplibregl-compact-show', !collapsed);
+		if (attrib.classList.contains('maplibregl-compact')) {
+			apply();
+			return;
+		}
+		// maplibre turns compact (and open) when the style's credits first load: collapse then.
+		const watch = new MutationObserver(() => {
+			if (!attrib.classList.contains('maplibregl-compact')) return;
+			watch.disconnect();
+			apply();
+		});
+		watch.observe(attrib, { attributes: true, attributeFilter: ['class'] });
+		return () => watch.disconnect();
 	});
 
 	function initMap(container: HTMLDivElement) {
@@ -1068,36 +1078,6 @@
 					if (app.placingId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-				// Beside the zoom buttons, so it moves with them when a sheet opens.
-				m.addControl(
-					{
-						onAdd() {
-							const wrap = document.createElement('div');
-							wrap.className = 'maplibregl-ctrl diagram-ctrl';
-							const button = document.createElement('button');
-							button.type = 'button';
-							button.setAttribute('aria-label', 'Single-line diagram');
-							button.title =
-								'Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows';
-							const full = document.createElement('span');
-							full.className = 'full';
-							full.textContent = 'Single-line diagram';
-							const short = document.createElement('span');
-							short.className = 'short';
-							short.textContent = 'Diagram';
-							button.append(full, short);
-							button.onclick = openSingleLine;
-							wrap.append(button);
-							diagramControl = wrap;
-							return wrap;
-						},
-						onRemove() {
-							diagramControl?.remove();
-							diagramControl = null;
-						}
-					},
-					'bottom-right'
-				);
 
 				// WebGL resilience on Safari. Two failure modes seen in the wild:
 				//   1. The canvas backing store is discarded while the tab is idle or
@@ -1275,6 +1255,7 @@
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
 		const marker = busMarkerRadius(app.busSizing);
+		const busScale = phoneBusScale;
 		const study = app.studyView;
 		if (study) {
 			const s = study.solution;
@@ -1325,12 +1306,15 @@
 					radiusUnits: marker.radiusUnits,
 					radiusMinPixels: marker.radiusMinPixels,
 					radiusMaxPixels: marker.radiusMaxPixels,
+					radiusScale: busScale,
 					getFillColor: (b) => {
 						const value = values.get(b.id);
 						return value === undefined
 							? palette.grey
-							: (mode === 'demand' ? demandColor : priceColor)(
-									(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
+							: scalarColor(
+									mode,
+									(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12),
+									theme
 								);
 					},
 					pickable: true,
@@ -1362,7 +1346,7 @@
 					// wider, so the price-rating source line reads at a glance.
 					getColor: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBranch
-							? [47, 111, 187, 255]
+							? [39, 71, 184, 255]
 							: branchColor(d?.loading.get(b.id) ?? 0, b.status === 1),
 					getWidth: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBranch
@@ -1395,6 +1379,7 @@
 					radiusUnits: marker.radiusUnits,
 					radiusMinPixels: marker.radiusMinPixels,
 					radiusMaxPixels: marker.radiusMaxPixels,
+					radiusScale: busScale,
 					getFillColor: busFill(c.id),
 					stroked: true,
 					billboard: true,
@@ -1415,7 +1400,7 @@
 					},
 					updateTriggers: {
 						getRadius: [app.busSizing],
-						getFillColor: [display],
+						getFillColor: [display, theme],
 						getLineColor: [app.selectedBus, app.activeCaseId, theme],
 						getLineWidth: [app.selectedBus, app.activeCaseId]
 					}
@@ -1440,7 +1425,7 @@
 						wrapLongitude: true,
 						getColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
-								? [47, 111, 187, 255]
+								? [39, 71, 184, 255]
 								: d
 									? branchColor(d.loading.get(b.id) ?? 0, b.status === 1)
 									: palette.greyLine,
@@ -1477,6 +1462,7 @@
 						radiusUnits: marker.radiusUnits,
 						radiusMinPixels: marker.radiusMinPixels,
 						radiusMaxPixels: marker.radiusMaxPixels,
+						radiusScale: busScale,
 						getFillColor: d ? busFill(c.id) : palette.grey,
 						stroked: true,
 						billboard: true,
@@ -1497,7 +1483,7 @@
 						},
 						updateTriggers: {
 							getRadius: [app.busSizing],
-							getFillColor: [display],
+							getFillColor: [display, theme],
 							getLineColor: [app.selectedBus, app.activeLocalId, theme],
 							getLineWidth: [app.selectedBus, app.activeLocalId]
 						}
@@ -1547,7 +1533,7 @@
 					// The selected edge draws in the selection blue of the branch cue,
 					// wider, so its panel detail has an obvious source on the map.
 					getColor: (e) =>
-						e.id === selectedEdgeId ? [47, 111, 187, 255] : edgeColor(e.kind, e.closed),
+						e.id === selectedEdgeId ? [39, 71, 184, 255] : edgeColor(e.kind, e.closed),
 					getWidth: (e) => edgeWidth(e.kind, e.n_phases) + (e.id === selectedEdgeId ? 2 : 0),
 					widthUnits: 'pixels',
 					widthMinPixels: 1.2,
@@ -1585,7 +1571,7 @@
 					getSize: 16,
 					sizeUnits: 'pixels',
 					getColor: (m) =>
-						m.id === selectedEdgeId ? [47, 111, 187, 255] : edgeColor('transformer', true),
+						m.id === selectedEdgeId ? [39, 71, 184, 255] : edgeColor('transformer', true),
 					pickable: false,
 					updateTriggers: {
 						getColor: [selectedEdgeId]
@@ -1747,6 +1733,47 @@
 			padding: framePadding(w, h, 'case'),
 			duration: prefersReducedMotion() ? 0 : 1400
 		});
+		lastCaseFit = { target, inset: untrack(() => app.sheetInset) };
+	});
+
+	// On a phone the sheet covers the lower part of the map. When it opens or
+	// closes, a case the reader has not moved since it was framed is framed
+	// again for the space now free, so a closed sheet leaves no empty band.
+	let lastCaseFit: { target: string; inset: number } | null = null;
+	$effect(() => {
+		const m = map;
+		if (!m) return;
+		const forget = (event: { originalEvent?: unknown }) => {
+			if (event.originalEvent) lastCaseFit = null;
+		};
+		m.on('movestart', forget);
+		return () => {
+			m.off('movestart', forget);
+		};
+	});
+	$effect(() => {
+		const inset = app.sheetInset;
+		const m = map;
+		if (!m || !panels.compact) return;
+		// Wait for the sheet to settle, so a drag reframes once, not every frame.
+		const timer = setTimeout(
+			() =>
+				untrack(() => {
+					const fit = lastCaseFit;
+					if (!fit || Math.abs(inset - fit.inset) < 40 || selectedBusCue || selectedBranchCue)
+						return;
+					const bounds = boundsFor(fit.target);
+					if (!bounds) return;
+					fit.inset = inset;
+					const { clientWidth: w, clientHeight: h } = m.getContainer();
+					m.fitBounds(bounds, {
+						padding: framePadding(w, h, 'case'),
+						duration: prefersReducedMotion() ? 0 : 400
+					});
+				}),
+			250
+		);
+		return () => clearTimeout(timer);
 	});
 </script>
 
@@ -1791,12 +1818,16 @@
 		onbusclick={selectDiagramBus}
 		onbranchclick={selectDiagramBranch}
 		onclear={onmapclick}
-		onsingleline={diagramAvailable && !diagramMulti ? openSingleLine : undefined}
 	/>
 {:else}
 	{#key mapGen}
 		<div class="map-stage">
-			<div class="map" class:zen={app.zen} {@attach initMap}></div>
+			<div
+				class="map"
+				class:zen={app.zen}
+				class:sheet-open={panels.compact && !!panels.drawer}
+				{@attach initMap}
+			></div>
 			{#if selectedBusCue}
 				{#key selectedBusCue.key}
 					<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
@@ -1851,16 +1882,13 @@
 		width: 28px;
 		height: 28px;
 		margin: -14px 0 0 -14px;
-		border: 2px solid #2f6fbb;
+		border: 2px solid var(--accent);
 		border-radius: 999px;
-		background: rgba(47, 111, 187, 0.1);
-		box-shadow:
-			0 0 0 4px rgba(47, 111, 187, 0.12),
-			0 0 18px rgba(47, 111, 187, 0.24);
+		background: rgb(var(--accent-rgb) / 0.1);
+		box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.14);
 		pointer-events: none;
-		animation:
-			selected-bus-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
-			selected-bus-pulse 1.8s ease-in-out 420ms infinite;
+		/* One pop when the selection is made; nothing loops afterwards. */
+		animation: selected-bus-pop 320ms var(--ease-out);
 	}
 
 	.selected-branch-cue {
@@ -1902,9 +1930,9 @@
 	}
 
 	.multi-detail :global(.mc-term) {
-		fill: var(--ink, #20242b);
+		fill: var(--ink);
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 12px;
 	}
 
 	.selected-branch-cue path {
@@ -1915,18 +1943,16 @@
 	}
 
 	.selected-branch-halo {
-		stroke: rgba(47, 111, 187, 0.2);
+		stroke: rgb(var(--accent-rgb) / 0.22);
 		stroke-width: 14;
-		filter: drop-shadow(0 0 14px rgba(47, 111, 187, 0.2));
-		animation:
-			selected-branch-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
-			selected-branch-pulse 1.8s ease-in-out 420ms infinite;
+		opacity: 0.82;
+		animation: selected-branch-pop 320ms var(--ease-out);
 	}
 
 	.selected-branch-line {
-		stroke: rgba(47, 111, 187, 0.92);
+		stroke: rgb(var(--accent-rgb) / 0.92);
 		stroke-width: 3;
-		animation: selected-branch-line-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+		animation: selected-branch-line-pop 320ms var(--ease-out);
 	}
 
 	@keyframes selected-bus-pop {
@@ -1934,31 +1960,9 @@
 			opacity: 0;
 			transform: scale(0.35);
 		}
-		65% {
-			opacity: 0.95;
-			transform: scale(1.35);
-		}
 		100% {
-			opacity: 0.9;
+			opacity: 1;
 			transform: scale(1);
-		}
-	}
-
-	@keyframes selected-bus-pulse {
-		0%,
-		100% {
-			opacity: 0.9;
-			transform: scale(1);
-			box-shadow:
-				0 0 0 4px rgba(47, 111, 187, 0.12),
-				0 0 18px rgba(47, 111, 187, 0.24);
-		}
-		50% {
-			opacity: 0.48;
-			transform: scale(1.22);
-			box-shadow:
-				0 0 0 8px rgba(47, 111, 187, 0.08),
-				0 0 28px rgba(47, 111, 187, 0.18);
 		}
 	}
 
@@ -1992,20 +1996,6 @@
 		}
 	}
 
-	@keyframes selected-branch-pulse {
-		0%,
-		100% {
-			opacity: 0.82;
-			stroke-width: 14;
-			filter: drop-shadow(0 0 14px rgba(47, 111, 187, 0.2));
-		}
-		50% {
-			opacity: 0.42;
-			stroke-width: 22;
-			filter: drop-shadow(0 0 24px rgba(47, 111, 187, 0.16));
-		}
-	}
-
 	/* Keyboard/touch equivalent to clicking the map while placing a local case;
 	   sits just above PlacementCue's instruction text so the two don't overlap. */
 	.place-at-center {
@@ -2017,10 +2007,10 @@
 		padding: 7px 14px;
 		background: var(--panel);
 		border: 1px solid var(--accent);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		color: var(--text-accent);
 		font-family: inherit;
-		font-size: 11px;
+		font-size: 12px;
 		cursor: pointer;
 		box-shadow: var(--elev-cue);
 	}
@@ -2033,7 +2023,7 @@
 
 	.map :global(.maplibregl-ctrl-bottom-right) {
 		right: 20px;
-		bottom: max(12px, var(--tellegen-timeline-clear, 0px));
+		bottom: max(12px, var(--tellegen-timeline-clear, 0px), var(--tellegen-sheet-clear, 0px));
 		display: flex;
 		flex-direction: row;
 		align-items: flex-end;
@@ -2048,46 +2038,38 @@
 		margin: 0;
 	}
 
-	.map :global(.diagram-ctrl) {
-		order: 1;
-	}
-	.map :global(.diagram-ctrl[hidden]) {
-		display: none;
-	}
-	.map :global(.diagram-ctrl .short) {
-		display: none;
-	}
-	@media (max-width: 760px) {
-		.map :global(.diagram-ctrl .full) {
-			display: none;
-		}
-		.map :global(.diagram-ctrl .short) {
-			display: inline;
-		}
-	}
-	.map :global(.diagram-ctrl button) {
-		white-space: nowrap;
-		padding: 7px 12px;
-		font: 11px var(--font-mono);
-		color: var(--ink);
-		background: var(--panel);
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		box-shadow: var(--elev-tooltip);
-		cursor: pointer;
-	}
-	.map :global(.diagram-ctrl button:hover) {
-		border-color: var(--accent);
-		color: var(--text-accent);
-	}
-	@media (pointer: coarse) {
-		.map :global(.diagram-ctrl button) {
-			min-height: 44px;
-		}
-	}
-
 	.map :global(.maplibregl-ctrl-group) {
 		order: 2;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		box-shadow: none;
+		overflow: hidden;
+	}
+
+	.map :global(.maplibregl-ctrl-group button + button) {
+		border-top-color: var(--line);
+	}
+
+	/* The group clips its corners, so the focus ring sits inside each button
+	   rather than outside, where the clip would cut it to a sliver. */
+	.map :global(.maplibregl-ctrl-group button:focus) {
+		box-shadow: none;
+	}
+	.map :global(.maplibregl-ctrl-group button:focus-visible) {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: -2px;
+		border-radius: var(--radius-control);
+	}
+	.map :global(.maplibregl-ctrl-group button:hover:not(:disabled)) {
+		background-color: var(--surface-hover);
+	}
+
+	/* maplibre draws its zoom and attribution icons dark; on the dark panel they
+	   turn light. */
+	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-group .maplibregl-ctrl-icon),
+	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-attrib-button) {
+		filter: invert(1);
 	}
 
 	/* Zen mode keeps the basemap attribution (a licensing requirement) and
@@ -2095,6 +2077,11 @@
 	   buttons keep their space so the attribution does not shift. */
 	.map.zen :global(.maplibregl-ctrl-group) {
 		visibility: hidden;
+	}
+	/* With the phone sheet open the zoom buttons would crowd the map's edge above it;
+	   pinch zoom still works, and the credit stays. */
+	.map.sheet-open :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) {
+		display: none;
 	}
 
 	.map :global(.maplibregl-ctrl-attrib) {
@@ -2106,12 +2093,12 @@
 		min-width: 0;
 		max-width: calc(100vw - 96px);
 		box-sizing: border-box;
-		background: rgb(var(--paper-rgb) / 0.75);
-		font-family: var(--font-mono);
-		font-size: 10px;
+		background: rgb(var(--paper-rgb) / 0.85);
+		border-radius: var(--radius-control);
+		color: var(--text-secondary);
+		font: 12px / 20px var(--font-sans);
 		white-space: nowrap;
 		text-align: right;
-		box-shadow: var(--elev-1);
 	}
 
 	.map :global(.maplibregl-ctrl-attrib a) {
@@ -2166,13 +2153,13 @@
 		font-variant-numeric: tabular-nums;
 		line-height: 1.5;
 		padding: 8px 10px !important;
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		box-shadow: var(--elev-tooltip);
 	}
 
 	@media (max-width: 760px) {
 		.map :global(.maplibregl-ctrl-bottom-right) {
-			bottom: max(12px, var(--tellegen-timeline-clear, 0px));
+			bottom: max(12px, var(--tellegen-timeline-clear, 0px), var(--tellegen-sheet-clear, 0px));
 			right: 12px;
 			gap: 12px;
 		}
@@ -2194,12 +2181,17 @@
 		}
 	}
 
-	/* Attribution shares the bottom row with touch-sized zoom buttons. */
+	/* Attribution shares the bottom row with touch-sized zoom buttons. When it
+	   wraps, its box grows with it, so no provider's name falls outside. */
 	@media (max-width: 460px) {
 		.map :global(.maplibregl-ctrl-attrib) {
 			max-width: calc(100vw - 140px);
-			font-size: 9px;
+			font-size: 12px;
 			white-space: normal;
+		}
+		.map :global(.maplibregl-ctrl-attrib.maplibregl-compact.maplibregl-compact-show) {
+			height: auto;
+			min-height: 24px;
 		}
 	}
 

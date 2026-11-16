@@ -11,11 +11,21 @@ const example = (name: string) =>
 
 test.setTimeout(180_000);
 
+// Dynamics is experimental: turn on Settings → Experimental features.
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'tellegen.preferences.v1',
+			JSON.stringify({ version: 1, values: { experimental: true } })
+		)
+	);
+});
+
 test('an agent attaches .dyr text, runs a trip and reads a compact verdict', async ({ page }) => {
 	await installWebMcpHarness(page);
 	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
 
 	const opened = await callTool(page, 'import_case', {
@@ -77,7 +87,9 @@ test('an agent attaches .dyr text, runs a trip and reads a compact verdict', asy
 	// The trace holds the nadir the summary reports, at its time.
 	expect(Math.min(...coi.v)).toBe(data.frequency.coi_nadir_hz);
 	expect(coi.t_s[coi.v.indexOf(data.frequency.coi_nadir_hz)]).toBe(data.frequency.nadir_t_s);
-	await expect(page.getByTestId('dynamics-panel').getByText('Run by the agent')).toBeVisible();
+	await expect(
+		page.getByTestId('dynamics-panel').getByText('Agent', { exact: true })
+	).toBeVisible();
 
 	// A fault: the voltage trace of the lowest bus holds the dip min_pu reports.
 	const fault = {

@@ -18,10 +18,10 @@
 		padding: 6px 11px;
 		background: var(--panel);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		color: var(--text-secondary);
 		font-family: inherit;
-		font-size: 11px;
+		font-size: 12px;
 		cursor: pointer;
 		box-shadow: var(--elev-1);
 	}

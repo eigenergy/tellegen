@@ -1,91 +1,76 @@
 <script lang="ts">
 	import { getUiConfig } from '../../context.svelte.js';
-	import { formulationLabel } from '../../format.js';
 	import { docsLink, type DOC_SECTIONS, type Lead } from '../../diagram/transmission-explain.js';
-	import type { operatingContext } from '../../diagram/transmission-results.js';
+	import { freshnessNote, type operatingContext } from '../../diagram/transmission-results.js';
+	import StatBoxes from '../StatBoxes.svelte';
 
-	/** The top of a result panel: the view's name, the calculation, whether the result is
-	 * current, and the plain reading of it with the reason and a docs link. */
+	/** The top of a result panel: the view's name, a docs link, a status chip when the result is
+	 * not current, and the view's key numbers. */
 	let {
 		title,
-		formulation,
 		context,
 		lead,
-		view,
-		brief = false
+		view
 	}: {
 		title: string;
-		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
 		lead: Lead;
 		view: keyof typeof DOC_SECTIONS;
-		/** Collapsed panel: the reading alone, and freshness only when stale. */
-		brief?: boolean;
 	} = $props();
 	const config = getUiConfig();
+	const note = $derived(freshnessNote(context));
 </script>
 
 <div class="heading">
-	<strong>{title}</strong><span>{formulationLabel(formulation)}</span>{#if context.relaxed}<strong
-			class="relaxation">Relaxation</strong
-		>{/if}
+	<strong>{title}</strong>
+	{#if note}<span class={['chip', context.stale && 'stale']} role="status">{note}</span>{/if}
+	<a
+		class="docs"
+		href={docsLink(config.docsHref, view)}
+		target="_blank"
+		rel="noreferrer"
+		aria-label="{title} docs">Docs</a
+	>
 </div>
-<p class={['freshness', context.stale && 'stale']} role="status" hidden={brief && !context.stale}>
-	{context.freshness}. Solver status: {context.status}. Base case.
-</p>
-<div class="lead {lead.tone}">
-	<p class="text">{lead.text}</p>
-	{#if !brief}
-		<p class="why">
-			{lead.why}
-			<a href={docsLink(config.docsHref, view)} target="_blank" rel="noreferrer"
-				>How to read this view</a
-			>
-		</p>
-	{/if}
-</div>
+{#if lead.empty}
+	<p class="empty">{lead.empty}</p>
+{:else}
+	<StatBoxes stats={lead.stats} label={title} />
+{/if}
 
 <style>
 	.heading {
 		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2xs) var(--space-lg);
 		align-items: center;
-		font-family: var(--font-display);
+		gap: var(--space-sm);
+		margin-bottom: var(--space-xs);
 		font-size: var(--fs-label);
 	}
 	.heading strong {
 		color: var(--ink);
+		font-size: var(--fs-body);
 	}
-	.heading .relaxation,
-	.stale {
-		color: var(--text-accent);
-	}
-	.freshness {
-		margin: var(--space-3xs) 0;
-		font-family: var(--font-display);
-		font-size: var(--fs-control);
+	.chip {
+		padding: 1px 8px;
+		border-radius: var(--radius-full);
+		background: var(--surface-chip);
 		color: var(--text-secondary);
-	}
-	.lead {
-		margin: var(--space-2xs) 0 var(--space-xs);
-		font-family: var(--font-display);
-	}
-	.lead p {
-		margin: var(--space-3xs) 0;
-		line-height: var(--lh-snug);
-	}
-	.text {
-		font-size: var(--fs-data);
-		font-weight: 600;
-		color: var(--ink);
-	}
-	.why {
-		font-size: var(--fs-label);
-		color: var(--text-secondary);
-	}
-	a {
-		color: inherit;
 		white-space: nowrap;
+	}
+	.chip.stale {
+		color: var(--text-accent);
+		background: var(--accent-soft);
+	}
+	.docs {
+		margin-left: auto;
+		color: var(--text-accent);
+		text-decoration: none;
+	}
+	.docs:hover {
+		text-decoration: underline;
+	}
+	.empty {
+		margin: 0 0 var(--space-xs);
+		color: var(--text-secondary);
 	}
 </style>

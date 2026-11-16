@@ -50,131 +50,118 @@
 	let message = $state<string | null>(null);
 
 	function add(e: DynEvent) {
-		message = dyn.add(e) ?? `Added: ${dyn.describe(e)}`;
+		message = dyn.add(e) ?? `Added ${dyn.describe(e).toLowerCase()}`;
 	}
 </script>
 
-<section class="dyn-actions" aria-label="Dynamics actions">
-	{#if !att}
-		<p class="dim">
-			Attach dynamic data (.dyr) to this case to pick events here. Drop the .dyr on the map, or open
-			the WECC 240 demo from the Dynamics panel.
-		</p>
-	{:else if att.status !== 'ready'}
-		<p class="dim">{att.status === 'opening' ? 'Opening the dynamic data…' : att.error}</p>
-	{:else if bus !== null}
-		<h4>Bus {bus}{busName ? ` ${busName}` : ''}</h4>
-		{#if !hasBus}
-			<p class="dim">The simulated network has no bus {bus}.</p>
-		{:else}
-			<button class="action" onclick={() => add(busFault(bus, f0))}
-				>⚡ Apply a fault here <span class="hint">1.000 s, cleared after 6 cycles</span></button
-			>
-			{#if hasLoad}
+{#if bus !== null || branch}<section class="dyn-actions" aria-label="Dynamics actions">
+		{#if !att}
+			<p class="dim">No dynamic data</p>
+		{:else if att.status !== 'ready'}
+			<p class="dim" title={att.status === 'opening' ? undefined : (att.error ?? undefined)}>
+				{att.status === 'opening' ? 'Opening…' : 'Failed to open'}
+			</p>
+		{:else if bus !== null}
+			<h4>Bus {bus}{busName ? ` ${busName}` : ''}</h4>
+			{#if !hasBus}
+				<p class="dim">Not in simulation</p>
+			{:else}
+				<button class="action" onclick={() => add(busFault(bus, f0))}>Apply a fault here</button>
+				{#if hasLoad}
+					<div class="row">
+						<button class="action" onclick={() => add(loadStep(bus, loadPct))}>Change load</button>
+						<label class="pct"
+							><span class="sr-only">Load step in percent</span><input
+								type="number"
+								min="-100"
+								max="100"
+								step="5"
+								bind:value={loadPct}
+							/> %</label
+						>
+					</div>
+				{/if}
+				{#if units.length || held.length}
+					<h5>Generators</h5>
+					<ul class="units">
+						{#each units as g (g.machine_id)}
+							<li>
+								<span class="mono"
+									>Generator {g.bus}
+									{g.machine_id.trim()}
+									<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
+								>
+								<button onclick={() => add(generatorTrip(g.bus, g.machine_id.trim()))}>Trip</button>
+							</li>
+						{/each}
+						{#each held as k (k)}
+							<li>
+								<span class="mono"
+									>Generator {k.replace('#', ' ')}
+									<span class="dim">{inspection?.plants?.includes(k) ? 'Renewable' : 'Fixed'}</span
+									></span
+								>
+								<button
+									onclick={() => add(generatorTrip(bus, k.includes('#') ? k.split('#')[1] : '1'))}
+									>Trip</button
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			{/if}
+		{:else if branch}
+			<h4>Line {branch.from}–{branch.to}</h4>
+			{#if circuits.length === 0}
+				<p class="dim">Not in simulation</p>
+			{:else}
+				{#if circuits.length > 1}
+					<fieldset>
+						<legend>Circuit</legend>
+						{#each circuits as c (c)}
+							<label
+								><input
+									type="radio"
+									name="dyn-circuit"
+									value={c}
+									checked={c === chosenCircuit}
+									onchange={() => (circuit = c)}
+								/>
+								{c}</label
+							>
+						{/each}
+					</fieldset>
+				{/if}
+				<button
+					class="action"
+					onclick={() => add(branchTrip(branch.from, branch.to, chosenCircuit ?? '1'))}
+					>Trip circuit {chosenCircuit}</button
+				>
 				<div class="row">
-					<button class="action" onclick={() => add(loadStep(bus, loadPct))}
-						>Step load {loadPct >= 0 ? '+' : ''}{loadPct} %</button
+					<button
+						class="action"
+						onclick={() =>
+							add(
+								lineFault(
+									branch.from,
+									branch.to,
+									chosenCircuit ?? '1',
+									nearEnd === 'from' ? branch.from : branch.to,
+									f0
+								)
+							)}>Fault on this line</button
 					>
 					<label
-						><span class="sr-only">Load step in percent</span><input
-							type="number"
-							min="-100"
-							max="100"
-							step="5"
-							bind:value={loadPct}
-						/> %</label
+						>near <select bind:value={nearEnd}
+							><option value="from">{branch.from}</option><option value="to">{branch.to}</option
+							></select
+						></label
 					>
 				</div>
 			{/if}
-			{#if units.length || held.length}
-				<h5>Units</h5>
-				<ul class="units">
-					{#each units as g (g.machine_id)}
-						<li>
-							<span class="mono"
-								>{g.bus} #{g.machine_id.trim()}
-								<span class="dim">{g.models.map((m) => m || '—').join(' · ')}</span>
-								<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
-							>
-							<button onclick={() => add(generatorTrip(g.bus, g.machine_id.trim()))}>Trip</button>
-						</li>
-					{/each}
-					{#each held as k (k)}
-						<li>
-							<span class="mono"
-								>{k}
-								<span class="dim"
-									>{inspection?.plants?.includes(k)
-										? 'renewable plant (REGCA1 · REECB1 · REPCA1)'
-										: 'held at power-flow output, not simulated'}</span
-								></span
-							>
-							<button
-								onclick={() => add(generatorTrip(bus, k.includes('#') ? k.split('#')[1] : '1'))}
-								>Trip</button
-							>
-						</li>
-					{/each}
-				</ul>
-			{/if}
 		{/if}
-	{:else if branch}
-		<h4>Branch {branch.from}–{branch.to}</h4>
-		{#if circuits.length === 0}
-			<p class="dim">The simulated network has no in-service branch {branch.from}–{branch.to}.</p>
-		{:else}
-			{#if circuits.length > 1}
-				<fieldset>
-					<legend>{branch.from}–{branch.to} · circuits {circuits.join(', ')}</legend>
-					{#each circuits as c (c)}
-						<label
-							><input
-								type="radio"
-								name="dyn-circuit"
-								value={c}
-								checked={c === chosenCircuit}
-								onchange={() => (circuit = c)}
-							/>
-							{c}</label
-						>
-					{/each}
-				</fieldset>
-			{/if}
-			<button
-				class="action"
-				onclick={() => add(branchTrip(branch.from, branch.to, chosenCircuit ?? '1'))}
-				>Trip circuit {chosenCircuit}</button
-			>
-			<div class="row">
-				<button
-					class="action"
-					onclick={() =>
-						add(
-							lineFault(
-								branch.from,
-								branch.to,
-								chosenCircuit ?? '1',
-								nearEnd === 'from' ? branch.from : branch.to,
-								f0
-							)
-						)}>⚡ Fault on this line <span class="hint">cleared by opening the line</span></button
-				>
-				<label
-					>near <select bind:value={nearEnd}
-						><option value="from">{branch.from}</option><option value="to">{branch.to}</option
-						></select
-					></label
-				>
-			</div>
-		{/if}
-	{:else}
-		<p class="dim">
-			Select a bus or a branch on the map, or search a bus above, to apply a fault, trip it or step
-			its load.
-		</p>
-	{/if}
-	{#if message}<p class="msg" role="status">{message}</p>{/if}
-</section>
+		{#if message}<p class="msg" role="status">{message}</p>{/if}
+	</section>{/if}
 
 <style>
 	.dyn-actions {
@@ -189,8 +176,6 @@
 	h5 {
 		margin-top: 4px;
 		font-size: var(--fs-control);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
 		color: var(--text-tertiary);
 	}
 	.action {
@@ -210,10 +195,6 @@
 	.action:hover {
 		border-color: var(--accent);
 	}
-	.hint {
-		color: var(--text-tertiary);
-		font-size: var(--fs-meta);
-	}
 	.row {
 		display: flex;
 		align-items: center;
@@ -221,6 +202,21 @@
 	}
 	.row input {
 		width: 4.5em;
+		height: 36px;
+		box-sizing: border-box;
+		font: inherit;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+	.pct {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.row .action {
+		flex-direction: row;
+		align-items: center;
+		height: 36px;
 	}
 	.units {
 		list-style: none;
@@ -240,8 +236,7 @@
 		flex-direction: column;
 	}
 	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--fs-data);
+		font-variant-numeric: tabular-nums;
 	}
 	.dim {
 		color: var(--text-tertiary);
@@ -259,6 +254,10 @@
 		.action,
 		.units button {
 			min-height: 44px;
+		}
+		.row .action,
+		.row input {
+			height: 44px;
 		}
 	}
 	.sr-only {

@@ -192,6 +192,9 @@ export class LocalCase {
 	/** Short solver-specific diagnostic shown beside the elapsed time. */
 	solveDetail = $state<string | null>(null);
 	solveFallbackReason = $state<string | null>(null);
+	/** A calculation the user chose that failed; the result on screen (if any) is still
+	 * the previous one. Cleared by the next solve. */
+	failedCalculation = $state<Formulation | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
 	/** Monotone generation for external optimistic concurrency. */
@@ -231,6 +234,11 @@ export class LocalCase {
 
 	get perturbed(): boolean {
 		return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
+	}
+
+	/** A line rating is edited: the power flows, which have no line limits, cannot solve it. */
+	get ratingsEdited(): boolean {
+		return hasPerturbation(this.ratings);
 	}
 }
 
@@ -275,6 +283,9 @@ export class CaseState {
 	/** Short solver-specific diagnostic shown beside the elapsed time. */
 	solveDetail = $state<string | null>(null);
 	solveFallbackReason = $state<string | null>(null);
+	/** A calculation the user chose that failed; the result on screen (if any) is still
+	 * the previous one. Cleared by the next solve. */
+	failedCalculation = $state<Formulation | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
 	/** Monotone generation for external optimistic concurrency. */
@@ -301,6 +312,11 @@ export class CaseState {
 
 	get perturbed(): boolean {
 		return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
+	}
+
+	/** A line rating is edited: the power flows, which have no line limits, cannot solve it. */
+	get ratingsEdited(): boolean {
+		return hasPerturbation(this.ratings);
 	}
 }
 
@@ -585,9 +601,21 @@ export class AppState {
 		units: string;
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
+	#mode = $state<'steady' | 'dynamics'>('steady');
+	/** Dynamics (RMS simulation) is experimental: it shows only after the
+	 * user turns on Settings → Experimental features. */
+	get dynamicsEnabled(): boolean {
+		return this.preferences.experimental;
+	}
 	/** Steady state (the static calculations) or dynamics (RMS simulation of
-	 * the active local case with its .dyr data). */
-	mode = $state<'steady' | 'dynamics'>('steady');
+	 * the active local case with its .dyr data). Reads as steady state while
+	 * dynamics is off, and a request for dynamics is then ignored. */
+	get mode(): 'steady' | 'dynamics' {
+		return this.dynamicsEnabled ? this.#mode : 'steady';
+	}
+	set mode(value: 'steady' | 'dynamics') {
+		this.#mode = value === 'dynamics' && !this.dynamicsEnabled ? 'steady' : value;
+	}
 	/** The bus or unit hovered in the dynamics traces or on the map; the
 	 * other view highlights it. */
 	dynamicsHover = $state.raw<{ kind: 'bus' | 'unit'; key: string } | null>(null);

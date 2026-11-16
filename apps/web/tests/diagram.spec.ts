@@ -71,6 +71,7 @@ test('drawing coordinates remain separate from geography and support navigation'
 	await expect(drawingGroup).toHaveAttribute('transform', initial!);
 	await page.screenshot({ path: testInfo.outputPath('diagram-desktop.png') });
 	const downloadPending = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'File', exact: true }).click();
 	await page.getByRole('button', { name: 'Save drawing', exact: true }).click();
 	const downloaded = JSON.parse(await readFile((await (await downloadPending).path())!, 'utf8'));
 	expect(downloaded.powerio_geo.space).toBe('diagram');
@@ -121,9 +122,7 @@ test('drawing coordinates remain separate from geography and support navigation'
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundleText)
 	});
-	await expect(await noticeDetails(page)).toHaveText(
-		'This study is already saved. Open it from Saved study.'
-	);
+	await expect(await noticeDetails(page)).toHaveText('Already saved');
 	await expect.poll(viewNumbers).toEqual(changedView);
 	await page
 		.getByRole('combobox', { name: 'Saved study', exact: true })
@@ -166,5 +165,6 @@ test('drawing coordinates remain separate from geography and support navigation'
 	await page.screenshot({ path: testInfo.outputPath('diagram-mobile.png') });
 	const zoom = await page.getByRole('button', { name: 'Zoom in', exact: true }).boundingBox();
 	const panel = await page.locator('[data-panel]:visible').boundingBox();
-	expect(zoom!.y).toBeGreaterThan(panel!.y + panel!.height);
+	// On a phone the controls sit on the drawing above the open sheet.
+	expect(zoom!.y + zoom!.height).toBeLessThanOrEqual(panel!.y);
 });

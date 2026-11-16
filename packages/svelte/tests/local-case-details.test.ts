@@ -9,6 +9,10 @@ const state = vi.hoisted(() => ({
 	exportUnavailable: null as string | null
 }));
 
+vi.mock('../src/lib/panels.svelte.js', () => ({
+	getPanelLayout: () => ({ show: () => true })
+}));
+
 vi.mock('../src/lib/context.svelte.js', () => ({
 	getAppState: () => state.app,
 	getController: () => ({ caseExportUnavailableReason: () => state.exportUnavailable })
@@ -44,11 +48,14 @@ beforeEach(() => {
 });
 
 describe('local case details', () => {
-	it('shows data and actions without host copy', () => {
+	it('shows data, with the file actions in one File menu', () => {
 		const { body } = render(LocalCaseDetails);
 		expect(body).toMatch(/<h2[^>]*>Portugal<\/h2>/);
 		expect(body).toMatch(/Coordinates<\/dt> <dd[^>]*>Generated<\/dd>/);
 		expect(body).toMatch(/File<\/dt> <dd[^>]*>portugal\.pio\.json<\/dd>/);
+		expect(body).toMatch(/Lines<\/dt> <dd[^>]*>180<\/dd>/);
+		expect(body).not.toContain('Base MVA');
+		expect(body).toMatch(/id="case-file-menu"[^>]*hidden/);
 		for (const label of ['Save case', 'Save solution', 'Export as', 'Save geography', 'Remove']) {
 			expect(body).toContain(label);
 		}
@@ -69,7 +76,8 @@ describe('local case details', () => {
 		const { body } = render(LocalCaseDetails);
 		expect(body).toMatch(/<button[^>]*disabled[^>]*>Save case<\/button>/);
 		expect(body).toMatch(/<button[^>]*disabled[^>]*>\s*Export as\s*<\/button>/);
-		expect(body).toContain('Saving and exporting AC OPF cases is not supported yet.');
+		// The reason is the buttons' tooltip, not a paragraph.
+		expect(body).toMatch(/title="Saving and exporting AC OPF cases is not supported yet\."/);
 	});
 
 	it('renders a host note with the case', () => {

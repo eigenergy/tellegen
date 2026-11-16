@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
-	import { fmt, signed } from '../format.js';
+	import { plain, signed } from '../format.js';
 	import { sliderKeyValue } from '../slider.js';
 
 	const app = getAppState();
@@ -23,9 +23,6 @@
 	const neutralPos = $derived(thumbAlignedPos(neutralFrac));
 	const fillLo = $derived(valFrac < neutralFrac ? valPos : neutralPos);
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
-	const sliderTip = 'Drag to preview, release to solve. The tick marks the committed demand.';
-	const disabledTip = 'Display-only bus; demand is fixed';
-	const scoreTip = 'Estimated from the LMP, then checked by solving again.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -42,7 +39,6 @@
 					class:active={app.demandRangeMode === 'local'}
 					aria-pressed={app.demandRangeMode === 'local'}
 					{disabled}
-					title="Range near the committed demand"
 					onclick={() => ctrl.setDemandRangeMode('local')}>Nearby</button
 				>
 				<button
@@ -50,21 +46,19 @@
 					class:active={app.demandRangeMode === 'full'}
 					aria-pressed={app.demandRangeMode === 'full'}
 					{disabled}
-					title="Zero load to the local physical limit"
 					onclick={() => ctrl.setDemandRangeMode('full')}>Full range</button
 				>
 			</div>
 			{#if disabled}
 				<span class="dim">Not adjustable</span>
 			{:else}
-				<span class="mono dim">{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW</span
-				>
+				<span class="mono dim">{plain(ctrl.sliderMin)} to {plain(ctrl.sliderMax)} MW</span>
 			{/if}
 		</div>
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
-			title={disabled ? disabledTip : sliderTip}
+			title={disabled ? 'Fixed' : undefined}
 		>
 			<input
 				type="range"
@@ -89,29 +83,20 @@
 				onchange={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
 			/>
 		</div>
-		<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
-			<p class="pred dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
-				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					Predicted cost change <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
-				{:else}
-					&nbsp;
-				{/if}
-			</p>
-			<p class="score" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
-				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
-					<span title={scoreTip}>
-						Cost change: estimated <span class="mono">{signed(ctrl.gradientScore.pred)}</span>,
-						solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h
-					</span>
-				{:else}
-					&nbsp;
-				{/if}
-			</p>
-			<div class="reset-row">
-				{#if ctrl.isPerturbed(c)}
-					<button class="reset" onclick={() => ctrl.resetCase(c)}>Reset demand</button>
-				{/if}
-			</div>
+		<div class="demand-feedback">
+			{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
+				<p class="pred dim">
+					Predicted <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
+				</p>
+			{:else if ctrl.gradientScore && ctrl.isPerturbed(c)}
+				<p class="score">
+					<span>Predicted <span class="mono">{signed(ctrl.gradientScore.pred)}</span> $/h</span>
+					<span>Solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h</span>
+				</p>
+			{/if}
+			{#if ctrl.committedDelta !== 0}
+				<button class="reset" onclick={() => ctrl.resetDemand(c)}>Reset demand</button>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -124,7 +109,7 @@
 	.slider-head {
 		display: flex;
 		justify-content: space-between;
-		font-size: 13.5px;
+		font-size: 13px;
 		color: var(--text-secondary);
 		margin-bottom: 4px;
 	}
@@ -139,7 +124,7 @@
 		justify-content: space-between;
 		gap: 8px;
 		margin: 6px 0 7px;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	.slider-track {
@@ -258,36 +243,21 @@
 		}
 	}
 
-	.pred {
+	.pred,
+	.score {
 		margin: 2px 0 0;
 		font-size: 13px;
-		min-height: 16px;
 	}
 
 	.score {
-		margin: 8px 0 0;
-		font-size: 13px;
+		display: flex;
+		gap: 16px;
 		color: var(--ink);
-		min-height: 16px;
 	}
 
 	.demand-feedback {
-		min-height: 78px;
-	}
-
-	/* On a fresh selection (no preview, no perturbation) the predicted/gradient/
-	   reset rows are empty; collapse the reserved block so the panel isn't padded
-	   with whitespace. The reservation returns during interaction to avoid jumps. */
-	.demand-feedback.idle {
-		min-height: 0;
-	}
-
-	.demand-feedback.idle .pred,
-	.demand-feedback.idle .score {
-		display: none;
-	}
-
-	.reset-row {
-		min-height: 28px;
+		display: grid;
+		justify-items: start;
+		gap: 6px;
 	}
 </style>

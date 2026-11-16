@@ -25,7 +25,7 @@
 />
 
 <main class="privacy">
-	<a class="back mono" href="/">Back to Tellegen</a>
+	<a class="back" href="/">Back to the map</a>
 	<h1>Privacy</h1>
 	<section>
 		<h2>Case files and saved studies</h2>
@@ -113,7 +113,7 @@
 	.analytics-choice input {
 		width: 18px;
 		height: 18px;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.preference {
 		color: var(--text-secondary);
@@ -130,8 +130,8 @@
 	.back {
 		display: inline-block;
 		margin-bottom: 26px;
-		color: var(--accent);
-		font-size: 12px;
+		color: var(--text-accent);
+		font-size: var(--fs-body);
 		text-decoration: none;
 	}
 
@@ -171,7 +171,7 @@
 		.analytics-choice input {
 			width: 18px;
 			height: 18px;
-			accent-color: var(--accent);
+			accent-color: var(--accent-fill);
 		}
 		.preference {
 			color: var(--text-secondary);

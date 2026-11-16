@@ -11,6 +11,8 @@ test.use({ trace: 'off' });
 
 async function downloadLayer(page: Page, label: string) {
 	const pending = page.waitForEvent('download');
+	// Layout downloads sit in the case's File menu.
+	await page.getByRole('button', { name: 'File', exact: true }).click();
 	await page.getByRole('button', { name: label, exact: true }).click();
 	return readFile((await (await pending).path())!, 'utf8');
 }

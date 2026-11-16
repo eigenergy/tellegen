@@ -1,22 +1,17 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { getAppState, getController } from '../context.svelte.js';
+	import { getAppState } from '../context.svelte.js';
 
 	/** Optional host content rendered under the drop prompt. */
 	let { children }: { children?: Snippet } = $props();
 
 	const app = getAppState();
-	const ctrl = getController();
 </script>
 
 {#if app.dragOver}
 	<div class="dropzone" aria-hidden="true">
 		<div class="dropframe">
-			<p>
-				{ctrl.collectionsAvailable
-					? 'Drop case files, ZIPs, folders or geographic files'
-					: 'Drop case or geographic files'}
-			</p>
+			<p>Drop files</p>
 			{#if children}<div class="note">{@render children()}</div>{/if}
 		</div>
 	</div>
@@ -35,7 +30,7 @@
 		position: absolute;
 		inset: 14px;
 		border: 1.5px dashed var(--accent);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -49,7 +44,7 @@
 	}
 
 	.note {
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 </style>

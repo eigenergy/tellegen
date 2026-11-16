@@ -8,8 +8,13 @@
 	/** Render in the parent's flow instead of as a card floating over the map. */
 	let { inline = false }: { inline?: boolean } = $props();
 
+	// A case drawn without coordinates has no map buses: its network still names every bus.
 	const buses = $derived(
-		app.studyView?.network.buses ?? app.active?.network?.buses ?? app.activeLocal?.view?.buses ?? []
+		app.studyView?.network.buses ??
+			app.active?.network?.buses ??
+			(app.activeLocal?.view?.buses.length
+				? app.activeLocal.view.buses
+				: (app.activeLocal?.network?.buses ?? []))
 	);
 
 	let query = $state('');
@@ -162,7 +167,7 @@
 	input {
 		width: 100%;
 		padding: 4px 8px;
-		font-size: 12.5px;
+		font-size: 13px;
 		background: var(--surface-control);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-xs, 2px);
@@ -186,7 +191,7 @@
 			display: flex;
 			align-items: center;
 			min-height: 44px;
-			font-size: 14px;
+			font-size: 13px;
 		}
 	}
 
@@ -243,7 +248,7 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius-xs, 2px);
 		box-shadow: var(--elev-1);
-		font-size: 12.5px;
+		font-size: 13px;
 		margin: 4px 0 0;
 	}
 

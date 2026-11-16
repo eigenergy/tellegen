@@ -12,11 +12,19 @@ import {
 	loadStep,
 	markers,
 	secondsToCycles,
-	sentence,
+	title,
 	toRmsEvents,
 	validate
 } from '../src/lib/dynamics/events.js';
-import { announcement, failureTime, headline, rows } from '../src/lib/dynamics/verdict.js';
+import {
+	announcement,
+	checks,
+	details,
+	failureTime,
+	headline,
+	modeGenerators,
+	stats
+} from '../src/lib/dynamics/verdict.js';
 import { groupNotes } from '../src/lib/dynamics/notes.js';
 import { m4 } from '../src/lib/dynamics/decimate.js';
 import { advance, rateAt, startTime } from '../src/lib/dynamics/player.svelte.js';
@@ -89,28 +97,26 @@ describe('dynamics events', () => {
 		expect(toRmsEvents(loadStep(2604, 10))[0]).toMatchObject({ scale: 1.1 });
 	});
 
-	it('says each event in one sentence', () => {
-		expect(sentence(busFault(1101, 60), 60, () => 'CORONADO')).toBe(
-			'Three-phase fault at bus 1101 CORONADO at 1.000 s, cleared after 6 cycles'
-		);
-		expect(sentence(branchTrip(1101, 1401, '1'), 60)).toBe(
-			'Trip of branch 1101–1401 circuit 1 at 1.000 s'
-		);
-		expect(sentence(loadStep(2604, -15), 60)).toBe('Load at bus 2604 -15 % at 1.000 s');
+	it('names each event in a few words', () => {
+		expect(title(busFault(1101, 60), () => 'CORONADO')).toBe('Fault at bus 1101 CORONADO');
+		expect(title(branchTrip(1101, 1401, '1'))).toBe('Trip line 1101–1401');
+		expect(title(branchTrip(1101, 1401, '2'))).toBe('Trip line 1101–1401 circuit 2');
+		expect(title(generatorTrip(1431, 'N'))).toBe('Trip unit 1431 N');
+		expect(title(loadStep(2604, -15))).toBe('Load change at bus 2604');
 	});
 
 	it('checks events as the engine does', () => {
 		const ctx = { tEnd: 20, inspection };
 		expect(validate(busFault(1101, 60), ctx)).toBeNull();
-		expect(validate(busFault(9, 60), ctx)).toBe('no bus 9');
-		expect(validate({ ...busFault(1101, 60), at: 20 }, ctx)).toMatch(/\[0, 20\)/);
-		expect(validate({ ...busFault(1101, 60), clearAfter: 0 } as never, ctx)).toMatch(/clear after/);
-		expect(validate({ ...busFault(1101, 60), x: -1 } as never, ctx)).toMatch(/r ≥ 0/);
+		expect(validate(busFault(9, 60), ctx)).toBe('No bus 9');
+		expect(validate({ ...busFault(1101, 60), at: 20 }, ctx)).toBe('Start must be before 20 s');
+		expect(validate({ ...busFault(1101, 60), clearAfter: 0 } as never, ctx)).toMatch(/Clear time/);
+		expect(validate({ ...busFault(1101, 60), x: -1 } as never, ctx)).toMatch(/0 or more/);
 		expect(validate(branchTrip(1401, 1101, '2'), ctx)).toBeNull();
-		expect(validate(branchTrip(1101, 1401, '3'), ctx)).toMatch(/no branch/);
+		expect(validate(branchTrip(1101, 1401, '3'), ctx)).toMatch(/No line/);
 		expect(validate(generatorTrip(1431, 'N'), ctx)).toBeNull();
 		expect(validate(generatorTrip(1101, 'S'), ctx)).toBeNull();
-		expect(validate(loadStep(1101), ctx)).toMatch(/no load/);
+		expect(validate(loadStep(1101), ctx)).toMatch(/No load/);
 		expect(circuitsBetween(inspection.branches, 1401, 1101)).toEqual(['1', '2']);
 	});
 
@@ -201,49 +207,61 @@ describe('dynamics verdict wording', () => {
 			word: 'Stable',
 			tone: 'ok'
 		});
-		expect(headline(screening({ verdict: 'loss_of_synchronism' })).word).toBe(
-			'Unstable: loss of synchronism'
-		);
-		expect(headline(screening({ verdict: 'island_runaway' })).word).toBe(
-			'Unstable: island frequency runs away'
-		);
-		expect(headline(screening({ verdict: 'not_settled' }), null, 20).word).toBe(
-			'Inconclusive: not settled by 20 s'
-		);
+		expect(headline(screening({ verdict: 'loss_of_synchronism' }))).toMatchObject({
+			word: 'Unstable',
+			detail: 'Loss of synchronism'
+		});
+		expect(headline(screening({ verdict: 'island_runaway' }))).toMatchObject({
+			word: 'Unstable',
+			detail: 'Island runaway'
+		});
+		expect(headline(screening({ verdict: 'not_settled' }), null, 20)).toMatchObject({
+			word: 'Not settled',
+			detail: 'by 20 s'
+		});
 		expect(
 			headline(null, {
 				message: 'integration failed at t = 3.4200 s: x',
 				at: failureTime('integration failed at t = 3.4200 s: x')
-			}).word
-		).toBe('Run failed at t = 3.42 s');
+			})
+		).toMatchObject({ word: 'Failed', detail: 'at 3.42 s' });
 		const s = screening();
 		expect(headline({ ...s, voltage: { ...s.voltage, recovered: false } })).toMatchObject({
 			tone: 'warning'
 		});
 	});
 
-	it('states every row with its criterion', () => {
-		const r = rows(screening());
-		expect(r.map((x) => x.metric)).toEqual([
-			'Pole slip',
-			'First swing',
-			'Max angle separation',
-			'Frequency nadir',
-			'RoCoF',
-			'Settling',
-			'Voltage recovery'
+	it('gives the key results as labelled numbers', () => {
+		const st = stats(screening());
+		expect(st.map((x) => [x.label, x.value])).toEqual([
+			['Lowest frequency', '59.842 Hz'],
+			['Lowest voltage', '0.410 pu'],
+			['Angle spread', '63.2°'],
+			['Final frequency', '59.930 Hz']
 		]);
-		expect(r[3].value).toBe('59.842 Hz at 4.21 s (COI)');
-		// The value compared with the ±180° criterion is |δ − δ_COI|, not the
-		// first swing.
-		expect(r[0].status).toBe('✓');
-		expect(r[0].value).toContain('40.0°');
-		expect(r[1].status).toBe('–');
-		expect(announcement(screening())).toBe(
-			'Stable. COI frequency nadir 59.842 Hz at 4.21 s; lowest voltage 0.41 pu.'
-		);
-		// A 5 mHz dip is not announced as 60.00 Hz.
 		const s = screening();
+		// A frequency that never moved is given once.
+		const still = stats({
+			...s,
+			frequency: { ...s.frequency, coi_nadir_hz: 60, final_hz: 60 }
+		}).map((x) => x.label);
+		expect(still).toContain('Lowest frequency');
+		expect(still).not.toContain('Final frequency');
+		// A failed check turns its number red.
+		expect(stats({ ...s, voltage: { ...s.voltage, recovered: false } })[1].tone).toBe('failure');
+		expect(
+			stats({
+				...s,
+				angle: { ...s.angle, pole_slips: [{ unit: '1431#N', t: 2 }] }
+			})[2].tone
+		).toBe('failure');
+		expect(checks(s)).toEqual([
+			{ label: 'Generators in sync', ok: true },
+			{ label: 'Settled', ok: true },
+			{ label: 'Voltage recovered', ok: true }
+		]);
+		expect(announcement(s)).toBe('Stable. Lowest frequency 59.842 Hz. Lowest voltage 0.410 pu.');
+		// A 5 mHz dip is not announced as 60.00 Hz.
 		expect(
 			announcement({
 				...s,
@@ -252,31 +270,69 @@ describe('dynamics verdict wording', () => {
 		).toContain('59.995 Hz');
 	});
 
-	it('words the separation against its start and the trend in plain words', () => {
+	it('puts where and when in details, one value per row', () => {
 		const s = screening();
-		const sep = (angle: Partial<RmsScreening['angle']>, verdict = s.verdict) =>
-			rows({ ...s, verdict, angle: { ...s.angle, ...angle } })[2].value;
-		expect(sep({ initial_separation_deg: 86.1 })).toContain('86.1° before the event');
-		expect(sep({ trend: 'undetermined' })).toContain('no clear swing trend');
-		expect(sep({ trend: 'sustained' })).toContain('swings sustained');
-		expect(sep({ trend: 'sustained' })).not.toContain('too few');
-		expect(sep({ trend: 'damped_out' })).toContain('damped out');
-		expect(sep({ trend: 'growing' })).toContain('extend the run to confirm');
-		expect(rows(s)[5].criterion).toContain('of its final value');
+		const d = (over: Partial<RmsScreening['angle']> = {}, events = 1) =>
+			Object.fromEntries(
+				details({ ...s, angle: { ...s.angle, ...over } }, events).map((x) => [x.label, x.value])
+			);
+		expect(d()).toMatchObject({
+			'Lowest frequency time': '4.21 s',
+			'Lowest frequency bus': 'Bus 1431',
+			'Lowest voltage bus': 'Bus 1101',
+			'Voltage recovery time': '0.18 s',
+			'Widest angle pair': 'Bus 1431 and 6533',
+			Swings: 'Decaying'
+		});
+		expect(d({ initial_separation_deg: 86.1 })['Angle spread before event']).toBe('86.1°');
+		expect(d({ trend: 'undetermined' }).Swings).toBe('Unclear');
+		expect(d({ trend: 'damped_out' }).Swings).toBe('Damped out');
+		expect(d({ pole_slips: [{ unit: '1431#N', t: 2 }] })['Pole slip']).toBe('Bus 1431');
+		// No value carries notation or a sentence.
+		for (const row of details(s)) expect(row.value).not.toMatch(/[|δ;]|COI/);
+		// Nothing the stat boxes show is repeated in Details.
+		const boxes = new Set(stats(s).map((x) => x.value));
+		expect(
+			details({
+				...s,
+				angle: {
+					...s.angle,
+					first_swing_unit: '1431#N',
+					first_swing_deg: 63.2
+				}
+			})
+				.map((x) => x.value)
+				.filter((value) => boxes.has(value))
+		).toEqual([]);
+	});
+
+	it('names the generators in a mode by bus', () => {
+		const parts = [
+			"R7031 'W' xi_Q",
+			"R6333 'W' xi_Q",
+			"R7031 'W' Vt_filt",
+			'bus 12 Vr',
+			'G2439 delta',
+			'G2434 omega'
+		].map((state) => ({ state, factor: 1 }));
+		expect(modeGenerators(parts)).toBe('Bus 7031, 6333, 2439');
+		expect(modeGenerators([{ state: 'bus 12 Vr' }])).toBe('—');
 	});
 
 	it('says nothing is after an event when the run had none', () => {
 		const s = screening();
-		const r = rows(s, 0);
-		expect(r[3].value).toBe('59.842 Hz (COI); no events');
-		expect(r[6].value).toBe('no events; lowest 0.410 pu at 1101');
-		// No event to be before, and no event to count the separation from.
-		const sep = rows({ ...s, angle: { ...s.angle, initial_separation_deg: 86.1 } }, 0)[2];
-		expect(sep.value).not.toContain('before the event');
-		expect(sep.criterion).not.toContain('event on');
-		expect(sep.criterion).toContain('no events');
-		expect(announcement(s, 20, 0)).toBe(
-			'Stable. No events applied; lowest COI frequency 59.842 Hz; lowest voltage 0.41 pu.'
+		const d = Object.fromEntries(
+			details({ ...s, angle: { ...s.angle, initial_separation_deg: 86.1 } }, 0).map((x) => [
+				x.label,
+				x.value
+			])
+		);
+		expect(d['Lowest frequency time']).toBeUndefined();
+		expect(d['Voltage recovery time']).toBeUndefined();
+		expect(d['Angle spread before event']).toBeUndefined();
+		expect(d['Fastest frequency change']).toBeUndefined();
+		expect(announcement(s, 20)).toBe(
+			'Stable. Lowest frequency 59.842 Hz. Lowest voltage 0.410 pu.'
 		);
 	});
 });
@@ -390,7 +446,8 @@ describe('validated scenarios', () => {
 		});
 		expect(differs).toEqual({
 			validated: false,
-			text: 'Scenario of the validation study; settings differ: load model, step'
+			text: 'Settings differ',
+			detail: 'load model, step'
 		});
 		expect(validationBadge({ ...base, presetId: null })).toBeNull();
 	});

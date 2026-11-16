@@ -19,6 +19,10 @@ export interface PanelRegistration {
 	children: Snippet;
 	headerActions?: Snippet;
 	onopen?: () => void;
+	/** Listed in the tab strip. Defaults to the panels that dock on the left. */
+	tab?: boolean;
+	/** A count shown beside the tab's name, such as new messages in the Log. */
+	badge?: number;
 }
 interface SavedPanel extends PanelBounds {
 	position: PanelPosition;
@@ -40,12 +44,17 @@ export class PanelLayout {
 	compact = $state(false);
 	drawer = $state<string | null>('network');
 	lastActive = $state('network');
-	dockActive = $state<Record<PanelSide, string>>({ left: 'network', right: 'solver' });
+	dockActive = $state<Record<PanelSide, string>>({
+		left: 'network',
+		right: 'settings'
+	});
 	viewportWidth = $state(1280);
 	viewportHeight = $state(800);
 	top = $state(100);
 	bottom = $state(88);
 	storageError = $state<string | null>(null);
+	/** The narrowest the left dock may be: the width its tab strip needs. */
+	stripMin = $state(0);
 	#storage: Storage | undefined;
 	#openers = new Map<string, HTMLElement | SVGElement>();
 	#gesture: {
@@ -98,19 +107,37 @@ export class PanelLayout {
 			this.panels = this.panels.filter((p) => p.id !== panel.id);
 		};
 	}
-	update(id: string, open: boolean, title: string, width: number) {
+	update(id: string, open: boolean, title: string, width: number, badge?: number) {
 		const previous = this.panels.find((p) => p.id === id);
 		if (
 			!previous ||
-			(previous.open === open && previous.title === title && previous.width === width)
+			(previous.open === open &&
+				previous.title === title &&
+				previous.width === width &&
+				previous.badge === badge)
 		)
 			return;
-		this.panels = this.panels.map((p) => (p.id === id ? { ...p, open, title, width } : p));
+		this.panels = this.panels.map((p) => (p.id === id ? { ...p, open, title, width, badge } : p));
 		if (open && !previous.open) {
 			this.#rememberOpener(id);
 			this.activate(previous);
 			if (this.compact) this.drawer = id;
 		}
+	}
+	/** Bring a panel to the front, opening it first if it is closed: what a
+	 * menu item or command that names the panel should do. Setting a panel's
+	 * open flag alone does nothing when it is already open behind another one. */
+	show(id: string): boolean {
+		const panel = this.panels.find((candidate) => candidate.id === id);
+		if (!panel) return false;
+		this.#rememberOpener(id);
+		this.activate(panel);
+		if (this.compact) this.drawer = id;
+		if (!panel.open) {
+			panel.setOpen(true);
+			panel.onopen?.();
+		}
+		return true;
 	}
 	activate(panel: PanelRegistration) {
 		this.lastActive = panel.id;
@@ -142,6 +169,12 @@ export class PanelLayout {
 				panel.onopen?.();
 			}
 		} else {
+			// A dock shows one panel at a time, like tabs: an open panel behind
+			// another one comes to the front instead of closing.
+			if (panel.open && this.position(panel) !== 'floating' && !this.preferred(panel)) {
+				this.activate(panel);
+				return;
+			}
 			if (!panel.open) {
 				this.#rememberOpener(panel.id);
 				this.activate(panel);
@@ -149,6 +182,12 @@ export class PanelLayout {
 			panel.setOpen(!panel.open);
 			if (!panel.open) panel.onopen?.();
 		}
+	}
+	/** Whether the panel is on screen: the drawer's panel when compact, else an
+	 * open panel that is floating or at the front of its dock. */
+	shown(panel: PanelRegistration): boolean {
+		if (this.compact) return this.drawer === panel.id;
+		return panel.open && (this.position(panel) === 'floating' || this.preferred(panel));
 	}
 	/** The control that had focus when the panel last opened, while it is still
 	 * in the document: where focus returns when the panel closes. */
@@ -162,7 +201,14 @@ export class PanelLayout {
 			this.#openers.set(id, active);
 		else this.#openers.delete(id);
 	}
+	/** Close a panel. Closing the front panel of a dock closes the panels
+	 * behind it too, so the dock collapses and the map is clear. */
 	close(panel: PanelRegistration) {
+		const side = this.position(panel);
+		if (!this.compact && side !== 'floating' && this.preferred(panel)) {
+			for (const other of this.ordered(side))
+				if (other.open && other !== panel) other.setOpen(false);
+		}
 		panel.setOpen(false);
 		if (this.drawer === panel.id) this.drawer = null;
 	}
@@ -214,11 +260,13 @@ export class PanelLayout {
 				this.placements[id] = { ...this.clamp(panel), position: 'floating' };
 		}
 	}
+	/** One width per dock, the widest panel that docks there, open or not, so
+	 * switching tabs never resizes the panel or rewraps its text. */
 	dockWidth(side: PanelSide) {
-		const panels = this.ordered(side).filter((p) => p.open);
-		return panels.length
-			? Math.min(Math.max(...panels.map((p) => p.width)), this.viewportWidth * 0.29)
-			: 0;
+		const panels = this.ordered(side);
+		if (!panels.some((p) => p.open)) return 0;
+		const width = Math.max(...panels.map((p) => p.width), side === 'left' ? this.stripMin : 0);
+		return Math.min(width, this.viewportWidth * (side === 'left' ? 0.36 : 0.29));
 	}
 	reset() {
 		this.placements = {};
@@ -247,7 +295,7 @@ export class PanelLayout {
 				};
 			}
 		} catch {
-			this.storageError = 'Panel layout could not be restored. Reset layout to use the defaults.';
+			this.storageError = 'Layout reset';
 		}
 	}
 	save() {
@@ -262,7 +310,7 @@ export class PanelLayout {
 			);
 			this.storageError = null;
 		} catch {
-			this.storageError = 'Panel layout could not be saved. Changes last for this visit.';
+			this.storageError = 'Layout not saved';
 		}
 	}
 }

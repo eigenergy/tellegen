@@ -6,8 +6,7 @@ const MC_STUDIES_STORE = 'snapshots';
 export class McStudyStore {
 	#db: Promise<IDBDatabase> | null = null;
 	private db(): Promise<IDBDatabase> {
-		if (typeof indexedDB === 'undefined')
-			throw new Error('Saved distribution studies require IndexedDB');
+		if (typeof indexedDB === 'undefined') throw new Error('Storage unavailable');
 		return (this.#db ??= new Promise((resolve, reject) => {
 			const request = indexedDB.open(MC_STUDIES_DB, 1);
 			request.onupgradeneeded = () =>
@@ -51,20 +50,20 @@ export class McStudyStore {
 				reject(
 					new Error(
 						transaction.error?.name === 'QuotaExceededError'
-							? 'Browser storage is full. Export saved studies and free browser storage, then save again.'
+							? 'Storage full'
 							: transaction.error?.name === 'ConstraintError'
-								? 'This study is already saved. Open it from Saved study.'
-								: 'Unable to save distribution study. Try again.'
+								? 'Already saved'
+								: 'Save failed'
 					)
 				);
 			transaction.onabort = () =>
 				reject(
 					new Error(
 						transaction.error?.name === 'QuotaExceededError'
-							? 'Browser storage is full. Export saved studies and free browser storage, then save again.'
+							? 'Storage full'
 							: transaction.error?.name === 'ConstraintError'
-								? 'This study is already saved. Open it from Saved study.'
-								: 'Unable to save distribution study. Try again.'
+								? 'Already saved'
+								: 'Save failed'
 					)
 				);
 		});

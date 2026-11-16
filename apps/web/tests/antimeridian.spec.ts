@@ -64,13 +64,13 @@ const NETWORK = {
 	].map((branch) => ({ ...branch, rate_mw: 100, status: 1 }))
 };
 
-// Every line at 95% loading, so every route draws in the attention red.
+// Every line at its rating, so every route draws in red.
 const SOLUTION = {
 	objective: 1,
 	prices: [1, 2, 3, 4].map((bus) => ({ bus, value: 20 + bus })),
 	va: [],
 	w: [],
-	flows: [1, 2, 3, 4].map((branch) => ({ branch, mw: 95, loading: 0.95 })),
+	flows: [1, 2, 3, 4].map((branch) => ({ branch, mw: 100, loading: 1 })),
 	dispatch: [{ gen: 1, mw: 120 }]
 };
 

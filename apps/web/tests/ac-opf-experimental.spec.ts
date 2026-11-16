@@ -1,4 +1,5 @@
 import { runCalculation } from './fixtures/calculation.js';
+import { openCaseMenu } from './fixtures/chrome.js';
 import { expect, test } from './fixtures/page-errors.js';
 import type { Route } from '@playwright/test';
 import { createHash } from 'node:crypto';
@@ -30,9 +31,9 @@ for (const status of [404, 200]) {
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(calculation).toBeEnabled();
 		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', true);
-		await expect(page.getByRole('complementary', { name: 'Network', exact: true })).toContainText(
-			'1,234.5'
-		);
+		await expect(
+			page.getByRole('complementary', { name: 'Network', exact: true }).locator('dl.stats')
+		).toContainText('$1,235/h');
 		await expect(page.locator('.error')).toHaveCount(0);
 	});
 }
@@ -57,7 +58,7 @@ for (const mode of ['preview', 'development']) {
 			process.env.TELLEGEN_KEYED_PORT ?? Number(process.env.TELLEGEN_PREVIEW_PORT ?? 4173) + 2
 		);
 		await page.goto(mode === 'preview' ? '/' : `http://127.0.0.1:${keyedPort}/`);
-		await expect(page.getByText('no default cases loaded')).toBeVisible();
+		await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 		await page.locator('input[type="file"][multiple]').setInputFiles([
 			{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 			{ name: 'case3opf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
@@ -67,20 +68,21 @@ for (const mode of ['preview', 'development']) {
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
 		await runCalculation(page, 'acopf');
-		await expect(page.locator('.solvecard')).toContainText('AC OPF');
+		await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'acopf');
 		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
 		await expect(calculation).toBeEnabled();
-		await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 			'aria-pressed',
 			'true'
 		);
-		await expect(page.getByRole('button', { name: 'LMP', exact: true })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveCount(0);
 		await expect(page.locator('.error')).toHaveCount(0);
-		await expect(page.getByRole('button', { name: 'Save case', exact: true })).toBeDisabled();
+		// The File menu's save and export are disabled, with the reason as their tooltip.
+		await page.getByRole('button', { name: 'File', exact: true }).click();
+		const save = page.getByRole('button', { name: 'Save case', exact: true });
+		await expect(save).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'Export as', exact: true })).toBeDisabled();
-		await expect(
-			page.getByText('Saving and exporting AC OPF cases is not supported yet.', { exact: true })
-		).toBeVisible();
+		await expect(save).toHaveAttribute('title', /not supported/);
 		await page.screenshot({ path: testInfo.outputPath('transmission-acopf.png') });
 		await expect.poll(() => workers.length).toBe(2); // probe plus first solve
 		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
@@ -104,6 +106,7 @@ for (const mode of ['preview', 'development']) {
 		await runCalculation(page, 'acopf');
 		await expect.poll(() => !!held).toBe(true);
 		await expect.poll(() => workers.length).toBe(4);
+		await openCaseMenu(page);
 		await page.locator('.case-chip.local .case-remove').click();
 		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
 		await held!.abort();
@@ -183,7 +186,7 @@ test('imports and solves a retained canonical AC OPF instance', async ({ page })
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"][multiple]').setInputFiles([
 		{ name: 'canonical.pio.json', mimeType: 'application/json', buffer: Buffer.from(moduleJson) },
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) }

@@ -13,7 +13,7 @@
 		log = getAppState().log,
 		onbus,
 		filename = 'tellegen-log.json',
-		empty = 'Nothing to report. Findings from opening, solving and exporting a case appear here.'
+		empty = 'No messages'
 	}: {
 		log?: DiagnosticLog;
 		/** Makes each named bus a button, for a host that can select it. */
@@ -53,6 +53,8 @@
 			copied = false;
 		}
 	}
+	/** Each step's heading, named for what it covers. */
+	const STAGE: Record<string, string> = { Open: 'Files', Solve: 'Calculation' };
 </script>
 
 <section class="log" aria-label="Log" data-testid="diagnostic-log">
@@ -85,8 +87,8 @@
 		{#each groups as group (`${group.stage}\u0000${group.subject ?? ''}`)}
 			<section class="group" data-stage={group.stage}>
 				<h4>
-					<span class="stage">{group.stage}</span>{#if group.subject}<span class="subject"
-							>{group.subject}</span
+					<span class="stage">{STAGE[group.stage] ?? group.stage}</span>{#if group.subject}<span
+							class="subject">{group.subject}</span
 						>{/if}
 				</h4>
 				<ol>
@@ -126,7 +128,7 @@
 		border: 1px solid var(--line);
 		background: transparent;
 		padding: 3px 8px;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	button:hover {
@@ -141,7 +143,7 @@
 		outline-offset: 2px;
 	}
 	.n {
-		font: 10px var(--font-mono);
+		font-variant-numeric: tabular-nums;
 		color: var(--text-secondary);
 	}
 	.group + .group {

@@ -30,6 +30,8 @@ describe('sensitivityDomain', () => {
 	it('flags constant columns flat and structured columns not', () => {
 		expect(sensitivityDomain([0.5, 0.5, 0.5]).flat).toBe(true);
 		expect(sensitivityDomain(column).flat).toBe(false);
+		// Solver noise around zero is flat, not a pattern.
+		expect(sensitivityDomain([-1.1e-7, 3.3e-7, 0, -3.3e-7]).flat).toBe(true);
 	});
 });
 
@@ -117,15 +119,18 @@ describe('demand encoding', () => {
 it('the branch loading key matches the grey, amber and red thresholds', () => {
 	for (const [loading, stop] of [
 		[0, '0%'],
-		[0.6, '60%'],
+		[0.89, '90%'],
 		[0.9, '90%'],
 		[1, '100%']
 	] as const) {
 		const rgb = branchColor(loading, true).slice(0, 3).join(' ');
 		expect(branchLoadingGradient).toContain(`rgb(${rgb}) ${stop}`);
 	}
-	const amber = branchColor(0.9 - Number.EPSILON, true)
-		.slice(0, 3)
-		.join(' ');
-	expect(branchLoadingGradient).toContain(`rgb(${amber}) 90%`);
+	const amber = branchColor(0.92, true).slice(0, 3).join(' ');
+	expect(amber).toBe('227 160 8');
+	expect(branchLoadingGradient).toContain(`rgb(${amber}) 100%`);
+	// Below the warning threshold a line stays grey, as in the diagram's key.
+	expect(branchColor(0.88, true).slice(0, 3).join(' ')).toBe('124 132 143');
+	expect(branchColor(0.99999999, true).slice(0, 3).join(' ')).toBe('215 38 30');
+	expect(branchColor(1, true).slice(0, 3).join(' ')).toBe('215 38 30');
 });

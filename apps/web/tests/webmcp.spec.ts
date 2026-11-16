@@ -19,7 +19,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await expect
 		.poll(() =>
 			page.evaluate(() =>
@@ -32,7 +32,6 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
-				'simulate_dynamics',
 				'export_case',
 				'focus_network',
 				'import_case',
@@ -72,7 +71,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected.ok).toBe(true);
@@ -112,7 +113,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!focused.ok) return;
 	const focusedRevision = String(focused.data.revision);
 	expect(focusedRevision).not.toBe(revision);
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible();
+	// An agent's focus brings the Network panel, which holds the readout, to the front.
+	await expect(page.locator('[data-panel="network"]')).toBeVisible();
+	await expect(page.getByTestId('sensitivity-readout')).toBeVisible();
 
 	const previewed = await callTool(page, 'preview_case_update', {
 		case_id: caseId,
@@ -126,7 +129,12 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	});
 	if (!previewed.ok) return;
 	expect(JSON.stringify(previewed).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('Predicted cost change', { exact: true })).toBeVisible();
+	// The Agent tab keeps the record of each call, a click away from the readout.
+	await page.locator('.panel-toolbar').getByRole('button', { name: 'Agent', exact: true }).click();
+	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
+	await expect(
+		page.locator('[data-webmcp-activity="open"]').getByText('Predicted', { exact: true }).first()
+	).toBeVisible();
 
 	const cancelled = await page.evaluate(
 		async ({ caseId, focusedRevision, busId }) =>
@@ -212,8 +220,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!updated.ok) return;
 	expect(String(updated.data.revision)).not.toBe(focusedRevision);
 	expect(JSON.stringify(updated).length).toBeLessThanOrEqual(1_450);
-	await expect(page.getByText('Solved', { exact: true })).toBeVisible();
-	await expect(page.getByText('Lines at limit')).toBeVisible();
+	const activity = page.locator('[data-webmcp-activity="open"]');
+	await expect(activity.getByText('Operational cost ($/h)', { exact: true })).toBeVisible();
+	await expect(activity.getByText('Lines at limit', { exact: true })).toBeVisible();
 
 	// Tool deltas are exact values, not slider gestures. A valid update below
 	// the UI slider's deadband must survive the transactional solve.
@@ -271,14 +280,14 @@ test('a full page reload creates a new WebMCP session id', async ({ page }) => {
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const first = await callTool(page, 'inspect_case', {});
 	expect(first.ok).toBe(true);
 	if (!first.ok) return;
 	expect(String(first.data.session_id)).toMatch(/^session-/);
 
 	await page.reload();
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	const second = await callTool(page, 'inspect_case', {});
 	expect(second.ok).toBe(true);
 	if (!second.ok) return;
@@ -294,7 +303,7 @@ test('pending formulation settings preserve displayed-case inspection until an e
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
@@ -307,7 +316,9 @@ test('pending formulation settings preserve displayed-case inspection until an e
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	// The card names the calculation while its import solve is still running.
 	// Race a permitted settings change with inspection, not a synthetic event on a disabled control.
 	await expect(page.locator('#formulation-select')).toBeEnabled();
@@ -328,14 +339,22 @@ test('pending formulation settings preserve displayed-case inspection until an e
 		return pending;
 	});
 	expect(raced).toMatchObject({ ok: true, data: { formulation: 'dcopf' } });
+	// Choosing a calculation in the panel runs it.
 	await expect
-		.poll(async () => {
-			const selected = await callTool(page, 'inspect_settings', {});
-			return selected.ok ? selected.data.calculation : null;
-		})
+		.poll(
+			async () => {
+				const current = await callTool(page, 'inspect_case', {});
+				return current.ok ? current.data.formulation : null;
+			},
+			{ timeout: 60_000 }
+		)
 		.toBe('socwr');
+	await expect(page.locator('#formulation-select')).toBeEnabled();
+	await expect(page.locator('#formulation-select')).toHaveValue('socwr');
+	// An agent's explicit run of the same calculation still works.
 	const selected = await callTool(page, 'inspect_settings', {});
 	if (!selected.ok) throw new Error(selected.error.message);
+	expect(selected.data.calculation).toBe('socwr');
 	const run = await callTool(page, 'run_calculation', {
 		case_id: selected.data.case_id,
 		expected_revision: selected.data.revision,
@@ -352,7 +371,7 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 		void route.fulfill({ json: [] });
 	});
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 
 	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
@@ -366,13 +385,18 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'error');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await page.getByRole('button', { name: 'Activity', exact: true }).click();
-	await expect(page.getByTestId('webmcp-registration-error')).toContainText(
-		'registration refused for propose_capacity_plan'
+	const registrationError = page.getByTestId('webmcp-registration-error');
+	await expect(registrationError).toHaveText('Tools failed to load');
+	await expect(registrationError).toHaveAttribute(
+		'title',
+		/registration refused for propose_capacity_plan/
 	);
 	await expect
 		.poll(() =>
@@ -386,7 +410,6 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			[
 				'analyze_sensitivity',
 				'solve_multiconductor_pf',
-				'simulate_dynamics',
 				'export_case',
 				'focus_network',
 				'import_case',
@@ -432,9 +455,9 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	await expect(ribbon).toBeVisible();
 	await expect(ribbon).toHaveAttribute('data-status', 'done');
 	await expect(ribbon).toContainText('Query network elements');
-	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('Returned 2 of 3 branches.');
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('2 of 3 lines');
 
-	// A failure stays on screen with the tool's own sentence.
+	// A failure stays on screen in a word or two; the tool's message is in the Agent panel.
 	const failed = await callTool(page, 'focus_network', {
 		case_id: 'no-such-case',
 		target: { kind: 'bus', element_id: '1' }
@@ -442,7 +465,7 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	expect(failed.ok).toBe(false);
 	await expect(ribbon).toHaveAttribute('data-status', 'failed');
 	await expect(ribbon).toContainText('Focus network element');
-	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText(/^The .+\.$/);
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('Case changed');
 
 	await ribbon.click();
 	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
@@ -454,16 +477,16 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	await expect(ribbon).toHaveCount(0, { timeout: 12_000 });
 });
 
-test('zen mode keeps the ribbon, and the ribbon leaves zen to open the Agent panel', async ({
+test('Hide panels keeps the ribbon, and the ribbon shows the panels to open the Agent panel', async ({
 	page
 }) => {
 	await installWebMcpHarness(page);
 	await congestCase(page);
 	await page.keyboard.press('ControlOrMeta+k');
 	const dialog = page.getByRole('dialog', { name: 'Command palette' });
-	await dialog.getByRole('combobox').fill('zen');
+	await dialog.getByRole('combobox').fill('hide panels');
 	await page.keyboard.press('Enter');
-	await expect(page.getByRole('button', { name: 'Exit zen mode', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show panels', exact: true })).toBeVisible();
 	await callTool(page, 'inspect_case', {});
 	const ribbon = page.getByTestId('agent-ribbon');
 	await expect(ribbon).toBeVisible();

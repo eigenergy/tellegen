@@ -1,4 +1,5 @@
 import { runCalculation } from './fixtures/calculation.js';
+import { showNetwork } from './fixtures/chrome.js';
 import { readFile } from 'node:fs/promises';
 import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
@@ -17,24 +18,26 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	await page.locator('input[type="file"][multiple]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3pf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 	await expect(calculation).toBeEnabled();
 	await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', false);
 	await runCalculation(page, 'acpf');
-	await expect(page.locator('.solvecard')).toContainText('AC power flow');
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'acpf');
 	await expect(calculation).toBeEnabled();
-	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+	await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
-	await expect(page.getByRole('button', { name: 'LMP', exact: true })).toHaveCount(0);
-	await expect(page.getByText('Generation cost ($/h)', { exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveCount(0);
+	await expect(page.locator('dl.stats')).not.toContainText('Operational cost');
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected).toMatchObject({
 		ok: true,
@@ -66,9 +69,9 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.getByRole('combobox', { name: 'Bus lookup', exact: true }).fill('2');
 	await page.getByRole('combobox', { name: 'Bus lookup', exact: true }).press('Enter');
 	const equipment = page.getByRole('region', { name: 'Power-flow equipment results' });
-	await expect(equipment).toContainText(`Voltage (pu) ${loadBus.voltage_pu.toFixed(4)}`);
-	await expect(equipment).toContainText('Demand (MW) 90');
-	await expect(equipment).toContainText(/Voltage angle \(°\) -?[0-9]+\.[0-9]{2}/);
+	await expect(equipment).toContainText(`Voltage ${loadBus.voltage_pu.toFixed(4)} pu`);
+	await expect(equipment).toContainText('Demand 90 MW');
+	await expect(equipment).toContainText(/Voltage angle -?[0-9]+\.[0-9]{2}°/);
 	await expect(page.locator('.error')).toHaveCount(0);
 	await equipment.scrollIntoViewIfNeeded();
 	await page.screenshot({ path: testInfo.outputPath('ac-power-flow.png') });
@@ -83,6 +86,8 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		page.getByRole('heading', { name: 'Three-bus power flow', exact: true })
 	).toBeVisible();
 	await page.getByRole('button', { name: 'Show on map', exact: true }).click();
+	// The saved result's details are in the Network panel, behind the Studies tab.
+	await showNetwork(page);
 	await expect(page.getByRole('region', { name: 'Saved network details' })).toBeVisible();
 	const saved = await callTool(page, 'query_network', {
 		case_id: caseId,
@@ -101,9 +106,11 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.getByRole('button', { name: 'Return to live case', exact: true }).click();
 	await runCalculation(page, 'dcopf');
 	await expect(calculation).toBeEnabled();
-	await expect(page.getByRole('button', { name: 'LMP', exact: true })).toBeVisible();
-	await expect(page.locator('.solvecard')).toContainText('DC OPF');
+	await expect(page.getByRole('button', { name: 'Price', exact: true })).toBeVisible();
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf');
 	await expect(page.locator('.error')).toHaveCount(0);
+	// Export is in the Studies panel.
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const download = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'Export', exact: true }).click();
 	const bundle: StudyBundle = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
@@ -113,10 +120,11 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundle.artifacts[state.input].text)
 	});
+	await showNetwork(page);
 	await expect(calculation).toHaveValue('acpf');
 	await expect(calculation).toBeEnabled();
-	await expect(page.locator('.solvecard')).toContainText('AC power flow');
-	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'acpf');
+	await expect(page.getByRole('button', { name: 'Voltage', exact: true })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
@@ -135,7 +143,7 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 	// A reactive demand no AC operating point can carry, so the AC power flow
 	// does not converge, while DC OPF ignores reactive power and still solves.
 	const reactiveOverload = CASE3_PLANNING.replace(
@@ -146,20 +154,25 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'reactive-overload.m', mimeType: 'text/plain', buffer: Buffer.from(reactiveOverload) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60_000
+	});
 	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 	await expect(calculation).toBeEnabled();
 	const network = page.getByRole('complementary', { name: 'Network', exact: true });
 	for (let attempt = 0; attempt < 2; attempt++) {
-		const panel = await runCalculation(page, 'acpf', { closeSettings: false });
-		await expect(panel.getByRole('alert')).toBeVisible();
-		await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
-		await expect(page.locator('.solvecard')).toContainText('DC OPF');
-		await expect(network).not.toContainText('Solving AC power flow');
-		await page.getByRole('button', { name: 'Close settings panel', exact: true }).click();
-		await runCalculation(page, 'dcopf');
+		await runCalculation(page, 'acpf');
+		// The failure says so, and the DC OPF result stays on screen and in the select.
+		await expect(page.getByTestId('notification-toast')).toContainText('AC power flow failed');
 		await expect(calculation).toBeEnabled();
-		await expect(page.locator('.solvecard')).toContainText('DC OPF');
-		await expect(network).not.toContainText('results available.');
+		await expect(calculation).toHaveValue('dcopf');
+		await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf');
+		// The status line blames the calculation that failed, not the one on screen.
+		await expect(network.locator('.solvecard .verdict')).toHaveText(
+			'AC power flow did not converge'
+		);
+		await expect(network).not.toContainText('Solving…');
+		await expect(network).not.toContainText('No result');
+		await page.getByRole('button', { name: 'Dismiss notification' }).click();
 	}
 });

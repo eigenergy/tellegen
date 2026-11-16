@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { resolve } from '$app/paths';
+	import { onMount, untrack } from 'svelte';
 	import AgentGuide from './AgentGuide.svelte';
 	import { PanelFrame, getAppState } from '@tellegen/svelte';
 	import type {
@@ -44,6 +43,16 @@
 	let tab = $state<'activity' | 'connect'>('connect');
 	const app = getAppState();
 	let welcome = $state(false);
+	/** The first-visit hint follows the Connect tab's status: tools to connect, a browser setting
+	 * to turn on, or nothing where this browser cannot run them. */
+	const hint = $derived.by(() => {
+		if (registrationError) return null;
+		if (supported || browser?.kind === 'ready')
+			return { text: 'Agent tools available', action: 'Connect' };
+		if (browser?.kind === 'flag' || browser?.kind === 'update' || browser?.kind === 'legacy')
+			return { text: 'Agent tools are off', action: 'Set up' };
+		return null;
+	});
 	const welcomeKey = 'tellegen.welcome.webmcp-v1';
 	onMount(() => {
 		try {
@@ -60,6 +69,10 @@
 			/* Dismissal applies to this visit. */
 		}
 	}
+	// Once the Agent tab has been seen, by any route, the hint has done its job.
+	$effect(() => {
+		if (open && welcome) untrack(dismiss);
+	});
 	// The welcome pill disappears once the panel opens, taking focus with it,
 	// so "Show me" asks for the Connect tab to take focus when it is attached.
 	let focusRequest = $state(0);
@@ -120,17 +133,17 @@
 
 	function formatNumber(value: number | null, digits = 2): string {
 		return value === null
-			? 'unavailable'
+			? '—'
 			: value.toLocaleString(undefined, { maximumFractionDigits: digits });
 	}
 
 	function formatDelta(value: number | null): string {
-		if (value === null) return 'unavailable';
+		if (value === null) return '—';
 		return `${value >= 0 ? '+' : ''}${formatNumber(value)}`;
 	}
 
 	function elapsed(activity: TellegenToolActivityEvent): string {
-		if (!finished(activity)) return 'working';
+		if (!finished(activity)) return '…';
 		const ms = activity.finishedAt - activity.startedAt;
 		return ms < 1_000 ? `${ms} ms` : `${(ms / 1_000).toFixed(1)} s`;
 	}
@@ -152,14 +165,7 @@
 	}
 </script>
 
-<PanelFrame id="agent" title="Agent" side="right" order={20} width={370} bind:open onopen={show}>
-	{#snippet headerActions()}
-		{#if experiments.length > 0}<button
-				class="export"
-				data-testid="export-experiment-journal"
-				onclick={exportJournal}>Export</button
-			>{/if}
-	{/snippet}
+<PanelFrame id="agent" title="Agent" side="left" order={30} width={370} bind:open onopen={show}>
 	<div class="activity-panel" data-webmcp-activity="open" aria-label="WebMCP activity">
 		<nav aria-label="Agent panel">
 			<button
@@ -173,6 +179,11 @@
 				aria-pressed={tab === 'connect'}
 				onclick={() => (tab = 'connect')}>Connect</button
 			>
+			{#if experiments.length > 0}<button
+					class="export"
+					data-testid="export-experiment-journal"
+					onclick={exportJournal}>Export</button
+				>{/if}
 		</nav>
 		<div class="agent-content">
 			{#if tab === 'connect'}<AgentGuide
@@ -183,22 +194,18 @@
 					{toolCount}
 					callCount={experiments.length}
 				/>{:else}
-				<p class="call-count" role="status">
-					{activities.length
-						? `${experiments.length} tool ${experiments.length === 1 ? 'call' : 'calls'} finished${activities.some((activity) => !finished(activity)) ? ', one running' : ''}`
-						: 'No tool calls yet'}
-				</p>
 				{#if registrationError}
-					<p class="registration-error mono" data-testid="webmcp-registration-error">
-						WebMCP tools could not be registered: {registrationError}
+					<p
+						class="registration-error"
+						data-testid="webmcp-registration-error"
+						title={registrationError}
+					>
+						Tools failed to load
 					</p>
 				{/if}
 
 				{#if activities.length === 0 && planning.entries.length === 0}
-					<div class="empty">
-						<p>No agent activity yet.</p>
-						<button class="copy" onclick={() => (tab = 'connect')}>Connect an agent</button>
-					</div>
+					<p class="empty">No activity</p>
 				{/if}
 
 				{#if planning.entries.length > 0}
@@ -246,7 +253,7 @@
 										<div class="review">
 											{#if isApproved(entry)}
 												<span class="approved mono" data-testid="capacity-plan-approved"
-													>Approved. The agent can apply it once.</span
+													>Approved</span
 												>
 											{:else}
 												<button
@@ -296,19 +303,18 @@
 
 								{#if predicted}
 									<div class="preview-result">
-										<span class="label">Predicted cost change</span>
+										<span class="label">Predicted</span>
 										<b class="mono">{formatDelta(number(predicted.objective_delta))} $/h</b>
-										<span class="dim">Nothing applied</span>
 									</div>
 								{/if}
 
 								{#if compare}
 									<div class="comparison">
 										<div class="comparison-head">
-											<span>Solved</span><span>Before</span><span>After</span>
+											<span></span><span>Before</span><span>After</span>
 										</div>
 										<div class="metric mono">
-											<span class="name">Cost ($/h)</span>
+											<span class="name">Operational cost ($/h)</span>
 											<span>{formatNumber(number(compare.before.objective))}</span>
 											<span>{formatNumber(number(compare.after.objective))}</span>
 										</div>
@@ -318,31 +324,30 @@
 											<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
 										</div>
 										<div class="metric mono">
-											<span class="name">Demand and rating edits</span>
-											<span
-												>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
-													number(compare.before.rating_edit_count),
-													0
-												)}</span
-											>
-											<span
-												>{formatNumber(number(compare.after.demand_edit_count), 0)} / {formatNumber(
-													number(compare.after.rating_edit_count),
-													0
-												)}</span
-											>
+											<span class="name">Demand edits</span>
+											<span>{formatNumber(number(compare.before.demand_edit_count), 0)}</span>
+											<span>{formatNumber(number(compare.after.demand_edit_count), 0)}</span>
+										</div>
+										<div class="metric mono">
+											<span class="name">Rating edits</span>
+											<span>{formatNumber(number(compare.before.rating_edit_count), 0)}</span>
+											<span>{formatNumber(number(compare.after.rating_edit_count), 0)}</span>
 										</div>
 									</div>
 								{/if}
 
 								{#if finished(activity) && activity.callerCancelled && activity.response.ok}
 									<p class="error mono" data-testid="caller-cancelled">
-										The agent cancelled this call, but it had already completed. Any change it made
-										stands; the agent did not receive the result.
+										Cancelled after completing
 									</p>
 								{/if}
 								{#if finished(activity) && !activity.response.ok}
-									<p class="error">{activity.response.error.message}</p>
+									<!-- The tool's message is written for the agent: one word here, the message
+									     behind Details. -->
+									<details class="error">
+										<summary>Failed</summary>
+										<p class="raw mono">{activity.response.error.message}</p>
+									</details>
 								{/if}
 								{#if check}
 									<div class="preview-result mono" data-testid="experiment-prediction-check">
@@ -358,11 +363,24 @@
 		</div>
 	</div>
 </PanelFrame>
-{#if welcome && !open && !app.zen}<aside class="welcome" aria-label="New to Tellegen">
-		<span>New: AI agents can drive this map</span>
-		<button class="welcome-go" onclick={showConnect}>Show me</button>
-		<a href={resolve('/changelog')}>What's new</a>
-		<button aria-label="Dismiss introduction" onclick={dismiss}>Close</button>
+<!-- Not while an agent is already calling tools, nor over the dynamics timeline. -->
+{#if welcome && hint && !open && !app.zen && !activities.length && app.mode !== 'dynamics'}<aside
+		class="welcome"
+		class:compact={app.compactLayout}
+		style:--sheet-clear={app.compactLayout ? `${app.sheetInset + 8}px` : undefined}
+		aria-label="About AI agents"
+	>
+		<span>{hint.text}</span>
+		<button class="welcome-go" onclick={showConnect}>{hint.action}</button>
+		<button
+			class="welcome-close"
+			aria-label="Dismiss introduction"
+			title="Dismiss"
+			onclick={dismiss}
+			><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+				><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+			></button
+		>
 	</aside>{/if}
 
 <style>
@@ -376,18 +394,15 @@
 		font: inherit;
 		cursor: pointer;
 	}
-	.export {
-		border: 0;
-		padding: 4px;
-		background: none;
-		color: var(--text-secondary);
-		font-size: 11px;
+	nav .export {
+		margin-left: auto;
+		color: var(--text-accent);
 	}
 
 	nav {
 		display: flex;
 		gap: 24px;
-		padding: 0 16px;
+		padding: 0 18px;
 		border-bottom: 1px solid var(--line);
 		flex: none;
 	}
@@ -406,66 +421,68 @@
 		overflow: auto;
 		min-height: 0;
 	}
-	.call-count {
-		margin: 0;
-		padding: 12px 16px;
-		font-size: 11px;
-		color: var(--text-secondary);
-		border-bottom: 1px solid var(--line);
-	}
 	.registration-error {
 		margin: 0;
-		padding: 16px;
+		padding: 16px 18px;
 		color: var(--text-danger);
 		font-size: 12px;
 	}
+	/* Every panel's empty line sits where its content would start: 16 px down, 18 px in. */
 	.empty {
-		padding: 24px 20px;
-	}
-	.empty p {
-		margin: 0 0 12px;
+		margin: 0;
+		padding: 16px 18px;
 		color: var(--text-secondary);
 	}
-	.copy {
-		padding: 7px 10px;
-		border: 1px solid var(--line);
-		border-radius: 4px;
-		background: var(--paper);
-		color: var(--ink);
-	}
+	/* First visit only: a small note in the map's lower left corner, clear of
+	   the panels, the map controls and the data. */
 	.welcome {
 		position: fixed;
-		/* Above the dynamics playback dock and the map's control row on it
-		   (44 px) while the dock is open; the shell's toasts stack above. */
-		bottom: max(12px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
-		left: 50%;
-		transform: translateX(-50%);
+		/* Above the dynamics playback dock while it is open, in the map control row below the panels. */
+		bottom: max(16px, calc(var(--tellegen-timeline-clear, -1000px) + 8px));
+		left: 16px;
 		z-index: 30;
 		display: flex;
-		gap: 12px;
+		gap: 4px;
 		align-items: center;
-		padding: 5px 10px;
+		max-width: calc(100vw - 32px);
+		padding: 4px 4px 4px 10px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
-		background: var(--paper);
-		font: 11px/1.4 var(--font-display);
+		border-radius: var(--radius-control);
+		background: var(--panel);
+		color: var(--text-secondary);
+		font: var(--fs-label) / 1.4 var(--font-sans);
 	}
-	.welcome a {
-		color: var(--text-accent);
-		text-underline-offset: 3px;
+	.welcome.compact {
+		bottom: var(--sheet-clear);
+		left: 12px;
+		max-width: calc(100vw - 24px);
+	}
+	.welcome button {
+		display: inline-grid;
+		place-items: center;
+		min-height: 24px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		font: inherit;
+		cursor: pointer;
 	}
 	.welcome .welcome-go {
-		padding: 1px 8px;
-		border: 1px solid rgb(var(--agent-rgb) / 0.5);
-		border-radius: 3px;
-		background: var(--agent-soft);
-		color: var(--agent);
+		color: var(--text-accent);
+		font-weight: 500;
 	}
-	.welcome button:not(.welcome-go) {
-		padding: 2px;
-		border: 0;
-		background: none;
+	.welcome .welcome-close {
 		color: var(--text-secondary);
+	}
+	.welcome button:hover {
+		background: var(--surface-hover);
+	}
+	@media (pointer: coarse) {
+		.welcome button {
+			min-width: 44px;
+			min-height: 44px;
+		}
 	}
 
 	.plans {
@@ -477,13 +494,13 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-		padding: 9px 14px 0;
+		padding: 9px 18px 0;
 	}
 
 	.section-head h3 {
 		margin: 0;
 		color: var(--text-tertiary);
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 500;
 	}
 
@@ -500,7 +517,7 @@
 		border-radius: 999px;
 		background: var(--surface-control);
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 	}
 
 	.chip-status[data-status='applied'] {
@@ -516,7 +533,7 @@
 	.phi,
 	.phi-detail {
 		margin: 7px 0 0 16px;
-		font-size: 9.5px;
+		font-size: 12px;
 	}
 
 	.phi {
@@ -529,7 +546,7 @@
 		flex-wrap: wrap;
 		gap: 4px 12px;
 		color: var(--text-secondary);
-		font-size: 8.5px;
+		font-size: 12px;
 	}
 
 	.changes {
@@ -538,7 +555,7 @@
 		list-style: none;
 		border-left: 2px solid var(--accent);
 		background: rgb(var(--paper-rgb) / 0.55);
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	.changes li {
@@ -563,7 +580,7 @@
 		border-radius: var(--radius-xs);
 		background: var(--surface-control);
 		color: var(--text-secondary);
-		font-size: 9px;
+		font-size: 12px;
 		cursor: pointer;
 	}
 
@@ -580,7 +597,7 @@
 
 	.approved {
 		color: var(--text-accent);
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	ol {
@@ -592,7 +609,7 @@
 	}
 
 	li {
-		padding: 11px 14px;
+		padding: 11px 18px;
 		border-bottom: 1px solid rgb(var(--ink-rgb) / 0.08);
 	}
 
@@ -640,7 +657,7 @@
 
 	.elapsed {
 		color: var(--text-tertiary);
-		font-size: 8.5px;
+		font-size: 12px;
 	}
 
 	.elapsed {
@@ -659,12 +676,7 @@
 		grid-template-columns: 1fr auto;
 		gap: 3px 10px;
 		padding: 8px 9px;
-		font-size: 10px;
-	}
-
-	.preview-result .dim {
-		grid-column: 1 / -1;
-		font-size: 8.5px;
+		font-size: 12px;
 	}
 
 	.label {
@@ -687,7 +699,7 @@
 	.comparison-head {
 		padding-bottom: 5px;
 		color: var(--text-tertiary);
-		font-size: 11px;
+		font-size: 12px;
 	}
 
 	.comparison-head span:first-child,
@@ -698,14 +710,23 @@
 	.metric {
 		padding: 3px 0;
 		border-top: 1px solid rgb(var(--ink-rgb) / 0.06);
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	.error {
 		margin: 7px 0 0 16px;
 		color: var(--text-danger);
-		font-size: 9px;
+		font-size: 12px;
 		line-height: 1.45;
+	}
+	details.error summary {
+		cursor: pointer;
+	}
+	details.error .raw {
+		margin: 4px 0 0;
+		color: var(--text-secondary);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 	@media (max-width: 960px) {
 		.welcome {

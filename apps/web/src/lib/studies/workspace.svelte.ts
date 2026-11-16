@@ -68,11 +68,11 @@ export class StudyWorkspace {
 		return this.#run(
 			async () => {
 				const c = this.grid.app.activeMulti;
-				if (!c?.result || c.solving) throw new Error('Run AC power flow before saving its result');
+				if (!c?.result || c.solving) throw new Error('Run power flow first');
 				const snapshot = await this.grid.snapshotMultiCase(c);
 				const stored = await this.#mcStore.get(snapshot.id);
 				if (stored && JSON.stringify(stored) !== JSON.stringify(snapshot))
-					throw new Error('This study is already saved. Open it from Saved study.');
+					throw new Error('Already saved');
 				if (!stored) await this.#mcStore.put(snapshot);
 				if (c.mcSnapshot === snapshot) c.mcSavedAt = new Date().toISOString();
 				await this.refreshSaved();
@@ -117,7 +117,7 @@ export class StudyWorkspace {
 	}
 	async exportMulti(): Promise<string> {
 		const c = this.grid.app.activeMulti;
-		if (!c?.result || c.solving) throw new Error('Run AC power flow before exporting its result');
+		if (!c?.result || c.solving) throw new Error('Run power flow first');
 		const snapshot = await this.grid.snapshotMultiCase(c);
 		trackUsage('study.export', { result: 'completed' });
 		// Keep large distribution snapshots below the replay input limit.
@@ -127,8 +127,7 @@ export class StudyWorkspace {
 		return this.#run(
 			async () => {
 				const snapshot = await replayMcStudy(text);
-				if (await this.#mcStore.get(snapshot.id))
-					throw new Error('This study is already saved. Open it from Saved study.');
+				if (await this.#mcStore.get(snapshot.id)) throw new Error('Already saved');
 				await this.#mcStore.put(snapshot);
 				await this.refreshSaved();
 				await this.#showMulti(snapshot);
@@ -150,8 +149,7 @@ export class StudyWorkspace {
 		event = 'study.operation',
 		metrics: EventData = {}
 	): Promise<T> {
-		if (this.busy)
-			throw new Error('A Study operation is running; wait or cancel it before continuing');
+		if (this.busy) throw new Error('Busy');
 		const started = performance.now();
 		this.busy = true;
 		this.error = null;
@@ -201,7 +199,7 @@ export class StudyWorkspace {
 			async (abort) => {
 				const c = this.grid.activeSolvable;
 				if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
-					throw new Error('Case changed; inspect the current case before creating a Study');
+					throw new Error('Case changed, retry');
 				const base_input = await this.grid.ensureStudyInputJson(c);
 				const captured = await this.grid.captureSavedCase(c);
 				const geometry = c.network;
@@ -256,7 +254,7 @@ export class StudyWorkspace {
 					: undefined;
 				abort.throwIfAborted();
 				if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
-					throw new Error('Case changed while capturing the Study starting point; retry');
+					throw new Error('Case changed, retry');
 				const controller = await StudyDocumentController.create(
 					{
 						...draft,
@@ -309,7 +307,7 @@ export class StudyWorkspace {
 						typeof document.id === 'string' &&
 						(await this.store.load(document.id))
 					) {
-						throw new Error('This study is already saved. Open it from Saved study.');
+						throw new Error('Already saved');
 					}
 				}
 				this.#controller = await StudyDocumentController.import(text, this.store);
@@ -343,7 +341,7 @@ export class StudyWorkspace {
 		return this.#run(
 			async (abort) => {
 				if (!this.#controller || this.document?.id !== studyId)
-					throw new Error('Open the requested Study before continuing');
+					throw new Error('Open the study first');
 				const result = await this.#controller.execute(
 					{ expected_revision: revision, operation },
 					abort
@@ -453,7 +451,7 @@ export class StudyWorkspace {
 	) {
 		const c = this.grid.activeSolvable;
 		if (!c || c.id !== context.caseId || caseRevision(c) !== context.caseRevision)
-			throw new Error('Case changed during inspection; retry before attaching Study evidence');
+			throw new Error('Case changed, retry');
 		await this.execute(
 			context.studyId,
 			context.revision,
@@ -528,8 +526,7 @@ export class StudyWorkspace {
 		);
 	}
 	approveCapacity(binding: CapacityStudyBinding) {
-		if (!this.capacityCurrent(binding) || this.busy)
-			throw new Error('Capacity proposal changed; review the current Study');
+		if (!this.capacityCurrent(binding) || this.busy) throw new Error('Proposal changed');
 		this.#capacityApprovals.set(
 			binding.proposal,
 			this.#controller!.recordUserApproval(binding.proposal)
@@ -541,8 +538,7 @@ export class StudyWorkspace {
 	}
 	async applyCapacity(binding: CapacityStudyBinding, publish: () => boolean, signal: AbortSignal) {
 		return this.#run(async (abort) => {
-			if (!this.capacityApproved(binding))
-				throw new Error('Capacity approval expired; review the current Study');
+			if (!this.capacityApproved(binding)) throw new Error('Approval expired');
 			const token = this.#capacityApprovals.get(binding.proposal)!;
 			const result = await this.#controller!.applyApprovedProposal(token, abort);
 			this.#capacityApprovals.delete(binding.proposal);
@@ -603,7 +599,7 @@ export class StudyWorkspace {
 		}
 		const state = d.states[d.inspected_state];
 		if (state.formulation === 'dcpf' || state.formulation === 'acopf')
-			throw new Error('This saved formulation is not supported by the Study viewer');
+			throw new Error('Unsupported calculation');
 		const geo = d.display ? b.artifacts[d.display.geography].text : undefined;
 		const geometryKey = state.input + ':' + (d.display?.geography ?? '');
 		let network = this.#geometry.get(geometryKey);

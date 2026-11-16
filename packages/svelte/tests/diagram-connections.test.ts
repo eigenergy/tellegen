@@ -71,12 +71,12 @@ describe('transformer kinds and labels', () => {
 	};
 
 	it('names a polyphase unit by its vector group, high side first, and its rating', () => {
-		expect(transformerInfo(g, 0)).toMatchObject({ kind: 'poly', label: 'Dyn · 500 kVA' });
+		expect(transformerInfo(g, 0)).toMatchObject({ kind: 'poly', label: 'Dyn 500 kVA' });
 	});
 
 	it('tells a centre tap from a plain single-phase unit', () => {
-		expect(transformerInfo(g, 1)).toMatchObject({ kind: 'split', label: '1φ split · 25 kVA' });
-		expect(transformerInfo(g, 4)).toMatchObject({ kind: 'single', label: '1φ · 50 kVA' });
+		expect(transformerInfo(g, 1)).toMatchObject({ kind: 'split', label: '1φ split 25 kVA' });
+		expect(transformerInfo(g, 4)).toMatchObject({ kind: 'single', label: '1φ 50 kVA' });
 	});
 
 	it('marks windings inside a polyphase symbol, a tap on a split one, nothing on a single one', () => {
@@ -101,7 +101,7 @@ describe('attachment connections', () => {
 		expect(terminalLabel(['2', '4'], 'single_phase')).toBe('B–N');
 		expect(terminalLabel(['1', '2', '3', '4'], 'wye')).toBe('Y ABCN');
 		expect(terminalLabel(['a', 'b', 'c'], 'delta')).toBe('Δ ABC');
-		expect(terminalLabel(['L1', 'L2', 'L3', 'N'], 'wye')).toBe('Y L1·L2·L3·N');
+		expect(terminalLabel(['L1', 'L2', 'L3', 'N'], 'wye')).toBe('Y L1,L2,L3,N');
 		expect(terminalConductors(['1', '4'], '4')).toEqual({ phases: 1, neutral: true });
 		expect(terminalConductors(['1', '2', '3'], '4')).toEqual({ phases: 3, neutral: false });
 	});

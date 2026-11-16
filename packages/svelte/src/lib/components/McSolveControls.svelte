@@ -30,13 +30,11 @@
 
 <div class="mc-solve">
 	{#if !mc.mcPfSupported && mc.mcPfReason}<p class="note">{mc.mcPfReason}</p>{/if}
-	{#if invalid}<p class="note">
-			{invalid} Open the power flow settings to change it before solving.
-		</p>{/if}
+	{#if invalid}<p class="note">{invalid}</p>{/if}
 	<button class="quiet" onclick={onsettings}>Power flow settings</button>
 	<div class="actions">
 		{#if mc.solving}
-			<span role="status">Calculating…</span>{#if mc.solveAbort}<button
+			<span role="status">Solving…</span>{#if mc.solveAbort}<button
 					class="quiet"
 					onclick={() => mc.solveAbort?.abort()}>Cancel</button
 				>{/if}
@@ -65,7 +63,7 @@
 	.note {
 		margin: 0 0 8px;
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 12px;
 		line-height: 1.5;
 	}
 	.actions {
@@ -79,7 +77,7 @@
 		font: inherit;
 		padding: 7px 11px;
 		border: 1px solid var(--line);
-		border-radius: 4px;
+		border-radius: var(--radius-control);
 		background: transparent;
 		color: var(--ink);
 		cursor: pointer;
@@ -89,9 +87,9 @@
 		cursor: default;
 	}
 	button.primary {
-		background: var(--ink);
-		border-color: var(--ink);
-		color: var(--paper);
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	button.text {
 		border: 0;

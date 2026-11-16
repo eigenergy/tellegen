@@ -68,6 +68,10 @@ describe('trace axes', () => {
 		expect(labels.length).toBeGreaterThan(1);
 		expect(lo).toBeLessThan(60);
 		expect(hi).toBeGreaterThan(60);
+		// No trailing zero past what the step needs.
+		expect(tickLabel(60.01, 0.005)).toBe('60.010');
+		expect(tickLabel(60.05, 0.05)).toBe('60.05');
+		expect(tickLabel(2, 2)).toBe('2');
 	});
 	it('leave a real range alone', () => {
 		expect(yDomain(59.8, 60, minSpanFor('Hz'))[0]).toBeCloseTo(59.8 - 0.012);
@@ -76,8 +80,8 @@ describe('trace axes', () => {
 
 describe('playback readout', () => {
 	it('counts cycles near an event and seconds after', () => {
-		expect(sinceEvent(0.05, 60)).toBe('+3.0 cyc');
-		expect(sinceEvent(1.9, 60)).toBe('+1.90 s');
+		expect(sinceEvent(0.05, 60)).toBe('3.0 cycles');
+		expect(sinceEvent(1.9, 60)).toBe('1.90 s');
 	});
 });
 
@@ -125,7 +129,7 @@ describe('dynamics controller', () => {
 		};
 		dyn.modesBusy = true;
 		expect(await dyn.run()).toBeNull();
-		expect(dyn.error).toMatch(/modes/);
+		expect(dyn.error).toMatch(/Modes/);
 		dyn.modesBusy = false;
 		dyn.running = true;
 		expect(await dyn.run()).toBeNull();

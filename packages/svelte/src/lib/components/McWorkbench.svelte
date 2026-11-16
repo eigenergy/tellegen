@@ -83,7 +83,6 @@
 	);
 	/** Declared voltage limits the overview does not rank: sequence or neutral-to-ground bounds, a
 	 * bound without its other side, or non-uniform phase–phase bounds without named pairs. */
-	const unrankedLimits = $derived(!limitsDeclared && graph.buses.some((b) => b.voltage_limits));
 	const busIndex = $derived(new Map(graph.buses.map((b, i) => [b.id, i])));
 	/** The first edge of each id: a multi-winding transformer's winding-pair edges share its id, and
 	 * the selection, tables and conductor panel show its first (primary) edge. */
@@ -167,7 +166,7 @@
 		return {
 			id: edge.id,
 			value: quantity(issue.value, '%'),
-			detail: `${edge.kind} · ${issue.severity === 'violation' ? 'over rating' : `≥ ${LOADING_WARNING}% of rating`}`
+			detail: `${edge.kind}, ${issue.severity === 'violation' ? 'over rating' : `${LOADING_WARNING}% of rating or more`}`
 		};
 	}
 	const isSelected = (issue: Issue) =>
@@ -239,7 +238,7 @@
 <section class="workbench" aria-label="Operating point overview">
 	<div class="heading">
 		<h4>Overview</h4>
-		{#if loading}<span role="status">Reading the full operating point…</span>{/if}
+		{#if loading}<span role="status">Loading…</span>{/if}
 		{#if onschematic}<button
 				class="schematic-toggle"
 				aria-pressed={schematic}
@@ -271,16 +270,11 @@
 					>{warning
 						? `+ ${warning} warning${warning === 1 ? '' : 's'}`
 						: limitsDeclared
-							? 'within declared limits'
-							: unrankedLimits
-								? 'no ranked limits'
-								: 'no limits declared'}</span
+							? 'OK'
+							: '—'}</span
 				>
 			</button>
-			<div
-				class="kpi"
-				title="Lines, switches and transformers: both end powers into the equipment, summed over the energized branches"
-			>
+			<div class="kpi">
 				<span class="label">Branch losses</span>
 				<span class="value">{quantity(summary.loss.p, 'kW')}</span>
 				<span class="sub">{quantity(summary.loss.q, 'kvar')}</span>
@@ -300,7 +294,7 @@
 				>
 					<span class="label">{zoneLabel(zone.zone)}</span>
 					<span class="value">{quantityRange(zone.min.volts, zone.max.volts, 'V')}</span>
-					<span class="sub">{bad ? 'limit violated' : `${zone.buses.toLocaleString()} buses`}</span>
+					<span class="sub">{bad ? 'Violated' : `${zone.buses.toLocaleString()} buses`}</span>
 				</button>
 			{/each}
 			{#if summary.loading}
@@ -323,28 +317,21 @@
 					class="kpi"
 					onclick={() => select('bus', u.bus)}
 					title={u.definition === 'VUF'
-						? 'Voltage unbalance factor |V2| / |V1| from terminal phasors'
-						: 'Magnitude-only unbalance: max deviation from the mean / mean'}
+						? 'Negative- over positive-sequence voltage, from terminal phasors'
+						: 'Largest deviation from the mean voltage, over the mean'}
 				>
 					<span class="label">Max unbalance</span>
 					<span class="value">{quantity(u.percent, '%')}</span>
-					<span class="sub">{u.definition} · {graph.buses[u.bus].id}</span>
+					<span class="sub">{u.definition}, {graph.buses[u.bus].id}</span>
 				</button>
 			{/if}
 		</div>
 
 		<h4>Issues <span class="count">{issues.length.toLocaleString()}</span></h4>
-		{#if unrankedLimits}
-			<p class="hint">
-				This case declares no ratings, and none of its voltage limits is a band the overview ranks
-				(phase–neutral, phase–phase or phase–ground), so nothing is ranked against them.
-			</p>
-		{:else if !limitsDeclared}
-			<p class="hint">
-				This case declares no voltage limits or ratings, so nothing is ranked against them.
-			</p>
+		{#if !limitsDeclared}
+			<p class="hint">No limits</p>
 		{:else if !issues.length}
-			<p class="hint ok">No limit violations or loading warnings.</p>
+			<p class="hint ok">No violations</p>
 		{:else}
 			<ol class="issues">
 				{#each issues.slice(0, ISSUE_LIMIT) as issue (`${issue.target.kind}:${issue.target.index}`)}
@@ -353,7 +340,7 @@
 						<button
 							aria-current={isSelected(issue)}
 							onclick={() => revealOrSelect(issue.target.kind, issue.target.index)}
-							title={`${t.id} · ${t.detail}`}
+							title={`${t.id}, ${t.detail}`}
 						>
 							<span class="sev" aria-label={issue.severity}
 								>{issue.severity === 'violation' ? '!' : '▲'}</span
@@ -366,7 +353,7 @@
 				{/each}
 			</ol>
 			{#if issues.length > ISSUE_LIMIT}<p class="hint">
-					Showing the worst {ISSUE_LIMIT} of {issues.length.toLocaleString()}; the CSV has all rows.
+					Top {ISSUE_LIMIT} of {issues.length.toLocaleString()}
 				</p>{/if}
 		{/if}
 
@@ -396,25 +383,23 @@
 						</div>
 					{/each}
 				</div>
-				<p class="hint">
-					Track: the declared band ± 25%{busSelection.unbalance
-						? ` · unbalance ${quantity(busSelection.unbalance.percent, '%')} (${busSelection.unbalance.definition})`
-						: ''}{busSpread
-						? ` · magnitude spread ${quantity(busSpread.percent, '%')} (${busSpread.definition})`
-						: ''}
-				</p>
-				{#if busSelection.unbalance && busSpread && busSpread.percent > 2 * busSelection.unbalance.percent}
-					<p class="hint">
-						The spread is mostly neutral shift (zero sequence), which VUF excludes.
-					</p>
-				{/if}
+				{#if busSelection.unbalance || busSpread}<dl class="hint pairs">
+						{#if busSelection.unbalance}<div title={busSelection.unbalance.definition}>
+								<dt>Unbalance</dt>
+								<dd>{quantity(busSelection.unbalance.percent, '%')}</dd>
+							</div>{/if}
+						{#if busSpread}<div>
+								<dt>Spread</dt>
+								<dd>{quantity(busSpread.percent, '%')}</dd>
+							</div>{/if}
+					</dl>{/if}
 			{:else}<p class="hint">No terminal-pair voltages at this bus.</p>{/if}
 		{:else if edgeSelection}
 			<h4>Conductors on {selectedEdge}</h4>
 			{#each edgeSelection.ends as end, side (side)}
 				{#if end}
 					<p class="end">
-						{side ? 'To' : 'From'} end · {quantity(end.p, 'kW')} · {quantity(end.q, 'kvar')}
+						{side ? 'To' : 'From'} end: {quantity(end.p, 'kW')}, {quantity(end.q, 'kvar')}
 					</p>
 					<div
 						class="bars"
@@ -440,14 +425,9 @@
 					</div>
 				{/if}
 			{/each}
-			<p class="hint">
-				One scale for both ends (max {quantity(
-					edgeSelection.scaleAmps,
-					'A'
-				)}){edgeSelection.neutralShare !== null
-					? ` · neutral carries ${quantity(edgeSelection.neutralShare, '%')} of the largest phase current`
-					: ''}
-			</p>
+			{#if edgeSelection.neutralShare !== null}<p class="hint">
+					Neutral: {quantity(edgeSelection.neutralShare, '%')}
+				</p>{/if}
 			{#if multiWire}
 				<h4>Multi-wire view</h4>
 				<MultiWire view={multiWire} />
@@ -489,12 +469,9 @@
 			<button onclick={() => exportCsv('branch')}>Branch CSV</button>
 		</div>
 	{:else if !loading && onanalyse}
-		<p class="hint">
-			This case is large, so the overview reads the full operating point on request.
-		</p>
-		<div class="actions"><button onclick={onanalyse}>Analyse operating point</button></div>
+		<div class="actions"><button onclick={onanalyse}>Load overview</button></div>
 	{:else if !loading}
-		<p class="hint">Run the power flow to see the overview.</p>
+		<p class="hint">No result</p>
 	{/if}
 </section>
 
@@ -503,7 +480,7 @@
 		margin: 14px 0;
 		padding-top: 12px;
 		border-top: 1px solid var(--line);
-		font-size: 11px;
+		font-size: 12px;
 	}
 	.heading {
 		display: flex;
@@ -522,7 +499,7 @@
 	}
 	h4 {
 		margin: 12px 0 6px;
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 600;
 	}
 	.kpis {
@@ -531,7 +508,7 @@
 		gap: 1px;
 		background: var(--line);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		overflow: hidden;
 	}
 	.kpi {
@@ -554,9 +531,7 @@
 		cursor: default;
 	}
 	.kpi .label {
-		font: 9px var(--font-mono);
-		letter-spacing: 0.5px;
-		text-transform: uppercase;
+		font: 12px var(--font-mono);
 	}
 	.kpi .value {
 		font: 12px var(--font-mono);
@@ -599,7 +574,7 @@
 		color: var(--ink);
 		background: transparent;
 		border: 0;
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 	.issues button:hover,
@@ -607,7 +582,7 @@
 		background: var(--accent-soft);
 	}
 	.sev {
-		font: 700 11px var(--font-mono);
+		font: 700 12px var(--font-mono);
 	}
 	.id,
 	.num,
@@ -640,7 +615,7 @@
 		position: relative;
 		height: 9px;
 		background: var(--surface-control);
-		border-radius: 2px;
+		border-radius: var(--radius-control);
 		overflow: hidden;
 	}
 	.band {
@@ -680,7 +655,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 3px 8px;
 		cursor: pointer;
 	}
@@ -704,9 +679,7 @@
 		margin: 8px 0 6px;
 	}
 	.tabs button {
-		font: 10px var(--font-mono);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
+		font: 12px var(--font-mono);
 		color: var(--text-secondary);
 		background: transparent;
 		border: 0;
@@ -728,7 +701,7 @@
 		color: var(--ink);
 		background: var(--paper);
 		border: 1px solid var(--line);
-		border-radius: 3px;
+		border-radius: var(--radius-control);
 		padding: 5px 7px;
 		cursor: pointer;
 	}

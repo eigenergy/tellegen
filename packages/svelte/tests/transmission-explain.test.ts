@@ -3,8 +3,7 @@ import {
 	docsLink,
 	economicsLead,
 	operatingLead,
-	transferLead,
-	TERMS
+	transferLead
 } from '../src/lib/diagram/transmission-explain.js';
 import { operatingExceptions } from '../src/lib/diagram/transmission-inspection.js';
 import { assessLoading, operatingContext } from '../src/lib/diagram/transmission-results.js';
@@ -70,15 +69,29 @@ const base = {
 	warning: 90
 };
 
-describe('operating coverage', () => {
-	it('reports checked equipment and only gives an all-clear tone for complete data', () => {
+const stat = (lead: ReturnType<typeof operatingLead>, label: string) =>
+	lead.stats.find((s) => s.label === label)?.value;
+
+describe('operating limits', () => {
+	it('shows one short line, and no counts, when nothing is near or over a limit', () => {
 		const lead = operatingLead(base);
-		expect(lead.tone).toBe('ok');
-		expect(lead.text).toContain('3 checked lines');
-		expect(lead.text).toContain('4 checked buses');
-		expect(operatingLead({ ...base, voltageSolved: false }).why).toContain(
-			'DC power flow treats every voltage as 1 pu'
-		);
+		expect(lead).toEqual({ stats: [], empty: 'All lines below 90%' });
+	});
+	it('counts the lines and buses that need attention, and leaves out zeros', () => {
+		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
+		expect(stat(lead, 'Low voltage')).toBe('1');
+		expect(stat(lead, 'High voltage')).toBeUndefined();
+		expect(stat(lead, 'Lines at limit')).toBeUndefined();
+	});
+	it('does not count voltage violations for DC, which solves no voltage', () => {
+		const lead = operatingLead({
+			...base,
+			voltageSolved: false,
+			counts: count(new Map([[1, 0.8]]))
+		});
+		expect(stat(lead, 'Low voltage')).toBeUndefined();
+		expect(stat(lead, 'Voltage unchecked')).toBeUndefined();
+		expect(lead).toEqual({ stats: [], empty: 'All lines below 90%' });
 	});
 	it('does not turn missing voltage, absent bounds or invalid bounds into an all-clear', () => {
 		const net = {
@@ -102,17 +115,25 @@ describe('operating coverage', () => {
 		);
 		expect(counts).toMatchObject({ voltageChecked: 1, voltageUnknown: 3 });
 		const lead = operatingLead({ ...base, counts });
-		expect(lead.tone).toBe('neutral');
-		expect(lead.text).toContain('1 checked bus');
-		expect(lead.text).toContain('3 buses could not be assessed');
-		expect(lead.text).not.toContain('Every bus');
+		expect(lead.empty).toBeUndefined();
+		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
+		expect(stat(lead, 'Voltage unchecked')).toBe('3');
 	});
-	it('distinguishes missing flows from unknown rating metadata', () => {
+	it('retains violations even when other values cannot be assessed', () => {
+		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
+		expect(lead.stats[0]).toEqual({
+			label: 'Low voltage',
+			value: '1',
+			tone: 'failure'
+		});
+		expect(stat(lead, 'Voltage unchecked')).toBe('3');
+	});
+	it('keeps missing flows and unknown ratings apart in the counts', () => {
 		const partial = {
 			...result,
 			flows: [result.flows[0], { ...result.flows[1], loading_info: undefined }]
 		};
-		const counts = count(new Map(), partial);
+		const counts = count(new Map(network.buses.map((b) => [b.id, 1])), partial);
 		expect(counts).toMatchObject({
 			loadingChecked: 1,
 			loadingUnknown: 2,
@@ -120,119 +141,113 @@ describe('operating coverage', () => {
 			ratingUnknown: 1
 		});
 		const lead = operatingLead({ ...base, counts });
-		expect(lead.text).toContain('1 line has no usable flow value');
-		expect(lead.text).toContain('1 line has no reliable rating metadata');
-		expect(lead.tone).toBe('neutral');
+		expect(stat(lead, 'No flow')).toBe('1');
+		expect(stat(lead, 'Unrated')).toBe('1');
+		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
 	});
-	it('retains violations even when other values cannot be assessed', () => {
-		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
-		expect(lead.tone).toBe('violation');
-		expect(lead.text).toContain('1 bus is outside its voltage limits');
-		expect(lead.text).toContain('3 buses could not be assessed');
-	});
-	it('does not claim that zero assessed lines are healthy', () => {
+	it('does not call zero assessed lines healthy', () => {
 		const lead = operatingLead({
 			...base,
 			counts: count(new Map(), { ...result, flows: [] })
 		});
-		expect(lead.text).toContain('No line loading could be assessed');
-		expect(lead.text).toContain('No bus voltage could be assessed');
-		expect(lead.tone).toBe('neutral');
+		expect(lead.empty).toBeUndefined();
+		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
+		expect(stat(lead, 'No flow')).toBe('3');
+		const none = {
+			...base.counts,
+			loadingChecked: 0,
+			loadingUnknown: 0,
+			flowMissing: 0
+		};
+		expect(operatingLead({ ...base, voltageSolved: false, counts: none })).toEqual({
+			stats: [],
+			empty: 'No line loading'
+		});
 	});
-	it('distinguishes warnings and at-rating operation from overload', () => {
+	it('counts lines at or over their rating together, and lines near it apart', () => {
 		const lead = operatingLead({
 			...base,
-			counts: { ...base.counts, warning: 1, atLimit: 1 },
+			formulation: 'dcopf',
+			counts: { ...base.counts, warning: 1, atLimit: 1, overload: 2 },
 			warning: 80
 		});
-		expect(lead.tone).toBe('warning');
-		expect(lead.text).toContain('No checked line is over its rating, but 2 run at 80%');
-		expect(operatingLead({ ...base, hasResult: false }).text).toBe('No result yet.');
+		expect(lead.stats.slice(0, 2)).toEqual([
+			{ label: 'Lines at limit', value: '3', tone: 'failure' },
+			{ label: 'Near limit', value: '1', title: '80% to 100% of rating', tone: 'warning' }
+		]);
+		// A power flow can load a line past its rating: its lines are over the limit.
+		expect(
+			operatingLead({
+				...base,
+				formulation: 'acpf',
+				counts: { ...base.counts, overload: 1 }
+			}).stats[0]
+		).toEqual({ label: 'Lines over limit', value: '1', tone: 'failure' });
+		expect(operatingLead({ ...base, hasResult: false })).toEqual({
+			stats: [],
+			empty: 'No result'
+		});
+	});
+	it('counts out-of-service lines only when there are some', () => {
+		expect(stat(operatingLead(base), 'Out of service')).toBeUndefined();
+		const lead = operatingLead({
+			...base,
+			counts: { ...base.counts, inactive: 2 }
+		});
+		expect(stat(lead, 'Out of service')).toBe('2');
 	});
 });
 
-describe('economic explanations', () => {
-	const econ = {
-		opf: true,
-		ac: false,
-		range: { lo: 5, hi: 40 },
-		uniform: null,
-		binding: 0,
-		thermalAvailable: true
-	};
-	for (const ac of [false, true])
-		for (const uniform of [null, 6.71]) {
-			it(`does not invent thermal status with missing metadata (AC=${ac}, uniform=${uniform})`, () => {
-				const lead = economicsLead({
-					...econ,
-					ac,
-					uniform,
-					thermalAvailable: false
-				});
-				expect(lead.why).toContain('Thermal binding information is unavailable');
-				expect(lead.why).not.toContain('No thermal limit binds');
-				expect(lead.why).not.toContain('No reported thermal limit binds');
-			});
-		}
-	it('does not infer positive or zero relief from binding status or price uniformity', () => {
-		for (const uniform of [null, 6.71]) {
-			const lead = economicsLead({ ...econ, uniform, binding: 1 });
-			expect(lead.why).toContain('1 reported line limit binds');
-			expect(lead.why).toContain('not necessarily that relaxing it reduces cost');
-			expect(lead.why).not.toContain('relaxing it would not lower');
-		}
-		expect(TERMS.binding).toContain('zero marginal value');
-		expect(TERMS.relief).toContain('additional MW of rating');
+describe('prices', () => {
+	const econ = { opf: true, range: { lo: 4.531, hi: 39.3 }, uniform: null };
+	it('shows the lowest and highest price to the same precision, with the unit under the value', () => {
+		expect(economicsLead(econ).stats).toEqual([
+			{ label: 'Lowest', value: '4.53', sub: '$/MWh' },
+			{ label: 'Highest', value: '39.30', sub: '$/MWh' }
+		]);
+		expect(
+			economicsLead({ ...econ, range: { lo: 12, hi: 1250 } }).stats.map((s) => s.value)
+		).toEqual(['12.00', '1,250.00']);
+		expect(economicsLead({ ...econ, uniform: 6.71 }).stats).toEqual([
+			{ label: 'Price', value: '6.71', sub: '$/MWh' }
+		]);
 	});
-	it('keeps possible causes separate from reported facts', () => {
-		expect(economicsLead({ ...econ, ac: true }).why).toContain(
-			'AC losses, voltage limits and other constraints can'
-		);
-		expect(economicsLead({ ...econ, uniform: 6.71 }).text).toContain(
-			'Reported bus prices are uniform'
-		);
-		expect(economicsLead({ ...econ, opf: false }).why).toContain('Choose DC OPF, AC OPF or SOCWR');
+	it('does not repeat the lines at their limit, which the Network panel shows', () => {
+		expect(economicsLead(econ).stats.some((s) => s.label === 'Lines at limit')).toBe(false);
+	});
+	it('says when there are no prices to show', () => {
+		expect(economicsLead({ ...econ, opf: false }).empty).toBe('No prices in power flow');
+		expect(economicsLead({ ...econ, range: null }).empty).toBe('No prices');
 	});
 });
 
-describe('transfer availability', () => {
-	const transfer = {
-		hasResult: true,
-		awaiting: false,
-		zero: 0,
-		missing: 0,
-		top: null,
-		scale: 500
-	};
+describe('flows', () => {
+	const transfer = { hasResult: true, zero: 0, missing: 0, top: null };
 	it('distinguishes missing, zero and absent energized branches', () => {
-		expect(transferLead({ ...transfer, missing: 3 }).text).toContain(
-			'unavailable for 3 in-service lines'
-		);
-		expect(transferLead({ ...transfer, missing: 3 }).why).toContain('do not mean zero');
-		expect(transferLead({ ...transfer, zero: 3 }).text).toContain(
-			'3 checked lines carry zero active power'
-		);
-		expect(transferLead(transfer).text).toBe('No energized in-service lines to assess.');
+		expect(transferLead({ ...transfer, missing: 3 }).stats).toEqual([
+			{ label: 'No flow', value: '3' }
+		]);
+		expect(transferLead({ ...transfer, zero: 3 }).stats).toEqual([
+			{ label: 'Zero flow', value: '3' }
+		]);
+		expect(transferLead(transfer).empty).toBe('No flows');
 	});
 	it('waits for the chosen formulation rather than describing a retained result as zero', () => {
 		const context = operatingContext('acpf', { ...result, formulation: 'dcopf' }, true, false);
-		const lead = transferLead({
-			...transfer,
-			hasResult: !!context.current,
-			awaiting: context.solved && !context.current
-		});
-		expect(lead.text).toBe('Awaiting a result for this calculation.');
-		expect(transferLead({ ...transfer, hasResult: false }).text).toBe('No result yet.');
+		expect(transferLead({ ...transfer, hasResult: !!context.current }).empty).toBe('No result');
 	});
-	it('qualifies a largest flow when other flows are missing', () => {
+	it('names the largest flow and still counts missing ones', () => {
 		const lead = transferLead({
 			...transfer,
 			missing: 2,
-			top: { id: 7, mw: '555 MW', direction: 'Bus 189 → bus 187' }
+			top: { id: 7, mw: '555 MW' }
 		});
-		expect(lead.text).toContain('Among reported flows');
-		expect(lead.text).toContain('2 lines have no usable flow value');
-		expect(lead.why).toContain('up to 500 MW');
+		expect(lead.stats[0]).toEqual({
+			label: 'Largest flow',
+			value: '555 MW',
+			sub: 'Line 7'
+		});
+		expect(lead.stats[1]).toEqual({ label: 'No flow', value: '2' });
 	});
 });
 

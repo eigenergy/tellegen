@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { mcNetworkScopeLabel, mcLoadModelLabel } from '@tellegen/engine';
 	import { untrack } from 'svelte';
 	import { on } from 'svelte/events';
 	import type { Network, NetworkBus } from '../api.js';
@@ -11,9 +10,10 @@
 		busRadiusFor,
 		demandColor,
 		priceColor,
+		scalarColor,
 		scalarDomain
 	} from '../colors.js';
-	import { degrees, quantity, rgbaCss } from '../format.js';
+	import { degrees, priceText, quantity, rgbaCss } from '../format.js';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import { edgeColor, attachmentColor } from '../multiconductor.js';
 	import { diagramLabels } from '../diagram-labels.js';
@@ -120,9 +120,7 @@
 		return rgbaCss(
 			value === undefined
 				? busNeutral
-				: (displayMode === 'demand' ? demandColor : priceColor)(
-						(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
-					)
+				: scalarColor(displayMode, (value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12))
 		);
 	}
 	function branchLabel(id: number) {
@@ -168,8 +166,12 @@
 		);
 		if (!extent || width <= 0 || height <= 0) return;
 		const space = available();
-		const spanX = Math.max(extent.maxX - extent.minX, 1),
-			spanY = Math.max(extent.maxY - extent.minY, 1);
+		// Drawings come in any unit (a generated layout fits a box under one unit wide), so the
+		// floor on a span is relative: only a single point falls back to one unit.
+		const largest = Math.max(extent.maxX - extent.minX, extent.maxY - extent.minY);
+		const floor = largest > 0 ? largest * 1e-3 : 1;
+		const spanX = Math.max(extent.maxX - extent.minX, floor),
+			spanY = Math.max(extent.maxY - extent.minY, floor);
 		scale = Math.min(maxScale, 0.85 * Math.min(space.width / spanX, space.height / spanY));
 		x = space.left + space.width / 2 - ((extent.minX + extent.maxX) * scale) / 2;
 		y = space.top + space.height / 2 - ((extent.minY + extent.maxY) * scale) / 2;
@@ -333,7 +335,7 @@
 						d={`M${points.map((point) => point.join(',')).join(' L')}`}
 						fill="none"
 						stroke={selectedBranch === branch.id
-							? '#2f6fbb'
+							? 'var(--accent)'
 							: multiconductor?.view?.edges[branch.id]
 								? rgbaCss(edgeColor(multiconductor.view.edges[branch.id].kind, branch.status !== 0))
 								: rgbaCss(branchColor(loading.get(branch.id) ?? 0, branch.status !== 0))}
@@ -366,7 +368,7 @@
 							r={Math.max(5, busRadiusFor(app.busSizing, Math.max(bus.demand_mw, bus.gen_mw))) /
 								scale}
 							fill={color(bus)}
-							style:stroke={selectedBus === bus.id ? '#2f6fbb' : 'var(--diagram-bus-stroke)'}
+							style:stroke={selectedBus === bus.id ? 'var(--accent)' : 'var(--diagram-bus-stroke)'}
 							stroke-width={selectedBus === bus.id ? 3 : 1}
 							vector-effect="non-scaling-stroke"
 						/>
@@ -374,7 +376,8 @@
 							class:hidden={!labels.has(bus.id)}
 							x={bus.lon + 10 / scale}
 							y={bus.lat - 10 / scale}
-							font-size={11 / scale}>{bus.name || bus.id}</text
+							font-size={11 / scale}
+							stroke-width={3 / scale}>{bus.name || bus.id}</text
 						>
 						<title
 							>Bus {multiconductor ? bus.uid : bus.id}{!multiconductor && bus.name
@@ -385,7 +388,7 @@
 							values.has(bus.id)
 								? `, ${
 										displayMode === 'price'
-											? `${values.get(bus.id)!.toFixed(4)} $/MWh LMP`
+											? `${priceText(values.get(bus.id)!)} $/MWh price`
 											: displayMode === 'voltage'
 												? `${quantity(values.get(bus.id), 'pu')} voltage`
 												: `${degrees(values.get(bus.id))} voltage angle`
@@ -397,30 +400,34 @@
 			</g>
 		</svg>
 	</div>
-	{#if !buses.length}<p class="empty">This drawing has no matched bus positions.</p>{/if}
-	<div class="controls" aria-label="Diagram controls">
+	{#if !buses.length}<p class="empty">No positions</p>{/if}
+	<div
+		class="controls"
+		aria-label="Diagram controls"
+		style:bottom="{panels.compact && app.sheetInset ? app.sheetInset + 8 : 12}px"
+	>
 		{#if onsingleline}
-			<button
-				onclick={onsingleline}
-				aria-label="Single-line diagram"
-				title="Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows"
+			<button class="text" onclick={onsingleline} aria-label="Single-line diagram"
 				><span class="full">Single-line diagram</span><span class="short">Diagram</span></button
 			>
 		{/if}
-		<button onclick={() => fit()} title="Fit diagram (F)">Fit diagram</button>
+		<!-- One group of icon buttons, like the map's zoom control. -->
 		<div class="zoom">
-			<button aria-label="Zoom in" onclick={() => zoom(1.25)}>+</button><button
-				aria-label="Zoom out"
-				onclick={() => zoom(0.8)}>-</button
+			<button aria-label="Zoom in" title="Zoom in" onclick={() => zoom(1.25)}
+				><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+					><path d="M8 3v10M3 8h10" /></svg
+				></button
+			><button aria-label="Zoom out" title="Zoom out" onclick={() => zoom(0.8)}
+				><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+					><path d="M3 8h10" /></svg
+				></button
+			><button aria-label="Fit diagram" title="Fit diagram (F)" onclick={() => fit()}
+				><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+					><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg
+				></button
 			>
 		</div>
 	</div>
-	<p class="coordinate-label">
-		Diagram coordinates{#if multiconductor?.result}
-			· {mcLoadModelLabel(multiconductor.result.load_model)} · {mcNetworkScopeLabel(
-				multiconductor.result.network_scope
-			)}{/if}
-	</p>
 </div>
 
 <style>
@@ -471,9 +478,13 @@
 		outline: none;
 		stroke: var(--accent);
 	}
+	/* A halo in the page colour keeps a name readable where it crosses a bubble. */
 	text {
 		fill: var(--text-secondary);
-		font-family: var(--font-mono);
+		font-family: var(--font-display);
+		paint-order: stroke;
+		stroke: var(--bg);
+		stroke-linejoin: round;
 		pointer-events: none;
 	}
 	.controls .short {
@@ -496,9 +507,6 @@
 		align-items: flex-end;
 	}
 	button {
-		padding: 6px 10px;
-		border: 1px solid var(--line);
-		border-radius: 4px;
 		color: var(--ink);
 		background: var(--paper);
 		font: 12px/1.5 var(--font-display);
@@ -508,21 +516,50 @@
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
+	button.text {
+		padding: 6px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+	}
 	.zoom {
 		display: grid;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		background: var(--panel);
+		overflow: hidden;
 	}
 	.zoom button {
-		width: 32px;
-		height: 30px;
-		font: 18px/1 var(--font-display);
+		display: grid;
+		place-items: center;
+		width: 29px;
+		height: 29px;
+		padding: 0;
+		border: 0;
+		background: var(--panel);
 	}
-	.coordinate-label {
-		position: absolute;
-		bottom: 44px;
-		left: 20px;
-		margin: 0;
-		font: 10px/1.4 var(--font-mono);
-		color: var(--text-secondary);
+	.zoom button + button {
+		border-top: 1px solid var(--line);
+	}
+	.zoom button:hover {
+		background: var(--surface-hover);
+	}
+	.zoom button:focus-visible {
+		outline-offset: -2px;
+	}
+	.zoom svg {
+		width: 16px;
+		height: 16px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	@media (pointer: coarse) {
+		.zoom button {
+			width: 44px;
+			height: 44px;
+		}
 	}
 	.empty {
 		position: absolute;
