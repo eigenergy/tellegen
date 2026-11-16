@@ -56,13 +56,14 @@
 <section class="operating-panel" aria-label="Limits">
 	<TxPanelHead title="Limits" {context} {lead} view="operating" />
 	{#if !brief}
-		{#if context.voltage && voltageAvailable}<div class="voltage-key">
-				<span>Voltage</span><span>0.90</span><i style:background={voltageGradient}></i><span
-					>1.10 pu</span
-				>
-			</div>{/if}
+		<!-- The counts lead; the colour key and the near-limit threshold wait behind Key. -->
 		<details class="settings">
 			<summary>Key</summary>
+			{#if context.voltage && voltageAvailable}<div class="voltage-key">
+					<span>Voltage</span><span>0.90</span><i style:background={voltageGradient}></i><span
+						>1.10 pu</span
+					>
+				</div>{/if}
 			<ul class="key">
 				<li><i class="swatch normal"></i>Below {warning}%</li>
 				<li><i class="swatch near"></i>Near limit</li>
@@ -76,8 +77,8 @@
 				{/if}
 			</ul>
 			<label
-				>Warn at (%) <input
-					aria-label="Warn at (%)"
+				>Near limit from <input
+					aria-label="Near limit from"
 					type="number"
 					min="0"
 					max="99"
@@ -88,7 +89,7 @@
 						if (e.currentTarget.validity.valid && Number.isFinite(value)) onwarning(value);
 						else e.currentTarget.value = String(warning);
 					}}
-				/></label
+				/>%</label
 			>
 		</details>
 	{/if}
@@ -127,6 +128,7 @@
 		line-height: var(--lh-snug);
 	}
 	.voltage-key {
+		margin-top: var(--space-2xs);
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2xs) var(--space-lg);

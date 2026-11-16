@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
-	import { fmt, plain, signed } from '../format.js';
+	import { signed } from '../format.js';
 	import { sliderKeyValue } from '../slider.js';
 
 	const ctrl = getController();
@@ -31,19 +31,6 @@
 			<span>Rating change</span>
 			<span class="val mono">{signed(ctrl.ratingSliderValue)} MW</span>
 		</div>
-		<div class="line-row">
-			{#if bounds.disabled}
-				<span class="dim">Not adjustable</span>
-			{:else}
-				<span class="dim"
-					>Range <span class="mono"
-						>{bounds.min === -bounds.max
-							? `±${fmt.format(bounds.max)}`
-							: `${signed(bounds.min)} to ${signed(bounds.max)}`} MW</span
-					></span
-				>
-			{/if}
-		</div>
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
@@ -71,6 +58,14 @@
 				onkeyup={(e) => ctrl.finishRatingInput(Number(e.currentTarget.value))}
 				onchange={(e) => ctrl.finishRatingInput(Number(e.currentTarget.value))}
 			/>
+		</div>
+		<!-- The slider's ends, as ticks under the track. -->
+		<div class="ticks mono" aria-hidden={!bounds.disabled}>
+			{#if bounds.disabled}
+				<span class="dim">Not adjustable</span>
+			{:else}
+				<span>{signed(bounds.min)}</span><span>{signed(bounds.max)} MW</span>
+			{/if}
 		</div>
 		<div class="rating-feedback">
 			{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
@@ -107,13 +102,14 @@
 		color: var(--ink);
 	}
 
-	.line-row {
+	.ticks {
 		display: flex;
-		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-		margin: 6px 0 7px;
-		font-size: 13px;
+		margin: -2px 0 6px;
+		font-size: var(--fs-label);
+		font-variant-numeric: tabular-nums;
+		color: var(--text-secondary);
 	}
 
 	.slider-track {

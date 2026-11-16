@@ -173,7 +173,7 @@ describe('operating limits', () => {
 		});
 		expect(lead.stats.slice(0, 2)).toEqual([
 			{ label: 'Lines at limit', value: '3', tone: 'failure' },
-			{ label: '80–100%', value: '1', tone: 'warning' }
+			{ label: 'Near limit', value: '1', title: '80% to 100% of rating', tone: 'warning' }
 		]);
 		// A power flow can load a line past its rating: its lines are over the limit.
 		expect(

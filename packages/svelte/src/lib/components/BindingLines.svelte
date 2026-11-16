@@ -72,9 +72,24 @@
 		color: var(--ink);
 		background: none;
 		border: 0;
-		border-top: 1px solid var(--line);
 		border-radius: 0;
 		cursor: pointer;
+	}
+
+	/* The rule above each row spans the text column, as the panel's other rules do; the
+	   button's hover area reaches past it. */
+	li {
+		position: relative;
+	}
+
+	li::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: var(--space-xs);
+		right: var(--space-xs);
+		border-top: 1px solid var(--line);
+		pointer-events: none;
 	}
 
 	.load {

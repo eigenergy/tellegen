@@ -56,8 +56,9 @@ export function operatingLead(input: OperatingLeadInput): Lead {
 		});
 	if (counts.warning)
 		stats.push({
-			label: `${input.warning}–100%`,
+			label: 'Near limit',
 			value: n(counts.warning),
+			title: `${input.warning}% to 100% of rating`,
 			tone: 'warning'
 		});
 	if (input.voltageSolved) {

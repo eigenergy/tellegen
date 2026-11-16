@@ -149,7 +149,7 @@ for (const touch of [false, true]) {
 			await expect(over).toContainText('1');
 			await expect(over).toHaveClass(/failure/);
 			// Counts are listed only when they are not zero.
-			await expect(panel.locator('.stat').filter({ hasText: /–100%/ })).toHaveCount(0);
+			await expect(panel.locator('.stat').filter({ hasText: 'Near limit' })).toHaveCount(0);
 			await expect(panel.locator('.stat')).toHaveCount(1);
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
 			// At the rating is red, filled the same as an overload; amber is only near it.
@@ -549,7 +549,7 @@ for (const touch of [false, true]) {
 				).toBe(true);
 			}
 			await page.locator('.tx-stage details.settings summary').click();
-			const warning = page.getByRole('spinbutton', { name: 'Warn at (%)' });
+			const warning = page.getByRole('spinbutton', { name: 'Near limit from' });
 			await warning.fill('10');
 			await warning.press('Tab');
 			await expect(page.locator('.tx-stage .legend .key')).toContainText('Below 10%');
@@ -591,9 +591,9 @@ for (const touch of [false, true]) {
 			await expectView(toolbar, 'Limits');
 			await expandResults(page);
 			await page.locator('.tx-stage details.settings summary').click();
-			await expect(page.getByRole('spinbutton', { name: 'Warn at (%)' })).toHaveValue('10');
-			await page.getByRole('spinbutton', { name: 'Warn at (%)' }).fill('90');
-			await page.getByRole('spinbutton', { name: 'Warn at (%)' }).press('Tab');
+			await expect(page.getByRole('spinbutton', { name: 'Near limit from' })).toHaveValue('10');
+			await page.getByRole('spinbutton', { name: 'Near limit from' }).fill('90');
+			await page.getByRole('spinbutton', { name: 'Near limit from' }).press('Tab');
 			await expect(page.locator('.tx-stage .legend')).toContainText('0.90');
 			await expect(page.locator('.tx-stage .legend')).toContainText('1.10 pu');
 			// AC results key the voltage markers too.
