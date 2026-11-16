@@ -240,6 +240,13 @@ describe('dynamics verdict wording', () => {
 			['Final frequency', '59.930 Hz']
 		]);
 		const s = screening();
+		// A frequency that never moved is given once.
+		const still = stats({
+			...s,
+			frequency: { ...s.frequency, coi_nadir_hz: 60, final_hz: 60 }
+		}).map((x) => x.label);
+		expect(still).toContain('Lowest frequency');
+		expect(still).not.toContain('Final frequency');
 		// A failed check turns its number red.
 		expect(stats({ ...s, voltage: { ...s.voltage, recovered: false } })[1].tone).toBe('failure');
 		expect(

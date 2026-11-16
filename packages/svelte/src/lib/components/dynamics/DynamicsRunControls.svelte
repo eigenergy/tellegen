@@ -10,7 +10,8 @@
 
 	const ctrl = getController();
 	const dyn = ctrl.dynamics;
-	const ready = $derived(dyn.active?.status === 'ready');
+	/** A run needs dynamic data and at least one event: with none, nothing moves. */
+	const ready = $derived(dyn.active?.status === 'ready' && dyn.events.length > 0);
 	const o = $derived(dyn.options);
 	const pct = $derived(
 		dyn.progress ? Math.min(100, (100 * dyn.progress.t) / dyn.progress.tEnd) : 0
@@ -154,7 +155,11 @@
 			class="run"
 			disabled={!ready || dyn.modesBusy}
 			onclick={() => void run()}
-			title={dyn.modesBusy ? 'Modes running' : 'Ctrl/Cmd+Enter'}>Run simulation</button
+			title={dyn.modesBusy
+				? 'Modes running'
+				: dyn.events.length === 0
+					? 'Choose an event'
+					: 'Ctrl/Cmd+Enter'}>Run simulation</button
 		>
 		{#if dyn.modesBusy}<p class="dim">Modes running</p>{/if}
 	{/if}

@@ -22,12 +22,12 @@
 	{#if dyn.active?.demo}
 		<div class="setting">
 			<label for="dyn-scenario">Event</label>
+			<!-- Shows the scenario in use; choosing another replaces its events. -->
 			<select
 				id="dyn-scenario"
-				value=""
+				value={dyn.presetId ?? ''}
 				onchange={(e) => {
 					if (e.currentTarget.value) dyn.usePreset(e.currentTarget.value);
-					e.currentTarget.value = '';
 				}}
 			>
 				<option value="">Choose…</option>

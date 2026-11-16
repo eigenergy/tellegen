@@ -102,8 +102,9 @@ export function stats(s: RmsScreening): Stat[] {
 	const a = s.angle;
 	const v = s.voltage;
 	const settled = f.settled && a.settled;
+	const lowest = hz(f.coi_nadir_hz);
 	const out: Stat[] = [
-		{ label: 'Lowest frequency', value: hz(f.coi_nadir_hz) },
+		{ label: 'Lowest frequency', value: lowest },
 		{
 			label: 'Lowest voltage',
 			value: `${v.min_pu.toFixed(3)} pu`,
@@ -120,6 +121,8 @@ export function stats(s: RmsScreening): Stat[] {
 			tone: settled ? undefined : 'warning'
 		}
 	];
+	// A frequency that never moved reads once, not twice.
+	if (settled && hz(f.final_hz) === lowest) out.splice(3, 1);
 	if (s.islands.length > 1)
 		out.push({
 			label: 'Islands',

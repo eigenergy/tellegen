@@ -41,6 +41,8 @@ async function openDemo(page: import('@playwright/test').Page) {
 	await expect(panel.getByTestId('dyn-flat')).toHaveText('Yes', { timeout: 60_000 });
 	// The steady state / dynamics switch waits for a simulation to show.
 	await expect(panel.getByTestId('mode-dynamics')).toHaveCount(0);
+	// With no event, a run would show nothing: Run waits for one.
+	await expect(panel.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
 	return panel;
 }
 
@@ -152,7 +154,9 @@ test('a validated scenario says it matches the validation study', async ({ page 
 
 test('stopping a run returns to idle and the static solve still works', async ({ page }) => {
 	const panel = await openDemo(page);
-	await panel.getByRole('button', { name: '120' }).count();
+	await panel.getByRole('combobox', { name: 'Event' }).selectOption('fault-1101');
+	// The chosen scenario stays shown in the picker.
+	await expect(panel.getByRole('combobox', { name: 'Event' })).toHaveValue('fault-1101');
 	await panel.getByLabel('Duration', { exact: true }).fill('120');
 	await panel.getByLabel('Duration', { exact: true }).blur();
 	await panel.getByRole('button', { name: 'Run simulation' }).click();
@@ -194,6 +198,7 @@ test('with experimental features on, the Modes tab computes and stops', async ({
 	await panel.getByRole('button', { name: 'Stop' }).click();
 	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
 	await panel.getByRole('tab', { name: 'Simulation' }).click();
+	await panel.getByRole('combobox', { name: 'Event' }).selectOption('fault-1101');
 	await expect(panel.getByRole('button', { name: 'Run simulation' })).toBeEnabled({
 		timeout: 30_000
 	});
