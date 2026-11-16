@@ -231,7 +231,7 @@ from its MATPOWER file lays out in about 30 ms, ACTIVSg70k in a little over a se
 The method follows Birchfield and Overbye (2018): independent substation interiors, greedy
 placement at the free point nearest each substation's position, and line routing through the
 channels of a Delaunay triangulation of the substations. The
-[layout evidence](https://github.com/eigenergy/tellegen/blob/main/docs/evidence/diagram/README.md)
+[layout evidence](https://github.com/eigenergy/tellegen/blob/main/validation/evidence/diagram/README.md)
 records its quality and speed: ACTIVSg200 lays out in under a millisecond with no overlapping
 substations and no line crossing another substation; 70,000 buses take about a third of a second.
 

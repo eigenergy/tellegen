@@ -58,7 +58,7 @@ jobs:
       # them unnoticed.
       - run: npm run build:example
       - run: npm run smoke:web
-      # The WebMCP challenge evidence harness (docs/evidence/webmcp) has its own
+      # The WebMCP challenge evidence harness (validation/evidence/capacity-plan) has its own
       # unit tests and nothing else runs them.
       - run: npm run test:evidence
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium

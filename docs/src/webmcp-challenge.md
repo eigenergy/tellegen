@@ -58,7 +58,7 @@ balanced networks only.
 ## Reproducible evidence
 
 [Studies](studies.md) describes the document and operations. The checked-in
-[Study declarations and runner](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/studies)
+[Study declarations and runner](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/studies)
 record executable and input hashes, exact trial outcomes, solve budgets and
 numerical tolerances. Browser tests run the same declared Study through native
 and WASM implementations and compare semantic results.
@@ -74,7 +74,7 @@ contest submission.
 
 ## Verified examples
 
-Fresh [result records](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/studies/results)
+Fresh [result records](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/studies/results)
 include the declared tolerances and all attempted trials. The values below are
 the outer objectives specified by each declaration; capacity and demand examples
 sum selected nodal prices, while the AC example measures squared voltage error.
@@ -92,7 +92,7 @@ retains its starting state: the tested changes are below its recorded improvemen
 tolerance. The planner reports that limit instead of presenting numerical noise
 as a gain. None of these searches applies its recommendation automatically.
 
-The [native WebMCP demonstration](https://github.com/eigenergy/tellegen/tree/main/docs/evidence/studies/native-webmcp)
+The [native WebMCP demonstration](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/studies/native-webmcp)
 records seven of the nine Study tools (all but `edit_demand` and
 `restore_base_case`), reload, branching, goal revision and a rejected
 stale request. Application and stale approvals have separate browser tests. On its synthetic three-bus case, a 5 MW

@@ -8,8 +8,8 @@ import argparse
 import hashlib
 import json
 import math
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 # Absolute SI tolerances chosen for this larger, smooth-control study.
 TOLERANCES = {"objective": 1e-4, "voltage_v": 1e-3, "line_current_a": 1e-2,

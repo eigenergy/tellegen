@@ -42,9 +42,9 @@ test('account-wide credentials cannot put unrelated websites in public evidence'
 		server.listen(0, '127.0.0.1');
 		await once(server, 'listening');
 		await mkdir(join(directory, 'scripts'));
-		await mkdir(join(directory, 'docs/evidence/usage'), { recursive: true });
+		await mkdir(join(directory, 'validation/evidence/usage'), { recursive: true });
 		await copyFile(new URL('./umami-report.mjs', import.meta.url), join(directory, 'scripts/umami-report.mjs'));
-		await writeFile(join(directory, 'docs/evidence/usage/README.md'), '<!-- usage:start -->\n<!-- usage:end -->\n');
+		await writeFile(join(directory, 'validation/evidence/usage/README.md'), '<!-- usage:start -->\n<!-- usage:end -->\n');
 		const child = spawn(process.execPath, [join(directory, 'scripts/umami-report.mjs')], {
 			env: { ...process.env, UMAMI_API_KEY: 'fixture-only', UMAMI_API_BASE: `http://127.0.0.1:${server.address().port}` },
 			stdio: 'pipe'
@@ -54,7 +54,7 @@ test('account-wide credentials cannot put unrelated websites in public evidence'
 		const [exit] = await once(child, 'close');
 		assert.equal(exit, 0, errors);
 		const month = new Date().toISOString().slice(0, 7);
-		const raw = await readFile(join(directory, `docs/evidence/usage/${month}.json`), 'utf8');
+		const raw = await readFile(join(directory, `validation/evidence/usage/${month}.json`), 'utf8');
 		const report = JSON.parse(raw);
 		assert.deepEqual(report.websites.map((s) => s.domain).sort(), ['maptogrid.com', 'tellegen.dev']);
 		assert.ok(!requests.some((path) => path.includes('private-id')));

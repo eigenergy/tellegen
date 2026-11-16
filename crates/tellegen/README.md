@@ -85,33 +85,11 @@ for units, input semantics and qualification/error handling.
 
 ## API compatibility
 
-The 0.3 release uses PowerIO 0.11 typed problem instances and generation-2
-`pio-ir` documents. Rust consumers must use the matching PowerIO types when
-calling `solve_instance`, `solve_ac_pf_instance`, or `solve_ac_instance`.
-The module JSON entry points require the same generation-2 input format.
-These input changes require migration from the 0.2 API and are released as a
-new minor version, rather than a compatible patch to 0.2.
-
-0.4 makes a multiconductor session edit constant-size: `McPfSession::
-replace_load_powers` returns the `McPfSummary` of the new operating point
-instead of the full result. `McPfSession::result` and `McPfSession::instance`
-are gone; call `build_result()` for the full terminal and equipment result,
-`detail()` for one bus and a page of equipment ports, and `base_instance()` or
-`edited_instance()` for the instance.
-
-After 0.7 the crate depends on PowerIO 0.12 instead of 0.11, an incompatible
-dependency line: Rust consumers must pass PowerIO 0.12 types. A branch or
-winding rating of positive infinity means no thermal bound and a numeric zero
-is a zero bound (PowerIO's readers translate each file format's own
-convention). The SOCWR solution names its branch columns `*_flow`. Saved
-`pio-ir` documents state `"version": "0.12.1"`, which PowerIO 0.11 readers
-refuse; documents written by 0.11 still load. Raw OpenDSS imports that pass the
-snapshot checks solve as a multiconductor power flow.
-
-Persistent investigations use `document::StudyDocument` and the operations in
-`study_ops`, with immutable states, goal revisions and explicit application.
-The document's schema version identifies its storage format separately from
-the crate version and the PowerIO IR version.
+`solve_instance`, `solve_ac_pf_instance` and `solve_ac_instance` take PowerIO
+typed problem instances, and the module JSON entry points take generation-2
+`pio-ir` documents. Use the PowerIO release this crate depends on; a different
+minor version of PowerIO has different types. Changes between releases are in
+the [changelog](CHANGELOG.md).
 
 ## Build
 

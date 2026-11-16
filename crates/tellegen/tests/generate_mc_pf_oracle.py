@@ -29,7 +29,6 @@ from pathlib import Path
 
 import opendssdirect as dss
 
-
 CASES = [
     "pf_1ph_freeneutral",
     "pf_1ph_impedanceneutral",

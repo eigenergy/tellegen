@@ -10,14 +10,14 @@ import hashlib
 import importlib.metadata
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE = ROOT / 'docs/evidence/studies/texas7k-reconversion'
+EVIDENCE = ROOT / 'validation/evidence/studies/texas7k-reconversion'
 LOCK = Path(__file__).with_name('texas7k-main-island-source.json')
 
 

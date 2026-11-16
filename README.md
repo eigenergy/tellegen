@@ -120,7 +120,7 @@ The multiconductor constant-power API, supported transformer profile, units,
 convergence options, and raw BMOPF limitations are documented in the
 [multiconductor power flow](https://eigenergy.github.io/tellegen/multiconductor-pf.html)
 page, with the full API reference in the
-[multiconductor power-flow guide](https://github.com/eigenergy/tellegen/blob/main/docs/multiconductor-power-flow.md).
+[multiconductor reference](https://eigenergy.github.io/tellegen/multiconductor-reference.html).
 
 ## Demo
 
@@ -202,7 +202,7 @@ stages the complete cases into `data/`; the server serves whatever is staged.
 - `apps/web/`: the hosted demo, a SvelteKit consumer of the Svelte package
 - `examples/`: minimal Vite and Svelte integrations of each package
 - `docs/src/`: mdBook source; `scripts/build-docs.sh` builds it
-- `docs/evidence/`: checked-in measurement records (generator sweeps, WebMCP challenge runs, studies, multiconductor references) and the scripts that reproduce them
+- `validation/evidence/`: checked-in measurement records (generator sweeps, WebMCP challenge runs, studies, multiconductor references) and the scripts that reproduce them
 
 The [HTTP API](https://eigenergy.github.io/tellegen/http-api.html),
 [deployment](https://eigenergy.github.io/tellegen/deployment.html), and
@@ -244,7 +244,6 @@ software release you used; GitHub's "Cite this repository" button reads
   title     = {tellegen: interactive power flow and optimal power flow in the browser},
   author    = {Talkington, Samuel and Geth, Frederik and Zhang, Qian and Xie, Le and Liu, Skyler},
   year      = {2026},
-  version   = {0.4.0},
   url       = {https://github.com/eigenergy/tellegen},
   license   = {MIT}
 }
