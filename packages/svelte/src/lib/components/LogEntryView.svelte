@@ -31,10 +31,11 @@
 				>{/if}
 		</p>
 		<dl class="meta">
-			<div>
-				<dt>From</dt>
-				<dd>{entry.source}</dd>
-			</div>
+			<!-- The app's own findings need no source; a reader's or engine's name says whose they are. -->
+			{#if entry.source !== 'tellegen'}<div>
+					<dt>From</dt>
+					<dd>{entry.source}</dd>
+				</div>{/if}
 			{#if entry.code}<div>
 					<dt>Code</dt>
 					<dd class="mono">{entry.code}</dd>

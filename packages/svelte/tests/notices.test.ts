@@ -38,6 +38,12 @@ describe('error titles', () => {
 		);
 		expect(errorNoticeTitle('notes.txt: unsupported format')).toBe('Unreadable file');
 		expect(errorNoticeCanRetry('grid.raw: unsupported format')).toBe(false);
+		// A malformed file fails the same way again: no Retry.
+		expect(
+			errorNoticeCanRetry(
+				'broken.m: PARSE.MATPOWER.MALFORMED: missing required MATPOWER field `baseMVA`'
+			)
+		).toBe(false);
 	});
 	it('names a failed case list', () => {
 		expect(errorNoticeTitle('Case list: Server error')).toBe('Could not load the case list');
@@ -79,7 +85,11 @@ describe('recent messages', () => {
 	});
 	it('records a quiet message in the Log without a toast', () => {
 		const notices = new NoticeCenter();
-		notices.push({ title: 'Could not load the case list', details: 'Case list: 502', quiet: true });
+		notices.push({
+			title: 'Could not load the case list',
+			details: 'Case list: 502',
+			quiet: true
+		});
 		expect(notices.entries).toHaveLength(1);
 		expect(notices.active).toBeNull();
 		notices.dispose();

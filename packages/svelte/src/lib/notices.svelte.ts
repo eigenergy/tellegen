@@ -91,7 +91,9 @@ export function getNoticeCenter(): NoticeCenter {
  * again cannot succeed, so their notices offer no Retry. */
 const INSTRUCTIONS = [
 	/experimental\. Turn it on in Settings/i,
-	/is not a case or geographic file|does not hold a complete network|could not (parse|read)|unsupported format|incomplete network|ambiguous format/i
+	/is not a case or geographic file|does not hold a complete network|could not (parse|read)|unsupported format|incomplete network|ambiguous format/i,
+	// A reader's finding on a malformed file: the same file fails the same way again.
+	/\bPARSE\.[A-Z_.]+|malformed|missing required/i
 ];
 export function errorNoticeCanRetry(details: string): boolean {
 	return !INSTRUCTIONS.some((pattern) => pattern.test(details));
