@@ -117,7 +117,7 @@ describe('transmission equipment semantics', () => {
 			5,
 			true
 		);
-		expect(drawing.labels.map((l) => l.text)).toEqual(['S1', 'OFF · S2', 'PST 0°', 'DC 1 · input']);
+		expect(drawing.labels.map((l) => l.text)).toEqual(['S1', 'S2 off', 'PST 0°', 'DC 1 input']);
 		expect(drawing.strokes.every((s) => [...s.from, ...s.to].every(Number.isFinite))).toBe(true);
 		expect(graph.from.length).toBe(1);
 		expect(equipmentGlyph('capacitor')).not.toEqual(equipmentGlyph('reactor'));

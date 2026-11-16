@@ -85,7 +85,7 @@
 							<dd>{signed(bus.demand_mw - baseDemand)} MW</dd>
 						</div>{/if}
 					{#if lmp != null}<div>
-							<dt>LMP</dt>
+							<dt>Price</dt>
 							<dd>{fmt.format(lmp)}<small>$/MWh</small></dd>
 						</div>{/if}
 					{#if voltage != null || squaredVoltage != null}<div>

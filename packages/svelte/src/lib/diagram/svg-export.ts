@@ -178,13 +178,13 @@ export function titleBlock(t: {
 			t.dataset,
 			t.layout,
 			t.view,
-			`Centre ${t.camera.target[0].toFixed(1)}, ${t.camera.target[1].toFixed(1)} · ${(2 ** t.camera.zoom).toPrecision(3)}×`
+			`Centre ${t.camera.target[0].toFixed(1)}, ${t.camera.target[1].toFixed(1)}, zoom ${(2 ** t.camera.zoom).toPrecision(3)}×`
 		],
 		right: [
 			r?.kind === 'stress'
 				? 'ARTIFICIAL STRESS: NOT A SOLUTION'
 				: r
-					? `${r.label}${r.iterations === null ? '' : ` · ${r.iterations} iterations`}`
+					? `${r.label}${r.iterations === null ? '' : `, ${r.iterations} iterations`}`
 					: 'No result snapshot',
 			r ? `Result revision ${r.revision.slice(0, 16)}${r.revision.length > 16 ? '…' : ''}` : '',
 			'P/Q positive into equipment at each end',

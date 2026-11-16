@@ -420,19 +420,19 @@ export function txBusText(
 	const bus = network.buses[i];
 	const sub = graph.substations[graph.substation[i]];
 	const lines = [
-		`${bus.name ? `${bus.name} · ` : ''}bus ${bus.id}`,
+		`${bus.name ? `${bus.name}, ` : ''}Bus ${bus.id}`,
 		[
 			graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : null,
 			graph.grouped && sub ? `substation ${sub.name ?? sub.key.replace(/^(sub|bus):/, '')}` : null
 		]
 			.filter(Boolean)
-			.join(' · '),
+			.join(', '),
 		[
 			graph.demandMw[i] ? `load ${mw(graph.demandMw[i])}` : null,
 			graph.genMw[i] ? `generation up to ${mw(graph.genMw[i])}` : null
 		]
 			.filter(Boolean)
-			.join(' · '),
+			.join(', '),
 		value ? `${value.label} ${value.text}` : null
 	];
 	return lines.filter(Boolean).join('\n');

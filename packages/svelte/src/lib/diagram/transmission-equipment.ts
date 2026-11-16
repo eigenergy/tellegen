@@ -338,7 +338,7 @@ export function equipmentDrawing(
 			symbol(shuntKind(shunt), x, y, 0, -1, key, !shunt.in_service);
 			out.labels.push({
 				position: [x, y - unit * 3],
-				text: `${shunt.in_service ? '' : 'OFF · '}S${shunt.id}`,
+				text: `S${shunt.id}${shunt.in_service ? '' : ' off'}`,
 				key
 			});
 		}
@@ -357,7 +357,7 @@ export function equipmentDrawing(
 			symbol('three_winding', centre[0], centre[1], 1, 0, key, !t.in_service);
 			out.labels.push({
 				position: [centre[0], centre[1] - unit * 2.5],
-				text: `${t.in_service ? '' : 'OFF · '}3W ${t.id}`,
+				text: `3W ${t.id}${t.in_service ? '' : ' off'}`,
 				key
 			});
 		}
@@ -374,7 +374,7 @@ export function equipmentDrawing(
 				symbol('switch', x, y, 1, 0, d.key, !d.in_service);
 				out.labels.push({
 					position: [x, y - unit * 2],
-					text: `${d.in_service ? 'CLOSED' : 'OPEN'} · ${d.key}`,
+					text: `${d.key} ${d.in_service ? 'closed' : 'open'}`,
 					key: d.key
 				});
 			} else {
@@ -385,7 +385,7 @@ export function equipmentDrawing(
 				symbol(d.kind, x, p[1], 0, -1, d.key, !d.in_service);
 				out.labels.push({
 					position: [x, p[1] - unit * 3],
-					text: `${d.in_service ? '' : 'OFF · '}${d.key.toUpperCase()}`,
+					text: `${d.key.toUpperCase()}${d.in_service ? '' : ' off'}`,
 					key: d.key
 				});
 			}
@@ -439,7 +439,7 @@ export function equipmentDrawing(
 		);
 		out.labels.push({
 			position: [(af[0] + bt[0]) / 2, (af[1] + bt[1]) / 2 - unit * 1.5],
-			text: `${h.in_service ? '' : 'OFF · '}DC ${h.id} · input`,
+			text: `DC ${h.id} input${h.in_service ? '' : ', off'}`,
 			key
 		});
 	}

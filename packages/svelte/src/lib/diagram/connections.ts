@@ -61,7 +61,7 @@ export function transformerInfo(graph: DistGraph, k: number): TransformerInfo | 
 		);
 		group = sorted.map((w, i) => windingLetters(w, phases, i === 0)).join('');
 	} else group = kind === 'split' ? '1φ split' : '1φ';
-	return { kind, from, to, label: rating ? `${group} · ${rating}` : group };
+	return { kind, from, to, label: rating ? `${group} ${rating}` : group };
 }
 
 /** A winding connection mark centred on the origin, `r` across: Δ, Y, or Y with a neutral tail. */
@@ -139,13 +139,13 @@ export function transformerGlyph(
 }
 
 /** Terminals as a compact label, read as phases: "B–N" across two terminals, else the names run together when all
- * are single characters ("ABCN") and dotted otherwise; a wye or delta connection leads ("Y ABCN"). */
+ * are single characters ("ABCN") and comma-separated otherwise; a wye or delta connection leads ("Y ABCN"). */
 export function terminalLabel(source: string[], connection?: DistConnection): string {
 	if (!source.length) return '';
 	const terminals = source.map((t) => phaseLabel(t));
 	if (terminals.length === 2 && connection !== 'wye' && connection !== 'delta')
 		return `${terminals[0]}–${terminals[1]}`;
-	const names = terminals.every((t) => t.length === 1) ? terminals.join('') : terminals.join('·');
+	const names = terminals.every((t) => t.length === 1) ? terminals.join('') : terminals.join(',');
 	const lead = connection === 'wye' ? 'Y ' : connection === 'delta' ? 'Δ ' : '';
 	return lead + names;
 }

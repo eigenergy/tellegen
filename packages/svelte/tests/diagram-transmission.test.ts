@@ -214,8 +214,8 @@ describe('transmission graph', () => {
 	it('describes buses for hover cards', () => {
 		const net = network();
 		const g = txGraph(net);
-		expect(txBusText(g, net, 0)).toBe('bus 1\n345 kV · substation ALPHA\ngeneration up to 500 MW');
-		expect(txBusText(g, net, 2, { label: 'LMP', text: '12.00 $/MWh' })).toContain('LMP 12.00');
+		expect(txBusText(g, net, 0)).toBe('Bus 1\n345 kV, substation ALPHA\ngeneration up to 500 MW');
+		expect(txBusText(g, net, 2, { label: 'Price', text: '12.00 $/MWh' })).toContain('Price 12.00');
 	});
 
 	it('hands the engine the graph with the shown positions as seeds', () => {

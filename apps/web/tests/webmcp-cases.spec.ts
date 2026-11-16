@@ -107,11 +107,11 @@ test('WebMCP switches cases without cursor input and keeps saved work', async ({
 		.locator('dl > div')
 		.filter({ has: page.locator('dt', { hasText: 'Current demand' }) });
 	await expect(demandRow.locator('dd')).toHaveText(`${bus.demand_mw} MW`);
-	const lmpRow = details
+	const priceRow = details
 		.locator('dl > div')
-		.filter({ has: page.locator('dt', { hasText: /^LMP$/ }) });
+		.filter({ has: page.locator('dt', { hasText: /^Price$/ }) });
 	const shownPrice = Number.parseFloat(
-		(await lmpRow.locator('dd').innerText()).replaceAll(',', '')
+		(await priceRow.locator('dd').innerText()).replaceAll(',', '')
 	);
 	expect(shownPrice).toBeCloseTo(bus.price, 1);
 	await expect(page.locator('input[type="range"]')).toHaveCount(0);

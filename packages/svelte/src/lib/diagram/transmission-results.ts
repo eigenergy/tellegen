@@ -237,20 +237,26 @@ export type GaugeCandidate = {
 /** A placed gauge: its box's top-left corner (`x`, `y`), joined to its branch by a leader. */
 export type OperatingGauge = GaugeCandidate & { x: number; y: number };
 
-export const GAUGE_WIDTH = 64;
-export const GAUGE_HEIGHT = 44;
-/** Box offsets from the branch point, tried in order: above right, above left, below right,
- * below left. A gap keeps the leader visible. */
-const GAUGE_OFFSETS: [number, number][] = [
-	[10, -GAUGE_HEIGHT - 14],
-	[-GAUGE_WIDTH - 10, -GAUGE_HEIGHT - 14],
-	[10, 14],
-	[-GAUGE_WIDTH - 10, 14]
-];
+export const GAUGE_WIDTH = 54;
+export const GAUGE_HEIGHT = 22;
+/** Box offsets from the branch point, tried in order: the four corners close in, then the
+ * sides, then the same again further out, so a cluster of flagged branches fans out instead
+ * of stacking. A gap keeps the leader visible. */
+const GAUGE_OFFSETS: [number, number][] = [10, 36, 64].flatMap((d) => [
+	[d, -GAUGE_HEIGHT - d],
+	[-GAUGE_WIDTH - d, -GAUGE_HEIGHT - d],
+	[d, d],
+	[-GAUGE_WIDTH - d, d],
+	[d + 6, -GAUGE_HEIGHT / 2],
+	[-GAUGE_WIDTH - d - 6, -GAUGE_HEIGHT / 2]
+]);
+/** Clear space kept between two gauges, and around every flagged branch point. */
+const GAUGE_GAP = 6;
 
 /** Fixed-size, local gauges. Selection wins, followed by violations and warnings. Each gauge
- * takes the first free spot around its branch point; the available canvas rectangle, collisions
- * and the budget limit clutter independently of network size. */
+ * takes the first free spot around its branch point that covers neither another gauge nor
+ * any flagged branch point; the available canvas rectangle, collisions and the budget limit
+ * clutter independently of network size. */
 export function placeOperatingGauges(
 	candidates: GaugeCandidate[],
 	rect: { left: number; top: number; right: number; bottom: number },
@@ -271,7 +277,13 @@ export function placeOperatingGauges(
 	// the rest before sorting keeps the sort to what is on screen.
 	const sorted = candidates
 		.filter((g) => [g.ax, g.ay, g.loading].every(Number.isFinite) && inside(g.ax, g.ay, 0, 0))
-		.sort((a, b) => rank(b) - rank(a) || a.edge - b.edge);
+		.sort((a, b) => rank(b) - rank(a) || a.edge - b.edge)
+		.slice(0, budget * 4);
+	const covers = (x: number, y: number, px: number, py: number) =>
+		px > x - GAUGE_GAP &&
+		px < x + GAUGE_WIDTH + GAUGE_GAP &&
+		py > y - GAUGE_GAP &&
+		py < y + GAUGE_HEIGHT + GAUGE_GAP;
 	const placed: OperatingGauge[] = [];
 	for (const g of sorted) {
 		for (const [dx, dy] of GAUGE_OFFSETS) {
@@ -280,10 +292,13 @@ export function placeOperatingGauges(
 			if (!inside(x, y, GAUGE_WIDTH, GAUGE_HEIGHT)) continue;
 			if (
 				placed.some(
-					(p) => Math.abs(p.x - x) < GAUGE_WIDTH + 6 && Math.abs(p.y - y) < GAUGE_HEIGHT + 4
+					(p) =>
+						Math.abs(p.x - x) < GAUGE_WIDTH + GAUGE_GAP &&
+						Math.abs(p.y - y) < GAUGE_HEIGHT + GAUGE_GAP
 				)
 			)
 				continue;
+			if (sorted.some((o) => covers(x, y, o.ax, o.ay))) continue;
 			placed.push({ ...g, x, y });
 			break;
 		}

@@ -166,7 +166,7 @@
 		return {
 			id: edge.id,
 			value: quantity(issue.value, '%'),
-			detail: `${edge.kind} · ${issue.severity === 'violation' ? 'over rating' : `≥ ${LOADING_WARNING}% of rating`}`
+			detail: `${edge.kind}, ${issue.severity === 'violation' ? 'over rating' : `${LOADING_WARNING}% of rating or more`}`
 		};
 	}
 	const isSelected = (issue: Issue) =>
@@ -317,12 +317,12 @@
 					class="kpi"
 					onclick={() => select('bus', u.bus)}
 					title={u.definition === 'VUF'
-						? 'Voltage unbalance factor |V2| / |V1| from terminal phasors'
-						: 'Magnitude-only unbalance: max deviation from the mean / mean'}
+						? 'Negative- over positive-sequence voltage, from terminal phasors'
+						: 'Largest deviation from the mean voltage, over the mean'}
 				>
 					<span class="label">Max unbalance</span>
 					<span class="value">{quantity(u.percent, '%')}</span>
-					<span class="sub">{u.definition} · {graph.buses[u.bus].id}</span>
+					<span class="sub">{u.definition}, {graph.buses[u.bus].id}</span>
 				</button>
 			{/if}
 		</div>
@@ -340,7 +340,7 @@
 						<button
 							aria-current={isSelected(issue)}
 							onclick={() => revealOrSelect(issue.target.kind, issue.target.index)}
-							title={`${t.id} · ${t.detail}`}
+							title={`${t.id}, ${t.detail}`}
 						>
 							<span class="sev" aria-label={issue.severity}
 								>{issue.severity === 'violation' ? '!' : '▲'}</span
@@ -399,7 +399,7 @@
 			{#each edgeSelection.ends as end, side (side)}
 				{#if end}
 					<p class="end">
-						{side ? 'To' : 'From'} end · {quantity(end.p, 'kW')} · {quantity(end.q, 'kvar')}
+						{side ? 'To' : 'From'} end: {quantity(end.p, 'kW')}, {quantity(end.q, 'kvar')}
 					</p>
 					<div
 						class="bars"

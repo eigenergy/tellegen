@@ -151,10 +151,9 @@ for (const touch of [false, true]) {
 			// Counts are listed only when they are not zero.
 			await expect(panel.locator('.stat').filter({ hasText: 'Near limit' })).toHaveCount(0);
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
-			// At rating is red (a heavy outline), not amber; only an overload is filled.
-			await expect(gauge).toHaveClass(/at-limit/);
+			// At the rating is red, filled the same as an overload; amber is only near it.
+			await expect(gauge).toHaveClass(/\bover\b/);
 			await expect(gauge).not.toHaveClass(/warning/);
-			await expect(gauge).not.toHaveClass(/violation/);
 			await page.screenshot({ path: testInfo.outputPath('at-rating-gauge.png') });
 			if (touch) await gauge.tap();
 			else {

@@ -595,7 +595,17 @@
 			if (priceCentre === null) return null;
 			const spread = priceSpread(values, priceCentre);
 			for (let i = 0; i < n; i++) values[i] -= priceCentre;
-			colourOf = (v: number) => priceFieldColour(v, spread, 130 * fade);
+			// The hue comes from the price ramp the buses and the legend use; the deviation from
+			// the median only sets how strong the shading is.
+			const centre = priceCentre;
+			const lo = domain?.lo ?? centre - spread;
+			const span = Math.max((domain?.hi ?? centre + spread) - lo, 1e-12);
+			colourOf = (v: number) => {
+				const strength = priceFieldColour(v, spread, 130 * fade);
+				if (!strength) return null;
+				const [r, g, b] = scalarColor('price', Math.min(1, Math.max(0, (v + centre - lo) / span)));
+				return [r, g, b, strength[3]];
+			};
 		}
 		const image = fieldImage(geometry.positions, values, colourOf, {
 			reach: typical * 1.4,
@@ -910,9 +920,9 @@
 			const generation = transferSolution ? dispatch.get(bus.id) : undefined;
 			const demand = modelDemand(bus, caseDemandDeltas);
 			const parts = [];
-			if (generation !== undefined) parts.push(`Gen ${generation.toFixed(1)} MW`);
+			if (generation !== undefined) parts.push(`Generation ${generation.toFixed(1)} MW`);
 			if (demand !== 0) parts.push(`Load ${demand.toFixed(1)} MW`);
-			return parts.length ? { label: 'Power', text: parts.join(' · ') } : null;
+			return parts.length ? { label: 'Power', text: parts.join(', ') } : null;
 		}
 		if (!display) return null;
 		const v = busValues.get(graph.busId[i]);
@@ -934,7 +944,7 @@
 		const name = (i: number) =>
 			internalStarRows.has(i)
 				? `Analysis star ${network.buses[i].id}`
-				: (network.buses[i].name ?? `bus ${network.buses[i].id}`);
+				: (network.buses[i].name ?? `Bus ${network.buses[i].id}`);
 		const candidates: (LabelCandidate & { position: [number, number] })[] = [];
 		const at = (i: number): [number, number] => [
 			geometry.positions[i * 3],
@@ -944,7 +954,7 @@
 			const p = at(selectedBus);
 			const v = resultsOn ? valueText(selectedBus) : null;
 			candidates.push({
-				text: v ? `${name(selectedBus)} · ${v.text}` : name(selectedBus),
+				text: v ? `${name(selectedBus)}, ${v.text}` : name(selectedBus),
 				state: 'normal',
 				priority: 1e9,
 				screen: screen(...p),
@@ -960,7 +970,7 @@
 				if (!inView(sp)) continue;
 				const transfer = transferOn ? valueText(i) : null;
 				candidates.push({
-					text: transfer ? `${name(i)} · ${transfer.text}` : name(i),
+					text: transfer ? `${name(i)}, ${transfer.text}` : name(i),
 					state: 'normal',
 					priority: graph.kv[i],
 					screen: sp,
@@ -996,7 +1006,7 @@
 					const level = graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : '';
 					if (!level && !transfer) continue;
 					candidates.push({
-						text: transfer ? [level, transfer.text].filter(Boolean).join(' · ') : level,
+						text: transfer ? [level, transfer.text].filter(Boolean).join(', ') : level,
 						state: 'normal',
 						priority: -1,
 						screen: sp,
@@ -1021,7 +1031,7 @@
 				const sp = screen(a.x, a.y);
 				if (!inView(sp)) return;
 				candidates.push({
-					text: `${(f.loading * 100).toFixed(0)} %`,
+					text: `${(f.loading * 100).toFixed(0)}%`,
 					state,
 					priority: 1000 + f.loading,
 					screen: sp,
@@ -1036,7 +1046,7 @@
 					v = solvedVoltages.get(graph.busId[i]);
 				if (!inView(screen(...p))) continue;
 				candidates.push({
-					text: `${marker.kind === 'low' ? '↓' : marker.kind === 'high' ? '↑' : '×'} bus ${graph.busId[i]}${v !== undefined ? ` · ${v.toFixed(4)} pu` : ''}`,
+					text: `Bus ${graph.busId[i]}, ${marker.kind === 'deenergized' ? 'off' : v !== undefined ? `${v.toFixed(3)} pu` : marker.kind}`,
 					state: marker.kind === 'deenergized' ? 'normal' : 'violation',
 					priority: 1e6,
 					screen: screen(...p),
@@ -1525,14 +1535,8 @@
 		ctx.globalAlpha = resultContext.stale ? 0.4 : 1;
 		for (const gauge of gauges) {
 			const { x, y } = gauge;
-			const over = gauge.state === 'violation';
-			const colour = over
-				? '#d7261e'
-				: gauge.state === 'at-limit'
-					? '#b01e17'
-					: gauge.state === 'warning'
-						? '#925b05'
-						: '#252525';
+			const over = gauge.state === 'violation' || gauge.state === 'at-limit';
+			const colour = over ? '#d7261e' : gauge.state === 'warning' ? '#e3a008' : '#4a5563';
 			const [lx, ly] = gaugeLeader(gauge);
 			ctx.strokeStyle = colour;
 			ctx.lineWidth = 1.2;
@@ -1544,31 +1548,15 @@
 			ctx.beginPath();
 			ctx.arc(gauge.ax, gauge.ay, 2.5, 0, 2 * Math.PI);
 			ctx.fill();
-			ctx.fillStyle = over ? '#d7261e' : '#fcfbf7';
+			ctx.fillStyle = over ? '#d7261e' : '#ffffff';
 			ctx.fillRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
-			ctx.lineWidth = gauge.state === 'at-limit' ? 2 : 1;
+			ctx.lineWidth = 1;
 			ctx.strokeRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
-			ctx.font = '10px "IBM Plex Mono", monospace';
+			ctx.font = `${over ? '600 ' : ''}12px "IBM Plex Sans", sans-serif`;
 			ctx.textAlign = 'center';
-			ctx.fillStyle = over ? '#ffffff' : colour;
-			ctx.fillText(gaugeText(gauge.loading), x + 32, y + 20);
-			ctx.strokeStyle = over ? '#f2b8b5' : '#c9c4ba';
-			ctx.lineWidth = 3;
-			ctx.beginPath();
-			ctx.moveTo(x + 10, y + 31);
-			ctx.lineTo(x + 54, y + 31);
-			ctx.stroke();
-			ctx.strokeStyle = over ? '#ffffff' : colour;
-			ctx.beginPath();
-			ctx.moveTo(x + 10, y + 31);
-			ctx.lineTo(x + 10 + (Math.min(1.25, gauge.loading) / 1.25) * 44, y + 31);
-			ctx.stroke();
-			ctx.strokeStyle = over ? '#ffffff' : '#252525';
-			ctx.lineWidth = 1.5;
-			ctx.beginPath();
-			ctx.moveTo(x + 45.2, y + 27);
-			ctx.lineTo(x + 45.2, y + 35);
-			ctx.stroke();
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = over ? '#ffffff' : gauge.state === 'warning' ? '#8a5a00' : '#18202b';
+			ctx.fillText(gaugeText(gauge.loading), x + GAUGE_WIDTH / 2, y + GAUGE_HEIGHT / 2);
 		}
 		ctx.restore();
 		const lines = transferOn
@@ -2052,9 +2040,8 @@
 				{@const branch = network.branches[gauge.edge]}
 				<button
 					class="utilization-gauge"
-					class:violation={gauge.state === 'violation'}
+					class:over={gauge.state === 'violation' || gauge.state === 'at-limit'}
 					class:warning={gauge.state === 'warning'}
-					class:at-limit={gauge.state === 'at-limit'}
 					style:left="{gauge.x}px"
 					style:top="{gauge.y}px"
 					title={branchTooltip(gauge.edge)}
@@ -2064,13 +2051,7 @@
 					)} percent, {loadingStateText[gauge.state]}"
 					onclick={() => onselectbranch(branch.id)}
 				>
-					<span>{gaugeText(gauge.loading)}</span>
-					<svg width="48" height="10" viewBox="0 0 48 10" aria-hidden="true"
-						><path d="M2 5H46" class="gauge-track" /><path
-							d="M2 5H{2 + (Math.min(1.25, gauge.loading) / 1.25) * 44}"
-							class="gauge-fill"
-						/><path d="M37.2 1V9" class="rating-tick" /></svg
-					>
+					<span class="pill">{gaugeText(gauge.loading)}</span>
 				</button>
 			{/each}
 		</div>
@@ -2213,12 +2194,9 @@
 		--gauge-line: var(--line);
 		--gauge-ink: var(--ink);
 		--gauge-warn: #8a5a00;
-		--gauge-alarm-ink: var(--text-danger);
-		--gauge-track: var(--line);
 	}
 	:global(:root[data-theme='dark']) .tx-stage {
 		--gauge-warn: #f2c14e;
-		--gauge-alarm-ink: #ff8a80;
 	}
 	.canvas,
 	canvas {
@@ -2363,46 +2341,60 @@
 	.gauges.stale {
 		opacity: 0.4;
 	}
+	/* One style per severity: red fill at or over the rating, amber outline near it. The
+	   button is the hit area; on a touch screen it grows to 44px around the same label. */
 	.utilization-gauge {
 		position: absolute;
-		width: 64px;
-		height: 44px;
+		width: 54px;
+		height: 22px;
 		display: flex;
-		flex-direction: column;
+		align-items: center;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: pointer;
+		pointer-events: auto;
+	}
+	.pill {
+		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 1px;
+		width: 100%;
+		height: 22px;
+		box-sizing: border-box;
 		background: var(--gauge-bg);
 		border: 1px solid var(--gauge-line);
 		border-radius: var(--radius-control);
 		color: var(--gauge-ink);
 		font: 12px var(--font-sans);
 		font-variant-numeric: tabular-nums;
-		cursor: pointer;
-		pointer-events: auto;
-		padding: 2px;
 	}
-	.utilization-gauge.warning {
+	.utilization-gauge.warning .pill {
 		color: var(--gauge-warn);
-		border-color: var(--gauge-warn);
+		border-color: var(--amber);
 	}
-	/* At rating: a heavier outline; over rating: filled. Shape and fill, not only hue. */
-	.utilization-gauge.at-limit {
-		color: var(--gauge-alarm-ink);
-		border-color: var(--red);
-		border-width: 2px;
-	}
-	.utilization-gauge.violation {
+	.utilization-gauge.over .pill {
 		color: #fff;
 		background: var(--red);
 		border-color: var(--red);
 		font-weight: 600;
 	}
-	.utilization-gauge.violation .gauge-track {
-		stroke: #f2b8b5;
+	.utilization-gauge[aria-pressed='true'] .pill {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
 	}
-	.utilization-gauge.violation .rating-tick {
-		stroke: #fff;
+	.utilization-gauge:focus-visible {
+		outline: none;
+	}
+	.utilization-gauge:focus-visible .pill {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 1px;
+	}
+	@media (pointer: coarse) {
+		.utilization-gauge {
+			height: 44px;
+			margin-top: -11px;
+		}
 	}
 	.leaders {
 		position: absolute;
@@ -2427,18 +2419,6 @@
 	}
 	.leaders .violation circle {
 		fill: var(--red);
-	}
-	.gauge-track {
-		stroke: var(--gauge-track);
-		stroke-width: 3;
-	}
-	.gauge-fill {
-		stroke: currentColor;
-		stroke-width: 3;
-	}
-	.rating-tick {
-		stroke: var(--gauge-ink);
-		stroke-width: 1.5;
 	}
 	.legend {
 		overflow: auto;

@@ -865,7 +865,7 @@
 			const p = view?.lmp?.find((v) => v.bus === id),
 				v = view?.vm?.find((v) => v.bus === id);
 			return {
-				html: `<b>Bus ${id}</b><br>Saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>Voltage ${v.value.toFixed(5)} pu` : ''}`
+				html: `<b>Bus ${id}</b><br>Saved state: ${esc(app.studyView.label)}${p ? `<br>Price ${p.value.toFixed(2)} $/MWh` : ''}${v ? `<br>Voltage ${v.value.toFixed(5)} pu` : ''}`
 			};
 		}
 		if (info.layer?.id.startsWith('local-subs-')) {
@@ -922,18 +922,18 @@
 		const sensRow =
 			sens === undefined
 				? ''
-				: `<br>&part;price/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
+				: `<br>Price change per MW ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
 		const previewRow =
 			preview === undefined
 				? ''
-				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
-		// Demand already has its own row below, so the demand colouring shows LMP here alone.
+				: `<br>Price change ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
+		// Demand already has its own row below, so the demand colouring shows the price here alone.
 		const scalarRow =
 			!d || d.scalarMode === 'price' || d.scalarMode === 'demand'
-				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`
+				? `Price ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`;
+					} ${d.scalarUnit}<br>Price ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`;
 		return {
 			html: `<div class="tt"><b>Bus ${bus.id}</b><br>${scalarRow}<br>${loadRow}<br>Generation ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}</div>`
 		};

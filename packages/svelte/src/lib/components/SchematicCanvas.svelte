@@ -280,7 +280,7 @@
 		})
 	);
 	const edgeMv = $derived(Uint8Array.from(edgeClass, (c) => (c === 'lv' ? 0 : 1)));
-	/** The levels in the drawing, per class, for the key: "MV · 11 kV". */
+	/** The levels in the drawing, per class, for the key: "MV 11 kV". */
 	const levelKey = $derived(
 		VOLTAGE_CLASSES.flatMap(({ cls, name }) => {
 			if (!zoneClass.includes(cls)) return [];
@@ -289,7 +289,7 @@
 					zoneVolts.flatMap((v, z) => (zoneClass[z] === cls && v !== null ? [levelLabel(v)] : []))
 				)
 			];
-			return [{ cls, label: levels.length ? `${name} · ${levels.slice(0, 3).join(', ')}` : name }];
+			return [{ cls, label: levels.length ? `${name} ${levels.slice(0, 3).join(', ')}` : name }];
 		})
 	);
 	/** Zoomed out, LV detail fades so the MV backbone, zone outlines and states read first. */
@@ -323,7 +323,7 @@
 				`${zone.buses.length} buses`,
 				...(minVolts === null ? [] : [`min ${quantity(minVolts, 'V')}`]),
 				...(maxLoading === null ? [] : [quantity(maxLoading, '%')])
-			].join(' · ');
+			].join(', ');
 			return {
 				z,
 				text,
