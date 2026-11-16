@@ -825,9 +825,10 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 			getTextAnchor: 'start',
 			getAlignmentBaseline: 'bottom',
 			getPixelOffset: [6, -5],
+			// Opaque, so a value stays readable over the voltage shading.
 			background: true,
-			getBackgroundColor: alpha(PAPER, 230),
-			backgroundPadding: [3, 1],
+			getBackgroundColor: PAPER,
+			backgroundPadding: [4, 2],
 			fontFamily: LABEL_FONT,
 			characterSet: 'auto'
 		})

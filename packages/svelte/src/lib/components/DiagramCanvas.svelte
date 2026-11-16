@@ -166,8 +166,12 @@
 		);
 		if (!extent || width <= 0 || height <= 0) return;
 		const space = available();
-		const spanX = Math.max(extent.maxX - extent.minX, 1),
-			spanY = Math.max(extent.maxY - extent.minY, 1);
+		// Drawings come in any unit (a generated layout fits a box under one unit wide), so the
+		// floor on a span is relative: only a single point falls back to one unit.
+		const largest = Math.max(extent.maxX - extent.minX, extent.maxY - extent.minY);
+		const floor = largest > 0 ? largest * 1e-3 : 1;
+		const spanX = Math.max(extent.maxX - extent.minX, floor),
+			spanY = Math.max(extent.maxY - extent.minY, floor);
 		scale = Math.min(maxScale, 0.85 * Math.min(space.width / spanX, space.height / spanY));
 		x = space.left + space.width / 2 - ((extent.minX + extent.maxX) * scale) / 2;
 		y = space.top + space.height / 2 - ((extent.minY + extent.maxY) * scale) / 2;

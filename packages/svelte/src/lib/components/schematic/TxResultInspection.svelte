@@ -406,17 +406,35 @@
 		margin: var(--space-2xs) 0;
 		list-style: none;
 	}
+	/* Plain rows with a rule between, as the Network panel lists lines. */
 	li {
-		padding: var(--space-3xs) 0;
+		padding: 0;
+		border-top: 1px solid var(--line);
 	}
 	li button {
 		width: 100%;
-		text-align: left;
 		display: flex;
 		flex-wrap: wrap;
+		align-items: baseline;
 		gap: var(--space-2xs) var(--space-lg);
 		justify-content: space-between;
+		padding: var(--space-3xs) var(--space-2xs);
+		text-align: left;
+		font-size: var(--fs-data);
+		color: var(--ink);
+		background: none;
+		border: 0;
+		border-radius: 0;
 		overflow-wrap: anywhere;
+	}
+	li button:hover {
+		background: var(--surface-hover);
+	}
+	li button[aria-pressed='true'] {
+		background: var(--accent-soft);
+	}
+	li button > strong {
+		font-weight: 400;
 	}
 	button,
 	input {

@@ -275,6 +275,14 @@
 	// never thins them again. A zoom gesture reads it at most every
 	// MARKER_ZOOM_SAMPLE_MS, and the end of every zoom reads it at once.
 	let markerZoom = $state(declutterZoom(DEFAULT_CAMERA.zoom));
+	/** On a phone a whole country fits in a few hundred pixels, so buses sized for the desktop
+	 * would merge into one disc and hide the lines: they draw smaller there until the reader zooms
+	 * in. Uniform sizing is in metres and shrinks with the map on its own. */
+	const phoneBusScale = $derived(
+		app.compactLayout && app.busSizing === 'power'
+			? Math.min(1, Math.max(0.3, 0.3 + 0.15 * (markerZoom - 4)))
+			: 1
+	);
 	const MARKER_ZOOM_SAMPLE_MS = 150;
 
 	type LayerCtors = {
@@ -1247,6 +1255,7 @@
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
 		const marker = busMarkerRadius(app.busSizing);
+		const busScale = phoneBusScale;
 		const study = app.studyView;
 		if (study) {
 			const s = study.solution;
@@ -1297,6 +1306,7 @@
 					radiusUnits: marker.radiusUnits,
 					radiusMinPixels: marker.radiusMinPixels,
 					radiusMaxPixels: marker.radiusMaxPixels,
+					radiusScale: busScale,
 					getFillColor: (b) => {
 						const value = values.get(b.id);
 						return value === undefined
@@ -1369,6 +1379,7 @@
 					radiusUnits: marker.radiusUnits,
 					radiusMinPixels: marker.radiusMinPixels,
 					radiusMaxPixels: marker.radiusMaxPixels,
+					radiusScale: busScale,
 					getFillColor: busFill(c.id),
 					stroked: true,
 					billboard: true,
@@ -1451,6 +1462,7 @@
 						radiusUnits: marker.radiusUnits,
 						radiusMinPixels: marker.radiusMinPixels,
 						radiusMaxPixels: marker.radiusMaxPixels,
+						radiusScale: busScale,
 						getFillColor: d ? busFill(c.id) : palette.grey,
 						stroked: true,
 						billboard: true,

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import { priceGradient } from '../../colors.js';
-	import { formulationLabel, readable } from '../../format.js';
+	import { formulationLabel, plain, readable } from '../../format.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -11,7 +11,7 @@
 		type economicsFor
 	} from '../../diagram/transmission-economics.js';
 	import type { operatingContext } from '../../diagram/transmission-results.js';
-	import { economicsLead, priceNumber } from '../../diagram/transmission-explain.js';
+	import { economicsLead } from '../../diagram/transmission-explain.js';
 	import TxPanelHead from './TxPanelHead.svelte';
 	import { previewHandlers, type PreviewItem } from './preview.js';
 
@@ -50,14 +50,6 @@
 	const preview = (id: number) => previewHandlers(onpreview, { kind: 'branch', id });
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
-	/** The scale's ends to the same decimals as the price boxes; a preset scale is whole numbers. */
-	const scaleDigits = $derived(
-		Number.isInteger(domain.lo) && Number.isInteger(domain.hi)
-			? 0
-			: Math.max(Math.abs(domain.lo), Math.abs(domain.hi)) >= 100
-				? 0
-				: 2
-	);
 	/** A signed whole number with a true minus sign. */
 	const signed = (value: number) => (value < 0 ? `−${-value}` : String(value));
 	const lead = $derived(
@@ -74,15 +66,9 @@
 	{#if economics.uniform === null && economics.prices.length}
 		<div class="scale">
 			<span
-				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{priceNumber(
-					domain.lo,
-					scaleDigits
-				).replace('-', '−')}</span
+				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{plain(domain.lo)}</span
 			><i style:background={priceGradient}></i><span
-				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{priceNumber(
-					domain.hi,
-					scaleDigits
-				).replace('-', '−')}
+				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{plain(domain.hi)}
 				{PRICE_UNIT}</span
 			>
 		</div>
@@ -112,7 +98,7 @@
 					</div>
 					<div>
 						<dt>Value of rating</dt>
-						<dd>{economicAmount(branchResult?.relief_per_mw)}/MW</dd>
+						<dd>{economicAmount(branchResult?.relief_per_mw)} per MW</dd>
 					</div>
 				{/if}
 			</dl>
@@ -124,7 +110,10 @@
 						.length})</summary
 				>
 				{#if economics.binding.length}
-					<ol>
+					<div class="list-head" aria-hidden="true">
+						<span>Line</span><span>Value of rating</span>
+					</div>
+					<ol aria-label="Value of rating, {PRICE_UNIT} per MW">
 						{#each economics.binding.slice(0, limit) as row (row.branch)}
 							<li>
 								<button
@@ -133,7 +122,7 @@
 									{...preview(row.branch)}
 								>
 									<strong>Line {row.branch}</strong>
-									<span>{economicAmount(row.relief_per_mw)}/MW</span>
+									<span>{economicAmount(row.relief_per_mw)} per MW</span>
 								</button>
 							</li>
 						{/each}
@@ -251,22 +240,46 @@
 	}
 	ol {
 		margin: var(--space-2xs) 0;
-		padding-left: var(--space-3xl);
+		padding: 0;
+		list-style: none;
 	}
+	.list-head {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-lg);
+		padding: 0 var(--space-2xs) var(--space-3xs);
+		color: var(--text-secondary);
+	}
+	/* Plain rows with a rule between, as the Network panel lists lines. */
 	li {
-		padding: var(--space-3xs) 0;
+		padding: 0;
+		border-top: 1px solid var(--line);
 	}
 	li button {
 		width: 100%;
 		display: flex;
 		flex-wrap: wrap;
+		align-items: baseline;
 		gap: var(--space-2xs) var(--space-lg);
 		justify-content: space-between;
+		padding: var(--space-3xs) var(--space-2xs);
 		text-align: left;
+		font-size: var(--fs-data);
+		color: var(--ink);
+		background: none;
+		border: 0;
+		border-radius: 0;
+	}
+	li button:hover {
+		background: var(--surface-hover);
+	}
+	li button[aria-pressed='true'] {
+		background: var(--accent-soft);
+	}
+	li button > strong {
+		font-weight: 400;
 	}
 	li button span {
-		font-variant-numeric: tabular-nums;
-		font-size: var(--fs-control);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 	}

@@ -8,8 +8,13 @@
 	/** Render in the parent's flow instead of as a card floating over the map. */
 	let { inline = false }: { inline?: boolean } = $props();
 
+	// A case drawn without coordinates has no map buses: its network still names every bus.
 	const buses = $derived(
-		app.studyView?.network.buses ?? app.active?.network?.buses ?? app.activeLocal?.view?.buses ?? []
+		app.studyView?.network.buses ??
+			app.active?.network?.buses ??
+			(app.activeLocal?.view?.buses.length
+				? app.activeLocal.view.buses
+				: (app.activeLocal?.network?.buses ?? []))
 	);
 
 	let query = $state('');

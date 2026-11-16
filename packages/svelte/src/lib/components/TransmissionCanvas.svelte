@@ -34,8 +34,8 @@
 		VOLTAGE_DOMAIN
 	} from '../diagram/transmission-results.js';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
-	import { docsLink } from '../diagram/transmission-explain.js';
-	import { displayFmt, formulationLabel } from '../format.js';
+	import { docsLink, priceNumber } from '../diagram/transmission-explain.js';
+	import { displayFmt, extent, formulationLabel } from '../format.js';
 	import { limitWords } from '../diagram/verdict.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
@@ -460,6 +460,25 @@
 	);
 	const resultsOn = $derived(colour !== 'level' && !!solution);
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
+	/** The Bus values view's key numbers: the lowest and highest value, as the other views lead
+	 * with two numbers. */
+	const valueStats = $derived.by(() => {
+		if (!display) return [];
+		const values = display.values.map((v) => v.value).filter(Number.isFinite);
+		if (!values.length) return [];
+		const { min, max } = extent(values);
+		// Prices to the precision of the Prices view's boxes.
+		const digits = Math.max(Math.abs(min), Math.abs(max)) >= 100 ? 0 : 2;
+		const box = (label: string, value: number) => ({
+			label,
+			value:
+				display.mode === 'price' ? priceNumber(value, digits) : displayFmt(display.mode, value),
+			sub: display.unit
+		});
+		return uniform !== null
+			? [box(display.label, uniform)]
+			: [box('Lowest', min), box('Highest', max)];
+	});
 	const domain = $derived(
 		economicsOn
 			? priceScale < 0
@@ -1109,8 +1128,17 @@
 			const placed = placeLandmarks(landmarkPool, screen, { width, height });
 			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
 		} else marks = null;
-		// Gauges stay clear of the generator and transformer symbols where they can.
-		const obstacles = (marks?.placed ?? []).map((m) => screen(m.x, m.y));
+		// Gauges stay clear of the generator and transformer symbols, and of the value labels,
+		// where they can. A label is a row of points along its text (11px type, offset 6, -5).
+		const obstacles: (readonly [number, number])[] = (marks?.placed ?? []).map((m) =>
+			screen(m.x, m.y)
+		);
+		for (const label of labels) {
+			const [lx, ly] = label.screen;
+			const end = lx + 6 + label.text.length * 6;
+			for (let x = lx + 6; x <= end; x += 16) obstacles.push([x, ly - 11]);
+			obstacles.push([end, ly - 11]);
+		}
 		gauges = placeOperatingGauges(
 			gaugeCandidates,
 			{
@@ -1875,15 +1903,16 @@
 							/> Basemap</label
 						>
 					{/if}
-					<!-- Always present, so the toolbar keeps one width from view to view. -->
-					<label class="check" class:off={!fieldKind}
-						><input
-							type="checkbox"
-							checked={fieldPref.value}
-							disabled={!fieldKind}
-							onchange={(e) => fieldPref.set(e.currentTarget.checked)}
-						/> Shading</label
-					>
+					<!-- Only the views with a shaded field (Voltage, Prices) offer it. -->
+					{#if fieldKind}
+						<label class="check"
+							><input
+								type="checkbox"
+								checked={fieldPref.value}
+								onchange={(e) => fieldPref.set(e.currentTarget.checked)}
+							/> Shading</label
+						>
+					{/if}
 					<button onclick={exportPng}>Save image</button>
 				</div>
 			</div>
@@ -1998,13 +2027,15 @@
 							aria-label="Bus values docs">Docs</a
 						>
 					</div>
+					{#if solution && valueStats.length}
+						<div class="values-stats"><StatBoxes stats={valueStats} label="Bus values" /></div>
+					{/if}
 					{#if !solution}
 						No result
 					{:else if display?.mode === 'voltage'}
 						Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
 					{:else if display && uniform !== null}
-						{display.label}: {uniform.toPrecision(4)}
-						{display.unit}
+						<!-- One value at every bus: the box above says it. -->
 					{:else if display && domain}
 						{display.label} <span>{displayFmt(display.mode, domain.lo)}</span><i
 							style:background={display.gradient}
@@ -2298,9 +2329,6 @@
 		gap: 4px;
 		align-items: center;
 	}
-	.toolbar .check.off {
-		color: var(--text-tertiary);
-	}
 	.segmented {
 		display: flex;
 		border: 1px solid var(--line);
@@ -2406,10 +2434,12 @@
 		color: var(--gauge-warn);
 		border-color: var(--amber);
 	}
+	/* The light theme's red in both themes: white text on the dark theme's lighter red is too
+	   faint to read. */
 	.utilization-gauge.over .pill {
 		color: #fff;
-		background: var(--red);
-		border-color: var(--red);
+		background: #d7261e;
+		border-color: #d7261e;
 		font-weight: 600;
 	}
 	.utilization-gauge[aria-pressed='true'] .pill {
@@ -2538,6 +2568,12 @@
 	.key-heading strong {
 		color: var(--ink);
 		font-size: var(--fs-body);
+	}
+	.values-stats {
+		flex: 0 0 100%;
+	}
+	.values-stats :global(dl.stats) {
+		margin-bottom: var(--space-xs);
 	}
 	/* A heading row of its own in the legend's wrapping row of keys. */
 	.values-heading {
