@@ -21,7 +21,7 @@
 	<h3 id="dyn-events-h">Events</h3>
 	{#if dyn.active?.demo}
 		<div class="setting">
-			<label for="dyn-scenario">Scenario</label>
+			<label for="dyn-scenario">Event</label>
 			<select
 				id="dyn-scenario"
 				value=""
@@ -36,7 +36,9 @@
 		</div>
 	{/if}
 	{#if dyn.events.length === 0}
-		<div class="setting"><span>Event</span><span class="value">None</span></div>
+		{#if !dyn.active?.demo}
+			<div class="setting"><span>Event</span><span class="value">None</span></div>
+		{/if}
 	{:else}
 		<ol class="events">
 			{#each dyn.events as e (e.id)}

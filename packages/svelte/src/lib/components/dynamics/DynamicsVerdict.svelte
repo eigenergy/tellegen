@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { DynRunRecord } from '../../dynamics/controller.svelte.js';
-	import { getUiConfig } from '../../context.svelte.js';
+	import { getController, getUiConfig } from '../../context.svelte.js';
 	import { announcement, checks, details, headline, stats } from '../../dynamics/verdict.js';
 	import StatBoxes from '../StatBoxes.svelte';
 
@@ -12,6 +12,7 @@
 	const more = $derived(s ? details(s, record.events.length) : []);
 	const said = $derived(announcement(s, record.tEnd));
 	const config = getUiConfig();
+	const dyn = getController().dynamics;
 	const docs = $derived(`${config.docsHref.replace(/\/?$/, '/')}rms-validation.html`);
 </script>
 
@@ -43,7 +44,9 @@
 			{#if record.badge}
 				<!-- A scenario of the validation study: whether this run repeats it as published. -->
 				<div>
-					<dt>Validation study</dt>
+					<dt title="The published PowerSimulationsDynamics.jl run of this scenario">
+						Reference result
+					</dt>
 					<dd data-testid="dyn-badge" title={record.badge.detail}>{record.badge.text}</dd>
 				</div>
 			{/if}
@@ -57,7 +60,22 @@
 						<dd>{d.value}</dd>
 					</div>
 				{/each}
+				{#if record.run}
+					<div>
+						<dt>Steps</dt>
+						<dd>{record.run.steps.toLocaleString()}</dd>
+					</div>
+					<div>
+						<dt>Compute time</dt>
+						<dd>{(record.wallMs / 1000).toFixed(1)} s</dd>
+					</div>
+				{/if}
 			</dl>
+			{#if record.run}
+				<button class="copy" onclick={() => navigator.clipboard?.writeText(dyn.runJson(record))}
+					>Copy as JSON</button
+				>
+			{/if}
 		</details>
 	{/if}
 </section>
@@ -156,6 +174,18 @@
 		line-height: 28px;
 		cursor: pointer;
 		color: var(--text-primary);
+	}
+	.copy {
+		margin-top: 6px;
+		padding: 2px 0;
+		border: 0;
+		background: none;
+		color: var(--text-accent);
+		font: inherit;
+		cursor: pointer;
+	}
+	.copy:hover {
+		text-decoration: underline;
 	}
 	.raw {
 		margin: 0;

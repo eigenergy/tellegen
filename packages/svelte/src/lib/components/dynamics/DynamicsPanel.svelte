@@ -155,12 +155,6 @@
 				<div class="setting">
 					<span>Dynamic data</span><span class="value">None</span>
 				</div>
-				<!-- The controls a run takes, disabled until the case has dynamic data. -->
-				<div class="setting">
-					<label for="dyn-event-empty">Event</label>
-					<select id="dyn-event-empty" disabled><option>Bus fault</option></select>
-				</div>
-				<button class="run" disabled title="Needs dynamic data">Run</button>
 				<div class="actions">
 					{#if caseName}<button class="secondary" onclick={openDyr}>Open .dyr file…</button>{/if}
 					<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
@@ -187,6 +181,11 @@
 							Dynamic data failed to build
 						</p>{/if}
 				{/if}
+				<!-- The run controls, as they read once the case has dynamic data. -->
+				<div class="setting">
+					<span>Event</span><span class="value">None</span>
+				</div>
+				<button class="run" disabled title="Needs dynamic data">Run simulation</button>
 			</section>
 		{:else}
 			<section class="block" aria-label="Dynamic data">
@@ -306,26 +305,6 @@
 					<DynamicsRunControls />
 					{#if current}
 						<DynamicsVerdict record={current} />
-						{#if current.run}
-							<details>
-								<summary>Run details</summary>
-								<div class="setting">
-									<span>Steps</span><span class="value">{current.run.steps.toLocaleString()}</span>
-								</div>
-								<div class="setting">
-									<span>Compute time</span><span class="value"
-										>{(current.wallMs / 1000).toFixed(1)} s</span
-									>
-								</div>
-								<div class="setting">
-									<button
-										class="link"
-										onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
-										>Copy as JSON</button
-									>
-								</div>
-							</details>
-						{/if}
 					{/if}
 					{#if dyn.runs.length > 1}
 						<div class="history" aria-label="Recent runs">
@@ -491,9 +470,6 @@
 		color: var(--text-accent);
 		cursor: pointer;
 		font: inherit;
-	}
-	.setting > .link {
-		margin-left: 0;
 	}
 	.link:hover {
 		text-decoration: underline;

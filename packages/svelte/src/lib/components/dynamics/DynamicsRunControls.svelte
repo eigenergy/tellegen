@@ -154,7 +154,7 @@
 			class="run"
 			disabled={!ready || dyn.modesBusy}
 			onclick={() => void run()}
-			title={dyn.modesBusy ? 'Modes running' : 'Ctrl/Cmd+Enter'}>Run {dyn.tEnd} s simulation</button
+			title={dyn.modesBusy ? 'Modes running' : 'Ctrl/Cmd+Enter'}>Run simulation</button
 		>
 		{#if dyn.modesBusy}<p class="dim">Modes running</p>{/if}
 	{/if}

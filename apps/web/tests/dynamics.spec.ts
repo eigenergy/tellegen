@@ -77,7 +77,7 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await expect(fault.getByLabel('Clear after')).toHaveValue('6');
 	await shot(page, '02-fault-chosen');
 
-	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
+	await panel.getByRole('button', { name: 'Run simulation' }).click();
 	const word = panel.getByTestId('dyn-verdict-word');
 	await expect(word).toHaveText('Stable', { timeout: 120_000 });
 	// Key results are labelled numbers, with no notation or sentence fragments.
@@ -145,11 +145,11 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 
 test('a validated scenario says it matches the validation study', async ({ page }) => {
 	const panel = await openDemo(page);
-	await panel.getByRole('combobox', { name: 'Scenario' }).selectOption('trip-1431-N');
-	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
+	await panel.getByRole('combobox', { name: 'Event' }).selectOption('trip-1431-N');
+	await panel.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
 	await expect(panel.getByTestId('dyn-badge')).toHaveText('Matches');
-	await expect(panel.getByTestId('dyn-verdict')).toContainText('Validation study');
+	await expect(panel.getByTestId('dyn-verdict')).toContainText('Reference result');
 	await expect(panel.getByTestId('dyn-verdict')).toContainText(/59\.\d{2}\d? Hz/);
 });
 
@@ -158,15 +158,16 @@ test('stopping a run returns to idle and the static solve still works', async ({
 	await panel.getByRole('button', { name: '120' }).count();
 	await panel.getByLabel('Duration', { exact: true }).fill('120');
 	await panel.getByLabel('Duration', { exact: true }).blur();
-	await panel.getByRole('button', { name: /Run 120 s simulation/ }).click();
+	await panel.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(panel.getByText(/Simulating…/)).toBeVisible();
+	await expect(panel.getByText(/\/ 120 s/)).toBeVisible();
 	await panel.getByRole('button', { name: 'Stop' }).click();
 	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
-	await expect(panel.getByRole('button', { name: /Run 120 s simulation/ })).toBeEnabled();
+	await expect(panel.getByRole('button', { name: 'Run simulation' })).toBeEnabled();
 	// Closing the panel returns the map to steady state: the solver still answers.
 	await page.locator('header').getByRole('button', { name: 'Dynamics', exact: true }).click();
 	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText(
-		/Voltage range|Operational cost|Max loading/,
+		/Lowest voltage|Operational cost|Max loading/,
 		{ timeout: 60_000 }
 	);
 });
@@ -196,7 +197,7 @@ test('with experimental features on, the Modes tab computes and stops', async ({
 	await panel.getByRole('button', { name: 'Stop' }).click();
 	await expect(panel.getByText('Stopped', { exact: true })).toBeVisible();
 	await panel.getByRole('tab', { name: 'Simulation' }).click();
-	await expect(panel.getByRole('button', { name: /Run 20 s simulation/ })).toBeEnabled({
+	await expect(panel.getByRole('button', { name: 'Run simulation' })).toBeEnabled({
 		timeout: 30_000
 	});
 });
@@ -204,8 +205,8 @@ test('with experimental features on, the Modes tab computes and stops', async ({
 test('reduced motion parks the playhead instead of playing', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' });
 	const panel = await openDemo(page);
-	await panel.getByRole('combobox', { name: 'Scenario' }).selectOption('trip-1101-1401');
-	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
+	await panel.getByRole('combobox', { name: 'Event' }).selectOption('trip-1101-1401');
+	await panel.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText(/Stable|Not settled/, {
 		timeout: 120_000
 	});
@@ -222,8 +223,8 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 	await page.locator('.panel-toolbar').getByRole('button', { name: 'Dynamics' }).click();
 	await page.getByTestId('dyn-open-demo').click();
 	await expect(page.getByTestId('dyn-counts')).toBeVisible({ timeout: 90_000 });
-	await page.getByRole('combobox', { name: 'Scenario' }).selectOption('fault-1101');
-	await page.getByRole('button', { name: /Run 20 s simulation/ }).click();
+	await page.getByRole('combobox', { name: 'Event' }).selectOption('fault-1101');
+	await page.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(page.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
 	await expect(page.getByTestId('dyn-scrubber')).toBeVisible();
 	await shot(page, '09-phone');
