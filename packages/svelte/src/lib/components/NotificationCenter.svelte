@@ -50,7 +50,10 @@
 					}))
 				]
 			: [];
-		for (const [identity, title, details, items] of [
+		/** A coordinate note that only reports success: every bus placed, nothing unmatched. */
+		const clean = (note: string) =>
+			/^(\d+) of \1 buses placed from /.test(note) || /; 0 unmatched objects$/.test(note);
+		for (const [identity, title, details, items, quiet] of [
 			[
 				summary,
 				'Case import notes',
@@ -72,14 +75,16 @@
 					source: 'tellegen',
 					subject,
 					message
-				}))
+				})),
+				// A success is not a notice: the Log keeps it.
+				!!geo && geo.every(clean)
 			]
-		] as Array<[object | undefined, string, string, LogEntryInput[] | undefined]>) {
+		] as Array<[object | undefined, string, string, LogEntryInput[] | undefined, boolean?]>) {
 			if (identity && !observed.has(identity)) {
 				observed.add(identity);
 				if (details)
 					untrack(() => {
-						notices.push({ kind: 'warning', title, details, entries: items });
+						if (!quiet) notices.push({ kind: 'warning', title, details, entries: items });
 						// The notice closes itself; the Log keeps what it said.
 						if (items?.length) app.log.record(items, { repeat: false });
 					});
