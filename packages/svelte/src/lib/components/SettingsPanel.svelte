@@ -7,6 +7,7 @@
 	const ctrl = getController();
 	const layout = getPanelLayout();
 	const support = $derived(ctrl.dynamics.support);
+	let calculation = $state<ReturnType<typeof CalculationSettings>>();
 	$effect(() => {
 		if (app.settingsOpen) void ctrl.dynamics.probe();
 	});
@@ -38,31 +39,36 @@
 	bind:open={app.settingsOpen}
 >
 	<div class="settings-content" role="region" aria-label="Common settings">
-		<CalculationSettings />
-		<hr />
+		<CalculationSettings bind:this={calculation} />
+
 		<h3>Display</h3>
-		<p class="intro">Saved in this browser. They do not change any result.</p>
-		<label
-			>Theme<select
+		<div class="row">
+			<label for="setting-theme">Theme</label>
+			<select
+				id="setting-theme"
 				value={app.preferences.theme ?? 'host'}
 				onchange={(e) =>
 					app.preferences.update({
 						theme: e.currentTarget.value === 'host' ? null : e.currentTarget.value
 					})}
-				><option value="host">Match the system</option><option value="light">Light</option><option
+				><option value="host">System</option><option value="light">Light</option><option
 					value="dark">Dark</option
 				></select
-			></label
-		>
-		<label
-			>Bus sizing<select
+			>
+		</div>
+		<div class="row">
+			<label for="setting-bus-sizing">Bus sizing</label>
+			<select
+				id="setting-bus-sizing"
 				value={app.busSizing}
 				onchange={(e) => app.preferences.update({ busSizing: e.currentTarget.value })}
 				><option value="power">By power</option><option value="uniform">Uniform</option></select
-			></label
-		>
-		<label
-			>Colour buses by<select
+			>
+		</div>
+		<div class="row">
+			<label for="setting-coloring">Bus colour</label>
+			<select
+				id="setting-coloring"
 				value={app.preferences.coloring}
 				onchange={(e) => {
 					app.preferences.update({ coloring: e.currentTarget.value });
@@ -72,74 +78,84 @@
 				><option value="price">Price</option><option value="voltage">Voltage</option><option
 					value="angle">Angle</option
 				><option value="demand">Demand</option></select
-			></label
-		>
-		<button
-			class="secondary"
-			onclick={() => {
-				app.preferences.reset();
-				if (ctrl.displayOptions.some((x) => x.mode === 'price')) app.displayMode = 'price';
-			}}>Restore display defaults</button
-		>
-		{#if app.preferences.error}<p role="alert">{app.preferences.error}</p>{/if}
-		<hr />
-		<label class="check"
-			><input
+			>
+		</div>
+		{#if app.preferences.error}<p class="error" role="alert">{app.preferences.error}</p>{/if}
+
+		<h3>Experimental</h3>
+		<div class="row">
+			<label for="setting-experimental">Experimental features</label>
+			<input
+				id="setting-experimental"
 				type="checkbox"
+				class="switch"
 				checked={app.preferences.experimental}
 				disabled={support !== null && !support.rms}
+				title={support !== null && !support.rms ? 'Not in this build' : undefined}
 				onchange={(e) => app.preferences.update({ experimental: e.currentTarget.checked })}
-			/>Experimental features</label
-		>
-		<p class="intro">
-			Adds dynamics (RMS) simulation of faults and trips. Its results are still being checked.
-		</p>
-		{#if support !== null && !support.rms}
-			<p class="intro">This engine build does not include dynamics simulation.</p>
-		{/if}
+			/>
+		</div>
+
+		<div class="footer">
+			<button
+				class="secondary"
+				onclick={() => {
+					app.preferences.reset();
+					if (ctrl.displayOptions.some((x) => x.mode === 'price')) app.displayMode = 'price';
+					calculation?.restoreDefaults();
+				}}>Restore defaults</button
+			>
+		</div>
 	</div>
 </PanelFrame>
 
 <style>
 	.settings-content {
-		padding: 16px;
+		padding: 12px 16px 16px;
 		font-size: var(--fs-body);
 	}
 	h3 {
-		margin: 0 0 6px;
-		font-size: var(--fs-title);
+		margin: 16px 0 2px;
+		font-size: var(--fs-label);
 		font-weight: 600;
-	}
-	p {
-		line-height: 1.5;
-	}
-	.intro {
-		margin: 0 0 8px;
 		color: var(--text-secondary);
 	}
-	label {
+	/* One setting per row: the name on the left, its control on the right. */
+	.row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		margin: 10px 0 4px;
+		min-height: 34px;
+		border-bottom: 1px solid var(--line);
 	}
 	select {
-		max-width: 55%;
+		max-width: 50%;
+		padding: 3px 6px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		background: var(--surface-control);
+		color: var(--ink);
+		font: inherit;
 	}
-	hr {
-		margin: 20px 0;
-		border: 0;
-		border-top: 1px solid var(--line);
+	input.switch {
+		width: 16px;
+		height: 16px;
+		margin: 0;
+		accent-color: var(--accent);
 	}
-	label.check {
-		justify-content: flex-start;
-		gap: 8px;
+	.error {
+		margin: 4px 0;
+		color: var(--text-danger);
+	}
+	.footer {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 16px;
 	}
 	.secondary {
-		margin-top: 12px;
 		min-height: 28px;
-		padding: 5px 10px;
+		padding: 4px 10px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--surface-control);
@@ -150,10 +166,20 @@
 	.secondary:hover {
 		border-color: var(--border-strong);
 	}
+	select:focus-visible,
+	input:focus-visible,
+	.secondary:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
 	@media (pointer: coarse) {
+		.row {
+			min-height: 44px;
+		}
 		.secondary,
 		select {
-			min-height: 44px;
+			min-height: 36px;
+			font-size: 16px;
 		}
 	}
 </style>

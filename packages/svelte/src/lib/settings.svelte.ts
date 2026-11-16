@@ -40,7 +40,7 @@ export class UserPreferences {
 				this.update(saved.values, false);
 			}
 		} catch {
-			this.error = 'Display preferences could not be restored. Defaults are in use.';
+			this.error = 'Display settings reset';
 		}
 	}
 	inspect() {
@@ -81,7 +81,7 @@ export class UserPreferences {
 			);
 			this.error = null;
 		} catch {
-			this.error = 'Display preferences could not be saved. Changes last for this visit.';
+			this.error = 'Display settings not saved';
 		}
 	}
 	reset() {

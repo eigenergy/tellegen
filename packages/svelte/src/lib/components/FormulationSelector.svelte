@@ -1,11 +1,8 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
-	import { formulationHint } from '../format.js';
-	import { DC_VARIANTS } from '../dc-variants.js';
-	import { FORMULATIONS, type Formulation, type DcFormula } from '@tellegen/engine';
+	import { FORMULATIONS, type Formulation } from '@tellegen/engine';
 
 	const ctrl = getController();
-	const label = (id: string) => FORMULATIONS.find((f) => f.id === id)?.label ?? id;
 </script>
 
 {#if ctrl.activeSolvable}
@@ -13,7 +10,7 @@
 	{@const chosen = c.solving ? (c.settings.calculation ?? c.formulation) : c.formulation}
 	<!-- While a calculation runs, the select names it; otherwise the one on screen. -->
 	<div class="formulation">
-		<label class="formulation-row" for="formulation-select" title={formulationHint(c.formulation)}>
+		<label class="formulation-row" for="formulation-select">
 			<span>Calculation</span>
 			<select
 				id="formulation-select"
@@ -28,7 +25,7 @@
 							c.declaredFormulation != null &&
 							c.declaredFormulation !== f.id)}
 					<option value={f.id} disabled={unavailable}>
-						{f.label}{unavailable ? ' (unavailable)' : ''}
+						{f.label}
 					</option>
 				{/each}
 			</select>
@@ -36,47 +33,17 @@
 		{#if c.solving}
 			<p class="solving" role="status">
 				<span>
-					{ctrl.acOpfLoading ? 'Loading the AC OPF solver…' : `Solving ${label(chosen)}…`}
+					{ctrl.acOpfLoading ? 'Loading…' : 'Solving…'}
 				</span>
 				{#if ctrl.canCancelSettings(c)}
 					<button class="cancel" onclick={() => ctrl.cancelSettings(c)}>Cancel</button>
 				{/if}
 			</p>
 		{/if}
-		{#if c.formulation === 'dcopf'}
-			<label class="formulation-row" for="dc-variant-select">
-				<span>DC line model</span>
-				<select
-					id="dc-variant-select"
-					disabled={c.solving || ('declaredFormulation' in c && !!c.declaredFormulation)}
-					value={c.solution?.branch_susceptance_formula ??
-						c.branchSusceptanceFormula ??
-						'series_susceptance'}
-					onchange={(e) => ctrl.changeDcFormula(c, e.currentTarget.value as DcFormula)}
-				>
-					{#each DC_VARIANTS as variant (variant.id)}
-						<option value={variant.id}>{variant.label}</option>
-					{/each}
-				</select>
-			</label>
-			<p class="variant-hint">
-				To compare with another tool's DC results, choose the model it uses.
-				<a
-					href="https://eigenergy.github.io/tellegen/dc-compatibility.html"
-					target="_blank"
-					rel="noreferrer">Which tool uses which</a
-				>
-			</p>
-		{/if}
 	</div>
 {/if}
 
 <style>
-	.variant-hint {
-		font-size: var(--fs-label);
-		color: var(--text-secondary);
-		margin: 6px 0;
-	}
 	.formulation {
 		display: grid;
 		gap: 6px;

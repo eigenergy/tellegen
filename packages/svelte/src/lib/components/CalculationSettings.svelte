@@ -1,46 +1,63 @@
 <script lang="ts" module>
-	/** Fields shown elsewhere: the Network panel owns the DC line model. */
-	const HIDDEN = new Set(['branch_susceptance_formula']);
+	import { DC_VARIANTS } from '../dc-variants.js';
 
-	/** Plain descriptions for the engine's settings, in place of its own notes. */
-	const DESCRIPTIONS: Record<string, string> = {
-		angle_difference:
-			"Keep the voltage angle difference across each line within the case's limits.",
-		start:
-			"Where the iteration starts. If the case's own voltages fail to converge, it starts again from a flat start.",
-		absolute_kcl_tolerance: 'The current mismatch at which the calculation counts as converged.',
-		relative_kcl_tolerance:
-			'Extra current mismatch allowed in proportion to the current through each bus.',
-		tolerance:
-			'The voltage change between iterations at which the calculation counts as converged. The current balance must also pass.',
-		damping: 'The share of each voltage update to apply, above 0 and at most 1.',
-		max_iterations: 'Stop after this many iterations.',
-		v_low_pu:
-			'Below this voltage, loads are modelled as their nominal impedance. Keep 0 < Vlow < Vmin < Vmax.',
-		v_min_pu: 'Lower edge of the band where loads follow their own model. Not a voltage limit.',
-		v_max_pu: 'Upper edge of the band where loads follow their own model. Not a voltage limit.',
-		voltage_envelope:
-			'Change how loads behave outside the Vmin to Vmax band. Results record when this applied.',
-		zero_voltage_tolerance:
-			'Protects the load current calculation from near-zero voltages. Not a convergence tolerance.'
+	/** Plain names for the engine's settings, in place of its own labels. */
+	const LABELS: Record<string, string> = {
+		angle_difference: 'Angle limits',
+		branch_susceptance_formula: 'DC line model',
+		start: 'Start',
+		voltage_envelope: 'Load envelope',
+		v_low_pu: 'Low voltage',
+		v_min_pu: 'Min voltage',
+		v_max_pu: 'Max voltage',
+		max_iterations: 'Max iterations',
+		damping: 'Damping',
+		tolerance: 'Voltage tolerance',
+		zero_voltage_tolerance: 'Zero-voltage floor',
+		absolute_kcl_tolerance: 'Current tolerance',
+		relative_kcl_tolerance: 'Relative tolerance',
+		thermal: 'Line limits',
+		lazy: 'Lazy line limits'
 	};
 
-	/** Plain names for enum choices. */
+	/** Plain names for enum choices; null is the case's own choice. */
 	const CHOICES: Record<string, string> = {
-		flat: 'Flat start (1.0 pu, 0°)',
-		case: "The case's voltages"
+		flat: 'Flat',
+		case: 'From case',
+		all: 'All',
+		rated: 'Rated lines',
+		...Object.fromEntries(DC_VARIANTS.map((v) => [v.id, v.label]))
 	};
 
-	/** A recorded setting in words. */
+	/** A setting's value in words. */
 	function valueWords(value: unknown): string {
-		if (value === null || value === undefined) return "The case's own choice";
+		if (value === null || value === undefined) return 'Default';
 		if (value === true) return 'On';
 		if (value === false) return 'Off';
 		if (typeof value === 'string') return CHOICES[value] ?? value.replaceAll('_', ' ');
 		if (typeof value === 'number')
 			return value.toLocaleString(undefined, { maximumFractionDigits: 6 });
-		return JSON.stringify(value);
+		if (typeof value === 'object' && value && 'branches' in value) return 'Chosen lines';
+		if (typeof value === 'object' && value) return 'On';
+		return String(value);
 	}
+
+	/** Where each setting sits: settings are grouped by topic, not by calculation. */
+	const MODEL = [
+		'branch_susceptance_formula',
+		'angle_difference',
+		'voltage_envelope',
+		'v_low_pu',
+		'v_min_pu',
+		'v_max_pu'
+	];
+	const SOLVER = ['start', 'max_iterations', 'damping'];
+	const TOLERANCES = [
+		'tolerance',
+		'zero_voltage_tolerance',
+		'absolute_kcl_tolerance',
+		'relative_kcl_tolerance'
+	];
 </script>
 
 <script lang="ts">
@@ -55,7 +72,9 @@
 	import { getAppState, getController } from '../context.svelte.js';
 	import { recordedCalculationSettings } from '../settings.svelte.js';
 	import { LocalCase, MulticonductorCase, type SolvableCase } from '../state.svelte.js';
-	import McNetworkScope from './McNetworkScope.svelte';
+
+	/** The calculation section of Settings: the calculation and its options as label and control
+	 * rows. A change applies and reruns at once. */
 	let { currentCase }: { currentCase?: SolvableCase | MulticonductorCase | null } = $props();
 	const app = getAppState();
 	const ctrl = getController();
@@ -80,60 +99,39 @@
 	);
 	const selected = $derived(current ? ctrl.inspectSettings(current) : null);
 	const descriptor = $derived(catalog.calculations.find((c) => c.calculation === calculation));
-	const fieldOrder = [
-		'voltage_envelope',
-		'v_low_pu',
-		'v_min_pu',
-		'v_max_pu',
-		'max_iterations',
-		'damping',
-		'tolerance',
-		'zero_voltage_tolerance',
-		'absolute_kcl_tolerance',
-		'relative_kcl_tolerance'
-	];
+	const fields = $derived(
+		(descriptor?.fields ?? []).filter((f) => f.type !== 'json') as SettingDescriptor[]
+	);
+	const byKey = (keys: string[]) => keys.flatMap((key) => fields.filter((f) => f.key === key));
 	const unavailable = $derived(
 		current instanceof MulticonductorCase
-			? current.mcPfReason
-			: descriptor && !canSelect(calculation, descriptor.available)
-				? (descriptor.reason ?? 'This calculation is unavailable for this case.')
-				: null
+			? !!current.mcPfReason
+			: !!descriptor && !canSelect(calculation, descriptor.available)
 	);
-	const fields = $derived(
-		[...(descriptor?.fields ?? [])]
-			.filter((f) => !HIDDEN.has(f.key))
-			.sort((a, b) => fieldOrder.indexOf(a.key) - fieldOrder.indexOf(b.key))
-	);
-	const unsaved = $derived(
-		selected ? calculation !== selected.calculation || !equal(options(), selected.selected) : false
-	);
-	function equal(a: unknown, b: unknown): boolean {
-		if (a && b && typeof a === 'object' && typeof b === 'object') {
-			const x = a as Record<string, unknown>,
-				y = b as Record<string, unknown>;
-			return (
-				Object.keys(x).length === Object.keys(y).length &&
-				Object.keys(x).every((k) => equal(x[k], y[k]))
-			);
-		}
-		return Object.is(a, b);
-	}
+	const solving = $derived(!!current?.solving);
+	/** The load envelope's band must be ordered. */
+	const bandError = $derived.by(() => {
+		const [low, min, max] = ['v_low_pu', 'v_min_pu', 'v_max_pu'].map((k) => draft[k]);
+		if ([low, min, max].some((v) => typeof v !== 'number')) return '';
+		return 0 < (low as number) &&
+			(low as number) < (min as number) &&
+			(min as number) < (max as number)
+			? ''
+			: 'Need low < min < max voltage';
+	});
+
 	function fill(value: Record<string, unknown>) {
 		draft = { ...value };
 		thermalMode = typeof value.thermal === 'string' ? value.thermal : 'branches';
 		const branches = (value.thermal as { branches?: unknown[] })?.branches;
 		thermalBranches = branches?.join(', ') ?? '';
 		lazy = value.lazy != null;
-		const l = value.lazy as {
-			max_rounds?: number;
-			near_binding?: number;
-		} | null;
+		const l = value.lazy as { max_rounds?: number; near_binding?: number } | null;
 		maxRounds = l?.max_rounds;
 		nearBinding = l?.near_binding;
 	}
-	// Refill the draft only when the case or its settings revision changes.
-	// Results and re-solves also recompute `selected`, and must not discard
-	// edits the user has not applied yet.
+	// Refill the draft only when the case or its settings revision changes, so a
+	// result arriving does not discard a value being typed.
 	let filledFor = '';
 	let filledCase: SolvableCase | MulticonductorCase | null = null;
 	$effect(() => {
@@ -180,11 +178,8 @@
 			? 'Distribution AC power flow'
 			: (FORMULATIONS.find((f) => f.id === value)?.label ?? value);
 	}
-	/** A setting's name as the form shows it. */
 	function fieldLabel(key: string): string {
-		for (const c of catalog.calculations)
-			for (const field of c.fields) if (field.key === key) return field.label;
-		return key.replaceAll('_', ' ');
+		return LABELS[key] ?? key.replaceAll('_', ' ');
 	}
 	function options(): Record<string, unknown> {
 		if (calculation !== 'dcopf') return { ...draft };
@@ -208,35 +203,17 @@
 				: null
 		};
 	}
-	function number(field: SettingDescriptor, raw: string) {
-		draft = { ...draft, [field.key]: raw === '' ? undefined : Number(raw) };
-	}
+	/** Apply the form and rerun: the one way a change takes effect. */
 	async function apply(reset = false) {
 		const target = current;
-		if (!target) return;
+		if (!target || (!reset && bandError)) return;
 		busy = true;
 		failure = '';
 		try {
 			if (calculation === 'acopf' && !(await ctrl.loadAcOpf()))
-				throw new Error('The AC OPF solver could not load in this browser.');
+				throw new Error('AC OPF unavailable');
 			if (current !== target) return;
 			await ctrl.updateSettings(target, calculation, reset ? {} : options(), revision, reset);
-		} catch (error) {
-			failure = error instanceof Error ? error.message : String(error);
-		} finally {
-			busy = false;
-		}
-	}
-	async function run() {
-		const target = current;
-		if (!target) return;
-		busy = true;
-		failure = '';
-		try {
-			if (calculation === 'acopf' && !(await ctrl.loadAcOpf()))
-				throw new Error('The AC OPF solver could not load in this browser.');
-			if (current !== target) return;
-			if (unsaved) await ctrl.updateSettings(target, calculation, options(), revision);
 			if (current !== target) return;
 			await ctrl.runSettings(target);
 		} catch (error) {
@@ -245,172 +222,235 @@
 			busy = false;
 		}
 	}
+	/** Restore the case's own settings and rerun. */
+	export function restoreDefaults() {
+		if (current && !current.solving) void apply(true);
+	}
+	function set(key: string, value: unknown) {
+		draft = { ...draft, [key]: value };
+		void apply();
+	}
+	/** The failure in a few words; the full message is in Details. */
+	const failureWords = $derived(
+		/infeasib/i.test(failure)
+			? 'Infeasible'
+			: /converge/i.test(failure)
+				? 'Did not converge'
+				: /changed/i.test(failure)
+					? 'Settings changed; run again'
+					: 'Failed'
+	);
 </script>
 
-{#snippet setting(field: SettingDescriptor)}
-	<label class={{ toggle: field.type === 'boolean' }}>
-		<span>{field.label}{field.unit ? ` (${field.unit})` : ''}</span>
+{#snippet control(field: SettingDescriptor)}
+	{@const id = `setting-${field.key}`}
+	<div class="row">
+		<label for={id}>{fieldLabel(field.key)}{field.unit ? ` (${field.unit})` : ''}</label>
 		{#if field.type === 'boolean'}
 			<input
+				{id}
 				type="checkbox"
+				class="switch"
 				checked={draft[field.key] === true}
-				onchange={(e) => (draft = { ...draft, [field.key]: e.currentTarget.checked })}
+				onchange={(e) => set(field.key, e.currentTarget.checked)}
 			/>
 		{:else if field.type === 'enum'}
 			<select
-				value={String(draft[field.key])}
+				{id}
+				value={String(draft[field.key] ?? null)}
 				onchange={(e) =>
-					(draft = {
-						...draft,
-						[field.key]: (field.choices ?? []).find(
-							(choice) => String(choice) === e.currentTarget.value
-						)
-					})}
+					set(
+						field.key,
+						(field.choices ?? []).find((choice) => String(choice) === e.currentTarget.value)
+					)}
 				>{#each field.choices ?? [] as choice (choice)}<option value={String(choice)}
 						>{valueWords(choice)}</option
 					>{/each}</select
 			>
 		{:else}
 			<input
+				{id}
 				type="number"
 				step={field.type === 'integer' ? 1 : 'any'}
 				min={field.minimum}
 				max={field.maximum}
 				value={draft[field.key] as number}
-				oninput={(e) => number(field, e.currentTarget.value)}
+				onchange={(e) =>
+					set(field.key, e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value))}
 			/>
 		{/if}
-	</label>
-	<small>{DESCRIPTIONS[field.key] ?? field.description}</small>
-{/snippet}
-
-{#snippet thermalControls()}
-	<label
-		>Thermal limits<select bind:value={thermalMode}
-			><option value="all">All declared limits</option><option value="rated"
-				>Explicit ratings only</option
-			><option value="branches">Selected branches</option></select
-		></label
-	>
-	{#if thermalMode === 'branches'}<label
-			>Branch IDs or UIDs<input
-				type="text"
-				bind:value={thermalBranches}
-				placeholder="1, 2, branches:3"
-			/></label
-		>{/if}
-	<small
-		>Which line ratings the optimization enforces. Each result records the limits it used.</small
-	>
-{/snippet}
-{#snippet lazyControls()}
-	<label class="toggle">Lazy thermal enforcement<input type="checkbox" bind:checked={lazy} /></label
-	>
-	{#if lazy}<label
-			>Maximum enforcement rounds<input
-				type="number"
-				min="1"
-				step="1"
-				placeholder="Engine default"
-				bind:value={maxRounds}
-			/></label
-		><label
-			>Near-binding fraction<input
-				type="number"
-				min="0"
-				max="1"
-				step="any"
-				placeholder="Engine default"
-				bind:value={nearBinding}
-			/></label
-		>{/if}
+	</div>
 {/snippet}
 
 <div class="calculation-settings" role="region" aria-label="Calculation settings">
+	<h3>Calculation</h3>
 	{#if current && selected}
-		<h3>{calculationLabel(calculation)} options</h3>
-		<p class="intro">
-			{current instanceof MulticonductorCase
-				? 'Changes apply the next time the power flow runs.'
-				: 'Choose the calculation in the Network panel. Changes here apply the next time it runs.'}
-		</p>
-		<fieldset disabled={busy || current.solving}>
-			{#each ['model', 'numerical'] as group (group)}
-				{#if fields.some((f) => f.group === group)}
-					<h4>{group === 'model' ? 'Model' : 'Solver'}</h4>
-					{#each fields.filter((f) => f.group === group && f.type !== 'json' && !f.key.includes('tolerance')) as field (field.key)}
-						{@render setting(field)}
-					{/each}
-					{#if calculation === 'dcopf'}
-						{#if group === 'model'}{@render thermalControls()}{:else}{@render lazyControls()}{/if}
-					{/if}
-					{#if group === 'numerical' && fields.some((f) => f.key.includes('tolerance'))}
-						<details>
-							<summary>Advanced tolerances</summary>
-							{#each fields.filter( (f) => f.key.includes('tolerance') ) as field (field.key)}{@render setting(
-									field
-								)}{/each}
-						</details>
-					{/if}
+		<fieldset disabled={busy || solving}>
+			<div class="row">
+				<label for="setting-calculation">Calculation</label>
+				{#if current instanceof MulticonductorCase}
+					<span class="value">{calculationLabel(calculation)}</span>
+				{:else}
+					{@const c = current}
+					<span class="control">
+						{#if calculation === 'acopf'}<span class="pill">Experimental</span>{/if}
+						<select
+							id="setting-calculation"
+							value={calculation}
+							onchange={(e) => void ctrl.chooseCalculation(c, e.currentTarget.value as Formulation)}
+						>
+							{#each catalog.calculations.filter((d) => d.calculation !== 'mc_ac_pf') as d (d.calculation)}
+								<option value={d.calculation} disabled={!canSelect(d.calculation, d.available)}
+									>{calculationLabel(d.calculation)}</option
+								>
+							{/each}
+						</select>
+					</span>
 				{/if}
-			{/each}
+			</div>
+			{#each byKey(MODEL) as field (field.key)}{@render control(field)}{/each}
+			{#if bandError}<p class="error" role="alert">{bandError}</p>{/if}
 		</fieldset>
-		{#if !fields.length}<p>This calculation has no options to set.</p>{/if}
-		{#if current instanceof MulticonductorCase}<McNetworkScope
-				scope={current.mcPreparedScope}
-				islands={current.mcExcludedIslands}
-				preview
-			/>{/if}
-		{#if unsaved}<p role="status">
-				You have changes that are not applied yet.
-			</p>{:else if selected.pending}<p role="status">
-				The result on screen used other settings. Run the calculation to update it.
-			</p>{/if}
-		{#if unavailable}<p>{unavailable}</p>{/if}
-		{#if calculation === 'acopf'}<p>
-				The AC OPF solver is experimental and loads on the first run. It solves the base case only,
-				without demand changes, and gives no prices or case export.
-			</p>{/if}
-		<div class="actions">
-			<button disabled={busy || current.solving || !unsaved} onclick={() => void apply()}
-				>Apply settings</button
-			>
-			<button disabled={busy || current.solving} onclick={() => void apply(true)}
-				>Restore case defaults</button
-			>
-			<button
-				class={['primary', { busy: current.solving }]}
-				disabled={busy || current.solving || !!unavailable}
-				onclick={() => void run()}
-				>{ctrl.acOpfLoading
-					? 'Loading AC OPF solver…'
-					: current instanceof MulticonductorCase
-						? current.mcSolveLabel
-						: 'Run calculation'}</button
-			>
-			{#if current.solving && ctrl.canCancelSettings(current)}<button
-					onclick={() => ctrl.cancelSettings(current)}>Cancel calculation</button
-				>{/if}
+
+		{#if calculation === 'dcopf'}
+			<h3>Line limits</h3>
+			<fieldset disabled={busy || solving}>
+				<div class="row">
+					<label for="setting-thermal">Line limits</label>
+					<select
+						id="setting-thermal"
+						bind:value={thermalMode}
+						onchange={() => thermalMode !== 'branches' && void apply()}
+						><option value="all">All</option><option value="rated">Rated lines</option><option
+							value="branches">Chosen lines</option
+						></select
+					>
+				</div>
+				{#if thermalMode === 'branches'}
+					<div class="row">
+						<label for="setting-branches">Lines</label>
+						<input
+							id="setting-branches"
+							type="text"
+							bind:value={thermalBranches}
+							placeholder="1, 2, 3"
+							onchange={() => void apply()}
+						/>
+					</div>
+				{/if}
+				<div class="row">
+					<label for="setting-lazy">Lazy line limits</label>
+					<input
+						id="setting-lazy"
+						type="checkbox"
+						class="switch"
+						bind:checked={lazy}
+						onchange={() => void apply()}
+					/>
+				</div>
+				{#if lazy}
+					<div class="row">
+						<label for="setting-rounds">Max rounds</label>
+						<input
+							id="setting-rounds"
+							type="number"
+							min="1"
+							step="1"
+							placeholder="20"
+							bind:value={maxRounds}
+							onchange={() => void apply()}
+						/>
+					</div>
+					<div class="row">
+						<label for="setting-near">Add above (%)</label>
+						<input
+							id="setting-near"
+							type="number"
+							min="0"
+							max="100"
+							step="any"
+							placeholder="98"
+							value={nearBinding === undefined ? '' : +(nearBinding * 100).toFixed(4)}
+							onchange={(e) => {
+								const raw = e.currentTarget.value;
+								nearBinding = raw === '' ? undefined : Number(raw) / 100;
+								void apply();
+							}}
+						/>
+					</div>
+				{/if}
+			</fieldset>
+		{/if}
+
+		{#if byKey(SOLVER).length || byKey(TOLERANCES).length}
+			<h3>Solver</h3>
+			<fieldset disabled={busy || solving}>
+				{#each byKey(SOLVER) as field (field.key)}{@render control(field)}{/each}
+				{#if byKey(TOLERANCES).length}
+					<details>
+						<summary>Tolerances</summary>
+						{#each byKey(TOLERANCES) as field (field.key)}{@render control(field)}{/each}
+					</details>
+				{/if}
+			</fieldset>
+		{/if}
+
+		<div class="status" role="status">
+			{#if solving}
+				<span>{ctrl.acOpfLoading ? 'Loading…' : 'Solving…'}</span>
+				{#if ctrl.canCancelSettings(current)}<button
+						class="text"
+						onclick={() => ctrl.cancelSettings(current)}>Cancel</button
+					>{/if}
+			{:else if failure}
+				<span class="error" role="alert" title={failure}>{failureWords}</span>
+			{:else if selected.pending && !unavailable}
+				<span class="chip">Not applied</span>
+				<button class="text" onclick={() => void apply()}>Run</button>
+			{:else if unavailable}
+				<span>Unavailable for this case</span>
+			{/if}
 		</div>
-		{#if selected.accepted && Object.keys(selected.accepted).length}<details>
-				<summary>Settings behind the result on screen</summary>
+		{#if failure}
+			<details class="failure">
+				<summary>Details</summary>
+				<p>{failure}</p>
+			</details>
+		{/if}
+		{#if selected.accepted && Object.keys(selected.accepted).length}
+			<details>
+				<summary>Used for result</summary>
 				<dl>
-					{#each Object.entries(selected.accepted) as [key, value] (key)}<dt>
-							{fieldLabel(key)}
-						</dt>
-						<dd>{valueWords(value)}</dd>{/each}
+					{#each Object.entries(selected.accepted) as [key, value] (key)}
+						<div class="row">
+							<dt>{fieldLabel(key)}</dt>
+							<dd>{valueWords(value)}</dd>
+						</div>
+					{/each}
 				</dl>
-			</details>{/if}
+			</details>
+		{/if}
 	{:else if app.studyView}
-		<p>This is a saved result, so its calculation settings can't be changed.</p>
-		{#if recorded}<p>{calculationLabel(recorded.calculation)}</p>
+		<div class="row"><span>Saved result</span><span class="value">Read-only</span></div>
+		{#if recorded}
 			<dl>
-				{#each Object.entries(recorded.effective) as [key, value] (key)}<dt>{fieldLabel(key)}</dt>
-					<dd>{valueWords(value)}</dd>{/each}
-			</dl>{:else}<p>This saved result has no recorded calculation settings.</p>{/if}
-	{:else}<h3>Calculation options</h3>
-		<p>Open a case to set how it is calculated.</p>{/if}
-	{#if failure}<p role="alert">{failure}</p>{/if}
+				<div class="row">
+					<dt>Calculation</dt>
+					<dd>{calculationLabel(recorded.calculation)}</dd>
+				</div>
+				{#each Object.entries(recorded.effective) as [key, value] (key)}
+					<div class="row">
+						<dt>{fieldLabel(key)}</dt>
+						<dd>{valueWords(value)}</dd>
+					</div>
+				{/each}
+			</dl>
+		{:else}
+			<div class="row"><span>Settings</span><span class="value">Not recorded</span></div>
+		{/if}
+	{:else}
+		<div class="row"><span>Calculation</span><span class="value">No case open</span></div>
+	{/if}
 </div>
 
 <style>
@@ -419,35 +459,13 @@
 		font-size: var(--fs-body);
 	}
 	h3 {
-		margin: 0 0 6px;
-		font-size: var(--fs-title);
-		font-weight: 600;
-	}
-	h4 {
-		margin: 16px 0 4px;
-		font-size: var(--fs-body);
-		font-weight: 600;
-	}
-	p,
-	small {
-		line-height: 1.5;
-	}
-	.intro {
-		margin: 0 0 4px;
-		color: var(--text-secondary);
-	}
-	small {
-		display: block;
+		margin: 16px 0 2px;
 		font-size: var(--fs-label);
+		font-weight: 600;
 		color: var(--text-secondary);
-		margin-bottom: 8px;
 	}
-	summary {
-		cursor: pointer;
-		margin-top: 8px;
-	}
-	dt {
-		color: var(--text-secondary);
+	h3:first-child {
+		margin-top: 0;
 	}
 	fieldset {
 		border: 0;
@@ -455,82 +473,148 @@
 		margin: 0;
 		min-width: 0;
 	}
-	label {
+	/* One setting per row: the name on the left, its control on the right. */
+	.row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		margin: 10px 0 4px;
+		min-height: 34px;
+		border-bottom: 1px solid var(--line);
 	}
-	input[type='number'] {
-		width: 105px;
+	.row > label,
+	.row > span:first-child,
+	dt {
+		min-width: 0;
+		color: var(--text-primary);
 	}
-	input[type='text'] {
-		width: 160px;
+	.value,
+	dd {
+		margin: 0;
+		color: var(--text-secondary);
+		text-align: right;
+		overflow-wrap: anywhere;
 	}
-	input:not([type='checkbox']) {
-		padding: 4px 6px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
-		background: var(--surface-control);
-		color: var(--ink);
-		font: inherit;
+	.control {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+	}
+	.pill {
+		padding: 1px 6px;
+		border-radius: var(--radius-full);
+		background: var(--accent-soft);
+		color: var(--text-accent);
+		font-size: var(--fs-micro);
+		font-weight: 600;
+		white-space: nowrap;
 	}
 	select,
-	input {
-		max-width: 55%;
-	}
-	button {
-		min-height: 28px;
-		padding: 5px 10px;
+	input:not([type='checkbox']) {
+		max-width: 50%;
+		padding: 3px 6px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
-		line-height: 1.25;
+	}
+	.control select {
+		max-width: none;
+	}
+	input[type='number'] {
+		width: 96px;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	input[type='text'] {
+		width: 140px;
+	}
+	input.switch {
+		width: 16px;
+		height: 16px;
+		margin: 0;
+		accent-color: var(--accent);
+	}
+	details {
+		border-bottom: 1px solid var(--line);
+	}
+	details .row:last-child {
+		border-bottom: 0;
+	}
+	summary {
+		display: flex;
+		align-items: center;
+		min-height: 34px;
 		cursor: pointer;
+		color: var(--text-secondary);
+		list-style-position: inside;
 	}
-	button:not(.primary):hover:not(:disabled) {
-		border-color: var(--border-strong);
+	summary:hover {
+		color: var(--text-primary);
 	}
-	button.busy {
-		cursor: progress;
+	dl {
+		margin: 0;
 	}
-	button.primary {
-		border-color: var(--accent);
-		background: var(--accent);
-		color: var(--on-accent, var(--paper));
+	.status {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 30px;
+		color: var(--text-secondary);
+	}
+	.status:empty {
+		display: none;
+	}
+	.chip {
+		padding: 1px 8px;
+		border-radius: var(--radius-full);
+		background: var(--surface-chip);
+		color: var(--text-primary);
+		font-size: var(--fs-label);
+	}
+	.error {
+		margin: 4px 0;
+		color: var(--text-danger);
 		font-weight: 600;
 	}
-	button:disabled {
-		cursor: default;
-		opacity: 0.6;
+	.failure p {
+		margin: 0 0 8px;
+		font-size: var(--fs-label);
+		color: var(--text-secondary);
+		overflow-wrap: anywhere;
+	}
+	button.text {
+		padding: 2px 6px;
+		border: 0;
+		border-radius: var(--radius-control);
+		background: none;
+		color: var(--text-accent);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	button.text:hover {
+		background: var(--surface-hover);
 	}
 	button:focus-visible,
 	select:focus-visible,
-	input:focus-visible {
+	input:focus-visible,
+	summary:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
 	@media (pointer: coarse) {
-		button,
-		select,
-		input:not([type='checkbox']) {
+		.row,
+		summary {
 			min-height: 44px;
 		}
-	}
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		margin: 16px 0;
-	}
-	dt {
-		margin-top: 6px;
-	}
-	dd {
-		margin: 0;
-		overflow-wrap: anywhere;
+		select,
+		input:not([type='checkbox']),
+		button.text {
+			min-height: 36px;
+			font-size: 16px;
+		}
 	}
 </style>
