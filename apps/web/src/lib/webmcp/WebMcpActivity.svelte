@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import AgentGuide from './AgentGuide.svelte';
-	import { PanelFrame, getAppState } from '@tellegen/svelte';
+	import { PanelFrame, StatBoxes, getAppState } from '@tellegen/svelte';
 	import type {
 		ExperimentRecord,
 		JsonValue,
@@ -194,15 +194,13 @@
 					{toolCount}
 					callCount={experiments.length}
 				/>{:else}
-				<!-- The same label-above-value count as on Connect. -->
+				<!-- The same stat box as on Connect. -->
 				<div class="call-count" role="status">
 					{#if activities.length}
-						<dl>
-							<div>
-								<dt>Calls</dt>
-								<dd>{experiments.length}</dd>
-							</div>
-						</dl>
+						<StatBoxes
+							label="Agent calls"
+							stats={[{ label: 'Calls', value: experiments.length.toLocaleString('en-US') }]}
+						/>
 					{/if}
 				</div>
 				{#if registrationError}
@@ -335,19 +333,14 @@
 											<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
 										</div>
 										<div class="metric mono">
-											<span class="name">Edits</span>
-											<span
-												>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
-													number(compare.before.rating_edit_count),
-													0
-												)}</span
-											>
-											<span
-												>{formatNumber(number(compare.after.demand_edit_count), 0)} / {formatNumber(
-													number(compare.after.rating_edit_count),
-													0
-												)}</span
-											>
+											<span class="name">Demand edits</span>
+											<span>{formatNumber(number(compare.before.demand_edit_count), 0)}</span>
+											<span>{formatNumber(number(compare.after.demand_edit_count), 0)}</span>
+										</div>
+										<div class="metric mono">
+											<span class="name">Rating edits</span>
+											<span>{formatNumber(number(compare.before.rating_edit_count), 0)}</span>
+											<span>{formatNumber(number(compare.after.rating_edit_count), 0)}</span>
 										</div>
 									</div>
 								{/if}
@@ -433,27 +426,14 @@
 		min-height: 0;
 	}
 	.call-count {
-		margin: 0;
-		padding: 12px 18px;
-		border-bottom: 1px solid var(--line);
+		padding: 16px 18px 0;
 	}
-	.call-count dl {
-		margin: 0;
-	}
-	.call-count dt {
-		font-size: 12px;
-		color: var(--text-secondary);
-	}
-	.call-count dd {
-		margin: 0;
-		font-size: 18px;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
+	.call-count :global(dl.stats) {
+		margin: 0 0 4px;
 	}
 	/* The live region stays in place for announcements, but takes no room while empty. */
 	.call-count:not(:has(dl)) {
 		padding: 0;
-		border: 0;
 	}
 	.registration-error {
 		margin: 0;
@@ -529,7 +509,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-		padding: 9px 14px 0;
+		padding: 9px 18px 0;
 	}
 
 	.section-head h3 {
@@ -644,7 +624,7 @@
 	}
 
 	li {
-		padding: 11px 14px;
+		padding: 11px 18px;
 		border-bottom: 1px solid rgb(var(--ink-rgb) / 0.08);
 	}
 

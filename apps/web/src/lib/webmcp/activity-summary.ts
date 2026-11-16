@@ -88,8 +88,8 @@ export function activitySummary(event: Finished): string {
 		}
 		case 'focus_network': {
 			const focused = record(data.focused);
-			const name = element(focused?.kind, focused?.element_id);
-			return name ? `Focused ${name}` : 'Done';
+			const name = text(focused?.name) ?? element(focused?.kind, focused?.element_id);
+			return name ? `Showing ${name}` : 'Done';
 		}
 		case 'analyze_sensitivity': {
 			const target = record(data.target);

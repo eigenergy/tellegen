@@ -56,6 +56,7 @@ import {
   capacityPlanPredictedPhiDelta,
 } from "./webmcp-metrics.js";
 import { CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT } from "./export-formats.js";
+import { lineName } from "./format.js";
 export type {
   WebMcpStudyHost,
   WebMcpPlanningHost,
@@ -1215,6 +1216,10 @@ async function focus(
       focused: {
         kind: input.target.kind,
         element_id: elementId(element, input.target.kind),
+        name:
+          input.target.kind === "bus"
+            ? `Bus ${element.id}`
+            : lineName(element as NetworkBranch),
       },
       sensitivity_loaded: false,
     };
@@ -1222,9 +1227,11 @@ async function focus(
   const c = activeCase(ctrl, input.caseId);
   signal.throwIfAborted();
   let focusedId: string;
+  let focusedName: string;
   if (input.target.kind === "bus") {
     const bus = resolveBus(c, input.target.elementId);
     focusedId = elementId(bus, "bus");
+    focusedName = `Bus ${bus.id}`;
     // Branch selection frames its target; bus selection does not, so ask.
     frameElement(ctrl, c.id, { bus: bus.id });
     if (ctrl.isBackendCase(c)) await ctrl.selectBus(c.id, bus.id);
@@ -1232,6 +1239,7 @@ async function focus(
   } else {
     const branch = resolveBranch(c, input.target.elementId);
     focusedId = elementId(branch, "branch");
+    focusedName = lineName(branch);
     if (ctrl.isBackendCase(c))
       await ctrl.selectBranch(c.id, branch.id, { focus: true });
     else await ctrl.selectLocalBranch(c.id, branch.id, { focus: true });
@@ -1245,6 +1253,7 @@ async function focus(
     focused: {
       kind: input.target.kind,
       element_id: focusedId,
+      name: focusedName,
     },
     sensitivity_loaded: ctrl.selectedSensitivity !== null,
   };

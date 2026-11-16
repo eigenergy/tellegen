@@ -220,5 +220,8 @@ test('a finished call is counted on the card', async ({ page }) => {
 	await page.getByRole('button', { name: 'Connect', exact: true }).click();
 	const status = page.getByTestId('webmcp-status');
 	await expect(status).toContainText('Connected');
-	await expect(status.getByRole('definition').last()).toHaveText(/^[1-9]\d*$/);
+	const counts = page.locator('dl[aria-label="Agent tools"]');
+	await expect(counts.locator('.stat', { hasText: 'Calls' }).locator('.value')).toHaveText(
+		/^[1-9]\d*$/
+	);
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { StatBoxes } from '@tellegen/svelte';
 	import { WEBMCP_TRIAL_ORIGIN, type WebMcpBrowserState } from './browser-support.js';
 
 	let {
@@ -87,16 +88,6 @@
 			<div class="status" role="status" data-testid="webmcp-status">
 				{#if ready}
 					<strong><span class="dot"></span>Connected</strong>
-					<dl class="counts">
-						<div>
-							<dt>Tools</dt>
-							<dd>{toolCount}</dd>
-						</div>
-						<div>
-							<dt>Calls</dt>
-							<dd>{callCount}</dd>
-						</div>
-					</dl>
 				{:else if !browser || browser.kind === 'ready'}
 					<strong class="pending"><span class="dot"></span>Loading…</strong>
 				{:else}
@@ -129,6 +120,17 @@
 		{/if}
 		{#if copyError}<p role="status" class="hint">Copy failed</p>{/if}
 	</div>
+	{#if ready && !registrationError}
+		<div class="counts">
+			<StatBoxes
+				label="Agent tools"
+				stats={[
+					{ label: 'Tools', value: toolCount.toLocaleString('en-US') },
+					{ label: 'Calls', value: callCount.toLocaleString('en-US') }
+				]}
+			/>
+		</div>
+	{/if}
 	<p class="visually-hidden" role="status">{copied ? 'Copied' : ''}</p>
 </section>
 
@@ -202,20 +204,8 @@
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
-	.counts {
-		display: flex;
-		gap: 24px;
-		margin: 4px 0 0;
-	}
-	.counts dt {
-		font-size: 12px;
-		color: var(--text-secondary);
-	}
-	.counts dd {
-		margin: 0;
-		font-size: 18px;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
+	.counts :global(dl.stats) {
+		margin: 12px 0 0;
 	}
 	.actions {
 		display: flex;
