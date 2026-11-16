@@ -12,7 +12,6 @@
 		McModelQualification,
 		McWorkbench,
 		McSolveControls,
-		MC_PF_NAME,
 		getNoticeCenter,
 		errorNoticeTitle
 	} from '@tellegen/svelte';
@@ -550,7 +549,6 @@
 				</p>{/if}
 			{#if multi}
 				<h3>{multi.label}</h3>
-				<p class="hint">Distribution case, solved by {MC_PF_NAME.toLowerCase()}</p>
 				<McNetworkScope scope={multi.mcPreparedScope} islands={multi.mcExcludedIslands} preview />
 				{#if multi.result}<McModelQualification model={multi.result.load_model} compact />{/if}
 				<McSolveControls
@@ -568,9 +566,7 @@
 							disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
 							onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
 						>
-						{#if linkable}<button
-								title="A link back to this saved study, its selection and view. It opens only in a browser that holds the study, saved there or imported from an export; it does not carry the data."
-								onclick={() => void attempt(copyLink)}
+						{#if linkable}<button onclick={() => void attempt(copyLink)}
 								>{linkCopied ? 'Link copied' : 'Copy view link'}</button
 							>{/if}
 					{/snippet}
@@ -607,10 +603,6 @@
 					/>{/if}
 			{:else if !doc || creating}
 				<h3>Save a study</h3>
-				<p class="hint">
-					Keeps this case, its demand changes and its results in this browser. Open it again from
-					the list above.
-				</p>
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
 						{network.name}<span>{network.buses.length.toLocaleString()} buses</span>
@@ -618,11 +610,9 @@
 				<button
 					class="primary"
 					disabled={workspace.busy || !supportedSave}
+					title={ctrl.activeSolvable?.formulation === 'acopf' ? 'Not for AC OPF' : undefined}
 					onclick={() => void attempt(create)}>Save study</button
 				>
-				{#if ctrl.activeSolvable?.formulation === 'acopf'}<p class="hint compact">
-						Saving AC OPF cases is not yet supported.
-					</p>{/if}
 			{:else if tab === 'case'}
 				<h3>{doc.title}</h3>
 				<dl class="facts">
@@ -730,7 +720,6 @@
 								onclick={() => demandPage++}>Next</button
 							>
 						</div>{/if}
-					<p class="hint compact">All demand values in MW.</p>
 				</details>
 				<div class="toolbar">
 					<button
@@ -738,14 +727,11 @@
 						onclick={() => void attempt(() => workspace.resetFromUser())}>Reset to base case</button
 					>
 				</div>
-				{#if !doc.base_input}<p class="hint">
-						Original network data is unavailable in this import.
-					</p>{/if}
+				{#if !doc.base_input}<p class="hint">No base data</p>{/if}
 				{#if !goal}<button class="text-button" onclick={startGoal}>Add a planning goal</button>{/if}
 			{:else if tab === 'plan'}
 				{#if editingGoal || !goal}
 					{#if !editingGoal}<h3>Explore a change</h3>
-						<p class="hint">Choose an objective and the equipment that can change.</p>
 						<button class="primary" onclick={startGoal}>Set a goal</button>
 					{:else}
 						<h3>{goal ? 'New goal revision' : 'Planning goal'}</h3>
@@ -755,9 +741,9 @@
 								onchange={() => {
 									busPage = 0;
 								}}
-								><option value="price" disabled={formulation === 'acpf'}>Reduce average LMP</option
-								><option value="voltage" disabled={formulation === 'dcopf'}
-									>Reach a voltage target</option
+								><option value="price" disabled={formulation === 'acpf'}>Lower price</option><option
+									value="voltage"
+									disabled={formulation === 'dcopf'}>Voltage target</option
 								></select
 							></label
 						>
@@ -817,7 +803,7 @@
 									class="text-button"
 									disabled={ctrl.app.selectedBus == null}
 									onclick={() => addMapSelection('buses')}
-									>Add selected map bus{ctrl.app.selectedBus != null
+									>Add selected{ctrl.app.selectedBus != null
 										? ` ${ctrl.app.selectedBus}`
 										: ''}</button
 								>{/if}
@@ -859,10 +845,9 @@
 						</details>
 						<label
 							>Allowed changes<select bind:value={form.intervention} onchange={changeIntervention}
-								><option value="capacity" disabled={formulation === 'acpf'}
-									>Increase line capacity</option
-								><option value="redistribution">Redistribute demand</option><option
-									value="placement">Add demand</option
+								><option value="capacity" disabled={formulation === 'acpf'}>Line capacity</option
+								><option value="redistribution">Move demand</option><option value="placement"
+									>Add demand</option
 								></select
 							></label
 						>
@@ -882,7 +867,7 @@
 								/></label
 							>
 							<label
-								>Maximum changed {form.intervention === 'capacity' ? 'lines' : 'buses'}<input
+								>Max changes<input
 									type="number"
 									min="1"
 									step="1"
@@ -897,20 +882,12 @@
 									/></label
 								>{/if}
 						</div>
-						{#if form.intervention === 'redistribution'}<p class="hint compact">
-								Total demand stays constant. Moving 1 MW uses 2 MW of the change budget.
-							</p>{/if}
 						<details>
 							<summary
 								>Candidate {form.intervention === 'capacity' ? 'lines' : 'buses'}<span
 									>{equipment.candidates.length.toLocaleString()}</span
 								></summary
 							>
-							{#if form.scope === 'area' && form.intervention === 'capacity'}<p
-									class="hint compact"
-								>
-									Includes lines connected to this area.
-								</p>{/if}
 							<label class="search"
 								>Find candidate<input
 									type="search"
@@ -1010,18 +987,17 @@
 					{/if}
 				{:else}
 					<h3>{goal.request}</h3>
-					<p class="hint">{goal.interpretation}</p>
 					<dl class="facts">
 						<div>
 							<dt>Objective</dt>
 							<dd>{objectiveLabel(goal.objective)}</dd>
 						</div>
 						<div>
-							<dt>Candidate elements</dt>
+							<dt>Candidates</dt>
 							<dd>{goal.decisions.variables.length.toLocaleString()}</dd>
 						</div>
 						<div>
-							<dt>Maximum changes</dt>
+							<dt>Max changes</dt>
 							<dd>{goal.decisions.max_changed_elements}</dd>
 						</div>
 						<div>
@@ -1063,7 +1039,6 @@
 								)}>Find a proposal</button
 						>
 					</div>
-					<p class="hint compact">Review the result before applying it.</p>
 					{#if latestProposal && doc.recommended_state !== doc.applied_state}<button
 							disabled={workspace.busy}
 							onclick={() => {
@@ -1123,10 +1098,8 @@
 									workspace.comparison.right_value
 								)}, improvement {number(workspace.comparison.improvement)}
 							</p>{/if}
-						{#if consequences.length}<p class="hint compact">
-								Largest {workspace.comparison.right_view?.lmp ? 'LMP' : 'voltage magnitude'} changes.
-							</p>
-							<table>
+						{#if consequences.length}<table>
+								<caption>Top changes</caption>
 								<thead><tr><th>Bus</th><th>Before</th><th>After</th><th>Change</th></tr></thead
 								><tbody
 									>{#each consequences as row (row.bus)}<tr
@@ -1137,9 +1110,7 @@
 							</table>{/if}
 					</div>{/if}
 				<h3>Activity</h3>
-				{#if !doc.experiment_order.length}<p class="hint">
-						Edits, solves and observations appear here.
-					</p>{/if}
+				{#if !doc.experiment_order.length}<p class="hint">No activity</p>{/if}
 				{#each doc.experiment_order.toReversed().slice(0, historyLimit) as id (id)}{@const event =
 						doc.experiments[id]}
 					<details>
@@ -1148,7 +1119,16 @@
 							></summary
 						>
 						<p>{event.rationale}</p>
-						<p class="hint compact">{event.solve_count} solves, {event.trials.length} trials</p>
+						<dl class="facts">
+							<div>
+								<dt>Solves</dt>
+								<dd>{event.solve_count}</dd>
+							</div>
+							<div>
+								<dt>Trials</dt>
+								<dd>{event.trials.length}</dd>
+							</div>
+						</dl>
 						{#each event.trials as trial, index (index)}<p class="trial">
 								Trial {index + 1}: {trial.failure ??
 									(trial.accepted ? 'Retained' : 'Rejected')}{#if trial.exact_value != null},
@@ -1334,6 +1314,13 @@
 		flex: 1;
 		margin: 0;
 	}
+	/* Selects and buttons in a toolbar share one height. */
+	.toolbar select,
+	.toolbar button {
+		box-sizing: border-box;
+		height: 36px;
+		padding-block: 0;
+	}
 	.toolbar label:has(input[type='number']) {
 		max-width: 132px;
 	}
@@ -1347,10 +1334,6 @@
 		color: var(--text-secondary);
 		font-size: 12px;
 		line-height: 1.5;
-	}
-	.hint.compact {
-		margin: 10px 0;
-		font-size: 12px;
 	}
 	.case-name {
 		display: flex;

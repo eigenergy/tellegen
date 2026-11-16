@@ -121,13 +121,10 @@ export function buildGoal(network: Network, form: GoalForm, formulation: string)
 	if (Object.values(form.weights).some((weight) => !Number.isFinite(weight) || weight < 0))
 		throw new Error('Bus weights must be finite and nonnegative.');
 	const { buses, candidates } = resolveEquipment(network, form);
-	if (!buses.length)
-		throw new Error('Choose at least one bus for the objective. LMP objectives use load buses.');
-	if (!candidates.length) throw new Error('Choose at least one line or bus that can be changed.');
+	if (!buses.length) throw new Error('Needs ≥1 bus');
+	if (!candidates.length) throw new Error('Needs ≥1 candidate');
 	if (form.intervention === 'redistribution' && (candidates.length < 2 || form.cardinality < 2))
-		throw new Error(
-			'Demand redistribution needs at least two candidate buses and two permitted changes.'
-		);
+		throw new Error('Needs ≥2 buses');
 	if (
 		form.intervention === 'placement' &&
 		(!Number.isFinite(form.increase) || form.increase <= 0 || form.increase > form.budget)
@@ -193,8 +190,7 @@ export function buildGoal(network: Network, form: GoalForm, formulation: string)
 					? { kind: 'placement', increase_mw: form.increase }
 					: { kind: 'redistribution' }
 	};
-	const request =
-		form.objective === 'price' ? 'Reduce average LMP' : `Bring voltage closer to ${form.target} pu`;
+	const request = form.objective === 'price' ? 'Lower price' : `Voltage target ${form.target} pu`;
 	const busCount = `${buses.length} ${buses.length === 1 ? 'bus' : 'buses'}`;
 	const candidateKind =
 		form.intervention === 'capacity'

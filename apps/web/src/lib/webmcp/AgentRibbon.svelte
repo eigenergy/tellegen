@@ -81,7 +81,6 @@
 			data-testid="agent-ribbon"
 			data-status={status}
 			onclick={openPanel}
-			title="Show this call in the Agent panel"
 		>
 			<span class="mark" aria-hidden="true"></span>
 			<span class="who">Agent</span>

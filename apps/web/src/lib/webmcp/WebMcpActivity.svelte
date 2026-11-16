@@ -119,17 +119,17 @@
 
 	function formatNumber(value: number | null, digits = 2): string {
 		return value === null
-			? 'unavailable'
+			? '—'
 			: value.toLocaleString(undefined, { maximumFractionDigits: digits });
 	}
 
 	function formatDelta(value: number | null): string {
-		if (value === null) return 'unavailable';
+		if (value === null) return '—';
 		return `${value >= 0 ? '+' : ''}${formatNumber(value)}`;
 	}
 
 	function elapsed(activity: TellegenToolActivityEvent): string {
-		if (!finished(activity)) return 'working';
+		if (!finished(activity)) return '…';
 		const ms = activity.finishedAt - activity.startedAt;
 		return ms < 1_000 ? `${ms} ms` : `${(ms / 1_000).toFixed(1)} s`;
 	}
@@ -168,8 +168,7 @@
 			{#if experiments.length > 0}<button
 					class="export"
 					data-testid="export-experiment-journal"
-					title="Download the record of every finished tool call"
-					onclick={exportJournal}>Export journal</button
+					onclick={exportJournal}>Export</button
 				>{/if}
 		</nav>
 		<div class="agent-content">
@@ -182,20 +181,22 @@
 					callCount={experiments.length}
 				/>{:else}
 				<p class="call-count" role="status">
-					{activities.length
-						? `${experiments.length} tool ${experiments.length === 1 ? 'call' : 'calls'} finished${activities.some((activity) => !finished(activity)) ? ', one running' : ''}`
-						: 'No tool calls yet'}
+					{activities.length ? `Calls: ${experiments.length}` : ''}
 				</p>
 				{#if registrationError}
-					<p class="registration-error mono" data-testid="webmcp-registration-error">
-						WebMCP tools could not be registered: {registrationError}
+					<p
+						class="registration-error"
+						data-testid="webmcp-registration-error"
+						title={registrationError}
+					>
+						Tools failed to load
 					</p>
 				{/if}
 
 				{#if activities.length === 0 && planning.entries.length === 0}
 					<div class="empty">
-						<p>No agent activity yet.</p>
-						<button class="copy" onclick={() => (tab = 'connect')}>Connect an agent</button>
+						<p>No activity</p>
+						<button class="copy" onclick={() => (tab = 'connect')}>Connect</button>
 					</div>
 				{/if}
 
@@ -244,7 +245,7 @@
 										<div class="review">
 											{#if isApproved(entry)}
 												<span class="approved mono" data-testid="capacity-plan-approved"
-													>Approved. The agent can apply it once.</span
+													>Approved</span
 												>
 											{:else}
 												<button
@@ -294,19 +295,18 @@
 
 								{#if predicted}
 									<div class="preview-result">
-										<span class="label">Predicted cost change</span>
+										<span class="label">Predicted</span>
 										<b class="mono">{formatDelta(number(predicted.objective_delta))} $/h</b>
-										<span class="dim">Nothing applied</span>
 									</div>
 								{/if}
 
 								{#if compare}
 									<div class="comparison">
 										<div class="comparison-head">
-											<span>Solved</span><span>Before</span><span>After</span>
+											<span></span><span>Before</span><span>After</span>
 										</div>
 										<div class="metric mono">
-											<span class="name">Cost ($/h)</span>
+											<span class="name">Operational cost ($/h)</span>
 											<span>{formatNumber(number(compare.before.objective))}</span>
 											<span>{formatNumber(number(compare.after.objective))}</span>
 										</div>
@@ -316,7 +316,7 @@
 											<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
 										</div>
 										<div class="metric mono">
-											<span class="name">Demand and rating edits</span>
+											<span class="name">Edits</span>
 											<span
 												>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
 													number(compare.before.rating_edit_count),
@@ -335,8 +335,7 @@
 
 								{#if finished(activity) && activity.callerCancelled && activity.response.ok}
 									<p class="error mono" data-testid="caller-cancelled">
-										The agent cancelled this call, but it had already completed. Any change it made
-										stands; the agent did not receive the result.
+										Cancelled after completing
 									</p>
 								{/if}
 								{#if finished(activity) && !activity.response.ok}
@@ -362,8 +361,8 @@
 		style:--sheet-clear={app.compactLayout ? `${app.sheetInset + 8}px` : undefined}
 		aria-label="About AI agents"
 	>
-		<span>AI agents in Chrome can use this map.</span>
-		<button class="welcome-go" onclick={showConnect}>How</button>
+		<span>Agent tools available</span>
+		<button class="welcome-go" onclick={showConnect}>Connect</button>
 		<button
 			class="welcome-close"
 			aria-label="Dismiss introduction"
@@ -683,11 +682,6 @@
 		grid-template-columns: 1fr auto;
 		gap: 3px 10px;
 		padding: 8px 9px;
-		font-size: 12px;
-	}
-
-	.preview-result .dim {
-		grid-column: 1 / -1;
 		font-size: 12px;
 	}
 

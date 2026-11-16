@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { resolve } from '$app/paths';
 	import { WEBMCP_TRIAL_ORIGIN, type WebMcpBrowserState } from './browser-support.js';
 
 	let {
@@ -45,7 +44,6 @@
 	};
 
 	let origin = $state(WEBMCP_TRIAL_ORIGIN);
-	const onTrialOrigin = $derived(origin === WEBMCP_TRIAL_ORIGIN);
 	// Claude in Chrome does not list page tools by itself yet, so the prompt
 	// tells it where they are and how to call them: executeTool takes the tool
 	// object from getTools and a plain input object (Chrome's Imperative API).
@@ -58,25 +56,9 @@
 			prompt
 	);
 
-	const introKey = 'tellegen.webmcp.intro-closed';
-	let introOpen = $state(true);
 	onMount(() => {
 		origin = location.origin;
-		try {
-			introOpen = localStorage.getItem(introKey) !== '1';
-		} catch {
-			/* Storage blocked: keep the explainer open. */
-		}
 	});
-	function rememberIntro(event: Event) {
-		introOpen = (event.currentTarget as HTMLDetailsElement).open;
-		try {
-			if (introOpen) localStorage.removeItem(introKey);
-			else localStorage.setItem(introKey, '1');
-		} catch {
-			/* The choice applies to this visit. */
-		}
-	}
 
 	let copied = $state<string | null>(null);
 	let copyError = $state(false);
@@ -91,25 +73,9 @@
 	}
 
 	const ready = $derived(supported && !registrationError);
-	const readyText = $derived(
-		callCount > 0
-			? `Your agent has made ${callCount} ${callCount === 1 ? 'call' : 'calls'}. Watch them in Activity.`
-			: `This tab offers ${toolCount || 'its'} ${toolCount === 1 ? 'tool' : 'tools'} to an AI agent. Choose an agent below, then give it the prompt. Its calls appear under Activity.`
-	);
-	/** The browser by name, for a sentence: Chrome, Edge, or "this browser". */
+	/** The browser by name: Chrome, Edge, or "this browser". */
 	const brandName = (brand: 'Chrome' | 'Edge' | 'Chromium') =>
 		brand === 'Chromium' ? 'this browser' : brand;
-	const site = WEBMCP_TRIAL_ORIGIN.slice(8);
-	const flagHint = $derived.by(() => {
-		if (browser?.kind !== 'flag') return '';
-		if (browser.brand === 'Edge')
-			return `Edge runs its own WebMCP trial, which ${site} has not joined, so Edge needs this setting on every site. Chrome needs none on ${site}.`;
-		if (browser.brand === 'Chromium')
-			return `Brave, Opera and other Chromium browsers need this setting on every site. Chrome needs none on ${site}.`;
-		return onTrialOrigin
-			? "Chrome's trial turns WebMCP on here by itself, but a policy or the browser build stopped it. The setting turns it on."
-			: `Chrome needs no setting on ${site}, which is in Chrome's trial. Local and preview copies of the site need it.`;
-	});
 </script>
 
 {#snippet copyRow(text: string, label: string)}
@@ -126,145 +92,81 @@
 <section aria-label="Use Tellegen with an agent">
 	{#if registrationError}
 		<div class="status" data-state="error" role="status" data-testid="webmcp-status">
-			<strong>The tools did not load</strong>
-			<p>
-				The browser refused Tellegen's tools: {registrationError}. Reload the page. If it happens
-				again, open the page in a new Chrome window.
-			</p>
+			<strong title={registrationError}>Tools failed to load</strong>
+			<details>
+				<summary>Details</summary>
+				<p>{registrationError}</p>
+			</details>
+			<button class="ask-copy" onclick={() => location.reload()}>Reload</button>
 		</div>
 	{:else if ready}
 		<div class="status" data-state="ready" role="status" data-testid="webmcp-status">
-			<strong
-				><span class="dot"></span>{callCount > 0 ? 'Agent connected' : 'Ready for agents'}</strong
-			>
-			<p>{readyText}</p>
-			{#if browser?.kind === 'ready' && browser.mobile}
-				<p>The agents that use these tools run on a computer for now.</p>
-			{/if}
+			<strong><span class="dot"></span>{callCount > 0 ? 'Connected' : 'Ready'}</strong>
+			<dl class="counts">
+				<div>
+					<dt>Tools</dt>
+					<dd>{toolCount}</dd>
+				</div>
+				<div>
+					<dt>Calls</dt>
+					<dd>{callCount}</dd>
+				</div>
+			</dl>
 		</div>
 	{:else if browser?.kind === 'ready'}
 		<div class="status" data-state="pending" role="status" data-testid="webmcp-status">
-			<strong><span class="dot"></span>Getting the tools ready…</strong>
-			<p>Your browser supports WebMCP. Tellegen is registering its tools.</p>
+			<strong><span class="dot"></span>Loading…</strong>
 		</div>
 	{:else if browser}
 		<div class="status" data-state="setup" role="status" data-testid="webmcp-status">
 			{#if browser.kind === 'flag'}
-				<strong>Turn on WebMCP in {brandName(browser.brand)}</strong>
-				<p>
-					WebMCP is off for this page. Paste this address into the address bar, set the option to
-					Enabled, then relaunch the browser.
-				</p>
+				<strong>WebMCP off</strong>
+				<p class="label">Enable at</p>
 				{@render copyRow(browser.flagUrl, 'flag address')}
-				<p class="hint">{flagHint}</p>
 			{:else if browser.kind === 'update' || browser.kind === 'legacy'}
-				<strong>Update {brandName(browser.brand)}</strong>
-				<p>
-					WebMCP needs version {browser.minVersion} or later. Update the browser from Settings, then About,
-					and reload this page.
-				</p>
-				{#if browser.brand !== 'Chrome'}
-					<p class="hint">An updated Chrome works on {site} with no setting to change.</p>
-				{/if}
+				<strong>Needs {brandName(browser.brand)} {browser.minVersion}+</strong>
 			{:else if browser.kind === 'mobile'}
-				<strong>Agents work from a computer</strong>
-				<p>
-					The agents that use these tools run on desktop for now. Open tellegen.dev in Chrome on a
-					computer. The map works here as usual.
-				</p>
+				<strong>Desktop only</strong>
 			{:else if browser.kind === 'other'}
-				<strong>{browser.browser ?? 'This browser'} does not support WebMCP yet</strong>
-				<p>
-					Only Chrome and Edge support it so far. Open this page in Chrome on a computer, or use an
-					agent below that brings its own browser.
-				</p>
+				<strong>Not supported in {browser.browser ?? 'this browser'}</strong>
 			{/if}
 		</div>
 	{/if}
 
-	<details class="intro" open={introOpen} ontoggle={rememberIntro}>
-		<summary>What is WebMCP?</summary>
-		<p>
-			WebMCP is a browser feature, on trial in Chrome, that lets a page offer tools to an AI agent.
-			The agent calls Tellegen's tools directly instead of reading the screen and clicking. Each
-			call is listed under Activity.
-		</p>
-	</details>
-
-	<h3>{ready ? '1. ' : ''}Connect your agent</h3>
+	<h3>Agents</h3>
 	<div class="routes">
 		<details open>
-			<summary>ChatGPT desktop app</summary>
-			<ol>
-				<li>Open {origin} in the app's built-in browser.</li>
-				<li>Ask for what you want. The agent finds the tools by itself.</li>
-				<li>The <b>Site tools</b> button in the address bar lists them.</li>
-			</ol>
-			<p class="hint">
-				Needs a model that supports Site tools. If the button is missing, check Settings, Browser,
-				Permissions, <b>Enable site tools</b>. Some work and school workspaces don't have it yet.
-				Not in the Codex CLI or IDE extension, and not through the Chrome connector.
-			</p>
+			<summary>ChatGPT app</summary>
+			<p>Open {origin} in the app's browser</p>
 		</details>
 		<details>
-			<summary>Claude Code with Claude in Chrome</summary>
-			<ol>
-				<li>
-					Install the Claude in Chrome extension (1.0.36 or later) and sign it in to the same Claude
-					account as Claude Code.
-				</li>
-				<li>
-					Start Claude Code with Chrome, and run <code>/chrome</code> to check it's connected:
-				</li>
-			</ol>
+			<summary>Claude in Chrome</summary>
 			{@render copyRow(commands.claudeChrome, 'Claude Code command')}
-			<p class="hint">
-				Needs a Claude Pro, Max, Team or Enterprise plan signed in with <code>/login</code>. With an
-				API key, Bedrock or Vertex, Claude Code keeps the browser off.
-			</p>
-			<p>
-				Claude does not look for page tools by itself yet, so start with this prompt. It tells
-				Claude where the tools are and how to call them.
-			</p>
-			<button class="primary" onclick={() => copy(claudePrompt)}
-				>{copied === claudePrompt ? 'Copied' : 'Copy prompt for Claude'}</button
-			>
 			{#if ready && !pageToolCalls}
-				<p class="hint note" data-testid="page-tool-calls-missing">
-					This browser lets the page offer tools but not call them, so this prompt won't work here.
-					Use Chrome DevTools MCP below instead.
-				</p>
+				<p class="hint" data-testid="page-tool-calls-missing">Use DevTools MCP</p>
+			{:else}
+				<button class="primary" onclick={() => copy(claudePrompt)}
+					>{copied === claudePrompt ? 'Copied' : 'Copy prompt for Claude'}</button
+				>
 			{/if}
 		</details>
 		<details>
-			<summary>Claude Code, Codex CLI or Cursor with Chrome DevTools MCP</summary>
-			<p>
-				Add Google's Chrome DevTools MCP server once. It opens its own Chrome window with WebMCP on
-				and gives the agent <code>list_webmcp_tools</code> and <code>execute_webmcp_tool</code>.
-			</p>
-			<p class="hint">Needs Node.js (for <code>npx</code>) and Chrome 150 or later installed.</p>
+			<summary>DevTools MCP</summary>
 			<p class="label">Claude Code</p>
 			{@render copyRow(commands.claudeDevtools, 'Claude Code DevTools command')}
 			<p class="label">Codex CLI</p>
 			{@render copyRow(commands.codexDevtools, 'Codex DevTools command')}
-			<p>Then ask the agent to open {origin} and list its WebMCP tools.</p>
-		</details>
-		<details>
-			<summary>Agents built into the browser</summary>
-			<p>Gemini in Chrome and Copilot in Edge do not call page tools yet.</p>
 		</details>
 	</div>
 
 	{#if ready}
-		<h3>2. Give it this prompt</h3>
-		<label class="visually-hidden" for="agent-prompt">Agent prompt</label>
-		<textarea id="agent-prompt" rows="5" readonly value={prompt}></textarea>
+		<h3>Prompt</h3>
 		<div class="actions">
 			<button class="primary" onclick={() => copy(prompt)}
 				>{copied === prompt ? 'Copied' : 'Copy prompt'}</button
 			>
 		</div>
-		<h3>3. Things to ask</h3>
+		<h3>Examples</h3>
 		<ul class="asks">
 			{#each asks as ask (ask)}
 				<li>
@@ -278,28 +180,11 @@
 			{/each}
 		</ul>
 	{/if}
-	{#if copyError}<p role="status" class="hint">Select the text and copy it yourself.</p>{/if}
+	{#if copyError}<p role="status" class="hint">Copy failed</p>{/if}
 	<p class="visually-hidden" role="status">{copied ? 'Copied' : ''}</p>
-	<h3>Questions</h3>
-	<dl class="faq">
-		<dt>Do I need to turn on remote debugging?</dt>
-		<dd>
-			No. Chrome DevTools MCP needs it only to attach to a Chrome you already have open: its
-			<code>--autoConnect</code> option needs remote debugging turned on at
-			<code>chrome://inspect/#remote-debugging</code>, and <code>--browserUrl</code> needs a Chrome started
-			with a debugging port. None of the setups above use either.
-		</dd>
-		<dt>Do I need to add an MCP server?</dt>
-		<dd>
-			Only for the Chrome DevTools MCP route, with the one command above. The ChatGPT app and
-			<code>claude --chrome</code> need none. To work on case files without a browser, use
-			<a href="{docs}/mcp.html" target="_blank" rel="noreferrer">tellegen-mcp</a>.
-		</dd>
-	</dl>
 
 	<div class="actions links">
-		<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Setup guide</a>
-		<a href={resolve('/changelog')}>Changelog</a>
+		<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
 	</div>
 </section>
 
@@ -351,9 +236,6 @@
 		white-space: nowrap;
 		border: 0;
 	}
-	.note {
-		margin-top: 8px;
-	}
 	.status[data-state='pending'] .dot {
 		background: var(--ink-dim);
 	}
@@ -374,15 +256,6 @@
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
-	.intro {
-		margin-bottom: 16px;
-		padding-bottom: 12px;
-		border-bottom: 1px solid var(--line);
-	}
-	.intro p {
-		margin: 6px 0 10px;
-	}
-	label,
 	.label {
 		display: block;
 		margin: 0 0 6px;
@@ -392,17 +265,20 @@
 		font-size: 12px;
 		margin-top: 8px;
 	}
-	textarea {
-		width: 100%;
-		box-sizing: border-box;
-		padding: 10px 12px;
-		resize: vertical;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
-		background: var(--paper);
-		color: var(--ink);
-		font: inherit;
-		line-height: 1.55;
+	.counts {
+		display: flex;
+		gap: 24px;
+		margin: 6px 0 0;
+	}
+	.counts dt {
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
+	.counts dd {
+		margin: 0;
+		font-size: 18px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
 	}
 	.actions {
 		display: flex;
@@ -457,7 +333,7 @@
 	.cmd {
 		display: flex;
 		gap: 8px;
-		align-items: flex-start;
+		align-items: center;
 		margin-bottom: 8px;
 	}
 	.cmd code {
@@ -467,7 +343,8 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--paper);
-		overflow-wrap: anywhere;
+		overflow-x: auto;
+		white-space: nowrap;
 		font-size: 12px;
 	}
 	/* Monospace only for text to paste: the flag address and terminal commands.
@@ -488,23 +365,6 @@
 	}
 	.routes details[open] summary {
 		margin-bottom: 6px;
-	}
-	.routes ol {
-		margin: 0 0 8px;
-		padding-left: 18px;
-	}
-	.routes li {
-		margin-bottom: 2px;
-	}
-	.faq {
-		margin: 0;
-	}
-	.faq dt {
-		font-weight: 600;
-	}
-	.faq dd {
-		margin: 2px 0 12px;
-		color: var(--text-secondary);
 	}
 	a {
 		color: var(--text-secondary);

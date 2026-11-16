@@ -116,9 +116,9 @@ test('unsupported physics and incomplete selected equipment fail before executio
 	);
 	const form = defaultGoalForm('dcopf');
 	form.scope = 'selected';
-	assert.throws(() => buildGoal(network, form, 'dcopf'), /at least one bus/);
+	assert.throws(() => buildGoal(network, form, 'dcopf'), /Needs ≥1 bus/);
 	form.buses = ['bus:2'];
-	assert.throws(() => buildGoal(network, form, 'dcopf'), /at least one line or bus/);
+	assert.throws(() => buildGoal(network, form, 'dcopf'), /Needs ≥1 candidate/);
 	assert.equal(resolveEquipment(network, form).candidates.length, 0);
 });
 
