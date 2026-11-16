@@ -207,7 +207,7 @@ describe('prices', () => {
 		]);
 		expect(
 			economicsLead({ ...econ, range: { lo: 12, hi: 1250 } }).stats.map((s) => s.value)
-		).toEqual(['12', '1,250']);
+		).toEqual(['12.00', '1,250.00']);
 		expect(economicsLead({ ...econ, uniform: 6.71 }).stats).toEqual([
 			{ label: 'Price', value: '6.71', sub: '$/MWh' }
 		]);

@@ -34,7 +34,7 @@
 		VOLTAGE_DOMAIN
 	} from '../diagram/transmission-results.js';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
-	import { docsLink, priceNumber } from '../diagram/transmission-explain.js';
+	import { docsLink } from '../diagram/transmission-explain.js';
 	import { displayFmt, extent, formulationLabel } from '../format.js';
 	import { limitWords } from '../diagram/verdict.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
@@ -462,17 +462,16 @@
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
 	/** The Bus values view's key numbers: the lowest and highest value, as the other views lead
 	 * with two numbers. */
+	const valueExtent = $derived.by(() => {
+		const values = (display?.values ?? []).map((v) => v.value).filter(Number.isFinite);
+		return values.length ? extent(values) : null;
+	});
 	const valueStats = $derived.by(() => {
-		if (!display) return [];
-		const values = display.values.map((v) => v.value).filter(Number.isFinite);
-		if (!values.length) return [];
-		const { min, max } = extent(values);
-		// Prices to the precision of the Prices view's boxes.
-		const digits = Math.max(Math.abs(min), Math.abs(max)) >= 100 ? 0 : 2;
+		if (!display || !valueExtent) return [];
+		const { min, max } = valueExtent;
 		const box = (label: string, value: number) => ({
 			label,
-			value:
-				display.mode === 'price' ? priceNumber(value, digits) : displayFmt(display.mode, value),
+			value: displayFmt(display.mode, value),
 			sub: display.unit
 		});
 		return uniform !== null
@@ -772,9 +771,7 @@
 	);
 	const levelsPresent = $derived(legend.entries);
 	const outOfService = $derived(graph.inService.some((on) => !on));
-	const TIER_NAMES = Object.fromEntries(
-		TX_TIERS.map((t) => [t.tier, t.name.charAt(0).toUpperCase() + t.name.slice(1)])
-	);
+	const TIER_NAMES = Object.fromEntries(TX_TIERS.map((t) => [t.tier, t.name]));
 
 	/** Width of the summary docked at the right edge on a wide screen, beside the drawing. */
 	const SUMMARY_WIDTH = 340;
@@ -2037,9 +2034,20 @@
 					{:else if display && uniform !== null}
 						<!-- One value at every bus: the box above says it. -->
 					{:else if display && domain}
-						{display.label} <span>{displayFmt(display.mode, domain.lo)}</span><i
-							style:background={display.gradient}
-						></i><span>{displayFmt(display.mode, domain.hi)} {display.unit}</span>
+						<!-- As the Prices view's scale: an end that cuts values off is marked ≤ or ≥. -->
+						{display.label}
+						<span
+							>{valueExtent && valueExtent.min < domain.lo ? '≤' : ''}{displayFmt(
+								display.mode,
+								domain.lo
+							)}</span
+						><i style:background={display.gradient}></i><span
+							>{valueExtent && valueExtent.max > domain.hi ? '≥' : ''}{displayFmt(
+								display.mode,
+								domain.hi
+							)}
+							{display.unit}</span
+						>
 					{/if}
 				{/if}
 				{#if panelView}
@@ -2607,7 +2615,7 @@
 		width: 16px;
 		height: 16px;
 		margin: 0;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.symbols {
 		margin: 4px 0 0;

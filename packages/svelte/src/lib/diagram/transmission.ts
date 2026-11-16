@@ -9,12 +9,13 @@ import { levelLabel } from './voltage-levels.js';
  * shade and their legend label. */
 export type TxTier = 'ehv' | 'hv' | 'sub' | 'low' | 'unknown';
 
+/** Each tier's key heading names its kV range, as the levels under it do. */
 export const TX_TIERS: { tier: TxTier; name: string; from: number }[] = [
-	{ tier: 'ehv', name: 'extra high voltage', from: 300 },
-	{ tier: 'hv', name: 'high voltage', from: 100 },
-	{ tier: 'sub', name: 'subtransmission', from: 35 },
-	{ tier: 'low', name: 'below 35 kV', from: 1e-9 },
-	{ tier: 'unknown', name: 'voltage not given', from: -Infinity }
+	{ tier: 'ehv', name: '300 kV and above', from: 300 },
+	{ tier: 'hv', name: '100–300 kV', from: 100 },
+	{ tier: 'sub', name: '35–100 kV', from: 35 },
+	{ tier: 'low', name: 'Below 35 kV', from: 1e-9 },
+	{ tier: 'unknown', name: 'Voltage not given', from: -Infinity }
 ];
 
 /** The tier of a nominal voltage in kV; 0 or missing is unknown. */

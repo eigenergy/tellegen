@@ -184,8 +184,14 @@ export interface ResultStatsInput {
   losses?: number | null;
 }
 
-/** One decimal, as on the diagram's gauges and the list of lines at limit. */
-const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+/** A line's loading as a percentage of its rating, to one decimal, as on the diagram's gauges
+ * and every list of lines. A loading over its rating that would round to 100.0% shows two
+ * decimals, so an overload never reads as exactly at the limit. */
+export function percent(fraction: number): string {
+  const value = fraction * 100;
+  const text = value.toFixed(1);
+  return `${value - 100 > 1e-6 && text === "100.0" ? value.toFixed(2) : text}%`;
+}
 
 /** The key numbers of a result, chosen per calculation, always in pairs: an OPF reports its
  * operational cost and the lines at their limit; AC power flow its losses, heaviest line, and

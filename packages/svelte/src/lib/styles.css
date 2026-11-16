@@ -16,7 +16,9 @@
 	--accent: #2747b8; /* cobalt: interaction, focus and selection */
 	--accent-bright: #2747b8;
 	--accent-soft: rgb(39 71 184 / 0.1);
+	--accent-fill: var(--accent); /* a filled control: primary button, checked box */
 	--on-accent: #ffffff; /* text on an accent fill, 8.3:1 */
+	--text-warning: #8a5a00; /* near-limit text, 5.6:1; --amber itself is for marks */
 	--red: #d7261e; /* alarm: a line at its limit, a violation */
 	--amber: #e3a008; /* near a limit */
 	--pos: #762a83;
@@ -163,7 +165,9 @@
 	--accent: #8fa6ff; /* 6.9:1 */
 	--accent-bright: #8fa6ff;
 	--accent-soft: rgb(143 166 255 / 0.16);
-	--on-accent: #10172a;
+	--accent-fill: #4767e0; /* reads as active on the dark panel, 3.3:1 */
+	--on-accent: #ffffff; /* 4.9:1 on the fill */
+	--text-warning: var(--amber);
 	--red: #ff6b5e; /* 5.9:1 */
 	--amber: #f2b53a;
 	--pos: #c9a7e0;
@@ -230,8 +234,9 @@
 		--accent: #8fa6ff; /* 6.9:1 */
 		--accent-bright: #8fa6ff;
 		--accent-soft: rgb(143 166 255 / 0.16);
-		--on-accent: #10172a;
-		--on-accent: #10172a;
+		--accent-fill: #4767e0;
+		--on-accent: #ffffff;
+		--text-warning: var(--amber);
 		--red: #ff6b5e; /* 5.9:1 */
 		--amber: #f2b53a;
 		--pos: #c9a7e0;
@@ -403,7 +408,7 @@ textarea {
 	width: 16px;
 	height: 16px;
 	margin: 0;
-	accent-color: var(--accent);
+	accent-color: var(--accent-fill);
 }
 :where(.settings-list) :where(details) {
 	border-bottom: 1px solid var(--line);
@@ -618,7 +623,7 @@ a:hover {
 }
 
 .segment button.active {
-	background: var(--accent);
+	background: var(--accent-fill);
 	color: var(--on-accent);
 }
 

@@ -292,7 +292,7 @@
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
 								><strong>{lineName(b)}</strong><span
-									class={{ over: b.state !== 'warning' }}
+									class={b.state === 'warning' ? 'near' : 'over'}
 									title="Exact: {(b.loading * 100).toPrecision(6)}%">{gaugeText(b.loading)}</span
 								></button
 							>
@@ -451,6 +451,10 @@
 	/* At or over a limit: red, as on the drawing. */
 	li button > span.over {
 		color: var(--red);
+	}
+	/* Near a limit: amber, as on the drawing. */
+	li button > span.near {
+		color: var(--text-warning);
 	}
 	@media (pointer: coarse) {
 		button,

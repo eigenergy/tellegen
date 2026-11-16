@@ -2,6 +2,7 @@
  * the choice of numbers is tested without a renderer. The docs page explains the quantities. */
 
 import type { operatingExceptions } from './transmission-inspection.js';
+import { priceText } from '../format.js';
 import { limitWords, type Stat } from './verdict.js';
 
 /** A view's summary: labelled numbers, or one short line when there is nothing to count. */
@@ -95,37 +96,26 @@ export interface EconomicsLeadInput {
 	uniform: number | null;
 }
 
-/** A price in $/MWh with a fixed number of decimals, so the ends of a range read alike. */
-export function priceNumber(value: number, digits: number): string {
-	const text = Math.abs(value).toLocaleString('en-US', {
-		minimumFractionDigits: digits,
-		maximumFractionDigits: digits
-	});
-	// A true minus sign, as everywhere else, and never a negative zero.
-	return value < 0 && /[1-9]/.test(text) ? `−${text}` : text;
-}
-
 /** OPF prices: the lowest and highest price, to the same precision. The lines at their limit are
  * in the Network panel and the list below, so they are not repeated here. */
 export function economicsLead(input: EconomicsLeadInput): Lead {
 	if (!input.opf) return { stats: [], empty: 'No prices in power flow' };
 	if (!input.range) return { stats: [], empty: 'No prices' };
 	const { lo, hi } = input.range;
-	const digits = Math.max(Math.abs(lo), Math.abs(hi)) >= 100 ? 0 : 2;
 	if (input.uniform !== null)
 		return {
 			stats: [
 				{
 					label: 'Price',
-					value: priceNumber(input.uniform, digits),
+					value: priceText(input.uniform),
 					sub: '$/MWh'
 				}
 			]
 		};
 	return {
 		stats: [
-			{ label: 'Lowest', value: priceNumber(lo, digits), sub: '$/MWh' },
-			{ label: 'Highest', value: priceNumber(hi, digits), sub: '$/MWh' }
+			{ label: 'Lowest', value: priceText(lo), sub: '$/MWh' },
+			{ label: 'Highest', value: priceText(hi), sub: '$/MWh' }
 		]
 	};
 }

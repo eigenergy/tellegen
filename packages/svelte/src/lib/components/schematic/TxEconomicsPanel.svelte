@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import { priceGradient } from '../../colors.js';
-	import { formulationLabel, plain, readable } from '../../format.js';
+	import { formulationLabel, priceText, readable } from '../../format.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -66,9 +66,9 @@
 	{#if economics.uniform === null && economics.prices.length}
 		<div class="scale">
 			<span
-				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{plain(domain.lo)}</span
+				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{priceText(domain.lo)}</span
 			><i style:background={priceGradient}></i><span
-				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{plain(domain.hi)}
+				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{priceText(domain.hi)}
 				{PRICE_UNIT}</span
 			>
 		</div>

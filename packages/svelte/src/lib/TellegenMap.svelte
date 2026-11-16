@@ -62,7 +62,7 @@
 	import { foldMapBounds } from './map-bounds.js';
 	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
-	import { displayFmt, fmt, quantity, rgbaCss } from './format.js';
+	import { displayFmt, priceText, quantity, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
@@ -938,10 +938,10 @@
 		// Demand already has its own row below, so the demand colouring shows the price here alone.
 		const scalarRow =
 			!d || d.scalarMode === 'price' || d.scalarMode === 'demand'
-				? `Price ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`
+				? `Price ${price === undefined ? '&mdash;' : priceText(price)} $/MWh`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>Price ${price === undefined ? '&mdash;' : fmt.format(price)} $/MWh`;
+					} ${d.scalarUnit}<br>Price ${price === undefined ? '&mdash;' : priceText(price)} $/MWh`;
 		return {
 			html: `<div class="tt"><b>Bus ${bus.id}</b><br>${scalarRow}<br>${loadRow}<br>Generation ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}</div>`
 		};

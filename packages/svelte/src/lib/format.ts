@@ -84,8 +84,18 @@ export const small = (v: number) => plain(Math.abs(v) < SMALL_FLOOR ? 0 : v, two
  * per MWh for each MW. */
 export const SMALL_FLOOR = 1e-4;
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
+const twoDecimals = new Intl.NumberFormat('en-US', {
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 2
+});
+/** A price in $/MWh, the same wherever it shows: two decimals, so 22 reads 22.00 beside 20.70. */
+export const priceText = (value: number) => plain(value, twoDecimals);
 export const displayFmt = (mode: DisplayMode, value: number) =>
-	mode === 'price' || mode === 'demand' ? plain(value) : plain(value, threeDecimals);
+	mode === 'price'
+		? priceText(value)
+		: mode === 'demand'
+			? plain(value)
+			: plain(value, threeDecimals);
 const threeDecimals = new Intl.NumberFormat('en-US', {
 	minimumFractionDigits: 3,
 	maximumFractionDigits: 3
@@ -116,7 +126,17 @@ export function readable(
 	if (value == null || !Number.isFinite(value)) return { text: '—', exact: '—' };
 	const magnitude = Math.abs(value);
 	const places =
-		unit === 'pu' ? 4 : unit === '%' ? 1 : magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : 2;
+		unit === 'pu'
+			? 4
+			: unit === '%'
+				? 1
+				: unit === '$/MWh'
+					? 2
+					: magnitude >= 100
+						? 0
+						: magnitude >= 10
+							? 1
+							: 2;
 	const rounded = decimals[places].format(magnitude);
 	const zero = Number(rounded.replace(/,/g, '')) === 0;
 	const sign = !signed || zero ? (value < 0 && !zero ? '-' : '') : value < 0 ? '-' : '+';

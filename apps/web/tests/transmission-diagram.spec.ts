@@ -208,7 +208,7 @@ for (const touch of [false, true]) {
 			// The price scale fits the prices by default, as the Network panel's legend does.
 			await expect(economics.getByLabel('Scale')).toHaveValue('-1');
 			await economics.getByLabel('Scale').selectOption('3');
-			await expect(economics).toContainText('200 $/MWh');
+			await expect(economics).toContainText('200.00 $/MWh');
 			await economics.getByText('Lines at limit (1)', { exact: true }).click();
 			const binding = economics.getByRole('button', { name: /Line 1.*\/MW/ });
 			if (touch) await binding.tap();
@@ -506,9 +506,9 @@ for (const touch of [false, true]) {
 			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
 			await expect(key).toContainText('Transformer');
 			await expect(key).toContainText('Out of service');
-			// Levels are grouped under their tier, named in sentence case.
-			await expect(key.getByText('Extra high voltage', { exact: true })).toBeVisible();
-			await expect(key.getByText('High voltage', { exact: true })).toBeVisible();
+			// Levels are grouped under their tier, named by its kV range.
+			await expect(key.getByText('300 kV and above', { exact: true })).toBeVisible();
+			await expect(key.getByText('100–300 kV', { exact: true })).toBeVisible();
 			await expect(key.locator('.stat').filter({ hasText: 'Substations' })).toContainText('3');
 			await expect(key.locator('.stat').filter({ hasText: 'Buses' })).toContainText('4');
 			// Each symbol is listed once.

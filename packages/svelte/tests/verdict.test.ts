@@ -4,11 +4,13 @@ import {
   flowSummary,
   duration,
   iterationCount,
+  percent,
   resultStats,
   savedVerdict,
   solveVerdict,
   statusWords,
 } from "../src/lib/diagram/verdict.js";
+import { priceText } from "../src/lib/format.js";
 
 describe("statusWords", () => {
   it("maps raw solver statuses to plain words", () => {
@@ -274,5 +276,23 @@ describe("resultStats", () => {
       resultStats({ formulation: "dcopf", objective: null, binding: null })[0]
         .value,
     ).toBe("—");
+  });
+});
+
+describe("percent", () => {
+  it("shows one decimal, and two when an overload would round to 100.0%", () => {
+    expect(percent(0.91)).toBe("91.0%");
+    expect(percent(1)).toBe("100.0%");
+    expect(percent(1.0004)).toBe("100.04%");
+    expect(percent(1.012)).toBe("101.2%");
+  });
+});
+
+describe("priceText", () => {
+  it("shows every price to two decimals", () => {
+    expect(priceText(22)).toBe("22.00");
+    expect(priceText(4.531)).toBe("4.53");
+    expect(priceText(-3.2)).toBe("−3.20");
+    expect(priceText(1250)).toBe("1,250.00");
   });
 });

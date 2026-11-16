@@ -1,6 +1,6 @@
 import type { BranchLoading, NetworkBus, SolutionFlow, Solution } from '@tellegen/engine';
 import type { RGBA } from '../colors.js';
-import { cleanStatus, statusWords } from './verdict.js';
+import { cleanStatus, percent, statusWords } from './verdict.js';
 
 /** Display tolerances suppress rounding noise; they are not solver feasibility tolerances. */
 export const VOLTAGE_TOLERANCE_PU = 1e-5;
@@ -329,7 +329,7 @@ export function gaugeLeader(g: OperatingGauge): [number, number] {
 }
 
 /** A gauge's percentage, to one decimal on every gauge, so neighbours compare at a glance. */
-export const gaugeText = (loading: number) => `${(loading * 100).toFixed(1)}%`;
+export const gaugeText = percent;
 
 export const loadingStateText: Record<LoadingState, string> = {
 	deenergized: 'de-energized',
