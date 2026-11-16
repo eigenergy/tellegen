@@ -67,7 +67,7 @@
 				<dl class="details">
 					{#each details as [key, value] (key)}
 						<div>
-							<dt class="mono">{key}</dt>
+							<dt>{key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' ')}</dt>
 							<dd class="mono">{value}</dd>
 						</div>
 					{/each}

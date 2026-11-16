@@ -21,6 +21,10 @@ export async function noticeDetails(page: Page) {
 		return log;
 	}
 	if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+	// An open notice expands its own details; the list of past messages shows after it closes.
+	const inline = section.getByTestId('notification-toast').getByTestId('notification-details');
+	if (await inline.count()) return inline;
+	// The open notice has only one message, so its title is not repeated in a list.
 	const first = section.locator('details').first();
 	if (!(await first.evaluate((element) => (element as HTMLDetailsElement).open)))
 		await first.locator('summary').click();

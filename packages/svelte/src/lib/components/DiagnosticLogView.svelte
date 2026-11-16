@@ -53,6 +53,8 @@
 			copied = false;
 		}
 	}
+	/** Each step's heading, named for what it covers. */
+	const STAGE: Record<string, string> = { Open: 'Files', Solve: 'Calculation' };
 </script>
 
 <section class="log" aria-label="Log" data-testid="diagnostic-log">
@@ -85,8 +87,8 @@
 		{#each groups as group (`${group.stage}\u0000${group.subject ?? ''}`)}
 			<section class="group" data-stage={group.stage}>
 				<h4>
-					<span class="stage">{group.stage}</span>{#if group.subject}<span class="subject"
-							>{group.subject}</span
+					<span class="stage">{STAGE[group.stage] ?? group.stage}</span>{#if group.subject}<span
+							class="subject">{group.subject}</span
 						>{/if}
 				</h4>
 				<ol>

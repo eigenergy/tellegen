@@ -1,4 +1,5 @@
 import type { PowerIoDiagnostic, SolveDiagnostic } from '@tellegen/engine';
+import { errorNoticeTitle } from './notices.svelte.js';
 
 /** How serious a finding is. PowerIO's `remark` and `note` both read as notes. */
 export type LogSeverity = 'error' | 'warning' | 'note';
@@ -197,13 +198,18 @@ export function errorStage(message: string): string {
 	return 'App';
 }
 
-/** An app error as a log entry. */
+/** An app error as a log entry: the notice's short title as its line, with the
+ * raw message (and any detail behind it) under Details. */
 export function errorEntry(message: string, detail?: string | null): LogEntryInput {
+	const title = errorNoticeTitle(message);
+	const details: Record<string, string> = {};
+	if (title !== message) details.message = message;
+	if (detail) details.detail = detail;
 	return {
 		severity: 'error',
 		stage: errorStage(message),
 		source: 'tellegen',
-		message,
-		details: detail ? { detail } : undefined
+		message: title,
+		details: Object.keys(details).length ? details : undefined
 	};
 }

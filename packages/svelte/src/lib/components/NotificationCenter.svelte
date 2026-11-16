@@ -92,7 +92,9 @@
 		onpointerenter={() => (hovered = true)}
 		onpointerleave={() => (hovered = false)}
 	>
-		{#if notices.expanded}
+		<!-- The open notice's details expand inside it; the list of past messages is for
+		     after it closes. -->
+		{#if notices.expanded && !notices.active}
 			<div class="recent" id="recent-notifications">
 				<header>
 					<strong>Recent messages</strong><button
@@ -138,29 +140,44 @@
 			class:quiet={!notices.active}
 			hidden={!notices.active && !notices.expanded}
 		>
-			{#if notices.active}
-				<span class="message">{notices.active.title}</span>
-				{#if notices.active.count > 1}<span
-						class="count"
-						aria-label={`${notices.active.count} occurrences`}>{notices.active.count}</span
+			<div class="row">
+				{#if notices.active}
+					<span class="message">{notices.active.title}</span>
+					{#if notices.active.count > 1}<span
+							class="count"
+							aria-label={`${notices.active.count} occurrences`}>{notices.active.count}</span
+						>{/if}
+					{#if notices.active.retry && notices.active.canRetry?.()}<button
+							onclick={notices.active.retry}>Retry</button
+						>{/if}
+				{/if}
+				<button
+					class="history"
+					aria-expanded={notices.expanded}
+					aria-controls={notices.active ? 'notice-details' : 'recent-notifications'}
+					onclick={() => (notices.expanded = !notices.expanded)}
+					>{notices.active ? 'Details' : 'Messages'}{#if !notices.active}<span class="count"
+							>{notices.entries.length}</span
+						>{/if}</button
+				>
+				{#if notices.active}<button
+						aria-label="Dismiss notification"
+						onclick={() => notices.dismiss()}>Close</button
 					>{/if}
-				{#if notices.active.retry && notices.active.canRetry?.()}<button
-						onclick={notices.active.retry}>Retry</button
-					>{/if}
+			</div>
+			{#if notices.active && notices.expanded}
+				<div class="inline" id="notice-details">
+					{#if notices.active.entries?.length}
+						<ol class="entries" data-testid="notification-details">
+							{#each notices.active.entries as item, i (i)}
+								<li><LogEntryView entry={item} showSubject={false} /></li>
+							{/each}
+						</ol>
+					{:else}
+						<pre data-testid="notification-details">{notices.active.details}</pre>
+					{/if}
+				</div>
 			{/if}
-			<button
-				class="history"
-				aria-expanded={notices.expanded}
-				aria-controls="recent-notifications"
-				onclick={() => (notices.expanded = !notices.expanded)}
-				>{notices.active ? 'Details' : 'Messages'}{#if !notices.active}<span class="count"
-						>{notices.entries.length}</span
-					>{/if}</button
-			>
-			{#if notices.active}<button
-					aria-label="Dismiss notification"
-					onclick={() => notices.dismiss()}>Close</button
-				>{/if}
 		</div>
 	</section>
 {/if}
@@ -194,13 +211,23 @@
 		border-radius: var(--radius-panel);
 		box-shadow: var(--elev-2);
 	}
-	.notice {
+	.row {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		min-height: 38px;
 		padding: 3px 8px 3px 12px;
 		box-sizing: border-box;
+	}
+	.inline {
+		max-height: min(240px, 36dvh);
+		overflow-y: auto;
+		padding: 0 12px 10px;
+		border-top: 1px solid var(--line);
+	}
+	.inline pre {
+		margin-top: 8px;
+		color: var(--text-secondary);
 	}
 	/* The message says what to do next, so it wraps instead of being cut off. */
 	.message {
