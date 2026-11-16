@@ -20,7 +20,7 @@ initSync({
 });
 
 const case3 = readFileSync(
-  new URL("../../../docs/evidence/studies/case3.m", import.meta.url),
+  new URL("../../../validation/evidence/studies/case3.m", import.meta.url),
 );
 const moduleJson = (
   JSON.parse(ingest_case(case3, "matpower")) as { module_json: string }
