@@ -69,41 +69,53 @@
 </script>
 
 <section aria-label="Use Tellegen with an agent">
-	{#if registrationError}
-		<div class="status" data-state="error" role="status" data-testid="webmcp-status">
-			<strong title={registrationError}>Tools failed to load</strong>
-			<details>
-				<summary>Details</summary>
-				<p>{registrationError}</p>
-			</details>
-			<button class="secondary" onclick={() => location.reload()}>Reload</button>
-		</div>
-	{:else if ready}
-		<div class="status" data-state="ready" role="status" data-testid="webmcp-status">
-			<strong><span class="dot"></span>{callCount > 0 ? 'Connected' : 'Ready'}</strong>
-			<dl class="counts">
-				<div>
-					<dt>Tools</dt>
-					<dd>{toolCount}</dd>
-				</div>
-				<div>
-					<dt>Calls</dt>
-					<dd>{callCount}</dd>
-				</div>
-			</dl>
-		</div>
-	{:else if browser?.kind === 'ready'}
-		<div class="status" data-state="pending" role="status" data-testid="webmcp-status">
-			<strong><span class="dot"></span>Loading…</strong>
-		</div>
-	{:else if browser}
-		<div class="status" data-state="setup" role="status" data-testid="webmcp-status">
-			{#if browser.kind === 'update' || browser.kind === 'legacy'}
-				<strong>Needs {brandName(browser.brand)} {browser.minVersion}+</strong>
-			{:else}
-				<strong>Not available in this browser</strong>
-			{/if}
-			{#if browser.kind === 'flag'}
+	<!-- One card: the status, what to do about it, and the docs. -->
+	<div class="card" data-state={registrationError ? 'error' : ready ? 'ready' : 'setup'}>
+		{#if registrationError}
+			<div class="status" role="status" data-testid="webmcp-status">
+				<strong title={registrationError}>Tools failed to load</strong>
+				<details>
+					<summary>Details</summary>
+					<p>{registrationError}</p>
+				</details>
+			</div>
+			<div class="actions">
+				<button class="secondary" onclick={() => location.reload()}>Reload</button>
+				<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
+			</div>
+		{:else}
+			<div class="status" role="status" data-testid="webmcp-status">
+				{#if ready}
+					<strong><span class="dot"></span>{callCount > 0 ? 'Connected' : 'Ready'}</strong>
+					<dl class="counts">
+						<div>
+							<dt>Tools</dt>
+							<dd>{toolCount}</dd>
+						</div>
+						<div>
+							<dt>Calls</dt>
+							<dd>{callCount}</dd>
+						</div>
+					</dl>
+				{:else if !browser || browser.kind === 'ready'}
+					<strong class="pending"><span class="dot"></span>Loading…</strong>
+				{:else}
+					{#if browser.kind === 'update' || browser.kind === 'legacy'}
+						<strong>Needs {brandName(browser.brand)} {browser.minVersion}+</strong>
+					{:else}
+						<strong>Not available in this browser</strong>
+					{/if}
+				{/if}
+			</div>
+			<div class="actions">
+				{#if ready}
+					<button class="secondary" onclick={() => copy(copiedPrompt)}
+						>{copied === copiedPrompt ? 'Copied' : 'Copy prompt'}</button
+					>
+				{/if}
+				<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
+			</div>
+			{#if !ready && browser?.kind === 'flag'}
 				<div class="cmd" title="Paste into the address bar, set to Enabled, relaunch">
 					<code>{browser.flagUrl}</code>
 					<button
@@ -114,54 +126,50 @@
 					>
 				</div>
 			{/if}
-		</div>
-	{/if}
-
-	<div class="actions">
-		{#if ready}
-			<button class="secondary" onclick={() => copy(copiedPrompt)}
-				>{copied === copiedPrompt ? 'Copied' : 'Copy prompt'}</button
-			>
 		{/if}
-		<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
+		{#if copyError}<p role="status" class="hint">Copy failed</p>{/if}
 	</div>
-	{#if copyError}<p role="status" class="hint">Copy failed</p>{/if}
 	<p class="visually-hidden" role="status">{copied ? 'Copied' : ''}</p>
 </section>
 
 <style>
 	section {
-		padding: 16px 18px 20px;
+		padding: 16px 18px;
 		font: 13px/1.5 var(--font-display);
 	}
 	p {
-		margin: 0 0 12px;
+		margin: 0;
 	}
-	.hint {
-		color: var(--text-secondary);
-		font-size: 12px;
-	}
-	.status {
-		margin-bottom: 16px;
+	/* Status on the left, its actions on the right, in one card. */
+	.card {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: start;
+		gap: 8px 12px;
 		padding: 10px 12px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--raised);
 	}
-	.status[data-state='error'] strong {
+	.hint {
+		grid-column: 1 / -1;
+		color: var(--text-secondary);
+		font-size: 12px;
+	}
+	.status {
+		min-width: 0;
+	}
+	.card[data-state='error'] strong {
 		color: var(--text-danger);
 	}
 	.status strong {
 		display: flex;
 		gap: 8px;
 		align-items: center;
-		margin-bottom: 4px;
+		min-height: 24px;
 	}
 	.status p {
 		margin: 0 0 6px;
-	}
-	.status > :last-child {
-		margin-bottom: 0;
 	}
 	.visually-hidden {
 		position: absolute;
@@ -174,7 +182,7 @@
 		white-space: nowrap;
 		border: 0;
 	}
-	.status[data-state='pending'] .dot {
+	.pending .dot {
 		background: var(--ink-dim);
 	}
 	.dot {
@@ -197,7 +205,7 @@
 	.counts {
 		display: flex;
 		gap: 24px;
-		margin: 6px 0 0;
+		margin: 4px 0 0;
 	}
 	.counts dt {
 		font-size: 12px;
@@ -212,7 +220,8 @@
 	.actions {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: 12px;
+		min-height: 24px;
 	}
 	.actions a {
 		font-size: 12px;
@@ -231,10 +240,10 @@
 		border-color: var(--border-strong);
 	}
 	.cmd {
+		grid-column: 1 / -1;
 		display: flex;
 		align-items: stretch;
 		height: 28px;
-		margin-top: 8px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--paper);

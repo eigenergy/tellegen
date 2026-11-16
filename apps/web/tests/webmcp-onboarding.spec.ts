@@ -43,13 +43,15 @@ test('recent Chrome without WebMCP gets the flag to copy', async ({ page, contex
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	const status = await asBrowser(page, MAC_CHROME(157));
 	await expect(status).toContainText('Not available in this browser');
-	await expect(status.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
+	// The flag sits in the status card, to copy.
+	const card = page.getByRole('region', { name: 'Use Tellegen with an agent' });
+	await expect(card.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
 	// The flag address is shown in full, not cut off.
 	await expect
-		.poll(() => status.locator('code').evaluate((el) => el.scrollWidth <= el.clientWidth))
+		.poll(() => card.locator('code').evaluate((el) => el.scrollWidth <= el.clientWidth))
 		.toBe(true);
-	await status.getByRole('button', { name: 'Copy flag address' }).click();
-	await expect(status.getByRole('button', { name: 'Copied flag address' })).toHaveText('Copied');
+	await card.getByRole('button', { name: 'Copy flag address' }).click();
+	await expect(card.getByRole('button', { name: 'Copied flag address' })).toHaveText('Copied');
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
 		'chrome://flags/#enable-webmcp-testing'
 	);
@@ -94,7 +96,9 @@ test('Firefox gets no first-visit hint', async ({ page }) => {
 
 test('Edge gets its own flag scheme', async ({ page }) => {
 	const status = await asBrowser(page, `${MAC_CHROME(150)} Edg/150.0.0.0`);
-	await expect(status.locator('code')).toHaveText('edge://flags/#enable-webmcp-testing');
+	await expect(
+		page.getByRole('region', { name: 'Use Tellegen with an agent' }).locator('code')
+	).toHaveText('edge://flags/#enable-webmcp-testing');
 	await expect(status).toContainText('Not available in this browser');
 });
 
