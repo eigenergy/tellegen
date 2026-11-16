@@ -19,9 +19,7 @@
 	const failed = $derived.by(() => {
 		const c = ctrl.activeSolvable;
 		return (
-			!!c &&
-			!c.solving &&
-			(!!c.failedCalculation || (c.solveBackend != null && c.solveMs == null))
+			!!c && !c.solving && (!!c.failedCalculation || (c.solveBackend != null && c.solveMs == null))
 		);
 	});
 </script>
