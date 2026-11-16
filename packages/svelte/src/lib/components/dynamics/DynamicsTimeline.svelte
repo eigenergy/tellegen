@@ -4,7 +4,14 @@
 	import { SPEEDS, type Speed } from '../../dynamics/player.svelte.js';
 	import DynamicsTraces from './DynamicsTraces.svelte';
 
-	let { dockHeight = $bindable(0) }: { dockHeight?: number } = $props();
+	let {
+		dockHeight = $bindable(0),
+		flush = false
+	}: {
+		dockHeight?: number;
+		/** Sit flush on the bottom edge, under an open phone sheet. */
+		flush?: boolean;
+	} = $props();
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -80,7 +87,7 @@
 
 {#if run && record}
 	<section
-		class={['timeline', { compact: app.compactLayout }]}
+		class={['timeline', { compact: app.compactLayout, flush }]}
 		aria-label="Dynamics playback"
 		data-dyn-timeline
 		bind:clientHeight={dockHeight}
@@ -189,6 +196,15 @@
 		right: 8px;
 		bottom: 40px;
 		padding: 4px 8px;
+	}
+	.timeline.compact.flush {
+		left: 0;
+		right: 0;
+		bottom: 0;
+		border-width: 1px 0 0;
+		border-radius: 0;
+		box-shadow: none;
+		backdrop-filter: none;
 	}
 	.controls {
 		display: flex;

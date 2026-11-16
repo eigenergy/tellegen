@@ -39,7 +39,8 @@
 	/** Phone with the sheet open: the sheet runs to the bottom edge, and the map's credit
 	 * and the notices sit on the map above it. */
 	const sheetOpen = $derived(layout.compact && !!layout.drawer && !app.zen);
-	const bottomReserve = $derived(sheetOpen ? 0 : notices.entries.length ? 120 : 88);
+	// An open sheet stands on the dynamics playback bar, which then sits flush on the bottom edge.
+	const bottomReserve = $derived(sheetOpen ? app.dockInset : notices.entries.length ? 120 : 88);
 	/** The tab strip: the panels that dock on the left by default, plus any that
 	 * ask for a tab (Dynamics). Settings opens from the header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));
@@ -470,6 +471,10 @@
 		height: 2px;
 		background: var(--accent);
 	}
+	/* The strip clips its overflow, so on a phone the underline sits inside its lower edge. */
+	.panel-toolbar.compact button[aria-pressed='true']::after {
+		bottom: 0;
+	}
 	button:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: -4px;
@@ -554,8 +559,9 @@
 		button {
 			min-height: 44px;
 		}
+		/* The 44 px tabs plus the strip's borders, so the open tab's underline is not clipped. */
 		.panel-toolbar {
-			height: 44px;
+			height: 46px;
 		}
 	}
 </style>

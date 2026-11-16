@@ -15,10 +15,12 @@
 	import TellegenMap from './TellegenMap.svelte';
 	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
 	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
+	import { getPanelLayout } from './panels.svelte.js';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+	const layout = getPanelLayout();
 
 	let dragDepth = 0;
 	/** Height kept free above the dock for the map's control row (the zoom
@@ -36,11 +38,14 @@
 	$effect(() => {
 		if (!app.dynamicsEnabled) untrack(() => dyn.player.pause());
 	});
+	/** Phone with a panel open: the playback bar sits flush on the bottom edge and the
+	 * sheet stands on top of it, so the bar never covers the sheet's content. */
+	const sheetOpen = $derived(app.compactLayout && !!layout.drawer && !app.zen);
 	// What the playback dock covers, from the bottom edge (it sits 12 px up,
-	// 40 px on the compact layout).
+	// 40 px on the compact layout, flush under an open sheet).
 	$effect(() => {
-		app.dockInset =
-			dynamicsShown && timelineHeight > 0 ? timelineHeight + (app.compactLayout ? 40 : 12) : 0;
+		const gap = app.compactLayout ? (sheetOpen ? 0 : 40) : 12;
+		app.dockInset = dynamicsShown && timelineHeight > 0 ? timelineHeight + gap : 0;
 	});
 	// Chrome anchored at the bottom (toasts, map controls, the host app's own
 	// notices outside this shell) clears the dock through this variable.
@@ -174,7 +179,7 @@
 	<ControlPanel />
 	{#if !app.studyView && app.dynamicsEnabled}<DynamicsPanel />{/if}
 	{#if dynamicsShown}
-		<DynamicsTimeline bind:dockHeight={timelineHeight} />
+		<DynamicsTimeline bind:dockHeight={timelineHeight} flush={sheetOpen} />
 	{/if}
 	<LogPanel />
 	<SettingsPanel />
