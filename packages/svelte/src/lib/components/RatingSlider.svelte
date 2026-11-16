@@ -39,7 +39,13 @@
 			{#if bounds.disabled}
 				<span class="dim">Not adjustable</span>
 			{:else}
-				<span class="mono dim">{signed(bounds.min)} to {signed(bounds.max)} MW</span>
+				<span class="dim"
+					>Range <span class="mono"
+						>{bounds.min === -bounds.max
+							? `±${fmt.format(bounds.max)}`
+							: `${signed(bounds.min)} to ${signed(bounds.max)}`} MW</span
+					></span
+				>
 			{/if}
 		</div>
 		<div

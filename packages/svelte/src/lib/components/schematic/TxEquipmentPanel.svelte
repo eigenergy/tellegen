@@ -196,6 +196,12 @@
 		width: 100%;
 		box-sizing: border-box;
 		min-height: 36px;
+		padding: 0 10px;
+		font: inherit;
+		color: var(--ink);
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
 	}
 	button {
 		font: inherit;

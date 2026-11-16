@@ -993,14 +993,26 @@
 		});
 	}
 
-	// Zen collapses the compact attribution to its (i) button; maplibre opens it
-	// by default on wide maps. The button still expands it on demand. Leaving zen
-	// restores the open state.
+	// Zen and the phone layout collapse the compact attribution to its (i) button;
+	// maplibre opens it once its credits arrive. The button still expands it on
+	// demand. Leaving zen restores the open state on a wide screen.
 	$effect(() => {
-		const zen = app.zen;
+		const collapsed = app.zen || app.compactLayout;
 		const attrib = map?.getContainer().querySelector('.maplibregl-ctrl-attrib');
 		if (!attrib) return;
-		attrib.classList.toggle('maplibregl-compact-show', !zen);
+		const apply = () => attrib.classList.toggle('maplibregl-compact-show', !collapsed);
+		if (attrib.classList.contains('maplibregl-compact')) {
+			apply();
+			return;
+		}
+		// maplibre turns compact (and open) when the style's credits first load: collapse then.
+		const watch = new MutationObserver(() => {
+			if (!attrib.classList.contains('maplibregl-compact')) return;
+			watch.disconnect();
+			apply();
+		});
+		watch.observe(attrib, { attributes: true, attributeFilter: ['class'] });
+		return () => watch.disconnect();
 	});
 
 	function initMap(container: HTMLDivElement) {

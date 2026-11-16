@@ -86,6 +86,12 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 		return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2));
 	});
 	expect(attribOnTop).toBe(true);
+	// On a phone the credit starts folded to its info button, which opens it.
+	const credit = page.locator('.maplibregl-ctrl-attrib');
+	await expect(credit).not.toHaveClass(/maplibregl-compact-show/);
+	await credit.locator('.maplibregl-ctrl-attrib-button').tap();
+	await expect(credit).toHaveClass(/maplibregl-compact-show/);
+	await expect(credit).toContainText('OpenStreetMap');
 
 	// Select a bus through the lookup the sheet mounts inline.
 	const lookup = page.locator('.bus-lookup input');

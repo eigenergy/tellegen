@@ -1195,8 +1195,11 @@
 	.file-button {
 		position: relative;
 		flex: none;
+		display: inline-flex;
+		align-items: center;
 		overflow: hidden;
-		padding: 8px;
+		padding: 8px 12px;
+		font-size: var(--fs-label);
 		cursor: pointer;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
@@ -1216,6 +1219,7 @@
 		flex: none;
 	}
 	nav button {
+		font-size: inherit;
 		border: 0;
 		border-bottom: 2px solid transparent;
 		border-radius: 0;
@@ -1267,8 +1271,10 @@
 		max-width: none;
 		padding-block: 8px;
 	}
+	/* One size for every button here, the file button included: the panels' control text. */
 	button {
 		padding: 8px 12px;
+		font-size: var(--fs-label);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: transparent;

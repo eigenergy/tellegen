@@ -38,7 +38,9 @@
 		}
 		const bus = ctrl.selectedBusData;
 		const price = solution?.prices.find((p) => p.bus === app.selectedBus)?.value;
-		const generation = solution ? dispatchByBus(solution.dispatch).get(app.selectedBus!) : undefined;
+		const generation = solution
+			? dispatchByBus(solution.dispatch).get(app.selectedBus!)
+			: undefined;
 		return [
 			['Price', readable(price, '$/MWh').text],
 			['Demand', readable(bus ? bus.demand_mw + ctrl.committedDelta : null, 'MW').text],
@@ -61,7 +63,10 @@
 </div>
 <dl class="values" aria-label="Selection values">
 	{#each values as [label, value] (label)}
-		<div><dt>{label}</dt><dd>{value}</dd></div>
+		<div>
+			<dt>{label}</dt>
+			<dd>{value}</dd>
+		</div>
 	{/each}
 </dl>
 <div class="sensitivity-readout" data-testid="sensitivity-readout" aria-live="polite">
@@ -80,10 +85,10 @@
 			     deflection), so the ramp ends label the colors: full green/purple is
 			     the predicted price change at full deflection, and intensity grows with the
 			     step instead of renormalizing every frame. -->
+			<p class="legend-caption">Price change ({previewUnits})</p>
 			<div class="legend" style:background={sensGradient}></div>
 			<div class="legend-labels">
 				<span>&minus;{small(ctrl.previewScale)}</span>
-				<span>Price change ({previewUnits})</span>
 				<span>+{small(ctrl.previewScale)}</span>
 			</div>
 		{/if}
@@ -94,10 +99,10 @@
 				<span>Price change {signedSmall(ctrl.sensSummary.mean)} {reportedUnits} at every bus</span>
 			</div>
 		{:else if ctrl.sensSummary}
+			<p class="legend-caption">Price change ({reportedUnits})</p>
 			<div class="legend" style:background={sensGradient}></div>
 			<div class="legend-labels">
 				<span>&minus;{small(ctrl.sensSummary.scale)}</span>
-				<span>Price change ({reportedUnits})</span>
 				<span>+{small(ctrl.sensSummary.scale)}</span>
 			</div>
 		{:else if app.sensitivityLoading}
@@ -110,6 +115,13 @@
 </div>
 
 <style>
+	/* The colour bar's name on its own line, so its two ends read as the only values under it. */
+	.legend-caption {
+		margin: var(--space-xs) 0 0;
+		font-size: var(--fs-label);
+		color: var(--text-secondary);
+	}
+
 	/* The title on the left and Clear on the right, on a phone too. */
 	.readout-head {
 		align-items: flex-start;
