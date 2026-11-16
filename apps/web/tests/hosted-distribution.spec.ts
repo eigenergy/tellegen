@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { openCaseMenu } from './fixtures/chrome.js';
+import { openCaseMenu, showNetwork } from './fixtures/chrome.js';
 import { expect, test } from './fixtures/page-errors.js';
 import { callTool, installWebMcpHarness } from './fixtures/planning-case.js';
 
@@ -113,7 +113,12 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	listed = await callTool(page, 'list_cases', {});
 	if (!listed.ok) throw new Error(listed.error.message);
 	expect(listed.data.cases).toHaveLength(2);
-	await page.getByRole('button', { name: 'Remove Hosted feeder-b', exact: true }).click();
+	// Built-in cases have no remove button in the menu; only added cases do.
+	await expect(page.locator('.case-chip:not(.local) .case-remove')).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	// The case's own panel still removes a hosted case from this browser.
+	await showNetwork(page);
+	await page.getByRole('button', { name: 'Remove', exact: true }).click();
 	await page.reload();
 	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await expect(page.locator('.case-activate').filter({ hasText: 'Hosted feeder-b' })).toHaveCount(

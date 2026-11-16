@@ -331,15 +331,6 @@
 										>{/if}</span
 								>
 							</button>
-							<button
-								class="case-remove"
-								aria-label="Remove {c.name}"
-								title="Remove {c.name}"
-								onclick={(e) => ctrl.removeBackendCase(c, e)}
-								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
-									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
-								></button
-							>
 						</li>
 					{/each}
 					{#each hostedPending as c (c.id)}
@@ -359,14 +350,6 @@
 											: distributionRegion(c.id, splitName(c.name)[0])}</span
 								>
 							</button>
-							<button
-								class="case-remove"
-								aria-label="Remove {c.name} from this browser"
-								onclick={() => ctrl.removeHostedDistribution(c.id)}
-								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
-									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
-								></button
-							>
 						</li>
 					{/each}
 					{#each app.localCases as c (c.id)}
@@ -404,15 +387,17 @@
 								<span class="cname">{splitName(c.label)[0]}</span>
 								<span class="cregion">{distributionRegion(c.id, splitName(c.label)[0])}</span>
 							</button>
-							<button
-								class="case-remove"
-								aria-label="Remove {c.label}"
-								title="Remove {c.label}"
-								onclick={(e) => ctrl.removeMultiCase(c, e)}
-								><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
-									><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
-								></button
-							>
+							{#if !c.hosted}
+								<button
+									class="case-remove"
+									aria-label="Remove {c.label}"
+									title="Remove {c.label}"
+									onclick={(e) => ctrl.removeMultiCase(c, e)}
+									><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+										><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
+									></button
+								>
+							{/if}
 						</li>
 					{/each}
 				</ul>
