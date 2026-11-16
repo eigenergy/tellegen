@@ -273,6 +273,11 @@ export class LocalCase {
   get perturbed(): boolean {
     return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
   }
+
+  /** A line rating is edited: the power flows, which have no line limits, cannot solve it. */
+  get ratingsEdited(): boolean {
+    return hasPerturbation(this.ratings);
+  }
 }
 
 /** One islanded network with its own solver state on the server. API
@@ -348,6 +353,11 @@ export class CaseState {
 
   get perturbed(): boolean {
     return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
+  }
+
+  /** A line rating is edited: the power flows, which have no line limits, cannot solve it. */
+  get ratingsEdited(): boolean {
+    return hasPerturbation(this.ratings);
   }
 }
 

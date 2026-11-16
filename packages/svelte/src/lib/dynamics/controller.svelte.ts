@@ -113,8 +113,7 @@ const REST_SECONDS = 0.02;
 const optionsKey = (o: RmsCaseOptions, network: string) => JSON.stringify([network, o]);
 
 /** Why dynamics is unavailable while the experimental setting is off. */
-export const DYNAMICS_OFF =
-	'Dynamics (RMS) simulation is experimental. Turn it on in Settings, under Experimental features.';
+export const DYNAMICS_OFF = 'Dynamics is off: turn on Experimental features in Settings';
 
 export class DynamicsController {
 	attachments: Record<string, DynAttachment> = $state.raw({});

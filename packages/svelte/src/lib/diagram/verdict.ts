@@ -97,7 +97,7 @@ export function solveVerdict(input: SolveVerdictInput): Verdict | null {
     );
     const what = infeasible
       ? "infeasible"
-      : input.formulation === "acpf"
+      : /converg/i.test(input.failure ?? "")
         ? "did not converge"
         : "failed";
     return {

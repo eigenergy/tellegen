@@ -3366,7 +3366,7 @@ export class Controller {
    * first after a confirm. */
   private attachDynamics = async (files: File[], localsBefore: Set<string>) => {
     if (!this.app.dynamicsEnabled) {
-      this.app.error = `${files.map((f) => f.name).join(" and ")}: ${DYNAMICS_OFF}`;
+      this.app.error = `${files.map((f) => f.name).join(" and ")} not opened: dynamics is off`;
       return;
     }
     const added = this.app.localCases.filter((c) => !localsBefore.has(c.id));

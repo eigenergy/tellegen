@@ -21,6 +21,14 @@ describe("error titles", () => {
       ),
     ).toBe("AC power flow failed");
   });
+  it("names the calculation an engine id refers to", () => {
+    expect(
+      errorNoticeTitle("branch rating edits are not supported by acpf"),
+    ).toBe("AC power flow failed");
+    expect(
+      errorNoticeTitle("case3: branch rating edits are not supported by dcpf"),
+    ).toBe("DC power flow failed");
+  });
   it("names the calculation that did not converge", () => {
     expect(
       errorNoticeTitle(
@@ -32,12 +40,16 @@ describe("error titles", () => {
     );
   });
   it("says how to turn on dynamics, and offers no retry that cannot succeed", () => {
-    const details =
-      "Dynamics (RMS) simulation is experimental. Turn it on in Settings, under Experimental features.";
+    const details = "case.dyr not opened: dynamics is off";
     expect(errorNoticeTitle(details)).toBe(
       "Turn on Experimental features in Settings",
     );
     expect(errorNoticeCanRetry(details)).toBe(false);
+    expect(
+      errorNoticeTitle(
+        "Dynamics is off: turn on Experimental features in Settings",
+      ),
+    ).toBe("Turn on Experimental features in Settings");
     expect(errorNoticeCanRetry("sensitivity rate limit exceeded")).toBe(true);
   });
   it("names a DC line model the case file fixes, and offers no retry", () => {

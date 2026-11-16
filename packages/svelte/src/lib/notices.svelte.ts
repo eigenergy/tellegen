@@ -90,7 +90,7 @@ export function getNoticeCenter(): NoticeCenter {
 /** Messages that tell the reader what to change: running the same thing
  * again cannot succeed, so their notices offer no Retry. */
 const INSTRUCTIONS = [
-  /experimental\. Turn it on in Settings/i,
+  /\bdynamics is off\b/i,
   /sets its own DC line model/i,
   /is not a case or geographic file|does not hold a complete network|could not (parse|read)|unsupported format|incomplete network|ambiguous format/i,
   // A reader's finding on a malformed file: the same file fails the same way again.
@@ -107,10 +107,17 @@ function fileOf(details: string): string | null {
     )?.[1] ?? null
   );
 }
+const ENGINE_LABELS: Record<string, string> = {
+  dcopf: "DC OPF",
+  acpf: "AC power flow",
+  dcpf: "DC power flow",
+  socwr: "Relaxed AC OPF",
+  acopf: "AC OPF",
+};
 /** A notice's title: a few words naming what failed. The full message is in Details. */
 export function errorNoticeTitle(details: string): string {
   if (/^Case list:/.test(details)) return "Could not load the case list";
-  if (/dynamics.*is experimental\. Turn it on in Settings/i.test(details))
+  if (/\bdynamics is off\b/i.test(details))
     return "Turn on Experimental features in Settings";
   if (/^ZIP and folder imports are unavailable in this build/.test(details))
     return "Imports unavailable";
@@ -125,6 +132,11 @@ export function errorNoticeTitle(details: string): string {
   // A singular matrix on its own is a solve failure (an AC power flow Jacobian,
   // say); only a sensitivity that fails is about prices.
   if (/sensitivity|derivative/i.test(details)) return "No price sensitivity";
+  // The engine names a calculation by its id ("not supported by acpf").
+  const engineId = /\bnot supported by (dcopf|acpf|dcpf|socwr|acopf)\b/i.exec(
+    details,
+  )?.[1];
+  if (engineId) return `${ENGINE_LABELS[engineId.toLowerCase()]} failed`;
   // Name the calculation that failed. An infeasible optimal power flow is an outcome, not a
   // broken solver.
   const calculation =

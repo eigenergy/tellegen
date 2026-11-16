@@ -87,11 +87,25 @@ describe("solveVerdict", () => {
 
   it("names what failed in a few words", () => {
     expect(
-      solveVerdict({ formulation: "acpf", solving: false, failed: true }),
+      solveVerdict({
+        formulation: "acpf",
+        solving: false,
+        failed: true,
+        failure: "AC power flow did not converge: best mismatch 2.0e1",
+      }),
     ).toEqual({
       text: "AC power flow did not converge",
       tone: "failure",
     });
+    // A failure that is not about convergence does not claim one.
+    expect(
+      solveVerdict({
+        formulation: "acpf",
+        solving: false,
+        failed: true,
+        failure: "branch rating edits are not supported by acpf",
+      })?.text,
+    ).toBe("AC power flow failed");
     expect(
       solveVerdict({
         formulation: "dcopf",
