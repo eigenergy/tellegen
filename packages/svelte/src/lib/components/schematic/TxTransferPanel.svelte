@@ -55,13 +55,13 @@
 <section class="transfer" aria-label="Flows">
 	<TxPanelHead title="Flows" {context} {lead} view="transfer" />
 	<label>
-		<span><i class="swatch"></i>Width: 0–</span>
-		{#if brief}{scale} MW{:else}<select
+		<span><i class="swatch"></i>Line width</span>
+		{#if brief}0–{scale} MW{:else}<select
 				aria-label="Width scale"
 				value={scale}
 				onchange={(event) => onscale(Number(event.currentTarget.value))}
 			>
-				{#each TRANSFER_SCALES as value (value)}<option {value}>{value} MW</option>{/each}
+				{#each TRANSFER_SCALES as value (value)}<option {value}>0–{value} MW</option>{/each}
 			</select>{/if}
 	</label>
 	{#if !brief}
@@ -156,8 +156,7 @@
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 	}
-	button,
-	select {
+	button {
 		padding: var(--space-2xs) var(--space-xs);
 		font: inherit;
 		color: var(--ink);

@@ -198,12 +198,12 @@ export function operatingContext(
 		relaxed: formulation === 'socwr',
 		/** The result's state in a word or two; empty when it is current. */
 		freshness: mismatch
-			? 'Stale'
+			? 'Out of date'
 			: solving
 				? 'Solving…'
 				: error
 					? solution
-						? 'Stale'
+						? 'Out of date'
 						: 'No result'
 					: solution
 						? ''

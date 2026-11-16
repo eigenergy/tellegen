@@ -31,8 +31,8 @@ export function transferDirectionText(
 	branch: Pick<NetworkBranch, 'from' | 'to'>
 ) {
 	if (reading.from === undefined || reading.to === undefined) return '—';
-	if (reading.direction === 1) return `${branch.from} → ${branch.to}`;
-	if (reading.direction === -1) return `${branch.to} → ${branch.from}`;
+	if (reading.direction === 1) return `${branch.from} to ${branch.to}`;
+	if (reading.direction === -1) return `${branch.to} to ${branch.from}`;
 	if (reading.magnitude === 0) return 'No flow';
 	if (reading.from >= 0 && reading.to >= 0) return 'Into line';
 	return 'Out of line';

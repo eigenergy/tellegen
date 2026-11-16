@@ -135,16 +135,21 @@ for (const touch of [false, true]) {
 				},
 				{ name: 'limited.m', mimeType: 'text/plain', buffer: Buffer.from(limited) }
 			]);
-			await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+			await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+				timeout: 60000
+			});
 			if (touch) await showNetwork(page);
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 			await hideBasemap(toolbar);
 			await fit(toolbar);
 			const panel = page.getByRole('region', { name: 'Limits', exact: true });
-			await expect(panel.locator('.stat').filter({ hasText: 'At rating' })).toContainText('1');
+			// A line at its rating counts as over the limit, in red as on the map.
+			const over = panel.locator('.stat').filter({ hasText: 'Over limit' });
+			await expect(over).toContainText('1');
+			await expect(over).toHaveClass(/failure/);
 			// Counts are listed only when they are not zero.
-			await expect(panel).not.toContainText('Overloaded');
+			await expect(panel.locator('.stat').filter({ hasText: '≥90%' })).toHaveCount(0);
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
 			// At rating is red (a heavy outline), not amber; only an overload is filled.
 			await expect(gauge).toHaveClass(/at-limit/);
@@ -171,14 +176,14 @@ for (const touch of [false, true]) {
 			await expect(inspector).toContainText('0 MW');
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await expect(inspector).toHaveCount(0);
-			const exceptions = diagram.getByText('Violations (1)', { exact: true });
+			const exceptions = diagram.getByText('Flagged (1)', { exact: true });
 			if (touch) await exceptions.tap();
 			else await exceptions.press('Enter');
 			const search = diagram.getByRole('searchbox', { name: 'Search' });
 			await search.fill('branch 99');
 			await expect(diagram.getByText('No matches', { exact: true })).toBeVisible();
 			await search.fill('branch 1');
-			const row = diagram.getByRole('button', { name: /Line 1, 1 → 2/ });
+			const row = diagram.getByRole('button', { name: /Line 1 \(1–2\)/ });
 			if (touch) await row.tap();
 			else await row.press('Enter');
 			await expect(inspector.getByRole('heading', { name: 'Line 1' })).toBeFocused();
@@ -194,8 +199,14 @@ for (const touch of [false, true]) {
 
 			await selectView(toolbar, 'Prices');
 			const economics = diagram.getByRole('region', { name: 'Prices' });
-			await expect(economics.locator('.stat').filter({ hasText: 'Price' })).toContainText('$/MWh');
-			await expect(economics).toContainText('LMP');
+			await expect(
+				economics
+					.locator('.stat')
+					.filter({ hasText: /^(Lowest|Price)/ })
+					.first()
+			).toContainText('$/MWh');
+			// The price scale fits the prices by default, as the Network panel's legend does.
+			await expect(economics.getByLabel('Scale')).toHaveValue('-1');
 			await economics.getByLabel('Scale').selectOption('3');
 			await expect(economics).toContainText('200 $/MWh');
 			await economics.getByText('Lines at limit (1)', { exact: true }).click();
@@ -223,11 +234,12 @@ for (const touch of [false, true]) {
 			await expect(inspector.getByRole('row', { name: /From bus 1/ })).toContainText('+80 MW');
 			await expect(inspector.getByRole('row', { name: /To bus 2/ })).toContainText('-80 MW');
 			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toHaveCount(0);
-			await expect(inspector).toContainText('1 → 2');
-			await expect(diagram.getByText('Overloads (0)', { exact: true })).toBeVisible();
+			await expect(inspector).toContainText('from bus 1 to bus 2');
+			// No overloads: the list is left out rather than shown empty.
+			await expect(diagram.getByText(/^Overloads/)).toHaveCount(0);
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await transfers.getByText('Largest flows', { exact: true }).click();
-			const ranked = transfers.getByRole('button', { name: /Line 1.*80 MW.*1 → 2/ });
+			const ranked = transfers.getByRole('button', { name: /Line 1.*80 MW.*1 to 2/ });
 			if (touch) await ranked.tap();
 			else await ranked.press('Enter');
 			await expect(inspector.getByRole('heading', { name: 'Line 1' })).toBeVisible();
@@ -252,7 +264,7 @@ for (const touch of [false, true]) {
 					(Reflect.get(window, 'exportedCanvasText') as string[]).join(' ')
 				);
 				expect(text).toContain('Flows, DC OPF');
-				expect(text).toContain('Width: 0–100 MW');
+				expect(text).toContain('Width 0–100 MW');
 				expect(text).not.toContain('Limits,');
 			}
 
@@ -300,7 +312,9 @@ for (const touch of [false, true]) {
 							buffer: Buffer.from('bus_i,lat,lon\n1,34,-81\n2,34,-81\n')
 						}
 					]);
-					await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+					await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+						timeout: 60_000
+					});
 					if (touch) await showNetwork(page);
 					const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 					await expect(calculation).toBeEnabled({ timeout: 60000 });
@@ -319,10 +333,10 @@ for (const touch of [false, true]) {
 					await expandResults(page);
 					await expect(panel).toContainText(uniform ? '1.0800–1.0800 pu' : '1.0200–1.0800 pu');
 					const diagram = page.locator('.tx-stage');
-					const exceptions = diagram.getByText(`Violations (${uniform ? 2 : 1})`, { exact: true });
+					const exceptions = diagram.getByText(`Flagged (${uniform ? 2 : 1})`, { exact: true });
 					await exceptions.click();
 					await expect(
-						diagram.getByRole('listitem').filter({ hasText: 'high' }).first()
+						diagram.getByRole('listitem').filter({ hasText: 'High' }).first()
 					).toContainText('Bus 1');
 					await exceptions.click();
 					await panel.locator('details.station summary').click();
@@ -357,8 +371,13 @@ for (const touch of [false, true]) {
 						await expect(page.getByRole('region', { name: 'Limits', exact: true })).toBeVisible();
 						await selectView(toolbar, 'Prices');
 						const economics = page.getByRole('region', { name: 'Prices' });
-						await expect(economics.locator('.stat').filter({ hasText: 'Price' })).toBeVisible();
-						// SOCWR reports no thermal binding data: no count of lines at limit.
+						await expect(
+							economics
+								.locator('.stat')
+								.filter({ hasText: /^(Lowest|Price)/ })
+								.first()
+						).toBeVisible();
+						// The Prices card shows the price range; lines at limit are in the Network panel.
 						await expect(
 							economics.locator('.stat').filter({ hasText: 'Lines at limit' })
 						).toHaveCount(0);
@@ -377,7 +396,9 @@ for (const touch of [false, true]) {
 				{ name: 'txdiagram-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(COORDS) },
 				{ name: 'txdiagram.m', mimeType: 'text/plain', buffer: Buffer.from(CASE) }
 			]);
-			await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+			await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+				timeout: 60_000
+			});
 
 			if (touch) await showNetwork(page);
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
@@ -456,17 +477,21 @@ for (const touch of [false, true]) {
 			}
 
 			await selectView(toolbar, 'Voltage');
-			// The key names the levels drawn, the transformer, and the engine's substation grouping:
-			// buses 1 and 2 share a coordinate, so four buses make three substations.
-			const key = page.locator('.tx-stage details.key');
+			// The key sits in the right-hand card, as on every other view. It names the levels
+			// drawn, the transformer, and the engine's substation grouping: buses 1 and 2 share a
+			// coordinate, so four buses make three substations.
+			const key = page.locator('.tx-stage .legend').getByRole('region', { name: 'Voltage' });
 			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
 			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
 			await expect(key).toContainText('Transformer');
 			await expect(key).toContainText('Out of service');
-			// Levels are grouped under their tier.
-			await expect(key).toContainText(/extra high voltage/i);
-			await expect(key).toContainText(/high voltage/i);
-			await expect(key).toContainText('3 substations, 4 buses');
+			// Levels are grouped under their tier, named in sentence case.
+			await expect(key.getByText('Extra high voltage', { exact: true })).toBeVisible();
+			await expect(key.getByText('High voltage', { exact: true })).toBeVisible();
+			await expect(key.locator('.stat').filter({ hasText: 'Substations' })).toContainText('3');
+			await expect(key.locator('.stat').filter({ hasText: 'Buses' })).toContainText('4');
+			// Each symbol is listed once.
+			await expect(key.getByText('Generator', { exact: true })).toHaveCount(1);
 			// A level in the key highlights on hover and stays highlighted when clicked.
 			const level = key.getByRole('button', { name: /345 kV/ });
 			await level.click();
@@ -578,7 +603,7 @@ for (const touch of [false, true]) {
 			const overloads = page.getByText('Overloads (1)', { exact: true });
 			await expect(overloads).toBeVisible();
 			await overloads.click();
-			await expect(page.getByRole('button', { name: /Line 1.*overload/ }).first()).toBeVisible();
+			await expect(page.getByRole('button', { name: /^Line 1 \(/ }).first()).toBeVisible();
 			await overloads.click();
 			await transfer.getByText('Largest flows', { exact: true }).click();
 			await transfer
@@ -616,12 +641,12 @@ for (const previousFormulation of [false, true]) {
 		const operating = page.getByRole('region', { name: 'Limits', exact: true });
 		// No line could be checked: the count is a dash, not a healthy zero.
 		await expect(operating.locator('.stat').filter({ hasText: 'Over limit' })).toContainText('—');
-		await expect(operating.locator('.stat').filter({ hasText: 'No data' })).toContainText('1');
+		await expect(operating.locator('.stat').filter({ hasText: 'No flow' })).toContainText('1');
 		await expect(operating.locator('.stat.ok')).toHaveCount(0);
 		await selectView(toolbar, 'Flows');
 		const transfer = page.getByRole('region', { name: 'Flows', exact: true });
 		if (previousFormulation) await expect(transfer).toContainText('No result');
-		else await expect(transfer.locator('.stat').filter({ hasText: 'No data' })).toContainText('1');
+		else await expect(transfer.locator('.stat').filter({ hasText: 'No flow' })).toContainText('1');
 		await expect(transfer).not.toContainText('Zero flow');
 		if (!previousFormulation) {
 			await selectView(toolbar, 'Prices');

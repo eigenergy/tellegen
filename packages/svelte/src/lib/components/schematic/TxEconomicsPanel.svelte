@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import { priceGradient } from '../../colors.js';
-	import { formulationLabel, readable } from '../../format.js';
+	import { displayFmt, formulationLabel, readable } from '../../format.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -21,6 +21,7 @@
 		economics,
 		scale,
 		onscale,
+		domain,
 		bus,
 		branch,
 		busPrice,
@@ -33,8 +34,11 @@
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
 		economics: ReturnType<typeof economicsFor>;
+		/** The chosen scale: -1 fits it to the prices, as the map's legend does. */
 		scale: number;
 		onscale: (scale: number) => void;
+		/** The colour scale's ends in $/MWh. */
+		domain: { lo: number; hi: number };
 		bus?: NetworkBus;
 		branch?: NetworkBranch;
 		busPrice?: number;
@@ -47,16 +51,13 @@
 		brief?: boolean;
 	} = $props();
 	const preview = (id: number) => previewHandlers(onpreview, { kind: 'branch', id });
-	const domain = $derived(PRICE_SCALES[scale]);
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
 	const lead = $derived(
 		economicsLead({
 			opf: isOpf(formulation),
 			range: economics.range,
-			uniform: economics.uniform,
-			binding: economics.binding.length,
-			thermalAvailable: economics.thermalAvailable
+			uniform: economics.uniform
 		})
 	);
 </script>
@@ -65,12 +66,23 @@
 	<TxPanelHead title="Prices" {context} {lead} view="economics" />
 	{#if economics.uniform === null && economics.prices.length}
 		<div class="scale">
-			<span>LMP</span><span>{domain.lo}</span><i style:background={priceGradient}></i>
-			<span>{domain.hi} {PRICE_UNIT}</span>
+			<span
+				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{displayFmt(
+					'price',
+					domain.lo
+				)}</span
+			><i style:background={priceGradient}></i><span
+				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{displayFmt(
+					'price',
+					domain.hi
+				)}
+				{PRICE_UNIT}</span
+			>
 		</div>
 		{#if !brief}<label>
 				Scale
 				<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
+					<option value={-1}>Fit to prices</option>
 					{#each PRICE_SCALES as entry, index (index)}
 						<option value={index}>{entry.lo} to {entry.hi}</option>
 					{/each}
@@ -277,8 +289,7 @@
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 	}
-	button,
-	select {
+	button {
 		padding: var(--space-2xs) var(--space-xs);
 		font: inherit;
 		color: var(--ink);

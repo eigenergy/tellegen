@@ -34,7 +34,7 @@
 		VOLTAGE_DOMAIN
 	} from '../diagram/transmission-results.js';
 	import { getAppState, getController } from '../context.svelte.js';
-	import { formulationLabel } from '../format.js';
+	import { displayFmt, formulationLabel } from '../format.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { basemapCredit, type BasemapSpec } from '../basemap.js';
@@ -89,6 +89,7 @@
 	import type { DeckKit } from './schematic/layers.js';
 	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
+	import StatBoxes from './StatBoxes.svelte';
 	import TxResultInspection from './schematic/TxResultInspection.svelte';
 	import TxEquipmentPanel from './schematic/TxEquipmentPanel.svelte';
 	import { equipmentDrawing, equipmentItems } from '../diagram/transmission-equipment.js';
@@ -183,15 +184,22 @@
 	);
 	let gauges = $state.raw<OperatingGauge[]>([]);
 	const formulation = $derived(ctrl.activeFormulation);
+	/** The active case's last solve ended without a result. An unrelated error elsewhere in
+	 * the app does not make this result out of date. */
+	const solveFailed = $derived.by(() => {
+		const active = ctrl.activeSolvable;
+		return !!active && !active.solving && active.solveBackend !== null && active.solveMs == null;
+	});
 	const resultContext = $derived(
-		operatingContext(formulation, solution, !!ctrl.activeSolvable?.solving, !!app.error)
+		operatingContext(formulation, solution, !!ctrl.activeSolvable?.solving, solveFailed)
 	);
 	const operatingOn = $derived(colour === 'operating');
 	const economicsOn = $derived(colour === 'economics');
 	/** Operating limits with solved voltage magnitudes (AC). */
 	const voltageView = $derived(operatingOn && resultContext.voltage);
 	const economics = $derived(economicsFor(solution, formulation));
-	let priceScale = $state(0);
+	/** -1 fits the price scale to the prices, as the Network panel's legend does. */
+	let priceScale = $state(-1);
 	const transferOn = $derived(colour === 'transfer');
 	/** A view with its own results panel (key, settings and lists). */
 	const panelView = $derived(operatingOn || economicsOn || transferOn);
@@ -405,7 +413,6 @@
 
 	const basemapPref = new StoredFlag('tellegen.schematic.basemap', ['on', 'off'], true);
 	const landmarksPref = new StoredFlag('tellegen.schematic.landmarks', ['on', 'off'], true);
-	const keyPref = new StoredFlag('tellegen.schematic.key', ['open', 'closed'], true);
 	const fieldPref = new StoredFlag('tellegen.transmission.field', ['on', 'off'], true);
 	const underlay = new BasemapUnderlay(() => ({
 		wanted: basemapPref.value && geographic && !!geometry.mercatorOrigin,
@@ -424,7 +431,7 @@
 						mode: 'voltage' as const,
 						label: 'Voltage',
 						unit: 'pu',
-						copy: 'Voltage magnitude',
+						copy: 'Voltage',
 						gradient: voltageGradient,
 						values: [...solvedVoltages].map(([bus, value]) => ({ bus, value }))
 					}
@@ -432,9 +439,9 @@
 			: economicsOn
 				? {
 						mode: 'price' as const,
-						label: 'Total LMP',
+						label: 'Price',
 						unit: PRICE_UNIT,
-						copy: 'Total locational marginal price',
+						copy: 'Price',
 						gradient: priceGradient,
 						values: economics.prices
 					}
@@ -446,7 +453,9 @@
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
 	const domain = $derived(
 		economicsOn
-			? PRICE_SCALES[priceScale]
+			? priceScale < 0
+				? scalarDomain('price', economics.prices.map((v) => v.value).filter(Number.isFinite))
+				: PRICE_SCALES[priceScale]
 			: display?.mode === 'voltage'
 				? VOLTAGE_DOMAIN
 				: display
@@ -724,11 +733,13 @@
 	);
 	const levelsPresent = $derived(legend.entries);
 	const outOfService = $derived(graph.inService.some((on) => !on));
-	const TIER_NAMES = Object.fromEntries(TX_TIERS.map((t) => [t.tier, t.name]));
+	const TIER_NAMES = Object.fromEntries(
+		TX_TIERS.map((t) => [t.tier, t.name.charAt(0).toUpperCase() + t.name.slice(1)])
+	);
 
 	/** Width of the summary docked at the right edge on a wide screen, beside the drawing. */
 	const SUMMARY_WIDTH = 340;
-	const summaryShown = $derived(colour !== 'level' && !equipmentOpen);
+	const summaryShown = $derived((colour !== 'level' || levelsPresent.length > 0) && !equipmentOpen);
 	const summaryDocked = $derived(!panels.compact && summaryShown);
 	/** Screen insets no panel, toolbar or summary covers. */
 	const freeArea = () =>
@@ -1543,7 +1554,7 @@
 		}
 		ctx.restore();
 		const lines = transferOn
-			? [`Flows, ${calculationName}`, `Width: 0–${transferScale} MW`]
+			? [`Flows, ${calculationName}`, `Width 0–${transferScale} MW`]
 			: [
 					`Limits, ${calculationName}`,
 					...(resultContext.voltage ? ['Voltage 0.90–1.10 pu'] : []),
@@ -1601,7 +1612,7 @@
 		const info = f?.loading_info;
 		const kv = (bus: number) => (bus >= 0 ? graph.kv[bus] : '—');
 		return [
-			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: ${network.branches[k].from} → ${network.branches[k].to}`,
+			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: ${network.branches[k].from}–${network.branches[k].to}`,
 			`kV: ${kv(graph.from[k])} / ${kv(graph.to[k])}`,
 			f && (!transferOn || transferReadings[k].from !== undefined)
 				? `P: ${f.mw.toFixed(2)} MW${transferOn ? `, ${transferDirectionText(transferReadings[k], network.branches[k])}` : ''}`
@@ -1624,6 +1635,92 @@
 		c[3]
 	];
 </script>
+
+{#snippet voltageKey()}
+	<section class="voltage-key" aria-label="Voltage">
+		<strong class="key-title">Voltage</strong>
+		{#if graph.grouped}
+			<StatBoxes
+				label="Network size"
+				stats={[
+					{ label: 'Substations', value: graph.substations.length.toLocaleString('en-US') },
+					{ label: 'Buses', value: graph.busId.length.toLocaleString('en-US') }
+				]}
+			/>
+		{/if}
+		<ul class="symbols" aria-label="Voltage levels">
+			{#each levelsPresent as l, j (l.label)}
+				{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
+					<li class="tier">{TIER_NAMES[l.tier]}</li>
+				{/if}
+				<li>
+					<button
+						class="level"
+						class:dim={focusEntry >= 0 && focusEntry !== j}
+						aria-pressed={pinnedEntry === j}
+						onpointerenter={() => (hoveredEntry = j)}
+						onpointerleave={() => (hoveredEntry = -1)}
+						onfocus={() => (hoveredEntry = j)}
+						onblur={() => (hoveredEntry = -1)}
+						onclick={() => (pinnedEntry = pinnedEntry === j ? -1 : j)}
+					>
+						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path
+								style:stroke={rgb(casingColour(entryColour(l)))}
+								style:stroke-width={entryWidth(l) + 1.4}
+								d="M-2 0H26"
+							/>
+							<path
+								style:stroke={rgb(entryColour(l))}
+								style:stroke-width={entryWidth(l)}
+								d="M-2 0H26"
+							/></svg
+						>{l.label}
+					</button>
+				</li>
+			{/each}
+		</ul>
+		<ul class="symbols" aria-label="Equipment">
+			{#if transformerEdges.length}
+				<li>
+					<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
+					>Transformer
+				</li>
+			{/if}
+			{#if outOfService}
+				<li>
+					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
+					>Out of service
+				</li>
+			{/if}
+			<li>
+				<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+					><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
+				>Load
+			</li>
+			<li>
+				<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+					><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
+				>Generator
+			</li>
+			{#if landmarkPool.length}
+				<li>
+					<label class="toggle"
+						><input
+							type="checkbox"
+							checked={landmarksPref.value}
+							onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
+						/><svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
+						>Power plants</label
+					>
+				</li>
+			{/if}
+		</ul>
+	</section>
+{/snippet}
 
 <div class="tx-stage" bind:clientWidth={width} bind:clientHeight={height}>
 	<p id="tx-keys" class="sr-only">
@@ -1772,9 +1869,9 @@
 			/>
 		</div>
 	{/if}
-	{#if colour !== 'level' && !equipmentOpen}
+	{#if summaryShown}
 		<div
-			class="legend"
+			class="legend panel-select"
 			class:operating={panelView}
 			bind:clientHeight={legendHeight}
 			class:docked={summaryDocked}
@@ -1788,98 +1885,105 @@
 				? `calc(100% - ${panels.top + 8 + panels.bottom}px)`
 				: `min(38vh, calc(100% - ${panels.top + toolbarHeight + 32 + app.sheetInset}px))`}
 		>
-			{#if panelView}
-				<button class="collapse" aria-expanded={!brief} onclick={() => (brief = !brief)}
-					>{brief ? 'Show details' : 'Hide details'}</button
-				>
-			{/if}
-			{#if operatingOn}
-				<TxOperatingPanel
-					{formulation}
-					context={resultContext}
-					voltageAvailable={solvedVoltages.size > 0}
-					counts={exceptions.counts}
-					warning={warningPref.value}
-					onwarning={(value) => warningPref.set(value)}
-					station={activeStation}
-					shading={!!field}
-					{brief}
-					{onselectbus}
-				/>
-			{:else if economicsOn}
-				<TxEconomicsPanel
-					{formulation}
-					context={resultContext}
-					{economics}
-					scale={priceScale}
-					onscale={(scale) => (priceScale = scale)}
-					bus={network.buses[selectedBus]}
-					branch={network.branches[selectedEdge]}
-					busPrice={busValues.get(graph.busId[selectedBus])}
-					flow={flows.get(network.branches[selectedEdge]?.id)}
-					onbranch={inspectListedBranch}
-					onpreview={setPreview}
-					shadingCentre={field ? priceCentre : null}
-					{brief}
-				/>
-			{:else if transferOn}
-				<TxTransferPanel
-					{formulation}
-					context={resultContext}
-					dc={dcTransfer}
-					scale={transferScale}
-					onscale={(scale) => (transferScale = scale)}
-					{...transferSummary}
-					hasDispatch={!!transferSolution && dispatch.size > 0}
-					onbranch={inspectListedBranch}
-					onpreview={setPreview}
-					{brief}
-				/>
-			{:else if !solution}
-				No result
-			{:else if display?.mode === 'voltage'}
-				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
-			{:else if display && uniform !== null}
-				{display.label}: {uniform.toPrecision(4)}
-				{display.unit}
-			{:else if display}
-				{display.label} <i style:background={display.gradient}></i>
-			{/if}
-			{#if panelView}
-				<TxResultInspection
-					bind:this={resultInspector}
-					exceptions={transferOn ? overloadExceptions : exceptions}
-					transfer={transferOn
-						? { dc: dcTransfer, reading: transferReadings[selectedEdge] }
-						: undefined}
-					bus={network.buses[selectedBus]}
-					branch={network.branches[selectedEdge]}
-					voltage={solvedVoltages.get(graph.busId[selectedBus])}
-					voltageSolved={resultContext.voltage}
-					deenergized={deenergized.has(graph.busId[selectedBus])}
-					generation={!transferOn || transferSolution
-						? dispatch.get(graph.busId[selectedBus])
-						: undefined}
-					demand={selectedDemand}
-					flow={transferOn
-						? transferFlow(network.branches[selectedEdge])
-						: flows.get(network.branches[selectedEdge]?.id)}
-					loading={!transferOn || transferSolution ? loadingStates[selectedEdge] : undefined}
-					stale={resultContext.stale}
-					showExceptions={operatingOn || transferOn}
-					oninspect={inspectResult}
-					onpreview={setPreview}
-					{brief}
-					{onclear}
-					onframe={frameSelection}
-				/>
-			{:else if solution}
-				<ul class="loading-key" aria-label="Line loading">
-					<li><i class="swatch normal"></i>&lt;{warningPref.value}%</li>
-					<li><i class="swatch near"></i>≥{warningPref.value}%</li>
-					<li><i class="swatch over"></i>≥100%</li>
-					<li><i class="swatch unrated"></i>Unrated</li>
-				</ul>
+			{#if colour === 'level'}
+				{@render voltageKey()}
+			{:else}
+				{#if panelView}
+					<button class="collapse" aria-expanded={!brief} onclick={() => (brief = !brief)}
+						>{brief ? 'Show details' : 'Hide details'}</button
+					>
+				{/if}
+				{#if operatingOn}
+					<TxOperatingPanel
+						{formulation}
+						context={resultContext}
+						voltageAvailable={solvedVoltages.size > 0}
+						counts={exceptions.counts}
+						warning={warningPref.value}
+						onwarning={(value) => warningPref.set(value)}
+						station={activeStation}
+						shading={!!field}
+						{brief}
+						{onselectbus}
+					/>
+				{:else if economicsOn}
+					<TxEconomicsPanel
+						{formulation}
+						context={resultContext}
+						{economics}
+						scale={priceScale}
+						onscale={(scale) => (priceScale = scale)}
+						domain={domain ?? PRICE_SCALES[0]}
+						bus={network.buses[selectedBus]}
+						branch={network.branches[selectedEdge]}
+						busPrice={busValues.get(graph.busId[selectedBus])}
+						flow={flows.get(network.branches[selectedEdge]?.id)}
+						onbranch={inspectListedBranch}
+						onpreview={setPreview}
+						shadingCentre={field ? priceCentre : null}
+						{brief}
+					/>
+				{:else if transferOn}
+					<TxTransferPanel
+						{formulation}
+						context={resultContext}
+						dc={dcTransfer}
+						scale={transferScale}
+						onscale={(scale) => (transferScale = scale)}
+						{...transferSummary}
+						hasDispatch={!!transferSolution && dispatch.size > 0}
+						onbranch={inspectListedBranch}
+						onpreview={setPreview}
+						{brief}
+					/>
+				{:else if !solution}
+					No result
+				{:else if display?.mode === 'voltage'}
+					Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
+				{:else if display && uniform !== null}
+					{display.label}: {uniform.toPrecision(4)}
+					{display.unit}
+				{:else if display && domain}
+					{display.label} <span>{displayFmt(display.mode, domain.lo)}</span><i
+						style:background={display.gradient}
+					></i><span>{displayFmt(display.mode, domain.hi)} {display.unit}</span>
+				{/if}
+				{#if panelView}
+					<TxResultInspection
+						bind:this={resultInspector}
+						exceptions={transferOn ? overloadExceptions : exceptions}
+						transfer={transferOn
+							? { dc: dcTransfer, reading: transferReadings[selectedEdge] }
+							: undefined}
+						bus={network.buses[selectedBus]}
+						branch={network.branches[selectedEdge]}
+						voltage={solvedVoltages.get(graph.busId[selectedBus])}
+						voltageSolved={resultContext.voltage}
+						deenergized={deenergized.has(graph.busId[selectedBus])}
+						generation={!transferOn || transferSolution
+							? dispatch.get(graph.busId[selectedBus])
+							: undefined}
+						demand={selectedDemand}
+						flow={transferOn
+							? transferFlow(network.branches[selectedEdge])
+							: flows.get(network.branches[selectedEdge]?.id)}
+						loading={!transferOn || transferSolution ? loadingStates[selectedEdge] : undefined}
+						stale={resultContext.stale}
+						showExceptions={operatingOn || transferOn}
+						oninspect={inspectResult}
+						onpreview={setPreview}
+						{brief}
+						{onclear}
+						onframe={frameSelection}
+					/>
+				{:else if solution}
+					<ul class="loading-key" aria-label="Line loading">
+						<li><i class="swatch normal"></i>&lt;{warningPref.value}%</li>
+						<li><i class="swatch near"></i>≥{warningPref.value}%</li>
+						<li><i class="swatch over"></i>≥100%</li>
+						<li><i class="swatch unrated"></i>Unrated</li>
+					</ul>
+				{/if}
 			{/if}
 		</div>
 	{/if}
@@ -1927,97 +2031,6 @@
 				</button>
 			{/each}
 		</div>
-	{/if}
-	{#if colour === 'level' && levelsPresent.length}
-		<details
-			class="key"
-			style:bottom="{panels.compact ? app.sheetInset + 12 : 24}px"
-			style:left="{toolLeft}px"
-			open={keyPref.value}
-			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
-		>
-			<summary>Key</summary>
-			<ul class="symbols" aria-label="Voltage levels">
-				{#each levelsPresent as l, j (l.label)}
-					{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
-						<li class="tier">{TIER_NAMES[l.tier]}</li>
-					{/if}
-					<li>
-						<button
-							class="level"
-							class:dim={focusEntry >= 0 && focusEntry !== j}
-							aria-pressed={pinnedEntry === j}
-							onpointerenter={() => (hoveredEntry = j)}
-							onpointerleave={() => (hoveredEntry = -1)}
-							onfocus={() => (hoveredEntry = j)}
-							onblur={() => (hoveredEntry = -1)}
-							onclick={() => (pinnedEntry = pinnedEntry === j ? -1 : j)}
-						>
-							<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-								><path
-									style:stroke={rgb(casingColour(entryColour(l)))}
-									style:stroke-width={entryWidth(l) + 1.4}
-									d="M-2 0H26"
-								/>
-								<path
-									style:stroke={rgb(entryColour(l))}
-									style:stroke-width={entryWidth(l)}
-									d="M-2 0H26"
-								/></svg
-							>{l.label}
-						</button>
-					</li>
-				{/each}
-				{#if transformerEdges.length}
-					<li>
-						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
-						>Transformer
-					</li>
-				{/if}
-				{#if outOfService}
-					<li>
-						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
-						>Out of service
-					</li>
-				{/if}
-			</ul>
-			<ul class="symbols" aria-label="Equipment">
-				<li>
-					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-						><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
-					>Load
-				</li>
-				<li>
-					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-						><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
-					>Generator
-				</li>
-			</ul>
-			<label class="toggle"
-				><input
-					type="checkbox"
-					checked={landmarksPref.value}
-					onchange={(e) => landmarksPref.set(e.currentTarget.checked)}
-				/> Landmarks</label
-			>
-			{#if landmarksPref.value && landmarkPool.length}
-				<ul class="symbols" aria-label="Landmarks">
-					<li>
-						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path d={glyphPath(landmarkGlyph('generator'), 7)} /></svg
-						>Generator
-					</li>
-				</ul>
-			{/if}
-			{#if graph.grouped}
-				<p class="hint">
-					{graph.substations.length.toLocaleString()} substations, {graph.busId.length.toLocaleString()}
-					buses
-				</p>
-			{/if}
-		</details>
 	{/if}
 	{#if underlay.opacity > 0}
 		<p
@@ -2436,31 +2449,26 @@
 		height: 7px;
 		border-radius: var(--radius-control);
 	}
-	.key {
-		max-height: 40vh;
-		overflow: auto;
-		position: absolute;
-		padding: 4px 8px;
-		font: 12px var(--font-mono);
-		color: var(--text-secondary);
-		background: var(--paper);
-		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
-		box-shadow: var(--elev-1);
+	.voltage-key {
+		width: 100%;
+		min-width: 0;
+		color: var(--text-primary);
 	}
-	.key summary {
-		cursor: pointer;
+	.key-title {
+		display: block;
+		margin-bottom: var(--space-xs);
 		color: var(--ink);
+		font-size: var(--fs-body);
 	}
-	.key .toggle {
+	.voltage-key .toggle {
 		display: flex;
 		gap: 4px;
 		align-items: center;
-		margin-top: 4px;
-		color: var(--ink);
+		cursor: pointer;
 	}
-	.key .hint {
-		margin: 2px 0 0;
+	.voltage-key .toggle input {
+		margin: 0 4px 0 0;
+		accent-color: var(--accent);
 	}
 	.symbols {
 		margin: 4px 0 0;
@@ -2485,8 +2493,7 @@
 		.toolbar button,
 		.toolbar .check,
 		.symbols .level,
-		.key summary,
-		.key .toggle {
+		.voltage-key .toggle {
 			min-height: 44px;
 			min-width: 44px;
 		}

@@ -67,7 +67,7 @@ describe('transmission operating limits', () => {
 		});
 		expect(operatingContext('acpf', solution, false, true)).toMatchObject({
 			stale: true,
-			freshness: 'Stale'
+			freshness: 'Out of date'
 		});
 		expect(operatingContext('dcopf', null, false, false)).toMatchObject({
 			voltage: false,
@@ -79,7 +79,7 @@ describe('transmission operating limits', () => {
 			stale: true,
 			status: 'optimal'
 		});
-		expect(operatingContext('acpf', previous, false, false).freshness).toBe('Stale');
+		expect(operatingContext('acpf', previous, false, false).freshness).toBe('Out of date');
 		expect(operatingVoltages(previous, 'acpf').size).toBe(0);
 	});
 

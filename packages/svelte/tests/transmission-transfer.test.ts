@@ -24,9 +24,9 @@ describe('transmission transfers', () => {
 		const branch = { from: 2, to: 8 };
 		const forward = transferReading(flow(45, -42), false);
 		expect(forward.magnitude).toBe(45);
-		expect(transferDirectionText(forward, branch)).toBe('2 → 8');
+		expect(transferDirectionText(forward, branch)).toBe('2 to 8');
 		const reverse = transferReading(flow(-42, 45), false);
-		expect(transferDirectionText(reverse, branch)).toBe('8 → 2');
+		expect(transferDirectionText(reverse, branch)).toBe('8 to 2');
 		const both = transferReading(flow(3, 1), false);
 		expect(both.direction).toBe(0);
 		expect(transferDirectionText(both, branch)).toBe('Into line');

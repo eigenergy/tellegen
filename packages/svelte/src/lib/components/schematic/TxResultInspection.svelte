@@ -5,7 +5,7 @@
 		transferReading,
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
-	import { readable } from '../../format.js';
+	import { lineName, readable } from '../../format.js';
 	import { previewHandlers, type PreviewItem } from './preview.js';
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
@@ -76,7 +76,9 @@
 	);
 	const branches = $derived(
 		exceptions.branches.filter(
-			(b) => !needle || `branch ${b.id} · bus ${b.from} to bus ${b.to}`.includes(needle)
+			(b) =>
+				!needle ||
+				`line ${b.id} branch ${b.id} bus ${b.from} bus ${b.to} ${b.from}–${b.to}`.includes(needle)
 		)
 	);
 	const total = $derived(exceptions.buses.length + exceptions.branches.length);
@@ -139,7 +141,7 @@
 		{#if stale}<span class="chip">Stale</span>{/if}
 		{#if brief}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong>, {flowSentence.from} → {flowSentence.to}
+					<strong>{flowSentence.mw}</strong> from bus {flowSentence.from} to bus {flowSentence.to}
 				</p>{/if}
 		{:else if bus}
 			<dl>
@@ -178,7 +180,7 @@
 			</dl>
 		{:else if branch}
 			{#if flowSentence}<p class="flow-sentence">
-					<strong>{flowSentence.mw}</strong>, {flowSentence.from} → {flowSentence.to}
+					<strong>{flowSentence.mw}</strong> from bus {flowSentence.from} to bus {flowSentence.to}
 				</p>{/if}
 			<table>
 				<thead>
@@ -244,9 +246,9 @@
 	</section>
 {/if}
 
-{#if showExceptions && !brief}
+{#if showExceptions && !brief && total > 0}
 	<details bind:open>
-		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Violations'} ({total})</summary>
+		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Flagged'} ({total})</summary>
 		{#if open}
 			<label>
 				Search
@@ -261,13 +263,13 @@
 					{needle ? 'No matches' : 'None'}
 				</p>{/if}
 			{#if buses.length}
-				<h3>Voltage ({buses.length} {buses.length === 1 ? 'bus' : 'buses'})</h3>
+				<h3>Buses ({buses.length})</h3>
 				<ol>
 					{#each buses.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('bus', b.id)} {...preview('bus', b.id)}
-								><strong>Bus {b.id}{b.name ? ` (${b.name})` : ''}</strong><span
-									>{@render q(b.value, 'pu')}, {b.state === 'low' ? 'low' : 'high'}</span
+								><strong>Bus {b.id}{b.name ? ` (${b.name})` : ''}</strong><span class="over"
+									>{@render q(b.value, 'pu')} {b.state === 'low' ? 'Low' : 'High'}</span
 								></button
 							>
 						</li>
@@ -275,16 +277,13 @@
 				</ol>
 			{/if}
 			{#if branches.length}
-				<h3>
-					Loading ({branches.length}
-					{branches.length === 1 ? 'line' : 'lines'})
-				</h3>
+				<h3>Lines ({branches.length})</h3>
 				<ol>
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
-								><strong>Line {b.id}, {b.from} → {b.to}</strong><span
-									>{@render q(b.loading * 100, '%')}, {loadingStateText[b.state]}</span
+								><strong>{lineName(b)}</strong><span class={{ over: b.state !== 'warning' }}
+									>{@render q(b.loading * 100, '%')}</span
 								></button
 							>
 						</li>
@@ -419,6 +418,10 @@
 	}
 	button {
 		cursor: pointer;
+	}
+	/* At or over a limit: red, as on the drawing. */
+	li button > span.over {
+		color: var(--red);
 	}
 	@media (pointer: coarse) {
 		button,
