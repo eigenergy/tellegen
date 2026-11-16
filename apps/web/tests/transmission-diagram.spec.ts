@@ -145,11 +145,11 @@ for (const touch of [false, true]) {
 			await fit(toolbar);
 			const panel = page.getByRole('region', { name: 'Limits', exact: true });
 			// A line at its rating counts as over the limit, in red as on the map.
-			const over = panel.locator('.stat').filter({ hasText: 'Over limit' });
+			const over = panel.locator('.stat').filter({ hasText: 'Lines at limit' });
 			await expect(over).toContainText('1');
 			await expect(over).toHaveClass(/failure/);
 			// Counts are listed only when they are not zero.
-			await expect(panel.locator('.stat').filter({ hasText: '≥90%' })).toHaveCount(0);
+			await expect(panel.locator('.stat').filter({ hasText: 'Near limit' })).toHaveCount(0);
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
 			// At rating is red (a heavy outline), not amber; only an overload is filled.
 			await expect(gauge).toHaveClass(/at-limit/);
@@ -236,7 +236,7 @@ for (const touch of [false, true]) {
 			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toHaveCount(0);
 			await expect(inspector).toContainText('from bus 1 to bus 2');
 			// No overloads: the list is left out rather than shown empty.
-			await expect(diagram.getByText(/^Overloads/)).toHaveCount(0);
+			await expect(diagram.getByText(/^Lines at limit \(/)).toHaveCount(0);
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await transfers.getByText('Largest flows', { exact: true }).click();
 			const ranked = transfers.getByRole('button', { name: /Line 1.*80 MW.*1 to 2/ });
@@ -509,17 +509,17 @@ for (const touch of [false, true]) {
 			await expandResults(page);
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
-			// The summary never covers the toolbar: below it on a phone, docked beside it on a
-			// wide screen.
+			// The summary never covers the toolbar: below it on a phone or where the screen is too
+			// narrow for both, docked beside it on a wide screen.
 			if (touch) expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
 			else
 				await expect
 					.poll(async () => {
 						const bar = (await toolbar.boundingBox())!;
 						const summary = (await page.locator('.tx-stage .legend').boundingBox())!;
-						return summary.x - (bar.x + bar.width);
+						return summary.x >= bar.x + bar.width || summary.y >= bar.y + bar.height;
 					})
-					.toBeGreaterThanOrEqual(0);
+					.toBe(true);
 			if (!touch) {
 				// The key stays clear of the panel, which holds the solver's result.
 				const panelBox = (await page.locator('[data-panel-dock="left"]').boundingBox())!;
@@ -531,8 +531,8 @@ for (const touch of [false, true]) {
 			const warning = page.getByRole('spinbutton', { name: 'Warn at (%)' });
 			await warning.fill('10');
 			await warning.press('Tab');
-			await expect(page.locator('.tx-stage .legend .key')).toContainText('<10%');
-			await expect(page.locator('.tx-stage .legend .key')).toContainText('≥10%');
+			await expect(page.locator('.tx-stage .legend .key')).toContainText('Below 10%');
+			await expect(page.locator('.tx-stage .legend .key')).toContainText('Near limit');
 			await page.locator('.tx-stage details.settings summary').click();
 			await canvas.press('f');
 			await expect(
@@ -600,7 +600,7 @@ for (const touch of [false, true]) {
 			await selectView(toolbar, 'Flows');
 			const transfer = page.getByRole('region', { name: 'Flows' });
 			await expect(transfer.locator('.stat').filter({ hasText: 'Largest flow' })).toBeVisible();
-			const overloads = page.getByText('Overloads (1)', { exact: true });
+			const overloads = page.getByText('Lines at limit (1)', { exact: true });
 			await expect(overloads).toBeVisible();
 			await overloads.click();
 			await expect(page.getByRole('button', { name: /^Line 1 \(/ }).first()).toBeVisible();
@@ -640,7 +640,9 @@ for (const previousFormulation of [false, true]) {
 		const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 		const operating = page.getByRole('region', { name: 'Limits', exact: true });
 		// No line could be checked: the count is a dash, not a healthy zero.
-		await expect(operating.locator('.stat').filter({ hasText: 'Over limit' })).toContainText('—');
+		await expect(operating.locator('.stat').filter({ hasText: 'Lines at limit' })).toContainText(
+			'—'
+		);
 		await expect(operating.locator('.stat').filter({ hasText: 'No flow' })).toContainText('1');
 		await expect(operating.locator('.stat.ok')).toHaveCount(0);
 		await selectView(toolbar, 'Flows');

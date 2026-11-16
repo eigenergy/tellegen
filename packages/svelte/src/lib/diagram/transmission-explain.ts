@@ -31,21 +31,21 @@ export interface OperatingLeadInput {
 	/** The calculation solves voltage magnitudes (AC); DC does not. */
 	voltageSolved: boolean;
 	counts: ReturnType<typeof operatingExceptions>['counts'];
-	/** Warning threshold in percent. */
+	/** Warning threshold in percent; the Key shows it. */
 	warning: number;
 }
 
 /** Operating limits: the lines at or over their rating and near it, the buses outside their
- * voltage limits (AC), and what could not be checked. Zero counts are left out. "Over limit"
+ * voltage limits (AC), and what could not be checked. Zero counts are left out. "Lines at limit"
  * reads 0 with an all-clear tone only when every line and (AC) every bus was checked. */
 export function operatingLead(input: OperatingLeadInput): Lead {
-	const { counts, warning } = input;
+	const { counts } = input;
 	if (!input.hasResult) return { stats: [], empty: 'No result' };
 	const stats: Stat[] = [];
 	const over = counts.overload + counts.atLimit;
-	if (over) stats.push({ label: 'Over limit', value: n(over), tone: 'failure' });
+	if (over) stats.push({ label: 'Lines at limit', value: n(over), tone: 'failure' });
 	if (counts.warning)
-		stats.push({ label: `≥${warning}%`, value: n(counts.warning), tone: 'warning' });
+		stats.push({ label: 'Near limit', value: n(counts.warning), tone: 'warning' });
 	if (input.voltageSolved) {
 		if (counts.low) stats.push({ label: 'Low voltage', value: n(counts.low), tone: 'failure' });
 		if (counts.high) stats.push({ label: 'High voltage', value: n(counts.high), tone: 'failure' });
@@ -59,9 +59,9 @@ export function operatingLead(input: OperatingLeadInput): Lead {
 		stats.push(
 			counts.loadingChecked
 				? complete
-					? { label: 'Over limit', value: '0', tone: 'ok' }
-					: { label: 'Over limit', value: '0' }
-				: { label: 'Over limit', value: '—' }
+					? { label: 'Lines at limit', value: '0', tone: 'ok' }
+					: { label: 'Lines at limit', value: '0' }
+				: { label: 'Lines at limit', value: '—' }
 		);
 	}
 	if (voltageUnchecked) stats.push({ label: 'Voltage unchecked', value: n(voltageUnchecked) });
@@ -95,11 +95,11 @@ export function economicsLead(input: EconomicsLeadInput): Lead {
 	const { lo, hi } = input.range;
 	const digits = Math.max(Math.abs(lo), Math.abs(hi)) >= 100 ? 0 : 2;
 	if (input.uniform !== null)
-		return { stats: [{ label: 'Price ($/MWh)', value: priceNumber(input.uniform, digits) }] };
+		return { stats: [{ label: 'Price', value: priceNumber(input.uniform, digits), sub: '$/MWh' }] };
 	return {
 		stats: [
-			{ label: 'Lowest ($/MWh)', value: priceNumber(lo, digits) },
-			{ label: 'Highest ($/MWh)', value: priceNumber(hi, digits) }
+			{ label: 'Lowest', value: priceNumber(lo, digits), sub: '$/MWh' },
+			{ label: 'Highest', value: priceNumber(hi, digits), sub: '$/MWh' }
 		]
 	};
 }

@@ -115,9 +115,10 @@ describe('resultStats', () => {
 	});
 
 	it('marks a relaxation cost as a lower bound', () => {
-		expect(resultStats({ formulation: 'socwr', objective: 1300, binding: 0 })[0].value).toBe(
-			'≥ $1,300/h'
-		);
+		expect(resultStats({ formulation: 'socwr', objective: 1300, binding: 0 })[0]).toMatchObject({
+			label: 'Cost lower bound',
+			value: '$1,300/h'
+		});
 	});
 
 	it('shows the change from the base case under the cost', () => {
@@ -146,7 +147,7 @@ describe('resultStats', () => {
 			})
 		).toEqual([
 			{ label: 'Voltage range', value: '0.950–1.050 pu' },
-			{ label: 'Max loading', value: '102%', tone: 'failure' }
+			{ label: 'Max loading', value: '102.0%', tone: 'failure' }
 		]);
 	});
 
@@ -156,7 +157,7 @@ describe('resultStats', () => {
 				(s) => [s.label, s.value]
 			)
 		).toEqual([
-			['Max loading', '50%'],
+			['Max loading', '50.0%'],
 			['Lines at limit', '1']
 		]);
 	});

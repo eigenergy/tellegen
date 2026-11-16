@@ -75,13 +75,13 @@ const stat = (lead: ReturnType<typeof operatingLead>, label: string) =>
 describe('operating limits', () => {
 	it('shows a single clear count when nothing is near or over a limit', () => {
 		const lead = operatingLead(base);
-		expect(lead.stats).toEqual([{ label: 'Over limit', value: '0', tone: 'ok' }]);
+		expect(lead.stats).toEqual([{ label: 'Lines at limit', value: '0', tone: 'ok' }]);
 	});
 	it('counts the lines and buses that need attention, and leaves out zeros', () => {
 		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
 		expect(stat(lead, 'Low voltage')).toBe('1');
 		expect(stat(lead, 'High voltage')).toBeUndefined();
-		expect(stat(lead, 'Over limit')).toBeUndefined();
+		expect(stat(lead, 'Lines at limit')).toBeUndefined();
 	});
 	it('does not count voltage violations for DC, which solves no voltage', () => {
 		const lead = operatingLead({
@@ -91,7 +91,7 @@ describe('operating limits', () => {
 		});
 		expect(stat(lead, 'Low voltage')).toBeUndefined();
 		expect(stat(lead, 'Voltage unchecked')).toBeUndefined();
-		expect(lead.stats[0]).toEqual({ label: 'Over limit', value: '0', tone: 'ok' });
+		expect(lead.stats[0]).toEqual({ label: 'Lines at limit', value: '0', tone: 'ok' });
 	});
 	it('does not turn missing voltage, absent bounds or invalid bounds into an all-clear', () => {
 		const net = {
@@ -115,7 +115,7 @@ describe('operating limits', () => {
 		);
 		expect(counts).toMatchObject({ voltageChecked: 1, voltageUnknown: 3 });
 		const lead = operatingLead({ ...base, counts });
-		expect(lead.stats[0]).toEqual({ label: 'Over limit', value: '0' });
+		expect(lead.stats[0]).toEqual({ label: 'Lines at limit', value: '0' });
 		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
 		expect(stat(lead, 'Voltage unchecked')).toBe('3');
 	});
@@ -143,7 +143,7 @@ describe('operating limits', () => {
 	});
 	it('does not call zero assessed lines healthy', () => {
 		const lead = operatingLead({ ...base, counts: count(new Map(), { ...result, flows: [] }) });
-		expect(lead.stats[0]).toEqual({ label: 'Over limit', value: '—' });
+		expect(lead.stats[0]).toEqual({ label: 'Lines at limit', value: '—' });
 		expect(stat(lead, 'No flow')).toBe('3');
 	});
 	it('counts lines at and over their rating together, apart from those near it', () => {
@@ -153,8 +153,8 @@ describe('operating limits', () => {
 			warning: 80
 		});
 		expect(lead.stats.slice(0, 2)).toEqual([
-			{ label: 'Over limit', value: '3', tone: 'failure' },
-			{ label: '≥80%', value: '1', tone: 'warning' }
+			{ label: 'Lines at limit', value: '3', tone: 'failure' },
+			{ label: 'Near limit', value: '1', tone: 'warning' }
 		]);
 		expect(operatingLead({ ...base, hasResult: false })).toEqual({ stats: [], empty: 'No result' });
 	});
@@ -167,16 +167,16 @@ describe('operating limits', () => {
 
 describe('prices', () => {
 	const econ = { opf: true, range: { lo: 4.531, hi: 39.3 }, uniform: null };
-	it('shows the lowest and highest price to the same precision, with the unit in the label', () => {
+	it('shows the lowest and highest price to the same precision, with the unit under the value', () => {
 		expect(economicsLead(econ).stats).toEqual([
-			{ label: 'Lowest ($/MWh)', value: '4.53' },
-			{ label: 'Highest ($/MWh)', value: '39.30' }
+			{ label: 'Lowest', value: '4.53', sub: '$/MWh' },
+			{ label: 'Highest', value: '39.30', sub: '$/MWh' }
 		]);
 		expect(
 			economicsLead({ ...econ, range: { lo: 12, hi: 1250 } }).stats.map((s) => s.value)
 		).toEqual(['12', '1,250']);
 		expect(economicsLead({ ...econ, uniform: 6.71 }).stats).toEqual([
-			{ label: 'Price ($/MWh)', value: '6.71' }
+			{ label: 'Price', value: '6.71', sub: '$/MWh' }
 		]);
 	});
 	it('does not repeat the lines at their limit, which the Network panel shows', () => {

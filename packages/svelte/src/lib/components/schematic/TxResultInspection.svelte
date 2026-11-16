@@ -248,7 +248,7 @@
 
 {#if showExceptions && !brief && total > 0}
 	<details bind:open>
-		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Flagged'} ({total})</summary>
+		<summary bind:this={summary}>{transfer ? 'Lines at limit' : 'Flagged'} ({total})</summary>
 		{#if open}
 			<label>
 				Search

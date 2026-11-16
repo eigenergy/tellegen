@@ -59,7 +59,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await expect(bindingLine).toHaveCount(1);
 	// Named as everywhere else: the line's id and the buses it joins.
 	await expect(bindingLine).toContainText('Line 3 (2–3)');
-	await expect(bindingLine).toContainText('100%');
+	await expect(bindingLine).toContainText('100.0%');
 
 	const mapCanvas = page.locator('.map canvas').first();
 	await expect(mapCanvas).toBeVisible();

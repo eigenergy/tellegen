@@ -6,7 +6,6 @@
 	import SavedNetworkDetails from './SavedNetworkDetails.svelte';
 	import ModelDetails from './ModelDetails.svelte';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import BindingLines from './BindingLines.svelte';
 	import BusPicker from './BusPicker.svelte';
 	import DemandSlider from './DemandSlider.svelte';
 	import DisplayControls from './DisplayControls.svelte';
@@ -208,10 +207,6 @@
 
 				<ModelDetails details={ctrl.activeSolvable?.network?.model_details} />
 				<BusPicker inline />
-
-				{#if !app.placingLocalId && ctrl.activeFormulation !== 'acpf'}
-					<BindingLines />
-				{/if}
 
 				{#if !selectionLeads && !app.compactLayout}
 					<hr />

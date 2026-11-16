@@ -2,6 +2,7 @@
 	import { getAppState, getController } from '../context.svelte.js';
 	import { resultStats } from '../diagram/verdict.js';
 	import StatBoxes from './StatBoxes.svelte';
+	import BindingLines from './BindingLines.svelte';
 
 	/** The network summary's key numbers for the active result. */
 	const ctrl = getController();
@@ -40,4 +41,5 @@
 
 {#if !dynamics && (ctrl.activeSolvable?.solution || ctrl.activeSolvable?.solving)}
 	<StatBoxes {stats} />
+	{#if !app.placingLocalId}<BindingLines />{/if}
 {/if}

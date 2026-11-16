@@ -509,7 +509,7 @@
 					? [120, 116, 108, 200]
 					: economicsOn
 						? marginal
-							? [118, 42, 131, 250]
+							? [215, 38, 30, 250]
 							: [150, 146, 137, 150]
 						: f
 							? operatingLoadingColor(state)
@@ -740,7 +740,21 @@
 	/** Width of the summary docked at the right edge on a wide screen, beside the drawing. */
 	const SUMMARY_WIDTH = 340;
 	const summaryShown = $derived((colour !== 'level' || levelsPresent.length > 0) && !equipmentOpen);
-	const summaryDocked = $derived(!panels.compact && summaryShown);
+	/** The toolbar's width on one wide screen: two rows of views and drawing controls. */
+	const TOOLBAR_WIDTH = 600;
+	/** The width between the left and right docks. */
+	const freeWidth = $derived(
+		width -
+			(panels.dockWidth('left') + 24) -
+			(panels.dockWidth('right') ? panels.dockWidth('right') + 24 : 12)
+	);
+	/** The summary docks at the right edge when the toolbar still fits beside it; between two
+	 * open panels it sits under the toolbar instead. */
+	const summaryDocked = $derived(
+		!panels.compact && summaryShown && freeWidth >= TOOLBAR_WIDTH + SUMMARY_WIDTH + 16
+	);
+	/** On a wide screen, an undocked summary sits under the toolbar at the left. */
+	const summaryBelow = $derived(!panels.compact && summaryShown && !summaryDocked);
 	/** Screen insets no panel, toolbar or summary covers. */
 	const freeArea = () =>
 		freeInsets({
@@ -748,7 +762,9 @@
 			top:
 				panels.top +
 				Math.max(0, toolbarHeight - 48) +
-				(panels.compact && (resultsOn || economicsOn || transferOn) ? legendHeight + 8 : 0),
+				((panels.compact && (resultsOn || economicsOn || transferOn)) || summaryBelow
+					? legendHeight + 8
+					: 0),
 			dockWidth: (side) =>
 				panels.dockWidth(side) +
 				(side === 'right' && summaryDocked
@@ -1877,10 +1893,10 @@
 			class:docked={summaryDocked}
 			style:top="{summaryDocked ? panels.top + 8 : panels.top + toolbarHeight + 16}px"
 			style:left={summaryDocked ? undefined : `${toolLeft}px`}
-			style:right="{panels.compact
-				? 12
-				: panels.dockWidth('right') + (panels.dockWidth('right') ? 32 : 16)}px"
-			style:width={summaryDocked ? `${SUMMARY_WIDTH}px` : undefined}
+			style:right={summaryBelow
+				? undefined
+				: `${panels.compact ? 12 : panels.dockWidth('right') + (panels.dockWidth('right') ? 32 : 16)}px`}
+			style:width={panels.compact ? undefined : `${Math.min(SUMMARY_WIDTH, freeWidth)}px`}
 			style:max-height={summaryDocked
 				? `calc(100% - ${panels.top + 8 + panels.bottom}px)`
 				: `min(38vh, calc(100% - ${panels.top + toolbarHeight + 32 + app.sheetInset}px))`}
@@ -1889,8 +1905,20 @@
 				{@render voltageKey()}
 			{:else}
 				{#if panelView}
-					<button class="collapse" aria-expanded={!brief} onclick={() => (brief = !brief)}
-						>{brief ? 'Show details' : 'Hide details'}</button
+					<button
+						class="collapse"
+						aria-expanded={!brief}
+						aria-label={brief ? 'Show details' : 'Hide details'}
+						title={brief ? 'Show details' : 'Hide details'}
+						onclick={() => (brief = !brief)}
+						><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+							><path
+								d={brief ? 'm3 4.5 3 3 3-3' : 'm3 7.5 3-3 3 3'}
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/></svg
+						></button
 					>
 				{/if}
 				{#if operatingOn}
@@ -1978,9 +2006,9 @@
 					/>
 				{:else if solution}
 					<ul class="loading-key" aria-label="Line loading">
-						<li><i class="swatch normal"></i>&lt;{warningPref.value}%</li>
-						<li><i class="swatch near"></i>≥{warningPref.value}%</li>
-						<li><i class="swatch over"></i>≥100%</li>
+						<li><i class="swatch normal"></i>Below {warningPref.value}%</li>
+						<li><i class="swatch near"></i>Near limit</li>
+						<li><i class="swatch over"></i>At limit</li>
 						<li><i class="swatch unrated"></i>Unrated</li>
 					</ul>
 				{/if}
@@ -2421,13 +2449,17 @@
 	.legend.operating {
 		display: flow-root;
 		max-width: 720px;
-		padding-right: 8px;
 	}
+	/* The details toggle sits in the heading row's right corner, after the Docs link. */
 	.legend .collapse {
-		float: right;
-		margin-left: 8px;
-		padding: 2px 8px;
-		font: inherit;
+		position: absolute;
+		top: 6px;
+		right: 8px;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
 		color: var(--ink);
 		background: var(--surface-control);
 		border: 1px solid var(--line);
@@ -2437,10 +2469,18 @@
 	.legend .collapse:hover {
 		border-color: var(--border-strong);
 	}
+	.legend.operating :global(.heading) {
+		min-height: 24px;
+		padding-right: 32px;
+	}
 	@media (pointer: coarse) {
 		.legend .collapse {
-			min-height: 44px;
-			min-width: 44px;
+			width: 32px;
+			height: 32px;
+		}
+		.legend.operating :global(.heading) {
+			min-height: 32px;
+			padding-right: 40px;
 		}
 	}
 	.legend i {

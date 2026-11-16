@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import { priceGradient } from '../../colors.js';
-	import { displayFmt, formulationLabel, readable } from '../../format.js';
+	import { formulationLabel, readable } from '../../format.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -11,7 +11,7 @@
 		type economicsFor
 	} from '../../diagram/transmission-economics.js';
 	import type { operatingContext } from '../../diagram/transmission-results.js';
-	import { economicsLead } from '../../diagram/transmission-explain.js';
+	import { economicsLead, priceNumber } from '../../diagram/transmission-explain.js';
 	import TxPanelHead from './TxPanelHead.svelte';
 	import { previewHandlers, type PreviewItem } from './preview.js';
 
@@ -53,6 +53,10 @@
 	const preview = (id: number) => previewHandlers(onpreview, { kind: 'branch', id });
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
+	/** The scale's ends to the same number of decimals. */
+	const scaleDigits = $derived(Math.max(Math.abs(domain.lo), Math.abs(domain.hi)) >= 100 ? 0 : 1);
+	/** A signed whole number with a true minus sign. */
+	const signed = (value: number) => (value < 0 ? `−${-value}` : String(value));
 	const lead = $derived(
 		economicsLead({
 			opf: isOpf(formulation),
@@ -67,15 +71,15 @@
 	{#if economics.uniform === null && economics.prices.length}
 		<div class="scale">
 			<span
-				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{displayFmt(
-					'price',
-					domain.lo
-				)}</span
+				>{economics.range && economics.range.lo < domain.lo ? '≤' : ''}{priceNumber(
+					domain.lo,
+					scaleDigits
+				).replace('-', '−')}</span
 			><i style:background={priceGradient}></i><span
-				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{displayFmt(
-					'price',
-					domain.hi
-				)}
+				>{economics.range && economics.range.hi > domain.hi ? '≥' : ''}{priceNumber(
+					domain.hi,
+					scaleDigits
+				).replace('-', '−')}
 				{PRICE_UNIT}</span
 			>
 		</div>
@@ -84,7 +88,7 @@
 				<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
 					<option value={-1}>Fit to prices</option>
 					{#each PRICE_SCALES as entry, index (index)}
-						<option value={index}>{entry.lo} to {entry.hi}</option>
+						<option value={index}>{signed(entry.lo)} to {signed(entry.hi)}</option>
 					{/each}
 				</select>
 			</label>{/if}
@@ -117,11 +121,11 @@
 			</dl>
 		{/if}
 		{#if economics.thermalAvailable}
-			<ul class="key">
-				<li><i class="swatch binding"></i>At limit</li>
-			</ul>
 			<details>
-				<summary>Lines at limit ({economics.binding.length})</summary>
+				<summary
+					><i class="swatch binding" aria-hidden="true"></i>Lines at limit ({economics.binding
+						.length})</summary
+				>
 				{#if economics.binding.length}
 					<ol>
 						{#each economics.binding.slice(0, limit) as row (row.branch)}
@@ -227,8 +231,12 @@
 		background: #9a5a2c;
 	}
 	.swatch.binding {
+		display: inline-block;
+		width: 18px;
 		height: 4px;
-		background: var(--data-pos);
+		margin-right: 6px;
+		vertical-align: middle;
+		background: var(--red);
 	}
 	.pick {
 		margin: var(--space-2xs) 0;

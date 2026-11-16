@@ -137,7 +137,8 @@ export interface ResultStatsInput {
 	maxLoading?: number | null;
 }
 
-const percent = (fraction: number) => `${Math.round(fraction * 100)}%`;
+/** One decimal, as on the diagram's gauges and the list of lines at limit. */
+const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
 
 /** The key numbers of a result, chosen per calculation: an OPF reports its operational cost and
  * the lines at their limit; AC power flow its voltage range and heaviest line; DC power flow its
@@ -147,12 +148,10 @@ export function resultStats(input: ResultStatsInput): Stat[] {
 	const stats: Stat[] = [];
 	if (OPF.has(input.formulation)) {
 		const delta = input.objective !== null ? input.deltaObjective : null;
+		// A relaxation's cost is a lower bound on the true operating cost: the label says so.
 		stats.push({
-			label: 'Operational cost',
-			value:
-				input.objective === null
-					? missing
-					: `${input.formulation === 'socwr' ? '≥ ' : ''}${costPerHour(input.objective)}`,
+			label: input.formulation === 'socwr' ? 'Cost lower bound' : 'Operational cost',
+			value: input.objective === null ? missing : costPerHour(input.objective),
 			sub: delta ? `${delta > 0 ? '+' : ''}${costPerHour(delta)}` : undefined
 		});
 	} else if (input.formulation === 'acpf') {

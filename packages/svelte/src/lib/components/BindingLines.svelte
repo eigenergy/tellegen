@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
 	import { lineName } from '../format.js';
+	import { gaugeText } from '../diagram/transmission-results.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -28,8 +29,7 @@
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<p class="dim head">{ctrl.bindingRule?.label}</p>
-		<ul>
+		<ul aria-label={ctrl.bindingRule?.label}>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>
 					<button
@@ -38,7 +38,7 @@
 						onclick={() => select(branch.id)}
 					>
 						<span>{lineName(branch)}</span>
-						<span class="mono load">{Math.round(loading * 100)}%</span>
+						<span class="load">{gaugeText(loading)}</span>
 					</button>
 				</li>
 			{/each}
@@ -47,13 +47,10 @@
 {/if}
 
 <style>
+	/* Right under the stat boxes, which count these lines. */
 	.binding-lines {
-		margin-top: var(--space-md);
-	}
-
-	.head {
-		font-size: var(--fs-data);
-		margin: 0 0 var(--space-2xs);
+		margin: calc(-1 * var(--space-sm)) 0 var(--space-lg);
+		border-bottom: 1px solid var(--line);
 	}
 
 	ul {
@@ -82,6 +79,8 @@
 	.load {
 		margin-left: auto;
 		text-align: right;
+		color: var(--text-danger);
+		font-variant-numeric: tabular-nums;
 	}
 
 	li button:hover {
