@@ -28,12 +28,14 @@ test('temporary errors group repeats, pause during interaction, and retain full 
 	await page.clock.fastForward(10_000);
 	await expect(toast).toContainText('Rate limited');
 	await page.setViewportSize({ width: 390, height: 844 });
-	const box = await toast.boundingBox();
 	// Above the map's credit, which sits above the open sheet (the zoom buttons step aside).
-	const credit = await page.locator('.maplibregl-ctrl-attrib').boundingBox();
-	expect(box).not.toBeNull();
-	expect(credit).not.toBeNull();
-	expect(box!.y + box!.height).toBeLessThan(credit!.y);
+	await expect
+		.poll(async () => {
+			const box = await toast.boundingBox();
+			const credit = await page.locator('.maplibregl-ctrl-attrib').boundingBox();
+			return !!box && !!credit && box.y + box.height < credit.y;
+		})
+		.toBe(true);
 	await page.screenshot({ path: testInfo.outputPath('notification-mobile.png') });
 	await page
 		.getByRole('region', { name: 'Notifications' })

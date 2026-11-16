@@ -74,7 +74,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 				opacity === '1' &&
 				attribBox.y >= 0 &&
 				attribBox.y + attribBox.height <= sheetBox.y &&
-				Math.round(sheetBox.y + sheetBox.height) === 844
+				Math.round(sheetBox.y + sheetBox.height) === page.viewportSize()!.height
 			);
 		})
 		.toBe(true);

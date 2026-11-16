@@ -144,12 +144,13 @@ for (const touch of [false, true]) {
 			await hideBasemap(toolbar);
 			await fit(toolbar);
 			const panel = page.getByRole('region', { name: 'Limits', exact: true });
-			// A line at its rating counts as over the limit, in red as on the map.
-			const over = panel.locator('.stat').filter({ hasText: 'Lines at limit' });
+			// A line at its rating counts as at the limit, in red as on the map.
+			const over = panel.locator('.stat').filter({ hasText: 'At limit' });
 			await expect(over).toContainText('1');
 			await expect(over).toHaveClass(/failure/);
 			// Counts are listed only when they are not zero.
-			await expect(panel.locator('.stat').filter({ hasText: 'Near limit' })).toHaveCount(0);
+			await expect(panel.locator('.stat').filter({ hasText: /^≥/ })).toHaveCount(0);
+			await expect(panel.locator('.stat').filter({ hasText: 'Over limit' })).toHaveCount(0);
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
 			// At the rating is red, filled the same as an overload; amber is only near it.
 			await expect(gauge).toHaveClass(/\bover\b/);
@@ -263,7 +264,7 @@ for (const touch of [false, true]) {
 					(Reflect.get(window, 'exportedCanvasText') as string[]).join(' ')
 				);
 				expect(text).toContain('Flows, DC OPF');
-				expect(text).toContain('Width 0–100 MW');
+				expect(text).toContain('Width 0 to 100 MW');
 				expect(text).not.toContain('Limits,');
 			}
 
@@ -330,7 +331,15 @@ for (const touch of [false, true]) {
 						uniform ? '2' : '1'
 					);
 					await expandResults(page);
-					await expect(panel).toContainText(uniform ? '1.0800–1.0800 pu' : '1.0200–1.0800 pu');
+					// A substation's lowest and highest voltage, as labelled values; with every bus
+					// at the same voltage there is no range to show.
+					const range = panel.getByRole('definition');
+					if (uniform) await expect(panel).not.toContainText('Lowest');
+					else {
+						await expect(panel).toContainText('Lowest, bus 2');
+						await expect(panel).toContainText('Highest, bus 1');
+						await expect(range.getByRole('button', { name: '1.0200 pu' })).toBeVisible();
+					}
 					const diagram = page.locator('.tx-stage');
 					const exceptions = diagram.getByText(`Flagged (${uniform ? 2 : 1})`, { exact: true });
 					await exceptions.click();
@@ -338,11 +347,9 @@ for (const touch of [false, true]) {
 						diagram.getByRole('listitem').filter({ hasText: 'High' }).first()
 					).toContainText('Bus 1');
 					await exceptions.click();
-					await panel.locator('details.station summary').click();
-					await expect(panel.getByRole('button', { name: /pu, bus 1$/ }).last()).toBeVisible();
-					await expect(
-						panel.getByRole('button', { name: /^1\.0800 pu, bus \d+$/ }).first()
-					).toBeVisible();
+					if (!uniform)
+						// The violating end is marked.
+						await expect(range.getByRole('button', { name: '1.0800 pu' })).toHaveClass(/violation/);
 					await fit(toolbar);
 					await page.evaluate(
 						() =>
@@ -355,7 +362,18 @@ for (const touch of [false, true]) {
 							uniform ? 'uniform-voltage-violation.png' : 'station-voltage-range.png'
 						)
 					});
-					await panel.getByRole('button', { name: /^\+[\d.]+ pu, bus 1$/ }).click();
+					// The violating bus is one click away: the range's end, or the flagged list.
+					if (!uniform) await range.getByRole('button', { name: '1.0800 pu' }).click();
+					else {
+						await exceptions.click();
+						await diagram
+							.getByRole('listitem')
+							.filter({ hasText: 'Bus 1' })
+							.getByRole('button')
+							.click();
+						// The diagram's own inspector keeps a closed phone sheet closed.
+						if (touch) await showNetwork(page);
+					}
 					await expect(
 						page.getByRole('region', { name: 'Power-flow equipment results' })
 					).toContainText('Voltage (pu) 1.0800');
@@ -640,11 +658,9 @@ for (const previousFormulation of [false, true]) {
 		await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 		const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
 		const operating = page.getByRole('region', { name: 'Limits', exact: true });
-		// No line could be checked: the count is a dash, not a healthy zero.
-		await expect(operating.locator('.stat').filter({ hasText: 'Lines at limit' })).toContainText(
-			'—'
-		);
+		// No line could be checked: the missing flow is counted, and nothing claims all clear.
 		await expect(operating.locator('.stat').filter({ hasText: 'No flow' })).toContainText('1');
+		await expect(operating).not.toContainText('All lines below');
 		await expect(operating.locator('.stat.ok')).toHaveCount(0);
 		await selectView(toolbar, 'Flows');
 		const transfer = page.getByRole('region', { name: 'Flows', exact: true });

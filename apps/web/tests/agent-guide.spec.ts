@@ -62,20 +62,24 @@ test('default docks keep Studies, Agent, solver and map controls separate', asyn
 			)
 			.toBe(true);
 		const zoom = page.getByRole('button', { name: 'Zoom in', exact: true });
-		await expect(zoom).toBeVisible();
-		{
-			const a = (await attribution.boundingBox())!,
-				z = (await zoom.boundingBox())!;
+		const panel = (await page.locator('[data-panel]:visible').first().boundingBox())!;
+		const a = (await attribution.boundingBox())!;
+		if (viewport.width < 960) {
+			// On a phone the open sheet runs to the bottom edge: the credit sits on the map
+			// above it, and the zoom buttons step aside (pinch still zooms).
+			await expect(zoom).toBeHidden();
+			expect(a.y + a.height).toBeLessThanOrEqual(panel.y);
+		} else {
+			await expect(zoom).toBeVisible();
+			const z = (await zoom.boundingBox())!;
 			expect(a.x + a.width).toBeLessThan(z.x - 6);
 			expect(viewport.height - z.y).toBeLessThan(90);
 			await zoom.click();
+			// The docked panels clear the attribution.
+			expect(panel.y + panel.height).toBeLessThan(a.y);
 		}
 		await page.screenshot({
 			path: testInfo.outputPath(`panels-${viewport.width}x${viewport.height}.png`)
 		});
-		// One panel shows at a time; the front one (Studies) clears the attribution.
-		const panel = (await page.locator('[data-panel]:visible').first().boundingBox())!;
-		const a = (await attribution.boundingBox())!;
-		expect(panel.y + panel.height).toBeLessThan(a.y);
 	}
 });

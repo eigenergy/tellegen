@@ -73,7 +73,8 @@ test('narrow screens show one drawer and keep panel controls reachable', async (
 		const bounds = await box(active);
 		expect(bounds.x).toBeGreaterThanOrEqual(0);
 		expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-		expect(bounds.y + bounds.height).toBeLessThanOrEqual(756);
+		// The sheet runs to the bottom edge.
+		expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
 	}
 	await page.getByRole('button', { name: 'Close network panel' }).click();
 	await expect(page.locator('[data-panel]:visible')).toHaveCount(0);
@@ -143,12 +144,17 @@ test('short desktop windows use one drawer without covering map controls', async
 	const toolbar = await box(page.locator('.panel-toolbar'));
 	// The tab strip sits on top of the drawer, which continues it.
 	expect(Math.abs(bounds.y - (toolbar.y + toolbar.height))).toBeLessThanOrEqual(1);
-	expect(bounds.y + bounds.height).toBeLessThanOrEqual(362);
+	expect(bounds.y + bounds.height).toBeLessThanOrEqual(450);
 	// MapLibre adds the attribution control once the map loads, which can trail the panel.
+	// It sits on the map above the sheet, clear of the tab strip.
 	const credit = page.locator('.maplibregl-ctrl-attrib');
 	await expect(credit).toBeVisible();
-	const attribution = await box(credit);
-	expect(bounds.y + bounds.height).toBeLessThan(attribution.y);
+	await expect
+		.poll(async () => {
+			const attribution = await box(credit);
+			return attribution.y + attribution.height <= toolbar.y;
+		})
+		.toBe(true);
 });
 
 test('switching to a narrow window retains the most recently opened panel', async ({ page }) => {
