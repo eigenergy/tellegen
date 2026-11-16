@@ -1,75 +1,61 @@
 <script lang="ts">
 	import { dynVoltageGradient, haloLegendRadius } from '../../dynamics/legend.js';
 
-	let { theme = 'light', top = 112 }: { theme?: 'light' | 'dark'; top?: number } = $props();
+	/** The key to the map's dynamics colours, in the Network panel where the steady-state key
+	 * sits, so it never covers the map. */
+	let { theme = 'light' }: { theme?: 'light' | 'dark' } = $props();
 	const gradient = $derived(dynVoltageGradient(theme));
 </script>
 
-<!-- Not `.legend`: the global stylesheet's .legend is the 6px colour-ramp strip. -->
-<aside class="dyn-legend" style:top="{top}px" aria-label="Dynamics map legend">
-	<div class="row">
-		<span class="title">Voltage</span>
-		<span class="end">0.5</span>
-		<i class="bar" style:background={gradient}></i>
-		<span class="end">1.2 pu</span>
-	</div>
-	<div class="row halos">
-		<span class="title">Generator speed</span>
-		<span class="ring"
-			><svg width="18" height="18" aria-hidden="true"
+<aside class="dyn-legend" aria-label="Dynamics map legend">
+	<p class="title">Voltage (pu)</p>
+	<div class="legend" style:background={gradient}></div>
+	<div class="legend-labels"><span>0.5</span><span>1.2</span></div>
+	<p class="title">Generator speed</p>
+	<ul class="rings">
+		<li>
+			<svg width="18" height="18" aria-hidden="true"
 				><circle cx="9" cy="9" r="4" class="rest" /></svg
-			>Nominal</span
-		>
-		<span class="ring"
-			><svg width="18" height="18" aria-hidden="true"
+			>Nominal
+		</li>
+		<li>
+			<svg width="18" height="18" aria-hidden="true"
 				><circle cx="9" cy="9" r={Math.min(8, haloLegendRadius(0.01))} class="under" /></svg
-			>Low</span
-		>
-		<span class="ring"
-			><svg width="18" height="18" aria-hidden="true"
+			>Low
+		</li>
+		<li>
+			<svg width="18" height="18" aria-hidden="true"
 				><circle cx="9" cy="9" r="8" class="over" /></svg
-			>High</span
-		>
-	</div>
+			>High
+		</li>
+	</ul>
 </aside>
 
 <style>
-	.dyn-legend {
-		position: fixed;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 12;
-		display: grid;
-		gap: 6px;
-		max-width: min(440px, calc(100vw - 32px));
-		padding: 6px 10px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-panel);
-		background: var(--panel);
-		font-size: var(--fs-control);
-		color: var(--text-secondary);
-		font-variant-numeric: tabular-nums;
-	}
-	.row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
+	/* The same type and spacing as the steady-state key it replaces. */
 	.title {
-		width: 104px;
+		margin: 10px 0 0;
+		font-size: 12px;
+		font-weight: 600;
 		color: var(--ink);
 	}
-	.bar {
-		display: block;
-		width: 140px;
-		height: 8px;
-		border-radius: var(--radius-control);
+	.dyn-legend > .title:first-child {
+		margin-top: 0;
 	}
-	.ring {
-		display: inline-flex;
+	.rings {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		margin: 4px 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
+	.rings li {
+		display: flex;
 		align-items: center;
 		gap: 4px;
-		margin-right: 6px;
 	}
 	svg {
 		flex: none;
@@ -86,10 +72,5 @@
 	}
 	.rest {
 		stroke: var(--text-tertiary);
-	}
-	@media (max-width: 960px) {
-		.halos {
-			display: none;
-		}
 	}
 </style>

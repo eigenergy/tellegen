@@ -15,6 +15,7 @@
 	import NetworkStats from './NetworkStats.svelte';
 	import PowerFlowDetails from './PowerFlowDetails.svelte';
 	import DynamicsElementActions from './dynamics/DynamicsElementActions.svelte';
+	import DynamicsLegend from './dynamics/DynamicsLegend.svelte';
 	import RatingSlider from './RatingSlider.svelte';
 	import SensitivityReadout from './SensitivityReadout.svelte';
 	import SizeLegend from './SizeLegend.svelte';
@@ -27,6 +28,15 @@
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
+
+	/** Dynamics colours the map (at rest or playing back): its key replaces the steady-state one.
+	 * The single-line diagram draws no dynamics layers. */
+	const dynamicsKey = $derived(ctrl.dynamics.mapLayers.length > 0 && !ctrl.singleLineShown);
+	const dynamicsSelection = $derived(
+		app.mode === 'dynamics' &&
+			!!app.activeLocal &&
+			(app.selectedBus !== null || app.selectedBranch !== null)
+	);
 
 	const layout = getPanelLayout();
 	let open = $state(true);
@@ -53,10 +63,7 @@
 	/** The diagram has its own colour tabs and key: the map's colour switch would only
 	 * repeat them, so it steps aside while the diagram is shown. */
 	const mapKeyOnly = $derived(
-		!!ctrl.singleLineShown &&
-			!(app.mode === 'dynamics' && app.activeLocal) &&
-			!busReadout &&
-			!branchReadout
+		!!ctrl.singleLineShown && !dynamicsSelection && !busReadout && !branchReadout
 	);
 	const blockEmpty = $derived(mapKeyOnly && ctrl.activeFormulation !== 'acpf');
 
@@ -91,8 +98,10 @@
 <PanelFrame id="network" title="Network" side="left" order={10} width={320} bind:open>
 	<div class="panel-body" id="control-panel-body" bind:this={bodyEl}>
 		{#snippet selectionBlock()}
-			{#if app.mode === 'dynamics' && app.activeLocal}
+			{#if dynamicsSelection}
 				<DynamicsElementActions />
+			{:else if dynamicsKey}
+				<DynamicsLegend theme={config.theme} />
 			{:else if ctrl.activeFormulation === 'acpf'}
 				{#if !mapKeyOnly}<DisplayControls />{/if}
 				<PowerFlowDetails />

@@ -23,13 +23,6 @@
 			<span data-testid="dyn-verdict-word">{h.word}</span>
 			{#if h.detail}<span class="detail">{h.detail}</span>{/if}
 		</h3>
-		{#if record.badge}
-			<span
-				class={['badge', record.badge.validated ? 'validated' : 'differs']}
-				data-testid="dyn-badge"
-				title={record.badge.detail}>{record.badge.text}</span
-			>
-		{/if}
 		{#if record.agent}<span class="badge agent">Agent</span>{/if}
 		{#if s}<a class="docs" href={docs} target="_blank" rel="noreferrer">Docs</a>{/if}
 	</div>
@@ -47,6 +40,13 @@
 					<dd class={c.ok ? 'ok' : 'bad'}>{c.ok ? 'Yes' : 'No'}</dd>
 				</div>
 			{/each}
+			{#if record.badge}
+				<!-- A scenario of the validation study: whether this run repeats it as published. -->
+				<div>
+					<dt>Validation study</dt>
+					<dd data-testid="dyn-badge" title={record.badge.detail}>{record.badge.text}</dd>
+				</div>
+			{/if}
 		</dl>
 		<details>
 			<summary>Details</summary>
@@ -106,9 +106,6 @@
 		font-size: var(--fs-label);
 		background: var(--surface-chip);
 		color: var(--text-primary);
-	}
-	.badge.differs {
-		color: var(--text-secondary);
 	}
 	.badge.agent {
 		background: var(--agent-soft);

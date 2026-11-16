@@ -183,7 +183,9 @@
 							>
 						</span>
 					</div>
-					{#if dynamizeError}<p class="err" title={dynamizeError}>Dynamic data failed to build</p>{/if}
+					{#if dynamizeError}<p class="err" title={dynamizeError}>
+							Dynamic data failed to build
+						</p>{/if}
 				{/if}
 			</section>
 		{:else}
@@ -208,7 +210,7 @@
 						<p class="err" role="alert" title={att.prepareError}>Preparation failed</p>
 					{/if}
 					{#if att.flat && !flatOk}
-						<p class="warn-line" role="status">Not at rest before the event</p>
+						<p class="warn-line" role="status">Not steady before the event</p>
 					{:else if att.flatError}
 						<p class="err" title={att.flatError}>Rest check failed</p>
 					{/if}
@@ -216,7 +218,7 @@
 						<p class="warn-line">Edits ignored: {dyn.staticEdits}</p>
 					{/if}
 					<div class="setting" aria-busy={att.preparing}>
-						<span>At rest</span>
+						<span>Starts steady</span>
 						<span class="value" data-testid="dyn-flat"
 							>{#if att.flat}{flatOk
 									? 'Yes'

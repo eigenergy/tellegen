@@ -137,12 +137,15 @@ export interface DynCheck {
 /** The pass or fail checks behind the verdict, one word each. */
 export function checks(s: RmsScreening): DynCheck[] {
 	const out: DynCheck[] = [
-		{ label: 'In step', ok: s.angle.pole_slips.length === 0 },
+		{ label: 'Generators in sync', ok: s.angle.pole_slips.length === 0 },
 		{ label: 'Settled', ok: s.frequency.settled && s.angle.settled },
 		{ label: 'Voltage recovered', ok: s.voltage.recovered }
 	];
 	if (s.islands.length > 1)
-		out.push({ label: 'Islands stable', ok: !s.islands.some((i) => i.runaway) });
+		out.push({
+			label: 'Islands stable',
+			ok: !s.islands.some((i) => i.runaway)
+		});
 	return out;
 }
 

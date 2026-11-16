@@ -30,9 +30,9 @@
 
 	const LOADS: [LoadModel, string][] = [
 		['power_flow', 'Power flow'],
-		['constant_impedance', 'Constant impedance (Z)'],
-		['constant_current', 'Constant current (I)'],
-		['constant_power', 'Constant power (P)']
+		['constant_impedance', 'Impedance (Z)'],
+		['constant_current', 'Current (I)'],
+		['constant_power', 'Power (P)']
 	];
 </script>
 

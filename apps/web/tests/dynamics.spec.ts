@@ -48,15 +48,22 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	page
 }) => {
 	const panel = await openDemo(page);
-	// Before a run there is nothing to explain: no dynamics legend.
-	await expect(page.getByRole('complementary', { name: 'Dynamics map legend' })).toHaveCount(0);
+	// The map shows the case at rest in the dynamics colours: the Network panel keys them.
+	const key = page
+		.locator('[data-panel="network"]')
+		.getByRole('complementary', { name: 'Dynamics map legend' });
+	await expect(key).toContainText('Voltage (pu)');
+	await expect(key).toContainText('Generator speed');
 	// The Network panel keeps the steady-state numbers, as on every other case, and has no
 	// empty placeholder before a bus or line is picked.
-	// The demo case has no generator costs, so its heaviest line shows instead of a $0 cost.
-	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText('Max loading', {
-		timeout: 60_000
-	});
-	await expect(page.locator('[data-panel="network"] dl.stats')).not.toContainText('$0');
+	// The demo case has no generator costs: the cost box says so, in place of a $0 cost, and the
+	// heaviest line shows.
+	const stats = page.locator('[data-panel="network"] dl.stats');
+	await expect(stats).toContainText('Max loading', { timeout: 60_000 });
+	await expect(stats.locator('.stat', { hasText: 'Operational cost' })).toContainText(
+		'No costs in case'
+	);
+	await expect(stats).not.toContainText('$0');
 	await expect(page.locator('[data-panel="network"]')).not.toContainText('Select a bus or line');
 	await shot(page, '01-demo-loaded');
 
@@ -136,12 +143,13 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	await expect(page.getByRole('complementary', { name: 'Dynamics map legend' })).toHaveCount(0);
 });
 
-test('a validated scenario carries its badge', async ({ page }) => {
+test('a validated scenario says it matches the validation study', async ({ page }) => {
 	const panel = await openDemo(page);
 	await panel.getByRole('combobox', { name: 'Scenario' }).selectOption('trip-1431-N');
 	await panel.getByRole('button', { name: /Run 20 s simulation/ }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
-	await expect(panel.getByTestId('dyn-badge')).toContainText('Validated');
+	await expect(panel.getByTestId('dyn-badge')).toHaveText('Matches');
+	await expect(panel.getByTestId('dyn-verdict')).toContainText('Validation study');
 	await expect(panel.getByTestId('dyn-verdict')).toContainText(/59\.\d{2}\d? Hz/);
 });
 

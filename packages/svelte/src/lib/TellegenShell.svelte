@@ -15,7 +15,6 @@
 	import TellegenMap from './TellegenMap.svelte';
 	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
 	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
-	import DynamicsLegend from './components/dynamics/DynamicsLegend.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -29,11 +28,6 @@
 	let timelineHeight = $state(0);
 	const dynamicsShown = $derived(
 		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
-	);
-	// The legend explains the map's dynamics layers once a run is on the map; before the first
-	// run there is nothing to explain. The single-line diagram draws neither.
-	const legendShown = $derived(
-		app.mode === 'dynamics' && !!dyn.frame && !dyn.atRest && !app.zen && !ctrl.singleLineShown
 	);
 	$effect(() => {
 		dyn.theme = config.theme;
@@ -182,7 +176,6 @@
 	{#if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} />
 	{/if}
-	{#if legendShown}<DynamicsLegend theme={config.theme} top={app.headerInset + 52} />{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}

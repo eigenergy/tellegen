@@ -58,7 +58,8 @@ export const WECC240_PRESETS: Preset[] = [
 	}
 ];
 
-export const VALIDATED_CLAIM = 'Validated';
+/** The run repeats the validation study's scenario and settings. */
+export const VALIDATED_CLAIM = 'Matches';
 
 const sameOptions = (o: RmsCaseOptions): string[] => {
 	const diff: string[] = [];

@@ -243,10 +243,13 @@ describe('dynamics verdict wording', () => {
 		// A failed check turns its number red.
 		expect(stats({ ...s, voltage: { ...s.voltage, recovered: false } })[1].tone).toBe('failure');
 		expect(
-			stats({ ...s, angle: { ...s.angle, pole_slips: [{ unit: '1431#N', t: 2 }] } })[2].tone
+			stats({
+				...s,
+				angle: { ...s.angle, pole_slips: [{ unit: '1431#N', t: 2 }] }
+			})[2].tone
 		).toBe('failure');
 		expect(checks(s)).toEqual([
-			{ label: 'In step', ok: true },
+			{ label: 'Generators in sync', ok: true },
 			{ label: 'Settled', ok: true },
 			{ label: 'Voltage recovered', ok: true }
 		]);
