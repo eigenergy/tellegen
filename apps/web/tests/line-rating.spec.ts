@@ -108,7 +108,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await expect(page.getByTestId('sensitivity-readout')).toContainText(/\$\/MWh per MW\b/);
 	// A binding line's column is structured, not the flat/uniform tint.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).not.toContainText('Uniform:');
+	await expect(labels).not.toContainText('at every bus');
 	// A signed scale in plain decimals, never e-notation.
 	await expect(labels).toContainText(/[+−][\d.]+/);
 	await expect(labels).not.toContainText(/\de[+-]\d/);

@@ -2,7 +2,8 @@
 	import { sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
-	import { lineName, signedSmall, small } from '../format.js';
+	import { lineName, readable, signedSmall, small } from '../format.js';
+	import { dispatchByBus } from '../diagram/transmission-inspection.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -23,6 +24,28 @@
 			: ctrl.sliderValue - ctrl.committedDelta
 	);
 
+	/** The selection's own numbers from the solved case, as labelled values. */
+	const values = $derived.by(() => {
+		const solution = ctrl.activeSolvable?.solution;
+		if (branchMode) {
+			const b = ctrl.selectedBranchData;
+			const flow = solution?.flows.find((f) => f.branch === app.selectedBranch);
+			return [
+				['Flow', readable(flow ? Math.abs(flow.mw) : null, 'MW').text],
+				['Loading', readable(flow && b && b.rate_mw > 0 ? flow.loading * 100 : null, '%').text],
+				['Rating', readable(b && b.rate_mw > 0 ? b.rate_mw : null, 'MW').text]
+			] as const;
+		}
+		const bus = ctrl.selectedBusData;
+		const price = solution?.prices.find((p) => p.bus === app.selectedBus)?.value;
+		const generation = solution ? dispatchByBus(solution.dispatch).get(app.selectedBus!) : undefined;
+		return [
+			['Price', readable(price, '$/MWh').text],
+			['Demand', readable(bus ? bus.demand_mw + ctrl.committedDelta : null, 'MW').text],
+			['Generation', readable(generation ?? (solution && bus ? 0 : null), 'MW').text]
+		] as const;
+	});
+
 	// Name the selected line as BindingLines and the diagram do; fall back to the raw
 	// branch id while the network loads.
 	const title = $derived.by(() => {
@@ -36,6 +59,11 @@
 	<h3 class="readout-title" data-testid="sensitivity-title">{title}</h3>
 	<button onclick={ctrl.clearSelection} aria-keyshortcuts="Escape" title="Esc">Clear</button>
 </div>
+<dl class="values" aria-label="Selection values">
+	{#each values as [label, value] (label)}
+		<div><dt>{label}</dt><dd>{value}</dd></div>
+	{/each}
+</dl>
 <div class="sensitivity-readout" data-testid="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
 		<p class="dim small">{ctrl.activeSolvable?.solving ? 'Solving…' : 'Estimate'}</p>
@@ -43,8 +71,8 @@
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels single">
 				<span
-					>Uniform: {signedSmall(ctrl.sensSummary.mean * previewStep)}
-					{previewUnits}</span
+					>{signedSmall(ctrl.sensSummary.mean * previewStep)}
+					{previewUnits} at every bus</span
 				>
 			</div>
 		{:else if ctrl.previewScale}
@@ -63,7 +91,7 @@
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels single">
-				<span>Uniform: {signedSmall(ctrl.sensSummary.mean)} {reportedUnits}</span>
+				<span>Price change {signedSmall(ctrl.sensSummary.mean)} {reportedUnits} at every bus</span>
 			</div>
 		{:else if ctrl.sensSummary}
 			<div class="legend" style:background={sensGradient}></div>
@@ -103,5 +131,23 @@
 
 	.sensitivity-readout {
 		margin-bottom: 4px;
+	}
+	.values {
+		display: grid;
+		gap: 2px;
+		margin: 6px 0 8px;
+		font-size: var(--fs-label);
+	}
+	.values div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.values dt {
+		color: var(--text-secondary);
+	}
+	.values dd {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
 	}
 </style>

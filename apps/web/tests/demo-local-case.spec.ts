@@ -102,7 +102,7 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	// shows the uniform predicted shift. The value must scale with the step — the
 	// regression this guards is the step cancelling out of the preview display.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/Uniform: [+−][\d.,]+\s+\$\/MWh/);
+	await expect(labels).toContainText(/[+−][\d.,]+\s+\$\/MWh at every bus/);
 	// Plain decimals, never e-notation.
 	await expect(labels).not.toContainText(/\de[+-]\d/);
 	const atFull = parseShift(await labels.innerText());
@@ -210,7 +210,7 @@ function parseShift(text: string): number {
 	const m = text
 		.replace('−', '-')
 		.replace(/,/g, '')
-		.match(/Uniform: ([+-]?[\d.]+)/);
+		.match(/([+-]?[\d.]+)\s+\$\/MWh/);
 	if (!m) throw new Error(`no shift value in ${JSON.stringify(text)}`);
 	return Number(m[1]);
 }

@@ -280,18 +280,16 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 /** Loading, as a fraction of rating, from which a branch is near its limit: amber from here,
  * red only at the rating itself (`LOADING_AT_LIMIT`), on the map and the diagram alike. */
 export const LOADING_ATTENTION = 0.9;
-/** Where the map starts shading a branch towards amber. */
-const LOADING_ELEVATED = 0.6;
 /** Loading from which a branch is drawn red: at its rating, less display rounding noise
  * (the diagram's `LOADING_TOLERANCE`). */
 const LOADING_AT_LIMIT = 1 - 1e-5;
 
-const LOADING_BASE: RGBA = [124, 132, 143, 200];
-const LOADING_AMBER: RGBA = [227, 160, 8, 240];
-const LOADING_RED: RGBA = [215, 38, 30, 250];
+export const LOADING_BASE: RGBA = [124, 132, 143, 200];
+export const LOADING_AMBER: RGBA = [227, 160, 8, 240];
+export const LOADING_RED: RGBA = [215, 38, 30, 250];
 const LOADING_STOPS: [RGBA, number][] = [
 	[LOADING_BASE, 0],
-	[LOADING_BASE, LOADING_ELEVATED],
+	[LOADING_BASE, LOADING_ATTENTION],
 	[LOADING_AMBER, LOADING_ATTENTION],
 	[LOADING_AMBER, 1],
 	[LOADING_RED, 1]
@@ -301,16 +299,11 @@ export const branchLoadingGradient = `linear-gradient(90deg, ${LOADING_STOPS.map
 	([c, stop]) => `rgb(${c.slice(0, 3).join(' ')}) ${stop * 100}%`
 ).join(', ')})`;
 
-/** Branch color by loading fraction: grey, shading to amber by `LOADING_ATTENTION`, red at the rating. */
+/** Branch color by loading fraction, in the diagram's three steps: grey below
+ * `LOADING_ATTENTION`, amber near the rating, red at it. */
 export function branchColor(loading: number, inService: boolean): RGBA {
 	if (!inService) return [190, 196, 204, 110];
-	if (loading < LOADING_ELEVATED) return LOADING_BASE;
-	if (loading < LOADING_ATTENTION)
-		return lerpColor(
-			[124, 132, 143, 210],
-			LOADING_AMBER,
-			(loading - LOADING_ELEVATED) / (LOADING_ATTENTION - LOADING_ELEVATED)
-		);
+	if (loading < LOADING_ATTENTION) return LOADING_BASE;
 	if (loading < LOADING_AT_LIMIT) return LOADING_AMBER;
 	return LOADING_RED;
 }
