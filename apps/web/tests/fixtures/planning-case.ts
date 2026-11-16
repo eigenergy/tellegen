@@ -67,79 +67,104 @@ export const PROPOSAL_TOOLS = [...PLANNING_TOOLS, 'apply_capacity_plan'].sort();
 
 /** A test host that follows the WebMCP algorithms tellegen depends on: names
  * are validated and unique, both schemas are serialized at registration, input
- * and output cross as JSON text, and a `toolchange` event follows each change. */
-export async function installWebMcpHarness(page: Page, failTool: string | null = null) {
-	await page.addInitScript((rejectedTool) => {
-		type Tool = {
-			name: string;
-			inputSchema?: object;
-			outputSchema?: object;
-			annotations?: Record<string, boolean>;
-			execute(input: Record<string, unknown>, options?: { signal: AbortSignal }): Promise<unknown>;
-		};
-		type Entry = { tool: Tool; outputSchema: string; exposedTo: string[] };
-		const tools = new Map<string, Entry>();
-		const roundTrip = async (pending: Promise<unknown>) => {
-			// The browser serializes the resolved value to JSON text for the agent.
-			const text = JSON.stringify(await pending);
-			if (text === undefined) throw new TypeError('tool result is not JSON serializable');
-			return JSON.parse(text);
-		};
-		const modelContext = new (class extends EventTarget {
-			async registerTool(tool: Tool, options: { signal?: AbortSignal; exposedTo?: string[] } = {}) {
-				if (tool.name === rejectedTool) throw new Error(`registration refused for ${tool.name}`);
-				if (!/^[A-Za-z0-9_.-]{1,128}$/.test(tool.name))
-					throw new DOMException('invalid tool name', 'InvalidStateError');
-				if (tools.has(tool.name)) throw new DOMException('duplicate tool', 'InvalidStateError');
-				JSON.stringify(tool.inputSchema);
-				tools.set(tool.name, {
-					tool,
-					outputSchema: JSON.stringify(tool.outputSchema ?? {}),
-					exposedTo: [...(options.exposedTo ?? [])]
-				});
-				options.signal?.addEventListener(
-					'abort',
-					() => {
-						tools.delete(tool.name);
-						this.dispatchEvent(new Event('toolchange'));
-					},
-					{ once: true }
-				);
-				this.dispatchEvent(new Event('toolchange'));
-			}
-		})();
-		Object.defineProperty(Document.prototype, 'modelContext', {
-			configurable: true,
-			get: () => modelContext
-		});
-		const lookup = (name: string) => {
-			const entry = tools.get(name);
-			if (!entry) throw new Error(`tool ${name} is not registered`);
-			return entry;
-		};
-		Object.defineProperty(window, '__tellegenWebMcpTest', {
-			value: {
-				list: () => [...tools.keys()].sort(),
-				describe: (name: string) => {
-					const entry = lookup(name);
-					return {
-						outputSchema: JSON.parse(entry.outputSchema),
-						annotations: entry.tool.annotations ?? {},
-						exposedTo: entry.exposedTo
-					};
-				},
-				execute: async (name: string, input: Record<string, unknown>) =>
-					roundTrip(lookup(name).tool.execute(JSON.parse(JSON.stringify(input)))),
-				executeAborted: async (name: string, input: Record<string, unknown>, delayMs: number) => {
-					const { tool } = lookup(name);
-					const controller = new AbortController();
-					const pending = tool.execute(input, { signal: controller.signal });
-					setTimeout(() => controller.abort(), delayMs);
-					return roundTrip(pending);
+ * and output cross as JSON text, and a `toolchange` event follows each change.
+ * `pageToolCalls` adds getTools and executeTool, as Chrome's Imperative API has
+ * them; without it the host can only register. */
+export async function installWebMcpHarness(
+	page: Page,
+	failTool: string | null = null,
+	{ pageToolCalls = false }: { pageToolCalls?: boolean } = {}
+) {
+	await page.addInitScript(
+		([rejectedTool, withCalls]) => {
+			type Tool = {
+				name: string;
+				inputSchema?: object;
+				outputSchema?: object;
+				annotations?: Record<string, boolean>;
+				execute(
+					input: Record<string, unknown>,
+					options?: { signal: AbortSignal }
+				): Promise<unknown>;
+			};
+			type Entry = { tool: Tool; outputSchema: string; exposedTo: string[] };
+			const tools = new Map<string, Entry>();
+			const roundTrip = async (pending: Promise<unknown>) => {
+				// The browser serializes the resolved value to JSON text for the agent.
+				const text = JSON.stringify(await pending);
+				if (text === undefined) throw new TypeError('tool result is not JSON serializable');
+				return JSON.parse(text);
+			};
+			const modelContext = new (class extends EventTarget {
+				async registerTool(
+					tool: Tool,
+					options: { signal?: AbortSignal; exposedTo?: string[] } = {}
+				) {
+					if (tool.name === rejectedTool) throw new Error(`registration refused for ${tool.name}`);
+					if (!/^[A-Za-z0-9_.-]{1,128}$/.test(tool.name))
+						throw new DOMException('invalid tool name', 'InvalidStateError');
+					if (tools.has(tool.name)) throw new DOMException('duplicate tool', 'InvalidStateError');
+					JSON.stringify(tool.inputSchema);
+					tools.set(tool.name, {
+						tool,
+						outputSchema: JSON.stringify(tool.outputSchema ?? {}),
+						exposedTo: [...(options.exposedTo ?? [])]
+					});
+					options.signal?.addEventListener(
+						'abort',
+						() => {
+							tools.delete(tool.name);
+							this.dispatchEvent(new Event('toolchange'));
+						},
+						{ once: true }
+					);
+					this.dispatchEvent(new Event('toolchange'));
 				}
-			}
-		});
-	}, failTool);
+			})();
+			if (withCalls)
+				Object.assign(modelContext, {
+					getTools: async () =>
+						[...tools.values()].map(({ tool }) => ({
+							name: tool.name,
+							inputSchema: tool.inputSchema
+						})),
+					executeTool: async (tool: { name: string }, input: Record<string, unknown>) =>
+						roundTrip(lookup(tool.name).tool.execute(input))
+				});
+			Object.defineProperty(Document.prototype, 'modelContext', {
+				configurable: true,
+				get: () => modelContext
+			});
+			const lookup = (name: string) => {
+				const entry = tools.get(name);
+				if (!entry) throw new Error(`tool ${name} is not registered`);
+				return entry;
+			};
+			Object.defineProperty(window, '__tellegenWebMcpTest', {
+				value: {
+					list: () => [...tools.keys()].sort(),
+					describe: (name: string) => {
+						const entry = lookup(name);
+						return {
+							outputSchema: JSON.parse(entry.outputSchema),
+							annotations: entry.tool.annotations ?? {},
+							exposedTo: entry.exposedTo
+						};
+					},
+					execute: async (name: string, input: Record<string, unknown>) =>
+						roundTrip(lookup(name).tool.execute(JSON.parse(JSON.stringify(input)))),
+					executeAborted: async (name: string, input: Record<string, unknown>, delayMs: number) => {
+						const { tool } = lookup(name);
+						const controller = new AbortController();
+						const pending = tool.execute(input, { signal: controller.signal });
+						setTimeout(() => controller.abort(), delayMs);
+						return roundTrip(pending);
+					}
+				}
+			});
+		},
+		[failTool, pageToolCalls] as const
+	);
 }
 
 export function describeTool(

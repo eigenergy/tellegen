@@ -25,15 +25,16 @@ async function asBrowser(page: Page, userAgent: string, mobile = false) {
 	return page.getByTestId('webmcp-status');
 }
 
-test('Firefox hears it is not supported, and the setup routes stay visible', async ({ page }) => {
+test('Firefox hears it is not available, with a link to the docs', async ({ page }) => {
 	const status = await asBrowser(
 		page,
 		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0'
 	);
-	await expect(status).toHaveText('Not supported in Firefox');
-	// Nothing to prompt yet: the prompt and examples wait until the tools load.
+	await expect(status).toHaveText('Not available in this browser');
+	// Nothing to prompt yet: the prompt waits until the tools load.
 	await expect(page.getByRole('button', { name: 'Copy prompt', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible();
+	// Per-agent setup lives in the docs, not in the panel.
+	await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'Docs', exact: true }).last()).toBeVisible();
 	await expect(page.locator('html')).not.toHaveAttribute('data-webmcp', /.*/);
 });
@@ -41,7 +42,7 @@ test('Firefox hears it is not supported, and the setup routes stay visible', asy
 test('recent Chrome without WebMCP gets the flag to copy', async ({ page, context }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	const status = await asBrowser(page, MAC_CHROME(157));
-	await expect(status).toContainText('WebMCP off');
+	await expect(status).toContainText('Not available in this browser');
 	await expect(status.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
 	// The flag address is shown in full, not cut off.
 	await expect
@@ -72,7 +73,7 @@ test('the first-visit hint follows what this browser can do', async ({ page }) =
 	// Chrome with WebMCP off: the hint says so and leads to the setting.
 	await expect(welcome).toContainText('Agent tools are off');
 	await welcome.getByRole('button', { name: 'Set up' }).click();
-	await expect(page.getByTestId('webmcp-status')).toContainText('WebMCP off');
+	await expect(page.getByTestId('webmcp-status')).toContainText('Not available in this browser');
 });
 
 test('Firefox gets no first-visit hint', async ({ page }) => {
@@ -94,7 +95,7 @@ test('Firefox gets no first-visit hint', async ({ page }) => {
 test('Edge gets its own flag scheme', async ({ page }) => {
 	const status = await asBrowser(page, `${MAC_CHROME(150)} Edg/150.0.0.0`);
 	await expect(status.locator('code')).toHaveText('edge://flags/#enable-webmcp-testing');
-	await expect(status).toContainText('WebMCP off');
+	await expect(status).toContainText('Not available in this browser');
 });
 
 test('Edge 149 is asked for 150, where its trial starts', async ({ page }) => {
@@ -107,31 +108,51 @@ test('Chrome before the trial is asked to update', async ({ page }) => {
 	await expect(status).toHaveText('Needs Chrome 149+');
 });
 
-test('a phone hears that agents work from a computer', async ({ page }) => {
+test('a phone hears that agent tools are not available', async ({ page }) => {
 	const status = await asBrowser(
 		page,
 		'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1',
 		true
 	);
-	await expect(status).toHaveText('Desktop only');
+	await expect(status).toHaveText('Not available in this browser');
+	// No desktop setup follows on a phone.
+	await expect(page.locator('[data-testid="webmcp-status"] ~ *').getByRole('button')).toHaveCount(
+		0
+	);
 });
 
-test('the setup routes copy their exact commands', async ({ page, context }) => {
-	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-	await installWebMcpHarness(page);
+async function copyPrompt(page: Page) {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
-	await page.getByText('DevTools MCP', { exact: true }).click();
-	await page.getByRole('button', { name: 'Copy Claude Code DevTools command' }).click();
-	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-		'claude mcp add chrome-devtools --scope user -- npx chrome-devtools-mcp@latest --categoryExperimentalWebmcp=true --chromeArg=--enable-features=WebMCP'
+	await expect(page.getByTestId('webmcp-status')).toContainText('Ready');
+	await page.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
+	return page.evaluate(() => navigator.clipboard.readText());
+}
+
+test('with getTools and executeTool, the prompt says how to call the page tools', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await installWebMcpHarness(page, null, { pageToolCalls: true });
+	const text = await copyPrompt(page);
+	expect(text).toMatch(
+		/^Open http:\/\/127\.0\.0\.1:\d+ in Chrome\. .*getTools\(\).*executeTool\(tools\.find\(/
 	);
-	await page.getByText('Claude in Chrome', { exact: true }).click();
-	await page.getByRole('button', { name: 'Copy Claude Code command' }).click();
-	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('claude --chrome');
-	// The test host has registerTool only, so the Claude route points at DevTools MCP instead.
-	await expect(page.getByTestId('page-tool-calls-missing')).toHaveText('Use DevTools MCP');
+	expect(text).toContain('Start with inspect_case');
+});
+
+test('without getTools and executeTool, the prompt only names the tools', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await installWebMcpHarness(page);
+	const text = await copyPrompt(page);
+	expect(text).toMatch(/^Use the WebMCP tools in this Tellegen tab/);
+	expect(text).not.toContain('getTools');
 });
 
 test('the introduction opens Connect and stays dismissed', async ({ page }) => {
@@ -169,12 +190,11 @@ test('a browser with WebMCP sees a loading card while the tools register', async
 	const status = page.getByTestId('webmcp-status');
 	await expect(status).toContainText('Loading…');
 	await expect(status).toContainText('Ready');
-	// Agents come first, then the prompt.
-	const headings = await page
-		.getByRole('region', { name: 'Use Tellegen with an agent' })
-		.locator('h3')
-		.allTextContents();
-	expect(headings.slice(0, 3)).toEqual(['Agents', 'Prompt', 'Examples']);
+	// Once ready, the prompt to copy and the docs; nothing else.
+	const guide = page.getByRole('region', { name: 'Use Tellegen with an agent' });
+	await expect(guide.getByRole('button', { name: 'Copy prompt', exact: true })).toBeVisible();
+	await expect(guide.getByRole('link', { name: 'Docs', exact: true })).toBeVisible();
+	await expect(guide.locator('h3, details')).toHaveCount(0);
 });
 
 test('a refused registration shows the error card', async ({ page }) => {

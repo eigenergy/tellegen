@@ -13,20 +13,19 @@ tools, and manual use works as before.
 
 ## Getting started (no setup knowledge needed) {#getting-started}
 
-Open **Agent**, then **Connect**, on the map. The panel checks your browser,
-tells you what, if anything, to change, and has copy buttons for every command
-and prompt on this page.
+Open **Agent**, then **Connect**, on the map. The panel shows whether this
+browser can offer the tools and, once they are ready, a **Copy prompt** button.
+Everything else is on this page.
 
 ### 1. Use a browser that speaks WebMCP
 
-| What the Connect tab says   | What to do                                                                                                                                                                                                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Getting the tools ready…    | Nothing. It turns into **Ready for agents** in a moment.                                                                                                                                                                                                                 |
-| Ready for agents            | Nothing. Go to step 2.                                                                                                                                                                                                                                                   |
-| One switch away             | Paste `chrome://flags/#enable-webmcp-testing` (`edge://flags/...` in Edge) into the address bar, set it to Enabled and relaunch. On https://tellegen.dev, Chrome needs no switch during its trial; local and preview copies, Edge, Brave and other Chromium browsers do. |
-| Almost there                | Update Chrome to 149 or later, or Edge to 150 or later.                                                                                                                                                                                                                  |
-| … doesn't speak WebMCP yet  | Firefox and Safari have no WebMCP. Use Chrome on a computer, or an agent that brings its own browser (step 2).                                                                                                                                                           |
-| Agents work from a computer | The agents that use page tools run on desktop, so phones and tablets, Android tablets included, get this note.                                                                                                                                                           |
+| What the Connect tab says     | What to do                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loading…                      | Nothing. It turns into **Ready** in a moment.                                                                                                                                                                                                                                                |
+| Ready                         | Nothing. Go to step 2.                                                                                                                                                                                                                                                                       |
+| Not available, with a flag    | Copy the flag address (`chrome://flags/#enable-webmcp-testing`, or `edge://flags/...` in Edge), paste it into the address bar, set it to Enabled and relaunch. On https://tellegen.dev, Chrome needs no flag during its trial; local and preview copies, Edge, Brave and other Chromium browsers do. |
+| Needs Chrome 149+             | Update Chrome to 149 or later, or Edge to 150 or later.                                                                                                                                                                                                                                      |
+| Not available, with no flag   | Firefox, Safari and phones have no WebMCP. Use Chrome on a computer, or an agent that brings its own browser (step 2).                                                                                                                                                                        |
 
 The origin-trial token covers https://tellegen.dev only, not other hosts, and
 only Chrome: Edge's trial is separate and needs a token from Microsoft, which
@@ -61,8 +60,8 @@ Foundry, Claude Code keeps the browser off even with `--chrome`. Run
 `/chrome` to check the connection.
 
 Claude does not look for WebMCP tools on its own yet, so tell it where they
-are. The Connect tab's **Copy prompt for Claude** button copies a prompt that
-starts:
+are. In a browser that has `getTools` and `executeTool`, the Connect tab's
+**Copy prompt** button copies a prompt that starts:
 
 > Open https://tellegen.dev in Chrome. The page offers WebMCP tools; use them
 > instead of clicking. List them by running
@@ -76,7 +75,7 @@ That is the call shape of Chrome's
 [Imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api):
 `executeTool` takes a tool object from `getTools()`, and JSON-string input is
 deprecated from Chrome 155. If the browser lacks `getTools` or `executeTool`,
-the Connect tab says so and points to the DevTools route below.
+the prompt leaves that part out; use the DevTools route below.
 
 This uses your own Chrome, so on https://tellegen.dev the origin-trial token
 applies and no flag is needed. Edge, Brave and other Chromium browsers, which
@@ -105,10 +104,14 @@ call page tools yet.
 
 ### 3. Ask
 
-With the tools ready, the Connect tab numbers the steps: connect an agent,
-give it the prompt that explains the tools, then try one of a few requests,
-each with a copy button. For example: "Which lines
-are congested right now, and which buses pay the highest prices?"
+With the tools ready, give the agent the prompt from **Copy prompt**, then ask.
+For example:
+
+- Which lines are congested right now, and which buses pay the highest prices?
+- If demand at the most expensive bus rises by 50 MW, how do prices and the
+  total cost change? Preview it before applying anything.
+- Propose the cheapest line capacity upgrade that relieves congestion, and wait
+  for my approval before applying it.
 
 ### Questions
 
@@ -125,9 +128,9 @@ with the one command above. The ChatGPT app and `claude --chrome` need none.
 To work on case files without a browser, Tellegen has a separate stdio server;
 see [MCP server](mcp.md).
 
-**How do I know it's working?** The Connect tab says **Ready for agents** and
-counts the tools this tab offers. After the first call it says **Agent
-connected**, and the call appears under **Activity**.
+**How do I know it's working?** The Connect tab says **Ready** and counts the
+tools this tab offers. After the first call it says **Connected**, and the call
+appears under **Activity**.
 
 The first-visit introduction at the bottom of the map opens the Connect tab
 and links to the application changelog.
