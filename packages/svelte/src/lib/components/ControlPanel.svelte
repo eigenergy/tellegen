@@ -100,6 +100,7 @@
 		{#snippet selectionBlock()}
 			{#if dynamicsSelection}
 				<DynamicsElementActions />
+				{#if dynamicsKey}<div class="dyn-key"><DynamicsLegend theme={config.theme} /></div>{/if}
 			{:else if dynamicsKey}
 				<DynamicsLegend theme={config.theme} />
 			{:else if ctrl.activeFormulation === 'acpf'}
@@ -242,6 +243,13 @@
 </PanelFrame>
 
 <style>
+	/* The key under a selection's dynamics actions, set off by the panel's own rule. */
+	.dyn-key {
+		margin-top: var(--space-lg);
+		padding-top: var(--space-lg);
+		border-top: 1px solid var(--line);
+	}
+
 	.panel-body {
 		padding: 16px 18px;
 	}
