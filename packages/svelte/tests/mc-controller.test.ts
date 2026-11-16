@@ -337,7 +337,7 @@ describe('hosted distribution catalogue', () => {
 		app.hostedDistributionCases = [summary];
 		ctrl.api = null;
 		await ctrl.activateHostedDistribution(summary.id);
-		expect(app.error).toContain('has none configured');
+		expect(app.error).toBe('Hosted feeder needs the tellegen server');
 		expect(app.multiCases).toEqual([local]);
 		expect(getCaseModuleJson).not.toHaveBeenCalled();
 		expect(ingest).not.toHaveBeenCalled();
@@ -913,7 +913,7 @@ describe('multiconductor calculation and coordinates', () => {
 		const pending = ctrl.solveMultiCase(c);
 		c.mcInput = 'changed';
 		finish({ ...result, iterations: 6 });
-		await expect(pending).rejects.toThrow('case changed');
+		await expect(pending).rejects.toThrow('Case changed during the calculation');
 		expect(c.result).toEqual(summary);
 	});
 	it('updates matched coordinates without changing electrical results and refuses a changed selection', async () => {

@@ -45,6 +45,17 @@ describe('error titles', () => {
 			)
 		).toBe(false);
 	});
+	it('names the calculation that has no solution', () => {
+		expect(errorNoticeTitle('Portugal: DC OPF has no solution at this demand')).toBe(
+			'DC OPF has no solution'
+		);
+		expect(errorNoticeTitle('AC OPF: problem infeasible')).toBe('AC OPF has no solution');
+	});
+	it('titles a case message with what happened, not the case name', () => {
+		expect(errorNoticeTitle('IEEE 14: solve again before saving')).toBe(
+			'Solve again before saving'
+		);
+	});
 	it('names a failed case list', () => {
 		expect(errorNoticeTitle('Case list: Server error')).toBe('Could not load the case list');
 		expect(errorNoticeCanRetry('Case list: Server error')).toBe(true);

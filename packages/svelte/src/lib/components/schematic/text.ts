@@ -246,11 +246,9 @@ export function tooltip(
 	// A stack's ring opens its card, which says the rest; inside an open stack the card names the
 	// buses, and a tooltip would cover them. A fanned route's card names its branches.
 	if (id === 'stack-rings' || picks.inOpenStack(info) || id === 'fan-branches') return null;
-	if (id === 'route-badges')
-		return `${(info.object as { n: number }).n} branches share this route. Hover to separate them; click to keep them open.`;
+	if (id === 'route-badges') return `${(info.object as { n: number }).n} branches on this route`;
 	if (id === 'landmark-halos') return text.landmark(info.object as Landmark);
-	if (id.startsWith('zones'))
-		return `${text.zone((info.object as { z: number }).z)}. Click to fit.`;
+	if (id.startsWith('zones')) return text.zone((info.object as { z: number }).z);
 	if (id.startsWith('buses-')) return text.bus(info.object as number);
 	if (id.startsWith('branches-')) {
 		const k = picks.segmentEdge(info.index);

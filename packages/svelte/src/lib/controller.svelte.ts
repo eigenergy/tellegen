@@ -114,8 +114,7 @@ export const NOTICES = {
 } as const;
 
 /** A case that needs the server when the host configured none. */
-const noApiNotice = (name: string) =>
-	`${name} is served by the tellegen server, and this page has none configured. Add a local case instead.`;
+const noApiNotice = (name: string) => `${name} needs the tellegen server`;
 
 function acOpfSolveDetail(response: SolveResponse): string {
 	const diagnostics = response.iterations;
@@ -1754,9 +1753,7 @@ export class Controller {
 			} catch (error) {
 				this.app.error = errorText(error);
 			}
-			if (displays.length)
-				this.app.error =
-					'Multiconductor cases take GeoJSON or CSV coordinates, not a drawing file. Attach a GeoJSON or CSV file instead.';
+			if (displays.length) this.app.error = 'Multiconductor cases need GeoJSON or CSV coordinates';
 			return;
 		}
 		const selectedId = source.id;
@@ -2284,7 +2281,7 @@ export class Controller {
 						this.app.previewActive = false;
 						this.app.previewDeltaMw = null;
 						this.app.previewRatingMw = null;
-						this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} has no feasible solution at this demand. Reduce the demand and solve again.`;
+						this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} has no solution at this demand`;
 						return;
 					}
 					// Any other commit failure is unexpected; drop the Study so the next solve
@@ -2434,9 +2431,7 @@ export class Controller {
 	changeDcFormula = async (c: SolvableCase, next: DcFormula) => {
 		if (c.solution?.branch_susceptance_formula === next) return;
 		if (c instanceof LocalCase && c.declaredFormulation) {
-			this.fail(
-				'The imported instance owns its DC convention. Select a network input to change it.'
-			);
+			this.fail('This imported case sets its own DC line model');
 			return;
 		}
 		try {
@@ -2457,9 +2452,7 @@ export class Controller {
 	chooseCalculation = async (c: SolvableCase, next: Formulation) => {
 		try {
 			if (next === 'acopf' && !(await this.loadAcOpf()))
-				throw new Error(
-					'The AC OPF solver could not load in this browser. Reload the page and try again.'
-				);
+				throw new Error('AC OPF solver failed to load');
 			await this.updateSettings(c, next, {}, c.settings.revision);
 			await this.runSettings(c);
 		} catch (error) {
@@ -2658,7 +2651,7 @@ export class Controller {
 		let study: BrowserStudy | null = null;
 		try {
 			const input = await this.ensureStudyInputJson(c);
-			if (!input) throw new Error('This case has no retained PowerIO input. Add the case again.');
+			if (!input) throw new Error('Case input missing; add the case again');
 			let solution: Solution;
 			let baseSolution: Solution | null = null;
 			let iterations: typeof c.iterations = [];
@@ -2693,7 +2686,7 @@ export class Controller {
 				revision !== c.revisionGeneration ||
 				settingsRevision !== c.settings.revision
 			)
-				throw new Error('The case or its settings changed during the calculation. Run it again.');
+				throw new Error('Case changed during the calculation');
 			this.disposeStudy(c);
 			c.formulation = formulation;
 			c.settings.accepted = resolved;
@@ -3369,7 +3362,7 @@ export class Controller {
 				revision !== c.revisionGeneration ||
 				!this.app.multiCases.includes(c)
 			)
-				throw new Error('The case changed while calculating. Run AC power flow again.');
+				throw new Error('Case changed during the calculation');
 			if (!result.converged) throw new Error('AC power flow did not converge.');
 			// A load edit staged against the previous session has nothing to
 			// apply to the fresh operating point; drop its pending flush.
@@ -3958,7 +3951,7 @@ export class Controller {
 		) {
 			const snapshot = await api.getSavedCase(c.id);
 			if (snapshot.base_input !== base || !sameSolution(snapshot.display_solution, c.solution))
-				throw new Error('The server case changed. Reload it before saving.');
+				throw new Error('Server case changed; reload before saving');
 			return {
 				input: snapshot.input,
 				solution: snapshot.solution,
@@ -4137,7 +4130,7 @@ export class Controller {
 		}
 		const study = await this.getStudy(c, studyInputJson);
 		if (!study) {
-			this.app.error = `${this.caseName(c)}: the browser study is unavailable. Solve the case again, then save.`;
+			this.app.error = `${this.caseName(c)}: solve again before saving`;
 			return null;
 		}
 		await study.commit(c.id, this.caseDeltas(c), this.caseRatings(c), null);

@@ -111,7 +111,7 @@ function userMessage(status: number, serverMessage: string | null): string {
 	if (status === 0) return 'Server unreachable';
 	if (status === 429) return RATE_LIMITED;
 	if (status >= 500) return 'Server error';
-	return serverMessage ?? `The request failed (HTTP ${status}). Try again.`;
+	return serverMessage ?? `Request failed (HTTP ${status})`;
 }
 
 async function checkedFetch(

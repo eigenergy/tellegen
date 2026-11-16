@@ -122,6 +122,10 @@ export function errorNoticeTitle(details: string): string {
 	// A singular matrix on its own is a solve failure (an AC power flow Jacobian,
 	// say); only a sensitivity that fails is about prices.
 	if (/sensitivity|derivative/i.test(details)) return 'No price sensitivity';
+	// An infeasible optimal power flow is an outcome, not a broken solver: name the calculation.
+	const opf = /\b(Relaxed AC OPF|AC OPF|DC OPF)\b/.exec(details)?.[1];
+	if (opf && /infeasib|no feasible solution|has no solution/i.test(details))
+		return `${opf} has no solution`;
 	if (
 		/infeasib|converg|singular|jacobian|solver|solving|calculation|compute|webassembly|power flow|\bstudy\b/i.test(
 			details
@@ -136,7 +140,10 @@ export function errorNoticeTitle(details: string): string {
 }
 /** The start of an unclassified message, so its notice still names what failed. */
 function firstWords(details: string): string {
-	const line = details
+	// "Case name: what happened" names the case first; the title is what happened.
+	const named = /^[^:\n]{1,40}:\s+(\S[^\n]*)$/.exec(details)?.[1];
+	const text = named ? named.charAt(0).toUpperCase() + named.slice(1) : details;
+	const line = text
 		.split(/\n|(?<=[.:;])\s/)[0]
 		.replace(/[.:;]$/, '')
 		.trim();
