@@ -57,10 +57,28 @@ export function formatElapsed(ms: number): string {
 	return clamped < 1_000 ? `${Math.round(clamped)} ms` : `${(clamped / 1_000).toFixed(1)} s`;
 }
 
-/** A few words for a finished call: what it found or changed, or why it failed. */
+/** A failure in a word or two. The tool's own message is written for the agent: the Agent
+ * panel keeps it behind Details. */
+const FAILURES: Record<string, string> = {
+	INVALID_INPUT: 'Invalid input',
+	CASE_NOT_FOUND: 'Case not found',
+	ELEMENT_NOT_FOUND: 'Not found',
+	NO_ACTIVE_CASE: 'No case open',
+	CASE_SOLVING: 'Busy solving',
+	CASE_NOT_READY: 'Case not ready',
+	STALE_CASE: 'Case changed',
+	STALE_REVISION: 'Case changed',
+	STALE_PROPOSAL: 'Plan changed',
+	APPROVAL_REQUIRED: 'Needs approval',
+	CANCELLED: 'Cancelled',
+	TIMEOUT: 'Timed out',
+	DYNAMICS_OFF: 'Dynamics is off'
+};
+
+/** A few words for a finished call: what it found or changed, or that it failed. */
 export function activitySummary(event: Finished): string {
 	const { response } = event;
-	if (!response.ok) return response.error.message;
+	if (!response.ok) return FAILURES[response.error.code] ?? 'Failed';
 	if (event.callerCancelled) return 'Cancelled after completing';
 	const data = response.data;
 	if (data.output_truncated) return 'Done';

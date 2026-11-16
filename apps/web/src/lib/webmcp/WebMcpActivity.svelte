@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import AgentGuide from './AgentGuide.svelte';
-	import { PanelFrame, StatBoxes, getAppState } from '@tellegen/svelte';
+	import { PanelFrame, getAppState } from '@tellegen/svelte';
 	import type {
 		ExperimentRecord,
 		JsonValue,
@@ -194,15 +194,6 @@
 					{toolCount}
 					callCount={experiments.length}
 				/>{:else}
-				<!-- The same stat box as on Connect. -->
-				<div class="call-count" role="status">
-					{#if activities.length}
-						<StatBoxes
-							label="Agent calls"
-							stats={[{ label: 'Calls', value: experiments.length.toLocaleString('en-US') }]}
-						/>
-					{/if}
-				</div>
 				{#if registrationError}
 					<p
 						class="registration-error"
@@ -429,16 +420,6 @@
 	.agent-content {
 		overflow: auto;
 		min-height: 0;
-	}
-	.call-count {
-		padding: 16px 18px 0;
-	}
-	.call-count :global(dl.stats) {
-		margin: 0 0 4px;
-	}
-	/* The live region stays in place for announcements, but takes no room while empty. */
-	.call-count:not(:has(dl)) {
-		padding: 0;
 	}
 	.registration-error {
 		margin: 0;

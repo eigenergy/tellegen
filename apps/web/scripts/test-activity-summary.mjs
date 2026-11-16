@@ -28,3 +28,21 @@ test('the update summary uses the shared precision', () => {
 	});
 	assert.equal(summary, 'Cost 626.95 → 876.50 $/h, 1 line at limit');
 });
+
+test('a failure reads in a word or two, not the message written for the agent', () => {
+	const failed = (code) =>
+		activitySummary({
+			type: 'finished',
+			id: 'tellegen-tool-2',
+			toolName: 'focus_network',
+			title: 'Focus network element',
+			startedAt: 0,
+			finishedAt: 10,
+			response: {
+				ok: false,
+				error: { code, message: 'case_id must be a nonempty string of at most 128 characters' }
+			}
+		});
+	assert.equal(failed('INVALID_INPUT'), 'Invalid input');
+	assert.equal(failed('SOMETHING_NEW'), 'Failed');
+});

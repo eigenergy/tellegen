@@ -457,7 +457,7 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	await expect(ribbon).toContainText('Query network elements');
 	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('2 of 3 lines');
 
-	// A failure stays on screen with the tool's own sentence.
+	// A failure stays on screen in a word or two; the tool's message is in the Agent panel.
 	const failed = await callTool(page, 'focus_network', {
 		case_id: 'no-such-case',
 		target: { kind: 'bus', element_id: '1' }
@@ -465,7 +465,7 @@ test('an agent call shows the activity ribbon with the Agent panel closed, and t
 	expect(failed.ok).toBe(false);
 	await expect(ribbon).toHaveAttribute('data-status', 'failed');
 	await expect(ribbon).toContainText('Focus network element');
-	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText(/^The .+\.$/);
+	await expect(page.getByTestId('agent-ribbon-summary')).toHaveText('Case changed');
 
 	await ribbon.click();
 	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();

@@ -191,7 +191,8 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: var(--accent);
+		/* Green, as a call that succeeded in Activity. */
+		background: var(--neg);
 	}
 	summary {
 		cursor: pointer;

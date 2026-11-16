@@ -20,6 +20,9 @@ export interface RegisterOptions extends CreateTellegenToolsOptions {
   signal?: AbortSignal;
   /** Reports a dynamic registration error, then `null` after a later retry succeeds. */
   onRegistrationError?: (error: Error | null) => void;
+  /** Reports the registered tool names whenever a tool that registers on its own (dynamics,
+   * capacity planning) comes or goes. */
+  onToolsChange?: (names: string[]) => void;
   /**
    * Origins, other than this document's, allowed to discover and call the
    * tools: for example the page that embeds tellegen in an iframe. The
@@ -204,11 +207,13 @@ export async function registerTellegenWebMcp(
         lifecycle.signal,
         exposedTo,
       );
+      dynamicsNames = () => dynamicsGroup.names();
       let tail: Promise<void> = Promise.resolve();
       const sync = () => {
         tail = tail
           .catch(() => undefined)
-          .then(() => dynamicsGroup.sync(dynamicsAvailable()));
+          .then(() => dynamicsGroup.sync(dynamicsAvailable()))
+          .then(() => options.onToolsChange?.(allNames()));
         return tail;
       };
       await sync().catch(reportRegistrationError);
@@ -219,7 +224,6 @@ export async function registerTellegenWebMcp(
       lifecycle.signal.addEventListener("abort", () => unsubscribeDynamics(), {
         once: true,
       });
-      dynamicsNames = () => dynamicsGroup.names();
     }
     const planning = adapter.planning;
     if (planning) {
@@ -236,6 +240,7 @@ export async function registerTellegenWebMcp(
         lifecycle.signal,
         exposedTo,
       );
+      dynamicNames = () => [...planningGroup.names(), ...proposalGroup.names()];
       // Serialize syncs: availability can change while a registration is in
       // flight, and interleaved register/abort calls on one group would race.
       let tail: Promise<void> = Promise.resolve();
@@ -251,6 +256,7 @@ export async function registerTellegenWebMcp(
               registrationError = null;
               options.onRegistrationError?.(null);
             }
+            options.onToolsChange?.(allNames());
           });
         return tail;
       };
@@ -264,7 +270,6 @@ export async function registerTellegenWebMcp(
       lifecycle.signal.addEventListener("abort", () => unsubscribe(), {
         once: true,
       });
-      dynamicNames = () => [...planningGroup.names(), ...proposalGroup.names()];
     }
   } catch (error) {
     lifecycle.abort(error);

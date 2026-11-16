@@ -166,6 +166,27 @@ describe("dynamic planning registration", () => {
     handle.dispose();
   });
 
+  it("reports the tool names when a planning tool comes or goes", async () => {
+    const { capability, set } = planningCapability({
+      planning: false,
+      proposal: false,
+    });
+    const { context } = trackingContext();
+    const counts: number[] = [];
+    const handle = await registerTellegenWebMcp(
+      context,
+      { ...adapter, planning: capability },
+      { onToolsChange: (names) => counts.push(names.length) },
+    );
+    set({ planning: true });
+    await settle();
+    expect(counts.at(-1)).toBe(8);
+    set({ planning: false });
+    await settle();
+    expect(counts.at(-1)).toBe(7);
+    handle.dispose();
+  });
+
   it("tears down dynamic tools with the lifecycle", async () => {
     const { capability } = planningCapability({
       planning: true,
