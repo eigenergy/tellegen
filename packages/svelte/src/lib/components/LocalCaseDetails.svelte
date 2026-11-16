@@ -7,8 +7,9 @@
 	import { formatPowerIoDiagnostic, type PowerIoDiagnostic } from '@tellegen/engine';
 	import OutcomeVerdict from './OutcomeVerdict.svelte';
 
-	/** Optional host content rendered under the case stats. */
-	let { note }: { note?: Snippet<[LocalCase]> } = $props();
+	/** Optional host content rendered under the case stats; `lead` goes right after
+	 * the result sentence, such as a selection readout. */
+	let { note, lead }: { note?: Snippet<[LocalCase]>; lead?: Snippet } = $props();
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -80,6 +81,7 @@
 	{@const lc = app.activeLocal}
 	<h2>{lc.label}</h2>
 	<OutcomeVerdict />
+	{@render lead?.()}
 	{#if lc.substations}
 		<dl>
 			<div>
@@ -88,7 +90,7 @@
 			</div>
 			<div>
 				<dt>Positions</dt>
-				<dd>Inferred from diagram</dd>
+				<dd>From diagram</dd>
 			</div>
 			<div>
 				<dt>File</dt>

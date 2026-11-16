@@ -40,16 +40,27 @@
 	const branchReadout = $derived(
 		app.selectedBranch !== null && (ctrl.selectedSensitivity || app.sensitivityLoading)
 	);
-	/** Compact only: a resolved selection outranks the case stats it was read
-	 * against. Gated on networkStats because that is what renders the readout. */
+	/** A resolved selection comes right after the result sentence, so it opens in
+	 * view instead of at the foot of a long panel. Gated on networkStats because
+	 * that is what renders the readout. */
 	const selectionLeads = $derived(
-		app.compactLayout &&
-			!!ctrl.networkStats &&
+		!!ctrl.networkStats &&
 			(busReadout ||
 				branchReadout ||
 				(ctrl.activeFormulation === 'acpf' &&
 					(app.selectedBus !== null || app.selectedBranch !== null)))
 	);
+
+	/** The case list failed to load: a case file still opens. */
+	function openFile() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.multiple = true;
+		input.onchange = () => {
+			if (input.files) void ctrl.ingestFiles(input.files);
+		};
+		input.click();
+	}
 
 	$effect(() => {
 		const selection = app.selectedBus ?? app.selectedBranch;
@@ -61,10 +72,9 @@
 				// the agent pointed at. The Agent tab keeps its record of the call.
 				const panel = layout.panels.find((candidate) => candidate.id === 'network');
 				if (panel) layout.activate(panel);
-				if (layout.compact) {
-					layout.drawer = 'network';
-					void tick().then(() => bodyEl?.closest('.panel-content')?.scrollTo({ top: 0 }));
-				}
+				if (layout.compact) layout.drawer = 'network';
+				// The readout sits near the top: scroll the panel back so it is in view.
+				void tick().then(() => bodyEl?.closest('.panel-content')?.scrollTo({ top: 0 }));
 			});
 	});
 </script>
@@ -106,12 +116,11 @@
 				<p class="dim blink">Parsing&hellip;</p>
 			{/if}
 
-			<!-- Selected equipment leads on narrow screens. -->
-			{#if selectionLeads}
-				{@render selectionBlock()}
-
-				<hr />
-			{/if}
+			{#snippet lead()}
+				{#if selectionLeads}
+					<div class="selection-lead">{@render selectionBlock()}</div>
+				{/if}
+			{/snippet}
 
 			{#if app.activeLocal}
 				{#if app.activeLocal.diagram && app.activeLocal.view?.buses.length}
@@ -126,7 +135,7 @@
 						>
 					</div>
 				{/if}
-				<LocalCaseDetails note={caseNote} />
+				<LocalCaseDetails note={caseNote} {lead} />
 			{/if}
 			{#each app.hostedDistributionCases.filter((c) => c.distribution?.related_case_id === app.activeCaseId) as related (related.id)}
 				<button
@@ -135,9 +144,7 @@
 					title={related.unavailable_reason ?? related.name}
 					onclick={() => ctrl.activateHostedDistribution(related.id)}
 				>
-					{ctrl.loadingHostedDistribution === related.id
-						? 'Loading distribution…'
-						: 'Explore associated distribution'}
+					{ctrl.loadingHostedDistribution === related.id ? 'Loading…' : 'Open distribution'}
 				</button>
 			{/each}
 			{#if app.activeMulti}
@@ -146,34 +153,38 @@
 			{#if !ctrl.networkStats}
 				{#if !app.activeLocal && !app.activeMulti}
 					{#if ctrl.loadingHostedDistribution}
-						<p class="dim mono blink">Loading selected case&hellip;</p>
+						<p class="dim blink">Loading&hellip;</p>
 					{:else if ctrl.casesLoaded && app.cases.length === 0}
-						<p class="dim mono">
+						<p class="dim">
 							{app.hostedDistributionCases.length
-								? 'No distribution case selected'
+								? 'No case'
 								: config.loadDefaultCases
-									? 'No default cases loaded'
-									: 'Drop a case file to begin'}
+									? 'No cases'
+									: 'Drop a case file'}
 						</p>
 						{#if config.loadDefaultCases}
 							<button class="reset" onclick={ctrl.restoreDefaultCases}>Restore default cases</button
 							>
 						{/if}
-					{:else if ctrl.loadingBackendCase}
-						<p class="dim blink">Loading case&hellip;</p>
+					{:else if ctrl.casesFailed}
+						<p class="load-failed" role="alert">Could not load the case list</p>
+						<div class="load-actions">
+							<button class="reset" onclick={() => void ctrl.load()}>Retry</button>
+							<button class="reset" onclick={openFile}>Open a file</button>
+						</div>
 					{:else}
-						<p class="dim blink">Loading cases&hellip;</p>
+						<p class="dim blink">Loading&hellip;</p>
 					{/if}
 				{/if}
 			{:else}
 				{#if !app.activeLocal}
-					<NetworkStats />
+					<NetworkStats {lead} />
 				{/if}
 
 				<!-- On a phone the sheet is short: the key to the map's colours comes
 				     right after the result, not below the fold. -->
 				{#if app.compactLayout && !selectionLeads}
-					{@render selectionBlock()}
+					<div class="compact-key">{@render selectionBlock()}</div>
 					<hr />
 				{/if}
 
@@ -182,7 +193,6 @@
 					<button
 						class="reset diagram-toggle"
 						aria-pressed={c.schematic}
-						title="Single-line diagram: voltage levels, transformers and results on a plain canvas"
 						onclick={() => {
 							c.schematic = !c.schematic;
 							// On a phone, the sheet would cover the diagram it opens.
@@ -223,6 +233,28 @@
 <style>
 	.panel-body {
 		padding: 16px 18px;
+	}
+
+	/* The selection readout, set off from the result sentence above it. */
+	.selection-lead {
+		margin: 12px 0;
+		padding: 12px 0;
+		border-block: 1px solid var(--line);
+	}
+
+	/* The display key under the case stats on a phone: a gap, not touching. */
+	.compact-key {
+		margin-top: 12px;
+	}
+
+	.load-failed {
+		margin: 0 0 8px;
+		font-weight: 600;
+		color: var(--text-danger);
+	}
+	.load-actions {
+		display: flex;
+		gap: 8px;
 	}
 
 	hr {

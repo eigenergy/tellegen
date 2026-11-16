@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+	costPerHour,
 	duration,
 	iterationCount,
-	outcomeVerdict,
+	resultStats,
 	savedVerdict,
 	solveVerdict,
 	statusWords
@@ -12,8 +13,9 @@ describe('statusWords', () => {
 	it('maps raw solver statuses to plain words', () => {
 		expect(statusWords('optimal')).toBe('Optimal');
 		expect(statusWords('not_converged')).toBe('Did not converge');
-		expect(statusWords('Restoration_Failed')).toBe('Stalled during restoration');
-		expect(statusWords('Solved_To_Acceptable_Level')).toBe('Acceptable (looser tolerance)');
+		expect(statusWords('Restoration_Failed')).toBe('Stalled');
+		expect(statusWords('Solved_To_Acceptable_Level')).toBe('Acceptable');
+		expect(statusWords('Maximum_Iterations_Exceeded')).toBe('Iteration limit');
 		expect(statusWords(null)).toBe('Not solved');
 	});
 
@@ -41,77 +43,37 @@ describe('duration', () => {
 });
 
 describe('solveVerdict', () => {
-	it('says an AC power flow converged, with its iterations and time', () => {
+	it('says nothing when a solve succeeded cleanly', () => {
 		expect(
-			solveVerdict({
-				formulation: 'acpf',
-				solving: false,
-				failed: false,
-				status: 'feasible',
-				iterations: 4,
-				ms: 38
-			})
-		).toEqual({
-			text: 'AC power flow converged in 4 iterations (38 ms).',
-			tone: 'ok'
-		});
-	});
-
-	it('says a DC OPF found the cheapest dispatch', () => {
+			solveVerdict({ formulation: 'acpf', solving: false, failed: false, status: 'feasible' })
+		).toBeNull();
 		expect(
-			solveVerdict({
-				formulation: 'dcopf',
-				solving: false,
-				failed: false,
-				status: 'optimal',
-				iterations: 9,
-				ms: 1436
-			}).text
-		).toBe('DC OPF found the cheapest dispatch in 9 iterations (1.4 s).');
-	});
-
-	it('says a relaxation gives a bound', () => {
-		expect(
-			solveVerdict({
-				formulation: 'socwr',
-				solving: false,
-				failed: false,
-				iterations: 1
-			}).text
-		).toBe('SOCWR found a lower bound on generation cost in 1 iteration.');
+			solveVerdict({ formulation: 'dcopf', solving: false, failed: false, status: 'optimal' })
+		).toBeNull();
+		expect(solveVerdict({ formulation: 'socwr', solving: false, failed: false })).toBeNull();
 	});
 
 	it('flags a result whose solver status is not clean', () => {
-		const v = solveVerdict({
-			formulation: 'acopf',
-			solving: false,
-			failed: false,
-			status: 'Solved_To_Acceptable_Level',
-			ms: 900
-		});
-		expect(v.tone).toBe('warning');
-		expect(v.text).toBe(
-			'AC OPF found a locally optimal dispatch (900 ms). Solver status: acceptable (looser tolerance).'
-		);
+		expect(
+			solveVerdict({
+				formulation: 'acopf',
+				solving: false,
+				failed: false,
+				status: 'Solved_To_Acceptable_Level'
+			})
+		).toEqual({ text: 'Acceptable', tone: 'warning' });
 	});
 
 	it('reports a running solve', () => {
 		expect(solveVerdict({ formulation: 'acpf', solving: true, failed: false })).toEqual({
-			text: 'Solving AC power flow…',
+			text: 'Solving…',
 			tone: 'pending'
 		});
 	});
 
-	it('says what failed and what to try', () => {
-		expect(
-			solveVerdict({
-				formulation: 'acpf',
-				solving: false,
-				failed: true,
-				iterations: 20
-			})
-		).toEqual({
-			text: 'AC power flow did not converge after 20 iterations. Try DC OPF for a starting point, or relax the tolerance in Settings.',
+	it('names what failed in a few words', () => {
+		expect(solveVerdict({ formulation: 'acpf', solving: false, failed: true })).toEqual({
+			text: 'AC power flow did not converge',
 			tone: 'failure'
 		});
 		expect(
@@ -120,84 +82,91 @@ describe('solveVerdict', () => {
 				solving: false,
 				failed: true,
 				failure: 'DC OPF solve infeasible'
-			}).text
-		).toBe(
-			'DC OPF found no feasible dispatch: demand cannot be served within the line and generator limits. Reduce demand or raise line ratings, then solve again.'
+			})?.text
+		).toBe('DC OPF infeasible');
+		expect(solveVerdict({ formulation: 'socwr', solving: false, failed: true })?.text).toBe(
+			'SOCWR failed'
 		);
 	});
 });
 
 describe('savedVerdict', () => {
-	it('reads a saved result in plain words', () => {
-		expect(savedVerdict({ formulation: 'dcopf', status: 'optimal', label: 'Peak' })).toEqual({
-			text: 'Saved DC OPF result: optimal.',
-			tone: 'ok'
-		});
-		expect(savedVerdict({ formulation: 'dcopf', status: null, label: 'Peak' }).tone).toBe(
-			'pending'
-		);
+	it('reads a saved result as a status', () => {
+		expect(savedVerdict({ status: 'optimal' })).toEqual({ text: 'Saved · Optimal', tone: 'ok' });
+		expect(savedVerdict({ status: null })).toEqual({ text: 'No result', tone: 'pending' });
 	});
 });
 
-describe('outcomeVerdict', () => {
-	it('leads with the objective and the lines at their limit', () => {
-		expect(
-			outcomeVerdict({
-				formulation: 'dcopf',
-				objective: 1234.5,
-				binding: 2,
-				flagged: true
-			})
-		).toEqual({
-			text: 'Generation cost is $1,235/h. Two lines are at their limit.',
-			tone: 'warning'
-		});
-		expect(
-			outcomeVerdict({
-				formulation: 'dcopf',
-				objective: 10,
-				binding: 1,
-				flagged: false
-			})?.text
-		).toBe('Generation cost is $10.00/h. One line is at or above its rating.');
-		expect(
-			outcomeVerdict({
-				formulation: 'dcopf',
-				objective: 10,
-				binding: 0,
-				flagged: true
-			})?.tone
-		).toBe('ok');
+describe('costPerHour', () => {
+	it('drops cents from $100 up and uses a true minus sign', () => {
+		expect(costPerHour(70_784.4)).toBe('$70,784/h');
+		expect(costPerHour(10)).toBe('$10.00/h');
+		expect(costPerHour(-65.5)).toBe('−$65.50/h');
+	});
+});
+
+describe('resultStats', () => {
+	it('gives an OPF its operational cost and the lines at their limit', () => {
+		expect(resultStats({ formulation: 'dcopf', objective: 1234.5, binding: 2 })).toEqual([
+			{ label: 'Operational cost', value: '$1,235/h', sub: undefined },
+			{ label: 'Lines at limit', value: '2', tone: 'warning' }
+		]);
+		expect(resultStats({ formulation: 'dcopf', objective: 10, binding: 0 })[1].tone).toBe('ok');
 	});
 
-	it('states the change from the base case', () => {
+	it('marks a relaxation cost as a lower bound', () => {
+		expect(resultStats({ formulation: 'socwr', objective: 1300, binding: 0 })[0].value).toBe(
+			'≥ $1,300/h'
+		);
+	});
+
+	it('shows the change from the base case under the cost', () => {
 		expect(
-			outcomeVerdict({
+			resultStats({
 				formulation: 'dcopf',
 				objective: 1300,
 				binding: null,
-				flagged: true,
 				deltaObjective: -65.5
-			})?.text
-		).toBe('Generation cost is $1,300/h. That is $65.50/h less than the base case.');
+			})[0].sub
+		).toBe('−$65.50/h');
+		expect(
+			resultStats({ formulation: 'dcopf', objective: 1300, binding: null, deltaObjective: 120 })[0]
+				.sub
+		).toBe('+$120/h');
 	});
 
-	it('has nothing to say for a power flow or a missing objective', () => {
+	it('gives AC power flow its voltage range and heaviest line', () => {
 		expect(
-			outcomeVerdict({
+			resultStats({
 				formulation: 'acpf',
 				objective: 0,
 				binding: 0,
-				flagged: true
+				voltage: { min: 0.95, max: 1.05 },
+				maxLoading: 1.02
 			})
-		).toBe(null);
+		).toEqual([
+			{ label: 'Voltage range', value: '0.950–1.050 pu' },
+			{ label: 'Max loading', value: '102%', tone: 'failure' }
+		]);
+	});
+
+	it('gives DC power flow its heaviest line and the lines at their limit', () => {
 		expect(
-			outcomeVerdict({
-				formulation: 'dcopf',
-				objective: null,
-				binding: 0,
-				flagged: true
-			})
-		).toBe(null);
+			resultStats({ formulation: 'dcpf', objective: null, binding: 1, maxLoading: 0.5 }).map(
+				(s) => [s.label, s.value]
+			)
+		).toEqual([
+			['Max loading', '50%'],
+			['Lines at limit', '1']
+		]);
+	});
+
+	it('shows an ellipsis while solving and a dash with no value', () => {
+		expect(
+			resultStats({ formulation: 'dcopf', solving: true, objective: null, binding: null })[0].value
+		).toBe('…');
+		expect(resultStats({ formulation: 'dcopf', objective: null, binding: null })[0].value).toBe(
+			'—'
+		);
 	});
 });

@@ -1,18 +1,22 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { getAppState, getController } from '../context.svelte.js';
-	import { signed, splitName } from '../format.js';
+	import { splitName } from '../format.js';
 	import OutcomeVerdict from './OutcomeVerdict.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
+
+	/** Content placed right after the result numbers, such as a selection readout. */
+	let { lead }: { lead?: Snippet } = $props();
 </script>
 
 {#if ctrl.networkStats}
 	{@const stats = ctrl.networkStats}
 	{@const [cname, cregion] = splitName(app.active?.name ?? '')}
-	{@const deltaObjective = stats.deltaObjective}
 	<h2>{cname} <span class="region">{cregion}</span></h2>
 	<OutcomeVerdict />
+	{@render lead?.()}
 	<dl>
 		<div>
 			<dt>Buses</dt>
@@ -22,25 +26,6 @@
 			<dt>Lines</dt>
 			<dd class="mono">{stats.branches}</dd>
 		</div>
-		{#if ctrl.activeFormulation !== 'acpf'}
-			<div>
-				<dt>{ctrl.bindingRule?.label ?? 'Lines near or above rating'}</dt>
-				<dd class="mono">{stats.binding ?? '…'}</dd>
-			</div>
-			<!-- The result sentence above states the cost; the row only marks a solve in progress. -->
-			{#if stats.objective === null}
-				<div>
-					<dt>Generation cost</dt>
-					<dd class="blink">Solving&hellip;</dd>
-				</div>
-			{/if}
-			{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
-				<div class="delta">
-					<dt>Cost change from the base case ($/h)</dt>
-					<dd class="mono">{signed(deltaObjective)}</dd>
-				</div>
-			{/if}
-		{/if}
 	</dl>
 {/if}
 
@@ -67,10 +52,6 @@
 		align-items: baseline;
 		gap: var(--space-lg);
 		padding: var(--space-3xs) 0;
-	}
-
-	dl .delta dd {
-		color: var(--text-accent);
 	}
 
 	dt {
