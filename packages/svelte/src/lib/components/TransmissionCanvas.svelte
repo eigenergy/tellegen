@@ -36,6 +36,7 @@
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { docsLink } from '../diagram/transmission-explain.js';
 	import { displayFmt, formulationLabel } from '../format.js';
+	import { limitWords } from '../diagram/verdict.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { basemapCredit, type BasemapSpec } from '../basemap.js';
@@ -1037,8 +1038,9 @@
 				const a = { x: anchors[k * 4], y: anchors[k * 4 + 1] };
 				const sp = screen(a.x, a.y);
 				if (!inView(sp)) return;
+				// Named, so a loading tag beside a bus is not read as that bus's value.
 				candidates.push({
-					text: `${(f.loading * 100).toFixed(0)}%`,
+					text: `Line ${br.id}  ${(f.loading * 100).toFixed(0)}%`,
 					state,
 					priority: 1000 + f.loading,
 					screen: sp,
@@ -1987,17 +1989,29 @@
 						onpreview={setPreview}
 						{brief}
 					/>
-				{:else if !solution}
-					No result
-				{:else if display?.mode === 'voltage'}
-					Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
-				{:else if display && uniform !== null}
-					{display.label}: {uniform.toPrecision(4)}
-					{display.unit}
-				{:else if display && domain}
-					{display.label} <span>{displayFmt(display.mode, domain.lo)}</span><i
-						style:background={display.gradient}
-					></i><span>{displayFmt(display.mode, domain.hi)} {display.unit}</span>
+				{:else}
+					<div class="key-heading values-heading">
+						<strong>Bus values</strong>
+						<a
+							class="docs"
+							href={docsLink(uiConfig.docsHref, 'operating')}
+							target="_blank"
+							rel="noreferrer"
+							aria-label="Bus values docs">Docs</a
+						>
+					</div>
+					{#if !solution}
+						No result
+					{:else if display?.mode === 'voltage'}
+						Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span>
+					{:else if display && uniform !== null}
+						{display.label}: {uniform.toPrecision(4)}
+						{display.unit}
+					{:else if display && domain}
+						{display.label} <span>{displayFmt(display.mode, domain.lo)}</span><i
+							style:background={display.gradient}
+						></i><span>{displayFmt(display.mode, domain.hi)} {display.unit}</span>
+					{/if}
 				{/if}
 				{#if panelView}
 					<TxResultInspection
@@ -2021,6 +2035,7 @@
 						loading={!transferOn || transferSolution ? loadingStates[selectedEdge] : undefined}
 						stale={resultContext.stale}
 						showExceptions={operatingOn || transferOn}
+						limitName={limitWords(formulation).lines}
 						oninspect={inspectResult}
 						onpreview={setPreview}
 						{brief}
@@ -2031,7 +2046,7 @@
 					<ul class="loading-key" aria-label="Line loading">
 						<li><i class="swatch normal"></i>Below {warningPref.value}%</li>
 						<li><i class="swatch near"></i>Near limit</li>
-						<li><i class="swatch over"></i>At limit</li>
+						<li><i class="swatch over"></i>{limitWords(formulation).key}</li>
 						<li><i class="swatch unrated"></i>Unrated</li>
 					</ul>
 				{/if}
@@ -2525,6 +2540,12 @@
 	.key-heading strong {
 		color: var(--ink);
 		font-size: var(--fs-body);
+	}
+	/* A heading row of its own in the legend's wrapping row of keys. */
+	.values-heading {
+		flex: 0 0 100%;
+		margin-bottom: 0;
+		padding-right: 0;
 	}
 	.key-heading .docs {
 		margin-left: auto;

@@ -36,7 +36,8 @@
 		onframe,
 		onclear,
 		onpreview,
-		brief = false
+		brief = false,
+		limitName = 'Lines at limit'
 	}: {
 		exceptions: ReturnType<typeof operatingExceptions>;
 		showExceptions?: boolean;
@@ -58,6 +59,8 @@
 		onpreview?: (item: PreviewItem | null) => void;
 		/** Collapsed: the selection's heading and flow only, no exception list. */
 		brief?: boolean;
+		/** The name for lines at or over their rating, which depends on the calculation. */
+		limitName?: string;
 	} = $props();
 	const preview = (kind: PreviewItem['kind'], id: number) =>
 		previewHandlers(onpreview, { kind, id });
@@ -83,6 +86,11 @@
 		)
 	);
 	const total = $derived(exceptions.buses.length + exceptions.branches.length);
+	/** Both kinds in the list: a heading for each. One kind: the summary names it. */
+	const mixed = $derived(exceptions.buses.length > 0 && exceptions.branches.length > 0);
+	const listName = $derived(
+		transfer ? limitName : mixed ? 'Buses and lines' : exceptions.buses.length ? 'Buses' : 'Lines'
+	);
 	const info = $derived(flow?.loading_info);
 	const rated = $derived(hasStatedRating(info) && isRated(loading));
 	const voltageStatus = $derived(
@@ -249,9 +257,7 @@
 
 {#if showExceptions && !brief && total > 0}
 	<details bind:open>
-		<summary bind:this={summary}
-			>{transfer ? 'Lines at limit' : 'Near or at limit'} ({total})</summary
-		>
+		<summary bind:this={summary}>{listName} ({total})</summary>
 		{#if open}
 			<label>
 				Search
@@ -266,7 +272,7 @@
 					{needle ? 'No matches' : 'None'}
 				</p>{/if}
 			{#if buses.length}
-				<h3>Buses ({buses.length})</h3>
+				{#if mixed}<h3>Buses ({buses.length})</h3>{/if}
 				<ol>
 					{#each buses.slice(0, limit) as b (b.id)}
 						<li>
@@ -280,7 +286,7 @@
 				</ol>
 			{/if}
 			{#if branches.length}
-				<h3>Lines ({branches.length})</h3>
+				{#if mixed}<h3>Lines ({branches.length})</h3>{/if}
 				<ol>
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>

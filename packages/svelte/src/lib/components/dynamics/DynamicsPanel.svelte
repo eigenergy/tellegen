@@ -155,40 +155,43 @@
 				<div class="setting">
 					<span>Dynamic data</span><span class="value">None</span>
 				</div>
-				<div class="actions">
-					{#if caseName}<button class="secondary" onclick={openDyr}>Open .dyr file…</button>{/if}
-					<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
-						>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
-					>
-				</div>
-				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
 				{#if experimental && local?.studyInputJson}
 					<div class="setting">
 						<label for="dyn-preset">Generator type</label>
-						<span class="inline">
-							<select id="dyn-preset" bind:value={preset}>
-								<option value="steam_wscc_192">Steam</option>
-								<option value="hydro_wscc_247">Hydro</option>
-								<option value="gas_turbine">Gas turbine</option>
-								<option value="steam_kundur_555">Steam, large</option>
-							</select>
-							<button class="secondary" disabled={dynamizeBusy} onclick={dynamize}
-								>{dynamizeBusy ? 'Adding…' : 'Add dynamic data'}</button
-							>
-						</span>
+						<select id="dyn-preset" bind:value={preset}>
+							<option value="steam_wscc_192">Steam</option>
+							<option value="hydro_wscc_247">Hydro</option>
+							<option value="gas_turbine">Gas turbine</option>
+							<option value="steam_kundur_555">Steam, large</option>
+						</select>
 					</div>
-					{#if dynamizeError}<p class="err" title={dynamizeError}>
-							Dynamic data failed to build
-						</p>{/if}
 				{/if}
 				<!-- The run controls, as they read once the case has dynamic data. -->
 				<div class="setting">
 					<span>Event</span><span class="value">None</span>
 				</div>
+				<div class="actions">
+					{#if caseName}<button class="secondary" onclick={openDyr}>Open .dyr file…</button>{/if}
+					{#if experimental && local?.studyInputJson}<button
+							class="secondary"
+							disabled={dynamizeBusy}
+							onclick={dynamize}>{dynamizeBusy ? 'Adding…' : 'Add dynamic data'}</button
+						>{/if}
+					<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
+						>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
+					>
+				</div>
+				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
+				{#if dynamizeError}<p class="err" title={dynamizeError}>
+						Dynamic data failed to build
+					</p>{/if}
 				<button class="run" disabled title="Needs dynamic data">Run simulation</button>
 			</section>
 		{:else}
 			<section class="block" aria-label="Dynamic data">
+				<div class="setting">
+					<span>Case</span><span class="value">{caseName ?? 'None'}</span>
+				</div>
 				<div class="setting">
 					<span>Dynamic data</span>
 					<span class="value"
@@ -217,7 +220,7 @@
 						<p class="warn-line">Edits ignored: {dyn.staticEdits}</p>
 					{/if}
 					<div class="setting" aria-busy={att.preparing}>
-						<span>Starts steady</span>
+						<span>Steady start</span>
 						<span class="value" data-testid="dyn-flat"
 							>{#if att.flat}{flatOk
 									? 'Yes'
@@ -346,18 +349,11 @@
 	.counts :global(dl.stats) {
 		margin: 4px 0 0;
 	}
-	.inline {
-		display: inline-flex;
-		gap: 6px;
-	}
-	.inline select {
-		width: 110px;
-	}
-	/* The case actions share the Run button's width, in equal columns. */
+	/* The case actions share the Run button's width, in equal columns; on a narrow panel they
+	   wrap to rows of their own. */
 	.actions {
 		display: grid;
-		grid-auto-columns: minmax(0, 1fr);
-		grid-auto-flow: column;
+		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 		gap: 8px;
 	}
 	.actions .secondary {

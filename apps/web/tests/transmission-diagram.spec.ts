@@ -176,7 +176,7 @@ for (const touch of [false, true]) {
 			await expect(inspector).toContainText('0 MW');
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await expect(inspector).toHaveCount(0);
-			const exceptions = diagram.getByText('Near or at limit (1)', { exact: true });
+			const exceptions = diagram.getByText('Lines (1)', { exact: true });
 			if (touch) await exceptions.tap();
 			else await exceptions.press('Enter');
 			const search = diagram.getByRole('searchbox', { name: 'Search' });
@@ -341,7 +341,7 @@ for (const touch of [false, true]) {
 						await expect(range.getByRole('button', { name: '1.0200 pu' })).toBeVisible();
 					}
 					const diagram = page.locator('.tx-stage');
-					const exceptions = diagram.getByText(`Near or at limit (${uniform ? 2 : 1})`, {
+					const exceptions = diagram.getByText(`Buses (${uniform ? 2 : 1})`, {
 						exact: true
 					});
 					await exceptions.click();
@@ -378,7 +378,7 @@ for (const touch of [false, true]) {
 					}
 					await expect(
 						page.getByRole('region', { name: 'Power-flow equipment results' })
-					).toContainText('Voltage (pu) 1.0800');
+					).toContainText('Voltage 1.0800 pu');
 					if (!touch && !uniform) {
 						const pending = page.waitForEvent('download');
 						await exportPng(toolbar);
@@ -621,7 +621,7 @@ for (const touch of [false, true]) {
 			await selectView(toolbar, 'Flows');
 			const transfer = page.getByRole('region', { name: 'Flows' });
 			await expect(transfer.locator('.stat').filter({ hasText: 'Largest flow' })).toBeVisible();
-			const overloads = page.getByText('Lines at limit (1)', { exact: true });
+			const overloads = page.getByText('Lines over limit (1)', { exact: true });
 			await expect(overloads).toBeVisible();
 			await overloads.click();
 			await expect(page.getByRole('button', { name: /^Line 1 \(/ }).first()).toBeVisible();
