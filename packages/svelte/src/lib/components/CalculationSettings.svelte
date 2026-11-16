@@ -422,7 +422,12 @@
 <style>
 	.calculation-settings {
 		padding: var(--tellegen-calculation-padding, 0);
+		margin-bottom: 16px;
 		font-size: var(--fs-body);
+	}
+	/* A calculation with no options of its own takes no room. */
+	.calculation-settings:not(:has(h3, .row, .status > *)) {
+		display: none;
 	}
 	h3 {
 		margin: 16px 0 2px;
@@ -514,7 +519,7 @@
 		min-height: 30px;
 		color: var(--text-secondary);
 	}
-	.status:empty {
+	.status:not(:has(> *)) {
 		display: none;
 	}
 	.chip {

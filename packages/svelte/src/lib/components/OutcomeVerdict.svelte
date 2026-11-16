@@ -7,8 +7,6 @@
 	/** The network summary's key numbers for the active result. */
 	const ctrl = getController();
 	const app = getAppState();
-	/** Dynamics mode on a case with dynamic data: the map shows the simulation instead. */
-	const dynamics = $derived(app.mode === 'dynamics' && !!ctrl.dynamics.active);
 	const stats = $derived.by(() => {
 		const network = ctrl.networkStats;
 		const c = ctrl.activeSolvable;
@@ -25,8 +23,13 @@
 			voltage = { min, max };
 		}
 		let maxLoading: number | null = null;
-		for (const flow of solution?.flows ?? [])
+		// Each branch loses what enters at one end and does not leave at the other.
+		let losses: number | null = null;
+		for (const flow of solution?.flows ?? []) {
 			if (Number.isFinite(flow.loading)) maxLoading = Math.max(maxLoading ?? 0, flow.loading);
+			if (flow.pt != null && Number.isFinite(flow.mw + flow.pt))
+				losses = (losses ?? 0) + flow.mw + flow.pt;
+		}
 		return resultStats({
 			formulation: ctrl.activeFormulation,
 			solving: c.solving,
@@ -34,12 +37,14 @@
 			binding: network.binding,
 			deltaObjective: ctrl.isPerturbed(c) ? network.deltaObjective : null,
 			voltage,
-			maxLoading
+			maxLoading,
+			losses
 		});
 	});
 </script>
 
-{#if !dynamics && (ctrl.activeSolvable?.solution || ctrl.activeSolvable?.solving)}
+<!-- The steady-state result keeps its numbers in dynamics mode too, as on every other case. -->
+{#if ctrl.activeSolvable?.solution || ctrl.activeSolvable?.solving}
 	<StatBoxes {stats} />
 	{#if !app.placingLocalId}<BindingLines />{/if}
 {/if}

@@ -3,16 +3,17 @@
 
 	let { iterations }: { iterations: SolveIteration[] } = $props();
 
+	/** Drawn at its own aspect ratio, so the text keeps its shape at any panel width. */
 	const W = 300;
-	const H = 86;
-	const T = 6;
-	const R = 4;
+	const H = 104;
+	const T = 20;
+	const R = 8;
 	const B = 22;
-	const L = 38;
+	const L = 34;
 	const PLOT_W = W - L - R;
 	const PLOT_H = H - T - B;
-	const Y_TOP = 0; // log10(1e0)
-	const Y_BOT = -9; // log10(tol_feas)
+	const Y_TOP = 0; // log10(1)
+	const Y_BOT = -9; // log10(feasibility tolerance)
 
 	const points = $derived.by(() => {
 		if (iterations.length < 2) return '';
@@ -33,22 +34,17 @@
 {#if points}
 	<svg
 		viewBox="0 0 {W} {H}"
-		preserveAspectRatio="none"
 		role="img"
-		aria-label="Residual by solver iteration"
+		aria-label="Residual by iteration, {iterations.length} iterations"
 	>
+		<text class="label" x={L} y="11">Residual</text>
 		<line class="axis" x1={L} y1={T} x2={L} y2={H - B} />
 		<line class="axis" x1={L} y1={H - B} x2={W - R} y2={H - B} />
-		<text
-			class="axis-label y-label"
-			x={-(T + PLOT_H / 2)}
-			y="11"
-			text-anchor="middle"
-			transform="rotate(-90)"
-		>
-			Residual
-		</text>
-		<text class="axis-label x-label" x={W - R} y={H - 4} text-anchor="end">Iterations</text>
+		<text class="label" x={L - 5} y={T + 4} text-anchor="end">1</text>
+		<text class="label" x={L - 5} y={H - B + 4} text-anchor="end">10⁻⁹</text>
+		<text class="label" x={L} y={H - 6} text-anchor="middle">1</text>
+		<text class="label" x={(L + W - R) / 2} y={H - 6} text-anchor="middle">Iteration</text>
+		<text class="label" x={W - R} y={H - 6} text-anchor="end">{iterations.length}</text>
 		<polyline {points} pathLength="1" />
 	</svg>
 {/if}
@@ -57,21 +53,20 @@
 	svg {
 		display: block;
 		width: 100%;
-		height: 86px;
-		overflow: visible;
+		height: auto;
+		margin-bottom: var(--space-xs);
 	}
 
 	.axis {
 		stroke: var(--line);
 		stroke-width: 1;
-		vector-effect: non-scaling-stroke;
 	}
 
-	.axis-label {
-		fill: var(--text-tertiary);
-		font-family: var(--font-display);
-		font-size: 12px;
-		letter-spacing: 0;
+	.label {
+		fill: var(--text-secondary);
+		font-family: var(--font-sans);
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
 	}
 
 	polyline {
@@ -79,7 +74,6 @@
 		stroke: var(--accent);
 		stroke-width: 1.8;
 		stroke-linejoin: round;
-		vector-effect: non-scaling-stroke;
 		stroke-dasharray: 1;
 		stroke-dashoffset: 1;
 		animation: sparkline-draw var(--dur-slow) var(--ease-out) forwards;

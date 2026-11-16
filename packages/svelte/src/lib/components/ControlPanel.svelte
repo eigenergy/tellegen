@@ -194,7 +194,6 @@
 				     right after the result, not below the fold. -->
 				{#if app.compactLayout && !selectionLeads && !blockEmpty}
 					<div class="compact-key">{@render selectionBlock()}</div>
-					<hr />
 				{/if}
 
 				{#if ctrl.activeSolvable?.network && !app.activeMulti}
@@ -219,17 +218,14 @@
 				<ModelDetails details={ctrl.activeSolvable?.network?.model_details} />
 				<BusPicker inline />
 
+				<!-- Each section brings its own rule, and an empty one shows nothing, rule included. -->
 				{#if !selectionLeads && !app.compactLayout && !blockEmpty}
-					<hr />
-
-					{@render selectionBlock()}
+					<div class="section">{@render selectionBlock()}</div>
 				{/if}
 
 				<!-- The diagram does not size buses by power, so the map's size key would mislead. -->
 				{#if app.busSizing === 'power' && !ctrl.singleLineShown}
-					<hr />
-
-					<SizeLegend />
+					<div class="section"><SizeLegend /></div>
 				{/if}
 			{/if}
 		{/if}
@@ -252,6 +248,18 @@
 	.compact-key {
 		margin-top: 12px;
 	}
+	.compact-key:not(:has(> *)) {
+		display: none;
+	}
+
+	.section {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--line);
+	}
+	.section:not(:has(> *)) {
+		display: none;
+	}
 
 	.load-failed {
 		margin: 0 0 8px;
@@ -261,12 +269,6 @@
 	.load-actions {
 		display: flex;
 		gap: 8px;
-	}
-
-	hr {
-		border: 0;
-		border-top: 1px solid var(--line);
-		margin: 12px 0;
 	}
 
 	.view-mode {

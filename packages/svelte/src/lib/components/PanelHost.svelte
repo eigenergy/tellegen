@@ -483,7 +483,9 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background: var(--panel);
+		/* A gradient, not a plain colour: Chromium paints a plain-colour fixed layer as an
+		   occluder, and its headless shell then blanks a band of the map canvas above. */
+		background: linear-gradient(var(--panel), var(--panel));
 		border-top: 1px solid var(--line);
 		pointer-events: none;
 	}

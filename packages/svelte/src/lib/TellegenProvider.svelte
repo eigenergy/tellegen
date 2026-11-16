@@ -93,21 +93,26 @@
 	const layout = setPanelLayout(new PanelLayout());
 	const notices = setNoticeCenter(new NoticeCenter());
 	const commands = setCommandRegistry(new CommandRegistry());
-	commands.register({
-		id: 'run-calculation',
-		title: 'Run calculation',
-		keywords: ['solve', 'power flow', 'opf', 'compute'],
-		run: () => {
-			const c = ctrl.activeSolvable ?? app.activeMulti;
-			if (!c) return;
-			ctrl.runSettings(c).catch((error: unknown) =>
-				notices.push({
-					kind: 'error',
-					title: 'Calculation failed',
-					details: error instanceof Error ? error.message : String(error)
-				})
-			);
-		}
+	// A transmission case gets one command per calculation (AppHeader); a distribution
+	// case has one calculation, its power flow.
+	commands.registerSource(() => {
+		const c = app.activeMulti;
+		if (ctrl.activeSolvable || !c) return [];
+		return [
+			{
+				id: 'run-calculation',
+				title: 'Run power flow',
+				keywords: ['solve', 'power flow', 'calculation', 'compute'],
+				run: () =>
+					void ctrl.runSettings(c).catch((error: unknown) =>
+						notices.push({
+							kind: 'error',
+							title: 'Power flow failed',
+							details: error instanceof Error ? error.message : String(error)
+						})
+					)
+			}
+		];
 	});
 	commands.register({
 		id: 'fit-view',

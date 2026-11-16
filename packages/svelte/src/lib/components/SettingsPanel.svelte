@@ -97,8 +97,10 @@
 		padding: 12px 16px 16px;
 		font-size: var(--fs-body);
 	}
+	/* The calculation's groups above keep their own gap below, so General starts flush
+	   when the calculation has no options. */
 	h3 {
-		margin: 16px 0 2px;
+		margin: 0 0 2px;
 		font-size: var(--fs-label);
 		font-weight: 600;
 		color: var(--text-secondary);

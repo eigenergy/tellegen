@@ -98,7 +98,7 @@ export function solveVerdict(input: SolveVerdictInput): Verdict | null {
 export function savedVerdict(input: { status?: string | null }): Verdict {
 	if (!input.status) return { text: 'No result', tone: 'pending' };
 	return {
-		text: `Saved · ${statusWords(input.status)}`,
+		text: `Saved, ${statusWords(input.status).toLowerCase()}`,
 		tone: cleanStatus(input.status) ? 'ok' : 'warning'
 	};
 }
@@ -135,14 +135,16 @@ export interface ResultStatsInput {
 	voltage?: { min: number; max: number } | null;
 	/** Highest line loading as a fraction of rating, when known. */
 	maxLoading?: number | null;
+	/** Real power lost in the branches (MW), for an AC power flow. */
+	losses?: number | null;
 }
 
 /** One decimal, as on the diagram's gauges and the list of lines at limit. */
 const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
 
 /** The key numbers of a result, chosen per calculation: an OPF reports its operational cost and
- * the lines at their limit; AC power flow its voltage range and heaviest line; DC power flow its
- * heaviest line and the lines at their limit. */
+ * the lines at their limit; AC power flow its voltage range and losses (the lines at their limit
+ * are listed under the boxes); DC power flow its heaviest line and the lines at their limit. */
 export function resultStats(input: ResultStatsInput): Stat[] {
 	const missing = input.solving ? '…' : '—';
 	const stats: Stat[] = [];
@@ -160,8 +162,15 @@ export function resultStats(input: ResultStatsInput): Stat[] {
 			label: 'Voltage range',
 			value: v ? `${v.min.toFixed(3)}–${v.max.toFixed(3)} pu` : missing
 		});
-	}
-	if (!OPF.has(input.formulation)) {
+		const l = input.losses;
+		stats.push({
+			label: 'Losses',
+			value:
+				l == null
+					? missing
+					: `${l.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MW`
+		});
+	} else if (!OPF.has(input.formulation)) {
 		const m = input.maxLoading;
 		stats.push({
 			label: 'Max loading',

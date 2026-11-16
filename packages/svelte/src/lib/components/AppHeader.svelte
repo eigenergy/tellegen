@@ -29,12 +29,18 @@
 		};
 		input.click();
 	}
-	/** A hosted distribution case named like the other cases: its name, then the region of
-	 * the transmission case it hangs off, when its own name has none. */
+	/** A distribution case's subtitle, like a transmission case's region: the region of the
+	 * transmission case it hangs off, or "Distribution". A feeder id in its own name is not
+	 * a region, so it is never shown. */
+	function distributionRegion(id: string, name: string): string {
+		const hosted = app.hostedDistributionCases.find((x) => x.id === id);
+		const related = app.cases.find((x) => x.id === hosted?.distribution?.related_case_id);
+		return (related ? splitName(related.name)[1] : '') || distributionDetail(name);
+	}
+	/** A hosted distribution case named like the other cases: "Texas7k distribution (Texas)". */
 	function distributionTitle(c: (typeof app.hostedDistributionCases)[number]): string {
-		const [name, own] = splitName(c.name);
-		const related = app.cases.find((x) => x.id === c.distribution?.related_case_id);
-		const region = own || (related ? splitName(related.name)[1] : '');
+		const name = splitName(c.name)[0];
+		const region = distributionRegion(c.id, name);
 		return region ? `${name} (${region})` : name;
 	}
 	// Every case is also a palette command, so a case can be opened by name.
@@ -136,7 +142,10 @@
 				.filter((c) => c !== app.activeMulti)
 				.map((c): Command => ({
 					id: `case:${c.id}`,
-					title: `Switch to ${splitName(c.label)[0]}`,
+					title: `Switch to ${splitName(c.label)[0]}${(() => {
+						const region = distributionRegion(c.id, splitName(c.label)[0]);
+						return region ? ` (${region})` : '';
+					})()}`,
 					group: 'Cases',
 					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
 					run: () => void ctrl.activateMulti(c)
@@ -160,7 +169,7 @@
 		const multi = app.activeMulti;
 		if (multi) {
 			const name = splitName(multi.label)[0];
-			return { name, detail: distributionDetail(name), perturbed: false };
+			return { name, detail: distributionRegion(multi.id, name), perturbed: false };
 		}
 		const backend = app.active;
 		if (backend) {
@@ -347,7 +356,7 @@
 										? 'Unavailable'
 										: ctrl.loadingHostedDistribution === c.id
 											? 'Loading…'
-											: distributionDetail(splitName(c.name)[0])}</span
+											: distributionRegion(c.id, splitName(c.name)[0])}</span
 								>
 							</button>
 							<button
@@ -393,7 +402,7 @@
 								onclick={() => pick(() => ctrl.activateMulti(c))}
 							>
 								<span class="cname">{splitName(c.label)[0]}</span>
-								<span class="cregion">{distributionDetail(splitName(c.label)[0])}</span>
+								<span class="cregion">{distributionRegion(c.id, splitName(c.label)[0])}</span>
 							</button>
 							<button
 								class="case-remove"

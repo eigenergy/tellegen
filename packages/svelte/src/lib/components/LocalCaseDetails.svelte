@@ -122,6 +122,7 @@
 			</div>
 		</dl>
 	{:else if lc.summary}
+		<!-- The same two rows as a hosted case; the rest of the file's data folds away. -->
 		<dl>
 			<div>
 				<dt>Buses</dt>
@@ -131,34 +132,39 @@
 				<dt>Lines</dt>
 				<dd class="mono">{lc.summary.n_branch}</dd>
 			</div>
-			<div>
-				<dt>Generators</dt>
-				<dd class="mono">{lc.summary.n_gen}</dd>
-			</div>
-			<div>
-				<dt>Load</dt>
-				<dd class="mono">{fmt.format(lc.summary.load_mw)} MW</dd>
-			</div>
-			<div>
-				<dt>Generation capacity</dt>
-				<dd class="mono">{fmt.format(lc.summary.gen_mw)} MW</dd>
-			</div>
-			{#if lc.displayMode === 'diagram' && lc.diagram}
-				<div>
-					<dt>Drawing</dt>
-					<dd>{lc.diagram.name}</dd>
-				</div>
-			{:else}
-				<div>
-					<dt>Coordinates</dt>
-					<dd>{coordinateSource(lc)}</dd>
-				</div>
-			{/if}
-			<div>
-				<dt>File</dt>
-				<dd class="mono">{lc.fileName}</dd>
-			</div>
 		</dl>
+		<details class="case-data">
+			<summary>Case details</summary>
+			<dl>
+				<div>
+					<dt>Generators</dt>
+					<dd class="mono">{lc.summary.n_gen}</dd>
+				</div>
+				<div>
+					<dt>Load</dt>
+					<dd class="mono">{fmt.format(lc.summary.load_mw)} MW</dd>
+				</div>
+				<div>
+					<dt>Generation capacity</dt>
+					<dd class="mono">{fmt.format(lc.summary.gen_mw)} MW</dd>
+				</div>
+				{#if lc.displayMode === 'diagram' && lc.diagram}
+					<div>
+						<dt>Drawing</dt>
+						<dd>{lc.diagram.name}</dd>
+					</div>
+				{:else}
+					<div>
+						<dt>Coordinates</dt>
+						<dd>{coordinateSource(lc)}</dd>
+					</div>
+				{/if}
+				<div>
+					<dt>File</dt>
+					<dd class="mono">{lc.fileName}</dd>
+				</div>
+			</dl>
+		</details>
 		{#if lc.displayMode === 'diagram' && lc.diagram?.warnings.length}
 			<details>
 				<summary>Drawing details</summary>
@@ -277,6 +283,19 @@
 	details {
 		margin-top: var(--space-sm);
 		font-size: var(--fs-label);
+	}
+
+	.case-data {
+		margin-bottom: var(--space-md);
+	}
+
+	.case-data summary {
+		color: var(--text-secondary);
+		cursor: pointer;
+	}
+
+	.case-data dl {
+		margin-top: var(--space-xs);
 	}
 
 	.warnings {

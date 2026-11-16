@@ -51,8 +51,12 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	// Before a run the map is the case at rest, explained, not the
 	// steady-state dispatch.
 	await expect(page.getByTestId('dyn-legend-rest')).toBeVisible({ timeout: 30_000 });
-	// The steady-state numbers step aside while the map shows the dynamic case.
-	await expect(page.locator('[data-panel="network"] dl.stats')).toHaveCount(0);
+	// The Network panel keeps the steady-state numbers, as on every other case, and has no
+	// empty placeholder before a bus or line is picked.
+	await expect(page.locator('[data-panel="network"] dl.stats')).toContainText('Operational cost', {
+		timeout: 60_000
+	});
+	await expect(page.locator('[data-panel="network"]')).not.toContainText('Select a bus or line');
 	await shot(page, '01-demo-loaded');
 
 	// Pick bus 1101 with the keyboard path (the bus search), then fault it.

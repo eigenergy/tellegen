@@ -105,7 +105,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	// rule that separates the selection from the case stats below it.
 	const sliderBox = (await page.getByLabel('Demand delta at selected bus').boundingBox())!;
 	const ruleTop = await page
-		.locator('.panel-body hr')
+		.locator('.panel-body .section')
 		.first()
 		.evaluate((el) => el.getBoundingClientRect().top);
 	expect(sliderBox.y).toBeLessThan(ruleTop);

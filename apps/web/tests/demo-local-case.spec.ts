@@ -28,6 +28,8 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: /case14synthetic/i })).toBeVisible({
 		timeout: 30_000
 	});
+	// Where the coordinates came from waits under Case details, with the file name.
+	await page.getByText('Case details', { exact: true }).click();
 	await expect(page.getByText('From case14-coords.csv', { exact: true })).toBeVisible();
 
 	// The result is labelled numbers; the solver's trace and timing wait behind Details.
@@ -39,9 +41,9 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	await expect(stats).toContainText('Lines at limit');
 	const solveCard = page.locator('.solvecard');
 	await expect(solveCard.getByText('Details', { exact: true })).toBeVisible();
-	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeHidden();
+	await expect(solveCard.getByLabel(/^Residual by iteration/)).toBeHidden();
 	await solveCard.getByText('Details', { exact: true }).click();
-	await expect(solveCard.getByLabel('Residual by solver iteration')).toBeVisible();
+	await expect(solveCard.getByLabel(/^Residual by iteration/)).toBeVisible();
 	await expect(solveCard.locator('dt', { hasText: 'Iterations' })).toBeVisible();
 	await expect(solveCard.locator('dt', { hasText: 'Time' })).toBeVisible();
 	await expect(solveCard).toHaveAttribute('data-calculation', 'dcopf');

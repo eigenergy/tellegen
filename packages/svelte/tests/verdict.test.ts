@@ -92,7 +92,7 @@ describe('solveVerdict', () => {
 
 describe('savedVerdict', () => {
 	it('reads a saved result as a status', () => {
-		expect(savedVerdict({ status: 'optimal' })).toEqual({ text: 'Saved · Optimal', tone: 'ok' });
+		expect(savedVerdict({ status: 'optimal' })).toEqual({ text: 'Saved, optimal', tone: 'ok' });
 		expect(savedVerdict({ status: null })).toEqual({ text: 'No result', tone: 'pending' });
 	});
 });
@@ -136,19 +136,21 @@ describe('resultStats', () => {
 		).toBe('+$120/h');
 	});
 
-	it('gives AC power flow its voltage range and heaviest line', () => {
+	it('gives AC power flow its voltage range and losses', () => {
 		expect(
 			resultStats({
 				formulation: 'acpf',
 				objective: 0,
 				binding: 0,
 				voltage: { min: 0.95, max: 1.05 },
-				maxLoading: 1.02
+				maxLoading: 1.02,
+				losses: 1234.56
 			})
 		).toEqual([
 			{ label: 'Voltage range', value: '0.950–1.050 pu' },
-			{ label: 'Max loading', value: '102.0%', tone: 'failure' }
+			{ label: 'Losses', value: '1,234.6 MW' }
 		]);
+		expect(resultStats({ formulation: 'acpf', objective: 0, binding: 0 })[1].value).toBe('—');
 	});
 
 	it('gives DC power flow its heaviest line and the lines at their limit', () => {

@@ -60,6 +60,17 @@
 		calculation === 'acpf' && cleanStatus(status) ? 'Converged' : statusWords(status)
 	);
 	const ms = $derived(saved ? null : (active?.solveMs ?? null));
+	/** The served base result of a hosted case: solved ahead of time, so it has no
+	 * iterations or time of its own. */
+	const precomputed = $derived(
+		!saved &&
+			!!active?.solution &&
+			!active.solving &&
+			active.solution === active.baseSolution &&
+			!active.solveBackend &&
+			count === null &&
+			active.solveMs == null
+	);
 	const failure = $derived(failed ? app.error : null);
 	const hasDetails = $derived(
 		!!failure ||
@@ -112,6 +123,11 @@
 						<div>
 							<dt>Time</dt>
 							<dd class="num">{duration(ms)}</dd>
+						</div>
+					{:else if precomputed}
+						<div>
+							<dt>Source</dt>
+							<dd>Precomputed</dd>
 						</div>
 					{/if}
 					{#if !saved && active?.solveDetail}

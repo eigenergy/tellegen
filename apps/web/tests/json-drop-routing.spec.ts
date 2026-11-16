@@ -123,6 +123,7 @@ test('a balanced JSON case consumes a co-dropped geographic sidecar', async ({ p
 	await expect(page.getByRole('heading', { name: /json-sidecar/i })).toBeVisible({
 		timeout: 30_000
 	});
+	await page.getByText('Case details', { exact: true }).click();
 	await expect(page.getByText('From json-sidecar-coords.csv', { exact: true })).toBeVisible();
 	await expect(page.getByText('Click the map to place the topology layout')).toHaveCount(0);
 	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
