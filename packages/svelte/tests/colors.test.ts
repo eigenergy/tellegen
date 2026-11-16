@@ -30,6 +30,8 @@ describe('sensitivityDomain', () => {
 	it('flags constant columns flat and structured columns not', () => {
 		expect(sensitivityDomain([0.5, 0.5, 0.5]).flat).toBe(true);
 		expect(sensitivityDomain(column).flat).toBe(false);
+		// Solver noise around zero is flat, not a pattern.
+		expect(sensitivityDomain([-1.1e-7, 3.3e-7, 0, -3.3e-7]).flat).toBe(true);
 	});
 });
 

@@ -20,3 +20,13 @@ describe('readable quantities', () => {
 		expect(readable(undefined, 'MW').text).toBe('—');
 	});
 });
+
+describe('small rates', () => {
+	it('reads solver noise as 0 and keeps real values to two figures', async () => {
+		const { signedSmall, small } = await import('../src/lib/format.js');
+		expect(signedSmall(-3.3e-7)).toBe('0');
+		expect(small(1.1e-7)).toBe('0');
+		expect(signedSmall(0.0017)).toBe('+0.0017');
+		expect(signedSmall(-0.42)).toBe('−0.42');
+	});
+});

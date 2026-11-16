@@ -77,12 +77,19 @@ const twoFigures = new Intl.NumberFormat('en-US', {
 });
 /** A small signed rate, such as a price change per MW, to two significant
  * figures in plain decimals (0.0017, not 1.7e-3). */
-export const signedSmall = (v: number) => signed(v, twoFigures);
+export const signedSmall = (v: number) => signed(Math.abs(v) < SMALL_FLOOR ? 0 : v, twoFigures);
 /** The same, without a sign. */
-export const small = (v: number) => plain(v, twoFigures);
+export const small = (v: number) => plain(Math.abs(v) < SMALL_FLOOR ? 0 : v, twoFigures);
+/** Below this a rate is solver noise, and reads 0: a price change of a hundredth of a cent
+ * per MWh for each MW. */
+export const SMALL_FLOOR = 1e-4;
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 export const displayFmt = (mode: DisplayMode, value: number) =>
-	mode === 'price' || mode === 'demand' ? fmt.format(value) : value.toFixed(3);
+	mode === 'price' || mode === 'demand' ? plain(value) : plain(value, threeDecimals);
+const threeDecimals = new Intl.NumberFormat('en-US', {
+	minimumFractionDigits: 3,
+	maximumFractionDigits: 3
+});
 
 const exactNumber = new Intl.NumberFormat('en', {
 	maximumFractionDigits: 6,

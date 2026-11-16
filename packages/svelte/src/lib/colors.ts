@@ -233,7 +233,8 @@ export const MAP_PALETTE: Record<'light' | 'dark', MapPalette> = {
 const FLAT_SENSITIVITY_TINT = 0.55;
 
 export function sensFlatColor(domain: Pick<SensitivityDomain, 'mean'>): RGBA {
-	if (domain.mean === 0) return sensNeutral;
+	// Noise around zero is no change: the neutral colour, as the readout's 0 says.
+	if (Math.abs(domain.mean) < 1e-4) return sensNeutral;
 	return sensColor(domain.mean > 0 ? FLAT_SENSITIVITY_TINT : -FLAT_SENSITIVITY_TINT);
 }
 
@@ -266,7 +267,8 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 	// very large cases).
 	const absMax = Math.max(Math.abs(min), Math.abs(max));
 	const robust = Math.max(Math.abs(q(0.01)), Math.abs(q(0.99)));
-	const flat = max - min <= Math.max(1e-7, 0.01 * absMax);
+	// Below a hundredth of a cent per MWh the spread is solver noise, not a pattern to colour.
+	const flat = max - min <= Math.max(1e-4, 0.01 * absMax);
 	return {
 		min,
 		max,

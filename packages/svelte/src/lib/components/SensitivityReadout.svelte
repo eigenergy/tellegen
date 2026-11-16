@@ -115,10 +115,13 @@
 				<span>+{small(ctrl.sensSummary.scale)}</span>
 			</div>
 		{:else if app.sensitivityLoading}
-			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
-			<div class="legend-labels single">
-				<span class="blink">Computing&hellip;</span>
-			</div>
+			<!-- The row the result fills, with its value still on the way. -->
+			<dl class="values uniform" aria-busy="true">
+				<div>
+					<dt>Price change</dt>
+					<dd class="pending">&hellip;</dd>
+				</div>
+			</dl>
 		{/if}
 	{/if}
 </div>
@@ -181,5 +184,8 @@
 	.values dd {
 		margin: 0;
 		font-variant-numeric: tabular-nums;
+	}
+	.values dd.pending {
+		color: var(--text-secondary);
 	}
 </style>
