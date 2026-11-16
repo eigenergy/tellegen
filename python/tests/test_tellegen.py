@@ -143,7 +143,8 @@ def test_a_non_finite_delta_is_refused(case: tellegen.Case):
 def test_an_unknown_bus_is_an_edit_error_with_a_code(case: tellegen.Case):
     with pytest.raises(tellegen.TellegenError) as caught:
         case.update(demand={99999: 10.0})
-    assert caught.value.code in {"EDIT.UNKNOWN_ELEMENT", "ENGINE.FAILED"}
+    assert isinstance(caught.value, tellegen.TellegenInputError)
+    assert caught.value.code == "EDIT.UNKNOWN_ELEMENT"
 
 
 def test_demand_cannot_go_negative(case: tellegen.Case):
@@ -181,9 +182,9 @@ def test_an_unavailable_formulation_is_refused_before_solving(case: tellegen.Cas
 
 def test_rating_edits_are_rejected_by_dc_power_flow(case: tellegen.Case):
     case.formulation = "dcpf"
-    with pytest.raises(tellegen.TellegenError) as caught:
+    with pytest.raises(tellegen.TellegenInputError) as caught:
         case.update(ratings={1: -5.0})
-    assert caught.value.code == "EDIT.OUT_OF_RANGE"
+    assert caught.value.code == "REQUEST.UNSUPPORTED"
 
 
 # -- sensitivities -----------------------------------------------------------
@@ -223,12 +224,13 @@ def test_repr_says_what_the_case_is_holding(case: tellegen.Case):
 
 # -- error classification ----------------------------------------------------
 #
-# The engine returns free-form error strings with no enum at its edge, so the
-# binding maps message substrings onto codes. That mapping is fragile by
-# construction, so every arm is pinned here: a reworded engine message should
-# fail this test rather than silently reclassify at runtime. Tested through the
-# loaded extension because a cdylib-only pyo3 crate has no portable cargo-test
-# harness (see `_classify`'s docstring).
+# The engine attaches a code to each error where it creates or returns it, and
+# the binding only maps that code to a `.code` name and an exception class.
+# Engine calls that still return a plain message get their code from the
+# engine's own reading of its fixed phrases; `_classify` exposes that path, and
+# the table below pins it. Tested through the loaded extension because a
+# cdylib-only pyo3 crate has no portable cargo-test harness (see `_classify`'s
+# docstring).
 
 CLASSIFICATIONS = [
     ("DC OPF solve infeasible", "SOLVE.INFEASIBLE"),
@@ -240,20 +242,57 @@ CLASSIFICATIONS = [
     ("unknown rating delta branch 7", "EDIT.UNKNOWN_ELEMENT"),
     ("edit would make demand negative", "EDIT.OUT_OF_RANGE"),
     ("edit would make the line limit non-positive", "EDIT.OUT_OF_RANGE"),
-    ("branch rating edits are not supported by dcpf", "EDIT.OUT_OF_RANGE"),
-    ("acpf does not support d(Price)/d(Demand)", "SENS.UNSUPPORTED"),
+    ("branch rating edits are not supported by dcpf", "REQUEST.UNSUPPORTED"),
+    ("acpf does not support d(Price)/d(Demand)", "REQUEST.UNSUPPORTED"),
     (
         "acopf (full nonlinear AC OPF) is not available in this build",
-        "FORMULATION.UNAVAILABLE",
+        "REQUEST.UNSUPPORTED",
     ),
-    ("socwr requires the `conic` feature", "FORMULATION.UNAVAILABLE"),
+    ("socwr requires the `conic` feature", "REQUEST.UNSUPPORTED"),
     (
         "PowerIO module holds powerio.TimeSeries, which this solve entry does not support",
-        "MODULE.UNSUPPORTED",
+        "REQUEST.UNSUPPORTED",
     ),
-    ("duplicate bus uid buses:1", "MODULE.UNSUPPORTED"),
-    ('unknown PowerIO format "nope"', "FORMAT.UNKNOWN"),
 ]
+
+
+def test_solve_errors_take_their_class_and_code_from_the_engine(case: tellegen.Case):
+    """One request per engine code a solve of this case can raise."""
+    from tellegen import _tellegen
+
+    module = case.module_json
+    expectations = [
+        ("{not json", tellegen.TellegenInputError, "REQUEST.MALFORMED"),
+        (
+            '{"edits":{"deltas":{"99999":10.0}}}',
+            tellegen.TellegenInputError,
+            "EDIT.UNKNOWN_ELEMENT",
+        ),
+        (
+            '{"edits":{"deltas":{"2":-1e9}}}',
+            tellegen.TellegenInputError,
+            "EDIT.OUT_OF_RANGE",
+        ),
+        (
+            '{"formulation":"dcpf","sensitivities":[{"operand":{"Price":"Active"},'
+            '"parameter":{"Demand":"Active"}}]}',
+            tellegen.TellegenInputError,
+            "REQUEST.UNSUPPORTED",
+        ),
+    ]
+    for request, kind, code in expectations:
+        with pytest.raises(kind) as caught:
+            _tellegen.solve_module(module, request)
+        assert caught.value.code == code, request
+    with pytest.raises(tellegen.TellegenInputError) as caught:
+        _tellegen.solve_module("not a module", "")
+    assert caught.value.code == "INPUT.INVALID"
+
+
+def test_an_opf_solution_says_what_its_objective_is(case: tellegen.Case):
+    assert case.solve()["objective_kind"] == "cost"
+    case.formulation = "acpf"
+    assert "objective_kind" not in case.solve()
 
 
 @pytest.mark.parametrize(("message", "code"), CLASSIFICATIONS)

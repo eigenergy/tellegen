@@ -308,7 +308,7 @@ struct SavedCase {
     base_input: String,
     input: String,
     solution: String,
-    view: SolveResponse,
+    view: tellegen::SolveOutput,
     display_solution: SolutionPayload,
 }
 
@@ -451,6 +451,11 @@ pub struct SolutionPayload {
     pub formulation: tellegen::Problem,
     pub status: tellegen::SolveStatus,
     pub objective: f64,
+    /// `cost` when the solved OPF minimized the case's generator cost,
+    /// `feasibility` when the case declares none (`objective` is then zero
+    /// and `prices` is empty).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub objective_kind: Option<tellegen::ObjectiveKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initialization: Option<tellegen::AcPfInitialization>,
     pub prices: Vec<PriceValue>,
@@ -1058,6 +1063,7 @@ async fn solve_stream(
         .await;
         let start = Instant::now();
         let cancel = Arc::new(AtomicBool::new(false));
+        let objective_kind = tellegen::ObjectiveKind::declared(entry.dc_instance.objective());
         let result = tokio::select! {
             biased;
             // Client hung up: cancel the in-flight solve and drop the stream so
@@ -1071,7 +1077,7 @@ async fn solve_stream(
         match result {
             Ok(output) => {
                 let solve_ms = start.elapsed().as_secs_f64() * 1000.0;
-                let solution = solution_payload(&output);
+                let solution = solution_payload(&output, objective_kind);
                 let iterations = match &output.iterations {
                     Some(Iterations::Ipm(trace)) => trace.as_slice(),
                     _ => &[][..],
@@ -1530,12 +1536,13 @@ fn build_entry(
         Arc::new(DcOpfInstance::from_network(network.clone()).map_err(|e| e.to_string())?);
     let study = tellegen::Study::new(&module_json, tellegen::Problem::DcOpf)?;
     let base = study.solution().clone();
+    let objective_kind = study.objective_kind();
     let saved_case = SavedCase {
         base_input: module_json.clone(),
         input: study.save_instance_module()?,
         solution: study.save_solution_module()?,
-        view: base.clone(),
-        display_solution: solution_payload(&base),
+        view: study.solution_output(),
+        display_solution: solution_payload(&base, objective_kind),
     };
     let dc_bus_ids = base
         .va
@@ -1569,7 +1576,7 @@ fn build_entry(
         dc_bus_ids,
         dc_branch_ids,
         view,
-        base_solution: solution_payload(&base),
+        base_solution: solution_payload(&base, objective_kind),
         saved_case,
     })
 }
@@ -1685,9 +1692,13 @@ fn network_payload(
     })
 }
 
-fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
+fn solution_payload(
+    resp: &SolveResponse,
+    objective_kind: Option<tellegen::ObjectiveKind>,
+) -> SolutionPayload {
     SolutionPayload {
         formulation: resp.formulation,
+        objective_kind,
         constraints: resp.constraints.clone(),
         branch_constraints: resp.branch_constraints.clone(),
         status: resp.status,

@@ -316,7 +316,7 @@ fn plan_capacity_impl(
         cancel,
         initial_solution,
         exact_solve_completed,
-        dc_opf_cancellable,
+        |model, cancel| dc_opf_cancellable(model, cancel).map_err(String::from),
     )
 }
 
@@ -461,7 +461,7 @@ fn plan_capacity_impl_with_solver(
         }
         // The implicit gradient at the current exact solution, scaled to
         // outer objective units per MW.
-        let kkt = DcKkt::new(&current, &sol);
+        let kkt = DcKkt::new(&current, &sol).map_err(|error| error.to_string())?;
         let scale = kkt.unit_scale(Operand::Price(Power::Active), Parameter::LineLimit);
         let per_unit = weighted_sensitivity(
             &kkt,
@@ -693,7 +693,7 @@ mod tests {
                 assert!(line_dual < 1e-5, "slack side dual is {line_dual}");
             }
 
-            let kkt = DcKkt::new(&dc, &sol);
+            let kkt = DcKkt::new(&dc, &sol).unwrap();
             let scale = kkt.unit_scale(Operand::Price(Power::Active), Parameter::LineLimit);
             let cols: Vec<usize> = (0..dc.m).collect();
             let grad: Vec<f64> = weighted_sensitivity(
@@ -1008,7 +1008,7 @@ mod tests {
             |model, cancel| {
                 calls += 1;
                 if calls == 1 {
-                    dc_opf_cancellable(model, cancel)
+                    dc_opf_cancellable(model, cancel).map_err(String::from)
                 } else {
                     Err("infeasible trial fixture".to_owned())
                 }

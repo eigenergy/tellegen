@@ -261,7 +261,7 @@ impl RmsCase {
     /// Prepare `module_json` (a stored PowerIO module) with `dyr_text`;
     /// `options_json` holds `load_model` and the [`RmsOptions`] fields.
     #[wasm_bindgen(constructor)]
-    pub fn new(module_json: &str, dyr_text: &str, options_json: &str) -> Result<RmsCase, JsError> {
+    pub fn new(module_json: &str, dyr_text: &str, options_json: &str) -> Result<RmsCase, JsValue> {
         install_panic_hook();
         ensure_input_text(module_json)?;
         ensure_input_text(dyr_text)?;
@@ -272,7 +272,7 @@ impl RmsCase {
     }
 
     /// The [`tellegen::rms::RmsInspection`] JSON (no run).
-    pub fn inspection(&self) -> Result<String, JsError> {
+    pub fn inspection(&self) -> Result<String, JsValue> {
         install_panic_hook();
         serde_json::to_string(&self.0.inspection()).map_err(jserr)
     }
@@ -284,7 +284,7 @@ impl RmsCase {
         &self,
         request_json: &str,
         progress: &js_sys::Function,
-    ) -> Result<RmsRunBuffers, JsError> {
+    ) -> Result<RmsRunBuffers, JsValue> {
         install_panic_hook();
         let run = run_request(request_json).map_err(jserr)?;
         let mut last = f64::NEG_INFINITY;
@@ -305,7 +305,7 @@ impl RmsCase {
 
     /// Run `seconds` without events: `{seconds, max_speed_drift,
     /// max_voltage_drift, steps}` JSON.
-    pub fn flat_check(&self, seconds: f64) -> Result<String, JsError> {
+    pub fn flat_check(&self, seconds: f64) -> Result<String, JsValue> {
         install_panic_hook();
         let c = flat_check(&self.0, seconds).map_err(jserr)?;
         serde_json::to_string(&c).map_err(jserr)
@@ -342,7 +342,7 @@ impl RmsRunBuffers {
 impl RmsCase {
     /// Modes with participation factors at the operating point
     /// ([`tellegen::rms::LinearRequest`] JSON in, `LinearResult` JSON out).
-    pub fn linear(&self, request_json: &str) -> Result<String, JsError> {
+    pub fn linear(&self, request_json: &str) -> Result<String, JsValue> {
         install_panic_hook();
         let request: tellegen::rms::LinearRequest = if request_json.trim().is_empty() {
             tellegen::rms::LinearRequest::default()
@@ -361,7 +361,7 @@ pub fn rms_dynamize(
     module_json: &str,
     dyr_text: &str,
     request_json: &str,
-) -> Result<String, JsError> {
+) -> Result<String, JsValue> {
     install_panic_hook();
     ensure_input_text(module_json)?;
     tellegen::rms::dyr_dynamize_json(module_json, dyr_text, request_json).map_err(jserr)
@@ -378,7 +378,7 @@ pub fn rms_library() -> String {
 /// The parameters of every DYR record, as JSON.
 #[cfg(feature = "rms-experimental")]
 #[wasm_bindgen]
-pub fn rms_dyr_parameters(module_json: &str, dyr_text: &str) -> Result<String, JsError> {
+pub fn rms_dyr_parameters(module_json: &str, dyr_text: &str) -> Result<String, JsValue> {
     install_panic_hook();
     tellegen::rms::dyr_parameters_json(module_json, dyr_text).map_err(jserr)
 }
@@ -386,7 +386,7 @@ pub fn rms_dyr_parameters(module_json: &str, dyr_text: &str) -> Result<String, J
 /// Apply parameter edits to DYR text.
 #[cfg(feature = "rms-experimental")]
 #[wasm_bindgen]
-pub fn rms_dyr_edit(dyr_text: &str, edit_json: &str) -> Result<String, JsError> {
+pub fn rms_dyr_edit(dyr_text: &str, edit_json: &str) -> Result<String, JsValue> {
     install_panic_hook();
     tellegen::rms::dyr_edit_json(dyr_text, edit_json).map_err(jserr)
 }
