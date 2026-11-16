@@ -1,5 +1,21 @@
 # @tellegen/webmcp
 
+## 0.4.0
+
+### Minor Changes
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`81ed298`](https://github.com/eigenergy/tellegen/commit/81ed2984bb313a90fd9275d2c0be81dec1da72a6) Thanks [@samtalki](https://github.com/samtalki)! - A host can keep `simulate_dynamics` behind a setting: with `dynamicsAvailable()` on the adapter, the tool is registered only while it returns true.
+
+- [#397](https://github.com/eigenergy/tellegen/pull/397) [`a7e6f57`](https://github.com/eigenergy/tellegen/commit/a7e6f57d28df48a39119f51ec1ee031aeceac352) Thanks [@samtalki](https://github.com/samtalki)! - Add the `simulate_dynamics` tool, which runs an RMS simulation of the displayed case after up to 16 events and returns its verdict and key numbers. `import_case` accepts `.dyr` text for the displayed case.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`a508e37`](https://github.com/eigenergy/tellegen/commit/a508e371985e0c98cedbf25cc7fbda30a8b7d876) Thanks [@samtalki](https://github.com/samtalki)! - New `onToolsChange` registration option reports the tool names whenever a dynamics or capacity planning tool comes or goes, so a host's tool count stays current.
+
+### Patch Changes
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`2bcc94d`](https://github.com/eigenergy/tellegen/commit/2bcc94dd25bae08764bd98caeb80e6c1bc97d347) Thanks [@samtalki](https://github.com/samtalki)! - Results show as labelled numbers, such as Operational cost and Lines at limit, and Settings is a list of short rows grouped by topic that apply and rerun at once. New export: `StatBoxes`.
+
+- [#376](https://github.com/eigenergy/tellegen/pull/376) [`aafc65f`](https://github.com/eigenergy/tellegen/commit/aafc65f4e0c3fbe1d2c10d2a75a92276ae3fc6fb) Thanks [@samtalki](https://github.com/samtalki)! - The engine reads and writes cases with PowerIO 0.12.0, so saved files carry version 0.12.0 and PowerIO 0.11 readers refuse them; files from earlier releases still open. An unrated branch is now saved as an infinite rating, and the multiconductor solvers follow PowerIO 0.12 for inverter power factor signs and type-A regulator taps.
+
 ## 0.3.0
 
 ### Minor Changes
