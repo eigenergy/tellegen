@@ -452,6 +452,9 @@
 		border-width: 0;
 		border-radius: 0;
 		box-shadow: none;
+		/* A gradient, not a plain colour: Chromium treats a full-width plain-colour fixed
+		   layer as an occluder and can skip drawing the map canvas above it. */
+		background: linear-gradient(var(--panel), var(--panel));
 	}
 	.mobile header {
 		min-height: 44px;

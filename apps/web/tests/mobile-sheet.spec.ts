@@ -60,8 +60,9 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	const headBox = await page.locator('[data-panel="network"] > header').boundingBox();
 	expect(headBox!.height).toBeGreaterThanOrEqual(44);
 
-	// Basemap attribution is a licensing requirement: on screen, opaque, and
-	// in the reserved control strip below the drawer.
+	// Basemap attribution is a licensing requirement: on screen, opaque, and on
+	// the map above the sheet, never over the sheet's content. The sheet runs to
+	// the bottom edge, and the zoom buttons step aside while it is open.
 	await expect
 		.poll(async () => {
 			const sheetBox = (await sheet.boundingBox())!;
@@ -71,11 +72,13 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 				.evaluate((el) => getComputedStyle(el).opacity);
 			return (
 				opacity === '1' &&
-				attribBox.y >= sheetBox.y + sheetBox.height &&
-				attribBox.y + attribBox.height <= 844
+				attribBox.y >= 0 &&
+				attribBox.y + attribBox.height <= sheetBox.y &&
+				Math.round(sheetBox.y + sheetBox.height) === 844
 			);
 		})
 		.toBe(true);
+	await expect(page.locator('.maplibregl-ctrl-group')).toBeHidden();
 
 	// Clear of the solve card too: a credit under an opaque panel is not a credit.
 	const attribOnTop = await page.locator('.maplibregl-ctrl-attrib').evaluate((el) => {

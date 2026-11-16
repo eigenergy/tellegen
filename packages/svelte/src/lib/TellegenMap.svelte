@@ -1798,7 +1798,12 @@
 {:else}
 	{#key mapGen}
 		<div class="map-stage">
-			<div class="map" class:zen={app.zen} {@attach initMap}></div>
+			<div
+				class="map"
+				class:zen={app.zen}
+				class:sheet-open={panels.compact && !!panels.drawer}
+				{@attach initMap}
+			></div>
 			{#if selectedBusCue}
 				{#key selectedBusCue.key}
 					<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
@@ -2048,6 +2053,11 @@
 	   buttons keep their space so the attribution does not shift. */
 	.map.zen :global(.maplibregl-ctrl-group) {
 		visibility: hidden;
+	}
+	/* With the phone sheet open the zoom buttons would crowd the map's edge above it;
+	   pinch zoom still works, and the credit stays. */
+	.map.sheet-open :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) {
+		display: none;
 	}
 
 	.map :global(.maplibregl-ctrl-attrib) {

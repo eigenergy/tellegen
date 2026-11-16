@@ -36,10 +36,10 @@
 			})
 		)
 	);
-	const bottomReserve = $derived(notices.entries.length ? 120 : 88);
-	/** Phone with the sheet open: the strip under it, where the map's attribution and zoom
-	 * stay, is a solid bar rather than a sliver of map. */
-	const sheetFooter = $derived(layout.compact && !!layout.drawer && !app.zen);
+	/** Phone with the sheet open: the sheet runs to the bottom edge, and the map's credit
+	 * and the notices sit on the map above it. */
+	const sheetOpen = $derived(layout.compact && !!layout.drawer && !app.zen);
+	const bottomReserve = $derived(sheetOpen ? 0 : notices.entries.length ? 120 : 88);
 	/** The tab strip: the panels that dock on the left by default, plus any that
 	 * ask for a tab (Dynamics). Settings opens from the header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));
@@ -215,11 +215,15 @@
 		app.sheetInset =
 			!app.zen && layout.compact ? stripBottom + (stripShown ? stripHeight + HANDLE_HEIGHT : 0) : 0;
 	});
-	// The main map's attribution and zoom, and the notices, sit above a docked strip.
+	// The main map's attribution and zoom, and the notices, sit above the strip or the
+	// open sheet.
 	$effect(() => {
 		const root = document.documentElement.style;
-		if (docked && !app.zen)
-			root.setProperty('--tellegen-sheet-clear', `${stripHeight + HANDLE_HEIGHT + 4}px`);
+		if ((docked || (sheetOpen && stripShown)) && !app.zen)
+			root.setProperty(
+				'--tellegen-sheet-clear',
+				`${(docked ? 0 : stripBottom) + stripHeight + HANDLE_HEIGHT + 4}px`
+			);
 		else root.removeProperty('--tellegen-sheet-clear');
 		return () => root.removeProperty('--tellegen-sheet-clear');
 	});
@@ -300,11 +304,6 @@
 		{/if}
 	</div>
 {/if}
-{#if sheetFooter}<div
-		class="sheet-footer"
-		style:height="{bottomReserve}px"
-		aria-hidden="true"
-	></div>{/if}
 {#if !app.zen}
 	{#if layout.storageError}<p class="layout-error" role="status" style:top="{panelTop}px">
 			{layout.storageError}
@@ -413,11 +412,11 @@
 		border-radius: 0;
 		box-shadow: none;
 	}
-	/* Open sheet: edge to edge, so no sliver of map shows beside it, and continuous with the
-	   strip under it that holds the map's credit and zoom. */
+	/* Open sheet: edge to edge, so no sliver of map shows beside it. */
 	.panel-toolbar.compact.attached {
 		left: 0;
 		right: 0;
+		background: linear-gradient(var(--panel), var(--panel));
 		border-width: 1px 0;
 		border-radius: var(--radius-panel) var(--radius-panel) 0 0;
 		border-bottom-color: var(--line);
@@ -507,7 +506,7 @@
 	}
 	.drawer {
 		position: fixed;
-		bottom: 88px;
+		bottom: 0;
 		left: 0;
 		right: 0;
 		z-index: 25;
@@ -536,18 +535,6 @@
 	}
 	.sheet-handle:focus-visible {
 		outline-offset: -2px;
-	}
-	/* Behind the map's controls (z-index 2), above the map itself. */
-	.sheet-footer {
-		position: fixed;
-		z-index: 1;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		/* A gradient, not a plain colour: Chromium paints a plain-colour fixed layer as an
-		   occluder, and its headless shell then blanks a band of the map canvas above. */
-		background: linear-gradient(var(--panel), var(--panel));
-		pointer-events: none;
 	}
 	.layout-error {
 		position: fixed;
