@@ -36,21 +36,36 @@ export interface OperatingLeadInput {
 	warning: number;
 }
 
-/** Operating limits: a few counts, each shown only when it is not zero: lines over and at their
- * rating, lines at or above the warning level, buses outside their voltage limits (AC), and what
+/** Operating limits: a few counts, each shown only when it is not zero: lines at or over their
+ * rating, lines from the warning level up to their rating, buses outside their voltage limits (AC), and what
  * could not be checked. With nothing to count, one short line says so; it reads as an all-clear
  * only when every line and (AC) every bus was checked. */
 export function operatingLead(input: OperatingLeadInput): Lead {
 	const { counts } = input;
 	if (!input.hasResult) return { stats: [], empty: 'No result' };
 	const stats: Stat[] = [];
-	if (counts.overload) stats.push({ label: 'Over limit', value: n(counts.overload), tone: 'failure' });
-	if (counts.atLimit) stats.push({ label: 'At limit', value: n(counts.atLimit), tone: 'failure' });
+	// One name for a line at or over its rating, as in the Network panel.
+	const atLimit = counts.overload + counts.atLimit;
+	if (atLimit) stats.push({ label: 'Lines at limit', value: n(atLimit), tone: 'failure' });
 	if (counts.warning)
-		stats.push({ label: `≥${input.warning}%`, value: n(counts.warning), tone: 'warning' });
+		stats.push({
+			label: `${input.warning}–100%`,
+			value: n(counts.warning),
+			tone: 'warning'
+		});
 	if (input.voltageSolved) {
-		if (counts.low) stats.push({ label: 'Low voltage', value: n(counts.low), tone: 'failure' });
-		if (counts.high) stats.push({ label: 'High voltage', value: n(counts.high), tone: 'failure' });
+		if (counts.low)
+			stats.push({
+				label: 'Low voltage',
+				value: n(counts.low),
+				tone: 'failure'
+			});
+		if (counts.high)
+			stats.push({
+				label: 'High voltage',
+				value: n(counts.high),
+				tone: 'failure'
+			});
 	}
 	const voltageUnchecked = input.voltageSolved ? counts.voltageUnknown : 0;
 	if (voltageUnchecked) stats.push({ label: 'Voltage unchecked', value: n(voltageUnchecked) });
@@ -83,12 +98,20 @@ export function priceNumber(value: number, digits: number): string {
 /** OPF prices: the lowest and highest price, to the same precision. The lines at their limit are
  * in the Network panel and the list below, so they are not repeated here. */
 export function economicsLead(input: EconomicsLeadInput): Lead {
-	if (!input.opf) return { stats: [], empty: 'Needs an OPF' };
+	if (!input.opf) return { stats: [], empty: 'No prices in power flow' };
 	if (!input.range) return { stats: [], empty: 'No prices' };
 	const { lo, hi } = input.range;
 	const digits = Math.max(Math.abs(lo), Math.abs(hi)) >= 100 ? 0 : 2;
 	if (input.uniform !== null)
-		return { stats: [{ label: 'Price', value: priceNumber(input.uniform, digits), sub: '$/MWh' }] };
+		return {
+			stats: [
+				{
+					label: 'Price',
+					value: priceNumber(input.uniform, digits),
+					sub: '$/MWh'
+				}
+			]
+		};
 	return {
 		stats: [
 			{ label: 'Lowest', value: priceNumber(lo, digits), sub: '$/MWh' },
@@ -110,7 +133,11 @@ export function transferLead(input: TransferLeadInput): Lead {
 	if (!input.hasResult) return { stats: [], empty: 'No result' };
 	const stats: Stat[] = [];
 	if (input.top)
-		stats.push({ label: 'Largest flow', value: input.top.mw, sub: `Line ${input.top.id}` });
+		stats.push({
+			label: 'Largest flow',
+			value: input.top.mw,
+			sub: `Line ${input.top.id}`
+		});
 	if (input.zero) stats.push({ label: 'Zero flow', value: n(input.zero) });
 	if (input.missing) stats.push({ label: 'No flow', value: n(input.missing) });
 	return stats.length ? { stats } : { stats: [], empty: 'No flows' };

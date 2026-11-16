@@ -81,8 +81,7 @@ describe('operating limits', () => {
 		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
 		expect(stat(lead, 'Low voltage')).toBe('1');
 		expect(stat(lead, 'High voltage')).toBeUndefined();
-		expect(stat(lead, 'At limit')).toBeUndefined();
-		expect(stat(lead, 'Over limit')).toBeUndefined();
+		expect(stat(lead, 'Lines at limit')).toBeUndefined();
 	});
 	it('does not count voltage violations for DC, which solves no voltage', () => {
 		const lead = operatingLead({
@@ -122,7 +121,11 @@ describe('operating limits', () => {
 	});
 	it('retains violations even when other values cannot be assessed', () => {
 		const lead = operatingLead({ ...base, counts: count(new Map([[1, 0.8]])) });
-		expect(lead.stats[0]).toEqual({ label: 'Low voltage', value: '1', tone: 'failure' });
+		expect(lead.stats[0]).toEqual({
+			label: 'Low voltage',
+			value: '1',
+			tone: 'failure'
+		});
 		expect(stat(lead, 'Voltage unchecked')).toBe('3');
 	});
 	it('keeps missing flows and unknown ratings apart in the counts', () => {
@@ -143,32 +146,45 @@ describe('operating limits', () => {
 		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
 	});
 	it('does not call zero assessed lines healthy', () => {
-		const lead = operatingLead({ ...base, counts: count(new Map(), { ...result, flows: [] }) });
+		const lead = operatingLead({
+			...base,
+			counts: count(new Map(), { ...result, flows: [] })
+		});
 		expect(lead.empty).toBeUndefined();
 		expect(lead.stats.some((s) => s.tone === 'ok')).toBe(false);
 		expect(stat(lead, 'No flow')).toBe('3');
-		const none = { ...base.counts, loadingChecked: 0, loadingUnknown: 0, flowMissing: 0 };
+		const none = {
+			...base.counts,
+			loadingChecked: 0,
+			loadingUnknown: 0,
+			flowMissing: 0
+		};
 		expect(operatingLead({ ...base, voltageSolved: false, counts: none })).toEqual({
 			stats: [],
 			empty: 'No line loading'
 		});
 	});
-	it('counts lines over, at and near their rating apart', () => {
+	it('counts lines at or over their rating together, and lines near it apart', () => {
 		const lead = operatingLead({
 			...base,
 			counts: { ...base.counts, warning: 1, atLimit: 1, overload: 2 },
 			warning: 80
 		});
-		expect(lead.stats.slice(0, 3)).toEqual([
-			{ label: 'Over limit', value: '2', tone: 'failure' },
-			{ label: 'At limit', value: '1', tone: 'failure' },
-			{ label: '≥80%', value: '1', tone: 'warning' }
+		expect(lead.stats.slice(0, 2)).toEqual([
+			{ label: 'Lines at limit', value: '3', tone: 'failure' },
+			{ label: '80–100%', value: '1', tone: 'warning' }
 		]);
-		expect(operatingLead({ ...base, hasResult: false })).toEqual({ stats: [], empty: 'No result' });
+		expect(operatingLead({ ...base, hasResult: false })).toEqual({
+			stats: [],
+			empty: 'No result'
+		});
 	});
 	it('counts out-of-service lines only when there are some', () => {
 		expect(stat(operatingLead(base), 'Out of service')).toBeUndefined();
-		const lead = operatingLead({ ...base, counts: { ...base.counts, inactive: 2 } });
+		const lead = operatingLead({
+			...base,
+			counts: { ...base.counts, inactive: 2 }
+		});
 		expect(stat(lead, 'Out of service')).toBe('2');
 	});
 });
@@ -191,7 +207,7 @@ describe('prices', () => {
 		expect(economicsLead(econ).stats.some((s) => s.label === 'Lines at limit')).toBe(false);
 	});
 	it('says when there are no prices to show', () => {
-		expect(economicsLead({ ...econ, opf: false }).empty).toBe('Needs an OPF');
+		expect(economicsLead({ ...econ, opf: false }).empty).toBe('No prices in power flow');
 		expect(economicsLead({ ...econ, range: null }).empty).toBe('No prices');
 	});
 });
@@ -212,8 +228,16 @@ describe('flows', () => {
 		expect(transferLead({ ...transfer, hasResult: !!context.current }).empty).toBe('No result');
 	});
 	it('names the largest flow and still counts missing ones', () => {
-		const lead = transferLead({ ...transfer, missing: 2, top: { id: 7, mw: '555 MW' } });
-		expect(lead.stats[0]).toEqual({ label: 'Largest flow', value: '555 MW', sub: 'Line 7' });
+		const lead = transferLead({
+			...transfer,
+			missing: 2,
+			top: { id: 7, mw: '555 MW' }
+		});
+		expect(lead.stats[0]).toEqual({
+			label: 'Largest flow',
+			value: '555 MW',
+			sub: 'Line 7'
+		});
 		expect(lead.stats[1]).toEqual({ label: 'No flow', value: '2' });
 	});
 });

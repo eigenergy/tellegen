@@ -145,12 +145,12 @@ for (const touch of [false, true]) {
 			await fit(toolbar);
 			const panel = page.getByRole('region', { name: 'Limits', exact: true });
 			// A line at its rating counts as at the limit, in red as on the map.
-			const over = panel.locator('.stat').filter({ hasText: 'At limit' });
+			const over = panel.locator('.stat').filter({ hasText: 'Lines at limit' });
 			await expect(over).toContainText('1');
 			await expect(over).toHaveClass(/failure/);
 			// Counts are listed only when they are not zero.
-			await expect(panel.locator('.stat').filter({ hasText: /^≥/ })).toHaveCount(0);
-			await expect(panel.locator('.stat').filter({ hasText: 'Over limit' })).toHaveCount(0);
+			await expect(panel.locator('.stat').filter({ hasText: /–100%/ })).toHaveCount(0);
+			await expect(panel.locator('.stat')).toHaveCount(1);
 			const gauge = page.getByRole('button', { name: /Branch 1, .*percent, at rating/ });
 			// At the rating is red, filled the same as an overload; amber is only near it.
 			await expect(gauge).toHaveClass(/\bover\b/);
@@ -176,7 +176,7 @@ for (const touch of [false, true]) {
 			await expect(inspector).toContainText('0 MW');
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
 			await expect(inspector).toHaveCount(0);
-			const exceptions = diagram.getByText('Flagged (1)', { exact: true });
+			const exceptions = diagram.getByText('Near or at limit (1)', { exact: true });
 			if (touch) await exceptions.tap();
 			else await exceptions.press('Enter');
 			const search = diagram.getByRole('searchbox', { name: 'Search' });
@@ -341,7 +341,9 @@ for (const touch of [false, true]) {
 						await expect(range.getByRole('button', { name: '1.0200 pu' })).toBeVisible();
 					}
 					const diagram = page.locator('.tx-stage');
-					const exceptions = diagram.getByText(`Flagged (${uniform ? 2 : 1})`, { exact: true });
+					const exceptions = diagram.getByText(`Near or at limit (${uniform ? 2 : 1})`, {
+						exact: true
+					});
 					await exceptions.click();
 					await expect(
 						diagram.getByRole('listitem').filter({ hasText: 'High' }).first()

@@ -64,7 +64,7 @@
 			<ul class="key">
 				<li><i class="swatch normal"></i>Below {warning}%</li>
 				<li><i class="swatch near"></i>Near limit</li>
-				<li><i class="swatch over"></i>At or over limit</li>
+				<li><i class="swatch over"></i>At limit</li>
 				<li><i class="swatch unrated"></i>Unrated</li>
 				<li><i class="swatch dashed"></i>Out of service</li>
 				{#if context.voltage}

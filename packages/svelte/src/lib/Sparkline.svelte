@@ -9,7 +9,7 @@
 	const T = 20;
 	const R = 8;
 	const B = 22;
-	const L = 34;
+	const L = 46;
 	const PLOT_W = W - L - R;
 	const PLOT_H = H - T - B;
 	const Y_TOP = 0; // log10(1)
@@ -35,13 +35,13 @@
 	<svg
 		viewBox="0 0 {W} {H}"
 		role="img"
-		aria-label="Residual by iteration, {iterations.length} iterations"
+		aria-label="Error by iteration, {iterations.length} iterations"
 	>
-		<text class="label" x={L} y="11">Residual</text>
+		<text class="label" x={L} y="11">Error</text>
 		<line class="axis" x1={L} y1={T} x2={L} y2={H - B} />
 		<line class="axis" x1={L} y1={H - B} x2={W - R} y2={H - B} />
-		<text class="label" x={L - 5} y={T + 4} text-anchor="end">1</text>
-		<text class="label" x={L - 5} y={H - B + 4} text-anchor="end">10⁻⁹</text>
+		<text class="label" x={L - 5} y={T + 4} text-anchor="end">High</text>
+		<text class="label" x={L - 5} y={H - B + 4} text-anchor="end">Solved</text>
 		<text class="label" x={L} y={H - 6} text-anchor="middle">1</text>
 		<text class="label" x={(L + W - R) / 2} y={H - 6} text-anchor="middle">Iteration</text>
 		<text class="label" x={W - R} y={H - 6} text-anchor="end">{iterations.length}</text>
