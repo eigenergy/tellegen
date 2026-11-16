@@ -16,15 +16,15 @@
 		zero_voltage_tolerance: 'Zero-voltage floor',
 		absolute_kcl_tolerance: 'Current tolerance',
 		relative_kcl_tolerance: 'Relative tolerance',
-		thermal: 'Line limits',
-		lazy: 'Lazy line limits'
+		thermal: 'Apply to',
+		lazy: 'Add as needed'
 	};
 
 	/** Plain names for enum choices; null is the case's own choice. */
 	const CHOICES: Record<string, string> = {
 		flat: 'Flat',
 		case: 'From case',
-		all: 'All',
+		all: 'All lines',
 		rated: 'Rated lines',
 		...Object.fromEntries(DC_VARIANTS.map((v) => [v.id, v.label]))
 	};
@@ -173,6 +173,13 @@
 			? ctrl.acOpfConfigured && !current.perturbed
 			: available && ctrl.formulationAvailable(current, value as Formulation);
 	}
+	/** The calculations the Network panel offers, so the two lists agree. */
+	const offered = $derived(
+		FORMULATIONS.map((f) => ({
+			calculation: f.id,
+			available: catalog.calculations.find((d) => d.calculation === f.id)?.available ?? false
+		}))
+	);
 	function calculationLabel(value: string) {
 		return value === 'mc_ac_pf'
 			? 'Distribution AC power flow'
@@ -238,7 +245,7 @@
 				? 'Did not converge'
 				: /changed/i.test(failure)
 					? 'Settings changed; run again'
-					: 'Failed'
+					: `${calculationLabel(calculation)} failed`
 	);
 </script>
 
@@ -287,7 +294,7 @@
 	{#if current && selected}
 		<fieldset disabled={busy || solving}>
 			<div class="row">
-				<label for="setting-calculation">Calculation</label>
+				<label for="setting-calculation">Type</label>
 				{#if current instanceof MulticonductorCase}
 					<span class="value">{calculationLabel(calculation)}</span>
 				{:else}
@@ -299,7 +306,7 @@
 							value={calculation}
 							onchange={(e) => void ctrl.chooseCalculation(c, e.currentTarget.value as Formulation)}
 						>
-							{#each catalog.calculations.filter((d) => d.calculation !== 'mc_ac_pf') as d (d.calculation)}
+							{#each offered as d (d.calculation)}
 								<option value={d.calculation} disabled={!canSelect(d.calculation, d.available)}
 									>{calculationLabel(d.calculation)}</option
 								>
@@ -316,12 +323,12 @@
 			<h3>Line limits</h3>
 			<fieldset disabled={busy || solving}>
 				<div class="row">
-					<label for="setting-thermal">Line limits</label>
+					<label for="setting-thermal">Apply to</label>
 					<select
 						id="setting-thermal"
 						bind:value={thermalMode}
 						onchange={() => thermalMode !== 'branches' && void apply()}
-						><option value="all">All</option><option value="rated">Rated lines</option><option
+						><option value="all">All lines</option><option value="rated">Rated lines</option><option
 							value="branches">Chosen lines</option
 						></select
 					>
@@ -339,7 +346,11 @@
 					</div>
 				{/if}
 				<div class="row">
-					<label for="setting-lazy">Lazy line limits</label>
+					<label
+						for="setting-lazy"
+						title="Solve without line limits, then add the ones that are exceeded"
+						>Add as needed</label
+					>
 					<input
 						id="setting-lazy"
 						type="checkbox"
@@ -415,19 +426,6 @@
 			<details class="failure">
 				<summary>Details</summary>
 				<p>{failure}</p>
-			</details>
-		{/if}
-		{#if selected.accepted && Object.keys(selected.accepted).length}
-			<details>
-				<summary>Used for result</summary>
-				<dl>
-					{#each Object.entries(selected.accepted) as [key, value] (key)}
-						<div class="row">
-							<dt>{fieldLabel(key)}</dt>
-							<dd>{valueWords(value)}</dd>
-						</div>
-					{/each}
-				</dl>
 			</details>
 		{/if}
 	{:else if app.studyView}
@@ -510,26 +508,26 @@
 		font-weight: 600;
 		white-space: nowrap;
 	}
+	/* Every control in the right column is one width, so the right edge lines up. The
+	   select keeps the panels' shared chevron: only its colour is set here. */
 	select,
 	input:not([type='checkbox']) {
-		max-width: 50%;
-		padding: 3px 6px;
+		flex: none;
+		width: var(--settings-control-width, 150px);
+		box-sizing: border-box;
+		min-height: 28px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
-		background: var(--surface-control);
+		background-color: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
 	}
-	.control select {
-		max-width: none;
+	input:not([type='checkbox']) {
+		padding: 3px 8px;
 	}
 	input[type='number'] {
-		width: 96px;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
-	}
-	input[type='text'] {
-		width: 140px;
 	}
 	input.switch {
 		width: 16px;
@@ -544,11 +542,10 @@
 		border-bottom: 0;
 	}
 	summary {
-		display: flex;
-		align-items: center;
-		min-height: 34px;
+		display: list-item;
+		line-height: 34px;
 		cursor: pointer;
-		color: var(--text-secondary);
+		color: var(--text-primary);
 		list-style-position: inside;
 	}
 	summary:hover {
@@ -606,9 +603,11 @@
 		outline-offset: 2px;
 	}
 	@media (pointer: coarse) {
-		.row,
-		summary {
+		.row {
 			min-height: 44px;
+		}
+		summary {
+			line-height: 44px;
 		}
 		select,
 		input:not([type='checkbox']),

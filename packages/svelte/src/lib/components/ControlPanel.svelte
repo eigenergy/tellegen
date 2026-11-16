@@ -170,7 +170,7 @@
 						<p class="load-failed" role="alert">Could not load the case list</p>
 						<div class="load-actions">
 							<button class="reset" onclick={() => void ctrl.load()}>Retry</button>
-							<button class="reset" onclick={openFile}>Open a file</button>
+							<button class="reset" onclick={openFile}>Open case file</button>
 						</div>
 					{:else}
 						<p class="dim blink">Loading&hellip;</p>

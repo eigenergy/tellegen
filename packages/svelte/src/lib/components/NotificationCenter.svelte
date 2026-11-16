@@ -25,6 +25,8 @@
 					title: detail ? message : errorNoticeTitle(message),
 					details: detail ?? message,
 					retry: errorNoticeCanRetry(detail ?? message) ? () => ctrl.retryError() : undefined,
+					// The Network panel shows a failed case list with its own Retry.
+					quiet: /^Case list:/.test(message),
 					canRetry: () =>
 						app.errorRevision === revision && app.error === message && app.errorRetry === retry
 				})
@@ -102,9 +104,10 @@
 					>
 				</header>
 				<ol>
-					{#each notices.entries as entry (entry.id)}
+					{#each notices.entries as entry, i (entry.id)}
 						<li>
-							<details>
+							<!-- The latest message opens with its full text: Details shows it at once. -->
+							<details open={i === 0}>
 								<summary
 									>{entry.title}{#if entry.count > 1}<span class="count">{entry.count}</span
 										>{/if}</summary

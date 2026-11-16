@@ -43,6 +43,15 @@ describe('error titles', () => {
 		expect(errorNoticeTitle('Case list: Server error')).toBe('Could not load the case list');
 		expect(errorNoticeCanRetry('Case list: Server error')).toBe(true);
 	});
+	it('never titles a notice with a bare "Failed"', () => {
+		expect(errorNoticeTitle('PowerIO balanced_network input cannot start a DcPf Study')).toBe(
+			'Calculation failed'
+		);
+		expect(errorNoticeTitle('Clipboard denied. The page lost focus')).toBe('Clipboard denied');
+		expect(
+			errorNoticeTitle('An unclassified message that runs on far longer than a notice title should')
+		).toBe('An unclassified message that runs on far longer…');
+	});
 });
 describe('recent messages', () => {
 	it('groups repeats, dismisses without losing details, and bounds retained messages', () => {
@@ -66,6 +75,13 @@ describe('recent messages', () => {
 		for (let index = 0; index < 40; index++)
 			notices.push({ title: 'Message', details: `Details ${index}` });
 		expect(notices.entries).toHaveLength(30);
+		notices.dispose();
+	});
+	it('records a quiet message in the Log without a toast', () => {
+		const notices = new NoticeCenter();
+		notices.push({ title: 'Could not load the case list', details: 'Case list: 502', quiet: true });
+		expect(notices.entries).toHaveLength(1);
+		expect(notices.active).toBeNull();
 		notices.dispose();
 	});
 	it('pauses dismissal during interaction and restarts the remaining time', () => {

@@ -127,15 +127,18 @@ test('an explicit run applies the calculation draft and agent edits retain its o
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
 	const result = page.locator('.solvecard');
-	await expect(result).toContainText('DC OPF', { timeout: 60000 });
+	await expect(result).toHaveAttribute('data-calculation', 'dcopf', { timeout: 60000 });
 	// Choosing a calculation in the Network panel runs it.
 	await runCalculation(page, 'acpf');
-	await expect(result).toContainText('AC power flow', { timeout: 60000 });
+	await expect(result).toHaveAttribute('data-calculation', 'acpf', { timeout: 60000 });
 	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
 	// Settings shows the same calculation as the Network panel, in its Calculation section.
-	await expect(panel.getByRole('combobox', { name: 'Calculation', exact: true })).toHaveValue(
-		'acpf'
+	const type = panel.getByRole('combobox', { name: 'Type', exact: true });
+	await expect(type).toHaveValue('acpf');
+	// It offers the Network panel's calculations and no other, so the two lists agree.
+	await expect(type.locator('option')).toHaveText(
+		await page.locator('#formulation-select option').allTextContents()
 	);
 	// Choosing an option applies it and reruns.
 	await panel.getByRole('combobox', { name: 'Start', exact: true }).selectOption('case');
@@ -169,7 +172,9 @@ test('partial lazy options agree with accepted settings and remain clean when sw
 		{ name: 'case14.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60000
+	});
 	const inspected = await tool(page, 'inspect_settings');
 	const updated = await tool(page, 'update_settings', {
 		case_id: inspected.data.case_id,
@@ -201,7 +206,9 @@ test('the DC line model is chosen in one place, shared with WebMCP, and can retu
 		{ name: 'case14.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+	await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf', {
+		timeout: 60000
+	});
 	// Settings holds the DC line model, under Calculation; the Network panel does not repeat it.
 	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });

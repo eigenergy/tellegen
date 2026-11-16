@@ -9,6 +9,8 @@ export interface NoticeInput {
 	kind?: 'error' | 'warning';
 	retry?: () => void;
 	canRetry?: () => boolean;
+	/** Record the message in the Log only: the page already shows it where it happened. */
+	quiet?: boolean;
 }
 export interface Notice extends NoticeInput {
 	id: number;
@@ -48,6 +50,7 @@ export class NoticeCenter {
 			0,
 			MAX_NOTICES
 		);
+		if (input.quiet) return;
 		this.activeId = entry.id;
 		this.announcement = `${entry.title}${entry.count > 1 ? `, repeated ${entry.count} times` : ''}`;
 		this.#remaining = LIFETIME_MS;
@@ -118,7 +121,7 @@ export function errorNoticeTitle(details: string): string {
 	// say); only a sensitivity that fails is about prices.
 	if (/sensitivity|derivative/i.test(details)) return 'No price sensitivity';
 	if (
-		/infeasib|converg|singular|jacobian|solver|solving|calculation|compute|webassembly|power flow/i.test(
+		/infeasib|converg|singular|jacobian|solver|solving|calculation|compute|webassembly|power flow|\bstudy\b/i.test(
 			details
 		)
 	)
@@ -127,5 +130,14 @@ export function errorNoticeTitle(details: string): string {
 		const file = fileOf(details);
 		return file ? `Could not open ${file}` : 'Unreadable file';
 	}
-	return 'Failed';
+	return firstWords(details);
+}
+/** The start of an unclassified message, so its notice still names what failed. */
+function firstWords(details: string): string {
+	const line = details
+		.split(/\n|(?<=[.:;])\s/)[0]
+		.replace(/[.:;]$/, '')
+		.trim();
+	if (!line) return 'Error';
+	return line.length > 48 ? `${line.slice(0, 47).trimEnd()}…` : line;
 }

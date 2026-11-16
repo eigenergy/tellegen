@@ -27,8 +27,8 @@ test('the baseline build hides collection controls and explains unsupported ZIP 
 	});
 	const notices = page.getByRole('region', { name: 'Notifications' });
 	await expect(notices.getByText('Imports unavailable', { exact: true })).toBeVisible();
+	// Details opens the latest message with its full text at once.
 	await notices.getByRole('button', { name: 'Details', exact: true }).click();
-	await notices.locator('summary').filter({ hasText: 'Imports unavailable' }).click();
 	await expect(
 		page.getByText(
 			'ZIP and folder imports are unavailable in this build. Open a single case file instead.'

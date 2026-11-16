@@ -300,7 +300,7 @@ textarea {
 
 /* One select in every panel: a raised control with a drawn chevron, never the
    operating system's own. Zero specificity, so a component can still adjust it. */
-:where(.panel-frame) :where(select:not([multiple])) {
+:where(.panel-frame, .panel-select) :where(select:not([multiple])) {
 	appearance: none;
 	-webkit-appearance: none;
 	max-width: 100%;
@@ -325,11 +325,11 @@ textarea {
 	cursor: pointer;
 }
 
-:where(.panel-frame) :where(select:not([multiple]):hover:not(:disabled)) {
+:where(.panel-frame, .panel-select) :where(select:not([multiple]):hover:not(:disabled)) {
 	border-color: var(--border-strong);
 }
 
-:where(.panel-frame) :where(select:disabled) {
+:where(.panel-frame, .panel-select) :where(select:disabled) {
 	cursor: default;
 	opacity: 0.6;
 }

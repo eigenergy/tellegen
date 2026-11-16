@@ -130,11 +130,13 @@
 		border-bottom: 1px solid var(--line);
 	}
 	select {
-		max-width: 50%;
-		padding: 3px 6px;
+		flex: none;
+		width: var(--settings-control-width, 150px);
+		box-sizing: border-box;
+		min-height: 28px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
-		background: var(--surface-control);
+		background-color: var(--surface-control);
 		color: var(--ink);
 		font: inherit;
 	}
