@@ -25,16 +25,16 @@
 			</h3>
 			<dl>
 				{#if demand !== null}<div>
-						<dt>Demand (MW)</dt>
-						<dd>{fmt.format(demand)}</dd>
+						<dt>Demand</dt>
+						<dd>{fmt.format(demand)} MW</dd>
 					</div>{/if}
 				{#if voltage != null}<div>
-						<dt>Voltage (pu)</dt>
-						<dd>{quantity(voltage, '', { decimals: 4 })}</dd>
+						<dt>Voltage</dt>
+						<dd>{quantity(voltage, '', { decimals: 4 })} pu</dd>
 					</div>{/if}
 				{#if angle != null}<div>
-						<dt>Voltage angle (°)</dt>
-						<dd>{quantity((angle * 180) / Math.PI, '', { decimals: 2 })}</dd>
+						<dt>Voltage angle</dt>
+						<dd>{quantity((angle * 180) / Math.PI, '°', { decimals: 2 })}</dd>
 					</div>{/if}
 			</dl>
 		{:else if branch}
@@ -46,12 +46,12 @@
 				</div>
 				{#if flow}
 					<div>
-						<dt>Active power (MW)</dt>
-						<dd>{fmt.format(flow.mw)}</dd>
+						<dt>Active power</dt>
+						<dd>{fmt.format(flow.mw)} MW</dd>
 					</div>
 					{#if branch.rate_mw > 0}<div>
-							<dt>Loading (%)</dt>
-							<dd>{fmt.format(flow.loading * 100)}</dd>
+							<dt>Loading</dt>
+							<dd>{fmt.format(flow.loading * 100)}%</dd>
 						</div>{/if}
 				{/if}
 			</dl>

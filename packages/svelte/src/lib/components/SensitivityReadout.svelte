@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { sensGradient } from '../colors.js';
+	import { sensFlatColor, sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
 	import { lineName, readable, signedSmall, small } from '../format.js';
@@ -69,11 +69,18 @@
 		</div>
 	{/each}
 </dl>
-<!-- The same change at every bus: one labelled value, not a colour bar. -->
+<!-- The same change at every bus: one labelled value, not a colour bar. Its swatch is the one
+     colour every bus on the map takes. -->
 {#snippet uniform(value: string, units: string)}
 	<dl class="values uniform" data-testid="uniform-shift">
 		<div>
-			<dt title="The same at every bus">Price change</dt>
+			<dt title="The same at every bus">
+				{#if ctrl.sensSummary}<i
+						class="swatch"
+						aria-hidden="true"
+						style:background="rgb({sensFlatColor(ctrl.sensSummary).slice(0, 3).join(' ')})"
+					></i>{/if}Price change
+			</dt>
 			<dd>{value} {units}</dd>
 		</div>
 	</dl>
@@ -160,6 +167,14 @@
 	}
 	.values dt {
 		color: var(--text-secondary);
+	}
+	.swatch {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		margin-right: 6px;
+		border-radius: 50%;
+		vertical-align: baseline;
 	}
 	.values dd {
 		margin: 0;

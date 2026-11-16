@@ -5,7 +5,6 @@
 
 	const app = getAppState();
 	const ctrl = getController();
-	const id = $props.id();
 
 	// The active result's binding lines (see `ctrl.bindingRule`), joined to the network for
 	// identity. Each row is a button: the keyboard path for branch selection.
@@ -29,11 +28,9 @@
 </script>
 
 {#if bindingLines.length > 0}
+	<!-- The lines the box above counts, by name: the box is their heading. -->
 	<div class="binding-lines">
-		<div class="head">
-			<span id="{id}-title">{ctrl.bindingRule?.label}</span><span>Loading</span>
-		</div>
-		<ul aria-labelledby="{id}-title">
+		<ul aria-label={ctrl.bindingRule?.label}>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>
 					<button
@@ -51,39 +48,30 @@
 {/if}
 
 <style>
-	/* Under the stat boxes, which count these lines, at the boxes' own gap. */
+	/* Under the stat boxes, at the panel's own edge, like the rows below it. */
 	.binding-lines {
-		margin: calc(var(--space-sm) - var(--space-lg)) 0 var(--space-lg);
+		margin: 0 0 var(--space-lg);
 		border-bottom: 1px solid var(--line);
 	}
 
-	/* The list's name and its value column, as a table header. */
-	.head {
-		display: flex;
-		justify-content: space-between;
-		padding: 0 var(--space-xs) var(--space-3xs) var(--space-sm);
-		font-size: var(--fs-label);
-		color: var(--text-secondary);
-	}
-
+	/* Rows reach past the text by a few pixels, so a hover or selection has room. */
 	ul {
-		margin: 0;
+		margin: 0 calc(-1 * var(--space-xs));
 		padding: 0;
 		list-style: none;
 		max-height: 118px;
 		overflow-y: auto;
 	}
 
-	/* The same row height as the key and value rows below. */
 	li button {
 		display: flex;
-		align-items: center;
-		gap: var(--space-2xs);
+		align-items: baseline;
+		gap: var(--space-lg);
 		width: 100%;
-		min-height: 23px;
-		padding: 0 var(--space-xs) 0 var(--space-sm);
+		min-height: 24px;
+		padding: var(--space-3xs) var(--space-xs);
 		text-align: left;
-		font-size: var(--fs-label);
+		font-size: var(--fs-data);
 		color: var(--ink);
 		background: none;
 		border: 0;
@@ -126,6 +114,7 @@
 
 		li button {
 			min-height: 44px;
+			align-items: center;
 			padding-block: var(--space-xs);
 		}
 	}
