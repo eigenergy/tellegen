@@ -69,17 +69,20 @@
 		</div>
 	{/each}
 </dl>
+<!-- The same change at every bus: one labelled value, not a colour bar. -->
+{#snippet uniform(value: string, units: string)}
+	<dl class="values uniform" data-testid="uniform-shift">
+		<div>
+			<dt title="The same at every bus">Price change</dt>
+			<dd>{value} {units}</dd>
+		</div>
+	</dl>
+{/snippet}
 <div class="sensitivity-readout" data-testid="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
 		<p class="dim small">{ctrl.activeSolvable?.solving ? 'Solving…' : 'Estimate'}</p>
 		{#if ctrl.sensSummary?.flat}
-			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
-			<div class="legend-labels single">
-				<span
-					>{signedSmall(ctrl.sensSummary.mean * previewStep)}
-					{previewUnits} at every bus</span
-				>
-			</div>
+			{@render uniform(signedSmall(ctrl.sensSummary.mean * previewStep), previewUnits)}
 		{:else if ctrl.previewScale}
 			<!-- The bounds are fixed for the whole drag (column scale × full slider
 			     deflection), so the ramp ends label the colors: full green/purple is
@@ -94,10 +97,7 @@
 		{/if}
 	{:else}
 		{#if ctrl.sensSummary?.flat}
-			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
-			<div class="legend-labels single">
-				<span>Price change {signedSmall(ctrl.sensSummary.mean)} {reportedUnits} at every bus</span>
-			</div>
+			{@render uniform(signedSmall(ctrl.sensSummary.mean), reportedUnits)}
 		{:else if ctrl.sensSummary}
 			<p class="legend-caption">Price change ({reportedUnits})</p>
 			<div class="legend" style:background={sensGradient}></div>
@@ -149,6 +149,9 @@
 		gap: 2px;
 		margin: 6px 0 8px;
 		font-size: var(--fs-label);
+	}
+	.values.uniform {
+		margin-top: 0;
 	}
 	.values div {
 		display: flex;

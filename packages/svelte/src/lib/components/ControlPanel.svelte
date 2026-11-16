@@ -200,12 +200,6 @@
 					<NetworkStats {lead} />
 				{/if}
 
-				<!-- On a phone the sheet is short: the key to the map's colours comes
-				     right after the result, not below the fold. -->
-				{#if app.compactLayout && !selectionLeads && !blockEmpty}
-					<div class="compact-key">{@render selectionBlock()}</div>
-				{/if}
-
 				{#if ctrl.activeSolvable?.network && !app.activeMulti}
 					{@const c = ctrl.activeSolvable}
 					<button
@@ -217,6 +211,12 @@
 							if (c.schematic && layout.compact) layout.drawer = null;
 						}}>{c.schematic ? 'Show map' : 'Show diagram'}</button
 					>
+				{/if}
+
+				<!-- On a phone the sheet is short: the key to the map's colours comes right after the
+				     result and its File and Show diagram row, not below the fold. -->
+				{#if app.compactLayout && !selectionLeads && !blockEmpty}
+					<div class="compact-key">{@render selectionBlock()}</div>
 				{/if}
 
 				{#if ctrl.activeSolvable}

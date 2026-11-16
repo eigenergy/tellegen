@@ -5,6 +5,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const id = $props.id();
 
 	// The active result's binding lines (see `ctrl.bindingRule`), joined to the network for
 	// identity. Each row is a button: the keyboard path for branch selection.
@@ -29,7 +30,10 @@
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<ul aria-label={ctrl.bindingRule?.label}>
+		<div class="head">
+			<span id="{id}-title">{ctrl.bindingRule?.label}</span><span>Loading</span>
+		</div>
+		<ul aria-labelledby="{id}-title">
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>
 					<button
@@ -51,6 +55,15 @@
 	.binding-lines {
 		margin: calc(var(--space-sm) - var(--space-lg)) 0 var(--space-lg);
 		border-bottom: 1px solid var(--line);
+	}
+
+	/* The list's name and its value column, as a table header. */
+	.head {
+		display: flex;
+		justify-content: space-between;
+		padding: 0 var(--space-xs) var(--space-3xs) var(--space-sm);
+		font-size: var(--fs-label);
+		color: var(--text-secondary);
 	}
 
 	ul {

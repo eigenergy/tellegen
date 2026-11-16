@@ -98,11 +98,11 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	});
 
 	await expect(page.getByText('Estimate', { exact: true })).toBeVisible();
-	// case14 is uncongested, so the LMP/demand column is flat and the preview legend
-	// shows the uniform predicted shift. The value must scale with the step — the
-	// regression this guards is the step cancelling out of the preview display.
-	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/[+−][\d.,]+\s+\$\/MWh at every bus/);
+	// case14 is uncongested, so the LMP/demand column is flat and the readout shows the
+	// uniform predicted shift. The value must scale with the step — the regression this
+	// guards is the step cancelling out of the preview display.
+	const labels = page.getByTestId('uniform-shift');
+	await expect(labels).toContainText(/Price change\s*[+−][\d.,]+\s+\$\/MWh/);
 	// Plain decimals, never e-notation.
 	await expect(labels).not.toContainText(/\de[+-]\d/);
 	const atFull = parseShift(await labels.innerText());
