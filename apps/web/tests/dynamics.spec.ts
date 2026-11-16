@@ -224,5 +224,13 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 	await page.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(page.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
 	await expect(page.getByTestId('dyn-scrubber')).toBeVisible();
+	// The open sheet stands on the playback bar: the bar covers none of it.
+	await expect
+		.poll(async () => {
+			const sheet = await page.locator('[data-panel-drawer]').boundingBox();
+			const bar = await page.locator('[data-dyn-timeline]').boundingBox();
+			return sheet && bar ? Math.round(bar.y - (sheet.y + sheet.height)) : null;
+		})
+		.toBeGreaterThanOrEqual(0);
 	await shot(page, '09-phone');
 });

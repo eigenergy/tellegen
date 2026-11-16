@@ -90,7 +90,7 @@
 		class={['timeline', { compact: app.compactLayout, flush }]}
 		aria-label="Dynamics playback"
 		data-dyn-timeline
-		bind:clientHeight={dockHeight}
+		bind:offsetHeight={dockHeight}
 	>
 		<div class="controls">
 			<button
