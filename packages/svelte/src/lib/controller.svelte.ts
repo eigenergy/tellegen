@@ -2443,7 +2443,7 @@ export class Controller {
 	changeDcFormula = async (c: SolvableCase, next: DcFormula) => {
 		if (c.solution?.branch_susceptance_formula === next) return;
 		if (c instanceof LocalCase && c.declaredFormulation) {
-			this.fail('This imported case sets its own DC line model');
+			this.fail('The case file sets its own DC line model, so Settings cannot change it.');
 			return;
 		}
 		try {

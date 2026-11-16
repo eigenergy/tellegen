@@ -29,6 +29,11 @@
 		...Object.fromEntries(DC_VARIANTS.map((v) => [v.id, v.label]))
 	};
 
+	/** A choice's tooltip: the tool whose convention a DC line model matches. */
+	const CHOICE_TITLES: Record<string, string> = Object.fromEntries(
+		DC_VARIANTS.filter((v) => v.matches).map((v) => [v.id, `Matches ${v.matches}`])
+	);
+
 	/** A setting's value in words. */
 	function valueWords(value: unknown): string {
 		if (value === null || value === undefined) return 'Default';
@@ -263,8 +268,9 @@
 						field.key,
 						(field.choices ?? []).find((choice) => String(choice) === e.currentTarget.value)
 					)}
-				>{#each field.choices ?? [] as choice (choice)}<option value={String(choice)}
-						>{valueWords(choice)}</option
+				>{#each field.choices ?? [] as choice (choice)}<option
+						value={String(choice)}
+						title={CHOICE_TITLES[String(choice)]}>{valueWords(choice)}</option
 					>{/each}</select
 			>
 		{:else}

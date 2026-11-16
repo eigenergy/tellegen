@@ -24,6 +24,11 @@ describe('error titles', () => {
 		expect(errorNoticeCanRetry(details)).toBe(false);
 		expect(errorNoticeCanRetry('sensitivity rate limit exceeded')).toBe(true);
 	});
+	it('names a DC line model the case file fixes, and offers no retry', () => {
+		const details = 'The case file sets its own DC line model, so Settings cannot change it.';
+		expect(errorNoticeTitle(details)).toBe('DC line model change failed');
+		expect(errorNoticeCanRetry(details)).toBe(false);
+	});
 	it('treats a singular Jacobian as a calculation failure, not a price sensitivity one', () => {
 		expect(errorNoticeTitle('AC power flow failed: singular Jacobian at iteration 3')).toBe(
 			'Calculation failed'

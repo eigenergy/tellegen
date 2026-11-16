@@ -215,6 +215,15 @@ test('the DC line model is chosen in one place, shared with WebMCP, and can retu
 	await expect(page.getByRole('combobox', { name: 'DC line model', exact: true })).toHaveCount(1);
 	const model = panel.getByRole('combobox', { name: 'DC line model', exact: true });
 	await expect(model).toHaveValue('null');
+	// One default entry, and plain names for the rest.
+	await expect(model.locator('option')).toHaveText([
+		'Default',
+		'Series impedance',
+		'Reactance with taps',
+		'Series impedance, no phase shift',
+		'Series impedance with taps',
+		'Reactance only'
+	]);
 	await model.selectOption('reactance_only');
 	await expect
 		.poll(async () => (await tool(page, 'inspect_case')).data.solution)

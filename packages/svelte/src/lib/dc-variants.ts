@@ -1,13 +1,30 @@
 import type { DcFormula } from '@tellegen/engine';
 
-/** How a DC calculation models each line, named for the tool whose convention each matches
- * (docs/src/dc-compatibility.md). Settings offers these as the DC line model. */
-export const DC_VARIANTS: ReadonlyArray<{ id: DcFormula; label: string }> = [
-	{ id: 'series_susceptance', label: 'Tellegen (default)' },
-	{ id: 'tap_adjusted_reactance', label: 'MATPOWER' },
-	{ id: 'series_susceptance_no_phase_shift', label: 'PowerModels DCP' },
-	{ id: 'tap_adjusted_series_susceptance', label: 'Susceptance with taps' },
-	{ id: 'reactance_only', label: 'Reactance only (1/x)' }
+/** How a DC calculation models each line (docs/src/dc-compatibility.md). Settings offers these as
+ * the DC line model, next to "Default", the case's own choice. `matches` names the tool whose
+ * convention each follows, for a tooltip. */
+export const DC_VARIANTS: ReadonlyArray<{
+	id: DcFormula;
+	label: string;
+	matches: string;
+}> = [
+	{ id: 'series_susceptance', label: 'Series impedance', matches: 'Tellegen' },
+	{
+		id: 'tap_adjusted_reactance',
+		label: 'Reactance with taps',
+		matches: 'MATPOWER'
+	},
+	{
+		id: 'series_susceptance_no_phase_shift',
+		label: 'Series impedance, no phase shift',
+		matches: 'PowerModels'
+	},
+	{
+		id: 'tap_adjusted_series_susceptance',
+		label: 'Series impedance with taps',
+		matches: ''
+	},
+	{ id: 'reactance_only', label: 'Reactance only', matches: '' }
 ];
 
 export function dcVariantLabel(id: string | null | undefined): string {

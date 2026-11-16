@@ -91,6 +91,7 @@ export function getNoticeCenter(): NoticeCenter {
  * again cannot succeed, so their notices offer no Retry. */
 const INSTRUCTIONS = [
 	/experimental\. Turn it on in Settings/i,
+	/sets its own DC line model/i,
 	/is not a case or geographic file|does not hold a complete network|could not (parse|read)|unsupported format|incomplete network|ambiguous format/i,
 	// A reader's finding on a malformed file: the same file fails the same way again.
 	/\bPARSE\.[A-Z_.]+|malformed|missing required/i
@@ -114,6 +115,7 @@ export function errorNoticeTitle(details: string): string {
 	if (/^ZIP and folder imports are unavailable in this build/.test(details))
 		return 'Imports unavailable';
 	if (/rate limit|limiting requests/i.test(details)) return 'Rate limited';
+	if (/sets its own DC line model/i.test(details)) return 'DC line model change failed';
 	// MapLibre's WebGL failure includes "Read more"; classify our map errors
 	// before the generic file/read fallback so it does not blame a case file.
 	if (/^map failed to load:|^the map lost its graphics context/i.test(details))
