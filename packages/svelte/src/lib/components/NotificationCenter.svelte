@@ -62,12 +62,27 @@
 					: '',
 				entries
 			],
-			[geo, 'Coordinate import notes', geo?.join('\n\n') ?? '', undefined]
+			[
+				geo,
+				'Coordinate import notes',
+				geo?.join('\n\n') ?? '',
+				(geo ?? []).map((message) => ({
+					severity: 'note' as const,
+					stage: 'Coordinates',
+					source: 'tellegen',
+					subject,
+					message
+				}))
+			]
 		] as Array<[object | undefined, string, string, LogEntryInput[] | undefined]>) {
 			if (identity && !observed.has(identity)) {
 				observed.add(identity);
 				if (details)
-					untrack(() => notices.push({ kind: 'warning', title, details, entries: items }));
+					untrack(() => {
+						notices.push({ kind: 'warning', title, details, entries: items });
+						// The notice closes itself; the Log keeps what it said.
+						if (items?.length) app.log.record(items, { repeat: false });
+					});
 			}
 		}
 	});
