@@ -543,6 +543,8 @@
 		outline-offset: -2px;
 	}
 	.zoom svg {
+		width: 16px;
+		height: 16px;
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.6;
