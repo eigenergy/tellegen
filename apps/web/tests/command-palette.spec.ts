@@ -101,7 +101,7 @@ test('zen mode keeps the case menu, which still lists every case', async ({ page
 	const list = menu.getByRole('navigation', { name: 'Cases' });
 	await expect(list.getByRole('button', { name: /Case One/ }).first()).toBeVisible();
 	await expect(list.getByRole('button', { name: /Case Two/ }).first()).toBeVisible();
-	await expect(menu.getByRole('button', { name: /^Open a file/ })).toBeVisible();
+	await expect(menu.getByRole('button', { name: /^Open case file/ })).toBeVisible();
 	await list
 		.getByRole('button', { name: /Case Two/ })
 		.first()

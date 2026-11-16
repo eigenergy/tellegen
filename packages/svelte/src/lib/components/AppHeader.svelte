@@ -34,7 +34,7 @@
 				? ([
 						{
 							id: 'dynamics:open',
-							title: () => (app.mode === 'dynamics' ? 'Back to steady state' : 'Open Dynamics'),
+							title: () => (app.mode === 'dynamics' ? 'Close Dynamics' : 'Open Dynamics'),
 							keywords: ['dynamics', 'rms', 'transient', 'stability', 'mode'],
 							run: () => (app.mode = app.mode === 'dynamics' ? 'steady' : 'dynamics')
 						},
@@ -85,9 +85,9 @@
 				.filter((c) => !app.multiCases.some((m) => m.hosted && m.id === c.id))
 				.map((c): Command => ({
 					id: `case:${c.id}`,
-					title: `Switch to ${c.name}`,
+					title: `Switch to ${splitName(c.name)[0]}`,
 					group: 'Cases',
-					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
+					keywords: ['case', 'network', 'open', 'distribution', 'multiconductor', c.name],
 					run: () => void ctrl.activateHostedDistribution(c.id)
 				})),
 			...app.localCases.map((c): Command => ({
@@ -99,7 +99,7 @@
 			})),
 			...app.multiCases.map((c): Command => ({
 				id: `case:${c.id}`,
-				title: `Switch to ${c.label}`,
+				title: `Switch to ${splitName(c.label)[0]}`,
 				group: 'Cases',
 				keywords: ['case', 'network', 'open', 'distribution', 'multiconductor'],
 				run: () => void ctrl.activateMulti(c)
@@ -116,10 +116,15 @@
 		return () => observer.disconnect();
 	}
 
+	/** "Distribution", unless the case's name already says so. */
+	const distributionDetail = (name: string) => (/distribution/i.test(name) ? '' : 'Distribution');
 	/** The open case, named as the case list names it. */
 	const current = $derived.by((): { name: string; detail: string; perturbed: boolean } | null => {
 		const multi = app.activeMulti;
-		if (multi) return { name: splitName(multi.label)[0], detail: 'Distribution', perturbed: false };
+		if (multi) {
+			const name = splitName(multi.label)[0];
+			return { name, detail: distributionDetail(name), perturbed: false };
+		}
 		const backend = app.active;
 		if (backend) {
 			const [name, region] = splitName(backend.name);
@@ -305,7 +310,7 @@
 										? 'Unavailable'
 										: ctrl.loadingHostedDistribution === c.id
 											? 'Loading…'
-											: 'Distribution'}</span
+											: distributionDetail(splitName(c.name)[0])}</span
 								>
 							</button>
 							<button
@@ -351,7 +356,7 @@
 								onclick={() => pick(() => ctrl.activateMulti(c))}
 							>
 								<span class="cname">{splitName(c.label)[0]}</span>
-								<span class="cregion">Distribution</span>
+								<span class="cregion">{distributionDetail(splitName(c.label)[0])}</span>
 							</button>
 							<button
 								class="case-remove"
@@ -368,7 +373,7 @@
 			</nav>
 			<div class="case-actions">
 				<button class="action" onclick={() => pick(() => fileInput?.click())}>
-					<span>Open a file…</span>
+					<span>Open case file…</span>
 				</button>
 				{#if ctrl.collectionsAvailable}
 					<button class="action" onclick={() => pick(openFolder)}>
@@ -677,6 +682,17 @@
 	.case-remove:focus-visible {
 		color: var(--text-danger);
 		background: var(--surface-hover);
+	}
+
+	/* With a mouse, Remove shows on the row under the pointer or with focus, not on every row. */
+	@media (hover: hover) {
+		.case-remove {
+			opacity: 0;
+		}
+		.case-chip:hover .case-remove,
+		.case-chip:focus-within .case-remove {
+			opacity: 1;
+		}
 	}
 
 	.case-actions {

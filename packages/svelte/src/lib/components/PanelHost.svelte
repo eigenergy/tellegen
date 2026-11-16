@@ -399,16 +399,6 @@
 		margin: 0 6px;
 		background: var(--line);
 	}
-	/* A panel beside the map is a toggle, not a tab: shown with a tint, not the
-	   tab underline. */
-	button.side[aria-pressed='true'] {
-		background: var(--accent-soft);
-		border-radius: var(--radius-control);
-		margin-block: 5px;
-	}
-	button.side[aria-pressed='true']::after {
-		display: none;
-	}
 	/* The open tab is underlined in the accent, the one place it appears here. */
 	button[aria-pressed='true']::after {
 		content: '';
@@ -433,6 +423,12 @@
 		align-items: stretch;
 		gap: 12px;
 		pointer-events: none;
+	}
+	/* A dock or the sheet takes focus only to hold it after its panel closes: it is not a
+	   control, so it draws no focus ring. */
+	.dock:focus,
+	.drawer:focus {
+		outline: none;
 	}
 	.dock.left {
 		left: var(--tellegen-dock-left, 16px);

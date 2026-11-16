@@ -11,6 +11,7 @@
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import ModeSwitch from './ModeSwitch.svelte';
 	import StatBoxes from '../StatBoxes.svelte';
+	import { splitName } from '../../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -25,7 +26,6 @@
 	const experimental = $derived(app.preferences.experimental && !!dyn.support?.experimental);
 	const local = $derived(app.activeLocal);
 	const current = $derived(dyn.current);
-	const hosted = $derived(!!app.active && !local);
 
 	// The panel opens with the mode, and the mode follows the panel.
 	$effect(() => {
@@ -45,6 +45,18 @@
 		} finally {
 			demoBusy = false;
 		}
+	}
+
+	const caseName = $derived(local?.label ?? (app.active ? splitName(app.active.name)[0] : null));
+	/** Pick a PSS/E .dyr file for the open case. */
+	function openDyr() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.dyr';
+		input.onchange = () => {
+			if (input.files) void ctrl.ingestFiles(input.files);
+		};
+		input.click();
 	}
 
 	// Experimental: default dynamics for a case without .dyr data.
@@ -82,7 +94,7 @@
 	id="dynamics"
 	title="Dynamics"
 	side="right"
-	order={25}
+	order={45}
 	tab
 	width={380}
 	bind:open
@@ -97,13 +109,26 @@
 			<section class="empty">
 				<dl class="rows">
 					<div>
+						<dt>Case</dt>
+						<dd>{caseName ?? 'None'}</dd>
+					</div>
+					<div>
 						<dt>Dynamic data</dt>
-						<dd>{hosted || local ? 'None' : 'No case'}</dd>
+						<dd>None</dd>
 					</div>
 				</dl>
-				<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
-					>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
-				>
+				<!-- The controls a run takes, disabled until the case has dynamic data. -->
+				<div class="row">
+					<label for="dyn-event-empty">Event</label>
+					<select id="dyn-event-empty" disabled><option>Bus fault</option></select>
+				</div>
+				<button class="run" disabled title="Needs dynamic data">Run</button>
+				<div class="actions">
+					{#if caseName}<button class="secondary" onclick={openDyr}>Open .dyr file…</button>{/if}
+					<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
+						>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
+					>
+				</div>
 				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
 				{#if experimental && local?.studyInputJson}
 					<div class="dynamize">
@@ -317,7 +342,36 @@
 	}
 	.empty {
 		display: grid;
+		gap: 10px;
+	}
+	.row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.row select {
+		width: 150px;
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
 		gap: 8px;
+	}
+	.run {
+		justify-self: start;
+		min-height: 28px;
+		padding: 5px 14px;
+		border: 1px solid var(--accent);
+		border-radius: var(--radius-control);
+		background: var(--accent);
+		color: var(--on-accent);
+		font: inherit;
+		font-weight: 600;
+	}
+	.run:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.secondary {
 		justify-self: start;
@@ -334,7 +388,8 @@
 		border-color: var(--border-strong);
 	}
 	@media (pointer: coarse) {
-		.secondary {
+		.secondary,
+		.run {
 			min-height: 44px;
 		}
 	}

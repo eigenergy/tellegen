@@ -238,7 +238,7 @@
 	.panel-frame {
 		display: flex;
 		flex-direction: column;
-		min-height: 130px;
+		min-height: 64px;
 		max-height: 100%;
 		flex: 0 1 auto;
 		pointer-events: auto;
