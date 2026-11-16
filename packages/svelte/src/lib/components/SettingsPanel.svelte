@@ -129,7 +129,7 @@
 		width: 16px;
 		height: 16px;
 		margin: 0;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.error {
 		margin: 4px 0;

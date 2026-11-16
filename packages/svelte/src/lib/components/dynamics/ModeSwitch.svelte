@@ -39,7 +39,7 @@
 		border-left: 1px solid var(--border-default);
 	}
 	button[aria-pressed='true'] {
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--on-accent);
 	}
 	button:focus-visible {

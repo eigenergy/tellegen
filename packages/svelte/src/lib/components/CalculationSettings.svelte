@@ -497,7 +497,7 @@
 		width: 16px;
 		height: 16px;
 		margin: 0;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	details {
 		border-bottom: 1px solid var(--line);

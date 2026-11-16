@@ -433,8 +433,12 @@
 		padding: 0 10px;
 		cursor: pointer;
 	}
-	button:hover {
-		color: var(--ink);
+	/* Hover only where there is a pointer: on a touch screen the last tapped tab keeps its
+	   hover, and would read as open beside the open tab. */
+	@media (hover: hover) {
+		button:hover {
+			color: var(--ink);
+		}
 	}
 	.badge {
 		margin-left: 4px;

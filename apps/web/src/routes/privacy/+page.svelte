@@ -113,7 +113,7 @@
 	.analytics-choice input {
 		width: 18px;
 		height: 18px;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.preference {
 		color: var(--text-secondary);
@@ -171,7 +171,7 @@
 		.analytics-choice input {
 			width: 18px;
 			height: 18px;
-			accent-color: var(--accent);
+			accent-color: var(--accent-fill);
 		}
 		.preference {
 			color: var(--text-secondary);

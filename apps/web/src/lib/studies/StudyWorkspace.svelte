@@ -1299,12 +1299,12 @@
 		border-color: var(--border-strong);
 	}
 	button.primary {
-		background: var(--accent);
-		border-color: var(--accent);
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
 		color: var(--on-accent);
 	}
 	button.primary:hover:enabled {
-		background: var(--accent);
+		background: var(--accent-fill);
 		filter: brightness(1.12);
 	}
 	button.text-button {
@@ -1409,7 +1409,7 @@
 		border-left: 1px solid var(--line);
 	}
 	.segment button.active {
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--on-accent);
 	}
 	.segment button:hover:enabled:not(.active) {
@@ -1459,7 +1459,7 @@
 		height: 15px;
 		flex: none;
 		padding: 0;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.table-scroll {
 		max-height: 255px;

@@ -214,10 +214,10 @@
 	.play {
 		width: 34px;
 		height: 30px;
-		border: 1px solid var(--accent);
+		border: 1px solid var(--accent-fill);
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--paper);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		cursor: pointer;
 		font-size: 12px;
 	}
@@ -259,7 +259,7 @@
 	}
 	.scrub input {
 		width: 100%;
-		accent-color: var(--accent);
+		accent-color: var(--accent-fill);
 	}
 	.marks {
 		position: absolute;
