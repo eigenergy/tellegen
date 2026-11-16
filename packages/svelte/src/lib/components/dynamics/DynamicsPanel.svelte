@@ -229,7 +229,7 @@
 						<p class="warn-line">Edits ignored: {dyn.staticEdits}</p>
 					{/if}
 					<div class="setting" aria-busy={att.preparing}>
-						<span>Steady start</span>
+						<span>Starts settled</span>
 						<span class="value" data-testid="dyn-flat"
 							>{#if att.flat}{flatOk
 									? 'Yes'
@@ -373,9 +373,9 @@
 	}
 	.run {
 		min-height: 36px;
-		border: 1px solid var(--accent);
+		border: 1px solid var(--accent-fill);
 		border-radius: var(--radius-sm);
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--on-accent);
 		font: inherit;
 		font-weight: 600;

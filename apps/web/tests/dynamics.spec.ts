@@ -147,8 +147,8 @@ test('a validated scenario says it matches the validation study', async ({ page 
 	await panel.getByRole('combobox', { name: 'Event' }).selectOption('trip-1431-N');
 	await panel.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(panel.getByTestId('dyn-verdict-word')).toHaveText('Stable', { timeout: 120_000 });
-	await expect(panel.getByTestId('dyn-badge')).toHaveText('Matches');
-	await expect(panel.getByTestId('dyn-verdict')).toContainText('Reference result');
+	await expect(panel.getByTestId('dyn-badge')).toHaveText('Yes');
+	await expect(panel.getByTestId('dyn-verdict')).toContainText('Matches reference');
 	await expect(panel.getByTestId('dyn-verdict')).toContainText(/59\.\d{2}\d? Hz/);
 });
 

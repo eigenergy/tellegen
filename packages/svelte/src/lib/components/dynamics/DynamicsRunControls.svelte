@@ -144,6 +144,9 @@
 			/>
 		</div>
 	</details>
+</section>
+<!-- The Run button stays in view at the panel's bottom edge while the options above scroll. -->
+<div class="foot">
 	{#if dyn.running}
 		<div class="progress" role="status">
 			<div class="bar" style:width="{pct}%"></div>
@@ -164,7 +167,7 @@
 		{#if dyn.modesBusy}<p class="dim">Modes running</p>{/if}
 	{/if}
 	{#if dyn.error}<p class="err" role="alert">{dyn.error}</p>{/if}
-</section>
+</div>
 
 <svelte:window
 	onkeydown={(e) => {
@@ -176,14 +179,22 @@
 />
 
 <style>
+	/* Above the panel's scroll fade, on the panel's own fill. */
+	.foot {
+		position: sticky;
+		bottom: 0;
+		z-index: 1;
+		margin: -4px 0 0;
+		padding: 8px 0;
+		background: var(--panel);
+	}
 	.run {
 		width: 100%;
 		min-height: 36px;
-		margin-top: 12px;
-		border: 1px solid var(--accent);
+		border: 1px solid var(--accent-fill);
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--paper);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
@@ -201,7 +212,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-		margin-top: 6px;
 		padding: 6px 8px;
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);

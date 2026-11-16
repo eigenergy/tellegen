@@ -45,9 +45,14 @@
 				<!-- A scenario of the validation study: whether this run repeats it as published. -->
 				<div>
 					<dt title="The published PowerSimulationsDynamics.jl run of this scenario">
-						Reference result
+						Matches reference
 					</dt>
-					<dd data-testid="dyn-badge" title={record.badge.detail}>{record.badge.text}</dd>
+					<dd
+						data-testid="dyn-badge"
+						title={record.badge.detail ? `Differs in ${record.badge.detail}` : undefined}
+					>
+						{record.badge.validated ? 'Yes' : 'No'}
+					</dd>
 				</div>
 			{/if}
 		</dl>
