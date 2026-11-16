@@ -14,21 +14,21 @@
 		<span class="end">1.2 pu</span>
 	</div>
 	<div class="row halos">
-		<span class="title">Speed</span>
+		<span class="title">Generator speed</span>
 		<span class="ring"
 			><svg width="18" height="18" aria-hidden="true"
 				><circle cx="9" cy="9" r="4" class="rest" /></svg
-			>Normal</span
+			>Nominal</span
 		>
 		<span class="ring"
 			><svg width="18" height="18" aria-hidden="true"
 				><circle cx="9" cy="9" r={Math.min(8, haloLegendRadius(0.01))} class="under" /></svg
-			>Slow</span
+			>Low</span
 		>
 		<span class="ring"
 			><svg width="18" height="18" aria-hidden="true"
 				><circle cx="9" cy="9" r="8" class="over" /></svg
-			>Fast</span
+			>High</span
 		>
 	</div>
 </aside>
@@ -56,7 +56,7 @@
 		gap: 8px;
 	}
 	.title {
-		width: 52px;
+		width: 104px;
 		color: var(--ink);
 	}
 	.bar {

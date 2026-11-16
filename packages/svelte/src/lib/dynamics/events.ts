@@ -162,7 +162,7 @@ export const fmtCycles = (s: number, f0: number) => {
  * matter of cycles (under 10), seconds after. */
 export function sinceEvent(s: number, f0: number): string {
 	const c = secondsToCycles(s, f0);
-	return c < 10 ? `+${c.toFixed(1)} cyc` : `+${s.toFixed(2)} s`;
+	return c < 10 ? `${c.toFixed(1)} cycles` : `${s.toFixed(2)} s`;
 }
 
 export type BusNames = (bus: number) => string | null | undefined;

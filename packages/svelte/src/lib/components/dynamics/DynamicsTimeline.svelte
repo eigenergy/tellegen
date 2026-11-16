@@ -107,7 +107,7 @@
 			<!-- Fixed width, the event on its own line: the scrubber beside it
 			     must not move as the readout grows. -->
 			<output class="time" data-testid="dyn-time"
-				><span>t = {player.t.toFixed(3)} s</span>{#if after}<span class="dim"
+				><span>Time {player.t.toFixed(3)} s</span>{#if after}<span class="dim"
 						>{after.since} after {after.what}</span
 					>{/if}</output
 			>

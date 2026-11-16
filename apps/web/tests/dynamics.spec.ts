@@ -202,7 +202,7 @@ test('reduced motion parks the playhead instead of playing', async ({ page }) =>
 		timeout: 120_000
 	});
 	await expect(page.getByTestId('dyn-play')).toHaveAttribute('aria-label', 'Play');
-	await expect(page.getByTestId('dyn-time')).toContainText('t = 1.017 s');
+	await expect(page.getByTestId('dyn-time')).toContainText('Time 1.017 s');
 });
 
 test('on a phone the timeline stays above the drawer', async ({ page }) => {

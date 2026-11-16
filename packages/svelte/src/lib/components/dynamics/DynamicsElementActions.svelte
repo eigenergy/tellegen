@@ -69,10 +69,8 @@
 				<button class="action" onclick={() => add(busFault(bus, f0))}>Apply a fault here</button>
 				{#if hasLoad}
 					<div class="row">
-						<button class="action" onclick={() => add(loadStep(bus, loadPct))}
-							>Change load {loadPct >= 0 ? '+' : ''}{loadPct}%</button
-						>
-						<label
+						<button class="action" onclick={() => add(loadStep(bus, loadPct))}>Change load</button>
+						<label class="pct"
 							><span class="sr-only">Load step in percent</span><input
 								type="number"
 								min="-100"
@@ -84,12 +82,12 @@
 					</div>
 				{/if}
 				{#if units.length || held.length}
-					<h5>Units</h5>
+					<h5>Generators</h5>
 					<ul class="units">
 						{#each units as g (g.machine_id)}
 							<li>
 								<span class="mono"
-									>Unit {g.bus}
+									>Generator {g.bus}
 									{g.machine_id.trim()}
 									<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
 								>
@@ -99,7 +97,7 @@
 						{#each held as k (k)}
 							<li>
 								<span class="mono"
-									>Unit {k.replace('#', ' ')}
+									>Generator {k.replace('#', ' ')}
 									<span class="dim">{inspection?.plants?.includes(k) ? 'Renewable' : 'Fixed'}</span
 									></span
 								>
@@ -204,6 +202,21 @@
 	}
 	.row input {
 		width: 4.5em;
+		height: 36px;
+		box-sizing: border-box;
+		font: inherit;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+	.pct {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.row .action {
+		flex-direction: row;
+		align-items: center;
+		height: 36px;
 	}
 	.units {
 		list-style: none;
@@ -223,8 +236,7 @@
 		flex-direction: column;
 	}
 	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--fs-data);
+		font-variant-numeric: tabular-nums;
 	}
 	.dim {
 		color: var(--text-tertiary);
@@ -242,6 +254,10 @@
 		.action,
 		.units button {
 			min-height: 44px;
+		}
+		.row .action,
+		.row input {
+			height: 44px;
 		}
 	}
 	.sr-only {

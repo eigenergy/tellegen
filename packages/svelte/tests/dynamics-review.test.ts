@@ -80,8 +80,8 @@ describe('trace axes', () => {
 
 describe('playback readout', () => {
 	it('counts cycles near an event and seconds after', () => {
-		expect(sinceEvent(0.05, 60)).toBe('+3.0 cyc');
-		expect(sinceEvent(1.9, 60)).toBe('+1.90 s');
+		expect(sinceEvent(0.05, 60)).toBe('3.0 cycles');
+		expect(sinceEvent(1.9, 60)).toBe('1.90 s');
 	});
 });
 

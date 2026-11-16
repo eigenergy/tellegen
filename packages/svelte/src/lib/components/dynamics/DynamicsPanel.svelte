@@ -170,7 +170,7 @@
 				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
 				{#if experimental && local?.studyInputJson}
 					<div class="setting">
-						<label for="dyn-preset">Default dynamics</label>
+						<label for="dyn-preset">Generator type</label>
 						<span class="inline">
 							<select id="dyn-preset" bind:value={preset}>
 								<option value="steam_wscc_192">Steam</option>
@@ -179,11 +179,11 @@
 								<option value="steam_kundur_555">Steam, large</option>
 							</select>
 							<button class="secondary" disabled={dynamizeBusy} onclick={dynamize}
-								>{dynamizeBusy ? 'Adding…' : 'Add'}</button
+								>{dynamizeBusy ? 'Adding…' : 'Add dynamic data'}</button
 							>
 						</span>
 					</div>
-					{#if dynamizeError}<p class="err" title={dynamizeError}>Default dynamics failed</p>{/if}
+					{#if dynamizeError}<p class="err" title={dynamizeError}>Dynamic data failed to build</p>{/if}
 				{/if}
 			</section>
 		{:else}

@@ -672,11 +672,9 @@ export class DynamicsController {
 		const esc = (x: string) => x.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 		if (info.layer?.id === 'dyn-bus-v' && info.index >= 0) {
 			const v = f.vNow[info.index];
-			const when = this.atRest
-				? 'at rest, before any event'
-				: `at t = ${this.player.t.toFixed(3)} s`;
+			const when = this.atRest ? 'Before any event' : `Time ${this.player.t.toFixed(3)} s`;
 			return {
-				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu ${when}`
+				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu<br>${when}`
 			};
 		}
 		if (info.layer?.id === 'dyn-halos' && info.index >= 0) {
@@ -684,11 +682,11 @@ export class DynamicsController {
 			const df = f.haloDf[info.index];
 			const units = h.units
 				.map((u) =>
-					u.held ? `${esc(u.key)}: held at power-flow output, not simulated` : esc(u.key)
+					u.held ? `${esc(u.key)}: not simulated` : esc(u.key)
 				)
 				.join('<br>');
 			return {
-				html: `<b>Units at bus ${h.bus}</b><br>${units}${Number.isFinite(df) ? `<br>largest speed deviation ${(df * 1000).toFixed(1)} mHz` : ''}`
+				html: `<b>Generators at bus ${h.bus}</b><br>${units}${Number.isFinite(df) ? `<br>Largest speed change ${(df * 1000).toFixed(1)} mHz` : ''}`
 			};
 		}
 		if (
