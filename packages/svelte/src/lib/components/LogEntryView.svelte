@@ -16,6 +16,7 @@
 	const count = $derived('count' in entry ? entry.count : 1);
 	const buses = $derived(entry.buses ?? []);
 	const title = $derived(logTitle(entry.message));
+	let open = $state(false);
 	const details = $derived(
 		Object.entries(entry.details ?? {}).map(
 			([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)] as const
@@ -40,11 +41,19 @@
 <div class="entry" data-severity={entry.severity} data-testid="log-entry">
 	<span class="severity">{LABEL[entry.severity]}</span>
 	<div class="body">
-		<p class="message" title={entry.message}>
-			{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
-					>{count} times</span
+		<div class="line">
+			<p class="message" title={entry.message}>
+				{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
+						>{count} times</span
+					>{/if}
+			</p>
+			{#if rows.length}<button
+					type="button"
+					class="toggle"
+					aria-expanded={open}
+					onclick={() => (open = !open)}>Details</button
 				>{/if}
-		</p>
+		</div>
 		{#if buses.length}
 			<p class="buses">
 				<span class="label">{buses.length === 1 ? 'Bus' : 'Buses'}</span>
@@ -57,17 +66,15 @@
 			</p>
 		{/if}
 		{#if rows.length}
-			<details>
-				<summary>Details</summary>
-				<dl class="details">
-					{#each rows as [key, value] (key)}
-						<div>
-							<dt>{key}</dt>
-							<dd>{value}</dd>
-						</div>
-					{/each}
-				</dl>
-			</details>
+			<!-- Kept in the page while closed, so copying or searching the Log finds the full text. -->
+			<dl class="details" hidden={!open}>
+				{#each rows as [key, value] (key)}
+					<div>
+						<dt>{key}</dt>
+						<dd>{value}</dd>
+					</div>
+				{/each}
+			</dl>
 		{/if}
 	</div>
 </div>
@@ -100,7 +107,30 @@
 	p {
 		margin: 0;
 	}
+	.line {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+	}
+	.toggle {
+		flex: none;
+		margin-left: auto;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: var(--text-accent);
+		cursor: pointer;
+	}
+	.toggle:hover {
+		text-decoration: underline;
+	}
+	.toggle:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
 	.message {
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -150,22 +180,17 @@
 	.buses button:hover {
 		background: var(--accent-soft);
 	}
-	.buses button:focus-visible,
-	summary:focus-visible {
+	.buses button:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
-	}
-	details {
-		margin-top: 4px;
-	}
-	summary {
-		cursor: pointer;
-		color: var(--text-secondary);
 	}
 	.details {
 		display: grid;
 		gap: 2px;
 		margin: 4px 0 0;
 		color: var(--text-secondary);
+	}
+	.details[hidden] {
+		display: none;
 	}
 </style>
