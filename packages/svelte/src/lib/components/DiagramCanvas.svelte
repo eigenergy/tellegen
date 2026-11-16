@@ -372,7 +372,8 @@
 							class:hidden={!labels.has(bus.id)}
 							x={bus.lon + 10 / scale}
 							y={bus.lat - 10 / scale}
-							font-size={11 / scale}>{bus.name || bus.id}</text
+							font-size={11 / scale}
+							stroke-width={3 / scale}>{bus.name || bus.id}</text
 						>
 						<title
 							>Bus {multiconductor ? bus.uid : bus.id}{!multiconductor && bus.name
@@ -396,21 +397,33 @@
 		</svg>
 	</div>
 	{#if !buses.length}<p class="empty">No positions</p>{/if}
-	<div class="controls" aria-label="Diagram controls">
+	<div
+		class="controls"
+		aria-label="Diagram controls"
+		style:bottom="{panels.compact && app.sheetInset ? app.sheetInset + 8 : 12}px"
+	>
 		{#if onsingleline}
-			<button onclick={onsingleline} aria-label="Single-line diagram"
+			<button class="text" onclick={onsingleline} aria-label="Single-line diagram"
 				><span class="full">Single-line diagram</span><span class="short">Diagram</span></button
 			>
 		{/if}
-		<button onclick={() => fit()} title="Fit diagram (F)">Fit diagram</button>
+		<!-- One group of icon buttons, like the map's zoom control. -->
 		<div class="zoom">
-			<button aria-label="Zoom in" onclick={() => zoom(1.25)}>+</button><button
-				aria-label="Zoom out"
-				onclick={() => zoom(0.8)}>-</button
+			<button aria-label="Zoom in" title="Zoom in" onclick={() => zoom(1.25)}
+				><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+					><path d="M8 3v10M3 8h10" /></svg
+				></button
+			><button aria-label="Zoom out" title="Zoom out" onclick={() => zoom(0.8)}
+				><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+					><path d="M3 8h10" /></svg
+				></button
+			><button aria-label="Fit diagram" title="Fit diagram (F)" onclick={() => fit()}
+				><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+					><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg
+				></button
 			>
 		</div>
 	</div>
-	<p class="coordinate-label">Diagram coordinates</p>
 </div>
 
 <style>
@@ -461,9 +474,13 @@
 		outline: none;
 		stroke: var(--accent);
 	}
+	/* A halo in the page colour keeps a name readable where it crosses a bubble. */
 	text {
 		fill: var(--text-secondary);
-		font-family: var(--font-mono);
+		font-family: var(--font-display);
+		paint-order: stroke;
+		stroke: var(--bg);
+		stroke-linejoin: round;
 		pointer-events: none;
 	}
 	.controls .short {
@@ -486,9 +503,6 @@
 		align-items: flex-end;
 	}
 	button {
-		padding: 6px 10px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-control);
 		color: var(--ink);
 		background: var(--paper);
 		font: 12px/1.5 var(--font-display);
@@ -498,21 +512,48 @@
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
+	button.text {
+		padding: 6px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+	}
 	.zoom {
 		display: grid;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-control);
+		background: var(--panel);
+		overflow: hidden;
 	}
 	.zoom button {
-		width: 32px;
-		height: 30px;
-		font: 18px/1 var(--font-display);
+		display: grid;
+		place-items: center;
+		width: 29px;
+		height: 29px;
+		padding: 0;
+		border: 0;
+		background: var(--panel);
 	}
-	.coordinate-label {
-		position: absolute;
-		bottom: 44px;
-		left: 20px;
-		margin: 0;
-		font: 12px/1.4 var(--font-mono);
-		color: var(--text-secondary);
+	.zoom button + button {
+		border-top: 1px solid var(--line);
+	}
+	.zoom button:hover {
+		background: var(--surface-hover);
+	}
+	.zoom button:focus-visible {
+		outline-offset: -2px;
+	}
+	.zoom svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	@media (pointer: coarse) {
+		.zoom button {
+			width: 44px;
+			height: 44px;
+		}
 	}
 	.empty {
 		position: absolute;

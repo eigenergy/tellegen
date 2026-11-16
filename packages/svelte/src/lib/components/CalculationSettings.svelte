@@ -22,7 +22,7 @@
 
 	/** Plain names for enum choices; null is the case's own choice. */
 	const CHOICES: Record<string, string> = {
-		flat: 'Flat (1 pu)',
+		flat: 'Flat',
 		case: 'From case',
 		all: 'All lines',
 		rated: 'Rated lines',

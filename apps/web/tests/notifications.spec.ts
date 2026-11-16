@@ -29,10 +29,11 @@ test('temporary errors group repeats, pause during interaction, and retain full 
 	await expect(toast).toContainText('Rate limited');
 	await page.setViewportSize({ width: 390, height: 844 });
 	const box = await toast.boundingBox();
-	const zoom = await page.getByRole('button', { name: 'Zoom in', exact: true }).boundingBox();
+	// Above the map's credit, which sits above the open sheet (the zoom buttons step aside).
+	const credit = await page.locator('.maplibregl-ctrl-attrib').boundingBox();
 	expect(box).not.toBeNull();
-	expect(zoom).not.toBeNull();
-	expect(box!.y + box!.height).toBeLessThan(zoom!.y);
+	expect(credit).not.toBeNull();
+	expect(box!.y + box!.height).toBeLessThan(credit!.y);
 	await page.screenshot({ path: testInfo.outputPath('notification-mobile.png') });
 	await page
 		.getByRole('region', { name: 'Notifications' })
