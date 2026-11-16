@@ -129,7 +129,6 @@
 
 		{#if app.studyView}
 			<SavedNetworkDetails />
-			<SolveCard embedded />
 		{:else}
 			{#if app.parsingFile}
 				<p class="dim blink">Parsing&hellip;</p>

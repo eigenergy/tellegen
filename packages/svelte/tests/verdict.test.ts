@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   costPerHour,
+  flowSummary,
   duration,
   iterationCount,
   resultStats,
@@ -122,14 +123,34 @@ describe("solveVerdict", () => {
 });
 
 describe("savedVerdict", () => {
-  it("reads a saved result as a status", () => {
-    expect(savedVerdict({ status: "optimal" })).toEqual({
-      text: "Saved, optimal",
-      tone: "ok",
+  it("says nothing of a clean saved result and names any other status", () => {
+    expect(savedVerdict({ status: "optimal" })).toBeNull();
+    expect(savedVerdict({ status: "infeasible" })).toEqual({
+      text: "Infeasible",
+      tone: "warning",
     });
     expect(savedVerdict({ status: null })).toEqual({
-      text: "No result",
+      text: "Not solved",
       tone: "pending",
+    });
+  });
+});
+
+describe("flowSummary", () => {
+  it("reads the voltage range, heaviest line and losses", () => {
+    expect(
+      flowSummary(
+        [{ value: 0.98 }, { value: 1.04 }],
+        [
+          { loading: 0.5, from: 10, to: -9.5 },
+          { loading: 0.9, from: 5, to: -4.75 },
+        ],
+      ),
+    ).toEqual({ voltage: { min: 0.98, max: 1.04 }, maxLoading: 0.9, losses: 0.75 });
+    expect(flowSummary(undefined, [{ loading: 0.2, from: 3 }])).toEqual({
+      voltage: null,
+      maxLoading: 0.2,
+      losses: null,
     });
   });
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
-	import { resultStats } from '../diagram/verdict.js';
+	import { flowSummary, resultStats } from '../diagram/verdict.js';
 	import StatBoxes from './StatBoxes.svelte';
 	import BindingLines from './BindingLines.svelte';
 
@@ -12,32 +12,16 @@
 		const c = ctrl.activeSolvable;
 		if (!network || !c) return [];
 		const solution = c.solution;
-		let voltage: { min: number; max: number } | null = null;
-		if (solution?.vm?.length) {
-			let min = Infinity;
-			let max = -Infinity;
-			for (const { value } of solution.vm) {
-				min = Math.min(min, value);
-				max = Math.max(max, value);
-			}
-			voltage = { min, max };
-		}
-		let maxLoading: number | null = null;
-		// Each branch loses what enters at one end and does not leave at the other.
-		let losses: number | null = null;
-		for (const flow of solution?.flows ?? []) {
-			if (Number.isFinite(flow.loading)) maxLoading = Math.max(maxLoading ?? 0, flow.loading);
-			if (flow.pt != null && Number.isFinite(flow.mw + flow.pt))
-				losses = (losses ?? 0) + flow.mw + flow.pt;
-		}
+		const summary = flowSummary(
+			solution?.vm,
+			solution?.flows?.map((f) => ({ loading: f.loading, from: f.mw, to: f.pt }))
+		);
 		return resultStats({
 			formulation: ctrl.activeFormulation,
 			solving: c.solving,
 			objective: network.objective,
 			binding: network.binding,
-			voltage,
-			maxLoading,
-			losses
+			...summary
 		});
 	});
 </script>

@@ -109,7 +109,7 @@
 					{/key}
 				{/if}
 				<dl>
-					{#if calculation && (saved || !embedded)}
+					{#if calculation && !embedded}
 						<div>
 							<dt>Calculation</dt>
 							<dd>{formulationLabel(attempted ?? calculation)}</dd>
@@ -144,7 +144,7 @@
 							<dd>{active.solveDetail}</dd>
 						</div>
 					{/if}
-					{#if saved}
+					{#if saved && !embedded}
 						<div>
 							<dt>Saved state</dt>
 							<dd>{saved.label}</dd>

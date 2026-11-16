@@ -108,13 +108,42 @@ export function solveVerdict(input: SolveVerdictInput): Verdict | null {
     : null;
 }
 
-/** A saved study's result status. */
-export function savedVerdict(input: { status?: string | null }): Verdict {
-  if (!input.status) return { text: "No result", tone: "pending" };
-  return {
-    text: `Saved, ${statusWords(input.status).toLowerCase()}`,
-    tone: cleanStatus(input.status) ? "ok" : "warning",
-  };
+/** A saved state's result status, as for a live result: null when the result is clean (its
+ * numbers say the rest), else one or two words. */
+export function savedVerdict(input: { status?: string | null }): Verdict | null {
+  if (!input.status) return { text: "Not solved", tone: "pending" };
+  return cleanStatus(input.status)
+    ? null
+    : { text: statusWords(input.status), tone: "warning" };
+}
+
+/** The voltage range, heaviest line and branch losses of a result, for {@link resultStats}.
+ * A flow's `from` and `to` are the active power entering at each end (MW); `to` is absent in
+ * results without it, which leave losses unknown. */
+export function flowSummary(
+  vm: readonly { value: number }[] | null | undefined,
+  flows: readonly { loading: number; from: number; to?: number | null }[] | null | undefined,
+): Pick<ResultStatsInput, "voltage" | "maxLoading" | "losses"> {
+  let voltage: { min: number; max: number } | null = null;
+  if (vm?.length) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const { value } of vm) {
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+    voltage = { min, max };
+  }
+  let maxLoading: number | null = null;
+  // Each branch loses what enters at one end and does not leave at the other.
+  let losses: number | null = null;
+  for (const flow of flows ?? []) {
+    if (Number.isFinite(flow.loading))
+      maxLoading = Math.max(maxLoading ?? 0, flow.loading);
+    if (flow.to != null && Number.isFinite(flow.from + flow.to))
+      losses = (losses ?? 0) + flow.from + flow.to;
+  }
+  return { voltage, maxLoading, losses };
 }
 
 /** Dollars per hour, the unit of MATPOWER generator costs: whole dollars from $100 up. */
