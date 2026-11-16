@@ -46,16 +46,12 @@
 </script>
 
 {#if bindingLines.length > 0}
-	<section class="binding-lines" aria-labelledby="binding-lines-title">
-		<h3 id="binding-lines-title">
-			<span>{ctrl.bindingRule?.label}</span>
-			<span class="count">{bindingLines.length.toLocaleString('en-US')}</span>
-		</h3>
+	<section class="binding-lines" aria-label={ctrl.bindingRule?.label}>
 		<ul>
 			{#each shown as { branch, loading } (branch.id)}
 				<li>
 					<button
-						class:selected={branch.id === app.selectedBranch}
+						class={{ selected: branch.id === app.selectedBranch }}
 						aria-current={branch.id === app.selectedBranch ? 'true' : undefined}
 						onclick={() => select(branch.id)}
 					>
@@ -81,22 +77,6 @@
 	/* Under the stat boxes, at the panel's own edge, like the rows below it. */
 	.binding-lines {
 		margin: 0 0 var(--space-lg);
-	}
-
-	h3 {
-		display: flex;
-		justify-content: space-between;
-		gap: var(--space-lg);
-		margin: 0 0 var(--space-2xs);
-		font-size: var(--fs-data);
-		font-weight: 600;
-		color: var(--ink);
-	}
-
-	.count {
-		font-weight: 400;
-		color: var(--text-secondary);
-		font-variant-numeric: tabular-nums;
 	}
 
 	/* Rows reach past the text by a few pixels, so a hover or selection has room. */
