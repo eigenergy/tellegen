@@ -49,7 +49,15 @@
 	let loadPct = $state(10);
 	let message = $state<string | null>(null);
 
+	/** The live view runs on this case: an action applies at once. */
+	const live = $derived(dyn.live.active && dyn.live.localId === app.activeLocal?.id);
+
 	function add(e: DynEvent) {
+		if (live) {
+			dyn.live.now(e);
+			message = `Applied at t = ${dyn.live.t.toFixed(2)} s: ${dyn.describe(e).split(' at ')[0].toLowerCase()}`;
+			return;
+		}
 		message = dyn.add(e) ?? `Added ${dyn.describe(e).toLowerCase()}`;
 	}
 </script>
@@ -63,6 +71,7 @@
 			</p>
 		{:else if bus !== null}
 			<h4>Bus {bus}{busName ? ` ${busName}` : ''}</h4>
+			{#if live}<p class="live" data-testid="dyn-live-hint">Live: actions apply now</p>{/if}
 			{#if !hasBus}
 				<p class="dim">Not in simulation</p>
 			{:else}
@@ -112,6 +121,7 @@
 			{/if}
 		{:else if branch}
 			<h4>Line {branch.from}–{branch.to}</h4>
+			{#if live}<p class="live">Live: actions apply now</p>{/if}
 			{#if circuits.length === 0}
 				<p class="dim">Not in simulation</p>
 			{:else}
@@ -164,6 +174,11 @@
 	</section>{/if}
 
 <style>
+	.live {
+		margin: 0;
+		color: var(--text-accent);
+		font-weight: 600;
+	}
 	.dyn-actions {
 		display: grid;
 		gap: 8px;

@@ -24,7 +24,51 @@ export type RmsWorkerOp =
       dyr_text: string;
       request_json: string;
     }
-  | { op: "library" };
+  | { op: "library" }
+  | RmsToolOp;
+
+/** The experimental editing tools and the live session (rms-tools.ts). */
+export type RmsToolOp =
+  | { op: "dyr_parameters"; module_json: string; dyr_text: string }
+  | { op: "dyr_edit"; dyr_text: string; edits_json: string }
+  | {
+      op: "dyr_set_model";
+      dyr_text: string;
+      bus: number;
+      machine_id: string;
+      role: string;
+      model: string;
+    }
+  | {
+      op: "dyr_apply_preset";
+      dyr_text: string;
+      bus: number;
+      machine_id: string;
+      preset: string;
+    }
+  | { op: "unit_presets" }
+  | { op: "model_template"; dyr_text: string; line: number }
+  | { op: "check_graph"; graph_json: string }
+  | {
+      op: "live_new";
+      session: number;
+      module_json: string;
+      dyn_text: string;
+      load_model: string;
+      dt: number;
+      output_step: number;
+    }
+  | { op: "live_record"; session: number; spec_json: string }
+  | { op: "live_step"; session: number; dt: number }
+  | { op: "live_advance"; session: number; seconds: number }
+  | { op: "live_apply"; session: number; event_json: string }
+  | { op: "live_free"; session: number };
+
+/** The value of a `live_advance`: the JSON head and the samples, transferred. */
+export interface RmsLiveSliceValue {
+  meta: string;
+  values: Float64Array;
+}
 
 export type RmsWorkerRequest = RmsWorkerOp & { id: number; wasm_url?: string };
 

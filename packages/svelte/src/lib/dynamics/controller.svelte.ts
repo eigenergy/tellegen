@@ -6,14 +6,17 @@
  * and the ids that tie them together. */
 
 import {
+	dynamicInput,
 	ingestCase,
 	looksLikeDyr,
 	openRmsCase,
 	rmsSupport,
 	type BrowserRmsCase,
+	type ModelOverride,
 	type RmsCaseOptions,
 	type RmsFlatCheck,
 	type RmsInspection,
+	type RmsLinearRequest,
 	type RmsLinearResult,
 	type RmsRun
 } from '@tellegen/engine';
@@ -27,6 +30,8 @@ import {
 	type LayerCtors,
 	type OpenBranch
 } from './layers.js';
+import { LiveView } from './live.svelte.js';
+import { UnitCatalog, unitGlyphLayer, unitSummary, type UnitPopupAt } from './units.svelte.js';
 import { DynamicsPlayer, startTime } from './player.svelte.js';
 import {
 	VALIDATION_DT,
@@ -48,6 +53,8 @@ export interface DynAttachment {
 	demo: boolean;
 	/** Typical parameters from "Add default dynamics", not the owner's. */
 	synthetic: boolean;
+	/** Controller block graphs that replace or add a unit's controller. */
+	models: ModelOverride[];
 	status: DynStatus;
 	/** The prepared case the next run uses: its options and network. The
 	 * inspection and the flat check below describe that case. */
@@ -141,6 +148,13 @@ export class DynamicsController {
 	error = $state<string | null>(null);
 	theme: 'light' | 'dark' = $state('light');
 	readonly player = new DynamicsPlayer();
+	/** Experimental: the active case simulated live. */
+	readonly live = new LiveView();
+	/** Experimental: the active case's units for the unit editor. */
+	readonly catalog = new UnitCatalog();
+	/** Experimental: the unit editor opened from a glyph on the map. */
+	unitPopup: UnitPopupAt | null = $state.raw(null);
+	#textLayer: typeof import('@deck.gl/layers').TextLayer | null = $state.raw(null);
 	layerCtors: LayerCtors | null = $state.raw(null);
 	/** Base URL of the bundled examples. */
 	examplesBase = '/examples';
@@ -202,7 +216,8 @@ export class DynamicsController {
 		fileName: string,
 		text: string,
 		demo = false,
-		synthetic = false
+		synthetic = false,
+		models: ModelOverride[] = []
 	): Promise<void> {
 		if (!local.studyInputJson) throw new Error(`${local.label} has no network to simulate`);
 		this.#free(local.id);
@@ -213,6 +228,7 @@ export class DynamicsController {
 			text,
 			demo,
 			synthetic,
+			models,
 			status: 'opening',
 			inspection: null,
 			network: 'case',
@@ -330,8 +346,27 @@ export class DynamicsController {
 		}
 	}
 
+	/** The dynamic data of `a` as the engine reads it: DYR, with its
+	 * controller graphs when it has any. */
+	dynText(a: DynAttachment): string {
+		return dynamicInput(a.text, a.models);
+	}
+
+	/** Replace the active case's dynamic data (edited parameters or models,
+	 * controller graphs) and prepare it again; the live view ends. */
+	async editDynamics(text: string, models?: ModelOverride[]): Promise<void> {
+		const local = this.app.activeLocal;
+		const a = this.active;
+		if (!local || !a) throw new Error('no dynamic data attached');
+		this.live.stop();
+		await this.attach(local, a.fileName, text, a.demo, a.synthetic, models ?? a.models);
+		const now = this.attachments[local.id];
+		if (now?.status === 'failed') throw new Error(now.error ?? 'the case does not initialize');
+	}
+
 	/** Forget a closed local case: its attachment, runs and worker cases. */
 	forget(localId: string): void {
+		if (this.live.localId === localId) this.live.stop();
 		this.#free(localId);
 		this.#described.delete(localId);
 		if (!(localId in this.attachments) && !this.runs.some((r) => r.localId === localId)) return;
@@ -363,7 +398,7 @@ export class DynamicsController {
 			const module = validationNetwork
 				? this.#validationNetwork()
 				: Promise.resolve(local.studyInputJson!);
-			p = module.then((m) => openRmsCase(m, a.text, this.options));
+			p = module.then((m) => openRmsCase(m, dynamicInput(a.text, a.models), this.options));
 			p.catch(() => this.#cases.delete(key));
 			this.#cases.set(key, p);
 		}
@@ -602,7 +637,8 @@ export class DynamicsController {
 
 	async #loadCtors(): Promise<void> {
 		if (this.layerCtors) return;
-		const { ScatterplotLayer, PathLayer } = await import('@deck.gl/layers');
+		const { ScatterplotLayer, PathLayer, TextLayer } = await import('@deck.gl/layers');
+		this.#textLayer = TextLayer;
 		this.layerCtors = { ScatterplotLayer, PathLayer };
 	}
 
@@ -613,16 +649,19 @@ export class DynamicsController {
 	readonly #shown = $derived.by(() => {
 		const local = this.app.activeLocal;
 		if (!local?.view) return null;
+		if (this.app.mode === 'dynamics' && this.live.run && this.live.localId === local.id)
+			return { record: null, run: this.live.run, local, live: true };
 		const r = this.current;
-		if (r?.run && r.localId === local.id) return { record: r, run: r.run, local };
+		if (r?.run && r.localId === local.id) return { record: r, run: r.run, local, live: false };
 		const a = this.attachments[local.id];
-		if (this.app.mode === 'dynamics' && a?.rest) return { record: null, run: a.rest, local };
+		if (this.app.mode === 'dynamics' && a?.rest)
+			return { record: null, run: a.rest, local, live: false };
 		return null;
 	});
 
 	/** The map shows the case at rest, before any run of it. */
 	get atRest(): boolean {
-		return !!this.#shown && !this.#shown.record;
+		return !!this.#shown && !this.#shown.record && !this.#shown.live;
 	}
 
 	readonly frame: DynamicsFrame | null = $derived.by(() => {
@@ -650,7 +689,8 @@ export class DynamicsController {
 					e.machineId.trim() === '1' ? String(e.bus) : `${e.bus}#${e.machineId.trim()}`,
 					e.at
 				);
-		return f.update(r ? this.player.t : 0, this.theme, tripped);
+		const t = this.#shown?.live ? f.run.time[f.run.time.length - 1] : r ? this.player.t : 0;
+		return f.update(t, this.theme, tripped);
 	});
 
 	readonly mapLayers: Layer[] = $derived.by(() => {
@@ -660,9 +700,28 @@ export class DynamicsController {
 		if (!f || !ctors || !s || this.app.mode !== 'dynamics') return [];
 		const hover = this.app.dynamicsHover;
 		const hoverBus = hover ? Number(hover.key.split('#')[0]) : null;
-		return f.layers(ctors, s.t, this.#shown?.record?.events ?? [], hoverBus, this.theme, (bus) =>
-			this.onBusClick?.(bus)
+		const layers = f.layers(
+			ctors,
+			s.t,
+			this.#shown?.record?.events ?? [],
+			hoverBus,
+			this.theme,
+			(bus, x, y) => {
+				this.onBusClick?.(bus);
+				// Experimental: the bus's actions and units beside it.
+				if (this.app.preferences.experimental && x !== undefined && y !== undefined)
+					this.unitPopup = { bus, machineId: '', x, y, kind: 'bus' };
+			}
 		);
+		// Experimental: a clickable chip per unit opens its editor.
+		const local = this.app.activeLocal;
+		if (this.app.preferences.experimental && this.#textLayer && local?.view && this.catalog.units.length)
+			layers.push(
+				unitGlyphLayer(this.#textLayer, this.catalog.units, local.view.buses, this.theme, (u, x, y) => {
+					this.unitPopup = { bus: u.bus, machineId: u.machine_id.trim(), x, y };
+				})
+			);
+		return layers;
 	});
 
 	tooltip = (info: PickingInfo): { html: string } | null => {
@@ -674,6 +733,12 @@ export class DynamicsController {
 			const when = this.atRest ? 'Before any event' : `Time ${this.player.t.toFixed(3)} s`;
 			return {
 				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu<br>${when}`
+			};
+		}
+		if (info.layer?.id === 'dyn-units' && info.object) {
+			const u = (info.object as { unit: import('@tellegen/engine').DyrGeneratorView }).unit;
+			return {
+				html: `<b>Unit ${u.bus} '${esc(u.machine_id.trim())}'</b><br>${esc(unitSummary(u))}<br>click to edit its models`
 			};
 		}
 		if (info.layer?.id === 'dyn-halos' && info.index >= 0) {
@@ -726,6 +791,16 @@ export class DynamicsController {
 
 	stopModes(): void {
 		this.#modesAbort?.abort();
+	}
+
+	/** A small-signal analysis of the active case's prepared case (the
+	 * frequency responses of `request.bode`). */
+	async linearAnalysis(request: RmsLinearRequest): Promise<RmsLinearResult> {
+		const local = this.app.activeLocal;
+		if (!local || !this.active) throw new Error('no dynamic data attached');
+		if (this.running) throw new Error('A run is in progress.');
+		const c = await this.#case(local, this.#useValidation(local.id));
+		return c.linear(request);
 	}
 
 	/** Dynamic states of the active case's machines and their controls: the

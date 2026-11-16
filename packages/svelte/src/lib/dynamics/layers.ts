@@ -276,7 +276,7 @@ export class DynamicsFrame {
 		events: readonly DynEvent[],
 		hoverBus: number | null,
 		theme: 'light' | 'dark',
-		onBusClick?: (bus: number) => void
+		onBusClick?: (bus: number, x?: number, y?: number) => void
 	): Layer[] {
 		const { ScatterplotLayer, PathLayer } = ctors;
 		const frame = this.frame;
@@ -328,9 +328,9 @@ export class DynamicsFrame {
 				getLineColor: theme === 'dark' ? [10, 20, 31, 220] : [46, 42, 34, 170],
 				lineWidthMinPixels: 1,
 				pickable: true,
-				onClick: (info: { index: number }) => {
+				onClick: (info: { index: number; x: number; y: number }) => {
 					if (info.index < 0) return false;
-					onBusClick?.(this.busIds[info.index]);
+					onBusClick?.(this.busIds[info.index], info.x, info.y);
 					return true;
 				},
 				updateTriggers: { getFillColor: frame }
@@ -351,6 +351,12 @@ export class DynamicsFrame {
 				lineWidthUnits: 'pixels',
 				getLineWidth: 2,
 				pickable: true,
+				// A ring sits over its bus: a click on it is a click on the bus.
+				onClick: (info: { index: number; x: number; y: number }) => {
+					if (info.index < 0) return false;
+					onBusClick?.(this.halos[info.index].bus, info.x, info.y);
+					return true;
+				},
 				updateTriggers: { getRadius: frame, getLineColor: frame }
 			}) as unknown as Layer
 		);

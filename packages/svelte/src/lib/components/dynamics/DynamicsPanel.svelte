@@ -8,6 +8,9 @@
 	import DynamicsRunControls from './DynamicsRunControls.svelte';
 	import DynamicsVerdict from './DynamicsVerdict.svelte';
 	import EigenPlot from './EigenPlot.svelte';
+	import DynamicsBode from './DynamicsBode.svelte';
+	import DynamicsLive from './DynamicsLive.svelte';
+	import DynamicsModels from './DynamicsModels.svelte';
 	import { headline } from '../../dynamics/verdict.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import ModeSwitch from './ModeSwitch.svelte';
@@ -20,7 +23,14 @@
 	const dyn = ctrl.dynamics;
 
 	let open = $state(false);
-	let tab = $state<'run' | 'modes'>('run');
+	type Tab = 'run' | 'live' | 'models' | 'modes';
+	const TABS: [Tab, string][] = [
+		['run', 'Simulation'],
+		['live', 'Live'],
+		['models', 'Models'],
+		['modes', 'Modes']
+	];
+	let tab = $state<Tab>('run');
 	let demoBusy = $state(false);
 	let demoError = $state<string | null>(null);
 	const att = $derived(dyn.active);
@@ -254,24 +264,25 @@
 					role="tablist"
 					aria-label="Dynamics views"
 					tabindex="-1"
-					onkeydown={(e) => onTabKey(e, ['run', 'modes'] as const, tab, (t) => (tab = t))}
+					onkeydown={(e) =>
+						onTabKey(
+							e,
+							TABS.map(([t]) => t),
+							tab,
+							(t) => (tab = t)
+						)}
 				>
-					<button
-						role="tab"
-						id="dyn-tab-run"
-						aria-selected={tab === 'run'}
-						aria-controls="dyn-tabpanel"
-						tabindex={tab === 'run' ? 0 : -1}
-						onclick={() => (tab = 'run')}>Simulation</button
-					>
-					<button
-						role="tab"
-						id="dyn-tab-modes"
-						aria-selected={tab === 'modes'}
-						aria-controls="dyn-tabpanel"
-						tabindex={tab === 'modes' ? 0 : -1}
-						onclick={() => (tab = 'modes')}>Modes</button
-					>
+					{#each TABS as [t, label] (t)}
+						<button
+							role="tab"
+							id={`dyn-tab-${t}`}
+							aria-selected={tab === t}
+							aria-controls="dyn-tabpanel"
+							tabindex={tab === t ? 0 : -1}
+							onclick={() => (tab = t)}
+							>{label}</button
+						>
+					{/each}
 				</div>
 			{/if}
 
@@ -279,13 +290,13 @@
 				class="tabpanel"
 				id="dyn-tabpanel"
 				role={experimental ? 'tabpanel' : undefined}
-				aria-labelledby={experimental
-					? tab === 'modes'
-						? 'dyn-tab-modes'
-						: 'dyn-tab-run'
-					: undefined}
+				aria-labelledby={experimental ? `dyn-tab-${tab}` : undefined}
 			>
-				{#if tab === 'modes' && experimental}
+				{#if tab === 'live' && experimental}
+					<DynamicsLive />
+				{:else if tab === 'models' && experimental}
+					<DynamicsModels />
+				{:else if tab === 'modes' && experimental}
 					<section class="block" aria-label="Small-signal modes" data-testid="dyn-modes">
 						{#if dyn.modes}
 							<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
@@ -312,6 +323,7 @@
 								{dyn.modesError === 'Stopped' ? 'Stopped' : 'Modes failed'}
 							</p>{/if}
 					</section>
+					<DynamicsBode />
 				{:else if att.status === 'ready'}
 					<DynamicsEventList />
 					<DynamicsRunControls />
