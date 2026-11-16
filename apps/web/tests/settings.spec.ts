@@ -220,9 +220,9 @@ test('the DC line model is chosen in one place, shared with WebMCP, and can retu
 		'Default',
 		'Series impedance',
 		'Reactance with taps',
-		'Series impedance, no phase shift',
+		'Reactance only',
 		'Series impedance with taps',
-		'Reactance only'
+		'Series impedance, no phase shift'
 	]);
 	await model.selectOption('reactance_only');
 	await expect
