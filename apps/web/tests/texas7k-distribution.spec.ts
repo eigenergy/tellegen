@@ -139,7 +139,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const reference = JSON.parse(
 		await readFile(
 			new URL(
-				'../../../docs/evidence/studies/texas7k-reconversion/shipping-wasm-validation-2026-11-03.json',
+				'../../../validation/evidence/studies/texas7k-reconversion/shipping-wasm-validation-2026-11-03.json',
 				import.meta.url
 			),
 			'utf8'
@@ -148,7 +148,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const qualification = JSON.parse(
 		await readFile(
 			new URL(
-				'../../../docs/evidence/studies/texas7k-reconversion/production-artifact-comparison-2026-11-07.json',
+				'../../../validation/evidence/studies/texas7k-reconversion/production-artifact-comparison-2026-11-07.json',
 				import.meta.url
 			),
 			'utf8'

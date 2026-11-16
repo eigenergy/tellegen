@@ -82,7 +82,7 @@ python3 scripts/enwl_ivr_study.py \
   --case-root /path/to/BMOPFDraftData/benchmarks/ENWLsnapshots \
   --binary target/release-py/examples/mc_opf_case_probe \
   --output /path/to/study-output
-julia --project=/path/to/BMOPFTools.jl/test scripts/mc_opf_external_oracle.jl \
+julia --project=/path/to/BMOPFTools.jl/test validation/mc-opf/mc_opf_external_oracle.jl \
   /path/to/study-output/cases.json /path/to/study-output
 python3 scripts/enwl_ivr_study.py --output /path/to/study-output --compare
 ```
@@ -110,7 +110,7 @@ For repeated sequential comparisons on the six 538-bus cases:
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
 RAYON_NUM_THREADS=1 JULIA_NUM_THREADS=1 \
 julia --startup-file=no --project=/path/to/BMOPFTools.jl/test \
-  scripts/enwl_ivr_profile.jl /path/to/study-output/cases.json \
+  validation/mc-opf/enwl_ivr_profile.jl /path/to/study-output/cases.json \
   /path/to/target/release-py/examples/mc_opf_case_probe /path/to/profile-output 5
 python3 scripts/enwl_ivr_study.py --output /path/to/profile-output --compare
 ```

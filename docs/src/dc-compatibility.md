@@ -138,7 +138,7 @@ At general operating voltages, let `ρ = vf vt`, `δ = Δθ − φ`, and
 - Taheri and Molzahn, [Optimizing Parameters of the DC Power Flow (2024)](https://arxiv.org/abs/2310.00447).
 
 The reproducible harness in
-[`evals/dc-variants`](https://github.com/eigenergy/tellegen/tree/main/evals/dc-variants)
+[`validation/dc-variants`](https://github.com/eigenergy/tellegen/tree/main/validation/dc-variants)
 pins the Julia environment, identifies built-in versus custom models, checks
 residuals before objectives, records input hashes, and reports AC failures and
 constraint violations. Its small strictly convex congested case is also an

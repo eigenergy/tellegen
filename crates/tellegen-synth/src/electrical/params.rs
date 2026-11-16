@@ -35,7 +35,7 @@ pub struct LineClass {
 /// on 100 MVA, about 0.45 Ω/km, X/R 4.6, 160 MVA; 500 kV: x 0.000155 pu/km,
 /// about 0.39 Ω/km, X/R 17), the survey the class set follows; the 500 kV
 /// reactance sits a little below that median (0.375 Ω/km), calibrated on the
-/// California Test System (docs/evidence/synth/cats/).
+/// California Test System (validation/evidence/synth/cats/).
 pub const LINE_CLASSES: [LineClass; 7] = [
     LineClass {
         kv: 69.0,
@@ -387,7 +387,7 @@ pub const MAX_CIRCUITS_PER_CORRIDOR: u32 = 4;
 /// St. Clair curve reaches 1.0 SIL (Dunlop, Gutman, Marchenko 1979), is a
 /// stability limit for transfer paths, not a voltage control distance: at
 /// 100 km the AC power flow of the country sweep converges inside 0.9–1.1 pu
-/// in 53 of 54 runs, against 49 at 480 km (docs/evidence/synth/).
+/// in 53 of 54 runs, against 49 at 480 km (validation/evidence/synth/).
 pub const VOLTAGE_SUPPORT_KM: f64 = 100.0;
 
 /// Reactive range of a synchronous condenser, MVAr per MW of the load it lies

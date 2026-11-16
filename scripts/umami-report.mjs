@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Pull aggregate usage from Umami Cloud's API into docs/evidence/usage/, so
+// Pull aggregate usage from Umami Cloud's API into validation/evidence/usage/, so
 // what people do with the hosted demo and MapToGrid (which regions they
 // generate, which checks pass, where OpenStreetMap mode is reachable) becomes
 // committed evidence beside the lab sweeps.
@@ -7,9 +7,9 @@
 //   UMAMI_API_KEY=... node scripts/umami-report.mjs [--month YYYY-MM] [--base URL]
 //
 // The key comes from the environment only (an Umami Cloud API key, Pro plan
-// and up; see docs/evidence/usage/README.md). The script reads, never writes,
-// Umami. It writes docs/evidence/usage/<YYYY-MM>.json and refreshes the table
-// between the markers in docs/evidence/usage/README.md. An endpoint that
+// and up; see validation/evidence/usage/README.md). The script reads, never writes,
+// Umami. It writes validation/evidence/usage/<YYYY-MM>.json and refreshes the table
+// between the markers in validation/evidence/usage/README.md. An endpoint that
 // fails is recorded as an error in the JSON rather than stopping the run, so
 // one missing feature does not hide the rest.
 
@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_BASE = 'https://api.umami.is/v1';
-const USAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'evidence', 'usage');
+const USAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'validation', 'evidence', 'usage');
 const README = join(USAGE_DIR, 'README.md');
 const START_MARK = '<!-- usage:start -->';
 const END_MARK = '<!-- usage:end -->';

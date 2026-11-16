@@ -333,7 +333,7 @@ def main():
     hours_in_year = (datetime(year + 1, 1, 1) - datetime(year, 1, 1)).days * 24
 
     ba_total = {}
-    for (state, ba), mwh in by_ba.items():
+    for (_state, ba), mwh in by_ba.items():
         if ba not in NO_BA:
             ba_total[ba] = ba_total.get(ba, 0.0) + mwh
     clean = {ba: plausible(values) for ba, values in hourly.items()}

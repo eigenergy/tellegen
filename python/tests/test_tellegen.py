@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 import tellegen
 
-# docs/evidence/studies/case3.m: a three-bus MATPOWER case already in the repo, small
+# validation/evidence/studies/case3.m: a three-bus MATPOWER case already in the repo, small
 # enough to reason about and congested once demand moves.
 CASE3 = (
-    Path(__file__).resolve().parents[2] / "docs" / "evidence" / "studies" / "case3.m"
+    Path(__file__).resolve().parents[2] / "validation" / "evidence" / "studies" / "case3.m"
 )
 
 

@@ -4,7 +4,7 @@
 //! state's generating capacity mix (EIA-860 nameplate). Bundled as
 //! `data/subnational_demand.json` and `data/subnational_fuel_mix.json`, built
 //! by `scripts/derive-subnational-demand.py` and
-//! `scripts/derive-subnational-fuel-mix.py`; `docs/evidence/synth/subnational-data.md`
+//! `scripts/derive-subnational-fuel-mix.py`; `validation/evidence/synth/subnational-data.md`
 //! summarises them. Places carry the ISO 3166-2 code these tables are keyed
 //! by ([`crate::places::Place::subdivision`]).
 

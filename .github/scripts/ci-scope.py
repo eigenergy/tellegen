@@ -114,6 +114,7 @@ def run(*globs: str) -> tuple[tuple[str, bool], ...]:
 NOT_BUILT = skip(
     ".changeset/**",
     "docs/**",
+    "validation/**",
     "book.toml",
     "python/**",
     "pyproject.toml",
@@ -123,7 +124,10 @@ NOT_BUILT = skip(
     "scripts/derive-*.py",
     "scripts/stage-data.sh",
     ".github/ISSUE_TEMPLATE/**",
+    ".github/CODEOWNERS",
     ".github/dependabot.yml",
+    ".github/scripts/pr-rules.py",
+    ".github/workflows/pr-rules.yml",
     ".github/workflows/deploy.yml",
     ".github/workflows/docs-pages.yml",
     ".github/workflows/package-inspect.yml",
@@ -180,12 +184,19 @@ RUST = Rules(
 # gates-js.yml builds the wasm module and the CLI from crates/, so Rust counts.
 # Nothing builds tellegen-py or benchmarks there, and nothing includes a crate's
 # markdown. The browser tests read fixtures from crates/tellegen/tests/data.
-# `npm run test:evidence` runs docs/evidence/webmcp and scripts/umami-report;
+# `npm run test:evidence` runs validation/evidence/capacity-plan and
+# scripts/umami-report;
 # `npm run wasm:acopf` runs scripts/build-acopf-wasi.sh, which copies licenses/.
 JS = Rules(
     True,
     skip("crates/tellegen-py/src/**", "crates/benchmarks/src/**", "crates/**/*.md"),
-    run("crates/**", "docs/evidence/webmcp/**", "apps/**", "packages/**", "examples/**"),
+    run(
+        "crates/**",
+        "validation/evidence/capacity-plan/**",
+        "apps/**",
+        "packages/**",
+        "examples/**",
+    ),
     NOT_BUILT,
     RELEASE_SCRIPTS,
     skip(
@@ -242,7 +253,7 @@ WHEEL = Rules(
         "Cargo.lock",
         "pyproject.toml",
         "rust-toolchain.toml",
-        "docs/evidence/studies/case3.m",
+        "validation/evidence/studies/case3.m",
         ".github/workflows/gates-python.yml",
         ".github/workflows/release-python.yml",
         "scripts/check-python-sdist.py",
@@ -250,8 +261,9 @@ WHEEL = Rules(
 )
 
 # What the Python job lints, type-checks or tests without changing the wheel.
-# ruff.toml's `include` keeps `ruff check .` to python/, and mypy and pytest read
-# only python/, so a .py file elsewhere (CI and evidence scripts) is not linted.
+# mypy and pytest read only python/. ruff.toml's `include` also names the
+# repository's Python scripts; pr-rules.yml lints those on every pull request,
+# so a script change does not need this job's wheel build.
 PYTHON_LINT = Rules(False, run("python/**", "ruff.toml", "mypy.ini"))
 
 # Mirrors `on.pull_request.paths` in docs-pages.yml: what mdBook and

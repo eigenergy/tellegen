@@ -1,8 +1,7 @@
 # tellegen monorepo task runner — `just` lists recipes, `just ci` runs the gates.
 #
 # The Rust side is a Cargo workspace (crates/*). The JavaScript side is an npm
-# workspace covering packages/engine, packages/svelte, apps/web,
-# examples/browser-minimal, and examples/svelte-minimal. This file is the
+# workspace covering packages/*, apps/web and examples/*. This file is the
 # single place that knows how the pieces fit together across the two languages.
 
 # List recipes.

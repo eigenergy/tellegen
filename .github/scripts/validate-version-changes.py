@@ -9,6 +9,7 @@ import re
 import stat
 import subprocess
 import sys
+from typing import NoReturn
 
 from sync_python_version import (
     ENGINE_MANIFEST,
@@ -19,7 +20,6 @@ from sync_python_version import (
     read_regular,
     replace_manifest_version,
 )
-
 
 PRE_STATE = ".changeset/pre.json"
 CHANGESET = re.compile(r"\.changeset/([A-Za-z0-9_-]+)\.md")

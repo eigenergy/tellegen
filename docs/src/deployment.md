@@ -389,7 +389,7 @@ unchanged. The prepared source and notices are checksum-pinned in
 `scripts/datasets/texas7k-main-island-source.json`.
 
 Reproduce the PowerIO 0.11.7 conversion and extraction using
-`docs/evidence/studies/texas7k-reconversion/README.md`, build the browser engine,
+`validation/evidence/studies/texas7k-reconversion/README.md`, build the browser engine,
 then prepare the hosting data:
 
 ```sh
@@ -438,7 +438,7 @@ The case endpoint negotiates gzip, serving a copy compressed once when the
 server loads the case. Measure the served PowerIO payload, not the
 reduced BMOPF file, when estimating downloads. The current hosted module is
 36.69 MB uncompressed and 1.26 MB gzipped; its BMOPF companion is 13.69 MB and
-1.10 MB respectively. See `docs/evidence/studies/texas7k-reconversion/SHIPPING.md`.
+1.10 MB respectively. See `validation/evidence/studies/texas7k-reconversion/SHIPPING.md`.
 The main island remains a
 large browser workload. Run the opt-in browser check against a server serving
 both the production build and staged data:
@@ -461,4 +461,4 @@ the export/reopen/rerun workflow (checkpoint samples, not exclusive allocation
 or a continuous peak). Those timings were not rerun for the main-island bundle.
 The six-feeder case is intended for desktop evaluation;
 low-memory/mobile operation remains unqualified. See
-`docs/evidence/studies/texas7k-reduction/BROWSER.md` for methodology and limits.
+`validation/evidence/studies/texas7k-reduction/BROWSER.md` for methodology and limits.

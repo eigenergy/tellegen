@@ -1,0 +1,39 @@
+name: PR rules
+
+# The release and size rules of CONTRIBUTING.md, checked by
+# .github/scripts/pr-rules.py, and the lint of the Python scripts. A label
+# lifts a rule, so this runs again when the labels or the title change.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge commit and both of its parents' history, for the merge
+          # base and the pull request's own commits.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test the rules
+        run: python3 .github/scripts/test-pr-rules.py
+      - name: Check the pull request
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          python3 .github/scripts/pr-rules.py \
+            --base HEAD^1 --head HEAD^2 --title "$TITLE" --labels "$LABELS"
+      # The Python gate lints the same files but runs only when the wheel can
+      # change. This takes seconds, so it runs for every pull request.
+      - name: Lint the Python scripts
+        run: pipx run ruff==0.17.5 check --no-fix .

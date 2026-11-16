@@ -7,7 +7,7 @@ import re
 import stat
 import tomllib
 from pathlib import Path
-
+from typing import NoReturn
 
 ENGINE_MANIFEST = Path("crates/tellegen/Cargo.toml")
 PYTHON_MANIFEST = Path("crates/tellegen-py/Cargo.toml")

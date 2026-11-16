@@ -100,7 +100,7 @@ pub const TRANSMISSION_AUTO_MAX_BUSES: u32 = 3_000;
 /// carries 67 GW over 2,000 buses (34 MW per bus) at 115 kV and above, the
 /// Texas7k case about 75 GW over 6,717 buses (11 MW) down to 69 kV, and CATS
 /// 44 GW over 8,870 buses (5 MW) down to 66 kV. The default is calibrated on
-/// CATS (docs/evidence/synth/cats/).
+/// CATS (validation/evidence/synth/cats/).
 pub fn hierarchical_bus_count(density: Density, peak_mw: f64) -> u32 {
     if !(peak_mw.is_finite() && peak_mw > 0.0) {
         return MIN_BUS_COUNT as u32;

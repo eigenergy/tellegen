@@ -4,10 +4,10 @@
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import re
 import shutil
 import tomllib
+from pathlib import Path
 
 FILES = (
     "tellegen_acopf_wasi.wasm",

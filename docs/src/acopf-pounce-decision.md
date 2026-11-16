@@ -484,7 +484,7 @@ cargo build -p tellegen --no-default-features --features mc-opf --locked
 cargo test -p tellegen --no-default-features --features mc-opf --locked
 ```
 
-`bash scripts/check-mc-opf.sh` tests a temporary archive of committed source with
+`bash validation/mc-opf/check-mc-opf.sh` tests a temporary archive of committed source with
 all features, MC OPF alone, and strict all-target Clippy using the locked
 dependencies. Its optional PowerIO checkout argument is for companion development:
 it patches all eight PowerIO crates only in the temporary archive and does not

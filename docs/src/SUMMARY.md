@@ -12,6 +12,7 @@
 - [Python](python.md)
   - [MCP server](mcp.md)
 - [Multiconductor AC power flow](multiconductor-pf.md)
+  - [Reference](multiconductor-reference.md)
 - [Settings](settings.md)
 - [RMS dynamic simulation](rms.md)
   - [Dynamics in the app](dynamics.md)

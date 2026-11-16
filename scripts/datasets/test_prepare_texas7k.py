@@ -2,9 +2,9 @@
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('prepare', Path(__file__).with_name('prepare-texas7k.py'))

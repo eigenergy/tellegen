@@ -11,7 +11,6 @@ from pathlib import Path
 
 import sync_python_version as sync
 
-
 VALIDATOR = Path(__file__).with_name("validate-version-changes.py").resolve()
 SYNC_SCRIPT = Path(sync.__file__).resolve()
 OLD = "0.3.0"

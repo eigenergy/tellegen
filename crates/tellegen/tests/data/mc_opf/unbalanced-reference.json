@@ -79,7 +79,7 @@
             "current_a": 1.0e-5
         },
         "input_sha256": "63b8712a06e6d9867f6a58de160b2744aaa5c0eb5eedc8025b48e4f2ca0e28f8",
-        "generated_by": "scripts/mc_opf_oracle.jl"
+        "generated_by": "validation/mc-opf/mc_opf_oracle.jl"
     },
     "termination_status": "LOCALLY_SOLVED",
     "objective": 0.053888485005030434,

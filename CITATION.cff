@@ -1,5 +1,5 @@
 # Citation metadata read by GitHub's "Cite this repository" button and by
-# Zenodo. Keep `version` and `date-released` in step with the crate release.
+# Zenodo. It names no version: cite the release you used.
 cff-version: 1.2.0
 message: >-
   If you use tellegen in your work, please cite the ACM DXConf 2026 paper
@@ -11,8 +11,6 @@ abstract: >-
   engine, its case parsers and solvers compile to WebAssembly; demand and
   rating edits preview through sensitivities and commit as exact re-solves,
   and case data never leaves the device.
-version: 0.4.0
-date-released: 2026-10-24
 license: MIT
 repository-code: https://github.com/eigenergy/tellegen
 url: https://tellegen.dev
