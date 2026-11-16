@@ -1,21 +1,29 @@
 # Changesets
 
-Pending release notes for `@tellegen/engine`, `@tellegen/svelte`,
-`@tellegen/webmcp` and `@tellegen/analytics`. The `tellegen` crate releases separately through
-release-plz (`release-plz.toml`).
+This folder holds the pending release notes for the npm packages
+(`@tellegen/engine`, `@tellegen/svelte`, `@tellegen/webmcp`,
+`@tellegen/analytics`). The release tool,
+[changesets](https://github.com/changesets/changesets), reads it and requires
+it to be here. The `tellegen` crate releases separately through release-plz
+(`release-plz.toml`).
 
 ## When you need one
 
 A pull request that changes `packages/engine`, `packages/svelte`,
 `packages/webmcp` or `packages/analytics` needs a changeset, or the change
-ships in no package release.
-A pull request that changes only `apps/web`, `examples/`, or the crate does not
-need one.
-
-Use a minor changeset for a new or incompatible public API while a package is
-on a `0.x` version. Use a patch changeset for compatible fixes.
+ships in no package release. A pull request that changes only `apps/web`,
+`examples/` or the crates does not need one.
 
 Run `npm run changeset` and commit the file it writes.
+
+## Which bump
+
+Write `patch`. That covers fixes and additions: a new export, prop or option
+that leaves existing code working is a patch.
+
+A `minor` bump is for a change that breaks existing code, and a maintainer
+decides when one ships. CI fails a pull request whose changeset says `minor` or
+`major` until a maintainer adds the `release:minor` label.
 
 ## Running the version step by hand
 
@@ -29,48 +37,4 @@ export GITHUB_TOKEN="$(gh auth token)"
 ```
 
 Otherwise use a short-lived fine-grained token limited to this repository with
-read-only pull-request access; repository metadata read access is implicit.
-
-## Prereleases
-
-While `.changeset/pre.json` exists, the repository is in Changesets pre mode.
-The 0.4.0 cycle entered pre mode with the `next` tag so that MapToGrid could
-build against `@tellegen/engine` and `@tellegen/svelte` from npm before the
-stable release, and left it before any prerelease was published.
-
-Changesets work as usual in pre mode. The version pull request differs in three
-ways:
-
-- A bumped package gets a prerelease version. A minor changeset on 0.3.0 gives
-  `0.4.0-next.0`, and the next version pull request gives `0.4.0-next.1`.
-- Each consumed changeset moves into `.changeset/pre/` instead of being
-  deleted, so the stable release can still read it. `pre.json` stays as it is.
-- Merging it publishes under the `next` dist-tag, and `latest` stays on the
-  last stable version. The publish plan takes the dist-tag from `pre.json`. It
-  switches a package to `latest` only when every version the package has
-  published is a `next` prerelease. All three packages have stable releases,
-  so this does not apply to them.
-
-To enter pre mode, run the command below and commit the `.changeset/pre.json`
-it writes:
-
-```sh
-npx changeset pre enter next
-```
-
-### Exiting before the stable release
-
-Exit pre mode before 0.4.0 is released:
-
-```sh
-npx changeset pre exit
-```
-
-This sets `"mode": "exit"` in `.changeset/pre.json`; merge that change in its
-own pull request. The next version pull request does three things:
-
-- It versions the packages as stable (0.4.0).
-- It writes their changelog from every changeset in `.changeset/pre/`.
-- It deletes those files and `pre.json`.
-
-Merging it publishes to `latest`.
+read-only pull-request access.
