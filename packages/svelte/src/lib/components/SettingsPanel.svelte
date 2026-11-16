@@ -41,7 +41,7 @@
 	<div class="settings-content" role="region" aria-label="Common settings">
 		<CalculationSettings bind:this={calculation} />
 
-		<h3>Display</h3>
+		<h3>General</h3>
 		<div class="row">
 			<label for="setting-theme">Theme</label>
 			<select
@@ -66,24 +66,6 @@
 			>
 		</div>
 		<div class="row">
-			<label for="setting-coloring">Bus colour</label>
-			<select
-				id="setting-coloring"
-				value={app.preferences.coloring}
-				onchange={(e) => {
-					app.preferences.update({ coloring: e.currentTarget.value });
-					if (ctrl.displayOptions.some((x) => x.mode === e.currentTarget.value))
-						app.displayMode = e.currentTarget.value as typeof app.displayMode;
-				}}
-				><option value="price">Price</option><option value="voltage">Voltage</option><option
-					value="angle">Angle</option
-				><option value="demand">Demand</option></select
-			>
-		</div>
-		{#if app.preferences.error}<p class="error" role="alert">{app.preferences.error}</p>{/if}
-
-		<h3>Experimental</h3>
-		<div class="row">
 			<label for="setting-experimental">Experimental features</label>
 			<input
 				id="setting-experimental"
@@ -95,6 +77,7 @@
 				onchange={(e) => app.preferences.update({ experimental: e.currentTarget.checked })}
 			/>
 		</div>
+		{#if app.preferences.error}<p class="error" role="alert">{app.preferences.error}</p>{/if}
 
 		<div class="footer">
 			<button
@@ -175,6 +158,9 @@
 		outline-offset: 2px;
 	}
 	@media (pointer: coarse) {
+		.settings-content {
+			font-size: 16px;
+		}
 		.row {
 			min-height: 44px;
 		}

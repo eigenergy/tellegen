@@ -17,7 +17,7 @@
 		absolute_kcl_tolerance: 'Current tolerance',
 		relative_kcl_tolerance: 'Relative tolerance',
 		thermal: 'Apply to',
-		lazy: 'Add as needed'
+		lazy: 'Add limits when exceeded'
 	};
 
 	/** Plain names for enum choices; null is the case's own choice. */
@@ -173,13 +173,6 @@
 			? ctrl.acOpfConfigured && !current.perturbed
 			: available && ctrl.formulationAvailable(current, value as Formulation);
 	}
-	/** The calculations the Network panel offers, so the two lists agree. */
-	const offered = $derived(
-		FORMULATIONS.map((f) => ({
-			calculation: f.id,
-			available: catalog.calculations.find((d) => d.calculation === f.id)?.available ?? false
-		}))
-	);
 	function calculationLabel(value: string) {
 		return value === 'mc_ac_pf'
 			? 'Distribution AC power flow'
@@ -290,31 +283,10 @@
 {/snippet}
 
 <div class="calculation-settings" role="region" aria-label="Calculation settings">
-	<h3>Calculation</h3>
 	{#if current && selected}
+		<!-- The calculation is chosen in the Network panel; these are its options, by topic. -->
+		{#if byKey(MODEL).length}<h3>Model</h3>{/if}
 		<fieldset disabled={busy || solving}>
-			<div class="row">
-				<label for="setting-calculation">Type</label>
-				{#if current instanceof MulticonductorCase}
-					<span class="value">{calculationLabel(calculation)}</span>
-				{:else}
-					{@const c = current}
-					<span class="control">
-						{#if calculation === 'acopf'}<span class="pill">Experimental</span>{/if}
-						<select
-							id="setting-calculation"
-							value={calculation}
-							onchange={(e) => void ctrl.chooseCalculation(c, e.currentTarget.value as Formulation)}
-						>
-							{#each offered as d (d.calculation)}
-								<option value={d.calculation} disabled={!canSelect(d.calculation, d.available)}
-									>{calculationLabel(d.calculation)}</option
-								>
-							{/each}
-						</select>
-					</span>
-				{/if}
-			</div>
 			{#each byKey(MODEL) as field (field.key)}{@render control(field)}{/each}
 			{#if bandError}<p class="error" role="alert">{bandError}</p>{/if}
 		</fieldset>
@@ -346,11 +318,7 @@
 					</div>
 				{/if}
 				<div class="row">
-					<label
-						for="setting-lazy"
-						title="Solve without line limits, then add the ones that are exceeded"
-						>Add as needed</label
-					>
+					<label for="setting-lazy">Add limits when exceeded</label>
 					<input
 						id="setting-lazy"
 						type="checkbox"
@@ -462,7 +430,7 @@
 		font-weight: 600;
 		color: var(--text-secondary);
 	}
-	h3:first-child {
+	h3:first-of-type {
 		margin-top: 0;
 	}
 	fieldset {
@@ -492,21 +460,6 @@
 		color: var(--text-secondary);
 		text-align: right;
 		overflow-wrap: anywhere;
-	}
-	.control {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		min-width: 0;
-	}
-	.pill {
-		padding: 1px 6px;
-		border-radius: var(--radius-full);
-		background: var(--accent-soft);
-		color: var(--text-accent);
-		font-size: var(--fs-micro);
-		font-weight: 600;
-		white-space: nowrap;
 	}
 	/* Every control in the right column is one width, so the right edge lines up. The
 	   select keeps the panels' shared chevron: only its colour is set here. */
@@ -603,6 +556,9 @@
 		outline-offset: 2px;
 	}
 	@media (pointer: coarse) {
+		.calculation-settings {
+			font-size: 16px;
+		}
 		.row {
 			min-height: 44px;
 		}

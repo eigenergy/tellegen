@@ -133,13 +133,9 @@ test('an explicit run applies the calculation draft and agent edits retain its o
 	await expect(result).toHaveAttribute('data-calculation', 'acpf', { timeout: 60000 });
 	await openSettings(page);
 	const panel = page.getByRole('region', { name: 'Common settings' });
-	// Settings shows the same calculation as the Network panel, in its Calculation section.
-	const type = panel.getByRole('combobox', { name: 'Type', exact: true });
-	await expect(type).toHaveValue('acpf');
-	// It offers the Network panel's calculations and no other, so the two lists agree.
-	await expect(type.locator('option')).toHaveText(
-		await page.locator('#formulation-select option').allTextContents()
-	);
+	// The Network panel chooses the calculation; Settings shows that calculation's options only.
+	await expect(panel.getByRole('combobox', { name: 'Type', exact: true })).toHaveCount(0);
+	await expect(panel.getByText('Line limits', { exact: true })).toHaveCount(0);
 	// Choosing an option applies it and reruns.
 	await panel.getByRole('combobox', { name: 'Start', exact: true }).selectOption('case');
 	await expect
