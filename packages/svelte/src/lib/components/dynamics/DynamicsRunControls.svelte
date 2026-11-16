@@ -183,10 +183,10 @@
 		font-weight: 600;
 		cursor: pointer;
 	}
-	/* Disabled reads as a quiet control in both themes, not a faded blue one. */
+	/* Disabled is a flat grey fill with no border, unlike any enabled button. */
 	.run:disabled {
-		border-color: var(--line);
-		background: var(--surface-control);
+		border-color: transparent;
+		background: var(--surface-hover);
 		color: var(--text-tertiary);
 		cursor: not-allowed;
 	}

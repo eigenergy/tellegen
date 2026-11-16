@@ -22,6 +22,7 @@ import {
 	details,
 	failureTime,
 	headline,
+	modeGenerators,
 	stats
 } from '../src/lib/dynamics/verdict.js';
 import { groupNotes } from '../src/lib/dynamics/notes.js';
@@ -270,15 +271,28 @@ describe('dynamics verdict wording', () => {
 			'Lowest frequency bus': 'Bus 1431',
 			'Lowest voltage bus': 'Bus 1101',
 			'Voltage recovery time': '0.18 s',
-			'Widest angle pair': 'Units 1431 N and 6533 C',
+			'Widest angle pair': 'Bus 1431 and 6533',
 			Swings: 'Decaying'
 		});
 		expect(d({ initial_separation_deg: 86.1 })['Angle spread before event']).toBe('86.1°');
 		expect(d({ trend: 'undetermined' }).Swings).toBe('Unclear');
 		expect(d({ trend: 'damped_out' }).Swings).toBe('Damped out');
-		expect(d({ pole_slips: [{ unit: '1431#N', t: 2 }] })['Pole slip']).toBe('Unit 1431 N');
+		expect(d({ pole_slips: [{ unit: '1431#N', t: 2 }] })['Pole slip']).toBe('Bus 1431');
 		// No value carries notation or a sentence.
 		for (const row of details(s)) expect(row.value).not.toMatch(/[|δ;]|COI/);
+	});
+
+	it('names the generators in a mode by bus', () => {
+		const parts = [
+			"R7031 'W' xi_Q",
+			"R6333 'W' xi_Q",
+			"R7031 'W' Vt_filt",
+			'bus 12 Vr',
+			'G2439 delta',
+			'G2434 omega'
+		].map((state) => ({ state, factor: 1 }));
+		expect(modeGenerators(parts)).toBe('Bus 7031, 6333, 2439');
+		expect(modeGenerators([{ state: 'bus 12 Vr' }])).toBe('—');
 	});
 
 	it('says nothing is after an event when the run had none', () => {

@@ -72,8 +72,20 @@ export function failureTime(message: string): number | null {
 	return m ? Number(m[1]) : null;
 }
 
-/** A unit as the engine names it (`bus#id`), in plain words. */
-export const unitName = (key: string) => `Unit ${key.replace('#', ' ')}`;
+/** A unit as the engine names it (`bus#id`), by its bus. */
+export const unitName = (key: string) => `Bus ${key.split('#')[0]}`;
+
+/** The generators that take most part in a mode, by bus, from the engine's state
+ * names (`G7031 'W' delta`, `R6333 xi_Q`). Bus voltage states are left out. */
+export function modeGenerators(participation: { state: string }[], max = 3): string {
+	const buses: string[] = [];
+	for (const p of participation) {
+		const bus = /^[GR](\d+)\b/.exec(p.state)?.[1];
+		if (bus && !buses.includes(bus)) buses.push(bus);
+		if (buses.length === max) break;
+	}
+	return buses.length ? `Bus ${buses.join(', ')}` : '—';
+}
 
 const TREND: Record<string, string> = {
 	decaying: 'Decaying',
@@ -164,7 +176,7 @@ export function details(s: RmsScreening, events = 1): DynDetail[] {
 	if (events > 0 && v.recovered_s != null) add('Voltage recovery time', sec(v.recovered_s));
 	add('Final voltage range', `${v.final_min_pu.toFixed(3)} to ${v.final_max_pu.toFixed(3)} pu`);
 	if (a.pair.length === 2)
-		add('Widest angle pair', `Units ${a.pair.map((k) => k.replace('#', ' ')).join(' and ')}`);
+		add('Widest angle pair', `Bus ${a.pair.map((k) => k.split('#')[0]).join(' and ')}`);
 	if (events > 0 && a.initial_separation_deg != null)
 		add('Angle spread before event', deg(a.initial_separation_deg));
 	if (a.trend) add('Swings', TREND[a.trend]);

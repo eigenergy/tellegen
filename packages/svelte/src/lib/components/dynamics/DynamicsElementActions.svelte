@@ -54,118 +54,116 @@
 	}
 </script>
 
-<section class="dyn-actions" aria-label="Dynamics actions">
-	{#if !att}
-		<p class="dim">No dynamic data</p>
-	{:else if att.status !== 'ready'}
-		<p class="dim" title={att.status === 'opening' ? undefined : (att.error ?? undefined)}>
-			{att.status === 'opening' ? 'Opening…' : 'Failed to open'}
-		</p>
-	{:else if bus !== null}
-		<h4>Bus {bus}{busName ? ` ${busName}` : ''}</h4>
-		{#if !hasBus}
-			<p class="dim">Not in simulation</p>
-		{:else}
-			<button class="action" onclick={() => add(busFault(bus, f0))}>Apply a fault here</button>
-			{#if hasLoad}
+{#if bus !== null || branch}<section class="dyn-actions" aria-label="Dynamics actions">
+		{#if !att}
+			<p class="dim">No dynamic data</p>
+		{:else if att.status !== 'ready'}
+			<p class="dim" title={att.status === 'opening' ? undefined : (att.error ?? undefined)}>
+				{att.status === 'opening' ? 'Opening…' : 'Failed to open'}
+			</p>
+		{:else if bus !== null}
+			<h4>Bus {bus}{busName ? ` ${busName}` : ''}</h4>
+			{#if !hasBus}
+				<p class="dim">Not in simulation</p>
+			{:else}
+				<button class="action" onclick={() => add(busFault(bus, f0))}>Apply a fault here</button>
+				{#if hasLoad}
+					<div class="row">
+						<button class="action" onclick={() => add(loadStep(bus, loadPct))}
+							>Change load {loadPct >= 0 ? '+' : ''}{loadPct}%</button
+						>
+						<label
+							><span class="sr-only">Load step in percent</span><input
+								type="number"
+								min="-100"
+								max="100"
+								step="5"
+								bind:value={loadPct}
+							/> %</label
+						>
+					</div>
+				{/if}
+				{#if units.length || held.length}
+					<h5>Units</h5>
+					<ul class="units">
+						{#each units as g (g.machine_id)}
+							<li>
+								<span class="mono"
+									>Unit {g.bus}
+									{g.machine_id.trim()}
+									<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
+								>
+								<button onclick={() => add(generatorTrip(g.bus, g.machine_id.trim()))}>Trip</button>
+							</li>
+						{/each}
+						{#each held as k (k)}
+							<li>
+								<span class="mono"
+									>Unit {k.replace('#', ' ')}
+									<span class="dim">{inspection?.plants?.includes(k) ? 'Renewable' : 'Fixed'}</span
+									></span
+								>
+								<button
+									onclick={() => add(generatorTrip(bus, k.includes('#') ? k.split('#')[1] : '1'))}
+									>Trip</button
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			{/if}
+		{:else if branch}
+			<h4>Line {branch.from}–{branch.to}</h4>
+			{#if circuits.length === 0}
+				<p class="dim">Not in simulation</p>
+			{:else}
+				{#if circuits.length > 1}
+					<fieldset>
+						<legend>Circuit</legend>
+						{#each circuits as c (c)}
+							<label
+								><input
+									type="radio"
+									name="dyn-circuit"
+									value={c}
+									checked={c === chosenCircuit}
+									onchange={() => (circuit = c)}
+								/>
+								{c}</label
+							>
+						{/each}
+					</fieldset>
+				{/if}
+				<button
+					class="action"
+					onclick={() => add(branchTrip(branch.from, branch.to, chosenCircuit ?? '1'))}
+					>Trip circuit {chosenCircuit}</button
+				>
 				<div class="row">
-					<button class="action" onclick={() => add(loadStep(bus, loadPct))}
-						>Change load {loadPct >= 0 ? '+' : ''}{loadPct}%</button
+					<button
+						class="action"
+						onclick={() =>
+							add(
+								lineFault(
+									branch.from,
+									branch.to,
+									chosenCircuit ?? '1',
+									nearEnd === 'from' ? branch.from : branch.to,
+									f0
+								)
+							)}>Fault on this line</button
 					>
 					<label
-						><span class="sr-only">Load step in percent</span><input
-							type="number"
-							min="-100"
-							max="100"
-							step="5"
-							bind:value={loadPct}
-						/> %</label
+						>near <select bind:value={nearEnd}
+							><option value="from">{branch.from}</option><option value="to">{branch.to}</option
+							></select
+						></label
 					>
 				</div>
 			{/if}
-			{#if units.length || held.length}
-				<h5>Units</h5>
-				<ul class="units">
-					{#each units as g (g.machine_id)}
-						<li>
-							<span class="mono"
-								>Unit {g.bus}
-								{g.machine_id.trim()}
-								<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
-							>
-							<button onclick={() => add(generatorTrip(g.bus, g.machine_id.trim()))}>Trip</button>
-						</li>
-					{/each}
-					{#each held as k (k)}
-						<li>
-							<span class="mono"
-								>Unit {k.replace('#', ' ')}
-								<span class="dim">{inspection?.plants?.includes(k) ? 'Renewable' : 'Fixed'}</span
-								></span
-							>
-							<button
-								onclick={() => add(generatorTrip(bus, k.includes('#') ? k.split('#')[1] : '1'))}
-								>Trip</button
-							>
-						</li>
-					{/each}
-				</ul>
-			{/if}
 		{/if}
-	{:else if branch}
-		<h4>Line {branch.from}–{branch.to}</h4>
-		{#if circuits.length === 0}
-			<p class="dim">Not in simulation</p>
-		{:else}
-			{#if circuits.length > 1}
-				<fieldset>
-					<legend>Circuit</legend>
-					{#each circuits as c (c)}
-						<label
-							><input
-								type="radio"
-								name="dyn-circuit"
-								value={c}
-								checked={c === chosenCircuit}
-								onchange={() => (circuit = c)}
-							/>
-							{c}</label
-						>
-					{/each}
-				</fieldset>
-			{/if}
-			<button
-				class="action"
-				onclick={() => add(branchTrip(branch.from, branch.to, chosenCircuit ?? '1'))}
-				>Trip circuit {chosenCircuit}</button
-			>
-			<div class="row">
-				<button
-					class="action"
-					onclick={() =>
-						add(
-							lineFault(
-								branch.from,
-								branch.to,
-								chosenCircuit ?? '1',
-								nearEnd === 'from' ? branch.from : branch.to,
-								f0
-							)
-						)}>Fault on this line</button
-				>
-				<label
-					>near <select bind:value={nearEnd}
-						><option value="from">{branch.from}</option><option value="to">{branch.to}</option
-						></select
-					></label
-				>
-			</div>
-		{/if}
-	{:else}
-		<p class="dim">Select a bus or line</p>
-	{/if}
-	{#if message}<p class="msg" role="status">{message}</p>{/if}
-</section>
+		{#if message}<p class="msg" role="status">{message}</p>{/if}
+	</section>{/if}
 
 <style>
 	.dyn-actions {

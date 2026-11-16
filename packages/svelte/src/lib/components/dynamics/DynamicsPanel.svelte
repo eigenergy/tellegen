@@ -372,10 +372,16 @@
 	.inline select {
 		width: 110px;
 	}
+	/* The case actions share the Run button's width, in equal columns. */
 	.actions {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-auto-columns: minmax(0, 1fr);
+		grid-auto-flow: column;
 		gap: 8px;
+	}
+	.actions .secondary {
+		justify-self: stretch;
+		min-height: 32px;
 	}
 	.run {
 		min-height: 36px;
@@ -386,10 +392,10 @@
 		font: inherit;
 		font-weight: 600;
 	}
-	/* Disabled reads as a quiet control in both themes, not a faded blue one. */
+	/* Disabled is a flat grey fill with no border, unlike any enabled button. */
 	.run:disabled {
-		border-color: var(--line);
-		background: var(--surface-control);
+		border-color: transparent;
+		background: var(--surface-hover);
 		color: var(--text-tertiary);
 		cursor: default;
 	}

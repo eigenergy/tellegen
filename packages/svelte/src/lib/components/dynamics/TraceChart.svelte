@@ -61,7 +61,8 @@
 	let drag = $state<{ x0: number; x1: number } | null>(null);
 	const PAD_L = 44;
 	const PAD_R = 8;
-	const PAD_T = 6;
+	/** Room above the plot for the unit, which heads the y ticks. */
+	const PAD_T = 22;
 	const PAD_B = 18;
 	const plotW = $derived(Math.max(10, width - PAD_L - PAD_R));
 	const plotH = $derived(Math.max(10, height - PAD_T - PAD_B));
@@ -302,7 +303,7 @@
 				>{fmt(v, xTicks[1] - xTicks[0])} s</span
 			>
 		{/each}
-		<span class="unit" style:left="{PAD_L + 6}px" style:top="{PAD_T + 2}px">{unit}</span>
+		<span class="unit">{unit}</span>
 		{#each refLines as r (r.label)}
 			{#if r.value >= yRange[0] && r.value <= yRange[1]}
 				<span class="ref" style:top="{yOf(r.value) - 12}px" style:right="{PAD_R + 2}px"
@@ -371,13 +372,14 @@
 		transform: translateX(-50%);
 		white-space: nowrap;
 	}
-	/* The unit sits inside the plot's top-left corner, clear of the y ticks. */
+	/* The unit heads the y ticks, above the plot. */
 	.unit {
 		position: absolute;
-		padding: 0 3px;
-		border-radius: 2px;
-		background: var(--surface-panel);
+		top: 0;
+		left: 0;
 		color: var(--text-secondary);
+		font-family: var(--font-sans);
+		white-space: nowrap;
 	}
 	.ref {
 		position: absolute;
