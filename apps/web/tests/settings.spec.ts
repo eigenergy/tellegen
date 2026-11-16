@@ -137,7 +137,9 @@ test('an explicit run applies the calculation draft and agent edits retain its o
 	await expect(panel.getByRole('combobox', { name: 'Type', exact: true })).toHaveCount(0);
 	await expect(panel.getByText('Line limits', { exact: true })).toHaveCount(0);
 	// Choosing an option applies it and reruns.
-	await panel.getByRole('combobox', { name: 'Start', exact: true }).selectOption('case');
+	await panel
+		.getByRole('combobox', { name: 'Starting voltages', exact: true })
+		.selectOption('case');
 	await expect
 		.poll(async () => (await tool(page, 'inspect_settings')).data.accepted)
 		.toEqual({ start: 'case' });

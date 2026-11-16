@@ -5,7 +5,7 @@
 	const LABELS: Record<string, string> = {
 		angle_difference: 'Angle limits',
 		branch_susceptance_formula: 'DC line model',
-		start: 'Start',
+		start: 'Starting voltages',
 		voltage_envelope: 'Load envelope',
 		v_low_pu: 'Low voltage',
 		v_min_pu: 'Min voltage',
@@ -17,12 +17,12 @@
 		absolute_kcl_tolerance: 'Current tolerance',
 		relative_kcl_tolerance: 'Relative tolerance',
 		thermal: 'Apply to',
-		lazy: 'Add limits when exceeded'
+		lazy: 'Add line limits as needed'
 	};
 
 	/** Plain names for enum choices; null is the case's own choice. */
 	const CHOICES: Record<string, string> = {
-		flat: 'Flat',
+		flat: 'Flat (1 pu)',
 		case: 'From case',
 		all: 'All lines',
 		rated: 'Rated lines',
@@ -318,7 +318,7 @@
 					</div>
 				{/if}
 				<div class="row">
-					<label for="setting-lazy">Add limits when exceeded</label>
+					<label for="setting-lazy">Add line limits as needed</label>
 					<input
 						id="setting-lazy"
 						type="checkbox"
