@@ -13,6 +13,8 @@ test('a failed case list shows once in the panel and is kept in the Log', async 
 	await expect(panel.getByRole('alert')).toHaveText('Could not load the case list');
 	await expect(panel.getByRole('button', { name: 'Open case file', exact: true })).toBeVisible();
 	await expect(page.getByTestId('notification-toast')).toBeHidden();
+	// The header does not claim there are no cases when the list failed to load.
+	await expect(page.locator('header .case-button')).toHaveText('Open a case');
 	await expect(page.getByRole('button', { name: /^Log, 1 new/ })).toBeVisible();
 	// The map fills the page below the top bar: no band of background at the bottom.
 	const canvas = page.locator('.map canvas').first();

@@ -299,7 +299,7 @@
 				{#if current.perturbed}<span class="edited" title="Edited">Edited</span>{/if}
 			{:else}
 				<span class="case-name"
-					>{ctrl.casesLoaded ? 'Open a case' : ctrl.casesFailed ? 'No cases' : 'Loading…'}</span
+					>{ctrl.casesLoaded || ctrl.casesFailed ? 'Open a case' : 'Loading…'}</span
 				>
 			{/if}
 			<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
@@ -529,7 +529,10 @@
 		gap: 12px;
 		height: 48px;
 		padding: 0 12px 0 16px;
-		background: var(--panel);
+		/* A gradient, not a plain colour: Chromium treats a plain-colour layer as an occluder and
+		   skips the map canvas under it in flipped rows, which blanked the bottom 48 px of a map
+		   that nothing else repaints (the no-case state). */
+		background: linear-gradient(var(--panel), var(--panel));
 		border-bottom: 1px solid var(--line);
 		font-family: var(--font-sans);
 	}
