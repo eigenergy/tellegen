@@ -50,6 +50,7 @@
 			{#if rows.length}<button
 					type="button"
 					class="toggle"
+					aria-label="Details, {title}"
 					aria-expanded={open}
 					onclick={() => (open = !open)}>Details</button
 				>{/if}
