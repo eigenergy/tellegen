@@ -351,7 +351,12 @@
 									</p>
 								{/if}
 								{#if finished(activity) && !activity.response.ok}
-									<p class="error">{activity.response.error.message}</p>
+									<!-- The tool's message is written for the agent: one word here, the message
+									     behind Details. -->
+									<details class="error">
+										<summary>Failed</summary>
+										<p class="raw mono">{activity.response.error.message}</p>
+									</details>
 								{/if}
 								{#if check}
 									<div class="preview-result mono" data-testid="experiment-prediction-check">
@@ -462,8 +467,7 @@
 		padding: 4px 4px 4px 10px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
-		/* A gradient, not a plain colour: headless Chromium blanks a band of map under a plain-colour fixed layer. */
-		background: linear-gradient(var(--panel), var(--panel));
+		background: var(--panel);
 		color: var(--text-secondary);
 		font: var(--fs-label) / 1.4 var(--font-sans);
 	}
@@ -733,6 +737,15 @@
 		color: var(--text-danger);
 		font-size: 12px;
 		line-height: 1.45;
+	}
+	details.error summary {
+		cursor: pointer;
+	}
+	details.error .raw {
+		margin: 4px 0 0;
+		color: var(--text-secondary);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 	@media (max-width: 960px) {
 		.welcome {
