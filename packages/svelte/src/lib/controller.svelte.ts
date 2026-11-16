@@ -326,6 +326,18 @@ export interface OpenBalancedModuleInput {
 	frame?: boolean;
 }
 
+/** A case's name for the header and panels: the name the file gives, unless that is a
+ * description (a PSS/E RAW header line, say), in which case the file name. */
+export function caseLabel(name: string | null | undefined, fileName: string): string {
+	const stem = fileName.replace(/\.[^.]+$/, '');
+	const given = name?.trim();
+	if (!given || given === 'case') return stem;
+	// RAW and RAWX headers hold a free-text line cut at its field width, not a name.
+	if (/\.rawx?$/i.test(fileName)) return stem;
+	if (given.length > 32 || given.split(/\s+/).length > 4) return stem;
+	return given;
+}
+
 export class Controller {
 	app: AppState;
 	/** `null` when the controller was created with `apiBase: null`; every
@@ -2981,9 +2993,7 @@ export class Controller {
 				const label =
 					this.dynamics.attachingDemo && format === 'raw'
 						? DEMO_LABEL
-						: summary.name && summary.name !== 'case'
-							? summary.name
-							: file.name.replace(/\.[^.]+$/, '');
+						: caseLabel(summary.name, file.name);
 				this.logImport(file.name, summary, module_json);
 				const local = new LocalCase({
 					id,
@@ -3225,9 +3235,7 @@ export class Controller {
 			...summary
 		}: Pick<IngestedDistCase, 'graph' | 'input'> & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
-		const label =
-			labelOverride ??
-			(summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, ''));
+		const label = labelOverride ?? caseLabel(summary.name, fileName);
 		const view =
 			coordsKind === 'geographic'
 				? buildGeographicView(graph, payload.geo_layer)
@@ -4017,8 +4025,7 @@ export class Controller {
 	 * it yet; co-dropped placement data is applied before the first solve. */
 	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
 		const { module_json, topology, view, formulation, ...summary } = payload;
-		const label =
-			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+		const label = caseLabel(summary.name, fileName);
 		this.logImport(fileName, summary, module_json);
 		return new LocalCase({
 			id: `local-${++this.localSeq}`,
