@@ -62,11 +62,11 @@
 
 </script>
 
-<section class="bode" aria-label="Frequency response" data-testid="dyn-bode">
+<section class="bode dyn-form" aria-label="Frequency response" data-testid="dyn-bode">
 	<h4>Frequency response <span class="pill-experimental">Experimental</span></h4>
 	<div class="form">
 		<label
-			>From <select bind:value={inputUnit}
+			><span class="cap">From</span><select bind:value={inputUnit}
 				>{#each units as u (unitKey(u))}<option value={unitKey(u)}
 						>{u.bus}{u.id === '1' ? '' : ` '${u.id}'`} · {u.models
 							.filter((m) => m !== 'none')
@@ -75,29 +75,29 @@
 			></label
 		>
 		<label
-			>input <select bind:value={input}
+			><span class="cap">Input</span><select bind:value={input}
 				><option value="v_ref">voltage reference</option><option value="p_ref"
 					>power reference</option
 				></select
 			></label
 		>
 		<label
-			>To <select bind:value={outputUnit}
+			><span class="cap">To</span><select bind:value={outputUnit}
 				>{#each units as u (unitKey(u))}<option value={unitKey(u)}
 						>{u.bus}{u.id === '1' ? '' : ` '${u.id}'`}</option
 					>{/each}</select
 			></label
 		>
 		<label
-			>output <select bind:value={output}
+			><span class="cap">Output</span><select bind:value={output}
 				><option value="vm">terminal voltage</option><option value="omega">speed</option><option
 					value="delta">rotor angle</option
 				><option value="pe">electrical power</option><option value="efd">field voltage</option
 				></select
 			></label
 		>
-		<label>f from <input type="number" min="0.001" step="any" bind:value={fMin} /> Hz</label>
-		<label>to <input type="number" min="0.01" step="any" bind:value={fMax} /> Hz</label>
+		<label><span class="cap">f from [Hz]</span><input type="number" min="0.001" step="any" bind:value={fMin} /></label>
+		<label><span class="cap">to [Hz]</span><input type="number" min="0.01" step="any" bind:value={fMax} /></label>
 		<button disabled={busy || !units.length || dyn.running} onclick={add}
 			>{busy ? 'Computing…' : 'Add response'}</button
 		>
@@ -142,7 +142,8 @@
 <style>
 	.bode {
 		display: grid;
-		gap: 6px;
+		gap: 6px;		grid-template-columns: minmax(0, 1fr);
+		min-width: 0;
 	}
 	h4 {
 		margin: 0;
@@ -159,8 +160,11 @@
 	}
 	.form select,
 	.form input {
-		min-width: 0;
-		font: inherit;
+		width: 100%;
+	}
+	.cap {
+		color: var(--text-secondary);
+		font-size: var(--fs-meta);
 	}
 	.form button {
 		grid-column: 1 / -1;

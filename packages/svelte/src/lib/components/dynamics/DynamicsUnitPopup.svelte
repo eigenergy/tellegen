@@ -54,9 +54,10 @@
 
 {#if at && app.mode === 'dynamics'}
 	<div
-		class="popup"
+		class="popup dyn-form"
 		style:left={`${pos[0]}px`}
 		style:top={`${pos[1]}px`}
+		style:max-height={`calc(100vh - ${pos[1] + 12}px)`}
 		style:width={`${WIDTH}px`}
 		role="dialog"
 		aria-label={`Generator ${at.bus}`}
@@ -143,7 +144,14 @@
 		overflow: auto;
 	}
 	h5 {
-		margin: 8px 0 2px;
+		margin: 10px 0 4px;
+		padding-top: 8px;
+		border-top: 1px solid var(--border-default);
+		color: var(--text-tertiary);
+		font-size: var(--fs-meta);
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
 	}
 	.units {
 		margin: 0;
@@ -154,6 +162,8 @@
 	.units li {
 		display: flex;
 		gap: 8px;
+		align-items: baseline;
+		padding: 2px 0;
 	}
 	.link {
 		border: none;

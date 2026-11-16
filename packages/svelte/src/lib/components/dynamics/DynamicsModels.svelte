@@ -30,7 +30,7 @@
 	});
 </script>
 
-<section class="models" aria-label="Unit models" data-testid="dyn-models">
+<section class="models dyn-form" aria-label="Unit models" data-testid="dyn-models">
 	<p class="dim">
 		Every generating unit with its dynamic models; on the map, click a unit's G, I or S chip. Changes
 		write new dynamic data and initialize the case again.
@@ -67,7 +67,8 @@
 <style>
 	.models {
 		display: grid;
-		gap: 8px;
+		gap: 8px;		grid-template-columns: minmax(0, 1fr);
+		min-width: 0;
 	}
 	p {
 		margin: 0;

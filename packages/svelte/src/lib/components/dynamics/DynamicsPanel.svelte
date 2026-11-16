@@ -161,7 +161,7 @@
 	bind:open
 	onopen={() => (app.mode = 'dynamics')}
 >
-	<div class="dyn settings-list" data-testid="dynamics-panel">
+	<div class="dyn settings-list dyn-form" data-testid="dynamics-panel">
 		<!-- The switch appears once there is a simulation to show. -->
 		{#if dyn.runs.length > 0}<div class="setting">
 				<span>Map shows</span><ModeSwitch />
