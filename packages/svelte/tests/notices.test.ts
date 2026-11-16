@@ -76,6 +76,10 @@ describe("error titles", () => {
       "Unreadable file",
     );
     expect(errorNoticeCanRetry("grid.raw: unsupported format")).toBe(false);
+    // A file that could not be opened opens the same way again: no Retry.
+    expect(
+      errorNoticeCanRetry("thing.json: JSON parse error: unexpected token"),
+    ).toBe(false);
     // A malformed file fails the same way again: no Retry.
     expect(
       errorNoticeCanRetry(

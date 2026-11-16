@@ -130,11 +130,15 @@
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
+	/* Wraps to a second line, so a file name at the end of a note stays readable. */
 	.message {
 		min-width: 0;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 	.count {
 		margin-left: 6px;

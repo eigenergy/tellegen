@@ -97,7 +97,10 @@ const INSTRUCTIONS = [
   /\bPARSE\.[A-Z_.]+|malformed|missing required/i,
 ];
 export function errorNoticeCanRetry(details: string): boolean {
-  return !INSTRUCTIONS.some((pattern) => pattern.test(details));
+  if (INSTRUCTIONS.some((pattern) => pattern.test(details))) return false;
+  // A file that could not be read reads the same way again.
+  const title = errorNoticeTitle(details);
+  return !title.startsWith("Could not open ") && title !== "Unreadable file";
 }
 /** The case or map file a message names, if any. */
 function fileOf(details: string): string | null {

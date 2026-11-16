@@ -5,6 +5,7 @@
 	import { powerIoEntry, type LogEntryInput } from '../log.svelte.js';
 	import { getNoticeCenter, errorNoticeCanRetry, errorNoticeTitle } from '../notices.svelte.js';
 	import LogEntryView from './LogEntryView.svelte';
+	import { DEMO_LABEL } from '../dynamics/controller.svelte.js';
 	const app = getAppState();
 	const ctrl = getController();
 	const notices = getNoticeCenter();
@@ -54,18 +55,22 @@
 		const clean = (note: string) =>
 			/^(\d+) of \1 buses placed from /.test(note) || /; 0 unmatched objects$/.test(note);
 		const count = (n: number, what: string) => `${n} ${what} note${n === 1 ? '' : 's'}`;
+		const problems = entries.filter((entry) => entry.severity !== 'note').length;
 		const geoCount = geo?.length ?? 0;
 		for (const [identity, title, details, items, quiet] of [
 			[
 				summary,
-				count(entries.length, 'import'),
+				`${problems} import ${problems === 1 ? 'warning' : 'warnings'}`,
 				summary
 					? [
 							...summary.diagnostics.map(formatPowerIoDiagnostic),
 							...('warnings' in summary ? summary.warnings : [])
 						].join('\n\n')
 					: '',
-				entries
+				entries,
+				// Notes alone are not a notice: the Log keeps them. The dynamics demo's notes are
+				// counted in the Dynamics panel's Notes row instead.
+				entries.every((entry) => entry.severity === 'note') || local?.label === DEMO_LABEL
 			],
 			[
 				geo,

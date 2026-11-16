@@ -28,6 +28,15 @@
 	const experimental = $derived(app.preferences.experimental && !!dyn.support?.experimental);
 	const local = $derived(app.activeLocal);
 	const current = $derived(dyn.current);
+	/** The engine's notes on the dynamic data and the import's notes on the case, as the Log
+	 * lists them. */
+	const noteCount = $derived(
+		(ins?.notes.length ?? 0) +
+			(local?.summary
+				? local.summary.diagnostics.length +
+					('warnings' in local.summary ? local.summary.warnings.length : 0)
+				: 0)
+	);
 
 	// The panel opens with the mode, and closing it returns the map to steady state.
 	$effect(() => {
@@ -227,11 +236,11 @@
 									: 'No'}{:else if att.flatError}—{:else}Checking…{/if}</span
 						>
 					</div>
-					{#if ins.notes.length}
+					{#if noteCount}
 						<div class="setting">
 							<span>Notes</span>
 							<span class="value"
-								>{ins.notes.length.toLocaleString()}
+								>{noteCount.toLocaleString('en-US')}
 								<button class="link" onclick={() => layout.show('log')}>Show in Log</button></span
 							>
 						</div>
