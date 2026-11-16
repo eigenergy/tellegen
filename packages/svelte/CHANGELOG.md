@@ -1,5 +1,116 @@
 # @tellegen/svelte
 
+## 0.10.0
+
+### Minor Changes
+
+- [#396](https://github.com/eigenergy/tellegen/pull/396) [`403248b`](https://github.com/eigenergy/tellegen/commit/403248b9a6c87af1adc933f76bfd56f0ae7bd4b1) Thanks [@samtalki](https://github.com/samtalki)! - Settings > Model > DC line model chooses how DC calculations model a line, with the earlier model as Default. The choice is kept in saved cases and studies and reported with each result.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`c2597bd`](https://github.com/eigenergy/tellegen/commit/c2597bd3e78319c237b09f61a0db78d842f1b490) Thanks [@samtalki](https://github.com/samtalki)! - Choosing a calculation runs it, the Log tab counts new messages, and on a phone the panel sheet has a handle to resize or close it. New exports: `PanelLayout.show(id)` and an optional `badge` on panels.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`81ed298`](https://github.com/eigenergy/tellegen/commit/81ed2984bb313a90fd9275d2c0be81dec1da72a6) Thanks [@samtalki](https://github.com/samtalki)! - Dynamics is now an experimental feature, off until Settings > Experimental features is turned on. While it is off, `.dyr` files are refused with a short message and agents are not offered `simulate_dynamics`; `AppState.dynamicsEnabled` and `UserPreferences.subscribe` are new.
+
+- [#397](https://github.com/eigenergy/tellegen/pull/397) [`b4eab26`](https://github.com/eigenergy/tellegen/commit/b4eab26807dee1d4a2207ad9b019f40b9cb6e045) Thanks [@samtalki](https://github.com/samtalki)! - Add a Dynamics mode: attach a PSS/E `.dyr` file to a `.raw` case, or open the WECC 240 demo, pick an event and run an RMS simulation. The map plays the run back, with a timeline, traces and a result card.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`2bcc94d`](https://github.com/eigenergy/tellegen/commit/2bcc94dd25bae08764bd98caeb80e6c1bc97d347) Thanks [@samtalki](https://github.com/samtalki)! - Results show as labelled numbers, such as Operational cost and Lines at limit, and Settings is a list of short rows grouped by topic that apply and rerun at once. New export: `StatBoxes`.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`450a0f8`](https://github.com/eigenergy/tellegen/commit/450a0f8ce444d5d6b102ace665be5053c87d3430) Thanks [@samtalki](https://github.com/samtalki)! - New look: cool grey panels, a cobalt accent, red and amber only for line limits, and one case menu in the header in place of the case tabs. The tab strip and left dock form one panel, the solver result shows in the Network panel, and error notices name what failed with the full message under Details.
+
+### Patch Changes
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`d8eabb5`](https://github.com/eigenergy/tellegen/commit/d8eabb5f25a021dc1e9e32dbd5818f00c721882b) Thanks [@samtalki](https://github.com/samtalki)! - AC power flow results show four boxes: losses, max loading, lowest voltage and highest voltage.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`b74af3b`](https://github.com/eigenergy/tellegen/commit/b74af3b2a68b297d1730d1240371aae218fa544e) Thanks [@samtalki](https://github.com/samtalki)! - When the case list fails to load, Details shows the server's status and message.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`723d12e`](https://github.com/eigenergy/tellegen/commit/723d12e0530fb7b0008632f65e8348b1652f2e1d) Thanks [@samtalki](https://github.com/samtalki)! - Only cases you added have a remove button in the case menu.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`a03fcab`](https://github.com/eigenergy/tellegen/commit/a03fcab12efe77033b943c0cc9317a26c8031af7) Thanks [@samtalki](https://github.com/samtalki)! - Coordinates that place every bus no longer raise a notice; the Log keeps the note.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`4ad0d4a`](https://github.com/eigenergy/tellegen/commit/4ad0d4a913be33945cf9612d53bf89576b5b9694) Thanks [@samtalki](https://github.com/samtalki)! - In dark mode, checked boxes and primary buttons use a deeper blue that reads as active. On touch screens only the open panel tab is highlighted.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`089b679`](https://github.com/eigenergy/tellegen/commit/089b67993a979f486e7dbdc85feb15178af2127b) Thanks [@samtalki](https://github.com/samtalki)! - The diagram's Bus values view has a title and Docs link, and its list is named Buses, Lines or Buses and lines. The Dynamics panel keeps its Case row and puts its actions below the rows.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`d1c990d`](https://github.com/eigenergy/tellegen/commit/d1c990dd9bad50c7aaaed9ba037b54619f065ddd) Thanks [@samtalki](https://github.com/samtalki)! - The diagram's Voltage card has a Docs link and a collapse button like the other cards, and loadings read with one decimal everywhere.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`2b96cea`](https://github.com/eigenergy/tellegen/commit/2b96ceabe0fd1918be1d5eb9ec5fe17c6d8b54c7) Thanks [@samtalki](https://github.com/samtalki)! - In the diagram a line at 100% loading has a red label in every view, and the view that follows the map's colours is named Bus values.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`846a094`](https://github.com/eigenergy/tellegen/commit/846a09492574a491fb6d9c0d2185133f9a29bbd0) Thanks [@samtalki](https://github.com/samtalki)! - Loading labels on the diagram spread out instead of covering each other: red at or over the rating, amber near it. Hover cards say Price instead of LMP.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`b4a7d09`](https://github.com/eigenergy/tellegen/commit/b4a7d09115a9d56ab22e417804eb8f2924417be4) Thanks [@samtalki](https://github.com/samtalki)! - In the diagram's line list, lines near their limit are amber. The voltage key names each group by its kV range, and an overload that rounds to 100.0% shows two decimals.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`0b6dd37`](https://github.com/eigenergy/tellegen/commit/0b6dd377372a4137d4061d8ed97b81f385268f49) Thanks [@samtalki](https://github.com/samtalki)! - The Dynamics panel shows the dynamic model as two counts, with the engine's notes in the Log. A local case's save, export and layout actions sit in one File menu.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`8c4cf93`](https://github.com/eigenergy/tellegen/commit/8c4cf930c66ae7982ad50d6197737ff111408f3f) Thanks [@samtalki](https://github.com/samtalki)! - Dynamics Details no longer repeat the result boxes, and the dynamics map legend appears only once a simulation has run.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`2c2d662`](https://github.com/eigenergy/tellegen/commit/2c2d6628cdb4f33cc6b336246e7c76250277b207) Thanks [@samtalki](https://github.com/samtalki)! - The Modes tab shows unstable modes and lowest damping as labelled numbers and plots each mode by damping and frequency.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`16267ff`](https://github.com/eigenergy/tellegen/commit/16267ffe3a1e1fbc9d312d79ae2ea8f886d61dcf) Thanks [@samtalki](https://github.com/samtalki)! - The Dynamics panel lists its data controls before Run simulation, and a result has one Details section.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`f1a78dd`](https://github.com/eigenergy/tellegen/commit/f1a78ddf856b11304c1bc5a96f42e1101540ef34) Thanks [@samtalki](https://github.com/samtalki)! - The dynamics colour key sits in the Network panel instead of over the map, and results use plain names such as Generators in sync.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`57585b0`](https://github.com/eigenergy/tellegen/commit/57585b0dbc9c81a1d6e3abfc0ae158d19c676895) Thanks [@samtalki](https://github.com/samtalki)! - Run simulation stays in view at the bottom of the Dynamics panel. Two dynamics rows have plainer names: Starts settled and Matches reference.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`283801e`](https://github.com/eigenergy/tellegen/commit/283801e275c76ec2a9863218b453c5e647db2e4e) Thanks [@samtalki](https://github.com/samtalki)! - Run simulation waits until an event is chosen, and the Event picker keeps showing the chosen scenario.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`da64381`](https://github.com/eigenergy/tellegen/commit/da64381cf3f823749fb9e57facf686103b4a0820) Thanks [@samtalki](https://github.com/samtalki)! - When a calculation fails, the status line and the notice name it, such as AC power flow failed, while the previous result stays on screen.
+
+- [#390](https://github.com/eigenergy/tellegen/pull/390) [`32f7c3c`](https://github.com/eigenergy/tellegen/commit/32f7c3c5e9b93d8ef883a2e1db7ce6ba96f5cecb) Thanks [@samtalki](https://github.com/samtalki)! - A case opened without edits shows its first result sooner, because the browser no longer solves the base case twice or parses the case text three times.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`0d3a0f6`](https://github.com/eigenergy/tellegen/commit/0d3a0f6d7ca95947f898694451c235eab954939d) Thanks [@samtalki](https://github.com/samtalki)! - With no case loaded the map reaches the bottom of the page, and a failed case list offers Open a case.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`e09cf03`](https://github.com/eigenergy/tellegen/commit/e09cf0383a45830453f76cca168a2eca284b66b3) Thanks [@samtalki](https://github.com/samtalki)! - On a phone the dynamics playback bar sits under the open sheet. AC power flow is unavailable while a line rating is edited.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`b55a82f`](https://github.com/eigenergy/tellegen/commit/b55a82f1b6b27c61051dd113096ad943d406dfc1) Thanks [@samtalki](https://github.com/samtalki)! - Power flow results count Lines over limit and OPF results count Lines at limit, in the panel, map key and diagram. A case without costs shows no cost box, and selected bus and line values carry their units.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`d537bf6`](https://github.com/eigenergy/tellegen/commit/d537bf6db4d2a6c4eefa4807ba100d21c1223b99) Thanks [@samtalki](https://github.com/samtalki)! - The diagram's Limits panel counts lines Near limit, and the line rating slider shows its ends as ticks.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`e766651`](https://github.com/eigenergy/tellegen/commit/e7666518ced96f327280119fd748e98196a050e6) Thanks [@samtalki](https://github.com/samtalki)! - The map draws a line red only at its rating and amber near it, as the diagram does.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`4f6e7d6`](https://github.com/eigenergy/tellegen/commit/4f6e7d61d483ff0afd71058f9d849ba710e9e197) Thanks [@samtalki](https://github.com/samtalki)! - The Network panel lists the lines at their limit once, under the stat box, without a second heading. Stat box numbers are the same size in every panel.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`d87919a`](https://github.com/eigenergy/tellegen/commit/d87919a3566ee73f5bf1415a54841e635279abc6) Thanks [@samtalki](https://github.com/samtalki)! - A uniform price change reads as one labelled value, and on a phone Show diagram sits beside File.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`575e423`](https://github.com/eigenergy/tellegen/commit/575e423c77d41730175631d18280a9daddc1546d) Thanks [@samtalki](https://github.com/samtalki)! - AC power flow results show voltage range and losses, and a dropped case lists buses and lines with the rest under Case details.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`78365f6`](https://github.com/eigenergy/tellegen/commit/78365f6d964a94fd6e8f6f763fd53027bb31f7fb) Thanks [@samtalki](https://github.com/samtalki)! - The Bus values panel can be collapsed, and the solver chart shows its scale from 1 to 10⁻⁹.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`202c9b4`](https://github.com/eigenergy/tellegen/commit/202c9b4b8a29f68846a94685416105d749a19266) Thanks [@samtalki](https://github.com/samtalki)! - A notice's Details open inside the notice, and the Log lists an error by its short title with the raw message under Details.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`b4a7d09`](https://github.com/eigenergy/tellegen/commit/b4a7d09115a9d56ab22e417804eb8f2924417be4) Thanks [@samtalki](https://github.com/samtalki)! - Prices show two decimals everywhere: stat boxes, colour keys, bus readouts and map tooltips.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`30f15da`](https://github.com/eigenergy/tellegen/commit/30f15da4a68c1918729131d3661fe5b32868efd8) Thanks [@samtalki](https://github.com/samtalki)! - The command palette can run each calculation, and Zen mode is now called Hide panels.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`80dbcd6`](https://github.com/eigenergy/tellegen/commit/80dbcd60ffefe731206686c636f7d55ee5e5930c) Thanks [@samtalki](https://github.com/samtalki)! - On a phone the panel sheet runs edge to edge, is only as tall as its content, and leaves the map in full above it.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`b5aec80`](https://github.com/eigenergy/tellegen/commit/b5aec8038d091193f968b38fcb1368938a5fbfa7) Thanks [@samtalki](https://github.com/samtalki)! - Dynamics playback reads Time 1.038 s, and its legend names generator speed.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`9b3dd04`](https://github.com/eigenergy/tellegen/commit/9b3dd0445f57613f724edc3581602be9c5b083d5) Thanks [@samtalki](https://github.com/samtalki)! - A dynamics run shows its results as labelled numbers with pass or fail checks, and the details behind them under Details.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`e78a849`](https://github.com/eigenergy/tellegen/commit/e78a84953ebf53dc80dd440220d176bfe182ca92) Thanks [@samtalki](https://github.com/samtalki)! - Each Log entry is one short line with its full text under Details. The diagram's Limits panel shows only counts that are not zero.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`c00575c`](https://github.com/eigenergy/tellegen/commit/c00575c55ce9e2987f0065a3cd55a51160c97aa1) Thanks [@samtalki](https://github.com/samtalki)! - The diagram cards use the same stat boxes as the Network panel, and a line at or over its limit is red in every view. The SOCWR calculation is now labelled Relaxed AC OPF, and the LMP colour option is named Price.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`19bb95e`](https://github.com/eigenergy/tellegen/commit/19bb95efab383247192cad2d19cf16c816aba9be) Thanks [@samtalki](https://github.com/samtalki)! - The cost box shows only the operational cost, and the bus and line inspectors drop empty rows. Reset demand and Reset rating undo only the selected bus or line.
+
+- [#376](https://github.com/eigenergy/tellegen/pull/376) [`aafc65f`](https://github.com/eigenergy/tellegen/commit/aafc65f4e0c3fbe1d2c10d2a75a92276ae3fc6fb) Thanks [@samtalki](https://github.com/samtalki)! - The engine reads and writes cases with PowerIO 0.12.0, so saved files carry version 0.12.0 and PowerIO 0.11 readers refuse them; files from earlier releases still open. An unrated branch is now saved as an infinite rating, and the multiconductor solvers follow PowerIO 0.12 for inverter power factor signs and type-A regulator taps.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`5c0a03f`](https://github.com/eigenergy/tellegen/commit/5c0a03f0c8c07c4685f2ce94341abe9a5f36d2bf) Thanks [@samtalki](https://github.com/samtalki)! - Each calculation shows its own result boxes, and a long value spans the row instead of being cut off. A case without generator costs shows its max loading instead of a $0 cost.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`a508e37`](https://github.com/eigenergy/tellegen/commit/a508e371985e0c98cedbf25cc7fbda30a8b7d876) Thanks [@samtalki](https://github.com/samtalki)! - Result boxes keep two to a row for long costs, the list of lines at limit has a heading, shows five lines with Show all, and keeps the selected line marked. Price changes too small to matter read 0, buses draw smaller on a phone map, and a file that cannot be opened offers no Retry.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`154dbf0`](https://github.com/eigenergy/tellegen/commit/154dbf0d60edc5e589c73f637ca7e8405a66bb1d) Thanks [@samtalki](https://github.com/samtalki)! - A saved state reads like the live result, with the same Operational cost and Lines at limit boxes. Price, Angle and Voltage are always offered, with the ones the result lacks disabled.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`e78a849`](https://github.com/eigenergy/tellegen/commit/e78a84953ebf53dc80dd440220d176bfe182ca92) Thanks [@samtalki](https://github.com/samtalki)! - A selected bus shows its price, demand and generation, and line colours step from grey to amber at 90% and red at the limit.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`80d6103`](https://github.com/eigenergy/tellegen/commit/80d610324190850d13afe214caf41c9d97318132) Thanks [@samtalki](https://github.com/samtalki)! - Settings use plainer names, such as Starting voltages and DC line model, with one Default entry.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`2b9b41e`](https://github.com/eigenergy/tellegen/commit/2b9b41eb39bcb04e466e60aa9041662e1d5413bd) Thanks [@samtalki](https://github.com/samtalki)! - Notices and progress messages are one short line, such as "DC OPF has no solution" or "12 cases found in 3 files".
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`c843f22`](https://github.com/eigenergy/tellegen/commit/c843f2271e7ac49955cc50e4c05164f969a271f6) Thanks [@samtalki](https://github.com/samtalki)! - On a phone the map credit starts folded to its info button, and Studies buttons share one size.
+- Updated dependencies [[`403248b`](https://github.com/eigenergy/tellegen/commit/403248b9a6c87af1adc933f76bfd56f0ae7bd4b1), [`81ed298`](https://github.com/eigenergy/tellegen/commit/81ed2984bb313a90fd9275d2c0be81dec1da72a6), [`32f7c3c`](https://github.com/eigenergy/tellegen/commit/32f7c3c5e9b93d8ef883a2e1db7ce6ba96f5cecb), [`2bcc94d`](https://github.com/eigenergy/tellegen/commit/2bcc94dd25bae08764bd98caeb80e6c1bc97d347), [`c00575c`](https://github.com/eigenergy/tellegen/commit/c00575c55ce9e2987f0065a3cd55a51160c97aa1), [`aafc65f`](https://github.com/eigenergy/tellegen/commit/aafc65f4e0c3fbe1d2c10d2a75a92276ae3fc6fb), [`106acf2`](https://github.com/eigenergy/tellegen/commit/106acf2e3449c1248f9b98e3f08913cae8038ee4), [`a7e6f57`](https://github.com/eigenergy/tellegen/commit/a7e6f57d28df48a39119f51ec1ee031aeceac352), [`82bba76`](https://github.com/eigenergy/tellegen/commit/82bba764f593e2294ea0a30fb780fa0090ddbbe5), [`a508e37`](https://github.com/eigenergy/tellegen/commit/a508e371985e0c98cedbf25cc7fbda30a8b7d876), [`9db9dac`](https://github.com/eigenergy/tellegen/commit/9db9dac92328c91f56045ce26bd40fdac2046916)]:
+  - @tellegen/engine@0.10.0
+  - @tellegen/webmcp@0.4.0
+
 ## 0.9.0
 
 ### Minor Changes

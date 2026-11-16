@@ -1,5 +1,25 @@
 # @tellegen/engine
 
+## 0.10.0
+
+### Minor Changes
+
+- [#396](https://github.com/eigenergy/tellegen/pull/396) [`403248b`](https://github.com/eigenergy/tellegen/commit/403248b9a6c87af1adc933f76bfd56f0ae7bd4b1) Thanks [@samtalki](https://github.com/samtalki)! - Settings > Model > DC line model chooses how DC calculations model a line, with the earlier model as Default. The choice is kept in saved cases and studies and reported with each result.
+
+- [#376](https://github.com/eigenergy/tellegen/pull/376) [`aafc65f`](https://github.com/eigenergy/tellegen/commit/aafc65f4e0c3fbe1d2c10d2a75a92276ae3fc6fb) Thanks [@samtalki](https://github.com/samtalki)! - The engine reads and writes cases with PowerIO 0.12.0, so saved files carry version 0.12.0 and PowerIO 0.11 readers refuse them; files from earlier releases still open. An unrated branch is now saved as an infinite rating, and the multiconductor solvers follow PowerIO 0.12 for inverter power factor signs and type-A regulator taps.
+
+- [#397](https://github.com/eigenergy/tellegen/pull/397) [`106acf2`](https://github.com/eigenergy/tellegen/commit/106acf2e3449c1248f9b98e3f08913cae8038ee4) Thanks [@samtalki](https://github.com/samtalki)! - Add RMS dynamic simulation in its own worker: `openRmsCase` prepares a case with its `.dyr` data, and `BrowserRmsCase` runs events and returns the traces with a screening verdict. The web module grows by about 0.8 MB before compression.
+
+### Patch Changes
+
+- [#390](https://github.com/eigenergy/tellegen/pull/390) [`32f7c3c`](https://github.com/eigenergy/tellegen/commit/32f7c3c5e9b93d8ef883a2e1db7ce6ba96f5cecb) Thanks [@samtalki](https://github.com/samtalki)! - A case opened without edits shows its first result sooner, because the browser no longer solves the base case twice or parses the case text three times.
+
+- [#400](https://github.com/eigenergy/tellegen/pull/400) [`c00575c`](https://github.com/eigenergy/tellegen/commit/c00575c55ce9e2987f0065a3cd55a51160c97aa1) Thanks [@samtalki](https://github.com/samtalki)! - The diagram cards use the same stat boxes as the Network panel, and a line at or over its limit is red in every view. The SOCWR calculation is now labelled Relaxed AC OPF, and the LMP colour option is named Price.
+
+- [#398](https://github.com/eigenergy/tellegen/pull/398) [`82bba76`](https://github.com/eigenergy/tellegen/commit/82bba764f593e2294ea0a30fb780fa0090ddbbe5) Thanks [@samtalki](https://github.com/samtalki)! - Generated grids convert kilometres to degrees with one scale, 111.195 km per degree from PowerIO's Earth radius, where some steps used 111.0. Place snapping, OSM clipping, cell margins, site offsets and generator areas move slightly, so a generated grid for a given request and seed differs from the one the previous release produced.
+
+- [#391](https://github.com/eigenergy/tellegen/pull/391) [`9db9dac`](https://github.com/eigenergy/tellegen/commit/9db9dac92328c91f56045ce26bd40fdac2046916) Thanks [@samtalki](https://github.com/samtalki)! - The AC power flow solves ZIP and exponential loads at the solved voltage, and its sensitivities include that dependence. SOCWR still refuses such loads.
+
 ## 0.9.1
 
 ### Patch Changes
