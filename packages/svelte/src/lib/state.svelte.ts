@@ -1,123 +1,143 @@
-import type { DcFormula } from '@tellegen/engine';
-import { CaseSettings, UserPreferences, recordedCalculationSettings } from './settings.svelte.js';
-import { DEFAULT_MC_PF_OPTIONS, summarizeMcExcludedIslands } from '@tellegen/engine';
-import type {
-	CaseSummary,
-	DemandDeltas,
-	Network,
-	NetworkBranch,
-	NetworkBus,
-	NetworkSubstation,
-	SensitivityColumn,
-	Solution,
-	SolveIteration
-} from './api.js';
-import { readBusKinds, tapsOf, withoutTaps } from './bus-kinds.js';
+import type { DcFormula } from "@tellegen/engine";
 import {
-	DEFAULT_FORMULATION,
-	type StudyView,
-	type NetworkEquipment,
-	type BranchRatingDeltas,
-	type BrowserMcPfSession,
-	type CaseFileSummary,
-	type DistGraph,
-	type Formulation,
-	type IngestedDistCase,
-	type McPfCallTiming,
-	type McPfResult,
-	type McPfResultTables,
-	type McPfSummary,
-	type McPfOptions,
-	type McLoadBranchState,
-	type McLoadPowerEdit,
-	type McModuleInput,
-	type McStudySnapshot,
-	type SensTarget,
-	type Topology
-} from '@tellegen/engine';
-import type { MultiView } from './multiconductor.js';
-import { DiagnosticLog, errorEntry } from './log.svelte.js';
-import { graphInputs, type GraphInputs } from './diagram/graph-inputs.js';
-import { buildSearchIndex, type SearchIndex } from './diagram/search.js';
-import { snapshotFromMcPf, type ResultSnapshot } from './diagram/snapshot.js';
+  CaseSettings,
+  UserPreferences,
+  recordedCalculationSettings,
+} from "./settings.svelte.js";
+import {
+  DEFAULT_MC_PF_OPTIONS,
+  summarizeMcExcludedIslands,
+} from "@tellegen/engine";
+import type {
+  CaseSummary,
+  DemandDeltas,
+  Network,
+  NetworkBranch,
+  NetworkBus,
+  NetworkSubstation,
+  SensitivityColumn,
+  Solution,
+  SolveIteration,
+} from "./api.js";
+import { readBusKinds, tapsOf, withoutTaps } from "./bus-kinds.js";
+import {
+  DEFAULT_FORMULATION,
+  type StudyView,
+  type NetworkEquipment,
+  type BranchRatingDeltas,
+  type BrowserMcPfSession,
+  type CaseFileSummary,
+  type DistGraph,
+  type Formulation,
+  type IngestedDistCase,
+  type McPfCallTiming,
+  type McPfResult,
+  type McPfResultTables,
+  type McPfSummary,
+  type McPfOptions,
+  type McLoadBranchState,
+  type McLoadPowerEdit,
+  type McModuleInput,
+  type McStudySnapshot,
+  type SensTarget,
+  type Topology,
+} from "@tellegen/engine";
+import type { MultiView } from "./multiconductor.js";
+import { DiagnosticLog, errorEntry } from "./log.svelte.js";
+import { graphInputs, type GraphInputs } from "./diagram/graph-inputs.js";
+import { buildSearchIndex, type SearchIndex } from "./diagram/search.js";
+import { snapshotFromMcPf, type ResultSnapshot } from "./diagram/snapshot.js";
 
 export type SolveBackend =
-	'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'pounce-wasi' | 'rust-server';
+  | "clarabel-wasm"
+  | "clarabel-wasm-server-sensitivity"
+  | "pounce-wasi"
+  | "rust-server";
 /** A map framing request: a case id, 'all', or one branch to center. */
 export type FrameTarget =
-	string | 'all' | { caseId: string; branchId: number } | { caseId: string; busId: number };
+  | string
+  | "all"
+  | { caseId: string; branchId: number }
+  | { caseId: string; busId: number };
 export interface CameraSnapshot {
-	center: [number, number];
-	zoom: number;
-	bearing: number;
-	pitch: number;
+  center: [number, number];
+  zoom: number;
+  bearing: number;
+  pitch: number;
 }
 export interface DiagramCameraSnapshot {
-	caseId: string;
-	center: [number, number];
-	scale: number;
+  caseId: string;
+  center: [number, number];
+  scale: number;
 }
 
-export type DemandRangeMode = 'local' | 'full';
-export type DisplayMode = 'price' | 'angle' | 'voltage' | 'demand';
+export type DemandRangeMode = "local" | "full";
+export type DisplayMode = "price" | "angle" | "voltage" | "demand";
 /** How bus markers are sized on the map: by the larger of demand and generation
  * (`power`), or all at one size (`uniform`) so dense networks keep their lines
  * readable and colour carries the variable. */
-export type BusSizing = 'power' | 'uniform';
+export type BusSizing = "power" | "uniform";
 
 /** The case a removal promoted to active, so the caller can hydrate it: a backend
  * case needs its network/solution loaded, a local needs a browser solve, and
  * `none` means nothing remains (or the removal left the active case untouched). */
 export type FallbackTarget =
-	{ kind: 'backend'; id: string } | { kind: 'local'; id: string } | { kind: 'none' };
+  | { kind: "backend"; id: string }
+  | { kind: "local"; id: string }
+  | { kind: "none" };
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
 export interface LocalSubstations {
-	points: { number: number; name: string; lon: number; lat: number }[];
-	approximate: true;
+  points: { number: number; name: string; lon: number; lat: number }[];
+  approximate: true;
 }
 
-type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'manual' | 'geofile';
+type CoordsKind =
+  "file" | "synthetic_pending" | "synthetic" | "manual" | "geofile";
 type LocalView = {
-	coordinate_space?: 'geographic' | 'diagram';
-	buses: NetworkBus[];
-	branches: NetworkBranch[];
-	substations?: NetworkSubstation[];
-	equipment?: NetworkEquipment;
+  coordinate_space?: "geographic" | "diagram";
+  buses: NetworkBus[];
+  branches: NetworkBranch[];
+  substations?: NetworkSubstation[];
+  equipment?: NetworkEquipment;
 };
 
 /** A case is perturbed when any committed demand or rating delta is nonzero. Shared
  * by both solvable case classes so the "perturbed" rule stays single-sourced. */
 const hasPerturbation = (edits: Record<number, number>): boolean =>
-	Object.values(edits).some((mw) => mw !== 0);
+  Object.values(edits).some((mw) => mw !== 0);
 
 /** The fields a parsed file supplies at creation; the solve state defaults. */
 export interface LocalCaseInit {
-	id: string; // `local-1`, `local-2`, ...
-	label: string;
-	fileName: string;
-	formulation?: Formulation;
-	declaredFormulation?: Formulation;
-	summary?: CaseFileSummary | null;
-	/** Retained PowerIO module used to construct solver studies. */
-	studyInputJson?: string;
-	topology?: Topology;
-	coordsKind?: CoordsKind;
-	view?: LocalView | null;
-	substations?: LocalSubstations;
+  id: string; // `local-1`, `local-2`, ...
+  label: string;
+  fileName: string;
+  formulation?: Formulation;
+  declaredFormulation?: Formulation;
+  summary?: CaseFileSummary | null;
+  /** Retained PowerIO module used to construct solver studies. */
+  studyInputJson?: string;
+  topology?: Topology;
+  coordsKind?: CoordsKind;
+  view?: LocalView | null;
+  substations?: LocalSubstations;
 }
 
 /** The convention that produced `solution`, or, before any result, the one the
  * Study is built with (accepted settings, else the case baseline). Pending
  * next-run selections never count: they have produced nothing yet. */
-function resultDcFormula(solution: Solution | null, settings: CaseSettings): DcFormula | undefined {
-	if (solution) return solution.branch_susceptance_formula ?? undefined;
-	const effective =
-		settings.accepted?.calculation === 'dcopf'
-			? settings.accepted.effective
-			: settings.baselines.dcopf;
-	return (effective?.branch_susceptance_formula ?? undefined) as DcFormula | undefined;
+function resultDcFormula(
+  solution: Solution | null,
+  settings: CaseSettings,
+): DcFormula | undefined {
+  if (solution) return solution.branch_susceptance_formula ?? undefined;
+  const effective =
+    settings.accepted?.calculation === "dcopf"
+      ? settings.accepted.effective
+      : settings.baselines.dcopf;
+  return (effective?.branch_susceptance_formula ?? undefined) as
+    DcFormula | undefined;
 }
 
 /** A case file parsed in the browser. Network cases can solve after they have
@@ -127,181 +147,208 @@ function resultDcFormula(solution: Solution | null, settings: CaseSettings): DcF
  * re-renders) and the seq tokens stay attached across overlapping async
  * callbacks, so a stale solve can neither freeze the UI nor clobber a newer one. */
 export class LocalCase {
-	/** Collection imports wait for an explicit calculation, including after tab changes. */
-	autoSolve = true;
-	settings = new CaseSettings();
-	readonly id: string;
-	readonly label: string;
-	readonly fileName: string;
-	readonly declaredFormulation?: Formulation;
-	/** Case stats; null for a .pwd display only entry. */
-	summary: CaseFileSummary | null = $state.raw<CaseFileSummary | null>(null);
-	/** PowerIO IR used for display edits and solver studies. */
-	studyInputJson: string | undefined = $state.raw<string | undefined>(undefined);
-	/** Topology for synthetic placement when the file has no coordinates. */
-	topology: Topology | undefined = $state.raw<Topology | undefined>(undefined);
-	coordsKind: CoordsKind | undefined = $state.raw<CoordsKind | undefined>(undefined);
-	/** Map geometry when the file carried or received coordinates. */
-	view: LocalView | null = $state.raw<LocalView | null>(null);
-	/** Each bus's kind in a generated grid, by bus id (`generator`,
-	 * `substation`, `converter`, `load`, `tap`); empty for any other case. At
-	 * low zoom the map keeps generators and substations over other buses. */
-	readonly busKinds: ReadonlyMap<number, string> = $derived(readBusKinds(this.studyInputJson));
-	/** Buses a generated grid marks as line taps. The map draws no marker for
-	 * them; the bus picker and the selection still reach them. */
-	readonly tapBuses: ReadonlySet<number> = $derived(tapsOf(this.busKinds));
-	/** `view.buses` less the line taps: the buses the map draws as markers. */
-	readonly markerBuses: NetworkBus[] = $derived(withoutTaps(this.view?.buses ?? [], this.tapBuses));
-	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
-		{ lon: number; lat: number } | undefined
-	>(undefined);
-	diagram: {
-		view: LocalView;
-		layer: string;
-		name: string;
-		warnings: string[];
-	} | null = $state.raw(null);
-	displayMode: 'geographic' | 'diagram' = $state('geographic');
-	geoSource: string | undefined = $state.raw<string | undefined>(undefined);
-	geoWarnings: string[] | undefined = $state.raw<string[] | undefined>(undefined);
-	network: Network | null = $state.raw<Network | null>(null);
-	baseSolution: Solution | null = $state.raw<Solution | null>(null);
-	solution: Solution | null = $state.raw<Solution | null>(null);
-	sensitivity: SensitivityColumn | null = $state.raw<SensitivityColumn | null>(null);
-	deltas: DemandDeltas = $state.raw<DemandDeltas>({});
-	/** Committed branch rating deltas (MW from base, keyed by branch). */
-	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
-	/** The selected calculation. Changing it rebuilds the numerical Study. */
-	formulation = $state<Formulation>(DEFAULT_FORMULATION);
-	/** The pending next-run DC convention selected in the settings. */
-	get branchSusceptanceFormula(): DcFormula | undefined {
-		const effective = this.settings.resolved.dcopf?.effective ?? {
-			...this.settings.baselines.dcopf,
-			...this.settings.options.dcopf
-		};
-		return (effective.branch_susceptance_formula ?? undefined) as DcFormula | undefined;
-	}
-	/** The DC convention behind the displayed result; gates server paths and saves. */
-	get resultDcFormula(): DcFormula | undefined {
-		return resultDcFormula(this.solution, this.settings);
-	}
-	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
-	solving = $state(false);
-	solveMs = $state<number | null>(null);
-	solveBackend = $state<SolveBackend | null>(null);
-	/** Short solver-specific diagnostic shown beside the elapsed time. */
-	solveDetail = $state<string | null>(null);
-	solveFallbackReason = $state<string | null>(null);
-	/** Monotone token: only the latest solve may write this case. */
-	solveSeq = 0;
-	/** Monotone generation for external optimistic concurrency. */
-	revisionGeneration = $state(0);
-	/** Monotone token: only the latest sensitivity request may write this case. */
-	sensitivitySeq = 0;
-	predictedObjective = $state<number | null>(null);
-	/** Present for a PowerWorld .pwd display only entry. */
-	substations: LocalSubstations | undefined = $state.raw<LocalSubstations | undefined>(undefined);
-	/** Show this case as a single-line diagram instead of the map. */
-	schematic = $state(false);
-	/** The diagram's last geographic view as a map camera, for the map to continue from when the
-	 * diagram closes. Plain, not reactive: it is read once, on close. */
-	lastGeoView: CameraSnapshot | null = null;
+  /** Collection imports wait for an explicit calculation, including after tab changes. */
+  autoSolve = true;
+  settings = new CaseSettings();
+  readonly id: string;
+  readonly label: string;
+  readonly fileName: string;
+  readonly declaredFormulation?: Formulation;
+  /** Case stats; null for a .pwd display only entry. */
+  summary: CaseFileSummary | null = $state.raw<CaseFileSummary | null>(null);
+  /** PowerIO IR used for display edits and solver studies. */
+  studyInputJson: string | undefined = $state.raw<string | undefined>(
+    undefined,
+  );
+  /** Topology for synthetic placement when the file has no coordinates. */
+  topology: Topology | undefined = $state.raw<Topology | undefined>(undefined);
+  coordsKind: CoordsKind | undefined = $state.raw<CoordsKind | undefined>(
+    undefined,
+  );
+  /** Map geometry when the file carried or received coordinates. */
+  view: LocalView | null = $state.raw<LocalView | null>(null);
+  /** Each bus's kind in a generated grid, by bus id (`generator`,
+   * `substation`, `converter`, `load`, `tap`); empty for any other case. At
+   * low zoom the map keeps generators and substations over other buses. */
+  readonly busKinds: ReadonlyMap<number, string> = $derived(
+    readBusKinds(this.studyInputJson),
+  );
+  /** Buses a generated grid marks as line taps. The map draws no marker for
+   * them; the bus picker and the selection still reach them. */
+  readonly tapBuses: ReadonlySet<number> = $derived(tapsOf(this.busKinds));
+  /** `view.buses` less the line taps: the buses the map draws as markers. */
+  readonly markerBuses: NetworkBus[] = $derived(
+    withoutTaps(this.view?.buses ?? [], this.tapBuses),
+  );
+  syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
+    { lon: number; lat: number } | undefined
+  >(undefined);
+  diagram: {
+    view: LocalView;
+    layer: string;
+    name: string;
+    warnings: string[];
+  } | null = $state.raw(null);
+  displayMode: "geographic" | "diagram" = $state("geographic");
+  geoSource: string | undefined = $state.raw<string | undefined>(undefined);
+  geoWarnings: string[] | undefined = $state.raw<string[] | undefined>(
+    undefined,
+  );
+  network: Network | null = $state.raw<Network | null>(null);
+  baseSolution: Solution | null = $state.raw<Solution | null>(null);
+  solution: Solution | null = $state.raw<Solution | null>(null);
+  sensitivity: SensitivityColumn | null = $state.raw<SensitivityColumn | null>(
+    null,
+  );
+  deltas: DemandDeltas = $state.raw<DemandDeltas>({});
+  /** Committed branch rating deltas (MW from base, keyed by branch). */
+  ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
+  /** The selected calculation. Changing it rebuilds the numerical Study. */
+  formulation = $state<Formulation>(DEFAULT_FORMULATION);
+  /** The pending next-run DC convention selected in the settings. */
+  get branchSusceptanceFormula(): DcFormula | undefined {
+    const effective = this.settings.resolved.dcopf?.effective ?? {
+      ...this.settings.baselines.dcopf,
+      ...this.settings.options.dcopf,
+    };
+    return (effective.branch_susceptance_formula ?? undefined) as
+      DcFormula | undefined;
+  }
+  /** The DC convention behind the displayed result; gates server paths and saves. */
+  get resultDcFormula(): DcFormula | undefined {
+    return resultDcFormula(this.solution, this.settings);
+  }
+  iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
+  solving = $state(false);
+  solveMs = $state<number | null>(null);
+  solveBackend = $state<SolveBackend | null>(null);
+  /** Short solver-specific diagnostic shown beside the elapsed time. */
+  solveDetail = $state<string | null>(null);
+  solveFallbackReason = $state<string | null>(null);
+  /** A calculation the user chose that failed; the result on screen (if any) is still
+   * the previous one. Cleared by the next solve. */
+  failedCalculation = $state<Formulation | null>(null);
+  /** Monotone token: only the latest solve may write this case. */
+  solveSeq = 0;
+  /** Monotone generation for external optimistic concurrency. */
+  revisionGeneration = $state(0);
+  /** Monotone token: only the latest sensitivity request may write this case. */
+  sensitivitySeq = 0;
+  predictedObjective = $state<number | null>(null);
+  /** Present for a PowerWorld .pwd display only entry. */
+  substations: LocalSubstations | undefined = $state.raw<
+    LocalSubstations | undefined
+  >(undefined);
+  /** Show this case as a single-line diagram instead of the map. */
+  schematic = $state(false);
+  /** The diagram's last geographic view as a map camera, for the map to continue from when the
+   * diagram closes. Plain, not reactive: it is read once, on close. */
+  lastGeoView: CameraSnapshot | null = null;
 
-	constructor(init: LocalCaseInit) {
-		this.id = init.id;
-		this.label = init.label;
-		this.fileName = init.fileName;
-		this.formulation = init.formulation ?? DEFAULT_FORMULATION;
-		this.declaredFormulation = init.declaredFormulation;
-		this.summary = init.summary ?? null;
-		this.studyInputJson = init.studyInputJson;
-		const recorded = recordedCalculationSettings(init.studyInputJson);
-		if (recorded) {
-			if (!init.formulation && ['dcopf', 'acpf', 'socwr', 'acopf'].includes(recorded.calculation))
-				this.formulation = recorded.calculation as Formulation;
-			this.settings.baselines = { [recorded.calculation]: recorded.effective };
-			this.settings.options = { [recorded.calculation]: {} };
-			this.settings.calculation = recorded.calculation;
-		}
-		this.topology = init.topology;
-		this.coordsKind = init.coordsKind;
-		this.view = init.view ?? null;
-		this.substations = init.substations;
-	}
+  constructor(init: LocalCaseInit) {
+    this.id = init.id;
+    this.label = init.label;
+    this.fileName = init.fileName;
+    this.formulation = init.formulation ?? DEFAULT_FORMULATION;
+    this.declaredFormulation = init.declaredFormulation;
+    this.summary = init.summary ?? null;
+    this.studyInputJson = init.studyInputJson;
+    const recorded = recordedCalculationSettings(init.studyInputJson);
+    if (recorded) {
+      if (
+        !init.formulation &&
+        ["dcopf", "acpf", "socwr", "acopf"].includes(recorded.calculation)
+      )
+        this.formulation = recorded.calculation as Formulation;
+      this.settings.baselines = { [recorded.calculation]: recorded.effective };
+      this.settings.options = { [recorded.calculation]: {} };
+      this.settings.calculation = recorded.calculation;
+    }
+    this.topology = init.topology;
+    this.coordsKind = init.coordsKind;
+    this.view = init.view ?? null;
+    this.substations = init.substations;
+  }
 
-	get perturbed(): boolean {
-		return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
-	}
+  get perturbed(): boolean {
+    return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
+  }
 }
 
 /** One islanded network with its own solver state on the server. API
  * payloads are reassigned wholesale, so $state.raw throughout. */
 export class CaseState {
-	settings = new CaseSettings();
-	readonly id: string;
-	readonly name: string;
-	readonly unavailableReason: string | null;
-	network: Network | null = $state.raw<Network | null>(null);
-	/** Retained PowerIO module for the browser solver; fetched lazily. */
-	studyInputJson: string | null = $state.raw<string | null>(null);
-	/** Boot solution at base demand; never changes. */
-	baseSolution: Solution | null = $state.raw<Solution | null>(null);
-	/** Exact solution at the current committed perturbation. */
-	solution: Solution | null = $state.raw<Solution | null>(null);
-	sensitivity: SensitivityColumn | null = $state.raw<SensitivityColumn | null>(null);
-	/** Committed demand deltas (MW from base, keyed by bus). */
-	deltas: DemandDeltas = $state.raw<DemandDeltas>({});
-	/** Committed branch rating deltas (MW from base, keyed by branch). */
-	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
-	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
-	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
-	formulation = $state<Formulation>(DEFAULT_FORMULATION);
-	/** The pending next-run DC convention selected in the settings. */
-	get branchSusceptanceFormula(): DcFormula | undefined {
-		const effective = this.settings.resolved.dcopf?.effective ?? {
-			...this.settings.baselines.dcopf,
-			...this.settings.options.dcopf
-		};
-		return (effective.branch_susceptance_formula ?? undefined) as DcFormula | undefined;
-	}
-	/** The DC convention behind the displayed result; gates server paths and saves. */
-	get resultDcFormula(): DcFormula | undefined {
-		return resultDcFormula(this.solution, this.settings);
-	}
-	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
-	solving = $state(false);
-	solveMs = $state<number | null>(null);
-	solveBackend = $state<SolveBackend | null>(null);
-	/** Short solver-specific diagnostic shown beside the elapsed time. */
-	solveDetail = $state<string | null>(null);
-	solveFallbackReason = $state<string | null>(null);
-	/** Monotone token: only the latest solve may write this case. */
-	solveSeq = 0;
-	/** Monotone generation for external optimistic concurrency. */
-	revisionGeneration = $state(0);
-	/** Monotone token: only the latest sensitivity request may write this case. */
-	sensitivitySeq = 0;
-	/** Closer for this case's in-flight server solve stream, if any. Owned per
-	 * case so closing one case's stream never strands another's solve. */
-	closeStream: (() => void) | null = null;
-	/** Objective change the gradient predicted for the last commit, to score
-	 * the preview once the exact solve lands. */
-	predictedObjective = $state<number | null>(null);
-	/** Show this case as a single-line diagram instead of the map. */
-	schematic = $state(false);
-	/** The diagram's last geographic view as a map camera, for the map to continue from when the
-	 * diagram closes. Plain, not reactive: it is read once, on close. */
-	lastGeoView: CameraSnapshot | null = null;
+  settings = new CaseSettings();
+  readonly id: string;
+  readonly name: string;
+  readonly unavailableReason: string | null;
+  network: Network | null = $state.raw<Network | null>(null);
+  /** Retained PowerIO module for the browser solver; fetched lazily. */
+  studyInputJson: string | null = $state.raw<string | null>(null);
+  /** Boot solution at base demand; never changes. */
+  baseSolution: Solution | null = $state.raw<Solution | null>(null);
+  /** Exact solution at the current committed perturbation. */
+  solution: Solution | null = $state.raw<Solution | null>(null);
+  sensitivity: SensitivityColumn | null = $state.raw<SensitivityColumn | null>(
+    null,
+  );
+  /** Committed demand deltas (MW from base, keyed by bus). */
+  deltas: DemandDeltas = $state.raw<DemandDeltas>({});
+  /** Committed branch rating deltas (MW from base, keyed by branch). */
+  ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
+  /** The OPF formulation the browser Study solves for this case: DC OPF (default),
+   * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
+  formulation = $state<Formulation>(DEFAULT_FORMULATION);
+  /** The pending next-run DC convention selected in the settings. */
+  get branchSusceptanceFormula(): DcFormula | undefined {
+    const effective = this.settings.resolved.dcopf?.effective ?? {
+      ...this.settings.baselines.dcopf,
+      ...this.settings.options.dcopf,
+    };
+    return (effective.branch_susceptance_formula ?? undefined) as
+      DcFormula | undefined;
+  }
+  /** The DC convention behind the displayed result; gates server paths and saves. */
+  get resultDcFormula(): DcFormula | undefined {
+    return resultDcFormula(this.solution, this.settings);
+  }
+  iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
+  solving = $state(false);
+  solveMs = $state<number | null>(null);
+  solveBackend = $state<SolveBackend | null>(null);
+  /** Short solver-specific diagnostic shown beside the elapsed time. */
+  solveDetail = $state<string | null>(null);
+  solveFallbackReason = $state<string | null>(null);
+  /** A calculation the user chose that failed; the result on screen (if any) is still
+   * the previous one. Cleared by the next solve. */
+  failedCalculation = $state<Formulation | null>(null);
+  /** Monotone token: only the latest solve may write this case. */
+  solveSeq = 0;
+  /** Monotone generation for external optimistic concurrency. */
+  revisionGeneration = $state(0);
+  /** Monotone token: only the latest sensitivity request may write this case. */
+  sensitivitySeq = 0;
+  /** Closer for this case's in-flight server solve stream, if any. Owned per
+   * case so closing one case's stream never strands another's solve. */
+  closeStream: (() => void) | null = null;
+  /** Objective change the gradient predicted for the last commit, to score
+   * the preview once the exact solve lands. */
+  predictedObjective = $state<number | null>(null);
+  /** Show this case as a single-line diagram instead of the map. */
+  schematic = $state(false);
+  /** The diagram's last geographic view as a map camera, for the map to continue from when the
+   * diagram closes. Plain, not reactive: it is read once, on close. */
+  lastGeoView: CameraSnapshot | null = null;
 
-	constructor(summary: CaseSummary) {
-		this.id = summary.id;
-		this.name = summary.name;
-		this.unavailableReason = summary.unavailable_reason ?? null;
-	}
+  constructor(summary: CaseSummary) {
+    this.id = summary.id;
+    this.name = summary.name;
+    this.unavailableReason = summary.unavailable_reason ?? null;
+  }
 
-	get perturbed(): boolean {
-		return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
-	}
+  get perturbed(): boolean {
+    return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
+  }
 }
 
 /** A case the solver can run: a server-backed case or a browser-parsed local case. */
@@ -310,522 +357,548 @@ export type SolvableCase = CaseState | LocalCase;
 /** The multiconductor ingest payload without the graph or the retained
  * input: the summary counts, connected load/generation, coordinate
  * provenance, and diagnostics. */
-export type MultiCaseSummary = Omit<IngestedDistCase, 'graph' | 'input'>;
+export type MultiCaseSummary = Omit<IngestedDistCase, "graph" | "input">;
 
 /** Geographic coordinates use the map; other positions use the diagram canvas. */
-export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
+export type MultiCoordsKind = "geographic" | "planar" | "synthetic";
 
 /** Where one interactive load edit spent its time, in milliseconds: engine
  * (solve and summary), transfer, and parsing as recorded by the session, and
  * the total from the start of the solve until the result state is updated. */
 export interface McEditTiming extends McPfCallTiming {
-	total_ms: number;
+  total_ms: number;
 }
 
 /** A conductor-resolved case with retained electrical inputs and terminal results. */
 export class MulticonductorCase {
-	settings = new CaseSettings();
-	readonly hosted: boolean;
-	distribution: CaseSummary['distribution'] = $state.raw(undefined);
-	readonly id: string;
-	readonly label: string;
-	readonly fileName: string;
-	/** The electrical input calculations start from: the module the engine
-	 * keeps from the import, or PowerIO IR text (a saved or re-placed module).
-	 * A kept module is freed when it is replaced or the case is removed. */
-	mcInput: McModuleInput | null = $state.raw<McModuleInput | null>(null);
-	geoLayer: string | null = $state.raw<string | null>(null);
-	geoWarnings: string[] = $state.raw<string[]>([]);
-	/** Summary of the displayed operating point: from the live session after
-	 * each solve or load edit, or derived from a stored full result. */
-	result: McPfSummary | null = $state.raw<McPfSummary | null>(null);
-	/** The complete result when no live session holds the operating point: a
-	 * saved Study, a solve without sessions, or after coordinates are attached. */
-	mcFullResult: McPfResult | null = $state.raw<McPfResult | null>(null);
-	/** Latency breakdown of the latest load-edit solve. */
-	mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
-	/** Explicit selection for the next solve. The graph and module retain every bus. */
-	mcEnergizedOnly = $state(false);
-	/** The retained input carries the energized-network selection record. It
-	 * cannot be removed, so every later solve of this input is energized-only. */
-	mcInputSelected = false;
-	/** Successful explicit solve to reveal in Studies; load edits do not advance it. */
-	mcCompletedSolveSeq = $state(0);
-	/** Detected on import, revalidated when preparing a solve; never removed from the graph. */
-	mcExcludedIslands: import('@tellegen/engine').McExcludedIsland[] = $state.raw([]);
-	mcPreparedScope: import('@tellegen/engine').McNetworkScope | null = $state.raw(null);
-	/** Selected settings for the next explicit solve; results carry their own effective settings. */
-	mcOptions: McPfOptions = $state<McPfOptions>({ ...DEFAULT_MC_PF_OPTIONS });
-	mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
-	mcSession: BrowserMcPfSession | null = $state.raw<BrowserMcPfSession | null>(null);
-	mcLoadBranches: McLoadBranchState[] = $state.raw<McLoadBranchState[]>([]);
-	mcLoadEdits: McLoadPowerEdit[] = $state.raw<McLoadPowerEdit[]>([]);
-	mcEditRevision = 0;
-	mcEditRunning = false;
-	mcEditTimer: ReturnType<typeof setTimeout> | null = null;
-	mcSavedAt = $state<string | null>(null);
-	solving = $state(false);
-	solveMs = $state<number | null>(null);
-	solveSeq = 0;
-	revisionGeneration = $state(0);
-	solveAbort: AbortController | null = null;
-	/** Summary counts and coordinate provenance from the parse. */
-	summary: MultiCaseSummary | null = $state.raw<MultiCaseSummary | null>(null);
-	/** The render-ready bus/terminal graph. */
-	graph: DistGraph | null = $state.raw<DistGraph | null>(null);
-	/** Placement kind resolved at ingest from the case's coordinate space. */
-	coordsKind: MultiCoordsKind = $state.raw<MultiCoordsKind>('synthetic');
-	/** The map or diagram positions. */
-	view: MultiView | null = $state.raw<MultiView | null>(null);
-	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
-		{ lon: number; lat: number } | undefined
-	>(undefined);
-	/** The selected bus id, whose terminal stack and incident conductors expand;
-	 * null when nothing is selected. String-keyed: distribution bus ids are names. */
-	selectedBusId = $state<string | null>(null);
-	/** The selected edge id, whose conductor pairing expands in the panel;
-	 * mutually exclusive with selectedBusId. */
-	selectedEdgeId = $state<string | null>(null);
-	/** What the pointer is over in any linked view (schematic, profile, tables); highlighted in
-	 * the others. Transient: never saved or put in links. */
-	hovered = $state<{ kind: 'bus' | 'branch'; id: string } | null>(null);
-	/** Bumped to ask the views to bring the current selection into view again (an issue clicked
-	 * that is already selected). */
-	revealSeq = $state(0);
-	/** The full operating point read for whole-network views (overview, schematic): a stored
-	 * result, or a live session's as columns. Null until read, and cleared when a large case's
-	 * operating point changes. */
-	overviewResult: McPfResult | McPfResultTables | null = $state.raw<
-		McPfResult | McPfResultTables | null
-	>(null);
-	overviewLoading = $state(false);
-	/** The graph's buses and branches as the overview and the diagram read them: rebuilt when the
-	 * graph is replaced, never after a solve. Both views read this one copy. */
-	overviewInputs: GraphInputs | null = $derived(this.graph ? graphInputs(this.graph) : null);
-	/** Search over the graph's buses and branches, rebuilt with `overviewInputs`. */
-	overviewSearch: SearchIndex | null = $derived(
-		this.overviewInputs ? buildSearchIndex(this.overviewInputs.entities) : null
-	);
-	/** `overviewResult` projected onto the graph, built once per operating point and shared by the
-	 * overview and the diagram; null while there is none. */
-	overviewSnapshot: ResultSnapshot | null = $derived(
-		this.overviewResult && this.overviewInputs
-			? snapshotFromMcPf(
-					this.overviewResult,
-					this.overviewInputs.buses,
-					this.overviewInputs.branches
-				)
-			: null
-	);
-	/** Show this case as a schematic instead of the map. */
-	schematic = $state(false);
-	/** The diagram's last geographic view as a map camera, for the map to continue from when the
-	 * diagram closes. Plain, not reactive: it is read once, on close. */
-	lastGeoView: CameraSnapshot | null = null;
+  settings = new CaseSettings();
+  readonly hosted: boolean;
+  distribution: CaseSummary["distribution"] = $state.raw(undefined);
+  readonly id: string;
+  readonly label: string;
+  readonly fileName: string;
+  /** The electrical input calculations start from: the module the engine
+   * keeps from the import, or PowerIO IR text (a saved or re-placed module).
+   * A kept module is freed when it is replaced or the case is removed. */
+  mcInput: McModuleInput | null = $state.raw<McModuleInput | null>(null);
+  geoLayer: string | null = $state.raw<string | null>(null);
+  geoWarnings: string[] = $state.raw<string[]>([]);
+  /** Summary of the displayed operating point: from the live session after
+   * each solve or load edit, or derived from a stored full result. */
+  result: McPfSummary | null = $state.raw<McPfSummary | null>(null);
+  /** The complete result when no live session holds the operating point: a
+   * saved Study, a solve without sessions, or after coordinates are attached. */
+  mcFullResult: McPfResult | null = $state.raw<McPfResult | null>(null);
+  /** Latency breakdown of the latest load-edit solve. */
+  mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
+  /** Explicit selection for the next solve. The graph and module retain every bus. */
+  mcEnergizedOnly = $state(false);
+  /** The retained input carries the energized-network selection record. It
+   * cannot be removed, so every later solve of this input is energized-only. */
+  mcInputSelected = false;
+  /** Successful explicit solve to reveal in Studies; load edits do not advance it. */
+  mcCompletedSolveSeq = $state(0);
+  /** Detected on import, revalidated when preparing a solve; never removed from the graph. */
+  mcExcludedIslands: import("@tellegen/engine").McExcludedIsland[] = $state.raw(
+    [],
+  );
+  mcPreparedScope: import("@tellegen/engine").McNetworkScope | null =
+    $state.raw(null);
+  /** Selected settings for the next explicit solve; results carry their own effective settings. */
+  mcOptions: McPfOptions = $state<McPfOptions>({ ...DEFAULT_MC_PF_OPTIONS });
+  mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
+  mcSession: BrowserMcPfSession | null = $state.raw<BrowserMcPfSession | null>(
+    null,
+  );
+  mcLoadBranches: McLoadBranchState[] = $state.raw<McLoadBranchState[]>([]);
+  mcLoadEdits: McLoadPowerEdit[] = $state.raw<McLoadPowerEdit[]>([]);
+  mcEditRevision = 0;
+  mcEditRunning = false;
+  mcEditTimer: ReturnType<typeof setTimeout> | null = null;
+  mcSavedAt = $state<string | null>(null);
+  solving = $state(false);
+  solveMs = $state<number | null>(null);
+  solveSeq = 0;
+  revisionGeneration = $state(0);
+  solveAbort: AbortController | null = null;
+  /** Summary counts and coordinate provenance from the parse. */
+  summary: MultiCaseSummary | null = $state.raw<MultiCaseSummary | null>(null);
+  /** The render-ready bus/terminal graph. */
+  graph: DistGraph | null = $state.raw<DistGraph | null>(null);
+  /** Placement kind resolved at ingest from the case's coordinate space. */
+  coordsKind: MultiCoordsKind = $state.raw<MultiCoordsKind>("synthetic");
+  /** The map or diagram positions. */
+  view: MultiView | null = $state.raw<MultiView | null>(null);
+  syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
+    { lon: number; lat: number } | undefined
+  >(undefined);
+  /** The selected bus id, whose terminal stack and incident conductors expand;
+   * null when nothing is selected. String-keyed: distribution bus ids are names. */
+  selectedBusId = $state<string | null>(null);
+  /** The selected edge id, whose conductor pairing expands in the panel;
+   * mutually exclusive with selectedBusId. */
+  selectedEdgeId = $state<string | null>(null);
+  /** What the pointer is over in any linked view (schematic, profile, tables); highlighted in
+   * the others. Transient: never saved or put in links. */
+  hovered = $state<{ kind: "bus" | "branch"; id: string } | null>(null);
+  /** Bumped to ask the views to bring the current selection into view again (an issue clicked
+   * that is already selected). */
+  revealSeq = $state(0);
+  /** The full operating point read for whole-network views (overview, schematic): a stored
+   * result, or a live session's as columns. Null until read, and cleared when a large case's
+   * operating point changes. */
+  overviewResult: McPfResult | McPfResultTables | null = $state.raw<
+    McPfResult | McPfResultTables | null
+  >(null);
+  overviewLoading = $state(false);
+  /** The graph's buses and branches as the overview and the diagram read them: rebuilt when the
+   * graph is replaced, never after a solve. Both views read this one copy. */
+  overviewInputs: GraphInputs | null = $derived(
+    this.graph ? graphInputs(this.graph) : null,
+  );
+  /** Search over the graph's buses and branches, rebuilt with `overviewInputs`. */
+  overviewSearch: SearchIndex | null = $derived(
+    this.overviewInputs ? buildSearchIndex(this.overviewInputs.entities) : null,
+  );
+  /** `overviewResult` projected onto the graph, built once per operating point and shared by the
+   * overview and the diagram; null while there is none. */
+  overviewSnapshot: ResultSnapshot | null = $derived(
+    this.overviewResult && this.overviewInputs
+      ? snapshotFromMcPf(
+          this.overviewResult,
+          this.overviewInputs.buses,
+          this.overviewInputs.branches,
+        )
+      : null,
+  );
+  /** Show this case as a schematic instead of the map. */
+  schematic = $state(false);
+  /** The diagram's last geographic view as a map camera, for the map to continue from when the
+   * diagram closes. Plain, not reactive: it is read once, on close. */
+  lastGeoView: CameraSnapshot | null = null;
 
-	constructor(init: {
-		hosted?: boolean;
-		id: string;
-		label: string;
-		fileName: string;
-		summary: MultiCaseSummary;
-		/** The module the engine kept from the import, in place of the
-		 * summary's `module_json`. */
-		input?: McModuleInput | null;
-		graph: DistGraph;
-		coordsKind: MultiCoordsKind;
-		view?: MultiView | null;
-	}) {
-		this.hosted = init.hosted ?? false;
-		this.id = init.id;
-		this.label = init.label;
-		this.fileName = init.fileName;
-		this.summary = init.summary;
-		this.mcInput = init.input ?? init.summary.module_json ?? null;
-		this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
-		this.mcInputSelected = this.mcEnergizedOnly;
-		this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
-		this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
-		this.geoLayer = init.summary.geo_layer ?? null;
-		this.graph = init.graph;
-		this.coordsKind = init.coordsKind;
-		this.view = init.view ?? null;
-	}
+  constructor(init: {
+    hosted?: boolean;
+    id: string;
+    label: string;
+    fileName: string;
+    summary: MultiCaseSummary;
+    /** The module the engine kept from the import, in place of the
+     * summary's `module_json`. */
+    input?: McModuleInput | null;
+    graph: DistGraph;
+    coordsKind: MultiCoordsKind;
+    view?: MultiView | null;
+  }) {
+    this.hosted = init.hosted ?? false;
+    this.id = init.id;
+    this.label = init.label;
+    this.fileName = init.fileName;
+    this.summary = init.summary;
+    this.mcInput = init.input ?? init.summary.module_json ?? null;
+    this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
+    this.mcInputSelected = this.mcEnergizedOnly;
+    this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
+    this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
+    this.geoLayer = init.summary.geo_layer ?? null;
+    this.graph = init.graph;
+    this.coordsKind = init.coordsKind;
+    this.view = init.view ?? null;
+  }
 
-	get mcPfReason(): string | null {
-		if (!this.mcInput) return 'This case has no retained electrical input';
-		if (this.summary?.mc_pf_enabled !== true)
-			return 'Multiconductor power flow is unavailable in this build';
-		return (
-			this.summary.mc_pf_reason ??
-			this.summary.mc_pf_unavailable_reason ??
-			(this.summary.mc_pf_supported !== true
-				? 'Multiconductor power flow is unavailable for this case'
-				: null)
-		);
-	}
-	/** Import detects scope; only a solve action opts into the selection. */
-	get mcRequiresEnergizedSolve(): boolean {
-		return this.mcExcludedIslands.length > 0;
-	}
-	get mcSolveLabel(): string {
-		return this.mcRequiresEnergizedSolve ? 'Solve energized network' : 'Run power flow';
-	}
-	get mcPfSupported(): boolean {
-		return this.mcPfReason === null;
-	}
+  get mcPfReason(): string | null {
+    if (!this.mcInput) return "This case has no retained electrical input";
+    if (this.summary?.mc_pf_enabled !== true)
+      return "Multiconductor power flow is unavailable in this build";
+    return (
+      this.summary.mc_pf_reason ??
+      this.summary.mc_pf_unavailable_reason ??
+      (this.summary.mc_pf_supported !== true
+        ? "Multiconductor power flow is unavailable for this case"
+        : null)
+    );
+  }
+  /** Import detects scope; only a solve action opts into the selection. */
+  get mcRequiresEnergizedSolve(): boolean {
+    return this.mcExcludedIslands.length > 0;
+  }
+  get mcSolveLabel(): string {
+    return this.mcRequiresEnergizedSolve
+      ? "Solve energized network"
+      : "Run power flow";
+  }
+  get mcPfSupported(): boolean {
+    return this.mcPfReason === null;
+  }
 
-	/** Whether the case is placed and ready to render. */
-	get placed(): boolean {
-		return this.view !== null;
-	}
+  /** Whether the case is placed and ready to render. */
+  get placed(): boolean {
+    return this.view !== null;
+  }
 
-	/** The selected bus's placed detail, or null. */
-	get selectedBus() {
-		if (this.selectedBusId === null) return null;
-		return this.view?.buses.find((b) => b.id === this.selectedBusId) ?? null;
-	}
+  /** The selected bus's placed detail, or null. */
+  get selectedBus() {
+    if (this.selectedBusId === null) return null;
+    return this.view?.buses.find((b) => b.id === this.selectedBusId) ?? null;
+  }
 
-	/** The selected edge's placed detail, or null. */
-	get selectedEdge() {
-		if (this.selectedEdgeId === null) return null;
-		return this.view?.edges.find((e) => e.id === this.selectedEdgeId) ?? null;
-	}
+  /** The selected edge's placed detail, or null. */
+  get selectedEdge() {
+    if (this.selectedEdgeId === null) return null;
+    return this.view?.edges.find((e) => e.id === this.selectedEdgeId) ?? null;
+  }
 }
 
 export interface StudyDisplaySnapshot {
-	id: string;
-	studyId: string;
-	caseId: string;
-	revision: number;
-	label: string;
-	formulation: Formulation;
-	network: Network;
-	solution: StudyView | null;
-	inputJson?: string;
-	baseDemandMw?: Record<string, number>;
+  id: string;
+  studyId: string;
+  caseId: string;
+  revision: number;
+  label: string;
+  formulation: Formulation;
+  network: Network;
+  solution: StudyView | null;
+  inputJson?: string;
+  baseDemandMw?: Record<string, number>;
 }
 
 export class AppState {
-	preferences = new UserPreferences();
-	settingsOpen = $state(false);
-	camera: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
-	/** Set when a view hands its camera to the map it returns to (the diagram closing from
-	 * geographic positions): the re-created map starts at `camera` instead of framing the case. */
-	cameraHandoff = false;
-	cameraRequest: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
-	cameraSeq = $state(0);
-	diagramCamera: DiagramCameraSnapshot | null = $state.raw<DiagramCameraSnapshot | null>(null);
-	diagramCameraRequest: DiagramCameraSnapshot | null = $state.raw<DiagramCameraSnapshot | null>(
-		null
-	);
-	diagramCameraSeq = $state(0);
+  preferences = new UserPreferences();
+  settingsOpen = $state(false);
+  camera: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
+  /** Set when a view hands its camera to the map it returns to (the diagram closing from
+   * geographic positions): the re-created map starts at `camera` instead of framing the case. */
+  cameraHandoff = false;
+  cameraRequest: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(
+    null,
+  );
+  cameraSeq = $state(0);
+  diagramCamera: DiagramCameraSnapshot | null =
+    $state.raw<DiagramCameraSnapshot | null>(null);
+  diagramCameraRequest: DiagramCameraSnapshot | null =
+    $state.raw<DiagramCameraSnapshot | null>(null);
+  diagramCameraSeq = $state(0);
 
-	requestDiagramCamera(caseId: string, snapshot: Omit<DiagramCameraSnapshot, 'caseId'>): void {
-		if (
-			!Array.isArray(snapshot.center) ||
-			snapshot.center.length !== 2 ||
-			![...snapshot.center, snapshot.scale].every(Number.isFinite) ||
-			snapshot.scale <= 0
-		) {
-			throw new Error('Invalid saved drawing view');
-		}
-		this.settleFrame();
-		this.diagramCameraRequest = {
-			caseId,
-			center: [...snapshot.center],
-			scale: snapshot.scale
-		};
-		this.diagramCameraSeq++;
-	}
+  requestDiagramCamera(
+    caseId: string,
+    snapshot: Omit<DiagramCameraSnapshot, "caseId">,
+  ): void {
+    if (
+      !Array.isArray(snapshot.center) ||
+      snapshot.center.length !== 2 ||
+      ![...snapshot.center, snapshot.scale].every(Number.isFinite) ||
+      snapshot.scale <= 0
+    ) {
+      throw new Error("Invalid saved drawing view");
+    }
+    this.settleFrame();
+    this.diagramCameraRequest = {
+      caseId,
+      center: [...snapshot.center],
+      scale: snapshot.scale,
+    };
+    this.diagramCameraSeq++;
+  }
 
-	requestCamera(snapshot: CameraSnapshot): void {
-		if (
-			!Array.isArray(snapshot.center) ||
-			snapshot.center.length !== 2 ||
-			![...snapshot.center, snapshot.zoom, snapshot.bearing, snapshot.pitch].every(
-				Number.isFinite
-			) ||
-			Math.abs(snapshot.center[1]) > 90 ||
-			snapshot.zoom < 0 ||
-			snapshot.zoom > 24 ||
-			snapshot.pitch < 0 ||
-			snapshot.pitch > 85
-		) {
-			throw new Error('Invalid saved camera position');
-		}
-		this.settleFrame();
-		this.cameraRequest = { ...snapshot, center: [...snapshot.center] };
-		this.cameraSeq++;
-	}
+  requestCamera(snapshot: CameraSnapshot): void {
+    if (
+      !Array.isArray(snapshot.center) ||
+      snapshot.center.length !== 2 ||
+      ![
+        ...snapshot.center,
+        snapshot.zoom,
+        snapshot.bearing,
+        snapshot.pitch,
+      ].every(Number.isFinite) ||
+      Math.abs(snapshot.center[1]) > 90 ||
+      snapshot.zoom < 0 ||
+      snapshot.zoom > 24 ||
+      snapshot.pitch < 0 ||
+      snapshot.pitch > 85
+    ) {
+      throw new Error("Invalid saved camera position");
+    }
+    this.settleFrame();
+    this.cameraRequest = { ...snapshot, center: [...snapshot.center] };
+    this.cameraSeq++;
+  }
 
-	/** Saved Study inspection is independent of the editable case and its solution. */
-	studyView: StudyDisplaySnapshot | null = $state.raw<StudyDisplaySnapshot | null>(null);
-	cases: CaseState[] = $state.raw<CaseState[]>([]);
-	hostedDistributionCases: CaseSummary[] = $state.raw<CaseSummary[]>([]);
-	activeCaseId = $state<string | null>(null);
-	/** Selected bus in the active case. */
-	selectedBus = $state<number | null>(null);
-	/** Selected branch in the active case; mutually exclusive with selectedBus. */
-	selectedBranch = $state<number | null>(null);
-	/** Live slider value (MW from base) before commit; null when idle. */
-	previewDeltaMw = $state<number | null>(null);
-	/** Live rating slider value (MW from base) before commit; null when idle. */
-	previewRatingMw = $state<number | null>(null);
-	/** True while the demand control should keep the map in nodal value preview mode. */
-	previewActive = $state(false);
-	/** Engine first order nodal value preview for the live drag, scoped to the case and selection
-	 * target (bus or branch) it was computed for. Set by the Study path; null when
-	 * no Study preview applies (the map then falls back to the JS
-	 * sensitivity-times-step preview). Reassigned wholesale, so $state.raw. */
-	previewPrices = $state.raw<{
-		caseId: string;
-		target: SensTarget;
-		delta: Map<number, number>;
-		units: string;
-	} | null>(null);
-	demandRangeMode = $state<DemandRangeMode>('local');
-	#mode = $state<'steady' | 'dynamics'>('steady');
-	/** Dynamics (RMS simulation) is experimental: it shows only after the
-	 * user turns on Settings → Experimental features. */
-	get dynamicsEnabled(): boolean {
-		return this.preferences.experimental;
-	}
-	/** Steady state (the static calculations) or dynamics (RMS simulation of
-	 * the active local case with its .dyr data). Reads as steady state while
-	 * dynamics is off, and a request for dynamics is then ignored. */
-	get mode(): 'steady' | 'dynamics' {
-		return this.dynamicsEnabled ? this.#mode : 'steady';
-	}
-	set mode(value: 'steady' | 'dynamics') {
-		this.#mode = value === 'dynamics' && !this.dynamicsEnabled ? 'steady' : value;
-	}
-	/** The bus or unit hovered in the dynamics traces or on the map; the
-	 * other view highlights it. */
-	dynamicsHover = $state.raw<{ kind: 'bus' | 'unit'; key: string } | null>(null);
-	displayMode = $state<DisplayMode>('price');
-	get busSizing(): BusSizing {
-		return this.preferences.busSizing;
-	}
-	set busSizing(value: BusSizing) {
-		this.preferences.update({ busSizing: value });
-	}
-	sensitivityLoading = $state(false);
-	#error = $state<string | null>(null);
-	errorRevision = $state(0);
-	/** Re-runs the operation behind the current `error`, when one applies. Every
-	 * write to `error` clears it, so a retry op can never outlive its message. */
-	errorRetry: (() => void) | null = $state.raw<(() => void) | null>(null);
-	/** Technical detail behind the current `error`, when the message itself is
-	 * written for people; notices keep it in their disclosure. Every write to
-	 * `error` clears it, as it clears `errorRetry`. */
-	#errorDetail = $state<string | null>(null);
-	/** Every error and engine finding of this session, structured; see `DiagnosticLog`. */
-	readonly log = new DiagnosticLog();
+  /** Saved Study inspection is independent of the editable case and its solution. */
+  studyView: StudyDisplaySnapshot | null =
+    $state.raw<StudyDisplaySnapshot | null>(null);
+  cases: CaseState[] = $state.raw<CaseState[]>([]);
+  hostedDistributionCases: CaseSummary[] = $state.raw<CaseSummary[]>([]);
+  activeCaseId = $state<string | null>(null);
+  /** Selected bus in the active case. */
+  selectedBus = $state<number | null>(null);
+  /** Selected branch in the active case; mutually exclusive with selectedBus. */
+  selectedBranch = $state<number | null>(null);
+  /** Live slider value (MW from base) before commit; null when idle. */
+  previewDeltaMw = $state<number | null>(null);
+  /** Live rating slider value (MW from base) before commit; null when idle. */
+  previewRatingMw = $state<number | null>(null);
+  /** True while the demand control should keep the map in nodal value preview mode. */
+  previewActive = $state(false);
+  /** Engine first order nodal value preview for the live drag, scoped to the case and selection
+   * target (bus or branch) it was computed for. Set by the Study path; null when
+   * no Study preview applies (the map then falls back to the JS
+   * sensitivity-times-step preview). Reassigned wholesale, so $state.raw. */
+  previewPrices = $state.raw<{
+    caseId: string;
+    target: SensTarget;
+    delta: Map<number, number>;
+    units: string;
+  } | null>(null);
+  demandRangeMode = $state<DemandRangeMode>("local");
+  #mode = $state<"steady" | "dynamics">("steady");
+  /** Dynamics (RMS simulation) is experimental: it shows only after the
+   * user turns on Settings → Experimental features. */
+  get dynamicsEnabled(): boolean {
+    return this.preferences.experimental;
+  }
+  /** Steady state (the static calculations) or dynamics (RMS simulation of
+   * the active local case with its .dyr data). Reads as steady state while
+   * dynamics is off, and a request for dynamics is then ignored. */
+  get mode(): "steady" | "dynamics" {
+    return this.dynamicsEnabled ? this.#mode : "steady";
+  }
+  set mode(value: "steady" | "dynamics") {
+    this.#mode =
+      value === "dynamics" && !this.dynamicsEnabled ? "steady" : value;
+  }
+  /** The bus or unit hovered in the dynamics traces or on the map; the
+   * other view highlights it. */
+  dynamicsHover = $state.raw<{ kind: "bus" | "unit"; key: string } | null>(
+    null,
+  );
+  displayMode = $state<DisplayMode>("price");
+  get busSizing(): BusSizing {
+    return this.preferences.busSizing;
+  }
+  set busSizing(value: BusSizing) {
+    this.preferences.update({ busSizing: value });
+  }
+  sensitivityLoading = $state(false);
+  #error = $state<string | null>(null);
+  errorRevision = $state(0);
+  /** Re-runs the operation behind the current `error`, when one applies. Every
+   * write to `error` clears it, so a retry op can never outlive its message. */
+  errorRetry: (() => void) | null = $state.raw<(() => void) | null>(null);
+  /** Technical detail behind the current `error`, when the message itself is
+   * written for people; notices keep it in their disclosure. Every write to
+   * `error` clears it, as it clears `errorRetry`. */
+  #errorDetail = $state<string | null>(null);
+  /** Every error and engine finding of this session, structured; see `DiagnosticLog`. */
+  readonly log = new DiagnosticLog();
 
-	get error(): string | null {
-		return this.#error;
-	}
+  get error(): string | null {
+    return this.#error;
+  }
 
-	set error(message: string | null) {
-		this.#error = message;
-		if (message) {
-			this.errorRevision++;
-			this.log.record(errorEntry(message));
-		}
-		this.errorRetry = null;
-		this.#errorDetail = null;
-	}
+  set error(message: string | null) {
+    this.#error = message;
+    if (message) {
+      this.errorRevision++;
+      this.log.record(errorEntry(message));
+    }
+    this.errorRetry = null;
+    this.#errorDetail = null;
+  }
 
-	get errorDetail(): string | null {
-		return this.#errorDetail;
-	}
+  get errorDetail(): string | null {
+    return this.#errorDetail;
+  }
 
-	set errorDetail(detail: string | null) {
-		this.#errorDetail = detail;
-		if (detail && this.#error) this.log.record(errorEntry(this.#error, detail), { repeat: false });
-	}
+  set errorDetail(detail: string | null) {
+    this.#errorDetail = detail;
+    if (detail && this.#error)
+      this.log.record(errorEntry(this.#error, detail), { repeat: false });
+  }
 
-	/** Case files parsed in the browser via the powerio wasm module. */
-	localCases: LocalCase[] = $state.raw<LocalCase[]>([]);
-	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
-	activeLocalId = $state<string | null>(null);
-	placingLocalId = $state<string | null>(null);
-	/** Multiconductor cases with retained inputs and AC power flow results. */
-	multiCases: MulticonductorCase[] = $state.raw<MulticonductorCase[]>([]);
-	/** Multiconductor case the panel shows; mutually exclusive with the solvable
-	 * active ids. */
-	activeMultiId = $state<string | null>(null);
-	/** Multiconductor case awaiting placement on the map. */
-	placingMultiId = $state<string | null>(null);
-	dragOver = $state(false);
-	parsingFile = $state(false);
+  /** Case files parsed in the browser via the powerio wasm module. */
+  localCases: LocalCase[] = $state.raw<LocalCase[]>([]);
+  /** Local case the panel shows; clicking a bundled case or a bus clears it. */
+  activeLocalId = $state<string | null>(null);
+  placingLocalId = $state<string | null>(null);
+  /** Multiconductor cases with retained inputs and AC power flow results. */
+  multiCases: MulticonductorCase[] = $state.raw<MulticonductorCase[]>([]);
+  /** Multiconductor case the panel shows; mutually exclusive with the solvable
+   * active ids. */
+  activeMultiId = $state<string | null>(null);
+  /** Multiconductor case awaiting placement on the map. */
+  placingMultiId = $state<string | null>(null);
+  dragOver = $state(false);
+  parsingFile = $state(false);
 
-	/** True under `(max-width: 760px)`; the panel renders as a bottom sheet. Set by
-	 * the shell from one media query so panel and map read the same value. */
-	compactLayout = $state(false);
-	/** Zen mode hides the panel toolbar and every panel so only the map and
-	 * header remain. It is a saved display preference, so a presenter keeps the
-	 * view across reloads; panel open state is left untouched so leaving zen
-	 * restores the previous view. */
-	get zen() {
-		return this.preferences.zen;
-	}
-	set zen(value: boolean) {
-		if (value !== this.preferences.zen) this.preferences.update({ zen: value });
-	}
-	/** Height in px the bottom sheet covers; 0 when `compactLayout` is false.
-	 * Read by the map's camera padding and by chrome anchored above the sheet. */
-	sheetInset = $state(0);
-	/** Height in px the header covers at the top of the map, measured by
-	 * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,
-	 * so callers that need to clear the header read this rather than a constant. */
-	headerInset = $state(64);
-	/** Height in px the dynamics playback dock covers at the bottom of the
-	 * map, from the viewport's bottom edge; 0 when it is closed. Read by the
-	 * map's camera padding and by chrome anchored at the bottom. */
-	dockInset = $state(0);
-	/** `window.innerHeight`, tracked by the shell. The sheet's snaps and the map's
-	 * chrome lift are both fractions of it; the fallback is a desktop window. */
-	viewportHeight = $state(800);
+  /** True under `(max-width: 760px)`; the panel renders as a bottom sheet. Set by
+   * the shell from one media query so panel and map read the same value. */
+  compactLayout = $state(false);
+  /** Zen mode hides the panel toolbar and every panel so only the map and
+   * header remain. It is a saved display preference, so a presenter keeps the
+   * view across reloads; panel open state is left untouched so leaving zen
+   * restores the previous view. */
+  get zen() {
+    return this.preferences.zen;
+  }
+  set zen(value: boolean) {
+    if (value !== this.preferences.zen) this.preferences.update({ zen: value });
+  }
+  /** Height in px the bottom sheet covers; 0 when `compactLayout` is false.
+   * Read by the map's camera padding and by chrome anchored above the sheet. */
+  sheetInset = $state(0);
+  /** Height in px the header covers at the top of the map, measured by
+   * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,
+   * so callers that need to clear the header read this rather than a constant. */
+  headerInset = $state(64);
+  /** Height in px the dynamics playback dock covers at the bottom of the
+   * map, from the viewport's bottom edge; 0 when it is closed. Read by the
+   * map's camera padding and by chrome anchored at the bottom. */
+  dockInset = $state(0);
+  /** `window.innerHeight`, tracked by the shell. The sheet's snaps and the map's
+   * chrome lift are both fractions of it; the fallback is a desktop window. */
+  viewportHeight = $state(800);
 
-	/** Map framing request: bump seq so repeat targets still fly. `requestFrame`
-	 * returns a promise the map resolves when the camera lands (or immediately
-	 * when it cannot fly), so a caller can defer heavy work until the animation
-	 * finishes. */
-	frameTarget: FrameTarget = $state.raw<FrameTarget>('all');
-	frameSeq = $state(0);
-	#frameSettled: (() => void) | null = null;
+  /** Map framing request: bump seq so repeat targets still fly. `requestFrame`
+   * returns a promise the map resolves when the camera lands (or immediately
+   * when it cannot fly), so a caller can defer heavy work until the animation
+   * finishes. */
+  frameTarget: FrameTarget = $state.raw<FrameTarget>("all");
+  frameSeq = $state(0);
+  #frameSettled: (() => void) | null = null;
 
-	get active(): CaseState | null {
-		return this.cases.find((c) => c.id === this.activeCaseId) ?? null;
-	}
+  get active(): CaseState | null {
+    return this.cases.find((c) => c.id === this.activeCaseId) ?? null;
+  }
 
-	byId(id: string): CaseState | null {
-		return this.cases.find((c) => c.id === id) ?? null;
-	}
+  byId(id: string): CaseState | null {
+    return this.cases.find((c) => c.id === id) ?? null;
+  }
 
-	get activeLocal(): LocalCase | null {
-		return this.localCases.find((c) => c.id === this.activeLocalId) ?? null;
-	}
+  get activeLocal(): LocalCase | null {
+    return this.localCases.find((c) => c.id === this.activeLocalId) ?? null;
+  }
 
-	get activeMulti(): MulticonductorCase | null {
-		return this.multiCases.find((c) => c.id === this.activeMultiId) ?? null;
-	}
+  get activeMulti(): MulticonductorCase | null {
+    return this.multiCases.find((c) => c.id === this.activeMultiId) ?? null;
+  }
 
-	/** Whether any case is awaiting a click-to-place on the map (local or multi). */
-	get placingId(): string | null {
-		return this.placingLocalId ?? this.placingMultiId;
-	}
+  /** Whether any case is awaiting a click-to-place on the map (local or multi). */
+  get placingId(): string | null {
+    return this.placingLocalId ?? this.placingMultiId;
+  }
 
-	addLocal(c: LocalCase) {
-		this.localCases = [...this.localCases, c];
-		this.activeLocalId = c.id;
-		this.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
-	}
+  addLocal(c: LocalCase) {
+    this.localCases = [...this.localCases, c];
+    this.activeLocalId = c.id;
+    this.placingLocalId = c.coordsKind === "synthetic_pending" ? c.id : null;
+  }
 
-	/** Add a multiconductor case and make it active. A case that still needs a
-	 * map center (planar/synthetic, no view yet) enters placement. */
-	addMulti(c: MulticonductorCase) {
-		this.multiCases = [...this.multiCases, c];
-		this.activeCaseId = null;
-		this.activeLocalId = null;
-		this.activeMultiId = c.id;
-		this.placingLocalId = null;
-		this.placingMultiId = c.placed ? null : c.id;
-	}
+  /** Add a multiconductor case and make it active. A case that still needs a
+   * map center (planar/synthetic, no view yet) enters placement. */
+  addMulti(c: MulticonductorCase) {
+    this.multiCases = [...this.multiCases, c];
+    this.activeCaseId = null;
+    this.activeLocalId = null;
+    this.activeMultiId = c.id;
+    this.placingLocalId = null;
+    this.placingMultiId = c.placed ? null : c.id;
+  }
 
-	removeMulti(id: string): FallbackTarget {
-		const wasActive = this.activeMultiId === id;
-		this.multiCases = this.multiCases.filter((c) => c.id !== id);
-		if (this.placingMultiId === id) this.placingMultiId = null;
-		if (!wasActive) return { kind: 'none' };
-		this.activeMultiId = null;
-		if (this.activeCaseId !== null || this.activeLocalId !== null) return { kind: 'none' };
-		return this.activateFallback();
-	}
+  removeMulti(id: string): FallbackTarget {
+    const wasActive = this.activeMultiId === id;
+    this.multiCases = this.multiCases.filter((c) => c.id !== id);
+    if (this.placingMultiId === id) this.placingMultiId = null;
+    if (!wasActive) return { kind: "none" };
+    this.activeMultiId = null;
+    if (this.activeCaseId !== null || this.activeLocalId !== null)
+      return { kind: "none" };
+    return this.activateFallback();
+  }
 
-	removeCase(id: string): FallbackTarget {
-		const wasActive = this.activeCaseId === id;
-		this.cases = this.cases.filter((c) => c.id !== id);
-		if (!wasActive) return { kind: 'none' };
+  removeCase(id: string): FallbackTarget {
+    const wasActive = this.activeCaseId === id;
+    this.cases = this.cases.filter((c) => c.id !== id);
+    if (!wasActive) return { kind: "none" };
 
-		this.selectedBus = null;
-		this.selectedBranch = null;
-		this.previewDeltaMw = null;
-		this.previewRatingMw = null;
-		this.previewActive = false;
-		this.previewPrices = null;
-		this.demandRangeMode = 'local';
-		this.sensitivityLoading = false;
+    this.selectedBus = null;
+    this.selectedBranch = null;
+    this.previewDeltaMw = null;
+    this.previewRatingMw = null;
+    this.previewActive = false;
+    this.previewPrices = null;
+    this.demandRangeMode = "local";
+    this.sensitivityLoading = false;
 
-		return this.activateFallback();
-	}
+    return this.activateFallback();
+  }
 
-	removeLocal(id: string): FallbackTarget {
-		const wasActive = this.activeLocalId === id;
-		this.localCases = this.localCases.filter((c) => c.id !== id);
-		if (this.placingLocalId === id) this.placingLocalId = null;
-		if (!wasActive) return { kind: 'none' };
+  removeLocal(id: string): FallbackTarget {
+    const wasActive = this.activeLocalId === id;
+    this.localCases = this.localCases.filter((c) => c.id !== id);
+    if (this.placingLocalId === id) this.placingLocalId = null;
+    if (!wasActive) return { kind: "none" };
 
-		this.activeLocalId = null;
-		// A backend case can still be active; only pick a fallback when nothing is.
-		if (this.activeCaseId !== null) return { kind: 'none' };
+    this.activeLocalId = null;
+    // A backend case can still be active; only pick a fallback when nothing is.
+    if (this.activeCaseId !== null) return { kind: "none" };
 
-		return this.activateFallback();
-	}
+    return this.activateFallback();
+  }
 
-	// Pick the next active case after a removal: the first remaining backend case,
-	// else a remaining local case that can render (a view or substations) or is
-	// awaiting placement, else the first remaining local. Frames whatever it picks.
-	activateFallback(): FallbackTarget {
-		this.activeCaseId = this.cases.find((c) => !c.unavailableReason)?.id ?? null;
-		if (this.activeCaseId) {
-			this.requestFrame(this.activeCaseId);
-			return { kind: 'backend', id: this.activeCaseId };
-		}
-		const nextLocal =
-			this.localCases.find(
-				(c) => c.view || c.substations || c.coordsKind === 'synthetic_pending'
-			) ??
-			this.localCases[0] ??
-			null;
-		if (nextLocal) {
-			this.activeLocalId = nextLocal.id;
-			this.placingLocalId = nextLocal.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
-			if (nextLocal.view || nextLocal.substations) this.requestFrame(nextLocal.id);
-			else this.requestFrame('all');
-			return { kind: 'local', id: nextLocal.id };
-		}
-		this.activeLocalId = null;
-		this.placingLocalId = null;
-		// A multiconductor case is viewing only, so no hydration target: activate
-		// it, frame whatever is placed, and report `none`.
-		const nextMulti = this.multiCases[0] ?? null;
-		this.activeMultiId = nextMulti?.id ?? null;
-		this.placingMultiId = nextMulti && !nextMulti.placed ? nextMulti.id : null;
-		if (nextMulti?.placed) this.requestFrame(nextMulti.id);
-		else this.requestFrame('all');
-		return { kind: 'none' };
-	}
+  // Pick the next active case after a removal: the first remaining backend case,
+  // else a remaining local case that can render (a view or substations) or is
+  // awaiting placement, else the first remaining local. Frames whatever it picks.
+  activateFallback(): FallbackTarget {
+    this.activeCaseId =
+      this.cases.find((c) => !c.unavailableReason)?.id ?? null;
+    if (this.activeCaseId) {
+      this.requestFrame(this.activeCaseId);
+      return { kind: "backend", id: this.activeCaseId };
+    }
+    const nextLocal =
+      this.localCases.find(
+        (c) => c.view || c.substations || c.coordsKind === "synthetic_pending",
+      ) ??
+      this.localCases[0] ??
+      null;
+    if (nextLocal) {
+      this.activeLocalId = nextLocal.id;
+      this.placingLocalId =
+        nextLocal.coordsKind === "synthetic_pending" ? nextLocal.id : null;
+      if (nextLocal.view || nextLocal.substations)
+        this.requestFrame(nextLocal.id);
+      else this.requestFrame("all");
+      return { kind: "local", id: nextLocal.id };
+    }
+    this.activeLocalId = null;
+    this.placingLocalId = null;
+    // A multiconductor case is viewing only, so no hydration target: activate
+    // it, frame whatever is placed, and report `none`.
+    const nextMulti = this.multiCases[0] ?? null;
+    this.activeMultiId = nextMulti?.id ?? null;
+    this.placingMultiId = nextMulti && !nextMulti.placed ? nextMulti.id : null;
+    if (nextMulti?.placed) this.requestFrame(nextMulti.id);
+    else this.requestFrame("all");
+    return { kind: "none" };
+  }
 
-	requestFrame(target: FrameTarget): Promise<void> {
-		// A superseded request settles immediately; the new request owns the camera.
-		this.settleFrame();
-		this.frameTarget = target;
-		this.frameSeq++;
-		return new Promise((resolve) => {
-			this.#frameSettled = resolve;
-		});
-	}
+  requestFrame(target: FrameTarget): Promise<void> {
+    // A superseded request settles immediately; the new request owns the camera.
+    this.settleFrame();
+    this.frameTarget = target;
+    this.frameSeq++;
+    return new Promise((resolve) => {
+      this.#frameSettled = resolve;
+    });
+  }
 
-	/** The map calls this when the requested camera move has landed. */
-	settleFrame() {
-		this.#frameSettled?.();
-		this.#frameSettled = null;
-	}
+  /** The map calls this when the requested camera move has landed. */
+  settleFrame() {
+    this.#frameSettled?.();
+    this.#frameSettled = null;
+  }
 }
 
 export function createAppState(): AppState {
-	return new AppState();
+  return new AppState();
 }

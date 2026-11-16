@@ -21,49 +21,57 @@
 	const app = getAppState();
 	const saved = $derived(app.studyView);
 	const active = $derived(ctrl.activeSolvable);
+	/** A calculation the user chose that failed, while the previous result stays on screen. */
+	const attempted = $derived(saved || active?.solving ? null : (active?.failedCalculation ?? null));
 	/** The convergence record: an interior-point trace (an array) or, for AC power flow, the
 	 * Newton summary the engine returns in its place. */
-	const record = $derived<unknown>(saved ? saved.solution?.iterations : (active?.iterations ?? []));
+	const record = $derived<unknown>(
+		saved ? saved.solution?.iterations : attempted ? [] : (active?.iterations ?? [])
+	);
 	const trace = $derived(Array.isArray(record) ? record : []);
 	const count = $derived(iterationCount(record));
 	/** A solve started (it picked a backend) but ended without a time: it failed. */
 	const failed = $derived(
-		!!active && !active.solving && active.solveBackend !== null && active.solveMs == null
+		!!attempted ||
+			(!!active && !active.solving && active.solveBackend !== null && active.solveMs == null)
 	);
 	const verdict = $derived(
 		saved
 			? savedVerdict({ status: saved.solution?.status })
 			: active
 				? solveVerdict({
-						formulation: active.formulation,
+						formulation: attempted ?? active.formulation,
 						solving: active.solving,
 						failed,
-						status: active.solution?.status,
+						status: attempted ? null : active.solution?.status,
 						failure: failed ? app.error : null
 					})
 				: null
 	);
 	/** Named only when a server took part; the browser engine is the default. */
 	const server = $derived(
-		active?.solveBackend === 'rust-server' ||
-			active?.solveBackend === 'clarabel-wasm-server-sensitivity'
+		!attempted &&
+			(active?.solveBackend === 'rust-server' ||
+				active?.solveBackend === 'clarabel-wasm-server-sensitivity')
 			? 'Server'
 			: null
 	);
 	const fallback = $derived(
-		active?.solveBackend === 'rust-server' ? active.solveFallbackReason : null
+		!attempted && active?.solveBackend === 'rust-server' ? active.solveFallbackReason : null
 	);
 	const status = $derived(saved ? saved.solution?.status : active?.solution?.status);
+	/** The calculation behind the result on screen. */
 	const calculation = $derived(saved ? saved.formulation : (active?.formulation ?? null));
 	/** A power flow that solves is "Converged"; "Feasible" is an optimiser's word. */
 	const statusText = $derived(
 		calculation === 'acpf' && cleanStatus(status) ? 'Converged' : statusWords(status)
 	);
-	const ms = $derived(saved ? null : (active?.solveMs ?? null));
+	const ms = $derived(saved || attempted ? null : (active?.solveMs ?? null));
 	/** The served base result of a hosted case: solved ahead of time, so it has no
 	 * iterations or time of its own. */
 	const precomputed = $derived(
 		!saved &&
+			!attempted &&
 			!!active?.solution &&
 			!active.solving &&
 			active.solution === active.baseSolution &&
@@ -79,7 +87,7 @@
 			count !== null ||
 			ms !== null ||
 			!!server ||
-			!!active?.solveDetail
+			(!attempted && !!active?.solveDetail)
 	);
 </script>
 
@@ -104,7 +112,7 @@
 					{#if calculation && (saved || !embedded)}
 						<div>
 							<dt>Calculation</dt>
-							<dd>{formulationLabel(calculation)}</dd>
+							<dd>{formulationLabel(attempted ?? calculation)}</dd>
 						</div>
 					{/if}
 					{#if status && !failed}
@@ -130,7 +138,7 @@
 							<dd>Precomputed</dd>
 						</div>
 					{/if}
-					{#if !saved && active?.solveDetail}
+					{#if !saved && !attempted && active?.solveDetail}
 						<div>
 							<dt>Method</dt>
 							<dd>{active.solveDetail}</dd>

@@ -15,23 +15,36 @@
 		{ label: 'Near limit', color: rgb(LOADING_AMBER) },
 		{ label: 'At limit', color: rgb(LOADING_RED) }
 	];
+	/** The last calculation failed: the status line above already says so. */
+	const failed = $derived.by(() => {
+		const c = ctrl.activeSolvable;
+		return (
+			!!c &&
+			!c.solving &&
+			(!!c.failedCalculation || (c.solveBackend != null && c.solveMs == null))
+		);
+	});
 </script>
 
-<div class="mode display-mode">
-	<div class="segment" aria-label="Bus color variable">
-		{#each ctrl.displayOptions as option (option.mode)}
-			<button
-				type="button"
-				class:active={app.displayMode === option.mode}
-				aria-pressed={app.displayMode === option.mode}
-				onclick={() => (app.displayMode = option.mode)}>{option.label}</button
-			>
-		{/each}
+{#if ctrl.displayOptions.length > 0 || app.sensitivityLoading}
+	<div class="mode display-mode">
+		{#if ctrl.displayOptions.length > 0}
+			<div class="segment" aria-label="Bus color variable">
+				{#each ctrl.displayOptions as option (option.mode)}
+					<button
+						type="button"
+						class={{ active: app.displayMode === option.mode }}
+						aria-pressed={app.displayMode === option.mode}
+						onclick={() => (app.displayMode = option.mode)}>{option.label}</button
+					>
+				{/each}
+			</div>
+		{/if}
+		{#if app.sensitivityLoading}
+			<span class="dim blink">Loading&hellip;</span>
+		{/if}
 	</div>
-	{#if app.sensitivityLoading}
-		<span class="dim blink">Loading&hellip;</span>
-	{/if}
-</div>
+{/if}
 {#if diagramOpen}
 	<!-- The diagram carries its own key. -->
 {:else if ctrl.activeDisplay && ctrl.displayStats}
@@ -69,7 +82,7 @@
 	</ul>
 {:else if ctrl.activeSolvable?.solving}
 	<p class="dim small blink">Solving&hellip;</p>
-{:else}
+{:else if !failed}
 	<p class="dim small">No result</p>
 {/if}
 

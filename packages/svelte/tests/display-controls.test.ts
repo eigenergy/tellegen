@@ -9,7 +9,11 @@ const state = vi.hoisted(() => ({
 		activeDisplay: null,
 		displayStats: null,
 		activeFormulation: 'acpf',
-		activeSolvable: { solving: false }
+		activeSolvable: { solving: false } as {
+			solving: boolean;
+			solveBackend?: string | null;
+			solveMs?: number | null;
+		}
 	}
 }));
 
@@ -19,7 +23,7 @@ vi.mock('../src/lib/context.svelte.js', () => ({
 }));
 
 beforeEach(() => {
-	state.ctrl.activeSolvable.solving = false;
+	state.ctrl.activeSolvable = { solving: false };
 });
 
 describe('display controls without a result', () => {
@@ -34,5 +38,10 @@ describe('display controls without a result', () => {
 		expect(body).not.toContain('Solving…');
 		expect(body).toContain('No result');
 		expect(body).not.toContain('blink');
+	});
+	it('leaves a failed calculation to the status line above', () => {
+		state.ctrl.activeSolvable = { solving: false, solveBackend: 'clarabel-wasm', solveMs: null };
+		const { body } = render(DisplayControls);
+		expect(body).not.toContain('No result');
 	});
 });

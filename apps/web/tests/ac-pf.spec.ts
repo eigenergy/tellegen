@@ -163,10 +163,14 @@ test('a rejected AC power flow stops the solving indicator and can recover with 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		await runCalculation(page, 'acpf');
 		// The failure says so, and the DC OPF result stays on screen and in the select.
-		await expect(page.getByTestId('notification-toast')).toContainText('Calculation failed');
+		await expect(page.getByTestId('notification-toast')).toContainText('AC power flow failed');
 		await expect(calculation).toBeEnabled();
 		await expect(calculation).toHaveValue('dcopf');
 		await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'dcopf');
+		// The status line blames the calculation that failed, not the one on screen.
+		await expect(network.locator('.solvecard .verdict')).toHaveText(
+			'AC power flow did not converge'
+		);
 		await expect(network).not.toContainText('Solving…');
 		await expect(network).not.toContainText('No result');
 		await page.getByRole('button', { name: 'Dismiss notification' }).click();
