@@ -29,7 +29,7 @@
 	}
 
 	const LOADS: [LoadModel, string][] = [
-		['power_flow', 'As the power flow solved them'],
+		['power_flow', 'Power flow'],
 		['constant_impedance', 'Constant impedance (Z)'],
 		['constant_current', 'Constant current (I)'],
 		['constant_power', 'Constant power (P)']
@@ -88,10 +88,7 @@
 								e.currentTarget.value === 'exact'
 									? { kind: 'exact' }
 									: { kind: 'break', v_break: 0.7 }
-						})}
-					><option value="break">PQBRAK at 0.7 pu (PSS/E)</option><option value="exact"
-						>Exact law</option
-					></select
+						})}><option value="break">PSS/E</option><option value="exact">Exact</option></select
 				></label
 			>
 			<label class="check"
@@ -99,37 +96,37 @@
 					type="checkbox"
 					checked={o.reactive_limits ?? true}
 					onchange={(e) => dyn.setOptions({ ...o, reactive_limits: e.currentTarget.checked })}
-				/> Reactive limits at initialization</label
+				/> Q limits</label
 			>
 			<label class="check"
 				><input
 					type="checkbox"
 					checked={o.renewable_plants ?? true}
 					onchange={(e) => dyn.setOptions({ ...o, renewable_plants: e.currentTarget.checked })}
-				/> Simulate renewable plants (else held at power-flow output)</label
+				/> Simulate renewables</label
 			>
 			<fieldset>
-				<legend>Compare with PowerSimulationsDynamics.jl</legend>
+				<legend>PSID compatibility</legend>
 				<label class="check"
 					><input
 						type="checkbox"
 						checked={!!o.psid_lv_gain}
 						onchange={(e) => dyn.setOptions({ ...o, psid_lv_gain: e.currentTarget.checked })}
-					/> Its renewable low-voltage current gain</label
+					/> LV current gain</label
 				>
 				<label class="check"
 					><input
 						type="checkbox"
 						checked={!!o.psid_converter_ramp}
 						onchange={(e) => dyn.setOptions({ ...o, psid_converter_ramp: e.currentTarget.checked })}
-					/> Its converter ramp limits</label
+					/> Ramp limits</label
 				>
 				<label class="check"
 					><input
 						type="checkbox"
 						checked={!!o.psid_saturation}
 						onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
-					/> Its saturation below the knee</label
+					/> Low saturation</label
 				>
 			</fieldset>
 		</div>
@@ -145,12 +142,9 @@
 			class="run"
 			disabled={!ready || dyn.modesBusy}
 			onclick={() => void run()}
-			title={dyn.modesBusy ? 'Small-signal modes are being computed' : 'Ctrl/Cmd+Enter'}
-			>Run {dyn.tEnd} s simulation</button
+			title={dyn.modesBusy ? 'Modes running' : 'Ctrl/Cmd+Enter'}>Run {dyn.tEnd} s simulation</button
 		>
-		{#if dyn.modesBusy}<p class="dim">
-				Small-signal modes are being computed; stop them on the Modes tab to run now.
-			</p>{/if}
+		{#if dyn.modesBusy}<p class="dim">Modes running</p>{/if}
 	{/if}
 	{#if dyn.error}<p class="err" role="alert">{dyn.error}</p>{/if}
 </section>

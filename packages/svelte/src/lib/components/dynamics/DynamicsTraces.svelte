@@ -214,7 +214,7 @@
 						{ value: 0.8, label: '0.8 pu' },
 						{ value: 0.9, label: '0.9 pu' }
 					],
-					unit: '|V| pu',
+					unit: 'pu',
 					summary: `Voltages: lowest ${s.voltage.min_pu.toFixed(3)} pu at bus ${s.voltage.min_bus ?? '–'}; final range ${s.voltage.final_min_pu.toFixed(3)}–${s.voltage.final_max_pu.toFixed(3)} pu`
 				};
 			}

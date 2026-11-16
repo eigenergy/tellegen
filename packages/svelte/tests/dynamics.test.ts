@@ -201,21 +201,24 @@ describe('dynamics verdict wording', () => {
 			word: 'Stable',
 			tone: 'ok'
 		});
-		expect(headline(screening({ verdict: 'loss_of_synchronism' })).word).toBe(
-			'Unstable: loss of synchronism'
-		);
-		expect(headline(screening({ verdict: 'island_runaway' })).word).toBe(
-			'Unstable: island frequency runs away'
-		);
-		expect(headline(screening({ verdict: 'not_settled' }), null, 20).word).toBe(
-			'Inconclusive: not settled by 20 s'
-		);
+		expect(headline(screening({ verdict: 'loss_of_synchronism' }))).toMatchObject({
+			word: 'Unstable',
+			detail: 'Loss of synchronism'
+		});
+		expect(headline(screening({ verdict: 'island_runaway' }))).toMatchObject({
+			word: 'Unstable',
+			detail: 'Island runaway'
+		});
+		expect(headline(screening({ verdict: 'not_settled' }), null, 20)).toMatchObject({
+			word: 'Not settled',
+			detail: 'by 20 s'
+		});
 		expect(
 			headline(null, {
 				message: 'integration failed at t = 3.4200 s: x',
 				at: failureTime('integration failed at t = 3.4200 s: x')
-			}).word
-		).toBe('Run failed at t = 3.42 s');
+			})
+		).toMatchObject({ word: 'Failed', detail: 't = 3.42 s' });
 		const s = screening();
 		expect(headline({ ...s, voltage: { ...s.voltage, recovered: false } })).toMatchObject({
 			tone: 'warning'
@@ -390,7 +393,8 @@ describe('validated scenarios', () => {
 		});
 		expect(differs).toEqual({
 			validated: false,
-			text: 'Scenario of the validation study; settings differ: load model, step'
+			text: 'Settings differ',
+			detail: 'load model, step'
 		});
 		expect(validationBadge({ ...base, presetId: null })).toBeNull();
 	});

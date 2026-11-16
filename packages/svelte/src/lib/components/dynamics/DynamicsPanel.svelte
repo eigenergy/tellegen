@@ -10,6 +10,7 @@
 	import { headline } from '../../dynamics/verdict.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import ModeSwitch from './ModeSwitch.svelte';
+	import StatBoxes from '../StatBoxes.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -66,8 +67,13 @@
 
 	const counts = $derived(
 		ins
-			? `${ins.generators.length} machines, ${ins.plants?.length ?? 0} renewable plants simulated, ${ins.held_units?.length ?? 0} held, ${ins.sources.length} voltage sources and ${ins.dyr_records.toLocaleString()} .dyr records.`
-			: ''
+			? [
+					{ label: 'Machines', value: ins.generators.length.toLocaleString() },
+					{ label: 'Renewables', value: (ins.plants?.length ?? 0).toLocaleString() },
+					{ label: 'Held', value: (ins.held_units?.length ?? 0).toLocaleString() },
+					{ label: '.dyr records', value: ins.dyr_records.toLocaleString() }
+				]
+			: []
 	);
 	const flatOk = $derived(!!att?.flat && att.flat.max_speed_drift <= 1e-6);
 </script>
@@ -83,34 +89,25 @@
 	onopen={() => (app.mode = 'dynamics')}
 >
 	<div class="dyn" data-testid="dynamics-panel">
-		<div class="dyn-mode"><span>Map shows</span><ModeSwitch /></div>
+		<!-- The switch appears once the case has a dynamic model to show. -->
+		{#if att?.status === 'ready'}<div class="dyn-mode">
+				<span>Map shows</span><ModeSwitch />
+			</div>{/if}
 		{#if !att}
 			<section class="empty">
-				<h3>Dynamics simulation</h3>
-				<p>
-					Simulate the first seconds after a fault, a line or unit trip, or a load step. The map
-					shows bus voltages and machine speeds as they swing. The result says whether the machines
-					stayed in step and how far frequency fell.
-				</p>
-				<p>
-					It needs PSS/E dynamic data (.dyr).{hosted ? ' This case has none.' : ''} Drop a .raw case with
-					its .dyr file on the map, or open the demo.
-				</p>
+				<dl class="rows">
+					<div>
+						<dt>Dynamic data</dt>
+						<dd>{hosted || local ? 'None' : 'No case'}</dd>
+					</div>
+				</dl>
 				<button class="secondary" disabled={demoBusy} onclick={demo} data-testid="dyn-open-demo"
-					>{demoBusy ? 'Opening WECC 240…' : 'Open the WECC 240 demo'}</button
+					>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
 				>
-				<p class="dim">
-					243 buses of the western US grid, with machines, exciters, governors and 37 renewable
-					plants.
-				</p>
-				{#if demoError}<p class="err" role="alert">{demoError}</p>{/if}
+				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
 				{#if experimental && local?.studyInputJson}
 					<div class="dynamize">
-						<h4>Add default dynamics <span class="pill-experimental">Experimental</span></h4>
-						<p class="dim">
-							Gives every generator of {local.label} typical models. Synthetic dynamic data: typical parameters,
-							not the owner's.
-						</p>
+						<h4>Default dynamics <span class="pill-experimental">Synthetic</span></h4>
 						<label
 							>Unit type <select bind:value={preset}>
 								<option value="steam_wscc_192">Steam (WSCC 192 MVA)</option>
@@ -120,9 +117,9 @@
 							</select></label
 						>
 						<button disabled={dynamizeBusy} onclick={dynamize}
-							>{dynamizeBusy ? 'Adding…' : 'Add default dynamics'}</button
+							>{dynamizeBusy ? 'Adding…' : 'Add'}</button
 						>
-						{#if dynamizeError}<p class="err">{dynamizeError}</p>{/if}
+						{#if dynamizeError}<p class="err" title={dynamizeError}>Failed</p>{/if}
 					</div>
 				{/if}
 			</section>
@@ -130,62 +127,48 @@
 			<section class="data" aria-label="Dynamic data">
 				<p class="file">
 					<span class="mono">{att.fileName}</span>
-					{#if att.synthetic}<span class="pill-experimental">Synthetic dynamic data</span>{/if}
+					{#if att.synthetic}<span class="pill-experimental">Synthetic</span>{/if}
 				</p>
 				{#if att.status === 'opening'}
-					<p class="dim" role="status">Initializing from the AC power flow…</p>
+					<p class="dim" role="status">Initializing…</p>
 				{:else if att.status === 'failed'}
 					<p class="err" role="alert">{att.error}</p>
 				{:else if ins}
-					<p data-testid="dyn-counts">{counts}</p>
+					<div data-testid="dyn-counts"><StatBoxes stats={counts} label="Dynamic model" /></div>
 					{#if att.preparing}
-						<p class="dim" role="status" data-testid="dyn-preparing">
-							Initializing again with the new settings…
-						</p>
+						<p class="dim" role="status" data-testid="dyn-preparing">Initializing…</p>
 					{:else if att.prepareError}
-						<p class="err" role="alert">{att.prepareError}</p>
+						<p class="err" role="alert" title={att.prepareError}>Initialization failed</p>
 					{/if}
 					<dl class="init" aria-busy={att.preparing}>
 						{#if att.network === 'validation'}
 							<dt>Network</dt>
-							<dd data-testid="dyn-network">the validation study's loads (case-validation.raw)</dd>
+							<dd data-testid="dyn-network">Validation loads</dd>
 						{/if}
 						<dt>Initial residual</dt>
-						<dd>‖f(x₀)‖∞ = {(ins.initial_residual ?? 0).toExponential(1)}</dd>
+						<dd>{(ins.initial_residual ?? 0).toExponential(1)}</dd>
 						<dt>Power flow</dt>
-						<dd>
-							AC, reactive limits {ins.options?.reactive_limits === false
-								? 'not enforced'
-								: 'enforced'}
-						</dd>
+						<dd>AC, Q limits {ins.options?.reactive_limits === false ? 'off' : 'on'}</dd>
 						<dt>Angle reference</dt>
-						<dd>{ins.reference_unit ? `unit ${ins.reference_unit}` : 'synchronous frame'}</dd>
+						<dd>{ins.reference_unit ? `Unit ${ins.reference_unit}` : 'System'}</dd>
 						<dt>Flat start</dt>
 						<dd data-testid="dyn-flat">
 							{#if att.flat}
-								max speed drift {att.flat.max_speed_drift.toExponential(0)} pu over {att.flat
-									.seconds} s
+								Drift {att.flat.max_speed_drift.toExponential(0)} pu
 								{flatOk ? '✓' : '✗'}
-								{#if !flatOk}<br /><span class="warn"
-										>the case is not at rest; results include that drift</span
-									>{/if}
+								{#if !flatOk}<span class="chip-warn">Not at rest</span>{/if}
 							{:else if att.flatError}
-								<span class="err">{att.flatError}</span>
+								<span class="err" title={att.flatError}>Failed</span>
 							{:else}
-								checking…
+								Checking…
 							{/if}
 						</dd>
 					</dl>
 					{#if dyn.staticEdits > 0}
-						<p class="warn">
-							Dynamics uses the case as loaded; {dyn.staticEdits} steady-state edit{dyn.staticEdits ===
-							1
-								? ' is'
-								: 's are'} not included.
-						</p>
+						<p class="warn">Edits ignored: {dyn.staticEdits}</p>
 					{/if}
 					<details>
-						<summary>Initialization notes ({ins.notes.length})</summary>
+						<summary>Notes ({ins.notes.length})</summary>
 						<DynamicsNotes notes={ins.notes} />
 					</details>
 				{/if}
@@ -231,17 +214,12 @@
 			>
 				{#if tab === 'modes' && experimental}
 					<section aria-label="Small-signal modes" data-testid="dyn-modes">
-						<p class="dim">
-							Eigenvalues of the system linearized at the operating point, with the states that take
-							part most in each mode. <span class="pill-experimental">Experimental</span>
-						</p>
 						{#if dyn.modes}
 							<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
 						{:else}
 							{#if dyn.dynamicStates > 300}
 								<p class="warn" data-testid="dyn-modes-size">
-									A dense analysis of {dyn.dynamicStates.toLocaleString()} machine states plus the network
-									and plant states: it can take many minutes in the browser. Stop ends it.
+									Slow: {dyn.dynamicStates.toLocaleString()} states
 								</p>
 							{/if}
 							{#if dyn.modesBusy}
@@ -252,7 +230,7 @@
 							{:else}
 								<button
 									disabled={att.status !== 'ready' || dyn.running}
-									title={dyn.running ? 'A run is in progress' : undefined}
+									title={dyn.running ? 'Run in progress' : undefined}
 									onclick={() => dyn.computeModes()}>Compute modes</button
 								>
 							{/if}
@@ -266,26 +244,31 @@
 						<DynamicsVerdict record={current} experimental={!!att.synthetic} />
 						{#if current.run}
 							<details>
-								<summary>Run notes and events</summary>
+								<summary>Run notes</summary>
 								<DynamicsNotes
 									notes={current.run.notes.slice(ins?.notes.length ?? 0)}
 									events={current.run.events}
 								/>
 							</details>
-							<p class="footer">
-								{current.run.steps.toLocaleString()} steps and {current.run.newtonIterations.toLocaleString()}
-								Newton iterations. Engine time {(current.run.workerMs / 1000).toFixed(2)} s, total {(
-									current.wallMs / 1000
-								).toFixed(2)} s. Time step {current.dt * 1000} ms, output every {current.run
-									.outputStep * 1000} ms. Load model: {(
-									current.options.load_model ?? 'power_flow'
-								).replaceAll('_', ' ')}.
-								<button
-									class="link"
-									onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
-									>Copy run as JSON</button
-								>
-							</p>
+							<dl class="init footer">
+								<dt>Steps</dt>
+								<dd>{current.run.steps.toLocaleString()}</dd>
+								<dt>Iterations</dt>
+								<dd>{current.run.newtonIterations.toLocaleString()}</dd>
+								<dt>Time</dt>
+								<dd>
+									{(current.wallMs / 1000).toFixed(2)} s
+								</dd>
+								<dt>Step</dt>
+								<dd>{current.dt * 1000} ms</dd>
+								<dt>Loads</dt>
+								<dd>{(current.options.load_model ?? 'power_flow').replaceAll('_', ' ')}</dd>
+							</dl>
+							<button
+								class="link"
+								onclick={() => navigator.clipboard?.writeText(dyn.runJson(current))}
+								>Copy run as JSON</button
+							>
 						{/if}
 					{/if}
 					{#if dyn.runs.length > 1}
@@ -325,7 +308,6 @@
 		padding: 12px 14px 16px;
 		font-size: var(--fs-label);
 	}
-	h3,
 	h4 {
 		margin: 0 0 6px;
 	}
@@ -412,8 +394,33 @@
 		box-shadow: var(--inset-active);
 	}
 	.footer {
-		font-size: var(--fs-meta);
-		color: var(--text-tertiary);
+		color: var(--text-secondary);
+	}
+	.rows {
+		margin: 0;
+	}
+	.rows div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 4px 0;
+		border-bottom: 1px solid var(--line);
+	}
+	.rows dt {
+		color: var(--text-secondary);
+	}
+	.rows dd {
+		margin: 0;
+	}
+	.chip-warn {
+		margin-left: 6px;
+		padding: 1px 6px;
+		border-radius: var(--radius-full);
+		box-shadow: inset 3px 0 0 var(--amber);
+		background: var(--surface-chip);
+	}
+	.link {
+		justify-self: start;
 	}
 	.link {
 		border: none;

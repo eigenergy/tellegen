@@ -58,8 +58,7 @@ export const WECC240_PRESETS: Preset[] = [
 	}
 ];
 
-export const VALIDATED_CLAIM =
-	'Validated scenario: trajectories match PowerSimulationsDynamics.jl 0.16.2 within 3.2e-6 pu speed, 1.2e-5 pu |V|';
+export const VALIDATED_CLAIM = 'Validated';
 
 const sameOptions = (o: RmsCaseOptions): string[] => {
 	const diff: string[] = [];
@@ -84,7 +83,7 @@ export function validationBadge(input: {
 	dt: number;
 	tEnd: number;
 	validationNetwork: boolean;
-}): { validated: boolean; text: string } | null {
+}): { validated: boolean; text: string; detail?: string } | null {
 	if (!input.presetId || !input.presetEvents) return null;
 	const diff = sameOptions(input.options);
 	if (Math.abs(input.dt - VALIDATION_DT) > 1e-12) diff.push('step');
@@ -96,8 +95,5 @@ export function validationBadge(input: {
 		input.events.every((e, i) => strip(e) === strip(input.presetEvents![i]));
 	if (!same) diff.push('events');
 	if (diff.length === 0) return { validated: true, text: VALIDATED_CLAIM };
-	return {
-		validated: false,
-		text: `Scenario of the validation study; settings differ: ${diff.join(', ')}`
-	};
+	return { validated: false, text: 'Settings differ', detail: diff.join(', ') };
 }

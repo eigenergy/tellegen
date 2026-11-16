@@ -56,20 +56,17 @@
 
 <section class="dyn-actions" aria-label="Dynamics actions">
 	{#if !att}
-		<p class="dim">
-			Attach dynamic data (.dyr) to this case to pick events here. Drop the .dyr on the map, or open
-			the WECC 240 demo from the Dynamics panel.
-		</p>
+		<p class="dim">No dynamic data</p>
 	{:else if att.status !== 'ready'}
-		<p class="dim">{att.status === 'opening' ? 'Opening the dynamic data…' : att.error}</p>
+		<p class="dim" title={att.status === 'opening' ? undefined : (att.error ?? undefined)}>
+			{att.status === 'opening' ? 'Opening…' : 'Failed to open'}
+		</p>
 	{:else if bus !== null}
 		<h4>Bus {bus}{busName ? ` ${busName}` : ''}</h4>
 		{#if !hasBus}
-			<p class="dim">The simulated network has no bus {bus}.</p>
+			<p class="dim">Not in simulation</p>
 		{:else}
-			<button class="action" onclick={() => add(busFault(bus, f0))}
-				>⚡ Apply a fault here <span class="hint">1.000 s, cleared after 6 cycles</span></button
-			>
+			<button class="action" onclick={() => add(busFault(bus, f0))}>⚡ Apply a fault here</button>
 			{#if hasLoad}
 				<div class="row">
 					<button class="action" onclick={() => add(loadStep(bus, loadPct))}
@@ -103,10 +100,7 @@
 						<li>
 							<span class="mono"
 								>{k}
-								<span class="dim"
-									>{inspection?.plants?.includes(k)
-										? 'renewable plant (REGCA1 · REECB1 · REPCA1)'
-										: 'held at power-flow output, not simulated'}</span
+								<span class="dim">{inspection?.plants?.includes(k) ? 'Renewable' : 'Fixed'}</span
 								></span
 							>
 							<button
@@ -121,7 +115,7 @@
 	{:else if branch}
 		<h4>Branch {branch.from}–{branch.to}</h4>
 		{#if circuits.length === 0}
-			<p class="dim">The simulated network has no in-service branch {branch.from}–{branch.to}.</p>
+			<p class="dim">Not in simulation</p>
 		{:else}
 			{#if circuits.length > 1}
 				<fieldset>
@@ -157,7 +151,7 @@
 								nearEnd === 'from' ? branch.from : branch.to,
 								f0
 							)
-						)}>⚡ Fault on this line <span class="hint">cleared by opening the line</span></button
+						)}>⚡ Fault on this line</button
 				>
 				<label
 					>near <select bind:value={nearEnd}
@@ -168,10 +162,7 @@
 			</div>
 		{/if}
 	{:else}
-		<p class="dim">
-			Select a bus or a branch on the map, or search a bus above, to apply a fault, trip it or step
-			its load.
-		</p>
+		<p class="dim">Select a bus or line</p>
 	{/if}
 	{#if message}<p class="msg" role="status">{message}</p>{/if}
 </section>
@@ -207,10 +198,6 @@
 	}
 	.action:hover {
 		border-color: var(--accent);
-	}
-	.hint {
-		color: var(--text-tertiary);
-		font-size: var(--fs-meta);
 	}
 	.row {
 		display: flex;

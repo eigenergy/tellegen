@@ -1,18 +1,15 @@
 <script lang="ts">
 	import type { DynRunRecord } from '../../dynamics/controller.svelte.js';
-	import {
-		announcement,
-		headline,
-		rows,
-		SCREENING_CAVEAT,
-		SCREENING_DISCLAIMER
-	} from '../../dynamics/verdict.js';
+	import { getUiConfig } from '../../context.svelte.js';
+	import { announcement, headline, rows } from '../../dynamics/verdict.js';
 
 	let { record, experimental = false }: { record: DynRunRecord; experimental?: boolean } = $props();
 	const s = $derived(record.run?.screening ?? null);
 	const h = $derived(headline(s, record.failure, record.tEnd));
 	const table = $derived(s ? rows(s, record.events.length) : []);
 	const said = $derived(announcement(s, record.tEnd, record.events.length));
+	const config = getUiConfig();
+	const docs = $derived(`${config.docsHref.replace(/\/?$/, '/')}rms-validation.html`);
 </script>
 
 <section class="verdict" aria-labelledby="dyn-verdict-h" data-testid="dyn-verdict">
@@ -20,45 +17,39 @@
 	<h3 id="dyn-verdict-h" class={['headline', h.tone]}>
 		<span aria-hidden="true" class="icon">{h.icon}</span>
 		<span data-testid="dyn-verdict-word">{h.word}</span>
-		{#if h.detail && !record.failure}<span class="detail">{h.detail}</span>{/if}
+		{#if h.detail}<span class="detail">{h.detail}</span>{/if}
 	</h3>
-	{#if s}<p class="caveat" data-testid="dyn-caveat">{SCREENING_CAVEAT}</p>{/if}
+	{#if s}<a class="caveat" data-testid="dyn-caveat" href={docs} target="_blank" rel="noreferrer"
+			>Screening only</a
+		>{/if}
 	<div class="badges">
 		{#if record.badge}
 			<span
 				class={['badge', record.badge.validated ? 'validated' : 'differs']}
 				data-testid="dyn-badge"
-				>{record.badge.validated ? '✓ ' : ''}{record.badge.text}{#if record.badge.validated}
-					(<a
-						href="https://eigenergy.github.io/tellegen/rms-validation.html"
-						target="_blank"
-						rel="noopener">docs</a
-					>){/if}</span
+				title={record.badge.detail}>{record.badge.validated ? '✓ ' : ''}{record.badge.text}</span
 			>
 		{/if}
 		{#if record.network === 'validation'}<span class="badge" data-testid="dyn-network"
-				>Network: WECC 240 with the validation study's loads</span
+				>Validation loads</span
 			>{/if}
-		{#if record.agent}<span class="badge agent">Run by the agent</span>{/if}
+		{#if record.agent}<span class="badge agent">Agent</span>{/if}
 		{#if experimental}<span class="pill-experimental">Experimental</span>{/if}
 	</div>
 	{#if record.failure}
-		<p class="failure">{record.failure.message}</p>
-		<p class="dim">This can indicate voltage collapse; it is not proven.</p>
+		<details class="failure">
+			<summary>Details</summary>
+			<p>{record.failure.message}</p>
+		</details>
 	{:else if s}
 		<table>
-			<thead
-				><tr
-					><th>Metric</th><th>Value</th><th>Criterion</th><th><span class="sr-only">Pass</span></th
-					></tr
-				></thead
+			<thead><tr><th>Metric</th><th>Value</th><th><span class="sr-only">Pass</span></th></tr></thead
 			>
 			<tbody>
 				{#each table as r (r.metric)}
 					<tr>
 						<th scope="row">{r.metric}</th>
 						<td>{r.value}</td>
-						<td class="crit">{r.criterion}</td>
 						<td
 							class={['mark', r.status === '✓' ? 'ok' : r.status === '✗' ? 'bad' : '']}
 							aria-label={r.status === '✓' ? 'meets' : r.status === '✗' ? 'fails' : 'reported'}
@@ -68,20 +59,6 @@
 				{/each}
 			</tbody>
 		</table>
-		<details>
-			<summary>How this is computed</summary>
-			<p>{SCREENING_DISCLAIMER}</p>
-			<p>
-				No under-frequency load shedding is modelled; the 59.5 Hz line on the frequency chart is an
-				illustrative reference, not a regional UFLS setting.
-			</p>
-			<p>
-				Centre of inertia: machines weighted by H · MBASE, a tripped machine left out from its trip,
-				each island on its own. Bus frequency is estimated from the bus angle (20 ms filter), with
-				the sample at each event held.
-			</p>
-			<pre>{JSON.stringify({ name: s.criteria_name, ...s.criteria }, null, 1)}</pre>
-		</details>
 	{/if}
 </section>
 
@@ -165,9 +142,6 @@
 	td {
 		font-variant-numeric: tabular-nums;
 	}
-	.crit {
-		color: var(--text-tertiary);
-	}
 	.mark {
 		font-weight: 700;
 	}
@@ -177,7 +151,7 @@
 	.mark.bad {
 		color: var(--text-danger);
 	}
-	.failure {
+	.failure p {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--fs-control);
@@ -187,18 +161,10 @@
 		font-size: var(--fs-control);
 		color: var(--text-secondary);
 	}
-	pre {
-		font-size: var(--fs-meta);
-		overflow-x: auto;
-	}
 	.caveat {
-		margin: 0;
+		justify-self: start;
 		font-size: var(--fs-control);
-		color: var(--text-secondary);
-	}
-	.dim {
-		color: var(--text-tertiary);
-		font-size: var(--fs-control);
+		color: var(--text-accent);
 	}
 	.sr-only {
 		position: absolute;

@@ -34,38 +34,38 @@ export function headline(
 	if (failure)
 		return {
 			icon: '⨯',
-			word: failure.at != null ? `Run failed at t = ${failure.at.toFixed(2)} s` : 'Run failed',
-			detail: failure.message,
+			word: 'Failed',
+			detail: failure.at != null ? `t = ${failure.at.toFixed(2)} s` : null,
 			tone: 'failure'
 		};
-	if (!s) return { icon: '…', word: 'Not run yet', detail: null, tone: 'pending' };
+	if (!s) return { icon: '…', word: 'Not run', detail: null, tone: 'pending' };
 	switch (s.verdict) {
 		case 'stable':
 			return {
 				icon: '✓',
 				word: 'Stable',
-				detail: s.voltage.recovered ? null : 'with a voltage concern',
+				detail: s.voltage.recovered ? null : 'Voltage concern',
 				tone: s.voltage.recovered ? 'ok' : 'warning'
 			};
 		case 'loss_of_synchronism':
 			return {
 				icon: '✗',
-				word: 'Unstable: loss of synchronism',
-				detail: null,
+				word: 'Unstable',
+				detail: 'Loss of synchronism',
 				tone: 'failure'
 			};
 		case 'island_runaway':
 			return {
 				icon: '✗',
-				word: 'Unstable: island frequency runs away',
-				detail: null,
+				word: 'Unstable',
+				detail: 'Island runaway',
 				tone: 'failure'
 			};
 		case 'not_settled':
 			return {
 				icon: '–',
-				word: `Inconclusive: not settled by ${tEnd != null ? `${tEnd} s` : 'the end of the run'}`,
-				detail: 'extend the run',
+				word: 'Not settled',
+				detail: tEnd != null ? `by ${tEnd} s` : null,
 				tone: 'warning'
 			};
 	}
@@ -185,11 +185,3 @@ export function announcement(s: RmsScreening | null, tEnd?: number, events = 1):
 		return `${h.word}. No events applied; lowest COI frequency ${hz(s.frequency.coi_nadir_hz)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
 	return `${h.word}. COI frequency nadir ${hz(s.frequency.coi_nadir_hz)} at ${sec(s.frequency.nadir_t)}; lowest voltage ${s.voltage.min_pu.toFixed(2)} pu.`;
 }
-
-/** The one line under every verdict: what it does not prove. */
-export const SCREENING_CAVEAT =
-	"Screening by tellegen's criteria; no protection, UFLS or motor loads. Not a planning assessment.";
-
-/** The fixed disclaimer of the screening. */
-export const SCREENING_DISCLAIMER =
-	'Screening criteria chosen by tellegen, not a TPL-001 or WECC planning assessment. No protection, UFLS, or motor loads are modelled (see Known limitations).';

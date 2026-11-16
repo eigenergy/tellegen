@@ -125,7 +125,7 @@ describe('dynamics controller', () => {
 		};
 		dyn.modesBusy = true;
 		expect(await dyn.run()).toBeNull();
-		expect(dyn.error).toMatch(/modes/);
+		expect(dyn.error).toMatch(/Modes/);
 		dyn.modesBusy = false;
 		dyn.running = true;
 		expect(await dyn.run()).toBeNull();

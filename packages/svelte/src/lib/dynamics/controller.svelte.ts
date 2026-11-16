@@ -78,7 +78,7 @@ export interface DynRunRecord {
 	options: RmsCaseOptions;
 	dt: number;
 	tEnd: number;
-	badge: { validated: boolean; text: string } | null;
+	badge: { validated: boolean; text: string; detail?: string } | null;
 	/** The network the run used: the case's own, or (for a validated
 	 * scenario on the demo) the validation study's. */
 	network: 'case' | 'validation';
@@ -495,16 +495,15 @@ export class DynamicsController {
 		const local = this.app.activeLocal;
 		const a = this.active;
 		if (!local || !a || a.status !== 'ready') {
-			this.error = 'Attach dynamic data (.dyr) to the case first.';
+			this.error = 'No dynamic data';
 			return null;
 		}
 		if (this.running) {
-			this.error = 'A run is already in progress.';
+			this.error = 'Run in progress';
 			return null;
 		}
 		if (this.modesBusy) {
-			this.error =
-				'Small-signal modes are being computed. Wait for them, or stop them, before a run.';
+			this.error = 'Modes running';
 			return null;
 		}
 		const errs = this.eventErrors;
@@ -560,7 +559,7 @@ export class DynamicsController {
 			if (err.name === 'AbortError') {
 				this.running = false;
 				this.progress = null;
-				this.error = 'Run stopped.';
+				this.error = 'Stopped';
 				return null;
 			}
 			record.failure = { message: err.message, at: failureTime(err.message) };
@@ -673,7 +672,7 @@ export class DynamicsController {
 				? 'at rest, before any event'
 				: `at t = ${this.player.t.toFixed(3)} s`;
 			return {
-				html: `<b>Bus ${f.busIds[info.index]}</b><br>|V| ${v.toFixed(4)} pu ${when}`
+				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu ${when}`
 			};
 		}
 		if (info.layer?.id === 'dyn-halos' && info.index >= 0) {
@@ -704,7 +703,7 @@ export class DynamicsController {
 		const local = this.app.activeLocal;
 		if (!local || !this.active || this.modesBusy) return;
 		if (this.running) {
-			this.modesError = 'A run is in progress. Compute the modes after it finishes.';
+			this.modesError = 'Run in progress';
 			return;
 		}
 		this.modesBusy = true;
@@ -716,7 +715,7 @@ export class DynamicsController {
 			this.modes = await c.linear({ participation_top: 3 }, { signal: abort.signal });
 		} catch (e) {
 			const err = e as Error;
-			this.modesError = err.name === 'AbortError' ? 'Stopped.' : err.message;
+			this.modesError = err.name === 'AbortError' ? 'Stopped' : err.message;
 		} finally {
 			this.modesBusy = false;
 			this.#modesAbort = null;

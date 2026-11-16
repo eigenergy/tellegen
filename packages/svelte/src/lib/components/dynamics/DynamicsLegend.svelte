@@ -14,7 +14,7 @@
 <!-- Not `.legend`: the global stylesheet's .legend is the 6px colour-ramp strip. -->
 <aside class="dyn-legend" style:top="{top}px" aria-label="Dynamics map legend">
 	<div class="row">
-		<span class="title">Bus |V| (pu)</span>
+		<span class="title">Bus voltage (pu)</span>
 		<div class="bar" style:background={gradient}>
 			{#each ticks as t (t)}<span class="tick" style:left="{pos(t)}%">{t.toFixed(1)}</span>{/each}
 		</div>
@@ -25,28 +25,11 @@
 			<circle cx="45" cy="15" r={haloLegendRadius(0.01)} class="under" />
 			<circle cx="75" cy="15" r={haloLegendRadius(0.1)} class="over" />
 		</svg>
-		<span
-			>Ring size = speed deviation (small: 0.01 Hz, large: 0.1 Hz); <b class="u">teal</b> below,
-			<b class="o">magenta</b> above nominal. Faint grey: at nominal (within 1 mHz) or held at power-flow
-			output.</span
-		>
+		<span>Ring: speed deviation, <b class="u">slow</b> or <b class="o">fast</b></span>
 	</div>
 	{#if atRest}
-		<p class="rest-note" data-testid="dyn-legend-rest">
-			At rest: where the simulation starts, from the AC power flow. Pick an event and run it to
-			watch the system respond.
-		</p>
+		<p class="rest-note" data-testid="dyn-legend-rest">At rest</p>
 	{/if}
-	<details>
-		<summary>What am I looking at?</summary>
-		<p>
-			Each dot is a bus, coloured by its voltage magnitude at the time on the timeline: neutral near
-			1.0 pu, warm as voltage sags, purple above 1.05 pu. Rings around generating buses grow as
-			machines speed up or slow down. {atRest
-				? 'Before a run every machine turns at nominal speed, so the rings are faint.'
-				: 'Press play, or drag the timeline, to watch the disturbance travel and settle.'}
-		</p>
-	</details>
 </aside>
 
 <style>
@@ -124,16 +107,8 @@
 	.o {
 		color: var(--dyn-speed-over);
 	}
-	details p {
-		margin: 4px 0 0;
-		line-height: 1.45;
-	}
-	summary {
-		cursor: pointer;
-	}
 	@media (max-width: 960px) {
-		.halos,
-		details {
+		.halos {
 			display: none;
 		}
 	}

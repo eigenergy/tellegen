@@ -66,9 +66,7 @@
 		<text class="tick" x={pad - 4} y={y(fMax) + 4} text-anchor="end">{fMax.toFixed(1)}</text>
 	</svg>
 	<figcaption>
-		Rays: 5 % and 10 % damping. {unstable
-			? `${unstable} mode(s) with a positive real part.`
-			: 'No mode with a positive real part.'}
+		Rays: 5 % and 10 % damping. Unstable modes: {unstable}
 	</figcaption>
 </figure>
 <table>
