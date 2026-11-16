@@ -12,6 +12,9 @@ test('a failed case list shows once in the panel and is kept in the Log', async 
 	const panel = page.getByRole('complementary', { name: 'Network', exact: true });
 	await expect(panel.getByRole('alert')).toHaveText('Could not load the case list');
 	await expect(panel.getByRole('button', { name: 'Open case file', exact: true })).toBeVisible();
+	// The raw error waits behind Details.
+	await panel.getByText('Details', { exact: true }).click();
+	await expect(panel.locator('.load-details pre')).toContainText('502');
 	await expect(page.getByTestId('notification-toast')).toBeHidden();
 	// The header does not claim there are no cases when the list failed to load.
 	await expect(page.locator('header .case-button')).toHaveText('Open a case');

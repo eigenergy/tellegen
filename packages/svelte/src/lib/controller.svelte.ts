@@ -511,6 +511,8 @@ export class Controller {
   casesLoaded = $state(false);
   /** The last attempt to fetch the case list failed. */
   casesFailed = $state(false);
+  /** That failure's message, for the panel's Details. */
+  casesError = $state<string | null>(null);
   loadingBackendCase = $state<string | null>(null);
   showFileDropUi = $state(true);
   // Predicted objective change vs the committed point for the live preview. The
@@ -1403,10 +1405,16 @@ export class Controller {
       try {
         let summaries: Awaited<ReturnType<typeof api.getCases>>;
         this.casesFailed = false;
+        this.casesError = null;
         try {
           summaries = await api.getCases();
         } catch (e) {
           this.casesFailed = true;
+          // The status and the server's own words, which the short message leaves out.
+          this.casesError =
+            e instanceof ApiError && e.status
+              ? `${errorText(e)} (HTTP ${e.status})${e.serverMessage ? `: ${e.serverMessage}` : ""}`
+              : errorText(e);
           throw new Error(`Case list: ${errorText(e)}`, { cause: e });
         }
         const hidden = this.readHiddenDefaultCases();

@@ -197,6 +197,12 @@
 						{/if}
 					{:else if ctrl.casesFailed}
 						<p class="load-failed" role="alert">Could not load the case list</p>
+						{#if ctrl.casesError}
+							<details class="load-details">
+								<summary>Details</summary>
+								<pre>{ctrl.casesError}</pre>
+							</details>
+						{/if}
 						<div class="load-actions">
 							<button class="reset" onclick={() => void ctrl.load()}>Retry</button>
 							<button class="reset" onclick={openFile}>Open case file</button>
@@ -296,6 +302,21 @@
 	.load-actions {
 		display: flex;
 		gap: 8px;
+	}
+	.load-details {
+		margin: 0 0 8px;
+		font-size: var(--fs-label);
+	}
+	.load-details summary {
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+	.load-details pre {
+		margin: 4px 0 0;
+		font: var(--fs-control) / var(--lh-snug) var(--font-mono);
+		color: var(--text-secondary);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.view-mode {
