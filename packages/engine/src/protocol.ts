@@ -145,6 +145,8 @@ export type EngineRequest =
   | { op: "synth_session_report"; session: number }
   | { op: "synth_session_module"; session: number }
   | { op: "synth_session_ingest"; session: number }
+  /** The ingest payload without `module_json`. */
+  | { op: "synth_session_ingest_view"; session: number }
   | { op: "synth_session_export_gridfm"; session: number }
   | { op: "synth_session_free"; session: number }
   | { op: "synth_generate"; request: string; osm: string | null };
@@ -215,8 +217,19 @@ export function transferables(value: EngineValue): Transferable[] {
 
 export type WorkerResponse =
   /** `worker_ms` is the time the worker spent running the request, so a
-   * caller can separate engine time from transfer and parsing. */
-  | { id: number; ok: true; value: EngineValue; worker_ms?: number }
+   * caller can separate engine time from transfer and parsing. `received_at`
+   * and `posted_at` are when the worker took the request and posted this
+   * answer, in milliseconds since the Unix epoch
+   * (`performance.timeOrigin + performance.now()`), so a benchmark can time
+   * each copy between the threads. */
+  | {
+      id: number;
+      ok: true;
+      value: EngineValue;
+      worker_ms?: number;
+      received_at?: number;
+      posted_at?: number;
+    }
   /** `fatal` marks an error the wasm instance cannot be trusted after — a trap
    * leaves linear memory, the allocator, and every live Study undefined. The
    * host tears the worker down rather than serving the next request from it. */
@@ -533,6 +546,8 @@ export function runRequest(
       return synthSession(req.session).module();
     case "synth_session_ingest":
       return synthSession(req.session).ingest();
+    case "synth_session_ingest_view":
+      return synthSession(req.session).ingest_view();
     case "synth_session_export_gridfm":
       return synthSession(req.session).export_gridfm();
     case "synth_session_free":

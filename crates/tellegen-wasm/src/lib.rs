@@ -1742,6 +1742,12 @@ impl SynthSession {
         synth::ingest_impl(&self.0).map_err(synth_err)
     }
 
+    /// `ingest` without `module_json`, for a caller that already holds the
+    /// text of `module` and adds it itself.
+    pub fn ingest_view(&self) -> Result<String, JsError> {
+        synth::ingest_view_impl(&self.0).map_err(synth_err)
+    }
+
     /// The network as GridFM graphkit JSON (per-unit feature matrices on a
     /// 0-based bus index), from `electrify` on.
     pub fn export_gridfm(&self) -> Result<String, JsError> {
