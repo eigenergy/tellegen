@@ -228,9 +228,9 @@ fn full_lu(
     for &(row, col, v) in jf {
         trip.push(Triplet::new(row, col, step_entry(mass, row, v, h, theta)));
     }
-    for i in 0..nx {
-        if mass[i] != 0.0 {
-            trip.push(Triplet::new(i, i, mass[i]));
+    for (i, &m) in mass.iter().enumerate().take(nx) {
+        if m != 0.0 {
+            trip.push(Triplet::new(i, i, m));
         }
     }
     SparseLu::new(nx, &trip, patterns)
@@ -627,7 +627,7 @@ impl Stepper {
             std::mem::swap(r, r_trial);
             let previous = rnorm;
             rnorm = trial_norm;
-            if !(rnorm < 0.5 * previous) {
+            if super::not_lt(rnorm, 0.5 * previous) {
                 stalls += 1;
             }
             // Error left in `x`: for a contraction with rate `rho`, at most

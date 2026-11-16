@@ -28,9 +28,24 @@
 //! ([`LoadModel`]); constant-power and constant-current parts convert to
 //! constant admittance below a breakpoint ([`LowVoltageLoad`]).
 
-// Negated comparisons are NaN-safe on purpose (`!(x <= tol)` fails on NaN);
-// index loops mirror the row-by-row residual equations.
-#![allow(clippy::neg_cmp_op_on_partial_ord, clippy::needless_range_loop)]
+/// True unless `a > b`. A NaN on either side counts as not greater, so a
+/// check written with this fails on NaN instead of passing it.
+pub(crate) fn not_gt(a: f64, b: f64) -> bool {
+    a.partial_cmp(&b) != Some(std::cmp::Ordering::Greater)
+}
+
+/// True unless `a < b`; NaN on either side counts as not less.
+pub(crate) fn not_lt(a: f64, b: f64) -> bool {
+    a.partial_cmp(&b) != Some(std::cmp::Ordering::Less)
+}
+
+/// True unless `a <= b`; NaN on either side counts as not less or equal.
+pub(crate) fn not_le(a: f64, b: f64) -> bool {
+    !matches!(
+        a.partial_cmp(&b),
+        Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+    )
+}
 
 #[cfg(feature = "rms-experimental")]
 pub mod auto;
