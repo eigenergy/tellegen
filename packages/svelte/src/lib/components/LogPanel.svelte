@@ -41,6 +41,6 @@
 
 <style>
 	.log-body {
-		padding: 12px 14px;
+		padding: 16px 18px;
 	}
 </style>

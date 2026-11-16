@@ -70,7 +70,7 @@ test('the first-visit hint follows what this browser can do', async ({ page }) =
 	);
 	await page.goto('/');
 	// Chrome with WebMCP off: the hint says so and leads to the setting.
-	await expect(welcome).toContainText('Agent tools off');
+	await expect(welcome).toContainText('Agent tools are off');
 	await welcome.getByRole('button', { name: 'Set up' }).click();
 	await expect(page.getByTestId('webmcp-status')).toContainText('WebMCP off');
 });

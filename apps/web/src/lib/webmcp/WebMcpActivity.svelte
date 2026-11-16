@@ -50,7 +50,7 @@
 		if (supported || browser?.kind === 'ready')
 			return { text: 'Agent tools available', action: 'Connect' };
 		if (browser?.kind === 'flag' || browser?.kind === 'update' || browser?.kind === 'legacy')
-			return { text: 'Agent tools off', action: 'Set up' };
+			return { text: 'Agent tools are off', action: 'Set up' };
 		return null;
 	});
 	const welcomeKey = 'tellegen.welcome.webmcp-v1';
@@ -400,7 +400,7 @@
 	nav {
 		display: flex;
 		gap: 24px;
-		padding: 0 16px;
+		padding: 0 18px;
 		border-bottom: 1px solid var(--line);
 		flex: none;
 	}
@@ -421,7 +421,7 @@
 	}
 	.call-count {
 		margin: 0;
-		padding: 12px 16px;
+		padding: 12px 18px;
 		font-size: 12px;
 		color: var(--text-secondary);
 		border-bottom: 1px solid var(--line);
@@ -433,21 +433,22 @@
 	}
 	.registration-error {
 		margin: 0;
-		padding: 16px;
+		padding: 16px 18px;
 		color: var(--text-danger);
 		font-size: 12px;
 	}
+	/* Every panel's empty line sits where its content would start: 16 px down, 18 px in. */
 	.empty {
 		margin: 0;
-		padding: 16px;
+		padding: 16px 18px;
 		color: var(--text-secondary);
 	}
 	/* First visit only: a small note in the map's lower left corner, clear of
 	   the panels, the map controls and the data. */
 	.welcome {
 		position: fixed;
-		/* Above the dynamics playback dock while it is open. */
-		bottom: max(16px, calc(var(--tellegen-timeline-clear, -1000px) + 44px));
+		/* Above the dynamics playback dock while it is open, in the map control row below the panels. */
+		bottom: max(16px, calc(var(--tellegen-timeline-clear, -1000px) + 8px));
 		left: 16px;
 		z-index: 30;
 		display: flex;

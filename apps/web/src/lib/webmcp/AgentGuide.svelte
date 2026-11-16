@@ -78,11 +78,12 @@
 		brand === 'Chromium' ? 'this browser' : brand;
 </script>
 
-{#snippet copyRow(text: string, label: string, wrap = false)}
-	<div class={['cmd', wrap && 'wrap']}>
+<!-- One copy field everywhere: a single line, the full text in its tooltip, the button inside. -->
+{#snippet copyRow(text: string, label: string)}
+	<div class="cmd">
 		<code title={text}>{text}</code>
 		<button
-			class="ask-copy"
+			class="cmd-copy"
 			aria-label={copied === text ? `Copied ${label}` : `Copy ${label}`}
 			onclick={() => copy(text)}>{copied === text ? 'Copied' : 'Copy'}</button
 		>
@@ -121,7 +122,7 @@
 		<div class="status" data-state="setup" role="status" data-testid="webmcp-status">
 			{#if browser.kind === 'flag'}
 				<strong>WebMCP off</strong>
-				{@render copyRow(browser.flagUrl, 'flag address', true)}
+				{@render copyRow(browser.flagUrl, 'flag address')}
 			{:else if browser.kind === 'update' || browser.kind === 'legacy'}
 				<strong>Needs {brandName(browser.brand)} {browser.minVersion}+</strong>
 			{:else if browser.kind === 'mobile'}
@@ -189,7 +190,7 @@
 
 <style>
 	section {
-		padding: 16px 20px 20px;
+		padding: 16px 18px 20px;
 		font: 13px/1.5 var(--font-display);
 	}
 	p {
@@ -223,12 +224,6 @@
 	}
 	.status .cmd {
 		margin-bottom: 0;
-	}
-	/* A value the reader must read in full, such as the flag address, wraps instead of clipping. */
-	.cmd.wrap code {
-		white-space: normal;
-		overflow-wrap: anywhere;
-		text-overflow: clip;
 	}
 	.visually-hidden {
 		position: absolute;
@@ -341,21 +336,40 @@
 	}
 	.cmd {
 		display: flex;
-		gap: 8px;
-		align-items: center;
+		align-items: stretch;
+		height: 28px;
 		margin-bottom: 8px;
-	}
-	.cmd code {
-		flex: 1;
-		min-width: 0;
-		padding: 5px 8px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-control);
 		background: var(--paper);
 		overflow: hidden;
+	}
+	.cmd code {
+		flex: 1;
+		min-width: 0;
+		align-self: center;
+		padding: 0 6px;
+		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-size: 12px;
+	}
+	.cmd-copy {
+		flex: none;
+		padding: 0 8px;
+		border: 0;
+		border-left: 1px solid var(--line);
+		background: var(--surface-control);
+		color: var(--text-secondary);
+		font: 12px/1 var(--font-display);
+		cursor: pointer;
+	}
+	.cmd-copy:hover {
+		color: var(--ink);
+		background: var(--surface-hover);
+	}
+	.cmd-copy:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: -2px;
 	}
 	/* Monospace only for text to paste: the flag address and terminal commands.
 	   Names mentioned in a sentence stay in the text face. */
@@ -364,7 +378,7 @@
 		font-weight: 500;
 	}
 	.cmd code {
-		font: 12px/1.45 var(--font-code);
+		font: 11.5px/1.45 var(--font-code);
 	}
 	.routes {
 		border-top: 1px solid var(--line);

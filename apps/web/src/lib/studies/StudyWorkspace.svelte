@@ -1167,7 +1167,7 @@
 		display: flex;
 		align-items: flex-end;
 		gap: 8px;
-		padding: 10px 16px;
+		padding: 10px 18px;
 		flex: none;
 	}
 	.storage label:first-child {
@@ -1211,7 +1211,7 @@
 	nav {
 		display: flex;
 		gap: 24px;
-		padding: 0 16px;
+		padding: 0 18px;
 		border-bottom: 1px solid var(--line);
 		flex: none;
 	}
@@ -1227,7 +1227,7 @@
 		color: var(--ink);
 	}
 	.workspace-content {
-		padding: 18px 16px;
+		padding: 16px 18px;
 		overflow: auto;
 		min-height: 0;
 		overscroll-behavior: contain;
@@ -1510,7 +1510,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		padding: 10px 16px;
+		padding: 10px 18px;
 		border-top: 1px solid var(--line);
 		flex: none;
 		font-size: 12px;

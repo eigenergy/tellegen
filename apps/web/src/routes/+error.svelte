@@ -21,7 +21,6 @@
 		</a>
 	</header>
 	<main>
-		<p class="status">{page.status}</p>
 		<h1>{page.status === 404 ? 'Page not found' : 'Something went wrong'}</h1>
 		<a class="home" href={resolve('/')}>Open the map</a>
 	</main>
@@ -66,12 +65,6 @@
 		justify-items: start;
 		gap: 8px;
 		padding: 0 16px 48px;
-	}
-	.status {
-		margin: 0;
-		color: var(--text-secondary);
-		font-size: var(--fs-label);
-		font-variant-numeric: tabular-nums;
 	}
 	h1 {
 		margin: 0 0 8px;
