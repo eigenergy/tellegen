@@ -97,10 +97,12 @@ export interface EconomicsLeadInput {
 
 /** A price in $/MWh with a fixed number of decimals, so the ends of a range read alike. */
 export function priceNumber(value: number, digits: number): string {
-	return (Math.abs(value) < 5e-7 ? 0 : value).toLocaleString('en-US', {
+	const text = Math.abs(value).toLocaleString('en-US', {
 		minimumFractionDigits: digits,
 		maximumFractionDigits: digits
 	});
+	// A true minus sign, as everywhere else, and never a negative zero.
+	return value < 0 && /[1-9]/.test(text) ? `−${text}` : text;
 }
 
 /** OPF prices: the lowest and highest price, to the same precision. The lines at their limit are

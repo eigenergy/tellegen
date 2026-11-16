@@ -215,21 +215,21 @@ describe("resultStats", () => {
     ).toBe("—");
   });
 
-  it("counts the lines at their limit in place of the heaviest line, which the list names", () => {
+  it("keeps the heaviest line for AC power flow with lines over their limit", () => {
     expect(
       resultStats({
         formulation: "acpf",
         objective: 0,
-        binding: 1,
+        binding: 4,
         voltage: { min: 0.95, max: 1.05 },
-        maxLoading: 1,
+        maxLoading: 2.229,
         losses: 10,
-      }).map((s) => s.label),
+      }).map((s) => [s.label, s.value]),
     ).toEqual([
-      "Losses",
-      "Lines at limit",
-      "Lowest voltage",
-      "Highest voltage",
+      ["Losses", "10.0 MW"],
+      ["Max loading", "222.9%"],
+      ["Lowest voltage", "0.950 pu"],
+      ["Highest voltage", "1.050 pu"],
     ]);
   });
 
@@ -247,17 +247,17 @@ describe("resultStats", () => {
     ]);
   });
 
-  it("gives DC power flow its heaviest line and the lines at their limit", () => {
+  it("gives DC power flow its heaviest line and the lines over their limit", () => {
     expect(
       resultStats({
         formulation: "dcpf",
         objective: null,
-        binding: 0,
-        maxLoading: 0.5,
+        binding: 2,
+        maxLoading: 1.5,
       }).map((s) => [s.label, s.value]),
     ).toEqual([
-      ["Max loading", "50.0%"],
-      ["Lines at limit", "0"],
+      ["Max loading", "150.0%"],
+      ["Lines over limit", "2"],
     ]);
   });
 

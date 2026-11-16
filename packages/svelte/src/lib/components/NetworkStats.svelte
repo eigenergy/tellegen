@@ -20,11 +20,11 @@
 	<dl>
 		<div>
 			<dt>Buses</dt>
-			<dd class="mono">{stats.buses}</dd>
+			<dd class="mono">{stats.buses.toLocaleString('en-US')}</dd>
 		</div>
 		<div>
 			<dt>Lines</dt>
-			<dd class="mono">{stats.branches}</dd>
+			<dd class="mono">{stats.branches.toLocaleString('en-US')}</dd>
 		</div>
 	</dl>
 {/if}

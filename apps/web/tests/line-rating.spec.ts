@@ -55,7 +55,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	});
 
 	// The tightened line binds, so the panel lists it as the selection target.
-	const bindingLine = page.locator('.binding-lines button');
+	const bindingLine = page.locator('.binding-lines li button');
 	await expect(bindingLine).toHaveCount(1);
 	// Named as everywhere else: the line's id and the buses it joins.
 	await expect(bindingLine).toContainText('Line 3 (2–3)');
@@ -73,9 +73,9 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await page.mouse.up();
 
 	await bindingLine.click();
-	// The selected line leaves the list; the inspector below names it.
+	// The selected line stays in the list, marked; the inspector names it.
 	await expect(page.getByTestId('sensitivity-title')).toHaveText('Line 3 (2–3)');
-	await expect(bindingLine).toHaveCount(0);
+	await expect(bindingLine).toHaveAttribute('aria-current', 'true');
 	const selectedBranchCue = page.locator('.selected-branch-cue');
 	const selectedBranchPath = selectedBranchCue.locator('.selected-branch-line');
 	await expect(selectedBranchCue).toBeVisible();

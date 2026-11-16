@@ -5,8 +5,9 @@
 	let { stats, label = 'Result' }: { stats: Stat[]; label?: string } = $props();
 
 	/** A value too long for half the row spans the row, so it is never cut off; a box left alone
-	 * in its row spans it too, so no half row stays empty. */
-	const LONG = 10;
+	 * in its row spans it too, so no half row stays empty. A cost such as $4,815,984/h fits in
+	 * half a row: the value's type shrinks a little in a narrow box before it would be cut. */
+	const LONG = 14;
 	const spans = $derived.by(() => {
 		let column = 0;
 		return stats.map((stat, i) => {
@@ -45,6 +46,7 @@
 		grid-column: 1 / -1;
 	}
 	.stat {
+		container-type: inline-size;
 		min-width: 0;
 		padding: 8px 10px;
 		border: 1px solid var(--line);
@@ -74,7 +76,7 @@
 		max-width: 100%;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-size: var(--fs-display);
+		font-size: clamp(15px, 13cqi, var(--fs-display));
 		font-weight: 600;
 		line-height: var(--lh-tight);
 		color: var(--text-primary);

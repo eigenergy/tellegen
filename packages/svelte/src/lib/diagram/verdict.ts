@@ -65,13 +65,15 @@ export function duration(ms: number): string {
 
 const OPF = new Set<string>(["dcopf", "socwr", "acopf"]);
 
-/** The names for lines at or over their rating, the same for every calculation: an OPF holds
- * a line at its limit, and a power flow's line past its rating is counted with them. */
-export function limitWords(_formulation?: string | null): {
+/** The names for lines at or over their rating: an OPF holds a line at its limit, while a
+ * power flow can load one past it. */
+export function limitWords(formulation?: string | null): {
   lines: string;
   key: string;
 } {
-  return { lines: "Lines at limit", key: "At limit" };
+  return formulation === "acpf" || formulation === "dcpf"
+    ? { lines: "Lines over limit", key: "Over limit" }
+    : { lines: "Lines at limit", key: "At limit" };
 }
 
 export interface SolveVerdictInput {
@@ -185,18 +187,15 @@ export interface ResultStatsInput {
 /** One decimal, as on the diagram's gauges and the list of lines at limit. */
 const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
 
-/** The key numbers of a result, chosen per calculation: an OPF reports its operational cost and
- * the lines at their limit; AC power flow its losses, heaviest line (or, with lines over their
- * limit, how many), and lowest and highest voltage, four boxes in two even rows; DC power flow its
- * heaviest line and the lines over their limit. An OPF whose cost is zero (a case without generator
- * costs) leaves out a meaningless $0 and shows its heaviest line. With lines at their
- * limit, the heaviest line is one of them and the list under the boxes gives its loading, so the
- * box is left out. */
+/** The key numbers of a result, chosen per calculation, always in pairs: an OPF reports its
+ * operational cost and the lines at their limit; AC power flow its losses, heaviest line, and
+ * lowest and highest voltage (the list under the boxes counts and names lines over their limit);
+ * DC power flow its heaviest line and the lines over their limit. An OPF whose cost is zero (a
+ * case without generator costs) leaves out a meaningless $0 and shows its heaviest line. */
 export function resultStats(input: ResultStatsInput): Stat[] {
   const missing = input.solving ? "…" : "—";
   const stats: Stat[] = [];
   const maxLoading = () => {
-    if (input.binding) return;
     const m = input.maxLoading;
     stats.push({
       label: "Max loading",
@@ -238,8 +237,7 @@ export function resultStats(input: ResultStatsInput): Stat[] {
           ? missing
           : `${l.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MW`,
     });
-    if (input.binding) linesAtLimit();
-    else maxLoading();
+    maxLoading();
     const v = input.voltage;
     stats.push(
       {

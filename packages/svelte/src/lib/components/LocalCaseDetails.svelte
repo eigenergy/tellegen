@@ -126,11 +126,11 @@
 		<dl>
 			<div>
 				<dt>Buses</dt>
-				<dd class="mono">{lc.summary.n_bus}</dd>
+				<dd class="mono">{lc.summary.n_bus.toLocaleString('en-US')}</dd>
 			</div>
 			<div>
 				<dt>Lines</dt>
-				<dd class="mono">{lc.summary.n_branch}</dd>
+				<dd class="mono">{lc.summary.n_branch.toLocaleString('en-US')}</dd>
 			</div>
 		</dl>
 		<details class="case-data">

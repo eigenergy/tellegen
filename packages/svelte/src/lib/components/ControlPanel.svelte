@@ -78,6 +78,16 @@
 		input.click();
 	}
 
+	function showSelection() {
+		const scroller = bodyEl?.closest('.panel-content');
+		if (!scroller) return;
+		const lead = layout.compact ? bodyEl?.querySelector<HTMLElement>('.selection-lead') : null;
+		const top = lead
+			? lead.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+			: 0;
+		scroller.scrollTo({ top: Math.max(0, top - 8) });
+	}
+
 	$effect(() => {
 		const selection = app.selectedBus ?? app.selectedBranch;
 		if (selection !== null)
@@ -89,8 +99,9 @@
 				const panel = layout.panels.find((candidate) => candidate.id === 'network');
 				if (panel) layout.activate(panel);
 				if (layout.compact) layout.drawer = 'network';
-				// The readout sits near the top: scroll the panel back so it is in view.
-				void tick().then(() => bodyEl?.closest('.panel-content')?.scrollTo({ top: 0 }));
+				// The readout sits near the top: scroll the panel back so it is in view. The
+				// phone sheet is short, so it scrolls to the readout itself.
+				void tick().then(() => requestAnimationFrame(showSelection));
 			});
 	});
 </script>
@@ -258,11 +269,6 @@
 		margin: 12px 0;
 		padding: 12px 0;
 		border-block: 1px solid var(--line);
-	}
-	/* Under the list of lines at limit, whose own bottom rule is this readout's top rule. */
-	:global(.binding-lines) + .selection-lead {
-		margin-top: calc(-1 * var(--space-lg));
-		border-top: 0;
 	}
 
 	/* The display key under the case stats on a phone: a gap, not touching. */
