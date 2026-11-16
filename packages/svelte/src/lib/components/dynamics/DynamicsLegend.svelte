@@ -1,11 +1,7 @@
 <script lang="ts">
 	import { dynVoltageGradient, haloLegendRadius } from '../../dynamics/legend.js';
 
-	let {
-		theme = 'light',
-		top = 112,
-		atRest = false
-	}: { theme?: 'light' | 'dark'; top?: number; atRest?: boolean } = $props();
+	let { theme = 'light', top = 112 }: { theme?: 'light' | 'dark'; top?: number } = $props();
 	const gradient = $derived(dynVoltageGradient(theme));
 </script>
 
@@ -16,7 +12,6 @@
 		<span class="end">0.5</span>
 		<i class="bar" style:background={gradient}></i>
 		<span class="end">1.2 pu</span>
-		{#if atRest}<span class="rest-note" data-testid="dyn-legend-rest">At rest</span>{/if}
 	</div>
 	<div class="row halos">
 		<span class="title">Speed</span>
@@ -69,11 +64,6 @@
 		width: 140px;
 		height: 8px;
 		border-radius: var(--radius-control);
-	}
-	.rest-note {
-		margin-left: auto;
-		padding-left: 8px;
-		color: var(--ink);
 	}
 	.ring {
 		display: inline-flex;

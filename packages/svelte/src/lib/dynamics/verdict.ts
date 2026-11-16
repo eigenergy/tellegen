@@ -152,14 +152,16 @@ export interface DynDetail {
 }
 
 /** Where and when: one value per row, for the Details disclosure. `events` is
- * how many events the run applied; with none, nothing is "before the event". */
+ * how many events the run applied; with none, nothing is "before the event" and nothing
+ * changed fast. A value the stat boxes already show is not repeated. */
 export function details(s: RmsScreening, events = 1): DynDetail[] {
 	const f = s.frequency;
 	const a = s.angle;
 	const v = s.voltage;
 	const out: DynDetail[] = [];
+	const shown = new Set(stats(s).map((x) => x.value));
 	const add = (label: string, value: string | null | undefined) => {
-		if (value) out.push({ label, value });
+		if (value && !shown.has(value)) out.push({ label, value });
 	};
 	const slip = a.pole_slips[0];
 	if (slip) {
@@ -171,7 +173,8 @@ export function details(s: RmsScreening, events = 1): DynDetail[] {
 		add('Lowest bus frequency', hz(f.lowest_bus_hz));
 		add('Lowest frequency bus', `Bus ${f.lowest_bus}`);
 	}
-	add('Fastest frequency change', `${f.max_rocof_hz_s.toFixed(3)} Hz/s`);
+	if (events > 0 && Math.abs(f.max_rocof_hz_s) >= 0.0005)
+		add('Fastest frequency change', `${f.max_rocof_hz_s.toFixed(3)} Hz/s`);
 	if (v.min_bus != null) add('Lowest voltage bus', `Bus ${v.min_bus}`);
 	if (events > 0 && v.recovered_s != null) add('Voltage recovery time', sec(v.recovered_s));
 	add('Final voltage range', `${v.final_min_pu.toFixed(3)} to ${v.final_max_pu.toFixed(3)} pu`);

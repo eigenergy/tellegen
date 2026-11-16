@@ -30,10 +30,10 @@
 	const dynamicsShown = $derived(
 		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
 	);
-	// The legend explains the map's dynamics layers: during playback, and at
-	// rest before the first run. The single-line diagram draws neither.
+	// The legend explains the map's dynamics layers once a run is on the map; before the first
+	// run there is nothing to explain. The single-line diagram draws neither.
 	const legendShown = $derived(
-		app.mode === 'dynamics' && !!dyn.frame && !app.zen && !ctrl.singleLineShown
+		app.mode === 'dynamics' && !!dyn.frame && !dyn.atRest && !app.zen && !ctrl.singleLineShown
 	);
 	$effect(() => {
 		dyn.theme = config.theme;
@@ -182,11 +182,7 @@
 	{#if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} />
 	{/if}
-	{#if legendShown}<DynamicsLegend
-			theme={config.theme}
-			top={app.headerInset + 52}
-			atRest={dyn.atRest}
-		/>{/if}
+	{#if legendShown}<DynamicsLegend theme={config.theme} top={app.headerInset + 52} />{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}

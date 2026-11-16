@@ -48,9 +48,8 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 	page
 }) => {
 	const panel = await openDemo(page);
-	// Before a run the map is the case at rest, explained, not the
-	// steady-state dispatch.
-	await expect(page.getByTestId('dyn-legend-rest')).toBeVisible({ timeout: 30_000 });
+	// Before a run there is nothing to explain: no dynamics legend.
+	await expect(page.getByRole('complementary', { name: 'Dynamics map legend' })).toHaveCount(0);
 	// The Network panel keeps the steady-state numbers, as on every other case, and has no
 	// empty placeholder before a bus or line is picked.
 	// The demo case has no generator costs, so its heaviest line shows instead of a $0 cost.
@@ -113,7 +112,6 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 
 	// The map's controls stay usable above the dock, beside the panels.
 	await page.getByRole('button', { name: 'Zoom in' }).click({ timeout: 5_000 });
-	await expect(page.getByTestId('dyn-legend-rest')).toHaveCount(0);
 
 	// Scrub to 1.05 s, during the fault: the lowest voltage is deep.
 	const scrub = page.getByTestId('dyn-scrubber');

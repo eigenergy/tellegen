@@ -280,6 +280,20 @@ describe('dynamics verdict wording', () => {
 		expect(d({ pole_slips: [{ unit: '1431#N', t: 2 }] })['Pole slip']).toBe('Bus 1431');
 		// No value carries notation or a sentence.
 		for (const row of details(s)) expect(row.value).not.toMatch(/[|δ;]|COI/);
+		// Nothing the stat boxes show is repeated in Details.
+		const boxes = new Set(stats(s).map((x) => x.value));
+		expect(
+			details({
+				...s,
+				angle: {
+					...s.angle,
+					first_swing_unit: '1431#N',
+					first_swing_deg: 63.2
+				}
+			})
+				.map((x) => x.value)
+				.filter((value) => boxes.has(value))
+		).toEqual([]);
 	});
 
 	it('names the generators in a mode by bus', () => {
@@ -306,6 +320,7 @@ describe('dynamics verdict wording', () => {
 		expect(d['Lowest frequency time']).toBeUndefined();
 		expect(d['Voltage recovery time']).toBeUndefined();
 		expect(d['Angle spread before event']).toBeUndefined();
+		expect(d['Fastest frequency change']).toBeUndefined();
 		expect(announcement(s, 20)).toBe(
 			'Stable. Lowest frequency 59.842 Hz. Lowest voltage 0.410 pu.'
 		);
