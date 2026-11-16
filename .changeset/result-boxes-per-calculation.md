@@ -2,4 +2,4 @@
 '@tellegen/svelte': patch
 ---
 
-AC power flow results add Max loading and Lines at limit boxes. A case without generator costs shows its heaviest line instead of a $0 cost.
+AC power flow results add Max loading and Lines at limit boxes, and a long value such as the voltage range spans the row instead of being cut off. A case without generator costs says No costs in case instead of showing $0.

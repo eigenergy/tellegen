@@ -45,10 +45,20 @@ describe('duration', () => {
 describe('solveVerdict', () => {
 	it('says nothing when a solve succeeded cleanly', () => {
 		expect(
-			solveVerdict({ formulation: 'acpf', solving: false, failed: false, status: 'feasible' })
+			solveVerdict({
+				formulation: 'acpf',
+				solving: false,
+				failed: false,
+				status: 'feasible'
+			})
 		).toBeNull();
 		expect(
-			solveVerdict({ formulation: 'dcopf', solving: false, failed: false, status: 'optimal' })
+			solveVerdict({
+				formulation: 'dcopf',
+				solving: false,
+				failed: false,
+				status: 'optimal'
+			})
 		).toBeNull();
 		expect(solveVerdict({ formulation: 'socwr', solving: false, failed: false })).toBeNull();
 	});
@@ -92,8 +102,14 @@ describe('solveVerdict', () => {
 
 describe('savedVerdict', () => {
 	it('reads a saved result as a status', () => {
-		expect(savedVerdict({ status: 'optimal' })).toEqual({ text: 'Saved, optimal', tone: 'ok' });
-		expect(savedVerdict({ status: null })).toEqual({ text: 'No result', tone: 'pending' });
+		expect(savedVerdict({ status: 'optimal' })).toEqual({
+			text: 'Saved, optimal',
+			tone: 'ok'
+		});
+		expect(savedVerdict({ status: null })).toEqual({
+			text: 'No result',
+			tone: 'pending'
+		});
 	});
 });
 
@@ -131,8 +147,12 @@ describe('resultStats', () => {
 			})[0].sub
 		).toBe('−$65.50/h');
 		expect(
-			resultStats({ formulation: 'dcopf', objective: 1300, binding: null, deltaObjective: 120 })[0]
-				.sub
+			resultStats({
+				formulation: 'dcopf',
+				objective: 1300,
+				binding: null,
+				deltaObjective: 120
+			})[0].sub
 		).toBe('+$120/h');
 	});
 
@@ -155,7 +175,20 @@ describe('resultStats', () => {
 		expect(resultStats({ formulation: 'acpf', objective: 0, binding: 0 })[1].value).toBe('—');
 	});
 
-	it('shows the heaviest line, not $0, for an OPF without generator costs', () => {
+	it('leaves out the heaviest line when lines are at their limit, which the list names', () => {
+		expect(
+			resultStats({
+				formulation: 'acpf',
+				objective: 0,
+				binding: 1,
+				voltage: { min: 0.95, max: 1.05 },
+				maxLoading: 1,
+				losses: 10
+			}).map((s) => s.label)
+		).toEqual(['Voltage range', 'Losses', 'Lines at limit']);
+	});
+
+	it('says an OPF case has no costs, not $0, and shows its heaviest line', () => {
 		expect(
 			resultStats({
 				formulation: 'dcopf',
@@ -164,6 +197,7 @@ describe('resultStats', () => {
 				maxLoading: 0.75
 			}).map((s) => [s.label, s.value])
 		).toEqual([
+			['Operational cost', 'No costs in case'],
 			['Max loading', '75.0%'],
 			['Lines at limit', '0']
 		]);
@@ -171,18 +205,26 @@ describe('resultStats', () => {
 
 	it('gives DC power flow its heaviest line and the lines at their limit', () => {
 		expect(
-			resultStats({ formulation: 'dcpf', objective: null, binding: 1, maxLoading: 0.5 }).map(
-				(s) => [s.label, s.value]
-			)
+			resultStats({
+				formulation: 'dcpf',
+				objective: null,
+				binding: 0,
+				maxLoading: 0.5
+			}).map((s) => [s.label, s.value])
 		).toEqual([
 			['Max loading', '50.0%'],
-			['Lines at limit', '1']
+			['Lines at limit', '0']
 		]);
 	});
 
 	it('shows an ellipsis while solving and a dash with no value', () => {
 		expect(
-			resultStats({ formulation: 'dcopf', solving: true, objective: null, binding: null })[0].value
+			resultStats({
+				formulation: 'dcopf',
+				solving: true,
+				objective: null,
+				binding: null
+			})[0].value
 		).toBe('…');
 		expect(resultStats({ formulation: 'dcopf', objective: null, binding: null })[0].value).toBe(
 			'—'

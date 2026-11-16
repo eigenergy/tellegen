@@ -37,7 +37,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 		'true'
 	);
 	await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveCount(0);
-	await expect(page.getByText('Generation cost ($/h)', { exact: true })).toHaveCount(0);
+	await expect(page.locator('dl.stats')).not.toContainText('Operational cost');
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected).toMatchObject({
 		ok: true,

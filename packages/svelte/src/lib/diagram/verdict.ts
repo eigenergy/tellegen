@@ -87,7 +87,10 @@ export function solveVerdict(input: SolveVerdictInput): Verdict | null {
 			: input.formulation === 'acpf'
 				? 'did not converge'
 				: 'failed';
-		return { text: `${formulationLabel(input.formulation)} ${what}`, tone: 'failure' };
+		return {
+			text: `${formulationLabel(input.formulation)} ${what}`,
+			tone: 'failure'
+		};
 	}
 	return input.status != null && !cleanStatus(input.status)
 		? { text: statusWords(input.status), tone: 'warning' }
@@ -145,21 +148,30 @@ const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
 /** The key numbers of a result, chosen per calculation: an OPF reports its operational cost and
  * the lines at their limit; AC power flow its voltage range, losses, heaviest line and lines at
  * their limit; DC power flow its heaviest line and the lines at their limit. An OPF whose cost is
- * zero (a case without generator costs) shows its heaviest line in place of a meaningless $0. */
+ * zero (a case without generator costs) says so in place of a meaningless $0 and adds its heaviest
+ * line. With lines at their limit, the heaviest line is one of them and the list under the boxes
+ * gives its loading, so the box is left out. */
 export function resultStats(input: ResultStatsInput): Stat[] {
 	const missing = input.solving ? '…' : '—';
 	const stats: Stat[] = [];
-	const maxLoading = (): Stat => {
+	const maxLoading = () => {
+		if (input.binding) return;
 		const m = input.maxLoading;
-		return {
+		stats.push({
 			label: 'Max loading',
 			value: m == null ? missing : percent(m),
 			tone: m != null && m >= 1 ? 'failure' : 'ok'
-		};
+		});
 	};
 	if (OPF.has(input.formulation)) {
-		if (input.objective === 0) stats.push(maxLoading());
-		else {
+		if (input.objective === 0) {
+			stats.push({
+				label: 'Operational cost',
+				value: 'No costs in case',
+				tone: 'pending'
+			});
+			maxLoading();
+		} else {
 			const delta = input.objective !== null ? input.deltaObjective : null;
 			// A relaxation's cost is a lower bound on the true operating cost: the label says so.
 			stats.push({
@@ -182,9 +194,9 @@ export function resultStats(input: ResultStatsInput): Stat[] {
 					? missing
 					: `${l.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MW`
 		});
-		stats.push(maxLoading());
+		maxLoading();
 	} else {
-		stats.push(maxLoading());
+		maxLoading();
 	}
 	const n = input.binding;
 	stats.push({

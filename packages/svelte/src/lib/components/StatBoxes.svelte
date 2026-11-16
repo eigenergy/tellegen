@@ -3,12 +3,26 @@
 
 	/** A row of labelled numbers: the label small above, the value large below. */
 	let { stats, label = 'Result' }: { stats: Stat[]; label?: string } = $props();
+
+	/** A value too long for half the row spans the row, so it is never cut off; a box left alone
+	 * in its row spans it too, so no half row stays empty. */
+	const LONG = 10;
+	const spans = $derived.by(() => {
+		let column = 0;
+		return stats.map((stat, i) => {
+			const wide =
+				stat.value.length > LONG ||
+				(column === 0 && (i === stats.length - 1 || stats[i + 1].value.length > LONG));
+			column = wide ? 0 : 1 - column;
+			return wide;
+		});
+	});
 </script>
 
 {#if stats.length}
 	<dl class="stats" aria-label={label}>
-		{#each stats as stat (stat.label)}
-			<div class={['stat', stat.tone]}>
+		{#each stats as stat, i (stat.label)}
+			<div class={['stat', stat.tone, { wide: spans[i] }]}>
 				<dt>{stat.label}</dt>
 				<dd>
 					<span class="value" title={stat.value}>{stat.value}</span>
@@ -27,8 +41,7 @@
 		gap: 8px;
 		margin: 0 0 var(--space-lg);
 	}
-	/* An odd box out spans the row, so no half row stays empty. */
-	.stat:last-child:nth-child(odd) {
+	.wide {
 		grid-column: 1 / -1;
 	}
 	.stat {
@@ -76,5 +89,12 @@
 	   keeps the ink colour, so every label in a row reads alike. */
 	.failure .value {
 		color: var(--red);
+	}
+	/* A value that is a short status, not a number: no figure to make large. */
+	.pending .value {
+		font-size: var(--fs-data);
+		font-weight: 400;
+		line-height: calc(var(--fs-display) * var(--lh-tight));
+		color: var(--text-secondary);
 	}
 </style>
