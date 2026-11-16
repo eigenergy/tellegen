@@ -13,31 +13,25 @@
 	);
 </script>
 
-<div class="movers-block">
-	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
-		<table>
-			<caption class="dim">
-				Top price changes <span class="unit">({units})</span>
-			</caption>
-			<tbody>
-				{#each ctrl.topMovers as mover (mover.bus)}
-					<tr>
-						<td>Bus <span class="mono">{mover.bus}</span></td>
-						<td class={['mono', { pos: mover.value > 0, neg: mover.value < 0 }]}>
-							{signedSmall(mover.value)}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
-</div>
+{#if !ctrl.previewing && ctrl.topMovers.length > 0}
+	<table>
+		<caption class="dim">
+			Top price changes <span class="unit">({units})</span>
+		</caption>
+		<tbody>
+			{#each ctrl.topMovers as mover (mover.bus)}
+				<tr>
+					<td>Bus <span class="mono">{mover.bus}</span></td>
+					<td class={['mono', { pos: mover.value > 0, neg: mover.value < 0 }]}>
+						{signedSmall(mover.value)}
+					</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+{/if}
 
 <style>
-	.movers-block {
-		min-height: 114px;
-	}
-
 	table {
 		width: 100%;
 		margin-top: var(--space-lg);

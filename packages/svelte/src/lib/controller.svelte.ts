@@ -2704,6 +2704,37 @@ export class Controller {
     this.runSolve(c, this.selectionTarget);
   };
 
+  /** Undo the selected bus's demand change. When it is the case's only edit, the base
+   * result returns at once, as a whole-case reset does. */
+  resetDemand = (c: SolvableCase) => {
+    const bus = this.app.selectedBus;
+    if (bus === null) return;
+    if (this.onlyEdit(c, "deltas", bus)) this.resetCase(c);
+    else this.commitDelta(0);
+  };
+
+  /** Undo the selected line's rating change, as `resetDemand` does for a bus. */
+  resetRating = (c: SolvableCase) => {
+    const branch = this.app.selectedBranch;
+    if (branch === null) return;
+    if (this.onlyEdit(c, "ratings", branch)) this.resetCase(c);
+    else void this.commitRating(0);
+  };
+
+  /** The case's edits are this one element's and nothing else. */
+  private onlyEdit(
+    c: SolvableCase,
+    kind: "deltas" | "ratings",
+    id: number,
+  ): boolean {
+    const others = (edits: Record<number, number>, skip: number | null) =>
+      Object.entries(edits).some(([k, mw]) => mw !== 0 && Number(k) !== skip);
+    return (
+      !others(c.deltas, kind === "deltas" ? id : null) &&
+      !others(c.ratings, kind === "ratings" ? id : null)
+    );
+  }
+
   /** Change the convention through the same settings path as WebMCP. */
   changeDcFormula = async (c: SolvableCase, next: DcFormula) => {
     if (c.solution?.branch_susceptance_formula === next) return;

@@ -73,8 +73,9 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await page.mouse.up();
 
 	await bindingLine.click();
-	await expect(bindingLine).toHaveClass(/selected/);
-	await expect(bindingLine).toHaveAttribute('aria-pressed', 'true');
+	// The selected line leaves the list; the inspector below names it.
+	await expect(page.getByTestId('sensitivity-title')).toHaveText('Line 3 (2–3)');
+	await expect(bindingLine).toHaveCount(0);
 	const selectedBranchCue = page.locator('.selected-branch-cue');
 	const selectedBranchPath = selectedBranchCue.locator('.selected-branch-line');
 	await expect(selectedBranchCue).toBeVisible();

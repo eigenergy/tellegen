@@ -4,6 +4,7 @@
 	import { dollarUnits } from '../display.js';
 	import { lineName, readable, signedSmall, small } from '../format.js';
 	import { dispatchByBus } from '../diagram/transmission-inspection.js';
+	import { gaugeText } from '../diagram/transmission-results.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -32,7 +33,8 @@
 			const flow = solution?.flows.find((f) => f.branch === app.selectedBranch);
 			return [
 				['Flow', readable(flow ? Math.abs(flow.mw) : null, 'MW').text],
-				['Loading', readable(flow && b && b.rate_mw > 0 ? flow.loading * 100 : null, '%').text],
+				// One decimal, as in the list of lines at their limit.
+				['Loading', flow && b && b.rate_mw > 0 ? gaugeText(flow.loading) : '—'],
 				['Rating', readable(b && b.rate_mw > 0 ? b.rate_mw : null, 'MW').text]
 			] as const;
 		}

@@ -35,7 +35,6 @@
 			solving: c.solving,
 			objective: network.objective,
 			binding: network.binding,
-			deltaObjective: ctrl.isPerturbed(c) ? network.deltaObjective : null,
 			voltage,
 			maxLoading,
 			losses

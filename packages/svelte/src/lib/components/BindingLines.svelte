@@ -7,7 +7,8 @@
 	const ctrl = getController();
 
 	// The active result's binding lines (see `ctrl.bindingRule`), joined to the network for
-	// identity. Each row is a button: the keyboard path for branch selection.
+	// identity. Each row is a button: the keyboard path for branch selection. The selected line
+	// leaves the list: the inspector below names it.
 	const bindingLines = $derived.by(() => {
 		const c = ctrl.activeSolvable;
 		const rule = ctrl.bindingRule;
@@ -15,7 +16,7 @@
 		const byId = new Map(c.network.branches.map((b) => [b.id, b]));
 		return c.solution.flows.filter(rule.binds).flatMap((f) => {
 			const branch = byId.get(f.branch);
-			return branch ? [{ branch, loading: f.loading }] : [];
+			return branch && branch.id !== app.selectedBranch ? [{ branch, loading: f.loading }] : [];
 		});
 	});
 
@@ -33,11 +34,7 @@
 		<ul aria-label={ctrl.bindingRule?.label}>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>
-					<button
-						class={{ selected: app.selectedBranch === branch.id }}
-						aria-pressed={app.selectedBranch === branch.id}
-						onclick={() => select(branch.id)}
-					>
+					<button onclick={() => select(branch.id)}>
 						<span>{lineName(branch)}</span>
 						<span class="load">{gaugeText(loading)}</span>
 					</button>
@@ -92,19 +89,6 @@
 		text-decoration: none;
 		box-shadow: none;
 	}
-	li button.selected:hover {
-		box-shadow: inset 3px 0 0 var(--accent);
-	}
-
-	li button.selected {
-		color: var(--text-accent);
-		background:
-			linear-gradient(90deg, rgb(var(--accent-rgb) / 0.16), rgb(var(--accent-rgb) / 0.05)),
-			var(--accent-soft);
-		box-shadow: inset 3px 0 0 var(--accent);
-		font-weight: 600;
-	}
-
 	/* Each row is a tap target that reframes the map, so give it a finger's worth
 	   of height and show a couple more rows before the list scrolls. */
 	@media (hover: none), (pointer: coarse) {

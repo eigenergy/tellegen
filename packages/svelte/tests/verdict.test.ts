@@ -155,44 +155,22 @@ describe("resultStats", () => {
     ).toBe("ok");
   });
 
-  it("marks a relaxation cost as a lower bound", () => {
-    expect(
-      resultStats({ formulation: "socwr", objective: 1300, binding: 0 })[0],
-    ).toMatchObject({
+  it("names a relaxation cost as a lower bound in its tooltip only", () => {
+    const [cost] = resultStats({
+      formulation: "socwr",
+      objective: 1300,
+      binding: 0,
+    });
+    expect(cost).toMatchObject({
       label: "Operational cost",
       value: "$1,300/h",
-      sub: "lower bound",
+      title: "Lower bound on the AC OPF cost",
     });
+    expect(cost.sub).toBeUndefined();
     expect(
-      resultStats({
-        formulation: "socwr",
-        objective: 1300,
-        binding: 0,
-        deltaObjective: 120,
-      })[0].sub,
-    ).toBe("lower bound, +$120/h");
-    expect(
-      resultStats({ formulation: "dcopf", objective: 1300, binding: 0 })[0].sub,
+      resultStats({ formulation: "dcopf", objective: 1300, binding: 0 })[0]
+        .title,
     ).toBeUndefined();
-  });
-
-  it("shows the change from the base case under the cost", () => {
-    expect(
-      resultStats({
-        formulation: "dcopf",
-        objective: 1300,
-        binding: null,
-        deltaObjective: -65.5,
-      })[0].sub,
-    ).toBe("−$65.50/h");
-    expect(
-      resultStats({
-        formulation: "dcopf",
-        objective: 1300,
-        binding: null,
-        deltaObjective: 120,
-      })[0].sub,
-    ).toBe("+$120/h");
   });
 
   it("gives AC power flow its losses, heaviest line and lowest and highest voltage", () => {
@@ -228,7 +206,7 @@ describe("resultStats", () => {
       }).map((s) => s.label),
     ).toEqual([
       "Losses",
-      "Lines over limit",
+      "Lines at limit",
       "Lowest voltage",
       "Highest voltage",
     ]);
@@ -258,7 +236,7 @@ describe("resultStats", () => {
       }).map((s) => [s.label, s.value]),
     ).toEqual([
       ["Max loading", "50.0%"],
-      ["Lines over limit", "0"],
+      ["Lines at limit", "0"],
     ]);
   });
 

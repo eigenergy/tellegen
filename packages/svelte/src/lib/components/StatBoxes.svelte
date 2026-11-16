@@ -22,7 +22,7 @@
 {#if stats.length}
 	<dl class="stats" aria-label={label}>
 		{#each stats as stat, i (stat.label)}
-			<div class={['stat', stat.tone, { wide: spans[i] }]}>
+			<div class={['stat', stat.tone, { wide: spans[i] }]} title={stat.title}>
 				<dt>{stat.label}</dt>
 				<dd>
 					<span class="value" title={stat.value}>{stat.value}</span>

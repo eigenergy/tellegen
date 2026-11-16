@@ -83,27 +83,20 @@
 				onchange={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
 			/>
 		</div>
-		<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
-			<p class="pred dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
-				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
+		<div class="demand-feedback">
+			{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
+				<p class="pred dim">
 					Predicted <span class="mono">{signed(ctrl.predictedDeltaObj)}</span> $/h
-				{:else}
-					&nbsp;
-				{/if}
-			</p>
-			<p class="score" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
-				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
+				</p>
+			{:else if ctrl.gradientScore && ctrl.isPerturbed(c)}
+				<p class="score">
 					<span>Predicted <span class="mono">{signed(ctrl.gradientScore.pred)}</span> $/h</span>
 					<span>Solved <span class="mono">{signed(ctrl.gradientScore.exact)}</span> $/h</span>
-				{:else}
-					&nbsp;
-				{/if}
-			</p>
-			<div class="reset-row">
-				{#if ctrl.isPerturbed(c)}
-					<button class="reset" onclick={() => ctrl.resetCase(c)}>Reset demand</button>
-				{/if}
-			</div>
+				</p>
+			{/if}
+			{#if ctrl.committedDelta !== 0}
+				<button class="reset" onclick={() => ctrl.resetDemand(c)}>Reset demand</button>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -250,42 +243,21 @@
 		}
 	}
 
-	.pred {
+	.pred,
+	.score {
 		margin: 2px 0 0;
 		font-size: 13px;
-		min-height: 16px;
 	}
 
 	.score {
 		display: flex;
 		gap: 16px;
-		margin: 8px 0 0;
-		font-size: 13px;
 		color: var(--ink);
-		min-height: 16px;
 	}
 
 	.demand-feedback {
-		min-height: 78px;
-	}
-
-	/* On a fresh selection (no preview, no perturbation) the predicted/gradient/
-	   reset rows are empty; collapse the reserved block so the panel isn't padded
-	   with whitespace. The reservation returns during interaction to avoid jumps. */
-	.demand-feedback.idle {
-		min-height: 0;
-	}
-
-	.demand-feedback.idle .pred,
-	.demand-feedback.idle .score {
-		display: none;
-	}
-
-	.reset-row {
-		min-height: 28px;
-	}
-
-	.demand-feedback.idle .reset-row {
-		display: none;
+		display: grid;
+		justify-items: start;
+		gap: 6px;
 	}
 </style>

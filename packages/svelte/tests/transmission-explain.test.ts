@@ -182,7 +182,7 @@ describe('operating limits', () => {
 				formulation: 'acpf',
 				counts: { ...base.counts, overload: 1 }
 			}).stats[0]
-		).toEqual({ label: 'Lines over limit', value: '1', tone: 'failure' });
+		).toEqual({ label: 'Lines at limit', value: '1', tone: 'failure' });
 		expect(operatingLead({ ...base, hasResult: false })).toEqual({
 			stats: [],
 			empty: 'No result'

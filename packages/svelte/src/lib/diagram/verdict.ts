@@ -65,15 +65,13 @@ export function duration(ms: number): string {
 
 const OPF = new Set<string>(["dcopf", "socwr", "acopf"]);
 
-/** The names for lines at or over their rating. An OPF holds a line at its limit; a power flow
- * can load it past its rating, so its results say "over limit". */
-export function limitWords(formulation: string | null | undefined): {
+/** The names for lines at or over their rating, the same for every calculation: an OPF holds
+ * a line at its limit, and a power flow's line past its rating is counted with them. */
+export function limitWords(_formulation?: string | null): {
   lines: string;
   key: string;
 } {
-  return formulation && OPF.has(formulation)
-    ? { lines: "Lines at limit", key: "At limit" }
-    : { lines: "Lines over limit", key: "Over limit" };
+  return { lines: "Lines at limit", key: "At limit" };
 }
 
 export interface SolveVerdictInput {
@@ -133,8 +131,10 @@ export function costPerHour(value: number): string {
 export interface Stat {
   label: string;
   value: string;
-  /** A small value under the main one, such as the change from the base case. */
+  /** A unit or short name after the value, such as $/MWh. */
   sub?: string;
+  /** A short tooltip on the box. */
+  title?: string;
   tone?: VerdictTone;
 }
 
@@ -145,8 +145,6 @@ export interface ResultStatsInput {
   objective: number | null;
   /** Lines at their limit; null when the result does not say. */
   binding: number | null;
-  /** Objective change from the base case, when the case is edited. */
-  deltaObjective?: number | null;
   /** Lowest and highest bus voltage (pu), for an AC power flow. */
   voltage?: { min: number; max: number } | null;
   /** Highest line loading as a fraction of rating, when known. */
@@ -191,17 +189,15 @@ export function resultStats(input: ResultStatsInput): Stat[] {
     // the heaviest line takes its place.
     if (input.objective === 0) maxLoading();
     else {
-      const delta = input.objective !== null ? input.deltaObjective : null;
-      const change = delta
-        ? `${delta > 0 ? "+" : ""}${costPerHour(delta)}`
-        : undefined;
-      // A relaxation's cost is a lower bound on the true operating cost: the box says so.
-      const bound = input.formulation === "socwr" ? "lower bound" : undefined;
       stats.push({
         label: "Operational cost",
         value:
           input.objective === null ? missing : costPerHour(input.objective),
-        sub: [bound, change].filter(Boolean).join(", ") || undefined,
+        // A relaxation's cost is a lower bound on the true operating cost.
+        title:
+          input.formulation === "socwr"
+            ? "Lower bound on the AC OPF cost"
+            : undefined,
       });
     }
   } else if (input.formulation === "acpf") {

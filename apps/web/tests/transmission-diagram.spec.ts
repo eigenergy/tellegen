@@ -621,7 +621,7 @@ for (const touch of [false, true]) {
 			await selectView(toolbar, 'Flows');
 			const transfer = page.getByRole('region', { name: 'Flows' });
 			await expect(transfer.locator('.stat').filter({ hasText: 'Largest flow' })).toBeVisible();
-			const overloads = page.getByText('Lines over limit (1)', { exact: true });
+			const overloads = page.getByText('Lines at limit (1)', { exact: true });
 			await expect(overloads).toBeVisible();
 			await overloads.click();
 			await expect(page.getByRole('button', { name: /^Line 1 \(/ }).first()).toBeVisible();
