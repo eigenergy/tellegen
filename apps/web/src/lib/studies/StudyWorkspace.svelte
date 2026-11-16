@@ -11,7 +11,8 @@
 		McNetworkScope,
 		McModelQualification,
 		McWorkbench,
-		McSolveControls
+		McSolveControls,
+		downloadText
 	} from '@tellegen/svelte';
 	import type { StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
@@ -404,14 +405,7 @@
 		if (!base) throw new Error('The starting state is unavailable.');
 		await operation({ kind: 'compare', goal: goalId, left: base, right: doc.inspected_state });
 	}
-	function download(text: string, name: string) {
-		const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = name;
-		link.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
-	}
+	const download = (text: string, name: string) => downloadText(text, name, 'application/json');
 	function stateLabel(id: string | null | undefined) {
 		return id ? (doc?.states[id]?.label ?? id.slice(0, 10)) : 'None';
 	}

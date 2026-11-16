@@ -55,7 +55,7 @@ import {
 	applyLayout,
 	createStudy,
 	extractGeo,
-	FORMULATIONS,
+	calculationAvailable,
 	formatPowerIoDiagnostic,
 	formatOf,
 	ingestCase,
@@ -91,7 +91,14 @@ import {
 	type PowerIoDiagnostic,
 	type SensTarget
 } from '@tellegen/engine';
-import { browserSolveFailure, errorText, extent, formulationLabel } from './format.js';
+import {
+	atLimit,
+	browserSolveFailure,
+	downloadText,
+	errorText,
+	extent,
+	formulationLabel
+} from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
 import { limitWords } from './diagram/verdict.js';
 import { DEMO_LABEL, DYNAMICS_OFF, DynamicsController } from './dynamics/controller.svelte.js';
@@ -263,24 +270,6 @@ function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> 
 /** `writeCaseFile` found no Study to write; the error banner already says why. */
 class CaseFileUnavailable extends Error {
 	override name = 'CaseFileUnavailable';
-}
-
-/** Trigger a browser download of in-memory text. Case files never leave the machine:
- * a save is a local Blob download. */
-export function downloadText(text: string, filename: string, mime: string) {
-	const url = URL.createObjectURL(new Blob([text], { type: mime }));
-	const anchor = document.createElement('a');
-	anchor.href = url;
-	anchor.download = filename;
-	anchor.rel = 'noopener';
-	document.body.appendChild(anchor);
-	anchor.click();
-	// Defer cleanup: revoking the object URL in the same tick as click() can cancel
-	// an in-flight download in some browsers.
-	setTimeout(() => {
-		anchor.remove();
-		URL.revokeObjectURL(url);
-	}, 0);
 }
 
 export type { SolvableCase };
@@ -539,9 +528,19 @@ export class Controller {
 		return c?.perturbed ?? false;
 	}
 
+	/** Whether the engine can run `formulation` on this case; see `calculationAvailable`. */
 	formulationAvailable(c: SolvableCase, formulation: Formulation): boolean {
-		if (formulation === 'acopf') return this.acOpfAvailable && !c.perturbed;
-		return !FORMULATIONS.find((entry) => entry.id === formulation)?.disabled;
+		return calculationAvailable(formulation, { edited: c.perturbed, acOpf: this.acOpfAvailable });
+	}
+
+	/** Whether a Calculation menu offers `formulation` for this case as it stands. */
+	calculationOffered(c: SolvableCase, formulation: Formulation): boolean {
+		return calculationAvailable(formulation, {
+			declared: c instanceof LocalCase ? c.declaredFormulation : null,
+			edited: c.perturbed,
+			ratingsEdited: c.ratingsEdited,
+			acOpf: this.acOpfAvailable
+		});
 	}
 
 	/** Whether this host supplied the optional solver asset. It loads only on request. */
@@ -1004,7 +1003,7 @@ export class Controller {
 			? new Set(constraints.filter((row) => row.binding).map((row) => row.branch))
 			: null;
 		const binds = (flow: { branch: number; loading: number }) =>
-			flagged ? flagged.has(flow.branch) : flow.loading >= 0.999;
+			flagged ? flagged.has(flow.branch) : atLimit(flow);
 		return {
 			label: limitWords(this.activeFormulation).lines,
 			flagged: !!constraints,

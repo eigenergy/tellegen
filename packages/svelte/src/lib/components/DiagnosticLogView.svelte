@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState } from '../context.svelte.js';
-	import { downloadText } from '../controller.svelte.js';
+	import { downloadText } from '../format.js';
 	import {
 		LOG_SEVERITIES,
 		type MessageLog,

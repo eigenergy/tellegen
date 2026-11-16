@@ -1,4 +1,5 @@
 import type { Network, NetworkShunt } from '@tellegen/engine';
+import { sixFigures } from '../format.js';
 import { attachmentGlyph, branchGlyph, type Glyph } from './schematic-equipment.js';
 import type { TxGraph, TxSchematicParts } from './transmission.js';
 import type { SchematicGeometry } from './schematic-layout.js';
@@ -23,7 +24,6 @@ export interface EquipmentItem {
 	branch?: number;
 	facts: string[];
 }
-const number = (n: number) => Number(n.toPrecision(6)).toString();
 
 /** How the selected calculation treats a device, in a word or two. */
 export function equipmentTreatment(kind: EquipmentKind, formulation: string): string {
@@ -93,8 +93,8 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 				branch: branch?.id,
 				facts: [
 					...(branch ? [`Buses: ${branch.from} ↔ ${branch.to}`] : []),
-					`Phase: ${number(t.phase_shift_deg)}°`,
-					`Tap: ${number(t.tap_ratio)}`,
+					`Phase: ${sixFigures(t.phase_shift_deg)}°`,
+					`Tap: ${sixFigures(t.tap_ratio)}`,
 					...(t.tap_changers ?? []).map(
 						(tap) =>
 							`${tap.kind === 'phase' ? 'Phase' : 'Ratio'} taps, winding ${tap.winding}: position ${tap.tap_position ?? '—'} of ${tap.steps.length}${tap.regulating ? ', regulating' : ''}`
@@ -102,7 +102,7 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 					`Control: ${t.control_mode?.replaceAll('_', ' ') ?? '—'}${t.control_enabled === null ? '' : t.control_enabled ? ', on' : ', off'}`,
 					...(t.setting_min !== null && t.setting_max !== null
 						? [
-								`Range: ${number(t.setting_min)} to ${number(t.setting_max)}${t.phase_shifter ? '°' : ''}`
+								`Range: ${sixFigures(t.setting_min)} to ${sixFigures(t.setting_max)}${t.phase_shifter ? '°' : ''}`
 							]
 						: []),
 					...(t.controlled_bus !== null ? [`Regulated bus: ${t.controlled_bus}`] : [])
@@ -119,11 +119,13 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 				state: s.in_service ? 'In service' : 'Out of service',
 				facts: [
 					`Bus: ${s.bus}`,
-					`B at 1 pu: ${number(s.b_mvar)} Mvar`,
-					`G at 1 pu: ${number(s.g_mw)} MW`,
+					`B at 1 pu: ${sixFigures(s.b_mvar)} Mvar`,
+					`G at 1 pu: ${sixFigures(s.g_mw)} MW`,
 					...(s.section_count === null ? [] : [`Sections on: ${s.section_count}`]),
 					...(s.blocks.length
-						? [`Steps: ${s.blocks.map((b) => `${b.steps} × ${number(b.b_mvar)} Mvar`).join('; ')}`]
+						? [
+								`Steps: ${s.blocks.map((b) => `${b.steps} × ${sixFigures(b.b_mvar)} Mvar`).join('; ')}`
+							]
 						: []),
 					`Switching: ${s.control_mode ?? '—'}`
 				]
@@ -137,11 +139,11 @@ export function equipmentItems(network: Network): EquipmentItem[] {
 			state: h.in_service ? 'In service' : 'Out of service',
 			facts: [
 				`Buses: ${h.from} ↔ ${h.to}`,
-				`From: ${number(h.pf_mw)} MW`,
-				`To: ${number(h.pt_mw)} MW`,
-				`Loss: ${number(h.pf_mw - h.pt_mw)} MW`,
+				`From: ${sixFigures(h.pf_mw)} MW`,
+				`To: ${sixFigures(h.pt_mw)} MW`,
+				`Loss: ${sixFigures(h.pf_mw - h.pt_mw)} MW`,
 				`Converters: ${h.from_converter?.toUpperCase() ?? '—'} / ${h.to_converter?.toUpperCase() ?? '—'}`,
-				...(h.nominal_kv ? [`DC voltage: ${number(h.nominal_kv)} kV`] : [])
+				...(h.nominal_kv ? [`DC voltage: ${sixFigures(h.nominal_kv)} kV`] : [])
 			]
 		}))
 	];
@@ -396,7 +398,7 @@ export function equipmentDrawing(
 			const [x, y] = anchors.subarray(row * 4, row * 4 + 2);
 			out.labels.push({
 				position: [x, y + unit * 2.6],
-				text: `PST ${number(t.phase_shift_deg)}°`,
+				text: `PST ${sixFigures(t.phase_shift_deg)}°`,
 				key: `transformer:${t.branch}`
 			});
 		}

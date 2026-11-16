@@ -81,7 +81,15 @@ export {
 	placeMultiView,
 	buildGeographicView
 } from './multiconductor.js';
-export { quantity, quantityRange, voltsWithPu, degrees, MISSING } from './format.js';
+export {
+	quantity,
+	quantityRange,
+	voltsWithPu,
+	degrees,
+	MISSING,
+	download,
+	downloadText
+} from './format.js';
 export type { QuantityUnit, QuantityOptions } from './format.js';
 export { distExtensionFormat } from './drop-classify.js';
 

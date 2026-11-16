@@ -87,7 +87,8 @@
 		type Landmark
 	} from '../diagram/index.js';
 	import { BasemapUnderlay } from './schematic/basemap-underlay.svelte.js';
-	import { canvasPng, download, fileStem } from './schematic/export.js';
+	import { download } from '../format.js';
+	import { canvasPng, fileStem } from './schematic/export.js';
 	import type { DeckKit } from './schematic/layers.js';
 	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
@@ -2687,13 +2688,5 @@
 		margin: 0;
 		color: var(--text-secondary);
 		pointer-events: none;
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
 	}
 </style>
