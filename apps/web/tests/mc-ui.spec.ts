@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/page-errors.js';
 import { installWebMcpHarness, callTool } from './fixtures/planning-case.js';
-import { noticeDetails } from './fixtures/notices.js';
+import { noticeDetails, openLog } from './fixtures/notices.js';
+import { showNetwork } from './fixtures/chrome.js';
 
 const fixture = new URL(
 	'./fixtures/mc-pf-browser/public/mc-pf-three-phase.bmopf.json',
@@ -126,13 +127,15 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		0
 	);
 	await expect.poll(() => table.innerText()).toBe(before);
-	await expect(await noticeDetails(page)).toContainText(
-		'2 buses, 1 routes matched; 0 unmatched objects'
-	);
-	await page
-		.getByRole('region', { name: 'Notifications' })
-		.getByRole('button', { name: 'Details', exact: true })
-		.click();
+	// A clean match raises no notice; the Log keeps the note.
+	await expect(await openLog(page)).toContainText('2 buses, 1 routes matched; 0 unmatched objects');
+	await expect(
+		page
+			.getByRole('region', { name: 'Notifications' })
+			.getByText('Coordinate import notes', { exact: true })
+	).toHaveCount(0);
+	// The Log shares the Network panel's dock: return to the result.
+	await showNetwork(page);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeVisible();
 	await page.screenshot({ path: testInfo.outputPath('mc-results-mobile.png') });
