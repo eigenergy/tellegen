@@ -396,7 +396,7 @@ fn study_command() -> Result<String, String> {
                 cancelled.load(std::sync::atomic::Ordering::Relaxed)
             })?;
             store.commit(expected, &bundle)?;
-            serde_json::to_string(&result).map_err(|e| e.to_string())
+            serde_json::to_string(&result.output(&bundle)?).map_err(|e| e.to_string())
         }
         _ => Err("unknown Study command; use create, inspect, run, export or import".into()),
     }
@@ -557,7 +557,7 @@ fn describe_value() -> Result<serde_json::Value, String> {
             "study_bundle": schemars::schema_for!(tellegen::document::StudyBundle),
             "study_create": schemars::schema_for!(tellegen::study_ops::CreateStudy),
             "study_request": schemars::schema_for!(tellegen::study_ops::StudyRequest),
-            "study_result": schemars::schema_for!(tellegen::study_ops::StudyOperationResult),
+            "study_result": schemars::schema_for!(tellegen::study_ops::StudyOperationOutput),
 
             "powerio_module": ir_schema()?,
             "capacity_plan_spec": serde_json::to_value(schemars::schema_for!(CapacityPlanSpec))
