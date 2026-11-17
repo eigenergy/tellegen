@@ -47,10 +47,20 @@ fn parse_request(request_json: &str) -> Result<SynthRequest, String> {
         .map_err(|e| payload(&SynthError::InvalidRequest(format!("request JSON: {e}"))))
 }
 
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct PlacesInfo {
+    pub count: usize,
+    pub sha256: String,
+}
+
 /// Parse and keep the places table; returns `{count, sha256}`.
 pub fn load_places_impl(bytes: &[u8]) -> Result<String, String> {
     let places = Places::parse(bytes).map_err(|e| payload(&e))?;
-    let summary = serde_json::json!({ "count": places.len(), "sha256": places.sha256() });
+    let summary = PlacesInfo {
+        count: places.len(),
+        sha256: places.sha256().to_owned(),
+    };
     PLACES.with(|slot| *slot.borrow_mut() = Some(Arc::new(places)));
     to_json(&summary)
 }
@@ -130,11 +140,11 @@ pub fn generate_impl(request_json: &str, osm_json: Option<String>) -> Result<Str
     }
     let ingest: serde_json::Value =
         serde_json::from_str(&ingest_impl(&session)?).map_err(|e| other("build", e))?;
-    to_json(&serde_json::json!({
-        "module_json": module_impl(&session)?,
-        "report": session.report_output(),
-        "ingest": ingest,
-    }))
+    to_json(&crate::outputs::Generated {
+        module_json: module_impl(&session)?,
+        report: session.report_output(),
+        ingest,
+    })
 }
 
 #[cfg(test)]

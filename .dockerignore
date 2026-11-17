@@ -29,8 +29,13 @@ data
 .env
 .DS_Store
 
-# The Python wheel surface: the image builds only tellegen-server.
-python/
+# Only the shared generated argument schema is needed by the frontend build.
+python/*
+!python/tellegen
+python/tellegen/*
+!python/tellegen/mcp
+python/tellegen/mcp/*
+!python/tellegen/mcp/_engine_schema.json
 pyproject.toml
 dist/
 *.whl

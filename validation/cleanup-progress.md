@@ -22,7 +22,7 @@ proof that its changes are on the deployed site.
 | Synchronous areas and HVDC, #263 | #418 and viewer #422 merged; four-country/three-seed and browser checks pass | Final deployed checks |
 | Drawing editing and persistence, #198 | #421 passed all CI; radial, meshed and substation browser checks and performance measurements recorded | Combined integration and deployed checks |
 | Node-breaker diagrams, #388 | #421 passed all CI with detailed projection and replacement of the old canvas | Combined integration and deployed checks |
-| Shared result validation and MCP argument types | #419 includes engine, HTTP stream and Python checks generated from Rust; final audit adds collection, geography, graph, packed-array and RMS checks | Final merged-tree validation and CI |
+| Shared result validation and MCP argument types | #419 passes combined local checks: 173 engine and 628 frontend tests, native compatibility and Rust checks | CI and integration |
 | Controller organization | #423 preserves the public API; review, targeted browser tests and all CI checks pass | Integration |
 | Dynamics PR #399 | Private review completed | Findings remain private; PR remains unmerged |
 | Release and local cleanup | Pending implementation | Patch releases, installed packages, production checks |

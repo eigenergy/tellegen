@@ -1,3 +1,5 @@
+import { parseApiResult, validateApiResult } from "./result-validation.js";
+export { parseApiResult, validateApiResult } from "./result-validation.js";
 import type { DcFormula, SensitivityMatrix } from "./generated/api-types.js";
 export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 import type { DcGrid, DcGridSolution } from "./dc-grid.js";
@@ -197,7 +199,7 @@ export interface CaseFileSummary {
   load_mw: number;
   gen_mw: number;
   has_coords: boolean;
-  /** Coordinate provenance: `file` for coordinates the case (or a geographic
+  /** Coordinate source: `file` for coordinates the case (or a geographic
    * sidecar) carried, `synthetic`/`manual` for a stamped layout (a restored
    * package echoes the kind it was saved with), `synthetic_pending` when the
    * case awaits placement. */
@@ -535,7 +537,7 @@ export async function classifyJson(
   bytes: Uint8Array,
 ): Promise<JsonDropClassification> {
   assertEngineInputBytes(bytes);
-  return JSON.parse(
+  return parseApiResult("classifier",
     expectText(await engineHost().call({ op: "classify_json", bytes })),
   );
 }
@@ -558,17 +560,18 @@ export async function ingestJsonDrop(
 ): Promise<IngestedJsonDrop> {
   assertEngineInputBytes(bytes);
   if (!options.retain) {
-    return JSON.parse(
+    return parseApiResult("json_drop",
       expectText(await engineHost().call({ op: "ingest_json_drop", bytes })),
     );
   }
   const host = engineHost();
   const input = ++mcInputSeq;
-  const drop = JSON.parse(
-    expectText(await host.call({ op: "ingest_json_drop", bytes, input })),
-  ) as IngestedJsonDrop;
+  const drop = await readRetainedResult<IngestedJsonDrop>(host, input, "json_drop",
+    host.call({ op: "ingest_json_drop", bytes, input }),
+  );
   const payload = drop.payload;
-  if (payload && "model" in payload) attachInput(payload, host, input);
+  if (payload && "model" in payload && payload.input_retained) attachInput(payload, host, input);
+  else await releaseUnownedInput(host, input);
   return drop;
 }
 
@@ -610,7 +613,7 @@ export async function ingestCase(
   format: string,
 ): Promise<IngestedCase> {
   assertEngineInputBytes(bytes);
-  return JSON.parse(
+  return parseApiResult("ingest_balanced",
     expectText(await engineHost().call({ op: "ingest_case", bytes, format })),
   );
 }
@@ -624,7 +627,7 @@ export async function ingestDistCase(
   format: string,
 ): Promise<IngestedDistCase> {
   assertEngineInputLength(text.length);
-  return JSON.parse(
+  return parseApiResult("ingest_distribution",
     expectText(
       await engineHost().call({ op: "ingest_dist_case", text, format }),
     ),
@@ -639,7 +642,7 @@ export async function ingestDistCaseBytes(
 ): Promise<IngestedDistCase> {
   assertEngineInputBytes(bytes);
   if (!options.retain) {
-    return JSON.parse(
+    return parseApiResult("ingest_distribution",
       expectText(
         await engineHost().call({
           op: "ingest_dist_case_bytes",
@@ -651,13 +654,31 @@ export async function ingestDistCaseBytes(
   }
   const host = engineHost();
   const input = ++mcInputSeq;
-  const payload = JSON.parse(
-    expectText(
-      await host.call({ op: "ingest_dist_case_bytes", bytes, format, input }),
-    ),
-  ) as IngestedDistCase;
-  attachInput(payload, host, input);
+  const payload = await readRetainedResult<IngestedDistCase>(host, input, "ingest_distribution",
+    host.call({ op: "ingest_dist_case_bytes", bytes, format, input }),
+  );
+  if (payload.input_retained) attachInput(payload, host, input);
+  else await releaseUnownedInput(host, input);
   return payload;
+}
+
+/** Release a new input when no browser object takes ownership. */
+async function releaseUnownedInput(host: EngineHost, input: number): Promise<void> {
+  await host.call({ op: "mc_input_free", input }).catch(() => {});
+}
+
+async function readRetainedResult<T>(
+  host: EngineHost,
+  input: number,
+  name: Parameters<typeof parseApiResult>[0],
+  response: Promise<EngineValue>,
+): Promise<T> {
+  try {
+    return parseApiResult<T>(name, await response);
+  } catch (error) {
+    await releaseUnownedInput(host, input);
+    throw error;
+  }
 }
 
 /** Wrap the module the engine kept for `payload` under `handle`. */
@@ -671,8 +692,8 @@ function attachInput(
 
 let mcInputSeq = 0;
 
-/** A dropped input must not pin a whole network in the engine: free one
- * the caller lost without freeing. Explicit {@link BrowserMcInput.free} is
+/** Release a stored network when its browser object is collected.
+ * This also handles callers that forget to free an input. Explicit {@link BrowserMcInput.free} is
  * still the normal path. */
 const mcInputCleanup =
   typeof FinalizationRegistry === "undefined"
@@ -714,15 +735,21 @@ export class BrowserMcInput {
   async prepareEnergized(): Promise<McRetainedEnergizedPreparation> {
     if (this.#freed) throw new Error("multiconductor input was freed");
     const output = ++mcInputSeq;
-    const prepared = JSON.parse(
-      expectText(
-        await this.host.call({
-          op: "mc_input_prepare_energized",
-          input: this.handle,
-          output,
-        }),
-      ),
+    const prepared = await readRetainedResult<{
+      input_retained: boolean;
+      network_scope: McRetainedEnergizedPreparation["network_scope"];
+      excluded_islands: McRetainedEnergizedPreparation["excluded_islands"];
+    }>(this.host, output, "energized_retained",
+      this.host.call({
+        op: "mc_input_prepare_energized",
+        input: this.handle,
+        output,
+      }),
     );
+    if (!prepared.input_retained) {
+      await releaseUnownedInput(this.host, output);
+      throw new Error("Engine did not retain the prepared multiconductor input");
+    }
     return {
       input: new BrowserMcInput(this.host, output),
       network_scope: prepared.network_scope,
@@ -755,7 +782,7 @@ export function isDisplayFile(name: string): boolean {
 
 export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
   assertEngineInputBytes(bytes);
-  return JSON.parse(
+  return parseApiResult("parsed_geo",
     expectText(
       await engineHost().call({ op: "parse_display", bytes, format: "pwd" }),
     ),
@@ -807,7 +834,7 @@ export async function parseGeo(
   hint: string,
 ): Promise<ParsedGeoLayer> {
   assertEngineInputBytes(bytes);
-  return JSON.parse(
+  return parseApiResult("parsed_geo",
     expectText(await engineHost().call({ op: "parse_geo", bytes, hint })),
   );
 }
@@ -820,7 +847,7 @@ export async function applyGeo(
   layer: string,
 ): Promise<AppliedGeoCase> {
   assertEngineInputLength(moduleJson.length);
-  return JSON.parse(
+  return parseApiResult("ingest_balanced",
     expectText(
       await engineHost().call({
         op: "apply_geo",
@@ -837,7 +864,7 @@ export async function applyMcGeo(
   layer: string,
 ): Promise<AppliedMcGeoCase> {
   assertEngineInputLength(moduleJson.length);
-  const result = JSON.parse(
+  const result = parseApiResult<AppliedMcGeoCase>("ingest_distribution",
     expectText(
       await engineHost().call({
         op: "apply_geo",
@@ -859,7 +886,7 @@ export async function applyLayout(
   kind: "synthetic" | "manual",
 ): Promise<StampedLayoutCase> {
   assertEngineInputLength(moduleJson.length);
-  return JSON.parse(
+  return parseApiResult("ingest_balanced",
     expectText(
       await engineHost().call({
         op: "apply_layout",
@@ -923,7 +950,7 @@ export async function mcSchematicLayout(
 ): Promise<SchematicLayout> {
   const graphJson = JSON.stringify(graph);
   assertEngineInputLength(graphJson.length);
-  return JSON.parse(
+  return parseApiResult("mc_layout",
     expectText(
       await engineHost().call({
         op: "mc_schematic_layout",
@@ -992,7 +1019,7 @@ export interface TxLayout {
 export async function solveDcGrid(grid: DcGrid): Promise<DcGridSolution> {
   const input = JSON.stringify(grid);
   assertEngineInputLength(input.length);
-  return JSON.parse(
+  return parseApiResult("dc_grid",
     expectText(
       await engineHost().call({ op: "solve_dc_grid", input_json: input }),
     ),
@@ -1007,7 +1034,7 @@ export async function solveAcDc(
   automaticRegulators = false,
 ): Promise<import("./dc-grid.js").AcDcSolution> {
   assertEngineInputLength(moduleJson.length);
-  return JSON.parse(
+  return parseApiResult("ac_dc",
     expectText(
       await engineHost().call({
         op: "solve_ac_dc",
@@ -1027,7 +1054,7 @@ export async function txSchematicLayout(
 ): Promise<TxLayout> {
   const inputJson = JSON.stringify(input);
   assertEngineInputLength(inputJson.length);
-  return JSON.parse(
+  return parseApiResult("tx_layout",
     expectText(
       await engineHost().call({
         op: "tx_schematic_layout",
@@ -1047,7 +1074,7 @@ export async function applyDisplayGeo(
 ): Promise<AppliedGeoCase> {
   assertEngineInputLength(moduleJson.length);
   assertEngineInputBytes(bytes);
-  return JSON.parse(
+  return parseApiResult("ingest_balanced",
     expectText(
       await engineHost().call({
         op: "apply_display_geo",
@@ -1059,7 +1086,7 @@ export async function applyDisplayGeo(
 }
 
 export async function capabilities(): Promise<ProblemCaps[]> {
-  return JSON.parse(
+  return parseApiResult("capabilities",
     expectText(await engineHost().call({ op: "capabilities" })),
   );
 }
@@ -1068,7 +1095,8 @@ export async function solveModule(
   moduleJson: string,
   request: SolveRequest = {},
 ): Promise<SolveResponse> {
-  return JSON.parse(
+  return parseApiResult(
+    "solve",
     expectText(
       await engineHost().call({
         op: "solve_module",
@@ -1525,7 +1553,15 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
   ) {
     throw new Error("engine returned no result tables");
   }
+  if (!(value.counts instanceof Uint32Array) || value.counts.length !== 4 ||
+      !(value.indices instanceof Uint32Array) || !(value.values instanceof Float64Array))
+    throw new Error("Invalid engine result table buffers");
   const [iterations, t, p, s] = value.counts;
+  if (value.indices.length !== 2 * t + 5 * p + 2 * s ||
+      value.values.length !== 6 * t + 4 * p + 4 * s)
+    throw new Error("Engine result table lengths do not match counts");
+  const strings = parseApiResult<string[]>("mc_strings", value.strings);
+  const metadata = parseApiResult<Pick<McPfResultTables, "load_model" | "network_scope" | "excluded_islands">>("mc_metadata", value.metadata);
   let at = 0;
   const indices = (rows: number) => value.indices.subarray(at, (at += rows));
   const terminalBus = indices(t);
@@ -1537,6 +1573,9 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
   const portTerminal = indices(p);
   const sourceName = indices(s);
   const sourceTerminal = indices(s);
+  for (const column of [terminalBus, terminalName, portElement, portKind, portBus, portTerminal, sourceName, sourceTerminal])
+    for (const index of column)
+      if (index >= strings.length) throw new Error("Engine result table string index is out of range");
   at = 0;
   const values = (rows: number) => value.values.subarray(at, (at += 2 * rows));
   const terminalVoltage = values(t);
@@ -1547,9 +1586,9 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
   const sourceCurrent = values(s);
   const sourcePower = values(s);
   return {
-    ...JSON.parse(value.metadata),
+    ...metadata,
     iterations,
-    strings: JSON.parse(value.strings) as string[],
+    strings,
     terminalBus,
     terminalName,
     terminalVoltage,
@@ -1637,7 +1676,8 @@ export class BrowserMcPfSession {
   ) {}
 
   async summary(): Promise<McPfSummary> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_summary",
       expectText(
         await this.host.call({
           op: "mc_pf_session_summary",
@@ -1662,7 +1702,8 @@ export class BrowserMcPfSession {
   /** The complete terminal and equipment result. Its size grows with the
    * network, so interactive views use {@link detail} instead. */
   async result(): Promise<McPfResult> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_result",
       expectText(
         await this.host.call({
           op: "mc_pf_session_result",
@@ -1673,7 +1714,8 @@ export class BrowserMcPfSession {
   }
 
   async loadBranches(): Promise<McLoadBranchState[]> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_load_branches",
       expectText(
         await this.host.call({
           op: "mc_pf_session_load_branches",
@@ -1694,7 +1736,7 @@ export class BrowserMcPfSession {
     });
     const received = performance.now();
     const text = expectText(answer.value);
-    const summary = JSON.parse(text) as McPfSummary;
+    const summary = parseApiResult("mc_summary", text) as McPfSummary;
     this.lastTiming = {
       engine_ms: answer.engineMs,
       round_trip_ms: received - started,
@@ -1706,7 +1748,8 @@ export class BrowserMcPfSession {
 
   /** One bus's terminals and a page of equipment ports. */
   async detail(query: McPfDetailQuery): Promise<McPfDetail> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_detail",
       expectText(
         await this.host.call({
           op: "mc_pf_session_detail",
@@ -1722,7 +1765,7 @@ export class BrowserMcPfSession {
   terminalIds(): Promise<Array<[string, string]>> {
     this.#terminalIds ??= this.host
       .call({ op: "mc_pf_session_terminal_ids", session: this.handle })
-      .then((value) => JSON.parse(expectText(value)));
+      .then((value) => parseApiResult<Array<[string, string]>>("mc_terminal_ids", value));
     return this.#terminalIds;
   }
 
@@ -1748,7 +1791,8 @@ export class BrowserMcPfSession {
 
   /** Engine phase timings of the latest solve, or of the cold start. */
   async profile(cold = false): Promise<McPfProfile> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_profile",
       expectText(
         await this.host.call({
           op: "mc_pf_session_profile",
@@ -1796,7 +1840,7 @@ export class BrowserMcPfSession {
     studyId: string,
     studyTitle: string,
   ): Promise<McStudySnapshot> {
-    return JSON.parse(
+    return parseApiResult("mc_study",
       expectText(
         await this.host.call({
           op: "mc_pf_session_snapshot",
@@ -1829,7 +1873,8 @@ export async function createMcPfSession(
   // A kept module lives in one engine worker; its session must too.
   const host = typeof input === "string" ? engineHost() : input.host;
   const handle = ++mcPfSessionSeq;
-  const summary = JSON.parse(
+  const summary = parseApiResult(
+    "mc_summary",
     expectText(
       await host.call(
         typeof input === "string"
@@ -1858,7 +1903,7 @@ export async function createMcPfSession(
 
 /** Live and peak heap of the shared engine, with its linear memory size. */
 export async function engineMemoryStats(): Promise<EngineMemoryStats> {
-  return JSON.parse(
+  return parseApiResult("memory_stats",
     expectText(await engineHost().call({ op: "memory_stats" })),
   );
 }
@@ -1874,7 +1919,8 @@ export async function solveMcBmopf(
   options: McPfOptions = {},
 ): Promise<McPfResult> {
   assertEngineInputLength(text.length);
-  return JSON.parse(
+  return parseApiResult(
+    "mc_result",
     expectText(
       await engineHost().call({
         op: "solve_mc_bmopf",
@@ -1900,7 +1946,7 @@ export async function prepareMcEnergizedNetwork(
 ): Promise<McEnergizedPreparation | McRetainedEnergizedPreparation> {
   if (typeof input !== "string") return input.prepareEnergized();
   assertEngineInputLength(input.length);
-  return JSON.parse(
+  return parseApiResult("energized",
     expectText(
       await engineHost().call({
         op: "prepare_mc_energized_network",
@@ -1929,7 +1975,7 @@ export async function solveMcModule(
       options: JSON.stringify(options),
     });
     signal?.throwIfAborted();
-    return JSON.parse(expectText(result));
+    return parseApiResult("mc_result", expectText(result));
   } finally {
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
@@ -1960,7 +2006,7 @@ export async function solveMcStudy(
       options: JSON.stringify(options),
     });
     signal?.throwIfAborted();
-    return JSON.parse(expectText(result));
+    return parseApiResult("mc_study", expectText(result));
   } finally {
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
@@ -1973,7 +2019,8 @@ export async function replayMcStudy(
   snapshotJson: string,
 ): Promise<McStudySnapshot> {
   assertEngineInputLength(snapshotJson.length);
-  return JSON.parse(
+  return parseApiResult(
+    "mc_study",
     expectText(
       await engineHost().call({
         op: "replay_mc_study",
@@ -1991,7 +2038,8 @@ export async function applyMcStudyGeo(
   const text = JSON.stringify(snapshot);
   assertEngineInputLength(text.length);
   assertEngineInputLength(layer.length);
-  return JSON.parse(
+  return parseApiResult(
+    "mc_study",
     expectText(
       await engineHost().call({
         op: "apply_mc_study_geo",
@@ -2334,7 +2382,8 @@ export class BrowserStudy {
   }
 
   async #solution(): Promise<StudySolveResponse> {
-    return JSON.parse(
+    return parseApiResult(
+      "solve",
       expectText(
         await this.#host.call({ op: "study_solution", study: this.#handle }),
       ),
@@ -2377,7 +2426,7 @@ export class BrowserStudy {
       });
       signal?.throwIfAborted();
       this.#atBase = edits.length === 0;
-      return JSON.parse(expectText(result));
+      return parseApiResult("commit", expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
       throw error;
@@ -2467,7 +2516,8 @@ export class BrowserStudy {
     if (this.#formulation === "acpf") {
       return { prices: [], objectiveDelta: null, units: null };
     }
-    const out: StudyPreview = JSON.parse(
+    const out: StudyPreview = parseApiResult(
+      "preview",
       expectText(
         await this.#host.call({
           op: "study_preview",
@@ -2492,7 +2542,8 @@ export class BrowserStudy {
   async currentView(): Promise<
     import("./generated/study-types.js").SolveResponse
   > {
-    return JSON.parse(
+    return parseApiResult(
+      "solve",
       expectText(
         await this.#host.call({ op: "study_solution", study: this.#handle }),
       ),
@@ -2534,7 +2585,7 @@ export class BrowserStudy {
 
   /** Write the current materialized case to one PowerIO target format. */
   async export(format: string): Promise<ExportedCase> {
-    return JSON.parse(
+    return parseApiResult("exported_case",
       expectText(
         await this.#host.call({
           op: "study_export",
@@ -2591,7 +2642,7 @@ export class BrowserStudy {
         spec: JSON.stringify(spec),
       });
       signal?.throwIfAborted();
-      return JSON.parse(expectText(result));
+      return parseApiResult("plan", expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
       throw error;
@@ -2605,7 +2656,7 @@ export class BrowserStudy {
    * `saveModule` or export carries the coordinates on screen. Locations are
    * metadata the model never reads; nothing re-solves. */
   async applyGeoLayer(layer: string): Promise<GeoApplyReport> {
-    return JSON.parse(
+    return parseApiResult("geo_report",
       expectText(
         await this.#host.call({
           op: "study_apply_geo",
@@ -2830,9 +2881,9 @@ async function loadPlacesOn(
   bytes: Uint8Array,
 ): Promise<SynthPlacesInfo> {
   assertEngineInputBytes(bytes);
-  const info = JSON.parse(
+  const info = parseApiResult<SynthPlacesInfo>("synth_places",
     expectText(await callSynth(host, { op: "synth_load_places", bytes })),
-  ) as SynthPlacesInfo;
+  );
   placesLoaded.set(host, host.kind);
   return info;
 }
@@ -2854,14 +2905,14 @@ export async function syntheticOverpassQueries(
 ): Promise<string[]> {
   const text = JSON.stringify(request);
   assertEngineInputLength(text.length);
-  return JSON.parse(
+  return parseApiResult<string[]>("synth_queries",
     expectText(
       await callSynth(synthEngineHost(), {
         op: "synth_overpass_queries",
         request: text,
       }),
     ),
-  ) as string[];
+  );
 }
 
 function expectSynthPreview(value: EngineValue): SynthPreview {
@@ -2874,6 +2925,19 @@ function expectSynthPreview(value: EngineValue): SynthPreview {
   ) {
     throw new Error("engine returned no synthetic preview");
   }
+  if (!(value.busPositions instanceof Float64Array) ||
+      !(value.busKinds instanceof Uint8Array) || !(value.busKv instanceof Float32Array) ||
+      !(value.branchPositions instanceof Float64Array) ||
+      !(value.branchStartIndices instanceof Uint32Array) || !(value.branchKv instanceof Float32Array) ||
+      value.busPositions.length !== value.busKinds.length * 2 ||
+      value.busKv.length !== value.busKinds.length || value.branchPositions.length % 2 !== 0 ||
+      value.branchStartIndices.length !== value.branchKv.length + 1 ||
+      value.branchStartIndices[0] !== 0 ||
+      value.branchStartIndices[value.branchStartIndices.length - 1] !== value.branchPositions.length / 2)
+    throw new Error("Engine synthetic preview buffers do not match");
+  for (let i = 1; i < value.branchStartIndices.length; i++)
+    if (value.branchStartIndices[i] < value.branchStartIndices[i - 1])
+      throw new Error("Engine synthetic preview branch offsets are out of order");
   return {
     busPositions: value.busPositions,
     busKinds: value.busKinds,
@@ -2920,14 +2984,14 @@ export class BrowserSynthSession {
     options: { withPreview?: boolean } = {},
   ): Promise<SynthAdvance & { preview?: SynthPreview }> {
     this.#check();
-    const outcome = JSON.parse(
+    const outcome = parseApiResult<SynthAdvance>("synth_step",
       expectText(
         await callSynth(this.host, {
           op: "synth_session_advance",
           session: this.handle,
         }),
       ),
-    ) as SynthAdvance;
+    );
     this.#done = outcome.done;
     if (options.withPreview && outcome.preview_changed) {
       return { ...outcome, preview: await this.preview() };
@@ -2975,14 +3039,14 @@ export class BrowserSynthSession {
   /** The generation report, partial until the session is done. */
   async report(): Promise<GenerationReport> {
     this.#check();
-    return JSON.parse(
+    return parseApiResult<GenerationReport>("synth_report",
       expectText(
         await callSynth(this.host, {
           op: "synth_session_report",
           session: this.handle,
         }),
       ),
-    ) as GenerationReport;
+    );
   }
 
   /** The module as PowerIO IR text, with bus locations and
@@ -3001,7 +3065,7 @@ export class BrowserSynthSession {
    * dropped `.pio.json` produces, so it opens without a second parse. */
   async ingest(): Promise<IngestedCase> {
     this.#check();
-    return JSON.parse(
+    return parseApiResult("ingest_balanced",
       expectText(
         await callSynth(this.host, {
           op: "synth_session_ingest",
@@ -3027,7 +3091,7 @@ export class BrowserSynthSession {
     // as unhandled while the payload is on its way.
     study.catch(() => {});
     try {
-      const view = JSON.parse(
+      const view = parseApiResult("ingest_balanced_view",
         expectText(
           await callSynth(this.host, {
             op: "synth_session_ingest_view",
@@ -3168,7 +3232,11 @@ export async function generateSynthetic(
   };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
-    const out = JSON.parse(
+    const out = parseApiResult<{
+      module_json: string;
+      report: GenerationReport;
+      ingest: IngestedCase;
+    }>("synth_generated",
       expectText(
         await callSynth(host, {
           op: "synth_generate",
@@ -3176,11 +3244,7 @@ export async function generateSynthetic(
           osm,
         }),
       ),
-    ) as {
-      module_json: string;
-      report: GenerationReport;
-      ingest: IngestedCase;
-    };
+    );
     signal?.throwIfAborted();
     return {
       moduleJson: out.module_json,
@@ -3360,7 +3424,7 @@ export async function solveRegulated(
   moduleJson: string,
 ): Promise<import("./dc-grid.js").RegulatedSolution> {
   assertEngineInputLength(moduleJson.length);
-  return JSON.parse(
+  return parseApiResult("regulated",
     expectText(
       await engineHost().call({
         op: "solve_regulated",

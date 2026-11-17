@@ -334,12 +334,15 @@ HTTPS source URL, related transmission case ID, and PF option defaults. The
 
 ## Result validation
 
-The engine package validates solve, study, planning and settings results against
-JSON schemas generated from the Rust records. HTTP solutions, saved results and
-streamed sensitivities use the server's serialized types. Invalid results name
-the affected field; an invalid stream closes and leaves the previous display
-intact. Older display responses may omit solver context, which is checked when
-present. A failed calculation retains its engine error and diagnostics.
+The engine package checks imports, solves, studies, settings, layouts, generation
+and RMS responses against schemas generated from their Rust records. This includes
+the separate AC OPF worker and the dimensions and indices of packed arrays.
+HTTP metadata, solutions, saved results and streamed sensitivities use the
+server's serialized types. Invalid results name the affected field; an invalid
+stream closes and leaves the previous display intact. Rejected retained-input
+responses release the new worker allocation. Older responses may omit newer
+optional fields, which are checked when present. A failed calculation retains
+its engine error and diagnostics.
 
 After changing those Rust types, regenerate the schemas and TypeScript/Python
 files using the commands in the [engine package guide](https://github.com/eigenergy/tellegen/tree/main/packages/engine#generated-types).

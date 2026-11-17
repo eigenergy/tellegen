@@ -1,3 +1,4 @@
+import { parseApiResult, validateApiResult } from "./result-validation.js";
 import type { McStudySnapshot } from "./index.js";
 import { isolatedEngineHost, type EngineHost } from "./host.js";
 import type { CreateStudy, StudyBundle, StudyRequest, StudyOperationResult } from "./generated/study-types.js";
@@ -28,10 +29,42 @@ async function callIsolated(request: Parameters<EngineHost["call"]>[0], signal?:
 }
 
 export const studyBackend: StudyBackend = {
-  async create(request, signal) { return JSON.parse(await callIsolated({ op: "study_document_create", request: JSON.stringify(request) }, signal)) as StudyBundle; },
-  async validate(text) { return JSON.parse(await callIsolated({ op: "study_document_import", bundle: text })) as StudyBundle; },
+  async create(request, signal) {
+    return parseApiResult(
+      "study_bundle",
+      await callIsolated(
+        { op: "study_document_create", request: JSON.stringify(request) },
+        signal,
+      ),
+    ) as StudyBundle;
+  },
+  async validate(text) {
+    return parseApiResult(
+      "study_bundle",
+      await callIsolated({ op: "study_document_import", bundle: text }),
+    ) as StudyBundle;
+  },
   async execute(bundle, request, signal) {
-    return JSON.parse(await callIsolated({ op: "study_document_run", bundle: JSON.stringify(bundle), request: JSON.stringify(request) }, signal)) as { bundle: StudyBundle; result: StudyOperationResult };
+    const response: unknown = JSON.parse(
+      await callIsolated(
+        {
+          op: "study_document_run",
+          bundle: JSON.stringify(bundle),
+          request: JSON.stringify(request),
+        },
+        signal,
+      ),
+    );
+    if (!response || typeof response !== "object")
+      throw new Error("Invalid engine Study response");
+    const value = response as Record<string, unknown>;
+    return {
+      bundle: validateApiResult<StudyBundle>("study_bundle", value.bundle),
+      result: validateApiResult<StudyOperationResult>(
+        "study_result",
+        value.result,
+      ),
+    };
   },
 };
 

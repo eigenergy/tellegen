@@ -192,11 +192,32 @@ give the full credits.
 
 `ENGINE_VERSION` is the package version. `API_SOURCE_SHA256` records the `crates/tellegen/src/api.rs` content used to generate `src/generated/api-types.ts`.
 
-Run the generator after Rust API changes:
+Run the generators from the repository root after Rust API changes:
 
 ```sh
+cargo run -p tellegen --example api_schema --features schema,conic,mc-pf > packages/engine/src/generated/api.schema.json
+cargo run -p tellegen --example settings_schema --features schema,conic,mc-pf > packages/engine/src/generated/settings.schema.json
+cargo run -p tellegen --example study_schema --features schema,conic,mc-pf > packages/engine/src/generated/study.schema.json
+cargo run -p tellegen-synth --example synth_schema --features schema > packages/engine/src/generated/synth.schema.json
+cargo run -p tellegen --example rms_schema --features schema,rms-experimental > packages/engine/src/generated/rms.schema.json
+cargo run -p tellegen-server --example http_schema --features schema > packages/engine/src/generated/http.schema.json
+cargo run -p tellegen-wasm --example adapter_schema --features schema,conic,synth,powerio-collections > packages/engine/src/generated/wasm-adapter.schema.json
+cargo run -p tellegen-wasm --example rms_adapter_schema --features schema,rms-experimental > packages/engine/src/generated/rms-adapter.schema.json
 npm run types
 ```
+
+Rust records also generate browser result validators and Python MCP argument
+models. Imports, solves, studies, settings, layouts, generation and RMS responses
+are checked before reaching callers, including results from the separate AC OPF
+worker. Packed results check their array lengths and indices. Malformed results
+identify the affected field; a rejected response releases any newly retained
+input. The browser does not load a schema compiler at runtime.
+
+HTTP metadata, solutions, saved results and streamed sensitivities use schemas
+from the server's serialized Rust records. Older responses may omit newer
+optional fields; supplied fields are checked. An invalid stream closes and
+reports an error without replacing the previous result. Unavailable RMS extrema
+keep their null JSON values and display as **Unavailable**.
 
 CI runs `npm run build:engine` from the repository root, and that runs
 `types:check`. Stale generated types fail the build.

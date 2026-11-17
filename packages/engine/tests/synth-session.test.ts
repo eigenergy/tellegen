@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrowserSynthSession, SynthEngineError } from "../src/index.js";
 import type { EngineHost } from "../src/host.js";
-import type { EngineRequest, EngineValue, SynthPreviewValue } from "../src/protocol.js";
+import type {
+  EngineRequest,
+  EngineValue,
+  SynthPreviewValue,
+} from "../src/protocol.js";
 
 const STAGES = [
   ["context", false],
@@ -30,35 +34,69 @@ function preview(buses: number): SynthPreviewValue {
 function stagedHost(kind: "worker" | "direct" = "worker") {
   let index = 0;
   const calls: EngineRequest[] = [];
-  const call = vi.fn<EngineHost["call"]>(async (request): Promise<EngineValue> => {
-    calls.push(request);
-    switch (request.op) {
-      case "synth_session_advance": {
-        const [stage, previewChanged] = STAGES[index];
-        index += 1;
-        const done = index === STAGES.length;
-        return JSON.stringify({
-          stage,
-          next: done ? null : STAGES[index][0],
-          progress: index / STAGES.length,
-          done,
-          warnings: [],
-          preview_changed: previewChanged,
-        });
+  const call = vi.fn<EngineHost["call"]>(
+    async (request): Promise<EngineValue> => {
+      calls.push(request);
+      switch (request.op) {
+        case "synth_session_advance": {
+          const [stage, previewChanged] = STAGES[index];
+          index += 1;
+          const done = index === STAGES.length;
+          return JSON.stringify({
+            stage,
+            next: done ? null : STAGES[index][0],
+            progress: index / STAGES.length,
+            done,
+            warnings: [],
+            preview_changed: previewChanged,
+          });
+        }
+        case "synth_session_preview":
+          return preview(4);
+        case "synth_session_report":
+          return JSON.stringify({
+            schema: "tellegen.synth-report/1",
+            stages: [],
+            warnings: [],
+            request: {
+              region: {
+                geometry: {
+                  type: "Polygon",
+                  coordinates: [
+                    [
+                      [-1, 50],
+                      [0, 50],
+                      [0, 51],
+                      [-1, 51],
+                      [-1, 50],
+                    ],
+                  ],
+                },
+              },
+            },
+            provenance: {
+              generator: "test",
+              seed: 1,
+              request_sha256: "test",
+              tellegen_synth_version: "test",
+              tellegen_version: "test",
+              powerio_version: "test",
+              parameter_table_version: "test",
+              spread_sigma: 0,
+            },
+          });
+        case "synth_session_free":
+          return null;
+        case "synth_session_export_gridfm":
+          return JSON.stringify({ format: "gridfm-graphkit", n_bus: 4 });
+        default:
+          throw new Error(`unexpected operation ${request.op}`);
       }
-      case "synth_session_preview":
-        return preview(4);
-      case "synth_session_report":
-        return JSON.stringify({ schema: "tellegen.synth-report/1", stages: [], warnings: [] });
-      case "synth_session_free":
-        return null;
-      case "synth_session_export_gridfm":
-        return JSON.stringify({ format: "gridfm-graphkit", n_bus: 4 });
-      default:
-        throw new Error(`unexpected operation ${request.op}`);
-    }
-  });
-  const cancel = vi.fn<NonNullable<EngineHost["cancel"]>>(() => kind === "worker");
+    },
+  );
+  const cancel = vi.fn<NonNullable<EngineHost["cancel"]>>(
+    () => kind === "worker",
+  );
   const host: EngineHost = { kind, call, cancel };
   return { host, call, cancel, calls };
 }
@@ -76,7 +114,9 @@ describe("BrowserSynthSession", () => {
     expect(seen).toEqual(STAGES.map(([stage, changed]) => [stage, changed]));
     expect(session.done).toBe(true);
     const ops = calls.map((c) => c.op);
-    expect(ops.filter((op) => op === "synth_session_advance")).toHaveLength(STAGES.length);
+    expect(ops.filter((op) => op === "synth_session_advance")).toHaveLength(
+      STAGES.length,
+    );
     expect(ops.filter((op) => op === "synth_session_preview")).toHaveLength(3);
     expect(calls.every((c) => !("session" in c) || c.session === 9)).toBe(true);
   });
@@ -84,7 +124,10 @@ describe("BrowserSynthSession", () => {
   it("exports GridFM graphkit JSON", async () => {
     const { host } = stagedHost();
     const text = await new BrowserSynthSession(host, 6).exportGridfm();
-    expect(JSON.parse(text)).toMatchObject({ format: "gridfm-graphkit", n_bus: 4 });
+    expect(JSON.parse(text)).toMatchObject({
+      format: "gridfm-graphkit",
+      n_bus: 4,
+    });
   });
 
   it("returns the preview as typed arrays without the transport tag", async () => {
@@ -125,7 +168,8 @@ describe("BrowserSynthSession", () => {
   it("turns generator refusals into SynthEngineError with their code", async () => {
     const payload = {
       code: "osm_insufficient",
-      message: "OpenStreetMap data is insufficient (2 bus(es), 1 branch(es)): too few lines",
+      message:
+        "OpenStreetMap data is insufficient (2 bus(es), 1 branch(es)): too few lines",
       buses: 2,
       branches: 1,
     };
@@ -135,9 +179,15 @@ describe("BrowserSynthSession", () => {
         throw new Error(JSON.stringify(payload));
       },
     };
-    const error = await new BrowserSynthSession(host, 4).advance().catch((e: unknown) => e);
+    const error = await new BrowserSynthSession(host, 4)
+      .advance()
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SynthEngineError);
-    expect(error).toMatchObject({ code: "osm_insufficient", buses: 2, branches: 1 });
+    expect(error).toMatchObject({
+      code: "osm_insufficient",
+      buses: 2,
+      branches: 1,
+    });
     // A failure that is not a generator payload passes through untouched.
     const plain: EngineHost = {
       kind: "worker",
@@ -145,6 +195,20 @@ describe("BrowserSynthSession", () => {
         throw new Error("engine worker failed");
       },
     };
-    await expect(new BrowserSynthSession(plain, 5).report()).rejects.toThrow("engine worker failed");
+    await expect(new BrowserSynthSession(plain, 5).report()).rejects.toThrow(
+      "engine worker failed",
+    );
   });
+});
+
+it("rejects inconsistent synthetic preview buffers before exposing them", async () => {
+  const invalid = preview(4);
+  invalid.branchStartIndices = new Uint32Array([0, 4]);
+  const session = new BrowserSynthSession(
+    { kind: "worker", call: async () => invalid },
+    1,
+  );
+  await expect(session.preview()).rejects.toThrow(
+    "preview buffers do not match",
+  );
 });

@@ -87,15 +87,24 @@
       "properties": {
         "coi_nadir_hz": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "coi_peak_hz": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "final_hz": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "lowest_bus": {
           "format": "uint",
@@ -108,7 +117,10 @@
         "lowest_bus_hz": {
           "description": "The lowest estimated bus frequency and where.",
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "lowest_bus_t": {
           "format": "double",
@@ -123,7 +135,10 @@
         "lowest_unit_hz": {
           "description": "The lowest unit speed (in service), Hz, and which unit.",
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "lowest_unit_t": {
           "format": "double",
@@ -156,17 +171,12 @@
       },
       "required": [
         "nominal_hz",
-        "coi_nadir_hz",
         "nadir_t",
-        "coi_peak_hz",
         "peak_t",
         "max_rocof_hz_s",
         "rocof_t",
-        "final_hz",
         "settled",
-        "lowest_bus_hz",
         "lowest_bus_t",
-        "lowest_unit_hz",
         "lowest_unit_t"
       ],
       "type": "object"
@@ -1257,11 +1267,17 @@
       "properties": {
         "final_max_pu": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "final_min_pu": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "last_event_t": {
           "description": "The time of the last event, s (0 without events).",
@@ -1278,7 +1294,10 @@
         },
         "min_pu": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "min_t": {
           "format": "double",
@@ -1297,12 +1316,9 @@
         }
       },
       "required": [
-        "min_pu",
         "min_t",
         "last_event_t",
-        "recovered",
-        "final_min_pu",
-        "final_max_pu"
+        "recovered"
       ],
       "type": "object"
     }
@@ -1342,5 +1358,5 @@
   ],
   "title": "RmsSchema",
   "type": "object",
-  "x-rust-source-sha256": "57a428cd684975578c03f3641f4cf0058bd70599c34a00177550345d1f2b9169"
+  "x-rust-source-sha256": "7e6e1612aad2bcd02ee088c0551c800a5e21e01d3f39a1c199a492938e60fc4a"
 }

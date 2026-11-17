@@ -3,6 +3,7 @@ import {
   BrowserRmsCase,
   buildRunRequest,
   openRmsCase,
+  rmsLibrary,
   setRmsWorkerFactory,
   unpackRun,
   type RmsWorkerLike,
@@ -27,24 +28,96 @@ const inspection = JSON.stringify({
   supported_models: [],
 });
 
-function meta(keys: string[]) {
-  return JSON.stringify({
-    keys,
-    notes: [],
-    events: [],
-    generators: [],
-    sources: [],
-    buses: [1, 2],
-    base_mva: 100,
-    base_frequency: 60,
-    steps: 10,
-    newton_iterations: 20,
-    output_step: 0.01,
+// Complete serialized Rust output; malformed-response tests mutate individual fields.
+const runMeta = {
+  base_frequency: 60,
+  base_mva: 100,
+  buses: [1, 2],
+  dt: 0.0025,
+  events: [],
+  generators: [],
+  keys: [],
+  newton_iterations: 20,
+  notes: [],
+  output_step: 0.01,
+  request: {
     dt: 0.0025,
+    events: [],
+    load_model: "power_flow",
+    output_step: 0.01,
+    record: null,
+    small_signal: false,
     t_end: 0.02,
-    screening: { verdict: "stable" },
-    request: {},
-  });
+  },
+  screening: {
+    angle: {
+      first_swing_deg: 0,
+      first_swing_unit: null,
+      initial_separation_deg: 0.0,
+      max_coi_angle_deg: 0,
+      max_coi_angle_t: 0,
+      max_coi_angle_unit: null,
+      max_separation_deg: 0,
+      pair: [],
+      pole_slips: [],
+      separation_t: 0,
+      settled: false,
+      trend: null,
+    },
+    criteria: {
+      bus_frequency_filter_s: 0.02,
+      bus_frequency_min_pu: 0.2,
+      pole_slip_deg: 180.0,
+      rocof_window_s: 0.5,
+      runaway_pu: 0.05,
+      settle_angle_deg: 1.0,
+      settle_frequency_hz: 0.01,
+      settle_window_s: 2.0,
+      version: 1,
+      voltage_recovery_pu: 0.8,
+      voltage_recovery_s: 1.0,
+    },
+    criteria_name: "tellegen-rms-screening-1",
+    frequency: {
+      coi_nadir_hz: 0,
+      coi_peak_hz: 0,
+      final_hz: 0,
+      lowest_bus: null,
+      lowest_bus_hz: 0,
+      lowest_bus_t: 0,
+      lowest_unit: null,
+      lowest_unit_hz: 0,
+      lowest_unit_t: 0,
+      max_rocof_hz_s: 0,
+      nadir_t: 0,
+      nominal_hz: 0,
+      peak_t: 0,
+      rocof_t: 0,
+      settled: false,
+    },
+    held_units: 0,
+    islands: [],
+    reasons: [],
+    reference_unit: null,
+    verdict: "stable",
+    voltage: {
+      final_max_pu: 0,
+      final_min_pu: 0,
+      last_event_t: 0,
+      min_bus: null,
+      min_pu: 0,
+      min_t: 0,
+      recovered: false,
+      recovered_s: null,
+    },
+  },
+  sources: [],
+  steps: 10,
+  t_end: 0.02,
+};
+
+function meta(keys: string[]) {
+  return JSON.stringify({ ...runMeta, keys });
 }
 
 /** A fake RMS worker: records requests, answers what `answer` says. */
@@ -117,7 +190,7 @@ describe("RMS run buffers", () => {
         { events: [] },
         {
           meta: meta(["a", "b"]),
-          time: new Float64Array(3),
+          time: new Float64Array([0, 0.01, 0.02]),
           values: new Float64Array(5),
         },
         0,
@@ -197,5 +270,179 @@ describe("RMS worker host", () => {
     setRmsWorkerFactory(() => new FakeWorker(answer));
     const c = await openRmsCase("{}", "dyr");
     await expect(c.linear()).rejects.toThrow(/not in this engine build/);
+  });
+});
+
+describe("RMS result validation", () => {
+  const validRun = (): RmsRunValue => ({
+    meta: meta(["vm:1"]),
+    time: new Float64Array([0, 0.01]),
+    values: new Float64Array([1, 1]),
+  });
+  it("accepts unavailable screening extrema returned by Rust", () => {
+    const value = validRun();
+    const parsed = JSON.parse(value.meta);
+    for (const key of [
+      "coi_nadir_hz",
+      "coi_peak_hz",
+      "final_hz",
+      "lowest_bus_hz",
+      "lowest_unit_hz",
+    ])
+      parsed.screening.frequency[key] = null;
+    for (const key of ["min_pu", "final_min_pu", "final_max_pu"])
+      parsed.screening.voltage[key] = null;
+    value.meta = JSON.stringify(parsed);
+    const run = unpackRun({ events: [] }, value, 1);
+    expect(run.screening.voltage.min_pu).toBeNull();
+    expect(run.screening.frequency.coi_nadir_hz).toBeNull();
+    expect(run.time).toBe(value.time);
+  });
+  it("rejects malformed run metadata before exposing channels", () => {
+    for (const change of [
+      (m: any) => {
+        m.keys = ["vm:1", "vm:1"];
+      },
+      (m: any) => {
+        m.steps = "10";
+      },
+      (m: any) => {
+        m.steps = Number.MAX_SAFE_INTEGER + 1;
+      },
+      (m: any) => {
+        m.screening.frequency = null;
+      },
+      (m: any) => {
+        m.request.events = false;
+      },
+      (m: any) => {
+        delete m.base_frequency;
+      },
+    ]) {
+      const value = validRun();
+      const parsed = JSON.parse(value.meta);
+      change(parsed);
+      value.meta = JSON.stringify(parsed);
+      expect(() => unpackRun({ events: [] }, value, 1)).toThrow(/RMS|rms/);
+    }
+  });
+  it("rejects wrong buffer types, invalid sample times and invalid worker duration", () => {
+    for (const patch of [
+      { time: [0, 1] },
+      { values: new Float32Array([1, 1]) },
+      { time: new Float64Array() },
+      { time: new Float64Array([0, 0]) },
+      { time: new Float64Array([0, Infinity]) },
+    ])
+      expect(() =>
+        unpackRun(
+          { events: [] },
+          { ...validRun(), ...patch } as RmsRunValue,
+          1,
+        ),
+      ).toThrow(/RMS/);
+    expect(() => unpackRun({ events: [] }, validRun(), NaN)).toThrow(
+      /duration/,
+    );
+  });
+  it("keeps unavailable frequency samples and their binary buffer intact", () => {
+    const value = validRun();
+    value.values[1] = NaN;
+    const run = unpackRun({ events: [] }, value, 1);
+    expect(run.time).toBe(value.time);
+    expect(run.series("vm:1")!.buffer).toBe(value.values.buffer);
+    expect(run.series("vm:1")![1]).toBeNaN();
+  });
+  it.each([
+    [
+      "flat_check",
+      { seconds: 2, max_speed_drift: "bad", max_voltage_drift: 0, steps: 400 },
+    ],
+    [
+      "linear",
+      {
+        states: ["omega:1"],
+        modes: [
+          {
+            re: -1,
+            im: 2,
+            freq_hz: 0.3,
+            damping: 0.4,
+            participation: [{ state: "omega:1", factor: "bad" }],
+          },
+        ],
+        bode: [],
+      },
+    ],
+    [
+      "library",
+      [{ role: "machine", name: "GENCLS", label: "Classical", engines: false }],
+    ],
+  ] as const)(
+    "rejects malformed %s records from the worker",
+    async (op, result) => {
+      setRmsWorkerFactory(
+        () =>
+          new FakeWorker((request) =>
+            request.op === "support"
+              ? { rms: true, experimental: true }
+              : request.op === op
+                ? JSON.stringify(result)
+                : answer(request),
+          ),
+      );
+      const c = await openRmsCase("{}", "dyr");
+      const resultPromise =
+        op === "flat_check"
+          ? c.flatCheck()
+          : op === "linear"
+            ? c.linear()
+            : rmsLibrary();
+      await expect(resultPromise).rejects.toThrow(/Invalid engine rms_/);
+      c.free();
+    },
+  );
+  it("accepts valid flat-check, linear and library records unchanged", async () => {
+    const results = {
+      flat_check: {
+        seconds: 2,
+        max_speed_drift: 0,
+        max_voltage_drift: 0,
+        steps: 400,
+      },
+      linear: {
+        states: ["omega:1"],
+        modes: [
+          {
+            re: -1,
+            im: 2,
+            freq_hz: 0.3,
+            damping: 0.4,
+            participation: [{ state: "omega:1", factor: 1 }],
+          },
+        ],
+        bode: [
+          { label: "omega", freq_hz: [1], mag_db: [-20], phase_deg: [-90] },
+        ],
+      },
+      library: [
+        { role: "machine", name: "GENCLS", label: "Classical", engines: "RMS" },
+      ],
+    };
+    setRmsWorkerFactory(
+      () =>
+        new FakeWorker((request) =>
+          request.op === "support"
+            ? { rms: true, experimental: true }
+            : request.op in results
+              ? JSON.stringify(results[request.op as keyof typeof results])
+              : answer(request),
+        ),
+    );
+    const c = await openRmsCase("{}", "dyr");
+    expect(await c.flatCheck()).toEqual(results.flat_check);
+    expect(await c.linear()).toEqual(results.linear);
+    expect(await rmsLibrary()).toEqual(results.library);
+    c.free();
   });
 });

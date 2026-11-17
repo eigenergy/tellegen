@@ -22,6 +22,7 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 serde.workspace = true
 serde_json.workspace = true
+schemars = { workspace = true, optional = true }
 # Forwards Rust panics to a readable console.error with a JS stack, instead of the bare
 # `unreachable` trap a wasm panic otherwise surfaces. Installed once per entry point.
 console_error_panic_hook = "0.1"
@@ -30,6 +31,8 @@ tellegen-synth = { path = "../tellegen-synth", optional = true }
 
 [features]
 default = []
+# Generate browser response schemas without adding code to ordinary builds.
+schema = ["dep:schemars", "tellegen/schema", "powerio/schema", "tellegen-synth?/schema"]
 # No-op alias kept for existing build commands; PowerIO 0.12 is the shipping
 # dependency (see the `tellegen` crate's `powerio-012` feature).
 powerio-012 = ["tellegen/powerio-012"]
@@ -57,6 +60,17 @@ rms-experimental = ["rms", "tellegen/rms-experimental"]
 [[test]]
 name = "rms_buffers"
 required-features = ["rms"]
+
+[dev-dependencies]
+sha2 = "0.11"
+
+[[example]]
+name = "rms_adapter_schema"
+required-features = ["schema", "rms-experimental"]
+
+[[example]]
+name = "adapter_schema"
+required-features = ["schema", "conic", "synth", "powerio-collections"]
 
 [lints]
 workspace = true

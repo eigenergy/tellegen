@@ -245,7 +245,7 @@ fn ingest_dist_value(
     let coords_space = coords_space(net.geo().as_ref());
     let coords_kind = coords_kind(coords_space, has_coords);
 
-    Ok(serde_json::json!({
+    let payload = serde_json::json!({
         "name": net.name(),
         // Discriminates this payload from the balanced `ingest_case` shape so the
         // frontend routes it to the viewing-only multiconductor state.
@@ -278,7 +278,10 @@ fn ingest_dist_value(
         "coords_kind": coords_kind,
         "diagnostics": diagnostics,
         "graph": graph_value,
-    }))
+    });
+    let typed: crate::outputs::DistributionIngest = serde_json::from_value(payload)
+        .map_err(|e| format!("invalid distribution display output: {e}"))?;
+    serde_json::to_value(typed).map_err(|e| e.to_string())
 }
 
 /// Add the neutral identity used by the MC Study view to PowerIO's stable

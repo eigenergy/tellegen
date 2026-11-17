@@ -1,4 +1,5 @@
-import { engineError } from "./errors.js";
+import { engineError, errorCode } from "./errors.js";
+import { validateApiResult } from "./result-validation.js";
 import type { SensRequest, SolveResponse } from "./generated/api-types.js";
 import type {
   AcOpfWorkerRequest,
@@ -107,6 +108,31 @@ function workerCall(
       return;
     }
     worker.onmessage = ({ data }) => {
+      try {
+        if (!data || typeof data !== "object")
+          throw new Error("AC OPF worker returned an invalid message");
+        switch (data.type) {
+          case "result":
+            validateApiResult<SolveResponse>("solve", data.response);
+            break;
+          case "joint_result":
+            validateApiResult("ac_dc", data.response);
+            break;
+          case "ready":
+            break;
+          case "error":
+            if (typeof data.message !== "string" ||
+                (data.code !== undefined && errorCode(data) === undefined))
+              throw new Error("AC OPF worker returned an invalid error");
+            break;
+          default:
+            throw new Error("AC OPF worker returned an unknown message type");
+        }
+      } catch (error) {
+        finish(false);
+        reject(error);
+        return;
+      }
       finish(true);
       if (data.type === "error") reject(engineError(data.message, data.code));
       else resolve(data);
@@ -128,7 +154,7 @@ function workerCall(
   });
 }
 
-/** Probe the optional development asset in the same worker/WASI environment a
+/** Probe the optional solver asset in the same worker/WASI environment a
  * solve uses. A missing asset, unsupported browser, or instantiation failure
  * returns false and leaves the formulation disabled. A successful probe leaves
  * its worker, with the compiled module, ready for the first solve. */

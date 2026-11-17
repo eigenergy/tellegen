@@ -11,6 +11,7 @@ use powerio::{BalancedNetwork, DynamicCase, DynamicRecord};
 
 /// One model of the library: role, PSS/E name, what it is, typical
 /// parameters (PSS/E order, on the machine base), and how the engines run it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LibraryModel {
     /// `machine`, `exciter`, `governor`, `stabilizer` or `inverter`.

@@ -181,20 +181,25 @@ pub struct PoleSlip {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FrequencyScreen {
     pub nominal_hz: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub coi_nadir_hz: f64,
     pub nadir_t: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub coi_peak_hz: f64,
     pub peak_t: f64,
     /// Largest `|Δf_COI| / window` over the sliding window, Hz/s.
     pub max_rocof_hz_s: f64,
     pub rocof_t: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub final_hz: f64,
     pub settled: bool,
     /// The lowest estimated bus frequency and where.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub lowest_bus_hz: f64,
     pub lowest_bus: Option<usize>,
     pub lowest_bus_t: f64,
     /// The lowest unit speed (in service), Hz, and which unit.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub lowest_unit_hz: f64,
     pub lowest_unit: Option<String>,
     pub lowest_unit_t: f64,
@@ -233,6 +238,7 @@ pub struct AngleScreen {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoltageScreen {
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub min_pu: f64,
     pub min_bus: Option<usize>,
     pub min_t: f64,
@@ -242,7 +248,9 @@ pub struct VoltageScreen {
     /// the criterion for good, s; `None`: not by the end of the run.
     pub recovered_s: Option<f64>,
     pub recovered: bool,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub final_min_pu: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<f64>"))]
     pub final_max_pu: f64,
 }
 
