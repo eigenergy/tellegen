@@ -59,8 +59,11 @@ COPY packages/analytics packages/analytics
 COPY examples/browser-minimal examples/browser-minimal
 COPY examples/svelte-minimal examples/svelte-minimal
 # `types:check` (run by build:engine) reads the Rust records the generated
-# TypeScript mirrors: tellegen's api.rs and the synth request/report/error.
+# TypeScript mirrors, plus the shared result schemas and MCP argument schema.
 COPY crates/tellegen/src crates/tellegen/src
+COPY crates/tellegen/examples/api_schema.rs crates/tellegen/examples/api_schema.rs
+COPY crates/tellegen-server/src/lib.rs crates/tellegen-server/src/lib.rs
+COPY python/tellegen/mcp/_engine_schema.json python/tellegen/mcp/_engine_schema.json
 COPY crates/tellegen-synth/src crates/tellegen-synth/src
 # The WECC 240 dynamics demo: apps/web copies it into static/examples at build.
 COPY crates/tellegen/tests/data/rms_examples/wecc240 crates/tellegen/tests/data/rms_examples/wecc240
