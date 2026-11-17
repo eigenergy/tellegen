@@ -320,11 +320,24 @@ export interface OpenBalancedModuleInput {
 	geoLayer?: string;
 	/** Overrides the formulation the module declares. */
 	formulation?: Formulation;
+	/** A Study already building from this module for the case's formulation,
+	 * such as the one `BrowserSynthSession.ingestWithStudy` starts. The case's
+	 * first solve uses it instead of building its own. The controller owns it
+	 * from this call on and frees it when it cannot use it. */
+	study?: Promise<BrowserStudy>;
 	/** Default `true`: add the case, make it active, and start its browser
 	 * solve. With `false` the prepared case is returned and not added. */
 	activate?: boolean;
 	/** Default `true`: fly the map to the case when it is activated. */
 	frame?: boolean;
+}
+
+/** Free a Study nobody will use, once its build settles. */
+function releaseWhenBuilt(study: Promise<BrowserStudy>) {
+	void study.then(
+		(built) => built.free(),
+		() => {}
+	);
 }
 
 /** A case's name for the header and panels: the name the file gives, unless that is a
@@ -4103,6 +4116,7 @@ export class Controller {
 	 * nothing. */
 	openBalancedModule = async (input: OpenBalancedModuleInput): Promise<LocalCase> => {
 		this.app.parsingFile = true;
+		let study = input.study;
 		try {
 			const payload =
 				input.payload ?? (await this.ingestBalancedModule(input.name, input.moduleJson));
@@ -4121,12 +4135,68 @@ export class Controller {
 				]);
 			}
 			this.placeTopologyAsDiagram(local);
+			if (study) {
+				this.adoptStudy(local, study);
+				study = undefined;
+			}
 			if (input.activate !== false) this.addAndActivateLocal(local, { frame: input.frame });
 			return local;
 		} finally {
+			// The open failed before the case took the Study.
+			if (study) releaseWhenBuilt(study);
 			this.app.parsingFile = false;
 		}
 	};
+
+	/** Make a Study that was started before the case existed the case's
+	 * pending build, so `getStudy` waits for it instead of building another.
+	 * It is used only as built: for the case's module and formulation, with no
+	 * calculation settings. Anything else, or a failed build, leaves the case
+	 * to build its own. */
+	private adoptStudy(c: LocalCase, pending: Promise<BrowserStudy>) {
+		const studyInputJson = c.studyInputJson;
+		const formulation = c.formulation;
+		if (
+			this.disposed ||
+			!studyInputJson ||
+			c.settings.accepted ||
+			c.settings.baselines[formulation]
+		) {
+			releaseWhenBuilt(pending);
+			return;
+		}
+		const token = {};
+		const current = () => this.studyBuilds.get(c)?.token === token;
+		const promise = (async (): Promise<BrowserStudy | null> => {
+			let study: BrowserStudy | null = null;
+			try {
+				study = await pending;
+				if (study.formulation !== formulation)
+					throw new Error(`Study built for ${study.formulation}, not ${formulation}`);
+				const baseSolution = await study.currentSolution();
+				// As in `getStudy`: the case may have changed or gone while this built.
+				if (c.formulation !== formulation || !current()) {
+					study.free();
+					return null;
+				}
+				this.caseStudies.set(c, {
+					study,
+					studyInputJson,
+					formulation,
+					baseSolution,
+					settings: defaultCalculationSettings(formulation)
+				});
+				this.studyBuilds.delete(c);
+				return study;
+			} catch {
+				study?.free();
+				if (!current()) return null;
+				this.studyBuilds.delete(c);
+				return this.getStudy(c, studyInputJson);
+			}
+		})();
+		this.studyBuilds.set(c, { studyInputJson, formulation, token, promise });
+	}
 
 	/** Swap a local case for a new module in place: same slot in the case list,
 	 * same formulation unless `input.formulation` says otherwise, same display

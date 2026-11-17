@@ -1,9 +1,8 @@
 # ZIP and folder case collections
 
-These controls require the optional collection build (the `tellegen-wasm`
-`powerio-collections` feature). The ordinary build hides collection controls
-and continues to accept individual case files. Hosts can query `collectionSupported()` from
-`@tellegen/engine` before offering ZIP or folder acquisition.
+The published browser package includes ZIP and folder imports. Custom builds can
+omit the `powerio-collections` feature; hosts can query `collectionSupported()`
+before offering these controls.
 
 Drop a ZIP onto Tellegen, choose it with **Open a case file**, or use **Open
 folder**. Folder drops preserve relative paths. Each ZIP has its own namespace:
@@ -26,8 +25,10 @@ Use **Choose a nonstandard entry or document group** for an unusual master
 suffix or a format that needs an explicit choice. XML is not assumed to be one
 CGMES network: choose XIIDM for independent networks, or explicitly group the
 profiles belonging to one CGMES case. GO problem/solution grouping is likewise
-explicit. Nested transport ZIPs are not recursively flattened; extract them and
-open the folder. Format-owned native ZIPs can be selected with their reader
+explicit. For a ZIP inside a ZIP, choose **Open ZIP** beside its path. The inner
+archive appears as a separate collection; its cases cannot read files from its
+parent or siblings. Each archive is opened only when requested, up to two ZIP
+layers. Format-owned native ZIPs can be selected with their reader
 format. Unsupported structural values, such as time series in a snapshot-only
 view, are reported rather than flattened.
 
@@ -39,8 +40,8 @@ case, and attach its geographic file using the existing sidecar workflow.
 
 The chooser limits one batch to 4096 members and 64 MiB of uploaded/expanded
 file bytes, at most 32 ZIP uploads and 32 selected imports per operation. ZIP
-members have a 200:1 expansion-ratio limit. PowerIO also bounds inspection and
-cumulative parser input work; repeated operations can exhaust a session budget.
+members have a 200:1 expansion-ratio limit. PowerIO also limits inspection and the work per operation. Parent and child
+archives share the limits on retained file counts and expanded bytes.
 Decoded electrical models may use more memory than their source files. Parsing
 is serial. Cancellation terminates the collection worker; on a synchronous
 fallback it discards the result when the current operation returns.

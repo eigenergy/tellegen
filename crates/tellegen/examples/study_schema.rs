@@ -10,7 +10,7 @@ struct StudySchema {
     bundle: tellegen::document::StudyBundle,
     create: tellegen::study_ops::CreateStudy,
     request: tellegen::study_ops::StudyRequest,
-    response: tellegen::study_ops::StudyOperationResult,
+    response: tellegen::study_ops::StudyOperationOutput,
 }
 
 fn main() {
