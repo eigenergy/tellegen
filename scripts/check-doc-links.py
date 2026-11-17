@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Check file and fragment links in the built book, without network requests."""
 
+import sys
 from html.parser import HTMLParser
 from pathlib import Path
-import sys
 from urllib.parse import unquote, urlsplit
 
 
