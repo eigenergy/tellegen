@@ -1,3 +1,4 @@
+import "./generate-api-validators.mjs";
 import "./generate-settings-types.mjs";
 import "./generate-study-types.mjs";
 import "./generate-synth-types.mjs";
@@ -409,7 +410,16 @@ export interface NetworkBranch {
 }
 
 /** Source equipment settings, independent of the AC solver branch arrays. */
+export interface NodeBreakerDrawing {
+  stations: { id: string; name: string }[];
+  nodes: { id: string; name: string; voltage_level: string; station: string | null; bus: number | null; nominal_kv: number; container: string | null; container_name?: string | null }[];
+  busbars: { id: string; name: string; node: string }[];
+  switches: { id: string; name: string; kind: string; from: string; to: string; open: boolean }[];
+  connections: { from: string; to: string }[];
+  terminals: { id: string; equipment: string; name: string; kind: string; number: number; node: string; connected: boolean }[];
+}
 export interface NetworkEquipment {
+  node_breaker?: NodeBreakerDrawing;
   transformers: NetworkTransformer[];
   shunts: NetworkShunt[];
   hvdc: NetworkHvdc[];

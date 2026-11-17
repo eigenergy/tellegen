@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 pub const SCHEMATIC_LAYOUT_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum SchematicStrategy {
     /// Every leaf on its own row; simple and stable under edits.
@@ -28,6 +29,7 @@ pub enum SchematicStrategy {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct SchematicOptions {
     pub strategy: SchematicStrategy,
@@ -58,6 +60,7 @@ pub const ROLE_OPEN: u8 = 2;
 
 /// Columnar layout output in graph order, sized for transfer to the browser.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SchematicLayout {
     pub version: u32,
     pub strategy: SchematicStrategy,

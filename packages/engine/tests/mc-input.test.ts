@@ -145,6 +145,7 @@ it("prepares energized islands on the retained input's host without serializing"
     });
     expect(request).not.toHaveProperty("module_json");
     return JSON.stringify({
+      input_retained: true,
       network_scope: scope,
       excluded_islands: exclusions,
     });

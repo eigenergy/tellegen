@@ -304,6 +304,7 @@ struct CaseEntry {
 }
 
 #[derive(Clone, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct SavedCase {
     base_input: String,
     input: String,
@@ -313,6 +314,7 @@ struct SavedCase {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CaseSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub distribution: Option<distribution::Metadata>,
@@ -331,6 +333,7 @@ pub struct CaseSummary {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum CaseModel {
     Balanced,
     Multiconductor,
@@ -352,6 +355,7 @@ pub struct HealthPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NetworkPayload {
     pub equipment: tellegen::equipment::Equipment,
     pub model_details: Option<tellegen::preparation::ModelDetails>,
@@ -366,6 +370,7 @@ pub struct NetworkPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NetworkBus {
     pub id: usize,
     pub name: Option<String>,
@@ -389,6 +394,7 @@ pub struct NetworkBus {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NetworkBranch {
     pub id: usize,
     pub from: usize,
@@ -406,12 +412,14 @@ pub struct NetworkBranch {
 /// common `BusScalar` / `BranchFlow` / `GenDispatch`; the server maps
 /// those to the DC-specific field names the frontend reads.
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PriceValue {
     pub bus: usize,
     pub value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FlowValue {
     pub branch: usize,
     pub mw: f64,
@@ -427,6 +435,7 @@ pub struct FlowValue {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DispatchValue {
     pub gen: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -435,18 +444,21 @@ pub struct DispatchValue {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ScalarValue {
     pub bus: usize,
     pub value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SensitivityValue {
     pub bus: usize,
     pub value: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SolutionPayload {
     pub formulation: tellegen::Problem,
     pub status: tellegen::SolveStatus,
@@ -470,6 +482,7 @@ pub struct SolutionPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SensitivityPayload {
     pub case: String,
     pub operand: &'static str,
@@ -480,6 +493,39 @@ pub struct SensitivityPayload {
     pub branch: Option<usize>,
     pub units: String,
     pub values: Vec<SensitivityValue>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct StreamSolution<'a> {
+    case: &'a str,
+    solve_ms: f64,
+    #[serde(flatten)]
+    solution: &'a SolutionPayload,
+    iterations: &'a [tellegen::SolveIteration],
+}
+
+/// The serialized HTTP result records, also consumed by browser validation.
+#[cfg(feature = "schema")]
+pub fn http_result_schema() -> serde_json::Value {
+    #[derive(schemars::JsonSchema)]
+    #[allow(dead_code)]
+    struct HttpResults {
+        http_cases: Vec<CaseSummary>,
+        http_network: NetworkOutput<'static>,
+        http_compute: ComputeStatus,
+        http_solution: SolutionPayload,
+        http_stream_solution: StreamSolution<'static>,
+        http_sensitivity: SensitivityPayload,
+        http_saved_case: SavedCase,
+    }
+    serde_json::to_value(
+        schemars::generate::SchemaSettings::default()
+            .for_serialize()
+            .into_generator()
+            .into_root_schema_for::<HttpResults>(),
+    )
+    .expect("HTTP result schema")
 }
 
 #[derive(Debug, Deserialize)]
@@ -817,8 +863,16 @@ async fn require_compute(State(state): State<Arc<AppState>>, req: Request, next:
 
 /// Whether the compute endpoints are enabled, so the frontend can pick honest
 /// copy (and skip doomed requests) instead of inferring it from a 403.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct ComputeStatus {
+    enabled: bool,
+}
+
 async fn compute_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(serde_json::json!({ "enabled": state.compute_enabled }))
+    Json(ComputeStatus {
+        enabled: state.compute_enabled,
+    })
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -925,8 +979,47 @@ async fn case_module_json(
 async fn network(
     State(state): State<Arc<AppState>>,
     AxumPath(id): AxumPath<String>,
-) -> ApiResult<Json<NetworkPayload>> {
-    Ok(Json(state.case(&id)?.view.clone()))
+) -> ApiResult<Json<serde_json::Value>> {
+    let case = state.case(&id)?;
+    network_output(&case.view, &case.network)
+        .map(Json)
+        .map_err(|error| ApiError::internal(error.to_string()))
+}
+
+// Keep the public NetworkPayload constructor compatible while extending its JSON equipment.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct NetworkOutput<'a> {
+    equipment: &'a tellegen::equipment::EquipmentOutput,
+    model_details: &'a Option<tellegen::preparation::ModelDetails>,
+    id: &'a str,
+    name: &'a str,
+    base_mva: f64,
+    synthetic_coords: bool,
+    buses: &'a [NetworkBus],
+    branches: &'a [NetworkBranch],
+    substations: &'a [Substation],
+}
+
+fn network_output(
+    view: &NetworkPayload,
+    network: &BalancedNetwork,
+) -> Result<serde_json::Value, serde_json::Error> {
+    let equipment = tellegen::equipment::EquipmentOutput {
+        equipment: view.equipment.clone(),
+        node_breaker: tellegen::equipment::node_breaker::project(network),
+    };
+    serde_json::to_value(NetworkOutput {
+        equipment: &equipment,
+        model_details: &view.model_details,
+        id: &view.id,
+        name: &view.name,
+        base_mva: view.base_mva,
+        synthetic_coords: view.synthetic_coords,
+        buses: &view.buses,
+        branches: &view.branches,
+        substations: &view.substations,
+    })
 }
 
 async fn solution(
@@ -1085,17 +1178,12 @@ async fn solve_stream(
                 send_event(
                     &tx,
                     "solution",
-                    &serde_json::json!({
-                        "case": id_for_task.as_str(),
-                        "solve_ms": (solve_ms * 10.0).round() / 10.0,
-                        "objective": solution.objective,
-                        "prices": solution.prices,
-                        "va": solution.va,
-                        "w": solution.w,
-                        "flows": solution.flows,
-                        "dispatch": solution.dispatch,
-                        "iterations": iterations,
-                    }),
+                    &StreamSolution {
+                        case: id_for_task.as_str(),
+                        solve_ms: (solve_ms * 10.0).round() / 10.0,
+                        solution: &solution,
+                        iterations,
+                    },
                 )
                 .await;
                 #[cfg(feature = "sensitivity")]
@@ -2564,6 +2652,58 @@ mod tests {
         let expected = vec![[-122.0, 37.0], [-121.5, 37.2], [-121.0, 37.4]];
         assert_eq!(paths.get(&BranchPathKey::Id(7)), Some(&expected));
         assert_eq!(paths.get(&BranchPathKey::Edge(101, 202)), Some(&expected));
+    }
+
+    #[test]
+    fn network_json_retains_node_breaker_detail_without_changing_existing_fields() {
+        let module = powerio::parse(
+            powerio::Source::open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../tests/data/node-breaker"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("balanced fixture");
+        };
+        let coords = synthetic_layout(net, FALLBACK_SPECS[0].bbox);
+        let view = network_payload(
+            "station",
+            "Station",
+            net,
+            &coords,
+            &Stacks::new(),
+            None,
+            true,
+        )
+        .unwrap();
+        let output = network_output(&view, net).unwrap();
+        let mut legacy = output.clone();
+        legacy["equipment"]
+            .as_object_mut()
+            .unwrap()
+            .remove("node_breaker");
+        assert_eq!(legacy, serde_json::to_value(&view).unwrap());
+        assert_eq!(output["buses"], serde_json::to_value(&view.buses).unwrap());
+        assert_eq!(
+            output["equipment"]["node_breaker"]["nodes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            5
+        );
+        assert_eq!(
+            output["equipment"]["node_breaker"]["switches"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            output["equipment"]["transformers"],
+            serde_json::to_value(&view.equipment.transformers).unwrap()
+        );
     }
 
     #[test]

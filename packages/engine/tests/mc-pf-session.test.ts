@@ -312,6 +312,21 @@ it("unpacks the engine's two packed buffers into views of the result tables", as
     summarizeMcPfResult(result, 1),
   );
   const tables = await session.resultTables();
+  packed.counts[1] += 1;
+  await expect(session.resultTables()).rejects.toThrow("lengths do not match");
+  packed.counts[1] -= 1;
+  const savedIndex = packed.indices[0];
+  packed.indices[0] = expected.strings.length;
+  await expect(session.resultTables()).rejects.toThrow(
+    "string index is out of range",
+  );
+  packed.indices[0] = savedIndex;
+  const savedMetadata = packed.metadata;
+  packed.metadata = '{"excluded_islands": "invalid"}';
+  await expect(session.resultTables()).rejects.toThrow(
+    "Invalid engine mc_metadata",
+  );
+  packed.metadata = savedMetadata;
   expect(tables.strings).toEqual(expected.strings);
   expect(tables.iterations).toBe(expected.iterations);
   expect(tables.load_model).toEqual(expected.load_model);

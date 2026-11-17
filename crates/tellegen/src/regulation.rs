@@ -31,6 +31,7 @@ pub(crate) struct Control {
     pub units: &'static str,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlResult {
     pub id: String,
     pub setting: f64,
@@ -42,6 +43,7 @@ pub struct ControlResult {
     pub status: String,
 }
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RegulatedSolution {
     pub solution: SolveResponse,
     pub controls: Vec<ControlResult>,

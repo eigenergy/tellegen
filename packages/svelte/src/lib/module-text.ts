@@ -1,10 +1,11 @@
-/** The two things the viewer reads from a PowerIO module's text on the page:
- * the calculation settings a saved Study recorded and the bus kinds a
- * generated grid records. A case opens with three reads of the same text
- * (the import log, the case's settings, the map's bus kinds), and a generated
- * 3,000-bus module is about 12.6 M characters, so the text is parsed once and
- * the last answer kept (#261). Only the last text and its small answer are
- * held; a module that names neither key is not parsed at all. */
+import {
+	parseSynchronousAreas,
+	type SynchronousAreaView
+} from './synchronous-areas.js';
+
+/** Read saved calculation settings and generated-grid annotations from module text.
+ * Large modules are parsed once across settings, bus-kind and area readers;
+ * only the most recent text and its display data remain cached. */
 
 /** The PowerIO module extension in which a saved Study records its settings. */
 export const RECORDED_SETTINGS_EXTENSION = 'tellegen.calculation_settings';
@@ -13,7 +14,11 @@ export const RECORDED_SETTINGS_EXTENSION = 'tellegen.calculation_settings';
  * annotation in the modules it writes. */
 export const SYNTH_EXTRAS = 'tellegen_synth';
 
+export const SYNCHRONOUS_AREAS_EXTENSION = 'tellegen.synchronous_areas';
+
 export interface ModuleTextReads {
+	synchronousAreas: SynchronousAreaView | null;
+	synchronousAreasInvalid: boolean;
 	/** `extensions["tellegen.calculation_settings"]` as written, unvalidated. */
 	recordedSettings: unknown;
 	/** Each bus's tellegen-synth kind by bus id; empty for other modules. */
@@ -22,12 +27,16 @@ export interface ModuleTextReads {
 
 const NOTHING: ModuleTextReads = {
 	recordedSettings: undefined,
+	synchronousAreas: null,
+	synchronousAreasInvalid: false,
 	busKinds: new Map()
 };
 let last: { text: string; reads: ModuleTextReads } | null = null;
 
 /** Read `moduleJson` once. Text that does not parse reads as nothing. */
-export function readModuleText(moduleJson: string | null | undefined): ModuleTextReads {
+export function readModuleText(
+	moduleJson: string | null | undefined
+): ModuleTextReads {
 	if (!moduleJson) return NOTHING;
 	if (last?.text === moduleJson) return last.reads;
 	const reads = parse(moduleJson);
@@ -38,7 +47,8 @@ export function readModuleText(moduleJson: string | null | undefined): ModuleTex
 function parse(text: string): ModuleTextReads {
 	const hasSettings = text.includes(`"${RECORDED_SETTINGS_EXTENSION}"`);
 	const hasKinds = text.includes(`"${SYNTH_EXTRAS}"`);
-	if (!hasSettings && !hasKinds) return NOTHING;
+	const hasAreas = text.includes(`"${SYNCHRONOUS_AREAS_EXTENSION}"`);
+	if (!hasSettings && !hasKinds && !hasAreas) return NOTHING;
 	let root: unknown;
 	try {
 		root = JSON.parse(text);
@@ -54,10 +64,17 @@ function parse(text: string): ModuleTextReads {
 	if (Array.isArray(buses))
 		for (const bus of buses) {
 			const kind = bus?.extras?.[SYNTH_EXTRAS]?.kind;
-			if (typeof bus?.id === 'number' && typeof kind === 'string') busKinds.set(bus.id, kind);
+			if (typeof bus?.id === 'number' && typeof kind === 'string')
+				busKinds.set(bus.id, kind);
 		}
+	const rawAreas = record?.extensions?.[SYNCHRONOUS_AREAS_EXTENSION];
+	const synchronousAreas = parseSynchronousAreas(rawAreas);
 	return {
-		recordedSettings: hasSettings ? record?.extensions?.[RECORDED_SETTINGS_EXTENSION] : undefined,
+		synchronousAreas,
+		synchronousAreasInvalid: rawAreas !== undefined && !synchronousAreas,
+		recordedSettings: hasSettings
+			? record?.extensions?.[RECORDED_SETTINGS_EXTENSION]
+			: undefined,
 		busKinds
 	};
 }

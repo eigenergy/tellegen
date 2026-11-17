@@ -201,3 +201,17 @@ export { default as McNetworkScope } from './components/McNetworkScope.svelte';
 export { recordedCalculationSettings } from './settings.svelte.js';
 
 export { default as DistributionResults } from './components/DistributionResults.svelte';
+
+export { default as EngineeringDrawing } from './components/EngineeringDrawing.svelte';
+export {
+	createDrawing,
+	parseDrawing,
+	restoreDrawing,
+	arrangeDrawing,
+	saveDrawing,
+	savedDrawings,
+	deleteDrawing,
+	type DrawingDocument,
+	type DrawingObject,
+	type DrawingConnection
+} from './diagram/drawing.js';

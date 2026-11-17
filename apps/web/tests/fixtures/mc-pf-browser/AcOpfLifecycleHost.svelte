@@ -24,6 +24,11 @@
 				app.addLocal(current);
 				ctrl.runSolve(current, null);
 			},
+			async sensitivity() {
+				if (!current?.solution || !current.studyInputJson) throw new Error('Solve first');
+				const bus = current.solution.prices[0].bus;
+				return ctrl.browserSensitivity(current, current.studyInputJson, { bus });
+			},
 			solved: () => current?.solution != null,
 			release: () => releaseAcOpfWorker()
 		};

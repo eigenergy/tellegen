@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineRequest, EngineValue } from "../src/protocol.js";
 
@@ -15,7 +16,16 @@ import { BrowserSynthSession } from "../src/index.js";
 import type { EngineHost } from "../src/host.js";
 
 const MODULE = '{"schema":"pio-ir"}';
-const VIEW = { name: "generated", n_bus: 3, coords_kind: "synthetic" };
+const VIEW = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../crates/tellegen-wasm/tests/fixtures/adapter-balanced-before.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+delete VIEW.module_json;
 
 /** A synthetic host that answers the module text and the payload without it,
  * recording the order of everything both hosts were asked. */
@@ -44,10 +54,21 @@ describe("BrowserSynthSession.ingestWithStudy", () => {
 
   it("starts the Study from the module text before it asks for the payload", async () => {
     const { synth, order } = hosts();
-    const { payload, study } = await new BrowserSynthSession(synth, 7).ingestWithStudy("dcopf");
-    expect(order).toEqual(["synth_session_module", "study_new", "synth_session_ingest_view"]);
+    const { payload, study } = await new BrowserSynthSession(
+      synth,
+      7,
+    ).ingestWithStudy("dcopf");
+    expect(order).toEqual([
+      "synth_session_module",
+      "study_new",
+      "synth_session_ingest_view",
+    ]);
     expect(studyHost.call).toHaveBeenCalledWith(
-      expect.objectContaining({ op: "study_new", module_json: MODULE, formulation: "dcopf" }),
+      expect.objectContaining({
+        op: "study_new",
+        module_json: MODULE,
+        formulation: "dcopf",
+      }),
     );
     // The payload is the one `ingest()` returns: the view plus the module text.
     expect(payload).toEqual({ ...VIEW, module_json: MODULE });
@@ -58,7 +79,9 @@ describe("BrowserSynthSession.ingestWithStudy", () => {
     const { synth, order } = hosts(() => {
       throw new Error("no payload");
     });
-    await expect(new BrowserSynthSession(synth, 7).ingestWithStudy()).rejects.toThrow("no payload");
+    await expect(
+      new BrowserSynthSession(synth, 7).ingestWithStudy(),
+    ).rejects.toThrow("no payload");
     await vi.waitFor(() => expect(order).toContain("study_free"));
   });
 
@@ -68,7 +91,10 @@ describe("BrowserSynthSession.ingestWithStudy", () => {
       if (request.op === "study_new") throw new Error("infeasible");
       return null;
     });
-    const { payload, study } = await new BrowserSynthSession(synth, 7).ingestWithStudy();
+    const { payload, study } = await new BrowserSynthSession(
+      synth,
+      7,
+    ).ingestWithStudy();
     expect(payload.module_json).toBe(MODULE);
     await expect(study).rejects.toThrow("infeasible");
   });

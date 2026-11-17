@@ -1,17 +1,59 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
-import { BrowserCaseCollection, collectionSupported } from "../src/collection.js";
+import {
+  BrowserCaseCollection,
+  collectionSupported,
+} from "../src/collection.js";
 import type { EngineHost } from "../src/host.js";
 import type { EngineRequest, EngineValue } from "../src/protocol.js";
 import { emptyHandles, runRequest, transferables } from "../src/protocol.js";
 import type { WasmModule } from "../src/module.js";
 
 const mock = vi.hoisted(() => ({ host: null as EngineHost | null }));
-vi.mock("../src/host.js", () => ({ isolatedEngineHost: () => mock.host, engineHost: () => mock.host }));
-const inspection = { name: "study", entries: [], candidates: [], original_zip: true };
-const imported = { kind: "balanced", payload: { module_json: "independent IR" }, dependencies: [], incomplete: false };
+vi.mock("../src/host.js", () => ({
+  isolatedEngineHost: () => mock.host,
+  engineHost: () => mock.host,
+}));
+const inspection = {
+  name: "study",
+  entries: [],
+  candidates: [],
+  original_zip: true,
+  limits: { files: 4096, expanded_bytes: 67108864 },
+};
+const imported = {
+  kind: "balanced",
+  payload: JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../crates/tellegen-wasm/tests/fixtures/adapter-balanced-before.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ),
+  dependencies: [],
+  incomplete: false,
+  origin: {
+    origin: { collection: "study", containers: [] },
+    selection: {
+      root: null,
+      primary: "case.m",
+      members: null,
+      format: null,
+      operation: "parse",
+    },
+  },
+};
 let call: ReturnType<typeof vi.fn<EngineHost["call"]>>;
 beforeEach(() => {
-  call = vi.fn<EngineHost["call"]>(async req => req.op === "collection_ingest" ? JSON.stringify(imported) : req.op === "collection_free" ? null : JSON.stringify(inspection));
+  call = vi.fn<EngineHost["call"]>(async (req) =>
+    req.op === "collection_ingest"
+      ? JSON.stringify(imported)
+      : req.op === "collection_free"
+        ? null
+        : JSON.stringify(inspection),
+  );
   mock.host = { kind: "worker", call, cancel: vi.fn(() => true) };
 });
 
@@ -19,9 +61,13 @@ it("reports the compiled collection capability without acquiring a collection", 
   call.mockResolvedValueOnce("false").mockResolvedValueOnce("true");
   await expect(collectionSupported()).resolves.toBe(false);
   await expect(collectionSupported()).resolves.toBe(true);
-  expect(call.mock.calls.every(([request]) => request.op === "collection_supported")).toBe(true);
+  expect(
+    call.mock.calls.every(([request]) => request.op === "collection_supported"),
+  ).toBe(true);
   const mod = { collection_supported: () => false } as unknown as WasmModule;
-  expect(runRequest(mod, emptyHandles(), { op: "collection_supported" })).toBe("false");
+  expect(runRequest(mod, emptyHandles(), { op: "collection_supported" })).toBe(
+    "false",
+  );
 });
 
 it("acquires a binary tree once and sends only selections for multiple imports", async () => {
@@ -29,65 +75,137 @@ it("acquires a binary tree once and sends only selections for multiple imports",
     { path: "a.dss", bytes: new Uint8Array([0, 255]) },
     { path: "shared.inc", bytes: new Uint8Array([1]) },
   ]);
-  expect(call.mock.calls[0][0]).toMatchObject({ names: '["a.dss","shared.inc"]', offsets: new Uint32Array([0, 2, 3]), bytes: new Uint8Array([0, 255, 1]) });
+  expect(call.mock.calls[0][0]).toMatchObject({
+    names: '["a.dss","shared.inc"]',
+    offsets: new Uint32Array([0, 2, 3]),
+    bytes: new Uint8Array([0, 255, 1]),
+  });
   const first = await collection.ingest({ primary: "a.dss" });
   await collection.ingest({ primary: "b.dss" });
-  expect(call.mock.calls.slice(1).every(([r]) => r.op === "collection_ingest" && !("bytes" in r))).toBe(true);
+  expect(
+    call.mock.calls
+      .slice(1)
+      .every(([r]) => r.op === "collection_ingest" && !("bytes" in r)),
+  ).toBe(true);
   await collection.free();
   await collection.free();
-  expect(call.mock.calls.filter(([r]) => r.op === "collection_free")).toHaveLength(1);
+  expect(
+    call.mock.calls.filter(([r]) => r.op === "collection_free"),
+  ).toHaveLength(1);
   expect(first).toEqual(imported);
-  await expect(collection.ingest({ primary: "a.dss" })).rejects.toThrow("closed");
+  await expect(collection.ingest({ primary: "a.dss" })).rejects.toThrow(
+    "closed",
+  );
 });
 
 it("cancels acquisition and rejects late results from the direct fallback", async () => {
   let finish!: (value: EngineValue) => void;
-  mock.host = { kind: "direct", call: vi.fn<EngineHost["call"]>(async (req: EngineRequest) => req.op === "collection_free" ? null : new Promise<EngineValue>(resolve => { finish = resolve; })), cancel: vi.fn(() => false) };
+  mock.host = {
+    kind: "direct",
+    call: vi.fn<EngineHost["call"]>(async (req: EngineRequest) =>
+      req.op === "collection_free"
+        ? null
+        : new Promise<EngineValue>((resolve) => {
+            finish = resolve;
+          }),
+    ),
+    cancel: vi.fn(() => false),
+  };
   const abort = new AbortController();
-  const pending = BrowserCaseCollection.fromZip("study.zip", new Uint8Array([1]), abort.signal);
+  const pending = BrowserCaseCollection.fromZip(
+    "study.zip",
+    new Uint8Array([1]),
+    abort.signal,
+  );
   abort.abort();
   finish(JSON.stringify(inspection));
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-  expect(mock.host!.call).toHaveBeenCalledWith(expect.objectContaining({ op: "collection_free" }));
+  expect(mock.host!.call).toHaveBeenCalledWith(
+    expect.objectContaining({ op: "collection_free" }),
+  );
 });
 
 it("keeps completed imports after one selection fails and rejects concurrent work", async () => {
-  const collection = await BrowserCaseCollection.fromZip("study.zip", new Uint8Array([1]));
+  const collection = await BrowserCaseCollection.fromZip(
+    "study.zip",
+    new Uint8Array([1]),
+  );
   const first = await collection.ingest({ primary: "first.m" });
   let finish!: () => void;
-  call.mockImplementationOnce(() => new Promise((_resolve, reject) => { finish = () => reject(new Error("missing include")); }));
+  call.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        finish = () => reject(new Error("missing include"));
+      }),
+  );
   const pending = collection.ingest({ primary: "bad.dss" });
-  await expect(collection.ingest({ primary: "other.m" })).rejects.toThrow("already running");
+  await expect(collection.ingest({ primary: "other.m" })).rejects.toThrow(
+    "already running",
+  );
   finish();
   await expect(pending).rejects.toThrow("missing include");
-  await expect(collection.ingest({ primary: "other.m" })).resolves.toEqual(imported);
+  await expect(collection.ingest({ primary: "other.m" })).resolves.toEqual(
+    imported,
+  );
   collection.cancel();
   expect(first).toEqual(imported);
 });
 
 it("checks limits before creating a host or copying a tree", async () => {
-  await expect(BrowserCaseCollection.fromFiles("study", Array(4097).fill({ path: "x", bytes: new Uint8Array() }))).rejects.toThrow("4096");
-  await expect(BrowserCaseCollection.fromFiles("study", [{ path: "x".repeat(1024 * 1024), bytes: new Uint8Array() }])).rejects.toThrow("metadata");
-  const abort = new AbortController(); abort.abort();
-  await expect(BrowserCaseCollection.fromZip("study.zip", new Uint8Array(), abort.signal)).rejects.toMatchObject({ name: "AbortError" });
+  await expect(
+    BrowserCaseCollection.fromFiles(
+      "study",
+      Array(4097).fill({ path: "x", bytes: new Uint8Array() }),
+    ),
+  ).rejects.toThrow("4096");
+  await expect(
+    BrowserCaseCollection.fromFiles("study", [
+      { path: "x".repeat(1024 * 1024), bytes: new Uint8Array() },
+    ]),
+  ).rejects.toThrow("metadata");
+  const abort = new AbortController();
+  abort.abort();
+  await expect(
+    BrowserCaseCollection.fromZip("study.zip", new Uint8Array(), abort.signal),
+  ).rejects.toMatchObject({ name: "AbortError" });
   expect(call).not.toHaveBeenCalled();
 });
 
 it("frees a WASM collection when inspection fails and transfers binary exports", () => {
-  const failed = { inspect: () => { throw new Error("budget"); }, free: vi.fn() };
-  const mod = { CaseCollection: { from_zip: () => failed } } as unknown as WasmModule;
+  const failed = {
+    inspect: () => {
+      throw new Error("budget");
+    },
+    free: vi.fn(),
+  };
+  const mod = {
+    CaseCollection: { from_zip: () => failed },
+  } as unknown as WasmModule;
   const handles = emptyHandles();
-  expect(() => runRequest(mod, handles, { op: "collection_zip", collection: 1, name: "study", bytes: new Uint8Array() })).toThrow("budget");
+  expect(() =>
+    runRequest(mod, handles, {
+      op: "collection_zip",
+      collection: 1,
+      name: "study",
+      bytes: new Uint8Array(),
+    }),
+  ).toThrow("budget");
   expect(failed.free).toHaveBeenCalledOnce();
   expect(handles.collections.size).toBe(0);
   const bytes = new Uint8Array([1, 2]);
   expect(transferables(bytes)).toEqual([bytes.buffer]);
 });
 
- it("keeps the parent worker alive when a nested collection is freed", async () => {
-  const parent = await BrowserCaseCollection.fromZip("outer.zip", new Uint8Array([1]));
+it("keeps the parent worker alive when a nested collection is freed", async () => {
+  const parent = await BrowserCaseCollection.fromZip(
+    "outer.zip",
+    new Uint8Array([1]),
+  );
   const child = await parent.openNested("inner.zip");
-  expect(call.mock.calls[1][0]).toMatchObject({ op: "collection_nested", member: "inner.zip" });
+  expect(call.mock.calls[1][0]).toMatchObject({
+    op: "collection_nested",
+    member: "inner.zip",
+  });
   await child.free();
   expect(mock.host!.cancel).not.toHaveBeenCalled();
   await expect(parent.ingest({ primary: "case.m" })).resolves.toEqual(imported);
@@ -96,7 +214,10 @@ it("frees a WASM collection when inspection fails and transfers binary exports",
 });
 
 it("a rejected child inspection leaves the parent usable; cancellation closes all descendants", async () => {
-  const parent = await BrowserCaseCollection.fromZip("outer.zip", new Uint8Array([1]));
+  const parent = await BrowserCaseCollection.fromZip(
+    "outer.zip",
+    new Uint8Array([1]),
+  );
   call.mockRejectedValueOnce(new Error("ZIP decoding layer limit exceeded"));
   await expect(parent.openNested("inner.zip")).rejects.toThrow("layer limit");
   expect(mock.host!.cancel).not.toHaveBeenCalled();
@@ -104,4 +225,66 @@ it("a rejected child inspection leaves the parent usable; cancellation closes al
   parent.cancel();
   await expect(child.ingest({ primary: "case.m" })).rejects.toThrow("closed");
   expect(mock.host!.cancel).toHaveBeenCalledOnce();
+});
+
+it("rejects malformed collection inspection and frees its acquired handle", async () => {
+  call.mockResolvedValueOnce('{"name":"study","entries":"invalid"}');
+  await expect(
+    BrowserCaseCollection.fromZip("study.zip", new Uint8Array([1])),
+  ).rejects.toThrow("Invalid engine collection_inspection");
+  expect(call).toHaveBeenCalledWith(
+    expect.objectContaining({ op: "collection_free" }),
+  );
+});
+
+it("rejects malformed nested inspection without closing its parent", async () => {
+  const parent = await BrowserCaseCollection.fromZip(
+    "study.zip",
+    new Uint8Array([1]),
+  );
+  call.mockResolvedValueOnce("{}");
+  await expect(parent.openNested("child.zip")).rejects.toThrow(
+    "Invalid engine collection_inspection",
+  );
+  expect(mock.host!.cancel).not.toHaveBeenCalled();
+  await expect(parent.ingest({ primary: "case.m" })).resolves.toEqual(imported);
+  await parent.free();
+});
+
+it("rejects malformed imported results and leaves the collection usable", async () => {
+  const collection = await BrowserCaseCollection.fromZip(
+    "study.zip",
+    new Uint8Array([1]),
+  );
+  call.mockResolvedValueOnce(
+    JSON.stringify({ ...imported, payload: { module_json: 3 } }),
+  );
+  await expect(collection.ingest({ primary: "case.m" })).rejects.toThrow(
+    "Invalid engine collection_import",
+  );
+  await expect(collection.ingest({ primary: "case.m" })).resolves.toEqual(
+    imported,
+  );
+  await collection.free();
+});
+
+it("refuses an imported kind that disagrees with its payload", async () => {
+  const collection = await BrowserCaseCollection.fromZip(
+    "study.zip",
+    new Uint8Array([1]),
+  );
+  call.mockResolvedValueOnce(
+    JSON.stringify({ ...imported, kind: "multiconductor" }),
+  );
+  await expect(collection.ingest({ primary: "case.m" })).rejects.toThrow(
+    "Invalid engine collection_import",
+  );
+  await collection.free();
+});
+
+it("rejects malformed compiled capability responses", async () => {
+  call.mockResolvedValueOnce('"true"');
+  await expect(collectionSupported()).rejects.toThrow(
+    "Invalid engine collection_supported",
+  );
 });
