@@ -10,6 +10,10 @@ struct Reference {
     source: String,
     #[serde(default)]
     fixed_controls: bool,
+    #[serde(default)]
+    floating_bus: Option<String>,
+    #[serde(default)]
+    centered_on_ground: bool,
     voltages: BTreeMap<String, [f64; 2]>,
     currents: BTreeMap<String, Current>,
     transformers: BTreeMap<String, Transformer>,
@@ -109,10 +113,6 @@ fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
                 case.name, result.physical_kcl_residual
             );
             assert!(result.physical_kcl_residual < 1e-6, "{}", case.name);
-            // With ppm_antifloat=0 nothing ties the delta secondary to ground, so
-            // its voltage to ground is not defined and each solver returns a
-            // different one. Compare that bus between terminals instead.
-            let between_terminals = case.name == "floating_delta_0";
             let solved = |bus: &str, terminal: &str| {
                 result
                     .terminals
@@ -121,17 +121,30 @@ fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
                     .unwrap_or_else(|| panic!("{}: missing {bus}.{terminal}", case.name))
                     .voltage
             };
+            // A bus with no path to ground is recorded between terminals,
+            // relative to terminal 1. With a nonzero ppm_antifloat its voltages
+            // also centre on ground; with zero the voltage to ground is not
+            // defined and each solver returns a different one.
+            if let Some(bus) = &case.floating_bus {
+                let on_bus: Vec<_> = result
+                    .terminals
+                    .iter()
+                    .filter(|t| t.bus.eq_ignore_ascii_case(bus))
+                    .collect();
+                let re: f64 = on_bus.iter().map(|t| t.voltage.re).sum();
+                let im: f64 = on_bus.iter().map(|t| t.voltage.im).sum();
+                let centered = re.hypot(im) / (on_bus.len() as f64) < 1e-3;
+                if case.centered_on_ground {
+                    assert!(centered, "{}: {bus} is not centred on ground", case.name);
+                }
+            }
             for (node, expected) in &case.voltages {
                 let (bus, terminal) = node.rsplit_once('.').unwrap();
                 let mut actual = solved(bus, terminal);
-                let mut expected = *expected;
-                if between_terminals && bus == "lv" {
+                if case.floating_bus.as_deref() == Some(bus) {
                     let reference = solved(bus, "1");
                     actual.re -= reference.re;
                     actual.im -= reference.im;
-                    let reference = case.voltages["lv.1"];
-                    expected[0] -= reference[0];
-                    expected[1] -= reference[1];
                 }
                 assert!(
                     (actual.re - expected[0]).hypot(actual.im - expected[1]) < 2e-5,

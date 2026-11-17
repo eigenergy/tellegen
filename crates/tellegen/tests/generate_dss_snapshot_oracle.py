@@ -10,7 +10,7 @@ import opendssdirect as dss
 from generate_mc_load_oracle import stable_float, write_report
 
 
-def reference(name, commands, tolerance=1e-12):
+def reference(name, commands, tolerance=1e-12, floating_bus=None):
     ctx = dss.NewContext()
     ctx.Basic.AllowDOScmd(False)
     ctx.Basic.AllowEditor(False)
@@ -21,7 +21,18 @@ def reference(name, commands, tolerance=1e-12):
     assert ctx.Solution.Converged(), name
     nodes = ctx.Circuit.AllNodeNames()
     volts = ctx.Circuit.AllBusVolts()
-    voltages = {node: [stable_float(r), stable_float(i)] for node, r, i in zip(nodes, volts[::2], volts[1::2])}
+    values = {node: complex(r, i) for node, r, i in zip(nodes, volts[::2], volts[1::2])}
+    centered = None
+    if floating_bus:
+        # A bus with no path to ground: its voltage to ground rests on tiny
+        # admittances and differs between platforms in the last digits, so
+        # record the voltages between terminals and whether they centre on ground.
+        on_bus = [node for node in nodes if node.split('.')[0] == floating_bus]
+        centered = abs(sum(values[node] for node in on_bus) / len(on_bus)) < 1e-3
+        first = values[on_bus[0]]
+        for node in on_bus:
+            values[node] -= first
+    voltages = {node: [stable_float(v.real), stable_float(v.imag)] for node, v in values.items()}
     currents = {}
     for load in ctx.Loads.AllNames():
         ctx.Circuit.SetActiveElement('load.' + load)
@@ -44,7 +55,11 @@ def reference(name, commands, tolerance=1e-12):
             prior[0] += values[2 * index]
             prior[1] += values[2 * index + 1]
         transformers[transformer] = dict(ports={k: [stable_float(v) for v in values] for k, values in ports.items()}, losses=[stable_float(v) for v in ctx.CktElement.Losses()])
-    return dict(name=name, tolerance=tolerance, source='\n'.join(commands) + '\n', voltages=voltages, currents=currents, transformers=transformers)
+    case = dict(name=name, tolerance=tolerance, source='\n'.join(commands) + '\n', voltages=voltages, currents=currents, transformers=transformers)
+    if floating_bus:
+        case['floating_bus'] = floating_bus
+        case['centered_on_ground'] = centered
+    return case
 
 
 def generate():
@@ -79,14 +94,17 @@ def generate():
                         'new load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1']
             cases.append(reference(f'three_{connections.replace(" ", "_")}_{ppm}', commands, tolerance=1e-10))
     # The delta secondary and its delta load have no path to ground, so only
-    # the transformer's ppm_antifloat admittance fixes the winding's voltage to ground.
+    # the transformer's ppm_antifloat admittance fixes the winding's voltage to
+    # ground. With ppm_antifloat=0 that voltage is not defined.
     for ppm in [None, 0, 50]:
         written = '' if ppm is None else f' ppm_antifloat={ppm}'
         commands = ['clear', 'set defaultbasefrequency=50',
                     'new circuit.floating phases=3 bus1=src.1.2.3 basekv=11 frequency=50',
                     f'new transformer.tx phases=3 windings=2 buses=[src.1.2.3.0 lv.1.2.3] conns=[wye delta] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4{written}',
                     'new load.ld phases=3 bus1=lv.1.2.3 conn=delta kv=.4 kw=30 kvar=10 model=1']
-        cases.append(reference(f'floating_delta_{ppm}', commands, tolerance=1e-10))
+        case = reference(f'floating_delta_{ppm}', commands, tolerance=1e-10, floating_bus='lv')
+        assert case['centered_on_ground'] == (ppm != 0), case['name']
+        cases.append(case)
     for ppm in [None, 0, 50]:
         written = '' if ppm is None else f' ppm_antifloat={ppm}'
         commands = ['clear', 'set defaultbasefrequency=50',
