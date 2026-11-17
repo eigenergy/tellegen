@@ -9,6 +9,22 @@ fn display_payload(text: &str) -> Value {
     let mut value: Value = serde_json::from_str(text).expect("adapter JSON");
     assert!(value["module_json"].is_string());
     value.as_object_mut().unwrap().remove("module_json");
+    for location in ["topology", "view"] {
+        if let Some(equipment) = value
+            .get_mut(location)
+            .and_then(|v| v.get_mut("equipment"))
+            .and_then(Value::as_object_mut)
+        {
+            if let Some(drawing) = equipment.remove("node_breaker") {
+                assert_eq!(
+                    drawing,
+                    serde_json::json!({
+                        "stations": [], "nodes": [], "busbars": [], "switches": [], "connections": [], "terminals": [],
+                    })
+                );
+            }
+        }
+    }
     if let Some(layer) = value.get_mut("geo_layer") {
         let mut parsed: Value = serde_json::from_str(layer.as_str().unwrap()).unwrap();
         assert!(parsed["powerio_geo"]["powerio_version"].is_string());

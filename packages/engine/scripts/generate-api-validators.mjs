@@ -91,6 +91,8 @@ const optionalLegacyFields = {
   Transformer: ["tap_changers"],
   Metadata: ["description", "source_url", "related_case_id", "pf_options"],
 };
+optionalLegacyFields.NetworkOutput = optionalLegacyFields.NetworkPayload;
+optionalLegacyFields.EquipmentOutput = [...optionalLegacyFields.Equipment, "node_breaker"];
 for (const [name, fields] of Object.entries(optionalLegacyFields))
   if (httpSchema.$defs[name]?.required)
     httpSchema.$defs[name].required = httpSchema.$defs[name].required.filter(
@@ -148,6 +150,10 @@ function adapterResults(family, prefix) {
         `${family} adapter schema is stale for ${file}; regenerate its Rust example`,
       );
   }
+  // Drawing detail was added after the original browser response format.
+  // Omission stays compatible; supplied detail must satisfy its Rust record.
+  if (family === "wasm" && adapter.$defs.EquipmentOutput?.required)
+    adapter.$defs.EquipmentOutput.required = adapter.$defs.EquipmentOutput.required.filter(field => field !== "node_breaker");
   ajv.addSchema(adapter, `tellegen-${family}-adapter`);
   for (const name of Object.keys(adapter.properties))
     extraResults.push([

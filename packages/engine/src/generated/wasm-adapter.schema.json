@@ -806,6 +806,25 @@
       ],
       "type": "object"
     },
+    "Busbar": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "node"
+      ],
+      "type": "object"
+    },
     "CalibrationOptions": {
       "additionalProperties": false,
       "description": "OPF-in-the-loop calibration controls.",
@@ -1167,6 +1186,21 @@
         "parameter",
         "element",
         "index"
+      ],
+      "type": "object"
+    },
+    "Connection": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
       ],
       "type": "object"
     },
@@ -2724,7 +2758,8 @@
       ],
       "type": "object"
     },
-    "Equipment": {
+    "EquipmentOutput": {
+      "description": "Equipment JSON for consumers that can display detailed switch connectivity.\nThe existing Equipment struct and its constructors remain unchanged.",
       "properties": {
         "dc_model": {
           "anyOf": [
@@ -2767,6 +2802,9 @@
           },
           "type": "array"
         },
+        "node_breaker": {
+          "$ref": "#/$defs/NodeBreaker"
+        },
         "shunts": {
           "items": {
             "$ref": "#/$defs/Shunt"
@@ -2796,7 +2834,8 @@
         "dc_topology",
         "dc_model",
         "dc_model_unavailable",
-        "import_notes"
+        "import_notes",
+        "node_breaker"
       ],
       "type": "object"
     },
@@ -4241,6 +4280,109 @@
         "multiconductor"
       ],
       "type": "string"
+    },
+    "Node": {
+      "properties": {
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "container": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "container_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nominal_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "station": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "voltage_level": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "voltage_level",
+        "station",
+        "bus",
+        "nominal_kv",
+        "container",
+        "container_name"
+      ],
+      "type": "object"
+    },
+    "NodeBreaker": {
+      "properties": {
+        "busbars": {
+          "items": {
+            "$ref": "#/$defs/Busbar"
+          },
+          "type": "array"
+        },
+        "connections": {
+          "items": {
+            "$ref": "#/$defs/Connection"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "type": "array"
+        },
+        "stations": {
+          "items": {
+            "$ref": "#/$defs/Station"
+          },
+          "type": "array"
+        },
+        "switches": {
+          "items": {
+            "$ref": "#/$defs/Switch"
+          },
+          "type": "array"
+        },
+        "terminals": {
+          "items": {
+            "$ref": "#/$defs/Terminal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "stations",
+        "nodes",
+        "busbars",
+        "switches",
+        "connections",
+        "terminals"
+      ],
+      "type": "object"
     },
     "Operand": {
       "description": "What a sensitivity is taken *of*, named for the physical power quantity rather\nthan a formulation's internal variable. The orthogonal sub-axes (active/reactive,\nfrom/to, voltage representation) are visible to the type system; each formulation\nmaps a request to its own KKT rows or returns [`SensError::Unsupported`].\n\nThe dialects fold into one vocabulary: DC `Angle` is `Voltage(Angle)`, the conic\nsquared magnitude `w` is `Voltage(Squared)`, the nodal price is `Price(Active)`.",
@@ -6104,6 +6246,21 @@
       ],
       "type": "object"
     },
+    "Station": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "Status": {
       "enum": [
         "selectable",
@@ -6199,6 +6356,37 @@
         "name",
         "source",
         "kv"
+      ],
+      "type": "object"
+    },
+    "Switch": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "from",
+        "to",
+        "open"
       ],
       "type": "object"
     },
@@ -6458,6 +6646,44 @@
       ],
       "type": "string"
     },
+    "Terminal": {
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "equipment": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "number": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "equipment",
+        "name",
+        "kind",
+        "number",
+        "node",
+        "connected"
+      ],
+      "type": "object"
+    },
     "ThreeWinding": {
       "description": "Physical three-terminal device and its analysis provenance.",
       "properties": {
@@ -6534,7 +6760,7 @@
           "type": "array"
         },
         "equipment": {
-          "$ref": "#/$defs/Equipment"
+          "$ref": "#/$defs/EquipmentOutput"
         },
         "substations": {
           "items": {
@@ -7103,7 +7329,7 @@
           "type": "string"
         },
         "equipment": {
-          "$ref": "#/$defs/Equipment"
+          "$ref": "#/$defs/EquipmentOutput"
         },
         "substations": {
           "items": {
@@ -7928,17 +8154,18 @@
   "x-rust-source-files": {
     "crates/tellegen-synth/src/report.rs": "337a271b876cbeea367ebc8ad36734812b35c08fc038d1546e9ccf4fefd06386",
     "crates/tellegen-synth/src/synchronous.rs": "45c048c14cebe1a60a924dd2d75842fe5da03195883986c2c24f7cf04fee5fb9",
-    "crates/tellegen-wasm/examples/adapter_schema.rs": "62dc24b5d249828216fb84abf1d38d2c6e60bc0b3a0a6cb0028daf7477f39964",
+    "crates/tellegen-wasm/examples/adapter_schema.rs": "b05a70e2e0295c0fbf6044ba07737c0bd2f5a2808f365a96ae84fe6af9df061d",
     "crates/tellegen-wasm/src/collection.rs": "60d99eea7aea65552dfb48db1c181af65e463e7db022051444dc0a6075e98b41",
     "crates/tellegen-wasm/src/dist.rs": "1819a87efb9b1f263bef85baae2909e32c1dd58705de67018dbd572dcd0caaec",
     "crates/tellegen-wasm/src/geo.rs": "e08cf5ff7c5fb7f61c3e0a1f177721840054b19283e3ef0ce23d30c20b63a37a",
-    "crates/tellegen-wasm/src/lib.rs": "f26317bdb7d103fbd6d63be7d0d8af1e96af0703edeaca1af1324b79c93d5a7d",
+    "crates/tellegen-wasm/src/lib.rs": "de238cdce04885b1fe1d7d8e5bb42ca2ff1c1cff610f4d257b37362fa524af08",
     "crates/tellegen-wasm/src/outputs.rs": "c56e62e5aaf88be5733068f47cb2d035639e5983e63141d5315bf737ccf5f049",
     "crates/tellegen-wasm/src/synth.rs": "6bef7076d83cbe7dff57e7b9133b457ef5046536bb78439bcb8f73640da5cdb8",
     "crates/tellegen/src/ac_dc.rs": "b661a00679864444dd8b666a47c3fb8ae9baf0968569e4d950fe7d519cca7c15",
     "crates/tellegen/src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",
     "crates/tellegen/src/dc_grid.rs": "525b5e2a7579aba78ed9b232e2b4e41a2c8c23be38e14269cb715e564abd1cfe",
-    "crates/tellegen/src/equipment.rs": "e6e23cdaeabf43efc597124a2ae59c6b0fe6282035328b1b35c22b3505393b49",
+    "crates/tellegen/src/equipment.rs": "2bf1035149c4aaefe5f7e24e85891ff129987a5185d0153d99e7a0f017653d0c",
+    "crates/tellegen/src/equipment/node_breaker.rs": "aa0df2d5a72804f3c9aad60a17d22699411e40689c3db9101fb5f85122fbe443",
     "crates/tellegen/src/mc_pf/energized.rs": "86405c31d8d7c51a2a129b065cbfeab1abcd97d6d54378937249232f32d53820",
     "crates/tellegen/src/regulation.rs": "00269b7506cf5a8c9c512880f331c5a1c832e73a0faed4dfad6492583177e1a8",
     "crates/tellegen/src/schematic.rs": "cb87c2ce640c4f24d263651943b3d471d14eca7ccda30dd5e43f84b74560b449",

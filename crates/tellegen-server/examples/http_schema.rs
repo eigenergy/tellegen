@@ -36,6 +36,7 @@ fn main() {
         "src/ac_dc.rs",
         "src/dc_grid.rs",
         "src/equipment.rs",
+        "src/equipment/node_breaker.rs",
         "src/preparation.rs",
         "src/settings.rs",
         "src/substations.rs",

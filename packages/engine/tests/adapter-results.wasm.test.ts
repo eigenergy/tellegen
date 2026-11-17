@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, expect, it } from "vitest";
 import * as wasm from "../src/wasm-pkg/tellegen.js";
-import { parseApiResult } from "../src/result-validation.js";
+import type { NetworkEquipment } from "../src/generated/api-types.js";
+import { parseApiResult, validateApiResult } from "../src/result-validation.js";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 const source = (path: string) =>
@@ -210,4 +211,29 @@ it("validates actual complete synthetic output and session ingestion", () => {
   } finally {
     session.free();
   }
+});
+
+
+it("validates detailed drawing output from the licensed CGMES fixture", () => {
+  const names = ["NodeBreaker_EQ.xml", "NodeBreaker_SSH.xml"];
+  const files = names.map(name => bytes(source(`tests/data/node-breaker/${name}`)));
+  const joined = new Uint8Array(files[0].length + files[1].length);
+  joined.set(files[0]); joined.set(files[1], files[0].length);
+  const collection = wasm.CaseCollection.from_files("node-breaker", JSON.stringify(names), new Uint32Array([0, files[0].length, joined.length]), joined);
+  try {
+    const imported = parseApiResult<{ payload: { topology: { equipment: NetworkEquipment } } }>("collection_import", collection.ingest(JSON.stringify({ members: names, format: "cgmes" })));
+    const equipment = imported.payload.topology.equipment;
+    const drawing = equipment.node_breaker;
+    expect(drawing?.nodes).toHaveLength(5);
+    expect(drawing?.switches).toHaveLength(3);
+    if (!drawing) throw new Error("Current engine omitted detailed drawing output");
+    const network = { id: "station", name: "Station", base_mva: 100, synthetic_coords: true, buses: [], branches: [], equipment };
+    validateApiResult("http_network", network);
+    const malformed = { ...equipment, node_breaker: { ...drawing, switches: drawing.switches.map((item, i) => i === 0 ? { ...item, open: "yes" } : item) } };
+    expect(() => validateApiResult("http_network", { ...network, equipment: malformed })).toThrow("/node_breaker/switches/0/open");
+    expect(() => validateApiResult("ingest_balanced", { ...imported.payload, topology: { ...imported.payload.topology, equipment: malformed } })).toThrow("/node_breaker/switches/0/open");
+    const { node_breaker: _detail, ...legacy } = equipment;
+    validateApiResult("http_network", { ...network, equipment: legacy });
+    validateApiResult("ingest_balanced", { ...imported.payload, topology: { ...imported.payload.topology, equipment: legacy } });
+  } finally { collection.free(); }
 });

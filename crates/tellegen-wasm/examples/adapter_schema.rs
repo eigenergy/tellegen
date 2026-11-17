@@ -15,6 +15,7 @@ fn main() {
         "crates/tellegen/src/api.rs",
         "crates/tellegen/src/study.rs",
         "crates/tellegen/src/equipment.rs",
+        "crates/tellegen/src/equipment/node_breaker.rs",
         "crates/tellegen/src/substations.rs",
         "crates/tellegen/src/schematic.rs",
         "crates/tellegen/src/tx_schematic.rs",

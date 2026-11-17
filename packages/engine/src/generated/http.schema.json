@@ -312,6 +312,25 @@
       ],
       "type": "object"
     },
+    "Busbar": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "node"
+      ],
+      "type": "object"
+    },
     "CaseModel": {
       "enum": [
         "balanced",
@@ -419,6 +438,21 @@
       },
       "required": [
         "enabled"
+      ],
+      "type": "object"
+    },
+    "Connection": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
       ],
       "type": "object"
     },
@@ -1132,7 +1166,8 @@
       ],
       "type": "string"
     },
-    "Equipment": {
+    "EquipmentOutput": {
+      "description": "Equipment JSON for consumers that can display detailed switch connectivity.\nThe existing Equipment struct and its constructors remain unchanged.",
       "properties": {
         "dc_model": {
           "anyOf": [
@@ -1175,6 +1210,9 @@
           },
           "type": "array"
         },
+        "node_breaker": {
+          "$ref": "#/$defs/NodeBreaker"
+        },
         "shunts": {
           "items": {
             "$ref": "#/$defs/Shunt"
@@ -1204,7 +1242,8 @@
         "dc_topology",
         "dc_model",
         "dc_model_unavailable",
-        "import_notes"
+        "import_notes",
+        "node_breaker"
       ],
       "type": "object"
     },
@@ -1856,7 +1895,7 @@
       ],
       "type": "object"
     },
-    "NetworkPayload": {
+    "NetworkOutput": {
       "properties": {
         "base_mva": {
           "format": "double",
@@ -1875,7 +1914,7 @@
           "type": "array"
         },
         "equipment": {
-          "$ref": "#/$defs/Equipment"
+          "$ref": "#/$defs/EquipmentOutput"
         },
         "id": {
           "type": "string"
@@ -1894,7 +1933,6 @@
           "type": "string"
         },
         "substations": {
-          "description": "Substations for transmission diagrams; `NetworkBus::substation` indexes this list.",
           "items": {
             "$ref": "#/$defs/Substation"
           },
@@ -1914,6 +1952,109 @@
         "buses",
         "branches",
         "substations"
+      ],
+      "type": "object"
+    },
+    "Node": {
+      "properties": {
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "container": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "container_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nominal_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "station": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "voltage_level": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "voltage_level",
+        "station",
+        "bus",
+        "nominal_kv",
+        "container",
+        "container_name"
+      ],
+      "type": "object"
+    },
+    "NodeBreaker": {
+      "properties": {
+        "busbars": {
+          "items": {
+            "$ref": "#/$defs/Busbar"
+          },
+          "type": "array"
+        },
+        "connections": {
+          "items": {
+            "$ref": "#/$defs/Connection"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "type": "array"
+        },
+        "stations": {
+          "items": {
+            "$ref": "#/$defs/Station"
+          },
+          "type": "array"
+        },
+        "switches": {
+          "items": {
+            "$ref": "#/$defs/Switch"
+          },
+          "type": "array"
+        },
+        "terminals": {
+          "items": {
+            "$ref": "#/$defs/Terminal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "stations",
+        "nodes",
+        "busbars",
+        "switches",
+        "connections",
+        "terminals"
       ],
       "type": "object"
     },
@@ -2831,6 +2972,21 @@
         }
       ]
     },
+    "Station": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "StreamSolution": {
       "properties": {
         "branch_constraints": {
@@ -2975,6 +3131,37 @@
       ],
       "type": "object"
     },
+    "Switch": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "from",
+        "to",
+        "open"
+      ],
+      "type": "object"
+    },
     "TapKind": {
       "description": "A transformer control: the tap ratio or the phase-shift angle.",
       "enum": [
@@ -2982,6 +3169,44 @@
         "PhaseShift"
       ],
       "type": "string"
+    },
+    "Terminal": {
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "equipment": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "number": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "equipment",
+        "name",
+        "kind",
+        "number",
+        "node",
+        "connected"
+      ],
+      "type": "object"
     },
     "ThreeWinding": {
       "description": "Physical three-terminal device and its analysis provenance.",
@@ -3150,7 +3375,7 @@
       "$ref": "#/$defs/ComputeStatus"
     },
     "http_network": {
-      "$ref": "#/$defs/NetworkPayload"
+      "$ref": "#/$defs/NetworkOutput"
     },
     "http_saved_case": {
       "$ref": "#/$defs/SavedCase"
@@ -3181,7 +3406,8 @@
     "src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",
     "src/dc_formula.rs": "57e5df4a0f203f498c4c9a71a7dfb20514bd74e7ebb1cc71077f2c33e0288868",
     "src/dc_grid.rs": "525b5e2a7579aba78ed9b232e2b4e41a2c8c23be38e14269cb715e564abd1cfe",
-    "src/equipment.rs": "e6e23cdaeabf43efc597124a2ae59c6b0fe6282035328b1b35c22b3505393b49",
+    "src/equipment.rs": "2bf1035149c4aaefe5f7e24e85891ff129987a5185d0153d99e7a0f017653d0c",
+    "src/equipment/node_breaker.rs": "aa0df2d5a72804f3c9aad60a17d22699411e40689c3db9101fb5f85122fbe443",
     "src/preparation.rs": "5d3fbd7bebc4e7b5606a4e3af1e2cf3d94c19e554b8be5b23635bcccad8ebcd3",
     "src/sens/interface.rs": "645da7931bdb369201ceb23a792fc9df6167bcab1e0dda554abda52736a304dc",
     "src/sens/mod.rs": "7915772aa3cf6ee7593099ec90ad6e0d449b404e4ab51426115d7aed1c349d1e",
@@ -3190,9 +3416,9 @@
     "src/substations.rs": "f74f5aef8d183c52112effe34272fbd1a217aaa394cc7f469d61e4678562bdf4"
   },
   "x-server-source-files": {
-    "examples/http_schema.rs": "70d9a6b64ee07cf9637493b80b76c3f9a45c705fd7a033a495f892b6bb6215c5",
+    "examples/http_schema.rs": "045c215a16c0db9385fe4b3f30b892053ba9874571b59185e46ea5e52aa632b9",
     "src/distribution.rs": "6ab5b35dbd30bbfa1eb50317a61101cd36ccdbf1ab5db9821de2a4d655f83864",
-    "src/lib.rs": "8aa53999ccb24a007923867b9f80e4703a0816778f3bdaa2ae8c3865994995ea"
+    "src/lib.rs": "afc60057b05e6f5b9e904984ac197e3686d3c395620e6888f73d4002341d0f91"
   },
-  "x-server-source-sha256": "8aa53999ccb24a007923867b9f80e4703a0816778f3bdaa2ae8c3865994995ea"
+  "x-server-source-sha256": "afc60057b05e6f5b9e904984ac197e3686d3c395620e6888f73d4002341d0f91"
 }
