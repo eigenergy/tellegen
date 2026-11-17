@@ -1,6 +1,8 @@
 //! Browser-owned collection sessions. PowerIO owns acquisition and selection;
 //! each imported module is independent of this session and its source bytes.
 
+mod cgmes;
+
 use std::sync::Arc;
 
 use powerio::collection::{CollectionOperation, SourceBundleScope};
@@ -246,10 +248,29 @@ impl CaseCollection {
     }
 
     fn inspect_value(&self) -> Result<Value, String> {
+        let groups = cgmes::inspect(&self.0)?;
+        let mut candidates: Vec<Candidate> = record(self.0.inspect().map_err(|e| e.to_string())?)?;
+        candidates.retain(|candidate| {
+            !candidate
+                .selection
+                .primary
+                .as_ref()
+                .is_some_and(|path| groups.members.iter().any(|members| members.contains(path)))
+        });
+        candidates.extend(groups.members.into_iter().map(|members| Candidate {
+            selection: Selection {
+                root: None,
+                primary: None,
+                members: Some(members),
+                format: Some("cgmes".to_owned()),
+                operation: Operation::Parse,
+            },
+            status: Status::Selectable,
+        }));
         serde_json::to_value(Inspection {
             name: self.0.name().to_owned(),
             entries: record(self.0.entries())?,
-            candidates: record(self.0.inspect().map_err(|e| e.to_string())?)?,
+            candidates,
             original_zip: self.0.original_zip().is_some(),
             limits: Limits {
                 files: MAX_FILES,
@@ -261,6 +282,36 @@ impl CaseCollection {
 
     fn ingest_value(&self, selection_json: &str) -> Result<Value, String> {
         let selection = selection(selection_json)?;
+        if selection.operation == CollectionOperation::Parse
+            && selection.members.is_none()
+            && selection
+                .format
+                .as_deref()
+                .is_none_or(|format| matches!(format, "cgmes" | "cim"))
+        {
+            if let Some(primary) = &selection.primary {
+                let primary = ArtifactPath::new(primary).map_err(|e| e.to_string())?;
+                let path = selection
+                    .root
+                    .as_ref()
+                    .map(|root| ArtifactPath::new(root).and_then(|root| root.join(&primary)))
+                    .transpose()
+                    .map_err(|e| e.to_string())?
+                    .unwrap_or(primary);
+                let groups = cgmes::inspect(&self.0)?;
+                let explicit_cgmes = selection
+                    .format
+                    .as_deref()
+                    .is_some_and(|format| matches!(format, "cgmes" | "cim"));
+                if groups.related.contains(path.as_str())
+                    || (groups.incomplete
+                        && groups.xml_files > 1
+                        && (explicit_cgmes || groups.profiles.contains(path.as_str())))
+                {
+                    return Err("This CGMES profile may have companion documents in the collection. Choose a suggested CGMES group, or select the related documents and choose Group selected as CGMES, to preserve switch states and other profile data.".to_owned());
+                }
+            }
+        }
         let result = self
             .0
             .parse(&selection, &ParseOptions::default())
@@ -382,6 +433,192 @@ mod tests {
             ("missing.dss", "New Circuit.broken basekv=12.47\nRedirect absent.inc\n"),
             ("comparison.m", "mpc.version = '2';\nmpc.baseMVA = 100;\nmpc.bus = [1 3 0 0 0 0 1 1 0 110 1 1.1 0.9];\nmpc.gen = [1 0 0 100 -100 1 100 1 100 0];\nmpc.branch = [];\n"),
         ].into_iter().map(|(name, text)| (ArtifactPath::new(name).unwrap(), Arc::from(text.as_bytes()))), CollectionLimits::default()).unwrap())
+    }
+
+    fn cgmes_tree(files: Vec<(&str, String)>) -> CaseCollection {
+        CaseCollection(
+            Collection::from_files(
+                "profiles",
+                files.into_iter().map(|(name, text)| {
+                    (
+                        ArtifactPath::new(name).unwrap(),
+                        Arc::from(text.into_bytes()),
+                    )
+                }),
+                CollectionLimits::default(),
+            )
+            .unwrap(),
+        )
+    }
+
+    const EQ: &str = include_str!("../../../tests/data/node-breaker/NodeBreaker_EQ.xml");
+    const SSH: &str = include_str!("../../../tests/data/node-breaker/NodeBreaker_SSH.xml");
+
+    #[test]
+    fn suggested_cgmes_group_preserves_companion_switch_state() {
+        // Names and prefixes are deliberately changed; only declared dependencies link them.
+        let eq = EQ
+            .replace("md:", "model:")
+            .replace("xmlns:md=", "xmlns:model=");
+        let ssh = SSH.replace("rdf:", "r:").replace("xmlns:rdf=", "xmlns:r=");
+        let collection = cgmes_tree(vec![("z-equipment.xml", eq), ("a-state.xml", ssh)]);
+        let inspection = collection.inspect_value().unwrap();
+        let candidates = inspection["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0]["selection"]["members"],
+            json!(["a-state.xml", "z-equipment.xml"])
+        );
+        let imported = collection
+            .ingest_value(&candidates[0]["selection"].to_string())
+            .unwrap();
+        assert_eq!(
+            imported["payload"]["topology"]["buses"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        let switches = imported["payload"]["topology"]["equipment"]["node_breaker"]["switches"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            switches
+                .iter()
+                .find(|switch| switch["name"] == "DSC1")
+                .unwrap()["open"],
+            true
+        );
+        assert_eq!(
+            imported["origin"]["selection"]["members"],
+            candidates[0]["selection"]["members"]
+        );
+        let error = collection
+            .ingest_value(r#"{"primary":"z-equipment.xml","format":"cgmes"}"#)
+            .unwrap_err();
+        assert!(error.contains("companion documents"));
+        for selection in [
+            r#"{"primary":"./z-equipment.xml","format":"cgmes"}"#,
+            r#"{"root":".","primary":"z-equipment.xml","format":"cgmes"}"#,
+        ] {
+            assert!(collection
+                .ingest_value(selection)
+                .unwrap_err()
+                .contains("artifact paths"));
+        }
+    }
+
+    #[test]
+    fn cgmes_suggestions_do_not_merge_unrelated_or_ambiguous_profiles() {
+        let old = "urn:uuid:6e0b7c5a-1b2f-4c1d-9a3e-";
+        let collection = cgmes_tree(vec![
+            ("first-eq.xml", EQ.to_owned()),
+            ("first-ssh.xml", SSH.to_owned()),
+            ("second-eq.xml", EQ.replace(old, "urn:uuid:unrelated-")),
+            ("second-ssh.xml", SSH.replace(old, "urn:uuid:unrelated-")),
+        ]);
+        let inspection = collection.inspect_value().unwrap();
+        let candidates = inspection["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            candidates[0]["selection"]["members"],
+            json!(["first-eq.xml", "first-ssh.xml"])
+        );
+        assert_eq!(
+            candidates[1]["selection"]["members"],
+            json!(["second-eq.xml", "second-ssh.xml"])
+        );
+        let collection = cgmes_tree(vec![
+            ("eq.xml", EQ.to_owned()),
+            ("ssh.xml", SSH.to_owned()),
+            (
+                "other-state.xml",
+                SSH.replace("000000000002", "000000000003"),
+            ),
+        ]);
+        let inspection = collection.inspect_value().unwrap();
+        assert!(inspection["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["selection"]["members"].is_null()));
+        assert!(collection
+            .ingest_value(r#"{"primary":"eq.xml","format":"cgmes"}"#)
+            .unwrap_err()
+            .contains("companion documents"));
+    }
+
+    #[test]
+    fn repeated_model_ids_require_explicit_grouping() {
+        let collection = cgmes_tree(vec![
+            ("first-eq.xml", EQ.to_owned()),
+            ("second-eq.xml", EQ.to_owned()),
+            ("ssh.xml", SSH.to_owned()),
+        ]);
+        let inspection = collection.inspect_value().unwrap();
+        assert!(inspection["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["selection"]["members"].is_null()));
+        for primary in ["first-eq.xml", "second-eq.xml"] {
+            assert!(collection
+                .ingest_value(&json!({"primary": primary, "format":"cgmes"}).to_string())
+                .unwrap_err()
+                .contains("companion documents"));
+        }
+    }
+
+    #[test]
+    fn multiple_full_models_do_not_get_an_automatic_group() {
+        let extra = r#"<md:FullModel rdf:about="urn:uuid:another-model"><md:Model.profile>http://entsoe.eu/CIM/EquipmentCore/3/1</md:Model.profile></md:FullModel>"#;
+        let eq = EQ.replace("</rdf:RDF>", &format!("{extra}</rdf:RDF>"));
+        let collection = cgmes_tree(vec![("eq.xml", eq), ("ssh.xml", SSH.to_owned())]);
+        let inspection = collection.inspect_value().unwrap();
+        assert!(inspection["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["selection"]["members"].is_null()));
+        assert!(collection
+            .ingest_value(r#"{"primary":"eq.xml","format":"cgmes"}"#)
+            .unwrap_err()
+            .contains("companion documents"));
+    }
+
+    #[test]
+    fn unread_companion_header_requires_explicit_grouping() {
+        let padding = format!("<!--{}-->", " ".repeat(1 << 20));
+        let ssh = SSH.replace("<md:FullModel", &format!("{padding}<md:FullModel"));
+        let collection = cgmes_tree(vec![("eq.xml", EQ.to_owned()), ("ssh.xml", ssh)]);
+        let inspection = collection.inspect_value().unwrap();
+        assert!(inspection["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["selection"]["members"].is_null()));
+        for selection in [
+            r#"{"primary":"eq.xml","format":"cgmes"}"#,
+            r#"{"primary":"eq.xml"}"#,
+        ] {
+            assert!(collection
+                .ingest_value(selection)
+                .unwrap_err()
+                .contains("Group selected as CGMES"));
+        }
+    }
+
+    #[test]
+    fn one_large_xml_document_can_still_be_imported_alone() {
+        let padding = format!("<!--{}-->", " ".repeat(1 << 20));
+        let eq = EQ.replace("</rdf:RDF>", &format!("{padding}</rdf:RDF>"));
+        let collection = cgmes_tree(vec![("eq.xml", eq)]);
+        let inspection = collection.inspect_value().unwrap();
+        assert_eq!(inspection["candidates"].as_array().unwrap().len(), 1);
+        let imported = collection
+            .ingest_value(r#"{"primary":"eq.xml","format":"cgmes"}"#)
+            .unwrap();
+        assert_eq!(imported["kind"], "balanced");
     }
 
     #[test]
