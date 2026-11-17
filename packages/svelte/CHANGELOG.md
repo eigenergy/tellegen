@@ -1,5 +1,36 @@
 # @tellegen/svelte
 
+## 0.10.1
+
+### Patch Changes
+
+- [#415](https://github.com/eigenergy/tellegen/pull/415) [`05c4a55`](https://github.com/eigenergy/tellegen/commit/05c4a557389da68422124e30c2450b7bc2a9b8ce) Thanks [@samtalki](https://github.com/samtalki)! - Show AC OPF price sensitivities for selected buses and branch limits using the dedicated browser solver, and cancel superseded selections.
+
+- [#424](https://github.com/eigenergy/tellegen/pull/424) [`128a97c`](https://github.com/eigenergy/tellegen/commit/128a97c829c9fe5d7e1c76f7b0a6ca523037c15c) Thanks [@samtalki](https://github.com/samtalki)! - Cancel pending diagram label updates when switching cases so a replaced diagram cannot read another case's buses.
+
+- [#423](https://github.com/eigenergy/tellegen/pull/423) [`4803fce`](https://github.com/eigenergy/tellegen/commit/4803fce75e660a26f4e8e7285c6eca22dff96d87) Thanks [@samtalki](https://github.com/samtalki)! - Separate case imports, balanced and distribution calculations, settings, and result queries behind the existing controller API.
+
+- [#419](https://github.com/eigenergy/tellegen/pull/419) [`2644761`](https://github.com/eigenergy/tellegen/commit/2644761b8847d96ebd7dba706445be68516cf189) Thanks [@samtalki](https://github.com/samtalki)! - Validate browser and HTTP solve, multiconductor, Study and settings results against schemas generated from Rust before exposing them to application code. Refuse malformed streamed results while retaining the previous display. Generate MCP argument models from the same Rust definitions.
+
+- [#405](https://github.com/eigenergy/tellegen/pull/405) [`e9dd0c1`](https://github.com/eigenergy/tellegen/commit/e9dd0c110f439e3edc7a698772dacde41e6ceee0) Thanks [@samtalki](https://github.com/samtalki)! - A generated grid reaches its first DC OPF result sooner. `BrowserSynthSession.ingestWithStudy()` starts the Study while the payload is prepared, and `openBalancedModule` takes that Study through its new `study` option.
+
+- [#406](https://github.com/eigenergy/tellegen/pull/406) [`7087c1c`](https://github.com/eigenergy/tellegen/commit/7087c1cc8f1c203810402aa97b62f18c46073b4a) Thanks [@samtalki](https://github.com/samtalki)! - The toast and the Log tab show the same messages from one store, `app.log`, and the Log tab counts the errors and warnings not yet seen. The Edited mark in the case menu lines up and shows for local cases, and every calculation menu follows one rule, `calculationAvailable`.
+
+- [#408](https://github.com/eigenergy/tellegen/pull/408) [`342cee6`](https://github.com/eigenergy/tellegen/commit/342cee66cc66cb88ce0432b7ec08ecc9c61b3eb0) Thanks [@samtalki](https://github.com/samtalki)! - Include ZIP and folder imports in browser builds and let users open ZIPs inside ZIPs without mixing their files or cases.
+
+- [#423](https://github.com/eigenergy/tellegen/pull/423) [`be2ee8f`](https://github.com/eigenergy/tellegen/commit/be2ee8f4563c07f7d52e25f14b824a9e28a49502) Thanks [@samtalki](https://github.com/samtalki)! - Retain detailed node-breaker connectivity for drawings, add editable saved engineering drawings with portable JSON and SVG export, and move remaining source drawings to the shared diagram canvases.
+
+- [#414](https://github.com/eigenergy/tellegen/pull/414) [`880ee1c`](https://github.com/eigenergy/tellegen/commit/880ee1c51f9ccb13a8809e8dae88aa0a724da18a) Thanks [@samtalki](https://github.com/samtalki)! - Use solve metadata to label feasibility results. Keep demo links and branding in the demo, scope shared styles to each provider, and provide distribution results for custom applications.
+
+- [#409](https://github.com/eigenergy/tellegen/pull/409) [`6aa38e4`](https://github.com/eigenergy/tellegen/commit/6aa38e4f3d7e7f6361a9fe75b7eb2f15a054e8be) Thanks [@samtalki](https://github.com/samtalki)! - Keep saved studies in one browser database, migrate distribution saves, and support renaming and deleting. Reopening saved distribution results reuses the case without moving the camera.
+
+- [#422](https://github.com/eigenergy/tellegen/pull/422) [`636e106`](https://github.com/eigenergy/tellegen/commit/636e106156297256a8daf718a3dad0acf822c389) Thanks [@samtalki](https://github.com/samtalki)! - Show generated synchronous areas, their planning basis and fixed synthetic HVDC transfers. Link area and converter-bus inspection to the viewer's existing selection.
+
+- [#417](https://github.com/eigenergy/tellegen/pull/417) [`713a2a0`](https://github.com/eigenergy/tellegen/commit/713a2a09dfe2a6b268922391692f692548d45e7a) Thanks [@samtalki](https://github.com/samtalki)! - Offer an explicit written-equipment-settings action for qualified distribution cases. Create an independent case and show the choice after saving and reopening.
+- Updated dependencies [[`85a787c`](https://github.com/eigenergy/tellegen/commit/85a787c8194702cbb833c9a12f9c795dfdd10e28), [`05c4a55`](https://github.com/eigenergy/tellegen/commit/05c4a557389da68422124e30c2450b7bc2a9b8ce), [`c3e6176`](https://github.com/eigenergy/tellegen/commit/c3e61769787ee87787d67d229149b81f560a531c), [`213e7c5`](https://github.com/eigenergy/tellegen/commit/213e7c520e99d55e77013d59efdb93c5cce80752), [`2644761`](https://github.com/eigenergy/tellegen/commit/2644761b8847d96ebd7dba706445be68516cf189), [`e9dd0c1`](https://github.com/eigenergy/tellegen/commit/e9dd0c110f439e3edc7a698772dacde41e6ceee0), [`7087c1c`](https://github.com/eigenergy/tellegen/commit/7087c1cc8f1c203810402aa97b62f18c46073b4a), [`342cee6`](https://github.com/eigenergy/tellegen/commit/342cee66cc66cb88ce0432b7ec08ecc9c61b3eb0), [`be2ee8f`](https://github.com/eigenergy/tellegen/commit/be2ee8f4563c07f7d52e25f14b824a9e28a49502), [`6aa38e4`](https://github.com/eigenergy/tellegen/commit/6aa38e4f3d7e7f6361a9fe75b7eb2f15a054e8be), [`a08743d`](https://github.com/eigenergy/tellegen/commit/a08743d7516412fe29f6995fa47c292675407d9b), [`f235130`](https://github.com/eigenergy/tellegen/commit/f23513037e05063987304eea918f1974f1ba1a64), [`8c867c4`](https://github.com/eigenergy/tellegen/commit/8c867c45b1e38f901eec1a8d8d47f04a060abe29), [`713a2a0`](https://github.com/eigenergy/tellegen/commit/713a2a09dfe2a6b268922391692f692548d45e7a), [`f0d89e4`](https://github.com/eigenergy/tellegen/commit/f0d89e4c07250b91c6dbd2c4076ff79b78f35be9)]:
+  - @tellegen/engine@0.10.1
+  - @tellegen/webmcp@0.4.1
+
 ## 0.10.0
 
 ### Minor Changes
