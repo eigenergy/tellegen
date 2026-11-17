@@ -1,20 +1,62 @@
+import { NOTICES, caseLabel } from './controller/messages.js';
+export { NOTICES, caseLabel } from './controller/messages.js';
 import type { DcFormula } from '@tellegen/engine';
-import { ApiError, createApiClient, RATE_LIMITED, type TellegenApiClient } from './api.js';
-import type {
-	BranchRatingDeltas,
-	Network,
-	NetworkBus,
-	SensitivityColumn,
-	Solution
-} from './api.js';
-import { previewScaleFor, scalarDomain, sensitivityDomain } from './colors.js';
 import {
-	caseDeltas as sharedCaseDeltas,
-	caseRatings as sharedCaseRatings,
+	applyGeo,
+	applyLayout,
+	browserWasmTransport,
+	calculationAvailable,
+	COLLECTION_UNAVAILABLE,
+	collectionSupported,
+	extractGeo,
+	formatPowerIoDiagnostic,
+	ingestDistCaseBytes,
+	ingestJsonDrop,
+	probeAcOpfWorker,
+	type AppliedGeoCase,
+	type BrowserStudy,
+	type EngineTransport,
+	type Formulation,
+	type IngestedCase,
+	type IngestedDistCase,
+	type McLoadPowerEdit,
+	type McModuleInput,
+	type PowerIoDiagnostic,
+	type ResolvedSettings,
+	type SensTarget
+} from '@tellegen/engine';
+import type { BranchRatingDeltas, Network, NetworkBus, Solution } from './api.js';
+import { ApiError, createApiClient, RATE_LIMITED, type TellegenApiClient } from './api.js';
+import { CollectionImport } from './collection-import.svelte.js';
+import { previewScaleFor, scalarDomain, sensitivityDomain } from './colors.js';
+import { BalancedSolveActions } from './controller/balanced-solve.js';
+import {
+	CaseImportActions,
+	type DisplayFile,
+	type GeoLayerFile
+} from './controller/case-imports.js';
+import {
+	CaseSettingsActions,
+	defaultCalculationSettings,
+	hasCustomCalculationSettings
+} from './controller/case-settings.js';
+import { DistributionResultsActions } from './controller/distribution-results.js';
+import { DistributionSolveActions, releaseMcInput } from './controller/distribution-solve.js';
+import { limitWords } from './diagram/verdict.js';
+import {
 	displayMetaFor,
 	displaySeriesFor,
-	dollarUnits
+	dollarUnits,
+	caseDeltas as sharedCaseDeltas,
+	caseRatings as sharedCaseRatings
 } from './display.js';
+import { DynamicsController } from './dynamics/controller.svelte.js';
+import { PIO_MODULE_EXPORT } from './export-formats.js';
+import { atLimit, downloadText, errorText, extent, formulationLabel } from './format.js';
+import { errorTitle, powerIoEntry, type ErrorContext, type LogEntryInput } from './log.svelte.js';
+import { buildDiagramView, buildGeographicView, placeMultiView } from './multiconductor.js';
+import { recordedCalculationSettings } from './settings.svelte.js';
+import { DEAD_ZONE_MW } from './slider.js';
 import {
 	CaseState,
 	LocalCase,
@@ -22,208 +64,9 @@ import {
 	type AppState,
 	type DemandRangeMode,
 	type FallbackTarget,
-	type MultiCaseSummary,
-	type MultiCoordsKind,
 	type SolvableCase
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
-import {
-	errorTitle,
-	powerIoEntry,
-	solveEntry,
-	type ErrorContext,
-	type LogEntryInput
-} from './log.svelte.js';
-import { recordedCalculationSettings } from './settings.svelte.js';
-import { PIO_MODULE_EXPORT } from './export-formats.js';
-import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
-import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
-import { CollectionImport } from './collection-import.svelte.js';
-import { captureDrop, namedFiles } from './collection-files.js';
-import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
-import {
-	browserWasmTransport,
-	collectionSupported,
-	COLLECTION_UNAVAILABLE,
-	resolveSettings,
-	settingsCatalog,
-	type Calculation,
-	type ResolvedSettings,
-	type SolveResponse,
-	applyDisplayGeo,
-	applyGeo,
-	applyLayout,
-	createStudy,
-	extractGeo,
-	calculationAvailable,
-	formatPowerIoDiagnostic,
-	formatOf,
-	ingestCase,
-	ingestDistCaseBytes,
-	ingestJsonDrop,
-	isDisplayFile,
-	isPermanentEngineFailure,
-	parseDisplay,
-	parseGeo,
-	probeAcOpfWorker,
-	solveAcOpfModule,
-	solveResponseToSolution,
-	sensitivityColumn,
-	type EngineTransport,
-	mcPfResultDetail,
-	summarizeMcPfResult,
-	validateMcPfOptions,
-	DEFAULT_MC_PF_OPTIONS,
-	type McLoadPowerEdit,
-	type McModuleInput,
-	type McPfDetail,
-	type McPfDetailQuery,
-	type McPfOptions,
-	type McPfResult,
-	type McPfResultTables,
-	type McPfSummary,
-	type McStudySnapshot,
-	type AppliedGeoCase,
-	type BrowserStudy,
-	type DisplayPreview,
-	type Formulation,
-	type IngestedCase,
-	type IngestedDistCase,
-	type PowerIoDiagnostic,
-	type SensTarget
-} from '@tellegen/engine';
-import {
-	atLimit,
-	browserSolveFailure,
-	downloadText,
-	errorText,
-	extent,
-	formulationLabel
-} from './format.js';
-import { DEAD_ZONE_MW } from './slider.js';
-import { limitWords } from './diagram/verdict.js';
-import { DEMO_LABEL, DYNAMICS_OFF, DynamicsController } from './dynamics/controller.svelte.js';
-
-function sameSettings(a: unknown, b: unknown): boolean {
-	if (a && b && typeof a === 'object' && typeof b === 'object') {
-		const x = a as Record<string, unknown>,
-			y = b as Record<string, unknown>;
-		return (
-			Object.keys(x).length === Object.keys(y).length &&
-			Object.keys(x).every((k) => sameSettings(x[k], y[k]))
-		);
-	}
-	return Object.is(a, b);
-}
-
-/** Notices the controller raises from more than one place, in a few words each, so the
- * notification center reads the same wherever it came from. */
-export const NOTICES = {
-	caseChanged: 'Case changed; attach again',
-	caseChangedWhileLoading: 'Case changed; attach again',
-	selectMatchingCase: 'Wrong case',
-	returnToLiveCase: 'Close the study first',
-	batchBusy: 'Still reading files',
-	collectionOpen: 'Collection still open',
-	rateLimited: RATE_LIMITED
-} as const;
-
-/** A case that needs the server when the host configured none. */
-const noApiNotice = (name: string) => `${name} needs the tellegen server`;
-
-function acOpfSolveDetail(response: SolveResponse): string {
-	const diagnostics = response.iterations;
-	return diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
-		? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
-		: 'POUNCE WASI';
-}
-
-/** Whether this engine build knows `name` as a calculation. */
-function isCalculation(name: string): name is Calculation {
-	return settingsCatalog.calculations.some((c) => c.calculation === name);
-}
-
-function defaultCalculationSettings(calculation: Calculation): ResolvedSettings {
-	const descriptor = settingsCatalog.calculations.find((c) => c.calculation === calculation);
-	const effective = descriptor && 'defaults' in descriptor ? { ...descriptor.defaults } : {};
-	return {
-		version: 1,
-		calculation,
-		engine_defaults: effective,
-		baseline: effective,
-		overrides: {},
-		effective
-	};
-}
-function hasCustomCalculationSettings(c: SolvableCase): boolean {
-	const accepted = c.settings.accepted;
-	return !!accepted && !sameSettings(accepted.effective, accepted.engine_defaults);
-}
-
-const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
-// Open on South Carolina by default: it has the most interesting price action.
-const DEFAULT_CASE_ID = 'case500';
-
-/** Commit and snapshot responses can order object keys differently (including nested loading
- * metadata). Compare the exact JSON values, retaining array order and numerical equality. */
-function sameSolution(a: Solution, b: Solution): boolean {
-	const ordered = (_key: string, value: unknown) => {
-		if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
-		const record = value as Record<string, unknown>;
-		return Object.fromEntries(
-			Object.keys(record)
-				.sort()
-				.map((key) => [key, record[key]])
-		);
-	};
-	return JSON.stringify(a, ordered) === JSON.stringify(b, ordered);
-}
-
-/** A parsed geographic sidecar awaiting application: the canonical `.geo.json`
- * layer document from the engine's tolerant reader, its source file name, and
- * the reader's notes on records it could not use. */
-type GeoLayerFile = {
-	name: string;
-	layer: string;
-	diagnostics: PowerIoDiagnostic[];
-};
-
-/** Whether a local case renders or will render a bus with this id. */
-function localHasBus(c: LocalCase, busId: number): boolean {
-	const buses = c.view?.buses ?? c.diagram?.view.buses ?? c.topology?.buses ?? [];
-	return buses.some((b) => b.id === busId);
-}
-
-type SavedCaseCapture = {
-	input: string;
-	solution?: string;
-	view?: import('@tellegen/engine').StudyView;
-};
-
-/** A parsed PowerWorld `.pwd` display awaiting routing: a coordinate-less case
- * in the same drop may consume its substation points (the SubNum join);
- * otherwise it becomes its own substation preview entry. */
-type DisplayFile = {
-	file: File;
-	bytes: Uint8Array;
-	preview: DisplayPreview;
-	consumed: boolean;
-};
-
-/** Result of the one engine request used to classify a JSON drop. Recognized
- * payloads are staged until geographic/display sidecars have parsed, so every
- * balanced input follows the same placement-before-solve ordering as `.m` and
- * `.raw`. An unrouted result retains the bytes for the geographic fallback. */
-type JsonDropRoute =
-	| { outcome: 'balanced'; payload: IngestedCase }
-	| { outcome: 'multiconductor'; payload: IngestedDistCase }
-	| { outcome: 'failed' }
-	| { outcome: 'unrouted'; bytes: Uint8Array | null };
-
-/** Free a case input the engine keeps; text needs no release. */
-function releaseMcInput(input: McModuleInput | null | undefined) {
-	if (input && typeof input !== 'string') input.free();
-}
 
 /** PowerIO IR text for a case input, built by the engine for a kept module. */
 function mcInputJson(input: McModuleInput): Promise<string> {
@@ -338,15 +181,40 @@ function releaseWhenBuilt(study: Promise<BrowserStudy>) {
 
 /** A case's name for the header and panels: the name the file gives, unless that is a
  * description (a PSS/E RAW header line, say), in which case the file name. */
-export function caseLabel(name: string | null | undefined, fileName: string): string {
-	const stem = fileName.replace(/\.[^.]+$/, '');
-	const given = name?.trim();
-	if (!given || given === 'case') return stem;
-	// RAW and RAWX headers hold a free-text line cut at its field width, not a name.
-	if (/\.rawx?$/i.test(fileName)) return stem;
-	if (given.length > 32 || given.split(/\s+/).length > 4) return stem;
-	return given;
+
+/** A case that needs the server when the host configured none. */
+const noApiNotice = (name: string) => `${name} needs the tellegen server`;
+
+const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
+// Open on South Carolina by default: it has the most interesting price action.
+const DEFAULT_CASE_ID = 'case500';
+
+/** Commit and snapshot responses can order object keys differently (including nested loading
+ * metadata). Compare the exact JSON values, retaining array order and numerical equality. */
+function sameSolution(a: Solution, b: Solution): boolean {
+	const ordered = (_key: string, value: unknown) => {
+		if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+		const record = value as Record<string, unknown>;
+		return Object.fromEntries(
+			Object.keys(record)
+				.sort()
+				.map((key) => [key, record[key]])
+		);
+	};
+	return JSON.stringify(a, ordered) === JSON.stringify(b, ordered);
 }
+
+/** Whether a local case renders or will render a bus with this id. */
+function localHasBus(c: LocalCase, busId: number): boolean {
+	const buses = c.view?.buses ?? c.diagram?.view.buses ?? c.topology?.buses ?? [];
+	return buses.some((b) => b.id === busId);
+}
+
+type SavedCaseCapture = {
+	input: string;
+	solution?: string;
+	view?: import('@tellegen/engine').StudyView;
+};
 
 export class Controller {
 	app: AppState;
@@ -431,7 +299,6 @@ export class Controller {
 	loading: Promise<void> | null = null;
 	// File reads and worker messages retain whole buffers. Admit one validated
 	// batch at a time so repeated drops cannot multiply the aggregate byte cap.
-	private readonly dropBatchGate = new DropBatchGate();
 	collectionsAvailable = $state(false);
 	private collectionProbe: Promise<boolean> | null = null;
 	probeCollections = (): Promise<boolean> => {
@@ -715,148 +582,31 @@ export class Controller {
 			...(view.substations ? { substations: view.substations } : {})
 		};
 	}
-
-	maybeStartLocalSolve(id: string) {
-		const c = this.app.localCases.find((lc) => lc.id === id);
-		if (!c?.studyInputJson || (!c.view && !c.diagram) || !c.summary) return;
-		c.network = this.localNetwork(c) ?? c.network ?? null;
-		if (c.autoSolve && c.network && !c.solution) this.runSolve(c, null);
-	}
-
-	// The case's Study, building it once for `(studyInputJson, formulation)` and rebuilding
-	// (after free) if either changed — so picking a new formulation re-parses and re-solves
-	// under that formulation. Returns null when the sens module can't load; the caller then
-	// falls back to the server, surfacing solveFallbackReason.
-	async getStudy(c: SolvableCase, studyInputJson: string): Promise<BrowserStudy | null> {
-		// A disposed controller builds nothing that would outlive it.
-		if (this.disposed) return null;
-		const latched = this.studyUnavailable.get(c);
-		if (latched) {
-			c.solveFallbackReason ??= latched;
-			return null;
-		}
-		const cached = this.caseStudies.get(c);
-		if (cached && cached.studyInputJson === studyInputJson && cached.formulation === c.formulation)
-			return cached.study;
-		// Coalesce concurrent builds for the same (case, module, formulation): a
-		// bus-select sensitivity fetch and a solve can both reach here before either
-		// createStudy resolves. Without this each builds its own wasm Study and the
-		// later set() orphans the earlier one (a leaked handle), and the cache can end
-		// up holding an instance the live solve never committed on.
-		const inflight = this.studyBuilds.get(c);
-		if (
-			inflight &&
-			inflight.studyInputJson === studyInputJson &&
-			inflight.formulation === c.formulation
-		)
-			return inflight.promise;
-		// Different params, or no build pending: drop any stale Study before rebuilding.
-		if (cached) {
-			cached.study.free();
-			this.caseStudies.delete(c);
-		}
-		const formulation = c.formulation;
-		// Identity for this build attempt: the post-await guards compare against it
-		// (rather than the promise) so a superseding build or a disposal wins the cache.
-		const token = {};
-		const build = (async (): Promise<BrowserStudy | null> => {
-			try {
-				const accepted =
-					(c.settings.accepted?.calculation === formulation ? c.settings.accepted : null) ??
-					(c.settings.baselines[formulation]
-						? await resolveSettings({
-								calculation: formulation,
-								baseline: c.settings.baselines[formulation]
-							})
-						: null);
-				const study = await createStudy(
-					studyInputJson,
-					formulation,
-					accepted
-						? {
-								settings: {
-									calculation: formulation,
-									overrides: accepted.effective
-								}
-							}
-						: {}
-				);
-				const baseSolution = await study.currentSolution();
-				// The case may have switched formulation or been disposed (removed, or its
-				// list reloaded) while building; don't cache a now-unwanted Study, and free
-				// the orphan so its wasm memory is released.
-				if (c.formulation !== formulation || this.studyBuilds.get(c)?.token !== token) {
-					study.free();
-					return null;
-				}
-				this.caseStudies.set(c, {
-					study,
-					studyInputJson,
-					formulation,
-					baseSolution,
-					settings: accepted ?? defaultCalculationSettings(formulation)
-				});
-				return study;
-			} catch (e) {
-				const message = errorText(e);
-				// Only a genuine browser-capability failure is permanent; latch it so the
-				// case stays on the fallback path. Transient errors stay retryable.
-				if (isPermanentEngineFailure(message)) {
-					this.studyUnavailable.set(c, 'browser study wasm is not supported by this browser');
-				}
-				c.solveFallbackReason ??= `browser study unavailable: ${message}`;
-				return null;
-			} finally {
-				if (this.studyBuilds.get(c)?.token === token) this.studyBuilds.delete(c);
-			}
-		})();
-		this.studyBuilds.set(c, {
-			studyInputJson,
-			formulation,
-			token,
-			promise: build
+	private createBalancedSolve(): BalancedSolveActions {
+		const controller = this;
+		return new BalancedSolveActions(this, {
+			get disposed() {
+				return controller.disposed;
+			},
+			get acOpfWasmUrl() {
+				return controller.acOpfWasmUrl;
+			},
+			get acOpfSolves() {
+				return controller.acOpfSolves;
+			},
+			computeOffNotice: (...args) => this.computeOffNotice(...args),
+			ratingEditsFallbackError: (...args) => this.ratingEditsFallbackError(...args),
+			fail: (...args) => this.fail(...args),
+			failed: (...args) => this.failed(...args)
 		});
-		return build;
 	}
+	private readonly balancedSolve: BalancedSolveActions = this.createBalancedSolve();
 
-	// The nodal-value/parameter column at `target` for the case's active formulation, solved in
-	// the browser. Every column, bus or branch, any formulation, comes from the Study's
-	// exact re-solve at the case's operating point. The column is null (with the reason on
-	// `solveFallbackReason`) when the Study can't be built; the selection paths then
-	// reconcile via the server where a DC endpoint exists. Throws only on a hard browser
-	// error.
-	async browserSensitivity(
-		c: SolvableCase,
-		studyInputJson: string,
-		target: SensTarget,
-		signal?: AbortSignal
-	): Promise<SensitivityColumn | null> {
-		if (c.formulation === 'acopf') {
-			if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
-				throw new Error('AC OPF sensitivity needs the available solver and an unedited case');
-			const index =
-				'bus' in target
-					? c.solution?.prices.findIndex((entry) => entry.bus === target.bus)
-					: c.solution?.flows.findIndex((entry) => entry.branch === target.branch);
-			if (index === undefined || index < 0) return null;
-			const response = await solveAcOpfModule(
-				this.acOpfWasmUrl,
-				studyInputJson,
-				signal,
-				undefined,
-				[
-					{
-						operand: { Price: 'Active' },
-						parameter: 'bus' in target ? { Demand: 'Active' } : 'LineLimit',
-						indices: [index]
-					}
-				]
-			);
-			return sensitivityColumn(c.id, response.sensitivities ?? []);
-		}
-		const study = await this.getStudy(c, studyInputJson);
-		return study ? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target) : null;
-	}
+	maybeStartLocalSolve = this.balancedSolve.maybeStartLocalSolve;
+
+	getStudy = this.balancedSolve.getStudy;
+
+	browserSensitivity = this.balancedSolve.browserSensitivity;
 
 	/** Release every engine handle this controller holds: each case's browser
 	 * Study, including one still being built, its AC OPF solve, each
@@ -889,86 +639,13 @@ export class Controller {
 			c.mcInput = null;
 		}
 	}
+	disposeStudy = this.balancedSolve.disposeStudy;
 
-	// Release a case's Study (if any) when the case is removed.
-	disposeStudy(c: SolvableCase) {
-		this.acOpfSolves.get(c)?.abort();
-		this.acOpfSolves.delete(c);
-		const cached = this.caseStudies.get(c);
-		if (cached) {
-			cached.study.free();
-			this.caseStudies.delete(c);
-		}
-		// Cancel any in-flight build: when it resolves it sees its entry gone and frees.
-		this.studyBuilds.delete(c);
-	}
+	acceptSensitivity = this.balancedSolve.acceptSensitivity;
 
-	acceptSensitivity(
-		c: SolvableCase,
-		col: SensitivityColumn | null,
-		target: SensTarget | null,
-		sensitivitySeq?: number
-	) {
-		if (!col || target === null) return;
-		// The column must name the target it was requested for, and the target must
-		// still be the live selection.
-		const matches =
-			'bus' in target
-				? col.bus === target.bus && this.app.selectedBus === target.bus
-				: col.branch === target.branch && this.app.selectedBranch === target.branch;
-		if (!matches) return;
-		if (!this.isActiveSolveCase(c)) return;
-		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
-		c.sensitivity = col;
-	}
+	finishSolve = this.balancedSolve.finishSolve;
 
-	finishSolve(c: SolvableCase, seq: number, target: SensTarget | null) {
-		if (seq !== (c.solveSeq ?? 0)) return;
-		c.solving = false;
-		const acceptedSettings = this.caseStudies.get(c)?.settings;
-		if (acceptedSettings?.calculation === c.formulation) c.settings.accepted = acceptedSettings;
-		// Every solve of a case restates the same findings; they count once.
-		const findings = c.solution?.diagnostics ?? [];
-		if (findings.length)
-			this.app.log.record(
-				findings.map((d) => solveEntry(d, { subject: this.caseName(c) })),
-				{ repeat: false }
-			);
-		const selectionLive =
-			target !== null &&
-			this.isActiveSolveCase(c) &&
-			('bus' in target
-				? this.app.selectedBus === target.bus
-				: this.app.selectedBranch === target.branch);
-		if (selectionLive) {
-			this.app.previewActive = false;
-			this.app.previewDeltaMw = null;
-			this.app.previewRatingMw = null;
-			// The committed solution supersedes the live engine preview.
-			this.app.previewPrices = null;
-			this.previewObjective = null;
-		}
-	}
-
-	// Fetch and cache the retained PowerIO module used by every browser Study.
-	// Returns null when it cannot be loaded, so callers can report or fall back.
-	async ensureStudyInputJson(c: SolvableCase): Promise<string | null> {
-		if (c.studyInputJson) return c.studyInputJson;
-		if (!this.isBackendCase(c)) return null;
-		const api = this.api;
-		if (!api) {
-			c.solveFallbackReason = 'no API configured';
-			return null;
-		}
-		try {
-			const moduleJson = await api.getCaseModuleJson(c.id);
-			c.studyInputJson = moduleJson;
-			return moduleJson;
-		} catch (e) {
-			c.solveFallbackReason = `case fetch failed: ${errorText(e)}`;
-			return null;
-		}
-	}
+	ensureStudyInputJson = this.balancedSolve.ensureStudyInputJson;
 
 	// Deltas the live preview would commit: the committed deltas with the slider's
 	// value at the selected bus, applying commitDelta's dead zone so a tiny nudge
@@ -2302,239 +1979,9 @@ export class Controller {
 		this.nearbyRangeAnchor = null;
 		this.app.sensitivityLoading = false;
 	};
+	runSolve = this.balancedSolve.runSolve;
 
-	// Exact solve in the browser (wasm). The build-once Study commits the new
-	// operating point without re-parsing, returning the nodal-value/parameter column for
-	// the selection target in the same solve; on a Study failure or missing PowerIO
-	// module it reconciles via the server stream (backend cases). Rating edits never
-	// fall back: the server solves at base ratings, so a Study failure there is
-	// terminal.
-	runSolve = (c: SolvableCase, target: SensTarget | null) => {
-		if (this.disposed) return;
-		if (c.formulation === 'acpf' || c.formulation === 'acopf') target = null;
-		this.acOpfSolves.get(c)?.abort();
-		this.acOpfSolves.delete(c);
-		// Cancel this case's own previous server stream, if any (backend only).
-		if (this.isBackendCase(c)) {
-			c.closeStream?.();
-			c.closeStream = null;
-		}
-		c.solveSeq = (c.solveSeq ?? 0) + 1;
-		const seq = c.solveSeq;
-		this.app.error = null;
-		c.solving = true;
-		c.failedCalculation = null;
-		c.solveBackend = null;
-		c.solveDetail = null;
-		c.solveFallbackReason = null;
-		c.iterations = [];
-		c.solveMs = null;
-		this.ensureStudyInputJson(c).then(async (studyInputJson) => {
-			if (this.disposed || seq !== (c.solveSeq ?? 0)) return;
-			if (!studyInputJson) {
-				c.solveFallbackReason ??= 'PowerIO module unavailable';
-				// The server fallback only implements DC OPF. Preserve the requested
-				// calculation when its browser input cannot be loaded.
-				if (c.formulation !== 'dcopf') {
-					c.solving = false;
-					this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} requires its PowerIO module; ${c.solveFallbackReason}`;
-					return;
-				}
-				if (this.hasRatingEdits(c)) {
-					c.solving = false;
-					this.app.error = this.ratingEditsFallbackError(c);
-					return;
-				}
-				if (this.isBackendCase(c)) return this.serverSolve(c, target, seq);
-				c.solving = false;
-				this.app.error = `${c.label}: re-add the case`;
-				return;
-			}
-			const t0 = performance.now();
-			if (c.formulation === 'acopf') {
-				if (!this.acOpfAvailable || !this.acOpfWasmUrl) {
-					c.solving = false;
-					this.app.error = `${this.caseName(c)}: AC OPF unavailable`;
-					return;
-				}
-				if (c.perturbed) {
-					c.solving = false;
-					this.app.error = `${this.caseName(c)}: AC OPF needs the unedited case`;
-					return;
-				}
-				const cancellation = new AbortController();
-				this.acOpfSolves.set(c, cancellation);
-				c.solveBackend = 'pounce-wasi';
-				try {
-					const response = await solveAcOpfModule(
-						this.acOpfWasmUrl,
-						studyInputJson,
-						cancellation.signal
-					);
-					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
-					c.solution = solveResponseToSolution(response);
-					c.solveDetail = acOpfSolveDetail(response);
-					c.solveMs = Math.round(performance.now() - t0);
-					this.finishSolve(c, seq, null);
-				} catch (error) {
-					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
-					c.solving = false;
-					this.failed(errorTitle(error, 'AC OPF failed'), 'Solve', error, {
-						message: `${this.caseName(c)}: AC OPF failed in the isolated browser worker: ${errorText(error)}`
-					});
-				} finally {
-					if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
-				}
-				return;
-			}
-			c.solveBackend = 'clarabel-wasm';
-
-			// Build-once Study path: commit the new operating point (no re-parse). The
-			// selected nodal value sensitivity column is computed in the same
-			// solve and comes back with it, so there is no second solve to reconcile it.
-			const study = await this.getStudy(c, studyInputJson);
-			if (seq !== (c.solveSeq ?? 0)) return;
-			if (study) {
-				try {
-					const cached = this.caseStudies.get(c);
-					if (!c.baseSolution && cached?.study === study) c.baseSolution = cached.baseSolution;
-					const { solution, iterations, sensitivity } = await study.commit(
-						c.id,
-						this.caseDeltas(c),
-						this.caseRatings(c),
-						target
-					);
-					if (seq !== (c.solveSeq ?? 0)) return;
-					c.solution = solution;
-					c.iterations = iterations;
-					if (!c.baseSolution && Object.keys(this.caseDeltas(c)).length === 0)
-						c.baseSolution = solution;
-					c.solveMs = Math.round(performance.now() - t0);
-					// The commit carried the sensitivity column; accept it for the selection
-					// through the same seq-guarded setter every sensitivity source goes through.
-					if (target !== null && sensitivity) this.acceptSensitivity(c, sensitivity, target);
-					this.finishSolve(c, seq, target);
-					return;
-				} catch (e) {
-					if (seq !== (c.solveSeq ?? 0)) return;
-					const msg = errorText(e);
-					// For AC OPF / SOCWR (browser-only) an infeasible operating point is an
-					// expected outcome — demand pushed past what the network can serve — not a
-					// broken Study. Keep the Study (it solves other points) and say so plainly,
-					// instead of the misleading "study unavailable".
-					if (c.formulation !== 'dcopf' && /infeasible/i.test(msg)) {
-						c.solving = false;
-						this.app.previewActive = false;
-						this.app.previewDeltaMw = null;
-						this.app.previewRatingMw = null;
-						this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} has no solution at this demand`;
-						return;
-					}
-					// Any other commit failure is unexpected; drop the Study so the next solve
-					// rebuilds, then fall through to the server fallback.
-					this.disposeStudy(c);
-					c.solveFallbackReason ??= `browser study commit failed: ${msg}`;
-				}
-			}
-
-			// The server stream below only solves DC OPF, so it is valid only for the
-			// DC formulation. For AC OPF / SOCWR the Study is the sole solver (nothing
-			// is solved on the server), so a Study failure there is terminal: surface
-			// it rather than silently returning a DC solution.
-			if (c.formulation !== 'dcopf') {
-				if (seq !== (c.solveSeq ?? 0)) return;
-				c.solving = false;
-				const why = c.solveFallbackReason ?? 'browser study unavailable';
-				this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} runs only in the browser Study, which is unavailable: ${why}`;
-				return;
-			}
-
-			// Neither the server stream nor any other path can apply rating edits;
-			// falling through would silently solve at base ratings, so stop here instead.
-			if (this.hasRatingEdits(c)) {
-				if (seq !== (c.solveSeq ?? 0)) return;
-				c.solving = false;
-				this.app.error = this.ratingEditsFallbackError(c);
-				return;
-			}
-
-			// Fallback: the server stream for backend cases. The Study is the only
-			// browser solver, so a local case with a failed Study is terminal.
-			if (seq !== (c.solveSeq ?? 0)) return;
-			if (this.isBackendCase(c)) {
-				this.serverSolve(c, target, seq);
-				return;
-			}
-			c.solving = false;
-			const failure = browserSolveFailure(c.label, c.solveFallbackReason);
-			this.fail(failure.message, null, {
-				detail: failure.detail,
-				stage: 'Solve'
-			});
-		});
-	};
-
-	serverSolve = (c: CaseState, target: SensTarget | null, seq = c.solveSeq) => {
-		if (hasCustomCalculationSettings(c)) {
-			if (seq !== c.solveSeq) return;
-			c.solving = false;
-			this.fail("Server can't apply settings");
-			return;
-		}
-		// Known-disabled server compute (or no backend at all): show the notice
-		// instead of opening a stream that answers 403 without a readable body
-		// (EventSource hides it).
-		const api = this.api;
-		if (this.serverComputeOff || !api) {
-			if (seq !== c.solveSeq) return;
-			c.solving = false;
-			if (this.isActiveSolveCase(c)) {
-				this.app.previewActive = false;
-				this.app.previewDeltaMw = null;
-				this.app.previewRatingMw = null;
-			}
-			this.fail(this.computeOffNotice(c), () => this.runSolve(c, target));
-			return;
-		}
-		c.solveBackend = 'rust-server';
-		c.solveFallbackReason ??= 'browser solve unavailable';
-		// The server computes bus columns only; a branch target streams no sensitivity.
-		const sensBus = target && 'bus' in target ? target.bus : null;
-		c.closeStream = api.openSolveStream(c.id, c.deltas, sensBus, {
-			onsolution: (sol) => {
-				if (seq !== c.solveSeq) return;
-				c.solution = sol;
-				c.iterations = sol.iterations ?? [];
-				c.solveMs = sol.solve_ms;
-			},
-			onsensitivity: (col) => {
-				if (seq !== c.solveSeq) return;
-				this.acceptSensitivity(c, col, target);
-			},
-			onfail: (msg) => {
-				if (seq !== c.solveSeq) return;
-				c.solving = false;
-				// Only the active case owns the global preview fields (mirror finishSolve); a
-				// background case's fallback failure must not collapse the active case's preview.
-				if (this.isActiveSolveCase(c)) {
-					this.app.previewActive = false;
-					this.app.previewDeltaMw = null;
-					this.app.previewRatingMw = null;
-				}
-				this.fail(
-					`${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`,
-					() => this.runSolve(c, target),
-					{
-						title: `${formulationLabel(c.formulation)} failed`,
-						stage: 'Solve'
-					}
-				);
-			},
-			ondone: () => {
-				this.finishSolve(c, seq, target);
-			}
-		});
-	};
+	serverSolve = this.balancedSolve.serverSolve;
 
 	commitDelta = (value: number) => {
 		const c = this.activeSolvable;
@@ -2644,270 +2091,15 @@ export class Controller {
 		}
 	};
 
-	/** Read selected next-run settings without changing a result or starting work. */
-	inspectSettings = (c: SolvableCase | MulticonductorCase) => {
-		const calculation =
-			c.settings.calculation ?? (c instanceof MulticonductorCase ? 'mc_ac_pf' : c.formulation);
-		const descriptor = settingsCatalog.calculations.find((d) => d.calculation === calculation);
-		const baseline =
-			c instanceof MulticonductorCase
-				? {
-						...c.distribution?.pf_options,
-						...c.settings.baselines[calculation]
-					}
-				: { ...c.settings.baselines[calculation] };
-		const selected =
-			c instanceof MulticonductorCase
-				? { ...c.mcOptions }
-				: (c.settings.options[calculation] ?? {});
-		const defaults = descriptor && 'defaults' in descriptor ? descriptor.defaults : {};
-		const effective =
-			c instanceof MulticonductorCase
-				? { ...defaults, ...baseline, ...selected }
-				: (c.settings.resolved[calculation]?.effective ?? {
-						...defaults,
-						...baseline,
-						...selected
-					});
-		const accepted =
-			c instanceof MulticonductorCase
-				? c.result?.load_model?.options
-				: c.settings.accepted?.effective;
-		return {
-			case_id: c.id,
-			settings_revision: c.settings.revision,
-			calculation,
-			baseline,
-			selected: effective,
-			accepted: accepted ?? null,
-			accepted_calculation:
-				c instanceof MulticonductorCase
-					? c.result
-						? 'mc_ac_pf'
-						: null
-					: c.solution
-						? c.formulation
-						: null,
-			pending:
-				!!accepted &&
-				(!sameSettings(effective, accepted) ||
-					(!(c instanceof MulticonductorCase) && calculation !== c.formulation)),
-			fields: descriptor?.fields ?? []
-		};
-	};
-
-	/** Validate the complete candidate in Rust, then commit all fields atomically. */
-	updateSettings = async (
-		c: SolvableCase | MulticonductorCase,
-		calculation: string,
-		patch: Record<string, unknown>,
-		expectedRevision: number,
-		reset = false
-	) => {
-		if (c.solving) throw new Error('Settings cannot change during a calculation.');
-		if (c.settings.revision !== expectedRevision) throw new Error('Settings changed; run again');
-		if (
-			!isCalculation(calculation) ||
-			(c instanceof MulticonductorCase
-				? calculation !== 'mc_ac_pf'
-				: !this.formulationAvailable(c, calculation as Formulation))
-		)
-			throw new Error('This calculation is unavailable for the selected case.');
-		if (c instanceof LocalCase && c.declaredFormulation && calculation !== c.declaredFormulation)
-			throw new Error('This PowerIO instance requires its declared calculation.');
-		// An undefined value (a cleared field) removes that override, so the
-		// setting falls back to the case baseline or engine default.
-		const overrides = reset
-			? {}
-			: Object.fromEntries(
-					Object.entries({
-						...c.settings.options[calculation],
-						...patch
-					}).filter(([, value]) => value !== undefined)
-				);
-		const caseRevision = c.revisionGeneration;
-		const baseline =
-			c instanceof MulticonductorCase
-				? {
-						...c.distribution?.pf_options,
-						...c.settings.baselines[calculation]
-					}
-				: { ...c.settings.baselines[calculation] };
-		let resolved: ResolvedSettings;
-		if (calculation === 'acopf' && this.acOpfAvailable) {
-			if (Object.keys(overrides).length)
-				throw new Error('The isolated AC OPF backend has no public numerical settings.');
-			resolved = {
-				version: 1,
-				calculation,
-				engine_defaults: {},
-				baseline: {},
-				overrides: {},
-				effective: {}
-			};
-		} else resolved = await resolveSettings({ calculation, baseline, overrides });
-		if (
-			c.solving ||
-			c.revisionGeneration !== caseRevision ||
-			c.settings.revision !== expectedRevision
-		)
-			throw new Error('Settings changed; run again');
-		c.settings.options = {
-			...c.settings.options,
-			[calculation]: { ...resolved.overrides }
-		};
-		c.settings.resolved = { ...c.settings.resolved, [calculation]: resolved };
-		c.settings.calculation = calculation;
-		c.settings.revision++;
-		if (c instanceof MulticonductorCase) c.mcOptions = { ...resolved.effective } as McPfOptions;
-		return this.inspectSettings(c);
-	};
-
-	canCancelSettings = (c: SolvableCase | MulticonductorCase) =>
-		c instanceof MulticonductorCase ? !!c.solveAbort : this.acOpfSolves.has(c);
-	cancelSettings = (c: SolvableCase | MulticonductorCase) => {
-		if (c instanceof MulticonductorCase) c.solveAbort?.abort();
-		else this.acOpfSolves.get(c)?.abort();
-	};
-
-	/** Explicit solve. A candidate Study replaces the accepted Study only after success. */
-	runSettings = async (c: SolvableCase | MulticonductorCase, signal?: AbortSignal) => {
-		signal?.throwIfAborted();
-		if (c.solving) throw new Error('Already running');
-		const snapshot = this.inspectSettings(c);
-		const initialRevision = c.revisionGeneration;
-		if (c instanceof MulticonductorCase) {
-			const resolved = await resolveSettings({
-				calculation: 'mc_ac_pf',
-				baseline: snapshot.baseline,
-				overrides: snapshot.selected
-			});
-			if (
-				c.revisionGeneration !== initialRevision ||
-				c.settings.revision !== snapshot.settings_revision
-			)
-				throw new Error('Settings changed; run again');
-			const result = await this.solveMultiCase(
-				c,
-				resolved.effective as McPfOptions,
-				signal,
-				c.mcRequiresEnergizedSolve
-			);
-			c.settings.accepted = resolved;
-			return result;
-		}
-		const formulation = snapshot.calculation as Formulation;
-		const resolved: ResolvedSettings =
-			formulation === 'acopf'
-				? {
-						version: 1,
-						calculation: formulation,
-						engine_defaults: {},
-						baseline: {},
-						overrides: {},
-						effective: {}
-					}
-				: await resolveSettings({
-						calculation: formulation,
-						baseline: snapshot.baseline,
-						overrides: c.settings.options[formulation] ?? {}
-					});
-		signal?.throwIfAborted();
-		if (c.solving) throw new Error('Already running');
-		if (
-			c.revisionGeneration !== initialRevision ||
-			c.settings.revision !== snapshot.settings_revision
-		)
-			throw new Error('Settings changed; run again');
-		const sequence = ++c.solveSeq;
-		const revision = c.revisionGeneration;
-		const settingsRevision = c.settings.revision;
-		const started = performance.now();
-		const cancellation = new AbortController();
-		const cancel = () => cancellation.abort();
-		signal?.addEventListener('abort', cancel, { once: true });
-		this.acOpfSolves.set(c, cancellation);
-		c.solving = true;
-		let study: BrowserStudy | null = null;
-		try {
-			const input = await this.ensureStudyInputJson(c);
-			if (!input) throw new Error('Case input missing; add the case again');
-			let solution: Solution;
-			let baseSolution: Solution | null = null;
-			let iterations: typeof c.iterations = [];
-			let solveDetail: string | null = null;
-			if (formulation === 'acopf') {
-				if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
-					throw new Error('AC OPF requires its isolated backend and the unedited base case.');
-				const response = await solveAcOpfModule(this.acOpfWasmUrl, input, cancellation.signal);
-				solution = solveResponseToSolution(response);
-				solveDetail = acOpfSolveDetail(response);
-				baseSolution = solution;
-			} else {
-				study = await createStudy(input, formulation, {
-					isolated: true,
-					signal: cancellation.signal,
-					settings: { calculation: formulation, overrides: resolved.effective }
-				});
-				baseSolution = await study.currentSolution();
-				const committed = await study.commit(
-					c.id,
-					this.caseDeltas(c),
-					this.caseRatings(c),
-					null,
-					cancellation.signal
-				);
-				solution = committed.solution;
-				iterations = committed.iterations;
-			}
-			cancellation.signal.throwIfAborted();
-			if (
-				sequence !== c.solveSeq ||
-				revision !== c.revisionGeneration ||
-				settingsRevision !== c.settings.revision
-			)
-				throw new Error('Case changed during the calculation');
-			this.disposeStudy(c);
-			c.formulation = formulation;
-			c.failedCalculation = null;
-			c.settings.accepted = resolved;
-			c.settings.revision++;
-			c.settings.resolved = { ...c.settings.resolved, [formulation]: resolved };
-			c.solution = solution;
-			c.baseSolution = baseSolution;
-			c.sensitivity = null;
-			c.iterations = iterations;
-			c.solveDetail = solveDetail;
-			c.solveBackend = formulation === 'acopf' ? 'pounce-wasi' : 'clarabel-wasm';
-			c.solveMs = Math.round(performance.now() - started);
-			if (study) {
-				this.caseStudies.set(c, {
-					study,
-					studyInputJson: input,
-					formulation,
-					baseSolution: baseSolution!,
-					settings: resolved
-				});
-				study = null;
-			}
-			this.bumpRevision(c);
-			if (this.app.displayMode !== 'demand')
-				this.app.displayMode =
-					formulation === 'acpf' || formulation === 'acopf' ? 'voltage' : 'price';
-			this.finishSolve(c, sequence, null);
-			return solution;
-		} catch (error) {
-			// The result on screen stays; the status line names the calculation that failed.
-			if (sequence === c.solveSeq && (error as Error)?.name !== 'AbortError')
-				c.failedCalculation = formulation;
-			throw error;
-		} finally {
-			study?.free();
-			if (sequence === c.solveSeq) c.solving = false;
-			if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
-			signal?.removeEventListener('abort', cancel);
-		}
-	};
+	private readonly settingsActions = new CaseSettingsActions(this, {
+		url: () => this.acOpfWasmUrl,
+		solves: this.acOpfSolves
+	});
+	inspectSettings = this.settingsActions.inspectSettings;
+	updateSettings = this.settingsActions.updateSettings;
+	canCancelSettings = this.settingsActions.canCancelSettings;
+	cancelSettings = this.settingsActions.cancelSettings;
+	runSettings = this.settingsActions.runSettings;
 
 	/** Rebuild the numerical Study for a selected calculation at the current demand. */
 	changeFormulation = (c: SolvableCase, next: Formulation) => {
@@ -2943,859 +2135,55 @@ export class Controller {
 		this.runSolve(c, this.selectionTarget);
 	};
 
-	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux, .epc, .pwb) become local networks; geographic files can
-	 * place those networks; a PowerWorld .pwd becomes a substation point
-	 * preview. Files run serially; nothing uploads. */
-	ingestFiles = async (files: FileList | File[]) => {
-		if (this.collectionImport.open) {
-			this.app.error = NOTICES.collectionOpen;
-			return;
-		}
-		const release = this.dropBatchGate.enter();
-		if (!release) {
-			this.app.error = NOTICES.batchBusy;
-			return;
-		}
-		try {
-			let list: File[];
-			try {
-				list = validateDropBatch(files);
-			} catch (e) {
-				this.failed('Could not open the files', 'Open', e);
-				return;
-			}
-			if (list.some((f) => /\.zip$/i.test(f.name) || !!f.webkitRelativePath)) {
-				await this.openCollection(async () => namedFiles(list));
-			} else if (
-				list.length > 1 &&
-				list.some((f) => /\.dss$/i.test(f.name)) &&
-				(await this.probeCollections())
-			) {
-				await this.openCollection(async () => namedFiles(list));
-			} else await this.ingestFileBatch(list);
-		} catch (e) {
-			this.failed('Could not open the files', 'Open', e);
-		} finally {
-			this.app.parsingFile = false;
-			release();
-		}
-	};
+	private readonly caseImports = new CaseImportActions(this, {
+		addMultiCase: (...args) => this.addMultiCase(...args),
+		attachSidecarsToSelected: (...args) => this.attachSidecarsToSelected(...args),
+		fail: (...args) => this.fail(...args),
+		failed: (...args) => this.failed(...args),
+		localFromBalancedPayload: (...args) => this.localFromBalancedPayload(...args),
+		logImport: (...args) => this.logImport(...args),
+		logPlacement: (...args) => this.logPlacement(...args),
+		openCollection: (...args) => this.openCollection(...args),
+		openFailed: (...args) => this.openFailed(...args)
+	});
+	ingestFiles = this.caseImports.ingestFiles;
+	ingestFolder = this.caseImports.ingestFolder;
+	ingestDrop = this.caseImports.ingestDrop;
+	private prepareDroppedLocal = this.caseImports.prepareDroppedLocal;
+	private placeTopologyAsDiagram = this.caseImports.placeTopologyAsDiagram;
+	setCaseDisplayMode = this.caseImports.setCaseDisplayMode;
 
-	/** Folder entries use collection-member limits, not the 32-upload picker cap. */
-	ingestFolder = async (files: FileList | File[]) => {
-		const release = this.dropBatchGate.enter();
-		if (!release) {
-			this.app.error = NOTICES.batchBusy;
-			return;
-		}
-		try {
-			await this.openCollection(async () => namedFiles(files));
-		} catch (error) {
-			this.failed('Could not open the files', 'Open', error);
-		} finally {
-			release();
-		}
-	};
-
-	ingestDrop = (data: DataTransfer) => {
-		// Capture entry handles in the drop event before its protected data expires.
-		try {
-			const entries = Array.from(data.items).filter((item) => item.kind === 'file');
-			if (!entries.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
-				void this.ingestFiles(data.files);
-				return;
-			}
-			const read = captureDrop(data);
-			const release = this.dropBatchGate.enter();
-			if (!release) {
-				this.app.error = NOTICES.batchBusy;
-				return;
-			}
-			void this.openCollection(read)
-				.catch((error) => {
-					this.failed('Could not open the files', 'Open', error);
-				})
-				.finally(release);
-		} catch (error) {
-			this.failed('Could not open the files', 'Open', error);
-		}
-	};
-
-	private ingestFileBatch = async (all: File[]) => {
-		const sidecarTarget = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
-		let parsedCaseCount = 0;
-
-		// PSS/E dynamic data (.dyr, or a .txt that reads as DYR) attaches to
-		// the balanced case of this drop, else to the active local case.
-		const dyrFiles: File[] = [];
-		const list: File[] = [];
-		for (const file of all) {
-			// With dynamics off, a .txt is never read as dynamic data.
-			const dyr = this.app.dynamicsEnabled
-				? await this.dynamics.isDyr(file)
-				: /\.dyr$/i.test(file.name);
-			if (dyr) dyrFiles.push(file);
-			else list.push(file);
-		}
-		const localsBefore = new Set(this.app.localCases.map((c) => c.id));
-
-		// Routable `.json` content (saved packages, model JSON, and transmission or
-		// distribution documents) shares the extension with geographic files. Route
-		// it up front, but stage recognized payloads until the geographic/display
-		// sidecars below have parsed. Unrouted JSON retains its first byte buffer so
-		// the geographic fallback does not read a potentially large file twice.
-		const rest: File[] = [];
-		const routedJson: { file: File; route: JsonDropRoute }[] = [];
-		const jsonBytes = new Map<File, Uint8Array>();
-		for (const file of list) {
-			if (file.name.toLowerCase().endsWith('.json')) {
-				const route = await this.routeJsonDrop(file);
-				if (route.outcome === 'balanced' || route.outcome === 'multiconductor') {
-					parsedCaseCount++;
-					routedJson.push({ file, route });
-					continue;
-				}
-				if (route.outcome === 'failed') continue;
-				if (route.bytes) jsonBytes.set(file, route.bytes);
-			}
-			rest.push(file);
-		}
-
-		const geoLayers: GeoLayerFile[] = [];
-		for (const file of rest.filter((f) => isGeoFileName(f.name))) {
-			this.app.parsingFile = true;
-			try {
-				const bytes = await readDropFileBytes(file, jsonBytes.get(file));
-				jsonBytes.delete(file);
-				const parsed = await parseGeo(bytes, file.name);
-				geoLayers.push({
-					name: file.name,
-					layer: parsed.layer,
-					diagnostics: parsed.diagnostics
-				});
-				this.app.error = null;
-			} catch (e) {
-				this.openFailed(file.name, e);
-			} finally {
-				this.app.parsingFile = false;
-			}
-		}
-
-		// PowerWorld .pwd displays parse up front so a coordinate-less case in the
-		// same drop can borrow their substation points (the SubNum join); one that
-		// no case consumes becomes its own substation preview entry below.
-		const displays: DisplayFile[] = [];
-		for (const file of rest.filter((f) => isDisplayFile(f.name))) {
-			this.app.parsingFile = true;
-			try {
-				const bytes = new Uint8Array(await file.arrayBuffer());
-				displays.push({
-					file,
-					bytes,
-					preview: await parseDisplay(bytes),
-					consumed: false
-				});
-				this.app.error = null;
-			} catch (e) {
-				this.openFailed(file.name, e);
-			} finally {
-				this.app.parsingFile = false;
-			}
-		}
-
-		// Materialize routed JSON cases only after sidecars are ready. This keeps
-		// placement ahead of the first solve and preserves the original JSON order.
-		// `prepareDroppedLocal` is a wasm call that takes seconds on a large case,
-		// and the drop gate refuses a second batch throughout, so the UI has to
-		// keep saying so.
-		if (routedJson.length > 0) this.app.parsingFile = true;
-		try {
-			for (const { file, route } of routedJson) {
-				if (route.outcome === 'multiconductor') {
-					const multi = this.addMultiCase(file.name, route.payload);
-					if (geoLayers.length) {
-						try {
-							await this.applyMultiGeoLayers(multi, geoLayers);
-						} catch (error) {
-							this.failed('Could not attach coordinates', 'Coordinates', error);
-						}
-					}
-					continue;
-				}
-				if (route.outcome !== 'balanced') continue;
-				const local = this.localFromBalancedPayload(file.name, route.payload);
-				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
-				this.addAndActivateLocal(local);
-				this.app.error = placement.error;
-			}
-		} finally {
-			this.app.parsingFile = false;
-		}
-
-		for (const file of rest.filter((f) => !isGeoFileName(f.name) && !isDisplayFile(f.name))) {
-			// OpenDSS routes by extension into the multiconductor viewing path.
-			const distFormat = distExtensionFormat(file.name);
-			if (distFormat) {
-				if (await this.ingestDistFile(file, distFormat)) {
-					parsedCaseCount++;
-					if (geoLayers.length && this.app.activeMulti) {
-						try {
-							await this.applyMultiGeoLayers(this.app.activeMulti, geoLayers);
-						} catch (error) {
-							this.failed('Could not attach coordinates', 'Coordinates', error);
-						}
-					}
-				}
-				continue;
-			}
-			const format = formatOf(file.name);
-			if (!format) {
-				this.app.error = `${file.name}: unsupported format`;
-				continue;
-			}
-			this.app.parsingFile = true;
-			try {
-				const bytes = new Uint8Array(await file.arrayBuffer());
-				const { module_json, topology, view, ...summary } = await ingestCase(bytes, format);
-				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
-					this.app.error = `${file.name}: incomplete network`;
-					continue;
-				}
-				const id = `local-${++this.localSeq}`;
-				// The bundled demo's RAW header is a sentence cut off at its
-				// field width, not a name.
-				const label =
-					this.dynamics.attachingDemo && format === 'raw'
-						? DEMO_LABEL
-						: caseLabel(summary.name, file.name);
-				this.logImport(file.name, summary, module_json, label === DEMO_LABEL);
-				const local = new LocalCase({
-					id,
-					label,
-					fileName: file.name,
-					summary,
-					studyInputJson: module_json,
-					topology,
-					coordsKind: summary.coords_kind,
-					view
-				});
-				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
-				this.addAndActivateLocal(local);
-				parsedCaseCount++;
-				this.app.error = placement.error; // a successful parse clears a prior file's error
-			} catch (e) {
-				this.openFailed(file.name, e);
-			} finally {
-				this.app.parsingFile = false;
-			}
-		}
-
-		if (dyrFiles.length > 0) await this.attachDynamics(dyrFiles, localsBefore);
-
-		if (parsedCaseCount === 0 && (geoLayers.length > 0 || displays.length > 0)) {
-			await this.attachSidecarsToSelected(geoLayers, displays, sidecarTarget);
-		} else {
-			const unmatchedDisplays = displays.filter((display) => !display.consumed);
-			if (unmatchedDisplays.length)
-				this.app.error = `${unmatchedDisplays.map((display) => display.file.name).join(' and ')}: drawing does not match case`;
-		}
-	};
-
-	/** Attach dropped dynamic data: to the balanced case the same drop
-	 * opened, else to the active local case. A second .dyr replaces the
-	 * first after a confirm. */
-	private attachDynamics = async (files: File[], localsBefore: Set<string>) => {
-		if (!this.app.dynamicsEnabled) {
-			this.fail(`${files.map((f) => f.name).join(' and ')} not opened: dynamics is off`, null, {
-				title: 'Turn on Experimental features in Settings',
-				stage: 'Open'
-			});
-			return;
-		}
-		const added = this.app.localCases.filter((c) => !localsBefore.has(c.id));
-		const target = added.at(-1) ?? this.app.activeLocal;
-		if (!target || !target.studyInputJson) {
-			this.app.error = `Drop the matching .raw case with ${files.map((f) => f.name).join(' and ')}.`;
-			return;
-		}
-		if (files.length > 1) {
-			this.app.error = `Drop one .dyr file at a time (${files.length} were dropped).`;
-			return;
-		}
-		const file = files[0];
-		const previous = this.dynamics.attachments[target.id];
-		if (
-			previous &&
-			typeof confirm === 'function' &&
-			!confirm(`Replace ${previous.fileName} with ${file.name} for ${target.label}?`)
-		)
-			return;
-		if (this.app.activeLocal?.id !== target.id) this.activateLocal(target);
-		this.app.mode = 'dynamics';
-		await this.dynamics.attach(target, file.name, await file.text(), this.dynamics.attachingDemo);
-	};
-
-	/** Apply co-dropped geographic data before a local case becomes active and
-	 * starts solving. Without geographic data, let a coordinate-less case borrow
-	 * the first matching PowerWorld display. A failed geographic join keeps the
-	 * parsed case and returns the user-facing placement error. */
-	private prepareDroppedLocal = async (
-		local: LocalCase,
-		geoLayers: GeoLayerFile[],
-		displays: DisplayFile[]
-	): Promise<{ geoLayersConsumed: boolean; error: string | null }> => {
-		let geoLayersConsumed = false;
-		let error: string | null = null;
-		if (geoLayers.length > 0 && local.studyInputJson) {
-			try {
-				await this.applyGeoLayers(local, geoLayers);
-				geoLayersConsumed = true;
-			} catch (e) {
-				error = `${geoLayers.map((layer) => layer.name).join(' + ')}: ${errorText(e)}`;
-			}
-		}
-		if (local.studyInputJson && displays.length > 0) {
-			await this.fillFromDisplaySibling(local, displays);
-		}
-		this.placeTopologyAsDiagram(local);
-		return { geoLayersConsumed, error };
-	};
-
-	/** A case that still has no geometry gets a connectivity layout as its
-	 * diagram, so it can render and solve without a placement step. */
-	private placeTopologyAsDiagram(local: LocalCase) {
-		if (local.view || local.diagram || !local.topology) return;
-		const view = {
-			...placeSyntheticTopology(local.topology, { lon: 0, lat: 0 }),
-			coordinate_space: 'diagram' as const
-		};
-		const layer = JSON.stringify({
-			type: 'FeatureCollection',
-			powerio_geo: { space: 'diagram', kind: 'synthetic' },
-			features: [
-				...view.buses.map((b) => ({
-					type: 'Feature',
-					properties: { target: 'bus', id: String(b.id) },
-					geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
-				})),
-				...view.branches.map((b) => ({
-					type: 'Feature',
-					properties: {
-						target: 'branch',
-						branch_id: String(b.id),
-						from: String(b.from),
-						to: String(b.to)
-					},
-					geometry: { type: 'LineString', coordinates: b.path }
-				}))
-			]
-		});
-		local.diagram = {
-			view,
-			layer,
-			name: 'Network diagram',
-			warnings: ['No coordinates']
-		};
-		local.displayMode = 'diagram';
-	}
-
-	/** Retain diagram geometry separately from the electrical case's geographic data. */
-	private fillFromDisplaySibling = async (c: LocalCase, displays: DisplayFile[]) => {
-		if (!c.studyInputJson) return;
-		for (const d of displays.filter((entry) => !entry.consumed)) {
-			try {
-				const payload = await applyDisplayGeo(c.studyInputJson, d.bytes);
-				if (!payload.view) continue;
-				c.diagram = {
-					view: payload.view,
-					layer: d.preview.layer,
-					name: d.file.name,
-					warnings: [
-						`${payload.report.matched_buses} buses, ${payload.report.matched_branches} routes matched; ${payload.report.unmatched_features} unmatched objects`,
-						...payload.report.notes
-					]
-				};
-				if (!c.view) c.displayMode = 'diagram';
-				c.geoWarnings = [...(c.geoWarnings ?? []), ...c.diagram.warnings];
-				this.logPlacement(
-					c,
-					c.diagram.warnings,
-					!payload.report.unmatched_features && !payload.report.notes.length
-				);
-				d.consumed = true;
-			} catch (error) {
-				c.geoWarnings = [errorText(error)];
-				this.logPlacement(c, c.geoWarnings, false);
-			}
-		}
-	};
-
-	setCaseDisplayMode = (c: LocalCase, mode: 'geographic' | 'diagram') => {
-		if (mode === 'diagram' ? !c.diagram : !c.view) return;
-		c.displayMode = mode;
-		c.network = this.localNetwork(c);
-		this.app.requestFrame(c.id);
-	};
-
-	/** Route a dropped `.json` by its content. Recognized payloads return without
-	 * mutating case state so co-dropped sidecars can be applied first; unrouted
-	 * content returns the bytes already read for the geographic fallback. */
-	private routeJsonDrop = async (file: File): Promise<JsonDropRoute> => {
-		let bytes: Uint8Array;
-		try {
-			bytes = await readDropFileBytes(file);
-		} catch {
-			return { outcome: 'unrouted', bytes: null };
-		}
-		this.app.parsingFile = true;
-		try {
-			// A multiconductor module stays in the engine; only its handle
-			// comes back, never its IR text.
-			const result = await ingestJsonDrop(bytes, { retain: true });
-			if (result.kind === 'unknown') return { outcome: 'unrouted', bytes };
-			if (result.kind === 'ambiguous') {
-				this.app.error = `${file.name}: ambiguous format`;
-				return { outcome: 'failed' };
-			}
-			if (result.kind === 'transmission') {
-				this.app.error = null;
-				return { outcome: 'balanced', payload: result.payload };
-			}
-			if (result.kind === 'module') {
-				// A stored module carries either network family; the payload's own
-				// marker decides the route, mirroring the engine's value kind.
-				this.app.error = null;
-				const payload = result.payload;
-				if ('model' in payload) return { outcome: 'multiconductor', payload };
-				return { outcome: 'balanced', payload };
-			}
-			if (result.kind === 'distribution') {
-				this.app.error = null;
-				return { outcome: 'multiconductor', payload: result.payload };
-			}
-			throw new Error('The engine returned an unsupported result for this JSON file.');
-		} catch (e) {
-			this.openFailed(file.name, e);
-			return { outcome: 'failed' };
-		} finally {
-			this.app.parsingFile = false;
-		}
-	};
-
-	/** Parse a dropped OpenDSS `.dss` file into a multiconductor viewing case.
-	 * Returns true when a case landed; a parse failure sets the panel error. */
-	private ingestDistFile = async (file: File, format: string): Promise<boolean> => {
-		this.app.parsingFile = true;
-		try {
-			const bytes = new Uint8Array(await file.arrayBuffer());
-			this.addMultiCase(file.name, await ingestDistCaseBytes(bytes, format, { retain: true }));
-			this.app.error = null;
-			return true;
-		} catch (e) {
-			this.openFailed(file.name, e);
-			return false;
-		} finally {
-			this.app.parsingFile = false;
-		}
-	};
-
-	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
-	private addMultiCase(
-		fileName: string,
-		payload: IngestedDistCase,
-		hosted?: {
-			id: string;
-			name: string;
-			distribution?: MulticonductorCase['distribution'];
-		},
-		labelOverride?: string,
-		frame = true
-	) {
-		if (!hosted) this.hostedLoadAbort?.abort();
-
-		const {
-			graph,
-			input,
-			...summary
-		}: Pick<IngestedDistCase, 'graph' | 'input'> & MultiCaseSummary = payload;
-		const coordsKind = payload.coords_kind as MultiCoordsKind;
-		const label = labelOverride ?? caseLabel(summary.name, fileName);
-		const view =
-			coordsKind === 'geographic'
-				? buildGeographicView(graph, payload.geo_layer)
-				: buildDiagramView(graph, payload.geo_layer);
-		this.logImport(fileName, summary);
-		const c = new MulticonductorCase({
-			id: hosted?.id ?? `dist-${++this.localSeq}`,
-			label: hosted?.name ?? label,
-			hosted: !!hosted,
-			fileName,
-			summary,
-			input,
-			graph,
-			coordsKind,
-			view
-		});
-		c.distribution = hosted?.distribution;
-		c.mcOptions = {
-			...DEFAULT_MC_PF_OPTIONS,
-			...hosted?.distribution?.pf_options
-		};
-		this.app.studyView = null;
-		this.clearSelection();
-		this.app.addMulti(c);
-		if (frame && c.placed) this.app.requestFrame(c.id);
-		return c;
-	}
-
-	/** Compute terminal quantities only for the retained input and current case revision. */
-	solveMultiCase = async (
-		c: MulticonductorCase,
-		options: McPfOptions = c.mcOptions,
-		signal?: AbortSignal,
-		energizedOnly = c.mcEnergizedOnly
-	): Promise<McPfSummary> => {
-		if (signal?.aborted || this.disposed)
-			throw new DOMException('Calculation cancelled', 'AbortError');
-		if (c.solving) throw new Error('Already running');
-		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
-		const settingsError = validateMcPfOptions(options);
-		if (settingsError) throw new Error(settingsError);
-		const unavailable = c.mcPfReason;
-		if (unavailable) {
-			this.app.error = unavailable;
-			throw new Error(unavailable);
-		}
-		// The retained input keeps its energized-network selection record, and
-		// there is no engine operation to remove it, so a full-network run here
-		// would still exclude the islands while claiming otherwise.
-		if (c.mcInputSelected && !energizedOnly) throw new Error('Already energized only');
-		// Rejected requests change nothing. Accepted settings persist even if
-		// the solver then fails, so a retry runs with them.
-		if (!sameSettings(c.mcOptions, options)) {
-			const baseline = {
-				...DEFAULT_MC_PF_OPTIONS,
-				...c.distribution?.pf_options
-			} as Record<string, unknown>;
-			c.settings.options = {
-				...c.settings.options,
-				mc_ac_pf: Object.fromEntries(
-					Object.entries(options).filter(([key, value]) => !sameSettings(value, baseline[key]))
-				)
-			};
-			c.settings.revision++;
-		}
-		c.mcOptions = { ...options };
-		c.mcEnergizedOnly = energizedOnly;
-		const originalInput = c.mcInput!;
-		let input: McModuleInput = originalInput;
-		const retainedAtStart = c.mcSession;
-		const revision = c.revisionGeneration;
-		const seq = ++c.solveSeq;
-		const abort = new AbortController();
-		const cancel = () => abort.abort();
-		signal?.addEventListener('abort', cancel, { once: true });
-		c.solveAbort = abort;
-		c.solving = true;
-		this.app.error = null;
-		const started = performance.now();
-		let nextSession: Awaited<ReturnType<NonNullable<EngineTransport['createMcPfSession']>>> | null =
-			null;
-		// An input this call took from the live session; freed unless it
-		// becomes the case's input.
-		let editedInput: McModuleInput | null = null;
-		try {
-			// The edited operating point stays in the engine; it is never
-			// written out as IR text to be read back.
-			if (retainedAtStart) input = editedInput = await retainedAtStart.input();
-			if (energizedOnly) {
-				if (!this.mcTransport.prepareMcEnergizedNetwork)
-					throw new Error('Energized-network preparation is unavailable.');
-				const prepared = await this.mcTransport.prepareMcEnergizedNetwork(input);
-				const selectedInput = 'input' in prepared ? prepared.input : prepared.module_json;
-				if (editedInput !== selectedInput) releaseMcInput(editedInput);
-				input = editedInput = selectedInput;
-				if (abort.signal.aborted || seq !== c.solveSeq || revision !== c.revisionGeneration)
-					throw new DOMException('Calculation cancelled', 'AbortError');
-				c.mcExcludedIslands = prepared.excluded_islands;
-				c.mcPreparedScope = prepared.network_scope;
-			}
-			let snapshot = null;
-			let result: McPfSummary;
-			let fullResult: McPfResult | null = null;
-			let loadBranches = c.mcLoadBranches;
-			if (this.mcTransport.createMcPfSession) {
-				// The session answers with its summary; terminal and equipment
-				// detail is fetched only when a view asks for it.
-				nextSession = await this.mcTransport.createMcPfSession(input, options, abort.signal);
-				result = nextSession.initialSummary;
-				loadBranches = await nextSession.loadBranches();
-			} else {
-				const text = typeof input === 'string' ? input : await input.moduleJson();
-				snapshot = this.mcTransport.solveMcStudy
-					? await this.mcTransport.solveMcStudy(
-							text,
-							crypto.randomUUID(),
-							c.label,
-							options,
-							abort.signal
-						)
-					: null;
-				fullResult =
-					snapshot?.result ?? (await this.mcTransport.solveMcModule(text, options, abort.signal));
-				result = summarizeMcPfResult(fullResult);
-			}
-			// dispose() aborts too; a session that arrives after it is freed below.
-			if (abort.signal.aborted || this.disposed)
-				throw new DOMException('Calculation cancelled', 'AbortError');
-			if (
-				seq !== c.solveSeq ||
-				(retainedAtStart ? retainedAtStart !== c.mcSession : originalInput !== c.mcInput) ||
-				revision !== c.revisionGeneration ||
-				!this.app.multiCases.includes(c)
-			)
-				throw new Error('Case changed during the calculation');
-			if (!result.converged) throw new Error('AC power flow did not converge.');
-			// A load edit staged against the previous session has nothing to
-			// apply to the fresh operating point; drop its pending flush.
-			if (c.mcEditTimer !== null) {
-				clearTimeout(c.mcEditTimer);
-				c.mcEditTimer = null;
-			}
-			c.mcSession?.free();
-			c.mcSession = nextSession;
-			nextSession = null;
-			c.mcLoadBranches = loadBranches;
-			c.mcLoadEdits = [];
-			if (c.mcInput !== input) releaseMcInput(c.mcInput);
-			c.mcInput = input;
-			editedInput = null;
-			c.result = result;
-			c.mcFullResult = fullResult;
-			c.mcTiming = null;
-			c.mcSnapshot = snapshot;
-			c.mcSavedAt = null;
-			c.solveMs = performance.now() - started;
-			c.revisionGeneration++;
-			c.mcCompletedSolveSeq = seq;
-			if (energizedOnly) c.mcInputSelected = true;
-			return result;
-		} catch (error) {
-			nextSession?.free();
-			releaseMcInput(editedInput);
-			if (
-				!abort.signal.aborted &&
-				!(error instanceof DOMException && error.name === 'AbortError')
-			) {
-				this.failed(errorTitle(error, 'Power flow failed'), 'Solve', error, {
-					retry: () => void this.solveMultiCase(c, options).catch(() => {})
-				});
-			}
-			throw error;
-		} finally {
-			signal?.removeEventListener('abort', cancel);
-			if (c.solveSeq === seq) {
-				c.solving = false;
-				c.solveAbort = null;
-			}
-		}
-	};
-
-	/** Open saved distribution results without moving the camera or duplicating the case. */
-	restoreMultiSnapshot = async (snapshot: McStudySnapshot): Promise<MulticonductorCase> => {
-		const existing = this.app.multiCases.find((c) => c.mcSnapshot?.id === snapshot.id);
-		if (existing) {
-			this.hostedLoadAbort?.abort();
-			this.app.studyView = null;
-			this.app.activeCaseId = this.app.activeLocalId = null;
-			this.app.activeMultiId = existing.id;
-			return existing;
-		}
-		const payload = await (this.mcTransport.ingestDistCaseBytes ?? ingestDistCaseBytes)(
-			new TextEncoder().encode(snapshot.input_module),
-			'pio',
-			{
-				retain: true
-			}
-		);
-		const c = this.addMultiCase(
-			`${snapshot.title}.pio.json`,
-			payload,
-			undefined,
-			snapshot.title,
-			false
-		);
-		c.mcSnapshot = snapshot;
-		c.settings.baselines = { mc_ac_pf: { ...snapshot.options } };
-		c.mcOptions = { ...snapshot.options };
-		c.settings.revision++;
-		c.mcEnergizedOnly = !!snapshot.result.network_scope;
-		c.mcPreparedScope = snapshot.result.network_scope ?? null;
-		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
-		c.result = summarizeMcPfResult(snapshot.result);
-		c.mcFullResult = snapshot.result;
-		c.mcSavedAt = new Date().toISOString();
-		c.revisionGeneration++;
-		return c;
-	};
-
-	/** Materialize the current retained operating point only when a portable
-	 * snapshot is actually needed (save/export/geography). */
-	snapshotMultiCase = async (c: MulticonductorCase): Promise<McStudySnapshot> => {
-		if (c.mcSnapshot) return c.mcSnapshot;
-		const session = c.mcSession;
-		if (!session || !c.result) throw new Error('Run AC power flow before saving its result.');
-		if (c.solving) throw new Error('Wait for the calculation before saving its result.');
-		const revision = c.revisionGeneration;
-		const snapshot = await session.snapshot(crypto.randomUUID(), c.label);
-		if (
-			session !== c.mcSession ||
-			revision !== c.revisionGeneration ||
-			!this.app.multiCases.includes(c)
-		)
-			throw new Error('The case changed while preparing its result.');
-		c.mcSnapshot = snapshot;
-		return snapshot;
-	};
-
-	/** One bus's terminals and a page of equipment ports for the displayed
-	 * operating point, from the live session or the stored full result. Null
-	 * when the operating point changed before the page arrived. */
-	multiResultDetail = async (
-		c: MulticonductorCase,
-		query: McPfDetailQuery
-	): Promise<McPfDetail | null> => {
-		const summary = c.result;
-		if (!summary) return null;
-		const session = c.mcSession;
-		if (session && !c.mcFullResult) {
-			const detail = await session.detail(query);
-			return session === c.mcSession && c.result?.solve_count === detail.solve_count
-				? detail
-				: null;
-		}
-		const full = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
-		return full ? mcPfResultDetail(full, query, summary.solve_count) : null;
-	};
-
-	/** Above this many buses, reading and indexing the whole operating point takes a noticeable
-	 * fraction of a second (validation/evidence/diagram), so the overview is computed on request instead of
-	 * after every solve. */
-	static readonly AUTO_OVERVIEW_MAX_BUSES = 25_000;
-	private overviewSeq = 0;
-
-	/** Whether this case computes its overview only on request. */
-	overviewOnRequest = (c: MulticonductorCase) =>
-		(c.graph?.buses.length ?? 0) > Controller.AUTO_OVERVIEW_MAX_BUSES;
-
-	/** Read the whole operating point into `c.overviewResult` for the overview and the diagram. The
-	 * previous result stays visible until the read lands; a newer read supersedes it. */
-	readOverview = (c: MulticonductorCase) => this.startOverviewRead(c, ++this.overviewSeq);
-
-	private startOverviewRead(c: MulticonductorCase, seq: number) {
-		c.overviewLoading = true;
-		this.multiOverviewResult(c).then(
-			(full) => {
-				if (seq !== this.overviewSeq) return;
-				if (full) c.overviewResult = full;
-				c.overviewLoading = false;
+	private createDistributionSolve() {
+		const controller = this;
+		return new DistributionSolveActions(this, {
+			get disposed() {
+				return controller.disposed;
 			},
-			() => {
-				if (seq === this.overviewSeq) c.overviewLoading = false;
-			}
-		);
-	}
-
-	/** Follow the active case's solves: read its operating point once load edits settle, or clear it
-	 * for a case that computes the overview on request. Call from an effect that tracks the case's
-	 * `result` and `mcFullResult`; the returned function cancels a pending read. */
-	followOverview = (c: MulticonductorCase | null): (() => void) | undefined => {
-		const seq = ++this.overviewSeq;
-		if (!c) return;
-		if (c.result?.solve_count === undefined || this.overviewOnRequest(c)) {
-			c.overviewResult = null;
-			c.overviewLoading = false;
-			return;
-		}
-		c.overviewLoading = true;
-		const timer = setTimeout(() => this.startOverviewRead(c, seq), 300);
-		return () => {
-			clearTimeout(timer);
-			// A read still in flight is superseded by the next one, so this case is no longer loading.
-			c.overviewLoading = false;
-		};
-	};
-
-	/** The complete operating point in the form whole-network views read: the stored result, or
-	 * the live session's as columns, which hold no object per terminal or port. Null when there is
-	 * no result or it changed before the read finished. */
-	multiOverviewResult = async (
-		c: MulticonductorCase
-	): Promise<McPfResult | McPfResultTables | null> => {
-		if (!c.result) return null;
-		const stored = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
-		const session = c.mcSession;
-		if (stored || !session) return stored;
-		if (c.mcEditRunning) return null;
-		const solve = c.result.solve_count;
-		const tables = await session.resultTables();
-		return session === c.mcSession && c.result?.solve_count === solve ? tables : null;
-	};
-
-	/** The complete operating point for whole-network views: the stored result, or one read from
-	 * the live session. Null when there is no result or it changed before the read finished. */
-	multiFullResult = async (c: MulticonductorCase): Promise<McPfResult | null> => {
-		if (!c.result) return null;
-		const stored = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
-		const session = c.mcSession;
-		if (stored || !session) return stored;
-		if (c.mcEditRunning) return null;
-		const solve = c.result.solve_count;
-		const full = await session.result();
-		return session === c.mcSession && c.result?.solve_count === solve ? full : null;
-	};
-
-	/** Every terminal's identity, voltage, and injected current, as numeric
-	 * arrays of interleaved `[re, im]` values. */
-	multiTerminalTable = async (
-		c: MulticonductorCase
-	): Promise<{
-		ids: Array<[string, string]>;
-		voltages: Float64Array;
-		currents: Float64Array;
-	} | null> => {
-		if (!c.result) return null;
-		const session = c.mcSession;
-		if (session && !c.mcFullResult) {
-			// Arrays carry no solve count, and a running flush may discard its solve.
-			if (c.mcEditRunning) return null;
-			const solve = c.result.solve_count;
-			const [ids, voltages, currents] = await Promise.all([
-				session.terminalIds(),
-				session.terminalVoltages(),
-				session.terminalCurrents()
-			]);
-			return session === c.mcSession && c.result?.solve_count === solve
-				? { ids, voltages, currents }
-				: null;
-		}
-		const full = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
-		if (!full) return null;
-		const voltages = new Float64Array(2 * full.terminals.length);
-		const currents = new Float64Array(2 * full.terminals.length);
-		full.terminals.forEach((terminal, k) => {
-			voltages[2 * k] = terminal.voltage.re;
-			voltages[2 * k + 1] = terminal.voltage.im;
-			currents[2 * k] = terminal.current_into_network.re;
-			currents[2 * k + 1] = terminal.current_into_network.im;
+			get hostedLoadAbort() {
+				return controller.hostedLoadAbort;
+			},
+			get mcTransport() {
+				return controller.mcTransport;
+			},
+			failed: (...args) => this.failed(...args),
+			logImport: (...args) => this.logImport(...args)
 		});
-		return {
-			ids: full.terminals.map((terminal) => [terminal.bus, terminal.terminal]),
-			voltages,
-			currents
-		};
-	};
+	}
+	private readonly distributionSolve = this.createDistributionSolve();
+	private addMultiCase = this.distributionSolve.addMultiCase;
+	solveMultiCase = this.distributionSolve.solveMultiCase;
+	restoreMultiSnapshot = this.distributionSolve.restoreMultiSnapshot;
+	snapshotMultiCase = this.distributionSolve.snapshotMultiCase;
+
+	private readonly distributionResults = new DistributionResultsActions();
+	static readonly AUTO_OVERVIEW_MAX_BUSES = DistributionResultsActions.AUTO_OVERVIEW_MAX_BUSES;
+	multiResultDetail = this.distributionResults.multiResultDetail;
+	overviewOnRequest = this.distributionResults.overviewOnRequest;
+	readOverview = this.distributionResults.readOverview;
+	followOverview = this.distributionResults.followOverview;
+	multiOverviewResult = this.distributionResults.multiOverviewResult;
+	multiFullResult = this.distributionResults.multiFullResult;
+	multiTerminalTable = this.distributionResults.multiTerminalTable;
 
 	/** Apply coordinates atomically to the explicitly selected conductor-resolved case. */
 	applyMultiGeoLayers = async (c: MulticonductorCase, layers: GeoLayerFile[]) => {
