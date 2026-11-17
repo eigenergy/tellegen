@@ -14,7 +14,7 @@ use std::sync::Arc;
 use powerio::PioValue;
 use tellegen_synth::{ErrorPayload, Generator, Places, SynthError, SynthRequest};
 
-use crate::{ingest_value, with_module_json};
+use crate::{ingest_value, mark_generated_coords, with_module_json};
 
 thread_local! {
     /// The places table every session of this instance reads.
@@ -106,6 +106,17 @@ pub fn ingest_impl(session: &Generator) -> Result<String, String> {
     to_json(&value)
 }
 
+/// [`ingest_impl`] without `module_json`, for a caller that already holds the
+/// module text of [`module_impl`]: the same payload once it adds that text
+/// under `module_json`, without serializing the module a second time.
+pub fn ingest_view_impl(session: &Generator) -> Result<String, String> {
+    let module = session.module().map_err(|e| payload(&e))?;
+    let mut view = ingest_value(module.value(), module.diagnostics(), Vec::new(), None)
+        .map_err(|e| other("build", e))?;
+    mark_generated_coords(&mut view, &module);
+    to_json(&view)
+}
+
 /// The network as GridFM graphkit JSON, from `Electrify` on.
 pub fn export_gridfm_impl(session: &Generator) -> Result<String, String> {
     session.export_gridfm().map_err(|e| payload(&e))
@@ -183,6 +194,13 @@ mod tests {
         assert!(branches
             .iter()
             .all(|b| b["path"].as_array().unwrap().len() >= 2));
+
+        // The payload without its module text, plus that text, is the payload.
+        let mut joined: serde_json::Value =
+            serde_json::from_str(&ingest_view_impl(&session).unwrap()).unwrap();
+        assert!(joined.get("module_json").is_none());
+        joined["module_json"] = module_impl(&session).unwrap().into();
+        assert_eq!(joined, ingest);
 
         // The module reads back through the drop route as a located module.
         let module = module_impl(&session).unwrap();

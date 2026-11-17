@@ -2304,6 +2304,11 @@ export class BrowserStudy {
     this.#planningHost = planningHost;
   }
 
+  /** The formulation this Study was built for. */
+  get formulation(): Formulation {
+    return this.#formulation;
+  }
+
   async #solution(): Promise<StudySolveResponse> {
     return JSON.parse(
       expectText(
@@ -2980,6 +2985,40 @@ export class BrowserSynthSession {
         }),
       ),
     ) as IngestedCase;
+  }
+
+  /** The drop-panel payload of {@link ingest}, with a Study of the same
+   * module already building. The module text goes to the study worker first,
+   * so the Study parses it and solves its base case there while the
+   * synthetic worker prepares the rest of the payload and the page parses
+   * it. The module is serialized once and its text is not parsed on the
+   * page. `study` settles on its own; a caller that drops it must free it:
+   * `void study.then((s) => s.free(), () => {})`. */
+  async ingestWithStudy(
+    formulation: Formulation = DEFAULT_FORMULATION,
+  ): Promise<{ payload: IngestedCase; study: Promise<BrowserStudy> }> {
+    const moduleJson = await this.takeModule();
+    const study = createStudy(moduleJson, formulation);
+    // A build failure reaches whoever awaits `study`; do not also report it
+    // as unhandled while the payload is on its way.
+    study.catch(() => {});
+    try {
+      const view = JSON.parse(
+        expectText(
+          await callSynth(this.host, {
+            op: "synth_session_ingest_view",
+            session: this.handle,
+          }),
+        ),
+      ) as Omit<IngestedCase, "module_json">;
+      return { payload: { ...view, module_json: moduleJson }, study };
+    } catch (error) {
+      void study.then(
+        (built) => built.free(),
+        () => {},
+      );
+      throw error;
+    }
   }
 
   /** The network as GridFM graphkit JSON: per-unit bus, branch and
