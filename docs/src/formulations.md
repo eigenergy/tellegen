@@ -1033,3 +1033,10 @@ OPF requires phase-only DELTA maps and rejects unsupported terminal roles
 before solving. Power flow supports a broader set of two-terminal connections.
 The [formulation review and independent OpenDSS comparisons](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/mc-opf-review)
 describe these contracts and the tested cases.
+
+The numerical review is complete. [Issue #338](https://github.com/eigenergy/tellegen/issues/338)
+remains open for a canonical per-coil dispatch representation and phase-neutral
+DELTA support; those changes are not part of this patch. Saved report versions
+6, 7 and 8 are checked under their original rank rules before upgrade to
+version 9, and altered rank claims are rejected. Report versions are separate
+from package versions.

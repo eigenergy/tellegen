@@ -18,9 +18,9 @@ proof that its changes are on the deployed site.
 | General OpenDSS models, #310 | PowerIO #884 merged; #885 merged the prerequisite release source; Tellegen implementation and #417 pass local checks | Dependency publication; published-version qualification |
 | CLI preparation costs, #363 | #412 merged; profile and 180 cold-start measurements recorded | Final release |
 | Numerical backend comparison, #153 | #420 merged with all checks passed; Austin reproduction and 316,000-unknown prepared comparison recorded | PowerIO 0.12.2 recheck still refuses all three original imports before preparation |
-| MC OPF review, #338 | #416 merged with all checks passed; formulation review and OpenDSS comparisons recorded | Final release |
+| MC OPF review, #338 | #416 merged with all checks passed; formulation review and OpenDSS comparisons recorded | Issue remains open for canonical per-coil dispatch and phase-neutral DELTA support |
 | Synchronous areas and HVDC, #263 | #418 and viewer #422 merged; four-country/three-seed and browser checks pass | Final deployed checks |
-| Drawing editing and persistence, #198 | #421 merged with all CI checks passed; radial, meshed and substation browser checks and performance measurements recorded | 38 combined browser checks passed; final deployed checks remain |
+| Drawing editing and persistence, #198 | #421 merged with all CI checks passed; radial, meshed and substation browser checks and performance measurements recorded | 38 combined browser checks passed; final deployed checks remain; optional layout and presentation extensions stay on the roadmap |
 | Node-breaker diagrams, #388 | #421 merged with all CI checks passed, detailed projection and replacement of the old canvas | 38 combined browser checks passed; final deployed checks remain |
 | Shared result validation and MCP argument types | #419 merged with all CI checks passed; 173 engine and 628 frontend tests, native compatibility and Rust checks pass | Final installed-package checks |
 | Controller organization | #423 merged; public API preserved, review and combined browser checks pass | Final deployed checks |
