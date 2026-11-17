@@ -23,6 +23,8 @@
 	const ctrl = getController();
 	const panels = getPanelLayout();
 	const config = getUiConfig();
+	let preparingFixed = $state(false);
+	let fixedError = $state<string | null>(null);
 	let resultsFor = $state<string | null>(null);
 	function openResults() {
 		const panel = panels.panels.find((p) => p.id === config.distributionResultsPanel);
@@ -118,6 +120,33 @@
 			islands={mc.mcExcludedIslands}
 			preview={!mc.result}
 		/>
+		{#if s.mc_fixed_controls}
+			<p class="footnote">
+				Using written equipment settings. Automatic controls are not run; original control records
+				remain in the saved case.
+			</p>
+		{:else if s.mc_fixed_controls_available}
+			<p class="footnote">
+				Create a separate case with the written taps and capacitor settings. Automatic controls will
+				not run.
+			</p>
+			<button
+				class="reset"
+				disabled={preparingFixed}
+				onclick={async () => {
+					preparingFixed = true;
+					fixedError = null;
+					try {
+						await ctrl.useWrittenEquipmentSettings(mc);
+					} catch (error) {
+						fixedError = error instanceof Error ? error.message : String(error);
+					} finally {
+						preparingFixed = false;
+					}
+				}}>Use written equipment settings</button
+			>
+		{/if}
+		{#if fixedError}<p role="alert">{fixedError}</p>{/if}
 		<McSolveControls
 			{mc}
 			onsettings={() => (app.settingsOpen = true)}

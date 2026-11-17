@@ -141,6 +141,7 @@ export interface ControllerOptions {
 				| 'createMcPfSession'
 				| 'ingestDistCaseBytes'
 				| 'prepareMcEnergizedNetwork'
+				| 'prepareMcFixedControls'
 			>
 		>;
 }
@@ -231,6 +232,7 @@ export class Controller {
 				| 'createMcPfSession'
 				| 'ingestDistCaseBytes'
 				| 'prepareMcEnergizedNetwork'
+				| 'prepareMcFixedControls'
 			>
 		>;
 	private hostedLoadAbort: AbortController | null = null;
@@ -2171,6 +2173,7 @@ export class Controller {
 	}
 	private readonly distributionSolve = this.createDistributionSolve();
 	private addMultiCase = this.distributionSolve.addMultiCase;
+	useWrittenEquipmentSettings = this.distributionSolve.useWrittenEquipmentSettings;
 	solveMultiCase = this.distributionSolve.solveMultiCase;
 	restoreMultiSnapshot = this.distributionSolve.restoreMultiSnapshot;
 	snapshotMultiCase = this.distributionSolve.snapshotMultiCase;

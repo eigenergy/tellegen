@@ -3319,6 +3319,7 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
+  prepareMcFixedControls?(moduleJson: string): Promise<IngestedDistCase>;
   prepareMcEnergizedNetwork?(
     input: McModuleInput,
   ): Promise<McEnergizedPreparation | McRetainedEnergizedPreparation>;
@@ -3386,6 +3387,7 @@ export const browserWasmTransport: EngineTransport = {
   solveModule,
   solveMcBmopf,
   prepareMcEnergizedNetwork,
+  prepareMcFixedControls,
   solveMcModule,
   solveMcStudy,
   createMcPfSession,

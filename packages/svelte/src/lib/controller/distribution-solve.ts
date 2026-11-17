@@ -1,5 +1,6 @@
 import {
 	DEFAULT_MC_PF_OPTIONS,
+	prepareMcFixedControls,
 	ingestDistCaseBytes,
 	summarizeMcPfResult,
 	validateMcPfOptions,
@@ -49,6 +50,38 @@ export class DistributionSolveActions {
 		private host: DistributionHost,
 		private deps: DistributionDependencies
 	) {}
+	/** Create a separate case after the user explicitly chooses written settings. */
+	useWrittenEquipmentSettings = async (c: MulticonductorCase): Promise<MulticonductorCase> => {
+		if (!c.summary?.mc_fixed_controls_available || !c.mcInput)
+			throw new Error('Written equipment settings are not available for this case');
+		const source = c.mcInput;
+		const revision = c.revisionGeneration;
+		const isCurrent = () =>
+			!this.deps.disposed &&
+			this.host.app.multiCases.includes(c) &&
+			c.mcInput === source &&
+			c.revisionGeneration === revision;
+		const requireCurrent = () => {
+			if (!isCurrent()) throw new DOMException('Case preparation cancelled', 'AbortError');
+		};
+		requireCurrent();
+		const input = await (typeof source === 'string'
+			? Promise.resolve(source)
+			: source.moduleJson());
+		requireCurrent();
+		const prepare = this.deps.mcTransport.prepareMcFixedControls ?? prepareMcFixedControls;
+		const payload = await prepare(input);
+		if (!isCurrent()) {
+			releaseMcInput(payload.input);
+			throw new DOMException('Case preparation cancelled', 'AbortError');
+		}
+		if (!payload.mc_fixed_controls || !payload.mc_pf_supported) {
+			releaseMcInput(payload.input);
+			throw new Error('The prepared case does not support written equipment settings');
+		}
+		return this.addMultiCase(c.fileName, payload, undefined, `${c.label} — fixed settings`);
+	};
+
 	addMultiCase = (
 		fileName: string,
 		payload: IngestedDistCase,
