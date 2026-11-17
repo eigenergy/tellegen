@@ -21,6 +21,7 @@ export type EngineRequest =
   | { op: "collection_supported" }
   | { op: "collection_zip"; collection: number; name: string; bytes: Uint8Array }
   | { op: "collection_files"; collection: number; name: string; names: string; offsets: Uint32Array; bytes: Uint8Array }
+  | { op: "collection_nested"; collection: number; parent: number; member: string }
   | { op: "collection_ingest"; collection: number; selection: string }
   | { op: "collection_original"; collection: number }
   | { op: "collection_source"; collection: number; selection: string; scope: "selected" | "project" }
@@ -328,6 +329,8 @@ export function runRequest(
       return acquireCollection(req.collection, mod.CaseCollection.from_zip(req.name, req.bytes));
     case "collection_files":
       return acquireCollection(req.collection, mod.CaseCollection.from_files(req.name, req.names, req.offsets, req.bytes));
+    case "collection_nested":
+      return acquireCollection(req.collection, collection(req.parent).open_nested(req.member));
     case "collection_ingest":
       return collection(req.collection).ingest(req.selection);
     case "collection_original":

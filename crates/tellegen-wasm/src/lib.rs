@@ -854,7 +854,10 @@ pub async fn study_document_run(
     })
     .await
     .map_err(jserr)?;
-    serde_json::to_string(&serde_json::json!({ "bundle": bundle, "result": result })).map_err(jserr)
+    serde_json::to_string(
+        &serde_json::json!({ "bundle": bundle, "result": result.output(&bundle).map_err(jserr)? }),
+    )
+    .map_err(jserr)
 }
 
 #[cfg(feature = "sensitivity")]

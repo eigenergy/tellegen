@@ -777,3 +777,16 @@ initialization and an extra WebAssembly optimization pass were tested and left
 out because they regressed the measured workloads.
 
 See [the reproduction instructions and raw results](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/acopf-cleanup).
+
+## Multiconductor preparation costs
+
+The `mc-pf-session-bench` command accepts `--cold-repeats N` to measure fresh
+session preparation separately from repeated edits. On the synthetic
+9,950-bus feeder, three alternating rounds of 30 starts measured preparation
+medians of 154.0 → 143.9 ms, 150.8 → 139.6 ms, and 153.1 → 151.3 ms after
+removing repeated ordered-map insertions. Total call time improved in two
+rounds and regressed in one while other builds were active. These measurements
+support a small preparation improvement; they do not establish an overall
+application speedup. The electrical results and regression checks were unchanged.
+
+See the [profile, all 180 measurements and reproduction commands](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/mc-prepare).
