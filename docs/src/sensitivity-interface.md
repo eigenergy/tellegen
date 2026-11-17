@@ -59,7 +59,28 @@ Finite differences validate the analytic columns per cell:
   derivative and are not compared.
 
 See [Validation](validation.md) for how these classes are checked, and
-[Methodology](methodology.md) for how the figures are produced.
+[Methodology](validation.md#methodology) for how the figures are produced.
+
+## Balanced AC OPF
+
+Enable both `acopf` and `sensitivity` for native use. The browser's separate
+AC OPF worker includes the same derivative implementation. Its parameters are
+active/reactive bus demand, branch ratings and active/reactive generator
+bounds. Outputs include active/reactive prices, generation, branch flows at
+either end, voltage magnitudes and voltage angles. Feasibility problems do not
+have generation-cost prices.
+
+The calculation uses the accepted local solution and its multipliers, with the
+active constraints held unchanged. It checks stationarity, constraint activity
+and the unmodified KKT matrix before returning a derivative. A weakly active
+bound, dependent constraints or a nonunique solution can make a requested
+matrix unavailable. The error is part of the result contract; retrying the same
+request is not evidence of a valid derivative. This calculation does not prove
+a global AC optimum or predict changes across an active-constraint transition.
+
+Finite-difference checks cover the offered parameter/output combinations, and
+a lossless example checks price signs against DC OPF. See the
+[measurements and browser checks](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/acopf-cleanup).
 
 ## Native multiconductor OPF
 

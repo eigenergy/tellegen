@@ -1,7 +1,7 @@
 # Contributing
 
 Thanks for helping. This page is the short version of what the repository
-enforces; the [release architecture](docs/src/release-architecture.md) page
+enforces; the [release architecture](docs/src/deployment.md#release-architecture) page
 explains the machinery behind it.
 
 ## Before opening a pull request

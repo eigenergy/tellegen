@@ -23,7 +23,7 @@ voltage levels 1–1500 kV, `demand.mw` up to 10⁷, `demand.per_capita_kw` up
 to 100 and `demand.peak_factor` from 1 to 10.
 
 Generated longitudes lie in [-180, 180], and a branch route that crosses the
-seam is not split; [Routes across the antimeridian](antimeridian-routes.md)
+seam is not split; [Routes across the antimeridian](local-case-files.md#antimeridian-routes)
 says how to draw one.
 
 Each generated bus, branch, load, generator, shunt and HVDC row keeps its
@@ -295,8 +295,9 @@ count (`circuits`) and the branch's 1-based place among them
   `initialization` records which strategy converged and how many starts ran.
   Modules with AC validation enabled record that calculation setting so the
   viewer and a reopened Study use it. Explicit settings can request `flat`.
-- **HVDC.** Links are replaced by fixed transfers on a validation copy,
-  because the engine's models do not read HVDC rows.
+- **HVDC.** Validation replaces each in-service link with its fixed transfer
+  on a copy of the network. The original loads and exported link records remain
+  unchanged; converters have no reactive-power controller in this approximation.
 - **Failures.** An infeasible DC OPF is reported as infeasible with the
   engine's message; nothing is shed. Load shedding is off in the portable DC
   OPF, so unserved energy is 0 when optimal and absent otherwise. An AC
@@ -393,7 +394,7 @@ session.free();
   GeoNames and the dump's SHA-256, and the report repeats both
   (`provenance.places`). Grids built from it carry GeoNames' attribution. A
   host may load its own bare array of `{n, lo, la, p, c}` rows instead; its
-  provenance then names no source. The national demand table is compiled
+  source information then names no source. The national demand table is compiled
   into the module.
 - **Types.** Request and report types are generated from Rust under
   `@tellegen/engine/synth`.
@@ -436,14 +437,13 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
 - Requests are capped at 12,000 buses (`limits.max_bus_count`), and a
   transmission-only automatic count stops at 3,000, which the largest
   countries reach. OpenStreetMap mode keeps to the request cap by leaving
-  out its lowest voltage levels. China at
-  3000 buses takes about 1.0–1.2 s natively
-  and 1.5 s in wasm (Node, Apple M5 Pro), end to end with both validations;
-  the United States takes 1.4–1.5 s and 2.0 s, about 0.9 s of it an AC power
-  flow that does not converge over five starts. A 500-bus country takes
-  under 0.1 s. `validation/evidence/synth` records the measurements.
-- Whether the AC power flow converges inside the band depends on the seed
-  for several countries. `validation/evidence/synth` sweeps three seeds on two
+  out its lowest voltage levels. Earlier single-area measurements recorded
+  1.0–1.2 s natively and 1.5 s in wasm for China at 3,000 buses, and
+  1.4–1.5 s natively and 2.0 s in wasm for the United States, including an AC
+  calculation that failed in that older model. These measurements in
+  `validation/evidence/synth` predate the synchronous-area changes below.
+- Earlier warm-start studies found seed-dependent AC convergence for several
+  countries. `validation/evidence/synth` records three seeds on two
   outlines (Natural Earth 1:50m and the MapToGrid app's 1:110m layer):
   every run passes DC. The warm-start evaluation passes AC inside the band
   in 53 of 54 and 49 of 51 runs. The United States passes all six runs;
@@ -453,14 +453,40 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
   GOC500 references, because the Gabriel mesh is rich in triangles. Their
   highest nodal degree is also lower, since the mesh caps it at 8.
   `validation/evidence/synth` measures both against the references.
-- Continental regions span several thousand kilometres as one AC island.
-  Their planning-case angle spread stays well above 44° within the branch
-  budget, so the plan reports `planning_incomplete`. Real systems of that
-  size split into synchronous areas joined by HVDC, which the generator does
-  not model yet; very long corridors, such as across the Nullarbor or
-  between Indonesian islands, stay AC.
+- The generator now separates synchronous areas as described below.
+  Corridor planning can still report `planning_incomplete` when an area misses
+  its angle or capacity target. A converged AC check does not remove that
+  planning warning or prove that every corridor meets its rating.
 - AC validation starts from the stored planning state and falls back to a
   flat start and deterministic perturbations if necessary. Long, weakly
   coupled systems can still fail or reach another solution outside the
   voltage band. The planning dispatch can also differ from the final DC
   OPF dispatch. Convergence and voltage-band acceptance remain separate checks.
+
+
+## Synchronous areas and DC links
+
+Synthetic grids use separate AC areas for the regional divisions of the USA,
+China, Australia and Indonesia. These are documented geographic approximations,
+not surveyed operating boundaries. Other regions use the existing landmass
+and distance grouping. Co-located voltage levels remain in one area.
+
+Each area has its own reference bus and AC topology. The generator connects
+areas with synthetic HVDC links scheduled from the planning dispatch; those
+fixed active-power transfers are included in both DC and AC validation. The
+model assumes lossless converters without reactive-power control. It does not
+reproduce the countries' installed interconnector ratings or converter controls.
+
+The report lists `synchronous_areas` and `planned_hvdc_links`. Saved modules
+retain these lists in `extensions["tellegen.synchronous_areas"]`, so the viewer
+can show them after reopening. The Network panel lists each area's bus count,
+planned demand and geographic basis, followed by the planned links' direction,
+transfer and rating. **Inspect bus** selects a link endpoint; the selected bus's
+area is identified in the panel and the bus readout. These are planned transfers,
+not a new optimization of converter controls. The load values in the original
+network are unchanged by the transfer calculation.
+
+All four countries converge within 0.95–1.05 pu at seeds 1, 7 and 2026. Existing
+corridor-planning warnings are retained where the unconstrained planning
+case misses its angle or capacity target. See the
+[geographic sources, assumptions and twelve-run checks](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/synth/synchronous-areas).

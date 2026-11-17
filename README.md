@@ -66,7 +66,7 @@ tellegen-mcp
 ```
 
 See the [Python guide](docs/src/python.md) for calculations and source builds,
-and the [MCP server guide](docs/src/mcp.md) for Claude Code and Claude Desktop
+and the [MCP server guide](docs/src/python.md#mcp) for Claude Code and Claude Desktop
 setup, the tools, and the filesystem policy.
 
 ### Rust

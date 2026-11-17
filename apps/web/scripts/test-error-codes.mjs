@@ -8,7 +8,7 @@ import { TELLEGEN_ERROR_CODES } from '../../../packages/webmcp/src/error-codes.t
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 // Where tool errors are raised: the WebMCP package, the Svelte adapter and this app.
 const SOURCES = ['packages/webmcp/src', 'packages/svelte/src/lib', 'apps/web/src'];
-// `TellegenToolError('CODE', ...)`, and the `code: 'CODE'` of an error envelope.
+// `TellegenToolError('CODE', ...)`, and the `code: 'CODE'` of an error response.
 const RAISED = /(?:TellegenToolError\(\s*|\bcode:\s*)["']([A-Z][A-Z_]{2,})["']/g;
 // Not a tool error: the placeholder for an import finding without a code.
 const IGNORED = new Set(['UNCODED']);

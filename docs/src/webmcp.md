@@ -193,9 +193,9 @@ Tellegen follows the WebMCP draft of November 2026: tools register on
 unregisters them.
 
 Every tool declares an `inputSchema` and an `outputSchema`. Each response is
-JSON in one envelope, `{ "ok": true, "data": … }` or
+JSON in one object, `{ "ok": true, "data": … }` or
 `{ "ok": false, "error": { "code": …, "message": … } }`, and the output
-schema states that envelope and the fields each tool's `data` reports. The
+schema describes that object and the fields each tool's `data` reports. The
 data fields are typed but not required, because a response that exceeds the
 output budget is trimmed: a committed change whose details do not fit reports
 `completed` and `output_truncated` instead. An agent that rejects responses

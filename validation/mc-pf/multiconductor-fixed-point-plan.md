@@ -3,7 +3,7 @@
 Planning baseline: 7 September 2026. This document is the historical planning
 baseline and proposed quality gates. The current implementation and supported
 raw-input format are documented in
-[the multiconductor reference](../../docs/src/multiconductor-reference.md), with numerical
+[the multiconductor reference](../../docs/src/multiconductor-pf.md#multiconductor-reference), with numerical
 cases in [`multiconductor-qc-cases.md`](multiconductor-qc-cases.md) and reader
 loss findings in [`multiconductor-semantic-audit.md`](multiconductor-semantic-audit.md).
 The requested method is OpenDSS Normal-style current injection with one global
