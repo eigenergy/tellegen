@@ -72,8 +72,9 @@ study preserves the camera, display mode, and page address. Reopening distributi
 results again reuses the same case. **Copy view link** creates a link without changing
 the current page address.
 
-A failed save reports the problem instead of discarding history. Free storage
-or export the saved Study before retrying. Cancellation retains completed trials
+A failed save reports the problem instead of discarding history. If browser
+storage is full, free space or export the saved study before retrying.
+Cancellation retains completed trials
 and the best candidate after the running solve finishes.
 
 ## Native and agent access

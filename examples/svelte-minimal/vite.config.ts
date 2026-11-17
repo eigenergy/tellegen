@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 
@@ -6,6 +7,10 @@ export default defineConfig({
 	build: {
 		chunkSizeWarningLimit: 1200,
 		rollupOptions: {
+			input: {
+				viewer: fileURLToPath(new URL('index.html', import.meta.url)),
+				custom: fileURLToPath(new URL('custom.html', import.meta.url))
+			},
 			output: {
 				manualChunks(id) {
 					if (

@@ -116,7 +116,7 @@ test('common settings stage changes, share them with WebMCP, reject stale writes
 	const preferences = await tool(page, 'inspect_settings', { scope: 'display' });
 	expect(preferences.data.selected).toMatchObject({ theme: 'dark', busSizing: 'uniform' });
 	await page.reload();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+	await expect(page.locator('.tellegen')).toHaveAttribute('data-theme', 'dark');
 });
 
 test('an explicit run applies the calculation draft and agent edits retain its options', async ({

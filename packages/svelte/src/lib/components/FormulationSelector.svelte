@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formulationLabel } from '../format.js';
 	import { getController } from '../context.svelte.js';
 	import { FORMULATIONS, type Formulation } from '@tellegen/engine';
 
@@ -20,7 +21,10 @@
 			>
 				{#each FORMULATIONS as f (f.id)}
 					<option value={f.id} disabled={!ctrl.calculationOffered(c, f.id)}>
-						{f.label}
+						{formulationLabel(
+							f.id,
+							f.id === c.formulation ? c.solution?.objective_kind : undefined
+						)}
 					</option>
 				{/each}
 			</select>

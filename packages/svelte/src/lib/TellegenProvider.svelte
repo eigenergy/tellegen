@@ -28,6 +28,9 @@
 		orgHref,
 		orgLabel,
 		showFooter,
+		menuLinks,
+		distributionResultsPanel,
+		dynamicsExample,
 		theme,
 		cartoApiKey,
 		children
@@ -44,7 +47,11 @@
 	// configure the controller this provider owns, and the links and footer are
 	// fixed copy. `theme` and `cartoApiKey` stay live, so a host can switch them
 	// and the root attribute and the default shell's map follow.
+	let element = $state<HTMLDivElement | null>(null);
 	const config: TellegenUiConfig = {
+		get element() {
+			return element;
+		},
 		...untrack(() =>
 			resolveTellegenUiConfig({
 				apiBase,
@@ -53,7 +60,10 @@
 				docsHref,
 				orgHref,
 				orgLabel,
-				showFooter
+				showFooter,
+				menuLinks,
+				distributionResultsPanel,
+				dynamicsExample
 			})
 		),
 		get theme() {
@@ -141,21 +151,8 @@
 	// The controller's Studies and multiconductor sessions live in the engine
 	// worker; release them with the provider.
 	onDestroy(() => ctrl.dispose());
-
-	// Hosts may own the root theme themselves. Leave the attribute to a host whose
-	// template set it unless the user explicitly saved a viewer preference; otherwise
-	// write the resolved theme (the host's prop, else the operating system's).
-	$effect(() => {
-		if (theme === undefined && app.preferences.theme === null && hostRootTheme !== undefined)
-			return;
-		const root = document.documentElement;
-		const previous = root.dataset.theme;
-		root.dataset.theme = config.theme;
-		return () => {
-			if (previous === undefined) delete root.dataset.theme;
-			else root.dataset.theme = previous;
-		};
-	});
 </script>
 
-{@render children?.()}
+<div class="tellegen" data-theme={config.theme} bind:this={element}>
+	{@render children?.()}
+</div>

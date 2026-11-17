@@ -196,7 +196,7 @@ the viewer mounts; remount it to change them.
 Use a different backend base path like this:
 
 ```svelte
-<TellegenViewer apiBase="/tellegen/api" />
+<TellegenViewer apiBase="/tellegen/api" loadDefaultCases={true} />
 ```
 
 Local file handling is the default. The equivalent explicit configuration is:

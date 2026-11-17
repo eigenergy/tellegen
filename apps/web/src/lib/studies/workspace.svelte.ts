@@ -1,7 +1,6 @@
 import {
 	IndexedDbStudyStore,
 	replayMcStudy,
-	summarizeMcPfResult,
 	type McStudySnapshot,
 	StudyDocumentController,
 	type CreateStudy,
@@ -15,7 +14,6 @@ import {
 import { capacityGoal, capacityOutcome, type CapacityStudyBinding } from './capacity-compat.js';
 import { errorText, errorTitle } from '@tellegen/svelte';
 import type { CapacityPlanSpecJson, Controller } from '@tellegen/svelte';
-import { McStudyStore } from './mc-study-store.js';
 import { caseRevision } from '../webmcp/tellegen-adapter.js';
 import { trackUsage, type EventData } from '../analytics/client.js';
 
@@ -32,9 +30,9 @@ export class StudyWorkspace {
 	comparison = $state.raw<Comparison | null>(null);
 	saved = $state.raw<Array<{ id: string; title: string; revision: number }>>([]);
 	mcSaved = $state.raw<Array<{ id: string; title: string }>>([]);
-	#mcStore = new McStudyStore();
 	busy = $state(false);
 	error = $state<string | null>(null);
+	storageError = $state<string | null>(null);
 	network = $state.raw<Network | null>(null);
 	#baseNetwork: Network | null = null;
 	#controller: StudyDocumentController | null = null;
@@ -65,7 +63,8 @@ export class StudyWorkspace {
 		return this.grid.app.activeMulti?.mcSnapshot ?? null;
 	}
 	async refreshSaved() {
-		const [saved, mcSaved] = await Promise.all([this.store.list(), this.#mcStore.list()]);
+		const [saved, mcSaved] = await Promise.all([this.store.list(), this.store.listDistribution()]);
+		this.storageError = null;
 		this.saved = saved;
 		this.mcSaved = mcSaved.map(({ id, title }) => ({ id, title }));
 	}
@@ -75,10 +74,10 @@ export class StudyWorkspace {
 				const c = this.grid.app.activeMulti;
 				if (!c?.result || c.solving) throw new Error('Run power flow first');
 				const snapshot = await this.grid.snapshotMultiCase(c);
-				const stored = await this.#mcStore.get(snapshot.id);
+				const stored = await this.store.loadDistribution(snapshot.id);
 				if (stored && JSON.stringify(stored) !== JSON.stringify(snapshot))
 					throw new Error('Already saved');
-				if (!stored) await this.#mcStore.put(snapshot);
+				if (!stored) await this.store.saveDistribution(snapshot);
 				if (c.mcSnapshot === snapshot) c.mcSavedAt = new Date().toISOString();
 				await this.refreshSaved();
 				return snapshot;
@@ -88,31 +87,13 @@ export class StudyWorkspace {
 		);
 	}
 	async #showMulti(snapshot: McStudySnapshot) {
-		const previous = this.grid.app.activeMulti;
-		await this.grid.ingestFiles([
-			new File([snapshot.input_module], `${snapshot.title}.pio.json`, { type: 'application/json' })
-		]);
-		const c = this.grid.app.activeMulti;
-		if (!c || c === previous) throw new Error('Saved distribution power flow could not be opened');
-		c.mcSnapshot = snapshot;
-		c.settings.baselines = { mc_ac_pf: { ...snapshot.options } };
-		c.mcOptions = { ...snapshot.options };
-		// Ingest makes the new case visible before replay restores its options.
-		// Notify the settings panel only after the complete selection is installed.
-		c.settings.revision++;
-		c.mcEnergizedOnly = !!snapshot.result.network_scope;
-		c.mcPreparedScope = snapshot.result.network_scope ?? null;
-		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
-		c.result = summarizeMcPfResult(snapshot.result);
-		c.mcFullResult = snapshot.result;
-		c.mcSavedAt = new Date().toISOString();
-		c.revisionGeneration++;
+		await this.grid.restoreMultiSnapshot(snapshot);
 		this.comparison = null;
 	}
 	async openMulti(id: string) {
 		return this.#run(
 			async () => {
-				const stored = await this.#mcStore.get(id);
+				const stored = await this.store.loadDistribution(id);
 				if (!stored) throw new Error('Saved distribution power flow was not found');
 				await this.#showMulti(await replayMcStudy(JSON.stringify(stored)));
 			},
@@ -132,8 +113,8 @@ export class StudyWorkspace {
 		return this.#run(
 			async () => {
 				const snapshot = await replayMcStudy(text);
-				if (await this.#mcStore.get(snapshot.id)) throw new Error('Already saved');
-				await this.#mcStore.put(snapshot);
+				if (await this.store.loadDistribution(snapshot.id)) throw new Error('Already saved');
+				await this.store.saveDistribution(snapshot);
 				await this.refreshSaved();
 				await this.#showMulti(snapshot);
 			},
@@ -141,11 +122,39 @@ export class StudyWorkspace {
 			'study.import'
 		);
 	}
+	async renameSaved(id: string, title: string, distribution = false) {
+		return this.#run(async () => {
+			await this.store.rename(id, title, distribution ? 'distribution' : 'study');
+			if (!distribution && this.document?.id === id) {
+				this.#controller = await StudyDocumentController.open(id, this.store);
+				this.bundle = this.#controller.bundle;
+			}
+			for (const c of this.grid.app.multiCases)
+				if (distribution && c.mcSnapshot?.id === id) {
+					c.mcSnapshot = { ...c.mcSnapshot, title: title.trim() };
+				}
+			await this.refreshSaved();
+		});
+	}
+	async deleteSaved(id: string, distribution = false) {
+		return this.#run(async () => {
+			await this.store.delete(id, distribution ? 'distribution' : 'study');
+			if (!distribution && this.document?.id === id) {
+				this.#controller = null;
+				this.bundle = null;
+				this.comparison = null;
+				this.closeView();
+			}
+			for (const c of this.grid.app.multiCases)
+				if (distribution && c.mcSnapshot?.id === id) c.mcSavedAt = null;
+			await this.refreshSaved();
+		});
+	}
 	async initialize() {
 		try {
 			await this.refreshSaved();
 		} catch (error) {
-			this.#fail(error, 'Could not load saved studies', String(error));
+			this.storageError = errorText(error);
 		}
 	}
 	async #run<T>(
@@ -292,7 +301,7 @@ export class StudyWorkspace {
 				this.#controller = await StudyDocumentController.open(id, this.store);
 				this.#caseAnchor = null;
 				this.comparison = null;
-				await this.#publish(true);
+				await this.#publish(false);
 			},
 			undefined,
 			'study.open'
@@ -317,7 +326,7 @@ export class StudyWorkspace {
 				this.#controller = await StudyDocumentController.import(text, this.store);
 				this.#caseAnchor = null;
 				this.comparison = null;
-				await this.#publish(true);
+				await this.#publish(false);
 			},
 			undefined,
 			'study.import'
@@ -637,7 +646,6 @@ export class StudyWorkspace {
 				this.#baseNetwork.buses.map((b) => [String(b.id), b.demand_mw])
 			)
 		};
-		if (!solution?.lmp?.length && solution?.vm?.length) this.grid.app.displayMode = 'voltage';
 		if (frame) {
 			if (network.coordinate_space === 'diagram' && d.display?.diagram_camera) {
 				this.grid.app.requestDiagramCamera(d.display.case_id, {

@@ -17,7 +17,14 @@ export interface TellegenUiConfig {
 	orgHref: string;
 	orgLabel: string;
 	showFooter: boolean;
-	/** `'dark'` sets `data-theme="dark"` on the document root while the
+	menuLinks?: readonly { label: string; href: string }[];
+	/** Optional host panel for distribution results; otherwise shown in Network. */
+	distributionResultsPanel?: string | null;
+	/** Show the bundled dynamics example in the command menu. */
+	dynamicsExample?: boolean;
+	/** The provider's element; styles and measurements stay inside this host. */
+	element?: HTMLElement | null;
+	/** `'dark'` sets `data-theme="dark"` on the provider element while the
 	 * provider is mounted, which switches the `styles.css` tokens. The
 	 * provider keeps it in step with its prop. */
 	theme: 'light' | 'dark';
@@ -30,13 +37,16 @@ export interface TellegenUiConfig {
 export type TellegenUiOptions = Partial<TellegenUiConfig>;
 
 export const DEFAULT_TELLEGEN_UI_CONFIG: TellegenUiConfig = {
-	apiBase: '/api',
+	apiBase: null,
 	acOpfWasmUrl: null,
-	loadDefaultCases: true,
+	loadDefaultCases: false,
 	docsHref: 'https://eigenergy.github.io/tellegen/',
-	orgHref: 'https://github.com/eigenergy',
-	orgLabel: 'Eigenergy Group, University of Michigan',
-	showFooter: true,
+	orgHref: '',
+	orgLabel: '',
+	showFooter: false,
+	menuLinks: [],
+	distributionResultsPanel: null,
+	dynamicsExample: false,
 	theme: 'light',
 	cartoApiKey: ''
 };
@@ -44,13 +54,15 @@ export const DEFAULT_TELLEGEN_UI_CONFIG: TellegenUiConfig = {
 export function resolveTellegenUiConfig(options: TellegenUiOptions = {}): TellegenUiConfig {
 	return {
 		apiBase: options.apiBase === undefined ? DEFAULT_TELLEGEN_UI_CONFIG.apiBase : options.apiBase,
-		loadDefaultCases:
-			options.loadDefaultCases ?? DEFAULT_TELLEGEN_UI_CONFIG.loadDefaultCases,
+		loadDefaultCases: options.loadDefaultCases ?? DEFAULT_TELLEGEN_UI_CONFIG.loadDefaultCases,
 		acOpfWasmUrl: options.acOpfWasmUrl ?? DEFAULT_TELLEGEN_UI_CONFIG.acOpfWasmUrl,
 		docsHref: options.docsHref ?? DEFAULT_TELLEGEN_UI_CONFIG.docsHref,
 		orgHref: options.orgHref ?? DEFAULT_TELLEGEN_UI_CONFIG.orgHref,
 		orgLabel: options.orgLabel ?? DEFAULT_TELLEGEN_UI_CONFIG.orgLabel,
 		showFooter: options.showFooter ?? DEFAULT_TELLEGEN_UI_CONFIG.showFooter,
+		menuLinks: options.menuLinks ?? [],
+		distributionResultsPanel: options.distributionResultsPanel ?? null,
+		dynamicsExample: options.dynamicsExample ?? false,
 		theme: resolveTheme(options.theme),
 		cartoApiKey: resolveCartoApiKey(options.cartoApiKey)
 	};

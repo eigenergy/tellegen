@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
-	import { getAppState } from '../context.svelte.js';
+	import { getAppState, getUiConfig } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import PanelCard from './PanelCard.svelte';
 	import { getCommandRegistry } from '../commands.svelte.js';
@@ -11,6 +11,7 @@
 	let { showToolbar = true }: { showToolbar?: boolean } = $props();
 
 	const app = getAppState();
+	const config = getUiConfig();
 	const layout = getPanelLayout();
 	const commands = getCommandRegistry();
 	// Each registered panel, including host panels such as the Agent panel, is
@@ -221,7 +222,8 @@
 	// The main map's attribution and zoom, and the notices, sit above the strip or the
 	// open sheet.
 	$effect(() => {
-		const root = document.documentElement.style;
+		const root = config.element?.style;
+		if (!root) return;
 		if ((docked || (sheetOpen && stripShown)) && !app.zen)
 			root.setProperty(
 				'--tellegen-sheet-clear',

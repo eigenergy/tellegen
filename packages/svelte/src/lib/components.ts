@@ -45,3 +45,5 @@ export { default as DynamicsLegend } from './components/dynamics/DynamicsLegend.
 export { default as TraceChart } from './components/dynamics/TraceChart.svelte';
 export { default as EigenPlot } from './components/dynamics/EigenPlot.svelte';
 export { default as ModeSwitch } from './components/dynamics/ModeSwitch.svelte';
+
+export { default as DistributionResults } from './components/DistributionResults.svelte';

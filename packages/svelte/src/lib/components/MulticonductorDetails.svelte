@@ -1,8 +1,9 @@
 <script lang="ts">
+	import DistributionResults from './DistributionResults.svelte';
 	import McNetworkScope from './McNetworkScope.svelte';
 	import McModelQualification from './McModelQualification.svelte';
 	import McSolveControls from './McSolveControls.svelte';
-	import { getAppState, getController } from '../context.svelte.js';
+	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { quantity, rgbaCss } from '../format.js';
 	import {
 		attachmentColor,
@@ -21,15 +22,17 @@
 	const app = getAppState();
 	const ctrl = getController();
 	const panels = getPanelLayout();
+	const config = getUiConfig();
+	let resultsFor = $state<string | null>(null);
 	function openResults() {
-		const panel = panels.panels.find((p) => p.id === 'studies');
+		const panel = panels.panels.find((p) => p.id === config.distributionResultsPanel);
 		if (panel) {
 			const network = panels.panels.find((p) => p.id === 'network');
 			if (network) panels.close(network);
 			panel.setOpen(true);
 			panels.activate(panel);
 			if (panels.compact) panels.drawer = panel.id;
-		}
+		} else resultsFor = app.activeMultiId;
 	}
 
 	/** A cleared or unparsable number field is not a request for zero load;
@@ -127,8 +130,10 @@
 		/>
 		{#if mc.result}<McModelQualification model={mc.result.load_model} compact />
 			<p class="footnote">{mc.result.iterations} iterations</p>
-			<button class="reset" onclick={openResults}>View results in Studies</button>{/if}
+			<button class="reset" onclick={openResults}>View results</button>{/if}
 	{/if}
+
+	{#if resultsFor === mc.id}<DistributionResults caseState={mc} />{/if}
 
 	{#if mc.selectedBus}
 		{@const b = mc.selectedBus}

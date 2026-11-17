@@ -57,16 +57,20 @@
 							keywords: ['dynamics', 'rms', 'transient', 'stability', 'mode'],
 							run: () => (app.mode = app.mode === 'dynamics' ? 'steady' : 'dynamics')
 						},
-						{
-							id: 'dynamics:demo',
-							title: 'Open WECC 240 dynamics demo',
-							keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
-							group: 'Cases',
-							run: () =>
-								void ctrl.dynamics
-									.openDemo()
-									.catch((e) => app.reportError(e, { title: 'Could not open the demo' }))
-						}
+						...(config.dynamicsExample
+							? [
+									{
+										id: 'dynamics:demo',
+										title: 'Open WECC 240 dynamics demo',
+										keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
+										group: 'Cases' as const,
+										run: () =>
+											void ctrl.dynamics
+												.openDemo()
+												.catch((e) => app.reportError(e, { title: 'Could not open the demo' }))
+									}
+								]
+							: [])
 					] satisfies Command[])
 				: []),
 			...(app.dynamicsEnabled && ctrl.dynamics.active?.status === 'ready'
@@ -473,11 +477,9 @@
 					rel="noreferrer"
 					onclick={() => closeMenus()}>Docs</a
 				>
-				{#if config.showFooter}
-					<a role="menuitem" href="/changelog/" onclick={() => closeMenus()}>What's new</a>
-					<a role="menuitem" href="/credits/" onclick={() => closeMenus()}>Credits</a>
-					<a role="menuitem" href="/privacy/" onclick={() => closeMenus()}>Privacy</a>
-				{/if}
+				{#each config.menuLinks ?? [] as link (link.href)}
+					<a role="menuitem" href={link.href} onclick={() => closeMenus()}>{link.label}</a>
+				{/each}
 				<!-- The Credits page names the lab; a host without it lists the lab here. -->
 				{#if config.orgLabel && !config.showFooter}
 					<a
