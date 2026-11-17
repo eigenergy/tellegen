@@ -68,6 +68,7 @@ import {
 	probeAcOpfWorker,
 	solveAcOpfModule,
 	solveResponseToSolution,
+	sensitivityColumn,
 	type EngineTransport,
 	mcPfResultDetail,
 	summarizeMcPfResult,
@@ -827,8 +828,32 @@ export class Controller {
 	async browserSensitivity(
 		c: SolvableCase,
 		studyInputJson: string,
-		target: SensTarget
+		target: SensTarget,
+		signal?: AbortSignal
 	): Promise<SensitivityColumn | null> {
+		if (c.formulation === 'acopf') {
+			if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
+				throw new Error('AC OPF sensitivity needs the available solver and an unedited case');
+			const index =
+				'bus' in target
+					? c.solution?.prices.findIndex((entry) => entry.bus === target.bus)
+					: c.solution?.flows.findIndex((entry) => entry.branch === target.branch);
+			if (index === undefined || index < 0) return null;
+			const response = await solveAcOpfModule(
+				this.acOpfWasmUrl,
+				studyInputJson,
+				signal,
+				undefined,
+				[
+					{
+						operand: { Price: 'Active' },
+						parameter: 'bus' in target ? { Demand: 'Active' } : 'LineLimit',
+						indices: [index]
+					}
+				]
+			);
+			return sensitivityColumn(c.id, response.sensitivities ?? []);
+		}
 		const study = await this.getStudy(c, studyInputJson);
 		return study ? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target) : null;
 	}
@@ -1465,7 +1490,10 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = c.id;
-		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
+		if (
+			(c.formulation === 'acpf' || (c.formulation === 'acopf' && !c.solution?.prices.length)) &&
+			this.app.displayMode === 'price'
+		)
 			this.app.displayMode = 'voltage';
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' && !c.diagram ? c.id : null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
@@ -1494,7 +1522,10 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.addLocal(c);
-		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
+		if (
+			(c.formulation === 'acpf' || (c.formulation === 'acopf' && !c.solution?.prices.length)) &&
+			this.app.displayMode === 'price'
+		)
 			this.app.displayMode = 'voltage';
 		if (c.diagram) this.app.placingLocalId = null;
 		if ((options.frame ?? true) && (c.view || c.diagram || c.substations))
@@ -1941,14 +1972,14 @@ export class Controller {
 				await this.awaitFocus(caseId, target.branch, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
+			if (c.formulation === 'acpf') return;
 			try {
 				// The column from the browser Study (under the case's formulation). DC OPF
 				// may reconcile a null column via the server; AC OPF / SOCWR are browser
 				// only, so a null column there is terminal.
 				const studyInputJson = await this.ensureStudyInputJson(c);
 				if (studyInputJson) {
-					const sensitivity = await this.browserSensitivity(c, studyInputJson, target);
+					const sensitivity = await this.browserSensitivity(c, studyInputJson, target, ac.signal);
 					if (!ac.signal.aborted && sensitivity) {
 						this.acceptSensitivity(c, sensitivity, target, sensitivitySeq);
 						handled = true;
@@ -2131,11 +2162,15 @@ export class Controller {
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
 			// Dynamics mode selects a bus to pick events, not to price it.
-			if (c.formulation === 'acpf' || c.formulation === 'acopf' || this.app.mode === 'dynamics')
-				return;
-			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
-				bus: busId
-			});
+			if (c.formulation === 'acpf' || this.app.mode === 'dynamics') return;
+			const sensitivity = await this.browserSensitivity(
+				c,
+				c.studyInputJson,
+				{
+					bus: busId
+				},
+				ac.signal
+			);
 			if (!ac.signal.aborted)
 				this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
 			if (!ac.signal.aborted && !sensitivity) {
@@ -2207,10 +2242,15 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
-			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
-				branch: branchId
-			});
+			if (c.formulation === 'acpf') return;
+			const sensitivity = await this.browserSensitivity(
+				c,
+				c.studyInputJson,
+				{
+					branch: branchId
+				},
+				ac.signal
+			);
 			if (ac.signal.aborted) return;
 			if (sensitivity) {
 				this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
