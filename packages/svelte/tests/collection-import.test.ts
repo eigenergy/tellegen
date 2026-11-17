@@ -132,7 +132,7 @@ it('shows incomplete and solver-restricted imports without discarding them', asy
 		...result,
 		kind: 'multiconductor',
 		payload: {
-			mc_pf_unavailable_reason: 'Unsupported three-winding transformer'
+			mc_pf_unavailable_reason: 'Unsupported four-winding transformer'
 		}
 	} as ImportedCollectionCase);
 	const accept = vi.fn(),
@@ -147,7 +147,7 @@ it('shows incomplete and solver-restricted imports without discarding them', asy
 	await model.importSelected();
 	expect(accept).toHaveBeenCalledTimes(2);
 	expect(model.rows.map((r) => r.outcome)).toEqual(['incomplete', 'view-only']);
-	expect(model.rows[1].message).toContain('three-winding');
+	expect(model.rows[1].message).toContain('four-winding');
 	model.close();
 });
 
