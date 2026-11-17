@@ -78,6 +78,21 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		page.getByText(/Conductor voltages, currents and powers remain available/)
 	).toBeVisible();
 	await page.getByRole('button', { name: 'Close drawing editor', exact: true }).click();
+	const editorOpener = page.getByRole('button', { name: 'Edit engineering drawing', exact: true });
+	await expect(editorOpener).toBeFocused();
+	await editorOpener.click();
+	const closeEditor = page.getByRole('button', { name: 'Close drawing editor', exact: true });
+	await expect(closeEditor).toBeFocused();
+	await page.keyboard.press('Shift+Tab');
+	expect(
+		await page.evaluate(() => document.activeElement?.closest('dialog')?.getAttribute('aria-label'))
+	).toBe('Drawing editor');
+	await page.keyboard.press('Tab');
+	await expect(closeEditor).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('region', { name: 'Engineering drawing' })).toHaveCount(0);
+	await expect(editorOpener).toBeFocused();
+
 	await page.getByRole('button', { name: 'Run power flow', exact: true }).click();
 	await expect(
 		page
