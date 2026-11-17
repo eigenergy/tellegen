@@ -177,12 +177,15 @@ test('8. a link reopens the saved study with its selection and view', async ({ p
 	await expect(page.getByRole('button', { name: 'Copy view link' })).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(page).toHaveURL(/[?&]study=[^&]+.*sel=bus%3Alb|sel=bus%3Alb.*study=/);
-	await expect(page).toHaveURL(/view=schematic/);
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await page.getByRole('button', { name: 'Copy view link' }).click();
+	const link = await page.evaluate(() => navigator.clipboard.readText());
+	expect(link).toMatch(/[?&]study=[^&]+.*sel=bus%3Alb|sel=bus%3Alb.*study=/);
+	expect(link).toContain('view=schematic');
 
 	const reopened = await context.newPage();
 	await reopened.route('**/api/cases', (route) => route.fulfill({ json: [] }));
-	await reopened.goto(page.url());
+	await reopened.goto(link);
 	const restored = reopened.getByRole('region', { name: 'Operating point overview' });
 	await expect(restored.getByRole('heading', { name: 'Phases at lb' })).toBeVisible({
 		timeout: 60_000
