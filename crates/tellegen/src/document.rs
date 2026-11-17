@@ -358,6 +358,31 @@ impl StudyBundle {
         })
     }
 
+    /// A saved result with its objective kind read from that state's input.
+    /// Old saved results need no migration and their content IDs stay unchanged.
+    pub fn state_view_output(&self, state: &str) -> Result<crate::SolveOutput, String> {
+        self.state_output(state, self.state_view(state)?)
+    }
+
+    pub(crate) fn state_output(
+        &self,
+        state: &str,
+        response: crate::SolveResponse,
+    ) -> Result<crate::SolveOutput, String> {
+        let state = self
+            .document
+            .states
+            .get(state)
+            .ok_or("state is unavailable")?;
+        let input = &self
+            .artifacts
+            .get(&state.input)
+            .ok_or("state input is unavailable")?
+            .text;
+        let kind = crate::api::module_objective_kind(input, response.formulation)?;
+        Ok(crate::SolveOutput::new(response, kind))
+    }
+
     pub fn state_view(&self, state: &str) -> Result<crate::SolveResponse, String> {
         let state = self
             .document
@@ -843,6 +868,45 @@ mod tests {
             super::validate_artifact(&artifact).is_err(),
             "unknown schema"
         );
+    }
+
+    #[test]
+    fn old_saved_results_get_kind_from_input_without_rewriting_artifacts() {
+        for feasibility in [false, true] {
+            let network = crate::model::parse_matpower(crate::model::CASE3).unwrap();
+            let mut instance = powerio::DcOpfInstance::from_network(network).unwrap();
+            if feasibility {
+                instance = instance.with_objective(powerio_prob::Objective::none());
+            }
+            let input = crate::ir::serialize_module(&powerio::PioModule::new(
+                powerio::PioValue::DcOpfInstance(instance),
+            ))
+            .unwrap();
+            let study = crate::Study::new(&input, crate::Problem::DcOpf).unwrap();
+            let mut candidate =
+                crate::exploration::ExactCandidate::capture(&study, vec![], 0.0).unwrap();
+            // Represent an older saved result with no objective_kind field.
+            candidate.view = serde_json::to_string(study.solution()).unwrap();
+            let mut view: serde_json::Value = serde_json::from_str(&candidate.view).unwrap();
+            view["objective"] = serde_json::json!(0.0);
+            candidate.view = view.to_string();
+            let mut bundle = super::StudyBundle::empty("old".into(), "Saved case".into()).unwrap();
+            let state = bundle
+                .capture_state(&candidate, None, "Saved".into())
+                .unwrap();
+            let before = bundle.export().unwrap();
+            let reopened = super::StudyBundle::import(&before).unwrap();
+            let output = reopened.state_view_output(&state).unwrap();
+            assert_eq!(
+                output.objective_kind,
+                Some(if feasibility {
+                    crate::ObjectiveKind::Feasibility
+                } else {
+                    crate::ObjectiveKind::Cost
+                })
+            );
+            assert_eq!(reopened.export().unwrap(), before);
+        }
     }
 
     #[test]

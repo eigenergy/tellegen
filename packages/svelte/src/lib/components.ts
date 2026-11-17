@@ -47,3 +47,5 @@ export { default as EigenPlot } from './components/dynamics/EigenPlot.svelte';
 export { default as ModeSwitch } from './components/dynamics/ModeSwitch.svelte';
 
 export { default as DistributionResults } from './components/DistributionResults.svelte';
+
+export { default as EngineeringDrawing } from './components/EngineeringDrawing.svelte';

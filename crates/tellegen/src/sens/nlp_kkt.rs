@@ -502,6 +502,37 @@ fn qualify_inverse(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "opt-in sparse KKT setup and retained-query timing"]
+    fn sparse_kkt_setup_measurement() {
+        for n in [2200, 6000] {
+            let primal = n / 2;
+            let mut entries = Vec::new();
+            // Strictly convex chain objective with one independent affine
+            // constraint per primal variable: a nonsingular saddle-point KKT.
+            for i in 0..primal {
+                entries.extend([(i, i, 4.0), (i, primal + i, 1.0), (primal + i, i, 1.0)]);
+                if i + 1 < primal {
+                    entries.extend([(i, i + 1, -1.0), (i + 1, i, -1.0)]);
+                }
+            }
+            let nonzeros = entries.len();
+            let start = std::time::Instant::now();
+            let factor = KktFactor::new(n, entries).unwrap();
+            let setup = start.elapsed().as_secs_f64();
+            let mut rhs = vec![0.0; n];
+            rhs[primal] = 1.0;
+            let start = std::time::Instant::now();
+            for _ in 0..100 {
+                factor.solve_with_diagnostics(&rhs).unwrap();
+            }
+            let query = start.elapsed().as_secs_f64() / 100.0;
+            println!(
+                "KKT_MEASUREMENT {}",
+                serde_json::json!({"dimension":n,"nonzeros":nonzeros,"setup_seconds":setup,"selected_query_seconds":query})
+            );
+        }
+    }
     type Entries = Vec<(usize, usize, f64)>;
 
     fn saddle(n: usize, shift: f64, reordered: bool) -> (Entries, Vec<f64>, Vec<f64>) {

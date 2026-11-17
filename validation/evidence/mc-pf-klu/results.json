@@ -1,0 +1,386 @@
+{
+  "opendss_version": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+  "klu_library_sha256": "e6a7ce395e493d5199f84c35ff70533d2f0e72f0948680a284aa88f1ff9745e0",
+  "cases": [
+    {
+      "name": "tellegen-reduced-100",
+      "dimension": 200,
+      "nonzeros": 1184,
+      "matrix_rhs_sha256": "a75689f17358b3459d4e195bbbaf676e21a42f4c2bf9e3f68c76fea0a5bef178",
+      "faer": {
+        "factor_seconds": 8e-05,
+        "high_precision_correction_sizes": [
+          1.0125279126954864e-12,
+          1.2806449738535808e-14,
+          1.2806449738535808e-14,
+          1.2806449738535808e-14,
+          1.2806449738535808e-14,
+          1.2806449738535808e-14,
+          1.2806449738535808e-14,
+          1.2806449738535808e-14
+        ],
+        "retained_heap_bytes": 75936,
+        "warm_solve_seconds": 2.2562499999999998e-06
+      },
+      "klu": {
+        "factor_seconds": 8.108397014439106e-05,
+        "warm_solve_seconds": 1.9562430679798126e-06,
+        "GetCondEst": 1237.3484558059188,
+        "GetRCond": 0.06432105937634282,
+        "GetSparseNNZ": 1184
+      },
+      "klu_orderings": {
+        "amd": {
+          "factor_seconds": 8.599995635449886e-05,
+          "warm_solve_seconds": 1.6500009223818779e-06,
+          "retained_heap_bytes": 49604.0,
+          "peak_heap_bytes": 56676.0,
+          "factor_nonzeros": 1384.0,
+          "condition_estimate": 1237.3484558059188,
+          "reciprocal_pivot_ratio": 0.06432105937634282,
+          "difference_from_reference_v": 0.0,
+          "backward_residual": 2.084703401515868e-16
+        },
+        "colamd": {
+          "factor_seconds": 7.30000901967287e-05,
+          "warm_solve_seconds": 2.1999934688210487e-06,
+          "retained_heap_bytes": 59364.0,
+          "peak_heap_bytes": 347588.0,
+          "factor_nonzeros": 1872.0,
+          "condition_estimate": 1237.3484558059279,
+          "reciprocal_pivot_ratio": 0.16079710691721283,
+          "difference_from_reference_v": 4.817392450159473e-13,
+          "backward_residual": 2.2101748926584739e-16
+        }
+      },
+      "max_voltage_difference_v": 5.067308286217107e-12,
+      "worst_terminal": [
+        "b83",
+        "1"
+      ],
+      "worst_reference_voltage_v": [
+        229.95514920619772,
+        -0.007297817405874961
+      ],
+      "difference_by_terminal_v": {
+        "phase": 5.067308286217107e-12,
+        "neutral": 2.393493790058591e-12
+      },
+      "high_precision_refined_difference_v": 4.469885902146783e-12,
+      "faer_refined_difference_v": 5.445341516017452e-12,
+      "scaled_faer_difference_v": 4.410970001657941e-12,
+      "reverse_input_order_difference_v": 5.982320344034199e-12,
+      "scaled_klu_difference_v": 1.4205031193101071e-12,
+      "row_scaled_backward_residual": {
+        "faer": 2.295273760926783e-16,
+        "klu": 2.084703401515868e-16,
+        "faer_refined": 2.435740701780337e-16,
+        "faer_scaled": 2.861564679205422e-16
+      }
+    },
+    {
+      "name": "tellegen-reduced-1000",
+      "dimension": 2000,
+      "nonzeros": 11984,
+      "matrix_rhs_sha256": "0b315180ad7cd14bd7972b857c93ff4abed8b8e7b28e5f23c5cbbe698f8fb445",
+      "faer": {
+        "factor_seconds": 0.000678042,
+        "high_precision_correction_sizes": [
+          5.362517463437136e-12,
+          1.3320951551580791e-14,
+          1.3320951551580791e-14,
+          1.3320951551580791e-14,
+          1.3320951551580791e-14,
+          1.3320951551580791e-14,
+          1.3320951551580791e-14,
+          1.3320951551580791e-14
+        ],
+        "retained_heap_bytes": 622752,
+        "warm_solve_seconds": 2.5885399999999998e-05
+      },
+      "klu": {
+        "factor_seconds": 0.00042066583409905434,
+        "warm_solve_seconds": 1.9566644914448263e-05,
+        "GetCondEst": 10442.633039099845,
+        "GetRCond": 0.04022140393451378,
+        "GetSparseNNZ": 11984
+      },
+      "klu_orderings": {
+        "amd": {
+          "factor_seconds": 0.0003349999897181988,
+          "warm_solve_seconds": 2.1899992134422064e-05,
+          "retained_heap_bytes": 496004.0,
+          "peak_heap_bytes": 589828.0,
+          "factor_nonzeros": 13984.0,
+          "condition_estimate": 10442.633039099845,
+          "reciprocal_pivot_ratio": 0.04022140393451378,
+          "difference_from_reference_v": 0.0,
+          "backward_residual": 1.9212776245165166e-16
+        },
+        "colamd": {
+          "factor_seconds": 0.0004290000069886446,
+          "warm_solve_seconds": 2.579999854788184e-05,
+          "retained_heap_bytes": 589604.0,
+          "peak_heap_bytes": 3542020.0,
+          "factor_nonzeros": 18664.0,
+          "condition_estimate": 10442.633039099735,
+          "reciprocal_pivot_ratio": 0.046395282762177616,
+          "difference_from_reference_v": 2.5972924947112107e-12,
+          "backward_residual": 3.484263379251442e-16
+        }
+      },
+      "max_voltage_difference_v": 4.232977698497451e-11,
+      "worst_terminal": [
+        "b623",
+        "1"
+      ],
+      "worst_reference_voltage_v": [
+        229.6225814435903,
+        -0.06119021798694447
+      ],
+      "difference_by_terminal_v": {
+        "phase": 4.232977698497451e-11,
+        "neutral": 2.1099757594660413e-11
+      },
+      "high_precision_refined_difference_v": 3.841108842260841e-11,
+      "faer_refined_difference_v": 4.142044800855664e-11,
+      "scaled_faer_difference_v": 3.9423834475683745e-11,
+      "reverse_input_order_difference_v": 4.579501440919839e-11,
+      "scaled_klu_difference_v": 1.279701142778412e-11,
+      "row_scaled_backward_residual": {
+        "faer": 3.0848206519255657e-16,
+        "klu": 1.9212776245165166e-16,
+        "faer_refined": 2.4800167943790646e-16,
+        "faer_scaled": 2.8181231069185913e-16
+      }
+    },
+    {
+      "name": "tellegen-reduced-10000",
+      "dimension": 20000,
+      "nonzeros": 119984,
+      "matrix_rhs_sha256": "403611f621752e3b1a920fd4de9f8649eff1c739ed3db67c9a1aabf240bc7186",
+      "faer": {
+        "factor_seconds": 0.006530208,
+        "high_precision_correction_sizes": [
+          6.493089371455071e-11,
+          1.4162751473617525e-14,
+          1.4162751473617525e-14,
+          1.4162751473617525e-14,
+          1.4162751473617525e-14,
+          1.4162751473617525e-14,
+          1.4162751473617525e-14,
+          1.4162751473617525e-14
+        ],
+        "retained_heap_bytes": 10944672,
+        "warm_solve_seconds": 0.00026031664999999997
+      },
+      "klu": {
+        "factor_seconds": 0.003530625021085143,
+        "warm_solve_seconds": 0.00019580830121412873,
+        "GetCondEst": 142249.91169944036,
+        "GetRCond": 0.029341520805054706,
+        "GetSparseNNZ": 119984
+      },
+      "klu_orderings": {
+        "amd": {
+          "factor_seconds": 0.0031950001139193773,
+          "warm_solve_seconds": 0.00022255000658333302,
+          "retained_heap_bytes": 4960004.0,
+          "peak_heap_bytes": 5746212.0,
+          "factor_nonzeros": 139984.0,
+          "condition_estimate": 142249.91169944036,
+          "reciprocal_pivot_ratio": 0.029341520805054706,
+          "difference_from_reference_v": 0.0,
+          "backward_residual": 2.265462496919621e-16
+        },
+        "colamd": {
+          "factor_seconds": 0.00392200006172061,
+          "warm_solve_seconds": 0.00022009999956935645,
+          "retained_heap_bytes": 5887364.0,
+          "peak_heap_bytes": 38082340.0,
+          "factor_nonzeros": 186352.0,
+          "condition_estimate": 142249.9116994385,
+          "reciprocal_pivot_ratio": 0.03179013361209003,
+          "difference_from_reference_v": 1.5352487002787616e-11,
+          "backward_residual": 4.767267289906394e-16
+        }
+      },
+      "max_voltage_difference_v": 5.327542529891165e-10,
+      "worst_terminal": [
+        "b8315",
+        "1"
+      ],
+      "worst_reference_voltage_v": [
+        225.0554913842976,
+        -0.7639594777718672
+      ],
+      "difference_by_terminal_v": {
+        "phase": 5.327542529891165e-10,
+        "neutral": 2.73035151791159e-10
+      },
+      "high_precision_refined_difference_v": 5.088600802015721e-10,
+      "faer_refined_difference_v": 5.027438338488019e-10,
+      "scaled_faer_difference_v": 5.282109461591667e-10,
+      "reverse_input_order_difference_v": 5.730708610604527e-10,
+      "scaled_klu_difference_v": 1.5775804458128426e-10,
+      "row_scaled_backward_residual": {
+        "faer": 3.133698983891389e-16,
+        "klu": 2.265462496919621e-16,
+        "faer_refined": 2.5927237293871295e-16,
+        "faer_scaled": 3.048971709321771e-16
+      }
+    },
+    {
+      "name": "opendss-raw-100",
+      "dimension": 201,
+      "nonzeros": 1193,
+      "matrix_rhs_sha256": "b567fdc0adf701791b40f35f18cd295ea2700d0d7ec5d639a2bc543d84f69cda",
+      "faer": {
+        "factor_seconds": 0.000128,
+        "high_precision_correction_sizes": [
+          2.4174521083530592e-12,
+          1.3500110431943051e-14,
+          1.3500110431943051e-14,
+          1.3500110431943051e-14,
+          1.3500110431943051e-14,
+          1.3500110431943051e-14,
+          1.3500110431943051e-14,
+          1.3500110431943051e-14
+        ],
+        "retained_heap_bytes": 75936,
+        "warm_solve_seconds": 3.9708e-06
+      },
+      "klu": {
+        "factor_seconds": 7.52920750528574e-05,
+        "warm_solve_seconds": 2.9937480576336382e-06,
+        "GetCondEst": 13663.697292633005,
+        "GetRCond": 0.06432105937634205,
+        "GetSparseNNZ": 1213
+      },
+      "klu_orderings": {
+        "amd": {
+          "factor_seconds": 6.3000014051795e-05,
+          "warm_solve_seconds": 1.6500009223818779e-06,
+          "retained_heap_bytes": 50252.0,
+          "peak_heap_bytes": 69628.0,
+          "factor_nonzeros": 1414.0,
+          "condition_estimate": 13663.697292633005,
+          "reciprocal_pivot_ratio": 0.06432105937634205,
+          "difference_from_reference_v": 0.0,
+          "backward_residual": 1.8269692957969294e-16
+        },
+        "colamd": {
+          "factor_seconds": 8.900021202862263e-05,
+          "warm_solve_seconds": 2.4000066332519056e-06,
+          "retained_heap_bytes": 59980.0,
+          "peak_heap_bytes": 512892.0,
+          "factor_nonzeros": 1898.0,
+          "condition_estimate": 13663.697292633044,
+          "reciprocal_pivot_ratio": 0.07146568242588573,
+          "difference_from_reference_v": 1.6299166168423495e-12,
+          "backward_residual": 1.8409447767252105e-16
+        }
+      },
+      "max_voltage_difference_v": 2.2042467617540335e-12,
+      "worst_terminal": [
+        "B32",
+        "1"
+      ],
+      "worst_reference_voltage_v": [
+        229.95496255374204,
+        -0.00759102956867997
+      ],
+      "difference_by_terminal_v": {
+        "phase": 2.2042467617540335e-12,
+        "neutral": 2.2221910713535064e-13
+      },
+      "high_precision_refined_difference_v": 5.060263121993468e-13,
+      "faer_refined_difference_v": 2.146265749539216e-12,
+      "scaled_faer_difference_v": 2.875258598388387e-12,
+      "reverse_input_order_difference_v": 2.179721490077821e-12,
+      "scaled_klu_difference_v": 1.3466554468176203e-12,
+      "row_scaled_backward_residual": {
+        "faer": 2.633941368520467e-16,
+        "klu": 1.8269692957969294e-16,
+        "faer_refined": 2.6083088273734796e-16,
+        "faer_scaled": 2.2021176305287404e-16
+      }
+    },
+    {
+      "name": "opendss-raw-1000",
+      "dimension": 2001,
+      "nonzeros": 11993,
+      "matrix_rhs_sha256": "7b7243d5556028dda63a9a33060f223443794645a88c1957c97238ee9b5a8890",
+      "faer": {
+        "factor_seconds": 0.000714292,
+        "high_precision_correction_sizes": [
+          1.779921348372752e-11,
+          1.4207391728111563e-14,
+          1.4207391728111563e-14,
+          1.4207391728111563e-14,
+          1.4207391728111563e-14,
+          1.4207391728111563e-14,
+          1.4207391728111563e-14,
+          1.4207391728111563e-14
+        ],
+        "retained_heap_bytes": 622752,
+        "warm_solve_seconds": 2.19771e-05
+      },
+      "klu": {
+        "factor_seconds": 0.0003118750173598528,
+        "warm_solve_seconds": 2.0135450176894666e-05,
+        "GetCondEst": 115316.98318441793,
+        "GetRCond": 0.040221403934510125,
+        "GetSparseNNZ": 12037
+      },
+      "klu_orderings": {
+        "amd": {
+          "factor_seconds": 0.00032899994403123856,
+          "warm_solve_seconds": 1.8750003073364495e-05,
+          "retained_heap_bytes": 497100.0,
+          "peak_heap_bytes": 689372.0,
+          "factor_nonzeros": 14038.0,
+          "condition_estimate": 115316.98318441793,
+          "reciprocal_pivot_ratio": 0.040221403934510125,
+          "difference_from_reference_v": 0.0,
+          "backward_residual": 2.6531697244154096e-16
+        },
+        "colamd": {
+          "factor_seconds": 0.00047500012442469597,
+          "warm_solve_seconds": 2.074999501928687e-05,
+          "retained_heap_bytes": 589372.0,
+          "peak_heap_bytes": 5149692.0,
+          "factor_nonzeros": 18646.0,
+          "condition_estimate": 115316.98318441848,
+          "reciprocal_pivot_ratio": 0.04639528274696527,
+          "difference_from_reference_v": 1.373933998747924e-11,
+          "backward_residual": 2.7829297037644944e-16
+        }
+      },
+      "max_voltage_difference_v": 1.6082992901790155e-11,
+      "worst_terminal": [
+        "B517",
+        "1"
+      ],
+      "worst_reference_voltage_v": [
+        229.61452691882988,
+        -0.06512645499626885
+      ],
+      "difference_by_terminal_v": {
+        "phase": 1.6082992901790155e-11,
+        "neutral": 2.1106572993448446e-12
+      },
+      "high_precision_refined_difference_v": 4.257191066943396e-12,
+      "faer_refined_difference_v": 1.6956721009600713e-11,
+      "scaled_faer_difference_v": 2.4302168148397382e-11,
+      "reverse_input_order_difference_v": 1.7351464922830065e-11,
+      "scaled_klu_difference_v": 1.1659966385634013e-11,
+      "row_scaled_backward_residual": {
+        "faer": 3.189946680921144e-16,
+        "klu": 2.6531697244154096e-16,
+        "faer_refined": 2.663695415244233e-16,
+        "faer_scaled": 2.954031798767113e-16
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "source": "SMART-DS/v1.0/peak/AUS/P3U/scenarios/base_peak/opendss/Master.dss",
+  "powerio_version": "0.12.1",
+  "result": "refused before matrix preparation",
+  "diagnostics": [
+    {
+      "line": 483,
+      "message": "redirect p3uhs9_1247/Lines.dss refused: include budget of 4096 files and 64 MiB exceeded; remaining includes not followed"
+    },
+    {
+      "line": 572,
+      "message": "line calculation history exceeds the supported work budget"
+    }
+  ],
+  "interpretation": "No Tellegen regional reduced matrix was produced. The separately recorded source-elimination experiment uses the exported OpenDSS matrix; it is not a Tellegen preparation result."
+}
