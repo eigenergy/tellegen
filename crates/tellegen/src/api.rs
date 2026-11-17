@@ -605,6 +605,29 @@ impl ObjectiveKind {
     }
 }
 
+/// Read the objective declaration without solving or guessing from its value.
+pub(crate) fn module_objective_kind(
+    module_json: &str,
+    formulation: Problem,
+) -> Result<Option<ObjectiveKind>, String> {
+    if !matches!(
+        formulation,
+        Problem::DcOpf | Problem::Socwr | Problem::Acopf
+    ) {
+        return Ok(None);
+    }
+    let module = crate::ir::deserialize_module(module_json)?;
+    Ok(match module.into_value() {
+        powerio::PioValue::BalancedNetwork(network) => {
+            let instance = DcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+            ObjectiveKind::declared(instance.objective())
+        }
+        powerio::PioValue::DcOpfInstance(instance) => ObjectiveKind::declared(instance.objective()),
+        powerio::PioValue::AcOpfInstance(instance) => ObjectiveKind::declared(instance.objective()),
+        _ => None,
+    })
+}
+
 /// A solve result as the JSON entry points and adapters emit it: every
 /// [`SolveResponse`] field at the top level, plus facts about the solved
 /// problem that the response does not hold.
