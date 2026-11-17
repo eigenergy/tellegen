@@ -44,6 +44,30 @@ import { failureTime } from './verdict.js';
 
 export type DynStatus = 'opening' | 'ready' | 'failed';
 
+/** One model of the hosted model library (examples/models/index.json,
+ * written at deploy time from a library config). */
+export interface LibraryModel {
+	id: string;
+	/** The library (group) it belongs to. */
+	library: string;
+	title: string;
+	/** Short facts shown beside the title, e.g. "10 buses". */
+	info?: string | null;
+	/** A short label shown with the title, such as a restriction of use. */
+	tag?: string | null;
+	licence?: string | null;
+	/** Files relative to examples/models/: case files, dynamic data (.dyr),
+	 * coordinates (.geo.csv, .geojson) and controller graphs (.models.json). */
+	files: { path: string; kind: 'case' | 'dyr' | 'geo' | 'models' }[];
+	/** It carries dynamic data: it opens in Dynamics, else in steady state. */
+	dynamics: boolean;
+}
+export interface ModelLibrary {
+	title: string;
+	libraries: { id: string; title: string; tag?: string | null; note?: string | null }[];
+	cases: LibraryModel[];
+}
+
 /** The dynamic data attached to one local case. */
 export interface DynAttachment {
 	localId: string;
@@ -217,7 +241,7 @@ export class DynamicsController {
 		text: string,
 		demo = false,
 		synthetic = false,
-		models: ModelOverride[] = []
+		models: ModelOverride[] = this.#exampleModels ?? []
 	): Promise<void> {
 		if (!local.studyInputJson) throw new Error(`${local.label} has no network to simulate`);
 		this.#free(local.id);
@@ -446,6 +470,81 @@ export class DynamicsController {
 	#demoNext = false;
 	get attachingDemo(): boolean {
 		return this.#demoNext;
+	}
+
+	// ---- hosted model library ----
+
+	/** The hosted model library; null until loaded, empty when none is hosted. */
+	examples: ModelLibrary | null = $state.raw(null);
+	#examplesLoad: Promise<ModelLibrary> | null = null;
+	#exampleLabel: string | null = null;
+	#exampleModels: ModelOverride[] | null = null;
+
+	/** Load examples/models/index.json once; an absent library is empty. */
+	loadExamples(): Promise<ModelLibrary> {
+		const empty = (): ModelLibrary => ({ title: 'Model library', libraries: [], cases: [] });
+		this.#examplesLoad ??= fetch(`${this.examplesBase}/models/index.json`)
+			.then(async (r) => {
+				const json = (r.headers.get('content-type') ?? '').includes('json');
+				const c = r.ok && json ? ((await r.json()) as ModelLibrary) : empty();
+				const lib: ModelLibrary = {
+					title: c.title || 'Model library',
+					libraries: Array.isArray(c.libraries) ? c.libraries : [],
+					cases: Array.isArray(c.cases) ? c.cases.filter((m) => Array.isArray(m.files)) : []
+				};
+				this.examples = lib;
+				return lib;
+			})
+			.catch(() => {
+				const lib = empty();
+				this.examples = lib;
+				return lib;
+			});
+		return this.#examplesLoad;
+	}
+
+	/** How a library model is named: its title and tag. */
+	exampleName(m: LibraryModel): string {
+		return m.tag ? `${m.title} (${m.tag})` : m.title;
+	}
+
+	/** The label the next ingested case takes when a demo or library model opens it. */
+	get exampleLabel(): string | null {
+		return this.#demoNext ? DEMO_LABEL : this.#exampleLabel;
+	}
+
+	/** Open a library model: its case files, and with them its dynamic data,
+	 * coordinates and controller graphs. A model with dynamic data opens in
+	 * Dynamics, any other in steady state. */
+	async openExample(id: string): Promise<void> {
+		const library = await this.loadExamples();
+		const m = library.cases.find((c) => c.id === id);
+		if (!m) throw new Error(`no hosted model ${id}`);
+		if (!m.files.some((f) => f.kind === 'case')) throw new Error(`${m.title} has no case file`);
+		const base = `${this.examplesBase}/models`;
+		const get = async (path: string): Promise<Blob> => {
+			const r = await fetch(`${base}/${path.split('/').map(encodeURIComponent).join('/')}`);
+			if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+			return r.blob();
+		};
+		const files: File[] = [];
+		let models: ModelOverride[] = [];
+		for (const f of m.files) {
+			const blob = await get(f.path);
+			if (f.kind === 'models') {
+				const doc = JSON.parse(await blob.text());
+				models = Array.isArray(doc) ? doc : (doc.models ?? []);
+			} else files.push(new File([blob], f.path.split('/').pop()!));
+		}
+		this.app.mode = m.dynamics ? 'dynamics' : 'steady';
+		this.#exampleLabel = this.exampleName(m);
+		this.#exampleModels = models.length ? models : null;
+		try {
+			await this.ingest(files);
+		} finally {
+			this.#exampleLabel = null;
+			this.#exampleModels = null;
+		}
 	}
 
 	// ---- events ----

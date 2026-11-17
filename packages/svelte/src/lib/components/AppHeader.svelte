@@ -16,7 +16,17 @@
 	);
 	onMount(() => {
 		void ctrl.probeCollections();
+		void ctrl.dynamics.loadExamples();
 	});
+	const library = $derived(ctrl.dynamics.examples);
+	const libraryCases = $derived(
+		(library?.cases ?? []).filter((c) => !c.dynamics || app.dynamicsEnabled)
+	);
+	/** The command palette, filtered to the hosted model library. */
+	function openLibrary() {
+		commands.show();
+		commands.query = 'library';
+	}
 
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 	function openFolder() {
@@ -73,6 +83,29 @@
 							: [])
 					] satisfies Command[])
 				: []),
+			// The hosted model library: a model with dynamic data only while
+			// dynamics is turned on.
+			...libraryCases.map((c): Command => {
+				const lib = library?.libraries.find((l) => l.id === c.library);
+				return {
+					id: `library:${c.id}`,
+					title: `Open ${ctrl.dynamics.exampleName(c)}`,
+					hint: [lib?.title, c.info, c.dynamics ? 'Dynamics' : 'Steady state']
+						.filter(Boolean)
+						.join(' · '),
+					keywords: [
+						'library',
+						'model',
+						c.dynamics ? 'dynamics' : 'steady',
+						...`${lib?.title ?? ''} ${c.tag ?? ''} ${c.info ?? ''}`.split(/\s+/).filter(Boolean)
+					],
+					group: 'Cases',
+					run: () =>
+						void ctrl.dynamics
+							.openExample(c.id)
+							.catch((e) => app.reportError(e, { title: 'Could not open the model' }))
+				};
+			}),
 			...(app.dynamicsEnabled && ctrl.dynamics.active?.status === 'ready'
 				? [
 						{
@@ -405,6 +438,11 @@
 				{#if ctrl.collectionsAvailable}
 					<button class="action" onclick={() => pick(openFolder)}>
 						<span>Open folder…</span>
+					</button>
+				{/if}
+				{#if libraryCases.length > 0}
+					<button class="action" onclick={() => pick(openLibrary)} data-testid="library-open">
+						<span>{library?.title ?? 'Model library'}…</span>
 					</button>
 				{/if}
 				{#if restorable}

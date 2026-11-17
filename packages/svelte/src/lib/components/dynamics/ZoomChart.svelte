@@ -32,6 +32,7 @@
 		cursor = null,
 		digits = 4,
 		showReset = true,
+		follow = null,
 		onseek
 	}: {
 		series: ZoomSeries[];
@@ -47,6 +48,9 @@
 		digits?: number;
 		/** False for a chart whose x range follows live data. */
 		showReset?: boolean;
+		/** Live data: show a fixed span of this many x units ending at the
+		 * newest point, so the axis scrolls instead of rescaling. */
+		follow?: number | null;
 		onseek?: (x: number) => void;
 	} = $props();
 
@@ -64,7 +68,9 @@
 				hi = Math.max(hi, s.x[s.x.length - 1]);
 			}
 		}
-		return Number.isFinite(lo) ? [lo, hi > lo ? hi : lo + 1] : [0, 1];
+		if (!Number.isFinite(lo)) return [0, follow && follow > 0 ? follow : 1];
+		if (follow && follow > 0) return hi - lo >= follow ? [hi - follow, hi] : [lo, lo + follow];
+		return [lo, hi > lo ? hi : lo + 1];
 	});
 	const dom = $derived(xDomain ?? fullX);
 	const u0 = $derived(tx(dom[0]));

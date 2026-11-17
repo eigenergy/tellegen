@@ -60,6 +60,7 @@
 	});
 	$effect(() => {
 		void dyn.probe();
+		void dyn.loadExamples();
 	});
 
 	// The engine's notes go to the Log, where they can be read in full; the panel counts them.
@@ -97,6 +98,34 @@
 			)
 		);
 	});
+	// The hosted model library (examples/models/index.json): here, the
+	// models that carry dynamic data, grouped by library.
+	let exampleId = $state('');
+	let exampleBusy = $state(false);
+	let exampleError = $state<string | null>(null);
+	const catalog = $derived(dyn.examples);
+	const dynModels = $derived(catalog?.cases.filter((c) => c.dynamics) ?? []);
+	const dynLibraries = $derived(
+		(catalog?.libraries ?? []).filter((l) => dynModels.some((c) => c.library === l.id))
+	);
+	const picked = $derived(dynModels.find((c) => c.id === exampleId) ?? null);
+	const pickedLibrary = $derived(
+		picked ? (catalog?.libraries.find((l) => l.id === picked.library) ?? null) : null
+	);
+	const libraryTag = (l: { title: string; tag?: string | null }) =>
+		l.tag ? `${l.title} · ${l.tag}` : l.title;
+	async function openExample() {
+		if (!exampleId) return;
+		exampleBusy = true;
+		exampleError = null;
+		try {
+			await dyn.openExample(exampleId);
+		} catch (e) {
+			exampleError = (e as Error).message;
+		} finally {
+			exampleBusy = false;
+		}
+	}
 
 	async function demo() {
 		demoBusy = true;
@@ -151,6 +180,35 @@
 	const flatOk = $derived(!!att?.flat && att.flat.max_speed_drift <= 1e-6);
 </script>
 
+{#snippet hostedPicker()}
+	{#if catalog}
+		<label
+			>Model <select bind:value={exampleId} data-testid="dyn-hosted-select">
+				<option value="">Choose…</option>
+				{#each dynLibraries as l (l.id)}
+					<optgroup label={libraryTag(l)}>
+						{#each dynModels.filter((c) => c.library === l.id) as c (c.id)}
+							<option value={c.id}
+								>{dyn.exampleName(c)}{c.info ? ` · ${c.info}` : ''}</option
+							>
+						{/each}
+					</optgroup>
+				{/each}
+			</select></label
+		>
+		{#if pickedLibrary?.note}<p class="dim">{pickedLibrary.note}</p>{/if}
+		{#if picked?.licence}<p class="dim">Licence: {picked.licence}</p>{/if}
+		<button disabled={!exampleId || exampleBusy} onclick={openExample}
+			>{exampleBusy
+				? `Opening ${picked?.title ?? ''}…`
+				: picked
+					? `Open ${dyn.exampleName(picked)}`
+					: 'Open model'}</button
+		>
+		{#if exampleError}<p class="err" role="alert">{exampleError}</p>{/if}
+	{/if}
+{/snippet}
+
 <PanelFrame
 	id="dynamics"
 	title="Dynamics"
@@ -204,6 +262,12 @@
 				{#if dynamizeError}<p class="err" title={dynamizeError}>
 						Dynamic data failed to build
 					</p>{/if}
+				{#if catalog && dynModels.length > 0}
+					<div class="hosted" data-testid="dyn-hosted-models">
+						<h4>{catalog.title}</h4>
+						{@render hostedPicker()}
+					</div>
+				{/if}
 				<button class="run" disabled title="Needs dynamic data">Run simulation</button>
 			</section>
 		{:else}
@@ -257,6 +321,13 @@
 					{/if}
 				{/if}
 			</section>
+
+			{#if catalog && dynModels.length > 0}
+				<details class="hosted" data-testid="dyn-hosted-models">
+					<summary>Open another model from {catalog.title}</summary>
+					{@render hostedPicker()}
+				</details>
+			{/if}
 
 			{#if experimental}
 				<div
@@ -425,6 +496,27 @@
 	}
 	.dim {
 		color: var(--text-secondary);
+	}
+	.hosted {
+		display: grid;
+		gap: 6px;
+		border-top: 1px solid var(--border, currentColor);
+		padding-top: 8px;
+	}
+	details.hosted summary {
+		cursor: pointer;
+		font-weight: 600;
+	}
+	details.hosted[open] {
+		display: grid;
+		gap: 6px;
+	}
+	.hosted label {
+		display: grid;
+		gap: 4px;
+	}
+	.hosted select {
+		max-width: 100%;
 	}
 	.err {
 		color: var(--text-danger);
