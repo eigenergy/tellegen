@@ -3261,5 +3261,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "8f9ff0cb3d2f175349283c212316220c0bb8b81c5b155c4b22a39acb579984a5"
+  "x-rust-source-sha256": "49cf33b15e36aa3b7587f7d82225ead8dfef129c4a5b3145445072255729a00f"
 }

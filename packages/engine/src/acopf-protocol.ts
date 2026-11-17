@@ -1,4 +1,4 @@
-import type { SolveResponse } from "./generated/api-types.js";
+import type { EngineErrorCode, SolveResponse } from "./generated/api-types.js";
 
 export type AcOpfWorkerRequest =
   | { type: "probe"; wasmUrl: string }
@@ -13,4 +13,4 @@ export type AcOpfWorkerResponse =
   | { type: "ready" }
   | { type: "result"; response: SolveResponse }
   | { type: "joint_result"; response: import("./dc-grid.js").AcDcSolution }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: EngineErrorCode };

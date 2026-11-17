@@ -78,6 +78,7 @@ export type {
 } from "./rms-protocol.js";
 export {
   probeAcOpfWorker,
+  releaseAcOpfWorker,
   solveAcOpfModule,
   type AcOpfWorkerFactory,
 } from "./acopf.js";

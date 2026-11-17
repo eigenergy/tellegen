@@ -406,5 +406,5 @@
     "title": "Contract",
     "type": "object"
   },
-  "x-rust-source-sha256": "1340dfe0f2ae4747ed21c104df692dce88926c648bd2be80871094befade2b1a"
+  "x-rust-source-sha256": "3a7d0acb997d252523a4c5098fa684722789cef416d486001429fac499f4e3ed"
 }

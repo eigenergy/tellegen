@@ -362,6 +362,14 @@ fn solve_prepared(
         error.diagnostics.extend(initial_diagnostics);
         return Err(error);
     }
+    if status == ApplicationReturnStatus::SolvedToAcceptableLevel {
+        initial_diagnostics.push(McOpfDiagnostic {
+            code: "MC_OPF.SOLVED_TO_ACCEPTABLE_LEVEL".into(),
+            severity: powerio::DiagnosticSeverity::Warning,
+            message: "POUNCE reached its acceptable stopping level; independent physical validation still gates this result".into(),
+            target: None,
+        });
+    }
     let t = tnlp.borrow();
     let x = t.inner.final_x().ok_or_else(|| {
         McOpfError::new(
@@ -438,6 +446,7 @@ fn solve_prepared(
         checked.objective,
     )
     .map_err(|e| McOpfError::from_powerio(McOpfStage::Export, e))?
+    .with_residuals(checked.power_residuals)
     .with_producer(format!(
         "tellegen {} mc-ivr-v2 POUNCE local solution",
         crate::VERSION

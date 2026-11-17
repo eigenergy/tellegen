@@ -16,26 +16,45 @@
 //! smaller. The driver applies the leading minus of `dz/dp`, composed with the
 //! selector's reporting sign, so every engine writes natural `+dK/dp` columns.
 
+// The fixed-active-set KKT code in `nlp_kkt` also serves the multiconductor
+// OPF, whose `mc-opf` feature does not turn on `sensitivity`. Everything else
+// in this module belongs to the `sensitivity` feature.
+#[cfg(feature = "sensitivity")]
 use faer::linalg::solvers::Solve;
+#[cfg(feature = "sensitivity")]
 use faer::sparse::{SparseColMat, Triplet};
+#[cfg(feature = "sensitivity")]
 use faer::Mat;
 
+#[cfg(feature = "sensitivity")]
 mod ac;
+#[cfg(all(feature = "sensitivity", feature = "acopf"))]
+mod acopf;
 #[cfg(feature = "conic")]
 mod conic;
+#[cfg(feature = "sensitivity")]
 mod dc;
+#[cfg(feature = "sensitivity")]
 mod interface;
+#[cfg(any(feature = "mc-opf", all(feature = "sensitivity", feature = "acopf")))]
+pub(crate) mod nlp_kkt;
 
+#[cfg(feature = "sensitivity")]
 pub use ac::AcNewton;
+#[cfg(all(feature = "sensitivity", feature = "acopf"))]
+pub(crate) use acopf::{AcOpfElementIds, AcOpfKkt};
 #[cfg(feature = "conic")]
 pub use conic::ConicKkt;
+#[cfg(feature = "sensitivity")]
 pub use dc::DcKkt;
+#[cfg(feature = "sensitivity")]
 pub use interface::{
     functional_gradient, sensitivity, weighted_sensitivity, Axis, Bound, ColMeta, CostTerm,
     Differentiable, ElementId, End, Operand, Parameter, Power, RowMeta, Selector, SensError,
     SensitivityMatrix, SolveSpec, TapKind, VoltageKind, GB,
 };
 
+#[cfg(feature = "sensitivity")]
 pub(crate) use interface::{served_unit_scale, served_units_label};
 
 /// Which linear systems the engine factorizes. [`Forward`](Mode::Forward) and
@@ -43,6 +62,7 @@ pub(crate) use interface::{served_unit_scale, served_units_label};
 /// factorization of `K` (cheap when parameters are few) for one of `K'` (cheap when
 /// operands are few). [`Auto`](Mode::Auto) picks the smaller dimension and is the api
 /// default.
+#[cfg(feature = "sensitivity")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
@@ -57,6 +77,7 @@ pub enum Mode {
 }
 
 /// Largest absolute entry of a dense matrix.
+#[cfg(feature = "sensitivity")]
 fn max_abs(m: &Mat<f64>) -> f64 {
     let mut mx = 0.0f64;
     for c in 0..m.ncols() {
@@ -77,6 +98,7 @@ fn max_abs(m: &Mat<f64>) -> f64 {
 /// removes the Tikhonov bias and damps the nullspace direction so the iteration
 /// stays bounded. Refinement stops at `tol_factor · ||rhs||` or once it stops
 /// improving.
+#[cfg(feature = "sensitivity")]
 pub(super) fn solve_refined(
     dim: usize,
     triplets: &[(usize, usize, f64)],
@@ -137,6 +159,7 @@ pub(super) fn solve_refined(
 /// is the scalar each engine picks so the result reads in reported units. Returns
 /// `out[operand][param]`. `solve` factorizes and back-solves (the engine threads in its
 /// own regularization through the closure).
+#[cfg(feature = "sensitivity")]
 pub(super) fn forward_adjoint(
     dim: usize,
     k: &[(usize, usize, f64)],
