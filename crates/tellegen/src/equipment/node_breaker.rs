@@ -77,7 +77,7 @@ pub fn project(net: &BalancedNetwork) -> NodeBreaker {
             .unwrap_or_else(|| id.local_id().to_string())
     };
     let endpoint = |e: &TopologyEndpoint| match e {
-        TopologyEndpoint::Node(id) => Some(id.to_string()),
+        TopologyEndpoint::Node(id) | TopologyEndpoint::Bus(id) => Some(id.to_string()),
         _ => None,
     };
     NodeBreaker {
@@ -113,6 +113,27 @@ pub fn project(net: &BalancedNetwork) -> NodeBreaker {
                         .map(&name),
                 }
             })
+            .chain(d.bus_breaker_buses.iter().map(|b| {
+                let level = levels.get(&b.voltage_level);
+                Node {
+                    id: b.component.to_string(),
+                    name: name(&b.component),
+                    voltage_level: b.voltage_level.to_string(),
+                    station: level
+                        .and_then(|v| v.substation.as_ref())
+                        .map(ToString::to_string),
+                    bus: b.calculated_bus.map(|id| id.0),
+                    nominal_kv: level.map_or(0.0, |v| v.nominal_kv),
+                    container: metadata
+                        .get(&b.component)
+                        .and_then(|m| m.equipment_container.as_ref())
+                        .map(ToString::to_string),
+                    container_name: metadata
+                        .get(&b.component)
+                        .and_then(|m| m.equipment_container.as_ref())
+                        .map(&name),
+                }
+            }))
             .collect(),
         busbars: d
             .busbar_sections
@@ -133,6 +154,7 @@ pub fn project(net: &BalancedNetwork) -> NodeBreaker {
                     kind: match s.kind {
                         powerio_tx::SwitchKind::Breaker => "breaker",
                         powerio_tx::SwitchKind::Disconnector => "disconnector",
+                        powerio_tx::SwitchKind::LoadBreakSwitch => "load_break_switch",
                         _ => "switch",
                     }
                     .into(),
@@ -164,7 +186,12 @@ pub fn project(net: &BalancedNetwork) -> NodeBreaker {
                     name: name(&t.equipment),
                     kind: t.equipment.component_type().to_string(),
                     number: t.terminal,
-                    node: t.node.as_ref()?.to_string(),
+                    node: t
+                        .node
+                        .as_ref()
+                        .or(t.bus.as_ref())
+                        .or(t.connectable_bus.as_ref())?
+                        .to_string(),
                     connected: t.connected,
                 })
             })
@@ -202,5 +229,92 @@ mod tests {
             .terminals
             .iter()
             .any(|t| t.name == "L3" && !t.connected));
+    }
+    #[test]
+    fn mixed_topology_retains_bus_switches_and_disconnected_terminals() {
+        let module = powerio::parse(
+            powerio::Source::open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../tests/data/node-breaker"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let powerio::PioValue::BalancedNetwork(mut net) = module.into_value() else {
+            panic!("balanced fixture");
+        };
+        let d = std::sync::Arc::make_mut(net.detailed_connectivity_mut().as_mut().unwrap());
+        let level = d.voltage_levels[0].component.clone();
+        let a = ComponentId::new("bus", "configured-a").unwrap();
+        let b = ComponentId::new("bus", "configured-b").unwrap();
+        for (component, calculated) in [(&a, 701), (&b, 903)] {
+            d.bus_breaker_buses.push(
+                serde_json::from_value(serde_json::json!({
+                    "component": component, "voltage_level": level, "calculated_bus": calculated
+                }))
+                .unwrap(),
+            );
+        }
+        let mut switch = d.switches[0].clone();
+        switch.component = ComponentId::new("switch", "bus-switch").unwrap();
+        switch.endpoint1 = TopologyEndpoint::Bus(a.clone());
+        switch.endpoint2 = TopologyEndpoint::Bus(b.clone());
+        switch.kind = powerio_tx::SwitchKind::LoadBreakSwitch;
+        switch.open = true;
+        d.switches.push(switch);
+        let mut terminal = d.terminals[0].clone();
+        terminal.component = Some(ComponentId::new("terminal", "disconnected").unwrap());
+        terminal.equipment = ComponentId::new("load", "bus-load").unwrap();
+        terminal.node = None;
+        terminal.bus = None;
+        terminal.connectable_bus = Some(b.clone());
+        terminal.connected = false;
+        d.terminals.push(terminal.clone());
+        terminal.component = Some(ComponentId::new("terminal", "connected").unwrap());
+        terminal.bus = Some(a.clone());
+        terminal.connected = true;
+        d.terminals.push(terminal);
+        let drawing = project(&net);
+        assert_eq!(drawing.nodes.len(), 7);
+        assert_eq!(
+            drawing
+                .nodes
+                .iter()
+                .find(|n| n.id == a.to_string())
+                .unwrap()
+                .bus,
+            Some(701)
+        );
+        assert_eq!(
+            drawing
+                .nodes
+                .iter()
+                .find(|n| n.id == b.to_string())
+                .unwrap()
+                .bus,
+            Some(903)
+        );
+        let switch = drawing
+            .switches
+            .iter()
+            .find(|s| s.name == "bus-switch")
+            .unwrap();
+        assert_eq!((&switch.from, &switch.to), (&a.to_string(), &b.to_string()));
+        assert_eq!(switch.kind, "load_break_switch");
+        assert!(switch.open);
+        let disconnected = drawing
+            .terminals
+            .iter()
+            .find(|t| t.id == "terminal/disconnected")
+            .unwrap();
+        assert_eq!(disconnected.node, b.to_string());
+        assert!(!disconnected.connected);
+        let connected = drawing
+            .terminals
+            .iter()
+            .find(|t| t.id == "terminal/connected")
+            .unwrap();
+        assert_eq!(connected.node, a.to_string());
+        assert!(connected.connected);
     }
 }
