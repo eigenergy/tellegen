@@ -213,3 +213,32 @@ it('admits folder member counts separately from upload counts and rejects overag
 	).toThrow('64 MiB');
 	expect(read).not.toHaveBeenCalled();
 });
+
+it('opens a nested ZIP explicitly without losing the parent cases or reopening it', async () => {
+	const child = session(['nested.m']);
+	const parent = {
+		...session(['parent.m', 'inner.zip']),
+		openNested: vi.fn(async () => child)
+	};
+	const accept = vi.fn();
+	const model = new CollectionImport(accept, {
+		zip: vi.fn(async () => parent),
+		files: vi.fn()
+	});
+	await model.start(async () => [zip()]);
+	const id = model.collections[0].id;
+	await model.openNested(id, 'inner.zip');
+	await model.openNested(id, 'inner.zip');
+	expect(parent.openNested).toHaveBeenCalledTimes(1);
+	expect(model.collections).toHaveLength(2);
+	expect(model.rows.find((r) => r.path === 'nested.m')?.label).toContain('inner.zip');
+	model.rows
+		.filter((r) => r.path.endsWith('.m'))
+		.forEach((r) => {
+			r.checked = true;
+		});
+	await model.importSelected();
+	expect(accept).toHaveBeenCalledTimes(2);
+	model.close();
+	expect(child.cancel).toHaveBeenCalledOnce();
+});

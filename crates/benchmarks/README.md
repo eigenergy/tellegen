@@ -76,6 +76,7 @@ cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- --pres
 | flag | default | effect |
 | --- | --- | --- |
 | `--preset NAME` / `--module PATH` / `--bmopf PATH` | — | generated preset, stored PowerIO module, or raw BMOPF input |
+| `--cold-repeats N` | 1 | repeat cold creation and record each phase profile; useful for sampling profilers |
 | `--edits N` | 20 | deterministic single-branch edits (each sends the accumulated absolute set) |
 | `--seed N` | 132 | edit-sequence seed |
 | `--write-module PATH` | — | also write the module JSON and its `.edits.json` sequence for the browser benchmark |
