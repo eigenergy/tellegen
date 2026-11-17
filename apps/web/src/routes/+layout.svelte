@@ -30,8 +30,26 @@
 
 <Analytics />
 <TellegenProvider
+	apiBase="/api"
+	loadDefaultCases={true}
+	showFooter={true}
+	orgHref="https://github.com/eigenergy"
+	orgLabel="Eigenergy Group, University of Michigan"
+	menuLinks={[
+		{ label: "What's new", href: '/changelog/' },
+		{ label: 'Credits', href: '/credits/' },
+		{ label: 'Privacy', href: '/privacy/' }
+	]}
+	distributionResultsPanel="studies"
+	dynamicsExample={true}
 	acOpfWasmUrl={PUBLIC_TELLEGEN_ACOPF_WASM_URL}
 	cartoApiKey={PUBLIC_CARTO_BASEMAP_KEY}
 >
 	{@render children()}
 </TellegenProvider>
+
+<style>
+	:global(body) {
+		margin: 0;
+	}
+</style>

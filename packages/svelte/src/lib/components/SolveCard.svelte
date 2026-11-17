@@ -8,7 +8,7 @@
 		solveVerdict,
 		statusWords
 	} from '../diagram/verdict.js';
-	import { formulationLabel } from '../format.js';
+	import { formulationLabel, objectiveKind } from '../format.js';
 	import Sparkline from '../Sparkline.svelte';
 	import PanelFrame from './PanelFrame.svelte';
 
@@ -112,7 +112,16 @@
 					{#if calculation && !embedded}
 						<div>
 							<dt>Calculation</dt>
-							<dd>{formulationLabel(attempted ?? calculation)}</dd>
+							<dd>
+								{formulationLabel(
+									attempted ?? calculation,
+									attempted
+										? undefined
+										: saved
+											? objectiveKind(saved.solution)
+											: active?.solution?.objective_kind
+								)}
+							</dd>
 						</div>
 					{/if}
 					{#if status && !failed}

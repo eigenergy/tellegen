@@ -11,6 +11,9 @@
 		orgHref,
 		orgLabel,
 		showFooter,
+		menuLinks,
+		distributionResultsPanel,
+		dynamicsExample,
 		theme,
 		cartoApiKey
 	}: TellegenUiOptions = $props();
@@ -24,6 +27,9 @@
 	{orgHref}
 	{orgLabel}
 	{showFooter}
+	{menuLinks}
+	{distributionResultsPanel}
+	{dynamicsExample}
 	{theme}
 	{cartoApiKey}
 >

@@ -20,6 +20,7 @@
 			formulation: ctrl.activeFormulation,
 			solving: c.solving,
 			objective: network.objective,
+			objectiveKind: solution?.objective_kind,
 			binding: network.binding,
 			...summary
 		});
@@ -29,5 +30,6 @@
 <!-- The steady-state result keeps its numbers in dynamics mode too, as on every other case. -->
 {#if ctrl.activeSolvable?.solution || ctrl.activeSolvable?.solving}
 	<StatBoxes {stats} />
-	{#if !app.placingLocalId}<BindingLines />{/if}
+	{#if !app.placingLocalId && ctrl.activeSolvable?.solution?.objective_kind !== 'feasibility'}<BindingLines
+		/>{/if}
 {/if}

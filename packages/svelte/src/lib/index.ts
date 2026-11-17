@@ -199,3 +199,5 @@ export { default as McModelQualification } from './components/McModelQualificati
 export { default as McNetworkScope } from './components/McNetworkScope.svelte';
 
 export { recordedCalculationSettings } from './settings.svelte.js';
+
+export { default as DistributionResults } from './components/DistributionResults.svelte';

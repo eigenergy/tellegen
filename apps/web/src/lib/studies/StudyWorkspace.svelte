@@ -5,10 +5,9 @@
 		getPanelLayout,
 		PanelFrame,
 		ModelDetails,
-		McResults,
+		DistributionResults,
 		McNetworkScope,
 		McModelQualification,
-		McWorkbench,
 		McSolveControls,
 		downloadText
 	} from '@tellegen/svelte';
@@ -556,35 +555,7 @@
 					{/snippet}
 				</McSolveControls>
 				{#if multi.result}<div bind:this={mcResultsStart}></div>{/if}
-				{#if multi.result && multi.graph && multi.overviewInputs && multi.overviewSearch}<McWorkbench
-						snapshot={multi.overviewSnapshot}
-						graph={multi.graph}
-						inputs={multi.overviewInputs}
-						search={multi.overviewSearch}
-						loading={multi.overviewLoading}
-						selectedBus={multi.selectedBusId}
-						selectedEdge={multi.selectedEdgeId}
-						onselectbus={(id) => ctrl.selectMultiBus(multi.id, id)}
-						onselectedge={(id) => ctrl.selectMultiEdge(multi.id, id)}
-						label={multi.label}
-						schematic={multi.schematic}
-						onschematic={(show) => (multi.schematic = show)}
-						hovered={multi.hovered}
-						onhover={(h) => (multi.hovered = h)}
-						onreveal={() => multi.revealSeq++}
-						onanalyse={ctrl.overviewOnRequest(multi) ? () => ctrl.readOverview(multi) : undefined}
-					/>{/if}
-				{#if multi.result}<McResults
-						result={multi.result}
-						excludedIslands={multi.mcExcludedIslands}
-						detail={(query) => ctrl.multiResultDetail(multi, query)}
-						timing={multi.mcTiming}
-						elapsedMs={multi.solveMs}
-						selectedBus={multi.selectedBusId}
-						selectedEdge={multi.selectedEdgeId}
-						graph={multi.graph}
-						searchIndex={multi.overviewSearch}
-					/>{/if}
+				<DistributionResults caseState={multi} />
 			{:else if !doc || creating}
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
