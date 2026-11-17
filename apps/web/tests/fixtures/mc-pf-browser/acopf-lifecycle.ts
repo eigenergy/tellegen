@@ -11,6 +11,8 @@ declare global {
 			available(): boolean;
 			start(text: string): Promise<void>;
 			solved(): boolean;
+			/** Terminate the idle kept worker so the next solve starts a new one. */
+			release(): boolean;
 		};
 	}
 }

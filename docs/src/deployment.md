@@ -128,8 +128,9 @@ workflows supply it automatically.
 DC OPF remains the default calculation. The AC OPF dropdown option enables
 only after the browser successfully probes the solver, and only for an
 unedited balanced case. The browser runs each AC OPF solve in a dedicated,
-terminable worker. There is no server fallback, and AC OPF edits, LMPs,
-sensitivities, and saving/exporting results remain unavailable.
+terminable worker, reused between solves. There is no server fallback. AC OPF
+returns nodal prices and supports sensitivity requests through the engine API;
+edits and saving/exporting results remain unavailable.
 
 Local website builds require `npm run wasm:acopf` before `npm run build:web`
 or the Vite development server. `PUBLIC_TELLEGEN_ACOPF_WASM_URL` can override

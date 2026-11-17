@@ -30,12 +30,29 @@ use super::{
 const INF: f64 = 1.0e19;
 const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v2";
 const PRIMAL_TOLERANCE: f64 = 1.0e-6;
+/// Iterations allowed in total across the base solve, POUNCE's own re-solves
+/// and every recovery attempt. `max_iter` below limits each of them alone, so
+/// without this a failing case could run it up to five times over.
+const TOTAL_ITERATION_BUDGET: usize = 2000;
+// Gradient-based scaling with a cut-off of 10 brings the objective (costs of
+// thousands per per-unit MW) and the admittance-sized constraint gradients to
+// a common size. On PGLib cases it cuts iterations severalfold against no
+// scaling, and the cut-off matters: the solver default of 100 leaves
+// case1888_rte at a worse local solution.
+//
+// `tol` is tested on the scaled problem, where the objective is divided by a
+// few hundred. The two absolute tolerances below hold the unscaled
+// complementarity and dual infeasibility to what the unscaled solve reached,
+// so objectives and multipliers keep their accuracy for a few more iterations.
 const POUNCE_OPTIONS: &str = "linear_solver feral
 hessian_approximation exact
-nlp_scaling_method none
+nlp_scaling_method gradient-based
+nlp_scaling_max_gradient 10
 linear_system_scaling none
 tol 1e-8
 constr_viol_tol 1e-8
+compl_inf_tol 1e-8
+dual_inf_tol 1e-6
 acceptable_tol 1e-7
 max_iter 1000
 print_level 0
@@ -67,8 +84,7 @@ impl AcOpfResidualCheck {
 }
 
 /// A converged POUNCE point after an independent calculation from PowerIO's
-/// prepared arrays. Duals intentionally stay private and unpublished until a
-/// perturbation test establishes their sign and source-unit scaling.
+/// prepared arrays.
 #[derive(Clone, Debug)]
 pub(crate) struct AcOpfSolved {
     pub(crate) preparation: AcOpfPreparation,
@@ -91,6 +107,40 @@ pub(crate) struct AcOpfSolved {
     pub(crate) solver_constraint_violation: f64,
     pub(crate) solver_kkt_error: f64,
     pub(crate) fingerprint: String,
+    /// The compiled program with the solver's point and multipliers, for
+    /// prices and sensitivities. `None` when the solver returned no
+    /// multipliers, and for the joint AC/DC solve, whose augmented program
+    /// has no validated price convention.
+    pub(crate) dual: Option<AcOpfDualPoint>,
+}
+
+/// The compiled program, the accepted point and POUNCE's multipliers at it.
+///
+/// The multipliers follow the Lagrangian `f + lambda' g - z_lower' (x - x_l)
+/// + z_upper' (x - x_u)` with `z >= 0`: a balance row's `lambda` is minus the
+/// marginal cost of demand at its bus, an inequality row at its lower bound
+/// has `lambda <= 0`, and one at its upper bound has `lambda >= 0`.
+#[derive(Clone, Debug)]
+// Without the `sensitivity` feature only the balance multipliers are read.
+#[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
+pub(crate) struct AcOpfDualPoint {
+    pub(crate) problem: NlProblem,
+    pub(crate) columns: AcOpfColumns,
+    pub(crate) rows: AcOpfRows,
+    pub(crate) x: Vec<f64>,
+    pub(crate) lambda: Vec<f64>,
+    pub(crate) z_lower: Vec<f64>,
+    pub(crate) z_upper: Vec<f64>,
+}
+
+impl AcOpfSolved {
+    /// Marginal cost of active and reactive demand per bus, in objective
+    /// units per per-unit power: minus the balance multipliers.
+    pub(crate) fn nodal_prices(&self) -> Option<(Vec<f64>, Vec<f64>)> {
+        let dual = self.dual.as_ref()?;
+        let price = |rows: &[usize]| rows.iter().map(|&row| -dual.lambda[row]).collect();
+        Some((price(&dual.rows.p_balance), price(&dual.rows.q_balance)))
+    }
 }
 
 /// Recovery diagnostics keep the original verdict and total work visible even
@@ -134,26 +184,26 @@ impl AcOpfAssemblyPolicy {
 
 /// Stable variable columns. Every vector is indexed in PowerIO preparation order.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct AcOpfColumns {
-    pub(super) va: Vec<usize>,
-    pub(super) vm: Vec<usize>,
-    pub(super) pg: Vec<usize>,
-    pub(super) qg: Vec<usize>,
+pub(crate) struct AcOpfColumns {
+    pub(crate) va: Vec<usize>,
+    pub(crate) vm: Vec<usize>,
+    pub(crate) pg: Vec<usize>,
+    pub(crate) qg: Vec<usize>,
     /// One entry per generator; `None` for a quadratic/no-cost generator.
-    pub(super) piecewise_epigraph: Vec<Option<usize>>,
+    pub(crate) piecewise_epigraph: Vec<Option<usize>>,
 }
 
 /// Stable constraint rows. Optional branch rows preserve branch-column alignment.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct AcOpfRows {
-    pub(super) p_balance: Vec<usize>,
-    pub(super) q_balance: Vec<usize>,
-    pub(super) reference_angle: Vec<usize>,
-    pub(super) angle_difference: Vec<Option<usize>>,
-    pub(super) thermal_from: Vec<Option<usize>>,
-    pub(super) thermal_to: Vec<Option<usize>>,
+pub(crate) struct AcOpfRows {
+    pub(crate) p_balance: Vec<usize>,
+    pub(crate) q_balance: Vec<usize>,
+    pub(crate) reference_angle: Vec<usize>,
+    pub(crate) angle_difference: Vec<Option<usize>>,
+    pub(crate) thermal_from: Vec<Option<usize>>,
+    pub(crate) thermal_to: Vec<Option<usize>>,
     /// Segment rows for each generator's exact convex piecewise epigraph.
-    pub(super) piecewise_segments: Vec<Vec<usize>>,
+    pub(crate) piecewise_segments: Vec<Vec<usize>>,
 }
 
 /// The private exact model plus everything later solve/emission code needs to
@@ -932,6 +982,7 @@ fn validate_primal(
         solver_constraint_violation,
         solver_kkt_error,
         fingerprint: model.fingerprint.clone(),
+        dual: None,
     })
 }
 
@@ -1000,14 +1051,26 @@ fn solve_ac_opf_with_options(
         return Err("AC OPF solve cancelled".into());
     }
     let model = compile_ac_opf_model(instance)?;
-    solve_compiled(model, cancel, options, |_, _| Ok(()))
+    solve_compiled_keeping(model, cancel, options, |_, _| Ok(()), true)
 }
 
 fn solve_compiled(
+    model: CanonicalAcOpfModel,
+    cancel: Option<Arc<AtomicBool>>,
+    options: &str,
+    qualify: impl FnMut(&mut CanonicalAcOpfModel, &[f64]) -> Result<(), String>,
+) -> Result<AcOpfSolved, String> {
+    solve_compiled_keeping(model, cancel, options, qualify, false)
+}
+
+/// As [`solve_compiled`]. With `keep_dual` the accepted point carries the
+/// compiled program and the solver's multipliers.
+fn solve_compiled_keeping(
     mut model: CanonicalAcOpfModel,
     cancel: Option<Arc<AtomicBool>>,
     options: &str,
     mut qualify: impl FnMut(&mut CanonicalAcOpfModel, &[f64]) -> Result<(), String>,
+    keep_dual: bool,
 ) -> Result<AcOpfSolved, String> {
     if cancel
         .as_ref()
@@ -1015,10 +1078,10 @@ fn solve_compiled(
     {
         return Err("AC OPF solve cancelled".into());
     }
-    let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
-        model.tnlp()?,
-        cancel.clone(),
-    )));
+    let tnlp = Rc::new(RefCell::new(
+        CancellableNlTnlp::new(model.tnlp()?, cancel.clone())
+            .with_iteration_budget(TOTAL_ITERATION_BUDGET),
+    ));
     let mut application = IpoptApplication::new();
     application
         .initialize_with_options_str(options)
@@ -1040,10 +1103,15 @@ fn solve_compiled(
         status,
         ApplicationReturnStatus::SolveSucceeded | ApplicationReturnStatus::SolvedToAcceptableLevel
     ) {
-        let qualification = if status == ApplicationReturnStatus::InfeasibleProblemDetected {
+        let qualification = if tnlp.borrow().budget_exhausted() {
+            format!(
+                "; the budget of {TOTAL_ITERATION_BUDGET} iterations across the base solve and its recovery attempts ran out"
+            )
+        } else if status == ApplicationReturnStatus::InfeasibleProblemDetected {
             "; this local NLP report is not a proof that the canonical problem is infeasible"
+                .to_owned()
         } else {
-            ""
+            String::new()
         };
         return Err(format!(
             "POUNCE AC OPF stopped with {status:?} after {} total iterations (base {:?}, recovery attempts {:?}, constraint violation {:.3e}, KKT error {:.3e}){qualification}",
@@ -1072,7 +1140,7 @@ fn solve_compiled(
         promoted_by: outcome.promoted_by.map(str::to_owned),
     };
     qualify(&mut model, x)?;
-    let accepted = validate_primal(
+    let mut accepted = validate_primal(
         &model,
         x,
         solved.inner.final_obj(),
@@ -1082,6 +1150,33 @@ fn solve_compiled(
         statistics.final_unscaled_kkt_error,
         recovery,
     )?;
+    let multipliers = solved
+        .inner
+        .final_lambda()
+        .zip(solved.inner.final_bound_multipliers())
+        .filter(|(lambda, (z_lower, z_upper))| {
+            keep_dual
+                && lambda.len() == model.problem.m
+                && z_lower.len() == x.len()
+                && z_upper.len() == x.len()
+                && lambda
+                    .iter()
+                    .chain(*z_lower)
+                    .chain(*z_upper)
+                    .all(|value| value.is_finite())
+        })
+        .map(|(lambda, (z_lower, z_upper))| (lambda.to_vec(), z_lower.to_vec(), z_upper.to_vec()));
+    let x = x.to_vec();
+    drop(solved);
+    accepted.dual = multipliers.map(|(lambda, z_lower, z_upper)| AcOpfDualPoint {
+        problem: model.problem,
+        columns: model.columns,
+        rows: model.rows,
+        x,
+        lambda,
+        z_lower,
+        z_upper,
+    });
 
     Ok(accepted)
 }
@@ -1208,6 +1303,46 @@ mod tests {
         ));
         // The rejected displaced starts must not replace the original point.
         assert!(tnlp.borrow().inner.final_x().unwrap()[0].abs() < 1e-8);
+    }
+
+    #[test]
+    fn one_iteration_budget_covers_the_base_solve_and_every_recovery_attempt() {
+        let run = |budget: Option<usize>| {
+            let tnlp = recovery_fixture(None, false);
+            if let Some(budget) = budget {
+                let inner = NlTnlp::try_new(tnlp.borrow().inner.problem().clone()).unwrap();
+                *tnlp.borrow_mut() =
+                    CancellableNlTnlp::new(inner, None).with_iteration_budget(budget);
+            }
+            let outcome = run_recovery_fixture(
+                Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>,
+                &None,
+                POUNCE_OPTIONS,
+                &mut |_| {},
+            )
+            .unwrap();
+            (tnlp, outcome)
+        };
+        // Unlimited, the failing fixture runs its base solve and then every
+        // recovery attempt to the end.
+        let (unlimited, full) = run(None);
+        assert!(!unlimited.borrow().budget_exhausted());
+        assert!(full.tried.len() > 1, "{full:?}");
+        assert!(full.rung_iteration_counts.iter().all(|&count| count > 0));
+
+        // A budget that ends inside the first attempt stops that attempt and
+        // refuses the later ones before they evaluate anything.
+        let budget = full.base_iteration_count + 1;
+        let (limited, outcome) = run(Some(budget));
+        assert!(limited.borrow().budget_exhausted());
+        assert!(limited.borrow_mut().get_nlp_info().is_none());
+        assert!(outcome.promoted_by.is_none());
+        assert_eq!(outcome.status, outcome.base_status);
+        assert!(
+            outcome.total_iteration_count() <= budget + 1
+                && outcome.total_iteration_count() < full.total_iteration_count(),
+            "limited {outcome:?} against unlimited {full:?}"
+        );
     }
 
     #[test]

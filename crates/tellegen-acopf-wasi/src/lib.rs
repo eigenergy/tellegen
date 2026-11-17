@@ -183,6 +183,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn browser_solver_includes_sensitivities() {
+        let capabilities: serde_json::Value =
+            serde_json::from_str(&tellegen::capabilities_json()).expect("capabilities JSON");
+        let text = capabilities.to_string();
+        assert!(text.contains("acopf"));
+        // Deserializing the request proves that this separately built adapter
+        // includes the sensitivity fields, which are feature-gated in Rust.
+        let request: tellegen::SolveRequest = serde_json::from_str(
+            r#"{"formulation":"acopf","sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"}}]}"#,
+        ).expect("browser sensitivity request");
+        assert_eq!(request.sensitivities.len(), 1);
+    }
+
+    #[test]
     fn empty_input_returns_structured_error() {
         // SAFETY: `(null, 0)` is deliberately accepted as an invalid empty input.
         let ptr = unsafe { tellegen_acopf_solve(std::ptr::null(), 0, std::ptr::null(), 0) };

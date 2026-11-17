@@ -1294,8 +1294,10 @@ pub fn solve_ac_instance_output(
 }
 
 /// Solve a typed PowerIO AC OPF instance with the exact polar POUNCE model.
-/// Request edits and sensitivities are rejected until their canonical-instance
-/// transformation and NLP dual contract are implemented.
+/// Request edits are rejected until their canonical-instance transformation
+/// is implemented. Requested sensitivities differentiate the KKT system of
+/// the returned local solution with its active set held fixed, and fail with
+/// an error where that derivative is not defined.
 #[cfg(feature = "acopf")]
 pub fn solve_ac_opf_instance(
     instance: &AcOpfInstance,
@@ -1350,16 +1352,14 @@ pub fn solve_ac_opf_instance_output_cancellable(
             "acopf request edits are not yet supported; amend the canonical AcOpfInstance instead",
         ));
     }
-    #[cfg(feature = "sensitivity")]
-    if !req.sensitivities.is_empty() {
-        return Err(coded(
-            ErrorCode::Unsupported,
-            "acopf sensitivities require a separately validated NLP KKT contract",
-        ));
-    }
     let solved = super::model::solve_ac_opf_cancellable(instance, cancel.clone())
         .map_err(|message| coded(ac_opf_failure_code(&message, cancel.as_ref()), message))?;
-    let response = ac_opf_assemble(instance.network(), &solved).code(ErrorCode::Internal)?;
+    #[cfg_attr(not(feature = "sensitivity"), allow(unused_mut))]
+    let mut response = ac_opf_assemble(instance.network(), &solved).code(ErrorCode::Internal)?;
+    #[cfg(feature = "sensitivity")]
+    if !req.sensitivities.is_empty() {
+        response.sensitivities = ac_opf_sensitivities(instance.network(), &solved, req)?;
+    }
     Ok(SolveOutput::new(
         response,
         ObjectiveKind::of(solved.preparation.objective),
@@ -1386,6 +1386,45 @@ fn ac_opf_failure_code(message: &str, cancel: Option<&Arc<AtomicBool>>) -> Error
     } else {
         ErrorCode::InvalidInput
     }
+}
+
+/// The requested sensitivity cells of one accepted AC OPF point.
+#[cfg(all(feature = "acopf", feature = "sensitivity"))]
+fn ac_opf_sensitivities(
+    network: &BalancedNetwork,
+    solved: &super::model::AcOpfSolved,
+    req: &SolveRequest,
+) -> Result<Vec<SensitivityMatrix>, EngineError> {
+    use super::model::{branch_source_rows, source_position_ids};
+    let prep = &solved.preparation;
+    if prep.objective != powerio_matrix::PreparedObjective::NetworkGeneratorCost
+        && req
+            .sensitivities
+            .iter()
+            .any(|cell| matches!(cell.operand, Operand::Price(_)))
+    {
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "price sensitivity requires a network_generator_cost objective",
+        ));
+    }
+    let ids = super::sens::AcOpfElementIds {
+        bus: prep.bus_ids.iter().map(|bus| bus.0).collect(),
+        branch: source_position_ids(
+            &branch_source_rows(&prep.branches.analysis_sources),
+            network.branches().len(),
+            "branch",
+        )
+        .code(ErrorCode::Internal)?,
+        generator: source_position_ids(
+            &prep.generators.source_rows,
+            network.generators().len(),
+            "generator",
+        )
+        .code(ErrorCode::Internal)?,
+    };
+    let system = super::sens::AcOpfKkt::new(solved, ids).code(ErrorCode::Unsupported)?;
+    run_cells(&system, &req.sensitivities)
 }
 
 #[cfg(feature = "acopf")]
@@ -1417,6 +1456,24 @@ pub(crate) fn ac_opf_assemble(
         &solved.q_injection,
         base,
     );
+    // Nodal prices are the marginal cost of demand, so they exist only for
+    // the economic objective. Per unit to objective units per MW or MVAr.
+    let prices = solved
+        .nodal_prices()
+        .filter(|_| prep.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost)
+        .map(|(active, reactive)| {
+            let served = |values: Vec<f64>| -> Vec<f64> {
+                values.into_iter().map(|value| value / base).collect()
+            };
+            (
+                zip_bus(&bus_ids, &bus_uids, &served(active)),
+                zip_bus(&bus_ids, &bus_uids, &served(reactive)),
+            )
+        });
+    let (lmp, lmp_q) = match prices {
+        Some((active, reactive)) => (Some(active), Some(reactive)),
+        None => (None, None),
+    };
     let branch_source_rows = branch_source_rows(&prep.branches.analysis_sources);
     let branch_ids = source_position_ids(&branch_source_rows, network.branches().len(), "branch")?;
     let branch_uids = uids_for_source_rows(
@@ -1508,8 +1565,8 @@ pub(crate) fn ac_opf_assemble(
             recovery_attempts: solved.recovery.attempts.clone(),
             recovered_by: solved.recovery.promoted_by.clone(),
         }),
-        lmp: None,
-        lmp_q: None,
+        lmp,
+        lmp_q,
         vm: Some(zip_bus(&bus_ids, &bus_uids, &solved.vm)),
         va: Some(zip_bus(&bus_ids, &bus_uids, &solved.va)),
         w: None,
@@ -2321,18 +2378,78 @@ fn formulation_caps() -> Vec<ProblemCaps> {
                 Parameter::ShuntAdmittance(GB::Susceptance),
             ],
         },
-        // Full nonlinear AC OPF remains opt-in and offers no sensitivity cells.
+        // Full nonlinear AC OPF remains opt-in. Its sensitivities come from
+        // the KKT system of the local solution with the active set held fixed.
         ProblemCaps {
             formulation: Problem::Acopf,
             available: cfg!(feature = "acopf"),
-            blocks: ["vm", "va", "injections", "flows", "dispatch"]
-                .map(str::to_owned)
-                .to_vec(),
+            blocks: [
+                "lmp",
+                "lmp_q",
+                "vm",
+                "va",
+                "injections",
+                "flows",
+                "dispatch",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
             constraints: vec![],
             #[cfg(feature = "sensitivity")]
-            operands: vec![],
+            operands: if cfg!(feature = "acopf") {
+                vec![
+                    Operand::Price(Power::Active),
+                    Operand::Price(Power::Reactive),
+                    Operand::Dispatch(Power::Active),
+                    Operand::Dispatch(Power::Reactive),
+                    Operand::Voltage(VoltageKind::Magnitude),
+                    Operand::Voltage(VoltageKind::Angle),
+                    Operand::Flow {
+                        power: Power::Active,
+                        end: End::From,
+                    },
+                    Operand::Flow {
+                        power: Power::Active,
+                        end: End::To,
+                    },
+                    Operand::Flow {
+                        power: Power::Reactive,
+                        end: End::From,
+                    },
+                    Operand::Flow {
+                        power: Power::Reactive,
+                        end: End::To,
+                    },
+                ]
+            } else {
+                vec![]
+            },
             #[cfg(feature = "sensitivity")]
-            parameters: vec![],
+            parameters: if cfg!(feature = "acopf") {
+                vec![
+                    Parameter::Demand(Power::Active),
+                    Parameter::Demand(Power::Reactive),
+                    Parameter::LineLimit,
+                    Parameter::GenBound {
+                        power: Power::Active,
+                        bound: Bound::Min,
+                    },
+                    Parameter::GenBound {
+                        power: Power::Active,
+                        bound: Bound::Max,
+                    },
+                    Parameter::GenBound {
+                        power: Power::Reactive,
+                        bound: Bound::Min,
+                    },
+                    Parameter::GenBound {
+                        power: Power::Reactive,
+                        bound: Bound::Max,
+                    },
+                ]
+            } else {
+                vec![]
+            },
         },
     ]
 }
@@ -3660,7 +3777,7 @@ mod tests {
 
     #[cfg(feature = "acopf")]
     #[test]
-    fn acopf_is_available_without_prices_or_sensitivities() {
+    fn acopf_is_available_with_prices() {
         let out = solve_test_network_json(&case3_json(), r#"{"formulation":"acopf"}"#)
             .expect("solve AC OPF");
         let value: Value = serde_json::from_str(&out).expect("response JSON");
@@ -3682,8 +3799,16 @@ mod tests {
                 .map(str::len),
             Some(64)
         );
-        assert!(value.get("lmp").is_none());
-        assert!(value.get("lmp_q").is_none());
+        // Marginal cost of demand in objective units per MW: generator 1 is
+        // unconstrained at bus 1, so its marginal cost is the price there.
+        let lmp = value["lmp"].as_array().expect("active prices");
+        assert_eq!(lmp.len(), 3);
+        let pg1 = value["dispatch"][0]["pg"].as_f64().unwrap();
+        let price1 = lmp[0]["value"].as_f64().unwrap();
+        assert!((price1 - (2.0 * 0.11 * pg1 + 5.0)).abs() < 1e-5, "{price1}");
+        assert_eq!(lmp[1]["bus"], 2);
+        assert!(lmp[1]["value"].as_f64().unwrap() > price1);
+        assert_eq!(value["lmp_q"].as_array().map(Vec::len), Some(3));
 
         let capabilities: Value = serde_json::from_str(&capabilities_json()).expect("capabilities");
         let capability = capabilities
@@ -3695,7 +3820,15 @@ mod tests {
         assert_eq!(capability["available"], true);
         assert_eq!(
             capability["blocks"],
-            serde_json::json!(["vm", "va", "injections", "flows", "dispatch"])
+            serde_json::json!([
+                "lmp",
+                "lmp_q",
+                "vm",
+                "va",
+                "injections",
+                "flows",
+                "dispatch"
+            ])
         );
     }
 
@@ -3745,17 +3878,51 @@ mod tests {
 
     #[cfg(all(feature = "acopf", feature = "sensitivity"))]
     #[test]
-    fn ac_opf_sensitivity_request_fails_closed() {
+    fn ac_opf_sensitivity_request_is_served_in_engineering_units() {
         let request = r#"{
             "formulation":"acopf",
-            "sensitivities":[{
-                "operand":{"Price":"Active"},
-                "parameter":{"Demand":"Active"}
-            }]
+            "sensitivities":[
+                {"operand":{"Price":"Active"},"parameter":{"Demand":"Active"}},
+                {"operand":{"Dispatch":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}
+            ]
         }"#;
-        let error = solve_test_network_json(&case3_json(), request)
-            .expect_err("unvalidated AC OPF sensitivity must reject");
-        assert!(error.contains("separately validated NLP KKT contract"));
+        let out = solve_test_network_json(&case3_json(), request).expect("AC OPF sensitivities");
+        let value: Value = serde_json::from_str(&out).expect("response JSON");
+        let cells = value["sensitivities"].as_array().expect("sensitivities");
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0]["units"], "(objective_unit/MW)/MW");
+        assert_eq!(cells[0]["values"].as_array().map(Vec::len), Some(3));
+        assert_eq!(
+            cells[0]["rows"][1]["element"],
+            serde_json::json!({"Bus": 2})
+        );
+        // More demand raises the price at its own bus.
+        assert!(cells[0]["values"][1][1].as_f64().unwrap() > 0.0);
+        // One more MW at bus 2 is met by the two generators together, plus
+        // the extra losses.
+        assert_eq!(cells[1]["units"], "(MW)/MW");
+        assert_eq!(
+            cells[1]["cols"][0]["element"],
+            serde_json::json!({"Bus": 2})
+        );
+        let served: f64 = cells[1]["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row[0].as_f64().unwrap())
+            .sum();
+        assert!(served > 1.0 && served < 1.05, "{served}");
+
+        // The capability table offers the cells the solve accepts.
+        let capabilities: Value = serde_json::from_str(&capabilities_json()).expect("capabilities");
+        let capability = capabilities
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|capability| capability["formulation"] == "acopf")
+            .expect("AC OPF capability");
+        assert_eq!(capability["operands"].as_array().map(Vec::len), Some(10));
+        assert_eq!(capability["parameters"].as_array().map(Vec::len), Some(7));
     }
 
     /// Guard against the static capability matrix drifting from the engine: build each
@@ -3812,6 +3979,20 @@ mod tests {
             let soc = super::super::problem::socwr_opf(&ac).unwrap();
             let sys = super::super::sens::ConicKkt::new(&ac, &soc).unwrap();
             check(Problem::Socwr, &sys);
+        }
+
+        // Full nonlinear AC OPF (fixed-active-set KKT).
+        #[cfg(feature = "acopf")]
+        {
+            let instance = AcOpfInstance::from_network(net.clone()).unwrap();
+            let solved = crate::model::solve_ac_opf_cancellable(&instance, None).unwrap();
+            let ids = super::super::sens::AcOpfElementIds {
+                bus: vec![1, 2, 3],
+                branch: vec![1, 2, 3],
+                generator: vec![1, 2],
+            };
+            let sys = super::super::sens::AcOpfKkt::new(&solved, ids).unwrap();
+            check(Problem::Acopf, &sys);
         }
     }
     #[cfg(feature = "acopf")]
