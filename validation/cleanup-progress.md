@@ -1,7 +1,9 @@
 # Cleanup progress
 
-This records unfinished work as well as completed checks. A passing PR is not
-proof that its changes are on the deployed site.
+This is a pre-release snapshot from November 17, 2026. It records unfinished
+work as well as completed checks; publication and deployment checks listed as
+pending were not complete at this point. A passing PR is not proof that its
+changes are on the deployed site.
 
 | Work | Current state | Remaining checks or work |
 | --- | --- | --- |
@@ -10,7 +12,7 @@ proof that its changes are on the deployed site.
 | Engine errors and result fields | #404 and saved-study metadata #413 merged | Final integration and package checks |
 | Generated-grid handoff, #261 | #405 merged | Final deployed handoff check |
 | Shared frontend rules and messages | #406 merged; all PR checks passed | Final deployed checks |
-| Documentation | #407 open; 20 chapters, links and Rust examples checked | Final behavior updates, CI and package examples |
+| Documentation | #407 merged with all required CI checks passed; 20 chapters, links and Rust examples checked | OpenDSS behavior updates in #310; final package examples |
 | Collections and nested ZIPs, #279 | #408 merged; all PR checks passed | Final deployed import check |
 | Saved-study storage and controls | #409 merged; migration and browser checks passed | Final deployed checks |
 | AC OPF speed and sensitivities | #411 and viewer #415 merged with all checks passed | Final browser checks |
