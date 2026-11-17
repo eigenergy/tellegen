@@ -115,7 +115,7 @@ Voltages are volts, currents are amperes, and terminal powers are VA. Complex
 values cross JSON as `{ "re": ..., "im": ... }`.
 
 The solver supports voltage-dependent loads, ideal voltage sources,
-lines, passive shunts, and finite-leakage two- and three-winding transformers, including
+lines, passive shunts, and finite-leakage two-winding transformers, including
 phase-to-phase `single_phase` records, two-winding `n_winding` records with
 explicit BMOPF delta rolls, and fixed-tap `single_phase_autotransformer`
 regulator snapshots. It also supports the three coupled windings into which
@@ -125,8 +125,8 @@ Transformer admittance follows the
 OpenDSS terminal primitive: common leakage base, winding voltage/tap maps,
 actual WYE/DELTA coil incidence, explicit neutral impedance, and explicit
 per-coil excitation shunts. Zero leakage (an ideal voltage constraint),
-transformers with more than three windings, ideal zero-impedance
-regulators, unresolved source impedance, and unsupported controls
+arbitrary transformers with more than two windings, ideal zero-impedance
+regulators, finite source impedance, and unsupported controls
 are rejected with an error rather than approximated.
 The direct OpenDSS YPrim comparison for YY/DD/YD/DY fixed-tap and per-winding
 delta-roll cases is frozen in
