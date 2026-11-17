@@ -295,8 +295,9 @@ count (`circuits`) and the branch's 1-based place among them
   `initialization` records which strategy converged and how many starts ran.
   Modules with AC validation enabled record that calculation setting so the
   viewer and a reopened Study use it. Explicit settings can request `flat`.
-- **HVDC.** Links are replaced by fixed transfers on a validation copy,
-  because the engine's models do not read HVDC rows.
+- **HVDC.** Validation replaces each in-service link with its fixed transfer
+  on a copy of the network. The original loads and exported link records remain
+  unchanged; converters have no reactive-power controller in this approximation.
 - **Failures.** An infeasible DC OPF is reported as infeasible with the
   engine's message; nothing is shed. Load shedding is off in the portable DC
   OPF, so unserved energy is 0 when optimal and absent otherwise. An AC
@@ -436,14 +437,13 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
 - Requests are capped at 12,000 buses (`limits.max_bus_count`), and a
   transmission-only automatic count stops at 3,000, which the largest
   countries reach. OpenStreetMap mode keeps to the request cap by leaving
-  out its lowest voltage levels. China at
-  3000 buses takes about 1.0–1.2 s natively
-  and 1.5 s in wasm (Node, Apple M5 Pro), end to end with both validations;
-  the United States takes 1.4–1.5 s and 2.0 s, about 0.9 s of it an AC power
-  flow that does not converge over five starts. A 500-bus country takes
-  under 0.1 s. `validation/evidence/synth` records the measurements.
-- Whether the AC power flow converges inside the band depends on the seed
-  for several countries. `validation/evidence/synth` sweeps three seeds on two
+  out its lowest voltage levels. Earlier single-area measurements recorded
+  1.0–1.2 s natively and 1.5 s in wasm for China at 3,000 buses, and
+  1.4–1.5 s natively and 2.0 s in wasm for the United States, including an AC
+  calculation that failed in that older model. These measurements in
+  `validation/evidence/synth` predate the synchronous-area changes below.
+- Earlier warm-start studies found seed-dependent AC convergence for several
+  countries. `validation/evidence/synth` records three seeds on two
   outlines (Natural Earth 1:50m and the MapToGrid app's 1:110m layer):
   every run passes DC. The warm-start evaluation passes AC inside the band
   in 53 of 54 and 49 of 51 runs. The United States passes all six runs;
@@ -453,12 +453,10 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
   GOC500 references, because the Gabriel mesh is rich in triangles. Their
   highest nodal degree is also lower, since the mesh caps it at 8.
   `validation/evidence/synth` measures both against the references.
-- Continental regions span several thousand kilometres as one AC island.
-  Their planning-case angle spread stays well above 44° within the branch
-  budget, so the plan reports `planning_incomplete`. Real systems of that
-  size split into synchronous areas joined by HVDC, which the generator does
-  not model yet; very long corridors, such as across the Nullarbor or
-  between Indonesian islands, stay AC.
+- The generator now separates synchronous areas as described below.
+  Corridor planning can still report `planning_incomplete` when an area misses
+  its angle or capacity target. A converged AC check does not remove that
+  planning warning or prove that every corridor meets its rating.
 - AC validation starts from the stored planning state and falls back to a
   flat start and deterministic perturbations if necessary. Long, weakly
   coupled systems can still fail or reach another solution outside the
