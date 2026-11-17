@@ -202,6 +202,24 @@ test('imports and solves a retained canonical AC OPF instance', async ({ page })
 	await expect(page.locator('.error')).toHaveCount(0);
 });
 
+test('the controller displays repeatable AC OPF price sensitivity', async ({ page }) => {
+	test.setTimeout(180_000);
+	const port = Number(
+		process.env.TELLEGEN_MC_PREVIEW_PORT ?? Number(process.env.TELLEGEN_PREVIEW_PORT ?? 4173) + 1
+	);
+	await page.goto(`http://127.0.0.1:${port}/acopf-lifecycle.html`);
+	await expect.poll(() => page.evaluate(() => window.acOpfLifecycle?.available())).toBe(true);
+	await page.evaluate((text) => window.acOpfLifecycle.start(text), CASE3_PLANNING);
+	await expect
+		.poll(() => page.evaluate(() => window.acOpfLifecycle.solved()), { timeout: 120_000 })
+		.toBe(true);
+	const first = await page.evaluate(() => window.acOpfLifecycle.sensitivity());
+	expect(first?.values.length).toBe(3);
+	expect(first?.values.every((entry) => Number.isFinite(entry.value))).toBe(true);
+	expect(await page.evaluate(() => window.acOpfLifecycle.sensitivity())).toEqual(first);
+	await page.evaluate(() => window.unmountAcOpfProvider());
+});
+
 for (const phase of ['probe', 'solve'] as const) {
 	test(`unmounting the provider terminates a pending ${phase} worker`, async ({ page }) => {
 		const port = Number(
