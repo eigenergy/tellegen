@@ -3,6 +3,9 @@
 The original Austin P3U discrepancy in #153 is reproduced: **17.473052 V**
 between faer and OpenDSS's default KLU on the same 431,897-node matrix and RHS.
 KLU reproduces live OpenDSS exactly. Its condition estimate is 2.253e16.
+The difference is a shift in the voltage to ground of two delta-bounded 69 kV
+sections; KLU and faer are both volts away from the exact solution of the
+matrix there (see "Where the 17 V comes from").
 No production solver behavior or backend selection changes in this study.
 
 ## What was measured
@@ -84,6 +87,103 @@ controls. No records were discarded or diagnostics bypassed. See
 unchanged. These checks confirm that the original regional reduced-system question
 remains unresolved; they are a source-candidate test, not a registry-package test.
 
+## Where the 17 V comes from
+
+`export_gap_case.py` and `explain_gap.py` locate the disagreement and test an
+explanation; `smartds-aus-p3u-gap-results.json` holds every number below.
+"Exact" means the float64 vector reached by refinement with residuals summed
+without rounding error (error-free products and `math.fsum`). It matches faer's
+`fx128`-refined vector to 7.3e-12 V. It is the solution of the exported
+float64 matrix with OpenDSS's current vector held fixed.
+
+**Where.** The disagreement is confined to the 657 nodes (219 buses) of the
+69 kV level. They form two sections of 315 and 342 nodes that are not connected
+to each other at 69 kV. Every transformer winding on them is a delta: 5
+delta 230 kV / delta 69 kV 300 MVA transformers above and 33 delta 69 kV /
+wye 12.47 kV substation transformers below. Raising all nodes of one section
+by the same voltage therefore produces no current at any node outside it (the
+matrix gives exactly 0 S), and the right-hand side is zero on both sections.
+
+**What ties each section to ground.** The 221 lines (78.6 km and 68.8 km)
+carry capacitance to ground: j8.677e-5 S and j8.705e-5 S in total per section.
+`ppm_antifloat` (1 ppm on every winding) contributes −j2.9e-7 S and −j3.7e-7 S,
+under 0.5% of that. The same sections contain 12 lines (linecode
+`fuse_1_69kv_3`, length 0.001) whose matrix entries are 7.07e7 S. One unit in
+the last place of such an entry is 7.45e-9 S; at 39.5 kV that is 2.9e-4 A,
+which the section's ground path turns into a 3.4 V shift of the whole section.
+
+**What the matrix says.** In the exact solution the mean voltage to ground of
+each section is 2.8e-7 V and 2.2e-6 V: the three phase voltages sum to zero,
+as the balanced capacitances require. The float64 LU answers do not reproduce
+this. Mean voltage to ground of each section (magnitude, volts):
+
+| solution | section of 315 nodes | section of 342 nodes |
+| --- | --- | --- |
+| exact | 2.8e-7 | 2.2e-6 |
+| OpenDSS KLU | 2.719 | 17.458 |
+| faer | 7.475 | 0.235 |
+| SuperLU, COLAMD | 11.663 | 1.872 |
+| SuperLU, MMD(Aᵀ+A) | 14.526 | 11.446 |
+
+For every solver this value equals the net current its solution sends to
+ground through the section divided by the section's admittance to ground
+(KLU: 1.52e-3 A, about five units in the last place of a 7.07e7 S entry).
+
+**Shape of the difference.** faer minus KLU is a common shift of 6.003 V on
+the first section and 17.467 V on the second; the shifts hold more than
+0.9999998 of the squared norm of the difference there. After removing them the
+largest remainder is 0.0109 V (RMS 0.0043 V) and the largest difference
+between two directly coupled 69 kV nodes is 0.0150 V. Outside the two sections
+the largest difference is 1.86 mV; 3,451 nodes exceed 1e-3 V. Across the 259
+lines and transformers at 69 kV, conductor currents differ by at most 2.7e-3 A
+(largest current 2,421.5 A) and terminal powers by at most 283 VA (largest
+235.5 MVA). The 17.47 V maximum is therefore KLU's 17.46 V error on the second
+section; on the first section faer is the farther of the two.
+
+**Sensitivity.** Moving the real and imaginary parts of the 144 entries above
+1e7 S by −1, 0 or +1 unit in the last place, independently, and solving
+exactly, shifts the sections by 13.4 V to 57.4 V over five draws. Doing the
+same to the other 2,427,525 entries shifts them by at most 1.7e-3 V. The
+exported matrix itself is not free of such rounding: its rows leave up to
+4.6e-9 S to ground that the element data do not contain. But that leftover
+differs by at most 1e-15 S between the three phases of any bus, so it
+multiplies voltages that sum to zero, and its estimated effect on the exact
+solution is below 3e-6 V.
+
+**Singular values.** The 2.253e16 condition estimate does not describe these
+sections. The smallest singular value of the full matrix, 6.28e-9 S, belongs
+to 48 pieces (294 nodes) with no connection to the source; their right-hand
+side is zero and every solver returns exactly 0 V there. Largest singular
+value 1.414e8 S over 6.28e-9 S gives 2.253e16. In the connected piece the two
+smallest singular values are 2.546e-7 S and 2.754e-7 S and the next is
+4.04e-4 S. The vectors equal to one on a section and zero elsewhere lie in the
+span of the two smallest singular vectors to within 1e-10, and their Rayleigh
+quotients (2.749e-7 S and 2.542e-7 S) are the sections' admittance to ground
+divided by their node counts. That ratio is 5.6e14.
+
+**Changing `ppm_antifloat` in OpenDSS.** Scaling it by 0.1, 10 and 100 on the
+38 transformers and re-solving moves KLU's mean section voltage by 3.6 V and
+7.0 V, 15.3 V and 28.6 V, 23.7 V and 41.9 V. The exact solution's mean section
+voltage stays below 4e-6 V in all three. The remaining voltage changes agree
+between KLU and exact (0.0099 V, 0.092 V and 1.01 V at 69 kV) and grow in
+proportion to the added shunt, which sits on the wye windings too.
+
+**What this supports.** The matrix does fix the voltage to ground of both
+69 kV sections, at a balanced value, but only through an admittance 1.2e-12
+times the largest entries on the same nodes. No float64 LU answer measured
+here resolves it: KLU is off by 2.7 V and 17.5 V, faer by 7.5 V and 0.2 V.
+Neither is the more accurate overall, so KLU is not a reference for voltages
+to ground on these sections. Voltages between conductors, currents and powers
+agree to the figures above, and refinement with exactly summed residuals
+recovers the balanced solution from either start in four or five steps.
+
+**Limits.** The shift of each solver was not traced to individual elimination
+steps; only its size is accounted for. The remainders of up to 0.011 V at
+69 kV and 1.9 mV elsewhere were measured, not explained. The exact solution
+holds OpenDSS's compensation currents fixed, so it is not a re-converged power
+flow. Only this region was examined, and Tellegen's own regional matrix is
+still unavailable (below).
+
 ## Timing and memory
 
 Machine: Apple M5 Pro, 64 GiB RAM. Rust 1.96.0, faer 0.24.4,
@@ -125,10 +225,14 @@ python compare.py /path/to/the/printed/test-executable /path/to/libklusolvex.dyl
 python run_reduced.py /path/to/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib /tmp/large-reduced 158000
 python recover_smartds.py /tmp/smartds-aus-p3u
 python run_smartds.py /path/to/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib /tmp/smartds-aus-p3u /tmp/smartds-results
+python export_gap_case.py /tmp/smartds-aus-p3u /tmp/smartds-gap
+python explain_gap.py /tmp/smartds-gap /path/to/test-executable > smartds-aus-p3u-gap-results.json
 ```
 
-The last command retains a roughly 144 MiB matrix JSON plus its result summary
-in the chosen output directory. The Rust exporter compiles only for tests;
+`run_smartds.py` retains a roughly 144 MiB matrix JSON plus its result summary
+in the chosen output directory. The two gap scripts also need scipy; the export
+keeps about 135 MB of matrices, and the test executable is optional (without
+it the faer rows are omitted). The Rust exporter compiles only for tests;
 its ignored test requires an explicit output path. `TELLEGEN_LINEAR_DSS`
 selects an actual DSS import attempt; `TELLEGEN_LINEAR_INPUT` selects an
 already exported matrix. Neither changes normal engine behavior.
@@ -140,7 +244,9 @@ no production dependency on KLU or new solver API is introduced.
 
 ## Remaining limits
 
-KLU remains the agreed reference. There is no supported regional Tellegen
+KLU remains the agreed reference except for voltages to ground on the two
+69 kV sections described above, where it is 17.46 V from the exact solution
+of its own matrix. There is no supported regional Tellegen
 import/preparation result, interval-validated solution, or demonstrated need
 for a WASM backend change. The other original regions were located in the
 same public data tree but were not remeasured here. This is a reproducible
