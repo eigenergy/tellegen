@@ -34,18 +34,21 @@ Render the full viewer:
 <TellegenViewer />
 ```
 
-The default viewer loads bundled cases from `/api`, parses dropped local case
-files in the browser, and runs supported local solves in WebAssembly.
+The default viewer opens local case files in the browser and runs supported solves
+in WebAssembly. It does not contact a backend unless the host configures one.
 
 `TellegenViewer` accepts:
 
-- `apiBase`, default `/api`
-- `loadDefaultCases`, default `true`
+- `apiBase`, default `null`
+- `loadDefaultCases`, default `false`
 - `docsHref`
 - `orgHref`
 - `orgLabel`
-- `showFooter`, default `true`
-- `theme`, `light` (default) or `dark`
+- `showFooter`, default `false`
+- `menuLinks`, optional `{ label, href }` entries for the header menu
+- `distributionResultsPanel`, optional host panel ID; otherwise results open in Network
+- `dynamicsExample`, default `false`; enables the bundled example command
+- `theme`, `light` or `dark` (otherwise follows the host or operating system)
 - `cartoApiKey`, the basemap key (see [Basemap](#basemap))
 
 `theme` and `cartoApiKey` follow their props. The others are read once, when
@@ -54,7 +57,7 @@ the viewer mounts; remount it to change them.
 Use a different backend base path like this:
 
 ```svelte
-<TellegenViewer apiBase="/tellegen/api" />
+<TellegenViewer apiBase="/tellegen/api" loadDefaultCases={true} />
 ```
 
 Use local files only by disabling bundled case loading:
@@ -520,3 +523,15 @@ unit test; `apps/web/src/lib/analytics/client.ts` is the hosted demo's.
 
 Downstream apps should not import from `apps/web/src/lib` or from generated wasm
 folders.
+
+
+### Build a different app
+
+The [custom Svelte example](https://github.com/eigenergy/tellegen/tree/main/examples/svelte-minimal)
+uses the provider, controller, and results component without the demo shell. Build the
+example and open `custom.html` to load a distribution case, run power flow, and inspect
+its results. `DistributionResults` takes a `MulticonductorCase` as `caseState` and reads
+the controller from its enclosing provider.
+
+The stylesheet applies inside the provider's `.tellegen` element. It does not reset the
+host page's links, inputs, body, or theme. Multiple providers can use different themes.

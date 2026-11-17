@@ -1,14 +1,28 @@
 import type { RGBA } from './colors.js';
 import type { DisplayMode } from './state.svelte.js';
-import { FORMULATIONS, type Formulation } from '@tellegen/engine';
+import { FORMULATIONS, type Formulation, type ObjectiveKind } from '@tellegen/engine';
 
 // errorText is defined once in wasm.ts (its first consumer) and surfaced here so UI
 // code can import it alongside the other formatting helpers.
 export { errorText } from '@tellegen/engine';
 
 /** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
-export function formulationLabel(id: Formulation): string {
+export function formulationLabel(id: Formulation, objectiveKind?: ObjectiveKind | null): string {
+	if (objectiveKind === 'feasibility' && id === 'dcopf') return 'DC feasibility';
+	if (objectiveKind === 'feasibility' && id === 'acopf') return 'AC feasibility';
+	if (objectiveKind === 'feasibility' && id === 'socwr') return 'AC feasibility (relaxed)';
 	return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
+}
+
+/** Older saved studies may not name their objective. Keep that distinct from feasibility. */
+export function objectiveKind(result: object | null | undefined): ObjectiveKind | undefined {
+	if (
+		result &&
+		'objective_kind' in result &&
+		(result.objective_kind === 'cost' || result.objective_kind === 'feasibility')
+	)
+		return result.objective_kind;
+	return undefined;
 }
 
 /** A line's name everywhere it is listed: its id and the buses it joins. */

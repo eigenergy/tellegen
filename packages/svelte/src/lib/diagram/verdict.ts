@@ -2,7 +2,7 @@
  * without a renderer. */
 
 import { formulationLabel } from '../format.js';
-import type { Formulation } from '@tellegen/engine';
+import type { Formulation, ObjectiveKind } from '@tellegen/engine';
 
 export type VerdictTone = 'ok' | 'warning' | 'failure' | 'pending';
 
@@ -169,6 +169,7 @@ export interface ResultStatsInput {
 	/** A solve is running, so missing values are on their way. */
 	solving?: boolean;
 	objective: number | null;
+	objectiveKind?: ObjectiveKind | null;
 	/** Lines at their limit; null when the result does not say. */
 	binding: number | null;
 	/** Lowest and highest bus voltage (pu), for an AC power flow. */
@@ -191,8 +192,8 @@ export function percent(fraction: number): string {
 /** The key numbers of a result, chosen per calculation, always in pairs: an OPF reports its
  * operational cost and the lines at their limit; AC power flow its losses, heaviest line, and
  * lowest and highest voltage (the list under the boxes counts and names lines over their limit);
- * DC power flow its heaviest line and the lines over their limit. An OPF whose cost is zero (a
- * case without generator costs) leaves out a meaningless $0 and shows its heaviest line. */
+ * DC power flow its heaviest line and the lines over their limit. A feasibility solve
+ * shows line loading without economic metrics. */
 export function resultStats(input: ResultStatsInput): Stat[] {
 	const missing = input.solving ? '…' : '—';
 	const stats: Stat[] = [];
@@ -214,10 +215,10 @@ export function resultStats(input: ResultStatsInput): Stat[] {
 		});
 	};
 	if (OPF.has(input.formulation)) {
-		// A case without generator costs solves to $0: no cost to show, so the box is left out and
-		// the heaviest line takes its place.
-		if (input.objective === 0) maxLoading();
-		else {
+		if (input.objectiveKind === 'feasibility') {
+			maxLoading();
+			return stats;
+		} else {
 			stats.push({
 				label: 'Operational cost',
 				value: input.objective === null ? missing : costPerHour(input.objective),
