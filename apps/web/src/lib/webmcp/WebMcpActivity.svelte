@@ -21,6 +21,7 @@
 		browser = null,
 		pageToolCalls = true,
 		toolCount = 0,
+		unavailableTools = [],
 		activities,
 		planning,
 		experiments,
@@ -33,6 +34,7 @@
 		browser?: WebMcpBrowserState | null;
 		pageToolCalls?: boolean;
 		toolCount?: number;
+		unavailableTools?: readonly { name: string; reason: string }[];
 		activities: TellegenToolActivityEvent[];
 		planning: PlanningActivityStore;
 		experiments: ExperimentRecord[];
@@ -192,6 +194,7 @@
 					{browser}
 					{pageToolCalls}
 					{toolCount}
+					{unavailableTools}
 					callCount={experiments.length}
 				/>{:else}
 				{#if registrationError}

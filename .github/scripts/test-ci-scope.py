@@ -73,6 +73,7 @@ CASES = {
         ["validation/evidence/capacity-plan/run.mjs"],
         gates("js"),
     ),
+    "the WebMCP page": (["docs/src/webmcp.md"], gates("js", "docs")),
     "validation harness": (
         ["validation/dc-variants/compare.py", "validation/mc-opf/mc_opf_oracle.jl"],
         gates(),

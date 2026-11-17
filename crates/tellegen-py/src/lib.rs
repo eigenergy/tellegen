@@ -66,6 +66,50 @@ impl Failure {
     }
 }
 
+// Compatibility for the Python codes published before typed engine errors.
+// Keep this table until a major release: the engine's broader categories cannot
+// distinguish SENS.UNSUPPORTED from FORMULATION.UNAVAILABLE, for example.
+fn legacy_python_code(message: &str) -> &'static str {
+    // Order matters: the solve-status arms are checked before the generic
+    // "bad request" arm because a cancelled solve also mentions its request.
+    if message.contains("solve infeasible") {
+        "SOLVE.INFEASIBLE"
+    } else if message.contains("solve unbounded") {
+        "SOLVE.UNBOUNDED"
+    } else if message.contains("did not converge") {
+        "SOLVE.NOT_CONVERGED"
+    } else if message.contains("cancelled") {
+        "SOLVE.CANCELLED"
+    } else if message.contains("bad request JSON") || message.contains("unknown field") {
+        "REQUEST.MALFORMED"
+    } else if message.contains("unknown demand delta bus")
+        || message.contains("unknown rating delta branch")
+    {
+        "EDIT.UNKNOWN_ELEMENT"
+    } else if message.contains("would make demand negative")
+        || message.contains("would make the line limit non-positive")
+        || message.contains("rating edits are not supported")
+    {
+        "EDIT.OUT_OF_RANGE"
+    } else if message.contains("does not support d(") {
+        "SENS.UNSUPPORTED"
+    } else if message.contains("is not available in this build")
+        || message.contains("requires the `conic` feature")
+        || message.contains("requires the `sensitivity` feature")
+    {
+        "FORMULATION.UNAVAILABLE"
+    } else if message.contains("which this solve entry does not support")
+        || message.contains("duplicate bus uid")
+        || message.contains("ambiguous with a numeric element id")
+    {
+        "MODULE.UNSUPPORTED"
+    } else if message.contains("unknown PowerIO format") {
+        "FORMAT.UNKNOWN"
+    } else {
+        "ENGINE.FAILED"
+    }
+}
+
 /// The Python `.code` for an engine error code.
 ///
 /// The engine classifies each error where it creates or returns it; this is
@@ -83,7 +127,7 @@ fn python_code(code: Option<tellegen::ErrorCode>) -> &'static str {
         Some(ErrorCode::UnknownElement) => "EDIT.UNKNOWN_ELEMENT",
         Some(ErrorCode::OutOfRange) => "EDIT.OUT_OF_RANGE",
         Some(ErrorCode::Unsupported) => "REQUEST.UNSUPPORTED",
-        Some(ErrorCode::InvalidInput) => "INPUT.INVALID",
+        Some(ErrorCode::InvalidInput) => "ENGINE.FAILED",
         _ => "ENGINE.FAILED",
     }
 }
@@ -92,19 +136,21 @@ fn python_code(code: Option<tellegen::ErrorCode>) -> &'static str {
 impl From<tellegen::EngineError> for Failure {
     fn from(error: tellegen::EngineError) -> Self {
         Self {
-            code: python_code(Some(error.code)),
+            code: match legacy_python_code(&error.message) {
+                "ENGINE.FAILED" => python_code(Some(error.code)),
+                legacy => legacy,
+            },
             message: error.message,
         }
     }
 }
 
 /// A plain message from an engine entry point that does not return a coded
-/// error yet. The engine reads its own fixed phrases
-/// (`ErrorCode::from_message`); this binding matches no text itself.
+/// error yet. Preserve the published Python classification for these messages.
 impl From<String> for Failure {
     fn from(message: String) -> Self {
         Self {
-            code: python_code(tellegen::ErrorCode::from_message(&message)),
+            code: legacy_python_code(&message),
             message,
         }
     }
@@ -431,7 +477,7 @@ fn study_run(
 /// code actually runs.
 #[pyfunction]
 fn _classify(message: &str) -> &'static str {
-    python_code(tellegen::ErrorCode::from_message(message))
+    legacy_python_code(message)
 }
 
 #[pymodule]

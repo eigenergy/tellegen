@@ -434,13 +434,18 @@ const ctrl = getController();
 const local = await ctrl.openBalancedModule({ name: 'synthetic grid', moduleJson });
 // or, with the payload the engine's ingestCase already returned for it:
 await ctrl.openBalancedModule({ name, payload, frame: false });
+// or a generated grid, with its Study already building on the study worker:
+const handoff = await session.ingestWithStudy('dcopf');
+await ctrl.openBalancedModule({ name, ...handoff, formulation: 'dcopf' });
 // swap it for a new result in place
 await ctrl.replaceLocalCase(local, { name, payload });
 ```
 
 Options: `geoLayer` (a `.geo.json` document, for a module without
 coordinates; a module that carries `Bus.location` needs none),
-`formulation`, `activate` (default `true`; `false` returns the prepared case
+`formulation`, `study` (a Study already building from this module for the
+case's formulation, which the first solve then uses instead of building its
+own), `activate` (default `true`; `false` returns the prepared case
 without adding it) and `frame` (default `true`). `replaceLocalCase` keeps the
 case's slot in the header, its formulation and display mode, and the selected
 bus when the new case has it. With `loadDefaultCases={false}` the controller

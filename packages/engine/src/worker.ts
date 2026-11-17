@@ -51,9 +51,14 @@ const scope = globalThis as unknown as {
 
 const cancelledOperations = new Set<number>();
 
+/** Milliseconds since the Unix epoch on this thread's high-resolution clock,
+ * comparable with the same expression on the page. */
+const wallClock = () => performance.timeOrigin + performance.now();
+
 scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
   if (req.op === "cancel_study_operation") { cancelledOperations.add(req.id); return; }
+  const received_at = wallClock();
   try {
     const mod = await wasmModule();
     const started = performance.now();
@@ -61,7 +66,10 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const worker_ms = performance.now() - started;
     // Numeric arrays and every preview buffer move to the caller instead of
     // being copied.
-    scope.postMessage({ id: req.id, ok: true, value, worker_ms }, transferables(value));
+    scope.postMessage(
+      { id: req.id, ok: true, value, worker_ms, received_at, posted_at: wallClock() },
+      transferables(value),
+    );
   } catch (e) {
     // A Rust panic or a failed allocation is a wasm trap, and a trapped
     // instance is not recoverable: linear memory, the allocator, and every

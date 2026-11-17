@@ -1,16 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createSynthSession, type IngestedCase, type SynthRequest } from '@tellegen/engine';
+	import {
+		createSynthSession,
+		type BrowserSynthSession,
+		type SynthRequest
+	} from '@tellegen/engine';
 	import proxy from '../../../../../packages/engine/tests/fixtures/handoff-request.json';
 	import china from '../../../../../packages/engine/tests/fixtures/handoff-china-request.json';
 	import { getController } from '../../../../../packages/svelte/src/lib/context.svelte.js';
-	import type { LocalCase } from '../../../../../packages/svelte/src/lib/state.svelte.js';
 
 	const ctrl = getController();
-	let payload: IngestedCase | null = null;
-	let current: LocalCase | null = null;
-	let samples = 0;
+	let session: BrowserSynthSession | null = null;
 
+	/** Milliseconds since the Unix epoch, the clock the workers report on. */
+	const now = () => performance.timeOrigin + performance.now();
 	const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
 	/** The first animation frame at which `ready()` holds, checked every frame. */
 	async function until(ready: () => boolean, label: string) {
@@ -19,7 +22,7 @@
 			if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
 			await frame();
 		}
-		return performance.now();
+		return now();
 	}
 	const cardShowsTime = () =>
 		[...document.querySelectorAll('.solvecard dt')].some((dt) => dt.textContent === 'Time');
@@ -30,51 +33,49 @@
 				const started = performance.now();
 				// No bus count: MapToGrid's request for China at its default density.
 				const request = buses === null ? china : { ...proxy, target_bus_count: buses };
-				const session = await createSynthSession(request as SynthRequest);
-				try {
-					await session.run();
-					const generated = performance.now();
-					payload = await session.ingest();
-					return {
-						generate_ms: generated - started,
-						ingest_ms: performance.now() - generated,
-						buses: payload.n_bus,
-						module_json_chars: payload.module_json.length
-					};
-				} finally {
-					session.free();
-				}
+				session = await createSynthSession(request as SynthRequest);
+				await session.run();
+				return { generate_ms: performance.now() - started };
 			},
-			async open() {
-				if (!payload) throw new Error('generate a grid first');
-				// Each sample opens on an empty viewer, as MapToGrid's first grid does.
-				if (current) await ctrl.removeLocalCase(current);
-				await until(() => !cardShowsTime(), 'the previous solve card to close');
-				// New text for every sample, as each new grid is: trailing whitespace
-				// keeps the module valid and defeats any cache keyed on the text.
-				const fresh = { ...payload, module_json: payload.module_json + ' '.repeat(++samples) };
-				const start = performance.now();
+			async open(path) {
+				if (!session) throw new Error('generate a grid first');
+				const ready = now();
+				// `serial` is the hand-off before #261; `ahead` starts the Study
+				// before the payload is prepared and gives it to the viewer.
+				const { payload, study } =
+					path === 'ahead'
+						? await session.ingestWithStudy('dcopf')
+						: { payload: await session.ingest(), study: undefined };
+				session.free();
+				session = null;
+				const start = now();
 				const local = await ctrl.openBalancedModule({
 					name: 'generated',
-					payload: fresh,
+					payload,
+					study,
 					formulation: 'dcopf',
 					frame: false
 				});
-				current = local;
-				const opened = performance.now();
+				const opened = now();
 				const solved = await until(
 					() =>
 						local.solution != null ||
 						(!local.solving && local.solveMs == null && local.solveBackend !== null),
 					'the first solve'
 				);
+				if (!local.solution) throw new Error('the first solve failed');
 				const card = await until(cardShowsTime, 'the solve card');
 				return {
-					open_ms: opened - start,
-					solution_ms: solved - start,
-					card_ms: card - start,
+					ready,
+					start,
+					opened,
+					solved,
+					card,
+					buses: payload.n_bus,
+					module_json_chars: payload.module_json.length,
 					formulation: local.formulation,
-					verdict: document.querySelector('.solvecard .verdict')?.textContent?.trim() ?? ''
+					calculation: document.querySelector<HTMLElement>('.solvecard')?.dataset.calculation ?? '',
+					status: local.solution?.status ?? ''
 				};
 			}
 		};
