@@ -35,7 +35,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	await page.goto('/');
 	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await expect(
-		page.getByRole('application', { name: 'Network diagram', exact: true })
+		page.getByRole('application', { name: 'Single-line diagram', exact: true })
 	).toBeVisible();
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
 	let listed = await callTool(page, 'list_cases', {});
@@ -91,7 +91,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 			const value = await callTool(page, 'inspect_case', {});
 			return value.ok ? value.data.case_id : '';
 		})
-		.toMatch(/^dist-/);
+		.toBe('feeder-b');
 	const study = page.getByRole('region', { name: 'Study workspace' });
 	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
 	await study.getByRole('button', { name: 'Run power flow' }).click();
@@ -107,9 +107,9 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	expect(JSON.parse(await readFile(reopenedPath!, 'utf8')).options).toEqual(snapshot.options);
 	expect(await callTool(page, 'select_case', { case_id: 'feeder-b' })).toMatchObject({ ok: true });
 	const imported = page.locator('.case-chip.local .case-remove');
-	// Remove only the reopened local case; retain the hosted catalogue entry.
+	// Reopening the result reuses the hosted case instead of adding a duplicate.
 	await openCaseMenu(page);
-	await imported.last().click();
+	await expect(imported).toHaveCount(0);
 	listed = await callTool(page, 'list_cases', {});
 	if (!listed.ok) throw new Error(listed.error.message);
 	expect(listed.data.cases).toHaveLength(2);

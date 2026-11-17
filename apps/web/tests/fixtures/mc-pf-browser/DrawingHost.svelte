@@ -4,13 +4,16 @@
 	import EngineeringDrawing from '../../../../../packages/svelte/src/lib/components/EngineeringDrawing.svelte';
 	let network = $state<Network | null>(null);
 	let error = $state('');
+	let showChange = $state(false);
 	let solution = $state<Solution | null>(null);
 	onMount(() => {
 		void (async () => {
 			try {
 				const query = new URLSearchParams(location.search);
+				showChange = query.has('live');
 				const count = Number(query.get('count'));
 				if (count > 0 && count <= 10_000) {
+					const columns = Math.ceil(Math.sqrt(count));
 					network = {
 						id: 'large',
 						name: 'Large',
@@ -20,8 +23,8 @@
 						buses: Array.from({ length: count }, (_, i) => ({
 							id: i,
 							name: `Bus ${i}`,
-							lon: (i % 32) * 160,
-							lat: Math.floor(i / 32) * 160,
+							lon: (i % columns) * 160,
+							lat: Math.floor(i / columns) * 160,
 							demand_mw: 1,
 							gen_mw: 0,
 							base_kv: 110,
@@ -45,8 +48,8 @@
 					if (query.has('mesh'))
 						network.branches.push(
 							...network.branches
-								.slice(0, Math.max(0, count - 32))
-								.map((b, i) => ({ ...b, id: count + i, to: i + 32 }))
+								.slice(0, Math.max(0, count - columns))
+								.map((b, i) => ({ ...b, id: count + i, to: i + columns }))
 						);
 					solution = {
 						objective: null,
@@ -87,7 +90,26 @@
 {#if network}<EngineeringDrawing
 		{network}
 		{solution}
-		label="Station"
+		label={network.name}
 		onclose={() => {}}
 		onselectbus={() => {}}
 	/>{:else}<p role="status">{error || 'Loading station'}</p>{/if}
+
+{#if showChange && network?.equipment?.node_breaker}
+	<button
+		style="position:fixed;right:8px;bottom:8px;z-index:2147483647"
+		onclick={() => {
+			if (!network?.equipment?.node_breaker) return;
+			network = {
+				...network,
+				equipment: {
+					...network.equipment,
+					node_breaker: {
+						...network.equipment.node_breaker,
+						switches: network.equipment.node_breaker.switches.map((s) => ({ ...s, open: !s.open }))
+					}
+				}
+			};
+		}}>Change switch states</button
+	>
+{/if}

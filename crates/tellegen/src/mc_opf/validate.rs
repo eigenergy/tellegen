@@ -10,6 +10,7 @@ pub(super) struct Checked {
     pub voltage: Vec<C>,
     pub shunts: Vec<McOpfShuntResult>,
     pub residuals: McOpfResiduals,
+    pub power_residuals: powerio_prob::Residuals,
     pub branches: Vec<McOpfBranchResult>,
     pub devices: Vec<McOpfDeviceResult>,
     pub transformers: Vec<super::McOpfTransformerResult>,
@@ -516,8 +517,25 @@ pub(super) fn check(
             )?;
         }
     }
+    let mut power_residuals = powerio_prob::Residuals::default();
+    power_residuals.max_active_power_mismatch = Some(0.0);
+    power_residuals.max_reactive_power_mismatch = Some(0.0);
     for (i, t) in prep.terminals.iter().enumerate() {
         if !t.grounded {
+            // The canonical residual fields use MW/MVAr, including for MC results.
+            let mismatch = voltage[i] * kcl[i].conj() * sb / 1e6;
+            power_residuals.max_active_power_mismatch = Some(
+                power_residuals
+                    .max_active_power_mismatch
+                    .unwrap()
+                    .max(mismatch.re.abs()),
+            );
+            power_residuals.max_reactive_power_mismatch = Some(
+                power_residuals
+                    .max_reactive_power_mismatch
+                    .unwrap()
+                    .max(mismatch.im.abs()),
+            );
             checks.at(t.bus.clone(), Some(t.terminal.clone()));
             checks.mismatch("kcl_pu", kcl[i].norm())?;
         }
@@ -532,6 +550,7 @@ pub(super) fn check(
         voltage,
         shunts,
         residuals,
+        power_residuals,
         branches,
         transformers,
         devices,

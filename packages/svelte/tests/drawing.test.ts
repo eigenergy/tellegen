@@ -4,6 +4,7 @@ import {
 	restoreDrawing,
 	arrangeDrawing,
 	drawingExtent,
+	drawingBounds,
 	drawingNetworkKey,
 	drawingPaths,
 	parseDrawing,
@@ -116,6 +117,13 @@ describe('persistent engineering drawings', () => {
 			}
 		};
 		const d = createDrawing(n, 'Station');
+		const generic = structuredClone(n);
+		generic.equipment!.node_breaker!.switches[0].kind = 'load_break_switch';
+		const genericDrawing = createDrawing(generic, 'Mixed switches');
+		expect(genericDrawing.objects.find((o) => o.id === 'switch')?.kind).toBe('switch');
+		expect(parseDrawing(JSON.stringify(genericDrawing), genericDrawing.network)).toEqual(
+			genericDrawing
+		);
 		const changed = structuredClone(n);
 		changed.equipment!.node_breaker!.busbars[0].node = 'n2';
 		expect(drawingNetworkKey(changed)).not.toBe(d.network);
@@ -260,4 +268,70 @@ it('keeps locked equipment fixed during graph layout and handles large extents w
 	expect(drawingExtent(Array.from({ length: 200000 }, (_, i) => [i, -i]))).toEqual([
 		0, -199999, 199999, -0
 	]);
+});
+
+it('includes rotated symbols, distant labels and routed bends in full drawing bounds', () => {
+	const d = createDrawing(network, 'Bounds');
+	d.objects[0].width = 3000;
+	d.objects[0].rotation = 45;
+	d.objects[0].labelOffset = [4000, 0];
+	d.connections[0].bends = [[-5000, -2000]];
+	const [x, y, width, height] = drawingBounds(d);
+	expect(x).toBeLessThan(-5000);
+	expect(y).toBeLessThan(-2000);
+	expect(x + width).toBeGreaterThan(2800);
+	expect(y + height).toBeGreaterThan(2800);
+});
+
+it('retains source route bends independently for each distribution conductor', () => {
+	const graph = {
+		buses: ['a', 'b'].map((id) => ({
+			id,
+			terminals: ['1', 'n'],
+			grounded: ['n'],
+			load_kw: 0,
+			gen_kw: 0,
+			has_source: id === 'a',
+			attachments: []
+		})),
+		edges: [
+			{
+				id: 'line',
+				from: 'a',
+				to: 'b',
+				kind: 'line' as const,
+				closed: true,
+				n_phases: 1,
+				conductors: [
+					['1', '1'],
+					['n', 'n']
+				] as [string, string][]
+			}
+		]
+	};
+	const feeder: Network = {
+		...network,
+		coordinate_space: 'diagram',
+		buses: network.buses.map((b, id) => ({ ...b, id })),
+		branches: [
+			{
+				...network.branches[0],
+				id: 0,
+				from: 0,
+				to: 1,
+				path: [
+					[0, 0],
+					[0.25, 0.75],
+					[1, 1]
+				]
+			}
+		]
+	};
+	const drawing = createDrawing(feeder, 'Feeder', graph);
+	expect(drawing.connections).toHaveLength(2);
+	expect(drawing.connections[0].bends).toEqual([[300, 700]]);
+	expect(drawing.connections[1].bends).toEqual([[300, 700]]);
+	drawing.connections[0].bends[0][0] = 400;
+	expect(drawing.connections[1].bends[0][0]).toBe(300);
+	expect(parseDrawing(JSON.stringify(drawing), drawing.network)).toEqual(drawing);
 });
