@@ -225,10 +225,10 @@
         ]
       },
       {
-        "available": false,
+        "available": true,
         "calculation": "socwr",
-        "fields": [],
-        "reason": "calculation \"socwr\" is unavailable in this build"
+        "defaults": {},
+        "fields": []
       },
       {
         "available": false,
