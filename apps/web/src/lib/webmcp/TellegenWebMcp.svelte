@@ -23,6 +23,7 @@
 		readBrowserSignals,
 		type WebMcpBrowserState
 	} from './browser-support.js';
+	import { unavailableTools } from './connect-status.js';
 
 	import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 	import { createStudyAdapter } from '../studies/adapter.js';
@@ -40,7 +41,8 @@
 	let browser = $state.raw<WebMcpBrowserState | null>(null);
 	/** Whether the page can list and call its own tools, as Claude in Chrome does. */
 	let pageToolCalls = $state(true);
-	let toolCount = $state(0);
+	let toolNames = $state.raw<readonly string[]>([]);
+	const toolCount = $derived(toolNames.length);
 	let activities = $state<TellegenToolActivityEvent[]>([]);
 
 	function recordActivity(event: TellegenToolActivityEvent) {
@@ -112,11 +114,11 @@
 			debugTool: import.meta.env.DEV || new URL(location.href).searchParams.has('debug'),
 			...(PUBLIC_WEBMCP_EXPOSED_TO ? { exposedTo: PUBLIC_WEBMCP_EXPOSED_TO.split(',') } : {}),
 			onToolsChange: (names) => {
-				if (!disposed) toolCount = names.length;
+				if (!disposed) toolNames = [...names];
 			},
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
-				toolCount = handle?.toolNames.length ?? toolCount;
+				toolNames = handle ? [...handle.toolNames] : toolNames;
 				document.documentElement.dataset.webmcp = error ? 'error' : 'ready';
 				if (error) console.warn('tellegen WebMCP dynamic registration failed', error);
 			}
@@ -128,7 +130,7 @@
 				}
 				handle = registered;
 				supported = registered.supported;
-				toolCount = registered.toolNames.length;
+				toolNames = [...registered.toolNames];
 				trackUsage('agent.availability', {
 					result: supported && !registered.registrationError ? 'completed' : 'unavailable'
 				});
@@ -163,6 +165,7 @@
 	{browser}
 	{pageToolCalls}
 	{toolCount}
+	unavailableTools={unavailableTools(toolNames)}
 	{activities}
 	{planning}
 	{experiments}

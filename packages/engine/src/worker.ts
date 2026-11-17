@@ -8,7 +8,7 @@
  * engine use, so laziness buys nothing here, and a static graph keeps the
  * worker a single chunk (Vite's default worker format cannot code-split). */
 
-import { errorText, isPermanentWasmLoadFailure } from "./errors.js";
+import { errorCode, errorText, isPermanentWasmLoadFailure } from "./errors.js";
 import type { WasmModule } from "./module.js";
 import {
   emptyHandles,
@@ -51,9 +51,14 @@ const scope = globalThis as unknown as {
 
 const cancelledOperations = new Set<number>();
 
+/** Milliseconds since the Unix epoch on this thread's high-resolution clock,
+ * comparable with the same expression on the page. */
+const wallClock = () => performance.timeOrigin + performance.now();
+
 scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
   if (req.op === "cancel_study_operation") { cancelledOperations.add(req.id); return; }
+  const received_at = wallClock();
   try {
     const mod = await wasmModule();
     const started = performance.now();
@@ -61,7 +66,10 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const worker_ms = performance.now() - started;
     // Numeric arrays and every preview buffer move to the caller instead of
     // being copied.
-    scope.postMessage({ id: req.id, ok: true, value, worker_ms }, transferables(value));
+    scope.postMessage(
+      { id: req.id, ok: true, value, worker_ms, received_at, posted_at: wallClock() },
+      transferables(value),
+    );
   } catch (e) {
     // A Rust panic or a failed allocation is a wasm trap, and a trapped
     // instance is not recoverable: linear memory, the allocator, and every
@@ -70,7 +78,14 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     // numbers that look fine. Answer this request, then take the worker down
     // so the host spawns a clean one.
     const fatal = e instanceof WebAssembly.RuntimeError;
-    scope.postMessage({ id: req.id, ok: false, error: errorText(e), fatal });
+    const code = errorCode(e);
+    scope.postMessage({
+      id: req.id,
+      ok: false,
+      error: errorText(e),
+      ...(code !== undefined ? { code } : {}),
+      fatal,
+    });
     if (fatal) {
       handles.studies.clear();
       handles.mcPfSessions.clear();

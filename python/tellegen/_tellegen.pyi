@@ -80,4 +80,4 @@ def study_run(
     """
 
 def _classify(message: str) -> str:
-    """The code `classify` would assign to an engine message. Diagnostics only."""
+    """The `.code` an engine message without a coded error would carry. Diagnostics only."""

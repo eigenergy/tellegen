@@ -25,6 +25,10 @@
   "homepage": "https://eigenergy.github.io/tellegen/",
   "types": "./dist/index.d.ts",
   "files": [
+    "dist/error-codes.d.ts",
+    "dist/error-codes.d.ts.map",
+    "dist/error-codes.js",
+    "dist/error-codes.js.map",
     "dist/index.d.ts",
     "dist/index.d.ts.map",
     "dist/index.js",
