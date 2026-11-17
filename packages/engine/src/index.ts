@@ -431,6 +431,10 @@ export interface IngestedDistCase {
   graph: DistGraph;
   /** Explicit capability from the reader; absent means inspection only. */
   mc_pf_supported?: boolean;
+  /** Whether explicitly holding written taps/capacitor states passes qualification. */
+  mc_fixed_controls_available?: boolean;
+  /** This independent case records the choice to hold equipment settings fixed. */
+  mc_fixed_controls?: boolean;
   /** Reader explanation for an inspection-only distribution payload. */
   mc_pf_reason?: string;
 }
@@ -1926,6 +1930,21 @@ export async function solveMcBmopf(
         op: "solve_mc_bmopf",
         text,
         options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Create an independent distribution case using its written equipment settings. */
+export async function prepareMcFixedControls(
+  moduleJson: string,
+): Promise<IngestedDistCase> {
+  assertEngineInputLength(moduleJson.length);
+  return parseApiResult("ingest_distribution",
+    expectText(
+      await engineHost().call({
+        op: "prepare_mc_fixed_controls",
+        module_json: moduleJson,
       }),
     ),
   );

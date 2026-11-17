@@ -247,6 +247,10 @@ pub(crate) struct DistributionIngest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mc_pf_supported: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mc_fixed_controls: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mc_fixed_controls_available: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mc_pf_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mc_energized_only: Option<bool>,

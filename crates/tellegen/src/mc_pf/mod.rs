@@ -5,10 +5,12 @@
 //! factor is retained through initialization and convergence.
 
 mod energized;
+mod fixed_controls;
 pub use energized::{
     mc_unpowered_islands, prepare_mc_energized_network, prepare_mc_energized_network_json,
     McEnergizedOutput, McExcludedEquipment, McExcludedIsland, McNetworkScope,
 };
+pub use fixed_controls::{prepare_mc_fixed_controls, FIXED_CONTROLS_EXTENSION};
 pub(crate) mod input;
 mod linear;
 mod loads;

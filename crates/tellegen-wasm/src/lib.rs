@@ -552,6 +552,19 @@ pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsValue
     tellegen::prepare_mc_energized_network_json(module_json).map_err(jserr)
 }
 
+/// Create an independent case using written taps and capacitor states.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn prepare_mc_fixed_controls(module_json: &str) -> Result<String, JsValue> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    let module = crate::read_module_bytes(module_json.as_bytes()).map_err(jserr)?;
+    let prepared = tellegen::prepare_mc_fixed_controls(&module).map_err(jserr)?;
+    dist::ingest_dist_module_value(prepared)
+        .map(|value| value.to_string())
+        .map_err(jserr)
+}
+
 /// Solve a stored PowerIO multiconductor module. This accepts the portable
 /// module form used by browser persistence in addition to raw BMOPF text.
 #[cfg(feature = "mc-pf")]

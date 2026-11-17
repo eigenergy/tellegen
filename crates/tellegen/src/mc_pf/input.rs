@@ -530,7 +530,7 @@ fn validate_wye_terminal_order(
     }
     if neutral_position != Some(names.len() - 1) {
         return Err(format!(
-            "{kind} `{name}` field `{field}` places an explicit neutral/earth terminal among phase coils; PowerIO v0.11 requires WYE phase terminals first and the neutral last"
+            "{kind} `{name}` field `{field}` places an explicit neutral/earth terminal among phase coils; this import requires WYE phase terminals first and the neutral last"
         ));
     }
     Ok(())
@@ -604,7 +604,7 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
     }
     if subtype == "n_winding" && (record.contains_key("tap") || record.contains_key("tap_ratio")) {
         return Err(format!(
-            "transformer `{name}` n_winding tap is not represented by PowerIO v0.11"
+            "transformer `{name}` top-level n_winding tap fields are not supported by this import"
         ));
     }
     if subtype != "n_winding" {
@@ -613,9 +613,9 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
     let Some(windings) = record.get("windings").and_then(Value::as_array) else {
         return Ok(());
     };
-    if windings.len() != 2 {
+    if !(2..=3).contains(&windings.len()) {
         return Err(format!(
-            "transformer `{name}` n_winding has {} windings; the MC primitive supports exactly two",
+            "transformer `{name}` n_winding has {} windings; the MC primitive supports two or three",
             windings.len()
         ));
     }
@@ -640,7 +640,7 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
         for key in winding.keys() {
             if !RETAINED.contains(&key.as_str()) {
                 return Err(format!(
-                    "transformer `{name}` winding {idx} field `{key}` is not losslessly represented by PowerIO v0.11"
+                    "transformer `{name}` winding {idx} field `{key}` is not accepted by the raw BMOPF import"
                 ));
             }
         }
@@ -841,6 +841,14 @@ pub(super) fn validate_mc_network(
                 "source {} retains unsupported property {}; finite source data must be normalized before MC Study mode",
                 source.name, key
             ));
+        }
+    }
+    for shunt in network.shunts() {
+        if let Some(property) = ["states", "numsteps", "cmatrix", "cuf", "r", "xl", "harm"]
+            .iter()
+            .find(|property| shunt.extras.contains_key(**property))
+        {
+            return Err(format!("shunt {} retains unsupported property {}; written capacitor steps must be normalized before calculation", shunt.name, property));
         }
     }
     for transformer in network.transformers() {

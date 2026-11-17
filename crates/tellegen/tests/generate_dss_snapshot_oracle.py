@@ -10,13 +10,13 @@ import opendssdirect as dss
 from generate_mc_load_oracle import stable_float, write_report
 
 
-def reference(name, commands):
+def reference(name, commands, tolerance=1e-12):
     ctx = dss.NewContext()
     ctx.Basic.AllowDOScmd(False)
     ctx.Basic.AllowEditor(False)
     for command in commands:
         ctx.Text.Command(command)
-    ctx.Text.Command('set mode=snapshot controlmode=off tolerance=1e-12 maxiterations=1000')
+    ctx.Text.Command(f'set mode=snapshot controlmode=off tolerance={tolerance} maxiterations=1000')
     ctx.Solution.Solve()
     assert ctx.Solution.Converged(), name
     nodes = ctx.Circuit.AllNodeNames()
@@ -27,7 +27,24 @@ def reference(name, commands):
         ctx.Circuit.SetActiveElement('load.' + load)
         values = ctx.CktElement.Currents()
         currents[load] = {'terminal': str(ctx.CktElement.NodeOrder()[0]), 'value': [stable_float(values[0]), stable_float(values[1])]}
-    return dict(name=name, source='\n'.join(commands) + '\n', voltages=voltages, currents=currents)
+    transformers = {}
+    for transformer in ctx.Transformers.AllNames():
+        if transformer == 'NONE':
+            continue
+        ctx.Circuit.SetActiveElement('transformer.' + transformer)
+        values = ctx.CktElement.Currents()
+        count = ctx.CktElement.NumConductors()
+        buses = ctx.CktElement.BusNames()
+        ports = {}
+        for index, node in enumerate(ctx.CktElement.NodeOrder()):
+            if node == 0:
+                continue
+            label = buses[index // count].split('.')[0] + '.' + str(node)
+            prior = ports.setdefault(label, [0., 0.])
+            prior[0] += values[2 * index]
+            prior[1] += values[2 * index + 1]
+        transformers[transformer] = dict(ports={k: [stable_float(v) for v in values] for k, values in ports.items()}, losses=[stable_float(v) for v in ctx.CktElement.Losses()])
+    return dict(name=name, tolerance=tolerance, source='\n'.join(commands) + '\n', voltages=voltages, currents=currents, transformers=transformers)
 
 
 def generate():
@@ -52,6 +69,25 @@ def generate():
                 'new transformer.tx phases=3 windings=2 buses=[src.1.2.3 lv.1.2.3.0] conns=[delta wye] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4 %noloadloss=.2 %imag=1',
                 'new load.ld phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1']
     cases.append(reference('delta_wye', commands))
+    for connections in ['wye wye delta', 'delta wye wye']:
+        for ppm in [None, 0, 50]:
+            written = '' if ppm is None else f' ppm_antifloat={ppm}'
+            commands = ['clear', 'set defaultbasefrequency=50',
+                        'new circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50',
+                        f'new transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[{connections}] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6{written}',
+                        'new load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1',
+                        'new load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1']
+            cases.append(reference(f'three_{connections.replace(" ", "_")}_{ppm}', commands, tolerance=1e-10))
+    for ppm in [None, 0, 50]:
+        written = '' if ppm is None else f' ppm_antifloat={ppm}'
+        commands = ['clear', 'set defaultbasefrequency=50',
+                    'new circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50',
+                    f'new transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1{written}',
+                    'new load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1',
+                    'new regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20']
+        case = reference(f'fixed_regulator_{ppm}', commands)
+        case['fixed_controls'] = True
+        cases.append(case)
     return {'backend': 'OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5', 'cases': cases}
 
 

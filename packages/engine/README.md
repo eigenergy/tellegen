@@ -90,9 +90,9 @@ The normal browser build includes ZIP and folder imports through
 builds can report that the feature is unavailable. Single-file imports remain
 available in builds without collections.
 
-The engine is built on PowerIO 0.12. Modules it saves state
-`"version": "0.12.0"` in their `pio-ir` header, which PowerIO 0.11 readers
-refuse; modules saved by earlier releases still load. A branch rating of
+The engine is built on PowerIO 0.12. Saved modules record their writer version
+in the `pio-ir` header. PowerIO 0.11 readers reject the 0.12 format;
+modules saved by earlier releases still load. A branch rating of
 positive infinity means no thermal bound and a zero rating a zero bound; display
 payloads still state an unrated branch as `0`. To test a PowerIO candidate,
 use the repository's dependency update script before building. The released

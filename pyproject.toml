@@ -28,13 +28,13 @@ dependencies = []
 # The MCP server. `mcp` 2.x moved the server class to
 # `mcp.server.mcpserver.MCPServer`. `powerio` supplies the filesystem path policy
 # (`powerio.mcp.sandbox`), which is shared with PowerMCP rather than copied.
-# It also reads the PowerIO IR the engine writes, so it follows the engine's
-# PowerIO release series: a 0.11 wheel refuses a 0.12 document.
+# It also reads source files and the PowerIO IR the engine writes, so its
+# minimum version matches the engine's qualified readers.
 # `pydantic` is imported directly by `tellegen.mcp` for its tool argument
 # schemas, so it is declared here and not left to arrive through `mcp`.
 mcp = [
   "mcp>=2,<3",
-  "powerio>=0.12,<0.13",
+  "powerio>=0.12.2,<0.13",
   "pydantic>=2,<3",
 ]
 

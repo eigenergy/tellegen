@@ -3,6 +3,7 @@
   "cases": [
     {
       "name": "model1_0.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -22,10 +23,12 @@
             0.1675458718
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model1_0.6",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -45,10 +48,12 @@
             0.5792097642
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model1_0.7",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -68,10 +73,12 @@
             0.740827312
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model1_0.9",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -91,10 +98,12 @@
             0.9378894027
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model1_1",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -114,10 +123,12 @@
             0.8431178102
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model1_1.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -137,10 +148,12 @@
             0.7604053087
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model2_0.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -160,10 +173,12 @@
             0.1675458718
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model2_0.6",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -183,10 +198,12 @@
             0.5026376154
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model2_0.7",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -206,10 +223,12 @@
             0.5864105513
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model2_0.9",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -229,10 +248,12 @@
             0.753956423
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model2_1",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -252,10 +273,12 @@
             0.8377293589
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model2_1.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -275,10 +298,12 @@
             1.005275231
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model3_0.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -298,10 +323,12 @@
             0.1675458718
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model3_0.6",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -321,10 +348,12 @@
             0.5792097642
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model3_0.7",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -344,10 +373,12 @@
             0.740827312
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model3_0.9",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -367,10 +398,12 @@
             1.606904804
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model3_1",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -390,10 +423,12 @@
             0.8627405762
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model3_1.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=3 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -413,10 +448,12 @@
             0.7604053087
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model4_0.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
       "voltages": {
         "src.1": [
@@ -436,10 +473,12 @@
             0.1675458718
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model4_0.6",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
       "voltages": {
         "src.1": [
@@ -459,10 +498,12 @@
             0.5792097642
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model4_0.7",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
       "voltages": {
         "src.1": [
@@ -482,10 +523,12 @@
             0.740827312
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model4_0.9",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
       "voltages": {
         "src.1": [
@@ -505,10 +548,12 @@
             1.37393774
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model4_1",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
       "voltages": {
         "src.1": [
@@ -528,10 +573,12 @@
             0.8568605914
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model4_1.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vlowpu=.5 vminpu=.85 vmaxpu=1.15 cvrwatts=.7 cvrvars=2.3\n",
       "voltages": {
         "src.1": [
@@ -551,10 +598,12 @@
             0.7604053087
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model5_0.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -574,10 +623,12 @@
             0.1675458718
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model5_0.6",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -597,10 +648,12 @@
             0.5378708735
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model5_0.7",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -620,10 +673,12 @@
             0.6574552874
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model5_0.9",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -643,10 +698,12 @@
             0.8405716044
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model5_1",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -666,10 +723,12 @@
             0.8404106225
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model5_1.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vlowpu=.5 vminpu=.85 vmaxpu=1.15 \n",
       "voltages": {
         "src.1": [
@@ -689,10 +748,12 @@
             0.8743201941
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model8_0.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
       "voltages": {
         "src.1": [
@@ -712,10 +773,12 @@
             0.1675458718
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model8_0.6",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.6 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
       "voltages": {
         "src.1": [
@@ -735,10 +798,12 @@
             0.0
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model8_0.7",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.7 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
       "voltages": {
         "src.1": [
@@ -758,10 +823,12 @@
             0.2459374337
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model8_0.9",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.9 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
       "voltages": {
         "src.1": [
@@ -781,10 +848,12 @@
             1.001615198
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model8_1",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
       "voltages": {
         "src.1": [
@@ -804,10 +873,12 @@
             0.8451372602
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "model8_1.2",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=23 frequency=50\nnew line.l phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.07] xmatrix=[.02] cmatrix=[0] length=1 units=m\nnew load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vlowpu=.5 vminpu=.85 vmaxpu=1.15 zipv=[.2,.3,.5,.5,.1,.4,.7]\n",
       "voltages": {
         "src.1": [
@@ -827,10 +898,12 @@
             0.6587427236
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "four_wire",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.wires phases=3 bus1=src.1.2.3 basekv=.4 frequency=50\nnew line.l phases=4 bus1=src.1.2.3.0 bus2=lb.1.2.3.4 length=1 units=m rmatrix=[.05 | .01 .05 | .01 .01 .05 | .01 .01 .01 .08] xmatrix=[.02 | .005 .02 | .005 .005 .02 | .005 .005 .005 .03] cmatrix=[0 | 0 0 | 0 0 0 | 0 0 0 0]\nnew load.a phases=1 bus1=lb.1.4 kv=.23094 kw=3 kvar=1 model=1\nnew load.b phases=1 bus1=lb.2.4 kv=.23094 kw=2 kvar=.5 model=5\nnew load.c phases=1 bus1=lb.3.4 kv=.23094 kw=1 kvar=.2 model=4 cvrwatts=.8 cvrvars=2\n",
       "voltages": {
         "src.1": [
@@ -884,10 +957,12 @@
             4.180813366
           ]
         }
-      }
+      },
+      "transformers": {}
     },
     {
       "name": "delta_wye",
+      "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.tx phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=2 buses=[src.1.2.3 lv.1.2.3.0] conns=[delta wye] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4 %noloadloss=.2 %imag=1\nnew load.ld phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\n",
       "voltages": {
         "src.1": [
@@ -923,7 +998,800 @@
             -34.74599052
           ]
         }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              1.590439918,
+              -0.5986008791
+            ],
+            "src.2": [
+              -1.313623527,
+              -1.078060933
+            ],
+            "src.3": [
+              -0.2768163909,
+              1.676661812
+            ],
+            "lv.1": [
+              -30.13016738,
+              34.74599052
+            ],
+            "lv.2": [
+              45.15599415,
+              8.720495115
+            ],
+            "lv.3": [
+              -15.02582678,
+              -43.46648563
+            ]
+          },
+          "losses": [
+            301.8230598,
+            1404.370013
+          ]
+        }
       }
+    },
+    {
+      "name": "three_wye_wye_delta_None",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[wye wye delta] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6\nnew load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\nnew load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.767966,
+          -0.1424428409
+        ],
+        "src.2": [
+          -3175.507343,
+          -5499.85517
+        ],
+        "src.3": [
+          -3175.260623,
+          5499.997614
+        ],
+        "lv.1": [
+          219.5176969,
+          -0.3372684324
+        ],
+        "lv.2": [
+          -110.0509315,
+          -189.9392679
+        ],
+        "lv.3": [
+          -109.4667654,
+          190.2765363
+        ],
+        "third.1": [
+          2046.512115,
+          -1185.635237
+        ],
+        "third.2": [
+          -2050.046294,
+          -1179.513863
+        ],
+        "third.3": [
+          3.534177185,
+          2365.149101
+        ]
+      },
+      "currents": {
+        "lv": {
+          "terminal": "1",
+          "value": [
+            45.53097628,
+            -15.25475869
+          ]
+        },
+        "third": {
+          "terminal": "1",
+          "value": [
+            2.085712329,
+            -2.022739405
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              2.624897305,
+              -0.7918911681
+            ],
+            "src.2": [
+              -1.998246411,
+              -1.877282151
+            ],
+            "src.3": [
+              -0.6266507175,
+              2.669173244
+            ],
+            "lv.1": [
+              -45.53097628,
+              15.25475869
+            ],
+            "lv.2": [
+              35.9764967,
+              31.80360277
+            ],
+            "lv.3": [
+              9.554479579,
+              -47.05836146
+            ],
+            "third.1": [
+              -2.085712329,
+              2.022739405
+            ],
+            "third.2": [
+              2.794599874,
+              0.7949101586
+            ],
+            "third.3": [
+              -0.7088875449,
+              -2.817649564
+            ]
+          },
+          "losses": [
+            10.67843881,
+            86.22901072
+          ]
+        }
+      }
+    },
+    {
+      "name": "three_wye_wye_delta_0",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[wye wye delta] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6 ppm_antifloat=0\nnew load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\nnew load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.76797,
+          -0.1424438232
+        ],
+        "src.2": [
+          -3175.507346,
+          -5499.855173
+        ],
+        "src.3": [
+          -3175.260624,
+          5499.997618
+        ],
+        "lv.1": [
+          219.5177023,
+          -0.3372691368
+        ],
+        "lv.2": [
+          -110.0509348,
+          -189.9392722
+        ],
+        "lv.3": [
+          -109.4667675,
+          190.2765414
+        ],
+        "third.1": [
+          2046.512162,
+          -1185.635273
+        ],
+        "third.2": [
+          -2050.046349,
+          -1179.513885
+        ],
+        "third.3": [
+          3.534184619,
+          2365.14916
+        ]
+      },
+      "currents": {
+        "lv": {
+          "terminal": "1",
+          "value": [
+            45.53097511,
+            -15.25475846
+          ]
+        },
+        "third": {
+          "terminal": "1",
+          "value": [
+            2.085712271,
+            -2.022739362
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              2.6248973,
+              -0.7918242091
+            ],
+            "src.2": [
+              -1.99818842,
+              -1.877315626
+            ],
+            "src.3": [
+              -0.6267087033,
+              2.66913976
+            ],
+            "lv.1": [
+              -45.53097511,
+              15.25475846
+            ],
+            "lv.2": [
+              35.97649591,
+              31.80360187
+            ],
+            "lv.3": [
+              9.554479193,
+              -47.05836033
+            ],
+            "third.1": [
+              -2.085712271,
+              2.022739362
+            ],
+            "third.2": [
+              2.794599807,
+              0.7949101303
+            ],
+            "third.3": [
+              -0.7088875361,
+              -2.817649492
+            ]
+          },
+          "losses": [
+            10.67834724,
+            84.95328789
+          ]
+        }
+      }
+    },
+    {
+      "name": "three_wye_wye_delta_50",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[wye wye delta] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6 ppm_antifloat=50\nnew load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\nnew load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.767773,
+          -0.1423947122
+        ],
+        "src.2": [
+          -3175.507205,
+          -5499.855028
+        ],
+        "src.3": [
+          -3175.260568,
+          5499.997423
+        ],
+        "lv.1": [
+          219.5174308,
+          -0.3372339196
+        ],
+        "lv.2": [
+          -110.0507686,
+          -189.9390547
+        ],
+        "lv.3": [
+          -109.4666622,
+          190.2762886
+        ],
+        "third.1": [
+          2046.509813,
+          -1185.633487
+        ],
+        "third.2": [
+          -2050.043627,
+          -1179.512744
+        ],
+        "third.3": [
+          3.533812879,
+          2365.146232
+        ]
+      },
+      "currents": {
+        "lv": {
+          "terminal": "1",
+          "value": [
+            45.53103386,
+            -15.25477011
+          ]
+        },
+        "third": {
+          "terminal": "1",
+          "value": [
+            2.085715168,
+            -2.022741542
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              2.624897553,
+              -0.7951721597
+            ],
+            "src.2": [
+              -2.001087957,
+              -1.87564187
+            ],
+            "src.3": [
+              -0.6238094194,
+              2.670813955
+            ],
+            "lv.1": [
+              -45.53103386,
+              15.25477011
+            ],
+            "lv.2": [
+              35.97653538,
+              31.80364692
+            ],
+            "lv.3": [
+              9.554498475,
+              -47.05841704
+            ],
+            "third.1": [
+              -2.085715168,
+              2.022741542
+            ],
+            "third.2": [
+              2.794603144,
+              0.7949115485
+            ],
+            "third.3": [
+              -0.7088879761,
+              -2.81765309
+            ]
+          },
+          "losses": [
+            10.6829316,
+            148.7393794
+          ]
+        }
+      }
+    },
+    {
+      "name": "three_delta_wye_wye_None",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[delta wye wye] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6\nnew load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\nnew load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.767966,
+          -0.1424428423
+        ],
+        "src.2": [
+          -3175.507343,
+          -5499.85517
+        ],
+        "src.3": [
+          -3175.260623,
+          5499.997614
+        ],
+        "lv.1": [
+          189.9392674,
+          -110.0509312
+        ],
+        "lv.2": [
+          -190.2765358,
+          -109.4667652
+        ],
+        "lv.3": [
+          0.3372683917,
+          219.5176964
+        ],
+        "third.1": [
+          2046.5121,
+          -1185.635226
+        ],
+        "third.2": [
+          -2050.046275,
+          -1179.513855
+        ],
+        "third.3": [
+          3.534175317,
+          2365.149081
+        ]
+      },
+      "currents": {
+        "lv": {
+          "terminal": "1",
+          "value": [
+            31.80360287,
+            -35.97649678
+          ]
+        },
+        "third": {
+          "terminal": "1",
+          "value": [
+            2.085712349,
+            -2.02273942
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              2.624897247,
+              -0.7918908856
+            ],
+            "src.2": [
+              -1.998246248,
+              -1.877282256
+            ],
+            "src.3": [
+              -0.6266509997,
+              2.669173141
+            ],
+            "lv.1": [
+              -31.80360287,
+              35.97649678
+            ],
+            "lv.2": [
+              47.05836158,
+              9.554479625
+            ],
+            "lv.3": [
+              -15.25475872,
+              -45.5309764
+            ],
+            "third.1": [
+              -2.085712349,
+              2.02273942
+            ],
+            "third.2": [
+              2.794599897,
+              0.7949101689
+            ],
+            "third.3": [
+              -0.7088875488,
+              -2.817649589
+            ]
+          },
+          "losses": [
+            10.67845592,
+            86.22410769
+          ]
+        }
+      }
+    },
+    {
+      "name": "three_delta_wye_wye_0",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[delta wye wye] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6 ppm_antifloat=0\nnew load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\nnew load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.76797,
+          -0.1424438207
+        ],
+        "src.2": [
+          -3175.507346,
+          -5499.855173
+        ],
+        "src.3": [
+          -3175.260624,
+          5499.997618
+        ],
+        "lv.1": [
+          189.9392722,
+          -110.0509348
+        ],
+        "lv.2": [
+          -190.2765414,
+          -109.4667675
+        ],
+        "lv.3": [
+          0.3372691701,
+          219.5177024
+        ],
+        "third.1": [
+          2046.512163,
+          -1185.635274
+        ],
+        "third.2": [
+          -2050.046348,
+          -1179.513886
+        ],
+        "third.3": [
+          3.534185169,
+          2365.149159
+        ]
+      },
+      "currents": {
+        "lv": {
+          "terminal": "1",
+          "value": [
+            31.80360187,
+            -35.97649591
+          ]
+        },
+        "third": {
+          "terminal": "1",
+          "value": [
+            2.085712271,
+            -2.022739361
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              2.624897241,
+              -0.7918241839
+            ],
+            "src.2": [
+              -1.998188479,
+              -1.877315601
+            ],
+            "src.3": [
+              -0.6267087621,
+              2.669139785
+            ],
+            "lv.1": [
+              -31.80360187,
+              35.97649591
+            ],
+            "lv.2": [
+              47.05836033,
+              9.5544792
+            ],
+            "lv.3": [
+              -15.25475846,
+              -45.5309751
+            ],
+            "third.1": [
+              -2.085712271,
+              2.022739361
+            ],
+            "third.2": [
+              2.794599807,
+              0.794910131
+            ],
+            "third.3": [
+              -0.7088875368,
+              -2.817649492
+            ]
+          },
+          "losses": [
+            10.67834724,
+            84.9532879
+          ]
+        }
+      }
+    },
+    {
+      "name": "three_delta_wye_wye_50",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.three phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=3 buses=[src.1.2.3.0 lv.1.2.3.0 third.1.2.3.0] conns=[delta wye wye] kvs=[11 .4 4.16] kvas=[1000 1000 1000] taps=[1.025 .975 1.01] %rs=[.2 .3 .4] xhl=4 xht=5 xlt=6 ppm_antifloat=50\nnew load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1\nnew load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.767774,
+          -0.1423949011
+        ],
+        "src.2": [
+          -3175.507205,
+          -5499.855028
+        ],
+        "src.3": [
+          -3175.260568,
+          5499.997424
+        ],
+        "lv.1": [
+          189.9390323,
+          -110.0507514
+        ],
+        "lv.2": [
+          -190.2762625,
+          -109.4666515
+        ],
+        "lv.3": [
+          0.337230251,
+          219.5174028
+        ],
+        "third.1": [
+          2046.509003,
+          -1185.632881
+        ],
+        "third.2": [
+          -2050.042696,
+          -1179.512346
+        ],
+        "third.3": [
+          3.533692579,
+          2365.145227
+        ]
+      },
+      "currents": {
+        "lv": {
+          "terminal": "1",
+          "value": [
+            31.80365158,
+            -35.97653944
+          ]
+        },
+        "third": {
+          "terminal": "1",
+          "value": [
+            2.085716156,
+            -2.022742296
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              2.624897539,
+              -0.7951592661
+            ],
+            "src.2": [
+              -2.001076894,
+              -1.875648318
+            ],
+            "src.3": [
+              -0.6238206451,
+              2.670807584
+            ],
+            "lv.1": [
+              -31.80365158,
+              35.97653944
+            ],
+            "lv.2": [
+              47.05842288,
+              9.554500484
+            ],
+            "lv.3": [
+              -15.2547713,
+              -45.53103991
+            ],
+            "third.1": [
+              -2.085716156,
+              2.022742296
+            ],
+            "third.2": [
+              2.794604291,
+              0.7949120281
+            ],
+            "third.3": [
+              -0.7088881359,
+              -2.817654324
+            ]
+          },
+          "losses": [
+            10.68378971,
+            148.4942052
+          ]
+        }
+      }
+    },
+    {
+      "name": "fixed_regulator_None",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",
+      "voltages": {
+        "src.1": [
+          2399.994756,
+          -0.01041573612
+        ],
+        "lv.1": [
+          2458.515628,
+          -2.273869493
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            4.06673911,
+            -0.8172603059
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              4.168407568,
+              -0.8377345216
+            ],
+            "lv.1": [
+              -4.06673911,
+              0.8172603059
+            ]
+          },
+          "losses": [
+            4.165029705,
+            10.51504196
+          ]
+        }
+      },
+      "fixed_controls": true
+    },
+    {
+      "name": "fixed_regulator_0",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1 ppm_antifloat=0\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",
+      "voltages": {
+        "src.1": [
+          2399.994756,
+          -0.01041576713
+        ],
+        "lv.1": [
+          2458.515641,
+          -2.273874687
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            4.066739087,
+            -0.8172603101
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              4.168407564,
+              -0.8376918179
+            ],
+            "lv.1": [
+              -4.066739087,
+              0.8172603101
+            ]
+          },
+          "losses": [
+            4.165021256,
+            10.41255314
+          ]
+        }
+      },
+      "fixed_controls": true
+    },
+    {
+      "name": "fixed_regulator_50",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1 ppm_antifloat=50\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",
+      "voltages": {
+        "src.1": [
+          2399.994751,
+          -0.01041421656
+        ],
+        "lv.1": [
+          2458.514989,
+          -2.273614959
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            4.066740251,
+            -0.8172600981
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              4.168407741,
+              -0.8398270053
+            ],
+            "lv.1": [
+              -4.066740251,
+              0.8172600981
+            ]
+          },
+          "losses": [
+            4.165443989,
+            15.53699362
+          ]
+        }
+      },
+      "fixed_controls": true
     }
   ]
 }

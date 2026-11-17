@@ -278,7 +278,7 @@ voltages, load connection maps, load voltage-model parameters, and solver
 options are structural session data: changing them requires a new session.
 
 The multiconductor PF entry point is `tellegen::solve_bmopf_json`. It accepts
-raw BMOPF JSON, validates fields that PowerIO 0.11.0 would otherwise collapse,
+raw BMOPF JSON, checks that its fields are supported by this import path,
 then parses the document through PowerIO and solves the resulting typed
 `McAcPfInstance`. The native runner has the same path:
 
@@ -296,8 +296,9 @@ cargo run --profile release-py -p tellegen --example mc_pf_session --features mc
 
 The generated feeder benchmark measures latency, payload, and memory at
 32,412 to 676,530 terminals, natively and in the browser, and CI runs its
-~10,000-bus preset as a deterministic regression; see
-`docs/src/mc-pf-performance.md` and `crates/benchmarks/README.md`.
+~10,000-bus preset as a deterministic regression; see the
+[performance measurements](benchmark-results.md#mc-pf-performance) and
+`crates/benchmarks/README.md`.
 
 The browser build exposes the same operation as `solve_mc_bmopf(text,
 options_json)`. The TypeScript transport is `solveMcBmopf(text, options)`.
@@ -316,7 +317,7 @@ Voltages are volts, currents are amperes, and terminal powers are VA. Complex
 values cross JSON as `{ "re": ..., "im": ... }`.
 
 The solver supports voltage-dependent loads, ideal voltage sources,
-lines, passive shunts, and finite-leakage two-winding transformers, including
+lines, passive shunts, and finite-leakage two- and three-winding transformers, including
 phase-to-phase `single_phase` records, two-winding `n_winding` records with
 explicit BMOPF delta rolls, and fixed-tap `single_phase_autotransformer`
 regulator snapshots. It also supports the three coupled windings into which
@@ -326,8 +327,9 @@ Transformer admittance follows the
 OpenDSS terminal primitive: common leakage base, winding voltage/tap maps,
 actual WYE/DELTA coil incidence, explicit neutral impedance, and explicit
 per-coil excitation shunts. Zero leakage (an ideal voltage constraint),
-arbitrary transformers with more than two windings, ideal zero-impedance
-regulators, finite source impedance, and unsupported controls
+transformers with more than three windings, ideal zero-impedance
+regulators, finite source-impedance data that has not been normalized explicitly,
+and unsupported controls
 are rejected with an error rather than approximated.
 The direct OpenDSS YPrim comparison for YY/DD/YD/DY fixed-tap and per-winding
 delta-roll cases is frozen in
@@ -335,9 +337,11 @@ delta-roll cases is frozen in
 a fixed-tap, excited centre-tap YPrim comparison, while the loaded centre-tap
 oracle also checks terminal voltages, currents, powers, losses, and polarity.
 
-Raw BMOPF inputs must use scalar or uniform taps. An `n_winding` raw record
-cannot carry a tap because PowerIO 0.11.0 drops that field; a canonical typed
-two-winding record can carry its fixed winding taps.
+Multiconductor power flow uses prescribed ideal source voltages. General
+two- and three-winding transformers are supported when their connections and
+parameters pass primitive validation. Raw BMOPF admission is narrower: inputs
+must use scalar or uniform taps, and `n_winding` tap fields are rejected before
+parsing. Use a validated typed case for supported written winding taps.
 Non-constant-power loads must carry explicit nominal branch voltages.
 Constant-power loads may omit them: the solver assigns each line-connected
 voltage zone a line-to-neutral base from transformer winding ratings or other

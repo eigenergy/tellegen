@@ -185,6 +185,15 @@ fn set_mc_study_capability(
             }
         }
     }
+    #[cfg(feature = "mc-pf")]
+    {
+        payload["mc_fixed_controls"] = module
+            .extensions()
+            .contains_key(tellegen::FIXED_CONTROLS_EXTENSION)
+            .into();
+        payload["mc_fixed_controls_available"] =
+            (reason.is_some() && tellegen::prepare_mc_fixed_controls(module).is_ok()).into();
+    }
     payload["mc_pf_supported"] = reason.is_none().into();
     payload["mc_pf_reason"] = serde_json::to_value(&reason).map_err(|e| e.to_string())?;
     payload["mc_pf_unavailable_reason"] = payload["mc_pf_reason"].clone();
@@ -807,6 +816,27 @@ mod tests {
                 (kept, read) => panic!("{format}: {:?} vs {:?}", kept.err(), read.err()),
             }
         }
+    }
+
+    #[test]
+    #[cfg(feature = "mc-pf")]
+    fn fixed_settings_are_explicit_and_survive_reload() {
+        let source = "new circuit.test basekv=11\nnew transformer.t phases=3 windings=2 buses=[sourcebus load] conns=[wye wye] kvs=[11 .4] kvas=[100 100] taps=[1 1.025] xhl=4\nnew load.l bus1=load phases=3 kv=.4 kw=10 kvar=2\nnew regcontrol.r transformer=t winding=2 vreg=120 band=2 ptratio=1\n";
+        let original = parse(&ingest_dist(source, "dss").unwrap());
+        assert_eq!(original["mc_pf_supported"], false);
+        assert_eq!(original["mc_fixed_controls_available"], true);
+        assert_eq!(original["mc_fixed_controls"], false);
+        let module =
+            tellegen::ir::deserialize_module(original["module_json"].as_str().unwrap()).unwrap();
+        let fixed = tellegen::prepare_mc_fixed_controls(&module).unwrap();
+        let saved = tellegen::ir::serialize_module(&fixed).unwrap();
+        let reloaded = parse(&ingest_dist_module(&saved).unwrap());
+        assert_eq!(reloaded["mc_pf_supported"], true);
+        assert_eq!(reloaded["mc_fixed_controls_available"], false);
+        assert_eq!(reloaded["mc_fixed_controls"], true);
+        let invalid =
+            parse(&ingest_dist(&format!("{source}\nredirect absent.dss"), "dss").unwrap());
+        assert_eq!(invalid["mc_fixed_controls_available"], false);
     }
 
     #[test]
