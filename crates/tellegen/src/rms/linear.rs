@@ -89,12 +89,14 @@ impl Default for LinearRequest {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Participation {
     pub state: String,
     pub factor: f64,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mode {
     pub re: f64,
@@ -105,6 +107,7 @@ pub struct Mode {
     pub participation: Vec<Participation>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BodeCurve {
     pub label: String,
@@ -113,6 +116,7 @@ pub struct BodeCurve {
     pub phase_deg: Vec<f64>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LinearResult {
     pub states: Vec<String>,

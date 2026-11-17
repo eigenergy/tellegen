@@ -314,6 +314,7 @@ struct SavedCase {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CaseSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub distribution: Option<distribution::Metadata>,
@@ -332,6 +333,7 @@ pub struct CaseSummary {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum CaseModel {
     Balanced,
     Multiconductor,
@@ -353,6 +355,7 @@ pub struct HealthPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NetworkPayload {
     pub equipment: tellegen::equipment::Equipment,
     pub model_details: Option<tellegen::preparation::ModelDetails>,
@@ -367,6 +370,7 @@ pub struct NetworkPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NetworkBus {
     pub id: usize,
     pub name: Option<String>,
@@ -390,6 +394,7 @@ pub struct NetworkBus {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NetworkBranch {
     pub id: usize,
     pub from: usize,
@@ -506,12 +511,21 @@ pub fn http_result_schema() -> serde_json::Value {
     #[derive(schemars::JsonSchema)]
     #[allow(dead_code)]
     struct HttpResults {
+        http_cases: Vec<CaseSummary>,
+        http_network: NetworkPayload,
+        http_compute: ComputeStatus,
         http_solution: SolutionPayload,
         http_stream_solution: StreamSolution<'static>,
         http_sensitivity: SensitivityPayload,
         http_saved_case: SavedCase,
     }
-    serde_json::to_value(schemars::schema_for!(HttpResults)).expect("HTTP result schema")
+    serde_json::to_value(
+        schemars::generate::SchemaSettings::default()
+            .for_serialize()
+            .into_generator()
+            .into_root_schema_for::<HttpResults>(),
+    )
+    .expect("HTTP result schema")
 }
 
 #[derive(Debug, Deserialize)]
@@ -849,8 +863,16 @@ async fn require_compute(State(state): State<Arc<AppState>>, req: Request, next:
 
 /// Whether the compute endpoints are enabled, so the frontend can pick honest
 /// copy (and skip doomed requests) instead of inferring it from a 403.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct ComputeStatus {
+    enabled: bool,
+}
+
 async fn compute_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(serde_json::json!({ "enabled": state.compute_enabled }))
+    Json(ComputeStatus {
+        enabled: state.compute_enabled,
+    })
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {

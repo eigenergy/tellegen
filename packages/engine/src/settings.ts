@@ -42,14 +42,12 @@ export interface SettingsCatalog {
   calculations: readonly CalculationDescriptor[];
 }
 
-function decode<T>(value: unknown): T {
-  if (typeof value !== "string")
-    throw new Error("engine returned no settings payload");
-  return JSON.parse(value) as T;
-}
 /** Discover capabilities of the running engine, rather than another build. */
 export async function describeSettings(): Promise<SettingsCatalog> {
-  return decode(await engineHost().call({ op: "settings_describe" }));
+  return parseApiResult(
+    "settings_catalog",
+    await engineHost().call({ op: "settings_describe" }),
+  );
 }
 /** Rust validates the full candidate; no selected case state changes here. */
 function assertJson(value: unknown): void {
@@ -116,7 +114,7 @@ export function createSettingsHttpClient(
 ) {
   const base = apiBase.replace(/\/+$/, "");
   async function call<T>(
-    path: string,
+    path: "/calculate" | "/settings/resolve" | "/settings",
     request?: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
@@ -147,7 +145,7 @@ export function createSettingsHttpClient(
       return validateApiResult<T>("calculation", result);
     if (path === "/settings/resolve")
       return validateApiResult<T>("settings", result);
-    return result as T;
+    return validateApiResult<T>("settings_catalog", result);
   }
   return {
     describe: (signal?: AbortSignal) =>

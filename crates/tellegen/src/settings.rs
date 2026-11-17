@@ -427,30 +427,147 @@ pub(crate) mod record {
 }
 
 /// JSON descriptors carry the same keys/defaults as the typed solver options.
+/// Settings shown by a running engine build.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SettingsCatalog {
+    pub version: u32,
+    pub calculations: Vec<CalculationDescriptor>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct CalculationDescriptor {
+    pub calculation: Calculation,
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub defaults: Option<Options>,
+    pub fields: Vec<SettingDescriptor>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SettingDescriptor {
+    pub key: String,
+    pub label: String,
+    pub description: String,
+    pub unit: String,
+    pub group: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub default: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<Option<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimum: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maximum: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclusive_minimum: Option<u32>,
+}
+
 /// Availability describes this binary, not another host's build features.
 pub fn describe() -> Value {
-    let calculations: Vec<Value> = Calculation::ALL.into_iter().map(|name| {
-        match defaults(name) {
+    serde_json::to_value(describe_catalog()).expect("settings catalog is JSON")
+}
+
+pub fn describe_catalog() -> SettingsCatalog {
+    let calculations = Calculation::ALL
+        .into_iter()
+        .map(|name| match defaults(name) {
             Ok(options) => {
-                let fields: Vec<Value> = options.iter().map(|(key, default)| {
-                    let (label, unit, description, group) = field(key);
-                    let kind = if default.is_boolean() { "boolean" } else if default.is_number() { "number" } else if default.is_string() { "enum" } else { "json" };
-                    let mut value = json!({"key":key,"label":label,"unit":unit,"description":description,"group":group,"type":kind,"default":default});
-                    if key == "branch_susceptance_formula" { value["type"] = json!("enum"); value["choices"] = json!([null, "series_susceptance", "tap_adjusted_reactance", "reactance_only", "tap_adjusted_series_susceptance", "series_susceptance_no_phase_shift"]); }
-                    if key == "start" { value["choices"] = json!(["flat","case"]); }
-                    if key == "thermal" { value["type"] = json!("json"); }
-                    if key == "max_iterations" { value["type"] = json!("integer"); value["minimum"] = json!(1); value["maximum"] = json!(u32::MAX); }
-                    if matches!(key.as_str(), "tolerance" | "zero_voltage_tolerance" | "absolute_kcl_tolerance" | "v_low_pu" | "v_min_pu" | "v_max_pu" | "damping") { value["exclusive_minimum"] = json!(0); }
-                    if key == "relative_kcl_tolerance" { value["minimum"] = json!(0); }
-                    if key == "damping" { value["maximum"] = json!(1); }
-                    value
-                }).collect();
-                json!({"calculation":name,"available":true,"defaults":options,"fields":fields})
+                let fields = options
+                    .iter()
+                    .map(|(key, default)| {
+                        let (label, unit, description, group) = field(key);
+                        let kind = if default.is_boolean() {
+                            "boolean"
+                        } else if default.is_number() {
+                            "number"
+                        } else if default.is_string() {
+                            "enum"
+                        } else {
+                            "json"
+                        };
+                        let mut value = SettingDescriptor {
+                            key: key.clone(),
+                            label: label.into(),
+                            unit: unit.into(),
+                            description: description.into(),
+                            group: group.into(),
+                            kind: kind.into(),
+                            default: default.clone(),
+                            choices: None,
+                            minimum: None,
+                            maximum: None,
+                            exclusive_minimum: None,
+                        };
+                        if key == "branch_susceptance_formula" {
+                            value.kind = "enum".into();
+                            value.choices = Some(vec![
+                                None,
+                                Some("series_susceptance".into()),
+                                Some("tap_adjusted_reactance".into()),
+                                Some("reactance_only".into()),
+                                Some("tap_adjusted_series_susceptance".into()),
+                                Some("series_susceptance_no_phase_shift".into()),
+                            ]);
+                        }
+                        if key == "start" {
+                            value.choices = Some(vec![Some("flat".into()), Some("case".into())]);
+                        }
+                        if key == "thermal" {
+                            value.kind = "json".into();
+                        }
+                        if key == "max_iterations" {
+                            value.kind = "integer".into();
+                            value.minimum = Some(1);
+                            value.maximum = Some(u32::MAX);
+                        }
+                        if matches!(
+                            key.as_str(),
+                            "tolerance"
+                                | "zero_voltage_tolerance"
+                                | "absolute_kcl_tolerance"
+                                | "v_low_pu"
+                                | "v_min_pu"
+                                | "v_max_pu"
+                                | "damping"
+                        ) {
+                            value.exclusive_minimum = Some(0);
+                        }
+                        if key == "relative_kcl_tolerance" {
+                            value.minimum = Some(0);
+                        }
+                        if key == "damping" {
+                            value.maximum = Some(1);
+                        }
+                        value
+                    })
+                    .collect();
+                CalculationDescriptor {
+                    calculation: name,
+                    available: true,
+                    defaults: Some(options),
+                    fields,
+                    reason: None,
+                }
             }
-            Err(reason) => json!({"calculation":name,"available":false,"reason":reason,"fields":[]}),
-        }
-    }).collect();
-    json!({"version":1,"calculations":calculations})
+            Err(reason) => CalculationDescriptor {
+                calculation: name,
+                available: false,
+                reason: Some(reason),
+                fields: vec![],
+                defaults: None,
+            },
+        })
+        .collect();
+    SettingsCatalog {
+        version: 1,
+        calculations,
+    }
 }
 
 fn field(key: &str) -> (&str, &str, &str, &str) {

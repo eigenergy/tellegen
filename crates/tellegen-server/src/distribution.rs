@@ -30,6 +30,7 @@ struct Spec {
 /// Public presentation and reproducible operating-point defaults for a hosted case.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Metadata {
     pub description: Option<String>,
     pub source_url: Option<String>,

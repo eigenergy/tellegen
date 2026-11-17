@@ -7,6 +7,24 @@ fn main() {
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
         .into();
+    let server_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut server_sources = serde_json::Map::new();
+    for file in [
+        "src/lib.rs",
+        "src/distribution.rs",
+        "examples/http_schema.rs",
+    ] {
+        let bytes = std::fs::read(server_root.join(file)).expect("HTTP result source");
+        server_sources.insert(
+            file.into(),
+            sha2::Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+                .into(),
+        );
+    }
+    schema["x-server-source-files"] = server_sources.into();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tellegen");
     let mut sources = serde_json::Map::new();
     for file in [
@@ -15,6 +33,12 @@ fn main() {
         "src/sens/interface.rs",
         "src/sens/mod.rs",
         "src/dc_formula.rs",
+        "src/ac_dc.rs",
+        "src/dc_grid.rs",
+        "src/equipment.rs",
+        "src/preparation.rs",
+        "src/settings.rs",
+        "src/substations.rs",
     ] {
         let bytes = std::fs::read(root.join(file)).expect("shared result source");
         sources.insert(

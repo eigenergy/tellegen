@@ -6,6 +6,7 @@ use powerio::{BalancedNetwork, TransformerControlMode};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Equipment {
     pub transformers: Vec<Transformer>,
     pub shunts: Vec<Shunt>,
@@ -22,12 +23,14 @@ pub struct Equipment {
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcTopology {
     pub nodes: Vec<String>,
     pub links: Vec<DcLink>,
     pub converters: Vec<DcConverterView>,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcLink {
     pub id: String,
     pub kind: &'static str,
@@ -37,6 +40,7 @@ pub struct DcLink {
     pub resistance_ohm: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcConverterView {
     pub id: String,
     pub kind: &'static str,
@@ -45,6 +49,7 @@ pub struct DcConverterView {
     pub connected1: Option<bool>,
     pub connected2: Option<bool>,
     pub ac_bus: Option<usize>,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub control: Option<powerio_tx::AcDcConverterControlMode>,
 }
 fn dc_topology(net: &BalancedNetwork) -> DcTopology {
@@ -156,6 +161,7 @@ fn dc_topology(net: &BalancedNetwork) -> DcTopology {
 
 /// Physical three-terminal device and its analysis provenance.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ThreeWinding {
     pub id: usize,
     pub uid: Option<String>,
@@ -168,6 +174,7 @@ pub struct ThreeWinding {
 
 /// Additional families whose identity must survive even where solving is unsupported.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Device {
     pub key: String,
     pub uid: Option<String>,
@@ -178,6 +185,7 @@ pub struct Device {
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DetailedDc {
     pub nodes: usize,
     pub lines: usize,
@@ -185,13 +193,19 @@ pub struct DetailedDc {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Transformer {
     pub branch: usize,
     pub uid: Option<String>,
     pub phase_shifter: bool,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "Vec<std::collections::BTreeMap<String, serde_json::Value>>")
+    )]
     pub tap_changers: Vec<powerio_tx::TapChanger>,
     pub tap_ratio: f64,
     pub phase_shift_deg: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub control_mode: Option<TransformerControlMode>,
     pub control_enabled: Option<bool>,
     pub controlled_bus: Option<usize>,
@@ -202,6 +216,7 @@ pub struct Transformer {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Shunt {
     pub id: usize,
     pub uid: Option<String>,
@@ -211,11 +226,13 @@ pub struct Shunt {
     pub g_mw: f64,
     pub b_mvar: f64,
     pub section_count: Option<u32>,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub control_mode: Option<powerio::SwitchedShuntMode>,
     pub blocks: Vec<ShuntBlock>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ShuntBlock {
     pub steps: u32,
     pub g_mw: f64,
@@ -223,6 +240,7 @@ pub struct ShuntBlock {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Hvdc {
     pub id: usize,
     pub uid: Option<String>,
@@ -234,7 +252,9 @@ pub struct Hvdc {
     pub pf_mw: f64,
     pub pt_mw: f64,
     pub nominal_kv: Option<f64>,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub from_converter: Option<powerio_tx::HvdcConverterKind>,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub to_converter: Option<powerio_tx::HvdcConverterKind>,
 }
 

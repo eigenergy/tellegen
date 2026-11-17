@@ -177,9 +177,9 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 	const fetchImpl = options.fetch ?? defaultFetch();
 
 	return {
-		getCases: () => getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases')),
+		getCases: () => getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases'), undefined, 'http_cases'),
 		getNetwork: (caseId) =>
-			getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`)),
+			getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`), undefined, 'http_network'),
 		async getCaseModuleJson(caseId, signal) {
 			const url = apiPath(apiBase, `/cases/${caseId}/case`);
 			const res = await checkedFetch(fetchImpl, url, signal);
@@ -220,7 +220,7 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			);
 		},
 		getComputeStatus(signal) {
-			return getJson<{ enabled: boolean }>(fetchImpl, apiPath(apiBase, `/compute`), signal);
+			return getJson<{ enabled: boolean }>(fetchImpl, apiPath(apiBase, `/compute`), signal, 'http_compute');
 		},
 		openSolveStream(caseId, deltas, sensBus, handlers) {
 			const EventSourceImpl = options.EventSource ?? defaultEventSource();

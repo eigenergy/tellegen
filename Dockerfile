@@ -63,8 +63,12 @@ COPY examples/svelte-minimal examples/svelte-minimal
 COPY crates/tellegen/src crates/tellegen/src
 COPY crates/tellegen/examples/api_schema.rs crates/tellegen/examples/api_schema.rs
 COPY crates/tellegen-server/src/lib.rs crates/tellegen-server/src/lib.rs
+COPY crates/tellegen-server/src/distribution.rs crates/tellegen-server/src/distribution.rs
+COPY crates/tellegen-server/examples/http_schema.rs crates/tellegen-server/examples/http_schema.rs
 COPY python/tellegen/mcp/_engine_schema.json python/tellegen/mcp/_engine_schema.json
 COPY crates/tellegen-synth/src crates/tellegen-synth/src
+COPY crates/tellegen-wasm/src crates/tellegen-wasm/src
+COPY crates/tellegen-wasm/examples crates/tellegen-wasm/examples
 # The WECC 240 dynamics demo: apps/web copies it into static/examples at build.
 COPY crates/tellegen/tests/data/rms_examples/wecc240 crates/tellegen/tests/data/rms_examples/wecc240
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg

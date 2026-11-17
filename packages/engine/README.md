@@ -194,6 +194,8 @@ Run the generators from the repository root after Rust API changes:
 cargo run -p tellegen --example api_schema --features schema,conic,mc-pf > packages/engine/src/generated/api.schema.json
 cargo run -p tellegen --example settings_schema --features schema,conic,mc-pf > packages/engine/src/generated/settings.schema.json
 cargo run -p tellegen-server --example http_schema --features schema > packages/engine/src/generated/http.schema.json
+cargo run -p tellegen-wasm --example adapter_schema --features schema,conic,synth,powerio-collections > packages/engine/src/generated/wasm-adapter.schema.json
+cargo run -p tellegen-wasm --example rms_adapter_schema --features schema,rms-experimental > packages/engine/src/generated/rms-adapter.schema.json
 npm run types
 ```
 

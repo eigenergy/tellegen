@@ -36,6 +36,14 @@ pub fn collection_supported() -> bool {
 }
 mod dist;
 mod geo;
+mod outputs;
+
+/// JSON schemas for the browser adapter's serialized responses.
+#[cfg(all(feature = "schema", feature = "conic", feature = "synth"))]
+pub fn output_schema() -> serde_json::Value {
+    outputs::schema()
+}
+
 #[cfg(feature = "rms")]
 pub mod rms;
 #[cfg(feature = "synth")]
@@ -123,18 +131,120 @@ fn source_format_id(format: &str) -> Result<powerio::FormatId, String> {
     powerio::FormatId::new(info.token).map_err(|error| error.to_string())
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 struct JsonDropClassification {
-    kind: &'static str,
+    kind: outputs::JsonKind,
     format: Option<&'static str>,
 }
 
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum JsonClassificationOutput<'a> {
+    Module { format: () },
+    Transmission { format: &'a str },
+    Distribution { format: &'a str },
+    Ambiguous { format: () },
+    Unknown { format: () },
+}
+
+impl Serialize for JsonDropClassification {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use outputs::JsonKind;
+        let output = match (&self.kind, self.format) {
+            (JsonKind::Module, None) => JsonClassificationOutput::Module { format: () },
+            (JsonKind::Transmission, Some(format)) => {
+                JsonClassificationOutput::Transmission { format }
+            }
+            (JsonKind::Distribution, Some(format)) => {
+                JsonClassificationOutput::Distribution { format }
+            }
+            (JsonKind::Ambiguous, None) => JsonClassificationOutput::Ambiguous { format: () },
+            (JsonKind::Unknown, None) => JsonClassificationOutput::Unknown { format: () },
+            _ => {
+                return Err(serde::ser::Error::custom(
+                    "JSON classification format disagrees with kind",
+                ))
+            }
+        };
+        output.serialize(serializer)
+    }
+}
+
 #[cfg(feature = "sensitivity")]
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 struct IngestedJsonDrop {
-    kind: &'static str,
+    kind: outputs::JsonKind,
     format: Option<&'static str>,
     payload: serde_json::Value,
+}
+
+#[cfg(feature = "sensitivity")]
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum JsonDropOutput<'a> {
+    Module {
+        format: (),
+        #[cfg_attr(feature = "schema", schemars(with = "outputs::IngestShape<'static>"))]
+        payload: &'a serde_json::Value,
+    },
+    Transmission {
+        format: &'a str,
+        #[cfg_attr(
+            feature = "schema",
+            schemars(with = "outputs::WithModuleText<outputs::BalancedIngest<'static>>")
+        )]
+        payload: &'a serde_json::Value,
+    },
+    Distribution {
+        format: &'a str,
+        #[cfg_attr(feature = "schema", schemars(with = "outputs::DistributionIngest"))]
+        payload: &'a serde_json::Value,
+    },
+    Ambiguous {
+        format: (),
+        payload: (),
+    },
+    Unknown {
+        format: (),
+        payload: (),
+    },
+}
+
+#[cfg(feature = "sensitivity")]
+impl Serialize for IngestedJsonDrop {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use outputs::JsonKind;
+        let output = match (&self.kind, self.format) {
+            (JsonKind::Module, None) => JsonDropOutput::Module {
+                format: (),
+                payload: &self.payload,
+            },
+            (JsonKind::Transmission, Some(format)) => JsonDropOutput::Transmission {
+                format,
+                payload: &self.payload,
+            },
+            (JsonKind::Distribution, Some(format)) => JsonDropOutput::Distribution {
+                format,
+                payload: &self.payload,
+            },
+            (JsonKind::Ambiguous, None) if self.payload.is_null() => JsonDropOutput::Ambiguous {
+                format: (),
+                payload: (),
+            },
+            (JsonKind::Unknown, None) if self.payload.is_null() => JsonDropOutput::Unknown {
+                format: (),
+                payload: (),
+            },
+            _ => {
+                return Err(serde::ser::Error::custom(
+                    "JSON drop fields disagree with kind",
+                ))
+            }
+        };
+        output.serialize(serializer)
+    }
 }
 
 /// Read a `.pio.json` stored module from dropped bytes. powerio names the
@@ -149,16 +259,11 @@ fn with_module_json(
     payload: serde_json::Value,
     module: powerio::PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    let mut payload = with_module_metadata(payload, &module);
-    let module_json = serialize_module(&module)?;
-    payload
-        .as_object_mut()
-        .ok_or("balanced ingest payload is not an object")?
-        .insert(
-            "module_json".to_owned(),
-            serde_json::Value::String(module_json),
-        );
-    Ok(payload)
+    outputs::WithModuleText {
+        payload: with_module_metadata(payload, &module),
+        module_json: serialize_module(&module)?,
+    }
+    .into_value()
 }
 
 /// The payload fields a module decides besides its serialized text.
@@ -226,7 +331,7 @@ fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, Stri
             || dist::is_viewable_module_value(module.value())
         {
             Ok(JsonDropClassification {
-                kind: "module",
+                kind: outputs::JsonKind::Module,
                 format: None,
             })
         } else {
@@ -242,7 +347,7 @@ fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, Stri
         _ => None,
     };
     Ok(JsonDropClassification {
-        kind: classification.family(),
+        kind: classification.family().try_into()?,
         format,
     })
 }
@@ -352,7 +457,7 @@ fn ingest_json_drop_parts(
     };
 
     let drop = IngestedJsonDrop {
-        kind,
+        kind: kind.try_into()?,
         format,
         payload,
     };
@@ -660,12 +765,12 @@ pub struct McPfResultBuffers {
 #[cfg(feature = "mc-pf")]
 impl McPfResultBuffers {
     fn pack(tables: tellegen::McPfResultTables) -> Self {
-        let metadata = serde_json::json!({
-            "load_model": tables.load_model,
-            "network_scope": tables.network_scope,
-            "excluded_islands": tables.excluded_islands,
+        let metadata = serde_json::to_string(&tellegen::mc_pf::McPfResultMetadata {
+            load_model: &tables.load_model,
+            network_scope: &tables.network_scope,
+            excluded_islands: &tables.excluded_islands,
         })
-        .to_string();
+        .expect("result metadata is JSON");
         let counts = [
             tables.iterations,
             tables.terminal_count(),
@@ -752,6 +857,7 @@ impl McPfResultBuffers {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct MemoryStats {
     heap_live_bytes: usize,
     heap_peak_bytes: usize,
@@ -1123,6 +1229,7 @@ fn commit_output(output: &tellegen::SolveOutput) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct ViewBus {
     id: usize,
     name: Option<String>,
@@ -1150,6 +1257,7 @@ struct ViewBus {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct ViewBranch {
     id: usize,
     /// powerio row uid, as on [`ViewBus`].
@@ -1169,6 +1277,7 @@ struct ViewBranch {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct View<'a> {
     equipment: &'a tellegen::equipment::Equipment,
     coordinate_space: &'static str,
@@ -1178,6 +1287,7 @@ struct View<'a> {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct TopologyBus {
     id: usize,
     name: Option<String>,
@@ -1198,6 +1308,7 @@ struct TopologyBus {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct TopologyBranch {
     id: usize,
     /// powerio row uid, as on [`ViewBus`].
@@ -1271,6 +1382,7 @@ fn analysis_uids(
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct Topology<'a> {
     equipment: &'a tellegen::equipment::Equipment,
     buses: Vec<TopologyBus>,
@@ -1407,10 +1519,12 @@ impl McInput {
     pub fn prepare_energized(&self) -> Result<RetainedIngest, JsValue> {
         let (module, islands) = tellegen::prepare_mc_energized_network(&self.0).map_err(jserr)?;
         let scope = tellegen::McNetworkScope::from_excluded_islands(&islands);
-        let payload = serde_json::json!({
-            "input_retained": true, "network_scope": scope, "excluded_islands": islands,
+        let payload = serde_json::to_string(&outputs::RetainedEnergized {
+            input_retained: true,
+            network_scope: scope,
+            excluded_islands: islands,
         })
-        .to_string();
+        .map_err(jserr)?;
         Ok(RetainedIngest {
             payload,
             input: Some(McInput::retain(module)),
@@ -1640,37 +1754,47 @@ pub(crate) fn ingest_value(
         }
     };
 
-    Ok(serde_json::json!({
-        "name": net.name(),
-        "base_mva": net.base_mva(),
-        "n_bus": net.buses().len(),
-        "n_branch": net.branches().len(),
-        "n_analysis_bus": analysis.buses().len(),
-        "n_analysis_branch": analysis.branches().len(),
-        "n_gen": net.generators().iter().filter(|g| g.in_service).count(),
-        "load_mw": demand.values().sum::<f64>(),
-        "gen_mw": gen.values().sum::<f64>(),
-        "has_coords": view.is_some(),
-        "coords_kind": coords_kind_token(net, view.is_some()),
-        "topology": topology,
-        "diagnostics": diagnostics,
-        "warnings": warnings,
-        "view": view,
-    }))
+    serde_json::to_value(outputs::BalancedIngest {
+        name: net.name(),
+        base_mva: net.base_mva(),
+        n_bus: net.buses().len(),
+        n_branch: net.branches().len(),
+        n_analysis_bus: analysis.buses().len(),
+        n_analysis_branch: analysis.branches().len(),
+        n_gen: net.generators().iter().filter(|g| g.in_service).count(),
+        load_mw: demand.values().sum(),
+        gen_mw: gen.values().sum(),
+        has_coords: view.is_some(),
+        coords_kind: coords_kind_token(net, view.is_some()),
+        topology,
+        diagnostics: outputs::diagnostic_objects(diagnostics)?,
+        warnings,
+        view,
+        module_json: None,
+        formulation: None,
+        coords_method: None,
+        layer: None,
+        report: None,
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// The coordinate provenance token the frontend placement logic reads:
 /// `synthetic`/`manual` echo a saved PowerIO module's layout provenance, so a
 /// reloaded case comes back placed with the same badge,
 /// `file` is any other located case, and `synthetic_pending` awaits placement.
-fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static str {
+fn coords_kind_token(
+    net: &powerio::BalancedNetwork,
+    has_view: bool,
+) -> outputs::BalancedCoordinates {
+    use outputs::BalancedCoordinates;
     if !has_view {
-        return "synthetic_pending";
+        return BalancedCoordinates::SyntheticPending;
     }
     match net.geo().as_ref().and_then(|g| g.kind) {
-        Some(powerio::geo::CoordsKind::Synthetic) => "synthetic",
-        Some(powerio::geo::CoordsKind::Manual) => "manual",
-        _ => "file",
+        Some(powerio::geo::CoordsKind::Synthetic) => BalancedCoordinates::Synthetic,
+        Some(powerio::geo::CoordsKind::Manual) => BalancedCoordinates::Manual,
+        _ => BalancedCoordinates::File,
     }
 }
 
@@ -1853,10 +1977,21 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsValue> {
             "Display did not parse as a PowerIO GeoLayer",
         ));
     };
-    serde_json::to_string(&serde_json::json!({"layer":layer.to_geojson(), "diagnostics":module.diagnostics(),
-        "n_points":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::Point(_))).count(),
-        "n_routes":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::LineString(_))).count()
-    })).map_err(jserr)
+    serde_json::to_string(&outputs::ParsedGeo {
+        layer: layer.to_geojson(),
+        diagnostics: outputs::diagnostic_objects(module.diagnostics()).map_err(jserr)?,
+        n_points: layer
+            .features
+            .iter()
+            .filter(|f| matches!(f.geometry, powerio::GeoGeometry::Point(_)))
+            .count(),
+        n_routes: layer
+            .features
+            .iter()
+            .filter(|f| matches!(f.geometry, powerio::GeoGeometry::LineString(_)))
+            .count(),
+    })
+    .map_err(jserr)
 }
 
 // ---------------------------------------------------------------------------

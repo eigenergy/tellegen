@@ -9,6 +9,7 @@
  * for sample, and the screening (verdict, COI frequency, bus frequencies) is
  * computed in Rust from the run's own samples, never from a decimated copy. */
 
+import { parseApiResult } from "./result-validation.js";
 import { errorText } from "./errors.js";
 import { assertEngineInputLength } from "./input-limit.js";
 import type {
@@ -339,7 +340,7 @@ export class BrowserRmsCase {
       { signal },
     );
     this.#generation = h.generation;
-    this.#inspection = JSON.parse(value as string) as RmsInspection;
+    this.#inspection = parseApiResult<RmsInspection>("rms_inspection", value);
   }
 
   /** Run `seconds` without events: how far the case drifts from rest. */
@@ -350,7 +351,7 @@ export class BrowserRmsCase {
       handle: this.handle,
       seconds,
     });
-    return JSON.parse(value as string) as RmsFlatCheck;
+    return parseApiResult<RmsFlatCheck>("rms_flat_check", value);
   }
 
   /** Run `request`, record the display channels and screen the run.
@@ -399,7 +400,7 @@ export class BrowserRmsCase {
       },
       { signal: opts.signal },
     );
-    return JSON.parse(value as string) as RmsLinearResult;
+    return parseApiResult<RmsLinearResult>("rms_linear_result", value);
   }
 
   /** Release the case in the worker. */
@@ -445,7 +446,7 @@ export async function rmsLibrary(): Promise<unknown[]> {
   if (!support.experimental)
     throw new ExperimentalUnavailable("the model library");
   const { value } = await rmsHost().call({ op: "library" });
-  return JSON.parse(value as string) as unknown[];
+  return parseApiResult<unknown[]>("rms_library", value);
 }
 
 // ---- pure helpers (tested) -------------------------------------------------
@@ -485,9 +486,46 @@ export function unpackRun(
   value: RmsRunValue,
   workerMs: number,
 ): RmsRun {
-  const meta = JSON.parse(value.meta) as RmsRunMeta;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !(value.time instanceof Float64Array) ||
+    !(value.values instanceof Float64Array)
+  )
+    throw new Error(
+      "RMS run must contain Float64Array time and values buffers",
+    );
+  const meta = parseApiResult<RmsRunMeta>("rms_run_meta", value.meta);
+  if (new Set(meta.keys).size !== meta.keys.length)
+    throw new Error("RMS run contains duplicate channel keys");
+  if (
+    !Number.isSafeInteger(meta.steps) ||
+    !Number.isSafeInteger(meta.newton_iterations) ||
+    meta.steps < 0 ||
+    meta.newton_iterations < 0
+  )
+    throw new Error(
+      "RMS run step and iteration counts must be safe nonnegative integers",
+    );
+  if (!Number.isFinite(workerMs) || workerMs < 0)
+    throw new Error("RMS worker duration must be finite and nonnegative");
   const n = value.time.length;
-  if (value.values.length !== meta.keys.length * n)
+  if (!n) throw new Error("RMS run must contain at least one time sample");
+  for (let i = 0; i < n; i++) {
+    if (
+      !Number.isFinite(value.time[i]) ||
+      (i > 0 && value.time[i] <= value.time[i - 1])
+    )
+      throw new Error(
+        "RMS sample times must be finite and strictly increasing",
+      );
+  }
+  // Channel values may contain NaN for the frequency of a de-energized bus.
+  // Only their dimensions are checked here; the buffers remain shared views.
+  if (
+    !Number.isSafeInteger(meta.keys.length * n) ||
+    value.values.length !== meta.keys.length * n
+  )
     throw new Error(
       `RMS run buffers do not match: ${meta.keys.length} channels × ${n} samples ≠ ${value.values.length} values`,
     );

@@ -1724,8 +1724,13 @@ pub fn apply_network_edits(net: &mut BalancedNetwork, edits: &[NetworkEdit]) -> 
 /// A study state written to a target format: the serialized case text, this
 /// output operation's diagnostics, and the format token and file extension.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ExportedCase {
     pub text: String,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "Vec<std::collections::BTreeMap<String, serde_json::Value>>")
+    )]
     pub diagnostics: Vec<powerio::Diagnostic>,
     pub format: String,
     pub extension: String,

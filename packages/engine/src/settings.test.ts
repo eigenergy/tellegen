@@ -42,3 +42,29 @@ it("HTTP settings client sends explicit per-request settings and propagates canc
     "HTTP 400: unsupported setting",
   );
 });
+
+it("validates the HTTP settings catalog before exposing its fields", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ version: 1, calculations: [] })),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          version: 1,
+          calculations: [
+            { calculation: "dcopf", available: "yes", fields: [] },
+          ],
+        }),
+      ),
+    );
+  const client = createSettingsHttpClient("/api", fetcher);
+  await expect(client.describe()).resolves.toEqual({
+    version: 1,
+    calculations: [],
+  });
+  await expect(client.describe()).rejects.toThrow(
+    "Invalid engine settings_catalog",
+  );
+});

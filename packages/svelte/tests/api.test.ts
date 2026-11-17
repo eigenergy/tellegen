@@ -79,9 +79,9 @@ describe('checkedFetch error mapping', () => {
 
 	it('returns parsed JSON on 2xx', async () => {
 		const cases = await clientWith(
-			async () => new Response(JSON.stringify([{ id: 'c1' }]), { status: 200 })
+			async () => new Response(JSON.stringify([{ id: 'c1', name: 'Case 1', n_bus: 1, n_branch: 0, n_gen: 1 }]), { status: 200 })
 		).getCases();
-		expect(cases).toEqual([{ id: 'c1' }]);
+		expect(cases).toEqual([{ id: 'c1', name: 'Case 1', n_bus: 1, n_branch: 0, n_gen: 1 }]);
 	});
 });
 
@@ -228,5 +228,43 @@ describe('streamed result validation', () => {
 		stream.emit('fail', { error: 'DC OPF solve infeasible: PrimalInfeasible' });
 		expect(handlers.onfail).toHaveBeenCalledWith('DC OPF solve infeasible: PrimalInfeasible');
 		expect(handlers.onsolution).not.toHaveBeenCalled();
+	});
+});
+
+
+describe('HTTP case and network validation', () => {
+	const legacyNetwork = {
+		id: 'c1', name: 'Case 1', base_mva: 100, synthetic_coords: false,
+		buses: [{ id: 1, lon: 0, lat: 0, demand_mw: 1, gen_mw: 1 }],
+		branches: [{ id: 1, from: 1, to: 1, rate_mw: 10, status: 1, path: [[0, 0], [1, 1]] }]
+	};
+	const response = (value: unknown) => clientWith(async () => new Response(JSON.stringify(value)));
+	it('preserves legacy network fields and validates current substation records without omitted Rust fields', async () => {
+		expect(await response(legacyNetwork).getNetwork('c1')).toEqual(legacyNetwork);
+		const network = {
+			...legacyNetwork,
+			substations: [{ key: 'bus:1', name: null, source: 'single', kv: [13.8] }],
+			equipment: { transformers: [], shunts: [], hvdc: [], detailed_dc: { nodes: 0, lines: 0, converters: 0 } }
+		};
+		expect(await response(network).getNetwork('c1')).toEqual(network);
+	});
+	it.each([
+		{ ...legacyNetwork, buses: null },
+		{ ...legacyNetwork, buses: [{ ...legacyNetwork.buses[0], lon: 'invalid' }] },
+		{ ...legacyNetwork, branches: [{ ...legacyNetwork.branches[0], path: [[0, 'invalid']] }] },
+		{ ...legacyNetwork, substations: [{ key: 'bus:1', name: null, source: 'single', kv: ['invalid'] }] },
+		{ ...legacyNetwork, equipment: { transformers: [], shunts: [], hvdc: [], detailed_dc: { nodes: 'invalid', lines: 0, converters: 0 } } }
+	])('rejects malformed network content', async (network) => {
+		await expect(response(network).getNetwork('c1')).rejects.toThrow('Invalid engine http_network');
+	});
+	it.each([null, {}, [{ id: 'c1', name: 'Case 1', n_bus: 'invalid', n_branch: 0, n_gen: 1 }],
+		[{ id: 'c1', name: 'Case 1', n_bus: 1, n_branch: 0, n_gen: 1, distribution: { source_url: 12 } }]])('rejects malformed case listings', async (cases) => {
+		await expect(response(cases).getCases()).rejects.toThrow('Invalid engine http_cases');
+	});
+	it('requires a real compute capability boolean and preserves both values', async () => {
+		for (const enabled of [false, true])
+			expect(await response({ enabled }).getComputeStatus()).toEqual({ enabled });
+		for (const value of [null, {}, { enabled: 'false' }, { enabled: 0 }])
+			await expect(response(value).getComputeStatus()).rejects.toThrow('Invalid engine http_compute');
 	});
 });

@@ -72,6 +72,7 @@ impl TxLayoutInput {
 
 /// Where substations start before placement.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum TxSeeding {
     /// At the mean of their buses' positions (geography, a drawing).
@@ -83,6 +84,7 @@ pub enum TxSeeding {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct TxLayoutOptions {
     pub seeding: TxSeeding,
@@ -117,6 +119,7 @@ impl Default for TxLayoutOptions {
 
 /// Columnar layout output, sized for transfer to the browser.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TxLayout {
     pub version: u32,
     /// `x, y` per bus: the middle of its busbar.
@@ -1189,6 +1192,7 @@ impl BoxGrid {
 
 /// Visual quality of a layout (Birchfield & Overbye §V), for tests and evidence.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TxLayoutQuality {
     /// Distance from seed to drawn centre per substation, in drawing units.
     pub displacement: Vec<f64>,

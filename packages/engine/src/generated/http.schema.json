@@ -312,6 +312,81 @@
       ],
       "type": "object"
     },
+    "CaseModel": {
+      "enum": [
+        "balanced",
+        "multiconductor"
+      ],
+      "type": "string"
+    },
+    "CaseSummary": {
+      "properties": {
+        "distribution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/CaseModel"
+        },
+        "n_analysis_branch": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_analysis_bus": {
+          "description": "Rendered analysis counts after three-winding star lowering.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_branch": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_bus": {
+          "description": "Canonical typed PowerIO row counts.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_gen": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unavailable_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "unavailable_reason",
+        "id",
+        "name",
+        "n_bus",
+        "n_branch",
+        "n_analysis_bus",
+        "n_analysis_branch",
+        "n_gen"
+      ],
+      "type": "object"
+    },
     "ColMeta": {
       "description": "Identity and quantity metadata for one column of a [`SensitivityMatrix`].",
       "properties": {
@@ -332,6 +407,18 @@
         "parameter",
         "element",
         "index"
+      ],
+      "type": "object"
+    },
+    "ComputeStatus": {
+      "description": "Whether the compute endpoints are enabled, so the frontend can pick honest\ncopy (and skip doomed requests) instead of inferring it from a 403.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
       ],
       "type": "object"
     },
@@ -389,11 +476,341 @@
       ],
       "type": "object"
     },
+    "CostApproximation": {
+      "properties": {
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generator": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_breakpoint_error": {
+          "format": "double",
+          "type": "number"
+        },
+        "model_cost": {
+          "$ref": "#/$defs/GenCost"
+        },
+        "rms_breakpoint_error": {
+          "format": "double",
+          "type": "number"
+        },
+        "source_cost": {
+          "$ref": "#/$defs/GenCost"
+        }
+      },
+      "required": [
+        "generator",
+        "bus",
+        "source_cost",
+        "model_cost",
+        "rms_breakpoint_error",
+        "max_breakpoint_error"
+      ],
+      "type": "object"
+    },
+    "CostPreparation": {
+      "enum": [
+        "exact",
+        "convex_quadratic_fit"
+      ],
+      "type": "string"
+    },
     "CostTerm": {
       "description": "Which generation-cost coefficient: the quadratic `cq` or the linear `cl`.",
       "enum": [
         "Quadratic",
         "Linear"
+      ],
+      "type": "string"
+    },
+    "DcBranch": {
+      "additionalProperties": false,
+      "properties": {
+        "current_limit_ka": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "from": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "in_service": {
+          "type": "boolean"
+        },
+        "resistance_ohm": {
+          "format": "double",
+          "type": "number"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "resistance_ohm",
+        "in_service",
+        "current_limit_ka"
+      ],
+      "type": "object"
+    },
+    "DcControl": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "voltage",
+              "type": "string"
+            },
+            "kv": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "kv"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "active_power",
+              "type": "string"
+            },
+            "mw": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "mw"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ka": {
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "current",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "ka"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Explicit Pac(U) slope in MW/kV. A positive slope reduces AC input when\nDC voltage rises. Format-specific droop constants require conversion.",
+          "properties": {
+            "kind": {
+              "const": "droop",
+              "type": "string"
+            },
+            "kv": {
+              "format": "double",
+              "type": "number"
+            },
+            "mw": {
+              "format": "double",
+              "type": "number"
+            },
+            "mw_per_kv": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "mw",
+            "kv",
+            "mw_per_kv"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DcConverter": {
+      "additionalProperties": false,
+      "properties": {
+        "ac_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "active_max_mw": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "active_min_mw": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "control": {
+          "$ref": "#/$defs/DcControl"
+        },
+        "current_direction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DcCurrentDirection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An explicit unidirectional converter constraint, independent of AC loss."
+        },
+        "current_limit_ka": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "in_service": {
+          "type": "boolean"
+        },
+        "loss": {
+          "description": "`a + b * |I| + c * I²`, with I in kA and loss in MW.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "negative": {
+          "type": "string"
+        },
+        "positive": {
+          "type": "string"
+        },
+        "voltage_max_kv": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "voltage_min_kv": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "positive",
+        "negative",
+        "ac_bus",
+        "in_service",
+        "control",
+        "loss",
+        "current_limit_ka",
+        "active_min_mw",
+        "active_max_mw",
+        "voltage_min_kv",
+        "voltage_max_kv"
+      ],
+      "type": "object"
+    },
+    "DcConverterView": {
+      "properties": {
+        "ac_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "connected1": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "connected2": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "control": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "terminal1": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "terminal2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "terminal1",
+        "terminal2",
+        "connected1",
+        "connected2",
+        "ac_bus",
+        "control"
+      ],
+      "type": "object"
+    },
+    "DcCurrentDirection": {
+      "enum": [
+        "positive",
+        "negative"
       ],
       "type": "string"
     },
@@ -426,6 +843,198 @@
           "type": "string"
         }
       ]
+    },
+    "DcGrid": {
+      "additionalProperties": false,
+      "properties": {
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/DcBranch"
+          },
+          "type": "array"
+        },
+        "converters": {
+          "items": {
+            "$ref": "#/$defs/DcConverter"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/DcNode"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "branches",
+        "converters"
+      ],
+      "type": "object"
+    },
+    "DcLink": {
+      "properties": {
+        "connected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "resistance_ohm": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "from",
+        "to",
+        "connected",
+        "resistance_ohm"
+      ],
+      "type": "object"
+    },
+    "DcNode": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "initial_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "reference_kv": {
+          "description": "A potential reference, not necessarily a physical earth electrode.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "initial_kv",
+        "reference_kv"
+      ],
+      "type": "object"
+    },
+    "DcTopology": {
+      "properties": {
+        "converters": {
+          "items": {
+            "$ref": "#/$defs/DcConverterView"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/DcLink"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "links",
+        "converters"
+      ],
+      "type": "object"
+    },
+    "DetailedDc": {
+      "properties": {
+        "converters": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lines": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nodes": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "nodes",
+        "lines",
+        "converters"
+      ],
+      "type": "object"
+    },
+    "Device": {
+      "description": "Additional families whose identity must survive even where solving is unsupported.",
+      "properties": {
+        "buses": {
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "in_service": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "treatment": {
+          "type": "string"
+        },
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "uid",
+        "kind",
+        "buses",
+        "in_service",
+        "treatment"
+      ],
+      "type": "object"
     },
     "DispatchValue": {
       "properties": {
@@ -523,6 +1132,82 @@
       ],
       "type": "string"
     },
+    "Equipment": {
+      "properties": {
+        "dc_model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DcGrid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dc_model_unavailable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dc_topology": {
+          "$ref": "#/$defs/DcTopology"
+        },
+        "detailed_dc": {
+          "$ref": "#/$defs/DetailedDc",
+          "description": "Detailed records may overlap reduced HVDC links. Count, do not duplicate\nor infer a multi-terminal graph without an authoritative mapping."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/Device"
+          },
+          "type": "array"
+        },
+        "hvdc": {
+          "items": {
+            "$ref": "#/$defs/Hvdc"
+          },
+          "type": "array"
+        },
+        "import_notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "shunts": {
+          "items": {
+            "$ref": "#/$defs/Shunt"
+          },
+          "type": "array"
+        },
+        "three_winding": {
+          "items": {
+            "$ref": "#/$defs/ThreeWinding"
+          },
+          "type": "array"
+        },
+        "transformers": {
+          "items": {
+            "$ref": "#/$defs/Transformer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "transformers",
+        "shunts",
+        "hvdc",
+        "three_winding",
+        "devices",
+        "detailed_dc",
+        "dc_topology",
+        "dc_model",
+        "dc_model_unavailable",
+        "import_notes"
+      ],
+      "type": "object"
+    },
     "FlowValue": {
       "properties": {
         "branch": {
@@ -585,6 +1270,48 @@
       ],
       "type": "string"
     },
+    "GenCost": {
+      "description": "A generator cost curve (`mpc.gencost` row).",
+      "properties": {
+        "coeffs": {
+          "description": "Raw coefficients, highest order first for the polynomial model:\n`[c_{k-1}, …, c1, c0]`.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "model": {
+          "description": "1 = piecewise linear, 2 = polynomial.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ncost": {
+          "description": "Number of cost coefficients (polynomial) or breakpoints (piecewise).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shutdown": {
+          "format": "double",
+          "type": "number"
+        },
+        "startup": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model",
+        "startup",
+        "shutdown",
+        "ncost",
+        "coeffs"
+      ],
+      "type": "object"
+    },
     "GenDispatch": {
       "description": "Generator dispatch, keyed by original generator id. `qg` is `None` on the DC paths.",
       "properties": {
@@ -617,6 +1344,105 @@
       "required": [
         "gen",
         "pg"
+      ],
+      "type": "object"
+    },
+    "GroupSource": {
+      "description": "How a substation's members were found. The strongest rule that joined any two of its buses.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "A single bus that no rule joined to another.",
+          "type": "string"
+        },
+        {
+          "const": "jumper",
+          "description": "Joined only through bus-splitting jumpers.",
+          "type": "string"
+        },
+        {
+          "const": "transformer",
+          "description": "Joined through transformers (and possibly jumpers).",
+          "type": "string"
+        },
+        {
+          "const": "colocated",
+          "description": "Joined by sharing a coordinate (possibly with transformers).",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "Declared by the source data.",
+          "type": "string"
+        }
+      ]
+    },
+    "Hvdc": {
+      "properties": {
+        "from": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from_converter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_service": {
+          "type": "boolean"
+        },
+        "nominal_kv": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pf_mw": {
+          "description": "Withdrawal from the from bus; injection into the to bus. Signed input\nvalues, including reverse transfers, not newly calculated DC results.",
+          "format": "double",
+          "type": "number"
+        },
+        "pt_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "to": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to_converter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "uid",
+        "from",
+        "to",
+        "in_service",
+        "pf_mw",
+        "pt_mw",
+        "nominal_kv",
+        "from_converter",
+        "to_converter"
       ],
       "type": "object"
     },
@@ -814,6 +1640,282 @@
         "both"
       ],
       "type": "string"
+    },
+    "Metadata": {
+      "additionalProperties": false,
+      "description": "Public presentation and reproducible operating-point defaults for a hosted case.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pf_options": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "related_case_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "source_url",
+        "related_case_id",
+        "pf_options"
+      ],
+      "type": "object"
+    },
+    "ModelDetails": {
+      "properties": {
+        "approximations": {
+          "items": {
+            "$ref": "#/$defs/CostApproximation"
+          },
+          "type": "array"
+        },
+        "method": {
+          "$ref": "#/$defs/CostPreparation"
+        },
+        "model": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "units": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "source",
+        "model",
+        "quantity",
+        "units",
+        "approximations"
+      ],
+      "type": "object"
+    },
+    "NetworkBranch": {
+      "properties": {
+        "editable": {
+          "description": "False for a display-only branch synthesized by analysis lowering.",
+          "type": "boolean"
+        },
+        "from": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "rate_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "status": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transformer": {
+          "description": "Joins two voltage levels (see `tellegen::substations::is_transformer`).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "rate_mw",
+        "status",
+        "transformer",
+        "editable",
+        "path"
+      ],
+      "type": "object"
+    },
+    "NetworkBus": {
+      "properties": {
+        "area": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "base_kv": {
+          "description": "Nominal voltage in kV (0 when the source gives none).",
+          "format": "double",
+          "type": "number"
+        },
+        "demand_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "editable": {
+          "description": "False for a display-only bus synthesized by analysis lowering.",
+          "type": "boolean"
+        },
+        "gen_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "substation": {
+          "description": "Index into `NetworkPayload::substations`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "vmax_pu": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vmin_pu": {
+          "description": "Source operating voltage bounds, per unit; absent for lowered display rows.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "zone": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "area",
+        "zone",
+        "lon",
+        "lat",
+        "demand_mw",
+        "gen_mw",
+        "base_kv",
+        "substation",
+        "editable"
+      ],
+      "type": "object"
+    },
+    "NetworkPayload": {
+      "properties": {
+        "base_mva": {
+          "format": "double",
+          "type": "number"
+        },
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/NetworkBranch"
+          },
+          "type": "array"
+        },
+        "buses": {
+          "items": {
+            "$ref": "#/$defs/NetworkBus"
+          },
+          "type": "array"
+        },
+        "equipment": {
+          "$ref": "#/$defs/Equipment"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model_details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelDetails"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "substations": {
+          "description": "Substations for transmission diagrams; `NetworkBus::substation` indexes this list.",
+          "items": {
+            "$ref": "#/$defs/Substation"
+          },
+          "type": "array"
+        },
+        "synthetic_coords": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "equipment",
+        "model_details",
+        "id",
+        "name",
+        "base_mva",
+        "synthetic_coords",
+        "buses",
+        "branches",
+        "substations"
+      ],
+      "type": "object"
     },
     "ObjectiveKind": {
       "description": "What the solved OPF minimized, as PowerIO declared it for the case. A case\nwith no generator cost data declares a feasibility problem: the reported\n`objective` is then zero by construction and prices and limit multipliers\nare left out, because any feasible point is optimal and they are not unique.",
@@ -1268,6 +2370,93 @@
       "required": [
         "bus",
         "value"
+      ],
+      "type": "object"
+    },
+    "Shunt": {
+      "properties": {
+        "b_mvar": {
+          "format": "double",
+          "type": "number"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/ShuntBlock"
+          },
+          "type": "array"
+        },
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "control_mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "g_mw": {
+          "description": "At 1 pu voltage, in native power units. Positive B supplies vars.",
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_service": {
+          "type": "boolean"
+        },
+        "section_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "uid",
+        "bus",
+        "in_service",
+        "g_mw",
+        "b_mvar",
+        "section_count",
+        "control_mode",
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "ShuntBlock": {
+      "properties": {
+        "b_mvar": {
+          "format": "double",
+          "type": "number"
+        },
+        "g_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "steps": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "steps",
+        "g_mw",
+        "b_mvar"
       ],
       "type": "object"
     },
@@ -1752,6 +2941,40 @@
       ],
       "type": "object"
     },
+    "Substation": {
+      "description": "One substation of a [`SubstationGrouping`].",
+      "properties": {
+        "key": {
+          "description": "Stable key: `sub:<declared id>` when declared, else `bus:<lowest bus id>`.",
+          "type": "string"
+        },
+        "kv": {
+          "description": "Distinct positive nominal voltages of the members in kV, highest first.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "The declared name, when the source gives one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/GroupSource"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "source",
+        "kv"
+      ],
+      "type": "object"
+    },
     "TapKind": {
       "description": "A transformer control: the tap ratio or the phase-shift angle.",
       "enum": [
@@ -1759,6 +2982,149 @@
         "PhaseShift"
       ],
       "type": "string"
+    },
+    "ThreeWinding": {
+      "description": "Physical three-terminal device and its analysis provenance.",
+      "properties": {
+        "branches": {
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "buses": {
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_service": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "star_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "uid",
+        "name",
+        "buses",
+        "in_service",
+        "star_bus",
+        "branches"
+      ],
+      "type": "object"
+    },
+    "Transformer": {
+      "properties": {
+        "branch": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "control_enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "control_mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "controlled_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "phase_shift_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "phase_shifter": {
+          "type": "boolean"
+        },
+        "setting_max": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "setting_min": {
+          "description": "Degrees for phase control, ratio for voltage/reactive control; absent\nfor controls whose source limits have no defined units.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tap_changers": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "tap_ratio": {
+          "format": "double",
+          "type": "number"
+        },
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch",
+        "uid",
+        "phase_shifter",
+        "tap_changers",
+        "tap_ratio",
+        "phase_shift_deg",
+        "control_mode",
+        "control_enabled",
+        "controlled_bus",
+        "setting_min",
+        "setting_max"
+      ],
+      "type": "object"
     },
     "VoltageKind": {
       "description": "How a voltage operand is represented: polar (`Magnitude`, `Angle`) for the AC\npower flow, or the W-space lift (`Squared` = `|V|²`, `ProductReal` = `Re(Vi Vj*)`,\n`ProductImag` = `Im(Vi Vj*)`) for the conic relaxation.",
@@ -1774,6 +3140,18 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "http_cases": {
+      "items": {
+        "$ref": "#/$defs/CaseSummary"
+      },
+      "type": "array"
+    },
+    "http_compute": {
+      "$ref": "#/$defs/ComputeStatus"
+    },
+    "http_network": {
+      "$ref": "#/$defs/NetworkPayload"
+    },
     "http_saved_case": {
       "$ref": "#/$defs/SavedCase"
     },
@@ -1788,6 +3166,9 @@
     }
   },
   "required": [
+    "http_cases",
+    "http_network",
+    "http_compute",
     "http_solution",
     "http_stream_solution",
     "http_sensitivity",
@@ -1796,11 +3177,22 @@
   "title": "HttpResults",
   "type": "object",
   "x-engine-source-files": {
+    "src/ac_dc.rs": "b661a00679864444dd8b666a47c3fb8ae9baf0968569e4d950fe7d519cca7c15",
     "src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",
     "src/dc_formula.rs": "57e5df4a0f203f498c4c9a71a7dfb20514bd74e7ebb1cc71077f2c33e0288868",
+    "src/dc_grid.rs": "525b5e2a7579aba78ed9b232e2b4e41a2c8c23be38e14269cb715e564abd1cfe",
+    "src/equipment.rs": "e6e23cdaeabf43efc597124a2ae59c6b0fe6282035328b1b35c22b3505393b49",
+    "src/preparation.rs": "5d3fbd7bebc4e7b5606a4e3af1e2cf3d94c19e554b8be5b23635bcccad8ebcd3",
     "src/sens/interface.rs": "645da7931bdb369201ceb23a792fc9df6167bcab1e0dda554abda52736a304dc",
     "src/sens/mod.rs": "7915772aa3cf6ee7593099ec90ad6e0d449b404e4ab51426115d7aed1c349d1e",
-    "src/solve.rs": "7ab1cc0ea152dfb13f636a1e7c6f7ec41b87d079691ceb0893815bbe9a8a7ed4"
+    "src/settings.rs": "75abe36ed0fc3db6f1326e52b8655feb1dd48e3b9ac655daae31b584c7bffc5c",
+    "src/solve.rs": "7ab1cc0ea152dfb13f636a1e7c6f7ec41b87d079691ceb0893815bbe9a8a7ed4",
+    "src/substations.rs": "f74f5aef8d183c52112effe34272fbd1a217aaa394cc7f469d61e4678562bdf4"
   },
-  "x-server-source-sha256": "8c0cd77571d3a23c0e15dd392cb869f437836166723586b694153b9d7dc053d3"
+  "x-server-source-files": {
+    "examples/http_schema.rs": "70d9a6b64ee07cf9637493b80b76c3f9a45c705fd7a033a495f892b6bb6215c5",
+    "src/distribution.rs": "6ab5b35dbd30bbfa1eb50317a61101cd36ccdbf1ab5db9821de2a4d655f83864",
+    "src/lib.rs": "8aa53999ccb24a007923867b9f80e4703a0816778f3bdaa2ae8c3865994995ea"
+  },
+  "x-server-source-sha256": "8aa53999ccb24a007923867b9f80e4703a0816778f3bdaa2ae8c3865994995ea"
 }

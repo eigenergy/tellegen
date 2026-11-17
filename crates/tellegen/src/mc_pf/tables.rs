@@ -16,6 +16,15 @@ use super::{
     McPfResult, NON_FINITE_OUTPUT,
 };
 
+/// Small descriptive fields accompanying packed numerical result columns.
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McPfResultMetadata<'a> {
+    pub load_model: &'a Option<super::McLoadModelAssessment>,
+    pub network_scope: &'a Option<super::McNetworkScope>,
+    pub excluded_islands: &'a [super::McExcludedIsland],
+}
+
 /// The terminals, equipment ports, and source reactions of an
 /// [`McPfResult`] as columns, row for row in the same order. Names are
 /// indices into `strings`, each name stored once; complex values are
