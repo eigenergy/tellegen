@@ -1,0 +1,224 @@
+{
+  "opendss_version": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+  "full": {
+    "name": "smartds-aus-p3u",
+    "dimension": 431897,
+    "nonzeros": 2427669,
+    "matrix_rhs_sha256": "8ed14288a05b64ca0996d0a102476f6399d1afdea6d61676359c335accf3ea64",
+    "faer": {
+      "factor_seconds": 0.2867365,
+      "high_precision_correction_sizes": [
+        7.4764719479804835,
+        0.001642689760987921,
+        3.605846068316035e-07,
+        2.2580620213573797e-10,
+        1.3226778088738376e-11,
+        1.3226778088741586e-11,
+        1.3226778088741586e-11,
+        1.3226778088741586e-11
+      ],
+      "retained_heap_bytes": 204243104,
+      "warm_solve_seconds": 0.006373137500000001
+    },
+    "klu": {
+      "factor_seconds": 0.11496799997985363,
+      "warm_solve_seconds": 0.006069700000807643,
+      "retained_heap_bytes": 111913948.0,
+      "peak_heap_bytes": 154365276.0,
+      "factor_nonzeros": 3258739.0,
+      "condition_estimate": 2.2532568900614444e+16,
+      "reciprocal_pivot_ratio": 8.631214812904459e-15
+    },
+    "klu_orderings": {
+      "amd": {
+        "factor_seconds": 0.1270490000024438,
+        "warm_solve_seconds": 0.0063010000041686,
+        "retained_heap_bytes": 111913948.0,
+        "peak_heap_bytes": 154365276.0,
+        "factor_nonzeros": 3258739.0,
+        "condition_estimate": 2.2532568900614444e+16,
+        "reciprocal_pivot_ratio": 8.631214812904459e-15,
+        "difference_from_reference_v": 0.0,
+        "backward_residual": 6.72633008364317e-15
+      },
+      "colamd": {
+        "factor_seconds": 0.24971799994818866,
+        "warm_solve_seconds": 0.010382299998309464,
+        "retained_heap_bytes": 127175452.0,
+        "peak_heap_bytes": 1046145596.0,
+        "factor_nonzeros": 4019224.0,
+        "condition_estimate": 2.2532568900614444e+16,
+        "reciprocal_pivot_ratio": 4.6003020713923796e-15,
+        "difference_from_reference_v": 23.922275272051376,
+        "backward_residual": 7.439909063576628e-14
+      }
+    },
+    "max_voltage_difference_v": 17.47305203616741,
+    "worst_terminal": [
+      "SB8_P3UHS18_1247_NODE_8_3",
+      "3"
+    ],
+    "worst_reference_voltage_v": [
+      -17890.36674876623,
+      34782.02908039495
+    ],
+    "difference_by_terminal_v": {
+      "phase": 17.47305203616741
+    },
+    "high_precision_refined_difference_v": 17.461980148942978,
+    "faer_refined_difference_v": 27.545881013983834,
+    "scaled_faer_difference_v": 20.994030683031163,
+    "reverse_input_order_difference_v": 16.769018266811067,
+    "scaled_klu_difference_v": 16.874327893804193,
+    "row_scaled_backward_residual": {
+      "faer": 1.183173507571451e-11,
+      "klu": 6.72633008364317e-15,
+      "faer_refined": 3.7826292333478136e-16,
+      "faer_scaled": 9.550172278517096e-15
+    },
+    "klu_vs_opendss_voltage_v": 0.0,
+    "largest_bus_differences": [
+      {
+        "bus": "SB8_P3UHS18_1247_NODE_8_3",
+        "phase_to_ground_difference_v": 17.47305203616741,
+        "within_bus_voltage_difference_v": 0.01504120940138681
+      },
+      {
+        "bus": "SB8_P3UHS18_1247_NODE_8_9",
+        "phase_to_ground_difference_v": 17.473052036166077,
+        "within_bus_voltage_difference_v": 0.015041209408136387
+      },
+      {
+        "bus": "P3UHS18_69",
+        "phase_to_ground_difference_v": 17.473051044117913,
+        "within_bus_voltage_difference_v": 0.015039235049861733
+      },
+      {
+        "bus": "P3UHS17_69-P3UHS18_69XX",
+        "phase_to_ground_difference_v": 17.47305005204754,
+        "within_bus_voltage_difference_v": 0.015037260716043848
+      },
+      {
+        "bus": "P3UHS17_69-P3UHS18_69X",
+        "phase_to_ground_difference_v": 17.471072322311457,
+        "within_bus_voltage_difference_v": 0.011944667143599284
+      },
+      {
+        "bus": "SB8_P3UHS17_1247_NODE_8_9",
+        "phase_to_ground_difference_v": 17.47107215331503,
+        "within_bus_voltage_difference_v": 0.01194489504776068
+      },
+      {
+        "bus": "SB8_P3UHS17_1247_NODE_8_3",
+        "phase_to_ground_difference_v": 17.47107215330921,
+        "within_bus_voltage_difference_v": 0.011944895039032552
+      },
+      {
+        "bus": "P3UHS17_69",
+        "phase_to_ground_difference_v": 17.471071296914896,
+        "within_bus_voltage_difference_v": 0.011942671306416013
+      },
+      {
+        "bus": "P3UHS17_69-P3UTS0_69X",
+        "phase_to_ground_difference_v": 17.471069415106445,
+        "within_bus_voltage_difference_v": 0.011938452179843097
+      },
+      {
+        "bus": "P3UHS13_69-P3UTS4_69X",
+        "phase_to_ground_difference_v": 17.468832025833937,
+        "within_bus_voltage_difference_v": 0.00039011503656817206
+      }
+    ],
+    "max_within_bus_voltage_difference_v": 0.015041209408136387,
+    "near_zero_reference_nodes": 294,
+    "near_zero_reference_difference_v": 0.0,
+    "high_precision_start_agreement_v": 0.0,
+    "high_precision_corrections_from_klu": [
+      17.44994906702946,
+      0.01713800576933963,
+      1.682797258982553e-05,
+      1.652742321949989e-08,
+      1.9644203029833095e-11,
+      1.3226778088741586e-11,
+      1.3226778088741586e-11,
+      1.3226778088741586e-11
+    ]
+  },
+  "source_eliminated": {
+    "name": "opendss-source-eliminated-aus-p3u",
+    "dimension": 431894,
+    "nonzeros": 2427630,
+    "matrix_rhs_sha256": "d169f86ca3833ec0ceca494562438473ecd4c94e5e7f78417b983701ff7c55ec",
+    "faer": {
+      "factor_seconds": 0.3222335,
+      "high_precision_correction_sizes": [
+        7.476482298208565,
+        0.0016427347907941982,
+        3.606040204667688e-07,
+        2.2642613371719725e-10,
+        1.2095109473867022e-11,
+        1.2095109473867022e-11,
+        1.2095109473867022e-11,
+        1.2095109473867022e-11
+      ],
+      "retained_heap_bytes": 204243104,
+      "warm_solve_seconds": 0.00688093125
+    },
+    "klu": {
+      "factor_seconds": 0.16066200006753206,
+      "warm_solve_seconds": 0.006948149995878339,
+      "retained_heap_bytes": 111901140.0,
+      "peak_heap_bytes": 136681956.0,
+      "factor_nonzeros": 3258107.0,
+      "condition_estimate": 2.2532568900614444e+16,
+      "reciprocal_pivot_ratio": 8.631255698507221e-15
+    },
+    "klu_orderings": {
+      "amd": {
+        "factor_seconds": 0.1284509999677539,
+        "warm_solve_seconds": 0.006181600003037602,
+        "retained_heap_bytes": 111901140.0,
+        "peak_heap_bytes": 136681956.0,
+        "factor_nonzeros": 3258107.0,
+        "condition_estimate": 2.2532568900614444e+16,
+        "reciprocal_pivot_ratio": 8.631255698507221e-15,
+        "difference_from_reference_v": 0.0,
+        "backward_residual": 1.6953517132138134e-14
+      },
+      "colamd": {
+        "factor_seconds": 0.21180100017227232,
+        "warm_solve_seconds": 0.008269300009123981,
+        "retained_heap_bytes": 127169124.0,
+        "peak_heap_bytes": 649404596.0,
+        "factor_nonzeros": 4018928.0,
+        "condition_estimate": 2.2532568900614444e+16,
+        "reciprocal_pivot_ratio": 4.5980847832770945e-15,
+        "difference_from_reference_v": 23.90380285369735,
+        "backward_residual": 9.145063105058003e-14
+      }
+    },
+    "max_voltage_difference_v": 17.4700421817074,
+    "worst_terminal": [
+      "SB8_P3UHS18_1247_NODE_8_9",
+      "3"
+    ],
+    "worst_reference_voltage_v": [
+      -17890.368153646632,
+      34782.034809273035
+    ],
+    "difference_by_terminal_v": {
+      "phase": 17.4700421817074
+    },
+    "high_precision_refined_difference_v": 17.458708923799705,
+    "faer_refined_difference_v": 12.06072555910794,
+    "scaled_faer_difference_v": 19.45393221618837,
+    "reverse_input_order_difference_v": 16.766206248924643,
+    "scaled_klu_difference_v": 16.87091843854188,
+    "row_scaled_backward_residual": {
+      "faer": 1.1914698436927626e-11,
+      "klu": 1.6953517132138134e-14,
+      "faer_refined": 3.816242273528829e-16,
+      "faer_scaled": 1.3746237307110466e-14
+    }
+  }
+}
