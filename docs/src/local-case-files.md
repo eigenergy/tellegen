@@ -206,7 +206,7 @@ The initial profile covers normalized finite sources with grounded references,
 explicit conductor impedances, bounded ZIP and exponential loads (including
 OpenDSS voltage bands and ZIP dropout), and supported finite-leakage transformers.
 An explicit fourth neutral conductor is supported. Source-defined load bounds
-always take precedence over the optional solver envelope; disabling that option
+always take precedence over the optional low- and high-voltage fallback; disabling that option
 does not remove the source model's own voltage bounds.
 
 Passive definitions, profiles and monitoring records remain in the module.
@@ -323,18 +323,17 @@ mapped, not surveyed. See
 #### Data sources
 
 Every table the generator ships names its source and the SHA-256 of the file
-it was derived from, and the generation report repeats them under
-`provenance`, so a host can show where each figure came from without a table
-of its own.
+it was derived from. The generation report repeats these source details, so a
+host can show where each figure came from without maintaining a table of its own.
 
-| Table | Source | Licence | Report field |
+| Table | Source | Licence | Reported source details |
 | --- | --- | --- | --- |
-| `data/populated_places.json` | GeoNames `cities5000` and `countryInfo` ([geonames.org](https://www.geonames.org/)) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), attribution required | `provenance.places` (`source`, `source_sha256`, `count`, `sha256`) |
-| `data/national_demand.json` | Ember, *Yearly Electricity Data*, through Our World in Data's energy dataset (demand and population) | CC BY 4.0 | `provenance.demand_table` (`source`, `licence`, `year`, `sha256`, `source_sha256`, `peak_factor`) |
-| `data/country_areas.json` | Natural Earth v5.1.2, 1:50m admin-0 countries | Public domain | `provenance.demand_table` (`areas_sha256`, `areas_source_sha256`) |
-| `data/voltage_ladders.json` | National transmission operators' and regulators' documents, the ENTSO-E members list and IEC 60038, cited per entry; copies no dataset | Compiled for tellegen | `provenance.voltage_table` (`version`, `sha256`) |
+| `data/populated_places.json` | GeoNames `cities5000` and `countryInfo` ([geonames.org](https://www.geonames.org/)) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), attribution required | Place source, original and compiled file hashes, and count |
+| `data/national_demand.json` | Ember, *Yearly Electricity Data*, through Our World in Data's energy dataset (demand and population) | CC BY 4.0 | Demand source, licence, year, file hashes, and peak factor |
+| `data/country_areas.json` | Natural Earth v5.1.2, 1:50m admin-0 countries | Public domain | Original and compiled area file hashes |
+| `data/voltage_ladders.json` | National transmission operators' and regulators' documents, the ENTSO-E members list and IEC 60038, cited per entry; copies no dataset | Compiled for tellegen | Voltage table version and file hash |
 | `data/subnational_demand.json`, `data/subnational_fuel_mix.json` | EIA-861, EIA-860 and the US Census Bureau's state population estimates | Public domain (US government works) | `context.demand_by_subdivision`, `context.fuel_mix_basis` |
-| OpenStreetMap mode | The Overpass answer the caller fetched (`power=*` features) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/), © OpenStreetMap contributors | `provenance.osm` (`document_sha256`, `elements`, `timestamp_osm_base`, `copyright`) |
+| OpenStreetMap mode | The Overpass answer the caller fetched (`power=*` features) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/), © OpenStreetMap contributors | OpenStreetMap document hash, element count, timestamp, and copyright |
 
 The `country_areas.json` keys are Natural Earth's `ADM0_A3`, and the places
 table carries the same code, so every lookup across the tables agrees.

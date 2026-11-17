@@ -14,7 +14,7 @@ Finite source impedance, active device controls, generator/IBR injections, unsup
 
 A current result belongs to the input that produced it. Cancelling or failing a new calculation retains the preceding result. Numeric columns exported to PowerIO are ordered by bus/terminal and source/terminal identities, with missing or duplicate identities rejected.
 
-After an initial solve, select a bus to edit each attached load branch's active and reactive power. The browser coalesces rapid changes and automatically warm-solves from the last converged voltages. It retains the same sparse factorization because load power changes alter the nonlinear current injection, not the passive network operator. The physical impedance and voltage-envelope terms still follow the edited power; only the fixed-point compensation reference is frozen. Resetting a row removes its override, and saved results contain the edited input and its qualified result. An edit changes only the solver's load laws: the network is not copied, and each edit returns a small summary in one round trip. The Studies panel then fetches only the selected bus and one page of equipment results. The portable input, optional canonical solution, and complete result are built only for save, export, geography attachment, or an explicit full rebuild. [Multiconductor PF performance](benchmark-results.md#mc-pf-performance) states the latency target and payload budgets with measurements.
+After an initial solve, select a bus to edit each attached load branch's active and reactive power. The browser coalesces rapid changes and automatically warm-solves from the last converged voltages. It retains the same sparse factorization because load power changes alter the nonlinear current injection, not the passive network operator. The physical impedance and low- and high-voltage fallback terms still follow the edited power; only the fixed-point compensation reference is frozen. Resetting a row removes its override, and saved results contain the edited input and its qualified result. An edit changes only the solver's load laws: the network is not copied, and each edit returns a small summary in one round trip. The Studies panel then fetches only the selected bus and one page of equipment results. The portable input, optional canonical solution, and complete result are built only for save, export, geography attachment, or an explicit full rebuild. [Multiconductor PF performance](benchmark-results.md#mc-pf-performance) states the latency target and payload budgets with measurements.
 
 ## Solver settings and OpenDSS comparison
 
@@ -28,7 +28,7 @@ produced that result.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Use load-model envelope (`voltage_envelope`) | Enabled | Permit the low/high-voltage fallback described below. |
+| Load-model fallback (`voltage_envelope`) | Enabled | Permit the low/high-voltage fallback described below. |
 | Vlow (`v_low_pu`) | 0.50 pu | Below this breakpoint, use nominal constant impedance. |
 | Vmin (`v_min_pu`) | 0.85 pu | Lower end of the original load-law band; below it, transition toward the low-voltage impedance law. |
 | Vmax (`v_max_pu`) | 1.15 pu | Above this breakpoint, use impedance matched to the original law at Vmax. |
@@ -76,7 +76,7 @@ voltages in [Load Models That Nearly Always Converge](https://opendss.epri.com/L
 Tellegen makes the consequence explicit: after convergence it checks the original
 load law at the final voltages. A result that used changed equations is labeled
 **Modified load model — non-canonical result** in the UI and exports. Disabling
-the envelope evaluates the original equations at all voltages, without promising
+the fallback evaluates the original equations at all voltages, without promising
 convergence. Merely going outside the band does not mark an unchanged impedance
 load as modified.
 
@@ -386,7 +386,7 @@ Constant-current loads therefore track the branch-voltage angle and retain
 their power factor; they are not fixed complex current phasors. ZIP coefficients
 are used as supplied, without silently normalizing their sums. Active and
 reactive coefficients or exponents may differ.
-With the default voltage envelope, all non-impedance load models use nominal
+With the default fallback outside the voltage band, all non-impedance load models use nominal
 impedance below `v_low_pu`, linearly interpolate complex current between the
 impedance and constant-power values from `v_low_pu` to `v_min_pu`, use the
 declared model from `v_min_pu` through `v_max_pu`, and use the impedance fixed
@@ -408,7 +408,7 @@ they are not interpreted through PowerIO's permissive model fallback.
 The compensation admittance stamped into the linear operator remains fixed.
 Each iteration compensates its current against the selected load law, so these
 models retain the single-factorization algorithm. A retained session updates
-the physical nominal admittance used by impedance and voltage-envelope laws
+the physical nominal admittance used by impedance and fallback load laws
 when P/Q changes, while leaving only the algebraic compensation reference
 frozen. Reported load currents and powers use the operating voltage, rather
 than merely copying nominal powers.
@@ -422,7 +422,7 @@ or a test of whether the load equations were modified. `min_voltage_pu`, `max_vo
 These are the BMOPF voltage laws plus the OpenDSS low/high-voltage fallback,
 not the complete OpenDSS load engine. ZIPV cutoff, time-dependent load
 multipliers, and control behavior are not added by this extension. Equation-only
-OpenDSS comparisons disable the envelope or remain within the matching range.
+OpenDSS comparisons disable the fallback or remain within the matching range.
 The frozen load references use OpenDSS model 2 for impedance, model 5 for
 current, model 8 for ZIP with cutoff disabled, and model 4 with specified CVR
 exponents for exponential loads. This comparison does not add support for
@@ -436,7 +436,7 @@ OpenDSS model-number input or its time-series/load-status semantics.
 The [user guide](multiconductor-pf.md#solver-settings-and-opendss-comparison) lists every exposed default, explains the new tolerance values, and compares their units and acceptance criteria with OpenDSS.
 
 
-**Power flow settings** in Studies exposes the load-model envelope and its
+**Power flow settings** in Studies exposes the load-model fallback and its
 `v_low_pu`, `v_min_pu`, and `v_max_pu` thresholds separately from numerical
 settings (maximum iterations, damping, and advanced voltage/KCL tolerances).
 The form shares one set of next-run settings with the context-sensitive solve
@@ -467,8 +467,8 @@ source information and CSV exports. Numerical convergence alone never establishe
 original-model solution. Legacy results without an assessment are unverified.
 
 Constant-impedance and zero-power branches are not marked modified merely
-because they fall outside the voltage band. Envelope use during intermediate
-iterations does not qualify the final point. Disabling the envelope can yield
+because they fall outside the voltage band. Fallback use during intermediate
+iterations does not qualify the final point. Disabling the fallback can yield
 an original-model solution outside the band. A change to the thresholds changes
 the equations; it does not waive engineering operating limits.
 
