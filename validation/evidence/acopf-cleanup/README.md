@@ -77,3 +77,21 @@ Rust suite passed 668 tests, with 5 existing ignored tests. The ACOPF-only suite
 passed 204 tests, the worker adapter passed 2, and the engine package passed 81. A separate
 multiconductor-only build passed 353 tests (3 existing ignored tests).
 Clippy with warnings denied and the patch-compatibility check against v0.8.0 pass.
+
+### Larger sensitivity setup check
+
+`kkt-setup.log` measures the shared KKT factor on nondegenerate sparse
+saddle-point systems of dimension 2200 and 6000 (5498 and 14998 nonzeros).
+The Hessian couples neighboring primal variables; independent equality rows
+form the indefinite constraint block. Setup includes every inverse-column
+qualification. Rust 1.96, native `release-py`: 63 ms / 473 ms setup and 33 µs / 94 µs
+per retained selected query (100 queries). Whole-process maximum RSS was
+8.23 MiB (`kkt-memory.log`), including the test harness and both cases.
+Run `sens::nlp_kkt::tests::sparse_kkt_setup_measurement` with `--ignored
+--exact --nocapture` in an optimized test executable to reproduce.
+
+This qualification algorithm already existed for MC OPF; AC OPF now shares
+it. Its cost remains dimension sparse backsolves plus dimension×nonzeros
+residual work. These bounded native measurements are not a browser latency
+claim or a guarantee for larger, fill-heavy systems. Selected queries reuse
+the prepared factor; none repeat the inverse qualification.
