@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import sys
+from importlib.metadata import requires
 from pathlib import Path
 
 import pytest
 import tellegen
+from packaging.requirements import Requirement
 
 # validation/evidence/studies/case3.m: a three-bus MATPOWER case already in the repo, small
 # enough to reason about and congested once demand moves.
@@ -43,12 +45,30 @@ def test_the_base_import_pulls_in_no_numeric_stack():
     assert "scipy" not in sys.modules
 
 
+def test_installed_mcp_extra_requires_the_qualified_reader():
+    requirements = [Requirement(item) for item in requires("tellegen") or []]
+    assert not any(
+        item.marker is None or item.marker.evaluate({"extra": ""})
+        for item in requirements
+    )
+    readers = [
+        item for item in requirements
+        if item.name == "powerio"
+        and item.marker is not None
+        and item.marker.evaluate({"extra": "mcp"})
+    ]
+    assert len(readers) == 1
+    assert "0.12.2" in readers[0].specifier
+    assert "0.12.1" not in readers[0].specifier
+    assert "0.13.0" not in readers[0].specifier
+
+
 def test_versions_separates_the_binding_from_the_engine():
     versions = tellegen.versions()
     assert set(versions) == {"tellegen", "engine", "powerio_ir"}
     # The two can drift: nothing bumps the binding automatically, so they are
     # reported separately rather than conflated into one number.
-    assert versions["powerio_ir"] == "pio-ir/0.12.1"
+    assert versions["powerio_ir"] == "pio-ir/0.12.2"
 
 
 def test_capabilities_reports_acopf_as_unavailable():
@@ -66,7 +86,7 @@ def test_load_infers_the_format_from_the_extension(case3_path: Path):
     case = tellegen.load(case3_path)
     module = json.loads(case.module_json)
     assert module["schema"] == "pio-ir"
-    assert module["version"] == "0.12.1"
+    assert module["version"] == "0.12.2"
     assert module["value"]["type"] == "powerio.BalancedNetwork"
 
 
