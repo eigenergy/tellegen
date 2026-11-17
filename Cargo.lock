@@ -2420,6 +2420,7 @@ dependencies = [
  "powerio",
  "powerio-dist",
  "powerio-tx",
+ "quick-xml",
  "schemars",
  "serde",
  "serde_json",

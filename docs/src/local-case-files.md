@@ -163,17 +163,24 @@ does not enable unsupported controls, load laws or transformer models.
 
 Use **Choose a nonstandard entry or document group** for an unusual master
 suffix or a format that needs an explicit choice. XML is not assumed to be one
-CGMES network: choose XIIDM for independent networks, or explicitly group the
-profiles belonging to one CGMES case. GO problem/solution grouping is likewise
-explicit. For a ZIP inside a ZIP, choose **Open ZIP** beside its path. The inner
+CGMES network: choose XIIDM for independent networks. For CGMES, the chooser
+suggests one case when model headers and declared dependencies identify an
+unambiguous profile group, keeping EQ and SSH together so switch positions
+survive import. It does not combine unrelated models or choose between conflicting
+profiles. If a group cannot be suggested, select the related documents and choose
+**Group selected as CGMES**. Header inspection is bounded to 1 MiB per XML file and
+8 MiB per collection; larger or incompletely inspected sets need explicit grouping.
+A single XML file remains importable on its own. GO problem/solution grouping is
+also explicit. For a ZIP inside a ZIP, choose **Open ZIP** beside its path. The inner
 archive appears as a separate collection; its cases cannot read files from its
 parent or siblings. Each archive is opened only when requested, up to two ZIP
 layers. Format-owned native ZIPs can be selected with their reader
 format. Unsupported structural values, such as time series in a snapshot-only
 view, are reported rather than flattened.
 
-Files are read locally. PowerIO owns discovery, dependency resolution and
-electrical parsing; no OpenDSS commands are executed by the browser and no
+Files are read locally. PowerIO owns source discovery, dependency resolution and
+electrical parsing; Tellegen adds the CGMES profile-group suggestions described above.
+No OpenDSS commands are executed by the browser and no
 missing file is fetched from the host or network. Geographic sidecars are not
 attached to every case in a mixed archive. Import first, select the intended
 case, and attach its geographic file using the existing sidecar workflow.

@@ -5,6 +5,17 @@ import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+declare global {
+	interface Window {
+		collectionFrames: {
+			count(): number;
+			handles(): number[];
+			remaining(handles: number[]): number[];
+			flush(): void;
+		};
+	}
+}
+
 test.beforeEach(async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
@@ -36,6 +47,38 @@ test.describe('PowerIO collection build', () => {
 		await expect(dialog.getByRole('status')).toHaveText('Done');
 		await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(2);
 		await expect(dialog.locator('[data-outcome="failed"]')).toHaveCount(0);
+	});
+
+	test('CGMES companion profiles import as one case and retain open switch positions', async ({
+		page
+	}) => {
+		const zip = await readFile(
+			new URL('./fixtures/mc-pf-browser/public/node-breaker.zip', import.meta.url)
+		);
+		await page
+			.locator('input[type="file"]')
+			.setInputFiles({ name: 'node-breaker.zip', mimeType: 'application/zip', buffer: zip });
+		const chooser = page.getByRole('dialog', { name: 'Choose cases from collection' });
+		await expect(chooser.locator('.candidate')).toHaveCount(1);
+		await expect(chooser.locator('.candidate')).toContainText('NodeBreaker_EQ.xml');
+		await expect(chooser.locator('.candidate')).toContainText('NodeBreaker_SSH.xml');
+		await chooser.getByRole('button', { name: 'Select all matching' }).click();
+		await chooser.getByRole('button', { name: 'Import selected cases' }).click();
+		await expect(chooser.getByRole('status')).toHaveText('Done');
+		await expect(chooser.locator('[data-outcome="imported"]')).toHaveCount(1);
+		await expect(chooser.locator('[data-outcome="failed"]')).toHaveCount(0);
+		await chooser.getByRole('button', { name: 'Close', exact: true }).click();
+		const canvas = page.getByRole('application', { name: 'Single-line diagram', exact: true });
+		if (!(await canvas.isVisible()))
+			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+		await page.getByRole('button', { name: 'Substation detail and drawing', exact: true }).click();
+		const drawing = page.getByRole('region', { name: 'Engineering drawing' });
+		await expect(
+			drawing.getByRole('button', { name: 'disconnector DSC1 open', exact: true })
+		).toBeVisible();
+		await expect(
+			drawing.getByRole('button', { name: 'disconnector DSC1 closed', exact: true })
+		).toHaveCount(0);
 	});
 
 	test('dragging a mixed ZIP discovers both shared masters and keeps successful imports', async ({
@@ -151,6 +194,63 @@ test.describe('PowerIO collection build', () => {
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 		await openCaseMenu(page);
 		await expect(page.locator('.case-chip.local')).toHaveCount(2);
+		await page
+			.locator('.case-chip.local')
+			.filter({ hasText: 'comparison.m' })
+			.locator('.case-activate')
+			.click();
+		const canvas = page.getByRole('application', { name: 'Single-line diagram', exact: true });
+		if (!(await canvas.isVisible()))
+			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+		await expect(canvas).toHaveAttribute('data-renderer-ready', 'true');
+		const originalCanvas = await canvas.elementHandle();
+		await openCaseMenu(page);
+		// Keep a label update queued while replacing the diagram with an incomplete case.
+		// This reproduces a slow frame without depending on the machine's render timing.
+		await page.evaluate(() => {
+			const request = window.requestAnimationFrame.bind(window);
+			const cancel = window.cancelAnimationFrame.bind(window);
+			const pending = new Map<number, FrameRequestCallback>();
+			let id = 1_000_000;
+			window.requestAnimationFrame = (callback) => {
+				pending.set(++id, callback);
+				return id;
+			};
+			window.cancelAnimationFrame = (handle) => {
+				pending.delete(handle);
+				cancel(handle);
+			};
+			Object.assign(window, {
+				collectionFrames: {
+					count: () => pending.size,
+					handles: () => [...pending.keys()],
+					remaining: (handles: number[]) => handles.filter((handle) => pending.has(handle)),
+					flush: () => {
+						window.requestAnimationFrame = request;
+						window.cancelAnimationFrame = cancel;
+						for (const [handle, callback] of pending) {
+							pending.delete(handle);
+							callback(performance.now());
+						}
+					}
+				}
+			});
+		});
+		await canvas.dispatchEvent('keydown', { key: '+' });
+		await expect
+			.poll(() => page.evaluate(() => window.collectionFrames.count()))
+			.toBeGreaterThan(0);
+		const queued = await page.evaluate(() => window.collectionFrames.handles());
+		await page
+			.locator('.case-chip.local')
+			.filter({ hasText: 'main.dss' })
+			.locator('.case-activate')
+			.dispatchEvent('click');
+		await expect.poll(() => originalCanvas!.evaluate((element) => element.isConnected)).toBe(false);
+		expect(
+			await page.evaluate((handles) => window.collectionFrames.remaining(handles), queued)
+		).toEqual([]);
+		await page.evaluate(() => window.collectionFrames.flush());
 	});
 
 	test('rejecting an unsafe archive leaves an independent valid ZIP available', async ({
