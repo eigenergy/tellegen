@@ -2,6 +2,8 @@
 //!
 //! These are input settings, not results or a promise that a control is solved.
 //! Rows remain in source order; HVDC never enters the AC branch index space.
+pub mod node_breaker;
+
 use powerio::{BalancedNetwork, TransformerControlMode};
 use serde::Serialize;
 
@@ -19,6 +21,15 @@ pub struct Equipment {
     pub dc_model: Option<crate::dc_grid::DcGrid>,
     pub dc_model_unavailable: Option<String>,
     pub import_notes: Vec<String>,
+}
+
+/// Equipment JSON for consumers that can display detailed switch connectivity.
+/// The existing Equipment struct and its constructors remain unchanged.
+#[derive(Clone, Debug, Serialize)]
+pub struct EquipmentOutput {
+    #[serde(flatten)]
+    pub equipment: Equipment,
+    pub node_breaker: node_breaker::NodeBreaker,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
