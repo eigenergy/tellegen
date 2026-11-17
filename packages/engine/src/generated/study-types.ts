@@ -1,5 +1,5 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: a4289eabfbd6d25d46845d84a554a7b30c25b6a05c269567ed4fcf7ad39cbe10
+// Source SHA256: 8f9ff0cb3d2f175349283c212316220c0bb8b81c5b155c4b22a39acb579984a5
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
@@ -27,7 +27,7 @@ export type Camera = { "bearing": number; "center": Array<number>; "pitch": numb
 
 export type ColMeta = { "element": ElementId; "index": number; "parameter": Parameter; };
 
-export type Comparison = { "goal"?: string | null; "improvement"?: number | null; "left": string; "left_value"?: number | null; "left_view"?: (SolveResponse) | (null); "right": string; "right_value"?: number | null; "right_view"?: (SolveResponse) | (null); };
+export type Comparison = { "goal"?: string | null; "improvement"?: number | null; "left": string; "left_value"?: number | null; "left_view"?: (SolveOutput) | (null); "right": string; "right_value"?: number | null; "right_view"?: (SolveOutput) | (null); };
 
 export type ConstraintResult = { "binding": boolean; "branches"?: Array<number>; "id": string; "lower"?: number | null; "shadow_price"?: number | null; "upper"?: number | null; "value": number; };
 
@@ -93,6 +93,8 @@ export type LoadingEnd = "from" | "to" | "both";
 
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 
+export type ObjectiveKind = ("cost") | ("feasibility");
+
 export type ObservableWeight = { "element": ElementKey; "weight": number; };
 
 export type Operand = ({ "Price": Power; }) | ({ "Dispatch": Power; }) | ({ "Flow": { "end": End; "power": Power; }; }) | ({ "Voltage": VoltageKind; });
@@ -117,6 +119,8 @@ export type SolveDiagnostic = { "buses": Array<number>; "code": string; "message
 
 export type SolveIteration = { "inf_du": number; "inf_pr": number; "iter": number; "objective": number; };
 
+export type SolveOutput = { "branch_constraints"?: Array<BranchConstraintResult> | null; "branch_susceptance_formula"?: (DcFormula) | (null); "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "initialization"?: (AcPfInitialization) | (null); "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "objective_kind"?: (ObjectiveKind) | (null); "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
+
 export type SolveResponse = { "branch_constraints"?: Array<BranchConstraintResult> | null; "branch_susceptance_formula"?: (DcFormula) | (null); "constraints"?: Array<ConstraintResult> | null; "diagnostics"?: Array<SolveDiagnostic>; "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "initialization"?: (AcPfInitialization) | (null); "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
 
 export type SolveStatus = ("optimal") | ("feasible");
@@ -133,7 +137,7 @@ export type StudyObjective = ({ "kind": "weighted_observable"; "operand": Operan
 
 export type StudyOperation = ({ "kind": "inspect"; "state": string; }) | ({ "kind": "branch"; "rationale": string; "state": string; }) | ({ "goal": GoalRevision; "kind": "revise_goal"; }) | ({ "goal"?: string | null; "kind": "compare"; "left": string; "right": string; }) | ({ "goal": string; "kind": "propose"; "options": SearchOptions; "rationale": string; "state": string; }) | ({ "changes": Array<DemandAdjustment>; "constrain_to_goal"?: boolean; "goal"?: string | null; "kind": "edit_demand"; "rationale": string; "state": string; }) | ({ "goal"?: string | null; "kind": "restore_base"; "rationale": string; "state": string; }) | ({ "assessed_recommendation"?: string | null; "evidence": unknown; "goal"?: string | null; "kind": "record_evidence"; "rationale": string; "sensitivity": boolean; "state": string; }) | ({ "base_state": string; "goal"?: string | null; "kind": "apply"; "proposal": string; "state": string; });
 
-export type StudyOperationResult = { "comparison"?: (Comparison) | (null); "demand_changes"?: Array<DemandChange> | null; "experiment"?: string | null; "inspected_view"?: (SolveResponse) | (null); "summary": StudySummary; };
+export type StudyOperationResult = { "comparison"?: (Comparison) | (null); "demand_changes"?: Array<DemandChange> | null; "experiment"?: string | null; "inspected_view"?: (SolveOutput) | (null); "summary": StudySummary; };
 
 export type StudyRequest = { "expected_revision": number; "operation": StudyOperation; };
 

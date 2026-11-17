@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use clarabel::solver::{DefaultInfo, DefaultSettings, DefaultSolver, IPSolver, SolverStatus};
 use serde::{Deserialize, Serialize};
 
+use crate::error::{coded, EngineError, ErrorCode};
 use crate::problem::OpfProgram;
 
 /// One interior-point iterate: the iteration index, the primal objective, and
@@ -56,10 +57,14 @@ const STATIC_REGULARIZATION_RETRY: f64 = 1e-7;
 pub(crate) fn run(
     prog: &OpfProgram,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<RawSolution, String> {
+) -> Result<RawSolution, EngineError> {
     match run_with(prog, cancel.clone(), STATIC_REGULARIZATION) {
-        Err(Retry) => run_with(prog, cancel, STATIC_REGULARIZATION_RETRY)
-            .map_err(|Retry| "DC OPF solve did not converge: NumericalError".to_owned())?,
+        Err(Retry) => run_with(prog, cancel, STATIC_REGULARIZATION_RETRY).map_err(|Retry| {
+            coded(
+                ErrorCode::NotConverged,
+                "DC OPF solve did not converge: NumericalError",
+            )
+        })?,
         Ok(result) => result,
     }
 }
@@ -72,7 +77,7 @@ fn run_with(
     prog: &OpfProgram,
     cancel: Option<Arc<AtomicBool>>,
     static_regularization_constant: f64,
-) -> Result<Result<RawSolution, String>, Retry> {
+) -> Result<Result<RawSolution, EngineError>, Retry> {
     let settings: DefaultSettings<f64> = DefaultSettings {
         verbose: false,
         tol_gap_abs: 1e-9,
@@ -85,7 +90,12 @@ fn run_with(
     let mut solver =
         match DefaultSolver::new(&prog.p, &prog.q, &prog.a, &prog.b, &prog.cones, settings) {
             Ok(solver) => solver,
-            Err(e) => return Ok(Err(format!("Clarabel setup failed: {e:?}"))),
+            Err(e) => {
+                return Ok(Err(coded(
+                    ErrorCode::Internal,
+                    format!("Clarabel setup failed: {e:?}"),
+                )))
+            }
         };
     // Record every interior-point iterate for the convergence plot, and (when a
     // cancel flag is present) stop the solve at the next iteration if it flips.
@@ -106,7 +116,7 @@ fn run_with(
 
     let status = solver.solution.status;
     if matches!(status, SolverStatus::CallbackTerminated) {
-        return Ok(Err("DC OPF solve cancelled".into()));
+        return Ok(Err(coded(ErrorCode::Cancelled, "DC OPF solve cancelled")));
     }
     if matches!(status, SolverStatus::NumericalError) {
         return Err(Retry);
@@ -119,13 +129,22 @@ fn run_with(
     // unservable case), so give it a distinct word the harness will not fold into the
     // "infeasible" bucket and silently count as agreement with the reference.
     if matches!(status, SolverStatus::PrimalInfeasible) {
-        return Ok(Err(format!("DC OPF solve infeasible: {status:?}")));
+        return Ok(Err(coded(
+            ErrorCode::Infeasible,
+            format!("DC OPF solve infeasible: {status:?}"),
+        )));
     }
     if matches!(status, SolverStatus::DualInfeasible) {
-        return Ok(Err(format!("DC OPF solve unbounded: {status:?}")));
+        return Ok(Err(coded(
+            ErrorCode::Unbounded,
+            format!("DC OPF solve unbounded: {status:?}"),
+        )));
     }
     if !matches!(status, SolverStatus::Solved | SolverStatus::AlmostSolved) {
-        return Ok(Err(format!("DC OPF solve did not converge: {status:?}")));
+        return Ok(Err(coded(
+            ErrorCode::NotConverged,
+            format!("DC OPF solve did not converge: {status:?}"),
+        )));
     }
     let iterations = std::mem::take(&mut *trace.lock().unwrap());
 

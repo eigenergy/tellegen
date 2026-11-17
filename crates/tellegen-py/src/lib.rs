@@ -48,14 +48,28 @@ const PANIC_CODE: &str = "BIND.PY.PANIC";
 /// so both hosts return the same shape.
 const STUDY_SUMMARY_LIMIT: usize = 8;
 
-/// Classify an engine error string into a stable code.
-///
-/// The engine returns free-form `Result<_, String>` with no error enum at its
-/// edge, so this matches the message substrings its tests pin. That is fragile
-/// by construction and the reason a typed error enum is worth adding upstream;
-/// until then, this is the single place the fragility lives, and every arm is
-/// covered by a test below.
-fn classify(message: &str) -> &'static str {
+/// One failure on its way to Python: the `.code` the exception carries and
+/// the message, which is the engine's text unchanged.
+struct Failure {
+    code: &'static str,
+    message: String,
+}
+
+impl Failure {
+    /// A failure this binding raises itself, with the `.code` stated where it
+    /// is created.
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+// Compatibility for the Python codes published before typed engine errors.
+// Keep this table until a major release: the engine's broader categories cannot
+// distinguish SENS.UNSUPPORTED from FORMULATION.UNAVAILABLE, for example.
+fn legacy_python_code(message: &str) -> &'static str {
     // Order matters: the solve-status arms are checked before the generic
     // "bad request" arm because a cancelled solve also mentions its request.
     if message.contains("solve infeasible") {
@@ -96,10 +110,56 @@ fn classify(message: &str) -> &'static str {
     }
 }
 
-/// Turn an engine error string into the matching Python exception, with `.code`
-/// set on the instance.
-fn engine_error(py: Python<'_>, message: String) -> PyErr {
-    let code = classify(&message);
+/// The Python `.code` for an engine error code.
+///
+/// The engine classifies each error where it creates or returns it; this is
+/// only the table from its codes to the names this package has always used.
+/// `None` is an engine message that carries no code, and `ENGINE.FAILED` is
+/// what such a failure has always been called here.
+fn python_code(code: Option<tellegen::ErrorCode>) -> &'static str {
+    use tellegen::ErrorCode;
+    match code {
+        Some(ErrorCode::Infeasible) => "SOLVE.INFEASIBLE",
+        Some(ErrorCode::Unbounded) => "SOLVE.UNBOUNDED",
+        Some(ErrorCode::NotConverged) => "SOLVE.NOT_CONVERGED",
+        Some(ErrorCode::Cancelled) => "SOLVE.CANCELLED",
+        Some(ErrorCode::InvalidRequest) => "REQUEST.MALFORMED",
+        Some(ErrorCode::UnknownElement) => "EDIT.UNKNOWN_ELEMENT",
+        Some(ErrorCode::OutOfRange) => "EDIT.OUT_OF_RANGE",
+        Some(ErrorCode::Unsupported) => "REQUEST.UNSUPPORTED",
+        Some(ErrorCode::InvalidInput) => "ENGINE.FAILED",
+        _ => "ENGINE.FAILED",
+    }
+}
+
+/// An engine error that carries its code.
+impl From<tellegen::EngineError> for Failure {
+    fn from(error: tellegen::EngineError) -> Self {
+        Self {
+            code: match legacy_python_code(&error.message) {
+                "ENGINE.FAILED" => python_code(Some(error.code)),
+                legacy => legacy,
+            },
+            message: error.message,
+        }
+    }
+}
+
+/// A plain message from an engine entry point that does not return a coded
+/// error yet. Preserve the published Python classification for these messages.
+impl From<String> for Failure {
+    fn from(message: String) -> Self {
+        Self {
+            code: legacy_python_code(&message),
+            message,
+        }
+    }
+}
+
+/// Turn a failure into the matching Python exception, with `.code` set on the
+/// instance. The exception class follows from the code alone.
+fn engine_error(py: Python<'_>, failure: impl Into<Failure>) -> PyErr {
+    let Failure { code, message } = failure.into();
     let err = match code {
         "SOLVE.INFEASIBLE" | "SOLVE.UNBOUNDED" | "SOLVE.NOT_CONVERGED" | "SOLVE.CANCELLED" => {
             TellegenSolveError::new_err(message)
@@ -125,8 +185,8 @@ fn engine_error(py: Python<'_>, message: String) -> PyErr {
 fn solve_module(py: Python<'_>, module_json: &str, request_json: &str) -> PyResult<String> {
     let module = module_json.to_owned();
     let request = request_json.to_owned();
-    py.detach(move || tellegen::solve_module_json(&module, &request))
-        .map_err(|message| engine_error(py, message))
+    py.detach(move || tellegen::solve_module_output_json(&module, &request))
+        .map_err(|error| engine_error(py, error))
 }
 
 /// The formulation, operand and parameter support matrix of this build, as JSON.
@@ -147,9 +207,13 @@ fn capabilities_json() -> String {
 fn parse_case(py: Python<'_>, bytes: &[u8], format: &str) -> PyResult<String> {
     let owned = bytes.to_vec();
     let token = format.to_owned();
-    py.detach(move || {
-        let info = powerio::resolve_format(&token)
-            .ok_or_else(|| format!("unknown PowerIO format {token:?}"))?;
+    py.detach(move || -> Result<String, Failure> {
+        let info = powerio::resolve_format(&token).ok_or_else(|| {
+            Failure::new(
+                "FORMAT.UNKNOWN",
+                format!("unknown PowerIO format {token:?}"),
+            )
+        })?;
         let id = powerio::FormatId::new(info.token).map_err(|error| error.to_string())?;
         // The angle-bracketed name marks an anonymous in-memory source, so the
         // reader takes the case's own name over a file-stem hint.
@@ -158,7 +222,7 @@ fn parse_case(py: Python<'_>, bytes: &[u8], format: &str) -> PyResult<String> {
             .with_format(id);
         let module = powerio::parse(source).map_err(|error| error.to_string())?;
         let balanced = tellegen::ir::balanced_module(module)?;
-        tellegen::ir::serialize_module(&balanced)
+        Ok(tellegen::ir::serialize_module(&balanced)?)
     })
     .map_err(|message| engine_error(py, message))
 }
@@ -192,21 +256,24 @@ fn producer_string() -> String {
 /// instance for a bare network. Mirrors the CLI's `instance_from_module_json`.
 fn instance_from_module_json(
     text: &str,
-) -> Result<powerio::PioModule<powerio::DcOpfInstance>, String> {
+) -> Result<powerio::PioModule<powerio::DcOpfInstance>, Failure> {
     use powerio::{DcOpfInstance, PioValue};
     let module = tellegen::ir::deserialize_module(text)?;
     match module.value() {
-        PioValue::DcOpfInstance(_) => module.try_map_value(|value| match value {
+        PioValue::DcOpfInstance(_) => Ok(module.try_map_value(|value| match value {
             PioValue::DcOpfInstance(instance) => Ok(instance),
             other => Err(other.type_name().to_owned()),
-        }),
-        PioValue::BalancedNetwork(_) => tellegen::ir::balanced_module(module)?
+        })?),
+        PioValue::BalancedNetwork(_) => Ok(tellegen::ir::balanced_module(module)?
             .try_map_value(DcOpfInstance::from_network)
-            .map_err(|error| error.to_string()),
-        other => Err(format!(
-            "the module holds a {} value; solve_module and plan accept \
-             powerio.DcOpfInstance or powerio.BalancedNetwork",
-            other.type_name()
+            .map_err(|error| error.to_string())?),
+        other => Err(Failure::new(
+            "MODULE.UNSUPPORTED",
+            format!(
+                "the module holds a {} value; solve_module and plan accept \
+                 powerio.DcOpfInstance or powerio.BalancedNetwork",
+                other.type_name()
+            ),
         )),
     }
 }
@@ -231,11 +298,11 @@ fn solution_module_json(
 #[pyfunction]
 fn solve_module_to_solution(py: Python<'_>, module_json: &str) -> PyResult<String> {
     let text = module_json.to_owned();
-    py.detach(move || {
+    py.detach(move || -> Result<String, Failure> {
         let source = instance_from_module_json(&text)?;
         let instance = std::sync::Arc::new(source.value().clone());
         let solution = tellegen::solve_dc_opf_instance(instance, producer_string())?;
-        solution_module_json(source, solution)
+        Ok(solution_module_json(source, solution)?)
     })
     .map_err(|message| engine_error(py, message))
 }
@@ -248,9 +315,14 @@ fn solve_module_to_solution(py: Python<'_>, module_json: &str) -> PyResult<Strin
 fn plan_capacity(py: Python<'_>, module_json: &str, spec_json: &str) -> PyResult<String> {
     let text = module_json.to_owned();
     let spec_text = spec_json.to_owned();
-    py.detach(move || {
-        let spec: tellegen::CapacityPlanSpec = serde_json::from_str(&spec_text)
-            .map_err(|error| format!("unreadable planning spec: {error}"))?;
+    py.detach(move || -> Result<String, Failure> {
+        let spec: tellegen::CapacityPlanSpec =
+            serde_json::from_str(&spec_text).map_err(|error| {
+                Failure::new(
+                    "REQUEST.MALFORMED",
+                    format!("unreadable planning spec: {error}"),
+                )
+            })?;
         let source = instance_from_module_json(&text)?;
         let instance = std::sync::Arc::new(source.value().clone());
         let execution = tellegen::plan::plan_capacity(instance, &spec)?;
@@ -261,7 +333,7 @@ fn plan_capacity(py: Python<'_>, module_json: &str, spec_json: &str) -> PyResult
             "solution_module": serde_json::from_str::<serde_json::Value>(&solution_module)
                 .map_err(|error| error.to_string())?,
         });
-        serde_json::to_string(&response).map_err(|error| error.to_string())
+        Ok(serde_json::to_string(&response).map_err(|error| error.to_string())?)
     })
     .map_err(|message| engine_error(py, message))
 }
@@ -271,13 +343,13 @@ fn plan_capacity(py: Python<'_>, module_json: &str, spec_json: &str) -> PyResult
 fn study_create(py: Python<'_>, path: &str, request_json: &str) -> PyResult<String> {
     let destination = path.to_owned();
     let text = request_json.to_owned();
-    py.detach(move || {
-        let request: tellegen::study_ops::CreateStudy =
-            serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    py.detach(move || -> Result<String, Failure> {
+        let request: tellegen::study_ops::CreateStudy = serde_json::from_str(&text)
+            .map_err(|error| Failure::new("REQUEST.MALFORMED", error.to_string()))?;
         let bundle = tellegen::study_ops::create_study(request)?;
         tellegen::study_storage::FileStudyStore::new(&destination).create(&bundle)?;
-        serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
-            .map_err(|error| error.to_string())
+        Ok(serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
+            .map_err(|error| error.to_string())?)
     })
     .map_err(|message| engine_error(py, message))
 }
@@ -313,11 +385,11 @@ fn study_export(py: Python<'_>, path: &str) -> PyResult<String> {
 fn study_import(py: Python<'_>, path: &str, bundle_json: &str) -> PyResult<String> {
     let destination = path.to_owned();
     let text = bundle_json.to_owned();
-    py.detach(move || {
+    py.detach(move || -> Result<String, Failure> {
         let bundle = tellegen::document::StudyBundle::import(&text)?;
         tellegen::study_storage::FileStudyStore::new(&destination).create(&bundle)?;
-        serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
-            .map_err(|error| error.to_string())
+        Ok(serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
+            .map_err(|error| error.to_string())?)
     })
     .map_err(|message| engine_error(py, message))
 }
@@ -354,20 +426,26 @@ fn study_run(
             std::time::Duration::try_from_secs_f64(seconds).map_err(|_| {
                 engine_error(
                     py,
-                    format!("bad request JSON: timeout_seconds {seconds} is out of range"),
+                    Failure::new(
+                        "REQUEST.MALFORMED",
+                        format!("bad request JSON: timeout_seconds {seconds} is out of range"),
+                    ),
                 )
             })?,
         ),
         Some(seconds) => {
             return Err(engine_error(
                 py,
-                format!("bad request JSON: timeout_seconds must be a finite, nonnegative number, not {seconds}"),
+                Failure::new(
+                    "REQUEST.MALFORMED",
+                    format!("bad request JSON: timeout_seconds must be a finite, nonnegative number, not {seconds}"),
+                ),
             ));
         }
     };
-    py.detach(move || {
-        let request: tellegen::study_ops::StudyRequest =
-            serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    py.detach(move || -> Result<String, Failure> {
+        let request: tellegen::study_ops::StudyRequest = serde_json::from_str(&text)
+            .map_err(|error| Failure::new("REQUEST.MALFORMED", error.to_string()))?;
         let expected = request.expected_revision;
         let store = tellegen::study_storage::FileStudyStore::new(&source);
         let mut bundle = store.load()?;
@@ -384,23 +462,23 @@ fn study_run(
         // Committed even on a cancelled run: the engine records the trials that
         // did finish, and dropping them would lose completed exact solves.
         store.commit(expected, &bundle)?;
-        let response = serde_json::json!({ "result": result, "progress": checkpoints });
-        serde_json::to_string(&response).map_err(|error| error.to_string())
+        let response =
+            serde_json::json!({ "result": result.output(&bundle)?, "progress": checkpoints });
+        Ok(serde_json::to_string(&response).map_err(|error| error.to_string())?)
     })
     .map_err(|message| engine_error(py, message))
 }
 
-/// The code `classify` would assign to an engine message.
+/// The `.code` an engine message without a coded error would carry.
 ///
-/// Exported so the classification table can be asserted from the Python test
-/// suite. A cdylib-only pyo3 crate cannot host a portable `cargo test` harness:
+/// Exported so the table can be asserted from the Python test suite. A cdylib-only pyo3 crate cannot host a portable `cargo test` harness:
 /// without `extension-module` the test binary links libpython and aborts, and
 /// with it the binary has undefined Python symbols that fail to link on Linux.
 /// Testing through the loaded extension is both portable and closer to how the
 /// code actually runs.
 #[pyfunction]
 fn _classify(message: &str) -> &'static str {
-    classify(message)
+    legacy_python_code(message)
 }
 
 #[pymodule]

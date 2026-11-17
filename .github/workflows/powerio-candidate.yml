@@ -91,7 +91,7 @@ jobs:
       - name: Test Rust surfaces
         run: |
           compat=()
-          wasm_features=conic,synth,rms,rms-experimental
+          wasm_features=conic,synth,rms,rms-experimental,powerio-collections
           if [ -n "$TELLEGEN_POWERIO_FEATURES" ]; then
             compat=(--features tellegen/powerio-012)
             wasm_features+=",$TELLEGEN_POWERIO_FEATURES"

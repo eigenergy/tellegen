@@ -24,7 +24,9 @@ export interface CollectionRow {
 type Session = Pick<
 	BrowserCaseCollection,
 	'inspection' | 'ingest' | 'originalZip' | 'sourceZip' | 'free' | 'cancel'
->;
+> & {
+	openNested?: (member: string) => Promise<Session>;
+} /* compatibility with custom factories */;
 type Factory = {
 	zip: (name: string, bytes: Uint8Array, signal: AbortSignal) => Promise<Session>;
 	files: (
@@ -53,6 +55,7 @@ export class CollectionImport {
 	private sequence = 0;
 	private expanded = 0;
 	private entries = 0;
+	private opened = $state<string[]>([]);
 
 	constructor(
 		private readonly accept: (label: string, result: ImportedCollectionCase) => void,
@@ -68,6 +71,7 @@ export class CollectionImport {
 		this.collections = [];
 		this.expanded = 0;
 		this.entries = 0;
+		this.opened = [];
 		const generation = ++this.generation;
 		const abort = (this.abort = new AbortController());
 		this.progress = 'Reading collection files…';
@@ -163,6 +167,31 @@ export class CollectionImport {
 			outcome: 'pending',
 			message: ''
 		});
+	}
+
+	async openNested(id: number, path: string): Promise<void> {
+		if (this.busy || !this.open) return;
+		const parent = this.collections.find((c) => c.id === id);
+		const owner = this.sessions.get(id);
+		const key = `${id}/${path}`;
+		if (!parent || !owner?.openNested || this.opened.includes(key)) return;
+		const generation = this.generation;
+		this.busy = true;
+		const label = `${parent.label} / ${path}`;
+		this.progress = `Inspecting ${label}…`;
+		try {
+			await this.admit(label, await owner.openNested(path), generation);
+			this.opened.push(key);
+			this.progress = `${plural(this.rows.length, 'case')} found in ${plural(this.entries, 'file')}`;
+		} catch (error) {
+			this.recordError(label, error, generation);
+		} finally {
+			if (generation === this.generation) this.busy = false;
+		}
+	}
+
+	isOpened(id: number, path: string): boolean {
+		return this.opened.includes(`${id}/${path}`);
 	}
 
 	addExplicit(session: number, path: string, format: string) {

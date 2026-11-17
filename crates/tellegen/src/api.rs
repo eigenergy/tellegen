@@ -23,6 +23,7 @@ use powerio::BalancedNetwork;
 use powerio::DcOpfInstance;
 use serde::{Deserialize, Serialize};
 
+use super::error::{coded, EngineError, ErrorCode, WithCode};
 use super::model::DcNetwork;
 use super::problem::dc_opf_cancellable;
 use super::solve::SolveIteration;
@@ -415,8 +416,11 @@ pub struct SolveRequest {
 /// branches synthesized for a three-winding transformer; those rows are valid
 /// model axes, but they are not source elements and therefore are never edit
 /// targets on a public API.
-pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> Result<(), String> {
-    validate_canonical_identity(net)?;
+pub(crate) fn validate_canonical_edits(
+    net: &BalancedNetwork,
+    edits: &Edits,
+) -> Result<(), EngineError> {
+    validate_canonical_identity(net).code(ErrorCode::InvalidInput)?;
     if edits.deltas.is_empty() && edits.rates.is_empty() {
         return Ok(());
     }
@@ -456,11 +460,17 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
     }
     for (bus, mw) in sorted_deltas(&edits.deltas) {
         if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("demand delta for bus {bus} must be finite"),
+            ));
         }
         let target = match bus {
             ElementKey::Id(id) if *id <= 0 => {
-                return Err("demand delta bus must be positive".into());
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    "demand delta bus must be positive",
+                ));
             }
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
@@ -468,20 +478,32 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             ElementKey::Uid(uid) => bus_by_uid.get(uid.as_str()).copied(),
         };
         let Some(target) = target else {
-            return Err(format!("unknown demand delta bus {bus}"));
+            return Err(coded(
+                ErrorCode::UnknownElement,
+                format!("unknown demand delta bus {bus}"),
+            ));
         };
         if target.kind == powerio::BusType::Isolated {
-            return Err(format!("demand delta bus {bus} is not editable"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("demand delta bus {bus} is not editable"),
+            ));
         }
     }
     let mut analysis: Option<powerio_tx::IndexedNetwork> = None;
     for (branch, mw) in sorted_deltas(&edits.rates) {
         if !mw.is_finite() {
-            return Err(format!("rating delta for branch {branch} must be finite"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("rating delta for branch {branch} must be finite"),
+            ));
         }
         let target = match branch {
             ElementKey::Id(id) if *id <= 0 => {
-                return Err("rating delta branch must be positive".into());
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    "rating delta branch must be positive",
+                ));
             }
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
@@ -490,13 +512,19 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             ElementKey::Uid(uid) => branch_by_uid.get(uid.as_str()).copied(),
         };
         let Some(row) = target else {
-            return Err(format!("unknown rating delta branch {branch}"));
+            return Err(coded(
+                ErrorCode::UnknownElement,
+                format!("unknown rating delta branch {branch}"),
+            ));
         };
         // PowerIO's analysis predicate: the branch the preparation keeps.
         // Source branch rows keep their positions in the lowered view.
         let view = analysis.get_or_insert_with(|| powerio_tx::IndexedNetwork::new(net));
         if !view.is_analysis_branch(row) {
-            return Err(format!("rating delta branch {branch} is not editable"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("rating delta branch {branch} is not editable"),
+            ));
         }
     }
     Ok(())
@@ -525,6 +553,107 @@ pub enum SolveStatus {
     Optimal,
     /// A power flow or local AC OPF solve reached a validated feasible point.
     Feasible,
+}
+
+/// What the solved OPF minimized, as PowerIO declared it for the case. A case
+/// with no generator cost data declares a feasibility problem: the reported
+/// `objective` is then zero by construction and prices and limit multipliers
+/// are left out, because any feasible point is optimal and they are not unique.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ObjectiveKind {
+    /// Total generator cost, in the case's cost units.
+    Cost,
+    /// No cost was declared; the solve found a feasible operating point.
+    Feasibility,
+}
+
+impl ObjectiveKind {
+    /// The wire name: `cost` or `feasibility`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cost => "cost",
+            Self::Feasibility => "feasibility",
+        }
+    }
+
+    /// The kind of the objective a PowerIO OPF instance declares, read as the
+    /// solvers read it: no terms is a feasibility problem, the network's
+    /// generator cost alone is a cost problem. `None` for any other
+    /// declaration, which the balanced OPF solvers refuse.
+    ///
+    /// Use it with `instance.objective()` when calling a typed entry point
+    /// that returns a bare [`SolveResponse`].
+    pub fn declared(objective: &powerio_prob::Objective) -> Option<Self> {
+        match objective.terms() {
+            [] => Some(Self::Feasibility),
+            [powerio_prob::ObjectiveTerm::NetworkGeneratorCost] => Some(Self::Cost),
+            _ => None,
+        }
+    }
+
+    /// The kind of a prepared objective. `None` for a declaration this
+    /// engine version does not know.
+    pub(crate) fn of(objective: powerio_matrix::PreparedObjective) -> Option<Self> {
+        match objective {
+            powerio_matrix::PreparedObjective::NetworkGeneratorCost => Some(Self::Cost),
+            powerio_matrix::PreparedObjective::Feasibility => Some(Self::Feasibility),
+            _ => None,
+        }
+    }
+}
+
+/// Read the objective declaration without solving or guessing from its value.
+#[cfg(feature = "sensitivity")]
+pub(crate) fn module_objective_kind(
+    module_json: &str,
+    formulation: Problem,
+) -> Result<Option<ObjectiveKind>, String> {
+    if !matches!(
+        formulation,
+        Problem::DcOpf | Problem::Socwr | Problem::Acopf
+    ) {
+        return Ok(None);
+    }
+    let module = crate::ir::deserialize_module(module_json)?;
+    Ok(match module.into_value() {
+        powerio::PioValue::BalancedNetwork(network) => {
+            let instance = DcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+            ObjectiveKind::declared(instance.objective())
+        }
+        powerio::PioValue::DcOpfInstance(instance) => ObjectiveKind::declared(instance.objective()),
+        powerio::PioValue::AcOpfInstance(instance) => ObjectiveKind::declared(instance.objective()),
+        _ => None,
+    })
+}
+
+/// A solve result as the JSON entry points and adapters emit it: every
+/// [`SolveResponse`] field at the top level, plus facts about the solved
+/// problem that the response does not hold.
+///
+/// `objective_kind` is derived from the problem each time a result is emitted,
+/// never stored: it says whether the OPF minimized a declared generator cost
+/// or only looked for a feasible point. It is present for every OPF
+/// formulation (`dcopf`, `socwr`, `acopf`) and absent for power flows.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub struct SolveOutput {
+    #[serde(flatten)]
+    pub response: SolveResponse,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective_kind: Option<ObjectiveKind>,
+}
+
+impl SolveOutput {
+    pub fn new(response: SolveResponse, objective_kind: Option<ObjectiveKind>) -> Self {
+        Self {
+            response,
+            objective_kind,
+        }
+    }
 }
 
 /// The convergence record. OPF paths carry the full interior-point trace (for the
@@ -887,8 +1016,20 @@ pub(crate) fn solve_test_network_json(
 /// Solve a PowerIO stored module. A balanced network is promoted to the
 /// default problem instance for the requested formulation; a stored DC or AC
 /// OPF instance keeps its declared objective and constraint selections.
+///
+/// The JSON is a [`SolveOutput`]: the [`SolveResponse`] fields plus
+/// `objective_kind` for an OPF.
 pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String, String> {
     solve_module_json_cancellable(module_json, request_json, None)
+}
+
+/// As [`solve_module_json`], with an [`EngineError`] that carries a stable
+/// code beside the same message.
+pub fn solve_module_output_json(
+    module_json: &str,
+    request_json: &str,
+) -> Result<String, EngineError> {
+    solve_module_output_json_cancellable(module_json, request_json, None)
 }
 
 pub(crate) fn solve_module_json_cancellable(
@@ -896,71 +1037,94 @@ pub(crate) fn solve_module_json_cancellable(
     request_json: &str,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<String, String> {
+    solve_module_output_json_cancellable(module_json, request_json, cancel).map_err(String::from)
+}
+
+pub(crate) fn solve_module_output_json_cancellable(
+    module_json: &str,
+    request_json: &str,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<String, EngineError> {
     if cancel
         .as_ref()
         .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
     {
-        return Err("calculation cancelled".into());
+        return Err(coded(ErrorCode::Cancelled, "calculation cancelled"));
     }
-    let module = crate::ir::deserialize_module(module_json)?;
+    let module = crate::ir::deserialize_module(module_json).code(ErrorCode::InvalidInput)?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
     } else {
-        serde_json::from_str(request_json).map_err(|error| format!("bad request JSON: {error}"))?
+        serde_json::from_str(request_json).map_err(|error| {
+            coded(
+                ErrorCode::InvalidRequest,
+                format!("bad request JSON: {error}"),
+            )
+        })?
     };
-    let response = match module.into_value() {
+    let output = match module.into_value() {
         powerio::PioValue::BalancedNetwork(network) => match req.formulation {
             Problem::DcOpf => {
                 let instance = DcOpfInstance::from_network(network)
-                    .map_err(|e| e.to_string())?
+                    .code(ErrorCode::InvalidInput)?
                     .with_branch_susceptance_formula(
                         req.branch_susceptance_formula.unwrap_or_default().into(),
                     );
-                solve_instance_cancellable(&instance, &req, cancel.clone())?
+                solve_instance_output_cancellable(&instance, &req, cancel.clone())?
             }
             #[cfg(feature = "sensitivity")]
             Problem::AcPf => {
-                let instance = AcPfInstance::from_network(network).map_err(|e| e.to_string())?;
-                solve_ac_pf_instance(&instance, &req)?
+                let instance = AcPfInstance::from_network(network).code(ErrorCode::InvalidInput)?;
+                solve_ac_pf_instance_output(&instance, &req)?
             }
             #[cfg(feature = "conic")]
             Problem::Socwr => {
-                let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
-                solve_ac_instance(&instance, &req)?
+                let instance =
+                    AcOpfInstance::from_network(network).code(ErrorCode::InvalidInput)?;
+                solve_ac_instance_output(&instance, &req)?
             }
             #[cfg(feature = "acopf")]
             Problem::Acopf => {
-                let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
-                solve_ac_opf_instance_cancellable(&instance, &req, cancel.clone())?
+                let instance =
+                    AcOpfInstance::from_network(network).code(ErrorCode::InvalidInput)?;
+                solve_ac_opf_instance_output_cancellable(&instance, &req, cancel.clone())?
             }
-            _ => solve_network(&network, &req)?,
+            _ => solve_network_output(&network, &req)?,
         },
         powerio::PioValue::DcOpfInstance(instance) => {
-            solve_instance_cancellable(&instance, &req, cancel.clone())?
+            solve_instance_output_cancellable(&instance, &req, cancel.clone())?
         }
         #[cfg(feature = "sensitivity")]
-        powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance(&instance, &req)?,
+        powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance_output(&instance, &req)?,
         #[cfg(any(feature = "conic", feature = "acopf"))]
         powerio::PioValue::AcOpfInstance(instance) => match req.formulation {
             #[cfg(feature = "conic")]
-            Problem::Socwr => solve_ac_instance(&instance, &req)?,
+            Problem::Socwr => solve_ac_instance_output(&instance, &req)?,
             #[cfg(feature = "acopf")]
-            Problem::Acopf => solve_ac_opf_instance_cancellable(&instance, &req, cancel.clone())?,
+            Problem::Acopf => {
+                solve_ac_opf_instance_output_cancellable(&instance, &req, cancel.clone())?
+            }
             _ => {
-                return Err(format!(
-                    "an ac_opf_instance cannot be solved as {:?}",
-                    req.formulation
+                return Err(coded(
+                    ErrorCode::Unsupported,
+                    format!(
+                        "an ac_opf_instance cannot be solved as {:?}",
+                        req.formulation
+                    ),
                 ));
             }
         },
         other => {
-            return Err(format!(
-                "PowerIO module holds {}, which this solve entry does not support",
-                other.type_name()
+            return Err(coded(
+                ErrorCode::Unsupported,
+                format!(
+                    "PowerIO module holds {}, which this solve entry does not support",
+                    other.type_name()
+                ),
             ));
         }
     };
-    serde_json::to_string(&response).map_err(|error| error.to_string())
+    serde_json::to_string(&output).code(ErrorCode::Internal)
 }
 
 /// Solve an already-parsed [`BalancedNetwork`] under `req`. Dispatches on the formulation to
@@ -971,30 +1135,62 @@ pub(crate) fn solve_network(
     net: &BalancedNetwork,
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
-    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
+    solve_network_output(net, req)
+        .map(|output| output.response)
+        .map_err(String::from)
+}
+
+/// [`solve_network`] with the coded error and the facts a [`SolveOutput`] adds.
+pub(crate) fn solve_network_output(
+    net: &BalancedNetwork,
+    req: &SolveRequest,
+) -> Result<SolveOutput, EngineError> {
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)
+        .code(ErrorCode::Unsupported)?;
     validate_canonical_edits(net, &req.edits)?;
     match req.formulation {
         Problem::DcOpf => solve_dc_opf(net, req),
         #[cfg(feature = "sensitivity")]
         Problem::DcPf => solve_dc_pf(net, req),
         #[cfg(not(feature = "sensitivity"))]
-        Problem::DcPf => Err("dcpf requires the `sensitivity` feature".into()),
+        Problem::DcPf => Err(coded(
+            ErrorCode::Unsupported,
+            "dcpf requires the `sensitivity` feature",
+        )),
         #[cfg(feature = "sensitivity")]
         Problem::AcPf => solve_ac_pf(net, req),
         #[cfg(not(feature = "sensitivity"))]
-        Problem::AcPf => Err("acpf requires the `sensitivity` feature".into()),
+        Problem::AcPf => Err(coded(
+            ErrorCode::Unsupported,
+            "acpf requires the `sensitivity` feature",
+        )),
         #[cfg(feature = "conic")]
         Problem::Socwr => solve_socwr(net, req),
         #[cfg(not(feature = "conic"))]
-        Problem::Socwr => Err("socwr requires the `conic` feature".into()),
+        Problem::Socwr => Err(coded(
+            ErrorCode::Unsupported,
+            "socwr requires the `conic` feature",
+        )),
         #[cfg(feature = "acopf")]
         Problem::Acopf => {
-            let instance = AcOpfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
-            solve_ac_opf_instance(&instance, req)
+            let instance =
+                AcOpfInstance::from_network(net.clone()).code(ErrorCode::InvalidInput)?;
+            solve_ac_opf_instance_output_cancellable(&instance, req, None)
         }
         #[cfg(not(feature = "acopf"))]
-        Problem::Acopf => Err("acopf (full nonlinear AC OPF) requires the `acopf` feature".into()),
+        Problem::Acopf => Err(coded(
+            ErrorCode::Unsupported,
+            "acopf (full nonlinear AC OPF) requires the `acopf` feature",
+        )),
     }
+}
+
+/// The message for a typed instance asked to solve as another formulation.
+fn wrong_formulation(instance: &str, formulation: Problem) -> EngineError {
+    coded(
+        ErrorCode::Unsupported,
+        format!("{instance} cannot be solved as {formulation:?}"),
+    )
 }
 
 /// Solve a typed PowerIO DC OPF instance. This is the public numerical entry
@@ -1013,16 +1209,40 @@ pub fn solve_instance_cancellable(
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<SolveResponse, String> {
+    solve_instance_output_cancellable(instance, req, cancel)
+        .map(|output| output.response)
+        .map_err(String::from)
+}
+
+/// As [`solve_instance`], returning the [`SolveOutput`] (the response plus
+/// `objective_kind`) and an [`EngineError`] that carries a stable code.
+pub fn solve_instance_output(
+    instance: &DcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveOutput, EngineError> {
+    solve_instance_output_cancellable(instance, req, None)
+}
+
+/// As [`solve_instance_output`], with cancellation polled by the interior
+/// point solve.
+pub fn solve_instance_output_cancellable(
+    instance: &DcOpfInstance,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveOutput, EngineError> {
     if req.formulation != Problem::DcOpf {
-        return Err(format!(
-            "a dc_opf_instance cannot be solved as {:?}",
-            req.formulation
-        ));
+        return Err(wrong_formulation("a dc_opf_instance", req.formulation));
     }
-    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)
+        .code(ErrorCode::Unsupported)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
-    crate::dc_formula::validate_instance(instance, req.branch_susceptance_formula)?;
-    dc_opf_response(DcNetwork::from_instance(instance)?, req, cancel)
+    crate::dc_formula::validate_instance(instance, req.branch_susceptance_formula)
+        .code(ErrorCode::InvalidRequest)?;
+    dc_opf_response(
+        DcNetwork::from_instance(instance).code(ErrorCode::InvalidInput)?,
+        req,
+        cancel,
+    )
 }
 
 /// Solve a typed PowerIO AC power flow instance. The instance's PQ, PV, and
@@ -1033,17 +1253,32 @@ pub fn solve_ac_pf_instance(
     instance: &AcPfInstance,
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
+    solve_ac_pf_instance_output(instance, req)
+        .map(|output| output.response)
+        .map_err(String::from)
+}
+
+/// As [`solve_ac_pf_instance`], returning the [`SolveOutput`] and an
+/// [`EngineError`] that carries a stable code.
+#[cfg(feature = "sensitivity")]
+pub fn solve_ac_pf_instance_output(
+    instance: &AcPfInstance,
+    req: &SolveRequest,
+) -> Result<SolveOutput, EngineError> {
     if req.formulation != Problem::AcPf {
-        return Err(format!(
-            "an ac_pf_instance cannot be solved as {:?}",
-            req.formulation
-        ));
+        return Err(wrong_formulation("an ac_pf_instance", req.formulation));
     }
-    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)
+        .code(ErrorCode::Unsupported)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
-    let (model, solution) =
-        ac_pf_solved(super::model::AcNetwork::from_pf_instance(instance)?, req)?;
-    ac_pf_assemble(&model, &solution, req)
+    let (model, solution) = ac_pf_solved(
+        super::model::AcNetwork::from_pf_instance(instance).code(ErrorCode::InvalidInput)?,
+        req,
+    )?;
+    Ok(SolveOutput::new(
+        ac_pf_assemble(&model, &solution, req)?,
+        None,
+    ))
 }
 
 /// Solve a typed PowerIO AC OPF instance with the SOCWR relaxation. The
@@ -1054,16 +1289,32 @@ pub fn solve_ac_instance(
     instance: &AcOpfInstance,
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
+    solve_ac_instance_output(instance, req)
+        .map(|output| output.response)
+        .map_err(String::from)
+}
+
+/// As [`solve_ac_instance`], returning the [`SolveOutput`] (the response plus
+/// `objective_kind`) and an [`EngineError`] that carries a stable code.
+#[cfg(feature = "conic")]
+pub fn solve_ac_instance_output(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveOutput, EngineError> {
     if req.formulation != Problem::Socwr {
-        return Err(format!(
-            "an ac_opf_instance cannot be solved as {:?}",
-            req.formulation
-        ));
+        return Err(wrong_formulation("an ac_opf_instance", req.formulation));
     }
-    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)
+        .code(ErrorCode::Unsupported)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
-    let (model, solution) = socwr_solved(super::model::AcNetwork::from_instance(instance)?, req)?;
-    socwr_assemble(&model, &solution, req)
+    let (model, solution) = socwr_solved(
+        super::model::AcNetwork::from_instance(instance).code(ErrorCode::InvalidInput)?,
+        req,
+    )?;
+    Ok(SolveOutput::new(
+        socwr_assemble(&model, &solution, req)?,
+        ObjectiveKind::of(model.objective),
+    ))
 }
 
 /// Solve a typed PowerIO AC OPF instance with the exact polar POUNCE model.
@@ -1085,29 +1336,80 @@ pub fn solve_ac_opf_instance_cancellable(
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<SolveResponse, String> {
+    solve_ac_opf_instance_output_cancellable(instance, req, cancel)
+        .map(|output| output.response)
+        .map_err(String::from)
+}
+
+/// As [`solve_ac_opf_instance`], returning the [`SolveOutput`] (the response
+/// plus `objective_kind`) and an [`EngineError`] that carries a stable code.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_output(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveOutput, EngineError> {
+    solve_ac_opf_instance_output_cancellable(instance, req, None)
+}
+
+/// As [`solve_ac_opf_instance_output`], with cancellation polled before model
+/// construction and once per POUNCE iteration.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_output_cancellable(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveOutput, EngineError> {
     if req.formulation != Problem::Acopf {
-        return Err(format!(
-            "an ac_opf_instance cannot be solved as {:?}",
-            req.formulation
-        ));
+        return Err(wrong_formulation("an ac_opf_instance", req.formulation));
     }
     reject_case_start(req, "acopf")?;
     reject_linear_constraints(&req.constraints, "acopf")?;
     reject_limit_options(req, "acopf")?;
-    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)?;
+    crate::dc_formula::validate(req.formulation, req.branch_susceptance_formula)
+        .code(ErrorCode::Unsupported)?;
     validate_canonical_edits(instance.network(), &req.edits)?;
     if !req.edits.deltas.is_empty() || !req.edits.rates.is_empty() {
-        return Err(
-            "acopf request edits are not yet supported; amend the canonical AcOpfInstance instead"
-                .into(),
-        );
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "acopf request edits are not yet supported; amend the canonical AcOpfInstance instead",
+        ));
     }
     #[cfg(feature = "sensitivity")]
     if !req.sensitivities.is_empty() {
-        return Err("acopf sensitivities require a separately validated NLP KKT contract".into());
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "acopf sensitivities require a separately validated NLP KKT contract",
+        ));
     }
-    let solved = super::model::solve_ac_opf_cancellable(instance, cancel)?;
-    ac_opf_assemble(instance.network(), &solved)
+    let solved = super::model::solve_ac_opf_cancellable(instance, cancel.clone())
+        .map_err(|message| coded(ac_opf_failure_code(&message, cancel.as_ref()), message))?;
+    let response = ac_opf_assemble(instance.network(), &solved).code(ErrorCode::Internal)?;
+    Ok(SolveOutput::new(
+        response,
+        ObjectiveKind::of(solved.preparation.objective),
+    ))
+}
+
+/// The code for a failed AC OPF solve. The nonlinear solver reports failures
+/// as messages, so this reads the cancel flag first and then the two fixed
+/// openings that solver writes; anything else is the model refusing the
+/// instance before the solve started.
+#[cfg(feature = "acopf")]
+fn ac_opf_failure_code(message: &str, cancel: Option<&Arc<AtomicBool>>) -> ErrorCode {
+    let cancelled = cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed));
+    if cancelled || message.starts_with("AC OPF solve cancelled") {
+        ErrorCode::Cancelled
+    } else if message.starts_with("POUNCE AC OPF stopped with") {
+        // A local solver's infeasibility report is not a proof, so it is
+        // reported as a solve that did not converge.
+        ErrorCode::NotConverged
+    } else if message.starts_with("could not configure POUNCE")
+        || message.starts_with("could not initialize POUNCE")
+    {
+        ErrorCode::Internal
+    } else {
+        ErrorCode::InvalidInput
+    }
 }
 
 #[cfg(feature = "acopf")]
@@ -1249,11 +1551,12 @@ pub(crate) fn ac_opf_assemble(
     })
 }
 
-fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveOutput, EngineError> {
     let dc = DcNetwork::from_network_with_formula(
         net,
         req.branch_susceptance_formula.unwrap_or_default().into(),
-    )?;
+    )
+    .code(ErrorCode::InvalidInput)?;
     dc_opf_response(dc, req, None)
 }
 
@@ -1265,7 +1568,7 @@ pub(crate) fn dc_opf_solved(
     mut dc: DcNetwork,
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<(DcNetwork, super::problem::DcOpfSolution), String> {
+) -> Result<(DcNetwork, super::problem::DcOpfSolution), EngineError> {
     dc.allow_shed = false;
     reject_case_start(req, "dcopf")?;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
@@ -1294,7 +1597,7 @@ pub(crate) fn dc_opf_solved(
 pub(crate) fn apply_limit_options(
     dc: &mut DcNetwork,
     limits: &LimitOptions,
-) -> Result<Vec<bool>, String> {
+) -> Result<Vec<bool>, EngineError> {
     if !limits.angle_difference {
         dc.angle_bound_active.fill(false);
     }
@@ -1310,9 +1613,12 @@ pub(crate) fn apply_limit_options(
             let idx = KeyIndex::with_uids(&dc.branch_ids, &dc.branch_uids, needs_uids);
             let mut selected = vec![false; dc.m];
             for key in keys {
-                let e = idx
-                    .get(key)
-                    .ok_or_else(|| format!("unknown thermal limit branch {key}"))?;
+                let e = idx.get(key).ok_or_else(|| {
+                    coded(
+                        ErrorCode::UnknownElement,
+                        format!("unknown thermal limit branch {key}"),
+                    )
+                })?;
                 selected[e] = true;
             }
             for (active, &keep) in dc.thermal_limit_active.iter_mut().zip(&selected) {
@@ -1322,10 +1628,16 @@ pub(crate) fn apply_limit_options(
     }
     if let Some(lazy) = &limits.lazy {
         if lazy.max_rounds == 0 {
-            return Err("lazy limits need at least one round".into());
+            return Err(coded(
+                ErrorCode::OutOfRange,
+                "lazy limits need at least one round",
+            ));
         }
         if !(lazy.near_binding > 0.0 && lazy.near_binding <= 1.0) {
-            return Err("lazy near_binding must be in (0, 1]".into());
+            return Err(coded(
+                ErrorCode::OutOfRange,
+                "lazy near_binding must be in (0, 1]",
+            ));
         }
     }
     Ok(dc.thermal_limit_active.clone())
@@ -1386,15 +1698,16 @@ fn solve_with_lazy_limits(
     enforceable: &[bool],
     lazy: &LazyLimits,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<super::problem::DcOpfSolution, String> {
+) -> Result<super::problem::DcOpfSolution, EngineError> {
     dc.thermal_limit_active.fill(false);
     // An unenforced limit loaded at least this much is met: it joins the next
     // round even when nothing is violated.
     let met = 1.0 - LIMIT_VIOLATION_TOL;
     let mut rounds = Vec::new();
     loop {
-        let mut sol = dc_opf_cancellable(dc, cancel.clone())
-            .map_err(|error| format!("lazy limit round {}: {error}", rounds.len() + 1))?;
+        let mut sol = dc_opf_cancellable(dc, cancel.clone()).map_err(|error| {
+            error.map_message(|message| format!("lazy limit round {}: {message}", rounds.len() + 1))
+        })?;
         let mut round = limit_round(dc, &sol, enforceable);
         let unenforced_loading = |e: usize| {
             (enforceable[e] && !dc.thermal_limit_active[e] && dc.fmax[e] > 0.0)
@@ -1409,7 +1722,7 @@ fn solve_with_lazy_limits(
             return Ok(sol);
         }
         if rounds.len() + 1 >= lazy.max_rounds {
-            return Err(if round.violated > 0 {
+            let message = if round.violated > 0 {
                 format!(
                     "lazy thermal limits still violate {} limit(s) after {} round(s)",
                     round.violated, lazy.max_rounds
@@ -1420,7 +1733,8 @@ fn solve_with_lazy_limits(
                      unenforced after {} round(s)",
                     lazy.max_rounds
                 )
-            });
+            };
+            return Err(coded(ErrorCode::NotConverged, message));
         }
         let threshold = lazy.near_binding.min(met);
         let added: Vec<usize> = (0..dc.m)
@@ -1441,7 +1755,7 @@ pub(crate) fn dc_opf_assemble(
     dc: &DcNetwork,
     sol: &super::problem::DcOpfSolution,
     req: &SolveRequest,
-) -> Result<SolveResponse, String> {
+) -> Result<SolveResponse, EngineError> {
     let base = dc.base_mva;
 
     #[cfg(feature = "sensitivity")]
@@ -1451,11 +1765,17 @@ pub(crate) fn dc_opf_assemble(
             .iter()
             .any(|cell| matches!(cell.operand, Operand::Price(_)))
     {
-        return Err("price sensitivity requires a network_generator_cost objective".to_string());
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "price sensitivity requires a network_generator_cost objective",
+        ));
     }
 
     #[cfg(feature = "sensitivity")]
-    let sensitivities = run_cells(&super::sens::DcKkt::new(dc, sol), &req.sensitivities)?;
+    let sensitivities = run_cells(
+        &super::sens::DcKkt::new(dc, sol).map_err(sens_error)?,
+        &req.sensitivities,
+    )?;
 
     let lmp_is_economic = dc.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost;
     let lmp = lmp_is_economic.then(|| {
@@ -1502,23 +1822,35 @@ fn dc_opf_response(
     dc: DcNetwork,
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<SolveResponse, String> {
+) -> Result<SolveOutput, EngineError> {
     let (dc, sol) = dc_opf_solved(dc, req, cancel)?;
-    dc_opf_assemble(&dc, &sol, req)
+    Ok(SolveOutput::new(
+        dc_opf_assemble(&dc, &sol, req)?,
+        ObjectiveKind::of(dc.objective),
+    ))
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveOutput, EngineError> {
     // Flow limits do not constrain a power flow, so a rating edit cannot enter
     // the model, and neither can a linear constraint.
     reject_rating_deltas(&req.edits.rates, "dcpf")?;
     reject_case_start(req, "dcpf")?;
     reject_linear_constraints(&req.constraints, "dcpf")?;
     reject_limit_options(req, "dcpf")?;
+    // The DC power flow has no sensitivity system here. Refuse a request for
+    // one instead of returning an empty list as if it had been answered.
+    if !req.sensitivities.is_empty() {
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "sensitivities are not supported by dcpf; request them with dcopf or acpf",
+        ));
+    }
     let mut dc = DcNetwork::from_network_with_formula(
         net,
         req.branch_susceptance_formula.unwrap_or_default().into(),
-    )?;
+    )
+    .code(ErrorCode::InvalidInput)?;
     let base = dc.base_mva;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
 
@@ -1532,11 +1864,12 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
                 .map(|row| net.generators()[row].pg / input_power_base)
                 .ok_or_else(|| format!("generator column {j} has no source row"))
         })
-        .collect::<Result<Vec<f64>, String>>()?;
+        .collect::<Result<Vec<f64>, String>>()
+        .code(ErrorCode::Internal)?;
     let generation = powerio_matrix::calc_bus_totals(dc.n, &dc.gen_bus, &pg);
-    let sol = super::problem::dc_pf(&dc, &generation)?;
+    let sol = super::problem::dc_pf(&dc, &generation).code(ErrorCode::NotConverged)?;
 
-    Ok(SolveResponse {
+    let response = SolveResponse {
         branch_susceptance_formula: Some(dc.formula),
         initialization: None,
         formulation: Problem::DcPf,
@@ -1565,23 +1898,24 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
         diagnostics: dc.diagnostics.clone(),
         limit_rounds: None,
         sensitivities: Vec::new(),
-    })
+    };
+    Ok(SolveOutput::new(response, None))
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveOutput, EngineError> {
     // The network's own AC model has no HVDC term. With in-service HVDC lines,
     // solve PowerIO's power flow instance, whose bus specifications state each
     // line's transfer as fixed injections.
     // ZIP and exponential loads are solved exactly inside the Newton iteration.
     let acnet = if net.hvdc().iter().any(|line| line.in_service) {
-        let instance = AcPfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
-        super::model::AcNetwork::from_pf_instance(&instance)?
+        let instance = AcPfInstance::from_network(net.clone()).code(ErrorCode::InvalidInput)?;
+        super::model::AcNetwork::from_pf_instance(&instance).code(ErrorCode::InvalidInput)?
     } else {
-        super::model::AcNetwork::from_network_pf(net)?
+        super::model::AcNetwork::from_network_pf(net).code(ErrorCode::InvalidInput)?
     };
     let (acnet, sol) = ac_pf_solved(acnet, req)?;
-    ac_pf_assemble(&acnet, &sol, req)
+    Ok(SolveOutput::new(ac_pf_assemble(&acnet, &sol, req)?, None))
 }
 
 /// Apply the request's demand edits to an owned [`AcNetwork`] and solve the AC power
@@ -1590,9 +1924,12 @@ fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
 pub(crate) fn ac_pf_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
-) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
+) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), EngineError> {
     if acnet.has_remote_voltage_control {
-        return Err("acpf does not yet support a generator regulating a remote bus".into());
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "acpf does not yet support a generator regulating a remote bus",
+        ));
     }
     reject_rating_deltas(&req.edits.rates, "acpf")?;
     reject_linear_constraints(&req.constraints, "acpf")?;
@@ -1613,7 +1950,7 @@ pub(crate) fn ac_pf_assemble(
     acnet: &super::model::AcNetwork,
     sol: &super::problem::AcPfSolution,
     req: &SolveRequest,
-) -> Result<SolveResponse, String> {
+) -> Result<SolveResponse, EngineError> {
     let base = acnet.base_mva;
     let [pf, qf, pt, qt] = crate::emit::ac_terminal_flows(acnet, sol);
     let sensitivities = run_cells(&super::sens::AcNewton::new(acnet, sol), &req.sensitivities)?;
@@ -1663,9 +2000,15 @@ pub(crate) fn ac_pf_assemble(
 }
 
 #[cfg(feature = "conic")]
-fn solve_socwr(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
-    let (acnet, sol) = socwr_solved(super::model::AcNetwork::from_network(net)?, req)?;
-    socwr_assemble(&acnet, &sol, req)
+fn solve_socwr(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveOutput, EngineError> {
+    let (acnet, sol) = socwr_solved(
+        super::model::AcNetwork::from_network(net).code(ErrorCode::InvalidInput)?,
+        req,
+    )?;
+    Ok(SolveOutput::new(
+        socwr_assemble(&acnet, &sol, req)?,
+        ObjectiveKind::of(acnet.objective),
+    ))
 }
 
 /// Apply the request's demand edits to an owned [`AcNetwork`] and solve the SOCWR
@@ -1676,7 +2019,7 @@ fn solve_socwr(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
 pub(crate) fn socwr_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
-) -> Result<(super::model::AcNetwork, super::problem::SocWrSolution), String> {
+) -> Result<(super::model::AcNetwork, super::problem::SocWrSolution), EngineError> {
     reject_case_start(req, "socwr")?;
     reject_linear_constraints(&req.constraints, "socwr")?;
     reject_limit_options(req, "socwr")?;
@@ -1693,7 +2036,7 @@ pub(crate) fn socwr_assemble(
     acnet: &super::model::AcNetwork,
     sol: &super::problem::SocWrSolution,
     req: &SolveRequest,
-) -> Result<SolveResponse, String> {
+) -> Result<SolveResponse, EngineError> {
     use super::sens::ConicKkt;
     let base = acnet.base_mva;
 
@@ -1703,11 +2046,14 @@ pub(crate) fn socwr_assemble(
             .iter()
             .any(|cell| matches!(cell.operand, Operand::Price(_)))
     {
-        return Err("price sensitivity requires a network_generator_cost objective".to_string());
+        return Err(coded(
+            ErrorCode::Unsupported,
+            "price sensitivity requires a network_generator_cost objective",
+        ));
     }
 
     let sensitivities = {
-        let sys = ConicKkt::new(acnet, sol).map_err(|e| e.to_string())?;
+        let sys = ConicKkt::new(acnet, sol).map_err(sens_error)?;
         run_cells(&sys, &req.sensitivities)?
     };
 
@@ -1778,12 +2124,12 @@ pub(crate) fn socwr_assemble(
 pub(crate) fn run_cells(
     sys: &dyn Differentiable,
     cells: &[SensRequest],
-) -> Result<Vec<SensitivityMatrix>, String> {
+) -> Result<Vec<SensitivityMatrix>, EngineError> {
     cells
         .iter()
         .map(|c| {
             let mut m = sensitivity(sys, c.operand, c.parameter, c.indices.as_deref(), c.mode)
-                .map_err(|e| e.to_string())?;
+                .map_err(sens_error)?;
             rescale_to_served(
                 &mut m,
                 sys.unit_scale(c.operand, c.parameter),
@@ -1793,6 +2139,19 @@ pub(crate) fn run_cells(
             Ok(m)
         })
         .collect()
+}
+
+/// The coded form of a sensitivity error, with its message unchanged.
+#[cfg(feature = "sensitivity")]
+fn sens_error(error: super::sens::SensError) -> EngineError {
+    use super::sens::SensError;
+    let code = match &error {
+        SensError::Unsupported { .. } => ErrorCode::Unsupported,
+        SensError::IndexOutOfRange { .. } => ErrorCode::UnknownElement,
+        SensError::InvalidInput(_) => ErrorCode::InvalidRequest,
+        _ => ErrorCode::Internal,
+    };
+    coded(code, error.to_string())
 }
 
 /// Apply the per-unit -> served-unit rescale to a sensitivity matrix at the api edge:
@@ -2075,25 +2434,35 @@ fn sorted_deltas(deltas: &HashMap<ElementKey, f64>) -> Vec<(&ElementKey, f64)> {
 fn aggregate_demand_deltas(
     deltas: &HashMap<ElementKey, f64>,
     idx: &KeyIndex<'_>,
-) -> Result<BTreeMap<usize, (ElementKey, f64)>, String> {
+) -> Result<BTreeMap<usize, (ElementKey, f64)>, EngineError> {
     let mut aggregated = BTreeMap::<usize, (ElementKey, f64)>::new();
     for (bus, mw) in sorted_deltas(deltas) {
         if matches!(bus, ElementKey::Id(id) if *id <= 0) {
-            return Err("demand delta bus must be positive".into());
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                "demand delta bus must be positive",
+            ));
         }
         if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("demand delta for bus {bus} must be finite"),
+            ));
         }
-        let dense = idx
-            .get(bus)
-            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
+        let dense = idx.get(bus).ok_or_else(|| {
+            coded(
+                ErrorCode::UnknownElement,
+                format!("unknown demand delta bus {bus}"),
+            )
+        })?;
         let entry = aggregated
             .entry(dense)
             .or_insert_with(|| (bus.clone(), 0.0));
         entry.1 += mw;
         if !entry.1.is_finite() {
-            return Err(format!(
-                "aggregate demand delta for bus {bus} must be finite"
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("aggregate demand delta for bus {bus} must be finite"),
             ));
         }
     }
@@ -2104,13 +2473,14 @@ fn aggregate_demand_deltas(
 fn apply_demand_deltas(
     dc: &mut DcNetwork,
     deltas: &HashMap<ElementKey, f64>,
-) -> Result<(), String> {
+) -> Result<(), EngineError> {
     let base = dc.base_mva;
     let idx = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, deltas);
     for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
         if dc.prep.p_d[i] * base + mw < -1e-9 {
-            return Err(format!(
-                "demand delta for bus {bus} would make demand negative"
+            return Err(coded(
+                ErrorCode::OutOfRange,
+                format!("demand delta for bus {bus} would make demand negative"),
             ));
         }
         dc.prep.p_d[i] += mw / base;
@@ -2125,13 +2495,14 @@ fn apply_demand_deltas(
 fn apply_demand_deltas_ac(
     acnet: &mut super::model::AcNetwork,
     deltas: &HashMap<ElementKey, f64>,
-) -> Result<(), String> {
+) -> Result<(), EngineError> {
     let base = acnet.base_mva;
     let idx = KeyIndex::new(&acnet.bus_ids, &acnet.bus_uids, deltas);
     for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
         if acnet.nominal_pd(i) * base + mw < -1e-9 {
-            return Err(format!(
-                "demand delta for bus {bus} would make demand negative"
+            return Err(coded(
+                ErrorCode::OutOfRange,
+                format!("demand delta for bus {bus} would make demand negative"),
             ));
         }
         acnet.pd[i] += mw / base;
@@ -2145,25 +2516,35 @@ fn apply_demand_deltas_ac(
 fn aggregate_rating_deltas(
     rates: &HashMap<ElementKey, f64>,
     idx: &KeyIndex<'_>,
-) -> Result<BTreeMap<usize, (ElementKey, f64)>, String> {
+) -> Result<BTreeMap<usize, (ElementKey, f64)>, EngineError> {
     let mut aggregated = BTreeMap::<usize, (ElementKey, f64)>::new();
     for (branch, mw) in sorted_deltas(rates) {
         if matches!(branch, ElementKey::Id(id) if *id <= 0) {
-            return Err("rating delta branch must be positive".into());
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                "rating delta branch must be positive",
+            ));
         }
         if !mw.is_finite() {
-            return Err(format!("rating delta for branch {branch} must be finite"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("rating delta for branch {branch} must be finite"),
+            ));
         }
-        let dense = idx
-            .get(branch)
-            .ok_or_else(|| format!("unknown rating delta branch {branch}"))?;
+        let dense = idx.get(branch).ok_or_else(|| {
+            coded(
+                ErrorCode::UnknownElement,
+                format!("unknown rating delta branch {branch}"),
+            )
+        })?;
         let entry = aggregated
             .entry(dense)
             .or_insert_with(|| (branch.clone(), 0.0));
         entry.1 += mw;
         if !entry.1.is_finite() {
-            return Err(format!(
-                "aggregate rating delta for branch {branch} must be finite"
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("aggregate rating delta for branch {branch} must be finite"),
             ));
         }
     }
@@ -2171,13 +2552,17 @@ fn aggregate_rating_deltas(
 }
 
 /// Perturb the thermal limits: `fmax += delta` (per unit) at each named branch.
-fn apply_rating_deltas(dc: &mut DcNetwork, rates: &HashMap<ElementKey, f64>) -> Result<(), String> {
+fn apply_rating_deltas(
+    dc: &mut DcNetwork,
+    rates: &HashMap<ElementKey, f64>,
+) -> Result<(), EngineError> {
     let base = dc.base_mva;
     let idx = KeyIndex::new(&dc.branch_ids, &dc.branch_uids, rates);
     for (i, (branch, mw)) in aggregate_rating_deltas(rates, &idx)? {
         if dc.fmax[i] * base + mw <= 1e-9 {
-            return Err(format!(
-                "rating delta for branch {branch} would make the line limit non-positive"
+            return Err(coded(
+                ErrorCode::OutOfRange,
+                format!("rating delta for branch {branch} would make the line limit non-positive"),
             ));
         }
         dc.fmax[i] += mw / base;
@@ -2191,13 +2576,14 @@ fn apply_rating_deltas(dc: &mut DcNetwork, rates: &HashMap<ElementKey, f64>) -> 
 fn apply_rating_deltas_ac(
     acnet: &mut super::model::AcNetwork,
     rates: &HashMap<ElementKey, f64>,
-) -> Result<(), String> {
+) -> Result<(), EngineError> {
     let base = acnet.base_mva;
     let idx = KeyIndex::new(&acnet.branch_ids, &acnet.branch_uids, rates);
     for (i, (branch, mw)) in aggregate_rating_deltas(rates, &idx)? {
         if acnet.rate_a[i] * base + mw <= 1e-9 {
-            return Err(format!(
-                "rating delta for branch {branch} would make the line limit non-positive"
+            return Err(coded(
+                ErrorCode::OutOfRange,
+                format!("rating delta for branch {branch} would make the line limit non-positive"),
             ));
         }
         acnet.rate_a[i] += mw / base;
@@ -2208,11 +2594,12 @@ fn apply_rating_deltas_ac(
 /// Limit options shape the DC OPF program only; refuse them elsewhere instead
 /// of solving as if they were absent.
 #[cfg(any(feature = "sensitivity", feature = "acopf"))]
-fn reject_limit_options(req: &SolveRequest, formulation: &str) -> Result<(), String> {
+fn reject_limit_options(req: &SolveRequest, formulation: &str) -> Result<(), EngineError> {
     match req.limits {
         None => Ok(()),
-        Some(_) => Err(format!(
-            "limit options apply only to dcopf, not {formulation}"
+        Some(_) => Err(coded(
+            ErrorCode::Unsupported,
+            format!("limit options apply only to dcopf, not {formulation}"),
         )),
     }
 }
@@ -2229,7 +2616,7 @@ fn reject_limit_options(req: &SolveRequest, formulation: &str) -> Result<(), Str
 fn apply_linear_constraints(
     dc: &mut DcNetwork,
     constraints: &[LinearConstraint],
-) -> Result<(), String> {
+) -> Result<(), EngineError> {
     dc.linear_rows.clear();
     if constraints.is_empty() {
         return Ok(());
@@ -2246,40 +2633,57 @@ fn apply_linear_constraints(
     for constraint in constraints {
         let id = &constraint.id;
         if id.is_empty() {
-            return Err("constraint id must not be empty".into());
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                "constraint id must not be empty",
+            ));
         }
         if !seen.insert(id.as_str()) {
-            return Err(format!("duplicate constraint id \"{id}\""));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("duplicate constraint id \"{id}\""),
+            ));
         }
         match (constraint.lower, constraint.upper) {
             (None, None) => {
-                return Err(format!(
-                    "constraint \"{id}\" needs a lower limit, an upper limit, or both"
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    format!("constraint \"{id}\" needs a lower limit, an upper limit, or both"),
                 ));
             }
             (lower, upper)
                 if lower.is_some_and(|v| !v.is_finite())
                     || upper.is_some_and(|v| !v.is_finite()) =>
             {
-                return Err(format!("constraint \"{id}\" limits must be finite"));
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    format!("constraint \"{id}\" limits must be finite"),
+                ));
             }
             (Some(lower), Some(upper)) if lower > upper => {
-                return Err(format!(
-                    "constraint \"{id}\" lower limit {lower} exceeds its upper limit {upper}"
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    format!(
+                        "constraint \"{id}\" lower limit {lower} exceeds its upper limit {upper}"
+                    ),
                 ));
             }
             _ => {}
         }
         if constraint.terms.is_empty() {
-            return Err(format!("constraint \"{id}\" has no terms"));
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!("constraint \"{id}\" has no terms"),
+            ));
         }
         let mut flow = BTreeMap::<usize, f64>::new();
         let mut generation = BTreeMap::<usize, f64>::new();
         for term in &constraint.terms {
             let key = &term.element;
             if !term.coefficient.is_finite() {
-                return Err(format!(
-                    "constraint \"{id}\" coefficient for {key} must be finite"
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    format!("constraint \"{id}\" coefficient for {key} must be finite"),
                 ));
             }
             match term.kind {
@@ -2288,7 +2692,11 @@ fn apply_linear_constraints(
                         .get(key)
                         .filter(|&e| dc.branch_source_rows[e].is_some())
                         .ok_or_else(|| {
-                            format!("constraint \"{id}\": unknown or out-of-service branch {key}")
+                            coded(ErrorCode::UnknownElement, {
+                                format!(
+                                    "constraint \"{id}\": unknown or out-of-service branch {key}"
+                                )
+                            })
                         })?;
                     *flow.entry(e).or_default() += term.coefficient;
                 }
@@ -2297,7 +2705,9 @@ fn apply_linear_constraints(
                         .get(key)
                         .filter(|&i| dc.bus_source_rows[i].is_some())
                         .ok_or_else(|| {
-                            format!("constraint \"{id}\": unknown or out-of-service bus {key}")
+                            coded(ErrorCode::UnknownElement, {
+                                format!("constraint \"{id}\": unknown or out-of-service bus {key}")
+                            })
                         })?;
                     // Row `i` of PowerIO's incidence lists the bus's branches.
                     for (e, sign) in crate::model::csr_row(&dc.incidence, i) {
@@ -2312,8 +2722,11 @@ fn apply_linear_constraints(
                             .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
                             .count();
                         if named > 1 {
-                            return Err(format!(
+                            return Err(coded(
+                                ErrorCode::InvalidRequest,
+                                format!(
                                 "constraint \"{id}\": generator uid {key} names {named} generators"
+                            ),
                             ));
                         }
                     }
@@ -2321,19 +2734,22 @@ fn apply_linear_constraints(
                         .get(key)
                         .filter(|&j| dc.gen_source_rows[j].is_some())
                         .ok_or_else(|| {
-                            format!(
+                            coded(ErrorCode::UnknownElement, {
+                                format!(
                                 "constraint \"{id}\": unknown or out-of-service generator {key}"
                             )
+                            })
                         })?;
                     *generation.entry(j).or_default() += term.coefficient;
                 }
             }
         }
-        let nonzero = |terms: BTreeMap<usize, f64>| -> Result<Vec<(usize, f64)>, String> {
+        let nonzero = |terms: BTreeMap<usize, f64>| -> Result<Vec<(usize, f64)>, EngineError> {
             let terms: Vec<(usize, f64)> = terms.into_iter().filter(|&(_, c)| c != 0.0).collect();
             if terms.iter().any(|&(_, c)| !c.is_finite()) {
-                return Err(format!(
-                    "constraint \"{id}\" combined coefficients must be finite"
+                return Err(coded(
+                    ErrorCode::InvalidRequest,
+                    format!("constraint \"{id}\" combined coefficients must be finite"),
                 ));
             }
             Ok(terms)
@@ -2341,8 +2757,11 @@ fn apply_linear_constraints(
         let flow = nonzero(flow)?;
         let generation = nonzero(generation)?;
         if flow.is_empty() && generation.is_empty() {
-            return Err(format!(
-                "constraint \"{id}\" has no nonzero coefficient once its terms are combined"
+            return Err(coded(
+                ErrorCode::InvalidRequest,
+                format!(
+                    "constraint \"{id}\" has no nonzero coefficient once its terms are combined"
+                ),
             ));
         }
         rows.push(super::model::LinearRow {
@@ -2422,23 +2841,25 @@ fn linear_constraint_results(
 fn reject_linear_constraints(
     constraints: &[LinearConstraint],
     formulation: &str,
-) -> Result<(), String> {
+) -> Result<(), EngineError> {
     if constraints.is_empty() {
         return Ok(());
     }
-    Err(format!(
-        "linear constraints are supported only by dcopf, not {formulation}"
+    Err(coded(
+        ErrorCode::Unsupported,
+        format!("linear constraints are supported only by dcopf, not {formulation}"),
     ))
 }
 
 /// Only the AC power flow iterates from a requested start. The convex solves and the
 /// DC power flow have none to choose, and AC OPF starts from its instance's own
 /// initial point, so refuse a requested case start rather than ignore it.
-fn reject_case_start(req: &SolveRequest, formulation: &str) -> Result<(), String> {
+fn reject_case_start(req: &SolveRequest, formulation: &str) -> Result<(), EngineError> {
     match req.start {
         PowerFlowStart::Flat => Ok(()),
-        PowerFlowStart::Case => Err(format!(
-            "start \"case\" applies only to acpf, not {formulation}"
+        PowerFlowStart::Case => Err(coded(
+            ErrorCode::Unsupported,
+            format!("start \"case\" applies only to acpf, not {formulation}"),
         )),
     }
 }
@@ -2446,12 +2867,16 @@ fn reject_case_start(req: &SolveRequest, formulation: &str) -> Result<(), String
 /// The AC power flow has no flow limits, so a rating edit cannot enter the model;
 /// reject it instead of silently solving without it.
 #[cfg(feature = "sensitivity")]
-fn reject_rating_deltas(rates: &HashMap<ElementKey, f64>, formulation: &str) -> Result<(), String> {
+fn reject_rating_deltas(
+    rates: &HashMap<ElementKey, f64>,
+    formulation: &str,
+) -> Result<(), EngineError> {
     if rates.is_empty() {
         return Ok(());
     }
-    Err(format!(
-        "branch rating edits are not supported by {formulation}"
+    Err(coded(
+        ErrorCode::Unsupported,
+        format!("branch rating edits are not supported by {formulation}"),
     ))
 }
 
@@ -2639,6 +3064,10 @@ fn ac_branch_flows(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "api_boundary_tests.rs"]
+mod boundary_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3394,7 +3823,7 @@ mod tests {
         // DC OPF (always available under `sensitivity`).
         let dc = DcNetwork::from_network(&net).unwrap();
         let dc_sol = dc_opf(&dc).unwrap();
-        check(Problem::DcOpf, &DcKkt::new(&dc, &dc_sol));
+        check(Problem::DcOpf, &DcKkt::new(&dc, &dc_sol).unwrap());
 
         // AC power flow (Newton system).
         let ac = AcNetwork::from_network(&net).unwrap();
@@ -3801,10 +4230,9 @@ mod tests {
         validate_canonical_edits(&net, &edits).expect("known keys");
         let unknown: Edits =
             serde_json::from_value(serde_json::json!({ "rates": { "branches:9": 1.0 } })).unwrap();
-        assert_eq!(
-            validate_canonical_edits(&net, &unknown).unwrap_err(),
-            "unknown rating delta branch \"branches:9\""
-        );
+        let error = validate_canonical_edits(&net, &unknown).unwrap_err();
+        assert_eq!(error.message, "unknown rating delta branch \"branches:9\"");
+        assert_eq!(error.code, ErrorCode::UnknownElement);
     }
 
     /// CASE3 with linear costs ($10/MWh at bus 1, $20/MWh at bus 3) and zero

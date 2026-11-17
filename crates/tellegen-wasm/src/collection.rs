@@ -35,7 +35,7 @@ pub struct CaseCollection(Collection);
 impl CaseCollection {
     /// Acquire and verify a ZIP. Nested archives remain explicit inventory
     /// entries; they are not flattened or searched for missing dependencies.
-    pub fn from_zip(name: &str, bytes: &[u8]) -> Result<CaseCollection, JsError> {
+    pub fn from_zip(name: &str, bytes: &[u8]) -> Result<CaseCollection, JsValue> {
         crate::install_panic_hook();
         Self::zip(name, bytes).map_err(jserr)
     }
@@ -47,26 +47,31 @@ impl CaseCollection {
         names_json: &str,
         offsets: &[u32],
         bytes: &[u8],
-    ) -> Result<CaseCollection, JsError> {
+    ) -> Result<CaseCollection, JsValue> {
         crate::install_panic_hook();
         Self::files(name, names_json, offsets, bytes).map_err(jserr)
     }
 
     /// Inventory and bounded candidate suggestions, without electrical parsing.
-    pub fn inspect(&self) -> Result<String, JsError> {
+    pub fn inspect(&self) -> Result<String, JsValue> {
         self.inspect_value().map(|v| v.to_string()).map_err(jserr)
+    }
+
+    /// Explicitly inspect a child archive in its own bounded namespace.
+    pub fn open_nested(&self, member: &str) -> Result<CaseCollection, JsValue> {
+        self.0.open_nested(member).map(Self).map_err(jserr)
     }
 
     /// Parse one independent selection. The resulting IR and display payload
     /// own their data and remain usable after this collection is freed/cancelled.
-    pub fn ingest(&self, selection_json: &str) -> Result<String, JsError> {
+    pub fn ingest(&self, selection_json: &str) -> Result<String, JsValue> {
         self.ingest_value(selection_json)
             .map(|v| v.to_string())
             .map_err(jserr)
     }
 
     /// Exact original container bytes; a file-tree session has no original ZIP.
-    pub fn original_zip(&self) -> Result<Vec<u8>, JsError> {
+    pub fn original_zip(&self) -> Result<Vec<u8>, JsValue> {
         self.0
             .original_zip()
             .map(|bytes| bytes.to_vec())
@@ -76,7 +81,7 @@ impl CaseCollection {
     /// Build a new ZIP with an explicit export scope. `project` includes all
     /// companions in the permitted root; `selected` includes only the primary
     /// or chosen document group and does not promise a self-contained project.
-    pub fn source_zip(&self, selection_json: &str, scope: &str) -> Result<Vec<u8>, JsError> {
+    pub fn source_zip(&self, selection_json: &str, scope: &str) -> Result<Vec<u8>, JsValue> {
         let selection = selection(selection_json).map_err(jserr)?;
         let scope = match scope {
             "selected" => SourceBundleScope::SelectedMembers,
@@ -250,6 +255,34 @@ mod tests {
 
     fn select(path: &str) -> String {
         serde_json::to_string(&CollectionSelection::file(path)).unwrap()
+    }
+
+    #[test]
+    fn nested_zip_keeps_sources_separate_and_records_the_container() {
+        let child = tree();
+        let bytes = child
+            .0
+            .source_bundle(
+                &CollectionSelection::file("masters/day.dss"),
+                SourceBundleScope::Project,
+            )
+            .unwrap()
+            .deterministic_zip(CollectionLimits::default().archive)
+            .unwrap();
+        let parent =
+            CaseCollection::files("outer", "[\"inner.zip\"]", &[0, bytes.len() as u32], &bytes)
+                .unwrap();
+        let nested = CaseCollection(parent.0.open_nested("inner.zip").unwrap());
+        let imported = nested.ingest_value(&select("masters/day.dss")).unwrap();
+        assert_eq!(
+            imported["origin"]["origin"]["containers"],
+            json!(["inner.zip"])
+        );
+        assert_eq!(imported["payload"]["mc_pf_supported"], true);
+        assert!(nested.ingest_value(&select("../inner.zip")).is_err());
+        assert!(parent.ingest_value(&select("masters/day.dss")).is_err());
+        drop(nested);
+        assert!(parent.inspect_value().is_ok());
     }
 
     #[test]

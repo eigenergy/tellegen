@@ -9,7 +9,7 @@ use std::fmt::Write;
 #[allow(dead_code)]
 struct SynthSchema {
     request: tellegen_synth::SynthRequest,
-    report: tellegen_synth::GenerationReport,
+    report: tellegen_synth::GenerationReportOutput<'static>,
     step: tellegen_synth::StepOutcome,
     preview: tellegen_synth::Preview,
     error: tellegen_synth::ErrorPayload,
@@ -20,6 +20,7 @@ fn main() {
         include_str!("../src/request.rs"),
         include_str!("../src/report.rs"),
         include_str!("../src/error.rs"),
+        include_str!("../src/synchronous.rs"),
     ];
     let mut hash = Sha256::new();
     for source in sources {

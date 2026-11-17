@@ -34,6 +34,8 @@ pub mod dc_grid;
 #[cfg(feature = "sensitivity")]
 pub mod document;
 mod emit;
+mod error;
+pub use error::{EngineError, ErrorCode};
 pub mod equipment;
 #[cfg(feature = "sensitivity")]
 pub mod exploration;
@@ -94,21 +96,25 @@ pub mod substations;
 /// Substation overview layouts for balanced network diagrams.
 pub mod tx_schematic;
 
-#[cfg(feature = "conic")]
-pub use api::solve_ac_instance;
 pub use api::{
-    capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
+    capabilities_json, solve_instance, solve_instance_cancellable, solve_instance_output,
+    solve_instance_output_cancellable, solve_module_json, solve_module_output_json,
     validate_canonical_identity, AcOpfResiduals, AcPfInitialization, AcPfStartStrategy,
     BranchConstraintResult, BranchFlow, BranchLoading, BranchScalar, BusInjection, BusScalar,
     ConstraintResult, ConstraintTerm, ConstraintTermKind, Edits, ElementKey, GenDispatch,
     Iterations, LazyLimits, LimitOptions, LimitRound, LinearConstraint, LoadingBasis, LoadingEnd,
-    PowerFlowStart, Problem, ProblemCaps, RatingSource, SolveRequest, SolveResponse, SolveStatus,
-    ThermalLimits,
+    ObjectiveKind, PowerFlowStart, Problem, ProblemCaps, RatingSource, SolveOutput, SolveRequest,
+    SolveResponse, SolveStatus, ThermalLimits,
 };
+#[cfg(feature = "conic")]
+pub use api::{solve_ac_instance, solve_ac_instance_output};
 #[cfg(feature = "acopf")]
-pub use api::{solve_ac_opf_instance, solve_ac_opf_instance_cancellable};
+pub use api::{
+    solve_ac_opf_instance, solve_ac_opf_instance_cancellable, solve_ac_opf_instance_output,
+    solve_ac_opf_instance_output_cancellable,
+};
 #[cfg(feature = "sensitivity")]
-pub use api::{solve_ac_pf_instance, SensRequest};
+pub use api::{solve_ac_pf_instance, solve_ac_pf_instance_output, SensRequest};
 pub use emit::solve_dc_opf_instance;
 #[cfg(feature = "acopf")]
 pub use emit::{solve_ac_opf_instance_to_solution, solve_ac_opf_instance_to_solution_cancellable};

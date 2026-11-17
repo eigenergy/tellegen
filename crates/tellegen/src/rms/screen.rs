@@ -305,7 +305,7 @@ struct SegIsland {
 /// weights sum to zero.
 pub(crate) fn coi(weights: &[f64], values: &[f64]) -> Option<f64> {
     let total: f64 = weights.iter().sum();
-    if !(total > 0.0) {
+    if super::not_gt(total, 0.0) {
         return None;
     }
     Some(weights.iter().zip(values).map(|(w, v)| w * v).sum::<f64>() / total)

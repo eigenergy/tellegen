@@ -21,6 +21,7 @@
 //!   --preset NAME          tiny | feeder-10k | feeder-106k | x300k | x650k
 //!   --module PATH          a stored PowerIO module (MulticonductorNetwork or McAcPfInstance)
 //!   --bmopf PATH           a raw BMOPF document
+//!   --cold-repeats N        repeat session creation for profiling (default 1)
 //!   --edits N              single-branch edits (default 20)
 //!   --seed N               edit sequence seed (default 132)
 //!   --write-module PATH    also write the module JSON (and PATH's .edits.json sequence)
@@ -59,6 +60,7 @@ enum Input {
 struct Args {
     input: Input,
     edits: usize,
+    cold_repeats: usize,
     seed: u64,
     write_module: Option<PathBuf>,
     out: PathBuf,
@@ -69,12 +71,13 @@ struct Args {
 }
 
 const USAGE: &str = "usage: mc-pf-session-bench (--preset NAME | --module PATH | --bmopf PATH) \
-[--edits N] [--seed N] [--write-module PATH] [--out DIR] [--label NAME] [--load-scale X] \
+[--edits N] [--cold-repeats N] [--seed N] [--write-module PATH] [--out DIR] [--label NAME] [--load-scale X] \
 [--calibrate X,Y,...] [--check]\npresets: tiny, feeder-10k, feeder-106k, x300k, x650k";
 
 fn parse_args() -> Result<Args, String> {
     let mut input = None;
     let mut edits = 20usize;
+    let mut cold_repeats = 1usize;
     let mut seed = 132u64;
     let mut write_module = None;
     let mut out = PathBuf::from("target/mc-pf-bench");
@@ -111,6 +114,14 @@ fn parse_args() -> Result<Args, String> {
             }
             "--module" => input = Some(Input::Module(PathBuf::from(value()?))),
             "--bmopf" => input = Some(Input::Bmopf(PathBuf::from(value()?))),
+            "--cold-repeats" => {
+                cold_repeats = value()?
+                    .parse()
+                    .map_err(|e| format!("--cold-repeats: {e}"))?;
+                if cold_repeats == 0 {
+                    return Err("--cold-repeats must be at least one".to_owned());
+                }
+            }
             "--edits" => edits = value()?.parse().map_err(|e| format!("--edits: {e}"))?,
             "--seed" => seed = value()?.parse().map_err(|e| format!("--seed: {e}"))?,
             "--write-module" => write_module = Some(PathBuf::from(value()?)),
@@ -141,6 +152,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         input,
         edits,
+        cold_repeats,
         seed,
         write_module,
         out,
@@ -434,6 +446,11 @@ fn run(args: &Args) -> Result<(), String> {
     let cold_peak = created.peak_bytes;
     let cold_retained = created.retained_bytes;
     let mut session = created.value?;
+    let mut cold_profiles = vec![profile_json(&session.cold_profile())];
+    for _ in 1..args.cold_repeats {
+        let repeated = McPfSession::from_module_json(&module_json, options)?;
+        cold_profiles.push(profile_json(&repeated.cold_profile()));
+    }
     let initial = session.summary().clone();
     let initial_json = measure(|| serde_json::to_string(&initial).map_err(|e| e.to_string()));
     let initial_json_bytes = initial_json.value?.len();
@@ -798,6 +815,7 @@ fn run(args: &Args) -> Result<(), String> {
         "shape": shape,
         "module": {"bytes": module_json.len(), "serialize": serialize},
         "cold": cold,
+        "cold_profiles": cold_profiles,
         "edits": edits,
         "on_demand": on_demand,
         "feeder_wide": feeder_wide,
