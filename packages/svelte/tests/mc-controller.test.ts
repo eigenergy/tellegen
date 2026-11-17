@@ -1089,3 +1089,31 @@ describe('multiconductor calculation and coordinates', () => {
 		);
 	});
 });
+
+describe('written equipment settings', () => {
+	it('creates an independent case and retains the original input and diagnostics', async () => {
+		const { app, ctrl, c } = host({
+			mc_pf_supported: false,
+			mc_fixed_controls_available: true,
+			mc_pf_unavailable_reason: 'Automatic control retained'
+		});
+		const original = c.mcInput;
+		const prepare = vi.fn(async () => ({ ...payload('fixed-settings'), mc_fixed_controls: true }));
+		ctrl.mcTransport.prepareMcFixedControls = prepare;
+		const next = await ctrl.useWrittenEquipmentSettings(c);
+		expect(prepare).toHaveBeenCalledWith('input');
+		expect(app.multiCases).toContain(c);
+		expect(next.id).not.toBe(c.id);
+		expect(next.label).toBe('Feeder — fixed settings');
+		expect(next.summary?.mc_fixed_controls).toBe(true);
+		expect(c.mcInput).toBe(original);
+		expect(c.summary?.mc_pf_unavailable_reason).toBe('Automatic control retained');
+	});
+	it('does not prepare cases with unrelated unsupported features', async () => {
+		const { ctrl, c } = host({ mc_fixed_controls_available: false });
+		const prepare = vi.fn();
+		ctrl.mcTransport.prepareMcFixedControls = prepare;
+		await expect(ctrl.useWrittenEquipmentSettings(c)).rejects.toThrow('not available');
+		expect(prepare).not.toHaveBeenCalled();
+	});
+});

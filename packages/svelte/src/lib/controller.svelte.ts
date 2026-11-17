@@ -68,6 +68,7 @@ import {
 	probeAcOpfWorker,
 	solveAcOpfModule,
 	solveResponseToSolution,
+	prepareMcFixedControls,
 	sensitivityColumn,
 	type EngineTransport,
 	mcPfResultDetail,
@@ -298,6 +299,7 @@ export interface ControllerOptions {
 				| 'createMcPfSession'
 				| 'ingestDistCaseBytes'
 				| 'prepareMcEnergizedNetwork'
+				| 'prepareMcFixedControls'
 			>
 		>;
 }
@@ -363,6 +365,7 @@ export class Controller {
 				| 'createMcPfSession'
 				| 'ingestDistCaseBytes'
 				| 'prepareMcEnergizedNetwork'
+				| 'prepareMcFixedControls'
 			>
 		>;
 	private hostedLoadAbort: AbortController | null = null;
@@ -3448,6 +3451,18 @@ export class Controller {
 		if (frame && c.placed) this.app.requestFrame(c.id);
 		return c;
 	}
+
+	/** Create a separate case after the user explicitly chooses written settings. */
+	useWrittenEquipmentSettings = async (c: MulticonductorCase): Promise<MulticonductorCase> => {
+		if (!c.summary?.mc_fixed_controls_available || !c.mcInput)
+			throw new Error('Written equipment settings are not available for this case');
+		const input = await mcInputJson(c.mcInput);
+		const prepare = this.mcTransport.prepareMcFixedControls ?? prepareMcFixedControls;
+		const payload = await prepare(input);
+		if (!payload.mc_fixed_controls || !payload.mc_pf_supported)
+			throw new Error('The prepared case does not support written equipment settings');
+		return this.addMultiCase(c.fileName, payload, undefined, `${c.label} — fixed settings`);
+	};
 
 	/** Compute terminal quantities only for the retained input and current case revision. */
 	solveMultiCase = async (

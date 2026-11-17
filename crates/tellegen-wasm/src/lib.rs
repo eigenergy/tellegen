@@ -450,7 +450,7 @@ pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsValue
 /// Create an independent case using written taps and capacitor states.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
-pub fn prepare_mc_fixed_controls(module_json: &str) -> Result<String, JsError> {
+pub fn prepare_mc_fixed_controls(module_json: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     let module = crate::read_module_bytes(module_json.as_bytes()).map_err(jserr)?;
