@@ -80,7 +80,7 @@ pub(crate) fn build(
     }
     report.pf_iterations = pf.iterations;
     report.pf_residual = pf.residual;
-    if !(pf.residual < 1e-6) {
+    if super::not_lt(pf.residual, 1e-6) {
         return Err(format!(
             "the AC power flow did not converge (residual {:.3e})",
             pf.residual
@@ -772,7 +772,7 @@ pub(crate) fn least_squares_step(jac: &[f64], g: &[f64], n: usize) -> Option<Vec
 pub(crate) fn solve_small(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
     for k in 0..n {
         let p = (k..n).max_by(|&i, &j| a[i * n + k].abs().total_cmp(&a[j * n + k].abs()))?;
-        if !(a[p * n + k].abs() > 1e-300) {
+        if super::not_gt(a[p * n + k].abs(), 1e-300) {
             return None;
         }
         if p != k {
@@ -1088,7 +1088,7 @@ pub(crate) fn init_device(
     let worst = inf_norm(&f)
         .max((out.ir - i_sys.re).abs())
         .max((out.ii - i_sys.im).abs());
-    if !(worst <= 1e-8) {
+    if super::not_le(worst, 1e-8) {
         return Err(format!(
             "{name}: device initialization left residual {worst:.3e}"
         ));

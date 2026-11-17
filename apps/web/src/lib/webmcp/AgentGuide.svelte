@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { StatBoxes } from '@tellegen/svelte';
 	import { WEBMCP_TRIAL_ORIGIN, type WebMcpBrowserState } from './browser-support.js';
+	import { connectStatus } from './connect-status.js';
 
 	let {
 		supported,
@@ -9,7 +10,8 @@
 		browser = null,
 		pageToolCalls = true,
 		toolCount = 0,
-		callCount = 0
+		callCount = 0,
+		unavailableTools = []
 	}: {
 		supported: boolean;
 		registrationError: string | null;
@@ -19,6 +21,8 @@
 		pageToolCalls?: boolean;
 		toolCount?: number;
 		callCount?: number;
+		/** Tools this tab does not offer right now, each with the reason. */
+		unavailableTools?: readonly { name: string; reason: string }[];
 	} = $props();
 
 	const docs = 'https://eigenergy.github.io/tellegen';
@@ -63,64 +67,51 @@
 		}
 	}
 
-	const ready = $derived(supported && !registrationError);
-	/** The browser by name: Chrome, Edge, or "this browser". */
-	const brandName = (brand: 'Chrome' | 'Edge' | 'Chromium') =>
-		brand === 'Chromium' ? 'this browser' : brand;
+	const status = $derived(connectStatus({ supported, registrationError, browser }));
+	const ready = $derived(status.id === 'connected');
 </script>
 
 <section aria-label="Use Tellegen with an agent">
 	<!-- One card: the status, what to do about it, and the docs. -->
-	<div class="card" data-state={registrationError ? 'error' : ready ? 'ready' : 'setup'}>
-		{#if registrationError}
-			<div class="status" role="status" data-testid="webmcp-status">
-				<strong title={registrationError}>Tools failed to load</strong>
+	<div class="card" data-state={status.id === 'error' ? 'error' : ready ? 'ready' : 'setup'}>
+		<div class="status" role="status" data-testid="webmcp-status">
+			<strong class:pending={status.id === 'loading'} title={registrationError}>
+				{#if ready || status.id === 'loading'}<span class="dot"></span>{/if}{status.label}
+			</strong>
+			{#if registrationError}
 				<details>
 					<summary>Details</summary>
 					<p>{registrationError}</p>
 				</details>
-			</div>
-			<div class="actions">
-				<button class="secondary" onclick={() => location.reload()}>Reload</button>
-				<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
-			</div>
-		{:else}
-			<div class="status" role="status" data-testid="webmcp-status">
-				{#if ready}
-					<strong><span class="dot"></span>Connected</strong>
-				{:else if !browser || browser.kind === 'ready'}
-					<strong class="pending"><span class="dot"></span>Loading…</strong>
-				{:else}
-					{#if browser.kind === 'update' || browser.kind === 'legacy'}
-						<strong>Needs {brandName(browser.brand)} {browser.minVersion}+</strong>
-					{:else}
-						<strong>Not available in this browser</strong>
-					{/if}
-				{/if}
-			</div>
-			<div class="actions">
-				{#if ready}
-					<button class="secondary" onclick={() => copy(copiedPrompt)}
-						>{copied === copiedPrompt ? 'Copied' : 'Copy prompt'}</button
-					>
-				{/if}
-				<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
-			</div>
-			{#if !ready && browser?.kind === 'flag'}
-				<div class="cmd" title="Paste into the address bar, set to Enabled, relaunch">
-					<code>{browser.flagUrl}</code>
-					<button
-						class="cmd-copy"
-						aria-label={copied === browser.flagUrl ? 'Copied flag address' : 'Copy flag address'}
-						onclick={() => copy(browser.flagUrl)}
-						>{copied === browser.flagUrl ? 'Copied' : 'Copy'}</button
-					>
-				</div>
 			{/if}
+		</div>
+		<div class="actions">
+			{#if status.id === 'error'}
+				<button class="secondary" onclick={() => location.reload()}>Reload</button>
+			{:else if ready}
+				<button class="secondary" onclick={() => copy(copiedPrompt)}
+					>{copied === copiedPrompt ? 'Copied' : 'Copy prompt'}</button
+				>
+			{/if}
+			<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
+		</div>
+		{#if status.next && status.id !== 'error'}
+			<p class="hint" data-testid="webmcp-next">{status.next}</p>
+		{/if}
+		{#if status.flagUrl}
+			{@const flagUrl = status.flagUrl}
+			<div class="cmd">
+				<code>{flagUrl}</code>
+				<button
+					class="cmd-copy"
+					aria-label={copied === flagUrl ? 'Copied flag address' : 'Copy flag address'}
+					onclick={() => copy(flagUrl)}>{copied === flagUrl ? 'Copied' : 'Copy'}</button
+				>
+			</div>
 		{/if}
 		{#if copyError}<p role="status" class="hint">Copy failed</p>{/if}
 	</div>
-	{#if ready && !registrationError}
+	{#if ready}
 		<div class="counts">
 			<StatBoxes
 				label="Agent tools"
@@ -130,6 +121,14 @@
 				]}
 			/>
 		</div>
+	{/if}
+	{#if ready && unavailableTools.length}
+		<dl class="unavailable" aria-label="Tools not offered now">
+			{#each unavailableTools as tool (tool.name)}
+				<dt><code>{tool.name}</code></dt>
+				<dd>{tool.reason}</dd>
+			{/each}
+		</dl>
 	{/if}
 	<p class="visually-hidden" role="status">{copied ? 'Copied' : ''}</p>
 </section>
@@ -207,6 +206,21 @@
 	}
 	.counts :global(dl.stats) {
 		margin: 12px 0 0;
+	}
+	/* One row per tool: its name, then why it is not offered. */
+	.unavailable {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 4px 12px;
+		margin: 12px 0 0;
+		font-size: 12px;
+	}
+	.unavailable dt code {
+		font: 11.5px/1.45 var(--font-code);
+	}
+	.unavailable dd {
+		margin: 0;
+		color: var(--text-secondary);
 	}
 	.actions {
 		display: flex;

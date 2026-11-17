@@ -11,7 +11,7 @@ pub struct CaseCollection;
 
 #[wasm_bindgen]
 impl CaseCollection {
-    pub fn from_zip(_name: &str, _bytes: &[u8]) -> Result<CaseCollection, JsError> {
+    pub fn from_zip(_name: &str, _bytes: &[u8]) -> Result<CaseCollection, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 
@@ -20,27 +20,27 @@ impl CaseCollection {
         _names_json: &str,
         _offsets: &[u32],
         _bytes: &[u8],
-    ) -> Result<CaseCollection, JsError> {
+    ) -> Result<CaseCollection, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 
-    pub fn open_nested(&self, _member: &str) -> Result<CaseCollection, JsError> {
+    pub fn open_nested(&self, _member: &str) -> Result<CaseCollection, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 
-    pub fn inspect(&self) -> Result<String, JsError> {
+    pub fn inspect(&self) -> Result<String, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 
-    pub fn ingest(&self, _selection_json: &str) -> Result<String, JsError> {
+    pub fn ingest(&self, _selection_json: &str) -> Result<String, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 
-    pub fn original_zip(&self) -> Result<Vec<u8>, JsError> {
+    pub fn original_zip(&self) -> Result<Vec<u8>, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 
-    pub fn source_zip(&self, _selection_json: &str, _scope: &str) -> Result<Vec<u8>, JsError> {
+    pub fn source_zip(&self, _selection_json: &str, _scope: &str) -> Result<Vec<u8>, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }
 }
