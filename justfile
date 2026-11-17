@@ -227,8 +227,11 @@ dev-setup:
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
-    trap 'kill 0' EXIT
     TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server &
+    server_pid=$!
+    trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     npm --workspace tellegen-frontend run dev -- --port 5173 --strictPort
 
 # ---- release ----
