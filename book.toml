@@ -22,7 +22,40 @@ site-url = "/tellegen/"
 [output.html.redirect]
 "/sensitivity-contract.html" = "sensitivity-interface.html"
 
+"/direction.html" = "architecture.html"
+"/technology-evaluation.html" = "architecture.html"
+"/webmcp-challenge.html" = "studies.html"
+"/challenge-evidence.html" = "validation.html"
+"/powerio-011-review.html" = "local-case-files.html#collection-import"
+"/tauri-roadmap.html" = "architecture.html"
+"/data-provenance.html" = "local-case-files.html#data-sources"
+
+"/frontend-package.html" = "framework-quickstart.html#frontend-package"
+"/transports.html" = "engine-api.html#transports"
+"/http-api.html" = "engine-api.html#http-api"
+"/mcp.html" = "python.html#mcp"
+"/collection-import.html" = "local-case-files.html#collection-import"
+"/data-sources.html" = "local-case-files.html#data-sources"
+"/display-data.html" = "local-case-files.html#display-data"
+"/antimeridian-routes.html" = "local-case-files.html#antimeridian-routes"
+"/acopf-pounce-decision.html" = "formulations.html#acopf-pounce-decision"
+"/synthetic-layout.html" = "transmission-diagrams.html#synthetic-layout"
+"/rms.html" = "dynamics.html#rms"
+"/methodology.html" = "validation.html#methodology"
+"/references.html" = "validation.html#references"
+"/mc-pf-performance.html" = "benchmark-results.html#mc-pf-performance"
+"/rms-validation.html" = "benchmark-results.html#rms-validation"
+"/release-architecture.html" = "deployment.html#release-architecture"
+
+"/dc-compatibility.html" = "formulations.html#dc-compatibility"
+"/multiconductor-reference.html" = "multiconductor-pf.html#multiconductor-reference"
+
+"/getting-started.html" = "introduction.html#getting-started"
+
 [output.html.search]
 enable = true
 limit-results = 30
 use-boolean-and = true
+
+[rust]
+edition = "2024"

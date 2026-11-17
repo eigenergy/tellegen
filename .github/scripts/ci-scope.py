@@ -121,6 +121,8 @@ NOT_BUILT = skip(
     "ruff.toml",
     "mypy.ini",
     "scripts/build-docs.sh",
+    "scripts/check-doc-links.py",
+    "scripts/test-check-doc-links.py",
     "scripts/derive-*.py",
     "scripts/stage-data.sh",
     ".github/ISSUE_TEMPLATE/**",
@@ -281,6 +283,8 @@ DOCS_PATHS = (
     "docs/theme/**",
     "docs/assets/**",
     "scripts/build-docs.sh",
+    "scripts/check-doc-links.py",
+    "scripts/test-check-doc-links.py",
     ".github/workflows/docs-pages.yml",
 )
 DOCS = Rules(False, run(*DOCS_PATHS))

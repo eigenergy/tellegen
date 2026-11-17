@@ -9,7 +9,7 @@ hosted demo is one private consumer.
 
 A Cargo workspace and a web app, side by side.
 
-- `crates/tellegen`: the engine. It parses a case through powerio and solves the requested supported formulation. One result envelope carries the fields and sensitivities that formulation defines.
+- `crates/tellegen`: the engine. It parses a case through powerio and solves the requested supported formulation. The result carries the fields and sensitivities that formulation defines.
 - `crates/tellegen-wasm`: the `wasm-bindgen` adapter that exposes the engine to the browser, built with `wasm-pack`.
 - `crates/tellegen-server`: a native HTTP server that serves the bundled cases and the static app.
 - `crates/tellegen-cli`: a command line front end over the engine's JSON API.
@@ -25,21 +25,26 @@ powerio owns parsing and the network and display formats; the engine and the app
 
 ## The engine
 
-Default builds of `crates/tellegen` solve four formulations through one
-interface:
+The balanced-network interface supports these formulations:
 
 - **DC power flow** and **DC OPF**: a B–θ linear/quadratic program;
 - **AC power flow**: a polar Newton solve; and
-- **SOCWR**: the Jabr second-order cone relaxation of AC OPF, in W-space.
+- **SOCWR**: the Jabr second-order cone relaxation of AC OPF, in W-space,
+  enabled by the `conic` feature.
 
-The non-default native `acopf` feature adds a fifth, development-only path: an
-exact polar AC OPF model solved through POUNCE. It has independent primal
-validation and portable PowerIO solution emission, but no shipping adapter,
-dual/sensitivity contract, or distribution approval. A separate unpublished
-WASI adapter and one-shot worker expose the canonical base-case solve for
-development and CI; ordinary browser builds do not contain its POUNCE asset.
+The optional native `acopf` feature adds exact polar AC OPF through POUNCE.
+It reports independently checked primal results, LMPs, and selected derivatives
+with respect to demand and line ratings. Derivatives require a suitable active
+set; the API reports when degeneracy makes them unavailable. The browser runs
+this calculation in a separate WASI worker. Its module, source information and
+license notices are released separately from the ordinary engine package.
+The host must provide its URL and successfully probe it before offering AC OPF.
 
-The formulations share one result envelope, but they do not claim the same
+Multiconductor power flow is enabled by the default `mc-pf` feature. The
+optional native `mc-opf` feature provides multiconductor optimization; the
+ordinary browser, HTTP and Python adapters do not enable it.
+
+The formulations share one result structure, but they do not claim the same
 quantities. DC power flow returns angles and branch flows without prices,
 optimized dispatch, or sensitivities. DC OPF adds dispatch, objective value,
 LMPs, and KKT sensitivities. AC power flow returns voltages and nodal
@@ -52,11 +57,8 @@ forward or adjoint columns.
 The default engine is Rust and compiles to WebAssembly, so the same code runs
 natively and in the browser. The convex solves use Clarabel; the sensitivities
 use faer. The exact AC OPF backend runs in opt-in native builds and in the
-separately built experimental WASI worker.
-Turning it into a shipping native product remains on the
-[desktop and mobile roadmap](tauri-roadmap.md); browser support uses a
-separate WASI worker because the ordinary browser solver build is single
-threaded and uses `wasm32-unknown-unknown`.
+separately built experimental WASI worker. The ordinary browser solver module
+uses `wasm32-unknown-unknown`; the AC OPF module uses `wasm32-wasip1`.
 
 ## The two API faces
 
@@ -85,22 +87,34 @@ file flow, solve card, state provider, and full viewer as Svelte components.
 through an adapter that does not depend on Svelte or the engine package.
 
 `apps/web` consumes the Svelte package and keeps demo concerns: routes, SEO,
-credits, privacy, deployment, and bundled case pages.
+credits, privacy, deployment, and bundled case pages. Embedded viewers have
+neutral defaults: local files, no backend, no bundled cases, and no footer.
+
+The public `Controller` class delegates case imports, balanced calculations,
+distribution calculations and results, and calculation settings to separate
+modules. Consumers keep using the same class methods; the provider owns their
+lifetime and frees engine resources when it is disposed.
 
 ## In the browser
 
-`@tellegen/engine` ships one wasm package built from `crates/tellegen-wasm`
-(the `conic` feature): DC power flow, DC OPF, AC power flow, SOCWR, the
-`Study`, and the sensitivity columns. A browser that cannot load it does not
-solve; the hosted demo shows a notice, and the server's compute endpoints
-exist as an opt-in fallback (`TELLEGEN_SERVER_COMPUTE`).
+`@tellegen/engine` ships the ordinary wasm module built from
+`crates/tellegen-wasm`. It supports DC power flow, DC OPF, AC power flow,
+SOCWR, multiconductor power flow, generation, collection imports and dynamics.
+Experimental dynamics tools remain disabled in the UI until the host or user
+enables them. The hosted demo's server compute endpoints are an opt-in DC OPF
+fallback (`TELLEGEN_SERVER_COMPUTE`).
 
-The Svelte package and the hosted app use `Study` for DC OPF, AC power flow,
-and SOCWR. `preview` returns a first order update for the quantities the chosen
-formulation defines; `commit` performs an exact re-solve and can return the
-displayed sensitivity column. DC power flow uses the stateless solve path, and
-full nonlinear AC OPF is unavailable in the shipping browser package.
-Supported solvable case files run in the browser and are not uploaded.
+The Svelte package uses `Study` for supported balanced calculations. `preview`
+returns a first-order update for the quantities the calculation defines;
+`commit` performs an exact re-solve and can return a selected sensitivity
+column. DC power flow returns no sensitivities and rejects such requests.
+Multiconductor power flow has its own retained session. AC OPF uses the
+separate worker described above, which reuses the compiled module but creates
+a fresh WASI instance for each calculation. Cancellation terminates that
+worker. AC OPF case edits, retained Studies and browser solution export remain
+unsupported.
+
+Supported local case files run in the browser and are not uploaded.
 
 ## Sources
 

@@ -1,6 +1,6 @@
 import type { DcFormula } from '@tellegen/engine';
 
-/** How a DC calculation models each line (docs/src/dc-compatibility.md). Settings offers these as
+/** How a DC calculation models each line (docs/src/formulations.md#dc-compatibility). Settings offers these as
  * the DC line model, next to "Default", the case's own choice. `matches` names the tool whose
  * convention each follows, for a tooltip. */
 export const DC_VARIANTS: ReadonlyArray<{

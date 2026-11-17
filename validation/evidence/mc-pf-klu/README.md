@@ -67,6 +67,23 @@ conversion handles regulators and supported capacitors, not protection devices
 or duplicate definitions. `tellegen-subset-imports.json` records both attempts.
 No source declarations or protection states were silently discarded.
 
+### PowerIO 0.12.2 follow-up
+
+The same regional, substation, and feeder imports were rechecked against PowerIO
+0.12.2 release source (merged commit `6794629d0e8617a7c73b9a55ca3cbafddd19df6f`, tree
+`1657774bad40ce6f39eea0025756f5b9a972222e`) using local Cargo patches, with all 2,273
+downloaded files verified against the original source manifest and the default import
+limits unchanged. None reached Tellegen matrix preparation. The regional parser again
+reported the 4,096-file/64 MiB include-budget refusal at Master.dss line 483 and the
+line-calculation-history work-budget refusal at line 572; its diagnostics also
+include duplicate definitions. The substation still fails validation on duplicate
+Linecode definitions; the earlier regulator diagnostic is no longer part of that
+refusal. The feeder still retains an unsupported padswitch line, fuses, and capacitor
+controls. No records were discarded or diagnostics bypassed. See
+`tellegen-imports-powerio-0.12.2.json`; the separate 0.12.1 evidence remains
+unchanged. These checks confirm that the original regional reduced-system question
+remains unresolved; they are a source-candidate test, not a registry-package test.
+
 ## Timing and memory
 
 Machine: Apple M5 Pro, 64 GiB RAM. Rust 1.96.0, faer 0.24.4,

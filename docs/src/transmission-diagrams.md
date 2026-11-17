@@ -259,6 +259,52 @@ Network payloads carry the result: `NetworkBus.base_kv`, `NetworkBus.substation`
 jumpers: ACTIVSg200 from its MATPOWER file gives the 111 substations its aux file declares, its 23
 jumpers having a fifteenth of the median line's reactance.
 
+## Saved engineering drawings
+
+**Edit engineering drawing** opens an editable view of the current case.
+For a node-breaker source, use **Substation detail and drawing**. Equipment keeps its
+source identity while its position, rotation, label, colour and visibility can
+change. Ports and route bends can be moved independently. A three-winding
+transformer is one object with separate terminal connections. The overview
+continues to aggregate equipment where that makes a large network easier to read.
+
+Use **Keep position during layout** to preserve manual placement during
+**Arrange unlocked objects**. Groups can be aligned horizontally or vertically;
+grid snapping, undo and redo apply to drawing edits. Add text, frames or a local
+PNG, JPEG or WebP image as annotations. Layers control which content is visible.
+For balanced cases with results, bus labels can display voltage or price with a
+chosen number of decimal places; branch overlays show active power and flow
+direction. Unavailable result controls are disabled. Multiconductor terminal
+results remain in the conductor inspector.
+
+**Save drawing** stores the drawing in this browser. **Duplicate drawing** creates
+a separate drawing for the same network. Export a `.drawing.json` file to retain
+objects, ports, routes, annotations and presentation settings outside the browser;
+import it after reopening the same network. SVG export includes the visible
+objects, labels, annotations and result overlays. It does not include a geographic
+basemap. Saving a drawing does not save an electrical case: use the study controls
+for that.
+
+Drawings cannot change electrical connections or switch states. On reload, those
+values come from the current case; an imported drawing with different source
+connections is refused. Moving or rotating equipment therefore cannot silently
+change a power-flow calculation.
+
+### Node-breaker detail
+
+When a source provides connectivity nodes and terminals, the drawing shows busbar
+sections, breakers, disconnectors and equipment connections within their declared
+substations and bays. Switch positions and connected-terminal states come from
+the imported case. Generic switches retain a generic symbol rather than acquiring
+a breaker type. The included CGMES test case exercises busbars, a bay, two
+breakers, a disconnector, load, generation and a line.
+
+PowerIO currently retains CGMES Diagram Layout records as unsupported metadata;
+it does not expose their coordinates to this drawing. Node-breaker placement is
+therefore generated. Ordinary source bus coordinates and line routes are retained
+when available. See the [drawing measurements and representative cases](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/engineering-drawings)
+for the separate rendering, selection, editing, layout, result and export checks.
+
 ## Engine API
 
 `txSchematicLayout(input, options)` in `@tellegen/engine` (`tellegen::tx_schematic` natively)
@@ -342,7 +388,7 @@ bus voltage by varying Q within stated min/max limits or a piecewise-linear
 capability curve evaluated at the solved Pac. Positive Q is AC absorption.
 These are PowerIO's **detailed** `VoltageSourceConverter` records. The IIDM
 `VscConverterStation` reduced-HVDC model has a different setpoint convention and
-must not be used to infer a sign flip for this record. The pinned PowerIO reader
+must not be used to infer a sign flip for this record. The PowerIO reader version used here
 preserves detailed XIIDM setpoints and curves, and CGMES `targetQpcc` and
 `VsCapabilityCurve`; Tellegen evaluates P coordinates and Q bounds consistently
 in PCC withdrawal convention. See the [detailed IIDM converter API](https://powsybl.readthedocs.io/projects/pypowsybl/en/latest/reference/api/pypowsybl.network.Network.get_voltage_source_converters.html).
@@ -416,3 +462,84 @@ Independent DC operating-limit checks allow an absolute numerical floor of
 nonlinear solver's bound relaxation. This accommodates binding 150 MW limits
 without accepting physically meaningful excesses. Numerical convergence remains
 separate from operating-limit diagnostics.
+
+
+<a id="synthetic-layout"></a>
+
+<a id="synthetic-layout-synthetic-layout"></a>
+
+## Synthetic Layout
+
+Most public OPF test cases do not include geographic coordinates. tellegen uses
+synthetic topology layouts in two places: the explicit pglib dev fallback, and
+local files parsed in the browser that the user places on the map. The tellegen
+backend API marks fallback coordinates with `synthetic_coords: true`; local
+files are labeled in the panel as synthetic layouts.
+
+<a id="synthetic-layout-tree-short-circuit-for-radial-networks"></a>
+
+### Tree Short-Circuit for Radial Networks
+
+Before the force pass, the browser layout counts independent cycles on the
+deduplicated graph (open switches are already excluded). When the count is at
+most `max(2, ceil(0.02 * n))`, the graph is a tree or nearly one — the shape of
+a distribution feeder — and it is drawn as a tidy tree instead: depth grows
+along one axis from the root, and each subtree occupies its own contiguous band
+of leaf slots on the other, so the drawing is planar and the longest chain
+renders as a straight trunk. The root is a source bus when the case identifies
+one (multiconductor cases pass their sources as hints), else a BFS diameter
+endpoint. Chords of a near-tree draw as plain segments between their placed
+endpoints. Meshed networks fall through to the force pass below.
+
+<a id="synthetic-layout-deterministic-seed"></a>
+
+### Deterministic Seed
+
+The layout starts from a golden angle spiral on the unit square. A deterministic
+jitter of about `1e-4`, computed from bus index sines, breaks exact ties. No
+random number generator is used.
+
+<a id="synthetic-layout-force-refinement"></a>
+
+### Force Refinement
+
+tellegen refines the seed with a Fruchterman–Reingold force pass on the unit
+square:
+
+- repulsion `k^2 / d` between each bus pair, with `k = sqrt(1 / n)`;
+- attraction `d^2 / k` along branches;
+- capped displacement with a linearly cooled temperature.
+
+The force pass is `O(iterations * n^2)`. In the tellegen backend it runs once
+at boot and the resulting network payload is cached. In the browser, local
+dropped files use the same deterministic force idea with a lighter seed and
+iteration count, then scale into a small footprint around the user's chosen map
+point. The fit into that footprint uses one uniform scale for both axes, so a
+long feeder keeps its aspect ratio instead of stretching to a square. Once
+placed, the local network solves in browser WebAssembly, and the layout is
+stamped into the retained PowerIO module (`Bus.location`, source information
+`synthetic`), so saved modules and case exports carry the placement and the
+panel can download it as a `.geo.json` layer.
+
+<a id="synthetic-layout-determinism"></a>
+
+### Determinism
+
+The pipeline uses source order, fixed jitter, and fixed iteration counts.
+Identical input files produce identical coordinates across boots.
+
+<a id="synthetic-layout-tests"></a>
+
+### Tests
+
+Rust tests check that:
+
+- every coordinate lies inside the bounding box;
+- no two buses remain stacked in the test fixture.
+
+<a id="synthetic-layout-references"></a>
+
+### References
+
+- T. M. J. Fruchterman and E. M. Reingold, "Graph drawing by force-directed
+  placement," Software: Practice and Experience, 1991.

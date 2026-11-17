@@ -72,8 +72,9 @@ study preserves the camera, display mode, and page address. Reopening distributi
 results again reuses the same case. **Copy view link** creates a link without changing
 the current page address.
 
-A failed save reports the problem instead of discarding history. If browser storage
-is full, free space or export the saved study before retrying. Cancellation retains completed trials
+A failed save reports the problem instead of discarding history. If browser
+storage is full, free space or export the saved study before retrying.
+Cancellation retains completed trials
 and the best candidate after the running solve finishes.
 
 ## Native and agent access
@@ -91,7 +92,7 @@ tellegen study export study.json > portable-study.json
 also generate the TypeScript types. Browser controls, WebMCP, and the CLI use
 the same Study operations and revision checks.
 
-The Python package's MCP server, `tellegen-mcp` (see [MCP server](mcp.md)),
+The Python package's MCP server, `tellegen-mcp` (see [MCP server](python.md#mcp)),
 runs the engine in process. Its `solve`, `solve_module`, and `plan` tools handle
 calculations; `study_create`, `study_inspect`, `study_run`, `study_export`, and
 `study_import` handle saved cases. `study_create` also accepts a case file for

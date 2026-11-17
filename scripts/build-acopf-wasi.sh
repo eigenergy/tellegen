@@ -28,4 +28,4 @@ install -m 0644 "$repo_root/licenses/POUNCE-EPL-2.0.txt" "$asset_dir/POUNCE-EPL-
 install -m 0644 "$repo_root/licenses/POUNCE-NOTICE.txt" "$asset_dir/POUNCE-NOTICE.txt"
 "${PYTHON:-python3}" "$repo_root/scripts/acopf-release.py" --asset "$asset_dir/tellegen_acopf_wasi.wasm"
 
-echo "built development-only AC OPF asset: $asset_dir/tellegen_acopf_wasi.wasm"
+echo "built AC OPF asset: $asset_dir/tellegen_acopf_wasi.wasm"

@@ -32,7 +32,7 @@ archives.
 
 The non-default native `tellegen/acopf` feature depends on
 [POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
-licensed under EPL-2.0. It is pinned to the checksummed crates.io release
+licensed under EPL-2.0. It uses the checksummed crates.io release
 `0.15.0`. The default engine and the
 published WASM, server, CLI, and Python adapters do not enable this feature.
 `scripts/epl-guard.sh` checks that boundary from Cargo's resolved dependency
@@ -125,7 +125,7 @@ and tap-dependent impedances use equivalent conventions. The hosted bundle
 then keeps only the main energized island, removing two unsupplied line
 sections (five buses, three lines, three line codes and five coordinate
 features). For storage it shares identical line-code records, keeps their
-source labels in a provenance sidecar, and drops duplicate GeoJSON bus points
+source labels in a source information sidecar, and drops duplicate GeoJSON bus points
 and default constant-power load labels. No electrical value or coordinate is
 rounded. The staged bundle carries `License.md` and `SOURCE_NOTICE.md` with the
 full attribution and list of changes. No endorsement by the original authors
