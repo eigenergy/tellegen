@@ -39,6 +39,7 @@ pub mod session;
 pub mod site;
 pub mod stats;
 pub mod subnational;
+pub mod synchronous;
 pub mod topology;
 pub mod tuning;
 pub mod validate;
@@ -63,3 +64,5 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Version of the physical parameter tables in `electrical::params`.
 pub const PARAMETER_TABLE_VERSION: &str = "2026.10";
+
+pub use synchronous::{GenerationReportOutput, PlannedHvdcLink, SynchronousArea};
