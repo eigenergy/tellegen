@@ -11,14 +11,13 @@ use std::collections::{BTreeMap, HashSet};
 use powerio::{Detection, JsonClass, PioValue, Source};
 use serde::Serialize;
 use tellegen::ir::{deserialize_module, serialize_module};
+use tellegen::ErrorCode;
 use wasm_bindgen::prelude::*;
 
 use tellegen::geo::{
     apply_aux_substation_locations, lowered_coords, network_coords, spread_stacks,
 };
 use tellegen::substations::{group_for_display, Substation};
-#[cfg(feature = "sensitivity")]
-use tellegen::SolveResponse;
 
 mod alloc_stats;
 #[cfg(feature = "sensitivity")]
@@ -58,8 +57,39 @@ pub fn rms_experimental_supported() -> bool {
 const MAX_INPUT_BYTES: usize = 128 * 1024 * 1024;
 const INPUT_TOO_LARGE: &str = "input exceeds 128 MiB limit";
 
-fn jserr(e: impl std::fmt::Display) -> JsError {
-    JsError::new(&e.to_string())
+/// The JS `Error` an export throws: `message` unchanged, plus a `code`
+/// property holding one of [`ErrorCode`]'s wire names when the class of the
+/// failure is known. Callers branch on `error.code`, not on the message text.
+fn thrown(code: Option<ErrorCode>, message: &str) -> JsValue {
+    let error = js_sys::Error::new(message);
+    if let Some(code) = code {
+        // Setting a property on a fresh Error cannot fail; if it ever did,
+        // the error would still be thrown with its message.
+        let _ = js_sys::Reflect::set(
+            &error,
+            &JsValue::from_str("code"),
+            &JsValue::from_str(code.as_str()),
+        );
+    }
+    error.into()
+}
+
+/// An error from an engine call that reports a plain message. The code comes
+/// from the engine's own reading of its fixed phrases, and is left off when
+/// the message matches none.
+fn jserr(e: impl std::fmt::Display) -> JsValue {
+    let message = e.to_string();
+    thrown(ErrorCode::from_message(&message), &message)
+}
+
+/// An error whose class is known where it is raised.
+fn jserr_code(code: ErrorCode, e: impl std::fmt::Display) -> JsValue {
+    thrown(Some(code), &e.to_string())
+}
+
+/// An engine error that already carries its code.
+fn engine_err(e: tellegen::EngineError) -> JsValue {
+    thrown(Some(e.code), &e.message)
 }
 
 fn ensure_input_len(byte_len: usize) -> Result<(), &'static str> {
@@ -76,15 +106,15 @@ fn ensure_input_len(byte_len: usize) -> Result<(), &'static str> {
 /// `packages/engine/src/input-limit.ts` is what actually bounds the allocation.
 /// This one bounds native and non-JS callers, and keeps the limit in one place
 /// if the JS check is ever bypassed.
-fn ensure_input_bytes(bytes: &[u8]) -> Result<(), JsError> {
-    ensure_input_len(bytes.len()).map_err(jserr)
+fn ensure_input_bytes(bytes: &[u8]) -> Result<(), JsValue> {
+    ensure_input_len(bytes.len()).map_err(|e| jserr_code(ErrorCode::InvalidInput, e))
 }
 
 /// Text counterpart of [`ensure_input_bytes`]. The string entry points sit
 /// beside byte ones that were already bounded; an embedder handing us a huge
 /// document as text should hit the same wall.
-fn ensure_input_text(text: &str) -> Result<(), JsError> {
-    ensure_input_len(text.len()).map_err(jserr)
+fn ensure_input_text(text: &str) -> Result<(), JsValue> {
+    ensure_input_len(text.len()).map_err(|e| jserr_code(ErrorCode::InvalidInput, e))
 }
 
 fn source_format_id(format: &str) -> Result<powerio::FormatId, String> {
@@ -220,7 +250,7 @@ fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, Stri
 /// Classify JSON bytes for the browser drop router. Invalid UTF-8 is never
 /// replaced; it follows powerio's unknown classification.
 #[wasm_bindgen]
-pub fn classify_json(bytes: &[u8]) -> Result<String, JsError> {
+pub fn classify_json(bytes: &[u8]) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     serde_json::to_string(&classify_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
@@ -234,7 +264,7 @@ pub fn classify_json(bytes: &[u8]) -> Result<String, JsError> {
 /// the kinds (`module` and powerio's families).
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
-pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsError> {
+pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     serde_json::to_string(&ingest_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
@@ -245,7 +275,7 @@ pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsError> {
 /// it still carries `module_json` and retains nothing.
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
-pub fn ingest_json_drop_retained(bytes: &[u8]) -> Result<RetainedIngest, JsError> {
+pub fn ingest_json_drop_retained(bytes: &[u8]) -> Result<RetainedIngest, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     let (drop, module) = ingest_json_drop_parts(bytes, true).map_err(jserr)?;
@@ -369,7 +399,7 @@ fn parse_case_module(
 /// replaced each offending byte with U+FFFD and parsed on. It also reaches
 /// PowerWorld `.pwb`, which has no text form at all.
 #[wasm_bindgen]
-pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
+pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     let module = parse_case_module(bytes, format).map_err(jserr)?;
@@ -382,12 +412,13 @@ pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
 }
 
 /// The stateless solve front door: a retained PowerIO module and a
-/// [`tellegen::SolveRequest`] JSON in, a [`tellegen::SolveResponse`] JSON out. One-shot callers only;
+/// [`tellegen::SolveRequest`] JSON in, a [`tellegen::SolveOutput`] JSON out (the
+/// `SolveResponse` fields plus `objective_kind` for an OPF). One-shot callers only;
 /// the reactive hot path is the [`Study`].
 #[wasm_bindgen]
-pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsError> {
+pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsValue> {
     install_panic_hook();
-    tellegen::solve_module_json(module_json, request_json).map_err(jserr)
+    tellegen::solve_module_output_json(module_json, request_json).map_err(engine_err)
 }
 
 /// Solve a raw BMOPF multiconductor constant-power case.  The parser and
@@ -395,7 +426,7 @@ pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsE
 /// performs the bounded text/JSON conversion at the browser boundary.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
-pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError> {
+pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsValue> {
     ensure_input_text(text)?;
     ensure_input_text(options_json)?;
     install_panic_hook();
@@ -410,7 +441,7 @@ pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError>
 /// Explicitly prepare a source-covered subset while retaining the full input.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
-pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsError> {
+pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     tellegen::prepare_mc_energized_network_json(module_json).map_err(jserr)
@@ -420,7 +451,7 @@ pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsError
 /// module form used by browser persistence in addition to raw BMOPF text.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
-pub fn solve_mc_module(module_json: &str, options_json: &str) -> Result<String, JsError> {
+pub fn solve_mc_module(module_json: &str, options_json: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     ensure_input_text(options_json)?;
     install_panic_hook();
@@ -442,7 +473,7 @@ pub fn solve_mc_study(
     study_id: &str,
     study_title: &str,
     options_json: &str,
-) -> Result<String, JsError> {
+) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     ensure_input_text(options_json)?;
     install_panic_hook();
@@ -480,7 +511,7 @@ fn install_profile_clock() {
 #[wasm_bindgen]
 impl McPfSession {
     #[wasm_bindgen(constructor)]
-    pub fn new(module_json: &str, options_json: &str) -> Result<McPfSession, JsError> {
+    pub fn new(module_json: &str, options_json: &str) -> Result<McPfSession, JsValue> {
         ensure_input_text(module_json)?;
         ensure_input_text(options_json)?;
         install_panic_hook();
@@ -497,7 +528,7 @@ impl McPfSession {
 
     /// Create a session from a module the engine already holds. The network
     /// is shared with `input`, and no IR text is read or written.
-    pub fn from_input(input: &McInput, options_json: &str) -> Result<McPfSession, JsError> {
+    pub fn from_input(input: &McInput, options_json: &str) -> Result<McPfSession, JsValue> {
         ensure_input_text(options_json)?;
         install_panic_hook();
         install_profile_clock();
@@ -513,38 +544,38 @@ impl McPfSession {
 
     /// The current edited input as a module kept in the engine, the
     /// counterpart of [`McPfSession::input_module`] that writes no IR text.
-    pub fn input(&self) -> Result<McInput, JsError> {
+    pub fn input(&self) -> Result<McInput, JsValue> {
         self.0.input_module().map(McInput).map_err(jserr)
     }
 
     /// The compact summary of the current operating point (constant size).
-    pub fn summary(&self) -> Result<String, JsError> {
+    pub fn summary(&self) -> Result<String, JsValue> {
         serde_json::to_string(self.0.summary()).map_err(jserr)
     }
 
     /// The complete terminal and equipment result, built on demand. Its size
     /// grows with the network; the interactive path uses `summary`/`detail`.
-    pub fn result(&self) -> Result<String, JsError> {
+    pub fn result(&self) -> Result<String, JsValue> {
         serde_json::to_string(&self.0.build_result().map_err(jserr)?).map_err(jserr)
     }
 
     /// The complete result as packed columns (see [`McPfResultBuffers`]), for
     /// whole-network views: a few typed arrays instead of the JSON of
     /// [`McPfSession::result`], which grows by an object per port.
-    pub fn result_tables(&self) -> Result<McPfResultBuffers, JsError> {
+    pub fn result_tables(&self) -> Result<McPfResultBuffers, JsValue> {
         Ok(McPfResultBuffers::pack(
             self.0.result_tables().map_err(jserr)?,
         ))
     }
 
     /// Editable load branches with base and current P/Q values.
-    pub fn load_branches(&self) -> Result<String, JsError> {
+    pub fn load_branches(&self) -> Result<String, JsValue> {
         serde_json::to_string(&self.0.load_branches()).map_err(jserr)
     }
 
     /// Replace the absolute branch-power edit state, solve with the retained
     /// factorization and previous converged voltage, and return the summary.
-    pub fn replace_load_powers(&mut self, edits_json: &str) -> Result<String, JsError> {
+    pub fn replace_load_powers(&mut self, edits_json: &str) -> Result<String, JsValue> {
         ensure_input_text(edits_json)?;
         let edits: Vec<tellegen::McLoadPowerEdit> = serde_json::from_str(edits_json)
             .map_err(|error| jserr(format!("bad multiconductor load edits JSON: {error}")))?;
@@ -554,7 +585,7 @@ impl McPfSession {
 
     /// Terminal identities as `[bus, terminal]` pairs in calculation order.
     /// They never change for a session, so a host fetches them once.
-    pub fn terminal_ids(&self) -> Result<String, JsError> {
+    pub fn terminal_ids(&self) -> Result<String, JsValue> {
         serde_json::to_string(self.0.terminal_ids()).map_err(jserr)
     }
 
@@ -569,7 +600,7 @@ impl McPfSession {
     }
 
     /// One bounded page of terminal and equipment values for a bus or element.
-    pub fn detail(&self, query_json: &str) -> Result<String, JsError> {
+    pub fn detail(&self, query_json: &str) -> Result<String, JsValue> {
         ensure_input_text(query_json)?;
         let query: tellegen::McPfDetailQuery = serde_json::from_str(query_json)
             .map_err(|error| jserr(format!("bad multiconductor detail query JSON: {error}")))?;
@@ -577,12 +608,12 @@ impl McPfSession {
     }
 
     /// Phase timings of the most recent solve.
-    pub fn profile(&self) -> Result<String, JsError> {
+    pub fn profile(&self) -> Result<String, JsValue> {
         serde_json::to_string(&self.0.profile()).map_err(jserr)
     }
 
     /// Phase timings of the session's parse, preparation, factorization, and first solve.
-    pub fn cold_profile(&self) -> Result<String, JsError> {
+    pub fn cold_profile(&self) -> Result<String, JsValue> {
         serde_json::to_string(&self.0.cold_profile()).map_err(jserr)
     }
 
@@ -592,12 +623,12 @@ impl McPfSession {
     }
 
     /// Materialize the current edited input as PowerIO IR.
-    pub fn input_module(&self) -> Result<String, JsError> {
+    pub fn input_module(&self) -> Result<String, JsValue> {
         self.0.input_module_json().map_err(jserr)
     }
 
     /// Save the current edited point and result without re-solving.
-    pub fn snapshot(&self, study_id: &str, study_title: &str) -> Result<String, JsError> {
+    pub fn snapshot(&self, study_id: &str, study_title: &str) -> Result<String, JsValue> {
         ensure_input_text(study_id)?;
         ensure_input_text(study_title)?;
         let snapshot = self.0.snapshot(study_id, study_title).map_err(jserr)?;
@@ -707,7 +738,7 @@ impl McPfResultBuffers {
     }
 
     /// The names the index array refers to, as a JSON array.
-    pub fn take_strings(&mut self) -> Result<String, JsError> {
+    pub fn take_strings(&mut self) -> Result<String, JsValue> {
         serde_json::to_string(&std::mem::take(&mut self.strings)).map_err(jserr)
     }
 
@@ -750,7 +781,7 @@ pub fn reset_peak_memory() {
 /// re-solving it.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
-pub fn replay_mc_study(snapshot_json: &str) -> Result<String, JsError> {
+pub fn replay_mc_study(snapshot_json: &str) -> Result<String, JsValue> {
     ensure_input_text(snapshot_json)?;
     install_panic_hook();
     tellegen::replay_mc_study_json(snapshot_json).map_err(jserr)
@@ -759,7 +790,7 @@ pub fn replay_mc_study(snapshot_json: &str) -> Result<String, JsError> {
 /// Attach geographic or drawing positions to a saved multiconductor result.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
-pub fn apply_mc_study_geo(snapshot_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+pub fn apply_mc_study_geo(snapshot_json: &str, layer_geojson: &str) -> Result<String, JsValue> {
     ensure_input_text(snapshot_json)?;
     ensure_input_text(layer_geojson)?;
     install_panic_hook();
@@ -780,7 +811,7 @@ pub fn capabilities_json() -> String {
 /// Create a portable application Study through the shared native controller.
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
-pub fn study_document_create(request_json: &str) -> Result<String, JsError> {
+pub fn study_document_create(request_json: &str) -> Result<String, JsValue> {
     install_panic_hook();
     let request = serde_json::from_str(request_json).map_err(jserr)?;
     tellegen::study_ops::create_study(request)
@@ -791,7 +822,7 @@ pub fn study_document_create(request_json: &str) -> Result<String, JsError> {
 /// Validate and normalize a portable bundle without executing its contents.
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
-pub fn study_document_import(bundle_json: &str) -> Result<String, JsError> {
+pub fn study_document_import(bundle_json: &str) -> Result<String, JsValue> {
     install_panic_hook();
     tellegen::document::StudyBundle::import(bundle_json)
         .and_then(|bundle| bundle.export())
@@ -805,7 +836,7 @@ pub async fn study_document_run(
     bundle_json: String,
     request_json: String,
     cancelled: js_sys::Function,
-) -> Result<String, JsError> {
+) -> Result<String, JsValue> {
     install_panic_hook();
     let mut bundle = tellegen::document::StudyBundle::import(&bundle_json).map_err(jserr)?;
     let request = serde_json::from_str(&request_json).map_err(jserr)?;
@@ -866,7 +897,7 @@ impl Study {
         module_json: &str,
         formulation: &str,
         options_json: Option<String>,
-    ) -> Result<Study, JsError> {
+    ) -> Result<Study, JsValue> {
         install_panic_hook();
         ensure_input_text(module_json)?;
         if let Some(options) = &options_json {
@@ -885,7 +916,7 @@ impl Study {
     }
 
     /// Build with validated common settings, retained by later commits.
-    pub fn with_settings(module_json: &str, request: &str) -> Result<Study, JsError> {
+    pub fn with_settings(module_json: &str, request: &str) -> Result<Study, JsValue> {
         ensure_input_text(module_json)?;
         ensure_input_text(request)?;
         let request = serde_json::from_str(request).map_err(jserr)?;
@@ -905,12 +936,12 @@ impl Study {
         &mut self,
         edits_json: &str,
         sensitivities_json: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<String, JsValue> {
         install_panic_hook();
         let edits = parse_edits(edits_json)?;
         let sensitivities = parse_sensitivities(sensitivities_json)?;
         let resp = self.0.commit_with(&edits, &sensitivities).map_err(jserr)?;
-        serde_json::to_string(&commit_output(&resp)).map_err(jserr)
+        serde_json::to_string(&commit_output(&self.0.output(resp))).map_err(jserr)
     }
 
     /// Replace the committed edit set with `edits_json` and exact-re-solve, attaching
@@ -920,7 +951,7 @@ impl Study {
         &mut self,
         edits_json: &str,
         sensitivities_json: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<String, JsValue> {
         install_panic_hook();
         let edits = parse_edits(edits_json)?;
         let sensitivities = parse_sensitivities(sensitivities_json)?;
@@ -928,13 +959,13 @@ impl Study {
             .0
             .replace_edits_with(&edits, &sensitivities)
             .map_err(jserr)?;
-        serde_json::to_string(&commit_output(&resp)).map_err(jserr)
+        serde_json::to_string(&commit_output(&self.0.output(resp))).map_err(jserr)
     }
 
     /// First-order preview of `edits_json` (a `NetworkEdit[]`) for the `watched_json`
     /// operands (an `Operand[]`), at the committed point, without re-solving. Returns the
     /// `Preview` JSON.
-    pub fn preview(&self, edits_json: &str, watched_json: &str) -> Result<String, JsError> {
+    pub fn preview(&self, edits_json: &str, watched_json: &str) -> Result<String, JsValue> {
         let edits = parse_edits(edits_json)?;
         let watched: Vec<tellegen::Operand> = serde_json::from_str(watched_json)
             .map_err(|e| jserr(format!("bad watched-operands JSON: {e}")))?;
@@ -949,7 +980,7 @@ impl Study {
         &self,
         edits_json: &str,
         watched_json: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<String, JsValue> {
         let edits = parse_edits(edits_json)?;
         let watched: Vec<tellegen::Operand> = serde_json::from_str(watched_json)
             .map_err(|e| jserr(format!("bad watched-operands JSON: {e}")))?;
@@ -960,9 +991,10 @@ impl Study {
         serde_json::to_string(&prev).map_err(jserr)
     }
 
-    /// The most recent committed solution as `SolveResponse` JSON.
-    pub fn solution(&self) -> Result<String, JsError> {
-        serde_json::to_string(self.0.solution()).map_err(jserr)
+    /// The most recent committed solution as `SolveOutput` JSON: the
+    /// `SolveResponse` fields plus `objective_kind` for an OPF Study.
+    pub fn solution(&self) -> Result<String, JsValue> {
+        serde_json::to_string(&self.0.solution_output()).map_err(jserr)
     }
 
     /// The formulation tag (`"dcopf"` / `"acpf"`).
@@ -977,20 +1009,20 @@ impl Study {
     /// the materialized network with one descriptive `Edit` history entry per
     /// committed edit, ready to download as `.pio.json`. Any PowerIO reader
     /// understands the file; reloading it starts a fresh session.
-    pub fn save_module(&self) -> Result<String, JsError> {
+    pub fn save_module(&self) -> Result<String, JsValue> {
         install_panic_hook();
         self.0.save_module().map_err(jserr)
     }
 
     /// Serialize the exact problem instance, including its inner objective and constraints.
-    pub fn save_instance_module(&self) -> Result<String, JsError> {
+    pub fn save_instance_module(&self) -> Result<String, JsValue> {
         install_panic_hook();
         self.0.save_instance_module().map_err(jserr)
     }
 
     /// Save the committed exact DC OPF result as a PowerIO solution module.
     /// The embedded instance contains the materialized case that was solved.
-    pub fn save_solution_module(&self) -> Result<String, JsError> {
+    pub fn save_solution_module(&self) -> Result<String, JsValue> {
         install_panic_hook();
         self.0.save_solution_module().map_err(jserr)
     }
@@ -999,7 +1031,7 @@ impl Study {
     /// `psse`, ...). Returns `{ text, diagnostics, format,
     /// extension }` as JSON: the serialized case, this output operation's
     /// structured diagnostics, and the format token and file extension.
-    pub fn export(&self, format: &str) -> Result<String, JsError> {
+    pub fn export(&self, format: &str) -> Result<String, JsValue> {
         ensure_input_text(format)?;
         install_panic_hook();
         let exported = self.0.export(format).map_err(jserr)?;
@@ -1014,7 +1046,7 @@ impl Study {
     /// [`tellegen::plan::CapacityPlanSpec`]; the returned JSON is the complete
     /// [`tellegen::plan::CapacityPlanOutcome`] trace with the unapplied
     /// proposal. A non-DC formulation returns a typed error.
-    pub fn plan(&self, spec_json: &str) -> Result<String, JsError> {
+    pub fn plan(&self, spec_json: &str) -> Result<String, JsValue> {
         ensure_input_text(spec_json)?;
         install_panic_hook();
         let spec: tellegen::plan::CapacityPlanSpec = serde_json::from_str(spec_json)
@@ -1028,7 +1060,7 @@ impl Study {
     /// [`save_module`](Study::save_module) or export carries the coordinates
     /// on screen. Locations are metadata the model never reads; nothing
     /// re-solves. Returns the apply report JSON.
-    pub fn apply_geo(&mut self, layer_geojson: &str) -> Result<String, JsError> {
+    pub fn apply_geo(&mut self, layer_geojson: &str) -> Result<String, JsValue> {
         install_panic_hook();
         let layer = crate::geo::parse_layer(layer_geojson).map_err(jserr)?;
         let report = self.0.apply_geo_layer(&layer);
@@ -1038,40 +1070,51 @@ impl Study {
 
 /// Parse a formulation tag (`Problem` is serde-lowercase: dcpf/dcopf/acpf/socwr/acopf).
 #[cfg(feature = "sensitivity")]
-fn parse_problem(formulation: &str) -> Result<tellegen::Problem, JsError> {
-    serde_json::from_value(serde_json::Value::String(formulation.to_string()))
-        .map_err(|_| jserr(format!("unknown formulation '{formulation}'")))
+fn parse_problem(formulation: &str) -> Result<tellegen::Problem, JsValue> {
+    serde_json::from_value(serde_json::Value::String(formulation.to_string())).map_err(|_| {
+        jserr_code(
+            ErrorCode::InvalidRequest,
+            format!("unknown formulation '{formulation}'"),
+        )
+    })
 }
 
 /// Parse a `NetworkEdit[]`; empty/blank is no edits.
 #[cfg(feature = "sensitivity")]
-fn parse_edits(edits_json: &str) -> Result<Vec<tellegen::NetworkEdit>, JsError> {
+fn parse_edits(edits_json: &str) -> Result<Vec<tellegen::NetworkEdit>, JsValue> {
     if edits_json.trim().is_empty() {
         return Ok(Vec::new());
     }
-    serde_json::from_str(edits_json).map_err(|e| jserr(format!("bad edits JSON: {e}")))
+    serde_json::from_str(edits_json)
+        .map_err(|e| jserr_code(ErrorCode::InvalidRequest, format!("bad edits JSON: {e}")))
 }
 
 /// Parse a `SensRequest[]` (the watched ∂operand/∂param cells); empty/blank is none.
 /// A cell is `{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}`.
 #[cfg(feature = "sensitivity")]
-fn parse_sensitivities(sens_json: &str) -> Result<Vec<tellegen::SensRequest>, JsError> {
+fn parse_sensitivities(sens_json: &str) -> Result<Vec<tellegen::SensRequest>, JsValue> {
     if sens_json.trim().is_empty() {
         return Ok(Vec::new());
     }
-    serde_json::from_str(sens_json).map_err(|e| jserr(format!("bad sensitivities JSON: {e}")))
+    serde_json::from_str(sens_json).map_err(|e| {
+        jserr_code(
+            ErrorCode::InvalidRequest,
+            format!("bad sensitivities JSON: {e}"),
+        )
+    })
 }
 
-/// Wrap a committed [`SolveResponse`] as `{ solution, iterations, sensitivities }`: the
-/// full response under `solution`, with its convergence trace and the watched sensitivity
-/// columns mirrored at the top level so the frontend reads the ∂LMP/∂d column directly off
-/// the commit without a second solve.
+/// Wrap a committed solve as `{ solution, iterations, sensitivities }`: the full
+/// [`SolveOutput`](tellegen::SolveOutput) under `solution` (the response fields plus
+/// `objective_kind`), with its convergence trace and the watched sensitivity columns
+/// mirrored at the top level so the frontend reads the ∂LMP/∂d column directly off the
+/// commit without a second solve.
 #[cfg(feature = "sensitivity")]
-fn commit_output(resp: &SolveResponse) -> serde_json::Value {
+fn commit_output(output: &tellegen::SolveOutput) -> serde_json::Value {
     serde_json::json!({
-        "solution": resp,
-        "iterations": resp.iterations,
-        "sensitivities": resp.sensitivities,
+        "solution": output,
+        "iterations": output.response.iterations,
+        "sensitivities": output.response.sensitivities,
     })
 }
 
@@ -1244,7 +1287,7 @@ struct Topology<'a> {
 /// Takes the dropped file's bytes, as [`parse_case`] does and for the same
 /// reason.
 #[wasm_bindgen]
-pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
+pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     serde_json::to_string(&ingest_case_value(bytes, format).map_err(jserr)?).map_err(jserr)
@@ -1283,7 +1326,7 @@ fn ingest_case_value(bytes: &[u8], format: &str) -> Result<serde_json::Value, St
 /// to `JsError` here), so a malformed, truncated, or oversized `.dss`/JSON
 /// rejects cleanly and never panics the wasm instance.
 #[wasm_bindgen]
-pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
+pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsValue> {
     ensure_input_text(text)?;
     install_panic_hook();
     let out = match format {
@@ -1295,7 +1338,7 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
 
 /// Byte counterpart of [`ingest_dist_case`] for dropped files.
 #[wasm_bindgen]
-pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsError> {
+pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     let out = match format {
@@ -1311,7 +1354,7 @@ pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsEr
 pub fn ingest_dist_case_bytes_retained(
     bytes: &[u8],
     format: &str,
-) -> Result<RetainedIngest, JsError> {
+) -> Result<RetainedIngest, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     let (payload, module) = match format {
@@ -1346,7 +1389,7 @@ impl McInput {
 impl McInput {
     /// Read a stored PowerIO IR document holding a multiconductor value.
     #[wasm_bindgen(constructor)]
-    pub fn new(module_json: &str) -> Result<McInput, JsError> {
+    pub fn new(module_json: &str) -> Result<McInput, JsValue> {
         ensure_input_text(module_json)?;
         install_panic_hook();
         let module = deserialize_module(module_json).map_err(jserr)?;
@@ -1361,7 +1404,7 @@ impl McInput {
 
     /// Explicitly select source-covered islands, keeping the full input in the engine.
     #[cfg(feature = "mc-pf")]
-    pub fn prepare_energized(&self) -> Result<RetainedIngest, JsError> {
+    pub fn prepare_energized(&self) -> Result<RetainedIngest, JsValue> {
         let (module, islands) = tellegen::prepare_mc_energized_network(&self.0).map_err(jserr)?;
         let scope = tellegen::McNetworkScope::from_excluded_islands(&islands);
         let payload = serde_json::json!({
@@ -1375,7 +1418,7 @@ impl McInput {
     }
 
     /// The module as PowerIO IR text, for saving or exporting.
-    pub fn module_json(&self) -> Result<String, JsError> {
+    pub fn module_json(&self) -> Result<String, JsValue> {
         serialize_module(&self.0).map_err(jserr)
     }
 }
@@ -1634,8 +1677,8 @@ fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static
 /// Error text of a synthetic generation call: the generator's `{code,
 /// message, buses?, branches?}` payload as JSON.
 #[cfg(feature = "synth")]
-fn synth_err(payload: String) -> JsError {
-    JsError::new(&payload)
+fn synth_err(payload: String) -> JsValue {
+    jserr(payload)
 }
 
 /// Load the populated places table every synthetic session of this instance
@@ -1643,7 +1686,7 @@ fn synth_err(payload: String) -> JsError {
 /// `{n, lo, la, p, c}` rows). Returns `{count, sha256}`.
 #[cfg(feature = "synth")]
 #[wasm_bindgen]
-pub fn synth_load_places(bytes: &[u8]) -> Result<String, JsError> {
+pub fn synth_load_places(bytes: &[u8]) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     synth::load_places_impl(bytes).map_err(synth_err)
@@ -1653,7 +1696,7 @@ pub fn synth_load_places(bytes: &[u8]) -> Result<String, JsError> {
 /// entries when the region crosses the antimeridian.
 #[cfg(feature = "synth")]
 #[wasm_bindgen]
-pub fn synth_overpass_queries(request_json: &str) -> Result<String, JsError> {
+pub fn synth_overpass_queries(request_json: &str) -> Result<String, JsValue> {
     ensure_input_text(request_json)?;
     install_panic_hook();
     synth::overpass_queries_impl(request_json).map_err(synth_err)
@@ -1662,7 +1705,7 @@ pub fn synth_overpass_queries(request_json: &str) -> Result<String, JsError> {
 /// Run every stage of a synthetic generation: `{module_json, report, ingest}`.
 #[cfg(feature = "synth")]
 #[wasm_bindgen]
-pub fn synth_generate(request_json: &str, osm_json: Option<String>) -> Result<String, JsError> {
+pub fn synth_generate(request_json: &str, osm_json: Option<String>) -> Result<String, JsValue> {
     ensure_input_text(request_json)?;
     if let Some(osm) = &osm_json {
         ensure_input_text(osm)?;
@@ -1690,7 +1733,7 @@ impl SynthSession {
     /// Open a session at the `context` stage. `osm_json` is the Overpass
     /// document (one, or a JSON array of documents) for `source: "osm"`.
     #[wasm_bindgen(constructor)]
-    pub fn new(request_json: &str, osm_json: Option<String>) -> Result<SynthSession, JsError> {
+    pub fn new(request_json: &str, osm_json: Option<String>) -> Result<SynthSession, JsValue> {
         ensure_input_text(request_json)?;
         if let Some(osm) = &osm_json {
             ensure_input_text(osm)?;
@@ -1705,7 +1748,7 @@ impl SynthSession {
 
     /// Run one stage (one calibration iteration for `calibrate`); returns the
     /// `StepOutcome` JSON.
-    pub fn advance(&mut self) -> Result<String, JsError> {
+    pub fn advance(&mut self) -> Result<String, JsValue> {
         synth::advance_impl(&mut self.0).map_err(synth_err)
     }
 
@@ -1715,7 +1758,7 @@ impl SynthSession {
     }
 
     /// The map preview as `Preview` JSON records.
-    pub fn preview(&self) -> Result<String, JsError> {
+    pub fn preview(&self) -> Result<String, JsValue> {
         synth::preview_impl(&self.0).map_err(synth_err)
     }
 
@@ -1726,25 +1769,31 @@ impl SynthSession {
     }
 
     /// The `GenerationReport` JSON, partial until the session is done.
-    pub fn report(&self) -> Result<String, JsError> {
+    pub fn report(&self) -> Result<String, JsValue> {
         synth::report_impl(&self.0).map_err(synth_err)
     }
 
     /// The module as PowerIO IR text, with bus locations and
     /// branch routes, from `electrify` on.
-    pub fn module(&self) -> Result<String, JsError> {
+    pub fn module(&self) -> Result<String, JsValue> {
         synth::module_impl(&self.0).map_err(synth_err)
     }
 
     /// The drop-panel payload of the module (the `ingest_case` shape with
     /// `module_json`).
-    pub fn ingest(&self) -> Result<String, JsError> {
+    pub fn ingest(&self) -> Result<String, JsValue> {
         synth::ingest_impl(&self.0).map_err(synth_err)
+    }
+
+    /// `ingest` without `module_json`, for a caller that already holds the
+    /// text of `module` and adds it itself.
+    pub fn ingest_view(&self) -> Result<String, JsError> {
+        synth::ingest_view_impl(&self.0).map_err(synth_err)
     }
 
     /// The network as GridFM graphkit JSON (per-unit feature matrices on a
     /// 0-based bus index), from `electrify` on.
-    pub fn export_gridfm(&self) -> Result<String, JsError> {
+    pub fn export_gridfm(&self) -> Result<String, JsValue> {
         synth::export_gridfm_impl(&self.0).map_err(synth_err)
     }
 }
@@ -1787,16 +1836,22 @@ impl SynthPreviewBuffers {
 
 /// Decode a PowerWorld drawing as a canonical PowerIO GeoLayer in diagram units.
 #[wasm_bindgen]
-pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
+pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     if !format.eq_ignore_ascii_case("pwd") {
-        return Err(JsError::new("unsupported display format"));
+        return Err(jserr_code(
+            ErrorCode::Unsupported,
+            "unsupported display format",
+        ));
     }
     install_panic_hook();
     let source = Source::from_memory("display.pwd", bytes.to_vec()).map_err(jserr)?;
     let module = powerio::parse(source).map_err(jserr)?;
     let PioValue::GeoLayer(layer) = module.value() else {
-        return Err(JsError::new("Display did not parse as a PowerIO GeoLayer"));
+        return Err(jserr_code(
+            ErrorCode::InvalidInput,
+            "Display did not parse as a PowerIO GeoLayer",
+        ));
     };
     serde_json::to_string(&serde_json::json!({"layer":layer.to_geojson(), "diagnostics":module.diagnostics(),
         "n_points":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::Point(_))).count(),
@@ -1814,7 +1869,7 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
 /// canonical `.geo.json` document, ready for [`apply_geo`]. Untrusted input
 /// rejects as a `JsError`, never a panic.
 #[wasm_bindgen]
-pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
+pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsValue> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     geo::parse_geo_impl(bytes, hint).map_err(jserr)
@@ -1826,7 +1881,7 @@ pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
 /// the refreshed `ingest_case` payload plus a `report` of matched/unmatched
 /// counts; errors when nothing matched.
 #[wasm_bindgen]
-pub fn apply_geo(module_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+pub fn apply_geo(module_json: &str, layer_geojson: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     geo::apply_geo_impl(module_json, layer_geojson).map_err(jserr)
@@ -1837,7 +1892,7 @@ pub fn apply_geo(module_json: &str, layer_geojson: &str) -> Result<String, JsErr
 /// `ingest_case` payload plus `layer`, the stamped layout as a canonical
 /// `.geo.json` document.
 #[wasm_bindgen]
-pub fn apply_layout(module_json: &str, coords_json: &str, kind: &str) -> Result<String, JsError> {
+pub fn apply_layout(module_json: &str, coords_json: &str, kind: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     geo::apply_layout_impl(module_json, coords_json, kind).map_err(jserr)
@@ -1847,7 +1902,7 @@ pub fn apply_layout(module_json: &str, coords_json: &str, kind: &str) -> Result<
 /// located bus, one route per routed branch, provenance preserved). Errors
 /// when the case carries none.
 #[wasm_bindgen]
-pub fn extract_geo(module_json: &str) -> Result<String, JsError> {
+pub fn extract_geo(module_json: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     geo::extract_geo_impl(module_json).map_err(jserr)
@@ -1857,7 +1912,7 @@ pub fn extract_geo(module_json: &str) -> Result<String, JsError> {
 /// positions, routed branch segments, edge roles and the display forest. `options_json` may be
 /// empty for the defaults (`{"strategy":"tidy","dx":120,"dy":28}`).
 #[wasm_bindgen]
-pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<String, JsError> {
+pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<String, JsValue> {
     ensure_input_text(graph_json)?;
     install_panic_hook();
     let graph: powerio_dist::DistGraph = serde_json::from_str(graph_json).map_err(jserr)?;
@@ -1872,7 +1927,7 @@ pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<Strin
 /// Solve an explicit resistive DC network with converter voltage/power/current
 /// controls. This is independent of the AC-network DC power-flow approximation.
 #[wasm_bindgen]
-pub fn solve_dc_grid(input_json: &str) -> Result<String, JsError> {
+pub fn solve_dc_grid(input_json: &str) -> Result<String, JsValue> {
     ensure_input_text(input_json)?;
     install_panic_hook();
     let grid: tellegen::dc_grid::DcGrid = serde_json::from_str(input_json).map_err(jserr)?;
@@ -1886,7 +1941,7 @@ pub fn solve_ac_dc(
     module_json: &str,
     formulation: &str,
     automatic_regulators: bool,
-) -> Result<String, JsError> {
+) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     let mode: tellegen::Problem =
@@ -1899,7 +1954,7 @@ pub fn solve_ac_dc(
 /// columnar bus positions, busbars, substation boxes, routed branch segments and edge roles, in
 /// the units of the seed positions. `options_json` may be empty for the defaults.
 #[wasm_bindgen]
-pub fn tx_schematic_layout(input_json: &str, options_json: &str) -> Result<String, JsError> {
+pub fn tx_schematic_layout(input_json: &str, options_json: &str) -> Result<String, JsValue> {
     ensure_input_text(input_json)?;
     install_panic_hook();
     let input: tellegen::tx_schematic::TxLayoutInput =
@@ -1921,7 +1976,7 @@ pub fn tx_schematic_layout(input_json: &str, options_json: &str) -> Result<Strin
 /// `SubNum` extras key. Returns the refreshed `ingest_case` payload plus a
 /// `report`; errors when no bus joined.
 #[wasm_bindgen]
-pub fn apply_display_geo(module_json: &str, bytes: &[u8]) -> Result<String, JsError> {
+pub fn apply_display_geo(module_json: &str, bytes: &[u8]) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     ensure_input_bytes(bytes)?;
     install_panic_hook();
@@ -1935,17 +1990,17 @@ pub fn describe_settings() -> String {
 }
 
 #[wasm_bindgen]
-pub fn resolve_settings(request: &str) -> Result<String, JsError> {
+pub fn resolve_settings(request: &str) -> Result<String, JsValue> {
     ensure_input_text(request)?;
     let request = serde_json::from_str(request).map_err(jserr)?;
     serde_json::to_string(&tellegen::settings::resolve(&request).map_err(jserr)?).map_err(jserr)
 }
 
 #[wasm_bindgen]
-pub fn calculate_with_settings(request: &str) -> Result<String, JsError> {
+pub fn calculate_with_settings(request: &str) -> Result<String, JsValue> {
     ensure_input_text(request)?;
     let request = serde_json::from_str(request).map_err(jserr)?;
-    serde_json::to_string(&tellegen::settings::calculate(&request, None).map_err(jserr)?)
+    serde_json::to_string(&tellegen::settings::calculate_coded(&request, None).map_err(engine_err)?)
         .map_err(jserr)
 }
 
@@ -2708,7 +2763,7 @@ mpc.gencost = [
 
 /// AC power flow with bounded, explicit transformer and switched-shunt control.
 #[wasm_bindgen]
-pub fn solve_regulated(module_json: &str) -> Result<String, JsError> {
+pub fn solve_regulated(module_json: &str) -> Result<String, JsValue> {
     ensure_input_text(module_json)?;
     install_panic_hook();
     tellegen::regulation::solve_module_json(module_json).map_err(jserr)

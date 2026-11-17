@@ -94,6 +94,7 @@ import type {
   NetworkBus,
   NetworkSubstation,
   NetworkEquipment,
+  ObjectiveKind,
   ProblemCaps,
   SensitivityColumn,
   Solution,
@@ -111,8 +112,10 @@ import type {
 } from "./generated/synth-types.js";
 export {
   API_SOURCE_SHA256,
+  ENGINE_ERROR_CODES,
   ENGINE_VERSION,
   FORMULATION_IDS,
+  OBJECTIVE_KINDS,
   SOLVE_STATUSES,
 } from "./generated/api-types.js";
 export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
@@ -131,6 +134,7 @@ export type {
   ConstraintTerm,
   ConstraintTermKind,
   DemandDeltas,
+  EngineErrorCode,
   LazyLimits,
   LimitOptions,
   LimitRound,
@@ -143,6 +147,7 @@ export type {
   NetworkBus,
   NetworkSubstation,
   NetworkEquipment,
+  ObjectiveKind,
   PowerFlowStart,
   ProblemCaps,
   SensRequest,
@@ -1994,7 +1999,7 @@ export async function applyMcStudyGeo(
   );
 }
 
-export { errorText } from "./errors.js";
+export { errorCode, errorText, type EngineError } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
  * recover from in this browser. Nothing solves client side when this is true;
@@ -2148,6 +2153,7 @@ interface StudySolveResponse {
   formulation: string;
   status: string;
   objective: number | null;
+  objective_kind?: ObjectiveKind;
   iterations?: SolveIteration[];
   lmp?: { bus: number; value: number }[];
   vm?: { bus: number; value: number }[];
@@ -2222,6 +2228,7 @@ export interface SolutionResponseProjection {
   status?: string;
   initialization?: AcPfInitialization | null;
   objective?: number | null;
+  objective_kind?: ObjectiveKind | null;
   lmp?: { bus: number; value: number }[] | null;
   vm?: { bus: number; value: number }[] | null;
   va?: { bus: number; value: number }[] | null;
@@ -2242,6 +2249,9 @@ export function solveResponseToSolution(
     ...(out.formulation !== undefined ? { formulation: out.formulation } : {}),
     ...(out.status !== undefined ? { status: out.status } : {}),
     objective: out.objective ?? null,
+    ...(out.objective_kind != null
+      ? { objective_kind: out.objective_kind }
+      : {}),
     // Keep serialized compact results equal across direct struct responses
     // and commit envelopes, whose nested JSON keys arrive in sorted order.
     ...(out.initialization
@@ -2318,6 +2328,11 @@ export class BrowserStudy {
     this.#handle = handle;
     this.#formulation = formulation;
     this.#planningHost = planningHost;
+  }
+
+  /** The formulation this Study was built for. */
+  get formulation(): Formulation {
+    return this.#formulation;
   }
 
   async #solution(): Promise<StudySolveResponse> {
@@ -2996,6 +3011,40 @@ export class BrowserSynthSession {
         }),
       ),
     ) as IngestedCase;
+  }
+
+  /** The drop-panel payload of {@link ingest}, with a Study of the same
+   * module already building. The module text goes to the study worker first,
+   * so the Study parses it and solves its base case there while the
+   * synthetic worker prepares the rest of the payload and the page parses
+   * it. The module is serialized once and its text is not parsed on the
+   * page. `study` settles on its own; a caller that drops it must free it:
+   * `void study.then((s) => s.free(), () => {})`. */
+  async ingestWithStudy(
+    formulation: Formulation = DEFAULT_FORMULATION,
+  ): Promise<{ payload: IngestedCase; study: Promise<BrowserStudy> }> {
+    const moduleJson = await this.takeModule();
+    const study = createStudy(moduleJson, formulation);
+    // A build failure reaches whoever awaits `study`; do not also report it
+    // as unhandled while the payload is on its way.
+    study.catch(() => {});
+    try {
+      const view = JSON.parse(
+        expectText(
+          await callSynth(this.host, {
+            op: "synth_session_ingest_view",
+            session: this.handle,
+          }),
+        ),
+      ) as Omit<IngestedCase, "module_json">;
+      return { payload: { ...view, module_json: moduleJson }, study };
+    } catch (error) {
+      void study.then(
+        (built) => built.free(),
+        () => {},
+      );
+      throw error;
+    }
   }
 
   /** The network as GridFM graphkit JSON: per-unit bus, branch and

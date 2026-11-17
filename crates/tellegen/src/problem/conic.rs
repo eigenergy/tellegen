@@ -477,7 +477,7 @@ fn read_socwr(net: &AcNetwork, lay: &SocWrLayout, raw: &RawSolution) -> SocWrSol
 /// program over [`SocWr`], solve it with Clarabel, and read back the W-space
 /// primals, branch flows, nodal prices, and objective. The relaxation is a convex
 /// lower bound on AC OPF.
-pub fn socwr_opf(net: &AcNetwork) -> Result<SocWrSolution, String> {
+pub fn socwr_opf(net: &AcNetwork) -> Result<SocWrSolution, crate::EngineError> {
     let lay = SocWrLayout::new(net);
     let prog = build_conic_opf(&SocWr::new(), net);
     let raw = run(&prog, None)?;
