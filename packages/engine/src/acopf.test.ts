@@ -228,6 +228,39 @@ it("sends joint dispatch to the dedicated worker and rejects an ordinary result"
   expect(releaseAcOpfWorker()).toBe(true);
   expect(worker.terminated).toBe(true);
 });
+
+for (const type of ["result", "joint_result"] as const) {
+  it(`rejects malformed ${type} and replaces its worker`, async () => {
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let created = 0;
+    const factory = () => workers[created++];
+    const pending = type === "result"
+      ? solveAcOpfModule("/acopf.wasm", "{}", undefined, factory)
+      : solveJointAcDcModule("/acopf.wasm", "{}", undefined, factory);
+    workers[0].reply({ type, response: {} } as AcOpfWorkerResponse);
+    await expect(pending).rejects.toThrow("Invalid engine");
+    expect(workers[0].terminated).toBe(true);
+    const next = solveAcOpfModule("/acopf.wasm", "{}", undefined, factory);
+    expect(created).toBe(2);
+    workers[1].reply(result);
+    await expect(next).resolves.toMatchObject({ formulation: "acopf" });
+  });
+}
+
+it("rejects invalid numeric sensitivity entries before exposing a solve", async () => {
+  const worker = new FakeWorker();
+  const pending = solveAcOpfModule("/acopf.wasm", "{}", undefined, () => worker);
+  worker.reply({ type: "result", response: {
+    formulation: "acopf", status: "feasible",
+    sensitivities: [{
+      rows: [{ operand: { Dispatch: "Active" }, element: { Generator: 1 }, index: 0 }],
+      cols: [{ parameter: { Demand: "Active" }, element: { Bus: 2 }, index: 0 }],
+      units: "MW/MW", values: [["bad"]],
+    }],
+  } } as unknown as AcOpfWorkerResponse);
+  await expect(pending).rejects.toThrow("/sensitivities/0/values/0/0");
+  expect(worker.terminated).toBe(true);
+});
 it("cancels joint dispatch by terminating its worker", async () => {
   const worker = new FakeWorker();
   const abort = new AbortController();

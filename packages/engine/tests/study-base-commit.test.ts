@@ -9,7 +9,10 @@ const base = {
   formulation: "dcopf",
   status: "optimal",
   objective: 10,
-  iterations: [{ iter: 0 }, { iter: 1 }],
+  iterations: [
+    { iter: 0, objective: 10, inf_pr: 0, inf_du: 0 },
+    { iter: 1, objective: 10, inf_pr: 0, inf_du: 0 },
+  ],
   lmp: [
     { bus: 1, value: 20 },
     { bus: 2, value: 21 },
@@ -17,7 +20,11 @@ const base = {
   flows: [{ branch: 7, pf: 5, loading: 0.1 }],
   dispatch: [],
 };
-const edited = { ...base, objective: 12, iterations: [{ iter: 0 }] };
+const edited = {
+  ...base,
+  objective: 12,
+  iterations: [{ iter: 0, objective: 10, inf_pr: 0, inf_du: 0 }],
+};
 
 function fakeHost(failReplace = false) {
   const call = vi.fn<EngineHost["call"]>(async (request) => {

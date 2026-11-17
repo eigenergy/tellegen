@@ -11,6 +11,7 @@
 		sumPrefix,
 		valueAt
 	} from '../../dynamics/series.js';
+	import { traceSummary } from '../../dynamics/verdict.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import TraceChart, { type TraceBand, type TraceSeries } from './TraceChart.svelte';
 
@@ -151,7 +152,7 @@
 					},
 					refLines: f0 === 60 ? [{ value: 59.5, label: '59.5 Hz' }] : [],
 					unit: 'Hz',
-					summary: `Frequency, lowest ${s.frequency.coi_nadir_hz.toFixed(3)} Hz`
+					summary: traceSummary(s, 'frequency')
 				};
 			}
 			if (tab === 'angles') {
@@ -214,7 +215,7 @@
 						{ value: 0.9, label: '0.9 pu' }
 					],
 					unit: 'pu',
-					summary: `Voltages, lowest ${s.voltage.min_pu.toFixed(3)} pu`
+					summary: traceSummary(s, 'voltages')
 				};
 			}
 			const series: TraceSeries[] = [

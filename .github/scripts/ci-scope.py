@@ -193,6 +193,7 @@ JS = Rules(
     run(
         "crates/**",
         "validation/evidence/capacity-plan/**",
+        "python/tellegen/mcp/_engine_schema.json",
         # `npm run check:web` checks this page's tables against the code.
         "docs/src/webmcp.md",
         "apps/**",
@@ -224,7 +225,10 @@ JS = Rules(
 IMAGE = Rules(
     True,
     skip("crates/tellegen-py/src/**", "crates/benchmarks/src/**", "crates/**/*.md"),
-    run("crates/**", "apps/**", "packages/**", "examples/**", ".github/scripts/**"),
+    run(
+        "crates/**", "apps/**", "packages/**", "examples/**", ".github/scripts/**",
+        "python/tellegen/mcp/_engine_schema.json",
+    ),
     NOT_BUILT,
     skip(
         "deny.toml",

@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Edits": {
+      "description": "Operating-point edits applied before the model is built: demand deltas in MW\nkeyed by bus (the operating point is `base demand + delta`) and branch rating\ndeltas in MW keyed by branch (the thermal limit is `base rating + delta`). Keys\nare [`ElementKey`]s — the original numeric id or the powerio row uid. A struct\n(not a bare map) so the structural-edit vocabulary (add line, add generator,\nretune a parameter) can grow without breaking the wire format: a client that\nknows only `deltas` keeps working.",
+      "properties": {
+        "deltas": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "default": {},
+          "description": "Active-power demand delta in MW per bus key.",
+          "type": "object"
+        },
+        "rates": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "default": {},
+          "description": "Thermal rating delta in MW per branch key. Supported by the DC OPF\nand SOCWR paths; the AC power flow has no flow limits and rejects them.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "SensRequest": {
+      "description": "One requested sensitivity cell: an [`Operand`] differentiated with respect to a\n[`Parameter`], over an optional parameter-index subset, in an optional direction.\nThe operand/parameter are the public serde-tagged enums verbatim\n(`{\"Price\":\"Active\"}` / `{\"Demand\":\"Active\"}`).",
+      "properties": {
+        "indices": {
+          "default": null,
+          "description": "Dense parameter-column indices; `None` computes the whole axis.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode",
+          "default": "Auto",
+          "description": "Forward / Adjoint / Auto. `Auto` when omitted."
+        },
+        "operand": {
+          "$ref": "#/$defs/Operand"
+        },
+        "parameter": {
+          "$ref": "#/$defs/Parameter"
+        }
+      },
+      "required": [
+        "operand",
+        "parameter"
+      ],
+      "type": "object"
+    },
+    "Mode": {
+      "description": "Which linear systems the engine factorizes. [`Forward`](Mode::Forward) and\n[`Adjoint`](Mode::Adjoint) return the same matrix; the choice trades a\nfactorization of `K` (cheap when parameters are few) for one of `K'` (cheap when\noperands are few). [`Auto`](Mode::Auto) picks the smaller dimension and is the api\ndefault.",
+      "oneOf": [
+        {
+          "const": "Forward",
+          "description": "Solve `K X = rhs` once per parameter set, read the operand rows.",
+          "type": "string"
+        },
+        {
+          "const": "Adjoint",
+          "description": "Solve `K' Y = S'` once per operand set, contract with `rhs`.",
+          "type": "string"
+        },
+        {
+          "const": "Auto",
+          "description": "Pick [`Forward`](Mode::Forward) when parameters are at most operands, else\n[`Adjoint`](Mode::Adjoint).",
+          "type": "string"
+        }
+      ]
+    },
+    "Operand": {
+      "description": "What a sensitivity is taken *of*, named for the physical power quantity rather\nthan a formulation's internal variable. The orthogonal sub-axes (active/reactive,\nfrom/to, voltage representation) are visible to the type system; each formulation\nmaps a request to its own KKT rows or returns [`SensError::Unsupported`].\n\nThe dialects fold into one vocabulary: DC `Angle` is `Voltage(Angle)`, the conic\nsquared magnitude `w` is `Voltage(Squared)`, the nodal price is `Price(Active)`.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Nodal-balance dual (the LMP for active power, the reactive price for\nreactive), per bus.",
+          "properties": {
+            "Price": {
+              "$ref": "#/$defs/Power"
+            }
+          },
+          "required": [
+            "Price"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Generator dispatch `pg` / `qg`, per generator.",
+          "properties": {
+            "Dispatch": {
+              "$ref": "#/$defs/Power"
+            }
+          },
+          "required": [
+            "Dispatch"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Branch active/reactive flow at the from/to end, per branch.",
+          "properties": {
+            "Flow": {
+              "properties": {
+                "end": {
+                  "$ref": "#/$defs/End"
+                },
+                "power": {
+                  "$ref": "#/$defs/Power"
+                }
+              },
+              "required": [
+                "power",
+                "end"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Flow"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Bus voltage in the formulation's representation (`vm` / `va` / `w` / `wr` /\n`wi`), per bus.",
+          "properties": {
+            "Voltage": {
+              "$ref": "#/$defs/VoltageKind"
+            }
+          },
+          "required": [
+            "Voltage"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Power": {
+      "description": "Active or reactive power. The orthogonal P/Q sub-axis shared by prices,\ndispatch, flows, and demand.",
+      "enum": [
+        "Active",
+        "Reactive"
+      ],
+      "type": "string"
+    },
+    "End": {
+      "description": "Which end of a branch a flow is measured at.",
+      "enum": [
+        "From",
+        "To"
+      ],
+      "type": "string"
+    },
+    "VoltageKind": {
+      "description": "How a voltage operand is represented: polar (`Magnitude`, `Angle`) for the AC\npower flow, or the W-space lift (`Squared` = `|V|²`, `ProductReal` = `Re(Vi Vj*)`,\n`ProductImag` = `Im(Vi Vj*)`) for the conic relaxation.",
+      "enum": [
+        "Magnitude",
+        "Angle",
+        "Squared",
+        "ProductReal",
+        "ProductImag"
+      ],
+      "type": "string"
+    },
+    "Parameter": {
+      "description": "What a sensitivity is taken *with respect to* — the parameter whose hand-derived\n`dK/dp` column drives the solve.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Bus active/reactive demand `pd` / `qd`, per bus.",
+          "properties": {
+            "Demand": {
+              "$ref": "#/$defs/Power"
+            }
+          },
+          "required": [
+            "Demand"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Generation cost coefficient, per generator.",
+          "properties": {
+            "Cost": {
+              "$ref": "#/$defs/CostTerm"
+            }
+          },
+          "required": [
+            "Cost"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "LineLimit",
+          "description": "DC thermal limit `fmax` / AC-conic apparent-power `|S|` limit, per branch.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Branch series admittance `g` / `b`, per branch.",
+          "properties": {
+            "SeriesAdmittance": {
+              "$ref": "#/$defs/GB"
+            }
+          },
+          "required": [
+            "SeriesAdmittance"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Bus shunt admittance `gs` / `bs`, per bus.",
+          "properties": {
+            "ShuntAdmittance": {
+              "$ref": "#/$defs/GB"
+            }
+          },
+          "required": [
+            "ShuntAdmittance"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Voltage-magnitude bound right-hand side (the `w = |V|²` bound), per bus.",
+          "properties": {
+            "VoltageBound": {
+              "$ref": "#/$defs/Bound"
+            }
+          },
+          "required": [
+            "VoltageBound"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Generator output bound right-hand side (`pmax` / `pmin` / `qmax` / `qmin`),\nper generator.",
+          "properties": {
+            "GenBound": {
+              "properties": {
+                "bound": {
+                  "$ref": "#/$defs/Bound"
+                },
+                "power": {
+                  "$ref": "#/$defs/Power"
+                }
+              },
+              "required": [
+                "power",
+                "bound"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "GenBound"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Transformer tap ratio / phase shift, per branch.",
+          "properties": {
+            "Transformer": {
+              "$ref": "#/$defs/TapKind"
+            }
+          },
+          "required": [
+            "Transformer"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "Switching",
+          "description": "Branch switching state `sw` in `[0, 1]`, per branch.",
+          "type": "string"
+        },
+        {
+          "const": "ConstraintLimit",
+          "description": "A shift of both limits of a caller-supplied linear constraint (the\nfixed value of an equality), per constraint in request order.",
+          "type": "string"
+        }
+      ]
+    },
+    "CostTerm": {
+      "description": "Which generation-cost coefficient: the quadratic `cq` or the linear `cl`.",
+      "enum": [
+        "Quadratic",
+        "Linear"
+      ],
+      "type": "string"
+    },
+    "GB": {
+      "description": "Conductance `g` or susceptance `b`, the real/imaginary parts of an admittance.",
+      "enum": [
+        "Conductance",
+        "Susceptance"
+      ],
+      "type": "string"
+    },
+    "Bound": {
+      "description": "A min or max bound, e.g. the lower/upper voltage-magnitude limit.",
+      "enum": [
+        "Min",
+        "Max"
+      ],
+      "type": "string"
+    },
+    "TapKind": {
+      "description": "A transformer control: the tap ratio or the phase-shift angle.",
+      "enum": [
+        "Ratio",
+        "PhaseShift"
+      ],
+      "type": "string"
+    },
+    "CapacityPlanSpec": {
+      "description": "The bounded decision space and search limits of one planning run. All\npower quantities are MW.",
+      "properties": {
+        "budget_mw": {
+          "description": "Total intervention budget: `Σ_e increase_e` never exceeds it.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "candidates": {
+          "description": "Candidate branches whose thermal ratings the search may increase.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "exact_solve_budget": {
+          "description": "Maximum number of exact OPF solves, including the baseline and every\naccepted or rejected trial.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "increment_mw": {
+          "description": "Discrete capacity increase considered in one trial.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "max_changed_lines": {
+          "description": "Positive cardinality bound over the final proposal, not one iteration.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_increase_per_branch_mw": {
+          "description": "Maximum cumulative increase for one branch.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "objective": {
+          "$ref": "#/$defs/ImplicitObjective"
+        }
+      },
+      "required": [
+        "objective",
+        "candidates",
+        "max_increase_per_branch_mw",
+        "budget_mw",
+        "increment_mw",
+        "max_changed_lines",
+        "exact_solve_budget"
+      ],
+      "type": "object"
+    },
+    "ImplicitObjective": {
+      "description": "A serializable outer objective over the optimal solve. Every\nvariant is a scalar with a well defined gradient through the KKT system;\nnew observables (generation, line loading, operating cost) add variants\nrather than accepting code.",
+      "oneOf": [
+        {
+          "description": "`Phi = Σ_b w_b · lmp_b` over the selected buses. Positive weights\nmake the search look for capacity increases that lower the weighted\nmarginal value of demand.",
+          "properties": {
+            "kind": {
+              "const": "weighted_lmp",
+              "type": "string"
+            },
+            "weights": {
+              "items": {
+                "$ref": "#/$defs/BusWeight"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "weights"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BusWeight": {
+      "description": "One bus term of a weighted objective, addressed by PowerIO bus ID.",
+      "properties": {
+        "bus": {
+          "$ref": "#/$defs/BusId"
+        },
+        "weight": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bus",
+        "weight"
+      ],
+      "type": "object"
+    },
+    "BusId": {
+      "description": "A source bus ID, preserved from the input format.\n\nMATPOWER IDs are 1-based and can contain gaps. They are distinct from the\nzero based dense indices produced by\n[`IndexedNetwork::bus_index`](crate::IndexedNetwork::bus_index). JSON stores\nthis type as an integer.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "properties": {
+    "edits": {
+      "$ref": "#/$defs/Edits"
+    },
+    "sensitivity": {
+      "$ref": "#/$defs/SensRequest"
+    },
+    "plan_spec": {
+      "$ref": "#/$defs/CapacityPlanSpec"
+    }
+  }
+}

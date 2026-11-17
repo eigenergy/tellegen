@@ -1,11 +1,11 @@
 // Generated from Rust by rms_schema and generate-rms-types.mjs.
-// Source SHA256: 57a428cd684975578c03f3641f4cf0058bd70599c34a00177550345d1f2b9169
+// Source SHA256: 7e6e1612aad2bcd02ee088c0551c800a5e21e01d3f39a1c199a492938e60fc4a
 
 /** Rotor angle figures, degrees. */
 export type AngleScreen = { "first_swing_deg": number; "first_swing_unit"?: string | null; "initial_separation_deg"?: number; "max_coi_angle_deg": number; "max_coi_angle_t": number; "max_coi_angle_unit"?: string | null; "max_separation_deg": number; "pair": Array<string>; "pole_slips": Array<PoleSlip>; "separation_t": number; "settled": boolean; "trend"?: (SwingTrend) | (null); };
 
 /** Frequency figures, Hz (the COI of the island with the most inertia). */
-export type FrequencyScreen = { "coi_nadir_hz": number; "coi_peak_hz": number; "final_hz": number; "lowest_bus"?: number | null; "lowest_bus_hz": number; "lowest_bus_t": number; "lowest_unit"?: string | null; "lowest_unit_hz": number; "lowest_unit_t": number; "max_rocof_hz_s": number; "nadir_t": number; "nominal_hz": number; "peak_t": number; "rocof_t": number; "settled": boolean; };
+export type FrequencyScreen = { "coi_nadir_hz"?: number | null; "coi_peak_hz"?: number | null; "final_hz"?: number | null; "lowest_bus"?: number | null; "lowest_bus_hz"?: number | null; "lowest_bus_t": number; "lowest_unit"?: string | null; "lowest_unit_hz"?: number | null; "lowest_unit_t": number; "max_rocof_hz_s": number; "nadir_t": number; "nominal_hz": number; "peak_t": number; "rocof_t": number; "settled": boolean; };
 
 /** A controller reference a [`RmsEvent::SetReference`] sets (and a frequency
  * response perturbs). */
@@ -74,4 +74,4 @@ export type ScreeningVerdict = ("stable") | ("loss_of_synchronism") | ("island_r
 export type SwingTrend = ("decaying") | ("growing") | ("damped_out") | ("sustained") | ("undetermined");
 
 /** Bus voltage figures, pu. */
-export type VoltageScreen = { "final_max_pu": number; "final_min_pu": number; "last_event_t": number; "min_bus"?: number | null; "min_pu": number; "min_t": number; "recovered": boolean; "recovered_s"?: number | null; };
+export type VoltageScreen = { "final_max_pu"?: number | null; "final_min_pu"?: number | null; "last_event_t": number; "min_bus"?: number | null; "min_pu"?: number | null; "min_t": number; "recovered": boolean; "recovered_s"?: number | null; };

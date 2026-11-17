@@ -37,12 +37,12 @@ pub fn parse_geo_impl(bytes: &[u8], hint: &str) -> Result<String, String> {
             GeoGeometry::LineString(_) => n_routes += 1,
         }
     }
-    serde_json::to_string(&serde_json::json!({
-        "layer": parsed.layer.to_geojson(),
-        "diagnostics": parsed.diagnostics,
-        "n_points": n_points,
-        "n_routes": n_routes,
-    }))
+    serde_json::to_string(&crate::outputs::ParsedGeo {
+        layer: parsed.layer.to_geojson(),
+        diagnostics: crate::outputs::diagnostic_objects(&parsed.diagnostics)?,
+        n_points,
+        n_routes,
+    })
     .map_err(|e| e.to_string())
 }
 
@@ -278,12 +278,13 @@ pub(crate) fn parse_layer(layer_geojson: &str) -> Result<GeoLayer, String> {
 
 /// The apply report as the JSON object every geo surface returns.
 pub(crate) fn report_value(report: &GeoApplyReport) -> serde_json::Value {
-    serde_json::json!({
-        "matched_buses": report.matched_buses,
-        "matched_branches": report.matched_branches,
-        "unmatched_features": report.unmatched_features,
-        "notes": report.notes,
+    serde_json::to_value(crate::outputs::GeoReport {
+        matched_buses: report.matched_buses,
+        matched_branches: report.matched_branches,
+        unmatched_features: report.unmatched_features,
+        notes: report.notes.clone(),
     })
+    .expect("serializable geographic report")
 }
 
 /// The refreshed drop-panel payload for an updated network, with the apply

@@ -1,3 +1,4 @@
+import "./generate-api-validators.mjs";
 import "./generate-settings-types.mjs";
 import "./generate-study-types.mjs";
 import "./generate-synth-types.mjs";

@@ -4,6 +4,7 @@ use powerio_tx::TopologyEndpoint;
 use serde::Serialize;
 
 #[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct NodeBreaker {
     pub stations: Vec<Station>,
     pub nodes: Vec<Node>,
@@ -13,11 +14,13 @@ pub struct NodeBreaker {
     pub terminals: Vec<Terminal>,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Station {
     pub id: String,
     pub name: String,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Node {
     pub id: String,
     pub name: String,
@@ -29,12 +32,14 @@ pub struct Node {
     pub container_name: Option<String>,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Busbar {
     pub id: String,
     pub name: String,
     pub node: String,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Switch {
     pub id: String,
     pub name: String,
@@ -44,11 +49,13 @@ pub struct Switch {
     pub open: bool,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Connection {
     pub from: String,
     pub to: String,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Terminal {
     pub id: String,
     pub equipment: String,

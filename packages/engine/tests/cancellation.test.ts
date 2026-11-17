@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  BrowserStudy,
-  type CapacityPlanSpecJson,
-} from "../src/index.js";
+import { BrowserStudy, type CapacityPlanSpecJson } from "../src/index.js";
 import type { EngineHost } from "../src/host.js";
 
 const planSpec: CapacityPlanSpecJson = {
@@ -41,7 +38,9 @@ describe("isolated study cancellation", () => {
             rejectCall = reject;
           });
         }
-        return Promise.reject(new Error(`unexpected isolated call ${request.op}`));
+        return Promise.reject(
+          new Error(`unexpected isolated call ${request.op}`),
+        );
       },
       cancel: isolatedCancel,
     };
@@ -54,7 +53,7 @@ describe("isolated study cancellation", () => {
         return Promise.resolve(
           JSON.stringify({
             formulation: "dcopf",
-            status: "solved",
+            status: "optimal",
             objective: 7,
             lmp: [],
             flows: [],
@@ -79,7 +78,9 @@ describe("isolated study cancellation", () => {
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(isolatedCancel).toHaveBeenCalledOnce();
     expect(sharedCancel).not.toHaveBeenCalled();
-    await expect(study.currentSolution()).resolves.toMatchObject({ objective: 7 });
+    await expect(study.currentSolution()).resolves.toMatchObject({
+      objective: 7,
+    });
   });
 
   it("does not dispatch when the signal is already aborted", async () => {
@@ -88,9 +89,11 @@ describe("isolated study cancellation", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(study.plan(planSpec, controller.signal)).rejects.toMatchObject({
-      name: "AbortError",
-    });
+    await expect(study.plan(planSpec, controller.signal)).rejects.toMatchObject(
+      {
+        name: "AbortError",
+      },
+    );
     expect(call).not.toHaveBeenCalled();
   });
 });

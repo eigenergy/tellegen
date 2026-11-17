@@ -37,7 +37,10 @@ pub enum ImplicitObjective {
     /// `Phi = Σ_b w_b · lmp_b` over the selected buses. Positive weights
     /// make the search look for capacity increases that lower the weighted
     /// marginal value of demand.
-    WeightedLmp { weights: Vec<BusWeight> },
+    WeightedLmp {
+        #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
+        weights: Vec<BusWeight>,
+    },
 }
 
 /// One bus term of a weighted objective, addressed by PowerIO bus ID.
@@ -56,17 +59,23 @@ pub struct BusWeight {
 pub struct CapacityPlanSpec {
     pub objective: ImplicitObjective,
     /// Candidate branches whose thermal ratings the search may increase.
+    #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
     pub candidates: Vec<String>,
     /// Maximum cumulative increase for one branch.
+    #[cfg_attr(feature = "schema", schemars(extend("exclusiveMinimum" = 0)))]
     pub max_increase_per_branch_mw: f64,
     /// Total intervention budget: `Σ_e increase_e` never exceeds it.
+    #[cfg_attr(feature = "schema", schemars(extend("exclusiveMinimum" = 0)))]
     pub budget_mw: f64,
     /// Discrete capacity increase considered in one trial.
+    #[cfg_attr(feature = "schema", schemars(extend("exclusiveMinimum" = 0)))]
     pub increment_mw: f64,
     /// Positive cardinality bound over the final proposal, not one iteration.
+    #[cfg_attr(feature = "schema", schemars(range(min = 1)))]
     pub max_changed_lines: usize,
     /// Maximum number of exact OPF solves, including the baseline and every
     /// accepted or rejected trial.
+    #[cfg_attr(feature = "schema", schemars(range(min = 1)))]
     pub exact_solve_budget: usize,
 }
 

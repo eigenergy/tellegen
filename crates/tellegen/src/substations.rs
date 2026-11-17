@@ -28,6 +28,7 @@ use crate::geo::Coords;
 
 /// How a substation's members were found. The strongest rule that joined any two of its buses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum GroupSource {
     /// A single bus that no rule joined to another.
@@ -44,6 +45,7 @@ pub enum GroupSource {
 
 /// One substation of a [`SubstationGrouping`].
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Substation {
     /// Stable key: `sub:<declared id>` when declared, else `bus:<lowest bus id>`.
     pub key: String,
@@ -60,6 +62,7 @@ pub struct Substation {
 
 /// Every bus of the analysis view assigned to one substation.
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubstationGrouping {
     /// Substation index per bus row of the analysis view.
     pub bus_substation: Vec<u32>,

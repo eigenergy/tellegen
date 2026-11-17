@@ -23,7 +23,8 @@ import {
 	failureTime,
 	headline,
 	modeGenerators,
-	stats
+	stats,
+	traceSummary
 } from '../src/lib/dynamics/verdict.js';
 import { groupNotes } from '../src/lib/dynamics/notes.js';
 import { m4 } from '../src/lib/dynamics/decimate.js';
@@ -229,6 +230,32 @@ describe('dynamics verdict wording', () => {
 		expect(headline({ ...s, voltage: { ...s.voltage, recovered: false } })).toMatchObject({
 			tone: 'warning'
 		});
+	});
+
+	it('describes missing extrema in both trace tabs', () => {
+		const s = screening();
+		expect(traceSummary(s, 'frequency')).toBe('Frequency, lowest 59.842 Hz');
+		expect(traceSummary(s, 'voltages')).toBe('Voltages, lowest 0.410 pu');
+		const missing = {
+			...s,
+			frequency: { ...s.frequency, coi_nadir_hz: null },
+			voltage: { ...s.voltage, min_pu: null }
+		};
+		expect(traceSummary(missing, 'frequency')).toBe('Frequency, lowest Unavailable');
+		expect(traceSummary(missing, 'voltages')).toBe('Voltages, lowest Unavailable');
+	});
+
+	it('shows unavailable voltage extrema without breaking summaries', () => {
+		const s = screening();
+		const missing = { ...s, voltage: { ...s.voltage, min_pu: null } };
+		expect(stats(missing).find((x) => x.label === 'Lowest voltage')?.value).toBe('Unavailable');
+		expect(announcement(missing)).toContain('Lowest voltage Unavailable.');
+		for (const range of [{ final_min_pu: null }, { final_max_pu: null }]) {
+			expect(details({ ...s, voltage: { ...s.voltage, ...range } })).toContainEqual({
+				label: 'Final voltage range',
+				value: 'Unavailable'
+			});
+		}
 	});
 
 	it('gives the key results as labelled numbers', () => {

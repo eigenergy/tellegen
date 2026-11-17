@@ -9,6 +9,7 @@ use powerio::{BalancedNetwork, BusId, Load};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AcDcSolution {
     pub dc: DcGridSolution,
     pub ac: SolveResponse,

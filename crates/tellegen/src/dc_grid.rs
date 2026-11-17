@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DcGrid {
     pub nodes: Vec<DcNode>,
@@ -15,6 +16,7 @@ pub struct DcGrid {
     pub converters: Vec<DcConverter>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DcNode {
     pub id: String,
@@ -23,6 +25,7 @@ pub struct DcNode {
     pub reference_kv: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DcBranch {
     pub id: String,
@@ -33,6 +36,7 @@ pub struct DcBranch {
     pub current_limit_ka: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DcControl {
     Voltage {
@@ -53,12 +57,14 @@ pub enum DcControl {
     },
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DcCurrentDirection {
     Positive,
     Negative,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DcConverter {
     pub id: String,
@@ -79,6 +85,7 @@ pub struct DcConverter {
     pub voltage_max_kv: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcGridSolution {
     pub iterations: usize,
     pub residual: f64,
@@ -92,17 +99,20 @@ pub struct DcGridSolution {
     pub violations: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcNodeResult {
     pub id: String,
     pub voltage_kv: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcBranchResult {
     pub id: String,
     pub current_ka: f64,
     pub loss_mw: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcConverterResult {
     pub id: String,
     pub ac_bus: usize,
@@ -1151,6 +1161,7 @@ pub fn from_network(net: &powerio::BalancedNetwork) -> Result<DcGrid, String> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DcGridSensitivity {
     pub converter: String,
     pub node_voltage_kv_per_mw: Vec<(String, f64)>,

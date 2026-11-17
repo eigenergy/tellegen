@@ -7,10 +7,120 @@ use powerio::collection::{CollectionOperation, SourceBundleScope};
 use powerio::{
     ArtifactPath, Collection, CollectionLimits, CollectionSelection, ParseOptions, PioValue,
 };
-use serde_json::{json, Value};
+#[cfg(test)]
+use serde_json::json;
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{dist, jserr};
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub(crate) struct Selection {
+    root: Option<String>,
+    primary: Option<String>,
+    members: Option<Vec<String>>,
+    format: Option<String>,
+    operation: Operation,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+enum Operation {
+    Parse,
+    Deserialize,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+enum Status {
+    Selectable,
+    NeedsOptions,
+    NeedsFormat,
+    ProbeLimit,
+    UnsupportedBuild,
+    Incomplete,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct Candidate {
+    selection: Selection,
+    status: Status,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct Entry {
+    path: String,
+    bytes: u64,
+}
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct Limits {
+    files: usize,
+    expanded_bytes: usize,
+}
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub(crate) struct Inspection {
+    name: String,
+    entries: Vec<Entry>,
+    candidates: Vec<Candidate>,
+    original_zip: bool,
+    limits: Limits,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct Origin {
+    collection: String,
+    containers: Vec<String>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub(crate) struct SelectionOrigin {
+    origin: Origin,
+    selection: Selection,
+}
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum Kind {
+    Balanced,
+    Multiconductor,
+}
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum Imported {
+    Balanced {
+        #[cfg_attr(
+            feature = "schema",
+            schemars(
+                with = "crate::outputs::WithModuleText<crate::outputs::BalancedIngest<'static>>"
+            )
+        )]
+        payload: Value,
+        origin: SelectionOrigin,
+        dependencies: Vec<String>,
+        incomplete: bool,
+    },
+    Multiconductor {
+        #[cfg_attr(
+            feature = "schema",
+            schemars(with = "crate::outputs::WithModuleText<crate::outputs::DistributionIngest>")
+        )]
+        payload: Value,
+        origin: SelectionOrigin,
+        dependencies: Vec<String>,
+        incomplete: bool,
+    },
+}
+
+// Upstream collection records are serializable but do not derive JsonSchema.
+// Convert at this boundary so the records used for output also define validation.
+fn record<T: serde::de::DeserializeOwned>(value: impl serde::Serialize) -> Result<T, String> {
+    serde_json::from_value(serde_json::to_value(value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
 
 const MAX_BYTES: usize = 64 << 20;
 const MAX_FILES: usize = 4096;
@@ -136,13 +246,17 @@ impl CaseCollection {
     }
 
     fn inspect_value(&self) -> Result<Value, String> {
-        Ok(json!({
-            "name": self.0.name(),
-            "entries": self.0.entries(),
-            "candidates": self.0.inspect().map_err(|e| e.to_string())?,
-            "original_zip": self.0.original_zip().is_some(),
-            "limits": {"files": MAX_FILES, "expanded_bytes": MAX_BYTES},
-        }))
+        serde_json::to_value(Inspection {
+            name: self.0.name().to_owned(),
+            entries: record(self.0.entries())?,
+            candidates: record(self.0.inspect().map_err(|e| e.to_string())?)?,
+            original_zip: self.0.original_zip().is_some(),
+            limits: Limits {
+                files: MAX_FILES,
+                expanded_bytes: MAX_BYTES,
+            },
+        })
+        .map_err(|e| e.to_string())
     }
 
     fn ingest_value(&self, selection_json: &str) -> Result<Value, String> {
@@ -193,7 +307,10 @@ impl CaseCollection {
         let (kind, payload) = if dist::is_viewable_module_value(module.value()) {
             // The typed snapshot capability gate applies equally to raw files
             // and collection selections; ZIP admission cannot bypass it.
-            ("multiconductor", dist::ingest_dist_module_value(module)?)
+            (
+                Kind::Multiconductor,
+                dist::ingest_dist_module_value(module)?,
+            )
         } else if crate::balanced_study_network(module.value()).is_some() {
             // AUX location tables live in retained source, outside the typed
             // electrical value, and must survive selected-source ingestion.
@@ -208,15 +325,29 @@ impl CaseCollection {
             let network =
                 crate::balanced_study_network(module.value()).ok_or("missing balanced network")?;
             let payload = crate::ingest_value(network, module.diagnostics(), Vec::new(), None)?;
-            ("balanced", crate::with_module_json(payload, module)?)
+            (Kind::Balanced, crate::with_module_json(payload, module)?)
         } else {
             return Err(format!(
                 "collection selection holds {}, which Tellegen cannot view or solve",
                 module.value().type_name()
             ));
         };
-        Ok(json!({"kind":kind, "payload":payload, "origin":origin,
-            "dependencies":result.dependencies, "incomplete":result.incomplete}))
+        let origin = record(origin)?;
+        let output = match kind {
+            Kind::Balanced => Imported::Balanced {
+                payload,
+                origin,
+                dependencies: result.dependencies,
+                incomplete: result.incomplete,
+            },
+            Kind::Multiconductor => Imported::Multiconductor {
+                payload,
+                origin,
+                dependencies: result.dependencies,
+                incomplete: result.incomplete,
+            },
+        };
+        serde_json::to_value(output).map_err(|e| e.to_string())
     }
 }
 
@@ -251,6 +382,32 @@ mod tests {
             ("missing.dss", "New Circuit.broken basekv=12.47\nRedirect absent.inc\n"),
             ("comparison.m", "mpc.version = '2';\nmpc.baseMVA = 100;\nmpc.bus = [1 3 0 0 0 0 1 1 0 110 1 1.1 0.9];\nmpc.gen = [1 0 0 100 -100 1 100 1 100 0];\nmpc.branch = [];\n"),
         ].into_iter().map(|(name, text)| (ArtifactPath::new(name).unwrap(), Arc::from(text.as_bytes()))), CollectionLimits::default()).unwrap())
+    }
+
+    #[test]
+    fn inspection_preserves_upstream_records_and_nullable_selection_fields() {
+        let collection = tree();
+        let before = json!({
+            "name": collection.0.name(),
+            "entries": collection.0.entries(),
+            "candidates": collection.0.inspect().unwrap(),
+            "original_zip": collection.0.original_zip().is_some(),
+            "limits": { "files": MAX_FILES, "expanded_bytes": MAX_BYTES },
+        });
+        assert_eq!(collection.inspect_value().unwrap(), before);
+        let selection = CollectionSelection::file("comparison.m");
+        let imported = collection
+            .ingest_value(&serde_json::to_string(&selection).unwrap())
+            .unwrap();
+        assert_eq!(
+            imported["origin"],
+            serde_json::to_value(collection.0.selection_origin(&selection)).unwrap()
+        );
+        assert!(imported["origin"]["selection"]
+            .as_object()
+            .unwrap()
+            .contains_key("root"));
+        assert!(imported["origin"]["selection"]["root"].is_null());
     }
 
     fn select(path: &str) -> String {
