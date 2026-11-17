@@ -202,7 +202,7 @@ and restoring a module does not restore an original-ZIP download.
 Qualified OpenDSS imports can run **Studies → Run power flow** after import.
 Existing typed module and BMOPF solving remain available under the same
 validation rules.
-The initial profile covers normalized finite sources with grounded references,
+The initial profile covers normalized ideal sources with grounded references,
 explicit conductor impedances, bounded ZIP and exponential loads (including
 OpenDSS voltage bands and ZIP dropout), and supported finite-leakage transformers.
 An explicit fourth neutral conductor is supported. Source-defined load bounds
@@ -213,15 +213,17 @@ Passive definitions, profiles and monitoring records remain in the module.
 This is a fixed equipment snapshot: daily/yearly simulation, control execution,
 and an OpenDSS script's sequence of solves are not run. For retained regulator
 and capacitor controls, **Use written equipment settings** creates a separate
-case using the written taps and capacitor values. It preserves the original
+case using the written taps and capacitor values. The action is available only
+when all other electrical checks pass. It preserves the original
 case and source data, archives the validated control records, and retains the
 choice when the derived case is saved. Regulator and capacitor controls are
-never executed. Missing control targets, malformed controls, unsupported
-stepped-capacitor settings, fuses and unsupported switch objects still prevent
+never executed or used to search for an operating point. Missing control targets,
+malformed controls, unsupported capacitor steps or filters, fuses and unsupported switch objects still prevent
 a calculation. Duplicate definitions and import limits remain errors.
 
 Finite two- and three-winding transformers support the qualified connections,
-taps, neutral settings and small grounding admittance. Unresolved geometry or
+taps, neutral settings and OpenDSS's default or written `ppm_antifloat` grounding
+admittance. Unresolved geometry or
 dependencies, floating source references, generator/IBR injections,
 voltage-dependent loads without a nominal voltage, and unqualified transformer
 settings remain view-only with a reason. Convergence and operating voltage-limit compliance are
