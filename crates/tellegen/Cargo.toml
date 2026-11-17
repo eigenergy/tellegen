@@ -160,3 +160,7 @@ required-features = ["rms"]
 [[test]]
 name = "rms_psid_validation"
 required-features = ["rms"]
+
+[[example]]
+name = "api_schema"
+required-features = ["schema", "mc-pf"]

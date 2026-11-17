@@ -1,3 +1,4 @@
+import { parseApiResult, validateApiResult } from "./result-validation.js";
 import { engineHost, isolatedEngineHost } from "./host.js";
 import { assertEngineInputLength } from "./input-limit.js";
 import type {
@@ -69,7 +70,8 @@ export async function resolveSettings(
   request: SettingsRequest,
 ): Promise<ResolvedSettings> {
   assertJson(request);
-  return decode(
+  return parseApiResult(
+    "settings",
     await engineHost().call({
       op: "settings_resolve",
       request: JSON.stringify(request),
@@ -89,7 +91,8 @@ export async function calculateWithSettings(
     host.cancel?.(new DOMException("Calculation cancelled", "AbortError"));
   signal?.addEventListener("abort", cancel, { once: true });
   try {
-    const result = decode<CalculationResult>(
+    const result = parseApiResult<CalculationResult>(
+      "calculation",
       await host.call({
         op: "settings_calculate",
         request: JSON.stringify(request),
@@ -139,7 +142,12 @@ export function createSettingsHttpClient(
       }
       throw new Error(`HTTP ${response.status}: ${message}`);
     }
-    return response.json() as Promise<T>;
+    const result: unknown = await response.json();
+    if (path === "/calculate")
+      return validateApiResult<T>("calculation", result);
+    if (path === "/settings/resolve")
+      return validateApiResult<T>("settings", result);
+    return result as T;
   }
   return {
     describe: (signal?: AbortSignal) =>

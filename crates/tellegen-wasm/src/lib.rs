@@ -1111,11 +1111,8 @@ fn parse_sensitivities(sens_json: &str) -> Result<Vec<tellegen::SensRequest>, Js
 /// commit without a second solve.
 #[cfg(feature = "sensitivity")]
 fn commit_output(output: &tellegen::SolveOutput) -> serde_json::Value {
-    serde_json::json!({
-        "solution": output,
-        "iterations": output.response.iterations,
-        "sensitivities": output.response.sensitivities,
-    })
+    serde_json::to_value(tellegen::study::StudyCommit::new(output))
+        .expect("serializable Study commit result")
 }
 
 // ---------------------------------------------------------------------------
@@ -1787,7 +1784,7 @@ impl SynthSession {
 
     /// `ingest` without `module_json`, for a caller that already holds the
     /// text of `module` and adds it itself.
-    pub fn ingest_view(&self) -> Result<String, JsError> {
+    pub fn ingest_view(&self) -> Result<String, JsValue> {
         synth::ingest_view_impl(&self.0).map_err(synth_err)
     }
 

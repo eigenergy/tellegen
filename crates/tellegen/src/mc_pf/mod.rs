@@ -909,6 +909,7 @@ impl McPfSession {
 /// carries a canonical PowerIO solution module.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McStudySnapshot {
     pub schema: String,
     pub version: u32,

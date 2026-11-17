@@ -27,7 +27,6 @@ from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, Union
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Field,
     TypeAdapter,
     ValidationError,
     with_config,
@@ -35,99 +34,14 @@ from pydantic import (
 from typing_extensions import NotRequired, TypedDict
 
 # ---- argument models ---------------------------------------------------------
+# Field names, tagged enums, defaults and limits come from Rust's generated schema.
+from ._schema_models import model
 
-
-class SolveEdits(BaseModel):
-    """Operating-point edits applied before the model is built.
-
-    Keys are a bus or branch's original numeric id (as a string) or its
-    PowerIO uid, as reported in a solve response.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    deltas: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Active-power demand change in MW per bus key; demand becomes base + delta.",
-    )
-    rates: Dict[str, float] = Field(
-        default_factory=dict,
-        description=(
-            "Thermal rating change in MW per branch key; the limit becomes base + delta. "
-            "DC OPF and SOCWR only."
-        ),
-    )
-
-
-class SensitivityRequest(BaseModel):
-    """One sensitivity cell: an operand differentiated with respect to a parameter."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    operand: Union[str, Dict[str, Any]] = Field(
-        description=(
-            'What is differentiated, e.g. {"Price": "Active"} (LMP), {"Dispatch": "Active"}, '
-            'or {"Flow": {"power": "Active", "end": "From"}}.'
-        ),
-    )
-    parameter: Union[str, Dict[str, Any]] = Field(
-        description=(
-            'What it is differentiated with respect to, e.g. {"Demand": "Active"} or "LineLimit".'
-        ),
-    )
-    indices: Optional[List[int]] = Field(
-        default=None,
-        description="Zero-based parameter columns to compute; omit for the whole axis.",
-    )
-    mode: Optional[Literal["Forward", "Adjoint", "Auto"]] = Field(
-        default=None, description="Differentiation mode; Auto when omitted."
-    )
-
-
-class BusWeight(BaseModel):
-    """One bus term of a weighted LMP objective."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    bus: int = Field(
-        description="Numeric bus id: the `bus` of a solve response's lmp entry."
-    )
-    weight: float = Field(description="Coefficient applied to this bus's LMP.")
-
-
-class WeightedLmpObjective(BaseModel):
-    """Minimize the weighted sum of the selected buses' LMPs."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["weighted_lmp"] = "weighted_lmp"
-    weights: List[BusWeight] = Field(min_length=1)
-
-
-class CapacityPlanSpec(BaseModel):
-    """The bounded decision space and search limits of one planning run. Power quantities are MW."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    objective: WeightedLmpObjective
-    candidates: List[str] = Field(
-        min_length=1,
-        description='Branch uids (e.g. "2-3") whose thermal ratings the search may increase.',
-    )
-    max_increase_per_branch_mw: float = Field(
-        gt=0, description="Largest increase for one branch."
-    )
-    budget_mw: float = Field(
-        gt=0, description="Largest total increase across all branches."
-    )
-    increment_mw: float = Field(gt=0, description="Capacity step tried in one trial.")
-    max_changed_lines: int = Field(
-        ge=1, description="Most branches the final proposal may change."
-    )
-    exact_solve_budget: int = Field(
-        ge=1,
-        description="Most exact OPF solves, counting the baseline and every trial.",
-    )
+SolveEdits = model("Edits")
+SensitivityRequest = model("SensRequest")
+BusWeight = model("BusWeight")
+WeightedLmpObjective = model("ImplicitObjective")
+CapacityPlanSpec = model("CapacityPlanSpec")
 
 
 _EXAMPLES = {
@@ -259,7 +173,7 @@ EDITS_SCHEMA = argument_schema(
     optional=True,
 )
 SENSITIVITIES_SCHEMA = argument_schema(
-    List[SensitivityRequest],
+    List[SensitivityRequest],  # type: ignore[valid-type]  # Generated model class.
     "Sensitivity cells computed against the solved system, in order (DC OPF). "
     "Example, LMP with respect to demand: " + _EXAMPLES["sensitivities"],
     optional=True,

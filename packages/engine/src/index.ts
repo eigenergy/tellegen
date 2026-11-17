@@ -1,3 +1,4 @@
+import { parseApiResult } from "./result-validation.js";
 import type { DcFormula } from "./generated/api-types.js";
 export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 import type { DcGrid, DcGridSolution } from "./dc-grid.js";
@@ -1065,7 +1066,8 @@ export async function solveModule(
   moduleJson: string,
   request: SolveRequest = {},
 ): Promise<SolveResponse> {
-  return JSON.parse(
+  return parseApiResult(
+    "solve",
     expectText(
       await engineHost().call({
         op: "solve_module",
@@ -1634,7 +1636,8 @@ export class BrowserMcPfSession {
   ) {}
 
   async summary(): Promise<McPfSummary> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_summary",
       expectText(
         await this.host.call({
           op: "mc_pf_session_summary",
@@ -1659,7 +1662,8 @@ export class BrowserMcPfSession {
   /** The complete terminal and equipment result. Its size grows with the
    * network, so interactive views use {@link detail} instead. */
   async result(): Promise<McPfResult> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_result",
       expectText(
         await this.host.call({
           op: "mc_pf_session_result",
@@ -1670,7 +1674,8 @@ export class BrowserMcPfSession {
   }
 
   async loadBranches(): Promise<McLoadBranchState[]> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_load_branches",
       expectText(
         await this.host.call({
           op: "mc_pf_session_load_branches",
@@ -1691,7 +1696,7 @@ export class BrowserMcPfSession {
     });
     const received = performance.now();
     const text = expectText(answer.value);
-    const summary = JSON.parse(text) as McPfSummary;
+    const summary = parseApiResult("mc_summary", text) as McPfSummary;
     this.lastTiming = {
       engine_ms: answer.engineMs,
       round_trip_ms: received - started,
@@ -1703,7 +1708,8 @@ export class BrowserMcPfSession {
 
   /** One bus's terminals and a page of equipment ports. */
   async detail(query: McPfDetailQuery): Promise<McPfDetail> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_detail",
       expectText(
         await this.host.call({
           op: "mc_pf_session_detail",
@@ -1745,7 +1751,8 @@ export class BrowserMcPfSession {
 
   /** Engine phase timings of the latest solve, or of the cold start. */
   async profile(cold = false): Promise<McPfProfile> {
-    return JSON.parse(
+    return parseApiResult(
+      "mc_profile",
       expectText(
         await this.host.call({
           op: "mc_pf_session_profile",
@@ -1826,7 +1833,8 @@ export async function createMcPfSession(
   // A kept module lives in one engine worker; its session must too.
   const host = typeof input === "string" ? engineHost() : input.host;
   const handle = ++mcPfSessionSeq;
-  const summary = JSON.parse(
+  const summary = parseApiResult(
+    "mc_summary",
     expectText(
       await host.call(
         typeof input === "string"
@@ -1871,7 +1879,8 @@ export async function solveMcBmopf(
   options: McPfOptions = {},
 ): Promise<McPfResult> {
   assertEngineInputLength(text.length);
-  return JSON.parse(
+  return parseApiResult(
+    "mc_result",
     expectText(
       await engineHost().call({
         op: "solve_mc_bmopf",
@@ -1926,7 +1935,7 @@ export async function solveMcModule(
       options: JSON.stringify(options),
     });
     signal?.throwIfAborted();
-    return JSON.parse(expectText(result));
+    return parseApiResult("mc_result", expectText(result));
   } finally {
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
@@ -1957,7 +1966,7 @@ export async function solveMcStudy(
       options: JSON.stringify(options),
     });
     signal?.throwIfAborted();
-    return JSON.parse(expectText(result));
+    return parseApiResult("mc_study", expectText(result));
   } finally {
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
@@ -1970,7 +1979,8 @@ export async function replayMcStudy(
   snapshotJson: string,
 ): Promise<McStudySnapshot> {
   assertEngineInputLength(snapshotJson.length);
-  return JSON.parse(
+  return parseApiResult(
+    "mc_study",
     expectText(
       await engineHost().call({
         op: "replay_mc_study",
@@ -1988,7 +1998,8 @@ export async function applyMcStudyGeo(
   const text = JSON.stringify(snapshot);
   assertEngineInputLength(text.length);
   assertEngineInputLength(layer.length);
-  return JSON.parse(
+  return parseApiResult(
+    "mc_study",
     expectText(
       await engineHost().call({
         op: "apply_mc_study_geo",
@@ -2310,7 +2321,8 @@ export class BrowserStudy {
   }
 
   async #solution(): Promise<StudySolveResponse> {
-    return JSON.parse(
+    return parseApiResult(
+      "solve",
       expectText(
         await this.#host.call({ op: "study_solution", study: this.#handle }),
       ),
@@ -2353,7 +2365,7 @@ export class BrowserStudy {
       });
       signal?.throwIfAborted();
       this.#atBase = edits.length === 0;
-      return JSON.parse(expectText(result));
+      return parseApiResult("commit", expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
       throw error;
@@ -2443,7 +2455,8 @@ export class BrowserStudy {
     if (this.#formulation === "acpf") {
       return { prices: [], objectiveDelta: null, units: null };
     }
-    const out: StudyPreview = JSON.parse(
+    const out: StudyPreview = parseApiResult(
+      "preview",
       expectText(
         await this.#host.call({
           op: "study_preview",
@@ -2468,7 +2481,8 @@ export class BrowserStudy {
   async currentView(): Promise<
     import("./generated/study-types.js").SolveResponse
   > {
-    return JSON.parse(
+    return parseApiResult(
+      "solve",
       expectText(
         await this.#host.call({ op: "study_solution", study: this.#handle }),
       ),
@@ -2567,7 +2581,7 @@ export class BrowserStudy {
         spec: JSON.stringify(spec),
       });
       signal?.throwIfAborted();
-      return JSON.parse(expectText(result));
+      return parseApiResult("plan", expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
       throw error;
