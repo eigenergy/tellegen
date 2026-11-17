@@ -14,6 +14,15 @@ Three generated two-conductor trees have 200, 2,000 and 20,000 unknowns.
 Two small OpenDSS cases export its full sparse Y and current RHS after PF.
 The largest faer/KLU difference in those five cases is below 6e-10 V.
 
+A further generated tree uses **316,000 unknowns and 1,895,984 nonzeros**
+through the same actual preparation path (`large-reduced-results.json`).
+Its faer/KLU difference is 6.031e-9 V (neutral maximum 3.490e-9 V), with
+backward residuals below 3.4e-16. KLU COLAMD differs from AMD by 1.337e-10 V.
+Scaling, reversal and both refinement methods remain below 6.5e-9 V from
+the reference. This confirms agreement on a substantial Tellegen reduced
+system; the generated two-conductor tree does not reproduce regional
+transformers, controls or the original matrix conditioning.
+
 The original regional source was recovered from the public
 [OEDI dataset](https://data.openei.org/submissions/2981), using the exact
 Austin P3U prefix recorded in #132's October 1 discussion. The 2,273 files
@@ -48,6 +57,15 @@ Actual Tellegen regional import was attempted without dropping diagnostics.
 PowerIO 0.12.1 refuses it at its 64 MiB include budget and line-history work
 budget (`tellegen-regional-import.json`). Consequently #153's regional
 Tellegen-preparation question remains open. No import limits were bypassed.
+The public `ParseOptions` API exposes format and acquisition-root selection,
+not OpenDSS resource-limit overrides; these limits are private constants.
+Two official nested inputs were also attempted unchanged: substation
+`p3uhs18_1247/Master.dss` fits within the size budget but is refused for duplicate
+Linecode declarations and regulator diagnostics; its `p3udt32182` feeder fits
+but retains unsupported fuse, capcontrol and line objects. The new fixed-control
+conversion handles regulators and supported capacitors, not protection devices
+or duplicate definitions. `tellegen-subset-imports.json` records both attempts.
+No source declarations or protection states were silently discarded.
 
 ## Timing and memory
 
@@ -70,6 +88,13 @@ allocation accounting, including symbolic/numeric workspaces). KLU reports
 127 MB. The allocator methods differ and neither is full process RSS.
 The study does not claim a comparable peak-heap measurement for faer.
 
+For the generated 316,000-unknown prepared system, faer factorization takes
+0.113 s and a retained solve 3.73 ms; KLU AMD takes 0.042 s and 3.01 ms.
+Retained allocations are 146 MB for faer and 78 MB for KLU AMD, which reports
+91 MB peak; COLAMD reports 599 MB peak. The same timing and allocator
+limitations above apply. The entire scripted comparison, including matrix
+construction, serialization, scaling and alternative solves, took 62 s.
+
 ## Reproduction
 
 Install numpy and OpenDSSDirect.py 0.9.4 in an isolated Python environment.
@@ -80,6 +105,7 @@ C measurement helper against the published SuiteSparse 5.6.0 headers:
 bash build_klu_metrics.sh /path/to/libklusolvex.dylib /tmp/klu-headers /tmp/klu-metrics.dylib
 cargo test -p tellegen --features mc-pf --lib --profile release-py --no-run
 python compare.py /path/to/the/printed/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib > results.json
+python run_reduced.py /path/to/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib /tmp/large-reduced 158000
 python recover_smartds.py /tmp/smartds-aus-p3u
 python run_smartds.py /path/to/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib /tmp/smartds-aus-p3u /tmp/smartds-results
 ```
