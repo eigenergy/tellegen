@@ -1,5 +1,11 @@
 # @tellegen/webmcp
 
+## 0.4.1
+
+### Patch Changes
+
+- [#402](https://github.com/eigenergy/tellegen/pull/402) [`8c867c4`](https://github.com/eigenergy/tellegen/commit/8c867c45b1e38f901eec1a8d8d47f04a060abe29) Thanks [@samtalki](https://github.com/samtalki)! - `TELLEGEN_ERROR_CODES` lists every error code a tool can return, with when it happens and what to do next, and `TellegenErrorCode` is its type.
+
 ## 0.4.0
 
 ### Minor Changes

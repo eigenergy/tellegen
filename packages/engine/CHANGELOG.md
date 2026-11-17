@@ -1,5 +1,43 @@
 # @tellegen/engine
 
+## 0.10.1
+
+### Patch Changes
+
+- [#411](https://github.com/eigenergy/tellegen/pull/411) [`85a787c`](https://github.com/eigenergy/tellegen/commit/85a787c8194702cbb833c9a12f9c795dfdd10e28) Thanks [@samtalki](https://github.com/samtalki)! - AC OPF solves reuse one worker and its compiled solver module instead of starting and compiling a new one each time, and their results carry nodal prices. `releaseAcOpfWorker()` frees the idle worker.
+
+  Sensitivity requests can be passed as the optional fifth argument to `solveAcOpfModule`. The separate WASI solver includes demand, line-limit and generator-bound derivatives, and worker failures retain the engine error code.
+
+- [#415](https://github.com/eigenergy/tellegen/pull/415) [`05c4a55`](https://github.com/eigenergy/tellegen/commit/05c4a557389da68422124e30c2450b7bc2a9b8ce) Thanks [@samtalki](https://github.com/samtalki)! - Show AC OPF price sensitivities for selected buses and branch limits using the dedicated browser solver, and cancel superseded selections.
+
+- [#424](https://github.com/eigenergy/tellegen/pull/424) [`c3e6176`](https://github.com/eigenergy/tellegen/commit/c3e61769787ee87787d67d229149b81f560a531c) Thanks [@samtalki](https://github.com/samtalki)! - Keep related CGMES profiles together in collection suggestions so SSH switch states survive import. Refuse standalone profile selections when declared companion documents are present.
+
+- [#404](https://github.com/eigenergy/tellegen/pull/404) [`213e7c5`](https://github.com/eigenergy/tellegen/commit/213e7c520e99d55e77013d59efdb93c5cce80752) Thanks [@samtalki](https://github.com/samtalki)! - OPF results say what their objective is, and engine errors carry a code.
+
+  - `SolveResponse` and `Solution` have an optional `objective_kind`: `'cost'` when the OPF minimized the case's generator cost, `'feasibility'` when the case declares no cost (the objective is then zero and there are no prices). It is absent for power flows. `OBJECTIVE_KINDS` and the `ObjectiveKind` type are exported.
+  - An error thrown by the engine has a `code` property when the engine knows the class of the failure: one of `ENGINE_ERROR_CODES` (`EngineErrorCode`). `errorCode(error)` reads it, and the code survives the worker boundary. Messages are unchanged.
+  - A sensitivity request on the DC power flow is refused with code `unsupported`. It used to return an empty list.
+
+- [#419](https://github.com/eigenergy/tellegen/pull/419) [`2644761`](https://github.com/eigenergy/tellegen/commit/2644761b8847d96ebd7dba706445be68516cf189) Thanks [@samtalki](https://github.com/samtalki)! - Validate browser and HTTP solve, multiconductor, Study and settings results against schemas generated from Rust before exposing them to application code. Refuse malformed streamed results while retaining the previous display. Generate MCP argument models from the same Rust definitions.
+
+- [#405](https://github.com/eigenergy/tellegen/pull/405) [`e9dd0c1`](https://github.com/eigenergy/tellegen/commit/e9dd0c110f439e3edc7a698772dacde41e6ceee0) Thanks [@samtalki](https://github.com/samtalki)! - A generated grid reaches its first DC OPF result sooner. `BrowserSynthSession.ingestWithStudy()` starts the Study while the payload is prepared, and `openBalancedModule` takes that Study through its new `study` option.
+
+- [#406](https://github.com/eigenergy/tellegen/pull/406) [`7087c1c`](https://github.com/eigenergy/tellegen/commit/7087c1cc8f1c203810402aa97b62f18c46073b4a) Thanks [@samtalki](https://github.com/samtalki)! - The toast and the Log tab show the same messages from one store, `app.log`, and the Log tab counts the errors and warnings not yet seen. The Edited mark in the case menu lines up and shows for local cases, and every calculation menu follows one rule, `calculationAvailable`.
+
+- [#408](https://github.com/eigenergy/tellegen/pull/408) [`342cee6`](https://github.com/eigenergy/tellegen/commit/342cee66cc66cb88ce0432b7ec08ecc9c61b3eb0) Thanks [@samtalki](https://github.com/samtalki)! - Include ZIP and folder imports in browser builds and let users open ZIPs inside ZIPs without mixing their files or cases.
+
+- [#423](https://github.com/eigenergy/tellegen/pull/423) [`be2ee8f`](https://github.com/eigenergy/tellegen/commit/be2ee8f4563c07f7d52e25f14b824a9e28a49502) Thanks [@samtalki](https://github.com/samtalki)! - Retain detailed node-breaker connectivity for drawings, add editable saved engineering drawings with portable JSON and SVG export, and move remaining source drawings to the shared diagram canvases.
+
+- [#409](https://github.com/eigenergy/tellegen/pull/409) [`6aa38e4`](https://github.com/eigenergy/tellegen/commit/6aa38e4f3d7e7f6361a9fe75b7eb2f15a054e8be) Thanks [@samtalki](https://github.com/samtalki)! - Keep saved studies in one browser database, migrate distribution saves, and support renaming and deleting. Reopening saved distribution results reuses the case without moving the camera.
+
+- [#413](https://github.com/eigenergy/tellegen/pull/413) [`a08743d`](https://github.com/eigenergy/tellegen/commit/a08743d7516412fe29f6995fa47c292675407d9b) Thanks [@samtalki](https://github.com/samtalki)! - Saved-study results and comparisons include the objective kind declared in each state's input. Older saved studies do not need rewriting, and a zero cost value is never treated as evidence that the solve was only checking feasibility.
+
+- [#418](https://github.com/eigenergy/tellegen/pull/418) [`f235130`](https://github.com/eigenergy/tellegen/commit/f23513037e05063987304eea918f1974f1ba1a64) Thanks [@samtalki](https://github.com/samtalki)! - Generate separate AC areas with scheduled HVDC links and retain their details in saved modules and generation reports.
+
+- [#417](https://github.com/eigenergy/tellegen/pull/417) [`713a2a0`](https://github.com/eigenergy/tellegen/commit/713a2a09dfe2a6b268922391692f692548d45e7a) Thanks [@samtalki](https://github.com/samtalki)! - Offer an explicit written-equipment-settings action for qualified distribution cases. Create an independent case and show the choice after saving and reopening.
+
+- [#425](https://github.com/eigenergy/tellegen/pull/425) [`f0d89e4`](https://github.com/eigenergy/tellegen/commit/f0d89e4c07250b91c6dbd2c4076ff79b78f35be9) Thanks [@samtalki](https://github.com/samtalki)! - Add an explicit fixed-settings copy of supported OpenDSS cases, preserving original regulator and capacitor control records and written equipment settings. Qualify general three-winding transformer snapshots against OpenDSS.
+
 ## 0.10.0
 
 ### Minor Changes
