@@ -430,13 +430,43 @@
 <dialog
 	class="drawing-dialog"
 	aria-label="Drawing editor"
+	onkeydown={(event) => {
+		if (event.key !== 'Tab') return;
+		const controls = [
+			...event.currentTarget.querySelectorAll<HTMLElement>(
+				'button, input, select, textarea, a[href], [tabindex]'
+			)
+		].filter(
+			(control) =>
+				control.tabIndex >= 0 &&
+				!control.hasAttribute('disabled') &&
+				control.getClientRects().length > 0
+		);
+		const index = controls.indexOf(document.activeElement as HTMLElement);
+		if (event.shiftKey && index <= 0) {
+			event.preventDefault();
+			controls.at(-1)?.focus();
+		} else if (!event.shiftKey && (index < 0 || index === controls.length - 1)) {
+			event.preventDefault();
+			controls[0]?.focus();
+		}
+	}}
 	oncancel={(event) => {
 		event.preventDefault();
 		onclose();
 	}}
 	{@attach (element) => {
+		const opener = document.activeElement;
 		element.showModal();
-		return () => element.close();
+		queueMicrotask(() => {
+			if (element.open) element.querySelector<HTMLButtonElement>('button')?.focus();
+		});
+		return () => {
+			element.close();
+			queueMicrotask(() => {
+				if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+			});
+		};
 	}}
 >
 	<section class="engineering" aria-label="Engineering drawing">
