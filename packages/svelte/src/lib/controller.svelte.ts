@@ -68,20 +68,6 @@ import {
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
 
-/** Notices the controller raises from more than one place, in a few words each, so the
- * notification center reads the same wherever it came from. */
-
-/** A parsed PowerWorld `.pwd` display awaiting routing: a coordinate-less case
- * in the same drop may consume its substation points (the SubNum join);
- * otherwise it becomes its own substation preview entry. */
-
-/** Result of the one engine request used to classify a JSON drop. Recognized
- * payloads are staged until geographic/display sidecars have parsed, so every
- * balanced input follows the same placement-before-solve ordering as `.m` and
- * `.raw`. An unrouted result retains the bytes for the geographic fallback. */
-
-/** Free a case input the engine keeps; text needs no release. */
-
 /** PowerIO IR text for a case input, built by the engine for a kept module. */
 function mcInputJson(input: McModuleInput): Promise<string> {
 	return typeof input === 'string' ? Promise.resolve(input) : input.moduleJson();
@@ -217,10 +203,6 @@ function sameSolution(a: Solution, b: Solution): boolean {
 	};
 	return JSON.stringify(a, ordered) === JSON.stringify(b, ordered);
 }
-
-/** A parsed geographic sidecar awaiting application: the canonical `.geo.json`
- * layer document from the engine's tolerant reader, its source file name, and
- * the reader's notes on records it could not use. */
 
 /** Whether a local case renders or will render a bus with this id. */
 function localHasBus(c: LocalCase, busId: number): boolean {

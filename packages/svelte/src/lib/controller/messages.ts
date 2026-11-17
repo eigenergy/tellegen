@@ -1,5 +1,6 @@
 import { RATE_LIMITED } from '../api.js';
 
+/** Short notices shared by controller operations. */
 export const NOTICES = {
 	caseChanged: 'Case changed; attach again',
 	caseChangedWhileLoading: 'Case changed; attach again',
