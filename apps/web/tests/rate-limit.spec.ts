@@ -1,4 +1,3 @@
-import { noticeDetails } from './fixtures/notices.js';
 import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes, sensitivityColumn } from './fixtures/backend-case';
 
@@ -31,13 +30,13 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// One selection, one 429: the rate limit copy, no "Error:" prefix, no retry
 	// of the same doomed request.
 	await lookupBus(page, 1);
-	const error = await noticeDetails(page);
-	await expect(error).toHaveText('Rate limited');
+	const error = page.getByTestId('notification-toast');
+	await expect(error).toContainText('Rate limited');
 	expect(sensitivityFetches).toBe(1);
 
 	// The cooldown suppresses the server call for the next selection entirely.
 	await lookupBus(page, 2);
-	await expect(error).toHaveText('Rate limited');
+	await expect(error).toContainText('Rate limited');
 	expect(sensitivityFetches).toBe(1);
 
 	// Retry re-runs the failed bus selection (not a case list reload) and the

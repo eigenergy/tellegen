@@ -21,3 +21,6 @@ npm --workspace @tellegen/example-svelte-minimal run dev
 
 `build:svelte` must run first: the example resolves `@tellegen/svelte` through
 the package's built `dist/`.
+
+`custom.html` builds a separate case explorer from `TellegenProvider`, the controller, and
+`DistributionResults`. It has no dependency on the hosted demo or its routes.

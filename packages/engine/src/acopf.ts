@@ -1,4 +1,5 @@
-import type { SolveResponse } from "./generated/api-types.js";
+import { engineError } from "./errors.js";
+import type { SensRequest, SolveResponse } from "./generated/api-types.js";
 import type {
   AcOpfWorkerRequest,
   AcOpfWorkerResponse,
@@ -18,6 +19,34 @@ export type AcOpfWorkerFactory = () => WorkerLike;
 const defaultWorkerFactory: AcOpfWorkerFactory = () =>
   new Worker(new URL("./acopf-worker.js", import.meta.url), { type: "module" });
 
+/** The one worker kept alive between calls. It holds the compiled wasm module,
+ * so a later solve skips the worker start, the fetch and the compile. `busy`
+ * is true while it answers a request. */
+interface KeptWorker {
+  factory: AcOpfWorkerFactory;
+  worker: WorkerLike;
+  busy: boolean;
+}
+
+let keptWorker: KeptWorker | null = null;
+
+function detach(worker: WorkerLike) {
+  worker.onmessage = null;
+  worker.onerror = null;
+  worker.onmessageerror = null;
+}
+
+/** Terminate the kept worker if it is idle, freeing the compiled module. The
+ * next call starts a fresh one. Returns whether a worker was terminated. */
+export function releaseAcOpfWorker(): boolean {
+  const kept = keptWorker;
+  if (!kept || kept.busy) return false;
+  keptWorker = null;
+  detach(kept.worker);
+  kept.worker.terminate();
+  return true;
+}
+
 function workerCall(
   request: AcOpfWorkerRequest,
   signal?: AbortSignal,
@@ -30,22 +59,46 @@ function workerCall(
     );
   }
   return new Promise((resolve, reject) => {
-    let worker: WorkerLike;
-    try {
-      worker = workerFactory();
-    } catch (error) {
-      reject(error);
-      return;
+    // Reuse the idle kept worker when it came from the same factory, and
+    // replace it when it came from another. A call made while it is busy runs
+    // in a worker of its own, which is terminated when that call ends.
+    if (keptWorker && !keptWorker.busy && keptWorker.factory !== workerFactory) {
+      releaseAcOpfWorker();
     }
-    const finish = () => {
+    let kept: KeptWorker | null = null;
+    let worker: WorkerLike;
+    if (keptWorker && !keptWorker.busy) {
+      kept = keptWorker;
+      worker = kept.worker;
+    } else {
+      try {
+        worker = workerFactory();
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      if (!keptWorker) {
+        kept = { factory: workerFactory, worker, busy: false };
+        keptWorker = kept;
+      }
+    }
+    if (kept) kept.busy = true;
+
+    /** End the call. A worker that answered stays alive for the next call;
+     * one that was cancelled or failed is terminated, because a synchronous
+     * solve cannot be interrupted any other way. */
+    const finish = (keep: boolean) => {
       signal?.removeEventListener("abort", abort);
-      worker.onmessage = null;
-      worker.onerror = null;
-      worker.onmessageerror = null;
+      detach(worker);
+      if (kept && keep) {
+        kept.busy = false;
+        return;
+      }
+      if (kept && keptWorker === kept) keptWorker = null;
       worker.terminate();
     };
     const abort = () => {
-      finish();
+      finish(false);
       reject(new DOMException("AC OPF solve cancelled", "AbortError"));
     };
     signal?.addEventListener("abort", abort, { once: true });
@@ -54,22 +107,22 @@ function workerCall(
       return;
     }
     worker.onmessage = ({ data }) => {
-      finish();
-      if (data.type === "error") reject(new Error(data.message));
+      finish(true);
+      if (data.type === "error") reject(engineError(data.message, data.code));
       else resolve(data);
     };
     worker.onerror = () => {
-      finish();
+      finish(false);
       reject(new Error("AC OPF worker failed"));
     };
     worker.onmessageerror = () => {
-      finish();
+      finish(false);
       reject(new Error("AC OPF worker returned an unreadable message"));
     };
     try {
       worker.postMessage(request);
     } catch (error) {
-      finish();
+      finish(false);
       reject(error);
     }
   });
@@ -77,7 +130,8 @@ function workerCall(
 
 /** Probe the optional development asset in the same worker/WASI environment a
  * solve uses. A missing asset, unsupported browser, or instantiation failure
- * returns false and leaves the formulation disabled. */
+ * returns false and leaves the formulation disabled. A successful probe leaves
+ * its worker, with the compiled module, ready for the first solve. */
 export async function probeAcOpfWorker(
   wasmUrl: string,
   workerFactory?: AcOpfWorkerFactory,
@@ -89,19 +143,23 @@ export async function probeAcOpfWorker(
       signal,
       workerFactory,
     );
-    return response.type === "ready";
+    if (response.type === "ready") return true;
   } catch {
-    return false;
+    // Fall through: the formulation stays disabled.
   }
+  releaseAcOpfWorker();
+  return false;
 }
 
-/** Run one nonlinear AC OPF in a fresh, dedicated worker. Cancellation always
- * terminates that worker; there is deliberately no main-thread fallback. */
+/** Run one nonlinear AC OPF in a dedicated worker, which is kept for later
+ * solves. Cancellation always terminates that worker, and the next solve
+ * starts a fresh one; there is deliberately no main-thread fallback. */
 export async function solveAcOpfModule(
   wasmUrl: string,
   moduleJson: string,
   signal?: AbortSignal,
   workerFactory?: AcOpfWorkerFactory,
+  sensitivities?: SensRequest[],
 ): Promise<SolveResponse> {
   assertEngineInputLength(moduleJson.length);
   const response = await workerCall(
@@ -109,7 +167,7 @@ export async function solveAcOpfModule(
       type: "solve",
       wasmUrl,
       moduleJson,
-      requestJson: JSON.stringify({ formulation: "acopf" }),
+      requestJson: JSON.stringify({ formulation: "acopf", sensitivities }),
     },
     signal,
     workerFactory,

@@ -192,7 +192,10 @@
 	$effect(() => {
 		if (typeof MutationObserver === 'undefined') return;
 		const mo = new MutationObserver(() => themeTick++);
-		mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		mo.observe(wrap?.closest('.tellegen') ?? document.documentElement, {
+			attributes: true,
+			attributeFilter: ['data-theme']
+		});
 		const mq = matchMedia('(prefers-color-scheme: dark)');
 		const bump = () => themeTick++;
 		mq.addEventListener('change', bump);

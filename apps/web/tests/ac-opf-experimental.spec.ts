@@ -75,7 +75,12 @@ for (const mode of ['preview', 'development']) {
 			'aria-pressed',
 			'true'
 		);
-		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveCount(0);
+		// The result carries nodal prices, so the Price view is offered beside
+		// the default Voltage view.
+		await expect(page.getByRole('button', { name: 'Price', exact: true })).toHaveAttribute(
+			'aria-pressed',
+			'false'
+		);
 		await expect(page.locator('.error')).toHaveCount(0);
 		// The File menu's save and export are disabled, with the reason as their tooltip.
 		await page.getByRole('button', { name: 'File', exact: true }).click();
@@ -84,32 +89,31 @@ for (const mode of ['preview', 'development']) {
 		await expect(page.getByRole('button', { name: 'Export as', exact: true })).toBeDisabled();
 		await expect(save).toHaveAttribute('title', /not supported/);
 		await page.screenshot({ path: testInfo.outputPath('transmission-acopf.png') });
-		await expect.poll(() => workers.length).toBe(2); // probe plus first solve
-		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
+		// The worker that answered the probe holds the compiled module and
+		// serves the solve; it stays alive for the next one.
+		expect(workers.length).toBe(1);
+		expect(workers[0].closed).toBe(false);
 
-		// A second solve must use and dispose a new worker, not retain its WASI memory.
-		await runCalculation(page, 'dcopf');
-		await expect(calculation).toBeEnabled();
-		await runCalculation(page, 'acopf');
-		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
-		await expect.poll(() => workers.length).toBe(3);
-		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
-
-		// Hold the next real worker's fetch so removal deterministically happens
-		// while it is pending, without relying on how fast a three-bus solve runs.
-		await runCalculation(page, 'dcopf');
-		await expect(calculation).toBeEnabled();
-		let held: Route | undefined;
+		// A second solve reuses that worker and its compiled module: the asset
+		// is not fetched again. Each solve still runs in a fresh wasm instance.
+		let assetFetches = 0;
 		await page.context().route('**/experimental-acopf/tellegen_acopf_wasi.wasm', (route) => {
-			held = route;
+			assetFetches++;
+			return route.continue();
 		});
+		await runCalculation(page, 'dcopf');
+		await expect(calculation).toBeEnabled();
 		await runCalculation(page, 'acopf');
-		await expect.poll(() => !!held).toBe(true);
-		await expect.poll(() => workers.length).toBe(4);
+		await expect(page.locator('.solvecard')).toHaveAttribute('data-calculation', 'acopf');
+		await expect(page.locator('.solvecard')).toContainText('NLP iterations', { timeout: 120_000 });
+		expect(workers.length).toBe(1);
+		expect(workers[0].closed).toBe(false);
+		expect(assetFetches).toBe(0);
+
+		// Removing the case leaves no result and no error. Cancelling a pending
+		// solve is covered by the lifecycle test below.
 		await openCaseMenu(page);
 		await page.locator('.case-chip.local .case-remove').click();
-		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
-		await held!.abort();
 		await expect(page.locator('.solvecard')).toHaveCount(0);
 		await expect(page.locator('.error')).toHaveCount(0);
 	});
@@ -223,6 +227,9 @@ for (const phase of ['probe', 'solve'] as const) {
 		await page.waitForFunction(() => !!window.acOpfLifecycle);
 		if (phase === 'solve') {
 			await expect.poll(() => page.evaluate(() => window.acOpfLifecycle.available())).toBe(true);
+			// The probed worker would serve the solve from its compiled module
+			// without a fetch to hold. Release it so the solve starts a new one.
+			expect(await page.evaluate(() => window.acOpfLifecycle.release())).toBe(true);
 			await holdAsset();
 			await page.evaluate((text) => window.acOpfLifecycle.start(text), CASE3_PLANNING);
 		}
@@ -307,8 +314,9 @@ for (const name of (
 		expect(iterations.base_solver_status).toBeTruthy();
 		expect(iterations.total_nlp_iterations).toBeGreaterThanOrEqual(iterations.nlp_iterations);
 		expect(iterations.restoration_calls).toBeGreaterThanOrEqual(0);
-		await expect.poll(() => workers.length).toBe(1);
-		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
+		// One worker ran the solve and is kept for the next.
+		expect(workers.length).toBe(1);
+		expect(workers[0].closed).toBe(false);
 		await testInfo.attach(`${name}.json`, {
 			body: JSON.stringify({
 				inputHash,

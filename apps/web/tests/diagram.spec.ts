@@ -112,17 +112,18 @@ test('drawing coordinates remain separate from geography and support navigation'
 		.getByRole('combobox', { name: 'Saved study', exact: true })
 		.selectOption(bundle.document.id);
 	await expect(canvas).toBeVisible();
-	await expect.poll(viewNumbers).toEqual(savedView);
+	await expect.poll(viewNumbers).not.toEqual(savedView);
+	const openedView = await viewNumbers();
 	await canvas.press('ArrowRight');
 	await canvas.press('-');
-	await expect.poll(viewNumbers).not.toEqual(savedView);
+	await expect.poll(viewNumbers).not.toEqual(openedView);
 	const changedView = await viewNumbers();
 	await page.locator('.file-button input[type="file"]').setInputFiles({
 		name: 'drawing-study.json',
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundleText)
 	});
-	await expect(await noticeDetails(page)).toHaveText('Already saved');
+	await expect(await noticeDetails(page)).toContainText('Already saved');
 	await expect.poll(viewNumbers).toEqual(changedView);
 	await page
 		.getByRole('combobox', { name: 'Saved study', exact: true })
@@ -130,6 +131,7 @@ test('drawing coordinates remain separate from geography and support navigation'
 	await expect(page.getByRole('combobox', { name: 'Saved study', exact: true })).toHaveValue(
 		bundle.document.id
 	);
+	await expect.poll(viewNumbers).toEqual(changedView);
 	const context = await browser.newContext({ viewport: page.viewportSize()! });
 	try {
 		const imported = await context.newPage();
@@ -151,7 +153,7 @@ test('drawing coordinates remain separate from geography and support navigation'
 					return [m.a, m.d, m.e, m.f];
 				})
 			)
-			.toEqual(savedView);
+			.not.toEqual(savedView);
 		expect(errors).toEqual([]);
 	} finally {
 		await context.close();

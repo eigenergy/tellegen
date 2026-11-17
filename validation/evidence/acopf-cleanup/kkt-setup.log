@@ -1,0 +1,8 @@
+
+running 1 test
+KKT_MEASUREMENT {"dimension":2200,"nonzeros":5498,"selected_query_seconds":0.0000330975,"setup_seconds":0.062910542}
+KKT_MEASUREMENT {"dimension":6000,"nonzeros":14998,"selected_query_seconds":0.00009361084,"setup_seconds":0.473396542}
+test sens::nlp_kkt::tests::sparse_kkt_setup_measurement ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 641 filtered out; finished in 0.55s
+

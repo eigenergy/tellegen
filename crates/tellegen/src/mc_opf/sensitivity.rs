@@ -1,6 +1,5 @@
 //! Fixed-active-set differentiation of a verified accepted stationary point.
 use super::*;
-use pounce_rs::SparsityRequest;
 mod linear;
 mod outputs;
 
@@ -304,81 +303,9 @@ impl<'a> McOpfSensitivities<'a> {
             }
         }
         let dim = p.n + active.len() + bound_columns.len();
-        let mut t =
-            NlTnlp::try_new(p.clone()).map_err(|e| error(ErrorKind::DerivativeEvaluation, e))?;
-        let info = t
-            .get_nlp_info()
-            .ok_or_else(|| error(ErrorKind::DerivativeEvaluation, "missing sparsity shape"))?;
-        let (mut jr, mut jc, mut j) = (
-            vec![0; info.nnz_jac_g as usize],
-            vec![0; info.nnz_jac_g as usize],
-            vec![0.; info.nnz_jac_g as usize],
-        );
-        let (mut hr, mut hc, mut h) = (
-            vec![0; info.nnz_h_lag as usize],
-            vec![0; info.nnz_h_lag as usize],
-            vec![0.; info.nnz_h_lag as usize],
-        );
-        let mut objective_gradient = vec![0.; p.n];
-        if !t.eval_grad_f(&d.primal, true, &mut objective_gradient)
-            || !t.eval_jac_g(
-                None,
-                false,
-                SparsityRequest::Structure {
-                    irow: &mut jr,
-                    jcol: &mut jc,
-                },
-            )
-            || !t.eval_jac_g(
-                Some(&d.primal),
-                true,
-                SparsityRequest::Values { values: &mut j },
-            )
-            || !t.eval_h(
-                None,
-                false,
-                1.,
-                None,
-                false,
-                SparsityRequest::Structure {
-                    irow: &mut hr,
-                    jcol: &mut hc,
-                },
-            )
-            || !t.eval_h(
-                Some(&d.primal),
-                true,
-                1.,
-                Some(&lambda),
-                true,
-                SparsityRequest::Values { values: &mut h },
-            )
-            || objective_gradient
-                .iter()
-                .chain(&j)
-                .chain(&h)
-                .any(|v| !v.is_finite())
-        {
-            return Err(error(
-                ErrorKind::DerivativeEvaluation,
-                "exact compiled derivative evaluation failed",
-            ));
-        }
-        let mut entries = Vec::new();
-        let mut jacobian = vec![Vec::new(); p.m];
-        let mut stationarity = objective_gradient.clone();
-        let mut stationarity_scale: Vec<_> =
-            objective_gradient.iter().map(|v| 1. + v.abs()).collect();
-        for ((r, c), v) in jr.into_iter().zip(jc).zip(j) {
-            let (r, c) = (r as usize, c as usize);
-            jacobian[r].push((c, v));
-            if let Some(&a) = active.get(&r) {
-                stationarity[c] += v * lambda[r];
-                stationarity_scale[c] += (v * lambda[r]).abs();
-                entries.push((p.n + a, c, v));
-                entries.push((c, p.n + a, v));
-            }
-        }
+        let derivatives = crate::sens::nlp_kkt::NlpDerivatives::evaluate(p, &d.primal, &lambda)
+            .map_err(linear::convert)?;
+        let (mut stationarity, mut stationarity_scale) = derivatives.stationarity(&lambda, &active);
         for &i in &bound_columns {
             // Finite variable bounds are not currently emitted by IVR, but
             // their stationarity terms must accompany any future bound rows.
@@ -386,31 +313,24 @@ impl<'a> McOpfSensitivities<'a> {
             stationarity_scale[i] +=
                 d.upper_bound_multipliers[i].abs() + d.lower_bound_multipliers[i].abs();
         }
-        if stationarity
-            .iter()
-            .zip(&stationarity_scale)
-            .any(|(r, s)| !r.is_finite() || !s.is_finite() || r.abs() > duals::KKT_TOL * s)
-        {
-            return Err(McOpfSensitivityError {
-                kind: ErrorKind::UnreliableDuals,
-                message: "stationarity failed after removing inactive multipliers".into(),
-                dual_status: Some(McOpfMarginalStatus::FailedKktCheck),
-                active_rank: Some(Box::new(d.active_rank.clone())),
-                linear_solve: None,
-            });
-        }
-        for ((r, c), v) in hr.into_iter().zip(hc).zip(h) {
-            let (r, c) = (r as usize, c as usize);
-            entries.push((r, c, v));
-            if r != c {
-                entries.push((c, r, v));
-            }
-        }
-        for (i, &c) in bound_columns.iter().enumerate() {
-            let r = p.n + active.len() + i;
-            entries.push((r, c, 1.));
-            entries.push((c, r, 1.));
-        }
+        crate::sens::nlp_kkt::check_stationarity(
+            &stationarity,
+            &stationarity_scale,
+            duals::KKT_TOL,
+        )
+        .map_err(|e| McOpfSensitivityError {
+            kind: ErrorKind::UnreliableDuals,
+            message: e.message,
+            dual_status: Some(McOpfMarginalStatus::FailedKktCheck),
+            active_rank: Some(Box::new(d.active_rank.clone())),
+            linear_solve: None,
+        })?;
+        let entries = derivatives.kkt_entries(&active, &bound_columns);
+        let crate::sens::nlp_kkt::NlpDerivatives {
+            objective_gradient,
+            jacobian,
+            ..
+        } = derivatives;
         let factor = linear::Factor::new(dim, entries).map_err(|mut e| {
             e.active_rank = Some(Box::new(d.active_rank.clone()));
             e

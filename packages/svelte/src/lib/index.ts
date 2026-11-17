@@ -1,14 +1,24 @@
 export { getNoticeCenter, errorNoticeTitle } from './notices.svelte.js';
 export {
 	DiagnosticLog,
+	ERROR_TITLE,
 	LOG_SEVERITIES,
+	MessageLog,
 	errorEntry,
 	errorStage,
+	errorTitle,
 	logSeverity,
 	powerIoEntry,
 	solveEntry
 } from './log.svelte.js';
-export type { LogDocument, LogEntry, LogEntryInput, LogSeverity } from './log.svelte.js';
+export type {
+	ErrorContext,
+	LogDocument,
+	LogEntry,
+	LogEntryInput,
+	LogSeverity,
+	LogToast
+} from './log.svelte.js';
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as PanelFrame } from './components/PanelFrame.svelte';
 export { getPanelLayout } from './panels.svelte.js';
@@ -71,7 +81,15 @@ export {
 	placeMultiView,
 	buildGeographicView
 } from './multiconductor.js';
-export { quantity, quantityRange, voltsWithPu, degrees, MISSING } from './format.js';
+export {
+	quantity,
+	quantityRange,
+	voltsWithPu,
+	degrees,
+	MISSING,
+	download,
+	downloadText
+} from './format.js';
 export type { QuantityUnit, QuantityOptions } from './format.js';
 export { distExtensionFormat } from './drop-classify.js';
 
@@ -181,3 +199,5 @@ export { default as McModelQualification } from './components/McModelQualificati
 export { default as McNetworkScope } from './components/McNetworkScope.svelte';
 
 export { recordedCalculationSettings } from './settings.svelte.js';
+
+export { default as DistributionResults } from './components/DistributionResults.svelte';

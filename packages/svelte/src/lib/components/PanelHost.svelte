@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
-	import { getAppState } from '../context.svelte.js';
+	import { getAppState, getUiConfig } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import { getNoticeCenter } from '../notices.svelte.js';
 	import PanelCard from './PanelCard.svelte';
 	import { getCommandRegistry } from '../commands.svelte.js';
 
@@ -12,8 +11,8 @@
 	let { showToolbar = true }: { showToolbar?: boolean } = $props();
 
 	const app = getAppState();
+	const config = getUiConfig();
 	const layout = getPanelLayout();
-	const notices = getNoticeCenter();
 	const commands = getCommandRegistry();
 	// Each registered panel, including host panels such as the Agent panel, is
 	// also a palette command.
@@ -40,7 +39,7 @@
 	 * and the notices sit on the map above it. */
 	const sheetOpen = $derived(layout.compact && !!layout.drawer && !app.zen);
 	// An open sheet stands on the dynamics playback bar, which then sits flush on the bottom edge.
-	const bottomReserve = $derived(sheetOpen ? app.dockInset : notices.entries.length ? 120 : 88);
+	const bottomReserve = $derived(sheetOpen ? app.dockInset : 88);
 	/** The tab strip: the panels that dock on the left by default, plus any that
 	 * ask for a tab (Dynamics). Settings opens from the header menu instead. */
 	const tabs = $derived(layout.ordered().filter((p) => p.tab ?? p.side === 'left'));
@@ -74,11 +73,15 @@
 	const leftShown = $derived(left.some((p) => layout.preferred(p)));
 	/** The panel under the strip, whose controls may share the strip's row. */
 	const front = $derived(layout.compact ? drawer : left.find((p) => layout.preferred(p)));
-	const reserve = $derived(front && !front.headerActions ? (layout.compact ? 52 : 68) : 0);
+	/** Room on the strip's row for the front panel's own controls. */
+	const STRIP_CONTROLS = 68;
+	const reserve = $derived(
+		front && !front.headerActions ? (layout.compact ? 52 : STRIP_CONTROLS) : 0
+	);
 	/** The tabs' natural width; the left dock grows to fit them and the controls. */
 	let tabsWidth = $state(0);
 	$effect(() => {
-		layout.stripMin = stripShown && !layout.compact ? tabsWidth + 68 + 10 : 0;
+		layout.stripMin = stripShown && !layout.compact ? tabsWidth + STRIP_CONTROLS + 10 : 0;
 	});
 	/** The shortest the phone sheet is while open. */
 	const SHEET_MIN = 140;
@@ -219,7 +222,8 @@
 	// The main map's attribution and zoom, and the notices, sit above the strip or the
 	// open sheet.
 	$effect(() => {
-		const root = document.documentElement.style;
+		const root = config.element?.style;
+		if (!root) return;
 		if ((docked || (sheetOpen && stripShown)) && !app.zen)
 			root.setProperty(
 				'--tellegen-sheet-clear',
@@ -371,7 +375,7 @@
 	.panel-toolbar {
 		position: fixed;
 		/* Under the docks, so a panel's own controls can sit on the strip's row. */
-		z-index: 24;
+		z-index: var(--z-panel-strip);
 		left: var(--tellegen-dock-left, 16px);
 		display: flex;
 		align-items: stretch;
@@ -493,7 +497,7 @@
 	}
 	.dock {
 		position: fixed;
-		z-index: 25;
+		z-index: var(--z-panel);
 		bottom: var(--tellegen-dock-bottom, 100px);
 		display: flex;
 		flex-direction: column;
@@ -518,12 +522,12 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		z-index: 25;
+		z-index: var(--z-panel);
 	}
 	/* The phone sheet's grab bar, just above its tabs. */
 	.sheet-handle {
 		position: fixed;
-		z-index: 26;
+		z-index: var(--z-dock);
 		left: 50%;
 		transform: translateX(-50%);
 		display: grid;
@@ -549,7 +553,7 @@
 		position: fixed;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 42;
+		z-index: var(--z-notice);
 		max-width: 400px;
 		margin: 0;
 		padding: 8px 12px;

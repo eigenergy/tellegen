@@ -3,7 +3,7 @@
    for interaction and selection, red only for a line at its limit, amber only
    for one close to it. Map data uses its own colour-blind-safe ramps (colors.ts),
    which never borrow the interface accent. */
-:root {
+.tellegen {
 	/* primitives */
 	--bg: #e3e7eb; /* behind the map while tiles load */
 	--panel: #eef0f2; /* panel surface on the map */
@@ -134,16 +134,27 @@
 	--ease-in-out: ease-in-out;
 	--ease-standard: ease;
 
-	/* z-index layers */
-	--z-chrome: 10;
-	--z-cue: 14;
-	--z-overlay: 20;
+	/* z-index layers, bottom to top. Everything that stacks takes one of these. */
+	--z-chrome: 10; /* footer and buttons on the map */
+	--z-cue: 14; /* placement instructions */
+	--z-map-action: 15; /* a button above a cue */
+	--z-overlay: 20; /* drop zone, bus picker list */
+	--z-panel-strip: 24; /* the panel tabs */
+	--z-panel: 25; /* docked panels and the phone sheet */
+	--z-dock: 26; /* the sheet's grab bar and the playback dock */
+	--z-note: 30; /* a host's own note on the map */
+	--z-floating: 40; /* floating panels, a host's status ribbon */
+	--z-notice: 42; /* a layout message above the panels */
+	--z-header: 45;
+	--z-menu: 50; /* header menus */
+	--z-toast: 65;
+	--z-modal: 70; /* command palette */
 	--z-grain: 9999;
 }
 
 /* Dark theme: `TellegenProvider theme="dark"` sets the attribute (a host may
    also put it in its template). Ratios are against the panel surface. */
-:root[data-theme='dark'] {
+.tellegen[data-theme='dark'] {
 	/* The price ramp on a dark map runs the other way: see PRICE_STOPS_DARK. */
 	--tellegen-price-ramp: linear-gradient(
 		90deg,
@@ -213,7 +224,7 @@
    provider then writes the same choice to the attribute after hydration, so this
    block only covers first paint. Keep it in step with the block above. */
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme]) {
+	.tellegen:not([data-theme]) {
 		--tellegen-price-ramp: linear-gradient(
 			90deg,
 			rgb(168 50 125),
@@ -279,12 +290,11 @@
 	}
 }
 
-* {
+:where(.tellegen) * {
 	box-sizing: border-box;
 }
 
-html,
-body {
+.tellegen {
 	margin: 0;
 	height: 100%;
 	background: var(--bg);
@@ -296,16 +306,16 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
-button,
-input,
-select,
-textarea {
+:where(.tellegen) button,
+:where(.tellegen) input,
+:where(.tellegen) select,
+:where(.tellegen) textarea {
 	font-variant-numeric: inherit;
 }
 
 /* One select in every panel: a raised control with a drawn chevron, never the
    operating system's own. Zero specificity, so a component can still adjust it. */
-:where(.panel-frame, .panel-select) :where(select:not([multiple])) {
+:where(.tellegen) :where(.panel-frame, .panel-select) :where(select:not([multiple])) {
 	appearance: none;
 	-webkit-appearance: none;
 	max-width: 100%;
@@ -330,11 +340,13 @@ textarea {
 	cursor: pointer;
 }
 
-:where(.panel-frame, .panel-select) :where(select:not([multiple]):hover:not(:disabled)) {
+:where(.tellegen)
+	:where(.panel-frame, .panel-select)
+	:where(select:not([multiple]):hover:not(:disabled)) {
 	border-color: var(--border-strong);
 }
 
-:where(.panel-frame, .panel-select) :where(select:disabled) {
+:where(.tellegen) :where(.panel-frame, .panel-select) :where(select:disabled) {
 	cursor: default;
 	opacity: 0.6;
 }
@@ -342,16 +354,16 @@ textarea {
 /* Settings-style rows, shared by Settings and the Dynamics panel: a small grey group
    heading, then one row per setting with its name on the left and its control on the
    right, every control one width. Zero specificity, so a panel can still adjust it. */
-:where(.settings-list) :where(h3, h4) {
+:where(.tellegen) :where(.settings-list) :where(h3, h4) {
 	margin: 16px 0 2px;
 	font-size: var(--fs-label);
 	font-weight: 600;
 	color: var(--text-secondary);
 }
-:where(.settings-list) :where(h3:first-child, h4:first-child) {
+:where(.tellegen) :where(.settings-list) :where(h3:first-child, h4:first-child) {
 	margin-top: 0;
 }
-:where(.settings-list) :where(.setting) {
+:where(.tellegen) :where(.settings-list) :where(.setting) {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -359,11 +371,13 @@ textarea {
 	min-height: 34px;
 	border-bottom: 1px solid var(--line);
 }
-:where(.settings-list) :where(.setting > label, .setting > span:first-child, .setting > dt) {
+:where(.tellegen)
+	:where(.settings-list)
+	:where(.setting > label, .setting > span:first-child, .setting > dt) {
 	min-width: 0;
 	color: var(--text-primary);
 }
-:where(.settings-list) :where(.setting > dd, .setting > .value) {
+:where(.tellegen) :where(.settings-list) :where(.setting > dd, .setting > .value) {
 	margin: 0;
 	min-width: 0;
 	color: var(--text-secondary);
@@ -371,7 +385,9 @@ textarea {
 	overflow-wrap: anywhere;
 	font-variant-numeric: tabular-nums;
 }
-:where(.settings-list) :where(.setting select, .setting input:not([type='checkbox'])) {
+:where(.tellegen)
+	:where(.settings-list)
+	:where(.setting select, .setting input:not([type='checkbox'])) {
 	flex: none;
 	width: var(--settings-control-width, 150px);
 	box-sizing: border-box;
@@ -382,16 +398,16 @@ textarea {
 	color: var(--ink);
 	font: inherit;
 }
-:where(.settings-list) :where(.setting input:not([type='checkbox'])) {
+:where(.tellegen) :where(.settings-list) :where(.setting input:not([type='checkbox'])) {
 	padding: 3px 8px;
 }
-:where(.settings-list) :where(.setting input[type='number']) {
+:where(.tellegen) :where(.settings-list) :where(.setting input[type='number']) {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 }
 /* A control with a unit after it: the pair takes the control's width, and the unit has a
    fixed slot, so inputs with different units line up. */
-:where(.settings-list) :where(.setting .with-unit) {
+:where(.tellegen) :where(.settings-list) :where(.setting .with-unit) {
 	flex: none;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) 3.6em;
@@ -400,78 +416,80 @@ textarea {
 	width: var(--settings-control-width, 150px);
 	color: var(--text-secondary);
 }
-:where(.settings-list) :where(.setting .with-unit input) {
+:where(.tellegen) :where(.settings-list) :where(.setting .with-unit input) {
 	width: 100%;
 	min-width: 0;
 }
-:where(.settings-list) :where(.setting input[type='checkbox']) {
+:where(.tellegen) :where(.settings-list) :where(.setting input[type='checkbox']) {
 	width: 16px;
 	height: 16px;
 	margin: 0;
 	accent-color: var(--accent-fill);
 }
-:where(.settings-list) :where(details) {
+:where(.tellegen) :where(.settings-list) :where(details) {
 	border-bottom: 1px solid var(--line);
 }
-:where(.settings-list) :where(details .setting:last-child) {
+:where(.tellegen) :where(.settings-list) :where(details .setting:last-child) {
 	border-bottom: 0;
 }
-:where(.settings-list) :where(summary) {
+:where(.tellegen) :where(.settings-list) :where(summary) {
 	display: list-item;
 	line-height: 34px;
 	cursor: pointer;
 	color: var(--text-primary);
 	list-style-position: inside;
 }
-:where(.settings-list) :where(select, input, summary, button):focus-visible {
+:where(.tellegen) :where(.settings-list) :where(select, input, summary, button):focus-visible {
 	outline: 2px solid var(--focus-ring);
 	outline-offset: 2px;
 }
 @media (pointer: coarse) {
-	:where(.settings-list) :where(.setting) {
+	:where(.tellegen) :where(.settings-list) :where(.setting) {
 		min-height: 44px;
 	}
-	:where(.settings-list) :where(summary) {
+	:where(.tellegen) :where(.settings-list) :where(summary) {
 		line-height: 44px;
 	}
-	:where(.settings-list) :where(.setting select, .setting input:not([type='checkbox'])) {
+	:where(.tellegen)
+		:where(.settings-list)
+		:where(.setting select, .setting input:not([type='checkbox'])) {
 		min-height: 36px;
 		font-size: 16px;
 	}
 }
 
 /* Numbers that should line up. The UI face with tabular figures, not monospace. */
-.mono {
+:where(.tellegen) .mono {
 	font-family: var(--font-mono);
 	font-variant-numeric: tabular-nums lining-nums;
 }
 
-code,
-kbd,
-pre,
-samp {
+:where(.tellegen) code,
+:where(.tellegen) kbd,
+:where(.tellegen) pre,
+:where(.tellegen) samp {
 	font-family: var(--font-code);
 	font-size: 0.92em;
 }
 
-a {
+:where(.tellegen) a {
 	color: var(--text-accent);
 	text-decoration: none;
 }
 
-a:hover {
+:where(.tellegen) a:hover {
 	text-decoration: underline;
 	text-underline-offset: 3px;
 }
 
 /* chrome classes shared by more than one split component; kept global so Svelte
    scoping does not drop them. */
-.dim {
+:where(.tellegen) .dim {
 	color: var(--text-secondary);
 }
 
 @media (hover: none), (pointer: coarse) {
-	.filedrop-ui {
+	:where(.tellegen) .filedrop-ui {
 		display: none;
 	}
 }
@@ -499,7 +517,7 @@ a:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	:root {
+	.tellegen {
 		--dur-fast: 0.01ms;
 		--dur-med: 0.01ms;
 		--dur-slow: 0.01ms;
@@ -515,14 +533,14 @@ a:hover {
    TopMovers, DisplayControls, SizeLegend, LocalCaseDetails) plus ControlPanel
    itself. Kept global so Svelte scoping does not drop them; the .mode /
    .display-mode / @media source order is kept so the cascade resolves as before. */
-.region {
+:where(.tellegen) .region {
 	font-size: var(--fs-label);
 	font-weight: 400;
 	color: var(--text-secondary);
 	margin-left: 6px;
 }
 
-.mode {
+:where(.tellegen) .mode {
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -531,7 +549,7 @@ a:hover {
 
 /* Kept global (not scoped into SensitivityReadout) so the @media (max-width: 760px)
    `.mode button { margin-left: 0 }` override below wins by source order. */
-.mode > button {
+:where(.tellegen) .mode > button {
 	margin-left: auto;
 	font-family: inherit;
 	font-size: var(--fs-label);
@@ -543,33 +561,33 @@ a:hover {
 	cursor: pointer;
 }
 
-.mode > button:hover {
+:where(.tellegen) .mode > button:hover {
 	border-color: var(--accent);
 	color: var(--text-accent);
 }
 
-.display-mode {
+:where(.tellegen) .display-mode {
 	flex-wrap: wrap;
 	gap: 8px;
 }
 
-.display-mode .segment button {
+:where(.tellegen) .display-mode .segment button {
 	font-size: var(--fs-body);
 	padding: 3px 10px;
 }
 
-.small {
+:where(.tellegen) .small {
 	font-size: var(--fs-label);
 	line-height: 1.5;
 }
 
-.legend {
+:where(.tellegen) .legend {
 	height: 8px;
 	border-radius: 2px;
 	margin-top: 6px;
 }
 
-.legend-labels {
+:where(.tellegen) .legend-labels {
 	display: flex;
 	justify-content: space-between;
 	font-size: var(--fs-label);
@@ -577,12 +595,12 @@ a:hover {
 	margin-top: 4px;
 }
 
-.legend-labels.single {
+:where(.tellegen) .legend-labels.single {
 	justify-content: center;
 	text-align: center;
 }
 
-.hint-dot {
+:where(.tellegen) .hint-dot {
 	display: inline-grid;
 	place-items: center;
 	width: 16px;
@@ -596,7 +614,7 @@ a:hover {
 	cursor: help;
 }
 
-.segment {
+:where(.tellegen) .segment {
 	display: inline-flex;
 	border: 1px solid var(--line);
 	border-radius: var(--radius-control);
@@ -604,7 +622,7 @@ a:hover {
 	background: var(--surface-control);
 }
 
-.segment button {
+:where(.tellegen) .segment button {
 	padding: 3px 9px;
 	border: 0;
 	background: transparent;
@@ -613,21 +631,21 @@ a:hover {
 	cursor: pointer;
 }
 
-.segment button + button {
+:where(.tellegen) .segment button + button {
 	border-left: 1px solid var(--line);
 }
 
-.segment button:hover {
+:where(.tellegen) .segment button:hover {
 	color: var(--ink);
 	background: var(--surface-hover);
 }
 
-.segment button.active {
+:where(.tellegen) .segment button.active {
 	background: var(--accent-fill);
 	color: var(--on-accent);
 }
 
-.reset {
+:where(.tellegen) .reset {
 	margin-top: 10px;
 	font-family: inherit;
 	font-size: var(--fs-label);
@@ -639,51 +657,51 @@ a:hover {
 	cursor: pointer;
 }
 
-.reset:hover {
+:where(.tellegen) .reset:hover {
 	border-color: var(--accent);
 	color: var(--text-accent);
 }
 
-.blink {
+:where(.tellegen) .blink {
 	animation: blink 1.2s steps(2) infinite;
 }
 
 @media (max-width: 760px) {
-	.mode {
+	:where(.tellegen) .mode {
 		flex-wrap: wrap;
 		gap: 7px;
 	}
 
-	.mode button {
+	:where(.tellegen) .mode button {
 		margin-left: 0;
 	}
 }
 
 /* Keyboard focus ring: one accent ring for every interactive element. */
-:focus-visible {
+:where(.tellegen) :focus-visible {
 	outline: 2px solid var(--focus-ring);
 	outline-offset: 2px;
 }
 
 /* Coarse pointers: comfortable hit targets for the toggle and reset controls. */
 @media (hover: none), (pointer: coarse) {
-	.segment button {
+	:where(.tellegen) .segment button {
 		min-height: 44px;
 	}
 
-	.reset {
+	:where(.tellegen) .reset {
 		min-height: 44px;
 	}
 
 	/* Keep the chip visually small next to its short siblings; the ::before pads
 	   the tap target out to 44px. */
-	.mode > button {
+	:where(.tellegen) .mode > button {
 		position: relative;
 		min-height: 28px;
 		padding-inline: 10px;
 	}
 
-	.mode > button::before {
+	:where(.tellegen) .mode > button::before {
 		content: '';
 		position: absolute;
 		inset: -8px -4px;
@@ -692,9 +710,9 @@ a:hover {
 
 /* Honor reduced-motion everywhere: collapse animations and transitions. */
 @media (prefers-reduced-motion: reduce) {
-	*,
-	*::before,
-	*::after {
+	:where(.tellegen) *,
+	:where(.tellegen) *::before,
+	:where(.tellegen) *::after {
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
@@ -702,8 +720,22 @@ a:hover {
 	}
 }
 
+/* Text for screen readers only. One definition for every component; the
+   declarations are important so a component's own element rules cannot undo them. */
+:where(.tellegen) .sr-only {
+	position: absolute !important;
+	width: 1px !important;
+	height: 1px !important;
+	margin: -1px !important;
+	padding: 0 !important;
+	border: 0 !important;
+	overflow: hidden !important;
+	clip-path: inset(50%) !important;
+	white-space: nowrap !important;
+}
+
 /* Experimental tools: a tag with the word and a caution rule, never colour alone. */
-.pill-experimental {
+:where(.tellegen) .pill-experimental {
 	display: inline-block;
 	padding: 0 6px;
 	border-left: 3px solid var(--warn);

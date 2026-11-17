@@ -1,14 +1,28 @@
 import type { RGBA } from './colors.js';
 import type { DisplayMode } from './state.svelte.js';
-import { FORMULATIONS, type Formulation } from '@tellegen/engine';
+import { FORMULATIONS, type Formulation, type ObjectiveKind } from '@tellegen/engine';
 
 // errorText is defined once in wasm.ts (its first consumer) and surfaced here so UI
 // code can import it alongside the other formatting helpers.
 export { errorText } from '@tellegen/engine';
 
 /** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
-export function formulationLabel(id: Formulation): string {
+export function formulationLabel(id: Formulation, objectiveKind?: ObjectiveKind | null): string {
+	if (objectiveKind === 'feasibility' && id === 'dcopf') return 'DC feasibility';
+	if (objectiveKind === 'feasibility' && id === 'acopf') return 'AC feasibility';
+	if (objectiveKind === 'feasibility' && id === 'socwr') return 'AC feasibility (relaxed)';
 	return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
+}
+
+/** Older saved studies may not name their objective. Keep that distinct from feasibility. */
+export function objectiveKind(result: object | null | undefined): ObjectiveKind | undefined {
+	if (
+		result &&
+		'objective_kind' in result &&
+		(result.objective_kind === 'cost' || result.objective_kind === 'feasibility')
+	)
+		return result.objective_kind;
+	return undefined;
 }
 
 /** A line's name everywhere it is listed: its id and the buses it joins. */
@@ -30,6 +44,35 @@ export function splitName(name: string): [string, string] {
 }
 
 export const INFEASIBLE_DISPATCH = 'Infeasible';
+
+/** A line counts as at its limit from 99.9% of its rating, wherever the solver
+ * does not flag binding lines itself. */
+export const atLimit = (flow: { loading: number }) => flow.loading >= 0.999;
+
+/** A number to six significant figures, without trailing zeros. */
+export const sixFigures = (n: number) => Number(n.toPrecision(6)).toString();
+
+/** Hand a file to the viewer. Nothing leaves the machine: a save is a local
+ * Blob download. */
+export function download(blob: Blob, filename: string) {
+	const url = URL.createObjectURL(blob);
+	const anchor = document.createElement('a');
+	anchor.href = url;
+	anchor.download = filename;
+	anchor.rel = 'noopener';
+	document.body.appendChild(anchor);
+	anchor.click();
+	// Defer cleanup: revoking the object URL in the same tick as click() can cancel
+	// an in-flight download in some browsers.
+	setTimeout(() => {
+		anchor.remove();
+		URL.revokeObjectURL(url);
+	}, 1000);
+}
+
+/** `download` for in-memory text. */
+export const downloadText = (text: string, filename: string, mime: string) =>
+	download(new Blob([text], { type: mime }), filename);
 
 /** The short message for a local case whose browser solve failed, and the technical
  * detail to disclose behind it. The engine spells an infeasible solve

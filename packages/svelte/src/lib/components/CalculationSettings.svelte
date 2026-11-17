@@ -67,7 +67,7 @@
 
 <script lang="ts">
 	import {
-		FORMULATIONS,
+		calculationAvailable,
 		type Formulation,
 		describeSettings,
 		settingsCatalog,
@@ -75,6 +75,7 @@
 		type SettingDescriptor
 	} from '@tellegen/engine';
 	import { getAppState, getController } from '../context.svelte.js';
+	import { formulationLabel } from '../format.js';
 	import { recordedCalculationSettings } from '../settings.svelte.js';
 	import { LocalCase, MulticonductorCase, type SolvableCase } from '../state.svelte.js';
 
@@ -168,20 +169,20 @@
 	function canSelect(value: string, available: boolean) {
 		if (!current) return false;
 		if (current instanceof MulticonductorCase) return value === 'mc_ac_pf' && available;
-		if (
-			current instanceof LocalCase &&
-			current.declaredFormulation &&
-			current.declaredFormulation !== value
-		)
-			return false;
-		return value === 'acopf'
-			? ctrl.acOpfConfigured && !current.perturbed
-			: available && ctrl.formulationAvailable(current, value as Formulation);
+		// AC OPF loads when it is chosen here, so a configured solver is enough.
+		return (
+			(value === 'acopf' || available) &&
+			calculationAvailable(value as Formulation, {
+				declared: current instanceof LocalCase ? current.declaredFormulation : null,
+				edited: current.perturbed,
+				acOpf: ctrl.acOpfConfigured
+			})
+		);
 	}
 	function calculationLabel(value: string) {
 		return value === 'mc_ac_pf'
 			? 'Distribution AC power flow'
-			: (FORMULATIONS.find((f) => f.id === value)?.label ?? value);
+			: formulationLabel(value as Formulation);
 	}
 	function fieldLabel(key: string): string {
 		return LABELS[key] ?? key.replaceAll('_', ' ');

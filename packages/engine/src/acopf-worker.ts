@@ -1,4 +1,4 @@
-import { errorText } from "./errors.js";
+import { engineError, errorCode, errorText } from "./errors.js";
 import type {
   AcOpfWorkerRequest,
   AcOpfWorkerResponse,
@@ -28,26 +28,45 @@ const scope = globalThis as unknown as {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-async function instantiate(url: string): Promise<AcOpfExports> {
-  const wasi = createAcOpfWasi((text) =>
-    console.debug("[acopf]", text.trimEnd()),
-  );
+/** Compiled modules by URL, kept for the life of the worker so that only the
+ * first solve pays for the fetch and the compile. */
+const modules = new Map<string, Promise<WebAssembly.Module>>();
+
+async function fetchAndCompile(url: string): Promise<WebAssembly.Module> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`AC OPF wasm fetch failed (HTTP ${response.status})`);
   }
-  let instance: WebAssembly.Instance;
   try {
-    ({ instance } = await WebAssembly.instantiateStreaming(
+    return await WebAssembly.compileStreaming(
       Promise.resolve(response.clone()),
-      wasi.imports,
-    ));
+    );
   } catch {
-    ({ instance } = await WebAssembly.instantiate(
-      await response.arrayBuffer(),
-      wasi.imports,
-    ));
+    return await WebAssembly.compile(await response.arrayBuffer());
   }
+}
+
+function compiled(url: string): Promise<WebAssembly.Module> {
+  let module = modules.get(url);
+  if (!module) {
+    module = fetchAndCompile(url);
+    modules.set(url, module);
+    // A failed fetch or compile is not remembered: the next request retries.
+    module.catch(() => modules.delete(url));
+  }
+  return module;
+}
+
+/** A fresh instance of the compiled module. Each solve gets its own memory, so
+ * a solve that trapped or grew the heap leaves nothing behind for the next. */
+async function instantiate(url: string): Promise<AcOpfExports> {
+  const wasi = createAcOpfWasi((text) =>
+    console.debug("[acopf]", text.trimEnd()),
+  );
+  const instance = await WebAssembly.instantiate(
+    await compiled(url),
+    wasi.imports,
+  );
   wasi.bind(instance);
   const exports = instance.exports as AcOpfExports;
   for (const name of [
@@ -90,7 +109,6 @@ scope.onmessage = async ({ data }: MessageEvent<AcOpfWorkerRequest>) => {
     const exports = await instantiate(data.wasmUrl);
     if (data.type === "probe") {
       scope.postMessage({ type: "ready" });
-      scope.close();
       return;
     }
     const moduleInput = copyInput(exports, data.moduleJson);
@@ -100,7 +118,7 @@ scope.onmessage = async ({ data }: MessageEvent<AcOpfWorkerRequest>) => {
         exports,
         exports.tellegen_acopf_solve(...moduleInput, ...requestInput),
       ) as { error?: unknown };
-      if (typeof value?.error === "string") throw new Error(value.error);
+      if (typeof value?.error === "string") throw engineError(value.error, errorCode(value));
       if (JSON.parse(data.requestJson).ac_dc === true) {
         scope.postMessage({
           type: "joint_result",
@@ -114,8 +132,6 @@ scope.onmessage = async ({ data }: MessageEvent<AcOpfWorkerRequest>) => {
       exports.tellegen_acopf_dealloc(...requestInput);
     }
   } catch (error) {
-    scope.postMessage({ type: "error", message: errorText(error) });
-  } finally {
-    scope.close();
+    scope.postMessage({ type: "error", message: errorText(error), code: errorCode(error) });
   }
 };

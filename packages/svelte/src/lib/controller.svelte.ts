@@ -27,7 +27,13 @@ import {
 	type SolvableCase
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
-import { powerIoEntry, solveEntry } from './log.svelte.js';
+import {
+	errorTitle,
+	powerIoEntry,
+	solveEntry,
+	type ErrorContext,
+	type LogEntryInput
+} from './log.svelte.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
 import { PIO_MODULE_EXPORT } from './export-formats.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
@@ -49,7 +55,7 @@ import {
 	applyLayout,
 	createStudy,
 	extractGeo,
-	FORMULATIONS,
+	calculationAvailable,
 	formatPowerIoDiagnostic,
 	formatOf,
 	ingestCase,
@@ -85,7 +91,14 @@ import {
 	type PowerIoDiagnostic,
 	type SensTarget
 } from '@tellegen/engine';
-import { browserSolveFailure, errorText, extent, formulationLabel } from './format.js';
+import {
+	atLimit,
+	browserSolveFailure,
+	downloadText,
+	errorText,
+	extent,
+	formulationLabel
+} from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
 import { limitWords } from './diagram/verdict.js';
 import { DEMO_LABEL, DYNAMICS_OFF, DynamicsController } from './dynamics/controller.svelte.js';
@@ -259,24 +272,6 @@ class CaseFileUnavailable extends Error {
 	override name = 'CaseFileUnavailable';
 }
 
-/** Trigger a browser download of in-memory text. Case files never leave the machine:
- * a save is a local Blob download. */
-export function downloadText(text: string, filename: string, mime: string) {
-	const url = URL.createObjectURL(new Blob([text], { type: mime }));
-	const anchor = document.createElement('a');
-	anchor.href = url;
-	anchor.download = filename;
-	anchor.rel = 'noopener';
-	document.body.appendChild(anchor);
-	anchor.click();
-	// Defer cleanup: revoking the object URL in the same tick as click() can cancel
-	// an in-flight download in some browsers.
-	setTimeout(() => {
-		anchor.remove();
-		URL.revokeObjectURL(url);
-	}, 0);
-}
-
 export type { SolvableCase };
 type DemandRangeAnchor = {
 	caseId: string;
@@ -447,8 +442,12 @@ export class Controller {
 			.catch(() => false));
 	};
 	private openCollection = async (read: Parameters<CollectionImport['start']>[0]) => {
-		if (!(await this.probeCollections())) throw new Error(COLLECTION_UNAVAILABLE);
-		if (!this.disposed) await this.collectionImport.start(read);
+		if (!(await this.probeCollections()))
+			this.fail(COLLECTION_UNAVAILABLE, null, {
+				title: 'Imports unavailable',
+				stage: 'Open'
+			});
+		else if (!this.disposed) await this.collectionImport.start(read);
 	};
 	readonly collectionImport = new CollectionImport((label, result) => {
 		if (this.disposed) return;
@@ -546,9 +545,22 @@ export class Controller {
 		return c?.perturbed ?? false;
 	}
 
+	/** Whether the engine can run `formulation` on this case; see `calculationAvailable`. */
 	formulationAvailable(c: SolvableCase, formulation: Formulation): boolean {
-		if (formulation === 'acopf') return this.acOpfAvailable && !c.perturbed;
-		return !FORMULATIONS.find((entry) => entry.id === formulation)?.disabled;
+		return calculationAvailable(formulation, {
+			edited: c.perturbed,
+			acOpf: this.acOpfAvailable
+		});
+	}
+
+	/** Whether a Calculation menu offers `formulation` for this case as it stands. */
+	calculationOffered(c: SolvableCase, formulation: Formulation): boolean {
+		return calculationAvailable(formulation, {
+			declared: c instanceof LocalCase ? c.declaredFormulation : null,
+			edited: c.perturbed,
+			ratingsEdited: c.ratingsEdited,
+			acOpf: this.acOpfAvailable
+		});
 	}
 
 	/** Whether this host supplied the optional solver asset. It loads only on request. */
@@ -1011,7 +1023,7 @@ export class Controller {
 			? new Set(constraints.filter((row) => row.binding).map((row) => row.branch))
 			: null;
 		const binds = (flow: { branch: number; loading: number }) =>
-			flagged ? flagged.has(flow.branch) : flow.loading >= 0.999;
+			flagged ? flagged.has(flow.branch) : atLimit(flow);
 		return {
 			label: limitWords(this.activeFormulation).lines,
 			flagged: !!constraints,
@@ -1322,7 +1334,12 @@ export class Controller {
 				// mount (the page guards the call with `if (!ctrl.casesLoaded)`).
 				this.casesLoaded = true;
 			} catch (e) {
-				this.fail(errorText(e), this.load);
+				this.failed(
+					this.casesFailed ? 'Could not load the case list' : 'Could not load the cases',
+					'Open',
+					e,
+					{ retry: this.load, quiet: this.casesFailed }
+				);
 			} finally {
 				this.loading = null;
 			}
@@ -1369,7 +1386,10 @@ export class Controller {
 			}
 		} catch (e) {
 			if (this.app.byId(c.id)) {
-				this.fail(`${c.name}: ${errorText(e)}`, () => this.loadBackendCase(c, true));
+				this.failed(`Could not load ${c.name}`, 'Open', e, {
+					message: `${c.name}: ${errorText(e)}`,
+					retry: () => this.loadBackendCase(c, true)
+				});
 			}
 		} finally {
 			if (this.loadingBackendCase === c.id) this.loadingBackendCase = null;
@@ -1535,7 +1555,9 @@ export class Controller {
 			);
 			this.app.error = null;
 		} catch (e) {
-			this.app.error = `${this.caseName(c)}: could not export the layout: ${errorText(e)}`;
+			this.failed('Could not export the layout', 'Export', e, {
+				message: `${this.caseName(c)}: could not export the layout: ${errorText(e)}`
+			});
 		}
 	};
 
@@ -1591,11 +1613,16 @@ export class Controller {
 		}
 		if (!payload) return;
 		const sourceLabel = layers.map((l) => l.name).join(' + ');
-		this.adoptGeoPayload(c, payload, sourceLabel, sourceLabel, [
+		const allPlaced = this.adoptGeoPayload(c, payload, sourceLabel, sourceLabel, [
 			...(routes > 0 ? [`${routes} branch route(s) matched from geographic file data`] : []),
 			...(unmatched > 0 ? [`${unmatched} feature(s) matched no case element`] : []),
 			...warnings
 		]);
+		this.logPlacement(
+			c,
+			c.geoWarnings ?? [],
+			allPlaced && !unmatched && !warnings.length && !payload.warnings.length
+		);
 		await this.syncStudyGeo(
 			c,
 			layers.map((l) => l.layer)
@@ -1604,7 +1631,7 @@ export class Controller {
 
 	/** Adopt an engine geo apply onto the case: the refreshed payload becomes
 	 * the case's network and view, provenance flips to the geographic source,
-	 * and the warnings panel gets the placement summary. */
+	 * and the warnings panel gets the placement summary. Returns whether every bus was placed. */
 	private adoptGeoPayload(
 		c: LocalCase,
 		payload: AppliedGeoCase,
@@ -1625,6 +1652,7 @@ export class Controller {
 			...extraWarnings,
 			...payload.warnings
 		];
+		return placedCanonicalBuses === payload.n_bus;
 	}
 
 	/** Update an existing numerical Study after the base input receives geographic data. */
@@ -1784,7 +1812,7 @@ export class Controller {
 			try {
 				await this.applyMultiGeoLayers(source, layers);
 			} catch (error) {
-				this.app.error = errorText(error);
+				this.failed('Could not attach coordinates', 'Coordinates', error);
 			}
 			if (displays.length) this.app.error = 'Multiconductor cases need GeoJSON or CSV coordinates';
 			return;
@@ -1866,7 +1894,7 @@ export class Controller {
 			this.app.error = placement.error;
 		} catch (error) {
 			if (target && target !== source) this.disposeStudy(target);
-			this.app.error = errorText(error);
+			this.failed('Could not attach coordinates', 'Coordinates', error);
 		}
 	}
 
@@ -1939,7 +1967,10 @@ export class Controller {
 				// looking dead.
 				if (c.formulation !== 'dcopf') {
 					if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-						this.fail(`${this.caseName(c)}: ${errorText(e)}`, retry);
+						this.failed('No price sensitivity', 'Solve', e, {
+							message: `${this.caseName(c)}: ${errorText(e)}`,
+							retry
+						});
 					}
 					handled = true;
 				}
@@ -2037,15 +2068,48 @@ export class Controller {
 			}
 			// A late failure must not clobber a newer selection's state.
 			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-				this.fail(errorText(e), retryOp);
+				this.failed('No price sensitivity', 'Solve', e, { retry: retryOp });
 			}
 		}
 	};
 
 	/** Show an error with an optional one-click re-run of the failed operation. */
-	private fail(message: string, retry: (() => void) | null = null) {
-		this.app.error = message;
-		this.app.errorRetry = retry;
+	private fail(message: string, retry: (() => void) | null = null, known: ErrorContext = {}) {
+		this.failed(known.title, known.stage, message, { ...known, retry });
+	}
+
+	/** Report a caught error: `title` names what failed and `stage` the step. A
+	 * `message` replaces the error's own text, and `quiet` keeps it out of the toast. */
+	private failed(
+		title: string | undefined,
+		stage: string | undefined,
+		cause: unknown,
+		known: Omit<ErrorContext, 'retry'> & {
+			quiet?: boolean;
+			retry?: (() => void) | null;
+		} = {}
+	) {
+		const { retry } = known;
+		this.app.reportError(cause, {
+			...known,
+			stage,
+			// The server's status says more than any step's own title.
+			title: cause instanceof ApiError && cause.status === 429 ? RATE_LIMITED : title,
+			// An explicit retry always ends a 429 cooldown.
+			retry: retry
+				? () => {
+						this.sensitivity429Until = 0;
+						return retry();
+					}
+				: undefined
+		});
+	}
+
+	/** A file that could not be read. */
+	private openFailed(name: string, cause: unknown) {
+		this.failed(`Could not open ${name}`, 'Open', cause, {
+			message: `${name}: ${errorText(cause)}`
+		});
 	}
 
 	/** The panel's retry button: re-run the failed operation when one is known,
@@ -2086,7 +2150,10 @@ export class Controller {
 			}
 		} catch (e) {
 			if (!ac.signal.aborted) {
-				this.fail(`${c.label}: ${errorText(e)}`, () => this.selectLocalBus(localId, busId));
+				this.failed('No price sensitivity', 'Solve', e, {
+					message: `${c.label}: ${errorText(e)}`,
+					retry: () => this.selectLocalBus(localId, busId)
+				});
 			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
@@ -2152,7 +2219,10 @@ export class Controller {
 			}
 		} catch (e) {
 			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-				this.fail(`${c.label}: ${errorText(e)}`, retry);
+				this.failed('No price sensitivity', 'Solve', e, {
+					message: `${c.label}: ${errorText(e)}`,
+					retry
+				});
 			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
@@ -2269,7 +2339,9 @@ export class Controller {
 				} catch (error) {
 					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
 					c.solving = false;
-					this.app.error = `${this.caseName(c)}: AC OPF failed in the isolated browser worker: ${errorText(error)}`;
+					this.failed(errorTitle(error, 'AC OPF failed'), 'Solve', error, {
+						message: `${this.caseName(c)}: AC OPF failed in the isolated browser worker: ${errorText(error)}`
+					});
 				} finally {
 					if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
 				}
@@ -2355,8 +2427,10 @@ export class Controller {
 			}
 			c.solving = false;
 			const failure = browserSolveFailure(c.label, c.solveFallbackReason);
-			this.app.error = failure.message;
-			this.app.errorDetail = failure.detail;
+			this.fail(failure.message, null, {
+				detail: failure.detail,
+				stage: 'Solve'
+			});
 		});
 	};
 
@@ -2407,8 +2481,13 @@ export class Controller {
 					this.app.previewDeltaMw = null;
 					this.app.previewRatingMw = null;
 				}
-				this.fail(`${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`, () =>
-					this.runSolve(c, target)
+				this.fail(
+					`${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`,
+					() => this.runSolve(c, target),
+					{
+						title: `${formulationLabel(c.formulation)} failed`,
+						stage: 'Solve'
+					}
 				);
 			},
 			ondone: () => {
@@ -2504,7 +2583,7 @@ export class Controller {
 			);
 			await this.runSettings(c);
 		} catch (error) {
-			this.fail(error instanceof Error ? error.message : String(error));
+			this.failed('DC line model change failed', 'Solve', error);
 		}
 	};
 
@@ -2519,10 +2598,9 @@ export class Controller {
 		} catch (error) {
 			if ((error as Error)?.name === 'AbortError') return;
 			if (!c.solving) c.failedCalculation = next;
-			this.fail(
-				error instanceof Error ? error.message : String(error),
-				() => void this.chooseCalculation(c, next)
-			);
+			this.failed(errorTitle(error, `${formulationLabel(next)} failed`), 'Solve', error, {
+				retry: () => void this.chooseCalculation(c, next)
+			});
 		}
 	};
 
@@ -2844,7 +2922,7 @@ export class Controller {
 			try {
 				list = validateDropBatch(files);
 			} catch (e) {
-				this.app.error = errorText(e);
+				this.failed('Could not open the files', 'Open', e);
 				return;
 			}
 			if (list.some((f) => /\.zip$/i.test(f.name) || !!f.webkitRelativePath)) {
@@ -2857,7 +2935,7 @@ export class Controller {
 				await this.openCollection(async () => namedFiles(list));
 			} else await this.ingestFileBatch(list);
 		} catch (e) {
-			this.app.error = errorText(e);
+			this.failed('Could not open the files', 'Open', e);
 		} finally {
 			this.app.parsingFile = false;
 			release();
@@ -2874,7 +2952,7 @@ export class Controller {
 		try {
 			await this.openCollection(async () => namedFiles(files));
 		} catch (error) {
-			this.app.error = errorText(error);
+			this.failed('Could not open the files', 'Open', error);
 		} finally {
 			release();
 		}
@@ -2896,11 +2974,11 @@ export class Controller {
 			}
 			void this.openCollection(read)
 				.catch((error) => {
-					this.app.error = errorText(error);
+					this.failed('Could not open the files', 'Open', error);
 				})
 				.finally(release);
 		} catch (error) {
-			this.app.error = errorText(error);
+			this.failed('Could not open the files', 'Open', error);
 		}
 	};
 
@@ -2958,7 +3036,7 @@ export class Controller {
 				});
 				this.app.error = null;
 			} catch (e) {
-				this.app.error = `${file.name}: ${errorText(e)}`;
+				this.openFailed(file.name, e);
 			} finally {
 				this.app.parsingFile = false;
 			}
@@ -2980,7 +3058,7 @@ export class Controller {
 				});
 				this.app.error = null;
 			} catch (e) {
-				this.app.error = `${file.name}: ${errorText(e)}`;
+				this.openFailed(file.name, e);
 			} finally {
 				this.app.parsingFile = false;
 			}
@@ -3000,7 +3078,7 @@ export class Controller {
 						try {
 							await this.applyMultiGeoLayers(multi, geoLayers);
 						} catch (error) {
-							this.app.error = errorText(error);
+							this.failed('Could not attach coordinates', 'Coordinates', error);
 						}
 					}
 					continue;
@@ -3025,7 +3103,7 @@ export class Controller {
 						try {
 							await this.applyMultiGeoLayers(this.app.activeMulti, geoLayers);
 						} catch (error) {
-							this.app.error = errorText(error);
+							this.failed('Could not attach coordinates', 'Coordinates', error);
 						}
 					}
 				}
@@ -3051,7 +3129,7 @@ export class Controller {
 					this.dynamics.attachingDemo && format === 'raw'
 						? DEMO_LABEL
 						: caseLabel(summary.name, file.name);
-				this.logImport(file.name, summary, module_json);
+				this.logImport(file.name, summary, module_json, label === DEMO_LABEL);
 				const local = new LocalCase({
 					id,
 					label,
@@ -3067,7 +3145,7 @@ export class Controller {
 				parsedCaseCount++;
 				this.app.error = placement.error; // a successful parse clears a prior file's error
 			} catch (e) {
-				this.app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+				this.openFailed(file.name, e);
 			} finally {
 				this.app.parsingFile = false;
 			}
@@ -3089,7 +3167,10 @@ export class Controller {
 	 * first after a confirm. */
 	private attachDynamics = async (files: File[], localsBefore: Set<string>) => {
 		if (!this.app.dynamicsEnabled) {
-			this.app.error = `${files.map((f) => f.name).join(' and ')} not opened: dynamics is off`;
+			this.fail(`${files.map((f) => f.name).join(' and ')} not opened: dynamics is off`, null, {
+				title: 'Turn on Experimental features in Settings',
+				stage: 'Open'
+			});
 			return;
 		}
 		const added = this.app.localCases.filter((c) => !localsBefore.has(c.id));
@@ -3197,9 +3278,15 @@ export class Controller {
 				};
 				if (!c.view) c.displayMode = 'diagram';
 				c.geoWarnings = [...(c.geoWarnings ?? []), ...c.diagram.warnings];
+				this.logPlacement(
+					c,
+					c.diagram.warnings,
+					!payload.report.unmatched_features && !payload.report.notes.length
+				);
 				d.consumed = true;
 			} catch (error) {
 				c.geoWarnings = [errorText(error)];
+				this.logPlacement(c, c.geoWarnings, false);
 			}
 		}
 	};
@@ -3249,7 +3336,7 @@ export class Controller {
 			}
 			throw new Error('The engine returned an unsupported result for this JSON file.');
 		} catch (e) {
-			this.app.error = `${file.name}: ${errorText(e)}`;
+			this.openFailed(file.name, e);
 			return { outcome: 'failed' };
 		} finally {
 			this.app.parsingFile = false;
@@ -3266,7 +3353,7 @@ export class Controller {
 			this.app.error = null;
 			return true;
 		} catch (e) {
-			this.app.error = `${file.name}: ${errorText(e)}`;
+			this.openFailed(file.name, e);
 			return false;
 		} finally {
 			this.app.parsingFile = false;
@@ -3282,7 +3369,8 @@ export class Controller {
 			name: string;
 			distribution?: MulticonductorCase['distribution'];
 		},
-		labelOverride?: string
+		labelOverride?: string,
+		frame = true
 	) {
 		if (!hosted) this.hostedLoadAbort?.abort();
 
@@ -3317,7 +3405,7 @@ export class Controller {
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.addMulti(c);
-		if (c.placed) this.app.requestFrame(c.id);
+		if (frame && c.placed) this.app.requestFrame(c.id);
 		return c;
 	}
 
@@ -3460,10 +3548,9 @@ export class Controller {
 				!abort.signal.aborted &&
 				!(error instanceof DOMException && error.name === 'AbortError')
 			) {
-				this.app.error = errorText(error);
-				this.app.errorRetry = () => {
-					void this.solveMultiCase(c, options).catch(() => {});
-				};
+				this.failed(errorTitle(error, 'Power flow failed'), 'Solve', error, {
+					retry: () => void this.solveMultiCase(c, options).catch(() => {})
+				});
 			}
 			throw error;
 		} finally {
@@ -3473,6 +3560,44 @@ export class Controller {
 				c.solveAbort = null;
 			}
 		}
+	};
+
+	/** Open saved distribution results without moving the camera or duplicating the case. */
+	restoreMultiSnapshot = async (snapshot: McStudySnapshot): Promise<MulticonductorCase> => {
+		const existing = this.app.multiCases.find((c) => c.mcSnapshot?.id === snapshot.id);
+		if (existing) {
+			this.hostedLoadAbort?.abort();
+			this.app.studyView = null;
+			this.app.activeCaseId = this.app.activeLocalId = null;
+			this.app.activeMultiId = existing.id;
+			return existing;
+		}
+		const payload = await (this.mcTransport.ingestDistCaseBytes ?? ingestDistCaseBytes)(
+			new TextEncoder().encode(snapshot.input_module),
+			'pio',
+			{
+				retain: true
+			}
+		);
+		const c = this.addMultiCase(
+			`${snapshot.title}.pio.json`,
+			payload,
+			undefined,
+			snapshot.title,
+			false
+		);
+		c.mcSnapshot = snapshot;
+		c.settings.baselines = { mc_ac_pf: { ...snapshot.options } };
+		c.mcOptions = { ...snapshot.options };
+		c.settings.revision++;
+		c.mcEnergizedOnly = !!snapshot.result.network_scope;
+		c.mcPreparedScope = snapshot.result.network_scope ?? null;
+		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
+		c.result = summarizeMcPfResult(snapshot.result);
+		c.mcFullResult = snapshot.result;
+		c.mcSavedAt = new Date().toISOString();
+		c.revisionGeneration++;
+		return c;
 	};
 
 	/** Materialize the current retained operating point only when a portable
@@ -3651,6 +3776,7 @@ export class Controller {
 		let payload: Awaited<ReturnType<NonNullable<EngineTransport['applyMcGeo']>>> | undefined;
 		const notes: string[] = [];
 		let matched = 0;
+		let complete = true;
 		for (const layer of layers) {
 			payload = await this.mcTransport.applyMcGeo(next, layer.layer);
 			if (snapshot) {
@@ -3662,6 +3788,10 @@ export class Controller {
 				throw new Error('Coordinate attachment returned no electrical input.');
 			next = payload.module_json;
 			matched += payload.report.matched_buses + payload.report.matched_branches;
+			complete &&=
+				!payload.report.unmatched_features &&
+				!payload.report.notes.length &&
+				!layer.diagnostics.length;
 			notes.push(
 				`${payload.report.matched_buses} buses, ${payload.report.matched_branches} routes matched; ${payload.report.unmatched_features} unmatched objects`,
 				...payload.report.notes,
@@ -3703,6 +3833,7 @@ export class Controller {
 				? buildGeographicView(graph, payload.geo_layer)
 				: buildDiagramView(graph, payload.geo_layer);
 		c.geoWarnings = notes;
+		this.logPlacement(c, notes, complete);
 		c.revisionGeneration++;
 		this.app.placingMultiId = null;
 		this.app.error = null;
@@ -3795,10 +3926,11 @@ export class Controller {
 					c.mcLoadEdits = [];
 				}
 			}
-			this.app.error = errorText(error);
-			this.app.errorRetry = c.mcSession
-				? () => void this.flushMultiLoadPowers(c)
-				: () => void this.solveMultiCase(c).catch(() => {});
+			this.failed(errorTitle(error, 'Power flow failed'), 'Solve', error, {
+				retry: c.mcSession
+					? () => void this.flushMultiLoadPowers(c)
+					: () => void this.solveMultiCase(c).catch(() => {})
+			});
 		} finally {
 			// The running flag belongs to this call regardless of whether the
 			// session was replaced meanwhile; leaving it set would silently
@@ -3928,9 +4060,10 @@ export class Controller {
 			this.app.errorRetry = null;
 		} catch (error) {
 			if (!abort.signal.aborted)
-				this.fail(`${summary.name}: ${errorText(error)}`, () =>
-					this.activateHostedDistribution(id)
-				);
+				this.failed(`Could not load ${summary.name}`, 'Open', error, {
+					message: `${summary.name}: ${errorText(error)}`,
+					retry: () => this.activateHostedDistribution(id)
+				});
 		} finally {
 			releaseMcInput(payload?.input);
 			if (this.hostedLoadAbort === abort) {
@@ -4038,11 +4171,13 @@ export class Controller {
 	private logImport(
 		fileName: string,
 		summary: { diagnostics?: PowerIoDiagnostic[]; warnings?: string[] },
-		moduleJson?: string
+		moduleJson?: string,
+		/** Log only: the dynamics demo counts its notes in the Dynamics panel. */
+		quiet = false
 	) {
 		const recorded = recordedCalculationSettings(moduleJson);
 		const ignored = recorded?.ignored.map((key) => `${recorded.calculation}.${key}`) ?? [];
-		this.app.log.record([
+		const entries: LogEntryInput[] = [
 			...(summary.diagnostics ?? []).map((d) =>
 				powerIoEntry(d, { stage: 'Open', subject: fileName })
 			),
@@ -4061,7 +4196,32 @@ export class Controller {
 				subject: fileName,
 				message: `saved setting ${setting} is not supported by this engine and was ignored`
 			}))
-		]);
+		];
+		// Notes alone are not a toast: the Log keeps them.
+		const problems = entries.filter((entry) => entry.severity !== 'note').length;
+		if (quiet || !problems) this.app.log.record(entries, { repeat: false });
+		else
+			this.app.log.notify(entries, {
+				repeat: false,
+				title: `${problems} import ${problems === 1 ? 'warning' : 'warnings'}`
+			});
+	}
+
+	/** Record what attaching coordinates to a case reported. `complete` is false
+	 * when something was left unplaced or unmatched, which is worth a toast. */
+	private logPlacement(c: LocalCase | MulticonductorCase, notes: string[], complete: boolean) {
+		const entries = notes.map((message) => ({
+			severity: 'note' as const,
+			stage: 'Coordinates',
+			subject: c.fileName,
+			message
+		}));
+		if (complete) this.app.log.record(entries, { repeat: false });
+		else
+			this.app.log.notify(entries, {
+				repeat: false,
+				title: `${notes.length} coordinate ${notes.length === 1 ? 'note' : 'notes'}`
+			});
 	}
 
 	/** Record a geographic layer's reader findings and placement notes. */
@@ -4270,7 +4430,9 @@ export class Controller {
 			);
 			this.app.error = null;
 		} catch (e) {
-			this.app.error = `${this.caseName(c)}: could not save PowerIO module: ${errorText(e)}`;
+			this.failed('Could not save the PowerIO module', 'Export', e, {
+				message: `${this.caseName(c)}: could not save PowerIO module: ${errorText(e)}`
+			});
 		}
 	};
 
@@ -4290,7 +4452,9 @@ export class Controller {
 			);
 			this.app.error = null;
 		} catch (e) {
-			this.app.error = `${this.caseName(c)}: could not save exact solution: ${errorText(e)}`;
+			this.failed('Could not save the solution', 'Export', e, {
+				message: `${this.caseName(c)}: could not save exact solution: ${errorText(e)}`
+			});
 		}
 	};
 
@@ -4343,7 +4507,9 @@ export class Controller {
 		} catch (e) {
 			// An unavailable study has already put its reason in the banner.
 			if (!(e instanceof CaseFileUnavailable))
-				this.app.error = `${this.caseName(c)}: could not export study: ${errorText(e)}`;
+				this.failed('Could not export the case', 'Export', e, {
+					message: `${this.caseName(c)}: could not export study: ${errorText(e)}`
+				});
 			return [];
 		}
 	};

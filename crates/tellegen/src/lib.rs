@@ -79,7 +79,7 @@ pub mod regulation;
 pub mod rms;
 /// Schematic layouts for multiconductor graphs.
 pub mod schematic;
-#[cfg(feature = "sensitivity")]
+#[cfg(any(feature = "sensitivity", feature = "mc-opf"))]
 mod sens;
 pub mod settings;
 mod solve;

@@ -14,7 +14,6 @@
 	import { createController } from './controller.svelte.js';
 	import { createAppState } from './state.svelte.js';
 	import { PanelLayout, setPanelLayout } from './panels.svelte.js';
-	import { NoticeCenter, setNoticeCenter } from './notices.svelte.js';
 	import { CommandRegistry, setCommandRegistry } from './commands.svelte.js';
 
 	interface Props extends TellegenUiOptions {
@@ -29,6 +28,9 @@
 		orgHref,
 		orgLabel,
 		showFooter,
+		menuLinks,
+		distributionResultsPanel,
+		dynamicsExample,
 		theme,
 		cartoApiKey,
 		children
@@ -45,7 +47,11 @@
 	// configure the controller this provider owns, and the links and footer are
 	// fixed copy. `theme` and `cartoApiKey` stay live, so a host can switch them
 	// and the root attribute and the default shell's map follow.
+	let element = $state<HTMLDivElement | null>(null);
 	const config: TellegenUiConfig = {
+		get element() {
+			return element;
+		},
 		...untrack(() =>
 			resolveTellegenUiConfig({
 				apiBase,
@@ -54,7 +60,10 @@
 				docsHref,
 				orgHref,
 				orgLabel,
-				showFooter
+				showFooter,
+				menuLinks,
+				distributionResultsPanel,
+				dynamicsExample
 			})
 		),
 		get theme() {
@@ -91,7 +100,6 @@
 	if (!config.loadDefaultCases) ctrl.casesLoaded = true;
 
 	const layout = setPanelLayout(new PanelLayout());
-	const notices = setNoticeCenter(new NoticeCenter());
 	const commands = setCommandRegistry(new CommandRegistry());
 	// A transmission case gets one command per calculation (AppHeader); a distribution
 	// case has one calculation, its power flow.
@@ -104,13 +112,11 @@
 				title: 'Run power flow',
 				keywords: ['solve', 'power flow', 'calculation', 'compute'],
 				run: () =>
-					void ctrl.runSettings(c).catch((error: unknown) =>
-						notices.push({
-							kind: 'error',
-							title: 'Power flow failed',
-							details: error instanceof Error ? error.message : String(error)
-						})
-					)
+					void ctrl
+						.runSettings(c)
+						.catch((error: unknown) =>
+							app.reportError(error, { title: 'Power flow failed', stage: 'Solve' })
+						)
 			}
 		];
 	});
@@ -145,21 +151,8 @@
 	// The controller's Studies and multiconductor sessions live in the engine
 	// worker; release them with the provider.
 	onDestroy(() => ctrl.dispose());
-
-	// Hosts may own the root theme themselves. Leave the attribute to a host whose
-	// template set it unless the user explicitly saved a viewer preference; otherwise
-	// write the resolved theme (the host's prop, else the operating system's).
-	$effect(() => {
-		if (theme === undefined && app.preferences.theme === null && hostRootTheme !== undefined)
-			return;
-		const root = document.documentElement;
-		const previous = root.dataset.theme;
-		root.dataset.theme = config.theme;
-		return () => {
-			if (previous === undefined) delete root.dataset.theme;
-			else root.dataset.theme = previous;
-		};
-	});
 </script>
 
-{@render children?.()}
+<div class="tellegen" data-theme={config.theme} bind:this={element}>
+	{@render children?.()}
+</div>

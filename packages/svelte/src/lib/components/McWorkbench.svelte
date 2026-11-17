@@ -27,7 +27,7 @@
 	} from '../diagram/index.js';
 	import { neutralTerminal, pairLabel, phaseCss } from '../multiconductor.js';
 	import { uiTheme } from './ui-theme.js';
-	import { quantity, quantityRange, voltsWithPu } from '../format.js';
+	import { downloadText, quantity, quantityRange, voltsWithPu } from '../format.js';
 
 	let {
 		snapshot,
@@ -226,12 +226,11 @@
 			...(snapshot.provenance ?? []),
 			'P/Q are positive into the equipment at each end; voltages are terminal-pair magnitudes'
 		]);
-		const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = `${label.replace(/[^\w.-]+/g, '_')}-${kind === 'bus' ? 'buses' : 'branches'}.csv`;
-		a.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
+		downloadText(
+			csv,
+			`${label.replace(/[^\w.-]+/g, '_')}-${kind === 'bus' ? 'buses' : 'branches'}.csv`,
+			'text/csv;charset=utf-8'
+		);
 	}
 </script>
 

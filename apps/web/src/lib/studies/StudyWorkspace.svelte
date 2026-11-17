@@ -1,19 +1,15 @@
 <script lang="ts">
-	import { onMount, tick, untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
-	import { page } from '$app/state';
+	import { onMount, tick } from 'svelte';
 	import {
 		getController,
 		getPanelLayout,
 		PanelFrame,
 		ModelDetails,
-		McResults,
+		DistributionResults,
 		McNetworkScope,
 		McModelQualification,
-		McWorkbench,
 		McSolveControls,
-		getNoticeCenter,
-		errorNoticeTitle
+		downloadText
 	} from '@tellegen/svelte';
 	import type { StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
@@ -35,12 +31,6 @@
 
 	const ctrl = getController();
 	const workspace = new StudyWorkspace(ctrl);
-	const notices = getNoticeCenter();
-	$effect(() => {
-		const details = workspace.error;
-		if (details)
-			untrack(() => notices.push({ kind: 'error', title: errorNoticeTitle(details), details }));
-	});
 	let expanded = $state(false);
 	let tab = $state<'case' | 'history' | 'plan'>('case');
 	let creating = $state(false);
@@ -179,16 +169,11 @@
 	// A saved distribution study is addressable: `?study=<id>&sel=bus:<id>|branch:<id>&view=schematic`
 	// reopens it in any browser that holds the study (saved here, or imported from an export).
 	const panels = getPanelLayout();
-	// Read the link before anything rewrites the URL, and write the URL only once it is handled.
+	// Read a saved view link once when the page opens.
 	const linkParams =
 		typeof window === 'undefined' ? null : new URL(window.location.href).searchParams;
-	let linkHandled = $state(false);
 	async function openLinkedStudy() {
-		try {
-			await openLinkedStudyFrom(linkParams);
-		} finally {
-			linkHandled = true;
-		}
+		await openLinkedStudyFrom(linkParams);
 	}
 	async function openLinkedStudyFrom(params: URLSearchParams | null) {
 		const id = params?.get('study');
@@ -211,35 +196,18 @@
 			if (panels.compact) panels.drawer = studies.id;
 		}
 	}
-	const linkable = $derived(
-		multi?.mcSnapshot && multi.mcSavedAt ? { id: multi.mcSnapshot.id, case: multi } : null
-	);
-	$effect(() => {
-		const c = linkable?.case;
-		const sel = c?.selectedBusId
-			? `bus:${c.selectedBusId}`
-			: c?.selectedEdgeId
-				? `branch:${c.selectedEdgeId}`
-				: null;
-		const state = { study: linkable?.id ?? null, sel, view: c?.schematic ? 'schematic' : null };
-		if (!linkHandled) return;
-		untrack(() => {
-			const url = new URL(window.location.href);
-			for (const [k, v] of Object.entries(state)) {
-				if (v) url.searchParams.set(k, v);
-				else url.searchParams.delete(k);
-			}
-			if (url.href === window.location.href) return;
-			try {
-				replaceState(url, page.state);
-			} catch {
-				// The router is not ready during the first render; the next change writes the URL.
-			}
-		});
-	});
 	let linkCopied = $state(false);
 	async function copyLink() {
-		await navigator.clipboard.writeText(window.location.href);
+		const url = new URL(window.location.href);
+		if (multi?.mcSnapshot && multi.mcSavedAt) {
+			url.searchParams.set('study', multi.mcSnapshot.id);
+			if (multi.selectedBusId) url.searchParams.set('sel', `bus:${multi.selectedBusId}`);
+			else if (multi.selectedEdgeId) url.searchParams.set('sel', `branch:${multi.selectedEdgeId}`);
+			else url.searchParams.delete('sel');
+			if (multi.schematic) url.searchParams.set('view', 'schematic');
+			else url.searchParams.delete('view');
+		}
+		await navigator.clipboard.writeText(url.href);
 		linkCopied = true;
 		setTimeout(() => (linkCopied = false), 2000);
 	}
@@ -412,14 +380,7 @@
 		if (!base) throw new Error('The starting state is unavailable.');
 		await operation({ kind: 'compare', goal: goalId, left: base, right: doc.inspected_state });
 	}
-	function download(text: string, name: string) {
-		const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = name;
-		link.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
-	}
+	const download = (text: string, name: string) => downloadText(text, name, 'application/json');
 	function stateLabel(id: string | null | undefined) {
 		return id ? (doc?.states[id]?.label ?? id.slice(0, 10)) : 'None';
 	}
@@ -457,6 +418,7 @@
 <TellegenWebMcp {workspace} studyExpanded={expanded} closeStudy={() => (expanded = false)} />
 <PanelFrame id="studies" title="Studies" side="left" order={20} width={400} bind:open={expanded}>
 	<div class="study-workspace">
+		{#if workspace.storageError}<p role="status">{workspace.storageError}</p>{/if}
 		<div class="storage">
 			<label
 				><span class="sr-only">Saved study</span><select
@@ -494,6 +456,26 @@
 					<option value={EXAMPLE}>Example: four-wire feeder</option>
 				</select></label
 			>
+			{#if (multi?.mcSavedAt && mcDoc) || (doc && !creating && !multi)}
+				<button
+					disabled={workspace.busy}
+					onclick={() => {
+						const saved = multi ? mcDoc : doc;
+						if (!saved) return;
+						const name = window.prompt('Study name', saved.title);
+						if (name !== null) void attempt(() => workspace.renameSaved(saved.id, name, !!multi));
+					}}>Rename</button
+				>
+				<button
+					disabled={workspace.busy}
+					onclick={() => {
+						const saved = multi ? mcDoc : doc;
+						if (saved && window.confirm(`Delete saved study “${saved.title}”?`))
+							void attempt(() => workspace.deleteSaved(saved.id, !!multi));
+					}}>Delete</button
+				>
+			{/if}
+
 			{#if doc && !creating && !multi}<button disabled={workspace.busy} onclick={newStudy}
 					>New study</button
 				>{/if}
@@ -567,41 +549,13 @@
 							disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
 							onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
 						>
-						{#if linkable}<button onclick={() => void attempt(copyLink)}
+						{#if multi?.mcSnapshot && multi.mcSavedAt}<button onclick={() => void attempt(copyLink)}
 								>{linkCopied ? 'Link copied' : 'Copy view link'}</button
 							>{/if}
 					{/snippet}
 				</McSolveControls>
 				{#if multi.result}<div bind:this={mcResultsStart}></div>{/if}
-				{#if multi.result && multi.graph && multi.overviewInputs && multi.overviewSearch}<McWorkbench
-						snapshot={multi.overviewSnapshot}
-						graph={multi.graph}
-						inputs={multi.overviewInputs}
-						search={multi.overviewSearch}
-						loading={multi.overviewLoading}
-						selectedBus={multi.selectedBusId}
-						selectedEdge={multi.selectedEdgeId}
-						onselectbus={(id) => ctrl.selectMultiBus(multi.id, id)}
-						onselectedge={(id) => ctrl.selectMultiEdge(multi.id, id)}
-						label={multi.label}
-						schematic={multi.schematic}
-						onschematic={(show) => (multi.schematic = show)}
-						hovered={multi.hovered}
-						onhover={(h) => (multi.hovered = h)}
-						onreveal={() => multi.revealSeq++}
-						onanalyse={ctrl.overviewOnRequest(multi) ? () => ctrl.readOverview(multi) : undefined}
-					/>{/if}
-				{#if multi.result}<McResults
-						result={multi.result}
-						excludedIslands={multi.mcExcludedIslands}
-						detail={(query) => ctrl.multiResultDetail(multi, query)}
-						timing={multi.mcTiming}
-						elapsedMs={multi.solveMs}
-						selectedBus={multi.selectedBusId}
-						selectedEdge={multi.selectedEdgeId}
-						graph={multi.graph}
-						searchIndex={multi.overviewSearch}
-					/>{/if}
+				<DistributionResults caseState={multi} />
 			{:else if !doc || creating}
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
