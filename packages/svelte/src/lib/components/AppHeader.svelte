@@ -63,7 +63,9 @@
 							keywords: ['dynamics', 'wecc', 'demo', 'example', 'rms'],
 							group: 'Cases',
 							run: () =>
-								void ctrl.dynamics.openDemo().catch((e) => (app.error = (e as Error).message))
+								void ctrl.dynamics
+									.openDemo()
+									.catch((e) => app.reportError(e, { title: 'Could not open the demo' }))
 						}
 					] satisfies Command[])
 				: []),
@@ -87,15 +89,7 @@
 			...(() => {
 				const c = ctrl.activeSolvable;
 				if (!c || c.solving) return [];
-				return FORMULATIONS.filter(
-					(f) =>
-						!(f.disabled && !(f.id === 'acopf' && ctrl.acOpfAvailable && !c.perturbed)) &&
-						!(
-							'declaredFormulation' in c &&
-							c.declaredFormulation != null &&
-							c.declaredFormulation !== f.id
-						)
-				).map((f): Command => ({
+				return FORMULATIONS.filter((f) => ctrl.calculationOffered(c, f.id)).map((f): Command => ({
 					id: `calculation:${f.id}`,
 					title: `Run ${f.label}`,
 					keywords: ['calculation', 'solve', 'run', f.id],
@@ -177,7 +171,7 @@
 			return { name, detail: region, perturbed: backend.perturbed };
 		}
 		const local = app.activeLocal;
-		if (local) return { name: local.label, detail: 'Local', perturbed: false };
+		if (local) return { name: local.label, detail: 'Local', perturbed: local.perturbed };
 		return null;
 	});
 	const hostedPending = $derived(
@@ -272,7 +266,7 @@
 	}}
 />
 
-<header {@attach publishHeight}>
+<header {@attach publishHeight} style:--header-height="{app.headerInset}px">
 	<div class="brand">
 		<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 			<path class="brand-stroke" d="M4 18 L12 6 L20 18" stroke-width="1.6" fill="none" />
@@ -325,11 +319,8 @@
 								onclick={() => pick(() => ctrl.activateCase(c.id))}
 							>
 								<span class="cname">{cname}</span>
-								<span class="cregion"
-									>{c.unavailableReason ? 'Unavailable' : cregion}{#if c.perturbed}<span
-											class="edited">Edited</span
-										>{/if}</span
-								>
+								<span class="cregion">{c.unavailableReason ? 'Unavailable' : cregion}</span>
+								{#if c.perturbed}<span class="edited">Edited</span>{/if}
 							</button>
 						</li>
 					{/each}
@@ -362,6 +353,7 @@
 							>
 								<span class="cname">{c.label}</span>
 								<span class="cregion">Local</span>
+								{#if c.perturbed}<span class="edited">Edited</span>{/if}
 							</button>
 							<button
 								class="case-remove"
@@ -523,7 +515,7 @@
 		top: 0;
 		left: 0;
 		right: 0;
-		z-index: 45;
+		z-index: var(--z-header);
 		display: flex;
 		align-items: center;
 		gap: 12px;
@@ -631,7 +623,7 @@
 	.popover {
 		position: absolute;
 		top: calc(100% + 6px);
-		z-index: 50;
+		z-index: var(--z-menu);
 		background: var(--surface-menu);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-panel);
@@ -762,22 +754,27 @@
 		background: var(--surface-hover);
 	}
 
-	/* An edited case: a small accent dot and the word. */
+	/* An edited case: a small accent dot and the word. It is plain inline text, so it
+	   lines up with the names beside it however the row aligns them. */
 	.edited {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		margin-left: 6px;
+		flex: none;
 		color: var(--text-accent);
 		font-size: var(--fs-label);
 		font-weight: 500;
+		white-space: nowrap;
+	}
+	.case-button .edited {
+		align-self: center;
 	}
 	.edited::before {
 		content: '';
+		display: inline-block;
 		width: 6px;
 		height: 6px;
+		margin-right: 4px;
 		border-radius: 50%;
 		background: currentColor;
+		vertical-align: 0.08em;
 	}
 
 	.tools {
@@ -881,7 +878,7 @@
 		   the screen instead, inside the page gutters. */
 		.case-list {
 			position: fixed;
-			top: 54px;
+			top: calc(var(--header-height) + 6px);
 			left: 16px;
 			right: 16px;
 			width: auto;

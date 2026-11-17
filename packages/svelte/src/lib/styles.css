@@ -134,10 +134,21 @@
 	--ease-in-out: ease-in-out;
 	--ease-standard: ease;
 
-	/* z-index layers */
-	--z-chrome: 10;
-	--z-cue: 14;
-	--z-overlay: 20;
+	/* z-index layers, bottom to top. Everything that stacks takes one of these. */
+	--z-chrome: 10; /* footer and buttons on the map */
+	--z-cue: 14; /* placement instructions */
+	--z-map-action: 15; /* a button above a cue */
+	--z-overlay: 20; /* drop zone, bus picker list */
+	--z-panel-strip: 24; /* the panel tabs */
+	--z-panel: 25; /* docked panels and the phone sheet */
+	--z-dock: 26; /* the sheet's grab bar and the playback dock */
+	--z-note: 30; /* a host's own note on the map */
+	--z-floating: 40; /* floating panels, a host's status ribbon */
+	--z-notice: 42; /* a layout message above the panels */
+	--z-header: 45;
+	--z-menu: 50; /* header menus */
+	--z-toast: 65;
+	--z-modal: 70; /* command palette */
 	--z-grain: 9999;
 }
 
@@ -700,6 +711,20 @@ a:hover {
 		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
 	}
+}
+
+/* Text for screen readers only. One definition for every component; the
+   declarations are important so a component's own element rules cannot undo them. */
+.sr-only {
+	position: absolute !important;
+	width: 1px !important;
+	height: 1px !important;
+	margin: -1px !important;
+	padding: 0 !important;
+	border: 0 !important;
+	overflow: hidden !important;
+	clip-path: inset(50%) !important;
+	white-space: nowrap !important;
 }
 
 /* Experimental tools: a tag with the word and a caution rule, never colour alone. */

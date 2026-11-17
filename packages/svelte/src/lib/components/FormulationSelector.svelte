@@ -19,13 +19,7 @@
 				onchange={(e) => void ctrl.chooseCalculation(c, e.currentTarget.value as Formulation)}
 			>
 				{#each FORMULATIONS as f (f.id)}
-					{@const unavailable =
-						(f.disabled && !(f.id === 'acopf' && ctrl.acOpfAvailable && !c.perturbed)) ||
-						(f.id === 'acpf' && c.ratingsEdited) ||
-						('declaredFormulation' in c &&
-							c.declaredFormulation != null &&
-							c.declaredFormulation !== f.id)}
-					<option value={f.id} disabled={unavailable}>
+					<option value={f.id} disabled={!ctrl.calculationOffered(c, f.id)}>
 						{f.label}
 					</option>
 				{/each}

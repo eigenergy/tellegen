@@ -13,8 +13,8 @@ import {
 	type StudyView
 } from '@tellegen/engine';
 import { capacityGoal, capacityOutcome, type CapacityStudyBinding } from './capacity-compat.js';
-import type { CapacityPlanSpecJson } from '@tellegen/svelte';
-import type { Controller } from '@tellegen/svelte';
+import { errorText, errorTitle } from '@tellegen/svelte';
+import type { CapacityPlanSpecJson, Controller } from '@tellegen/svelte';
 import { McStudyStore } from './mc-study-store.js';
 import { caseRevision } from '../webmcp/tellegen-adapter.js';
 import { trackUsage, type EventData } from '../analytics/client.js';
@@ -45,6 +45,11 @@ export class StudyWorkspace {
 	#caseAnchor: { caseId: string; revision: string; state: string } | null = null;
 
 	constructor(readonly grid: Controller) {}
+	/** Show an error here and in the app's toast and Log, under `title`. */
+	#fail(error: unknown, title: string, message = errorText(error)) {
+		this.error = message;
+		this.grid.app.log.notify({ severity: 'error', title, message, stage: 'Study' });
+	}
 	get store(): IndexedDbStudyStore {
 		return (this.#store ??= new IndexedDbStudyStore());
 	}
@@ -140,7 +145,7 @@ export class StudyWorkspace {
 		try {
 			await this.refreshSaved();
 		} catch (error) {
-			this.error = String(error);
+			this.#fail(error, 'Could not load saved studies', String(error));
 		}
 	}
 	async #run<T>(
@@ -176,8 +181,7 @@ export class StudyWorkspace {
 				result: abort.signal.aborted ? 'cancelled' : 'failed',
 				duration_ms: performance.now() - started
 			});
-			if (!abort.signal.aborted)
-				this.error = error instanceof Error ? error.message : String(error);
+			if (!abort.signal.aborted) this.#fail(error, errorTitle(error, 'Study failed'));
 			throw error;
 		} finally {
 			signal?.removeEventListener('abort', cancel);
@@ -587,7 +591,11 @@ export class StudyWorkspace {
 			await this.refreshSaved();
 		} catch (error) {
 			this.grid.app.studyView = null;
-			this.error = `Study saved, but the display could not refresh: ${String(error)}`;
+			this.#fail(
+				error,
+				'Study display not refreshed',
+				`Study saved, but the display could not refresh: ${String(error)}`
+			);
 		}
 	}
 	async #display(frame: boolean) {

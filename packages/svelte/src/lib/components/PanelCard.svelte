@@ -328,16 +328,6 @@
 	.spacer {
 		flex: 1;
 	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		margin: -1px;
-		padding: 0;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
 	.icon {
 		display: grid;
 		place-items: center;
@@ -429,7 +419,7 @@
 	.floating {
 		position: fixed;
 		min-height: 0;
-		z-index: 40;
+		z-index: var(--z-floating);
 		max-height: none;
 	}
 	.floating .panel-content {

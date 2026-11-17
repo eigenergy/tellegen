@@ -14,7 +14,6 @@
 	import { createController } from './controller.svelte.js';
 	import { createAppState } from './state.svelte.js';
 	import { PanelLayout, setPanelLayout } from './panels.svelte.js';
-	import { NoticeCenter, setNoticeCenter } from './notices.svelte.js';
 	import { CommandRegistry, setCommandRegistry } from './commands.svelte.js';
 
 	interface Props extends TellegenUiOptions {
@@ -91,7 +90,6 @@
 	if (!config.loadDefaultCases) ctrl.casesLoaded = true;
 
 	const layout = setPanelLayout(new PanelLayout());
-	const notices = setNoticeCenter(new NoticeCenter());
 	const commands = setCommandRegistry(new CommandRegistry());
 	// A transmission case gets one command per calculation (AppHeader); a distribution
 	// case has one calculation, its power flow.
@@ -104,13 +102,11 @@
 				title: 'Run power flow',
 				keywords: ['solve', 'power flow', 'calculation', 'compute'],
 				run: () =>
-					void ctrl.runSettings(c).catch((error: unknown) =>
-						notices.push({
-							kind: 'error',
-							title: 'Power flow failed',
-							details: error instanceof Error ? error.message : String(error)
-						})
-					)
+					void ctrl
+						.runSettings(c)
+						.catch((error: unknown) =>
+							app.reportError(error, { title: 'Power flow failed', stage: 'Solve' })
+						)
 			}
 		];
 	});

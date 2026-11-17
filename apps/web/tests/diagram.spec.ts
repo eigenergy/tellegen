@@ -122,7 +122,7 @@ test('drawing coordinates remain separate from geography and support navigation'
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundleText)
 	});
-	await expect(await noticeDetails(page)).toHaveText('Already saved');
+	await expect(await noticeDetails(page)).toContainText('Already saved');
 	await expect.poll(viewNumbers).toEqual(changedView);
 	await page
 		.getByRole('combobox', { name: 'Saved study', exact: true })

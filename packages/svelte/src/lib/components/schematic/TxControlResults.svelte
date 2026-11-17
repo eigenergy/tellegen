@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ControlResult } from '@tellegen/engine';
+	import { sixFigures } from '../../format.js';
 	let { controls }: { controls: ControlResult[] } = $props();
-	const number = (n: number) => Number(n.toPrecision(6));
 </script>
 
 {#if controls.length}
@@ -12,9 +12,9 @@
 				<li>
 					<strong>{c.id}</strong>: {c.status.replaceAll('_', ' ')}
 					<span class="reading"
-						>Setting {number(c.setting)}
-						{c.units}, measured {number(c.measured)}
-						{c.measured_units}, target {number(c.target_low)}–{number(c.target_high)}</span
+						>Setting {sixFigures(c.setting)}
+						{c.units}, measured {sixFigures(c.measured)}
+						{c.measured_units}, target {sixFigures(c.target_low)}–{sixFigures(c.target_high)}</span
 					>
 				</li>
 			{/each}
