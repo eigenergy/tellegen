@@ -9,16 +9,16 @@ instance for each call. Cancellation terminates the worker.
 The saved measurements include input and executable checksums, objective values,
 iteration counts and independently calculated primal residuals. Timings are
 measurements on one Apple Silicon development machine, with other build work
-running, rather than a controlled hardware comparison. Native final builds use
+running, rather than a controlled hardware comparison. Both native builds use
 Rust 1.96.0. The baseline source is commit `199c1e73`; the final implementation is
 `85a787c8`. The WASI baseline is the preserved executable from the interrupted
 session; its checksum identifies exactly what was measured.
 
 | Case | Native before | Native after | WASI before | WASI after, median of 3 |
 | --- | ---: | ---: | ---: | ---: |
-| case793_goc | 1.47 s | 0.28 s | 2.30 s | 0.43 s |
-| case1888_rte | 16.49 s | 5.24 s | 30.25 s | 5.16 s |
-| case4661_sdet | failed after 307.75 s | 11.22 s | failed after 298.31 s | 12.25 s |
+| case793_goc | 1.34 s | 0.28 s | 2.30 s | 0.43 s |
+| case1888_rte | 18.73 s | 5.24 s | 30.25 s | 5.16 s |
+| case4661_sdet | failed after 275.32 s | 11.22 s | failed after 298.31 s | 12.25 s |
 
 The case4661 improvement is a successful solve where the baseline did not return
 one; it is not a speed ratio between equivalent successful solves. Objectives on
@@ -74,5 +74,6 @@ These derivatives describe one local solution while its active constraints stay
 fixed. They do not claim a globally smooth or globally optimal solution map.
 Shared KKT code is also exercised by the multiconductor OPF tests: the combined
 Rust suite passed 668 tests, with 5 existing ignored tests. The ACOPF-only suite
-passed 204 tests, the worker adapter passed 2, and the engine package passed 81.
+passed 204 tests, the worker adapter passed 2, and the engine package passed 81. A separate
+multiconductor-only build passed 353 tests (3 existing ignored tests).
 Clippy with warnings denied and the patch-compatibility check against v0.8.0 pass.
