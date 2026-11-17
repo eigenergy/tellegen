@@ -1665,6 +1665,228 @@
       }
     },
     {
+      "name": "floating_delta_None",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.floating phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=2 buses=[src.1.2.3.0 lv.1.2.3] conns=[wye delta] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4\nnew load.ld phases=3 bus1=lv.1.2.3 conn=delta kv=.4 kw=30 kvar=10 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.79772,
+          -0.08471473496
+        ],
+        "src.2": [
+          -3175.472226,
+          -5499.909802
+        ],
+        "src.3": [
+          -3175.325494,
+          5499.994518
+        ],
+        "lv.1": [
+          197.2920148,
+          -116.8434891
+        ],
+        "lv.2": [
+          -199.8354382,
+          -112.4381547
+        ],
+        "lv.3": [
+          2.543419821,
+          229.2816409
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            30.11688973,
+            -34.73174394
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              1.5799223,
+              -0.5461908255
+            ],
+            "src.2": [
+              -1.262976266,
+              -1.095157431
+            ],
+            "src.3": [
+              -0.3169460097,
+              1.64134825
+            ],
+            "lv.1": [
+              -30.11688973,
+              34.73174394
+            ],
+            "lv.2": [
+              45.13701743,
+              8.716119617
+            ],
+            "lv.3": [
+              -15.0201277,
+              -43.44786355
+            ]
+          },
+          "losses": [
+            101.4394787,
+            405.8407742
+          ]
+        }
+      }
+    },
+    {
+      "name": "floating_delta_0",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.floating phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=2 buses=[src.1.2.3.0 lv.1.2.3] conns=[wye delta] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4 ppm_antifloat=0\nnew load.ld phases=3 bus1=lv.1.2.3 conn=delta kv=.4 kw=30 kvar=10 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.797721,
+          -0.08471479877
+        ],
+        "src.2": [
+          -3175.472226,
+          -5499.909803
+        ],
+        "src.3": [
+          -3175.325494,
+          5499.994518
+        ],
+        "lv.1": [
+          397.1274583,
+          -4.405335672
+        ],
+        "lv.2": [
+          0.0,
+          0.0
+        ],
+        "lv.3": [
+          202.3788618,
+          341.7197996
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            30.11688921,
+            -34.73174357
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              1.579922296,
+              -0.5461864619
+            ],
+            "src.2": [
+              -1.262972485,
+              -1.09515961
+            ],
+            "src.3": [
+              -0.3169497868,
+              1.641346065
+            ],
+            "lv.1": [
+              -30.11688921,
+              34.73174357
+            ],
+            "lv.2": [
+              45.13701685,
+              8.716119357
+            ],
+            "lv.3": [
+              -15.02012764,
+              -43.44786292
+            ]
+          },
+          "losses": [
+            101.4394093,
+            405.7576372
+          ]
+        }
+      }
+    },
+    {
+      "name": "floating_delta_50",
+      "tolerance": 1e-10,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.floating phases=3 bus1=src.1.2.3 basekv=11 frequency=50\nnew transformer.tx phases=3 windings=2 buses=[src.1.2.3.0 lv.1.2.3] conns=[wye delta] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4 ppm_antifloat=50\nnew load.ld phases=3 bus1=lv.1.2.3 conn=delta kv=.4 kw=30 kvar=10 model=1\n",
+      "voltages": {
+        "src.1": [
+          6350.797708,
+          -0.08471160805
+        ],
+        "src.2": [
+          -3175.472217,
+          -5499.909793
+        ],
+        "src.3": [
+          -3175.32549,
+          5499.994506
+        ],
+        "lv.1": [
+          197.2919043,
+          -116.8433806
+        ],
+        "lv.2": [
+          -199.8352879,
+          -112.4381108
+        ],
+        "lv.3": [
+          2.543383729,
+          229.2814913
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            30.11691495,
+            -34.73176212
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              1.579922479,
+              -0.5464046422
+            ],
+            "src.2": [
+              -1.263161526,
+              -1.095050678
+            ],
+            "src.3": [
+              -0.3167609285,
+              1.641455313
+            ],
+            "lv.1": [
+              -30.11691495,
+              34.73176212
+            ],
+            "lv.2": [
+              45.13704579,
+              8.716132367
+            ],
+            "lv.3": [
+              -15.02013084,
+              -43.44789449
+            ]
+          },
+          "losses": [
+            101.4428792,
+            409.9144879
+          ]
+        }
+      }
+    },
+    {
       "name": "fixed_regulator_None",
       "tolerance": 1e-12,
       "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",

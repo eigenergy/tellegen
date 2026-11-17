@@ -73,7 +73,7 @@ fn capability_rejects_missing_voltage_dependent_load_base() {
 #[test]
 fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
     let report: Report = serde_json::from_str(include_str!("data/dss_snapshots.json")).unwrap();
-    assert_eq!(report.cases.len(), 47);
+    assert_eq!(report.cases.len(), 50);
     for case in report.cases {
         let input = module(&case.source);
         let input = if case.fixed_controls {
@@ -109,14 +109,30 @@ fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
                 case.name, result.physical_kcl_residual
             );
             assert!(result.physical_kcl_residual < 1e-6, "{}", case.name);
-            for (node, expected) in &case.voltages {
-                let (bus, terminal) = node.rsplit_once('.').unwrap();
-                let actual = result
+            // With ppm_antifloat=0 nothing ties the delta secondary to ground, so
+            // its voltage to ground is not defined and each solver returns a
+            // different one. Compare that bus between terminals instead.
+            let between_terminals = case.name == "floating_delta_0";
+            let solved = |bus: &str, terminal: &str| {
+                result
                     .terminals
                     .iter()
                     .find(|t| t.bus.eq_ignore_ascii_case(bus) && t.terminal == terminal)
-                    .unwrap_or_else(|| panic!("{}: missing {node}", case.name))
-                    .voltage;
+                    .unwrap_or_else(|| panic!("{}: missing {bus}.{terminal}", case.name))
+                    .voltage
+            };
+            for (node, expected) in &case.voltages {
+                let (bus, terminal) = node.rsplit_once('.').unwrap();
+                let mut actual = solved(bus, terminal);
+                let mut expected = *expected;
+                if between_terminals && bus == "lv" {
+                    let reference = solved(bus, "1");
+                    actual.re -= reference.re;
+                    actual.im -= reference.im;
+                    let reference = case.voltages["lv.1"];
+                    expected[0] -= reference[0];
+                    expected[1] -= reference[1];
+                }
                 assert!(
                     (actual.re - expected[0]).hypot(actual.im - expected[1]) < 2e-5,
                     "{}: {node}: {actual:?} != {expected:?}",
@@ -157,18 +173,26 @@ fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
                 );
             }
             for (load, expected) in &case.currents {
-                let actual = result
+                // A delta load has two coils on each terminal; OpenDSS reports
+                // the terminal's total current.
+                let ports: Vec<_> = result
                     .element_ports
                     .iter()
-                    .find(|p| {
+                    .filter(|p| {
                         p.element.eq_ignore_ascii_case(load)
                             && p.kind == "load"
                             && p.terminal == expected.terminal
                     })
-                    .unwrap()
-                    .current_into_element;
+                    .collect();
+                assert!(!ports.is_empty(), "{}: {load}: no port", case.name);
+                let actual = ports.iter().fold((0.0, 0.0), |sum, p| {
+                    (
+                        sum.0 + p.current_into_element.re,
+                        sum.1 + p.current_into_element.im,
+                    )
+                });
                 assert!(
-                    (actual.re - expected.value[0]).hypot(actual.im - expected.value[1]) < 2e-5,
+                    (actual.0 - expected.value[0]).hypot(actual.1 - expected.value[1]) < 2e-5,
                     "{}: {load}: {actual:?} != {:?}",
                     case.name,
                     expected.value

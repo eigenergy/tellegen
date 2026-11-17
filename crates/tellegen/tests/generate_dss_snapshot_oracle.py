@@ -78,6 +78,15 @@ def generate():
                         'new load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1',
                         'new load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1']
             cases.append(reference(f'three_{connections.replace(" ", "_")}_{ppm}', commands, tolerance=1e-10))
+    # The delta secondary and its delta load have no path to ground, so only
+    # the transformer's ppm_antifloat admittance fixes the winding's voltage to ground.
+    for ppm in [None, 0, 50]:
+        written = '' if ppm is None else f' ppm_antifloat={ppm}'
+        commands = ['clear', 'set defaultbasefrequency=50',
+                    'new circuit.floating phases=3 bus1=src.1.2.3 basekv=11 frequency=50',
+                    f'new transformer.tx phases=3 windings=2 buses=[src.1.2.3.0 lv.1.2.3] conns=[wye delta] kvs=[11 .4] kvas=[100 100] %rs=[.5 .5] xhl=4{written}',
+                    'new load.ld phases=3 bus1=lv.1.2.3 conn=delta kv=.4 kw=30 kvar=10 model=1']
+        cases.append(reference(f'floating_delta_{ppm}', commands, tolerance=1e-10))
     for ppm in [None, 0, 50]:
         written = '' if ppm is None else f' ppm_antifloat={ppm}'
         commands = ['clear', 'set defaultbasefrequency=50',
