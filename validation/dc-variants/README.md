@@ -86,7 +86,7 @@ includes an ACP/Ipopt **local** AC OPF result, not a global bound.
 
 The tests do not require the hybrid to improve AC accuracy. The small case is
 an intentional example: every DC dispatch violates an AC apparent-power limit.
-See the user-facing [compatibility matrix](../../docs/src/dc-compatibility.md)
+See the user-facing [compatibility matrix](../../docs/src/formulations.md#dc-compatibility)
 for the relationship between selectable conventions and optimal objectives.
 
 ## Recorded results

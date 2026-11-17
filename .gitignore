@@ -29,6 +29,10 @@ data/
 !crates/tellegen/tests/data/
 !crates/tellegen/tests/data/mc_pf/
 !crates/tellegen/tests/data/mc_pf/**
+# The small handwritten node-breaker fixture is checked-in test data.
+!tests/data/
+!tests/data/node-breaker/
+!tests/data/node-breaker/**
 
 # OS
 .DS_Store

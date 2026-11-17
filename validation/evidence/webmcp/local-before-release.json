@@ -1,0 +1,99 @@
+{
+  "checked_at": "2026-11-17",
+  "phase": "Before final cleanup release",
+  "browser": "Brave / Chromium 157, headless, WebMCP feature enabled",
+  "connection": "chrome-devtools-mcp execute_webmcp_tool; no direct call to application controller",
+  "url": "http://127.0.0.1:4673/",
+  "fixture": "crates/tellegen/tests/data/dc_variants/case3_variants.m",
+  "updated": {
+    "status": "Completed",
+    "output": {
+      "ok": true,
+      "data": {
+        "case_id": "local-1",
+        "revision": "session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r4",
+        "formulation": "dcopf",
+        "demand_edit_count": 1,
+        "rating_edit_count": 0,
+        "solution": {
+          "branch_susceptance_formula": "series_susceptance",
+          "objective": 806.5123674967501,
+          "base_objective": 788.7962790069305,
+          "objective_delta": 17.71608848981964,
+          "binding_branches": 1,
+          "solve_backend": "clarabel-wasm",
+          "solve_ms": 41
+        },
+        "before": {
+          "revision": "session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r3",
+          "formulation": "dcopf",
+          "demand_edit_count": 0,
+          "rating_edit_count": 0,
+          "objective": 788.7962790069305,
+          "objective_delta": 0,
+          "binding_branches": 1
+        },
+        "after": {
+          "revision": "session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r4",
+          "formulation": "dcopf",
+          "demand_edit_count": 1,
+          "rating_edit_count": 0,
+          "objective": 806.5123674967501,
+          "objective_delta": 17.71608848981964,
+          "binding_branches": 1
+        }
+      }
+    }
+  },
+  "stale_request": {
+    "status": "Completed",
+    "output": {
+      "ok": false,
+      "error": {
+        "code": "STALE_REVISION",
+        "message": "The case edits changed; the current revision is session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r4. Call inspect_case before retrying."
+      }
+    }
+  },
+  "restored": {
+    "status": "Completed",
+    "output": {
+      "ok": true,
+      "data": {
+        "case_id": "local-1",
+        "revision": "session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r5",
+        "formulation": "dcopf",
+        "demand_edit_count": 0,
+        "rating_edit_count": 0,
+        "solution": {
+          "branch_susceptance_formula": "series_susceptance",
+          "objective": 788.7962790069305,
+          "base_objective": 788.7962790069305,
+          "objective_delta": 0,
+          "binding_branches": 1,
+          "solve_backend": "clarabel-wasm",
+          "solve_ms": 36
+        },
+        "before": {
+          "revision": "session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r4",
+          "formulation": "dcopf",
+          "demand_edit_count": 1,
+          "rating_edit_count": 0,
+          "objective": 806.5123674967501,
+          "objective_delta": 17.71608848981964,
+          "binding_branches": 1
+        },
+        "after": {
+          "revision": "session-6de77d23-fe77-4c9e-8c6d-3add88f342ef:r5",
+          "formulation": "dcopf",
+          "demand_edit_count": 0,
+          "rating_edit_count": 0,
+          "objective": 788.7962790069305,
+          "objective_delta": 0,
+          "binding_branches": 1
+        }
+      }
+    }
+  },
+  "visible_result": "Operational cost $789/h, 1 line at limit; agent completion message displayed."
+}

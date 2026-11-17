@@ -11,7 +11,7 @@ Supported implicit derivatives use the interface described in
 
 The default is unchanged. Select an explicit branch convention to match
 PowerModels DCP/PGLib DC or MATPOWER/PowerModels DCMP; see the
-[optimality compatibility matrix](dc-compatibility.md).
+[optimality compatibility matrix](formulations.md#dc-compatibility).
 Phase-shifting variants include an affine branch flow and nodal injection term
 in addition to the angle-dependent matrix below.
 
@@ -114,7 +114,7 @@ tellegen '{"constraints":[{"id":"north-south","upper":400,"terms":[{"kind":"bran
 
 The program has no row for a limit it does not enforce, and no shedding
 variable for a bus that cannot shed. A portable solve never sheds, so that
-removes a column and a row pair per bus. These pinned pairs have no interior,
+removes a column and a row pair per bus. These fixed pairs have no interior,
 and on PGLib's 78,484-bus case they kept the interior point solve from
 converging at all.
 
@@ -290,7 +290,7 @@ These formulations compile to native Rust and WebAssembly.
 The opt-in `mc-opf` feature solves unbalanced AC OPF in current–voltage
 rectangular (IVR) coordinates, with explicit terminals and neutrals. It has
 separate native entry points over `McAcOpfInstance`; see the
-[solver decision](acopf-pounce-decision.md#experimental-native-multiconductor-ivr-opf)
+[solver decision](formulations.md#experimental-native-multiconductor-ivr-opf)
 for build commands and API availability.
 
 PowerIO owns canonical electrical semantics, source mappings, units, selected
@@ -504,8 +504,11 @@ instance without solving it. `solve()` uses the last accepted primal when
 available. `solve_cancellable(McOpfStart::Declared, cancel)` instead selects the
 instance's explicit initial point, or its ordinary cold start if absent.
 
-```rust
+```rust,no_run
+# extern crate tellegen;
+# extern crate powerio;
 use tellegen::{McOpfEdit, McOpfSession};
+# fn example(instance: powerio::McAcOpfInstance) -> Result<(), Box<dyn std::error::Error>> {
 
 // `instance` is the caller's declared McAcOpfInstance.
 let mut session = McOpfSession::new(instance, Default::default())?;
@@ -517,6 +520,8 @@ session.apply_edits(&[McOpfEdit::LoadPower {
 }])?;
 let accepted = session.solve()?;
 let json = accepted.result.to_module_json()?;
+# Ok(())
+# }
 ```
 
 Edits use canonical identities and equipment ordering. Supported fields are
@@ -585,7 +590,7 @@ currents enter the equipment.
 
 Transformer rating ports retain their prepared winding/port names and selected
 limits. These ports may include magnetizing current or represent through-power;
-they are measurements, not additional additive terminal injections. Bare winding
+they are measurements, not extra terminal injections. Bare winding
 currents and separate core/grounding shunt ledgers reconstruct physical KCL.
 The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
@@ -642,7 +647,7 @@ Each row has a unique compiler ordinal, a descriptive label and any squared-norm
 normalization radius in working units. Ordinals identify rows within that compiled
 problem, not across revisions. Labels need not be unique and are never parsed
 to recover parameter identities. Omitted fixed equations and zero-reduced rows
-retain provenance; synthetic zero definitions are identified explicitly. Raw
+retain source information; synthetic zero definitions are identified explicitly. Raw
 row multipliers use `L = f + lambda*g`: lower-side multipliers are negative,
 upper-side multipliers positive, and equality multipliers unrestricted.
 They use compiled row units. **IVR KCL multipliers are not nodal energy prices.**
@@ -769,3 +774,269 @@ the sum of absolute gradient, Jacobian-multiplier and bound-dual contributions;
 relative complementarity divides by `1+abs(objective)`. Active inequality rows
 are weak when `abs(lambda)*norm(row_gradient) <= 1e-8` (variable bounds use
 `z <= 1e-8`). This conservative policy exposes diagnostic limits explicitly.
+
+
+<a id="acopf-pounce-decision"></a>
+
+<a id="acopf-pounce-decision-ac-optimal-power-flow"></a>
+
+## AC optimal power flow
+
+AC OPF minimizes generation cost subject to nonlinear AC power balance,
+voltage bounds, generator limits and branch limits. Tellegen uses POUNCE and
+checks the electrical equations and limits after the solver returns.
+A successful solver status alone does not establish a usable result.
+
+<a id="acopf-pounce-decision-browser"></a>
+
+### Browser
+
+The demo runs AC OPF in a separate worker. Its WebAssembly file is built and
+released separately from the ordinary engine because POUNCE uses the EPL-2.0
+license. See [licenses](third-party-notices.md) and
+[release instructions](deployment.md#release-architecture-separate-ac-opf-download).
+The app must finish loading that file before AC OPF is available.
+
+The worker and compiled module are reused between calls. Each solve gets fresh
+WebAssembly memory; cancellation terminates the active worker, and the next
+call creates another. `releaseAcOpfWorker()` releases an idle worker.
+
+Large or difficult cases may take substantially longer than a power flow or
+DC OPF. Compare timings for the same case,
+settings and initial state; browser startup time and numerical solve time
+are different measurements.
+
+<a id="acopf-pounce-decision-native-rust"></a>
+
+### Native Rust
+
+Enable the `acopf` feature. This example accepts a stored PowerIO AC OPF
+instance and returns the solve result:
+
+```rust,no_run
+# extern crate tellegen;
+# extern crate powerio;
+use tellegen::{Problem, SolveRequest};
+
+fn solve(module_json: &str) -> Result<(), String> {
+    let module = tellegen::ir::deserialize_module(module_json)?;
+    let powerio::PioValue::AcOpfInstance(instance) = module.into_value() else {
+        return Err("expected an ac_opf_instance".into());
+    };
+    let request = SolveRequest {
+        formulation: Problem::Acopf,
+        ..Default::default()
+    };
+    let result = tellegen::solve_ac_opf_instance(&instance, &request)?;
+    println!("{:?}", result.status);
+    Ok(())
+}
+```
+
+With the `sensitivity` feature, `SolveRequest.sensitivities` can request local
+AC OPF derivatives with respect to active/reactive demand, branch ratings and
+generator bounds. They describe the returned local optimum while its active
+constraints stay unchanged. Weakly active or dependent constraints, nonunique
+solutions and unsuitable numerical conditioning produce an error; they do not
+produce a derivative that looks valid. See [sensitivities](sensitivity-interface.md#balanced-ac-opf).
+
+For the equations, supported inputs and multiconductor formulation, see
+[calculations](formulations.md). See [validation](validation.md) for numerical
+comparisons and their limits. Historical development measurements are kept in
+[`validation/history`](https://github.com/eigenergy/tellegen/tree/main/validation/history).
+
+
+<a id="dc-compatibility"></a>
+
+<a id="dc-compatibility-dc-opf-variants-and-optimality-compatibility"></a>
+
+## DC OPF variants and optimality compatibility
+
+Tellegen keeps **Legacy Tellegen** as its default. To reproduce a PowerModels
+DCP or PGLib **DC** baseline, select **PowerModels DCP / PGLib DC**. To use the
+MATPOWER DC equations, select **MATPOWER / PowerModels DCMP**. Loading a PGLib
+case does not automatically change the selected variant.
+
+These options select different optimization problems. An optimal solution of
+one problem need not have the same cost, dispatch, congestion or prices as
+another. None is a guarantee of AC feasibility, AC optimality, or a lower bound
+on AC cost. The PGLib AC baseline is a different comparison.
+
+<a id="dc-compatibility-compatibility-matrix"></a>
+
+### Compatibility matrix
+
+Let `Δθ = θfrom − θto`, `k = x/(r²+x²)`, `τ` be the effective tap magnitude,
+and `φ` the phase shift in radians. Source tap zero means unity. Branch power
+is positive from the from-bus to the to-bus. The table describes **equation
+compatibility**; optimal-objective agreement also requires the checklist below.
+
+| UI selection / API token | Active branch flow | PowerModels DCP / PGLib DC | MATPOWER DC / PowerModels DCMP | AC OPF objective |
+| --- | --- | --- | --- | --- |
+| **Tellegen (default)** — `series_susceptance` | `k(Δθ−φ)` | When all shifts are zero | When `r=0` and `τ=1` | No equality guarantee |
+| **PowerModels DCP** — `series_susceptance_no_phase_shift` | `kΔθ` | Exact equations | When `r=0`, `τ=1`, `φ=0` | No equality guarantee |
+| **MATPOWER** — `tap_adjusted_reactance` | `(Δθ−φ)/(xτ)` | When `r=0`, `τ=1`, `φ=0` | Exact equations | No equality guarantee |
+| **Susceptance with taps** — `tap_adjusted_series_susceptance` | `k(Δθ−φ)/τ` | When `τ=1`, `φ=0` | When `r=0` | No equality guarantee |
+| **Reactance only (1/x)** — `reactance_only` | `Δθ/x` | When `r=0` | When `τ=1`, `φ=0` | No equality guarantee |
+
+Conditional entries are sufficient conditions on every active branch, not an
+exhaustive list of cases that happen to yield equal costs. All five options
+agree when `r=0`, `τ=1`, `φ=0`. Taps can change radial-network angles without
+changing its fixed-injection flows; meshed networks redistribute flows.
+
+Equation parity assumes the same branch orientation and impedance reference
+side. PowerModels `parse_file` may reverse antiparallel transformers, scaling
+`r,x` by `τ²`, inverting `τ`, negating `φ`, and reversing angle bounds.
+The two tap-adjusted conventions are invariant under this complete reversal
+(with reversed flow sign); the three tap-ignoring coefficients change by
+`1/τ²`. PowerIO preserves source orientation, so independently parsing the
+same file does not by itself guarantee DCP parity for off-nominal transformers.
+
+In per unit, nodal balance is `pg,i − pd,i − gs,i = Σout f − Σin f`,
+where `f` includes the selected shift term. Fixed HVDC terminal injections
+enter the same balance separately.
+
+The built-in DCP and DCMP equations are checked against **PowerModels 0.19.9**.
+MATPOWER compatibility here means its documented DC equations, tested
+numerically through PowerModels DCMP; it is not a claim that a separate
+MATPOWER executable ran. The other three modes use explicitly labelled,
+validation-only PowerModels extensions.
+
+<a id="dc-compatibility-what-must-match-before-comparing-optimal-objectives"></a>
+
+### What must match before comparing optimal objectives
+
+- Use the same case revision and per-unit base, active equipment and island
+  references. Resolve bus identities and generator aggregation consistently.
+- Match the full generator cost curves, including constant terms, quadratic
+  scaling and piecewise-linear segments, and match generation limits.
+- Match thermal **active-power** limits, angle-difference limits, shunt active
+  withdrawals, fixed HVDC injections and any caller-supplied constraints.
+- Match preprocessing: zero-impedance handling, three-winding lowering,
+  reference angles, missing ratings and unconstrained angle windows.
+  Tellegen's network path applies PowerIO's PowerModels ±60° (1.0472 rad) pad
+  and may synthesize an unrated thermal limit over it; that is not equivalent
+  to an unlimited MATPOWER branch.
+- First check primal residuals and solver status, then compare objective using
+  an explicit numerical tolerance. Equal objective does not imply unique
+  dispatch or prices. Compare dispatch only when uniqueness is established,
+  and duals only for a nondegenerate active set, in matching units and signs.
+
+The selector changes neither thermal ratings nor voltage/reactive constraints.
+DC models omit the latter. A user wanting an AC-operable dispatch should replay
+it with AC power flow and inspect voltages, reactive generation and apparent
+power at **both** branch ends. A locally solved AC OPF is a feasible local
+reference, not a certified global optimum.
+
+<a id="dc-compatibility-selecting-and-retaining-a-variant"></a>
+
+### Selecting and retaining a variant
+
+The browser's **Calculation → DC variant** control validates the common
+calculation settings and builds a replacement study. A successful solve replaces
+the displayed result and sensitivities; a failed solve retains the accepted result. An imported typed instance owns
+its convention; its selector is read-only. A nondefault variant cannot fall
+back silently to the legacy-only HTTP calculation service.
+
+The same stable token works in CLI/Python JSON requests and `solveModule`:
+
+```json
+{
+  "formulation": "dcopf",
+  "branch_susceptance_formula": "series_susceptance_no_phase_shift"
+}
+```
+
+It also applies to `dcpf`. Other formulations reject this option. Omission on a
+network preserves the legacy default; omission on a typed instance inherits
+its convention. A matching explicit request is accepted; a conflict is an error.
+The common settings API accepts the same token in
+`overrides.branch_susceptance_formula` for `dcopf` and `dcpf`. Its default is
+`null`, meaning inherit the input convention. The shared `@tellegen/svelte/webmcp`
+adapter uses accepted settings for previews, sensitivities and exact updates.
+Saved studies retain the convention together with their other calculation settings.
+
+Every new DC result reports the resolved `branch_susceptance_formula`.
+
+```ts
+const study = await createStudy(moduleJson, 'dcopf', {
+  branch_susceptance_formula: 'tap_adjusted_reactance'
+});
+```
+
+Rust offers `Study::new_with_options` and `Study::from_module_with_options`
+with `StudyOptions`. Durable `CreateStudy` requests accept the same optional
+field. Saved instances, solutions and study sessions retain the choice;
+network-only exports intentionally contain network data without solver options.
+The original constructors retain their behavior.
+
+`SeriesAdmittance(Susceptance)` sensitivities remain derivatives with respect
+to raw series `b`, holding raw `g` and transformer settings fixed. Tellegen
+applies the selected coefficient's chain rule to both the matrix and its phase
+injection. This does not introduce transformer-tap sensitivities.
+
+<a id="dc-compatibility-engineering-basis-and-evidence"></a>
+
+### Engineering basis and evidence
+
+Ignoring resistance (`1/x`) and ignoring conductance (`x/(r²+x²)`) are distinct
+conventional approximations. Transformer ratios and phase shifts are further
+choices. At unit bus voltage magnitudes and effective angle difference zero,
+the full complex transformer model has active-flow angle derivative
+`x/((r²+x²)τ)`. That local derivative justifies the tap-adjusted series option;
+it does not establish that it predicts every network's AC flows best.
+At general operating voltages, let `ρ = vf vt`, `δ = Δθ − φ`, and
+`g = r/(r²+x²)`. The from-end derivative is
+`ρ(k cos δ + g sin δ)/τ`; the symmetric-transfer derivative is
+`ρ k cos δ/τ`. The simplified `ρk/τ` slope assumes `δ=0`.
+
+- [PowerModels formulation details](https://lanl-ansi.github.io/PowerModels.jl/stable/formulation-details/)
+  and [v0.19.9 DC implementations](https://github.com/lanl-ansi/PowerModels.jl/blob/v0.19.9/src/form/dcp.jl).
+- [MATPOWER DC modeling](https://matpower.app/manual/matpower/DCModeling.html)
+  and [PGLib v23.07 baselines](https://github.com/power-grid-lib/pglib-opf/blob/v23.07/BASELINE.md).
+- Stott, Jardim and Alsaç, [DC Power Flow Revisited (2009)](https://doi.org/10.1109/TPWRS.2009.2021235).
+- Taheri and Molzahn, [Optimizing Parameters of the DC Power Flow (2024)](https://arxiv.org/abs/2310.00447).
+
+The reproducible harness in
+[`validation/dc-variants`](https://github.com/eigenergy/tellegen/tree/main/validation/dc-variants)
+pins the Julia environment, identifies built-in versus custom models, checks
+residuals before objectives, records input hashes, and reports AC failures and
+constraint violations. Its small strictly convex congested case is also an
+offline Rust regression fixture. See [validation](validation.md) for the wider
+solver qualification and its limits.
+
+The recorded small and 300-bus comparisons agree with PowerModels across all
+five options. The 13,659-bus stress case still shows numerical discrepancies:
+matching DCP equations does **not** currently guarantee PGLib objective parity
+on that case. Tellegen's existing `optimal` status also includes Clarabel's
+reduced-accuracy termination, so inspect primal residuals when benchmarking.
+The harness README records the objective gaps, residuals and AC convergence
+failures; this change does not retune the solver or change its status mapping.
+
+## Multiconductor OPF result conventions
+
+The canonical generator result uses terminal-map order, including the neutral,
+and injection-positive terminal powers. The detailed report also carries each
+coil's positive and negative terminal IDs and its generation-positive dispatch
+in `devices[].coil_power_va`. Use the coil values for generator cost and coil
+bounds. For a DELTA device or a nonzero neutral voltage, coil and terminal
+powers differ. This patch preserves the existing field meanings.
+
+Canonical active/reactive mismatches are measured in MW/MVAr. The detailed
+report separately checks current balance, voltage equations, device power,
+limits and the objective. Both successful POUNCE stopping levels must pass
+those checks; an acceptable-level stop also carries an explicit diagnostic.
+At tiny or zero dispatch, an absolute power-equation tolerance does not
+establish relative power-factor accuracy, and the report says so.
+
+OPF requires phase-only DELTA maps and rejects unsupported terminal roles
+before solving. Power flow supports a broader set of two-terminal connections.
+The [formulation review and independent OpenDSS comparisons](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/mc-opf-review)
+describe these contracts and the tested cases.
+
+The numerical review is complete. [Issue #338](https://github.com/eigenergy/tellegen/issues/338)
+remains open for a canonical per-coil dispatch representation and phase-neutral
+DELTA support; those changes are not part of this patch. Saved report versions
+6, 7 and 8 are checked under their original rank rules before upgrade to
+version 9, and altered rank claims are rejected. Report versions are separate
+from package versions.
