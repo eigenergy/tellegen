@@ -1412,7 +1412,6 @@
 		if (!morph) render();
 	});
 	// Relabel and re-place landmarks when the camera or what is shown changes.
-	let labelFrame = 0;
 	$effect(() => {
 		void [
 			camera,
@@ -1442,8 +1441,8 @@
 			app.sheetInset
 		];
 		if (!deck) return;
-		cancelAnimationFrame(labelFrame);
-		labelFrame = requestAnimationFrame(updateLabels);
+		const frame = requestAnimationFrame(updateLabels);
+		return () => cancelAnimationFrame(frame);
 	});
 
 	// Preserve the camera unless a resized key or panel covers every bus.

@@ -5,6 +5,15 @@ import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+type QueuedFramesWindow = Window & {
+	collectionFrames: {
+		count(): number;
+		handles(): number[];
+		remaining(handles: number[]): number[];
+		flush(): void;
+	};
+};
+
 test.beforeEach(async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
@@ -183,6 +192,68 @@ test.describe('PowerIO collection build', () => {
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 		await openCaseMenu(page);
 		await expect(page.locator('.case-chip.local')).toHaveCount(2);
+		await page
+			.locator('.case-chip.local')
+			.filter({ hasText: 'comparison.m' })
+			.locator('.case-activate')
+			.click();
+		const canvas = page.getByRole('application', { name: 'Single-line diagram', exact: true });
+		if (!(await canvas.isVisible()))
+			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+		await expect(canvas).toHaveAttribute('data-renderer-ready', 'true');
+		const originalCanvas = await canvas.elementHandle();
+		await openCaseMenu(page);
+		// Keep a label update queued while replacing the diagram with an incomplete case.
+		// This reproduces a slow frame without depending on the machine's render timing.
+		await page.evaluate(() => {
+			const request = window.requestAnimationFrame.bind(window);
+			const cancel = window.cancelAnimationFrame.bind(window);
+			const pending = new Map<number, FrameRequestCallback>();
+			let id = 1_000_000;
+			window.requestAnimationFrame = (callback) => {
+				pending.set(++id, callback);
+				return id;
+			};
+			window.cancelAnimationFrame = (handle) => {
+				pending.delete(handle);
+				cancel(handle);
+			};
+			Object.assign(window, {
+				collectionFrames: {
+					count: () => pending.size,
+					handles: () => [...pending.keys()],
+					remaining: (handles: number[]) => handles.filter((handle) => pending.has(handle)),
+					flush: () => {
+						window.requestAnimationFrame = request;
+						window.cancelAnimationFrame = cancel;
+						for (const [handle, callback] of pending) {
+							pending.delete(handle);
+							callback(performance.now());
+						}
+					}
+				}
+			});
+		});
+		await canvas.dispatchEvent('keydown', { key: '+' });
+		await expect
+			.poll(() => page.evaluate(() => (window as QueuedFramesWindow).collectionFrames.count()))
+			.toBeGreaterThan(0);
+		const queued = await page.evaluate(() =>
+			(window as QueuedFramesWindow).collectionFrames.handles()
+		);
+		await page
+			.locator('.case-chip.local')
+			.filter({ hasText: 'main.dss' })
+			.locator('.case-activate')
+			.dispatchEvent('click');
+		await expect.poll(() => originalCanvas!.evaluate((element) => element.isConnected)).toBe(false);
+		expect(
+			await page.evaluate(
+				(handles) => (window as QueuedFramesWindow).collectionFrames.remaining(handles),
+				queued
+			)
+		).toEqual([]);
+		await page.evaluate(() => (window as QueuedFramesWindow).collectionFrames.flush());
 	});
 
 	test('rejecting an unsafe archive leaves an independent valid ZIP available', async ({
