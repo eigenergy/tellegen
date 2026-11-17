@@ -5,14 +5,16 @@ import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-type QueuedFramesWindow = Window & {
-	collectionFrames: {
-		count(): number;
-		handles(): number[];
-		remaining(handles: number[]): number[];
-		flush(): void;
-	};
-};
+declare global {
+	interface Window {
+		collectionFrames: {
+			count(): number;
+			handles(): number[];
+			remaining(handles: number[]): number[];
+			flush(): void;
+		};
+	}
+}
 
 test.beforeEach(async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
@@ -236,11 +238,9 @@ test.describe('PowerIO collection build', () => {
 		});
 		await canvas.dispatchEvent('keydown', { key: '+' });
 		await expect
-			.poll(() => page.evaluate(() => (window as QueuedFramesWindow).collectionFrames.count()))
+			.poll(() => page.evaluate(() => window.collectionFrames.count()))
 			.toBeGreaterThan(0);
-		const queued = await page.evaluate(() =>
-			(window as QueuedFramesWindow).collectionFrames.handles()
-		);
+		const queued = await page.evaluate(() => window.collectionFrames.handles());
 		await page
 			.locator('.case-chip.local')
 			.filter({ hasText: 'main.dss' })
@@ -248,12 +248,9 @@ test.describe('PowerIO collection build', () => {
 			.dispatchEvent('click');
 		await expect.poll(() => originalCanvas!.evaluate((element) => element.isConnected)).toBe(false);
 		expect(
-			await page.evaluate(
-				(handles) => (window as QueuedFramesWindow).collectionFrames.remaining(handles),
-				queued
-			)
+			await page.evaluate((handles) => window.collectionFrames.remaining(handles), queued)
 		).toEqual([]);
-		await page.evaluate(() => (window as QueuedFramesWindow).collectionFrames.flush());
+		await page.evaluate(() => window.collectionFrames.flush());
 	});
 
 	test('rejecting an unsafe archive leaves an independent valid ZIP available', async ({
