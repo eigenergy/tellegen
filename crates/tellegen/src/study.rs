@@ -165,6 +165,11 @@ trait SolvedState: Send + Sync {
         false
     }
 
+    /// What the committed OPF minimized; `None` for a power flow.
+    fn objective_kind(&self) -> Option<crate::ObjectiveKind> {
+        None
+    }
+
     /// The committed flow limit shadow value per MW of rating,
     /// per dense branch, for the rating preview's objective delta: ∂objective/∂rating
     /// = −shadow. `None` when the formulation exposes no flow-limit duals; the preview
@@ -201,10 +206,10 @@ impl SolvedState for DcState {
         Box::new(self.clone())
     }
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
-        dc_opf_assemble(&self.net, &self.sol, req)
+        dc_opf_assemble(&self.net, &self.sol, req).map_err(String::from)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
-        f(&DcKkt::new(&self.net, &self.sol))
+        f(&DcKkt::new(&self.net, &self.sol).map_err(|error| error.to_string())?)
     }
     fn lmp(&self) -> Option<Vec<f64>> {
         self.has_economic_objective()
@@ -212,6 +217,9 @@ impl SolvedState for DcState {
     }
     fn has_economic_objective(&self) -> bool {
         self.net.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost
+    }
+    fn objective_kind(&self) -> Option<crate::ObjectiveKind> {
+        crate::ObjectiveKind::of(self.net.objective)
     }
     fn line_shadow_prices(&self) -> Option<Vec<f64>> {
         // Both limit rows relax when the rating grows, so the shadow is the dual sum;
@@ -244,7 +252,7 @@ impl SolvedState for AcPfState {
         Box::new(self.clone())
     }
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
-        ac_pf_assemble(&self.net, &self.sol, req)
+        ac_pf_assemble(&self.net, &self.sol, req).map_err(String::from)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
         f(&AcNewton::new(&self.net, &self.sol))
@@ -271,7 +279,7 @@ impl SolvedState for ConicState {
         Box::new(self.clone())
     }
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
-        socwr_assemble(&self.net, &self.sol, req)
+        socwr_assemble(&self.net, &self.sol, req).map_err(String::from)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
         let sys = ConicKkt::new(&self.net, &self.sol).map_err(|e| e.to_string())?;
@@ -287,6 +295,9 @@ impl SolvedState for ConicState {
     }
     fn has_economic_objective(&self) -> bool {
         self.net.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost
+    }
+    fn objective_kind(&self) -> Option<crate::ObjectiveKind> {
+        crate::ObjectiveKind::of(self.net.objective)
     }
 }
 
@@ -957,6 +968,24 @@ impl Study {
         &self.last
     }
 
+    /// What the committed OPF minimized: a declared generator cost, or
+    /// nothing (a feasibility problem). `None` for a power flow Study. Read
+    /// from the solved problem, so it follows the Study's current case.
+    pub fn objective_kind(&self) -> Option<crate::ObjectiveKind> {
+        self.solved.objective_kind()
+    }
+
+    /// `response` as the adapters emit it: its fields plus this Study's
+    /// `objective_kind`. Use it for any response this Study returned.
+    pub fn output(&self, response: SolveResponse) -> crate::SolveOutput {
+        crate::SolveOutput::new(response, self.objective_kind())
+    }
+
+    /// The most recent committed solution as the adapters emit it.
+    pub fn solution_output(&self) -> crate::SolveOutput {
+        self.output(self.last.clone())
+    }
+
     /// The committed edit log (the study): base case + these edits = the current point.
     pub fn edits(&self) -> &[NetworkEdit] {
         &self.log
@@ -1555,7 +1584,7 @@ impl Study {
 /// commit or preview. Folding preserves zero-magnitude keys, so even a no-op
 /// edit cannot use a display-only lowered row as a public target.
 fn validate_network_edits(net: &BalancedNetwork, edits: &[NetworkEdit]) -> Result<(), String> {
-    validate_canonical_edits(net, &fold(edits))
+    validate_canonical_edits(net, &fold(edits)).map_err(String::from)
 }
 
 /// The numeric bus id for a bus edit key. A numeric key is the id itself; a uid
@@ -2004,7 +2033,7 @@ mod tests {
                 p_mw: 50.0,
             }])
             .expect("commit");
-        let from_study = serde_json::to_string(&resp).unwrap();
+        let from_study = serde_json::to_string(&s.output(resp)).unwrap();
         let stateless = crate::solve_module_json(
             &net,
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}}}"#,
@@ -2036,7 +2065,7 @@ mod tests {
             .expect("commit_with");
         // The cell is present in the committed response (no second solve needed).
         assert_eq!(resp.sensitivities.len(), 1);
-        let from_study = serde_json::to_string(&resp).unwrap();
+        let from_study = serde_json::to_string(&s.output(resp)).unwrap();
         let stateless = crate::solve_module_json(
             &net,
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}},"sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}]}"#,
@@ -2304,7 +2333,10 @@ mod tests {
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}}}"#,
         )
         .expect("module solve");
-        assert_eq!(serde_json::to_string(&replaced).unwrap(), stateless);
+        assert_eq!(
+            serde_json::to_string(&s.output(replaced)).unwrap(),
+            stateless
+        );
         assert_eq!(s.edits().len(), 1);
     }
 
@@ -2320,7 +2352,7 @@ mod tests {
         let reset = s.replace_edits(&[]).unwrap();
         let base =
             crate::solve_module_json(&net, r#"{"formulation":"dcopf"}"#).expect("solve module");
-        assert_eq!(serde_json::to_string(&reset).unwrap(), base);
+        assert_eq!(serde_json::to_string(&s.output(reset)).unwrap(), base);
         assert!(s.edits().is_empty());
     }
 
@@ -2455,7 +2487,7 @@ mod tests {
             r#"{"formulation":"dcopf","edits":{"rates":{"3":-210.0}}}"#,
         )
         .expect("module solve");
-        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert_eq!(serde_json::to_string(&s.output(resp)).unwrap(), stateless);
     }
 
     #[test]
@@ -2575,7 +2607,7 @@ mod tests {
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":20.0},"rates":{"3":-210.0}}}"#,
         )
         .unwrap();
-        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert_eq!(serde_json::to_string(&s.output(resp)).unwrap(), stateless);
 
         // A mixed preview is the sum of the groups' first-order terms (this used to
         // error on mixed edit kinds, which replacement_step now legitimately emits).
@@ -2602,7 +2634,7 @@ mod tests {
         // both edit kinds).
         let reset = s.replace_edits(&[]).unwrap();
         let base = crate::solve_module_json(&net, r#"{"formulation":"dcopf"}"#).unwrap();
-        assert_eq!(serde_json::to_string(&reset).unwrap(), base);
+        assert_eq!(serde_json::to_string(&s.output(reset)).unwrap(), base);
         assert!(s.edits().is_empty());
     }
 
@@ -2662,7 +2694,7 @@ mod tests {
             r#"{"formulation":"socwr","edits":{"rates":{"3":-210.0}}}"#,
         )
         .expect("module solve");
-        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert_eq!(serde_json::to_string(&s.output(resp)).unwrap(), stateless);
     }
 
     #[test]
@@ -2719,7 +2751,7 @@ mod tests {
             }])
             .expect("socwr commit");
         assert!(resp.w.is_some(), "socwr reports w");
-        let from_study = serde_json::to_string(&resp).unwrap();
+        let from_study = serde_json::to_string(&s.output(resp)).unwrap();
         let stateless = crate::solve_module_json(
             &net,
             r#"{"formulation":"socwr","edits":{"deltas":{"2":10.0}}}"#,
@@ -3420,7 +3452,10 @@ mod tests {
             .to_string(),
         )
         .expect("module solve");
-        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert_eq!(
+            serde_json::to_string(&study.output(resp)).unwrap(),
+            stateless
+        );
         assert!(study.fork().solution().constraints.is_some());
 
         // Removing them restores the unconstrained solve.
@@ -3431,7 +3466,10 @@ mod tests {
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":10.0}}}"#,
         )
         .expect("module solve");
-        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert_eq!(
+            serde_json::to_string(&study.output(resp)).unwrap(),
+            stateless
+        );
     }
 
     #[test]

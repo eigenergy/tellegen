@@ -9,6 +9,8 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+use tellegen::{EngineError, ErrorCode};
+
 const PREFIX: usize = std::mem::size_of::<u32>();
 
 fn layout_for(len: usize) -> Option<Layout> {
@@ -63,8 +65,12 @@ fn to_payload(text: &str) -> *mut u8 {
     ptr
 }
 
-fn error_payload(message: impl std::fmt::Display) -> *mut u8 {
-    to_payload(&serde_json::json!({ "error": message.to_string() }).to_string())
+/// The error payload: `error` is the message, unchanged, and `code` is one of
+/// [`ErrorCode`]'s wire names.
+fn error_payload(error: &EngineError) -> *mut u8 {
+    to_payload(
+        &serde_json::json!({ "error": error.message, "code": error.code.as_str() }).to_string(),
+    )
 }
 
 /// Release a length-prefixed result returned by [`tellegen_acopf_solve`].
@@ -84,18 +90,29 @@ pub unsafe extern "C" fn tellegen_acopf_free_payload(ptr: *mut u8) {
     }
 }
 
-unsafe fn input<'a>(ptr: *const u8, len: usize, name: &str) -> Result<&'a str, String> {
+unsafe fn input<'a>(
+    ptr: *const u8,
+    len: usize,
+    name: &str,
+    code: ErrorCode,
+) -> Result<&'a str, EngineError> {
     if ptr.is_null() || len == 0 {
-        return Err(format!("{name} must not be empty"));
+        return Err(EngineError::new(code, format!("{name} must not be empty")));
     }
     // SAFETY: the ABI caller promises a readable input allocation for this call.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    std::str::from_utf8(bytes).map_err(|error| format!("{name} is not UTF-8: {error}"))
+    std::str::from_utf8(bytes)
+        .map_err(|error| EngineError::new(code, format!("{name} is not UTF-8: {error}")))
 }
 
 /// Solve one canonical PowerIO module as nonlinear AC OPF.
 ///
-/// Returns either a `SolveResponse` JSON object or `{ "error": "..." }`.
+/// Returns either a `SolveOutput` JSON object (the `SolveResponse` fields plus
+/// `objective_kind`) or `{ "error": "...", "code": "..." }`.
+///
+/// This target aborts on panic, so the `catch_unwind` below catches nothing
+/// in the shipped module: a panic traps the instance and the worker replaces
+/// it. The guard only takes effect in native builds, such as the tests.
 /// The worker is the cancellation boundary: terminating it stops a synchronous
 /// solve without leaving a reusable wasm instance in an uncertain state.
 ///
@@ -111,27 +128,53 @@ pub unsafe extern "C" fn tellegen_acopf_solve(
 ) -> *mut u8 {
     match catch_unwind(AssertUnwindSafe(|| {
         // SAFETY: forwarded from this function's caller contract.
-        let module = unsafe { input(module_ptr, module_len, "module JSON") }?;
+        let module = unsafe {
+            input(
+                module_ptr,
+                module_len,
+                "module JSON",
+                ErrorCode::InvalidInput,
+            )
+        }?;
         // SAFETY: forwarded from this function's caller contract.
-        let request = unsafe { input(request_ptr, request_len, "request JSON") }?;
-        let value: serde_json::Value = serde_json::from_str(request).map_err(|e| e.to_string())?;
+        let request = unsafe {
+            input(
+                request_ptr,
+                request_len,
+                "request JSON",
+                ErrorCode::InvalidRequest,
+            )
+        }?;
+        let value: serde_json::Value = serde_json::from_str(request)
+            .map_err(|e| EngineError::new(ErrorCode::InvalidRequest, e.to_string()))?;
         if value.get("ac_dc").is_some() {
             if value.get("ac_dc") != Some(&serde_json::Value::Bool(true))
                 || value.get("formulation").and_then(|v| v.as_str()) != Some("acopf")
                 || value.as_object().is_none_or(|o| o.len() != 2)
             {
-                return Err(
-                    "Joint AC/DC request accepts only formulation=acopf and ac_dc=true".into(),
-                );
+                return Err(EngineError::new(
+                    ErrorCode::InvalidRequest,
+                    "Joint AC/DC request accepts only formulation=acopf and ac_dc=true",
+                ));
             }
-            tellegen::ac_dc::solve_module_json(module, tellegen::Problem::Acopf)
+            // The joint solve reports plain messages. Its failures are the
+            // model refusing the case unless the message names another class.
+            tellegen::ac_dc::solve_module_json(module, tellegen::Problem::Acopf).map_err(
+                |message| {
+                    let code = ErrorCode::from_message(&message).unwrap_or(ErrorCode::InvalidInput);
+                    EngineError::new(code, message)
+                },
+            )
         } else {
-            tellegen::solve_module_json(module, request)
+            tellegen::solve_module_output_json(module, request)
         }
     })) {
         Ok(Ok(response)) => to_payload(&response),
-        Ok(Err(error)) => error_payload(error),
-        Err(_) => error_payload("AC OPF solve panicked; the worker must be replaced"),
+        Ok(Err(error)) => error_payload(&error),
+        Err(_) => error_payload(&EngineError::new(
+            ErrorCode::Internal,
+            "AC OPF solve panicked; the worker must be replaced",
+        )),
     }
 }
 
@@ -150,6 +193,7 @@ mod tests {
         let bytes = unsafe { std::slice::from_raw_parts(ptr.add(PREFIX), len) };
         let value: serde_json::Value = serde_json::from_slice(bytes).expect("error JSON");
         assert!(value["error"].as_str().unwrap().contains("module JSON"));
+        assert_eq!(value["code"], "invalid_input");
         // SAFETY: release the live payload once.
         unsafe { tellegen_acopf_free_payload(ptr) };
     }

@@ -94,6 +94,7 @@ import type {
   NetworkBus,
   NetworkSubstation,
   NetworkEquipment,
+  ObjectiveKind,
   ProblemCaps,
   SensitivityColumn,
   Solution,
@@ -111,8 +112,10 @@ import type {
 } from "./generated/synth-types.js";
 export {
   API_SOURCE_SHA256,
+  ENGINE_ERROR_CODES,
   ENGINE_VERSION,
   FORMULATION_IDS,
+  OBJECTIVE_KINDS,
   SOLVE_STATUSES,
 } from "./generated/api-types.js";
 export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
@@ -131,6 +134,7 @@ export type {
   ConstraintTerm,
   ConstraintTermKind,
   DemandDeltas,
+  EngineErrorCode,
   LazyLimits,
   LimitOptions,
   LimitRound,
@@ -143,6 +147,7 @@ export type {
   NetworkBus,
   NetworkSubstation,
   NetworkEquipment,
+  ObjectiveKind,
   PowerFlowStart,
   ProblemCaps,
   SensRequest,
@@ -1994,7 +1999,7 @@ export async function applyMcStudyGeo(
   );
 }
 
-export { errorText } from "./errors.js";
+export { errorCode, errorText, type EngineError } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
  * recover from in this browser. Nothing solves client side when this is true;
@@ -2148,6 +2153,7 @@ interface StudySolveResponse {
   formulation: string;
   status: string;
   objective: number | null;
+  objective_kind?: ObjectiveKind;
   iterations?: SolveIteration[];
   lmp?: { bus: number; value: number }[];
   vm?: { bus: number; value: number }[];
@@ -2222,6 +2228,7 @@ export interface SolutionResponseProjection {
   status?: string;
   initialization?: AcPfInitialization | null;
   objective?: number | null;
+  objective_kind?: ObjectiveKind | null;
   lmp?: { bus: number; value: number }[] | null;
   vm?: { bus: number; value: number }[] | null;
   va?: { bus: number; value: number }[] | null;
@@ -2242,6 +2249,9 @@ export function solveResponseToSolution(
     ...(out.formulation !== undefined ? { formulation: out.formulation } : {}),
     ...(out.status !== undefined ? { status: out.status } : {}),
     objective: out.objective ?? null,
+    ...(out.objective_kind != null
+      ? { objective_kind: out.objective_kind }
+      : {}),
     // Keep serialized compact results equal across direct struct responses
     // and commit envelopes, whose nested JSON keys arrive in sorted order.
     ...(out.initialization
