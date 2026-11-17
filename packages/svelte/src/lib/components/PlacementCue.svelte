@@ -13,7 +13,7 @@
 		position: absolute;
 		left: 50%;
 		bottom: 52px;
-		z-index: 14;
+		z-index: var(--z-cue);
 		transform: translateX(-50%);
 		padding: 8px 12px;
 		background: var(--panel);

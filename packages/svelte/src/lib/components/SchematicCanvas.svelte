@@ -84,7 +84,8 @@
 		MAX_ZOOM,
 		MIN_ZOOM
 	} from '../diagram/index.js';
-	import { canvasPng, download, fileStem, sceneSvg } from './schematic/export.js';
+	import { download } from '../format.js';
+	import { canvasPng, fileStem, sceneSvg } from './schematic/export.js';
 	import {
 		createLayerCache,
 		morphLayers,
@@ -1735,13 +1736,5 @@
 		margin: 0;
 		color: var(--text-secondary);
 		pointer-events: none;
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
 	}
 </style>

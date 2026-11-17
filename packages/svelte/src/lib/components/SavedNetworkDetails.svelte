@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { getAppState } from '../context.svelte.js';
 	import { flowSummary, resultStats } from '../diagram/verdict.js';
-	import { degrees, fmt, formulationLabel, quantity, signed, splitName } from '../format.js';
+	import {
+		atLimit,
+		degrees,
+		fmt,
+		formulationLabel,
+		quantity,
+		signed,
+		splitName
+	} from '../format.js';
 	import BusPicker from './BusPicker.svelte';
 	import ModelDetails from './ModelDetails.svelte';
 	import SolveCard from './SolveCard.svelte';
@@ -40,7 +48,7 @@
 		const flows = solution.flows ?? [];
 		const binding = constraints
 			? constraints.filter((row) => row.binding).length
-			: flows.filter((f) => f.loading >= 0.999).length;
+			: flows.filter(atLimit).length;
 		return resultStats({
 			formulation: saved.formulation,
 			objective: solution.objective ?? null,
@@ -72,7 +80,9 @@
 
 {#if saved}
 	<section aria-label="Saved network details">
-		<h2>{name[0]}{#if name[1]}<span class="region">{name[1]}</span>{/if}</h2>
+		<h2>
+			{name[0]}{#if name[1]}<span class="region">{name[1]}</span>{/if}
+		</h2>
 		<StatBoxes {stats} />
 		<dl>
 			<div>

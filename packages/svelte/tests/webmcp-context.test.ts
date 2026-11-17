@@ -9,7 +9,6 @@ import type { CaseSummary } from '@tellegen/engine';
 
 vi.mock('@tellegen/engine', async (original) => ({
 	...(await original<typeof import('@tellegen/engine')>()),
-	FORMULATIONS: [{ id: 'dcopf' }, { id: 'acpf' }, { id: 'socwr', disabled: true }],
 	createStudy: vi.fn(() => {
 		throw new Error('Unexpected solve');
 	})
@@ -192,7 +191,8 @@ describe('WebMCP displayed-state context', () => {
 		local.network = live.network;
 		app.cases[0] = local;
 		const inspected = await createTellegenWebMcpAdapter(ctrl).inspectCase(signal());
-		expect(inspected.available_formulations).toEqual(['dcopf', 'acpf']);
+		// AC OPF is off until its solver loads; the rule itself is the engine's.
+		expect(inspected.available_formulations).toEqual(['dcopf', 'acpf', 'socwr']);
 	});
 
 	it('ranks AC power flow voltages and reports unavailable LMP analysis', async () => {

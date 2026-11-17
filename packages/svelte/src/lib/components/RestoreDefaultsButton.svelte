@@ -14,7 +14,7 @@
 		position: absolute;
 		bottom: 34px;
 		left: 20px;
-		z-index: 10;
+		z-index: var(--z-chrome);
 		padding: 6px 11px;
 		background: var(--panel);
 		border: 1px solid var(--line);

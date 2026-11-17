@@ -1,8 +1,8 @@
 import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes } from './fixtures/backend-case.js';
-import { noticeDetails } from './fixtures/notices.js';
+import { openLog } from './fixtures/notices.js';
 
-test('temporary errors group repeats, pause during interaction, and retain full details', async ({
+test('an error shows once in the toast and the Log, counts repeats, and holds while pointed at', async ({
 	page
 }, testInfo) => {
 	await mockDataRoutes(page);
@@ -22,8 +22,8 @@ test('temporary errors group repeats, pause during interaction, and retain full 
 	await toast.getByRole('button', { name: 'Retry', exact: true }).click();
 	await expect.poll(() => requests).toBe(2);
 	await expect(toast.getByLabel('2 occurrences')).toBeVisible();
-	const details = await noticeDetails(page);
-	await expect(details).toContainText('Rate limited');
+	// The pointer on the toast holds it open.
+	await toast.hover();
 	await page.clock.install();
 	await page.clock.fastForward(10_000);
 	await expect(toast).toContainText('Rate limited');
@@ -37,15 +37,17 @@ test('temporary errors group repeats, pause during interaction, and retain full 
 		})
 		.toBe(true);
 	await page.screenshot({ path: testInfo.outputPath('notification-mobile.png') });
-	await page
-		.getByRole('region', { name: 'Notifications' })
-		.getByRole('button', { name: 'Details', exact: true })
-		.click();
-	await page.getByRole('button', { name: 'Network', exact: true }).focus();
+	// Once it times out, the Log still has the entry, counted once with both reports.
 	await page.mouse.move(2, 2);
 	await page.clock.fastForward(7000);
-	await expect(toast.locator('.message')).toHaveCount(0);
-	await expect(await noticeDetails(page)).toContainText('Rate limited');
+	await expect(toast).toHaveCount(0);
+	await expect(page.locator('.panel-toolbar').getByRole('button', { name: /^Log/ })).toContainText(
+		'(1)'
+	);
+	const log = await openLog(page);
+	await expect(log.getByTestId('log-entry')).toHaveCount(1);
+	await expect(log).toContainText('Rate limited');
+	await expect(log).toContainText('2 times');
 });
 
 test('local previews never request analytics and the preference persists', async ({ page }) => {

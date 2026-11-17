@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { validateMcPfOptions } from '@tellegen/engine';
-	import { getNoticeCenter } from '../notices.svelte.js';
+	import { getAppState } from '../context.svelte.js';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import { MC_PF_UNAVAILABLE, MC_PF_UNAVAILABLE_TITLE } from '../multiconductor.js';
 
@@ -24,7 +24,7 @@
 		actions?: Snippet;
 	} = $props();
 
-	const notices = getNoticeCenter();
+	const log = getAppState().log;
 	const invalid = $derived(validateMcPfOptions(mc.mcOptions));
 </script>
 
@@ -48,10 +48,12 @@
 	{#if !mc.mcPfSupported}<button
 			class="text"
 			onclick={() =>
-				notices.push({
-					kind: 'warning',
+				log.notify({
+					severity: 'warning',
 					title: MC_PF_UNAVAILABLE_TITLE,
-					details: mc.mcPfReason ?? MC_PF_UNAVAILABLE
+					message: mc.mcPfReason ?? MC_PF_UNAVAILABLE,
+					stage: 'Solve',
+					subject: mc.fileName
 				})}>Why unavailable</button
 		>{/if}
 </div>

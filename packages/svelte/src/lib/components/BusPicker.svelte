@@ -212,7 +212,7 @@
 
 	ul {
 		position: absolute;
-		z-index: 20;
+		z-index: var(--z-overlay);
 		top: calc(100% + 2px);
 		left: 0;
 		right: 0;

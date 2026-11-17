@@ -2,6 +2,11 @@
  * this to the committed value commits nothing and starts no solve. */
 export const DEAD_ZONE_MW = 0.25;
 
+/** Where a fraction of the track sits under a native range thumb `thumbPx`
+ * wide: the thumb's centre stops half a thumb short of each end. */
+export const thumbAlignedPos = (frac: number, thumbPx: number) =>
+	`calc(${frac * 100}% + ${(0.5 - frac) * thumbPx}px)`;
+
 const KEY_DIRECTIONS: Record<string, number> = {
 	ArrowRight: 1,
 	ArrowUp: 1,

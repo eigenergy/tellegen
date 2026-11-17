@@ -2093,6 +2093,32 @@ export const FORMULATIONS: ReadonlyArray<{
   },
 ];
 
+/** What decides which calculations a case can run. Leave out what does not apply. */
+export interface CalculationContext {
+  /** The one calculation the case file declares, when it declares one. */
+  declared?: Formulation | null;
+  /** A demand or a rating is edited. */
+  edited?: boolean;
+  /** A line rating is edited. */
+  ratingsEdited?: boolean;
+  /** The optional AC OPF solver can run here. */
+  acOpf?: boolean;
+}
+
+/** Whether a case can run calculation `id`: the one rule behind every
+ * calculation menu. A case file that declares a calculation runs only that
+ * one; AC power flow has no line limits, so it cannot solve edited ratings;
+ * AC OPF needs its solver and solves the unedited case only. */
+export function calculationAvailable(
+  id: Formulation,
+  context: CalculationContext = {},
+): boolean {
+  if (context.declared && context.declared !== id) return false;
+  if (id === "acpf" && context.ratingsEdited) return false;
+  if (id === "acopf") return !!context.acOpf && !context.edited;
+  return FORMULATIONS.some((entry) => entry.id === id && !entry.disabled);
+}
+
 /** DC OPF is the default calculation. */
 export const DEFAULT_FORMULATION: Formulation = "dcopf";
 
