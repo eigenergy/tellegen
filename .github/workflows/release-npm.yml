@@ -1,6 +1,6 @@
 name: Release (packages)
 
-# Setup for this workflow is in docs/src/release-architecture.md.
+# Setup for this workflow is in docs/src/deployment.md#release-architecture.
 #
 # The npm trusted publisher binds to this filename. If you rename this file,
 # update the publisher on npmjs.com for every package first.

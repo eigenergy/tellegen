@@ -126,7 +126,7 @@ sensitivities, LMPs, retained Studies, and browser solution export are not
 supported. There is no server or main-thread fallback. A successful result is
 locally feasible, not a proof of global optimality.
 
-See the [development setup and release gates](../../docs/src/acopf-pounce-decision.md#experimental-browser-abi)
+See the [development setup and release gates](../../docs/src/formulations.md#acopf-pounce-decision-experimental-browser-abi)
 before building or distributing the separate asset.
 
 Probe calls accept an optional third `AbortSignal` argument. Abort it when the

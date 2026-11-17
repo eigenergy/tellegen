@@ -32,7 +32,7 @@ the exact solve fires on release and reconciles the preview. Around that
 loop:
 
 - **powerio** (Rust): parsing, encoding, the formats, the network data model,
-  and the canonical display format ([display-data.md](display-data.md)).
+  and the canonical display format ([display-data.md](local-case-files.md#display-data)).
 - **tellegen** (browser): interaction, the fast math, rendering. Its Rust is
   built in this repository against powerio and compiled to WebAssembly.
 - **tellegen backend** (Rust): the same numerical core compiled native. It

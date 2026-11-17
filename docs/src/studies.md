@@ -84,7 +84,7 @@ tellegen study export study.json > portable-study.json
 also generate the TypeScript types. Browser controls, WebMCP, and the CLI use
 the same Study operations and revision checks.
 
-The Python package's MCP server, `tellegen-mcp` (see [MCP server](mcp.md)),
+The Python package's MCP server, `tellegen-mcp` (see [MCP server](python.md#mcp)),
 runs the engine in process. Its `solve`, `solve_module`, and `plan` tools handle
 calculations; `study_create`, `study_inspect`, `study_run`, `study_export`, and
 `study_import` handle saved cases. `study_create` also accepts a case file for

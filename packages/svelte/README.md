@@ -88,7 +88,7 @@ belongs in a layout that stays mounted.
 A development host can pass `acOpfWasmUrl="/experimental-acopf/tellegen_acopf_wasi.wasm"`
 to `TellegenViewer` or `TellegenProvider`. The asset must be built and served
 separately; the selector enables AC OPF only after a worker probe succeeds.
-See the [local setup and release gates](../../docs/src/acopf-pounce-decision.md#experimental-browser-abi).
+See the [local setup and release gates](../../docs/src/formulations.md#acopf-pounce-decision-experimental-browser-abi).
 
 Balanced networks and stored canonical AC OPF instances are supported at the
 base operating point. Imported instances retain their objective and constraints.

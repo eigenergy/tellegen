@@ -23,7 +23,7 @@ voltage levels 1–1500 kV, `demand.mw` up to 10⁷, `demand.per_capita_kw` up
 to 100 and `demand.peak_factor` from 1 to 10.
 
 Generated longitudes lie in [-180, 180], and a branch route that crosses the
-seam is not split; [Routes across the antimeridian](antimeridian-routes.md)
+seam is not split; [Routes across the antimeridian](local-case-files.md#antimeridian-routes)
 says how to draw one.
 
 Each generated bus, branch, load, generator, shunt and HVDC row keeps its
@@ -464,3 +464,27 @@ PowerIO's `gridfm` format is the Parquet dataset layout.
   coupled systems can still fail or reach another solution outside the
   voltage band. The planning dispatch can also differ from the final DC
   OPF dispatch. Convergence and voltage-band acceptance remain separate checks.
+
+
+## Synchronous areas and DC links
+
+Synthetic grids use separate AC areas for the regional divisions of the USA,
+China, Australia and Indonesia. These are documented geographic approximations,
+not surveyed operating boundaries. Other regions use the existing landmass
+and distance grouping. Co-located voltage levels remain in one area.
+
+Each area has its own reference bus and AC topology. The generator connects
+areas with synthetic HVDC links scheduled from the planning dispatch; those
+fixed active-power transfers are included in both DC and AC validation. The
+model assumes lossless converters without reactive-power control. It does not
+reproduce the countries' installed interconnector ratings or converter controls.
+
+The report lists `synchronous_areas` and `planned_hvdc_links`. Saved modules
+retain these lists in `extensions["tellegen.synchronous_areas"]`, so the viewer
+can show them after reopening. The load values in the original network are
+unchanged by the transfer calculation.
+
+All four countries converge within 0.95–1.05 pu at seeds 1, 7 and 2026. Existing
+corridor-planning warnings are retained where the unconstrained planning
+case misses its angle or capacity target. See the
+[geographic sources, assumptions and twelve-run checks](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/synth/synchronous-areas).

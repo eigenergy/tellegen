@@ -493,7 +493,7 @@ rewrite either checkout's lockfile. A companion checkout is not required.
 See [Formulations](formulations.md#experimental-native-multiconductor-ivr-opf)
 for the electrical profile and derivative strategy,
 [Validation](validation.md#multiconductor-ivr-opf) for acceptance and regression
-coverage, and [Methodology](methodology.md#external-multiconductor-ivr-studies)
+coverage, and [Methodology](validation.md#methodology-external-multiconductor-ivr-studies)
 for optional external studies. Ordinary frozen-reference tests need neither
 Julia nor the large ENWL dataset.
 The existing solver release and distribution gates below also apply to MC OPF.

@@ -61,7 +61,7 @@ reader selected for transmission and distribution documents.
 ## Solves And Studies
 
 DC requests and Study options accept `branch_susceptance_formula`. See the
-[DC optimality compatibility matrix](dc-compatibility.md) for tokens, equations,
+[DC optimality compatibility matrix](formulations.md#dc-compatibility) for tokens, equations,
 benchmark assumptions and persistence semantics.
 
 - `capabilities()`: returns available formulations, operands, and parameters.
@@ -212,3 +212,119 @@ Public types include:
 - `BrowserFormulation`, `FormulationId`, `SolveStatus`
 
 The generated file is committed at `packages/engine/src/generated/api-types.ts` and checked in CI.
+
+
+<a id="transports"></a>
+
+<a id="transports-transports"></a>
+
+## Transports
+
+The transport boundary is the line between a host app and the tellegen engine.
+
+<a id="transports-browser-wasm"></a>
+
+### Browser Wasm
+
+`@tellegen/engine` ships the browser wasm transport today. It wraps the `wasm-pack` output from `crates/tellegen-wasm` and exposes direct functions plus `browserWasmTransport`.
+
+Use this transport when cases should stay local to the browser. Dropped case
+files are parsed in WebAssembly, and solves, `Study.preview`, `Study.commit`,
+and sensitivity requests run there as well. No case text or PowerIO module
+leaves the browser unless the host app sends it.
+
+The wasm instance lives in a dedicated Web Worker, so a multi-second solve
+never blocks the page. When the browser cannot run a module worker the same
+requests execute on the calling thread instead; the API is identical either
+way.
+
+The transport has one wasm package carrying parsing, all solves, `Study`,
+capabilities, and generalized sensitivity requests.
+
+The loader is lazy. Host apps can call `preloadEngine()` to control when the browser downloads and initializes wasm.
+
+<a id="transports-http"></a>
+
+### HTTP
+
+The hosted demo also uses HTTP for bundled case metadata and native server fallback paths. That server is a demo consumer, not a requirement for using `@tellegen/engine`.
+
+An HTTP transport can implement the same shape as `EngineTransport`: parse or
+fetch a PowerIO module, call a native module solve endpoint, keep a server side
+study handle, and return the same generated TypeScript types.
+
+That transport is optional for apps that need server sized cases, audit logs, or native deployment.
+
+<a id="transports-tauri"></a>
+
+### Tauri
+
+The desktop and mobile path can use the same transport contract with a Tauri command layer. The UI keeps the `Study` workflow; only the call boundary changes from browser wasm to native commands.
+
+The Rust types stay the source of truth. New transports should return the generated `SolveResponse`, `ProblemCaps`, and sensitivity matrix shapes instead of defining parallel types.
+
+<a id="http-api"></a>
+
+<a id="http-api-http-api"></a>
+
+## HTTP API
+
+The demo server's surface. Data endpoints are always served; the compute
+endpoints ship disabled and answer 403 unless `TELLEGEN_SERVER_COMPUTE=1`
+(see [Deployment](deployment.md)).
+
+<a id="http-api-data"></a>
+
+### Data
+
+- `GET /api/health` — liveness and the served case ids.
+- `GET /api/compute` — `{"enabled": bool}`, whether the compute endpoints are on.
+- `GET /api/cases` — case summaries.
+- `GET /api/cases/{id}/case` — the portable PowerIO module the browser engine consumes.
+- `GET /api/cases/{id}/network` — the map view (buses, branches, coordinates).
+- `GET /api/cases/{id}/solution` — the cached base DC OPF solution, computed once at startup.
+
+Case summaries report canonical PowerIO row counts as `n_bus`/`n_branch` and
+rendered, three-winding-lowered counts as
+`n_analysis_bus`/`n_analysis_branch`. Older servers may omit the analysis
+counts.
+
+Summaries include `model: "balanced"` or `"multiconductor"`; an omitted model
+on an older server means balanced. Hosted distribution modules are registered
+through the [distribution manifest](deployment.md#hosted-distribution-cases).
+For them, bus/branch counts describe the distribution graph and the analysis
+counts equal those graph counts. `/case` retains the full module, including
+geometry and diagnostics. The browser builds the distribution view and runs
+supported AC power flow locally. Balanced-only `/network`, `/solution`,
+`/snapshot`, and enabled compute routes return 400 for distribution IDs.
+The global disabled-compute gate still returns 403 when compute is off.
+
+<a id="http-api-compute"></a>
+
+### Compute
+
+- `GET /api/cases/{id}/sensitivity/lmp/d/{bus}` — the ∂LMP/∂demand column at a bus.
+- `GET /api/cases/{id}/sensitivity/lmp/fmax/{branch}` — the ∂LMP/∂rating column at a branch.
+- `GET /api/cases/{id}/solve` — a DC OPF solve streamed over server-sent events:
+  `status`, `solution`, optional `sensitivity`, and `done`.
+
+The sensitivity and solve endpoints accept `?d=bus:mw,bus:mw`, each value a MW
+delta from the base case. They take no other request fields: linear
+constraints and the rest of the solve request go through the engine's
+`solveModule`, the `tellegen` CLI, or the crate (see
+[Formulations](formulations.md#linear-constraints)).
+
+<a id="http-api-limits"></a>
+
+### Limits
+
+Solve work is bounded by `TELLEGEN_SOLVER_CONCURRENCY` (default 2) and
+`TELLEGEN_SOLVER_TIMEOUT_SECS` (default 30). Compute routes are rate limited
+per client: 5 solve and 25 sensitivity requests per 10 seconds by default,
+tuned with `TELLEGEN_RATE_LIMIT_WINDOW_SECS`,
+`TELLEGEN_SOLVE_RATE_LIMIT_EVENTS`, and
+`TELLEGEN_SENSITIVITY_RATE_LIMIT_EVENTS`.
+
+Hosted distribution summaries may include `distribution` metadata: description,
+HTTPS source URL, related transmission case ID, and PF option defaults. The
+`/api/cases/{id}/case` endpoint negotiates gzip for portable module downloads.

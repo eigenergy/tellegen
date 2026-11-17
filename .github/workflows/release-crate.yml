@@ -1,6 +1,6 @@
 name: Release (crate)
 
-# Setup for this workflow is in docs/src/release-architecture.md.
+# Setup for this workflow is in docs/src/deployment.md#release-architecture.
 
 on:
   push:
