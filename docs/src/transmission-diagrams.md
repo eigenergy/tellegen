@@ -261,7 +261,8 @@ jumpers having a fifteenth of the median line's reactance.
 
 ## Saved engineering drawings
 
-**Edit drawing** opens an editable view of the current case. Equipment keeps its
+**Edit engineering drawing** opens an editable view of the current case.
+For a node-breaker source, use **Substation detail and drawing**. Equipment keeps its
 source identity while its position, rotation, label, colour and visibility can
 change. Ports and route bends can be moved independently. A three-winding
 transformer is one object with separate terminal connections. The overview
@@ -271,8 +272,10 @@ Use **Keep position during layout** to preserve manual placement during
 **Arrange unlocked objects**. Groups can be aligned horizontally or vertically;
 grid snapping, undo and redo apply to drawing edits. Add text, frames or a local
 PNG, JPEG or WebP image as annotations. Layers control which content is visible.
-Bus labels can display voltage or price with a chosen number of decimal places;
-branch overlays show active power and flow direction when results are available.
+For balanced cases with results, bus labels can display voltage or price with a
+chosen number of decimal places; branch overlays show active power and flow
+direction. Unavailable result controls are disabled. Multiconductor terminal
+results remain in the conductor inspector.
 
 **Save drawing** stores the drawing in this browser. **Duplicate drawing** creates
 a separate drawing for the same network. Export a `.drawing.json` file to retain

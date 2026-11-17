@@ -790,3 +790,30 @@ support a small preparation improvement; they do not establish an overall
 application speedup. The electrical results and regression checks were unchanged.
 
 See the [profile, all 180 measurements and reproduction commands](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/mc-prepare).
+
+
+## Sparse solver comparison
+
+The [faer and KLU study](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/mc-pf-klu)
+uses identical matrices and right-hand sides. It reproduces the reported Austin
+P3U difference of 17.473 V on an exported OpenDSS system with 431,897 unknowns.
+The largest differences are mainly a common shift of phase voltages; the largest
+within-bus phase-to-phase difference is 0.015 V. Changing KLU ordering also changes
+the answer. Higher-precision residual refinement from both starting answers
+converges to the same final double-precision vector, but this alone does not
+establish the accuracy of the physical input model.
+
+On an actual Tellegen-prepared generated tree with 316,000 unknowns and 1,895,984
+nonzeros, faer and KLU agree within 6.1e-9 V. Maximum backward residuals are below
+3.4e-16. Factor and retained-solve times were 0.113 s and 3.73 ms for faer, and
+0.042 s and 3.01 ms for KLU AMD on the development host. Memory measurements use
+different allocator methods, described with the raw results; they are not a
+controlled comparison of process memory.
+
+The full Austin source cannot currently pass Tellegen's import checks. Resource
+limits, duplicate declarations and unsupported protection devices prevent a
+regional prepared-system result. The study retains those failures and does not
+remove source declarations to make an import pass. The generated-tree comparison
+therefore does not answer the remaining regional-model question in
+[issue #153](https://github.com/eigenergy/tellegen/issues/153). No production
+backend was changed.

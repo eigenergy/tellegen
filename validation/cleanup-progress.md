@@ -13,12 +13,12 @@ proof that its changes are on the deployed site.
 | Documentation | #407 open; 20 chapters, links and Rust examples checked | Final behavior updates, CI and package examples |
 | Collections and nested ZIPs, #279 | #408 merged; all PR checks passed | Final deployed import check |
 | Saved-study storage and controls | #409 open; migration and browser tests pass locally | CI, merge and integration checks |
-| AC OPF speed and sensitivities | #411 and viewer #415 open; native and WASI measurements recorded | CI, integration and final browser checks |
+| AC OPF speed and sensitivities | #411 merged with all checks passed; viewer #415 open | Viewer integration and final browser checks |
 | Neutral reusable viewer and result labels | #414 open | CI, merge and installed-package check |
 | General OpenDSS models, #310 | PowerIO #884 merged; #885 releases the prerequisite; Tellegen implementation and #417 pass local checks | Dependency publication; published-version qualification |
 | CLI preparation costs, #363 | #412 merged; profile and 180 cold-start measurements recorded | Final release |
-| Numerical backend comparison, #153 | #420 reproduces the Austin discrepancy and compares actual Tellegen reduced systems | Regional import is unsupported; further bounded checks underway |
-| MC OPF review, #338 | #416 open; formulation review and independent OpenDSS comparisons recorded | CI and integration |
+| Numerical backend comparison, #153 | #420 reproduces Austin and compares a 316,000-unknown Tellegen-prepared system | CI and integration; original regional import remains unsupported |
+| MC OPF review, #338 | #416 merged with all checks passed; formulation review and OpenDSS comparisons recorded | Final release |
 | Synchronous areas and HVDC, #263 | #418 merged; all four countries converge within voltage limits for three seeds | Complete viewer and deployed checks |
 | Drawing editing and persistence, #198 | #421 open; radial, meshed and substation browser checks and performance measurements recorded | Fix review findings, CI and integration |
 | Node-breaker diagrams, #388 | #421 includes detailed projection and removes the old canvas | Mixed-topology review fixes, CI and integration |
