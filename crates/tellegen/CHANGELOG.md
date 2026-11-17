@@ -4,6 +4,25 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.8.1](https://github.com/eigenergy/tellegen/compare/v0.8.0...v0.8.1) - 2026-11-17
+
+### Added
+
+- Objective kind on OPF results, codes on errors, fewer panics ([#404](https://github.com/eigenergy/tellegen/pull/404))
+
+### Changed
+
+- Release and size rules for pull requests, and a validation folder ([#401](https://github.com/eigenergy/tellegen/pull/401))
+- Merge pull request #413: preserve objective types in saved study results
+- Merge pull request #412: measure and reduce multiconductor preparation costs
+- Merge pull request #411: speed up AC OPF and support local sensitivities
+- Merge pull request #416: report MC OPF residuals and stopping details
+- Merge pull request #420: compare sparse solvers on original and prepared systems
+- Merge pull request #421: complete persistent engineering drawings
+- Merge pull request #419: validate browser and HTTP responses from Rust records
+- Merge pull request #425: qualify general OpenDSS models and explicit written-settings copies
+- Merge pull request #426: compare a winding with no path to ground against OpenDSS
+
 ## [0.8.0](https://github.com/eigenergy/tellegen/compare/v0.7.1...v0.8.0) - 2026-11-16
 
 ### Breaking
