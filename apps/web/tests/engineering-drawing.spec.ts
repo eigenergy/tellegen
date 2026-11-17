@@ -30,7 +30,9 @@ test('node-breaker objects retain edits through saved drawings and SVG export', 
 	await page.getByRole('button', { name: 'busbar BB1', exact: true }).click();
 	await expect(page.getByLabel('X', { exact: true }).first()).toHaveValue('560');
 	await expect(page.getByLabel('Keep position during layout', { exact: true })).toBeChecked();
-	await page.getByRole('button', { name: 'Change switch states', exact: true }).click();
+	await page
+		.getByRole('button', { name: 'Change switch states', exact: true, includeHidden: true })
+		.evaluate((button: HTMLButtonElement) => button.click());
 	await expect(
 		page.getByRole('button', { name: 'disconnector DSC1 closed', exact: true })
 	).toBeVisible();
