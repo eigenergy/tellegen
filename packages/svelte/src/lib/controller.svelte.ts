@@ -68,6 +68,7 @@ import {
 	probeAcOpfWorker,
 	solveAcOpfModule,
 	solveResponseToSolution,
+	sensitivityColumn,
 	type EngineTransport,
 	mcPfResultDetail,
 	summarizeMcPfResult,
@@ -443,7 +444,10 @@ export class Controller {
 	};
 	private openCollection = async (read: Parameters<CollectionImport['start']>[0]) => {
 		if (!(await this.probeCollections()))
-			this.fail(COLLECTION_UNAVAILABLE, null, { title: 'Imports unavailable', stage: 'Open' });
+			this.fail(COLLECTION_UNAVAILABLE, null, {
+				title: 'Imports unavailable',
+				stage: 'Open'
+			});
 		else if (!this.disposed) await this.collectionImport.start(read);
 	};
 	readonly collectionImport = new CollectionImport((label, result) => {
@@ -544,7 +548,10 @@ export class Controller {
 
 	/** Whether the engine can run `formulation` on this case; see `calculationAvailable`. */
 	formulationAvailable(c: SolvableCase, formulation: Formulation): boolean {
-		return calculationAvailable(formulation, { edited: c.perturbed, acOpf: this.acOpfAvailable });
+		return calculationAvailable(formulation, {
+			edited: c.perturbed,
+			acOpf: this.acOpfAvailable
+		});
 	}
 
 	/** Whether a Calculation menu offers `formulation` for this case as it stands. */
@@ -821,8 +828,32 @@ export class Controller {
 	async browserSensitivity(
 		c: SolvableCase,
 		studyInputJson: string,
-		target: SensTarget
+		target: SensTarget,
+		signal?: AbortSignal
 	): Promise<SensitivityColumn | null> {
+		if (c.formulation === 'acopf') {
+			if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
+				throw new Error('AC OPF sensitivity needs the available solver and an unedited case');
+			const index =
+				'bus' in target
+					? c.solution?.prices.findIndex((entry) => entry.bus === target.bus)
+					: c.solution?.flows.findIndex((entry) => entry.branch === target.branch);
+			if (index === undefined || index < 0) return null;
+			const response = await solveAcOpfModule(
+				this.acOpfWasmUrl,
+				studyInputJson,
+				signal,
+				undefined,
+				[
+					{
+						operand: { Price: 'Active' },
+						parameter: 'bus' in target ? { Demand: 'Active' } : 'LineLimit',
+						indices: [index]
+					}
+				]
+			);
+			return sensitivityColumn(c.id, response.sensitivities ?? []);
+		}
 		const study = await this.getStudy(c, studyInputJson);
 		return study ? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target) : null;
 	}
@@ -1459,7 +1490,10 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = c.id;
-		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
+		if (
+			(c.formulation === 'acpf' || (c.formulation === 'acopf' && !c.solution?.prices.length)) &&
+			this.app.displayMode === 'price'
+		)
 			this.app.displayMode = 'voltage';
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' && !c.diagram ? c.id : null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
@@ -1488,7 +1522,10 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.addLocal(c);
-		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
+		if (
+			(c.formulation === 'acpf' || (c.formulation === 'acopf' && !c.solution?.prices.length)) &&
+			this.app.displayMode === 'price'
+		)
 			this.app.displayMode = 'voltage';
 		if (c.diagram) this.app.placingLocalId = null;
 		if ((options.frame ?? true) && (c.view || c.diagram || c.substations))
@@ -1935,14 +1972,14 @@ export class Controller {
 				await this.awaitFocus(caseId, target.branch, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
+			if (c.formulation === 'acpf') return;
 			try {
 				// The column from the browser Study (under the case's formulation). DC OPF
 				// may reconcile a null column via the server; AC OPF / SOCWR are browser
 				// only, so a null column there is terminal.
 				const studyInputJson = await this.ensureStudyInputJson(c);
 				if (studyInputJson) {
-					const sensitivity = await this.browserSensitivity(c, studyInputJson, target);
+					const sensitivity = await this.browserSensitivity(c, studyInputJson, target, ac.signal);
 					if (!ac.signal.aborted && sensitivity) {
 						this.acceptSensitivity(c, sensitivity, target, sensitivitySeq);
 						handled = true;
@@ -2078,7 +2115,10 @@ export class Controller {
 		title: string | undefined,
 		stage: string | undefined,
 		cause: unknown,
-		known: Omit<ErrorContext, 'retry'> & { quiet?: boolean; retry?: (() => void) | null } = {}
+		known: Omit<ErrorContext, 'retry'> & {
+			quiet?: boolean;
+			retry?: (() => void) | null;
+		} = {}
 	) {
 		const { retry } = known;
 		this.app.reportError(cause, {
@@ -2122,11 +2162,15 @@ export class Controller {
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
 			// Dynamics mode selects a bus to pick events, not to price it.
-			if (c.formulation === 'acpf' || c.formulation === 'acopf' || this.app.mode === 'dynamics')
-				return;
-			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
-				bus: busId
-			});
+			if (c.formulation === 'acpf' || this.app.mode === 'dynamics') return;
+			const sensitivity = await this.browserSensitivity(
+				c,
+				c.studyInputJson,
+				{
+					bus: busId
+				},
+				ac.signal
+			);
 			if (!ac.signal.aborted)
 				this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
 			if (!ac.signal.aborted && !sensitivity) {
@@ -2198,10 +2242,15 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
-			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
-				branch: branchId
-			});
+			if (c.formulation === 'acpf') return;
+			const sensitivity = await this.browserSensitivity(
+				c,
+				c.studyInputJson,
+				{
+					branch: branchId
+				},
+				ac.signal
+			);
 			if (ac.signal.aborted) return;
 			if (sensitivity) {
 				this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
@@ -3360,7 +3409,8 @@ export class Controller {
 			name: string;
 			distribution?: MulticonductorCase['distribution'];
 		},
-		labelOverride?: string
+		labelOverride?: string,
+		frame = true
 	) {
 		if (!hosted) this.hostedLoadAbort?.abort();
 
@@ -3395,7 +3445,7 @@ export class Controller {
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.addMulti(c);
-		if (c.placed) this.app.requestFrame(c.id);
+		if (frame && c.placed) this.app.requestFrame(c.id);
 		return c;
 	}
 
@@ -3550,6 +3600,44 @@ export class Controller {
 				c.solveAbort = null;
 			}
 		}
+	};
+
+	/** Open saved distribution results without moving the camera or duplicating the case. */
+	restoreMultiSnapshot = async (snapshot: McStudySnapshot): Promise<MulticonductorCase> => {
+		const existing = this.app.multiCases.find((c) => c.mcSnapshot?.id === snapshot.id);
+		if (existing) {
+			this.hostedLoadAbort?.abort();
+			this.app.studyView = null;
+			this.app.activeCaseId = this.app.activeLocalId = null;
+			this.app.activeMultiId = existing.id;
+			return existing;
+		}
+		const payload = await (this.mcTransport.ingestDistCaseBytes ?? ingestDistCaseBytes)(
+			new TextEncoder().encode(snapshot.input_module),
+			'pio',
+			{
+				retain: true
+			}
+		);
+		const c = this.addMultiCase(
+			`${snapshot.title}.pio.json`,
+			payload,
+			undefined,
+			snapshot.title,
+			false
+		);
+		c.mcSnapshot = snapshot;
+		c.settings.baselines = { mc_ac_pf: { ...snapshot.options } };
+		c.mcOptions = { ...snapshot.options };
+		c.settings.revision++;
+		c.mcEnergizedOnly = !!snapshot.result.network_scope;
+		c.mcPreparedScope = snapshot.result.network_scope ?? null;
+		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
+		c.result = summarizeMcPfResult(snapshot.result);
+		c.mcFullResult = snapshot.result;
+		c.mcSavedAt = new Date().toISOString();
+		c.revisionGeneration++;
+		return c;
 	};
 
 	/** Materialize the current retained operating point only when a portable

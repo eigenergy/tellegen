@@ -50,7 +50,8 @@
 	// Chrome anchored at the bottom (toasts, map controls, the host app's own
 	// notices outside this shell) clears the dock through this variable.
 	$effect(() => {
-		const root = document.documentElement.style;
+		const root = config.element?.style;
+		if (!root) return;
 		if (app.dockInset > 0) root.setProperty('--tellegen-timeline-clear', `${app.dockInset + 8}px`);
 		else root.removeProperty('--tellegen-timeline-clear');
 		return () => root.removeProperty('--tellegen-timeline-clear');

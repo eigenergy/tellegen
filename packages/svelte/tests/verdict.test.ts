@@ -223,18 +223,13 @@ describe('resultStats', () => {
 		]);
 	});
 
-	it('leaves out a $0 cost for an OPF case without costs and shows its heaviest line', () => {
-		expect(
-			resultStats({
-				formulation: 'dcopf',
-				objective: 0,
-				binding: 0,
-				maxLoading: 0.75
-			}).map((s) => [s.label, s.value])
-		).toEqual([
-			['Max loading', '75.0%'],
-			['Lines at limit', '0']
-		]);
+	it('uses the engine feasibility flag and shows its heaviest line', () => {
+		expect(resultStats({ formulation: 'dcopf', objective: 0, objectiveKind: 'feasibility', binding: 0, maxLoading: 0.75 }))
+			.toEqual([{ label: 'Max loading', value: '75.0%', tone: 'ok' }]);
+	});
+	it('keeps a zero-cost economic result distinct from feasibility', () => {
+		expect(resultStats({ formulation: 'dcopf', objective: 0, objectiveKind: 'cost', binding: 0 })[0])
+			.toMatchObject({ label: 'Operational cost', value: '$0.00/h' });
 	});
 
 	it('gives DC power flow its heaviest line and the lines over their limit', () => {

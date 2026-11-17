@@ -272,6 +272,21 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	await reopenedSaved.selectOption(firstSavedValue);
 	await expect(reopened.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
 	await expect(reopened.getByText('Goal', { exact: true })).toHaveCount(0);
+	const url = page.url();
+	const cases = page.getByTestId('distribution-case-chip');
+	const count = await cases.count();
+	await reopenedSaved.selectOption(firstSavedValue);
+	await expect(cases).toHaveCount(count);
+	expect(page.url()).toBe(url);
+	page.once('dialog', (dialog) => dialog.accept('Renamed feeder'));
+	await page.getByRole('button', { name: 'Rename', exact: true }).click();
+	await expect(reopenedSaved.locator('option:checked')).toHaveText('Renamed feeder, distribution');
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await expect(savedDistributionOptions(page)).toHaveCount(1);
+	await openApp(page);
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	await expect(savedDistributionOptions(page)).toHaveCount(1);
 });
 
 test('built-in four-wire demo solves and a three-wire case omits neutral-relative columns', async ({

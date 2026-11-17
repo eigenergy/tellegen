@@ -1,55 +1,26 @@
 import { parseApiResult, validateApiResult } from "./result-validation.js";
+import type { McStudySnapshot } from "./index.js";
 import { isolatedEngineHost, type EngineHost } from "./host.js";
-import type {
-  CreateStudy,
-  StudyBundle,
-  StudyRequest,
-  StudyOperationResult,
-} from "./generated/study-types.js";
+import type { CreateStudy, StudyBundle, StudyRequest, StudyOperationResult } from "./generated/study-types.js";
 
-export type {
-  CreateStudy,
-  StudyBundle,
-  StudyDocument,
-  StudyRequest,
-  StudyOperation,
-  StudyOperationResult,
-  GoalRevision,
-  DecisionSpace,
-  StudyObjective,
-  StateNode,
-  Comparison,
-} from "./generated/study-types.js";
+export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-types.js";
 
 export interface StudyBackend {
   create(request: CreateStudy, signal?: AbortSignal): Promise<StudyBundle>;
   validate(text: string): Promise<StudyBundle>;
-  execute(
-    bundle: StudyBundle,
-    request: StudyRequest,
-    signal?: AbortSignal,
-  ): Promise<{ bundle: StudyBundle; result: StudyOperationResult }>;
+  execute(bundle: StudyBundle, request: StudyRequest, signal?: AbortSignal): Promise<{ bundle: StudyBundle; result: StudyOperationResult }>;
 }
 
-async function callIsolated(
-  request: Parameters<EngineHost["call"]>[0],
-  signal?: AbortSignal,
-): Promise<string> {
+async function callIsolated(request: Parameters<EngineHost["call"]>[0], signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   const host = isolatedEngineHost();
   const cooperative = request.op === "study_document_run";
-  const cancel = () =>
-    cooperative
-      ? host.requestStop?.()
-      : host.cancel?.(
-          new DOMException("Study operation cancelled", "AbortError"),
-        );
+  const cancel = () => cooperative ? host.requestStop?.() : host.cancel?.(new DOMException("Study operation cancelled", "AbortError"));
   signal?.addEventListener("abort", cancel, { once: true });
   try {
     const result = await host.call(request);
     if (!cooperative) signal?.throwIfAborted();
-    if (typeof result !== "string")
-      throw new Error("The engine returned no Study result");
+    if (typeof result !== "string") throw new Error("The engine returned no Study result");
     return result;
   } finally {
     signal?.removeEventListener("abort", cancel);
@@ -105,9 +76,9 @@ export interface StudyStore {
 
 function storageError(error: unknown): Error {
   const cause = error instanceof Error ? error.message : String(error);
-  return new Error(
-    `Study was not saved: ${cause}. Free browser storage or export the Study and choose another destination before retrying.`,
-  );
+  const advice = error instanceof DOMException && error.name === "QuotaExceededError"
+    ? " Free browser storage or export the study before retrying." : "";
+  return new Error(`Study storage failed: ${cause}.${advice}`);
 }
 
 /** IndexedDB commits the complete document and its deduplicated artifact map together. */
@@ -115,20 +86,17 @@ export class IndexedDbStudyStore implements StudyStore {
   #database: Promise<IDBDatabase>;
   constructor(name = "tellegen-studies") {
     this.#database = new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 1);
-      request.onupgradeneeded = () =>
-        request.result.createObjectStore("studies", { keyPath: "document.id" });
-      request.onsuccess = () => {
-        request.result.onversionchange = () => request.result.close();
-        resolve(request.result);
+      if (typeof indexedDB === "undefined") { reject(new Error("Browser storage is unavailable")); return; }
+      const request = indexedDB.open(name, 2);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains("studies")) db.createObjectStore("studies", { keyPath: "document.id" });
+        db.createObjectStore("distribution", { keyPath: "id" });
+        db.createObjectStore("settings");
       };
+      request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
       request.onerror = () => reject(storageError(request.error));
-      request.onblocked = () =>
-        reject(
-          new Error(
-            "Study storage is blocked by another tab; close its connection and reload",
-          ),
-        );
+      request.onblocked = () => reject(new Error("Study storage is blocked by another tab; close its connection and reload"));
     });
   }
   async load(id: string): Promise<StudyBundle | null> {
@@ -136,14 +104,11 @@ export class IndexedDbStudyStore implements StudyStore {
     return new Promise((resolve, reject) => {
       const tx = db.transaction("studies", "readonly");
       const request = tx.objectStore("studies").get(id);
-      request.onsuccess = () =>
-        resolve((request.result as StudyBundle | undefined) ?? null);
+      request.onsuccess = () => resolve((request.result as StudyBundle | undefined) ?? null);
       request.onerror = () => reject(storageError(request.error));
     });
   }
-  async list(): Promise<
-    Array<{ id: string; title: string; revision: number }>
-  > {
+  async list(): Promise<Array<{ id: string; title: string; revision: number }>> {
     const db = await this.#database;
     return new Promise((resolve, reject) => {
       const rows: Array<{ id: string; title: string; revision: number }> = [];
@@ -153,19 +118,14 @@ export class IndexedDbStudyStore implements StudyStore {
         const cursor = request.result;
         if (!cursor) return;
         const { id, title, revision } = (cursor.value as StudyBundle).document;
-        rows.push({ id, title, revision });
-        cursor.continue();
+        rows.push({ id, title, revision }); cursor.continue();
       };
       tx.oncomplete = () => resolve(rows);
       tx.onabort = tx.onerror = () => reject(storageError(tx.error));
     });
   }
-  async create(bundle: StudyBundle): Promise<void> {
-    return this.#write(null, bundle);
-  }
-  async commit(expectedRevision: number, bundle: StudyBundle): Promise<void> {
-    return this.#write(expectedRevision, bundle);
-  }
+  async create(bundle: StudyBundle): Promise<void> { return this.#write(null, bundle); }
+  async commit(expectedRevision: number, bundle: StudyBundle): Promise<void> { return this.#write(expectedRevision, bundle); }
   async #write(expected: number | null, bundle: StudyBundle): Promise<void> {
     const db = await this.#database;
     return new Promise((resolve, reject) => {
@@ -175,42 +135,121 @@ export class IndexedDbStudyStore implements StudyStore {
       const request = store.get(bundle.document.id);
       request.onsuccess = () => {
         const current = request.result as StudyBundle | undefined;
-        if (
-          expected === null
-            ? current !== undefined
-            : current?.document.revision !== expected ||
-              bundle.document.revision !== expected + 1
-        ) {
-          conflict = new Error(
-            "Study storage revision changed; reload the saved Study before retrying",
-          );
-          tx.abort();
-          return;
+        if (expected === null ? current !== undefined : current?.document.revision !== expected || bundle.document.revision !== expected + 1) {
+          conflict = new Error("Study storage revision changed; reload the saved Study before retrying"); tx.abort(); return;
         }
-        try {
-          store.put(bundle);
-        } catch (error) {
-          conflict = storageError(error);
-          tx.abort();
-        }
+        try { store.put(bundle); }
+        catch (error) { conflict = storageError(error); tx.abort(); }
       };
       tx.oncomplete = () => resolve();
       tx.onabort = () => reject(conflict ?? storageError(tx.error));
       tx.onerror = () => reject(conflict ?? storageError(tx.error));
     });
   }
-  async close(): Promise<void> {
-    (await this.#database).close();
+  /** Copy old distribution saves once. Leave the original database intact. */
+  async migrateDistribution(): Promise<void> {
+    const db = await this.#database;
+    const done = await this.#read<boolean>("settings", "distribution-migrated");
+    if (done) return;
+    const old = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("tellegen-multiconductor-studies-v1", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(storageError(request.error));
+      request.onblocked = () => reject(new Error("Close other study tabs to migrate saved studies"));
+    });
+    let snapshots: McStudySnapshot[];
+    try {
+      snapshots = old.objectStoreNames.contains("snapshots")
+        ? await new Promise<McStudySnapshot[]>((resolve, reject) => {
+          const request = old.transaction("snapshots").objectStore("snapshots").getAll();
+          request.onsuccess = () => resolve(request.result as McStudySnapshot[]);
+          request.onerror = () => reject(storageError(request.error));
+        }) : [];
+    } finally { old.close(); }
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(["distribution", "settings"], "readwrite");
+      const store = tx.objectStore("distribution");
+      let failure: unknown;
+      const settings = tx.objectStore("settings");
+      const marker = settings.get("distribution-migrated");
+      marker.onsuccess = () => {
+        // Another tab may have finished and deleted a save while this tab read the old database.
+        // The marker and all copies share one transaction so that deletion stays final.
+        if (marker.result) return;
+        for (const snapshot of snapshots) {
+          const request = store.get(snapshot.id);
+          request.onsuccess = () => {
+            try { if (!request.result) store.add(snapshot); }
+            catch (error) { failure = error; tx.abort(); }
+          };
+        }
+        settings.put(true, "distribution-migrated");
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(storageError(failure ?? tx.error));
+    });
   }
+  async #read<T>(store: string, id: string): Promise<T | null> {
+    const db = await this.#database;
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(store).objectStore(store).get(id);
+      request.onsuccess = () => resolve((request.result as T | undefined) ?? null);
+      request.onerror = () => reject(storageError(request.error));
+    });
+  }
+  async listDistribution(): Promise<McStudySnapshot[]> {
+    await this.migrateDistribution();
+    const db = await this.#database;
+    return new Promise((resolve, reject) => {
+      const request = db.transaction("distribution").objectStore("distribution").getAll();
+      request.onsuccess = () => resolve(request.result as McStudySnapshot[]);
+      request.onerror = () => reject(storageError(request.error));
+    });
+  }
+  async loadDistribution(id: string): Promise<McStudySnapshot | null> {
+    await this.migrateDistribution();
+    return this.#read("distribution", id);
+  }
+  async saveDistribution(snapshot: McStudySnapshot): Promise<void> {
+    await this.migrateDistribution();
+    await this.#change("distribution", (store) => store.add(snapshot));
+  }
+  async #change(name: string, change: (store: IDBObjectStore) => void): Promise<void> {
+    const db = await this.#database;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(name, "readwrite");
+      change(tx.objectStore(name));
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(storageError(tx.error));
+    });
+  }
+  async delete(id: string, kind: "study" | "distribution" = "study"): Promise<void> {
+    if (kind === "distribution") await this.migrateDistribution();
+    await this.#change(kind === "study" ? "studies" : "distribution", (store) => store.delete(id));
+  }
+  async rename(id: string, title: string, kind: "study" | "distribution" = "study"): Promise<void> {
+    title = title.trim();
+    if (!title) throw new Error("Enter a study name");
+    if (kind === "distribution") await this.migrateDistribution();
+    let missing = false;
+    await this.#change(kind === "study" ? "studies" : "distribution", (store) => {
+      const request = store.get(id);
+      request.onsuccess = () => {
+        if (!request.result) { missing = true; return; }
+        if (kind === "study") {
+          const bundle = request.result as StudyBundle;
+          bundle.document.title = title;
+          bundle.document.revision++;
+          store.put(bundle);
+        } else store.put({ ...request.result, title });
+      };
+    });
+    if (missing) throw new Error("Saved study was not found");
+  }
+  async close(): Promise<void> { (await this.#database).close(); }
 }
 
-type Approval = {
-  proposal: string;
-  state: string;
-  goal: string | null;
-  base: string;
-  revision: number;
-};
+type Approval = { proposal: string; state: string; goal: string | null; base: string; revision: number };
 
 /** Browser controls and agent tools share serialized, durable Study mutations. */
 export class StudyDocumentController {
@@ -220,93 +259,42 @@ export class StudyDocumentController {
   #queue: Promise<unknown> = Promise.resolve();
   #approvals = new Map<string, Approval>();
 
-  private constructor(
-    bundle: StudyBundle,
-    store: StudyStore,
-    backend: StudyBackend,
-  ) {
-    this.#bundle = bundle;
-    this.#store = store;
-    this.#backend = backend;
+  private constructor(bundle: StudyBundle, store: StudyStore, backend: StudyBackend) {
+    this.#bundle = bundle; this.#store = store; this.#backend = backend;
   }
-  static async create(
-    request: CreateStudy,
-    store: StudyStore,
-    backend: StudyBackend = studyBackend,
-    signal?: AbortSignal,
-  ): Promise<StudyDocumentController> {
-    const bundle = await backend.create(request, signal);
-    signal?.throwIfAborted();
+  static async create(request: CreateStudy, store: StudyStore, backend: StudyBackend = studyBackend, signal?: AbortSignal): Promise<StudyDocumentController> {
+    const bundle = await backend.create(request, signal); signal?.throwIfAborted();
     await store.create(bundle);
     return new StudyDocumentController(bundle, store, backend);
   }
-  static async open(
-    id: string,
-    store: StudyStore,
-    backend: StudyBackend = studyBackend,
-  ): Promise<StudyDocumentController> {
+  static async open(id: string, store: StudyStore, backend: StudyBackend = studyBackend): Promise<StudyDocumentController> {
     const saved = await store.load(id);
     if (!saved) throw new Error(`Study ${id} is unavailable`);
     const bundle = await backend.validate(JSON.stringify(saved));
     return new StudyDocumentController(bundle, store, backend);
   }
-  static async import(
-    text: string,
-    store: StudyStore,
-    backend: StudyBackend = studyBackend,
-  ): Promise<StudyDocumentController> {
-    const bundle = await backend.validate(text);
-    await store.create(bundle);
+  static async import(text: string, store: StudyStore, backend: StudyBackend = studyBackend): Promise<StudyDocumentController> {
+    const bundle = await backend.validate(text); await store.create(bundle);
     return new StudyDocumentController(bundle, store, backend);
   }
-  get bundle(): StudyBundle {
-    return structuredClone(this.#bundle);
-  }
-  export(): string {
-    return JSON.stringify(this.#bundle);
-  }
+  get bundle(): StudyBundle { return structuredClone(this.#bundle); }
+  export(): string { return JSON.stringify(this.#bundle); }
 
-  execute(
-    request: StudyRequest,
-    signal?: AbortSignal,
-  ): Promise<StudyOperationResult> {
-    if (request.operation.kind === "apply")
-      return Promise.reject(
-        new Error(
-          "Apply requires explicit user approval of the current proposal",
-        ),
-      );
+  execute(request: StudyRequest, signal?: AbortSignal): Promise<StudyOperationResult> {
+    if (request.operation.kind === "apply") return Promise.reject(new Error("Apply requires explicit user approval of the current proposal"));
     return this.#execute(request, signal);
   }
-  #execute(
-    request: StudyRequest,
-    signal?: AbortSignal,
-  ): Promise<StudyOperationResult> {
+  #execute(request: StudyRequest, signal?: AbortSignal): Promise<StudyOperationResult> {
     const queuedRequest = structuredClone(request);
     const operation = this.#queue.then(async () => {
       signal?.throwIfAborted();
-      if (queuedRequest.expected_revision !== this.#bundle.document.revision)
-        throw new Error(
-          "Stale Study revision; inspect the current Study and retry",
-        );
-      const completed = await this.#backend.execute(
-        structuredClone(this.#bundle),
-        queuedRequest,
-        signal,
-      );
+      if (queuedRequest.expected_revision !== this.#bundle.document.revision) throw new Error("Stale Study revision; inspect the current Study and retry");
+      const completed = await this.#backend.execute(structuredClone(this.#bundle), queuedRequest, signal);
       if (queuedRequest.operation.kind !== "propose") signal?.throwIfAborted();
-      await this.#store.commit(
-        queuedRequest.expected_revision,
-        completed.bundle,
-      );
+      await this.#store.commit(queuedRequest.expected_revision, completed.bundle);
       this.#bundle = completed.bundle;
-      if (
-        ["inspect", "compare", "record_evidence"].includes(
-          queuedRequest.operation.kind,
-        )
-      ) {
-        for (const approval of this.#approvals.values())
-          approval.revision = completed.bundle.document.revision;
+      if (["inspect", "compare", "record_evidence"].includes(queuedRequest.operation.kind)) {
+        for (const approval of this.#approvals.values()) approval.revision = completed.bundle.document.revision;
       } else this.#approvals.clear();
       return completed.result;
     });
@@ -317,61 +305,19 @@ export class StudyDocumentController {
   recordUserApproval(proposal: string): string {
     const d = this.#bundle.document;
     const experiment = d.experiments[proposal];
-    if (
-      !experiment ||
-      !["planning", "counterfactual"].includes(experiment.kind) ||
-      !experiment.start_state ||
-      experiment.goal !== d.active_goal ||
-      !d.recommended_state ||
-      !experiment.result_states.includes(d.recommended_state)
-    )
-      throw new Error(
-        "The proposal no longer matches the active goal and recommendation",
-      );
+    if (!experiment || !["planning", "counterfactual"].includes(experiment.kind) || !experiment.start_state || experiment.goal !== d.active_goal || !d.recommended_state || !experiment.result_states.includes(d.recommended_state)) throw new Error("The proposal no longer matches the active goal and recommendation");
     const token = crypto.randomUUID();
-    this.#approvals.set(token, {
-      proposal,
-      state: d.recommended_state,
-      goal: d.active_goal ?? null,
-      base: experiment.start_state,
-      revision: d.revision,
-    });
+    this.#approvals.set(token, { proposal, state: d.recommended_state, goal: d.active_goal ?? null, base: experiment.start_state, revision: d.revision });
     return token;
   }
   isApprovalCurrent(token: string): boolean {
-    const approval = this.#approvals.get(token),
-      d = this.#bundle.document;
-    return (
-      !!approval &&
-      d.revision === approval.revision &&
-      d.active_goal === approval.goal &&
-      d.recommended_state === approval.state &&
-      d.experiments[approval.proposal]?.start_state === approval.base
-    );
+    const approval = this.#approvals.get(token), d = this.#bundle.document;
+    return !!approval && d.revision === approval.revision && d.active_goal === approval.goal &&
+      d.recommended_state === approval.state && d.experiments[approval.proposal]?.start_state === approval.base;
   }
-  applyApprovedProposal(
-    token: string,
-    signal?: AbortSignal,
-  ): Promise<StudyOperationResult> {
+  applyApprovedProposal(token: string, signal?: AbortSignal): Promise<StudyOperationResult> {
     const approval = this.#approvals.get(token);
-    if (!approval || !this.isApprovalCurrent(token))
-      return Promise.reject(
-        new Error(
-          "Proposal approval expired; review the current proposal again",
-        ),
-      );
-    return this.#execute(
-      {
-        expected_revision: approval.revision,
-        operation: {
-          kind: "apply",
-          proposal: approval.proposal,
-          state: approval.state,
-          goal: approval.goal,
-          base_state: approval.base,
-        },
-      },
-      signal,
-    );
+    if (!approval || !this.isApprovalCurrent(token)) return Promise.reject(new Error("Proposal approval expired; review the current proposal again"));
+    return this.#execute({ expected_revision: approval.revision, operation: { kind: "apply", proposal: approval.proposal, state: approval.state, goal: approval.goal, base_state: approval.base } }, signal);
   }
 }

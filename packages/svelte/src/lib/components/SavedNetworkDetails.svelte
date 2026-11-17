@@ -6,6 +6,7 @@
 		degrees,
 		fmt,
 		formulationLabel,
+		objectiveKind,
 		quantity,
 		signed,
 		splitName
@@ -52,6 +53,7 @@
 		return resultStats({
 			formulation: saved.formulation,
 			objective: solution.objective ?? null,
+			objectiveKind: objectiveKind(solution),
 			binding,
 			...flowSummary(
 				solution.vm,
@@ -91,7 +93,7 @@
 			</div>
 			<div>
 				<dt>Calculation</dt>
-				<dd>{formulationLabel(saved.formulation)}</dd>
+				<dd>{formulationLabel(saved.formulation, objectiveKind(saved.solution))}</dd>
 			</div>
 			<div>
 				<dt>Buses</dt>

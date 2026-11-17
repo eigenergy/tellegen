@@ -1,6 +1,6 @@
 import { parseApiResult, validateApiResult } from "./result-validation.js";
 export { parseApiResult, validateApiResult } from "./result-validation.js";
-import type { DcFormula } from "./generated/api-types.js";
+import type { DcFormula, SensitivityMatrix } from "./generated/api-types.js";
 export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 import type { DcGrid, DcGridSolution } from "./dc-grid.js";
 export type { DcGrid, DcGridSolution } from "./dc-grid.js";
@@ -2228,12 +2228,7 @@ interface StudyPreview {
 /** One `SensitivityMatrix` from the engine: `values[r][c] = d(rows[r])/d(cols[c])`,
  * with row/column metadata naming the source element (`element` is an externally
  * tagged `ElementId`, e.g. `{ Bus: id }` / `{ Branch: id }`). */
-interface SensitivityMatrixJson {
-  values: number[][];
-  rows: { element: { Bus?: number; Branch?: number }; index: number }[];
-  cols: { element: { Bus?: number; Branch?: number }; index: number }[];
-  units: string;
-}
+type SensitivityMatrixJson = SensitivityMatrix;
 
 /** The `{ solution, iterations, sensitivities }` JSON the Study's `commit` returns:
  * the committed `SolveResponse`, its convergence trace, and the watched ∂operand/∂param
@@ -2251,7 +2246,7 @@ interface StudyCommitOutput {
  * `cols[0].element`: a bus for the demand parameter (`parameter: "d"`) or a branch for
  * the rating parameter (`parameter: "fmax"`). Returns null when no matrix was requested
  * or its column has no recognized source element. */
-function sensitivityColumn(
+export function sensitivityColumn(
   caseId: string,
   matrices: SensitivityMatrixJson[],
 ): SensitivityColumn | null {
@@ -2259,13 +2254,13 @@ function sensitivityColumn(
   const el = m?.cols[0]?.element;
   if (!m || !el) return null;
   const values = m.rows
-    .map((row, r) => ({ bus: row.element.Bus, value: m.values[r]?.[0] ?? 0 }))
+    .map((row, r) => ({ bus: "Bus" in row.element ? row.element.Bus : undefined, value: m.values[r]?.[0] ?? 0 }))
     .filter((v): v is { bus: number; value: number } => v.bus !== undefined);
   const shared = { case: caseId, operand: "price", units: m.units, values };
-  if (el.Bus !== undefined) {
+  if ("Bus" in el) {
     return { ...shared, parameter: "d", bus: el.Bus };
   }
-  if (el.Branch !== undefined) {
+  if ("Branch" in el) {
     return { ...shared, parameter: "fmax", branch: el.Branch };
   }
   return null;

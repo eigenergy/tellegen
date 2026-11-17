@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readModuleText } from '../module-text.js';
 	import { sensFlatColor, sensGradient } from '../colors.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { dollarUnits } from '../display.js';
@@ -8,6 +9,10 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const selectedArea = $derived(
+		app.selectedBus == null ? undefined :
+			readModuleText(ctrl.activeSolvable?.studyInputJson).synchronousAreas?.byBus.get(app.selectedBus)
+	);
 	/** The engine's units, read out: ($/MWh)/MW becomes "$/MWh per MW". A rating's
 	 * ($/MWh)/MVA is read per MW too, the unit the rating slider beside it moves in. */
 	const perMw = (units: string) =>
@@ -63,6 +68,7 @@
 	<h3 class="readout-title" data-testid="sensitivity-title">{title}</h3>
 	<button onclick={ctrl.clearSelection} aria-keyshortcuts="Escape" title="Esc">Clear</button>
 </div>
+{#if selectedArea}<p>Synchronous area: {selectedArea.name}</p>{/if}
 <dl class="values" aria-label="Selection values">
 	{#each values as [label, value] (label)}
 		<div>

@@ -11,6 +11,7 @@ declare global {
 			available(): boolean;
 			start(text: string): Promise<void>;
 			solved(): boolean;
+			sensitivity(): Promise<import('@tellegen/engine').SensitivityColumn | null>;
 			/** Terminate the idle kept worker so the next solve starts a new one. */
 			release(): boolean;
 		};

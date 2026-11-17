@@ -344,6 +344,38 @@ describe('hosted distribution catalogue', () => {
 	});
 });
 describe('multiconductor calculation and coordinates', () => {
+	it('restores saved results once without moving the camera or changing display mode', async () => {
+		const { app, ctrl } = host();
+		const ingest = vi.fn(async () => payload());
+		ctrl.mcTransport.ingestDistCaseBytes = ingest;
+		const frame = vi.spyOn(app, 'requestFrame');
+		const before = app.multiCases.length;
+		const mode = app.displayMode;
+		const saved: McStudySnapshot = {
+			schema: 'tellegen-mc-pf-study',
+			version: 1,
+			id: 'saved-restore',
+			title: 'Saved feeder',
+			formulation: 'mc_ac_pf',
+			input_module: 'input',
+			solution_module: 'solution',
+			options: {},
+			result
+		};
+		const first = await ctrl.restoreMultiSnapshot(saved);
+		const second = await ctrl.restoreMultiSnapshot(saved);
+		expect(second).toBe(first);
+		expect(app.multiCases).toHaveLength(before + 1);
+		expect(ingest).toHaveBeenCalledTimes(1);
+		expect(ingest).toHaveBeenCalledWith(new TextEncoder().encode('input'), 'pio', { retain: true });
+		expect(frame).not.toHaveBeenCalled();
+		expect(app.displayMode).toBe(mode);
+		expect(app.activeMulti).toBe(first);
+		expect(first.mcFullResult).toBe(result);
+		expect(first.mcSnapshot).toBe(saved);
+		ctrl.dispose();
+	});
+
 	it('retains a fixed-point session and automatically warm-solves load edits', async () => {
 		vi.useFakeTimers();
 		try {

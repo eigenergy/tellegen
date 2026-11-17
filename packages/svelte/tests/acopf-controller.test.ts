@@ -3,6 +3,7 @@ import {
 	createStudy,
 	probeAcOpfWorker,
 	solveAcOpfModule,
+	solveResponseToSolution,
 	type SolveResponse
 } from '@tellegen/engine';
 import { AppState, CaseState, LocalCase } from '../src/lib/state.svelte.js';
@@ -92,6 +93,81 @@ describe('AC OPF controller boundary', () => {
 		const server = vi.spyOn(ctrl, 'serverSolve').mockImplementation(() => {});
 		ctrl.runSolve(c, null);
 		await vi.waitFor(() => expect(server).toHaveBeenCalledOnce());
+	});
+
+	it.each(['bus', 'branch'] as const)(
+		'requests AC OPF price sensitivity for a selected %s',
+		async (kind) => {
+			const { ctrl, c } = host();
+			c.network = { buses: [], branches: [] } as unknown as NonNullable<typeof c.network>;
+			c.solution = solveResponseToSolution({
+				...response,
+				lmp: [
+					{ bus: 101, value: 2 },
+					{ bus: 205, value: 3 }
+				],
+				flows: [{ branch: 88, pf: 1, loading: 0.2 }]
+			});
+			const parameter = kind === 'bus' ? { Demand: 'Active' as const } : ('LineLimit' as const);
+			const element = kind === 'bus' ? { Bus: 205 } : { Branch: 88 };
+			vi.mocked(solveAcOpfModule).mockResolvedValue({
+				...response,
+				sensitivities: [
+					{
+						values: [[0.25], [0.5]],
+						rows: [
+							{ operand: { Price: 'Active' }, element: { Bus: 101 }, index: 0 },
+							{ operand: { Price: 'Active' }, element: { Bus: 205 }, index: 1 }
+						],
+						cols: [{ parameter, element, index: kind === 'bus' ? 1 : 0 }],
+						units: '($/MWh)/MW'
+					}
+				]
+			});
+			if (kind === 'bus') await ctrl.selectLocalBus(c.id, 205);
+			else await ctrl.selectLocalBranch(c.id, 88);
+			expect(solveAcOpfModule).toHaveBeenCalledWith(
+				expect.any(String),
+				'canonical-instance',
+				expect.any(AbortSignal),
+				undefined,
+				[
+					{
+						operand: { Price: 'Active' },
+						parameter,
+						indices: [kind === 'bus' ? 1 : 0]
+					}
+				]
+			);
+			expect(c.sensitivity?.values).toEqual([
+				{ bus: 101, value: 0.25 },
+				{ bus: 205, value: 0.5 }
+			]);
+			expect(createStudy).not.toHaveBeenCalled();
+			ctrl.dispose();
+		}
+	);
+
+	it('aborts an AC OPF selection when another selection supersedes it', async () => {
+		const { ctrl, c } = host();
+		c.network = { buses: [], branches: [] } as unknown as NonNullable<typeof c.network>;
+		c.solution = solveResponseToSolution({
+			...response,
+			lmp: [
+				{ bus: 101, value: 2 },
+				{ bus: 205, value: 3 }
+			]
+		});
+		const first = pending<SolveResponse>();
+		vi.mocked(solveAcOpfModule).mockReturnValueOnce(first.promise).mockResolvedValueOnce(response);
+		const selected = ctrl.selectLocalBus(c.id, 101);
+		const signal = vi.mocked(solveAcOpfModule).mock.calls[0][2]!;
+		await ctrl.selectLocalBus(c.id, 205);
+		expect(signal.aborted).toBe(true);
+		first.resolve(response);
+		await selected;
+		expect(c.sensitivity).toBeNull();
+		ctrl.dispose();
 	});
 
 	it('passes the retained canonical module to the worker without building a Study', async () => {
