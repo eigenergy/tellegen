@@ -1,0 +1,70 @@
+{
+  "tellegen_source": "8d4e4970b7077065d3307df342dc7861fa6892f6",
+  "powerio_source": "f97534d9891240f9fc2686d8c0547a3078fa80ce",
+  "powerio_tree": "1657774bad40ce6f39eea0025756f5b9a972222e",
+  "powerio_version": "0.12.2",
+  "configuration": "/private/tmp/tellegen-dss-release-dependencies.toml",
+  "verified_source_files": 2273,
+  "source_manifest_sha256": "6b891bb2b3516088ae4567ef2b629ae46dbaae24e31b64a4bb4b3e89aa88a31c",
+  "limits": "Unmodified PowerIO default parse/include/history limits; no records removed or diagnostics ignored.",
+  "results": [
+    {
+      "label": "regional",
+      "path": "/private/tmp/smartds-original/AUS/P3U/Master.dss",
+      "powerio_version": "0.12.2",
+      "result": {
+        "error": "PARSE.DIST.SOURCE_MALFORMED: OpenDSS read error: the static electrical snapshot could not be materialized; see the component diagnostics",
+        "stage": "parse",
+        "diagnostic_counts": {
+          "PARSE.DIST.SOURCE_MALFORMED": 1,
+          "PARSE.DSS.SOURCE_MALFORMED": 3134,
+          "READ.DSS.INCLUDE_BUDGET": 2,
+          "READ.DSS.RETAINED_SOURCE_ONLY": 404,
+          "READ.DSS.CONTROL_NOT_EXECUTED": 33
+        },
+        "selected_diagnostics": [
+          {
+            "code": "READ.DSS.INCLUDE_BUDGET",
+            "message": "/private/tmp/smartds-original/AUS/P3U/Master.dss:483: redirect /private/tmp/smartds-original/AUS/P3U/p3uhs9_1247/Lines.dss: refused; the case exceeded the include budget of 4096 files and 64 MiB, so the rest of the includes were not followed"
+          },
+          {
+            "code": "READ.DSS.INCLUDE_BUDGET",
+            "message": "/private/tmp/smartds-original/AUS/P3U/Master.dss:572: line calculation history exceeds the supported work budget"
+          },
+          {
+            "code": "PARSE.DSS.SOURCE_MALFORMED",
+            "message": "/private/tmp/smartds-original/AUS/P3U/p3uhs5_1247/p3uhs5_1247--p3udt10526/LineCodes.dss:1: duplicate `New Linecode.1P_UG_AL_1/0_Brenau_2`; editing the existing object"
+          }
+        ],
+        "selected_diagnostics_note": "Selection identifies refusal reasons; full diagnostics are retained in the external results file."
+      },
+      "seconds": 101.6888645
+    },
+    {
+      "label": "substation",
+      "path": "/private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/Master.dss",
+      "powerio_version": "0.12.2",
+      "result": {
+        "error": "PowerIO module contains unsupported or lossy diagnostics: PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:1: duplicate `New Linecode.1P_OH_AL_4/0_Zuzara_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:3: duplicate `New Linecode.1P_OH_AL_4_Periwinkle_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:5: duplicate `New Linecode.1P_UG_AL_2/0_Converse_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:7: duplicate `New Linecode.1P_OH_AL_2/0_Rucina_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:9: duplicate `New Linecode.1P_UG_AL_1/0_Brenau_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:11: duplicate `New Linecode.1P_UG_AL_4/0_Sweetbriar_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:15: duplicate `New Linecode.1P_UG_AL_1`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:17: duplicate `New Linecode.1P_OH_AL_ACSR_#2_Sparrow_1`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:19: duplicate `New Linecode.3P_UG_AL_3`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:21: duplicate `New Linecode.3P_OH_AL_ACSR_4/0_Penguin_3`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:23: duplicate `New Linecode.3P_UG_AL_350kcmil_3_4`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:25: duplicate `New Linecode.padswitch_1`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:27: duplicate `New Linecode.padswitch_1_1`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:29: duplicate `New Linecode.padswitch_1_3`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:33: duplicate `New Linecode.padswitch_3_5`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:41: duplicate `New Linecode.fuse_1`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:43: duplicate `New Linecode.fuse_1_5`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:45: duplicate `New Linecode.fuse_1_2`; editing the existing object; PARSE.DSS.SOURCE_MALFORMED: /private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt7679/LineCodes.dss:49: duplicate `New Linecode.fuse_1_1`; editing the existing object",
+        "stage": "validate_mc_module"
+      },
+      "seconds": 0.182701375
+    },
+    {
+      "label": "feeder",
+      "path": "/private/tmp/smartds-original/AUS/P3U/p3uhs18_1247/p3uhs18_1247--p3udt32182/Master.dss",
+      "powerio_version": "0.12.2",
+      "result": {
+        "error": "multiconductor network retains unsupported active objects: line.padswitch(r:p3udt2374-p3udt32185)p3u_206596, fuse.Fuse_fuse(r:p3udt21462-p3udt3087)p3u_207126, fuse.Fuse_fuse(r:p3udt5183-p3udt7101)p3u_207358, fuse.Fuse_fuse(r:p3udt29913-p3udt5183)p3u_207359, fuse.Fuse_fuse(r:p3udt32045-p3udt9909)p3u_207783, fuse.Fuse_fuse(r:p3udt12462-p3udt5184)p3u_208023, fuse.Fuse_fuse(r:p3udt10409-p3udt15801)p3u_208359, fuse.Fuse_fuse(r:p3udt11928-p3udt18737)p3u_208642, fuse.Fuse_fuse(r:p3udt18746-p3udt24682)p3u_208643, fuse.Fuse_fuse(r:p3udt12456-p3udt19727)p3u_208725, fuse.Fuse_fuse(r:p3udt20321-p3udt21179)p3u_208796, fuse.Fuse_fuse(r:p3udt20321-p3udt25142)p3u_208797, fuse.Fuse_fuse(r:p3udt10417-p3udt20896)p3u_208866, fuse.Fuse_fuse(r:p3udt10421-p3udt21185)p3u_208899, fuse.Fuse_fuse(r:p3udt13748-p3udt21185)p3u_208900, fuse.Fuse_fuse(r:p3udt21186-p3udt8240)p3u_208901, fuse.Fuse_fuse(r:p3udt21187-p3udt27851)p3u_208902, fuse.Fuse_fuse(r:p3udt21187-p3udt29911)p3u_208903, fuse.Fuse_fuse(r:p3udt1644-p3udt21459)p3u_208928, fuse.Fuse_fuse(r:p3udt10418-p3udt22735)p3u_209076, fuse.Fuse_fuse(r:p3udt23010-p3udt882)p3u_209096, fuse.Fuse_fuse(r:p3udt23731-p3udt9917)p3u_209176, fuse.Fuse_fuse(r:p3udt24219-p3udt30375)p3u_209218, fuse.Fuse_fuse(r:p3udt25759-p3udt6457)p3u_209365, fuse.Fuse_fuse(r:p3udt16210-p3udt25977)p3u_209382, fuse.Fuse_fuse(r:p3udt24678-p3udt28023)p3u_209587, fuse.Fuse_fuse(r:p3udt28509-p3udt8816)p3u_209645, fuse.Fuse_fuse(r:p3udt15811-p3udt28509)p3u_209646, fuse.Fuse_fuse(r:p3udt16566-p3udt28511)p3u_209647, fuse.Fuse_fuse(r:p3udt26750-p3udt28511)p3u_209648, fuse.Fuse_fuse(r:p3udt25760-p3udt28670)p3u_209665, fuse.Fuse_fuse(r:p3udt29291-p3udt7102)p3u_209720, fuse.Fuse_fuse(r:p3udt19730-p3udt29440)p3u_209735, fuse.Fuse_fuse(r:p3udt25973-p3udt30821)p3u_209891, fuse.Fuse_fuse(r:p3udt1643-p3udt31496)p3u_209957, fuse.Fuse_fuse(r:p3udt29761-p3udt31496)p3u_209958, fuse.Fuse_fuse(r:p3udt26549-p3udt31898)p3u_210011, capcontrol.p3uc109, capcontrol.p3uc110",
+        "stage": "validate_mc_module"
+      },
+      "seconds": 0.092175792
+    }
+  ],
+  "powerio_merged_source": "6794629d0e8617a7c73b9a55ca3cbafddd19df6f",
+  "powerio_merged_tree": "1657774bad40ce6f39eea0025756f5b9a972222e",
+  "dependency_status": "Exact 0.12.2 release source through local Cargo patches; not a registry-package test.",
+  "full_results_sha256": "6e3776f1c46f76500eda21f57343e1e95b3306fc05e81342e0678f7d5f05f5fe",
+  "full_results_path": "/private/tmp/tellegen-import-0122-evidence/results.json",
+  "interpretation": "All three inputs remain refused before Tellegen matrix preparation. No unsupported record was removed and no diagnostic bypassed. The original regional reduced-system comparison remains unresolved."
+}

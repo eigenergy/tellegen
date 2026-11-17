@@ -212,11 +212,13 @@ does not remove the source model's own voltage bounds.
 Passive definitions, profiles and monitoring records remain in the module.
 This is a fixed equipment snapshot: daily/yearly simulation, control execution,
 and an OpenDSS script's sequence of solves are not run. For retained regulator
-controls, **Use written equipment settings** creates a separate case using the
-written taps; it retains the original case and records the choice when saved.
-Regulator and capacitor controls are never executed. Missing control targets,
-unrelated invalid records and unsupported stepped-capacitor settings still
-prevent a calculation.
+and capacitor controls, **Use written equipment settings** creates a separate
+case using the written taps and capacitor values. It preserves the original
+case and source data, archives the validated control records, and retains the
+choice when the derived case is saved. Regulator and capacitor controls are
+never executed. Missing control targets, malformed controls, unsupported
+stepped-capacitor settings, fuses and unsupported switch objects still prevent
+a calculation. Duplicate definitions and import limits remain errors.
 
 Finite two- and three-winding transformers support the qualified connections,
 taps, neutral settings and small grounding admittance. Unresolved geometry or
