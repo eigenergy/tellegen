@@ -6,6 +6,7 @@
  * Study and session handles are allocated by the caller, which keeps them
  * valid when pending requests replay against the other host. */
 
+import type { EngineErrorCode } from "./generated/api-types.js";
 import type {
   WasmCaseCollection,
   WasmMcInput,
@@ -220,7 +221,14 @@ export type WorkerResponse =
   /** `fatal` marks an error the wasm instance cannot be trusted after — a trap
    * leaves linear memory, the allocator, and every live Study undefined. The
    * host tears the worker down rather than serving the next request from it. */
-  | { id: number; ok: false; error: string; fatal?: boolean };
+  | {
+      id: number;
+      ok: false;
+      error: string;
+      /** The engine's error code, when the thrown error carried one. */
+      code?: EngineErrorCode;
+      fatal?: boolean;
+    };
 
 export interface EngineHandles {
   collections: Map<number, WasmCaseCollection>;
