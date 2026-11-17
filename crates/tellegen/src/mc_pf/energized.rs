@@ -283,15 +283,25 @@ pub(crate) fn validate_selection(
     Ok(actual)
 }
 
+/// The full portable input and its explicitly selected source-covered islands.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McEnergizedOutput {
+    pub module_json: String,
+    pub network_scope: Option<McNetworkScope>,
+    pub excluded_islands: Vec<McExcludedIsland>,
+}
+
 /// Explicitly opt into excluding source-less bus islands. This returns the full
 /// network, with a validated selection record; no equipment is erased from it.
 pub fn prepare_mc_energized_network_json(text: &str) -> Result<String, String> {
     let module = crate::ir::deserialize_module(text)?;
     let (module, islands) = prepare_mc_energized_network(&module)?;
-    serde_json::to_string(&serde_json::json!({
-        "module_json": crate::ir::serialize_module(&module)?,
-        "network_scope": scope(&islands), "excluded_islands": islands
-    }))
+    serde_json::to_string(&McEnergizedOutput {
+        module_json: crate::ir::serialize_module(&module)?,
+        network_scope: scope(&islands),
+        excluded_islands: islands,
+    })
     .map_err(|e| e.to_string())
 }
 

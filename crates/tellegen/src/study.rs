@@ -97,6 +97,7 @@ impl NetworkEdit {
 /// change in each watched operand, the predicted objective change, and the
 /// linearization caveat.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Preview {
     /// One predicted operand-delta column per watched operand, in request order.
     pub operands: Vec<PreviewColumn>,
@@ -111,6 +112,7 @@ pub struct Preview {
 
 /// The predicted change in one operand across the elements it ranges over.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PreviewColumn {
     pub operand: Operand,
     pub values: Vec<PreviewValue>,
@@ -120,10 +122,30 @@ pub struct PreviewColumn {
 
 /// One element's predicted operand change, keyed by its source element id.
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PreviewValue {
     pub element: ElementId,
     pub index: usize,
     pub value: f64,
+}
+
+/// A committed solve together with its convergence record and sensitivities.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct StudyCommit<'a> {
+    pub solution: &'a crate::SolveOutput,
+    pub iterations: &'a Option<crate::Iterations>,
+    pub sensitivities: &'a Vec<crate::sens::SensitivityMatrix>,
+}
+
+impl<'a> StudyCommit<'a> {
+    pub fn new(solution: &'a crate::SolveOutput) -> Self {
+        Self {
+            solution,
+            iterations: &solution.response.iterations,
+            sensitivities: &solution.response.sensitivities,
+        }
+    }
 }
 
 /// The preview callback [`with_system`](SolvedState::with_system) hands the freshly built
@@ -1702,8 +1724,13 @@ pub fn apply_network_edits(net: &mut BalancedNetwork, edits: &[NetworkEdit]) -> 
 /// A study state written to a target format: the serialized case text, this
 /// output operation's diagnostics, and the format token and file extension.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ExportedCase {
     pub text: String,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "Vec<std::collections::BTreeMap<String, serde_json::Value>>")
+    )]
     pub diagnostics: Vec<powerio::Diagnostic>,
     pub format: String,
     pub extension: String,

@@ -1,3 +1,4 @@
+import { parseApiResult, validateApiResult } from "./result-validation.js";
 import { engineHost, isolatedEngineHost } from "./host.js";
 import { assertEngineInputLength } from "./input-limit.js";
 import type {
@@ -41,14 +42,12 @@ export interface SettingsCatalog {
   calculations: readonly CalculationDescriptor[];
 }
 
-function decode<T>(value: unknown): T {
-  if (typeof value !== "string")
-    throw new Error("engine returned no settings payload");
-  return JSON.parse(value) as T;
-}
 /** Discover capabilities of the running engine, rather than another build. */
 export async function describeSettings(): Promise<SettingsCatalog> {
-  return decode(await engineHost().call({ op: "settings_describe" }));
+  return parseApiResult(
+    "settings_catalog",
+    await engineHost().call({ op: "settings_describe" }),
+  );
 }
 /** Rust validates the full candidate; no selected case state changes here. */
 function assertJson(value: unknown): void {
@@ -69,7 +68,8 @@ export async function resolveSettings(
   request: SettingsRequest,
 ): Promise<ResolvedSettings> {
   assertJson(request);
-  return decode(
+  return parseApiResult(
+    "settings",
     await engineHost().call({
       op: "settings_resolve",
       request: JSON.stringify(request),
@@ -89,7 +89,8 @@ export async function calculateWithSettings(
     host.cancel?.(new DOMException("Calculation cancelled", "AbortError"));
   signal?.addEventListener("abort", cancel, { once: true });
   try {
-    const result = decode<CalculationResult>(
+    const result = parseApiResult<CalculationResult>(
+      "calculation",
       await host.call({
         op: "settings_calculate",
         request: JSON.stringify(request),
@@ -113,7 +114,7 @@ export function createSettingsHttpClient(
 ) {
   const base = apiBase.replace(/\/+$/, "");
   async function call<T>(
-    path: string,
+    path: "/calculate" | "/settings/resolve" | "/settings",
     request?: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
@@ -139,7 +140,12 @@ export function createSettingsHttpClient(
       }
       throw new Error(`HTTP ${response.status}: ${message}`);
     }
-    return response.json() as Promise<T>;
+    const result: unknown = await response.json();
+    if (path === "/calculate")
+      return validateApiResult<T>("calculation", result);
+    if (path === "/settings/resolve")
+      return validateApiResult<T>("settings", result);
+    return validateApiResult<T>("settings_catalog", result);
   }
   return {
     describe: (signal?: AbortSignal) =>

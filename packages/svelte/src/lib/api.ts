@@ -1,3 +1,4 @@
+import { parseApiResult, validateApiResult } from '@tellegen/engine';
 import type {
 	CaseSummary,
 	DemandDeltas,
@@ -141,9 +142,15 @@ async function checkedFetch(
 	return res;
 }
 
-async function getJson<T>(fetchImpl: FetchLike, url: string, signal?: AbortSignal): Promise<T> {
+async function getJson<T>(
+	fetchImpl: FetchLike,
+	url: string,
+	signal?: AbortSignal,
+	schema?: Parameters<typeof validateApiResult>[0]
+): Promise<T> {
 	const res = await checkedFetch(fetchImpl, url, signal);
-	return res.json() as Promise<T>;
+	const value: unknown = await res.json();
+	return schema ? validateApiResult<T>(schema, value) : (value as T);
 }
 
 export interface SolveStreamHandlers {
@@ -170,24 +177,36 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 	const fetchImpl = options.fetch ?? defaultFetch();
 
 	return {
-		getCases: () => getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases')),
+		getCases: () => getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases'), undefined, 'http_cases'),
 		getNetwork: (caseId) =>
-			getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`)),
+			getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`), undefined, 'http_network'),
 		async getCaseModuleJson(caseId, signal) {
 			const url = apiPath(apiBase, `/cases/${caseId}/case`);
 			const res = await checkedFetch(fetchImpl, url, signal);
 			return res.text();
 		},
-		getSavedCase: (caseId) => getJson(fetchImpl, apiPath(apiBase, `/cases/${caseId}/snapshot`)),
+		getSavedCase: (caseId) =>
+			getJson(
+				fetchImpl,
+				apiPath(apiBase, `/cases/${caseId}/snapshot`),
+				undefined,
+				'http_saved_case'
+			),
 		getSolution: (caseId) =>
-			getJson<Solution>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/solution`)),
+			getJson<Solution>(
+				fetchImpl,
+				apiPath(apiBase, `/cases/${caseId}/solution`),
+				undefined,
+				'http_solution'
+			),
 		getSensitivity(caseId, bus, deltas = {}, signal) {
 			const d = encodeDeltas(deltas);
 			const query = d ? `?d=${encodeURIComponent(d)}` : '';
 			return getJson<SensitivityColumn>(
 				fetchImpl,
 				apiPath(apiBase, `/cases/${caseId}/sensitivity/lmp/d/${bus}${query}`),
-				signal
+				signal,
+				'http_sensitivity'
 			);
 		},
 		getBranchSensitivity(caseId, branch, deltas = {}, signal) {
@@ -196,11 +215,12 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			return getJson<SensitivityColumn>(
 				fetchImpl,
 				apiPath(apiBase, `/cases/${caseId}/sensitivity/lmp/fmax/${branch}${query}`),
-				signal
+				signal,
+				'http_sensitivity'
 			);
 		},
 		getComputeStatus(signal) {
-			return getJson<{ enabled: boolean }>(fetchImpl, apiPath(apiBase, `/compute`), signal);
+			return getJson<{ enabled: boolean }>(fetchImpl, apiPath(apiBase, `/compute`), signal, 'http_compute');
 		},
 		openSolveStream(caseId, deltas, sensBus, handlers) {
 			const EventSourceImpl = options.EventSource ?? defaultEventSource();
@@ -217,20 +237,50 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 				finished = true;
 				es.close();
 			};
+			const invalid = (error: unknown) => {
+				finish();
+				handlers.onfail?.(error instanceof Error ? error.message : 'Invalid solve response');
+			};
 			es.addEventListener('solution', (e) => {
-				const solution = JSON.parse(e.data) as Solution & {
-					case: string;
-					solve_ms: number;
-					iterations: SolveIteration[];
-				};
+				if (finished) return;
+				let solution: Parameters<NonNullable<SolveStreamHandlers['onsolution']>>[0];
+				try {
+					solution = parseApiResult('http_stream_solution', e.data);
+				} catch (error) {
+					invalid(error);
+					return;
+				}
 				handlers.onsolution?.(solution);
 			});
-			es.addEventListener('sensitivity', (e) => handlers.onsensitivity?.(JSON.parse(e.data)));
+			es.addEventListener('sensitivity', (e) => {
+				if (finished) return;
+				let column: SensitivityColumn;
+				try {
+					column = parseApiResult('http_sensitivity', e.data);
+				} catch (error) {
+					invalid(error);
+					return;
+				}
+				handlers.onsensitivity?.(column);
+			});
 			es.addEventListener('fail', (e) => {
+				if (finished) return;
 				finish();
-				handlers.onfail?.(JSON.parse(e.data).error ?? 'solve failed');
+				let value: unknown;
+				try {
+					value = JSON.parse(e.data);
+				} catch {
+					handlers.onfail?.('Invalid solve failure response');
+					return;
+				}
+				handlers.onfail?.(
+					value && typeof value === 'object' && 'error' in value && typeof value.error === 'string'
+						? value.error
+						: 'Solve failed'
+				);
 			});
 			es.addEventListener('done', () => {
+				if (finished) return;
 				finish();
 				handlers.ondone?.();
 			});

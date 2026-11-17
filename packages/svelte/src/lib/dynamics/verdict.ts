@@ -15,9 +15,18 @@ export interface DynHeadline {
 }
 
 const hz = (v: number | null | undefined, d = 3) =>
-	v == null || !Number.isFinite(v) ? '–' : `${v.toFixed(d)} Hz`;
+	v == null || !Number.isFinite(v) ? 'Unavailable' : `${v.toFixed(d)} Hz`;
+const pu = (v: number | null | undefined) =>
+	v == null || !Number.isFinite(v) ? 'Unavailable' : `${v.toFixed(3)} pu`;
 const deg = (v: number) => `${v.toFixed(1)}°`;
 const sec = (v: number) => `${v.toFixed(2)} s`;
+
+/** Accessible chart descriptions use the same missing-value handling as the result cards. */
+export function traceSummary(s: RmsScreening, kind: 'frequency' | 'voltages'): string {
+	return kind === 'frequency'
+		? `Frequency, lowest ${hz(s.frequency.coi_nadir_hz)}`
+		: `Voltages, lowest ${pu(s.voltage.min_pu)}`;
+}
 
 /** The headline of a screened run, or of a run that failed at `failedAt`. */
 export function headline(
@@ -107,7 +116,7 @@ export function stats(s: RmsScreening): Stat[] {
 		{ label: 'Lowest frequency', value: lowest },
 		{
 			label: 'Lowest voltage',
-			value: `${v.min_pu.toFixed(3)} pu`,
+			value: pu(v.min_pu),
 			tone: v.recovered ? undefined : 'failure'
 		},
 		{
@@ -183,7 +192,15 @@ export function details(s: RmsScreening, events = 1): DynDetail[] {
 		add('Fastest frequency change', `${f.max_rocof_hz_s.toFixed(3)} Hz/s`);
 	if (v.min_bus != null) add('Lowest voltage bus', `Bus ${v.min_bus}`);
 	if (events > 0 && v.recovered_s != null) add('Voltage recovery time', sec(v.recovered_s));
-	add('Final voltage range', `${v.final_min_pu.toFixed(3)} to ${v.final_max_pu.toFixed(3)} pu`);
+	add(
+		'Final voltage range',
+		v.final_min_pu == null ||
+			v.final_max_pu == null ||
+			!Number.isFinite(v.final_min_pu) ||
+			!Number.isFinite(v.final_max_pu)
+			? 'Unavailable'
+			: `${v.final_min_pu.toFixed(3)} to ${v.final_max_pu.toFixed(3)} pu`
+	);
 	if (a.pair.length === 2)
 		add('Widest angle pair', `Bus ${a.pair.map((k) => k.split('#')[0]).join(' and ')}`);
 	if (events > 0 && a.initial_separation_deg != null)
@@ -202,5 +219,5 @@ export function details(s: RmsScreening, events = 1): DynDetail[] {
 export function announcement(s: RmsScreening | null, tEnd?: number): string {
 	const h = headline(s, null, tEnd);
 	if (!s) return h.word;
-	return `${h.word}. Lowest frequency ${hz(s.frequency.coi_nadir_hz)}. Lowest voltage ${s.voltage.min_pu.toFixed(3)} pu.`;
+	return `${h.word}. Lowest frequency ${hz(s.frequency.coi_nadir_hz)}. Lowest voltage ${pu(s.voltage.min_pu)}.`;
 }

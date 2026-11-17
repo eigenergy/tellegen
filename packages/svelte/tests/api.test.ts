@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient } from '../src/lib/api.js';
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -48,7 +48,9 @@ describe('checkedFetch error mapping', () => {
 		const e = (await caught(
 			async () =>
 				new Response(
-					JSON.stringify({ error: 'demand delta for bus 3 would make demand negative' }),
+					JSON.stringify({
+						error: 'demand delta for bus 3 would make demand negative'
+					}),
 					{
 						status: 400
 					}
@@ -77,9 +79,9 @@ describe('checkedFetch error mapping', () => {
 
 	it('returns parsed JSON on 2xx', async () => {
 		const cases = await clientWith(
-			async () => new Response(JSON.stringify([{ id: 'c1' }]), { status: 200 })
+			async () => new Response(JSON.stringify([{ id: 'c1', name: 'Case 1', n_bus: 1, n_branch: 0, n_gen: 1 }]), { status: 200 })
 		).getCases();
-		expect(cases).toEqual([{ id: 'c1' }]);
+		expect(cases).toEqual([{ id: 'c1', name: 'Case 1', n_bus: 1, n_branch: 0, n_gen: 1 }]);
 	});
 });
 
@@ -101,5 +103,168 @@ describe('solution wire', () => {
 
 		const solution = await client.getSolution('case-1');
 		expect(solution.prices).toEqual([{ bus: 4, value: 3.5 }]);
+	});
+
+	it('rejects malformed nested numbers before displaying a result', async () => {
+		const client = clientWith(
+			async () =>
+				new Response(
+					JSON.stringify({
+						objective: 12,
+						prices: [{ bus: 4, value: 'wrong' }],
+						va: [],
+						w: [],
+						flows: [],
+						dispatch: []
+					})
+				)
+		);
+		await expect(client.getSolution('case-1')).rejects.toThrow('/prices/0/value');
+	});
+});
+
+class FakeEventSource {
+	static last: FakeEventSource;
+	listeners = new Map<string, (event: { data: string }) => void>();
+	close = vi.fn();
+	onerror: (() => void) | null = null;
+	constructor(_url: string) {
+		FakeEventSource.last = this;
+	}
+	addEventListener(name: string, listener: (event: { data: string }) => void) {
+		this.listeners.set(name, listener);
+	}
+	emit(name: string, value: unknown) {
+		this.listeners.get(name)?.({ data: JSON.stringify(value) });
+	}
+}
+
+describe('streamed result validation', () => {
+	const result = {
+		case: 'case-1',
+		solve_ms: 5,
+		iterations: [],
+		objective: 12,
+		prices: [{ bus: 4, value: 3.5 }],
+		va: [],
+		w: [],
+		flows: [],
+		dispatch: []
+	};
+	function open() {
+		const handlers = {
+			onsolution: vi.fn(),
+			onsensitivity: vi.fn(),
+			onfail: vi.fn(),
+			ondone: vi.fn()
+		};
+		createApiClient({
+			fetch: async () => new Response('{}'),
+			EventSource: FakeEventSource as unknown as typeof EventSource
+		}).openSolveStream('case-1', {}, null, handlers);
+		return { handlers, stream: FakeEventSource.last };
+	}
+	it('accepts existing server records with and without solver context', () => {
+		const { handlers, stream } = open();
+		stream.emit('solution', result);
+		stream.emit('solution', {
+			...result,
+			formulation: 'dcopf',
+			status: 'optimal',
+			objective_kind: 'cost'
+		});
+		stream.emit('sensitivity', {
+			case: 'case-1',
+			operand: 'price',
+			parameter: 'demand',
+			bus: 4,
+			units: 'USD/MWh/MW',
+			values: [{ bus: 4, value: 0.1 }]
+		});
+		stream.emit('done', { ok: true });
+		expect(handlers.onsolution).toHaveBeenCalledTimes(2);
+		expect(handlers.onsensitivity).toHaveBeenCalledTimes(1);
+		expect(handlers.onfail).not.toHaveBeenCalled();
+		expect(handlers.ondone).toHaveBeenCalledTimes(1);
+		expect(stream.close).toHaveBeenCalledTimes(1);
+	});
+	it('closes a malformed result stream and ignores already queued results', () => {
+		const { handlers, stream } = open();
+		stream.emit('solution', { ...result, solve_ms: 'invalid' });
+		stream.emit('solution', result);
+		stream.emit('done', { ok: true });
+		expect(handlers.onfail).toHaveBeenCalledWith(expect.stringContaining('/solve_ms'));
+		expect(handlers.onsolution).not.toHaveBeenCalled();
+		expect(handlers.ondone).not.toHaveBeenCalled();
+		expect(stream.close).toHaveBeenCalledTimes(1);
+	});
+	it.each([
+		[
+			'solution',
+			{ ...result, iterations: [{ iter: 1, objective: 12, inf_pr: 'bad', inf_du: 0 }] },
+			'/iterations/0/inf_pr'
+		],
+		[
+			'sensitivity',
+			{
+				case: 'case-1',
+				operand: 'price',
+				parameter: 'demand',
+				units: 'USD/MWh/MW',
+				values: [{ bus: 4, value: 'bad' }]
+			},
+			'/values/0/value'
+		]
+	])('rejects malformed nested %s data', (event, data, path) => {
+		const { handlers, stream } = open();
+		stream.emit(event as string, data);
+		expect(handlers.onfail).toHaveBeenCalledWith(expect.stringContaining(path as string));
+		expect(handlers.onsolution).not.toHaveBeenCalled();
+		expect(handlers.onsensitivity).not.toHaveBeenCalled();
+		expect(stream.close).toHaveBeenCalledTimes(1);
+	});
+	it('retains an actual server failure message', () => {
+		const { handlers, stream } = open();
+		stream.emit('fail', { error: 'DC OPF solve infeasible: PrimalInfeasible' });
+		expect(handlers.onfail).toHaveBeenCalledWith('DC OPF solve infeasible: PrimalInfeasible');
+		expect(handlers.onsolution).not.toHaveBeenCalled();
+	});
+});
+
+
+describe('HTTP case and network validation', () => {
+	const legacyNetwork = {
+		id: 'c1', name: 'Case 1', base_mva: 100, synthetic_coords: false,
+		buses: [{ id: 1, lon: 0, lat: 0, demand_mw: 1, gen_mw: 1 }],
+		branches: [{ id: 1, from: 1, to: 1, rate_mw: 10, status: 1, path: [[0, 0], [1, 1]] }]
+	};
+	const response = (value: unknown) => clientWith(async () => new Response(JSON.stringify(value)));
+	it('preserves legacy network fields and validates current substation records without omitted Rust fields', async () => {
+		expect(await response(legacyNetwork).getNetwork('c1')).toEqual(legacyNetwork);
+		const network = {
+			...legacyNetwork,
+			substations: [{ key: 'bus:1', name: null, source: 'single', kv: [13.8] }],
+			equipment: { transformers: [], shunts: [], hvdc: [], detailed_dc: { nodes: 0, lines: 0, converters: 0 } }
+		};
+		expect(await response(network).getNetwork('c1')).toEqual(network);
+	});
+	it.each([
+		{ ...legacyNetwork, buses: null },
+		{ ...legacyNetwork, buses: [{ ...legacyNetwork.buses[0], lon: 'invalid' }] },
+		{ ...legacyNetwork, branches: [{ ...legacyNetwork.branches[0], path: [[0, 'invalid']] }] },
+		{ ...legacyNetwork, substations: [{ key: 'bus:1', name: null, source: 'single', kv: ['invalid'] }] },
+		{ ...legacyNetwork, equipment: { transformers: [], shunts: [], hvdc: [], detailed_dc: { nodes: 'invalid', lines: 0, converters: 0 } } }
+	])('rejects malformed network content', async (network) => {
+		await expect(response(network).getNetwork('c1')).rejects.toThrow('Invalid engine http_network');
+	});
+	it.each([null, {}, [{ id: 'c1', name: 'Case 1', n_bus: 'invalid', n_branch: 0, n_gen: 1 }],
+		[{ id: 'c1', name: 'Case 1', n_bus: 1, n_branch: 0, n_gen: 1, distribution: { source_url: 12 } }]])('rejects malformed case listings', async (cases) => {
+		await expect(response(cases).getCases()).rejects.toThrow('Invalid engine http_cases');
+	});
+	it('requires a real compute capability boolean and preserves both values', async () => {
+		for (const enabled of [false, true])
+			expect(await response({ enabled }).getComputeStatus()).toEqual({ enabled });
+		for (const value of [null, {}, { enabled: 'false' }, { enabled: 0 }])
+			await expect(response(value).getComputeStatus()).rejects.toThrow('Invalid engine http_compute');
 	});
 });

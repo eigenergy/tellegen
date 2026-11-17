@@ -7,7 +7,7 @@
 mod energized;
 pub use energized::{
     mc_unpowered_islands, prepare_mc_energized_network, prepare_mc_energized_network_json,
-    McExcludedEquipment, McExcludedIsland, McNetworkScope,
+    McEnergizedOutput, McExcludedEquipment, McExcludedIsland, McNetworkScope,
 };
 pub(crate) mod input;
 mod linear;
@@ -19,7 +19,7 @@ pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
     validate_mc_module, validate_mc_module_json,
 };
-pub use tables::McPfResultTables;
+pub use tables::{McPfResultMetadata, McPfResultTables};
 
 use num_complex::Complex64;
 use powerio_prob::solution::{McAcPfSolution, Residuals, Termination};
@@ -909,6 +909,7 @@ impl McPfSession {
 /// carries a canonical PowerIO solution module.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McStudySnapshot {
     pub schema: String,
     pub version: u32,

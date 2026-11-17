@@ -5,9 +5,19 @@ it("HTTP settings client sends explicit per-request settings and propagates canc
   const fetcher = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(
-      new Response(JSON.stringify({ effective: { damping: 0.8 } }), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify({
+          version: 1,
+          calculation: "mc_ac_pf",
+          engine_defaults: {},
+          baseline: {},
+          overrides: { damping: 0.8 },
+          effective: { damping: 0.8 },
+        }),
+        {
+          status: 200,
+        },
+      ),
     )
     .mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "unsupported setting" }), {
@@ -19,7 +29,7 @@ it("HTTP settings client sends explicit per-request settings and propagates canc
     calculation: "mc_ac_pf",
     overrides: { damping: 0.8 },
   };
-  expect(await client.resolve(request, signal)).toEqual({
+  expect(await client.resolve(request, signal)).toMatchObject({
     effective: { damping: 0.8 },
   });
   expect(fetcher).toHaveBeenCalledWith("/prefix/api/settings/resolve", {
@@ -30,5 +40,31 @@ it("HTTP settings client sends explicit per-request settings and propagates canc
   });
   await expect(client.resolve(request)).rejects.toThrow(
     "HTTP 400: unsupported setting",
+  );
+});
+
+it("validates the HTTP settings catalog before exposing its fields", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ version: 1, calculations: [] })),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          version: 1,
+          calculations: [
+            { calculation: "dcopf", available: "yes", fields: [] },
+          ],
+        }),
+      ),
+    );
+  const client = createSettingsHttpClient("/api", fetcher);
+  await expect(client.describe()).resolves.toEqual({
+    version: 1,
+    calculations: [],
+  });
+  await expect(client.describe()).rejects.toThrow(
+    "Invalid engine settings_catalog",
   );
 });

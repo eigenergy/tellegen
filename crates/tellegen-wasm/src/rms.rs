@@ -43,6 +43,7 @@ pub struct RunRequest {
 }
 
 /// The head of a run's buffers.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize)]
 pub struct RunMeta {
     /// The channel of each block of `values`, in order.
@@ -202,6 +203,7 @@ pub fn run_buffers(
 
 /// The largest speed and voltage drift of a run without events, pu: a case
 /// at rest stays where it starts.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize)]
 pub struct FlatCheck {
     pub seconds: f64,
@@ -389,4 +391,23 @@ pub fn rms_dyr_parameters(module_json: &str, dyr_text: &str) -> Result<String, J
 pub fn rms_dyr_edit(dyr_text: &str, edit_json: &str) -> Result<String, JsValue> {
     install_panic_hook();
     tellegen::rms::dyr_edit_json(dyr_text, edit_json).map_err(jserr)
+}
+
+/// Schemas of the RMS records returned by the browser adapter.
+#[cfg(all(feature = "schema", feature = "rms-experimental"))]
+#[must_use]
+pub fn output_schema() -> serde_json::Value {
+    #[derive(schemars::JsonSchema)]
+    #[allow(dead_code)]
+    struct OutputSchema {
+        run_meta: RunMeta,
+        flat_check: FlatCheck,
+        linear_result: tellegen::rms::LinearResult,
+        library: Vec<tellegen::rms::LibraryModel>,
+    }
+    let schema = schemars::generate::SchemaSettings::default()
+        .for_serialize()
+        .into_generator()
+        .into_root_schema_for::<OutputSchema>();
+    serde_json::to_value(schema).expect("RMS output schema")
 }
