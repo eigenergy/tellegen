@@ -85,10 +85,14 @@ test.describe('PowerIO collection build', () => {
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 		await openCaseMenu(page);
 		await expect(
-			page.locator('#tellegen-case-list').getByRole('button', { name: /study.zip \/ masters\/day.dss Distribution/ })
+			page
+				.locator('#tellegen-case-list')
+				.getByRole('button', { name: /study.zip \/ masters\/day.dss Distribution/ })
 		).toBeVisible();
 		await expect(
-			page.locator('#tellegen-case-list').getByRole('button', { name: /study.zip \/ masters\/night.dss Distribution/ })
+			page
+				.locator('#tellegen-case-list')
+				.getByRole('button', { name: /study.zip \/ masters\/night.dss Distribution/ })
 		).toBeVisible();
 	});
 
