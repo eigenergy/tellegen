@@ -184,7 +184,7 @@ def test_rating_edits_are_rejected_by_dc_power_flow(case: tellegen.Case):
     case.formulation = "dcpf"
     with pytest.raises(tellegen.TellegenInputError) as caught:
         case.update(ratings={1: -5.0})
-    assert caught.value.code == "REQUEST.UNSUPPORTED"
+    assert caught.value.code == "EDIT.OUT_OF_RANGE"
 
 
 # -- sensitivities -----------------------------------------------------------
@@ -212,8 +212,9 @@ def test_a_sensitivity_request_does_not_disturb_the_committed_solution(
 
 def test_ac_power_flow_has_no_price_sensitivity(case: tellegen.Case):
     case.formulation = "acpf"
-    with pytest.raises(tellegen.TellegenError):
+    with pytest.raises(tellegen.TellegenInputError) as caught:
         case.sensitivity({"Price": "Active"}, {"Demand": "Active"})
+    assert caught.value.code == "SENS.UNSUPPORTED"
 
 
 def test_repr_says_what_the_case_is_holding(case: tellegen.Case):
@@ -224,11 +225,9 @@ def test_repr_says_what_the_case_is_holding(case: tellegen.Case):
 
 # -- error classification ----------------------------------------------------
 #
-# The engine attaches a code to each error where it creates or returns it, and
-# the binding only maps that code to a `.code` name and an exception class.
-# Engine calls that still return a plain message get their code from the
-# engine's own reading of its fixed phrases; `_classify` exposes that path, and
-# the table below pins it. Tested through the loaded extension because a
+# Python retains its published codes and exception classes while the engine
+# gains broader typed categories. Check the compatibility table and exercise real
+# failures below so categories cannot silently replace existing codes. Tested through the loaded extension because a
 # cdylib-only pyo3 crate has no portable cargo-test harness (see `_classify`'s
 # docstring).
 
@@ -242,16 +241,16 @@ CLASSIFICATIONS = [
     ("unknown rating delta branch 7", "EDIT.UNKNOWN_ELEMENT"),
     ("edit would make demand negative", "EDIT.OUT_OF_RANGE"),
     ("edit would make the line limit non-positive", "EDIT.OUT_OF_RANGE"),
-    ("branch rating edits are not supported by dcpf", "REQUEST.UNSUPPORTED"),
-    ("acpf does not support d(Price)/d(Demand)", "REQUEST.UNSUPPORTED"),
+    ("branch rating edits are not supported by dcpf", "EDIT.OUT_OF_RANGE"),
+    ("acpf does not support d(Price)/d(Demand)", "SENS.UNSUPPORTED"),
     (
         "acopf (full nonlinear AC OPF) is not available in this build",
-        "REQUEST.UNSUPPORTED",
+        "FORMULATION.UNAVAILABLE",
     ),
-    ("socwr requires the `conic` feature", "REQUEST.UNSUPPORTED"),
+    ("socwr requires the `conic` feature", "FORMULATION.UNAVAILABLE"),
     (
         "PowerIO module holds powerio.TimeSeries, which this solve entry does not support",
-        "REQUEST.UNSUPPORTED",
+        "MODULE.UNSUPPORTED",
     ),
 ]
 
@@ -284,9 +283,10 @@ def test_solve_errors_take_their_class_and_code_from_the_engine(case: tellegen.C
         with pytest.raises(kind) as caught:
             _tellegen.solve_module(module, request)
         assert caught.value.code == code, request
-    with pytest.raises(tellegen.TellegenInputError) as caught:
+    with pytest.raises(tellegen.TellegenError) as caught:
         _tellegen.solve_module("not a module", "")
-    assert caught.value.code == "INPUT.INVALID"
+    assert type(caught.value) is tellegen.TellegenError
+    assert caught.value.code == "ENGINE.FAILED"
 
 
 def test_an_opf_solution_says_what_its_objective_is(case: tellegen.Case):

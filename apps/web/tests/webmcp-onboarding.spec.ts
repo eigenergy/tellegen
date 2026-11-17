@@ -42,7 +42,7 @@ test('Firefox hears it is not available, with a link to the docs', async ({ page
 test('recent Chrome without WebMCP gets the flag to copy', async ({ page, context }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	const status = await asBrowser(page, MAC_CHROME(157));
-	await expect(status).toContainText('Not available in this browser');
+	await expect(status).toContainText('Off in this browser');
 	// The flag sits in the status card, to copy.
 	const card = page.getByRole('region', { name: 'Use Tellegen with an agent' });
 	await expect(card.locator('code')).toHaveText('chrome://flags/#enable-webmcp-testing');
@@ -75,7 +75,7 @@ test('the first-visit hint follows what this browser can do', async ({ page }) =
 	// Chrome with WebMCP off: the hint says so and leads to the setting.
 	await expect(welcome).toContainText('Agent tools are off');
 	await welcome.getByRole('button', { name: 'Set up' }).click();
-	await expect(page.getByTestId('webmcp-status')).toContainText('Not available in this browser');
+	await expect(page.getByTestId('webmcp-status')).toContainText('Off in this browser');
 });
 
 test('Firefox gets no first-visit hint', async ({ page }) => {
@@ -99,7 +99,7 @@ test('Edge gets its own flag scheme', async ({ page }) => {
 	await expect(
 		page.getByRole('region', { name: 'Use Tellegen with an agent' }).locator('code')
 	).toHaveText('edge://flags/#enable-webmcp-testing');
-	await expect(status).toContainText('Not available in this browser');
+	await expect(status).toContainText('Off in this browser');
 });
 
 test('Edge 149 is asked for 150, where its trial starts', async ({ page }) => {
