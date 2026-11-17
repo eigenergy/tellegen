@@ -419,6 +419,7 @@
 <TellegenWebMcp {workspace} studyExpanded={expanded} closeStudy={() => (expanded = false)} />
 <PanelFrame id="studies" title="Studies" side="left" order={20} width={400} bind:open={expanded}>
 	<div class="study-workspace">
+		{#if workspace.storageError}<p role="status">{workspace.storageError}</p>{/if}
 		<div class="storage">
 			<label
 				><span class="sr-only">Saved study</span><select

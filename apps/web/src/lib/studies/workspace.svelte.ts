@@ -32,6 +32,7 @@ export class StudyWorkspace {
 	mcSaved = $state.raw<Array<{ id: string; title: string }>>([]);
 	busy = $state(false);
 	error = $state<string | null>(null);
+	storageError = $state<string | null>(null);
 	network = $state.raw<Network | null>(null);
 	#baseNetwork: Network | null = null;
 	#controller: StudyDocumentController | null = null;
@@ -63,6 +64,7 @@ export class StudyWorkspace {
 	}
 	async refreshSaved() {
 		const [saved, mcSaved] = await Promise.all([this.store.list(), this.store.listDistribution()]);
+		this.storageError = null;
 		this.saved = saved;
 		this.mcSaved = mcSaved.map(({ id, title }) => ({ id, title }));
 	}
@@ -152,7 +154,7 @@ export class StudyWorkspace {
 		try {
 			await this.refreshSaved();
 		} catch (error) {
-			this.error = errorText(error);
+			this.storageError = errorText(error);
 		}
 	}
 	async #run<T>(
