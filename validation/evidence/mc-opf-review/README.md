@@ -36,10 +36,35 @@ checks versions 6, 7, 8 and 9: old rank claims are verified under their original
 rules before upgrade, and modified claims are rejected. The unreleased jump
 therefore has a tested read path; report version is not the package version.
 
-Remaining #338 decisions: PowerIO's legacy generator column is still in
-terminal-map order, neutral included, and uses the existing injection-positive
-terminal powers. Coil powers in the MC report retain generation-positive
-values and their own axes. The canonical constructor enforces terminal count;
-changing that meaning requires an upstream compatibility design. PF and OPF
-also still disagree on DELTA maps containing neutral/earth, and a domain
-expert's review remains outstanding. These checks do not close #338.
+## Formulation review
+
+The review checked the expression compiler, separate physical validation and
+the regression cases below. It found no additional defect in these equations.
+The OpenDSS comparisons above independently check feasibility; they do not
+certify optimality or every supported equipment combination.
+
+| Question | Reviewed behavior and evidence |
+| --- | --- |
+| Coil and terminal incidence | `mc_opf_results::assert_ledgers` reconstructs terminal currents from each coil's positive and negative terminals, including the return current. It checks terminal and coil powers with complex arithmetic and accumulates KCL independently. The results round-trip test covers the saved axes; permutation tests retain their equipment identities. |
+| KCL, KVL and power signs | `equation_rows_match_independent_complex_arithmetic_away_from_solution` checks line voltage drops and coil powers at a perturbed point, where an error cannot hide behind a solved residual of zero. The separate validator adds generator injections, subtracts loads and passive-device withdrawals, and evaluates the declared objective from coil powers. The resistive two-wire test checks a closed-form solution and a nonzero neutral voltage. |
+| Zero ratings | Tests cover current and apparent-power limits, required versus zero flow, both line-end shunts, source-angle changes, open switches and zero inverter ratings. `zero_apparent_rating_at_ground_does_not_imply_zero_current` specifically retains return current at a zero-voltage terminal. |
+| Signed fixed power factor | `original_pf_validation_detects_wrong_control_and_qualifies_tiny_dispatch` checks both signs at ordinary and near-zero power factor, rejects a wrong control equation, and reports unqualified relative accuracy at tiny or zero dispatch. `tiny_pf_solve_reports_relative_accuracy_and_preserves_it_on_import` checks a solved example and refuses a saved report with its warning removed. Absolute power tolerance is not presented as relative power-factor accuracy. |
+| Result acceptance | Both successful solver stopping levels pass the same independent current, voltage, power, limit and objective checks. A local nonlinear-solver failure is not reported as proof of infeasibility. Canonical power residuals now use MW/MVAr; the report retains its separate dimensionless residual families. |
+
+For the patch release, PowerIO's existing generator column remains in
+terminal-map order, neutral included, with injection-positive terminal powers.
+Use `devices[].coil_power_va` together with `devices[].coils` for generation
+costs, coil bounds and coil dispatch. DELTA coil powers and terminal powers
+are different quantities; multiplying costs by the legacy terminal column is
+incorrect. Changing that column's meaning requires a separately reviewed
+upstream compatibility change.
+
+The OPF preparation contract rejects DELTA maps containing neutral or earth
+terminals before optimization, including direct instances and edited sessions.
+Power flow supports a broader set of two-terminal connections. This patch
+preserves both contracts and their explicit refusal behavior instead of silently
+rewriting a device's terminal roles. `mc_opf_terminal_roles` tests the OPF
+boundary and atomic rollback of an invalid edit. PowerIO #742 has merged;
+the remaining distinction is intentional scope in the current calculations,
+not an unmerged prerequisite. PowerIO #700 is a broader terminal-power sign
+discussion and does not by itself approve changing MC generator fields.
