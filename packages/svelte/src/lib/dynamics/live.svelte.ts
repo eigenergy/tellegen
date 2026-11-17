@@ -21,8 +21,68 @@ import { toRmsEvents, type DynEvent } from './events.js';
 export const WINDOWS = [10, 20, 60] as const;
 /** Integration steps the live view offers, s. */
 export const STEPS = [0.001, 0.0025, 0.005, 0.01] as const;
-/** The shortest time between two redraws of the live view, ms. */
-const DRAW_MS = 100;
+/** The shortest time between two redraws of the live view, ms (about 30
+ * per second; a redraw also waits for the browser's next frame). */
+const DRAW_MS = 33;
+/** Internal per-sample columns (not channels): the lowest bus voltage, its
+ * bus and the largest rotor angle from the COI at each sample. */
+const VMIN = '\u0000vmin';
+const VMIN_BUS = '\u0000vmin_bus';
+const SEP = '\u0000sep';
+
+/** The kept samples: one Float64Array per channel, all sharing the index
+ * range [start, end) of `time`. Appends write past `end`; dropping old
+ * samples only moves `start`. When the arrays run out of room, the kept
+ * range moves into other arrays (the ones of two moves back, else fresh
+ * ones), so the arrays a published run views are not written again while
+ * that run is shown. A run is views into these arrays: no copies. */
+class Samples {
+	cap = 0;
+	start = 0;
+	end = 0;
+	time: Float64Array = new Float64Array(0);
+	cols = new Map<string, Float64Array>();
+	#spare: { time: Float64Array; cols: Map<string, Float64Array> } | null = null;
+
+	get length(): number {
+		return this.end - this.start;
+	}
+
+	/** Room for `n` more samples when at most `keep` are kept. */
+	reserve(n: number, keep: number): void {
+		if (this.end + n <= this.cap) return;
+		const kept = Math.min(this.length, keep);
+		const from = this.end - kept;
+		const cap = keep + Math.max(Math.ceil(keep / 2), n, 16);
+		const spare = this.#spare;
+		const take = (old: Float64Array | undefined) =>
+			old && old.length === cap ? old : new Float64Array(cap);
+		const time = take(spare?.time);
+		time.set(this.time.subarray(from, this.end));
+		const cols = new Map<string, Float64Array>();
+		for (const [k, c] of this.cols) {
+			const a = take(spare?.cols.get(k));
+			a.set(c.subarray(from, this.end));
+			cols.set(k, a);
+		}
+		this.#spare = { time: this.time, cols: this.cols };
+		this.time = time;
+		this.cols = cols;
+		this.cap = cap;
+		this.start = 0;
+		this.end = kept;
+	}
+
+	/** The column of `k`, created with gaps (NaN) before the current end. */
+	col(k: string): Float64Array {
+		let c = this.cols.get(k);
+		if (!c) {
+			c = new Float64Array(this.cap).fill(NaN);
+			this.cols.set(k, c);
+		}
+		return c;
+	}
+}
 /** The live output step, s. */
 const OUTPUT_STEP = 0.02;
 /** Channels the live session records: what the map and the traces read. */
@@ -104,8 +164,10 @@ export class LiveView {
 
 	#session: BrowserRmsLive | null = $state.raw(null);
 	#inspection: RmsInspection | null = null;
-	#time: number[] = [];
-	#channels = new Map<string, number[]>();
+	#samples = new Samples();
+	/** The channel set the derived columns and the run's keys were built
+	 * for; rebuilt when a slice brings a new channel. */
+	#layout: Layout | null = null;
 	/** Follow-up events, applied once the simulation reaches their time. */
 	#pending: RmsEvent[] = [];
 	/** Events to apply at the next slice, each with its follow-ups and how
@@ -136,8 +198,8 @@ export class LiveView {
 				this.localId = localId;
 				this.t = 0;
 				this.log = [];
-				this.#time = [];
-				this.#channels = new Map();
+				this.#samples = new Samples();
+				this.#layout = null;
 				this.#pending = [];
 			} catch (e) {
 				this.error = (e as Error).message;
@@ -152,7 +214,7 @@ export class LiveView {
 
 	pause(): void {
 		this.running = false;
-		if (this.#inspection && this.#time.length) this.run = this.#asRun();
+		if (this.#inspection && this.#samples.length) this.run = this.#asRun();
 	}
 
 	/** End the session and close the workbench. */
@@ -173,6 +235,8 @@ export class LiveView {
 		this.perfHistory = [];
 		this.#pending = [];
 		this.#queued = [];
+		this.#samples = new Samples();
+		this.#layout = null;
 	}
 
 	/** Integrate with a step of about `dt` from now on. */
@@ -278,120 +342,217 @@ export class LiveView {
 		}
 	}
 
+	/** Add a slice: write its samples, derive the new samples' bus
+	 * frequencies, centre of inertia and screening columns, drop what left
+	 * the window and schedule a redraw. Work is per new sample, not per
+	 * kept sample, so it does not grow with the window or the redraw rate. */
 	#append(time: number[], keys: string[], series: (k: string) => Float64Array | undefined): void {
-		if (!time.length) return;
-		this.#time.push(...time);
+		const n = time.length;
+		if (!n) return;
+		const s = this.#samples;
+		const keep = Math.max(1, Math.round(this.windowS / OUTPUT_STEP));
+		s.reserve(n, keep);
+		const i0 = s.end;
+		s.time.set(time, i0);
+		const seen = new Set<Float64Array>();
 		for (const k of keys) {
-			let col = this.#channels.get(k);
-			if (!col) {
-				// A channel that appears later starts with gaps.
-				col = new Array(this.#time.length - time.length).fill(NaN);
-				this.#channels.set(k, col);
-			}
-			col.push(...series(k)!);
+			const v = series(k);
+			if (!v) continue;
+			const c = s.col(k);
+			c.set(v.length > n ? v.subarray(0, n) : v, i0);
+			if (v.length < n) c.fill(NaN, i0 + v.length, i0 + n);
+			seen.add(c);
 		}
-		const drop = this.#time.length - Math.round(this.windowS / OUTPUT_STEP);
-		if (drop > 0) {
-			this.#time.splice(0, drop);
-			for (const col of this.#channels.values()) col.splice(0, drop);
-		}
-		// The view is rebuilt at most every DRAW_MS: the engine keeps
-		// computing while the page draws.
-		const now = performance.now();
-		if (now - this.#drawn >= DRAW_MS || !this.running) {
-			this.#drawn = now;
-			this.run = this.#asRun();
-		}
+		s.end = i0 + n;
+		const L = this.#ensureLayout();
+		// A channel this slice did not bring has a gap here.
+		if (seen.size < L.recorded.length)
+			for (const c of L.recorded) if (!seen.has(c)) c.fill(NaN, i0, i0 + n);
+		this.#derive(L, i0, s.end);
+		if (s.length > keep) s.start = s.end - keep;
+		this.#scheduleDraw();
 	}
-	#drawn = 0;
 
-	/** The kept window as an {@link RmsRun}: the recorded channels (bus
-	 * angles turned into bus frequencies `f:<bus>`), the centre-of-inertia
-	 * frequency `coi:f` and angle `coi:delta` (weighted by H · MBASE, equal
-	 * weights without H), and a screening summary of the window for the
-	 * traces. */
-	#asRun(): RmsRun {
+	/** The derived and internal columns and the run's keys for the current
+	 * channel set; rebuilt when a channel appears or the arrays move. */
+	#ensureLayout(): Layout {
+		const s = this.#samples;
+		const old = this.#layout;
+		if (old && old.colsRef === s.cols && old.size === s.cols.size) return old;
 		const ins = this.#inspection!;
-		const n = this.#time.length;
-		const f0 = ins.base_frequency;
-		const out = new Map<string, Float64Array>();
-		for (const [k, col] of this.#channels) if (!k.startsWith('va:')) out.set(k, Float64Array.from(col));
-		// Bus frequencies from the bus angles: f0 + dθ/dt / 2π.
-		for (const [k, col] of this.#channels) {
+		const derived = new Set<string>(['coi:f', 'coi:delta', VMIN, VMIN_BUS, SEP]);
+		const recordedKeys = [...s.cols.keys()].filter((k) => !derived.has(k) && !k.startsWith('f:'));
+		const va: [Float64Array, Float64Array][] = [];
+		const fKeys: string[] = [];
+		for (const k of recordedKeys) {
 			if (!k.startsWith('va:')) continue;
-			const f = new Float64Array(n);
-			for (let i = 0; i < n; i++) {
-				const a = Math.max(0, i - 1);
-				const b = Math.min(n - 1, i === 0 ? 1 : i);
-				const dt = this.#time[b] - this.#time[a];
-				let d = col[b] - col[a];
+			const fk = `f:${k.slice(3)}`;
+			fKeys.push(fk);
+			va.push([s.cols.get(k)!, s.col(fk)]);
+		}
+		const vm: [Float64Array, number][] = [];
+		const delta: Float64Array[] = [];
+		for (const k of recordedKeys) {
+			if (k.startsWith('vm:')) vm.push([s.cols.get(k)!, Number(k.slice(3).split('#')[0])]);
+			else if (k.startsWith('delta:')) delta.push(s.cols.get(k)!);
+		}
+		const gens = ins.generators;
+		const unit = (g: RmsGenerator) =>
+			g.machine_id.trim() === '1' ? `${g.bus}` : `${g.bus}#${g.machine_id.trim()}`;
+		const keys = [...recordedKeys.filter((k) => !k.startsWith('va:')), ...fKeys, 'coi:f', 'coi:delta'];
+		const layout: Layout = {
+			size: 0,
+			colsRef: s.cols,
+			keys,
+			keySet: new Set(keys),
+			recorded: recordedKeys.map((k) => s.cols.get(k)!),
+			va,
+			vm,
+			delta,
+			omega: gens.map((g) => s.cols.get(`omega:${unit(g)}`)),
+			gDelta: gens.map((g) => s.cols.get(`delta:${unit(g)}`)),
+			weights: gens.map((g) => ((g.h ?? 0) > 0 ? (g.h ?? 0) * g.mbase : 1)),
+			coiF: s.col('coi:f'),
+			coiD: s.col('coi:delta'),
+			vmin: s.col(VMIN),
+			vminBus: s.col(VMIN_BUS),
+			sep: s.col(SEP)
+		};
+		layout.size = s.cols.size;
+		this.#layout = layout;
+		return layout;
+	}
+
+	/** Bus frequencies (from the bus angles: f0 + dθ/dt / 2π), the centre of
+	 * inertia (frequency and angle, weighted by H · MBASE, equal weights
+	 * without H) and the per-sample screening columns for samples [a, b). */
+	#derive(L: Layout, a: number, b: number): void {
+		const t = this.#samples.time;
+		const f0 = this.#inspection!.base_frequency;
+		for (const [va, f] of L.va) {
+			for (let i = a; i < b; i++) {
+				if (i === 0) {
+					f[i] = f0;
+					continue;
+				}
+				const dt = t[i] - t[i - 1];
+				let d = va[i] - va[i - 1];
 				d = Math.atan2(Math.sin(d), Math.cos(d));
 				f[i] = dt > 0 ? f0 + d / dt / (2 * Math.PI) : f0;
 			}
-			out.set(`f:${k.slice(3)}`, f);
 		}
-		const gens: RmsGenerator[] = ins.generators;
-		const w = gens.map((g) => ((g.h ?? 0) > 0 ? (g.h ?? 0) * g.mbase : 1));
-		const key = (g: RmsGenerator) =>
-			g.machine_id.trim() === '1' ? `${g.bus}` : `${g.bus}#${g.machine_id.trim()}`;
-		const coi = (prefix: string, scale: number) => {
-			const cols = gens.map((g) => this.#channels.get(`${prefix}${key(g)}`));
-			const r = new Float64Array(n);
-			for (let i = 0; i < n; i++) {
+		const coi = (cols: (Float64Array | undefined)[], out: Float64Array, scale: number) => {
+			for (let i = a; i < b; i++) {
 				let num = 0;
 				let den = 0;
-				cols.forEach((c, j) => {
-					const v = c?.[i];
+				for (let j = 0; j < cols.length; j++) {
+					const v = cols[j]?.[i];
 					if (v !== undefined && Number.isFinite(v)) {
-						num += w[j] * v;
-						den += w[j];
+						num += L.weights[j] * v;
+						den += L.weights[j];
 					}
-				});
-				r[i] = den > 0 ? (num / den) * scale : NaN;
+				}
+				out[i] = den > 0 ? (num / den) * scale : NaN;
 			}
-			return r;
 		};
-		const coiF = coi('omega:', f0);
-		const coiD = coi('delta:', 1);
-		out.set('coi:f', coiF);
-		out.set('coi:delta', coiD);
+		coi(L.omega, L.coiF, f0);
+		coi(L.gDelta, L.coiD, 1);
+		L.vmin.fill(Infinity, a, b);
+		L.vminBus.fill(NaN, a, b);
+		for (const [c, bus] of L.vm) {
+			for (let i = a; i < b; i++) {
+				const x = c[i];
+				if (x < L.vmin[i] && x > 1e-3) {
+					L.vmin[i] = x;
+					L.vminBus[i] = bus;
+				}
+			}
+		}
+		L.sep.fill(0, a, b);
+		const k = 180 / Math.PI;
+		for (const c of L.delta) {
+			for (let i = a; i < b; i++) {
+				const x = Math.abs((c[i] - L.coiD[i]) * k);
+				if (x > L.sep[i]) L.sep[i] = x;
+			}
+		}
+	}
+
+	#drawn = 0;
+	#drawQueued = false;
+	/** Publish the window as {@link run} at the next animation frame, at
+	 * most every {@link DRAW_MS}: the engine keeps computing while the page
+	 * draws, and a slow frame delays the next publish instead of piling up. */
+	#scheduleDraw(): void {
+		if (this.#drawQueued) return;
+		this.#drawQueued = true;
+		let done = false;
+		const draw = () => {
+			if (done) return;
+			done = true;
+			this.#drawQueued = false;
+			if (!this.#inspection || !this.#samples.length) return;
+			this.#drawn = performance.now();
+			this.run = this.#asRun();
+		};
+		const wait = Math.max(0, DRAW_MS - (performance.now() - this.#drawn));
+		setTimeout(() => {
+			if (typeof requestAnimationFrame === 'function' && typeof document !== 'undefined' && !document.hidden) {
+				requestAnimationFrame(draw);
+				// A page that is not painted (an embedding that paused its
+				// frames) still gets the newest window now and then.
+				setTimeout(draw, 250);
+			} else draw();
+		}, wait);
+	}
+
+	/** The kept window as an {@link RmsRun}: views into the kept columns
+	 * (bus angles appear as bus frequencies `f:<bus>`), the centre-of-inertia
+	 * frequency `coi:f` and angle `coi:delta`, and a screening summary of the
+	 * window for the traces. Nothing is copied. */
+	#asRun(): RmsRun {
+		const ins = this.#inspection!;
+		const s = this.#samples;
+		const L = this.#ensureLayout();
+		const a = s.start;
+		const b = s.end;
+		const n = b - a;
+		const f0 = ins.base_frequency;
+		const cols = s.cols;
+		const time = s.time.subarray(a, b);
 
 		// Screening summary of the window (the traces' captions).
 		let nadir = Infinity;
 		let nadirT = 0;
-		coiF.forEach((v, i) => {
-			if (v < nadir) {
-				nadir = v;
-				nadirT = this.#time[i];
-			}
-		});
 		let minV = Infinity;
 		let minBus: number | null = null;
+		let sep = 0;
+		for (let i = a; i < b; i++) {
+			const f = L.coiF[i];
+			if (f < nadir) {
+				nadir = f;
+				nadirT = s.time[i];
+			}
+			if (L.vmin[i] < minV) {
+				minV = L.vmin[i];
+				minBus = L.vminBus[i];
+			}
+			if (L.sep[i] > sep) sep = L.sep[i];
+		}
 		let lastMin = Infinity;
 		let lastMax = -Infinity;
-		let sep = 0;
-		for (const [k, v] of out) {
-			if (k.startsWith('vm:')) {
-				for (const x of v)
-					if (x < minV && x > 1e-3) {
-						minV = x;
-						minBus = Number(k.slice(3).split('#')[0]);
-					}
-				const e = v[n - 1];
-				if (Number.isFinite(e)) {
-					lastMin = Math.min(lastMin, e);
-					lastMax = Math.max(lastMax, e);
-				}
-			} else if (k.startsWith('delta:')) {
-				for (let i = 0; i < n; i++)
-					sep = Math.max(sep, Math.abs(((v[i] - coiD[i]) * 180) / Math.PI));
+		for (const [c] of L.vm) {
+			const e = c[b - 1];
+			if (Number.isFinite(e)) {
+				lastMin = Math.min(lastMin, e);
+				lastMax = Math.max(lastMax, e);
 			}
 		}
 		const screening = {
 			frequency: {
 				coi_nadir_hz: Number.isFinite(nadir) ? nadir : f0,
 				nadir_t: nadirT,
-				final_hz: coiF[n - 1] ?? f0
+				final_hz: n ? L.coiF[b - 1] : f0
 			},
 			angle: { max_separation_deg: sep, pole_slips: [] },
 			voltage: {
@@ -402,16 +563,12 @@ export class LiveView {
 			}
 		};
 
-		const allKeys = [...out.keys()];
-		const values = new Float64Array(allKeys.length * n);
-		allKeys.forEach((k, i) => values.set(out.get(k)!, i * n));
-		const index = new Map(allKeys.map((k, i) => [k, i] as const));
-		const time = Float64Array.from(this.#time);
+		const { keys, keySet } = L;
 		const meta = {
-			keys: allKeys,
+			keys,
 			notes: [],
 			events: [],
-			generators: gens,
+			generators: ins.generators,
 			sources: ins.sources,
 			buses: ins.buses,
 			base_mva: ins.base_mva,
@@ -426,11 +583,8 @@ export class LiveView {
 		return {
 			request: { events: [] },
 			time,
-			keys: allKeys,
-			series: (k: string) => {
-				const i = index.get(k);
-				return i === undefined ? undefined : values.subarray(i * n, (i + 1) * n);
-			},
+			keys,
+			series: (k: string) => (keySet.has(k) ? cols.get(k)?.subarray(a, b) : undefined),
 			meta,
 			screening: screening as unknown as RmsRun['screening'],
 			notes: [],
@@ -439,7 +593,31 @@ export class LiveView {
 			newtonIterations: 0,
 			outputStep: OUTPUT_STEP,
 			workerMs: 0,
-			bytes: values.byteLength
+			bytes: keys.length * n * 8
 		};
 	}
+}
+
+/** See {@link LiveView.#ensureLayout}. */
+interface Layout {
+	/** The column count and the column map the layout was built for. */
+	size: number;
+	colsRef: Map<string, Float64Array>;
+	keys: string[];
+	keySet: Set<string>;
+	recorded: Float64Array[];
+	/** Bus angle and the bus frequency derived from it. */
+	va: [Float64Array, Float64Array][];
+	/** Bus voltage magnitude and its bus. */
+	vm: [Float64Array, number][];
+	delta: Float64Array[];
+	/** Per generator of the inspection: speed, rotor angle, COI weight. */
+	omega: (Float64Array | undefined)[];
+	gDelta: (Float64Array | undefined)[];
+	weights: number[];
+	coiF: Float64Array;
+	coiD: Float64Array;
+	vmin: Float64Array;
+	vminBus: Float64Array;
+	sep: Float64Array;
 }

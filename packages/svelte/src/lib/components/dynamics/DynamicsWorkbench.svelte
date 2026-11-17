@@ -23,6 +23,70 @@
 	const f0 = $derived(ins?.base_frequency ?? 60);
 	let collapsed = $state(false);
 
+	// ----- dock height: drag the top edge; remembered per browser -----
+	const HEIGHT_KEY = 'tellegen.live.dockHeight';
+	const MIN_DOCK = 180;
+	const maxDock = () => (typeof window === 'undefined' ? 2000 : Math.max(MIN_DOCK, window.innerHeight - 90));
+	const clampDock = (h: number) => Math.round(Math.min(maxDock(), Math.max(MIN_DOCK, h)));
+	let dockPx = $state<number | null>(
+		(() => {
+			try {
+				const v = Number(localStorage.getItem(HEIGHT_KEY));
+				return Number.isFinite(v) && v >= MIN_DOCK ? v : null;
+			} catch {
+				return null;
+			}
+		})()
+	);
+	function saveDock() {
+		try {
+			if (dockPx === null) localStorage.removeItem(HEIGHT_KEY);
+			else localStorage.setItem(HEIGHT_KEY, String(dockPx));
+		} catch {
+			/* storage unavailable: the height lasts for this page only */
+		}
+	}
+	let sectionEl = $state<HTMLElement | null>(null);
+	let drag: { y: number; h: number } | null = null;
+	function gripDown(e: PointerEvent) {
+		if (e.button !== 0 || !sectionEl) return;
+		(e.currentTarget as Element).setPointerCapture(e.pointerId);
+		drag = { y: e.clientY, h: sectionEl.getBoundingClientRect().height };
+		e.preventDefault();
+	}
+	function gripMove(e: PointerEvent) {
+		if (drag) dockPx = clampDock(drag.h + (drag.y - e.clientY));
+	}
+	function gripUp() {
+		if (!drag) return;
+		drag = null;
+		saveDock();
+	}
+	function gripKey(e: KeyboardEvent) {
+		const h = dockPx ?? sectionEl?.getBoundingClientRect().height ?? 400;
+		if (e.key === 'ArrowUp') dockPx = clampDock(h + 40);
+		else if (e.key === 'ArrowDown') dockPx = clampDock(h - 40);
+		else if (e.key === 'Home') dockPx = clampDock(maxDock());
+		else if (e.key === 'End') dockPx = MIN_DOCK;
+		else return;
+		e.preventDefault();
+		saveDock();
+	}
+	// A smaller window keeps the dock inside it.
+	$effect(() => {
+		const onResize = () => {
+			if (dockPx !== null && dockPx > maxDock()) dockPx = clampDock(dockPx);
+		};
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
+
+	// ----- chart grid: fill the plot area -----
+	const GAP = 6;
+	const MIN_CHART_W = 420;
+	let chartsW = $state(0);
+	let chartsH = $state(0);
+
 	// ----- speed -----
 	const perf = $derived(live.perf);
 	const fmtX = (x: number) =>
@@ -91,6 +155,18 @@
 				series
 			};
 		});
+	});
+
+	/** Columns and chart height so the charts fill the plot area: as many
+	 * columns as fit at {@link MIN_CHART_W}, rows sharing the height. */
+	const grid = $derived.by(() => {
+		const n = Math.max(1, charts.length);
+		const cols = Math.max(1, Math.min(n, Math.floor((chartsW + GAP) / (MIN_CHART_W + GAP))));
+		const rows = Math.ceil(n / cols);
+		// Title row and legend line around each chart's plot.
+		const over = 22 + (charts.some((c) => c.series.length > 1) ? 22 : 0);
+		const h = Math.floor((chartsH - GAP * (rows - 1)) / rows) - over;
+		return { cols, height: Math.max(120, Math.min(h, 1200)) };
 	});
 
 	// ----- channel picker -----
@@ -216,7 +292,31 @@
 	aria-label="Live workbench"
 	data-testid="dyn-workbench"
 	bind:clientHeight={dockHeight}
+	bind:this={sectionEl}
+	style:height={!collapsed && dockPx !== null ? `${dockPx}px` : null}
 >
+	{#if !collapsed}
+		<div
+			class="grip"
+			role="slider"
+			aria-orientation="vertical"
+			aria-label="Height of the live workbench (arrow keys)"
+			aria-valuemin={MIN_DOCK}
+			aria-valuemax={maxDock()}
+			aria-valuenow={dockPx ?? Math.round(dockHeight)}
+			tabindex="0"
+			title="Drag to resize; double-click for the default height"
+			onpointerdown={gripDown}
+			onpointermove={gripMove}
+			onpointerup={gripUp}
+			onpointercancel={gripUp}
+			ondblclick={() => {
+				dockPx = null;
+				saveDock();
+			}}
+			onkeydown={gripKey}
+		></div>
+	{/if}
 	<header>
 		<strong>Live</strong>
 		{#if live.running}
@@ -351,16 +451,22 @@
 				{#if !run}
 					<p class="dim">Start the live view: the plots fill as it runs.</p>
 				{:else}
-					<div class="charts">
+					<div
+						class="charts"
+						bind:clientWidth={chartsW}
+						bind:clientHeight={chartsH}
+						style:grid-template-columns={`repeat(${grid.cols}, minmax(0, 1fr))`}
+					>
 						{#each charts as c (c.q)}
 							<ZoomChart
 								series={c.series}
 								title={c.title}
 								unit={c.unit}
 								digits={c.digits}
-								height={140}
+								height={grid.height}
 								xLabel="time [s]"
 								showReset={false}
+								follow={live.windowS}
 								bind:xDomain
 								bind:hoverX
 							/>
@@ -493,6 +599,34 @@
 	.wb.collapsed {
 		height: auto;
 	}
+	.grip {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		right: 0;
+		height: 10px;
+		cursor: ns-resize;
+		touch-action: none;
+		z-index: 1;
+	}
+	.grip::after {
+		content: '';
+		position: absolute;
+		top: 3px;
+		left: 50%;
+		width: 44px;
+		height: 4px;
+		margin-left: -22px;
+		border-radius: 2px;
+		background: var(--border-default);
+	}
+	.grip:hover::after,
+	.grip:focus-visible::after {
+		background: var(--accent);
+	}
+	.grip:focus-visible {
+		outline: none;
+	}
 	header {
 		display: flex;
 		align-items: center;
@@ -592,15 +726,18 @@
 		flex: 1;
 		min-height: 0;
 		display: grid;
-		grid-template-columns: 1fr 300px;
+		grid-template-columns: minmax(0, 1fr) clamp(280px, 20vw, 380px);
 	}
 	.plots {
 		min-width: 0;
-		overflow: auto;
+		min-height: 0;
 		padding: 6px 10px;
-		display: grid;
-		align-content: start;
+		display: flex;
+		flex-direction: column;
 		gap: 6px;
+	}
+	.plots > :not(.charts) {
+		flex: none;
 	}
 	.picker {
 		display: flex;
@@ -673,8 +810,11 @@
 		cursor: default;
 	}
 	.charts {
+		flex: 1 1 0;
+		min-height: 0;
+		overflow: auto;
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+		align-content: start;
 		gap: 6px;
 	}
 	aside {
