@@ -46,7 +46,11 @@ fn balanced_output_preserves_existing_display_fields() {
 fn distribution_output_preserves_nulls_and_graph_fields() {
     let source = "new circuit.compat basekv=.4\nnew line.feeder phases=3 bus1=sourcebus.1.2.3 bus2=target.1.2.3 r1=.1 x1=.1 length=1\nnew load.l phases=3 bus1=target.1.2.3 conn=delta kv=.4 kw=3 kvar=1\n";
     let actual = tellegen_wasm::ingest_dist_case(source, "dss").expect("distribution ingest");
-    let expected = display_payload(include_str!("fixtures/adapter-distribution-before.json"));
+    let mut expected = display_payload(include_str!("fixtures/adapter-distribution-before.json"));
+    // The new optional flags describe an unchanged case with no controls.
+    // Keep comparing every field captured before these flags were introduced.
+    expected["mc_fixed_controls"] = false.into();
+    expected["mc_fixed_controls_available"] = false.into();
     assert!(expected
         .as_object()
         .unwrap()
