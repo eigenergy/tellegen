@@ -9,7 +9,6 @@ vi.mock('@tellegen/engine', async (importOriginal) => {
 
 import {
 	DiagnosticLog,
-	errorStage,
 	powerIoEntry,
 	solveEntry,
 	type LogEntryInput
@@ -121,14 +120,6 @@ describe('entry builders', () => {
 		expect(entry('island_deenergized').severity).toBe('warning');
 		expect(entry('BUILD.HVDC.FIXED_INJECTION').severity).toBe('note');
 	});
-
-	it('places app errors in the step their wording names', () => {
-		expect(errorStage('Portugal: could not export study: boom')).toBe('Export');
-		expect(errorStage('Portugal: DC OPF has no feasible solution at this demand')).toBe('Solve');
-		expect(errorStage('case.m: unexpected token while parsing')).toBe('Open');
-		expect(errorStage('No coordinates matched the selected case')).toBe('Coordinates');
-		expect(errorStage('Too many requests')).toBe('App');
-	});
 });
 
 describe('AppState and Controller record into the log', () => {
@@ -143,7 +134,7 @@ describe('AppState and Controller record into the log', () => {
 		expect(app.log.entries).toHaveLength(1);
 		expect(app.log.entries[0]).toMatchObject({
 			severity: 'error',
-			stage: 'Solve',
+			stage: 'App',
 			count: 2,
 			details: { detail: 'WebAssembly.instantiate failed' }
 		});

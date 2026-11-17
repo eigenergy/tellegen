@@ -13,16 +13,6 @@ export interface ExportView {
 	height: number;
 }
 
-/** Hand a file to the viewer. */
-export function download(blob: Blob, name: string) {
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = name;
-	a.click();
-	setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 /** A file name stem from a case label. */
 export const fileStem = (label: string) => `${label.replace(/[^\w.-]+/g, '_')}-schematic`;
 

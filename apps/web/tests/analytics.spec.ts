@@ -5,6 +5,10 @@ import { CASE14_COORDS } from './fixtures/local-case';
 // The public host's usage counts go straight to Umami's collection address
 // from the site's own code. The test serves the preview as tellegen.dev,
 // answers the collector itself, and reads every payload that leaves.
+test.afterEach(async ({ page }) => {
+	await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('public-host usage counts post only approved fields, carry the cache token and honor opt-out', async ({
 	page,
 	baseURL

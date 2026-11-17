@@ -1,0 +1,1091 @@
+{
+  "opendss_version": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+  "cases": [
+    {
+      "generator_connection": "WYE",
+      "load_neutral_grounded": false,
+      "max_voltage_error_v": 7.585754659247662e-08,
+      "max_line_current_error_a": 1.0856412563357773e-10,
+      "opf_residuals": {
+        "kcl_pu": 1.5515838457795457e-17,
+        "kvl_pu": 9.852687265764165e-17,
+        "objective_relative_error": 0.0,
+        "power_link_pu": 2.7755575615628914e-17,
+        "prescribed_power_pu": 2.7755575615628914e-17,
+        "relative_limit_violation": 3.469446951953614e-18
+      },
+      "dispatch_w_var": [
+        [
+          49.999999394037964,
+          1.3044307387716225e-16
+        ],
+        [
+          49.99999939436969,
+          -3.469446951953614e-15
+        ],
+        [
+          49.999999393988,
+          3.469446951953614e-15
+        ]
+      ],
+      "input": {
+        "bus": {
+          "s": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "perfectly_grounded_terminals": [
+              "n"
+            ]
+          },
+          "b": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "vpn_min": [
+              200,
+              200,
+              200
+            ],
+            "vpn_max": [
+              250,
+              250,
+              250
+            ],
+            "vn_max": 10
+          }
+        },
+        "linecode": {
+          "c": {
+            "R_series_1_1": 0.1,
+            "R_series_1_2": 0.02,
+            "R_series_1_3": 0.02,
+            "R_series_1_4": 0.02,
+            "R_series_2_1": 0.02,
+            "R_series_2_2": 0.1,
+            "R_series_2_3": 0.02,
+            "R_series_2_4": 0.02,
+            "R_series_3_1": 0.02,
+            "R_series_3_2": 0.02,
+            "R_series_3_3": 0.1,
+            "R_series_3_4": 0.02,
+            "R_series_4_1": 0.02,
+            "R_series_4_2": 0.02,
+            "R_series_4_3": 0.02,
+            "R_series_4_4": 0.1,
+            "X_series_1_1": 0.04,
+            "X_series_1_2": 0.01,
+            "X_series_1_3": 0.01,
+            "X_series_1_4": 0.01,
+            "X_series_2_1": 0.01,
+            "X_series_2_2": 0.04,
+            "X_series_2_3": 0.01,
+            "X_series_2_4": 0.01,
+            "X_series_3_1": 0.01,
+            "X_series_3_2": 0.01,
+            "X_series_3_3": 0.04,
+            "X_series_3_4": 0.01,
+            "X_series_4_1": 0.01,
+            "X_series_4_2": 0.01,
+            "X_series_4_3": 0.01,
+            "X_series_4_4": 0.04,
+            "i_max": [
+              20,
+              20,
+              20,
+              20
+            ],
+            "s_max": [
+              4000,
+              4000,
+              4000,
+              1000
+            ]
+          }
+        },
+        "line": {
+          "l": {
+            "bus_from": "s",
+            "bus_to": "b",
+            "terminal_map_from": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "terminal_map_to": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "linecode": "c",
+            "length": 1
+          }
+        },
+        "voltage_source": {
+          "grid": {
+            "bus": "s",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "v_magnitude": [
+              230,
+              230,
+              230,
+              0
+            ],
+            "v_angle": [
+              0,
+              -2.0943951023931953,
+              2.0943951023931953,
+              0
+            ],
+            "cost": [
+              0.2,
+              0.2,
+              0.2
+            ]
+          }
+        },
+        "load": {
+          "w": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "configuration": "WYE",
+            "model": "constant_power",
+            "p_nom": [
+              100,
+              140,
+              80
+            ],
+            "q_nom": [
+              20,
+              30,
+              10
+            ]
+          },
+          "d": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c"
+            ],
+            "configuration": "DELTA",
+            "model": "constant_power",
+            "p_nom": [
+              20,
+              30,
+              10
+            ],
+            "q_nom": [
+              4,
+              5,
+              2
+            ]
+          }
+        },
+        "generator": {
+          "g": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "configuration": "WYE",
+            "p_min": [
+              0,
+              0,
+              0
+            ],
+            "p_max": [
+              50,
+              50,
+              50
+            ],
+            "q_min": [
+              0,
+              0,
+              0
+            ],
+            "q_max": [
+              0,
+              0,
+              0
+            ],
+            "s_max": [
+              80,
+              80,
+              80
+            ],
+            "i_max": [
+              2,
+              2,
+              2,
+              2
+            ],
+            "cost": [
+              0.05,
+              0.05,
+              0.05
+            ]
+          }
+        },
+        "meta": {
+          "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+          "frequency": 60
+        }
+      },
+      "opendss_commands": [
+        "clear",
+        "new circuit.check bus1=s.1.2.3 basekv=0.39837168574084175 pu=1 angle=0 r1=1e-8 x1=1e-8 r0=1e-8 x0=1e-8",
+        "new linecode.c nphases=4 units=none rmatrix=[0.1 | 0.02 0.1 | 0.02 0.02 0.1 | 0.02 0.02 0.02 0.1] xmatrix=[0.04 | 0.01 0.04 | 0.01 0.01 0.04 | 0.01 0.01 0.01 0.04] cmatrix=[0|0 0|0 0 0|0 0 0 0]",
+        "new line.l phases=4 bus1=s.1.2.3.0 bus2=b.1.2.3.4 linecode=c length=1 units=none",
+        "new load.load_w_0 phases=1 bus1=b.1.4 conn=delta model=1 kv=0.23 kw=0.09999999999999999 kvar=0.019999999999999997 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_1 phases=1 bus1=b.2.4 conn=delta model=1 kv=0.23 kw=0.14000000000000004 kvar=0.03 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_2 phases=1 bus1=b.3.4 conn=delta model=1 kv=0.23 kw=0.08 kvar=0.009999999999999995 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_0 phases=1 bus1=b.1.2 conn=delta model=1 kv=0.39837168574084175 kw=0.020000000000000004 kvar=0.004000000000000002 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_1 phases=1 bus1=b.2.3 conn=delta model=1 kv=0.39837168574084175 kw=0.030000000000000002 kvar=0.004999999999999998 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_2 phases=1 bus1=b.3.1 conn=delta model=1 kv=0.39837168574084175 kw=0.01 kvar=0.002 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_0 phases=1 bus1=b.1.4 conn=delta model=1 kv=0.23 kw=-0.049999999394037965 kvar=-1.3044307387716225e-19 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_1 phases=1 bus1=b.2.4 conn=delta model=1 kv=0.23 kw=-0.049999999394369686 kvar=3.469446951953614e-18 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_2 phases=1 bus1=b.3.4 conn=delta model=1 kv=0.23 kw=-0.049999999393988 kvar=-3.469446951953614e-18 vminpu=0.1 vmaxpu=2",
+        "set controlmode=off",
+        "set tolerance=1e-12 maxiterations=100",
+        "solve"
+      ]
+    },
+    {
+      "generator_connection": "WYE",
+      "load_neutral_grounded": true,
+      "max_voltage_error_v": 7.585779584386962e-08,
+      "max_line_current_error_a": 1.0920331168008811e-10,
+      "opf_residuals": {
+        "kcl_pu": 7.757919228897728e-18,
+        "kvl_pu": 5.808613161324222e-17,
+        "objective_relative_error": 0.0,
+        "power_link_pu": 1.3985787785349405e-17,
+        "prescribed_power_pu": 1.3985787785349405e-17,
+        "relative_limit_violation": 3.469446951953614e-18
+      },
+      "dispatch_w_var": [
+        [
+          49.99999939409141,
+          1.3065483211397583e-16
+        ],
+        [
+          49.999999394255035,
+          0.0
+        ],
+        [
+          49.99999939404925,
+          3.469446951953614e-15
+        ]
+      ],
+      "input": {
+        "bus": {
+          "s": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "perfectly_grounded_terminals": [
+              "n"
+            ]
+          },
+          "b": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "vpn_min": [
+              200,
+              200,
+              200
+            ],
+            "vpn_max": [
+              250,
+              250,
+              250
+            ],
+            "vn_max": 10,
+            "perfectly_grounded_terminals": [
+              "n"
+            ]
+          }
+        },
+        "linecode": {
+          "c": {
+            "R_series_1_1": 0.1,
+            "R_series_1_2": 0.02,
+            "R_series_1_3": 0.02,
+            "R_series_1_4": 0.02,
+            "R_series_2_1": 0.02,
+            "R_series_2_2": 0.1,
+            "R_series_2_3": 0.02,
+            "R_series_2_4": 0.02,
+            "R_series_3_1": 0.02,
+            "R_series_3_2": 0.02,
+            "R_series_3_3": 0.1,
+            "R_series_3_4": 0.02,
+            "R_series_4_1": 0.02,
+            "R_series_4_2": 0.02,
+            "R_series_4_3": 0.02,
+            "R_series_4_4": 0.1,
+            "X_series_1_1": 0.04,
+            "X_series_1_2": 0.01,
+            "X_series_1_3": 0.01,
+            "X_series_1_4": 0.01,
+            "X_series_2_1": 0.01,
+            "X_series_2_2": 0.04,
+            "X_series_2_3": 0.01,
+            "X_series_2_4": 0.01,
+            "X_series_3_1": 0.01,
+            "X_series_3_2": 0.01,
+            "X_series_3_3": 0.04,
+            "X_series_3_4": 0.01,
+            "X_series_4_1": 0.01,
+            "X_series_4_2": 0.01,
+            "X_series_4_3": 0.01,
+            "X_series_4_4": 0.04,
+            "i_max": [
+              20,
+              20,
+              20,
+              20
+            ],
+            "s_max": [
+              4000,
+              4000,
+              4000,
+              1000
+            ]
+          }
+        },
+        "line": {
+          "l": {
+            "bus_from": "s",
+            "bus_to": "b",
+            "terminal_map_from": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "terminal_map_to": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "linecode": "c",
+            "length": 1
+          }
+        },
+        "voltage_source": {
+          "grid": {
+            "bus": "s",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "v_magnitude": [
+              230,
+              230,
+              230,
+              0
+            ],
+            "v_angle": [
+              0,
+              -2.0943951023931953,
+              2.0943951023931953,
+              0
+            ],
+            "cost": [
+              0.2,
+              0.2,
+              0.2
+            ]
+          }
+        },
+        "load": {
+          "w": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "configuration": "WYE",
+            "model": "constant_power",
+            "p_nom": [
+              100,
+              140,
+              80
+            ],
+            "q_nom": [
+              20,
+              30,
+              10
+            ]
+          },
+          "d": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c"
+            ],
+            "configuration": "DELTA",
+            "model": "constant_power",
+            "p_nom": [
+              20,
+              30,
+              10
+            ],
+            "q_nom": [
+              4,
+              5,
+              2
+            ]
+          }
+        },
+        "generator": {
+          "g": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "configuration": "WYE",
+            "p_min": [
+              0,
+              0,
+              0
+            ],
+            "p_max": [
+              50,
+              50,
+              50
+            ],
+            "q_min": [
+              0,
+              0,
+              0
+            ],
+            "q_max": [
+              0,
+              0,
+              0
+            ],
+            "s_max": [
+              80,
+              80,
+              80
+            ],
+            "i_max": [
+              2,
+              2,
+              2,
+              2
+            ],
+            "cost": [
+              0.05,
+              0.05,
+              0.05
+            ]
+          }
+        },
+        "meta": {
+          "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+          "frequency": 60
+        }
+      },
+      "opendss_commands": [
+        "clear",
+        "new circuit.check bus1=s.1.2.3 basekv=0.39837168574084175 pu=1 angle=0 r1=1e-8 x1=1e-8 r0=1e-8 x0=1e-8",
+        "new linecode.c nphases=4 units=none rmatrix=[0.1 | 0.02 0.1 | 0.02 0.02 0.1 | 0.02 0.02 0.02 0.1] xmatrix=[0.04 | 0.01 0.04 | 0.01 0.01 0.04 | 0.01 0.01 0.01 0.04] cmatrix=[0|0 0|0 0 0|0 0 0 0]",
+        "new line.l phases=4 bus1=s.1.2.3.0 bus2=b.1.2.3.0 linecode=c length=1 units=none",
+        "new load.load_w_0 phases=1 bus1=b.1.0 conn=delta model=1 kv=0.23 kw=0.1 kvar=0.02 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_1 phases=1 bus1=b.2.0 conn=delta model=1 kv=0.23 kw=0.14 kvar=0.03 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_2 phases=1 bus1=b.3.0 conn=delta model=1 kv=0.23 kw=0.07999999999999999 kvar=0.010000000000000002 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_0 phases=1 bus1=b.1.2 conn=delta model=1 kv=0.39837168574084175 kw=0.019999999999999997 kvar=0.003999999999999999 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_1 phases=1 bus1=b.2.3 conn=delta model=1 kv=0.39837168574084175 kw=0.029999999999999995 kvar=0.004999999999999999 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_2 phases=1 bus1=b.3.1 conn=delta model=1 kv=0.39837168574084175 kw=0.009999999999999998 kvar=0.0020000000000000005 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_0 phases=1 bus1=b.1.0 conn=delta model=1 kv=0.23 kw=-0.04999999939409141 kvar=-1.3065483211397583e-19 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_1 phases=1 bus1=b.2.0 conn=delta model=1 kv=0.23 kw=-0.049999999394255035 kvar=-0.0 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_2 phases=1 bus1=b.3.0 conn=delta model=1 kv=0.23 kw=-0.04999999939404925 kvar=-3.469446951953614e-18 vminpu=0.1 vmaxpu=2",
+        "set controlmode=off",
+        "set tolerance=1e-12 maxiterations=100",
+        "solve"
+      ]
+    },
+    {
+      "generator_connection": "DELTA",
+      "load_neutral_grounded": false,
+      "max_voltage_error_v": 7.585741219523387e-08,
+      "max_line_current_error_a": 1.1492768011248173e-10,
+      "opf_residuals": {
+        "kcl_pu": 1.6155775646998403e-17,
+        "kvl_pu": 5.467089454758156e-17,
+        "objective_relative_error": 0.0,
+        "power_link_pu": 1.3985787785349405e-17,
+        "prescribed_power_pu": 1.3985787785349405e-17,
+        "relative_limit_violation": 3.469446951953614e-18
+      },
+      "dispatch_w_var": [
+        [
+          49.99999939417365,
+          0.0
+        ],
+        [
+          49.99999939413668,
+          -1.73726457481857e-15
+        ],
+        [
+          49.99999939408519,
+          3.469446951953614e-15
+        ]
+      ],
+      "input": {
+        "bus": {
+          "s": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "perfectly_grounded_terminals": [
+              "n"
+            ]
+          },
+          "b": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "vpn_min": [
+              200,
+              200,
+              200
+            ],
+            "vpn_max": [
+              250,
+              250,
+              250
+            ],
+            "vn_max": 10
+          }
+        },
+        "linecode": {
+          "c": {
+            "R_series_1_1": 0.1,
+            "R_series_1_2": 0.02,
+            "R_series_1_3": 0.02,
+            "R_series_1_4": 0.02,
+            "R_series_2_1": 0.02,
+            "R_series_2_2": 0.1,
+            "R_series_2_3": 0.02,
+            "R_series_2_4": 0.02,
+            "R_series_3_1": 0.02,
+            "R_series_3_2": 0.02,
+            "R_series_3_3": 0.1,
+            "R_series_3_4": 0.02,
+            "R_series_4_1": 0.02,
+            "R_series_4_2": 0.02,
+            "R_series_4_3": 0.02,
+            "R_series_4_4": 0.1,
+            "X_series_1_1": 0.04,
+            "X_series_1_2": 0.01,
+            "X_series_1_3": 0.01,
+            "X_series_1_4": 0.01,
+            "X_series_2_1": 0.01,
+            "X_series_2_2": 0.04,
+            "X_series_2_3": 0.01,
+            "X_series_2_4": 0.01,
+            "X_series_3_1": 0.01,
+            "X_series_3_2": 0.01,
+            "X_series_3_3": 0.04,
+            "X_series_3_4": 0.01,
+            "X_series_4_1": 0.01,
+            "X_series_4_2": 0.01,
+            "X_series_4_3": 0.01,
+            "X_series_4_4": 0.04,
+            "i_max": [
+              20,
+              20,
+              20,
+              20
+            ],
+            "s_max": [
+              4000,
+              4000,
+              4000,
+              1000
+            ]
+          }
+        },
+        "line": {
+          "l": {
+            "bus_from": "s",
+            "bus_to": "b",
+            "terminal_map_from": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "terminal_map_to": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "linecode": "c",
+            "length": 1
+          }
+        },
+        "voltage_source": {
+          "grid": {
+            "bus": "s",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "v_magnitude": [
+              230,
+              230,
+              230,
+              0
+            ],
+            "v_angle": [
+              0,
+              -2.0943951023931953,
+              2.0943951023931953,
+              0
+            ],
+            "cost": [
+              0.2,
+              0.2,
+              0.2
+            ]
+          }
+        },
+        "load": {
+          "w": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "configuration": "WYE",
+            "model": "constant_power",
+            "p_nom": [
+              100,
+              140,
+              80
+            ],
+            "q_nom": [
+              20,
+              30,
+              10
+            ]
+          },
+          "d": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c"
+            ],
+            "configuration": "DELTA",
+            "model": "constant_power",
+            "p_nom": [
+              20,
+              30,
+              10
+            ],
+            "q_nom": [
+              4,
+              5,
+              2
+            ]
+          }
+        },
+        "generator": {
+          "g": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c"
+            ],
+            "configuration": "DELTA",
+            "p_min": [
+              0,
+              0,
+              0
+            ],
+            "p_max": [
+              50,
+              50,
+              50
+            ],
+            "q_min": [
+              0,
+              0,
+              0
+            ],
+            "q_max": [
+              0,
+              0,
+              0
+            ],
+            "s_max": [
+              80,
+              80,
+              80
+            ],
+            "i_max": [
+              2,
+              2,
+              2
+            ],
+            "cost": [
+              0.05,
+              0.05,
+              0.05
+            ]
+          }
+        },
+        "meta": {
+          "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+          "frequency": 60
+        }
+      },
+      "opendss_commands": [
+        "clear",
+        "new circuit.check bus1=s.1.2.3 basekv=0.39837168574084175 pu=1 angle=0 r1=1e-8 x1=1e-8 r0=1e-8 x0=1e-8",
+        "new linecode.c nphases=4 units=none rmatrix=[0.1 | 0.02 0.1 | 0.02 0.02 0.1 | 0.02 0.02 0.02 0.1] xmatrix=[0.04 | 0.01 0.04 | 0.01 0.01 0.04 | 0.01 0.01 0.01 0.04] cmatrix=[0|0 0|0 0 0|0 0 0 0]",
+        "new line.l phases=4 bus1=s.1.2.3.0 bus2=b.1.2.3.4 linecode=c length=1 units=none",
+        "new load.load_w_0 phases=1 bus1=b.1.4 conn=delta model=1 kv=0.23 kw=0.10000000000000002 kvar=0.02 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_1 phases=1 bus1=b.2.4 conn=delta model=1 kv=0.23 kw=0.14 kvar=0.029999999999999992 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_2 phases=1 bus1=b.3.4 conn=delta model=1 kv=0.23 kw=0.08000000000000002 kvar=0.009999999999999998 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_0 phases=1 bus1=b.1.2 conn=delta model=1 kv=0.39837168574084175 kw=0.020000000000000004 kvar=0.004000000000000002 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_1 phases=1 bus1=b.2.3 conn=delta model=1 kv=0.39837168574084175 kw=0.030000000000000002 kvar=0.004999999999999999 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_2 phases=1 bus1=b.3.1 conn=delta model=1 kv=0.39837168574084175 kw=0.01 kvar=0.0020000000000000005 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_0 phases=1 bus1=b.1.2 conn=delta model=1 kv=0.39837168574084175 kw=-0.04999999939417365 kvar=-0.0 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_1 phases=1 bus1=b.2.3 conn=delta model=1 kv=0.39837168574084175 kw=-0.04999999939413668 kvar=1.73726457481857e-18 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_2 phases=1 bus1=b.3.1 conn=delta model=1 kv=0.39837168574084175 kw=-0.049999999394085184 kvar=-3.469446951953614e-18 vminpu=0.1 vmaxpu=2",
+        "set controlmode=off",
+        "set tolerance=1e-12 maxiterations=100",
+        "solve"
+      ]
+    },
+    {
+      "generator_connection": "DELTA",
+      "load_neutral_grounded": true,
+      "max_voltage_error_v": 7.585777018671165e-08,
+      "max_line_current_error_a": 1.1503215721296786e-10,
+      "opf_residuals": {
+        "kcl_pu": 7.965010658495516e-18,
+        "kvl_pu": 4.167871894952422e-17,
+        "objective_relative_error": 0.0,
+        "power_link_pu": 1.3985787785349405e-17,
+        "prescribed_power_pu": 1.3985787785349405e-17,
+        "relative_limit_violation": 3.469446951953614e-18
+      },
+      "dispatch_w_var": [
+        [
+          49.99999939417361,
+          0.0
+        ],
+        [
+          49.999999394136665,
+          -3.705769144237564e-17
+        ],
+        [
+          49.999999394085215,
+          -3.469446951953614e-15
+        ]
+      ],
+      "input": {
+        "bus": {
+          "s": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "perfectly_grounded_terminals": [
+              "n"
+            ]
+          },
+          "b": {
+            "terminal_names": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "vpn_min": [
+              200,
+              200,
+              200
+            ],
+            "vpn_max": [
+              250,
+              250,
+              250
+            ],
+            "vn_max": 10,
+            "perfectly_grounded_terminals": [
+              "n"
+            ]
+          }
+        },
+        "linecode": {
+          "c": {
+            "R_series_1_1": 0.1,
+            "R_series_1_2": 0.02,
+            "R_series_1_3": 0.02,
+            "R_series_1_4": 0.02,
+            "R_series_2_1": 0.02,
+            "R_series_2_2": 0.1,
+            "R_series_2_3": 0.02,
+            "R_series_2_4": 0.02,
+            "R_series_3_1": 0.02,
+            "R_series_3_2": 0.02,
+            "R_series_3_3": 0.1,
+            "R_series_3_4": 0.02,
+            "R_series_4_1": 0.02,
+            "R_series_4_2": 0.02,
+            "R_series_4_3": 0.02,
+            "R_series_4_4": 0.1,
+            "X_series_1_1": 0.04,
+            "X_series_1_2": 0.01,
+            "X_series_1_3": 0.01,
+            "X_series_1_4": 0.01,
+            "X_series_2_1": 0.01,
+            "X_series_2_2": 0.04,
+            "X_series_2_3": 0.01,
+            "X_series_2_4": 0.01,
+            "X_series_3_1": 0.01,
+            "X_series_3_2": 0.01,
+            "X_series_3_3": 0.04,
+            "X_series_3_4": 0.01,
+            "X_series_4_1": 0.01,
+            "X_series_4_2": 0.01,
+            "X_series_4_3": 0.01,
+            "X_series_4_4": 0.04,
+            "i_max": [
+              20,
+              20,
+              20,
+              20
+            ],
+            "s_max": [
+              4000,
+              4000,
+              4000,
+              1000
+            ]
+          }
+        },
+        "line": {
+          "l": {
+            "bus_from": "s",
+            "bus_to": "b",
+            "terminal_map_from": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "terminal_map_to": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "linecode": "c",
+            "length": 1
+          }
+        },
+        "voltage_source": {
+          "grid": {
+            "bus": "s",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "v_magnitude": [
+              230,
+              230,
+              230,
+              0
+            ],
+            "v_angle": [
+              0,
+              -2.0943951023931953,
+              2.0943951023931953,
+              0
+            ],
+            "cost": [
+              0.2,
+              0.2,
+              0.2
+            ]
+          }
+        },
+        "load": {
+          "w": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c",
+              "n"
+            ],
+            "configuration": "WYE",
+            "model": "constant_power",
+            "p_nom": [
+              100,
+              140,
+              80
+            ],
+            "q_nom": [
+              20,
+              30,
+              10
+            ]
+          },
+          "d": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c"
+            ],
+            "configuration": "DELTA",
+            "model": "constant_power",
+            "p_nom": [
+              20,
+              30,
+              10
+            ],
+            "q_nom": [
+              4,
+              5,
+              2
+            ]
+          }
+        },
+        "generator": {
+          "g": {
+            "bus": "b",
+            "terminal_map": [
+              "a",
+              "b",
+              "c"
+            ],
+            "configuration": "DELTA",
+            "p_min": [
+              0,
+              0,
+              0
+            ],
+            "p_max": [
+              50,
+              50,
+              50
+            ],
+            "q_min": [
+              0,
+              0,
+              0
+            ],
+            "q_max": [
+              0,
+              0,
+              0
+            ],
+            "s_max": [
+              80,
+              80,
+              80
+            ],
+            "i_max": [
+              2,
+              2,
+              2
+            ],
+            "cost": [
+              0.05,
+              0.05,
+              0.05
+            ]
+          }
+        },
+        "meta": {
+          "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+          "frequency": 60
+        }
+      },
+      "opendss_commands": [
+        "clear",
+        "new circuit.check bus1=s.1.2.3 basekv=0.39837168574084175 pu=1 angle=0 r1=1e-8 x1=1e-8 r0=1e-8 x0=1e-8",
+        "new linecode.c nphases=4 units=none rmatrix=[0.1 | 0.02 0.1 | 0.02 0.02 0.1 | 0.02 0.02 0.02 0.1] xmatrix=[0.04 | 0.01 0.04 | 0.01 0.01 0.04 | 0.01 0.01 0.01 0.04] cmatrix=[0|0 0|0 0 0|0 0 0 0]",
+        "new line.l phases=4 bus1=s.1.2.3.0 bus2=b.1.2.3.0 linecode=c length=1 units=none",
+        "new load.load_w_0 phases=1 bus1=b.1.0 conn=delta model=1 kv=0.23 kw=0.09999999999999999 kvar=0.02 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_1 phases=1 bus1=b.2.0 conn=delta model=1 kv=0.23 kw=0.14 kvar=0.03 vminpu=0.1 vmaxpu=2",
+        "new load.load_w_2 phases=1 bus1=b.3.0 conn=delta model=1 kv=0.23 kw=0.08000000000000002 kvar=0.010000000000000002 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_0 phases=1 bus1=b.1.2 conn=delta model=1 kv=0.39837168574084175 kw=0.02 kvar=0.004 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_1 phases=1 bus1=b.2.3 conn=delta model=1 kv=0.39837168574084175 kw=0.029999999999999995 kvar=0.005000000000000001 vminpu=0.1 vmaxpu=2",
+        "new load.load_d_2 phases=1 bus1=b.3.1 conn=delta model=1 kv=0.39837168574084175 kw=0.01 kvar=0.002 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_0 phases=1 bus1=b.1.2 conn=delta model=1 kv=0.39837168574084175 kw=-0.04999999939417361 kvar=-0.0 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_1 phases=1 bus1=b.2.3 conn=delta model=1 kv=0.39837168574084175 kw=-0.049999999394136664 kvar=3.705769144237564e-20 vminpu=0.1 vmaxpu=2",
+        "new load.generator_g_2 phases=1 bus1=b.3.1 conn=delta model=1 kv=0.39837168574084175 kw=-0.04999999939408521 kvar=3.469446951953614e-18 vminpu=0.1 vmaxpu=2",
+        "set controlmode=off",
+        "set tolerance=1e-12 maxiterations=100",
+        "solve"
+      ]
+    }
+  ]
+}

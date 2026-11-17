@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { getAppState } from '../context.svelte.js';
-	import { downloadText } from '../controller.svelte.js';
+	import { downloadText } from '../format.js';
 	import {
 		LOG_SEVERITIES,
-		type DiagnosticLog,
+		type MessageLog,
 		type LogEntry,
 		type LogEntryInput,
 		type LogSeverity
@@ -15,7 +15,7 @@
 		filename = 'tellegen-log.json',
 		empty = 'No messages'
 	}: {
-		log?: DiagnosticLog;
+		log?: MessageLog;
 		/** Makes each named bus a button, for a host that can select it. */
 		onbus?: (bus: number, entry: LogEntryInput) => void;
 		filename?: string;

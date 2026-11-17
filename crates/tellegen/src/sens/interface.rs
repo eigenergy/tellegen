@@ -375,6 +375,9 @@ pub enum SensError {
     Solve(String),
     /// The request itself was malformed.
     InvalidInput(String),
+    /// The solution has no well-defined derivative: its active set is
+    /// degenerate or the solver's multipliers do not determine it.
+    Degenerate(String),
 }
 
 impl std::fmt::Display for SensError {
@@ -394,6 +397,9 @@ impl std::fmt::Display for SensError {
             SensError::Assembly(m) => write!(f, "sensitivity assembly failed: {m}"),
             SensError::Solve(m) => write!(f, "sensitivity solve failed: {m}"),
             SensError::InvalidInput(m) => write!(f, "invalid sensitivity request: {m}"),
+            SensError::Degenerate(m) => {
+                write!(f, "sensitivity is not defined at this solution: {m}")
+            }
         }
     }
 }

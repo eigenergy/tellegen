@@ -142,6 +142,8 @@ pub fn generate_command(
     } else {
         None
     };
+    let report_json =
+        serde_json::to_string_pretty(&session.report_output()).map_err(|e| e.to_string())?;
     let (module, report) = session.into_parts().map_err(|e| e.to_string())?;
 
     std::fs::create_dir_all(&args.out)
@@ -159,12 +161,7 @@ pub fn generate_command(
     };
     let pio = serialize_module(&module.map_value(PioValue::BalancedNetwork))?;
     write(&args.out, "network.pio.json", &pio, &mut files)?;
-    write(
-        &args.out,
-        "report.json",
-        &serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?,
-        &mut files,
-    )?;
+    write(&args.out, "report.json", &report_json, &mut files)?;
     write(&args.out, "network.geo.json", &geo, &mut files)?;
     if let Some(study) = &study {
         for format in &args.exports {

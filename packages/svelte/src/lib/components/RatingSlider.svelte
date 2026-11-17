@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
 	import { signed } from '../format.js';
-	import { sliderKeyValue } from '../slider.js';
+	import { sliderKeyValue, thumbAlignedPos } from '../slider.js';
 
 	const ctrl = getController();
 
@@ -16,10 +16,8 @@
 	const neutralFrac = $derived(
 		Math.max(0, Math.min(1, (ctrl.committedRating - bounds.min) / sliderSpan))
 	);
-	const thumbAlignedPos = (frac: number) =>
-		`calc(${frac * 100}% + ${(0.5 - frac) * thumbSizePx}px)`;
-	const valPos = $derived(thumbAlignedPos(valFrac));
-	const neutralPos = $derived(thumbAlignedPos(neutralFrac));
+	const valPos = $derived(thumbAlignedPos(valFrac, thumbSizePx));
+	const neutralPos = $derived(thumbAlignedPos(neutralFrac, thumbSizePx));
 	const fillLo = $derived(valFrac < neutralFrac ? valPos : neutralPos);
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
 </script>

@@ -35,6 +35,8 @@ mod powerio_parity;
 
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
+#[cfg(all(feature = "acopf", feature = "sensitivity"))]
+pub(crate) use acopf::AcOpfDualPoint;
 #[cfg(feature = "acopf")]
 pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
 pub(crate) use dc::{csr_row, DcNetwork, LinearRow};

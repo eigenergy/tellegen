@@ -438,16 +438,6 @@
 	.bus:focus-visible text.hidden {
 		visibility: visible;
 	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
 	.diagram-stage {
 		position: absolute;
 		inset: 0;

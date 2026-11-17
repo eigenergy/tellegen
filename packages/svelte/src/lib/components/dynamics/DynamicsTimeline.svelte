@@ -179,7 +179,7 @@
 		left: var(--tellegen-dock-left, 20px);
 		right: var(--tellegen-dock-right, 20px);
 		bottom: 12px;
-		z-index: 26;
+		z-index: var(--z-dock);
 		display: grid;
 		gap: 6px;
 		padding: 8px 12px 10px;
@@ -316,12 +316,5 @@
 	}
 	.compact .time {
 		width: 14ch;
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip: rect(0 0 0 0);
 	}
 </style>

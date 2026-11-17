@@ -1,23 +1,32 @@
 <script lang="ts">
+	import type { Attachment } from 'svelte/attachments';
 	import { getAppState, getController } from '../context.svelte.js';
-	import { getNoticeCenter } from '../notices.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import DiagnosticLogView from './DiagnosticLogView.svelte';
 	import PanelFrame from './PanelFrame.svelte';
 	const app = getAppState();
 	const ctrl = getController();
-	const notices = getNoticeCenter();
 	const layout = getPanelLayout();
 	let open = $state(false);
-	// Messages that popped up since the Log was last on screen: the tab counts
-	// them, instead of a floating button over the map.
-	let seen = $state(0);
-	const unseen = $derived(Math.max(0, notices.entries.length - seen));
-	$effect(() => {
-		const count = notices.entries.length;
+	// The tab counts the errors and warnings recorded since the Log was last on
+	// screen. While it is on screen there is nothing to count.
+	const shown = $derived.by(() => {
 		const panel = layout.panels.find((candidate) => candidate.id === 'log');
-		if (count < seen || (panel && layout.shown(panel))) seen = count;
+		return !!panel && layout.shown(panel);
 	});
+	/** Whatever the Log has on screen is seen, when it comes into view and when it leaves. */
+	const seen: Attachment = (node) => {
+		let visible = false;
+		const observer = new IntersectionObserver(([entry]) => {
+			if (visible || entry.isIntersecting) app.log.markSeen();
+			visible = entry.isIntersecting;
+		});
+		observer.observe(node);
+		return () => {
+			observer.disconnect();
+			if (visible) app.log.markSeen();
+		};
+	};
 	// A bus named in a finding selects that bus on the case on screen.
 	function selectBus(bus: number) {
 		if (app.activeLocal) void ctrl.selectLocalBus(app.activeLocal.id, bus);
@@ -31,10 +40,10 @@
 	side="left"
 	order={40}
 	width={360}
-	badge={unseen || undefined}
+	badge={shown ? undefined : app.log.unseen || undefined}
 	bind:open
 >
-	<div class="log-body">
+	<div class="log-body" {@attach seen}>
 		<DiagnosticLogView onbus={selectBus} />
 	</div>
 </PanelFrame>

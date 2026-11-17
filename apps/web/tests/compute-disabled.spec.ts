@@ -1,4 +1,3 @@
-import { noticeDetails } from './fixtures/notices.js';
 import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes } from './fixtures/backend-case';
 
@@ -24,7 +23,7 @@ test('compute reported off up front: notice shown, no server sensitivity request
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible({ timeout: 30_000 });
 
 	await lookupBus(page, 1);
-	const error = await noticeDetails(page);
+	const error = page.getByTestId('notification-toast');
 	await expect(error).toContainText(/Solve failed|Engine unavailable/);
 	expect(sensitivityFetches).toBe(0);
 });
@@ -44,7 +43,7 @@ test('compute status unavailable: first 403 shows the notice and latches', async
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible({ timeout: 30_000 });
 
 	await lookupBus(page, 1);
-	const error = await noticeDetails(page);
+	const error = page.getByTestId('notification-toast');
 	await expect(error).toContainText(/Solve failed|Engine unavailable/);
 	expect(sensitivityFetches).toBe(1);
 

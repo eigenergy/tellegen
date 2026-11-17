@@ -1,5 +1,5 @@
 import { tick } from 'svelte';
-import { resolveSettings, type ResolvedSettings } from '@tellegen/engine';
+import { calculationAvailable, resolveSettings, type ResolvedSettings } from '@tellegen/engine';
 import type {
 	WebMcpStudyHost as StudyWorkspace,
 	WebMcpPlanningHost as PlanningActivityStore,
@@ -19,7 +19,7 @@ import {
 	type SolveIteration
 } from '@tellegen/engine';
 import { LocalCase, type SolvableCase, type StudyDisplaySnapshot } from './state.svelte.js';
-import type { Controller } from './controller.svelte.js';
+import { isDisplayOnlyElement, type Controller } from './controller.svelte.js';
 import { AgentInputError, agentSummary, resolveAgentEvents } from './dynamics/agent.js';
 import { DYNAMICS_OFF } from './dynamics/controller.svelte.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
@@ -45,7 +45,7 @@ import {
 } from '@tellegen/webmcp';
 import { capacityPlanFirstOrderError, capacityPlanPredictedPhiDelta } from './webmcp-metrics.js';
 import { CASE_EXPORT_FORMATS, PIO_MODULE_EXPORT } from './export-formats.js';
-import { lineName } from './format.js';
+import { atLimit, lineName } from './format.js';
 export type {
 	WebMcpStudyHost,
 	WebMcpPlanningHost,
@@ -56,13 +56,12 @@ export type {
 } from './webmcp-hosts.js';
 
 const OUTPUT_ID_LENGTH = 64;
-type FormulationOption = { id: Formulation; disabled?: boolean };
 
 function availableFormulations(c: SolvableCase): Formulation[] {
 	const declared = c instanceof LocalCase ? c.declaredFormulation : undefined;
-	return FORMULATIONS.filter(
-		(entry: FormulationOption) => !entry.disabled && (!declared || entry.id === declared)
-	).map((entry: FormulationOption) => entry.id);
+	return FORMULATIONS.map((entry) => entry.id).filter((id) =>
+		calculationAvailable(id, { declared })
+	);
 }
 
 // Agent calculations follow the accepted result, not a staged next-run draft.
@@ -82,10 +81,6 @@ type QueryRow = Record<string, string | number | boolean | null> & {
 	element_id: string;
 	legacy_id: number;
 };
-
-function isDisplayOnlyElement(element: { editable?: boolean } | null | undefined): boolean {
-	return element?.editable === false;
-}
 
 function clip(value: string, length = OUTPUT_ID_LENGTH): string {
 	return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
@@ -564,10 +559,7 @@ function solutionPayload(c: SolvableCase): ToolPayload {
 				: null
 		),
 		binding_branches:
-			c.formulation === 'acpf'
-				? null
-				: (c.solution?.flows.filter((flow: Solution['flows'][number]) => flow.loading >= 0.999)
-						.length ?? 0),
+			c.formulation === 'acpf' ? null : (c.solution?.flows.filter(atLimit).length ?? 0),
 		solve_backend: c.solveBackend ?? 'none',
 		solve_ms: finite(c.solveMs)
 	};
@@ -586,10 +578,7 @@ function caseSnapshot(c: SolvableCase): ToolPayload {
 				: null
 		),
 		binding_branches:
-			c.formulation === 'acpf'
-				? null
-				: (c.solution?.flows.filter((flow: Solution['flows'][number]) => flow.loading >= 0.999)
-						.length ?? 0)
+			c.formulation === 'acpf' ? null : (c.solution?.flows.filter(atLimit).length ?? 0)
 	};
 }
 
@@ -1433,9 +1422,7 @@ async function update(
 	signal.throwIfAborted();
 	let formulation: Formulation | undefined;
 	if (input.formulation !== undefined) {
-		const option = FORMULATIONS.find(
-			(entry: FormulationOption) => entry.id === input.formulation
-		) as FormulationOption | undefined;
+		const option = FORMULATIONS.find((entry) => entry.id === input.formulation);
 		if (!option || !availableFormulations(c).includes(option.id)) {
 			throw new TellegenToolError(
 				'FORMULATION_UNAVAILABLE',

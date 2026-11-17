@@ -1,13 +1,16 @@
 <script lang="ts">
-	import { logTitle, type LogEntry, type LogEntryInput } from '../log.svelte.js';
+	import type { LogEntry, LogEntryInput } from '../log.svelte.js';
 	let {
 		entry,
 		showSubject = true,
+		bare = false,
 		onbus
 	}: {
 		entry: LogEntryInput | LogEntry;
 		/** Off inside a group that already names the subject. */
 		showSubject?: boolean;
+		/** Only the details, open: for a toast whose title is already on screen. */
+		bare?: boolean;
 		/** Makes each named bus a button, for a host that can select it. */
 		onbus?: (bus: number, entry: LogEntryInput) => void;
 	} = $props();
@@ -15,8 +18,9 @@
 	const MAX_BUSES = 12;
 	const count = $derived('count' in entry ? entry.count : 1);
 	const buses = $derived(entry.buses ?? []);
-	const title = $derived(logTitle(entry.message));
-	let open = $state(false);
+	const title = $derived(entry.title ?? entry.message);
+	let open = $derived(bare);
+	const retry = $derived(entry.retry && (entry.canRetry?.() ?? true) ? entry.retry : null);
 	const details = $derived(
 		Object.entries(entry.details ?? {}).map(
 			([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)] as const
@@ -32,29 +36,33 @@
 			['Element', entry.target ?? ''],
 			['Suggestion', entry.hint ?? ''],
 			...details.map(
-				([key, value]) => [key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' '), value] as const
+				([key, value]) =>
+					[key.charAt(0).toUpperCase() + key.slice(1).replaceAll('_', ' '), value] as const
 			)
 		].filter(([, value]) => value) as [string, string][]
 	);
 </script>
 
-<div class="entry" data-severity={entry.severity} data-testid="log-entry">
-	<span class="severity">{LABEL[entry.severity]}</span>
+<div class={['entry', { bare }]} data-severity={entry.severity} data-testid="log-entry">
+	{#if !bare}<span class="severity">{LABEL[entry.severity]}</span>{/if}
 	<div class="body">
-		<div class="line">
-			<p class="message" title={entry.message}>
-				{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
-						>{count} times</span
+		{#if !bare}
+			<div class="line">
+				<p class="message" title={entry.message}>
+					{title}{#if count > 1}<span class="count" aria-label={`reported ${count} times`}
+							>{count} times</span
+						>{/if}
+				</p>
+				{#if retry}<button type="button" class="toggle" onclick={retry}>Retry</button>{/if}
+				{#if rows.length}<button
+						type="button"
+						class="toggle"
+						aria-label="Details, {title}"
+						aria-expanded={open}
+						onclick={() => (open = !open)}>Details</button
 					>{/if}
-			</p>
-			{#if rows.length}<button
-					type="button"
-					class="toggle"
-					aria-label="Details, {title}"
-					aria-expanded={open}
-					onclick={() => (open = !open)}>Details</button
-				>{/if}
-		</div>
+			</div>
+		{/if}
 		{#if buses.length}
 			<p class="buses">
 				<span class="label">{buses.length === 1 ? 'Bus' : 'Buses'}</span>
@@ -89,6 +97,9 @@
 		font: var(--fs-meta, 12px) / 1.45 var(--font-display);
 		color: var(--text-primary, var(--ink));
 	}
+	.bare {
+		grid-template-columns: minmax(0, 1fr);
+	}
 	:global(:root[data-theme='dark']) .entry {
 		--log-warning: #f0c36d;
 	}
@@ -115,13 +126,15 @@
 	}
 	.toggle {
 		flex: none;
-		margin-left: auto;
 		padding: 0;
 		border: 0;
 		background: none;
 		font: inherit;
 		color: var(--text-accent);
 		cursor: pointer;
+	}
+	.toggle:first-of-type {
+		margin-left: auto;
 	}
 	.toggle:hover {
 		text-decoration: underline;

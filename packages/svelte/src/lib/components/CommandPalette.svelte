@@ -128,7 +128,7 @@
 	.backdrop {
 		position: fixed;
 		inset: 0;
-		z-index: 70;
+		z-index: var(--z-modal);
 		background: rgb(var(--ink-rgb) / 0.2);
 		display: flex;
 		justify-content: center;

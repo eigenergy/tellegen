@@ -21,7 +21,7 @@
 	.dropzone {
 		position: fixed;
 		inset: 0;
-		z-index: 20;
+		z-index: var(--z-overlay);
 		pointer-events: none;
 		background: rgb(var(--bg-rgb) / 0.75);
 	}

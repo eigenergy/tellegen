@@ -42,6 +42,11 @@ pub(crate) type IntermediateTestHook = Box<dyn FnMut(&IterStats)>;
 pub(crate) struct CancellableNlTnlp {
     pub(crate) inner: NlTnlp,
     cancel: Option<Arc<AtomicBool>>,
+    /// Iterations left across every solve this model is handed to: the base
+    /// solve, POUNCE's own re-solves and each recovery attempt. `None` is no
+    /// limit beyond the solver's per-solve `max_iter`.
+    iterations_left: Option<usize>,
+    budget_exhausted: bool,
     #[cfg(test)]
     pub(crate) on_intermediate: Option<IntermediateTestHook>,
 }
@@ -51,9 +56,32 @@ impl CancellableNlTnlp {
         Self {
             inner,
             cancel,
+            iterations_left: None,
+            budget_exhausted: false,
             #[cfg(test)]
             on_intermediate: None,
         }
+    }
+
+    /// Stop every solve on this model once `budget` iterations have run in
+    /// total. POUNCE applies `max_iter` to each solve separately, so without
+    /// this a failing case runs the full count once per recovery attempt.
+    pub(crate) fn with_iteration_budget(mut self, budget: usize) -> Self {
+        self.iterations_left = Some(budget);
+        self
+    }
+
+    /// Whether the total iteration budget stopped a solve.
+    pub(crate) fn budget_exhausted(&self) -> bool {
+        self.budget_exhausted
+    }
+
+    fn stopped(&self) -> bool {
+        self.budget_exhausted
+            || self
+                .cancel
+                .as_ref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
     }
 }
 
@@ -62,12 +90,9 @@ impl TNLP for CancellableNlTnlp {
         // POUNCE's ladder (0.13 through at least 0.15) continues to the next
         // rung even after a UserRequestedStop; it breaks only on a promoted
         // retry. Refuse its next initialization before it can rebuild or
-        // evaluate the NLP; the caller maps the flag to cancellation.
-        if self
-            .cancel
-            .as_ref()
-            .is_some_and(|flag| flag.load(Ordering::Relaxed))
-        {
+        // evaluate the NLP; the caller maps the flag to cancellation. A spent
+        // iteration budget refuses later attempts the same way.
+        if self.stopped() {
             return None;
         }
         self.inner.get_nlp_info()
@@ -167,11 +192,18 @@ impl TNLP for CancellableNlTnlp {
         if let Some(callback) = &mut self.on_intermediate {
             callback(&statistics);
         }
-        if self
-            .cancel
-            .as_ref()
-            .is_some_and(|flag| flag.load(Ordering::Relaxed))
-        {
+        // The callback also reports iteration zero of each solve, which is
+        // the starting point and costs no step.
+        if statistics.iter > 0 {
+            if let Some(left) = &mut self.iterations_left {
+                if *left == 0 {
+                    self.budget_exhausted = true;
+                } else {
+                    *left -= 1;
+                }
+            }
+        }
+        if self.stopped() {
             return false;
         }
         self.inner.intermediate_callback(statistics, data, cq)

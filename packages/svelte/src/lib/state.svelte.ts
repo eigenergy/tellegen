@@ -36,7 +36,7 @@ import {
 	type Topology
 } from '@tellegen/engine';
 import type { MultiView } from './multiconductor.js';
-import { DiagnosticLog, errorEntry } from './log.svelte.js';
+import { errorEntry, type ErrorContext, type LogEntryInput, MessageLog } from './log.svelte.js';
 import { graphInputs, type GraphInputs } from './diagram/graph-inputs.js';
 import { buildSearchIndex, type SearchIndex } from './diagram/search.js';
 import { snapshotFromMcPf, type ResultSnapshot } from './diagram/snapshot.js';
@@ -636,21 +636,48 @@ export class AppState {
 	 * written for people; notices keep it in their disclosure. Every write to
 	 * `error` clears it, as it clears `errorRetry`. */
 	#errorDetail = $state<string | null>(null);
-	/** Every error and engine finding of this session, structured; see `DiagnosticLog`. */
-	readonly log = new DiagnosticLog();
+	/** Every message of this session: the Log lists them and the toast shows the
+	 * latest; see `MessageLog`. */
+	readonly log = new MessageLog();
+	#errorEntry: LogEntryInput | null = null;
 
 	get error(): string | null {
 		return this.#error;
 	}
 
+	/** Text the caller wrote for people: it is its own title. Use `reportError`
+	 * for a caught error, or to give a title, a step or a retry. */
 	set error(message: string | null) {
-		this.#error = message;
-		if (message) {
-			this.errorRevision++;
-			this.log.record(errorEntry(message));
+		if (message) this.reportError(message);
+		else {
+			this.#error = this.errorRetry = this.#errorDetail = this.#errorEntry = null;
 		}
-		this.errorRetry = null;
-		this.#errorDetail = null;
+	}
+
+	/** Make `error` the current error and record it. `known` is what the caller
+	 * knows: a `title` (else a thrown error takes the one for its `code`), the
+	 * `stage` and `subject`, a `retry`, and `quiet` to keep it out of the toast
+	 * when the page already shows it where it happened. */
+	reportError(error: unknown, known: ErrorContext & { quiet?: boolean } = {}) {
+		const { quiet, retry, ...context } = known;
+		const revision = ++this.errorRevision;
+		const entry = errorEntry(error, {
+			...context,
+			// Whatever `errorRetry` holds when Retry is pressed, so a host that
+			// sets it after `error` still gets the button.
+			retry: () => {
+				const op = this.errorRetry;
+				this.error = null;
+				op?.();
+			},
+			canRetry: () => this.errorRevision === revision && !!this.#error && !!this.errorRetry
+		});
+		this.#error = entry.message;
+		this.errorRetry = retry ?? null;
+		this.#errorDetail = known.detail ?? null;
+		this.#errorEntry = entry;
+		if (quiet) this.log.record(entry);
+		else this.log.notify(entry);
 	}
 
 	get errorDetail(): string | null {
@@ -659,7 +686,8 @@ export class AppState {
 
 	set errorDetail(detail: string | null) {
 		this.#errorDetail = detail;
-		if (detail && this.#error) this.log.record(errorEntry(this.#error, detail), { repeat: false });
+		if (detail && this.#errorEntry)
+			this.log.record({ ...this.#errorEntry, details: { detail } }, { repeat: false });
 	}
 
 	/** Case files parsed in the browser via the powerio wasm module. */

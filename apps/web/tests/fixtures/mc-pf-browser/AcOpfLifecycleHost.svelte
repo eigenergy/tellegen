@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ingestCase } from '@tellegen/engine';
+	import { ingestCase, releaseAcOpfWorker } from '@tellegen/engine';
 	import {
 		getAppState,
 		getController
@@ -24,7 +24,8 @@
 				app.addLocal(current);
 				ctrl.runSolve(current, null);
 			},
-			solved: () => current?.solution != null
+			solved: () => current?.solution != null,
+			release: () => releaseAcOpfWorker()
 		};
 		ctrl.probeAcOpf();
 	});

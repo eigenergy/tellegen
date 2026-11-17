@@ -107,7 +107,7 @@
 	.anchor {
 		position: fixed;
 		left: 50%;
-		z-index: 40;
+		z-index: var(--z-floating);
 		transform: translateX(-50%);
 		width: max-content;
 		max-width: min(560px, calc(100vw - 32px));
