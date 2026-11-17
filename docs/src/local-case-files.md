@@ -230,7 +230,10 @@ a calculation. Duplicate definitions and import limits remain errors.
 
 Finite two- and three-winding transformers support the qualified connections,
 taps, neutral settings and OpenDSS's default or written `ppm_antifloat` grounding
-admittance. Unresolved geometry or
+admittance. When a winding and everything connected to it have no path to
+ground and `ppm_antifloat=0` is written, the voltages between its terminals and
+its currents are calculated, but its voltage to ground is not defined and the
+reported value is arbitrary, as it is in OpenDSS. Unresolved geometry or
 dependencies, floating source references, generator/IBR injections,
 voltage-dependent loads without a nominal voltage, and unqualified transformer
 settings remain view-only with a reason. Convergence and operating voltage-limit compliance are

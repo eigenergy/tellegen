@@ -110,7 +110,7 @@ export const EMPTY_GEOMETRY: SchematicGeometry = {
 };
 
 /** Positions as placed in the source data: geographic longitude/latitude projected to Web Mercator
- * metres (y down), or drawing coordinates as given (already y down, as `DiagramCanvas` draws them),
+ * metres (y down), or drawing coordinates as given (already y down),
  * relative to their centroid. Branches are drawn straight. */
 export function sourceLayout(
 	graph: DistGraph,

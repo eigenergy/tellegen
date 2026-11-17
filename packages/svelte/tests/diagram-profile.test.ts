@@ -203,7 +203,7 @@ describe('schematic layouts', () => {
 			tree
 		);
 		expect(planar.positions[3] - planar.positions[0]).toBe(1);
-		// Drawing coordinates are already y down, as DiagramCanvas draws them.
+		// Drawing coordinates are already y down.
 		expect(planar.positions[4] - planar.positions[1]).toBe(1);
 		expect(planar.segmentEdge).toHaveLength(graph.edges.length);
 	});
