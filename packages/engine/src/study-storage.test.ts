@@ -61,6 +61,36 @@ describe('saved study storage', () => {
     await expect(store.rename(bundle.document.id, 'Gone')).rejects.toThrow('not found');
     await store.close();
   });
+  it('does not restore a deleted save after another tab finishes a delayed legacy read', async () => {
+    const old = await legacy(); old.close();
+    const slow = new IndexedDbStudyStore();
+    const fast = new IndexedDbStudyStore();
+    let release!: () => void;
+    let readStarted!: () => void;
+    const started = new Promise<void>(resolve => { readStarted = resolve; });
+    const original = IDBObjectStore.prototype.getAll;
+    let delay = true;
+    const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll').mockImplementation(function (this: IDBObjectStore, ...args) {
+      if (this.name !== 'snapshots' || !delay) return original.apply(this, args);
+      delay = false;
+      const held = { result: [snapshot], onsuccess: null, onerror: null } as unknown as IDBRequest<unknown[]>;
+      release = () => held.onsuccess?.call(held, new Event('success'));
+      readStarted();
+      return held;
+    });
+    try {
+      const pending = slow.listDistribution();
+      await started;
+      expect(await fast.listDistribution()).toEqual([snapshot]);
+      await fast.delete(snapshot.id, 'distribution');
+      release();
+      expect(await pending).toEqual([]);
+      expect(await fast.listDistribution()).toEqual([]);
+    } finally {
+      getAll.mockRestore();
+      await slow.close(); await fast.close();
+    }
+  });
   it('does not overwrite an existing distribution save and supports concurrent first reads', async () => {
     const old = await legacy(); old.close();
     const store = new IndexedDbStudyStore();

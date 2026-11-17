@@ -137,14 +137,21 @@ export class IndexedDbStudyStore implements StudyStore {
       const tx = db.transaction(["distribution", "settings"], "readwrite");
       const store = tx.objectStore("distribution");
       let failure: unknown;
-      for (const snapshot of snapshots) {
-        const request = store.get(snapshot.id);
-        request.onsuccess = () => {
-          try { if (!request.result) store.add(snapshot); }
-          catch (error) { failure = error; tx.abort(); }
-        };
-      }
-      tx.objectStore("settings").put(true, "distribution-migrated");
+      const settings = tx.objectStore("settings");
+      const marker = settings.get("distribution-migrated");
+      marker.onsuccess = () => {
+        // Another tab may have finished and deleted a save while this tab read the old database.
+        // The marker and all copies share one transaction so that deletion stays final.
+        if (marker.result) return;
+        for (const snapshot of snapshots) {
+          const request = store.get(snapshot.id);
+          request.onsuccess = () => {
+            try { if (!request.result) store.add(snapshot); }
+            catch (error) { failure = error; tx.abort(); }
+          };
+        }
+        settings.put(true, "distribution-migrated");
+      };
       tx.oncomplete = () => resolve();
       tx.onerror = tx.onabort = () => reject(storageError(failure ?? tx.error));
     });
