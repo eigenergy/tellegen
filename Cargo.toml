@@ -73,6 +73,14 @@ dbg_macro = "warn"
 opt-level = "s"
 lto = true
 
+# The separate WASI AC OPF module's profile, selected by
+# `scripts/build-acopf-wasi.sh`. That module is fetched only when a nonlinear
+# solve is requested and spends its time in sparse factorizations, so it is
+# built for speed; the main browser module above stays built for size.
+[profile.release-acopf]
+inherits = "release"
+opt-level = 3
+
 # The Python wheel's profile. `release` above is tuned for wasm binary size;
 # Clarabel and faer want speed on native hardware. Selected explicitly with
 # `maturin build --profile release-py`, so no other build is affected.
