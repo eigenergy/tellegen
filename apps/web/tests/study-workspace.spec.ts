@@ -301,3 +301,46 @@ test('WebMCP demand edits accumulate and a base reset preserves history until ex
 	await expect(page.getByRole('button', { name: 'Apply recommendation' })).toHaveCount(0);
 	expect((await bundle(page)).document.applied_state).toBe(resetBundle.document.recommended_state);
 });
+
+test('saved studies can be renamed and deleted without changing the page address', async ({
+	page
+}) => {
+	test.setTimeout(120_000);
+	const initial = await create(page);
+	const url = page.url();
+	page.once('dialog', (dialog) => dialog.accept('Renamed transmission'));
+	await page.getByRole('button', { name: 'Rename', exact: true }).click();
+	await expect(page.getByLabel('Saved study').locator('option:checked')).toHaveText(
+		'Renamed transmission'
+	);
+	const renamed = await bundle(page);
+	expect(renamed.document.title).toBe('Renamed transmission');
+	expect(renamed.document.revision).toBe(initial.document.revision + 1);
+	expect(renamed.artifacts).toEqual(initial.artifacts);
+	expect(page.url()).toBe(url);
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await expect(
+		page.getByLabel('Saved study').locator(`option[value="${initial.document.id}"]`)
+	).toHaveCount(0);
+	await page.reload();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	await expect(
+		page.getByLabel('Saved study').locator(`option[value="${initial.document.id}"]`)
+	).toHaveCount(0);
+});
+
+test('unavailable storage is quiet at startup and reports the actual problem', async ({ page }) => {
+	await page.addInitScript(() => {
+		indexedDB.open = () => {
+			throw new DOMException('Storage blocked by browser settings', 'SecurityError');
+		};
+	});
+	await installWebMcpHarness(page);
+	await congestCase(page);
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	await expect(
+		page.getByText('Storage blocked by browser settings', { exact: false })
+	).toBeVisible();
+	await expect(page.getByTestId('notification-toast')).toHaveCount(0);
+});
