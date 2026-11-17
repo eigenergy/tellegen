@@ -606,6 +606,7 @@ impl ObjectiveKind {
 }
 
 /// Read the objective declaration without solving or guessing from its value.
+#[cfg(feature = "sensitivity")]
 pub(crate) fn module_objective_kind(
     module_json: &str,
     formulation: Problem,
