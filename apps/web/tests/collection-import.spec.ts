@@ -307,13 +307,13 @@ test.describe('PowerIO collection build', () => {
 		);
 		const source = references.cases.find((c: { name: string }) => c.name === 'four_wire').source;
 		const unsupported =
-			'new circuit.three basekv=11\nnew transformer.t phases=3 windings=3 buses=[sourcebus lb lc] conns=[wye wye delta] kvs=[11 .4 .4] kvas=[100 100 100] xhl=4 xht=5 xlt=6\n';
+			'new circuit.four basekv=11\nnew transformer.t phases=3 windings=4 buses=[sourcebus lb lc ld] conns=[wye wye delta wye] kvs=[11 .4 .4 .4] kvas=[100 100 100 100] xscarray=[4 5 6 7 8 9]\n';
 		await page.locator('input[type="file"]').setInputFiles({
 			name: 'snapshots.zip',
 			mimeType: 'application/zip',
 			buffer: storedZip({
 				'four-wire.dss': source,
-				'three-winding.dss': unsupported,
+				'four-winding.dss': unsupported,
 				'generator.dss':
 					'new circuit.qc basekv=.4\nnew generator.g phases=3 bus1=sourcebus kv=.4 kw=3 kvar=1 model=1\n'
 			})
@@ -324,8 +324,8 @@ test.describe('PowerIO collection build', () => {
 		await dialog.getByRole('button', { name: 'Import selected cases' }).click();
 		await expect(dialog.locator('[data-outcome="view-only"]')).toHaveCount(2);
 		await expect(
-			dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'three-winding.dss' })
-		).toContainText('3 windings');
+			dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'four-winding.dss' })
+		).toContainText('finite primitives require two or three windings');
 		await expect(
 			dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'generator.dss' })
 		).toContainText('generator or IBR injections');
