@@ -19,11 +19,28 @@ import type {
 
 export type EngineRequest =
   | { op: "collection_supported" }
-  | { op: "collection_zip"; collection: number; name: string; bytes: Uint8Array }
-  | { op: "collection_files"; collection: number; name: string; names: string; offsets: Uint32Array; bytes: Uint8Array }
+  | {
+      op: "collection_zip";
+      collection: number;
+      name: string;
+      bytes: Uint8Array;
+    }
+  | {
+      op: "collection_files";
+      collection: number;
+      name: string;
+      names: string;
+      offsets: Uint32Array;
+      bytes: Uint8Array;
+    }
   | { op: "collection_ingest"; collection: number; selection: string }
   | { op: "collection_original"; collection: number }
-  | { op: "collection_source"; collection: number; selection: string; scope: "selected" | "project" }
+  | {
+      op: "collection_source";
+      collection: number;
+      selection: string;
+      scope: "selected" | "project";
+    }
   | { op: "collection_free"; collection: number }
   | { op: "preload" }
   | { op: "solve_dc_grid"; input_json: string }
@@ -63,6 +80,7 @@ export type EngineRequest =
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
   | { op: "solve_mc_bmopf"; text: string; options: string }
+  | { op: "prepare_mc_fixed_controls"; module_json: string }
   | { op: "prepare_mc_energized_network"; module_json: string }
   | { op: "solve_mc_module"; module_json: string; options: string }
   | {
@@ -187,11 +205,17 @@ export interface McPfResultBuffersValue {
 /** One engine answer: wasm JSON text, nothing, a numeric array, a synthetic
  * preview, or packed result columns. */
 export type EngineValue =
-  string | null | Float64Array | Uint8Array | SynthPreviewValue | McPfResultBuffersValue;
+  | string
+  | null
+  | Float64Array
+  | Uint8Array
+  | SynthPreviewValue
+  | McPfResultBuffersValue;
 
 /** The buffers an answer moves to the caller instead of copying. */
 export function transferables(value: EngineValue): Transferable[] {
-  if (value instanceof Float64Array || value instanceof Uint8Array) return [value.buffer];
+  if (value instanceof Float64Array || value instanceof Uint8Array)
+    return [value.buffer];
   if (
     value !== null &&
     typeof value === "object" &&
@@ -282,9 +306,13 @@ export function runRequest(
     if (!value) throw new Error(`unknown collection handle ${handle}`);
     return value;
   };
-  const acquireCollection = (handle: number, value: WasmCaseCollection): string => {
+  const acquireCollection = (
+    handle: number,
+    value: WasmCaseCollection,
+  ): string => {
     try {
-      if (handles.collections.has(handle)) throw new Error("collection handle already exists");
+      if (handles.collections.has(handle))
+        throw new Error("collection handle already exists");
       const inspection = value.inspect();
       handles.collections.set(handle, value);
       return inspection;
@@ -325,9 +353,20 @@ export function runRequest(
     case "collection_supported":
       return JSON.stringify(mod.collection_supported());
     case "collection_zip":
-      return acquireCollection(req.collection, mod.CaseCollection.from_zip(req.name, req.bytes));
+      return acquireCollection(
+        req.collection,
+        mod.CaseCollection.from_zip(req.name, req.bytes),
+      );
     case "collection_files":
-      return acquireCollection(req.collection, mod.CaseCollection.from_files(req.name, req.names, req.offsets, req.bytes));
+      return acquireCollection(
+        req.collection,
+        mod.CaseCollection.from_files(
+          req.name,
+          req.names,
+          req.offsets,
+          req.bytes,
+        ),
+      );
     case "collection_ingest":
       return collection(req.collection).ingest(req.selection);
     case "collection_original":
@@ -401,6 +440,8 @@ export function runRequest(
       return mod.solve_module(req.module_json, req.request);
     case "solve_mc_bmopf":
       return mod.solve_mc_bmopf(req.text, req.options);
+    case "prepare_mc_fixed_controls":
+      return mod.prepare_mc_fixed_controls(req.module_json);
     case "prepare_mc_energized_network":
       return mod.prepare_mc_energized_network(req.module_json);
     case "solve_mc_module":
