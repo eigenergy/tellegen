@@ -1,90 +1,65 @@
 # WebMCP
 
-WebMCP lets a web page hand your AI assistant a toolbox. Tellegen's map
-offers tools such as `inspect_case`, `query_network` and `update_case`, so an
-agent reads and changes the case through them instead of reading the screen
-and clicking. Each call shows in the **Agent** panel and in a ribbon below the
-header. The tools read and update the state shown in the interface and run the
-same WebAssembly solver.
+WebMCP is a browser feature that lets a web page offer tools to an AI agent.
+Tellegen's page offers tools such as `inspect_case`, `query_network` and
+`update_case`, so an agent reads and changes the case you see by calling them,
+instead of reading the screen and clicking. Every call shows in the **Agent**
+panel and runs the same solver in your browser as the interface does.
 
-WebMCP is a new browser standard. Chrome and Edge each run their own origin
-trial; https://tellegen.dev has joined Chrome's. Browsers without `document.modelContext` run the application without these
-tools, and manual use works as before.
+There is no server to add and nothing to install in Tellegen. You need two
+things: a browser that has WebMCP, and an agent that can use that browser.
 
-## Getting started (no setup knowledge needed) {#getting-started}
+## Getting started {#getting-started}
 
-Open **Agent**, then **Connect**, on the map. The panel shows whether this
-browser can offer the tools and, once they are ready, a **Copy prompt** button.
-Everything else is on this page.
+### 1. Open Tellegen in a browser that has WebMCP
 
-### 1. Use a browser that speaks WebMCP
+Open <https://tellegen.dev> in Chrome 149 or later, or in Brave, on a computer.
+Then open **Agent** and its **Connect** tab.
 
-| What the Connect tab says     | What to do                                                                                                                                                                                                                                                                                   |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Loading…                      | Nothing. It turns into **Ready** in a moment.                                                                                                                                                                                                                                                |
-| Ready                         | Nothing. Go to step 2.                                                                                                                                                                                                                                                                       |
-| Not available, with a flag    | Copy the flag address (`chrome://flags/#enable-webmcp-testing`, or `edge://flags/...` in Edge), paste it into the address bar, set it to Enabled and relaunch. On https://tellegen.dev, Chrome needs no flag during its trial; local and preview copies, Edge, Brave and other Chromium browsers do. |
-| Needs Chrome 149+             | Update Chrome to 149 or later, or Edge to 150 or later.                                                                                                                                                                                                                                      |
-| Not available, with no flag   | Firefox, Safari and phones have no WebMCP. Use Chrome on a computer, or an agent that brings its own browser (step 2).                                                                                                                                                                        |
+<!-- webmcp:status:start -->
+| The Connect tab says | What to do |
+| --- | --- |
+| Loading… | Wait. It changes within a few seconds. |
+| Connected | The tools are registered. Press **Copy prompt** and go to step 2. |
+| Off in this browser | The browser has WebMCP but this page may not use it. Copy the address shown (`chrome://flags/#enable-webmcp-testing`), paste it into the address bar, set it to **Enabled** and relaunch. |
+| Needs Chrome 149+ (or Edge 150+) | Update the browser to the version named. |
+| Not available in this browser | Firefox, Safari and phones have no WebMCP. Use Chrome, Edge or Brave on a computer. |
+| Tools failed to load | Press **Reload**. **Details** shows the error; report it if it comes back. |
+<!-- webmcp:status:end -->
 
-The origin-trial token covers https://tellegen.dev only, not other hosts, and
-only Chrome: Edge's trial is separate and needs a token from Microsoft, which
-tellegen.dev does not have yet. Chrome's trial runs in a bounded range of
-releases (149 to 156, extended to 162), and the token expires on 30 March
-2027; outside that window Chrome needs the switch too.
+On tellegen.dev, Chrome and Brave need no setting: the site takes part in
+Chrome's WebMCP trial, which runs until 30 March 2027. Edge has its own trial
+that tellegen.dev has not joined, so Edge 150 or later needs the flag. Any
+other address, such as a copy you run yourself, needs the flag in every
+browser.
+
+When the tab says **Connected** it also shows how many tools the page offers.
+Two tools appear only in some states, and the tab lists the reason when one is
+missing: `simulate_dynamics` needs Dynamics turned on in Settings, and
+`propose_capacity_plan` needs a solved DC OPF on the live case.
 
 ### 2. Connect an agent
 
-Pick one. Only the last option touches remote debugging, and you don't need it.
+An agent can call the tools only if it controls a browser tab with Tellegen
+open. Three ways to do that:
 
-**ChatGPT desktop app (no setup).** Open https://tellegen.dev in the app's
-built-in browser and ask for what you want. The agent finds the tools itself;
-the **Site tools** button in the address bar lists them. This works in the
-desktop app's browser only, not in the Codex CLI, the IDE extension or the
-Chrome connector. Site tools need a model that supports them; if the button
-is missing, check **Settings > Browser > Permissions > Enable site tools**.
-Some work and school workspaces do not have it yet.
+**ChatGPT desktop app.** Open <https://tellegen.dev> in the app's built-in
+browser and ask. It finds the tools by itself; the **Site tools** button in
+the address bar lists them. If the button is missing, check **Settings >
+Browser > Permissions > Enable site tools**. This does not work in the Codex
+CLI, the IDE extension or the Chrome connector.
 
-**Claude Code with Claude in Chrome.** Install the
-[Claude in Chrome](https://code.claude.com/docs/en/chrome) extension (1.0.36
-or later), sign it in to the same Claude account and organization as Claude
-Code, and start Claude Code with:
+**Claude Code with the Claude in Chrome extension.** Install
+[Claude in Chrome](https://code.claude.com/docs/en/chrome), sign it in to the
+same account as Claude Code, and start Claude Code with `claude --chrome`. It
+needs a Claude plan signed in with `/login`, not an API key. Claude does not
+look for page tools by itself, so press **Copy prompt** in the Connect tab and
+paste it: the prompt tells Claude how to list and call the tools.
 
-```sh
-claude --chrome
-```
-
-This needs a Claude Pro, Max, Team or Enterprise plan signed in with
-`/login`. With an API key, a `claude setup-token` token, Bedrock, Vertex or
-Foundry, Claude Code keeps the browser off even with `--chrome`. Run
-`/chrome` to check the connection.
-
-Claude does not look for WebMCP tools on its own yet, so tell it where they
-are. In a browser that has `getTools` and `executeTool`, the Connect tab's
-**Copy prompt** button copies a prompt that starts:
-
-> Open https://tellegen.dev in Chrome. The page offers WebMCP tools; use them
-> instead of clicking. List them by running
-> `const tools = await document.modelContext.getTools()` in the page (each has
-> a name, description and inputSchema). Call one with
-> `await document.modelContext.executeTool(tools.find((t) => t.name === '<name>'), { ...args })`,
-> passing the tool object and a plain object of arguments, not a name or a
-> JSON string.
-
-That is the call shape of Chrome's
-[Imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api):
-`executeTool` takes a tool object from `getTools()`, and JSON-string input is
-deprecated from Chrome 155. If the browser lacks `getTools` or `executeTool`,
-the prompt leaves that part out; use the DevTools route below.
-
-This uses your own Chrome, so on https://tellegen.dev the origin-trial token
-applies and no flag is needed. Edge, Brave and other Chromium browsers, which
-Claude in Chrome also supports, need the flag.
-
-**Claude Code, Codex CLI, Cursor or another MCP client with Chrome DevTools
-MCP.** Add Google's
+**Any MCP client with Chrome DevTools MCP** (Claude Code, Codex CLI, Cursor).
+Add Google's
 [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp)
-server once, with its experimental WebMCP tools turned on:
+server with its WebMCP tools turned on:
 
 ```sh
 # Claude Code
@@ -93,19 +68,16 @@ claude mcp add chrome-devtools --scope user -- npx chrome-devtools-mcp@latest --
 codex mcp add chrome-devtools -- npx chrome-devtools-mcp@latest --categoryExperimentalWebmcp=true --chromeArg=--enable-features=WebMCP
 ```
 
-It needs Node.js (for `npx`) and Chrome 150 or later installed. Then ask the
-agent to open https://tellegen.dev and list its WebMCP tools. It gets `list_webmcp_tools` and `execute_webmcp_tool`. The server starts its own
-Chrome window with a separate profile, which is why the command passes
-`--enable-features=WebMCP`: flags you set at `chrome://flags` in your everyday
-profile do not carry over.
+It needs Node.js and Chrome 150 or later. The server starts its own browser
+window with its own profile; `--enable-features=WebMCP` turns WebMCP on in
+that window for every address, so this route also works for a local copy.
+To use Brave or another Chromium browser instead of Chrome, add
+`--executablePath` with the path to it. Ask the agent to open
+<https://tellegen.dev> and list its WebMCP tools.
 
-**Agents built into the browser.** Gemini in Chrome and Copilot in Edge do not
-call page tools yet.
+Gemini in Chrome and Copilot in Edge do not call page tools yet.
 
 ### 3. Ask
-
-With the tools ready, give the agent the prompt from **Copy prompt**, then ask.
-For example:
 
 - Which lines are congested right now, and which buses pay the highest prices?
 - If demand at the most expensive bus rises by 50 MW, how do prices and the
@@ -113,27 +85,41 @@ For example:
 - Propose the cheapest line capacity upgrade that relieves congestion, and wait
   for my approval before applying it.
 
-### Questions
+Each call appears under **Activity** in the Agent panel, with its input and
+result.
 
-**Do I need to turn on remote debugging?** No. Chrome DevTools MCP needs it
-only to attach to a Chrome you already have open: `--autoConnect` needs remote
-debugging turned on at `chrome://inspect/#remote-debugging`, and
-`--browserUrl` needs a Chrome started with a debugging port. Neither is needed
-for the setup above, which starts its own window. If you do attach, that
-Chrome needs WebMCP itself (Chrome's trial on tellegen.dev, or the flag),
-because `--chromeArg` applies only to a browser the server starts.
+### Check it without an agent
 
-**Do I need to add an MCP server?** Only for the Chrome DevTools MCP route,
-with the one command above. The ChatGPT app and `claude --chrome` need none.
-To work on case files without a browser, Tellegen has a separate stdio server;
-see [MCP server](mcp.md).
+The tools are ordinary page objects, so you can try them from the browser's
+developer console on the Tellegen tab:
 
-**How do I know it's working?** The Connect tab says **Ready** and counts the
-tools this tab offers. After the first call it says **Connected**, and the call
-appears under **Activity**.
+```js
+const tools = await document.modelContext.getTools();
+tools.map((tool) => tool.name);
+const inspect = tools.find((tool) => tool.name === "inspect_case");
+JSON.parse(await document.modelContext.executeTool(inspect, {}));
+```
 
-The first-visit introduction at the bottom of the map opens the Connect tab
-and links to the application changelog.
+`executeTool` takes the tool object from `getTools()` and a plain object of
+arguments. If `document.modelContext` is `undefined`, the browser has not
+turned WebMCP on for this page; see the table in step 1.
+
+## Running it locally {#local}
+
+It needs Rust, Node.js, Python 3.11 or later and
+[just](https://github.com/casey/just).
+
+```sh
+just dev-setup   # once: install, build the wasm modules and the packages
+just dev         # the case server on :8000 and the app on http://localhost:5173
+```
+
+A local address is not covered by the trial, so turn WebMCP on in the browser:
+open `chrome://flags/#enable-webmcp-testing` (the Connect tab shows the address
+to copy), choose **Enabled** and relaunch. Starting the browser with
+`--enable-features=WebMCP` does the same for one run. A development build also
+registers `inspect_webmcp_registration`, which reports the registered tools and
+the last registration error.
 
 ## Tools
 
@@ -155,7 +141,7 @@ and links to the application changelog.
 | `reset_settings`              | Return the selected calculation's settings to their defaults without solving.                                                        |
 | `run_calculation`             | Calculate with the selected settings; a failed calculation keeps the preceding result.                                               |
 | `solve_multiconductor_pf`     | Solve the displayed distribution case's multiconductor AC power flow.                                                                |
-| `simulate_dynamics`           | Run an RMS simulation of the displayed case with its `.dyr` data after events and return the screening verdict and figures.        |
+| `simulate_dynamics`           | Run an RMS simulation of the displayed case with its `.dyr` data after events and return the screening verdict and figures.          |
 | `create_study`                | Save the current case and its results as a Study.                                                                                    |
 | `inspect_study`               | Read a page of a Study's goals, states, or evidence, or open a saved Study.                                                          |
 | `revise_study_goal`           | Save a new goal revision.                                                                                                            |
@@ -224,6 +210,50 @@ applies only after the user approves it in the interface.
 `inspect_webmcp_registration` sets `debugging`, so agents for end users can
 leave it out. The web app registers it only in a development build or when the
 page URL has `?debug`.
+
+## Error codes {#errors}
+
+A failed call returns `{ "ok": false, "error": { "code": "...", "message": "..." } }`.
+The message says what to do for that call; the code is stable.
+
+<!-- webmcp:errors:start -->
+| Code | When | What to do next |
+| --- | --- | --- |
+| `INVALID_INPUT` | An argument is missing, has the wrong type or is out of range. | Fix the argument the message names and call again. |
+| `INVALID_OUTPUT` | The tool produced a result that is not valid JSON for its schema. | Report it; this is a bug in the page, not in the call. |
+| `OUTPUT_TOO_LARGE` | The result is longer than the output limit. | Ask for less: lower `limit` or name fewer elements. |
+| `TIMEOUT` | The tool did not finish within its time limit. | Call again, or use a smaller case or a shorter simulation. |
+| `CANCELLED` | The agent or the person stopped the call. | Call again only if the result is still wanted. |
+| `BUSY` | Another tool call that changes the case is still running. | Wait for it to finish, then call again. |
+| `TOOL_FAILED` | The tool failed for a reason no other code covers. | Read the message; call `inspect_case` to see the current state. |
+| `INVALID_CONFIGURATION` | The page set up the tools with an invalid option. | Report it; an agent cannot fix this. |
+| `NO_ACTIVE_CASE` | No case that can be solved is shown. | Call `list_cases`, then `select_case`. |
+| `CASE_NOT_FOUND` | The case ID is not one `list_cases` returned. | Call `list_cases` and use one of its IDs. |
+| `CASE_UNAVAILABLE` | The case exists but cannot be opened, for example its data failed to load. | Choose another case from `list_cases`. |
+| `CASE_NOT_READY` | The case is still loading. | Wait a moment, then call `inspect_case` again. |
+| `CASE_SOLVING` | A solve is still running. | Wait for it to finish, then call again. |
+| `CASE_DATA_UNAVAILABLE` | The page does not hold the case data the tool needs. | Ask the person to reload the page. |
+| `STALE_CASE` | The case shown changed since `case_id` was read. | Call `inspect_case` and use the new `case_id`. |
+| `STALE_REVISION` | The case, its settings or the display changed since the revision was read. | Read the state again with the tool the message names and use the new revision. |
+| `SAVED_STATE_READ_ONLY` | A saved Study state is shown, which cannot be edited. | Use the Study tools, or call `select_case` to return to the live case. |
+| `ELEMENT_NOT_FOUND` | The bus or branch ID is not in the case. | Find a valid ID with `query_network`. |
+| `EDIT_NOT_SUPPORTED` | The element cannot be edited, for example a bus that is shown but not modelled. | Choose an element that `query_network` reports as editable. |
+| `EDIT_OUT_OF_RANGE` | The change is outside the limits for that element. | Choose a value inside the range the message gives. |
+| `FORMULATION_UNAVAILABLE` | The calculation is not available for this case. | Call `inspect_settings` to list the calculations that are. |
+| `METRIC_UNAVAILABLE` | The calculation shown does not produce the requested quantity, such as a price from a power flow. | Ask for a quantity the message lists, or run a calculation that produces it. |
+| `INVALID_SORT` | `sort_by` does not apply to that kind of element. | Choose another `sort_by`. |
+| `SENSITIVITY_UNAVAILABLE` | The calculation shown has no sensitivity for the requested target. | Run a calculation that has one (DC OPF for prices), or change the target. |
+| `PREVIEW_UNAVAILABLE` | The calculation shown cannot predict the effect of an edit. | Apply the edit with `update_case`, which solves it exactly. |
+| `DYNAMICS_OFF` | Dynamic simulation is turned off in Settings. | Ask the person to turn Dynamics on in Settings. |
+| `DYNAMICS_ATTACHED` | The case already has dynamic data and the import would replace it. | Ask the person, then call `import_case` with `replace_dynamics: true`. |
+| `TRACE_UNAVAILABLE` | The browser cannot compute the checksum that identifies the case data. | Use a browser with Web Crypto, on an https page or localhost. |
+| `IMPORT_FAILED` | The file could not be read as a case. | Check the file name's extension and the text; the message says what failed. |
+| `EXPORT_UNAVAILABLE` | The case cannot be written in the requested format. | Choose a format the `export_case` schema lists for this case. |
+| `PLANNING_UNAVAILABLE` | Capacity planning cannot run on this case or this branch. | Solve the case as DC OPF, and choose branches `query_network` returns. |
+| `UNKNOWN_PROPOSAL` | No proposal with that ID is waiting. | Call `propose_capacity_plan` first. |
+| `STALE_PROPOSAL` | The case changed after the proposal was computed. | Call `propose_capacity_plan` again. |
+| `APPROVAL_REQUIRED` | The person has not approved the proposal in the Agent panel. | Ask them to review it and press Approve, then call again. |
+<!-- webmcp:errors:end -->
 
 ## Enabling WebMCP
 

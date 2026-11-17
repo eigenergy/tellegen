@@ -528,7 +528,7 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
 /// price `nu_bal`). This uncancellable convenience entry exists for numerical
 /// tests; product paths use [`dc_opf_cancellable`].
 #[cfg(test)]
-pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcOpfSolution, String> {
+pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcOpfSolution, crate::EngineError> {
     dc_opf_cancellable(model, None)
 }
 
@@ -539,7 +539,7 @@ pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcOpfSolution, String> {
 pub(crate) fn dc_opf_cancellable(
     model: &DcNetwork,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<DcOpfSolution, String> {
+) -> Result<DcOpfSolution, crate::EngineError> {
     let prog = build_opf(&Dc::new(), model);
     let raw = run(&prog, cancel)?;
     Ok(read_dc_solution(model, &raw))

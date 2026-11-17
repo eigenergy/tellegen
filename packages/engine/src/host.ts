@@ -5,6 +5,7 @@
  * the replay target when the worker errors before its first response — the
  * failure mode of a browser that cannot run module workers. */
 
+import { engineError } from "./errors.js";
 import { engineModule } from "./module.js";
 import {
   emptyHandles,
@@ -111,7 +112,7 @@ class WorkerHost implements EngineHost {
             value: ev.data.value,
             engineMs: ev.data.worker_ms ?? null,
           });
-        else pending.reject(new Error(ev.data.error));
+        else pending.reject(engineError(ev.data.error, ev.data.code));
       }
       // The worker closes itself after a trap, so no error event follows.
       // Fail here instead, which rejects the rest of the queue and drops the

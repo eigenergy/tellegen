@@ -8,6 +8,7 @@ export {
   type CreateTellegenToolsOptions,
 } from "./tools.js";
 export { ERROR_CODES, responseSchema, schemaErrors } from "./output.js";
+export { TELLEGEN_ERROR_CODES, type TellegenErrorCode } from "./error-codes.js";
 export {
   IMPORT_EXTENSIONS,
   MAX_IMPORT_TEXT,

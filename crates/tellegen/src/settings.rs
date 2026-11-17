@@ -1,5 +1,6 @@
 //! Calculation settings shared by native, WASM, CLI and HTTP callers.
 //! Display preferences and network edits are deliberately separate contracts.
+use crate::error::{coded, EngineError, ErrorCode, WithCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::sync::{
@@ -474,51 +475,83 @@ fn field(key: &str) -> (&str, &str, &str, &str) {
 }
 
 /// Stateless calculation. Settings are never written into shared hosted cases.
+///
+/// For a balanced OPF the `result` is a [`SolveOutput`](crate::SolveOutput):
+/// the solve response fields plus `objective_kind`.
 pub fn calculate(
     request: &CalculationRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<CalculationResult, String> {
+    calculate_coded(request, cancel).map_err(String::from)
+}
+
+/// As [`calculate`], with an [`EngineError`] that carries a stable code beside
+/// the same message.
+pub fn calculate_coded(
+    request: &CalculationRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<CalculationResult, EngineError> {
     let check = || {
         if cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
-            Err("calculation cancelled".to_owned())
+            Err(coded(ErrorCode::Cancelled, "calculation cancelled"))
         } else {
             Ok(())
         }
     };
     check()?;
-    let settings = resolve(&request.settings)?;
+    let settings = resolve(&request.settings).code(ErrorCode::InvalidRequest)?;
     let result = if settings.calculation == Calculation::McAcPf {
         #[cfg(feature = "mc-pf")]
         {
             if !request.edits.deltas.is_empty() || !request.edits.rates.is_empty() {
-                return Err("multiconductor edits belong in the input module".into());
+                return Err(coded(
+                    ErrorCode::Unsupported,
+                    "multiconductor edits belong in the input module",
+                ));
             }
-            crate::validate_mc_module_json(&request.module_json)?;
+            crate::validate_mc_module_json(&request.module_json).code(ErrorCode::InvalidInput)?;
             let input = if request.energized_only {
                 {
-                    let module = crate::ir::deserialize_module(&request.module_json)?;
-                    let (selected, _) = crate::prepare_mc_energized_network(&module)?;
-                    crate::ir::serialize_module(&selected)?
+                    let module = crate::ir::deserialize_module(&request.module_json)
+                        .code(ErrorCode::InvalidInput)?;
+                    let (selected, _) = crate::prepare_mc_energized_network(&module)
+                        .code(ErrorCode::InvalidInput)?;
+                    crate::ir::serialize_module(&selected).code(ErrorCode::Internal)?
                 }
             } else {
                 request.module_json.clone()
             };
             let options = serde_json::from_value(Value::Object(settings.effective.clone()))
-                .map_err(|e| e.to_string())?;
-            crate::mc_pf::input::solve_mc_module_json_cancellable(&input, &options, cancel.clone())?
+                .code(ErrorCode::InvalidRequest)?;
+            // The multiconductor solve reports failures as messages. Its own
+            // phrases name a cancelled or unconverged run; anything else is
+            // the solve refusing the input.
+            crate::mc_pf::input::solve_mc_module_json_cancellable(&input, &options, cancel.clone())
+                .map_err(|message| {
+                    let code = ErrorCode::from_message(&message).unwrap_or(ErrorCode::InvalidInput);
+                    coded(code, message)
+                })?
         }
         #[cfg(not(feature = "mc-pf"))]
         {
-            return Err("mc_ac_pf is unavailable in this build".into());
+            return Err(coded(
+                ErrorCode::Unsupported,
+                "mc_ac_pf is unavailable in this build",
+            ));
         }
     } else {
         if request.energized_only {
-            return Err("energized_only is supported only by mc_ac_pf".into());
+            return Err(coded(
+                ErrorCode::Unsupported,
+                "energized_only is supported only by mc_ac_pf",
+            ));
         }
         let mut req = json!({"formulation":settings.calculation,"edits":request.edits});
         if settings.calculation == Calculation::DcOpf {
-            req["limits"] =
-                serde_json::to_value(dc_limits(&settings.effective)?).map_err(|e| e.to_string())?;
+            req["limits"] = serde_json::to_value(
+                dc_limits(&settings.effective).code(ErrorCode::InvalidRequest)?,
+            )
+            .code(ErrorCode::Internal)?;
         }
         if matches!(settings.calculation, Calculation::DcOpf | Calculation::DcPf) {
             req["branch_susceptance_formula"] =
@@ -527,7 +560,7 @@ pub fn calculate(
         if settings.calculation == Calculation::AcPf {
             req["start"] = settings.effective["start"].clone();
         }
-        crate::api::solve_module_json_cancellable(
+        crate::api::solve_module_output_json_cancellable(
             &request.module_json,
             &req.to_string(),
             cancel.clone(),
@@ -536,7 +569,7 @@ pub fn calculate(
     check()?;
     Ok(CalculationResult {
         settings,
-        result: serde_json::from_str(&result).map_err(|e| e.to_string())?,
+        result: serde_json::from_str(&result).code(ErrorCode::Internal)?,
     })
 }
 

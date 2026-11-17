@@ -228,14 +228,14 @@ impl Regca1 {
         let v = |i: usize| p[i - 1];
         let lvpl_sw = flag(v(1), "REGCA1 LVPLSW", &[0, 1])? == 1;
         // The two gains divide by these differences.
-        if lvpl_sw && !(v(5) < v(4)) {
+        if lvpl_sw && super::not_lt(v(5), v(4)) {
             return Err(format!(
                 "REGCA1 Zerox = {} must be below Brkpt = {}",
                 v(5),
                 v(4)
             ));
         }
-        if !(v(9) < v(8)) {
+        if super::not_lt(v(9), v(8)) {
             return Err(format!(
                 "REGCA1 Lvpnt0 = {} must be below Lvpnt1 = {}",
                 v(9),

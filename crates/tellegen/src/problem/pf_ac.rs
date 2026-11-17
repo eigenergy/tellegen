@@ -28,6 +28,7 @@ use powerio_tx::{calc_dense_island_labels, BusId};
 
 use crate::{AcPfInitialization, AcPfStartStrategy, PowerFlowStart};
 
+use crate::error::{coded, EngineError, ErrorCode, WithCode};
 use crate::formulation::{AcPolar, Formulation};
 use crate::model::AcNetwork;
 use crate::solve::solve_sparse;
@@ -752,7 +753,7 @@ fn collapsed<'a>(
 /// [`ac_pf_with_start`].
 #[cfg(test)]
 pub(crate) fn ac_pf<F: AcPfFormulation>(f: &F, net: &AcNetwork) -> Result<AcPfSolution, String> {
-    ac_pf_with_start(f, net, AcStart::Flat)
+    ac_pf_with_start(f, net, AcStart::Flat).map_err(String::from)
 }
 
 /// Solve the AC power flow for `net` under formulation `f`: try the requested start (the
@@ -766,7 +767,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
     f: &F,
     net: &AcNetwork,
     start: AcStart,
-) -> Result<AcPfSolution, String> {
+) -> Result<AcPfSolution, EngineError> {
     let (qmin_bus, qmax_bus, has_gen) = aggregate_q(net);
     let vm_hold = net.vm_set.clone();
     let flat_vm = net.vm_set.clone();
@@ -775,7 +776,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
         .map(|(_, reference)| reference)
         .collect();
     // The Jacobian's structure is built once; every iterate refreshes its values.
-    let mut jacobian = power_flow_jacobian(net, &flat_vm, &flat_va)?;
+    let mut jacobian = power_flow_jacobian(net, &flat_vm, &flat_va).code(ErrorCode::Internal)?;
 
     let mut starts = Vec::with_capacity(RESTARTS + 2);
     if start == AcStart::Case {
@@ -852,20 +853,28 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
     // Reject NaN as well as an over-tolerance mismatch: `NaN >= TOL` is false, so a
     // best built from an all-NaN restart set would otherwise fall through as converged.
     if residual.is_nan() || residual >= TOL {
-        return Err(format!(
+        return Err(coded(
+            ErrorCode::NotConverged,
+            format!(
             "AC power flow did not converge: best mismatch {residual:.3e} over {start_count} starts"
+        ),
         ));
     }
     // A voltage-dependent load below its ratio floor is a collapsed voltage, not an
     // operating point (see [`collapsed`]).
     if let Some(term) = collapsed(net, &vm) {
-        return Err(format!(
-            "AC power flow converged to a collapsed voltage of {:.3e} pu at bus {}, below the \
-             range of its voltage-dependent load (exponent {})",
-            vm[term.bus], net.bus_ids[term.bus], term.exponent
+        return Err(coded(
+            ErrorCode::NotConverged,
+            format!(
+                "AC power flow converged to a collapsed voltage of {:.3e} pu at bus {}, below \
+                 the range of its voltage-dependent load (exponent {})",
+                vm[term.bus], net.bus_ids[term.bus], term.exponent
+            ),
         ));
     }
-    let BusPowerInjection { p, q, .. } = f.injections(&jacobian, &vm, &va)?;
+    let BusPowerInjection { p, q, .. } = f
+        .injections(&jacobian, &vm, &va)
+        .code(ErrorCode::Internal)?;
     Ok(AcPfSolution::new(
         vm,
         va,

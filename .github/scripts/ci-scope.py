@@ -193,6 +193,8 @@ JS = Rules(
     run(
         "crates/**",
         "validation/evidence/capacity-plan/**",
+        # `npm run check:web` checks this page's tables against the code.
+        "docs/src/webmcp.md",
         "apps/**",
         "packages/**",
         "examples/**",
