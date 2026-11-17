@@ -678,5 +678,16 @@ unit test; `apps/web/src/lib/analytics/client.ts` is the hosted demo's.
 - `examples/browser-minimal` imports `@tellegen/engine` directly and has no map
   stack.
 
+The [custom Svelte example](https://github.com/eigenergy/tellegen/tree/main/examples/svelte-minimal)
+uses the provider, controller, and results component without the demo shell.
+Build the example and open `custom.html` to load a distribution case, run power
+flow, and inspect its results. `DistributionResults` takes a
+`MulticonductorCase` as `caseState` and reads the controller from its enclosing
+provider.
+
+The stylesheet applies inside the provider's `.tellegen` element. It does not
+reset the host page's links, inputs, body, or theme. Multiple providers can use
+different themes.
+
 Downstream apps should not import from `apps/web/src/lib` or from generated wasm
 folders.

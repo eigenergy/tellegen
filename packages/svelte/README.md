@@ -547,6 +547,19 @@ under the host's control. Omitting them leaves planning disabled. Hosts exposing
 only a subset can select those methods from the returned adapter. `caseRevision`
 and `webMcpSessionId` let host evidence use the same concurrency tokens.
 
+## Build a different app
+
+The [custom Svelte example](https://github.com/eigenergy/tellegen/tree/main/examples/svelte-minimal)
+uses the provider, controller, and results component without the demo shell.
+Build the example and open `custom.html` to load a distribution case, run power
+flow, and inspect its results. `DistributionResults` takes a
+`MulticonductorCase` as `caseState` and reads the controller from its enclosing
+provider.
+
+The stylesheet applies inside the provider's `.tellegen` element. It does not
+reset the host page's links, inputs, body, or theme. Multiple providers can use
+different themes.
+
 ## Release
 
 Build and inspect the package from the repository root:
@@ -560,8 +573,8 @@ npm run pack:svelte
 npm run test:svelte-packed
 ```
 
-`@tellegen/svelte` is published with `@tellegen/engine` in the first framework
-release. The package ships only `dist`, the README, the MIT license text, and
+`@tellegen/svelte` declares its compatible `@tellegen/engine` version in its
+package dependencies. The package ships only `dist`, the README, the MIT license text, and
 package metadata. The packed smoke test installs the generated tarballs into a
 temporary Svelte consumer and builds it so missing exports, styles, or wasm
 assets fail before publish.
