@@ -11,6 +11,7 @@ fn main() {
         "crates/tellegen-wasm/src/geo.rs",
         "crates/tellegen-wasm/src/synth.rs",
         "crates/tellegen-wasm/src/collection.rs",
+        "crates/tellegen-wasm/src/collection/cgmes.rs",
         "crates/tellegen-wasm/examples/adapter_schema.rs",
         "crates/tellegen/src/api.rs",
         "crates/tellegen/src/study.rs",

@@ -38,6 +38,38 @@ test.describe('PowerIO collection build', () => {
 		await expect(dialog.locator('[data-outcome="failed"]')).toHaveCount(0);
 	});
 
+	test('CGMES companion profiles import as one case and retain open switch positions', async ({
+		page
+	}) => {
+		const zip = await readFile(
+			new URL('./fixtures/mc-pf-browser/public/node-breaker.zip', import.meta.url)
+		);
+		await page
+			.locator('input[type="file"]')
+			.setInputFiles({ name: 'node-breaker.zip', mimeType: 'application/zip', buffer: zip });
+		const chooser = page.getByRole('dialog', { name: 'Choose cases from collection' });
+		await expect(chooser.locator('.candidate')).toHaveCount(1);
+		await expect(chooser.locator('.candidate')).toContainText('NodeBreaker_EQ.xml');
+		await expect(chooser.locator('.candidate')).toContainText('NodeBreaker_SSH.xml');
+		await chooser.getByRole('button', { name: 'Select all matching' }).click();
+		await chooser.getByRole('button', { name: 'Import selected cases' }).click();
+		await expect(chooser.getByRole('status')).toHaveText('Done');
+		await expect(chooser.locator('[data-outcome="imported"]')).toHaveCount(1);
+		await expect(chooser.locator('[data-outcome="failed"]')).toHaveCount(0);
+		await chooser.getByRole('button', { name: 'Close', exact: true }).click();
+		const canvas = page.getByRole('application', { name: 'Single-line diagram', exact: true });
+		if (!(await canvas.isVisible()))
+			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+		await page.getByRole('button', { name: 'Substation detail and drawing', exact: true }).click();
+		const drawing = page.getByRole('region', { name: 'Engineering drawing' });
+		await expect(
+			drawing.getByRole('button', { name: 'disconnector DSC1 open', exact: true })
+		).toBeVisible();
+		await expect(
+			drawing.getByRole('button', { name: 'disconnector DSC1 closed', exact: true })
+		).toHaveCount(0);
+	});
+
 	test('dragging a mixed ZIP discovers both shared masters and keeps successful imports', async ({
 		page
 	}) => {

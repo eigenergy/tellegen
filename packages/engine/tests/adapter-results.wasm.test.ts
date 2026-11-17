@@ -221,11 +221,23 @@ it("validates detailed drawing output from the licensed CGMES fixture", () => {
   joined.set(files[0]); joined.set(files[1], files[0].length);
   const collection = wasm.CaseCollection.from_files("node-breaker", JSON.stringify(names), new Uint32Array([0, files[0].length, joined.length]), joined);
   try {
-    const imported = parseApiResult<{ payload: { topology: { equipment: NetworkEquipment } } }>("collection_import", collection.ingest(JSON.stringify({ members: names, format: "cgmes" })));
+    // Exercise the ZIP chooser's suggested selection, not a hand-assembled group.
+    const zip = collection.source_zip(JSON.stringify({ members: names, format: "cgmes" }), "selected");
+    const zipped = wasm.CaseCollection.from_zip("node-breaker.zip", zip);
+    let imported: { payload: { topology: { equipment: NetworkEquipment } } };
+    try {
+      const inspection = parseApiResult<{ candidates: { selection: { members: string[]; format: string } }[] }>("collection_inspection", zipped.inspect());
+      expect(inspection.candidates).toHaveLength(1);
+      expect(inspection.candidates[0].selection.members).toEqual(names);
+      expect(inspection.candidates[0].selection.format).toBe("cgmes");
+      imported = parseApiResult("collection_import", zipped.ingest(JSON.stringify(inspection.candidates[0].selection)));
+      expect(() => zipped.ingest(JSON.stringify({ primary: names[0], format: "cgmes" }))).toThrow("companion documents");
+    } finally { zipped.free(); }
     const equipment = imported.payload.topology.equipment;
     const drawing = equipment.node_breaker;
     expect(drawing?.nodes).toHaveLength(5);
     expect(drawing?.switches).toHaveLength(3);
+    expect(drawing?.switches.find(item => item.name === "DSC1")?.open).toBe(true);
     if (!drawing) throw new Error("Current engine omitted detailed drawing output");
     const network = { id: "station", name: "Station", base_mva: 100, synthetic_coords: true, buses: [], branches: [], equipment };
     validateApiResult("http_network", network);
