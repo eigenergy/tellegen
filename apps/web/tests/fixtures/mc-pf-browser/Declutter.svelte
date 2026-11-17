@@ -10,6 +10,6 @@
 	}: { projection: MapProjection; theme: MapTheme; declutter: boolean } = $props();
 </script>
 
-<TellegenProvider>
+<TellegenProvider apiBase="/api" loadDefaultCases={true}>
 	<Host {projection} {theme} {declutter} />
 </TellegenProvider>
