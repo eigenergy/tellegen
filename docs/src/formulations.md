@@ -290,7 +290,7 @@ These formulations compile to native Rust and WebAssembly.
 The opt-in `mc-opf` feature solves unbalanced AC OPF in current–voltage
 rectangular (IVR) coordinates, with explicit terminals and neutrals. It has
 separate native entry points over `McAcOpfInstance`; see the
-[solver decision](acopf-pounce-decision.md#experimental-native-multiconductor-ivr-opf)
+[solver decision](formulations.md#experimental-native-multiconductor-ivr-opf)
 for build commands and API availability.
 
 PowerIO owns canonical electrical semantics, source mappings, units, selected
@@ -504,8 +504,11 @@ instance without solving it. `solve()` uses the last accepted primal when
 available. `solve_cancellable(McOpfStart::Declared, cancel)` instead selects the
 instance's explicit initial point, or its ordinary cold start if absent.
 
-```rust
+```rust,no_run
+# extern crate tellegen;
+# extern crate powerio;
 use tellegen::{McOpfEdit, McOpfSession};
+# fn example(instance: powerio::McAcOpfInstance) -> Result<(), Box<dyn std::error::Error>> {
 
 // `instance` is the caller's declared McAcOpfInstance.
 let mut session = McOpfSession::new(instance, Default::default())?;
@@ -517,6 +520,8 @@ session.apply_edits(&[McOpfEdit::LoadPower {
 }])?;
 let accepted = session.solve()?;
 let json = accepted.result.to_module_json()?;
+# Ok(())
+# }
 ```
 
 Edits use canonical identities and equipment ordering. Supported fields are
@@ -642,7 +647,7 @@ Each row has a unique compiler ordinal, a descriptive label and any squared-norm
 normalization radius in working units. Ordinals identify rows within that compiled
 problem, not across revisions. Labels need not be unique and are never parsed
 to recover parameter identities. Omitted fixed equations and zero-reduced rows
-retain provenance; synthetic zero definitions are identified explicitly. Raw
+retain source information; synthetic zero definitions are identified explicitly. Raw
 row multipliers use `L = f + lambda*g`: lower-side multipliers are negative,
 upper-side multipliers positive, and equality multipliers unrestricted.
 They use compiled row units. **IVR KCL multipliers are not nodal energy prices.**

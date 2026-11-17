@@ -14,7 +14,7 @@ DC OPF instance becomes a case, while supported multiconductor networks,
 instances, and solutions open in the viewer. AC PF and AC OPF instance modules
 retain their declared calculation and original problem definition. AC PF is
 available in the ordinary browser build; AC OPF solving requires the
-[experimental worker](acopf-pounce-decision.md#experimental-browser-abi).
+[experimental worker](acopf-pounce-decision.md#browser).
 Without that worker, AC OPF instances can be viewed but cannot be solved.
 Transmission exchange JSON opens as a balanced case, and BMOPF or
 PowerModelsDistribution documents open the multiconductor viewer. The retired

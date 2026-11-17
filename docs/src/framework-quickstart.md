@@ -22,10 +22,7 @@ npm install @tellegen/engine
 For local development in this repository:
 
 ```sh
-npm ci
-npm run wasm
-npm run build:engine
-npm run build:svelte
+just dev-setup
 npm --workspace @tellegen/example-svelte-minimal run dev
 ```
 

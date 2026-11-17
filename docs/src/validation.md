@@ -6,7 +6,7 @@ reference: `DC ($/h)`, `AC ($/h)`, `QC Gap (%)`, and `SOC Gap (%)`. The
 [Methodology](methodology.md) chapter describes how the harness produces the
 comparison; this chapter records what each comparison asserts. The measured figures are in
 [benchmark results](benchmark-results.md), a committed snapshot of a full
-harness run with its provenance.
+harness run with its source information.
 
 ## DC objective
 
@@ -92,7 +92,7 @@ Regression coverage combines:
 - Complete result export/import across delta devices, neutral returns,
   transformer rating ports, mixed windings, shunts and optimized taps. Tests
   reconstruct KCL and complex power from public result identities, preserve
-  diagnostic/provenance records, and reject incomplete or mismatched reports.
+  diagnostic/source information records, and reject incomplete or mismatched reports.
 - Explicit initial-point identity/order and base conversion, partial and poor
   voltage starts, PF-to-OPF seeding, delta terminal power mapping, physical tap
   conventions, auxiliary consistency, and zero/singular equipment. Regressions
@@ -186,7 +186,7 @@ Regression coverage combines:
 
 `mc_opf_feeder` uses one authored four-bus feeder with a delta-wye transformer,
 two coupled four-wire lines, ZIP wye/delta loads and a controlled four-leg
-inverter. Its pinned BMOPFTools reference checks rectangular voltages, line
+inverter. Its recorded BMOPFTools reference checks rectangular voltages, line
 currents and P/Q, losses, dispatch and original inverter bounds. The test then
 checks a nominal-load sensitivity direction against centered solves, reuses one
 factorization for forward/adjoint queries, and compares a warm demand/availability/
@@ -262,10 +262,10 @@ python3 scripts/enwl_ivr_study.py --cases /path/to/selected-cases.json \
 The case list is a JSON array of BMOPF file paths. Existing `--case-root` ENWL
 selection and independent oracle comparison remain available. No dataset or
 Julia process is invoked by ordinary CI tests. Regenerate only the new feeder
-reference with `validation/mc-opf/mc_opf_oracle.jl feeder` in the pinned oracle environment.
+reference with `validation/mc-opf/mc_opf_oracle.jl feeder` in the recorded oracle environment.
 
 The inputs, reference JSON, attribution and license files in
-`crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
+`crates/tellegen/tests/data/mc_opf/` are regression assets. Their source information
 records input SHA-256 hashes, oracle revision, units and numerical tolerances;
 the component bundles also record Julia/JuMP/Ipopt versions and solver options.
 Ordinary Rust tests consume the frozen results without Julia, network access

@@ -1,4 +1,4 @@
-# Data Provenance
+# Data sources
 
 The demo cases are synthetic grids from TAMU ACTIVSg and CATS. They are
 fictional networks built on geographic footprints. ACTIVSg200 and ACTIVSg500
@@ -71,7 +71,7 @@ people or more with name, position, population and country, derived by
 `scripts/derive-populated-places.py`. Every place sizes and spreads demand; a
 transmission-only grid sites its buses on the places of 50,000 people or more,
 or on every place when a region has none that large. Generated buses are
-labelled with coordinate provenance `synthetic`. OpenStreetMap mode reads the
+labelled with coordinate source information `synthetic`. OpenStreetMap mode reads the
 Overpass answer the caller fetched and labels its buses `source`. Its
 electrical parameters and loads are modelled, so its buses and lines are
 mapped, not surveyed. See

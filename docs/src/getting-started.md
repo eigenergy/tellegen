@@ -1,95 +1,63 @@
-# Getting Started
+# Run the demo locally
 
-## Repository Layout
+## Requirements
 
-- `apps/web/`: private SvelteKit hosted demo
-- `crates/`: the tellegen engine and its wasm, server, CLI, and benchmark adapters
-- `packages/engine/`: public `@tellegen/engine` browser package
-- `packages/svelte/`: public `@tellegen/svelte` component package
-- `examples/browser-minimal/`: minimal downstream Vite example
-- `examples/svelte-minimal/`: minimal Svelte example using the component package
-- `scripts/`: data staging and docs build helpers
-- `deploy/`: deployment compose files and proxy notes
-- `docs/src/`: mdBook documentation source
+Install Rust using `rust-toolchain.toml`, Node.js 24, `just`, `wasm-pack`,
+and Python 3.11 or newer. The build needs the Rust targets
+`wasm32-unknown-unknown` and `wasm32-wasip1`.
 
-## Prerequisites
+## Build and run
 
-- Rust from `rust-toolchain.toml`, including `rustfmt`, `clippy`, and the
-  `wasm32-unknown-unknown` target
-- Node.js 22 or newer
-- `wasm-pack` 0.15.x for browser WebAssembly builds
-- mdBook 0.5.x for local documentation builds
-
-## tellegen backend
+From the repository root:
 
 ```sh
-cargo run -p tellegen-server
+just dev-setup
+just dev
 ```
 
-Set `TELLEGEN_ALLOW_FALLBACK=1` to run without staged demo data:
+`dev-setup` installs JavaScript dependencies and builds the browser engine,
+AC OPF module, and packages. Run it after pulling changes that affect those
+parts. `dev` starts the case server on port 8000 and the app at
+<http://localhost:5173>. Ctrl-C stops the server it started.
 
-```sh
-TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
-```
-
-## WebAssembly Module
-
-```sh
-npm ci
-npm run wasm
-npm run build:engine
-npm run build:svelte
-```
-
-## tellegen frontend demo
-
-```sh
-npm ci
-npm run wasm
-npm run build:engine
-npm run build:svelte
-npm --workspace tellegen-frontend run dev
-```
-
-The Vite dev server proxies `/api` to `http://localhost:8000`. `apps/web`
-resolves `@tellegen/svelte` through its built `dist/`, so `build:svelte` must
-run before the dev server starts.
-
-## Framework Packages
-
-Preview the package contents before publishing:
-
-```sh
-npm run pack:engine
-npm run pack:svelte
-```
-
-Use `@tellegen/svelte` for the map, panels, local file flow, and solve card. Use
-`@tellegen/engine` for apps that want case parsing and browser solves without
-the tellegen UI. The hosted app is a private demo workspace that consumes
-`@tellegen/svelte` like another Svelte app would.
-
-## Data
-
-The ACTIVSg and CATS distributions are downloaded by the operator and are not
-vendored. With the distributions under `~/Datasets`:
+Without staged data the server uses small example cases. To use the larger
+demo cases, download their distributions and run:
 
 ```sh
 scripts/stage-data.sh ~/Datasets
 ```
 
-The script stages any complete case pairs it finds into `data/`. The backend
-serves the staged subset; if nothing is staged, it exits unless
-`TELLEGEN_ALLOW_FALLBACK=1` is set. That fallback serves two pglib cases with
-synthetic coordinates for CI and local smoke checks.
+The source distributions are not included in this repository. See
+[data sources](data-sources.md) for their origins and limitations.
 
-## Docs
+## Repository folders
 
-Install mdBook, then build the public docs:
+| Folder | Purpose |
+| --- | --- |
+| `crates/` | Rust engine, adapters and numerical benchmarks |
+| `packages/` | Published browser engine, Svelte components, agent tools and analytics |
+| `apps/web/` | Hosted demo using those packages |
+| `examples/` | Small applications showing how to use the packages |
+| `scripts/` | Build, release and data preparation commands |
+| `validation/` | Numerical comparisons, measurements and their inputs |
+| `.changeset/` | Pending release notes for JavaScript packages |
+| `deploy/` | Server deployment files |
+| `docs/` | This book and its assets |
+
+`examples/` contains applications; `scripts/` contains repository commands.
+Keep them separate so examples remain usable by package consumers.
+
+## Check changes
+
+Run `just ci` for the repository checks. See
+[contributing](https://github.com/eigenergy/tellegen/blob/main/CONTRIBUTING.md)
+for the PR rules and [releases](release-architecture.md) for publishing.
+
+To build the book, install mdBook 0.5.3 and run:
 
 ```sh
 scripts/build-docs.sh
 ```
 
-CI pins mdBook to `v0.5.3`. For local work, any recent mdBook `0.5.x` release
-renders the book.
+For a new application rather than this demo, use the
+[package quickstart](framework-quickstart.md).

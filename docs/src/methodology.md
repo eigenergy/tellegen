@@ -56,7 +56,7 @@ The harness records the source revision, toolchain, dependency versions, host,
 and invocation used for each run. It writes `results.json` (one record per
 `(case, variant)`) and `results.csv`. With its book flag it also writes the
 markdown snapshot to `docs/src/benchmark-results.md`. The repository keeps that
-generated snapshot, and a rerun can be compared with its recorded provenance:
+generated snapshot, and a rerun can be compared with its recorded source information:
 
 ```sh
 cargo run -p benchmarks --release -- [flags]

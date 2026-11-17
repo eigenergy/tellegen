@@ -342,7 +342,7 @@ bus voltage by varying Q within stated min/max limits or a piecewise-linear
 capability curve evaluated at the solved Pac. Positive Q is AC absorption.
 These are PowerIO's **detailed** `VoltageSourceConverter` records. The IIDM
 `VscConverterStation` reduced-HVDC model has a different setpoint convention and
-must not be used to infer a sign flip for this record. The pinned PowerIO reader
+must not be used to infer a sign flip for this record. The PowerIO reader version used here
 preserves detailed XIIDM setpoints and curves, and CGMES `targetQpcc` and
 `VsCapabilityCurve`; Tellegen evaluates P coordinates and Q bounds consistently
 in PCC withdrawal convention. See the [detailed IIDM converter API](https://powsybl.readthedocs.io/projects/pypowsybl/en/latest/reference/api/pypowsybl.network.Network.get_voltage_source_converters.html).

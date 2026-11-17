@@ -14,6 +14,8 @@ on:
       - docs/theme/**
       - docs/assets/**
       - scripts/build-docs.sh
+      - scripts/check-doc-links.py
+      - scripts/test-check-doc-links.py
       - .github/workflows/docs-pages.yml
   workflow_dispatch:
 
@@ -49,8 +51,14 @@ jobs:
           echo "${MDBOOK_SHA256}  $RUNNER_TEMP/mdbook.tar.gz" | sha256sum -c -
           tar -xz --directory "$RUNNER_TEMP/mdbook" -f "$RUNNER_TEMP/mdbook.tar.gz"
           echo "$RUNNER_TEMP/mdbook" >> "$GITHUB_PATH"
+      - name: Test link checker
+        run: python3 scripts/test-check-doc-links.py
       - name: Build docs
         run: scripts/build-docs.sh
+      - name: Build libraries for Rust examples
+        run: cargo build -p tellegen --features acopf,mc-opf
+      - name: Test Rust examples
+        run: mdbook test -L target/debug/deps
       - name: Configure Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

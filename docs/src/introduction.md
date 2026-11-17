@@ -1,55 +1,30 @@
-<p class="hero-image">
-  <img src="assets/hero.svg" alt="tellegen reactive power flow visualization" />
-</p>
+# Tellegen
 
-# Introduction
+Tellegen is a framework for power-system applications. It provides a Rust
+numerical engine, browser packages, and Svelte components. The hosted
+[demo](https://tellegen.dev) is one application built with those packages.
 
-tellegen is a reactive visualization interface for power flow cases. The name
-refers to Tellegen's theorem and the adjoint sensitivity calculations.
+Use the demo to open a case, choose a calculation, inspect results, and change
+loads or equipment settings. Supported calculations depend on the imported
+model. A parsed file is not necessarily ready to solve; the app explains
+unsupported models and missing data.
 
-The app uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact solves (DC OPF, AC power
-flow, and the SOCWR relaxation) run in the browser in WebAssembly. Case parsing uses
-[powerio](https://github.com/eigenergy/powerio).
+## Start here
 
-## Demo
+- [Run the demo locally](getting-started.md).
+- [Build an application](framework-quickstart.md) with the viewer or engine.
+- [Load your files](local-case-files.md), including [ZIPs and folders](collection-import.md).
+- [Choose a calculation](formulations.md) and read its assumptions.
+- [Connect an agent](webmcp.md) to the browser, or use the [Python MCP server](mcp.md).
 
-The public demo at [tellegen.dev](https://tellegen.dev) serves three TAMU
-ACTIVSg synthetic grids and the CATS
-California Test System at their staged geographic coordinates. These are
-synthetic grids on geographic footprints, not surveyed infrastructure:
+Browser calculations run in WebAssembly. Local case files stay in the browser
+unless the host application explicitly sends them elsewhere. The demo server
+provides bundled cases; applications using local files do not need it.
 
-| case | territory | buses | branches |
-| --- | --- | ---: | ---: |
-| ACTIVSg200 | central Illinois | 200 | 245 |
-| ACTIVSg500 | South Carolina | 500 | 597 |
-| ACTIVSg7000 | Texas | 6717 | 9140 |
-| CATS | California | 8870 | 10823 |
+Sensitivity previews estimate nearby changes. Committing an edit runs the
+calculation again. A preview is not a replacement for checking the new solution.
 
-Each case solves as DC OPF by default; a selector switches to the SOCWR relaxation,
-solved in the browser in WebAssembly. Bus color shows locational marginal price. Selecting a bus shows the dLMP/dd column for a
-demand perturbation at that bus. Moving the demand slider applies the local
-sensitivity immediately; releasing it computes the exact solution in WebAssembly.
-
-## Local Files
-
-Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
-WebAssembly build of powerio. Files with coordinates render on the map. Files
-without coordinates can be placed by clicking the map, or paired with local
-geographic files in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
-`.pwd` file is decoded as display data and rendered as approximate substation
-positions. Parsed local case files solve in the browser and are not uploaded.
-
-## API
-
-- `GET /api/health`
-- `GET /api/cases`
-- `GET /api/cases/{id}/case`
-- `GET /api/cases/{id}/network`
-- `GET /api/cases/{id}/solution`
-- `GET /api/cases/{id}/sensitivity/lmp/d/{bus}`
-- `GET /api/cases/{id}/solve`
-
-The sensitivity and solve endpoints accept `?d=bus:mw,bus:mw`, where each value
-is a MW delta from the base case. The solve stream emits `status`, `solution`,
-optional `sensitivity`, and `done` events.
+For package APIs, see the [engine reference](engine-api.md),
+[Svelte components](frontend-package.md), [Python](python.md), and
+[HTTP server](http-api.md). The [architecture](architecture.md) explains which
+parts belong to the framework and which belong to the demo.

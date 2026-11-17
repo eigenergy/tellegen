@@ -167,7 +167,7 @@ engine packages. The manifest records the reactor ABI, engine version, full
 source revision, source archive and POUNCE crate checksums. This preserves the
 license and corresponding-source information distributed with the website.
 
-Consumers pin a release URL and reactor hash, rather than the changing demo
+Consumers specify a release URL and file checksum, rather than the changing demo
 URL. The publisher never replaces existing release assets: a retry verifies
 identical bytes and uploads only missing files. A source or toolchain change
 needs a new release. To backfill an existing stable tag, dispatch
@@ -221,7 +221,7 @@ release skips build verification because those unprivileged gates have already
 verified the package against that exact commit. release-plz obtains its
 short-lived crates.io credential directly from OIDC.
 
-While the workspace resolves PowerIO from a temporary git pin (a
+While the workspace resolves PowerIO from a temporary Git dependency (a
 `[patch.crates-io]` section, used only until a PowerIO release reaches
 crates.io), this packaging check fails, because packaging ignores `[patch]`;
 that keeps the crate from publishing ahead of its PowerIO dependency. The

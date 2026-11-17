@@ -393,7 +393,7 @@ session.free();
   GeoNames and the dump's SHA-256, and the report repeats both
   (`provenance.places`). Grids built from it carry GeoNames' attribution. A
   host may load its own bare array of `{n, lo, la, p, c}` rows instead; its
-  provenance then names no source. The national demand table is compiled
+  source information then names no source. The national demand table is compiled
   into the module.
 - **Types.** Request and report types are generated from Rust under
   `@tellegen/engine/synth`.

@@ -39,7 +39,7 @@ dual/sensitivity contract, or distribution approval. A separate unpublished
 WASI adapter and one-shot worker expose the canonical base-case solve for
 development and CI; ordinary browser builds do not contain its POUNCE asset.
 
-The formulations share one result envelope, but they do not claim the same
+The formulations share one result structure, but they do not claim the same
 quantities. DC power flow returns angles and branch flows without prices,
 optimized dispatch, or sensitivities. DC OPF adds dispatch, objective value,
 LMPs, and KKT sensitivities. AC power flow returns voltages and nodal
@@ -54,7 +54,7 @@ natively and in the browser. The convex solves use Clarabel; the sensitivities
 use faer. The exact AC OPF backend runs in opt-in native builds and in the
 separately built experimental WASI worker.
 Turning it into a shipping native product remains on the
-[desktop and mobile roadmap](tauri-roadmap.md); browser support uses a
+[desktop and mobile roadmap](architecture.md); browser support uses a
 separate WASI worker because the ordinary browser solver build is single
 threaded and uses `wasm32-unknown-unknown`.
 

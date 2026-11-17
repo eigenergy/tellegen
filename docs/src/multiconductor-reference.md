@@ -258,7 +258,7 @@ The full result also includes `load_model_changes`: load/bus/branch identities,
 branch voltage in pu, actual absorbed power, and original-law power at the same
 voltage (W + j var, or null if undefined). A modified result remains inspectable
 and saveable. Its warning persists in Studies, the network inspector, diagram
-provenance and CSV exports. Numerical convergence alone never establishes an
+source information and CSV exports. Numerical convergence alone never establishes an
 original-model solution. Legacy results without an assessment are unverified.
 
 Constant-impedance and zero-power branches are not marked modified merely
@@ -308,7 +308,7 @@ and absent from solved totals. Missing results are not synthesized as zero.
 Full results carry `network_scope` and `excluded_islands`; compact session summaries
 carry only scope counts. Saved Study JSON retains the full input and all exclusions.
 A canonical PowerIO solution, when available, covers the selected network and
-carries the exclusion record in its module extension. CSV provenance carries both
+carries the exclusion record in its module extension. CSV source information carries both
 network scope and load-model qualification. Replay checks exclusions against the
 full input topology and checks the result against the selected instance. Load
 edits update only the solved network's loads in the retained full input.

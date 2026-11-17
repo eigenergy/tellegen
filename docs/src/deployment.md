@@ -135,7 +135,7 @@ Local website builds require `npm run wasm:acopf` before `npm run build:web`
 or the Vite development server. `PUBLIC_TELLEGEN_ACOPF_WASM_URL` can override
 the bundled solver URL; an unset or empty value uses the bundled asset.
 Public distribution still requires the release review recorded in
-[the POUNCE decision](acopf-pounce-decision.md#remaining-release-gates).
+[the POUNCE decision](release-architecture.md#separate-ac-opf-download).
 
 The compute endpoints (`/api/cases/{id}/solve` over SSE and the
 `/api/cases/{id}/sensitivity/...` routes) ship disabled and answer 403
@@ -241,7 +241,7 @@ Required repository secrets:
 - `TELLEGEN_DEPLOY_SSH_KEY`
 - `TELLEGEN_DEPLOY_PATH`, for example `/opt/tellegen`
 - `TELLEGEN_DEMO_URL`, for example `https://tellegen.dev`
-- `TELLEGEN_DEPLOY_KNOWN_HOSTS`: the pinned SSH host key for the deploy host,
+- `TELLEGEN_DEPLOY_KNOWN_HOSTS`: the recorded SSH host key for the deploy host,
   the verified output of `ssh-keyscan -H <host>` or an equivalent known hosts
   entry. The workflow refuses to deploy without this secret.
 
@@ -385,7 +385,7 @@ The intended public example is `texas7k-p1uhs0_1247`, the main energized island
 of the six-feeder substation associated with Texas7k. It contains 22,076 modeled
 buses and all 15,299 loads. Two original unsupplied line sections (five buses,
 three lines) are removed; retained electrical values and coordinates are
-unchanged. The prepared source and notices are checksum-pinned in
+unchanged. The prepared source and notices are checked against recorded checksums in
 `scripts/datasets/texas7k-main-island-source.json`.
 
 Reproduce the PowerIO 0.11.7 conversion and extraction using
@@ -402,14 +402,14 @@ Alternatively set `TELLEGEN_TEXAS7K_MAIN_ISLAND=/path/to/prepared-main-island`
 when invoking `scripts/stage-data.sh`. Staging verifies all prepared input
 checksums, reduces duplicate representation, converts to portable PowerIO, and
 compares original/reduced geometry and complete WASM PF results. Source labels
-remain in a provenance sidecar. The reduction removes no further equipment and
+remain in a source information sidecar. The reduction removes no further equipment and
 rounds no electrical values. It requires Python 3 and Node and does not download
 data. The historical full-pilot path remains available through
 `TELLEGEN_BMOPF_REPO` and is used only when no main-island path is supplied.
 
 The script preserves other distribution entries and atomically registers an
 immutable bundle under `data/distribution/`. Each bundle contains license and
-source notices, reduction provenance, solver options, source revision/checksums,
+source notices, reduction source information, solver options, source revision/checksums,
 and validation evidence. The case appears in the demo once the complete bundle
 and `distribution-cases.json` are staged under the deployment data directory and
 readable by the container user (uid 10001); restart the server after staging.
@@ -453,7 +453,7 @@ TELLEGEN_TEXAS7K=1 npm run test:browser -- texas7k-distribution.spec.ts --worker
 The test checks actual API metadata, geography, UI/WebMCP solves, study round-trip
 options/results, and a load edit. It writes timing, transfer-size and screenshot
 artifacts. Routine browser CI uses small fixtures; run this full-data check
-before changing the pinned source, converter, solver or demo bundle.
+before changing the recorded source, converter, solver or demo bundle.
 
 The historical full-pilot desktop acceptance run loaded in 5.34 s and solved in 1.78 s over
 loopback. Combined Chromium RSS was about 1.65 GB after solving and 4.80 GB after
