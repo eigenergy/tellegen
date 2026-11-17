@@ -1,10 +1,10 @@
 {
   "buses": 1000,
   "topology": "radial",
-  "renderMs": 245,
-  "selectionMs": 45,
-  "editMs": 81,
-  "layoutMs": 105,
-  "resultMs": 86,
-  "exportMs": 47
+  "renderMs": 352,
+  "selectionMs": 57,
+  "editMs": 100,
+  "layoutMs": 146,
+  "resultMs": 94,
+  "exportMs": 55
 }

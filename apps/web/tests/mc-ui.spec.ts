@@ -61,12 +61,23 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		timeout: 60_000
 	});
 	await expect(
-		page.getByRole('application', { name: 'Network diagram', exact: true })
+		page.getByRole('application', { name: 'Single-line diagram', exact: true })
 	).toBeVisible();
 	await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
-	await expect(page.locator('[data-bus-id="0"] circle')).toHaveAttribute('cx', /1000|1100/);
-	const path = page.locator('[data-branch-id="0"]');
-	expect((await path.getAttribute('d'))?.split(' L')).toHaveLength(3);
+	await page.getByRole('button', { name: 'Edit engineering drawing', exact: true }).click();
+	const drawingDownload = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export drawing', exact: true }).click();
+	const drawingFile = await (await drawingDownload).path();
+	const drawing = JSON.parse(await readFile(drawingFile!, 'utf8'));
+	expect(drawing.objects.find((object: { label: string }) => object.label === 'src').x).toBe(100);
+	expect(
+		drawing.connections.find((connection: { branch?: number }) => connection.branch === 0).bends
+	).toHaveLength(1);
+	await expect(page.getByLabel('Show active power and arrows')).toBeDisabled();
+	await expect(
+		page.getByText(/Conductor voltages, currents and powers remain available/)
+	).toBeVisible();
+	await page.getByRole('button', { name: 'Close drawing editor', exact: true }).click();
 	await page.getByRole('button', { name: 'Run power flow', exact: true }).click();
 	await expect(
 		page
@@ -122,9 +133,9 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		mimeType: 'application/json',
 		buffer: Buffer.from(coordinates('geographic'))
 	});
-	await expect(page.getByRole('application', { name: 'Network diagram', exact: true })).toHaveCount(
-		0
-	);
+	await expect(
+		page.getByRole('application', { name: 'Single-line diagram', exact: true })
+	).toHaveCount(0);
 	await expect.poll(() => table.innerText()).toBe(before);
 	// A clean match raises no notice; the Log keeps the note.
 	const tabs = page.locator('.panel-toolbar');
@@ -168,7 +179,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		await expect.poll(() => resultTable.innerText()).toBe(before);
 		await expect(imported.getByRole('button', { name: 'Save result', exact: true })).toBeDisabled();
 		await expect(
-			imported.getByRole('application', { name: 'Network diagram', exact: true })
+			imported.getByRole('application', { name: 'Single-line diagram', exact: true })
 		).toHaveCount(0);
 		await imported
 			.getByText('Import', { exact: true })

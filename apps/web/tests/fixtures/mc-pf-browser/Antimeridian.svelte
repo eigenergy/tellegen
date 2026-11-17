@@ -6,6 +6,6 @@
 	let { projection }: { projection: MapProjection } = $props();
 </script>
 
-<TellegenProvider>
+<TellegenProvider apiBase="/api" loadDefaultCases={true}>
 	<Host {projection} />
 </TellegenProvider>

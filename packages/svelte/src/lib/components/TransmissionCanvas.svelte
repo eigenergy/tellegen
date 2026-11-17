@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { DistGraph } from '@tellegen/engine';
 	import EngineeringDrawing from './EngineeringDrawing.svelte';
 	import { networkWithDrawingGeometry } from '../diagram/drawing.js';
 	let editingDrawing = $state(false);
@@ -136,6 +137,7 @@
 
 	let {
 		network,
+		distributionGraph,
 		solution = null,
 		caseId,
 		label,
@@ -147,6 +149,7 @@
 		basemap: basemapSpec = DEFAULT_BASEMAP
 	}: {
 		network: Network;
+		distributionGraph?: DistGraph;
 		solution?: Solution | null;
 		caseId: string;
 		label: string;
@@ -816,6 +819,9 @@
 	const maxZoom = $derived(maxZoomFor(geometry.bounds));
 	const fitAll = () => fitBounds(geometry.bounds, { width, height }, freeArea(), maxZoom);
 
+	const initialDrawingCamera = untrack(() =>
+		app.diagramCamera?.caseId === caseId ? app.diagramCamera : null
+	);
 	const drawingOrigin = $derived.by((): [number, number] => {
 		const n = Math.max(1, network.buses.length);
 		return [
@@ -824,14 +830,14 @@
 		];
 	});
 	$effect(() => {
-		if (geographic || layout !== 'source') return;
+		if (!deck || geographic || layout !== 'source') return;
 		app.diagramCamera = {
 			caseId,
 			center: [camera.target[0] + drawingOrigin[0], camera.target[1] + drawingOrigin[1]],
 			scale: 2 ** camera.zoom
 		};
 	});
-	let restoredDrawingCamera = -1;
+	let restoredDrawingCamera = untrack(() => (initialDrawingCamera ? app.diagramCameraSeq : -1));
 	$effect(() => {
 		const seq = app.diagramCameraSeq;
 		const saved = app.diagramCameraRequest;
@@ -1227,9 +1233,22 @@
 					geometry.mercatorOrigin && app.camera
 						? cameraFromMap(app.camera, geometry.mercatorOrigin)
 						: null;
-				camera = openingCamera(fromMap, fitAll(), (c) =>
-					showsAnyPosition(geometry.positions, c, { width, height }, freeArea())
-				);
+				const fromDrawing =
+					!geographic && initialDrawingCamera
+						? {
+								target: [
+									initialDrawingCamera.center[0] - drawingOrigin[0],
+									initialDrawingCamera.center[1] - drawingOrigin[1],
+									0
+								] as [number, number, number],
+								zoom: Math.log2(initialDrawingCamera.scale)
+							}
+						: null;
+				camera =
+					fromDrawing ??
+					openingCamera(fromMap, fitAll(), (c) =>
+						showsAnyPosition(geometry.positions, c, { width, height }, freeArea())
+					);
 				deck = new core.Deck({
 					canvas: element,
 					width: '100%',
@@ -1494,7 +1513,7 @@
 	});
 
 	// Frame requests (Fit case, search results) aimed at this case.
-	let handledFrame = -1;
+	let handledFrame = untrack(() => (initialDrawingCamera ? app.frameSeq : -1));
 	$effect(() => {
 		const seq = app.frameSeq;
 		if (!deck || seq === handledFrame) return;
@@ -1831,6 +1850,8 @@
 		class="canvas"
 		role="application"
 		aria-label="Single-line diagram"
+		data-diagram-camera={JSON.stringify(camera)}
+		data-renderer-ready={!!deck}
 		aria-describedby="tx-keys"
 		tabindex="0"
 		{onkeydown}
@@ -2192,6 +2213,7 @@
 </div>
 
 {#if editingDrawing}<EngineeringDrawing
+		{distributionGraph}
 		network={networkWithDrawingGeometry(network, geometry)}
 		{solution}
 		{label}

@@ -7,6 +7,7 @@ export type DrawingKind =
 	| 'node'
 	| 'breaker'
 	| 'disconnector'
+	| 'switch'
 	| 'transformer'
 	| 'load'
 	| 'generator'
@@ -171,14 +172,25 @@ const connection = (
 function detailedObjects(
 	data: NodeBreakerDrawing
 ): Pick<DrawingDocument, 'objects' | 'connections'> {
-	const levels = [...new Set(data.nodes.map((n) => n.voltage_level))];
-	const objects = data.nodes.map((n, i) =>
-		object(n.id, 'node', n.name, 100 + (i % 6) * 160, 100 + levels.indexOf(n.voltage_level) * 260, {
-			bus: n.bus ?? undefined,
-			station: n.station ?? undefined,
-			group: n.container ?? n.voltage_level
-		})
-	);
+	const levelRows = new Map<string, typeof data.nodes>();
+	for (const node of data.nodes) {
+		const nodes = levelRows.get(node.voltage_level) ?? [];
+		nodes.push(node);
+		levelRows.set(node.voltage_level, nodes);
+	}
+	const objects: DrawingObject[] = [];
+	let row = 0;
+	for (const nodes of levelRows.values()) {
+		for (const [i, n] of nodes.entries())
+			objects.push(
+				object(n.id, 'node', n.name, 100 + (i % 6) * 180, 100 + (row + Math.floor(i / 6)) * 360, {
+					bus: n.bus ?? undefined,
+					station: n.station ?? undefined,
+					group: n.container ?? n.voltage_level
+				})
+			);
+		row += Math.ceil(nodes.length / 6);
+	}
 	const byId = new Map(objects.map((o) => [o.id, o]));
 	const connections: DrawingConnection[] = [];
 	for (const b of data.busbars) {
@@ -200,7 +212,7 @@ function detailedObjects(
 		objects.push(
 			object(
 				s.id,
-				s.kind === 'disconnector' ? 'disconnector' : 'breaker',
+				s.kind === 'disconnector' ? 'disconnector' : s.kind === 'breaker' ? 'breaker' : 'switch',
 				s.name,
 				(a.x + b.x) / 2,
 				(a.y + b.y) / 2 + 45,
@@ -246,7 +258,7 @@ function detailedObjects(
 				kind,
 				first.name,
 				locations.reduce((sum, n) => sum + n.x, 0) / locations.length,
-				Math.max(...locations.map((n) => n.y)) + 120,
+				locations.reduce((highest, n) => Math.max(highest, n.y), -Infinity) + 120,
 				{ ports, group: locations[0].group, station: locations[0].station }
 			)
 		);
@@ -375,9 +387,10 @@ export function createDrawing(
 				);
 			}
 		}
+		const routes = new Map(connections.map((c) => [c.branch, c.bends]));
 		connections = [];
 		const transformers = new Set<string>();
-		for (const edge of distribution.edges) {
+		for (const [edgeIndex, edge] of distribution.edges.entries()) {
 			const a = buses.get(edge.from.toLowerCase()),
 				b = buses.get(edge.to.toLowerCase());
 			if (!a || !b) continue;
@@ -412,6 +425,8 @@ export function createDrawing(
 							a.id,
 							b.id,
 							{
+								branch: edgeIndex,
+								bends: (routes.get(edgeIndex) ?? []).map((p) => [...p] as DrawingPoint),
 								fromPort: from,
 								toPort: to,
 								connected: edge.closed,
@@ -564,6 +579,7 @@ export function parseDrawing(text: string, network: string): DrawingDocument {
 				'node',
 				'breaker',
 				'disconnector',
+				'switch',
 				'transformer',
 				'load',
 				'generator',
@@ -707,6 +723,47 @@ export function arrangeDrawing(document: DrawingDocument): void {
 		}
 		componentRow += height + 1;
 	}
+}
+
+/** Bounds include rotated symbols, ports, label offsets and every routed connection. */
+export function drawingBounds(
+	document: DrawingDocument,
+	solution: Solution | null = null
+): [number, number, number, number] {
+	let left = Infinity,
+		top = Infinity,
+		right = -Infinity,
+		bottom = -Infinity;
+	const include = (x: number, y: number) => {
+		left = Math.min(left, x);
+		top = Math.min(top, y);
+		right = Math.max(right, x);
+		bottom = Math.max(bottom, y);
+	};
+	for (const o of document.objects) {
+		const angle = (o.rotation * Math.PI) / 180,
+			cos = Math.cos(angle),
+			sin = Math.sin(angle);
+		const point = (x: number, y: number) =>
+			include(o.x + x * cos - y * sin, o.y + x * sin + y * cos);
+		const width = Math.max(40, o.width),
+			height = Math.max(40, o.height);
+		for (const x of [-width / 2, width / 2]) for (const y of [-height / 2, height / 2]) point(x, y);
+		for (const p of o.ports) point(p.x, p.y);
+		// A full font-size per character safely covers the variable-width rendered label.
+		const halfLabel = (Array.from(drawingLabel(o, solution)).length * 13) / 2;
+		for (const x of [-halfLabel, halfLabel])
+			for (const y of [-16, 4]) point(o.labelOffset[0] + x, o.labelOffset[1] + y);
+	}
+	for (const path of drawingPaths(document)) for (const p of path.points) include(p[0], p[1]);
+	if (!Number.isFinite(left)) return [0, 0, 800, 500];
+	const margin = 100;
+	return [
+		left - margin,
+		top - margin,
+		Math.max(100, right - left) + margin * 2,
+		Math.max(100, bottom - top) + margin * 2
+	];
 }
 
 const storageKey = (network: string) => `tellegen.drawings.v1:${network}`;

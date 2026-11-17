@@ -1820,6 +1820,7 @@
 	{#key diagramNetwork}
 		<TransmissionCanvas
 			network={diagramNetwork}
+			distributionGraph={diagramMulti?.graph ?? undefined}
 			caseId={diagramCaseId}
 			label={app.studyView?.label ??
 				(diagramCase && ('label' in diagramCase ? diagramCase.label : diagramCase.name)) ??
