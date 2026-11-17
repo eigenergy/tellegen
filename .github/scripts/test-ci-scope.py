@@ -88,6 +88,9 @@ CASES = {
         ["python/tellegen/__init__.py", "python/tests/test_tellegen.py"],
         gates("python", "macos"),
     ),
+    "shared generated schema": (
+        ["python/tellegen/mcp/_engine_schema.json"], gates("js", "python", "macos", "image"),
+    ),
     "python lint config": (["ruff.toml"], gates("python")),
     "binding crate": (["crates/tellegen-py/src/lib.rs"], gates("rust", "python", "macos")),
     "engine crate": (["crates/tellegen/src/lib.rs"], gates(*CI)),
