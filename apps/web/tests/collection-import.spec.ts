@@ -11,34 +11,32 @@ test.beforeEach(async ({ page }) => {
 	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
 });
 
-const collectionsEnabled = (process.env.TELLEGEN_POWERIO_FEATURES ?? '')
-	.split(',')
-	.includes('powerio-collections');
-
-test('the baseline build hides collection controls and explains unsupported ZIP imports', async ({
-	page
-}) => {
-	test.skip(collectionsEnabled, 'The candidate build enables collections');
-	await expect(page.getByRole('button', { name: 'Open folder' })).toHaveCount(0);
-	await page.locator('input[type="file"]').setInputFiles({
-		name: 'study.zip',
-		mimeType: 'application/zip',
-		buffer: storedZip({ 'case.m': comparison })
-	});
-	const notices = page.getByRole('region', { name: 'Notifications' });
-	await expect(notices.getByText('Imports unavailable', { exact: true })).toBeVisible();
-	// Details opens the latest message with its full text at once.
-	await notices.getByRole('button', { name: 'Details', exact: true }).click();
-	await expect(
-		page.getByText(
-			'ZIP and folder imports are unavailable in this build. Open a single case file instead.'
-		)
-	).toBeVisible();
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-});
-
 test.describe('PowerIO collection build', () => {
-	test.skip(!collectionsEnabled, 'Requires the optional PowerIO collection build');
+	test('opens an inner ZIP explicitly and imports its case independently', async ({ page }) => {
+		await page.locator('input[type="file"]').setInputFiles({
+			name: 'outer.zip',
+			mimeType: 'application/zip',
+			buffer: storedZip({
+				'inner.zip': storedZip({ 'nested.m': comparison }),
+				'parent.m': comparison
+			})
+		});
+		const dialog = page.getByRole('dialog', { name: 'Choose cases from collection' });
+		await dialog
+			.getByRole('button', { name: 'Open ZIP: 1. outer.zip / inner.zip', exact: true })
+			.click();
+		await expect(
+			dialog.getByRole('checkbox', { name: '1. outer.zip / inner.zip / nested.m', exact: true })
+		).toBeVisible();
+		await dialog
+			.getByRole('checkbox', { name: '1. outer.zip / inner.zip / nested.m', exact: true })
+			.check();
+		await dialog.getByRole('checkbox', { name: '1. outer.zip / parent.m', exact: true }).check();
+		await dialog.getByRole('button', { name: 'Import selected cases' }).click();
+		await expect(dialog.getByRole('status')).toHaveText('Done');
+		await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(2);
+		await expect(dialog.locator('[data-outcome="failed"]')).toHaveCount(0);
+	});
 
 	test('dragging a mixed ZIP discovers both shared masters and keeps successful imports', async ({
 		page
@@ -85,11 +83,12 @@ test.describe('PowerIO collection build', () => {
 		expect(source.includes(Buffer.from(comparison))).toBe(true);
 		expect(source.includes(Buffer.from(day))).toBe(false);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+		await openCaseMenu(page);
 		await expect(
-			page.getByRole('button', { name: /study.zip \/ masters\/day.dss Distribution/ })
+			page.locator('#tellegen-case-list').getByRole('button', { name: /study.zip \/ masters\/day.dss Distribution/ })
 		).toBeVisible();
 		await expect(
-			page.getByRole('button', { name: /study.zip \/ masters\/night.dss Distribution/ })
+			page.locator('#tellegen-case-list').getByRole('button', { name: /study.zip \/ masters\/night.dss Distribution/ })
 		).toBeVisible();
 	});
 
@@ -146,6 +145,7 @@ test.describe('PowerIO collection build', () => {
 		await expect(dialog.locator('[data-outcome="incomplete"]')).toHaveCount(1);
 		await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+		await openCaseMenu(page);
 		await expect(page.locator('.case-chip.local')).toHaveCount(2);
 	});
 
@@ -167,6 +167,7 @@ test.describe('PowerIO collection build', () => {
 		await dialog.getByRole('button', { name: 'Import selected cases' }).click();
 		await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+		await openCaseMenu(page);
 		await expect(page.locator('.case-chip.local')).toHaveCount(1);
 	});
 
@@ -182,6 +183,7 @@ test.describe('PowerIO collection build', () => {
 		const dialog = page.getByRole('dialog');
 		await expect(dialog.locator('.candidate')).toHaveCount(1);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+		await openCaseMenu(page);
 		await expect(page.locator('.case-chip.local')).toHaveCount(0);
 		await page.locator('input[type="file"]').setInputFiles(file);
 		await expect(dialog.locator('.candidate')).toHaveCount(1);
@@ -225,6 +227,7 @@ test.describe('PowerIO collection build', () => {
 		).toContainText('generator or IBR injections');
 		await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 		await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+		await openCaseMenu(page);
 		await page.getByRole('button', { name: /snapshots.zip \/ four-wire.dss Distribution/ }).click();
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
 		const study = page.getByRole('region', { name: 'Study workspace' });
@@ -251,6 +254,7 @@ test.describe('PowerIO collection build', () => {
 		for (const width of [1280, 390]) {
 			await page.setViewportSize({ width, height: 800 });
 			for (const name of ['case-00.m', 'case-19.m', 'case-00.m']) {
+				await openCaseMenu(page);
 				await page.getByRole('button', { name: new RegExp(`${name} Local`) }).click();
 				await expect(page.locator('.case-chip.active .cname')).toContainText(name);
 			}
