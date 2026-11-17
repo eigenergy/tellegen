@@ -147,8 +147,9 @@ WebAssembly. The calculation selector offers DC OPF (the default), AC power
 flow, SOCWR, and experimental nonlinear AC OPF for balanced transmission cases.
 The website bundles the separate POUNCE WASI solver and enables AC OPF after
 its browser capability probe succeeds. AC OPF currently solves the unedited
-base case; demand/rating edits, LMPs, sensitivities, and saving/exporting AC OPF
-results are not supported.
+base case. It returns nodal prices and supports sensitivity requests through
+the engine API. Demand/rating edits and saving/exporting AC OPF results are
+not supported.
 
 Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, and recognized JSON cases
 parse in the browser and never upload. Files with coordinates render in place;
