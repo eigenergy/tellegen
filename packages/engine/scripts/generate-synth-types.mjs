@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const generatedDir = join(root, "packages/engine/src/generated");
 const schema = JSON.parse(readFileSync(join(generatedDir, "synth.schema.json"), "utf8"));
-const sources = ["request.rs", "report.rs", "error.rs"];
+const sources = ["request.rs", "report.rs", "error.rs", "synchronous.rs"];
 const hash = createHash("sha256");
 for (const source of sources) hash.update(readFileSync(join(root, "crates/tellegen-synth/src", source)));
 if (hash.digest("hex") !== schema["x-rust-source-sha256"]) {

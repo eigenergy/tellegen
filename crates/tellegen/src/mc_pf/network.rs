@@ -468,10 +468,7 @@ impl PreparedNetwork {
         for (u, &i) in unknown.iter().enumerate() {
             position[i] = u;
         }
-        let mut triplets_by_global = BTreeMap::<(usize, usize), Complex64>::new();
-        for (&key, &value) in &passive.values {
-            *triplets_by_global.entry(key).or_default() += value;
-        }
+        let mut triplets_by_global = passive.values.clone();
         for (&key, &value) in &yref.values {
             *triplets_by_global.entry(key).or_default() += value;
         }

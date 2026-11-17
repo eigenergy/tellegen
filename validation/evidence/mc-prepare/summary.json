@@ -1,0 +1,117 @@
+{
+  "baseline_commit": "8966459044b30aa31fb33ad3d9059fb5471d97bb",
+  "rust": "1.96.0",
+  "profile": "release-py with debug symbols",
+  "case": "feeder-10k",
+  "terminals": 32412,
+  "rounds": [
+    {
+      "run": "after-0",
+      "samples": 30,
+      "medians_ms": {
+        "parse_ms": 50.76195850000022,
+        "prepare_ms": 143.91895850000003,
+        "factor_ms": 19.58756249999942,
+        "total_ms": 231.39116700000002
+      },
+      "checks": {
+        "failures": [],
+        "requested": true
+      },
+      "voltage_range": [
+        0.9302859556501953,
+        0.9965037623535036
+      ]
+    },
+    {
+      "run": "after-1",
+      "samples": 30,
+      "medians_ms": {
+        "parse_ms": 48.21047900000002,
+        "prepare_ms": 139.5610415000001,
+        "factor_ms": 19.17793749999987,
+        "total_ms": 222.808854
+      },
+      "checks": {
+        "failures": [],
+        "requested": true
+      },
+      "voltage_range": [
+        0.9302859556501953,
+        0.9965037623535036
+      ]
+    },
+    {
+      "run": "after-2",
+      "samples": 30,
+      "medians_ms": {
+        "parse_ms": 51.08658349999996,
+        "prepare_ms": 151.34962450000057,
+        "factor_ms": 21.274583500000062,
+        "total_ms": 242.30468749999943
+      },
+      "checks": {
+        "failures": [],
+        "requested": true
+      },
+      "voltage_range": [
+        0.9302859556501953,
+        0.9965037623535036
+      ]
+    },
+    {
+      "run": "before-0",
+      "samples": 30,
+      "medians_ms": {
+        "parse_ms": 48.65006300000073,
+        "prepare_ms": 154.00704200000018,
+        "factor_ms": 19.482125499999484,
+        "total_ms": 240.82822900000042
+      },
+      "checks": {
+        "failures": [],
+        "requested": true
+      },
+      "voltage_range": [
+        0.9302859556501953,
+        0.9965037623535036
+      ]
+    },
+    {
+      "run": "before-1",
+      "samples": 30,
+      "medians_ms": {
+        "parse_ms": 47.6562914999995,
+        "prepare_ms": 150.75937499999998,
+        "factor_ms": 19.050833499999953,
+        "total_ms": 235.21389649999992
+      },
+      "checks": {
+        "failures": [],
+        "requested": true
+      },
+      "voltage_range": [
+        0.9302859556501953,
+        0.9965037623535036
+      ]
+    },
+    {
+      "run": "before-2",
+      "samples": 30,
+      "medians_ms": {
+        "parse_ms": 48.412958000000344,
+        "prepare_ms": 153.06306250000034,
+        "factor_ms": 19.327624999999898,
+        "total_ms": 236.6009160000001
+      },
+      "checks": {
+        "failures": [],
+        "requested": true
+      },
+      "voltage_range": [
+        0.9302859556501953,
+        0.9965037623535036
+      ]
+    }
+  ]
+}

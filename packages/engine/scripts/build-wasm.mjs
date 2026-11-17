@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 
-// Optional downstream compatibility builds must select these explicitly. The
-// normal published package continues to use its locked, released dependency.
+// Compatibility checks can add feature aliases. Collections ship in the normal
+// build using the released PowerIO dependency.
 const optional = (process.env.TELLEGEN_POWERIO_FEATURES ?? '').split(',').filter(Boolean);
 for (const feature of optional) {
   if (!['powerio-012', 'powerio-collections'].includes(feature))
@@ -12,7 +12,7 @@ const built = spawnSync('wasm-pack', [
   '--out-dir', '../../packages/engine/src/wasm-pkg', '--out-name', 'tellegen',
   // `rms-experimental` ships in the binary; the app gates its tools behind
   // the experimental switch.
-  '--', '--features', ['conic', 'synth', 'rms', 'rms-experimental', ...optional].join(',')
+  '--', '--features', ['conic', 'synth', 'rms', 'rms-experimental', 'powerio-collections', ...optional].join(',')
 ], { stdio: 'inherit' });
 if (built.error) throw built.error;
 if (built.status !== 0) process.exit(built.status ?? 1);

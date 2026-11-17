@@ -1213,7 +1213,7 @@
       ]
     },
     "GenerationReport": {
-      "description": "The full report. Blocks are `None` until their stage has run, so a report\nread mid-session is partial but never invented.",
+      "description": "Extra JSON fields without changing existing Rust report constructors.",
       "properties": {
         "ac_pf": {
           "anyOf": [
@@ -1265,6 +1265,13 @@
             }
           ]
         },
+        "planned_hvdc_links": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlannedHvdcLink"
+          },
+          "type": "array"
+        },
         "planning": {
           "anyOf": [
             {
@@ -1299,6 +1306,13 @@
               "type": "null"
             }
           ]
+        },
+        "synchronous_areas": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SynchronousArea"
+          },
+          "type": "array"
         },
         "warnings": {
           "items": {
@@ -1667,6 +1681,48 @@
       "required": [
         "count",
         "sha256"
+      ],
+      "type": "object"
+    },
+    "PlannedHvdcLink": {
+      "description": "A synthetic, lossless DC link scheduled at a fixed active-power transfer.",
+      "properties": {
+        "from_area": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rating_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "to_area": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to_bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transfer_mw": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "from_bus",
+        "to_bus",
+        "from_area",
+        "to_area",
+        "rating_mw",
+        "transfer_mw"
       ],
       "type": "object"
     },
@@ -2497,6 +2553,48 @@
       ],
       "type": "object"
     },
+    "SynchronousArea": {
+      "description": "A generated AC area. Bus identifiers are the module's one-based bus ids.",
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "bus_ids": {
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "demand_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "bus_ids",
+        "demand_mw",
+        "basis"
+      ],
+      "type": "object"
+    },
     "SynthRequest": {
       "additionalProperties": false,
       "description": "The one generation request. Unknown keys are refused here and in every\nnested option, so a misspelt option fails instead of taking its default.",
@@ -2992,5 +3090,5 @@
   ],
   "title": "SynthSchema",
   "type": "object",
-  "x-rust-source-sha256": "2c65f388a0b2ff3171b0f70cf20d6bb23b6aaa16e440193ac60d8676a12f86fc"
+  "x-rust-source-sha256": "46d0d9da771bc327b89e27b69b43851054a590e6432d82761c39e047327e0397"
 }
