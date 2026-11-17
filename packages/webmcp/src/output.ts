@@ -229,7 +229,10 @@ const STUDY_FIELDS: Record<string, Schema> = {
   applied_state: {},
 };
 
-/** Error codes a tool can report, beyond host-specific ones. */
+/**
+ * The error codes named in each tool's output schema.
+ * `TELLEGEN_ERROR_CODES` lists every code with its meaning.
+ */
 export const ERROR_CODES = [
   "INVALID_INPUT",
   "INVALID_OUTPUT",
