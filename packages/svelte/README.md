@@ -21,7 +21,7 @@ Import the component and stylesheet in your app:
 <TellegenViewer />
 ```
 
-Use local files only by disabling bundled case loading:
+Local file handling is the default. The equivalent explicit configuration is:
 
 ```svelte
 <script lang="ts">
@@ -31,6 +31,10 @@ Use local files only by disabling bundled case loading:
 
 <TellegenViewer loadDefaultCases={false} showFooter={false} />
 ```
+
+The default viewer opens local case files and runs supported calculations in
+browser WebAssembly. A host can configure a backend with `apiBase` and opt into
+bundled cases with `loadDefaultCases={true}`.
 
 The viewer accepts at most 32 files in one ingestion batch. Each file must be
 at most 128 MiB, and the aggregate batch must also be at most 128 MiB. Files
@@ -52,14 +56,17 @@ operating gauges and result context.
 
 `TellegenViewer` accepts:
 
-- `apiBase`, default `/api`
+- `apiBase`, default `null`
 - `acOpfWasmUrl`, default `null` (optional experimental AC OPF asset)
-- `loadDefaultCases`, default `true`
+- `loadDefaultCases`, default `false`
 - `docsHref`
 - `orgHref`
 - `orgLabel`
-- `showFooter`, default `true`
-- `theme`, `light` (default) or `dark`
+- `showFooter`, default `false`
+- `menuLinks`, optional `{ label, href }` entries for the header menu
+- `distributionResultsPanel`, optional host panel ID; otherwise results open in Network
+- `dynamicsExample`, default `false`; enables the bundled example command
+- `theme`, `light` or `dark` (otherwise follows the host or operating system)
 - `cartoApiKey`, the basemap key (see [Basemap](#basemap))
 
 `theme` and `cartoApiKey` follow their props. The others are read once, when
@@ -90,10 +97,12 @@ to `TellegenViewer` or `TellegenProvider`. The asset must be built and served
 separately; the selector enables AC OPF only after a worker probe succeeds.
 See the [local setup and release gates](../../docs/src/formulations.md#acopf-pounce-decision-experimental-browser-abi).
 
-Balanced networks and stored canonical AC OPF instances are supported at the
-base operating point. Imported instances retain their objective and constraints.
-Demand/rating editing, LMPs, sensitivities, and saving/exporting the AC OPF case
-are unavailable. Geographic sidecars and layout downloads remain available.
+Balanced networks support demand and branch-rating edits through the AC OPF
+worker. The selected bus or branch can request local result derivatives when
+the solved system supports them; degenerate systems report that derivatives are
+unavailable. Superseded requests are cancelled. Imported canonical AC OPF
+instances retain their objective and constraints, and refuse unsupported edits.
+Geographic sidecars and layout downloads remain available.
 Without the optional worker, imported AC OPF instances remain viewable but
 cannot be solved. No server solve is substituted for AC OPF.
 

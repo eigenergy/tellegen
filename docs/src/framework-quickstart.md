@@ -41,7 +41,7 @@ Svelte package and for custom engine consumers.
 <TellegenViewer />
 ```
 
-For local files only:
+Local file handling is the default. To state that configuration explicitly:
 
 ```svelte
 <script lang="ts">
@@ -51,6 +51,10 @@ For local files only:
 
 <TellegenViewer loadDefaultCases={false} showFooter={false} />
 ```
+
+The default viewer opens local case files and runs supported calculations in
+browser WebAssembly. A host can configure a backend with `apiBase` and opt into
+bundled cases with `loadDefaultCases={true}`.
 
 The viewer accepts at most 32 files in one ingestion batch. No individual file
 and no batch total may exceed 128 MiB.
@@ -173,13 +177,16 @@ files in the browser, and runs supported local solves in WebAssembly.
 
 `TellegenViewer` accepts:
 
-- `apiBase`, default `/api`
-- `loadDefaultCases`, default `true`
+- `apiBase`, default `null`
+- `loadDefaultCases`, default `false`
 - `docsHref`
 - `orgHref`
 - `orgLabel`
-- `showFooter`, default `true`
-- `theme`, `light` (default) or `dark`
+- `showFooter`, default `false`
+- `menuLinks`, optional `{ label, href }` entries for the header menu
+- `distributionResultsPanel`, optional host panel ID; otherwise results open in Network
+- `dynamicsExample`, default `false`; enables the bundled example command
+- `theme`, `light` or `dark` (otherwise follows the host or operating system)
 - `cartoApiKey`, the basemap key (see [Basemap](#frontend-package-basemap))
 
 `theme` and `cartoApiKey` follow their props. The others are read once, when
@@ -191,7 +198,7 @@ Use a different backend base path like this:
 <TellegenViewer apiBase="/tellegen/api" />
 ```
 
-Use local files only by disabling bundled case loading:
+Local file handling is the default. The equivalent explicit configuration is:
 
 ```svelte
 <script lang="ts">

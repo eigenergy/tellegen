@@ -65,6 +65,13 @@ versions, hashes, identities, and references. It never restores approval tokens
 or executes imported text. Older journals remain historical evidence when their
 electrical states are unavailable.
 
+Use **Rename** or **Delete** beside the saved-study list to manage a saved study.
+Transmission and distribution saves share one browser database. Existing distribution
+saves are copied automatically; their original database is left intact. Reopening a
+study preserves the camera, display mode, and page address. Reopening distribution
+results again reuses the same case. **Copy view link** creates a link without changing
+the current page address.
+
 A failed save reports the problem instead of discarding history. Free storage
 or export the saved Study before retrying. Cancellation retains completed trials
 and the best candidate after the running solve finishes.

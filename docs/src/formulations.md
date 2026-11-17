@@ -1012,3 +1012,24 @@ on that case. Tellegen's existing `optimal` status also includes Clarabel's
 reduced-accuracy termination, so inspect primal residuals when benchmarking.
 The harness README records the objective gaps, residuals and AC convergence
 failures; this change does not retune the solver or change its status mapping.
+
+## Multiconductor OPF result conventions
+
+The canonical generator result uses terminal-map order, including the neutral,
+and injection-positive terminal powers. The detailed report also carries each
+coil's positive and negative terminal IDs and its generation-positive dispatch
+in `devices[].coil_power_va`. Use the coil values for generator cost and coil
+bounds. For a DELTA device or a nonzero neutral voltage, coil and terminal
+powers differ. This patch preserves the existing field meanings.
+
+Canonical active/reactive mismatches are measured in MW/MVAr. The detailed
+report separately checks current balance, voltage equations, device power,
+limits and the objective. Both successful POUNCE stopping levels must pass
+those checks; an acceptable-level stop also carries an explicit diagnostic.
+At tiny or zero dispatch, an absolute power-equation tolerance does not
+establish relative power-factor accuracy, and the report says so.
+
+OPF requires phase-only DELTA maps and rejects unsupported terminal roles
+before solving. Power flow supports a broader set of two-terminal connections.
+The [formulation review and independent OpenDSS comparisons](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/mc-opf-review)
+describe these contracts and the tested cases.

@@ -331,3 +331,16 @@ tuned with `TELLEGEN_RATE_LIMIT_WINDOW_SECS`,
 Hosted distribution summaries may include `distribution` metadata: description,
 HTTPS source URL, related transmission case ID, and PF option defaults. The
 `/api/cases/{id}/case` endpoint negotiates gzip for portable module downloads.
+
+## Result validation
+
+The engine package validates solve, study, planning and settings results against
+JSON schemas generated from the Rust records. HTTP solutions, saved results and
+streamed sensitivities use the server's serialized types. Invalid results name
+the affected field; an invalid stream closes and leaves the previous display
+intact. Older display responses may omit solver context, which is checked when
+present. A failed calculation retains its engine error and diagnostics.
+
+After changing those Rust types, regenerate the schemas and TypeScript/Python
+files using the commands in the [engine package guide](https://github.com/eigenergy/tellegen/tree/main/packages/engine#generated-types).
+The build rejects stale schemas, including changes in shared result records.

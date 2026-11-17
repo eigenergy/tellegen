@@ -259,6 +259,49 @@ Network payloads carry the result: `NetworkBus.base_kv`, `NetworkBus.substation`
 jumpers: ACTIVSg200 from its MATPOWER file gives the 111 substations its aux file declares, its 23
 jumpers having a fifteenth of the median line's reactance.
 
+## Saved engineering drawings
+
+**Edit drawing** opens an editable view of the current case. Equipment keeps its
+source identity while its position, rotation, label, colour and visibility can
+change. Ports and route bends can be moved independently. A three-winding
+transformer is one object with separate terminal connections. The overview
+continues to aggregate equipment where that makes a large network easier to read.
+
+Use **Keep position during layout** to preserve manual placement during
+**Arrange unlocked objects**. Groups can be aligned horizontally or vertically;
+grid snapping, undo and redo apply to drawing edits. Add text, frames or a local
+PNG, JPEG or WebP image as annotations. Layers control which content is visible.
+Bus labels can display voltage or price with a chosen number of decimal places;
+branch overlays show active power and flow direction when results are available.
+
+**Save drawing** stores the drawing in this browser. **Duplicate drawing** creates
+a separate drawing for the same network. Export a `.drawing.json` file to retain
+objects, ports, routes, annotations and presentation settings outside the browser;
+import it after reopening the same network. SVG export includes the visible
+objects, labels, annotations and result overlays. It does not include a geographic
+basemap. Saving a drawing does not save an electrical case: use the study controls
+for that.
+
+Drawings cannot change electrical connections or switch states. On reload, those
+values come from the current case; an imported drawing with different source
+connections is refused. Moving or rotating equipment therefore cannot silently
+change a power-flow calculation.
+
+### Node-breaker detail
+
+When a source provides connectivity nodes and terminals, the drawing shows busbar
+sections, breakers, disconnectors and equipment connections within their declared
+substations and bays. Switch positions and connected-terminal states come from
+the imported case. Generic switches retain a generic symbol rather than acquiring
+a breaker type. The included CGMES test case exercises busbars, a bay, two
+breakers, a disconnector, load, generation and a line.
+
+PowerIO currently retains CGMES Diagram Layout records as unsupported metadata;
+it does not expose their coordinates to this drawing. Node-breaker placement is
+therefore generated. Ordinary source bus coordinates and line routes are retained
+when available. See the [drawing measurements and representative cases](https://github.com/eigenergy/tellegen/tree/main/validation/evidence/engineering-drawings)
+for the separate rendering, selection, editing, layout, result and export checks.
+
 ## Engine API
 
 `txSchematicLayout(input, options)` in `@tellegen/engine` (`tellegen::tx_schematic` natively)
