@@ -24,6 +24,10 @@ impl CaseCollection {
         Err(crate::jserr(UNAVAILABLE))
     }
 
+    pub fn open_nested(&self, _member: &str) -> Result<CaseCollection, JsValue> {
+        Err(crate::jserr(UNAVAILABLE))
+    }
+
     pub fn inspect(&self) -> Result<String, JsValue> {
         Err(crate::jserr(UNAVAILABLE))
     }

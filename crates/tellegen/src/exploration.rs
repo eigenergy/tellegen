@@ -63,7 +63,7 @@ impl ExactCandidate {
         Ok(Self {
             input: study.save_instance_module()?,
             solution: study.save_exact_module()?,
-            view: serde_json::to_string(study.solution()).map_err(|e| e.to_string())?,
+            view: serde_json::to_string(&study.solution_output()).map_err(|e| e.to_string())?,
             changes,
             value,
         })

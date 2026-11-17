@@ -170,6 +170,82 @@ pub struct StudyOperationResult {
     pub demand_changes: Option<Vec<DemandChange>>,
 }
 
+/// Study results for JSON callers, including the objective declared by each state.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "StudyOperationResult"))]
+pub struct StudyOperationOutput {
+    pub summary: StudySummary,
+    pub experiment: Option<String>,
+    pub inspected_view: Option<crate::SolveOutput>,
+    pub comparison: Option<ComparisonOutput>,
+    pub demand_changes: Option<Vec<DemandChange>>,
+}
+
+/// Two saved results with their respective objective declarations.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "Comparison"))]
+pub struct ComparisonOutput {
+    pub goal: Option<String>,
+    pub left: String,
+    pub right: String,
+    pub left_value: Option<f64>,
+    pub right_value: Option<f64>,
+    pub improvement: Option<f64>,
+    pub left_view: Option<crate::SolveOutput>,
+    pub right_view: Option<crate::SolveOutput>,
+}
+
+impl StudyOperationResult {
+    /// Prepare JSON output without changing the stored bundle or public result fields.
+    pub fn output(&self, bundle: &StudyBundle) -> Result<StudyOperationOutput, String> {
+        let inspected_view = self
+            .inspected_view
+            .clone()
+            .map(|view| {
+                let state = self
+                    .summary
+                    .inspected_state
+                    .as_deref()
+                    .ok_or("inspected state is unavailable")?;
+                bundle.state_output(state, view)
+            })
+            .transpose()?;
+        let comparison = self
+            .comparison
+            .as_ref()
+            .map(|comparison| {
+                Ok::<_, String>(ComparisonOutput {
+                    goal: comparison.goal.clone(),
+                    left: comparison.left.clone(),
+                    right: comparison.right.clone(),
+                    left_value: comparison.left_value,
+                    right_value: comparison.right_value,
+                    improvement: comparison.improvement,
+                    left_view: comparison
+                        .left_view
+                        .clone()
+                        .map(|view| bundle.state_output(&comparison.left, view))
+                        .transpose()?,
+                    right_view: comparison
+                        .right_view
+                        .clone()
+                        .map(|view| bundle.state_output(&comparison.right, view))
+                        .transpose()?,
+                })
+            })
+            .transpose()?;
+        Ok(StudyOperationOutput {
+            summary: self.summary.clone(),
+            experiment: self.experiment.clone(),
+            inspected_view,
+            comparison,
+            demand_changes: self.demand_changes.clone(),
+        })
+    }
+}
+
 pub fn create_study(mut request: CreateStudy) -> Result<StudyBundle, String> {
     crate::dc_formula::validate(request.formulation, request.branch_susceptance_formula)?;
     if request.branch_susceptance_formula.is_some() {
@@ -217,7 +293,11 @@ pub fn create_study(mut request: CreateStudy) -> Result<StudyBundle, String> {
             &ExactCandidate {
                 input: request.input.clone(),
                 solution,
-                view: serde_json::to_string(&view).map_err(|e| e.to_string())?,
+                view: serde_json::to_string(&crate::SolveOutput::new(
+                    view,
+                    crate::api::module_objective_kind(&request.input, request.formulation)?,
+                ))
+                .map_err(|e| e.to_string())?,
                 changes: vec![],
                 value: 0.0,
             },
@@ -1342,6 +1422,34 @@ mod tests {
         })
         .unwrap();
         bundle
+    }
+
+    #[test]
+    fn output_includes_each_saved_states_declared_objective() {
+        let bundle = fixture();
+        let state = bundle.document.inspected_state.clone().unwrap();
+        let result = StudyOperationResult {
+            summary: bundle.summary(8),
+            experiment: None,
+            inspected_view: Some(bundle.state_view(&state).unwrap()),
+            comparison: Some(Comparison {
+                goal: None,
+                left: state.clone(),
+                right: state.clone(),
+                left_value: None,
+                right_value: None,
+                improvement: None,
+                left_view: Some(bundle.state_view(&state).unwrap()),
+                right_view: Some(bundle.state_view(&state).unwrap()),
+            }),
+            demand_changes: None,
+        };
+        let before = bundle.export().unwrap();
+        let json = serde_json::to_value(result.output(&bundle).unwrap()).unwrap();
+        assert_eq!(json["inspected_view"]["objective_kind"], "cost");
+        assert_eq!(json["comparison"]["left_view"]["objective_kind"], "cost");
+        assert_eq!(json["comparison"]["right_view"]["objective_kind"], "cost");
+        assert_eq!(before, bundle.export().unwrap());
     }
 
     #[test]
