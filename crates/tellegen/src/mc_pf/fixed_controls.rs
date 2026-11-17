@@ -29,6 +29,24 @@ pub fn prepare_mc_fixed_controls(
         return Err("This case has no regulator or capacitor controls to hold fixed".to_owned());
     }
     for control in &controls {
+        if control.class.eq_ignore_ascii_case("regcontrol") {
+            let target = control.props.iter().rev().find_map(|(key, value)| {
+                key.as_deref()
+                    .filter(|key| key.eq_ignore_ascii_case("transformer"))
+                    .map(|_| value.trim_matches(['\"', '\'']))
+            });
+            if !target.is_some_and(|target| {
+                network
+                    .transformers()
+                    .iter()
+                    .any(|transformer| transformer.name.eq_ignore_ascii_case(target))
+            }) {
+                return Err(format!(
+                    "Regulator control {} has no supported transformer target",
+                    control.name
+                ));
+            }
+        }
         if control.class.eq_ignore_ascii_case("capcontrol") {
             let target = control.props.iter().rev().find_map(|(key, value)| {
                 key.as_deref()
@@ -128,6 +146,32 @@ mod tests {
             prepare_mc_fixed_controls(&module(&source.replace("kvar=2", "kvar=2 states=[0]")))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn serialized_controls_require_existing_transformer_targets() {
+        for target in [None, Some("missing")] {
+            let mut original = module("");
+            let PioValue::MulticonductorNetwork(network) = original.value_mut() else {
+                panic!("network")
+            };
+            let control = &mut network.untyped_objects_mut()[0];
+            control
+                .props
+                .retain(|(key, _)| key.as_deref() != Some("transformer"));
+            if let Some(target) = target {
+                control
+                    .props
+                    .push((Some("transformer".into()), target.into()));
+            }
+            // The parser's retained diagnostic describes the original valid target.
+            // Saved IR can change independently and must be checked on its own.
+            let text = crate::ir::serialize_module(&original).unwrap();
+            let restored = crate::ir::deserialize_module(&text).unwrap();
+            let error = prepare_mc_fixed_controls(&restored).unwrap_err();
+            assert!(error.contains("transformer target"), "{error}");
+            assert_eq!(crate::ir::serialize_module(&restored).unwrap(), text);
+        }
     }
 
     #[test]

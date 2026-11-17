@@ -8,6 +8,8 @@ use tellegen::{McPfOptions, McPfResult};
 struct Reference {
     name: String,
     source: String,
+    #[serde(default)]
+    fixed_controls: bool,
     voltages: BTreeMap<String, [f64; 2]>,
     currents: BTreeMap<String, Current>,
     transformers: BTreeMap<String, Transformer>,
@@ -71,9 +73,15 @@ fn capability_rejects_missing_voltage_dependent_load_base() {
 #[test]
 fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
     let report: Report = serde_json::from_str(include_str!("data/dss_snapshots.json")).unwrap();
-    assert_eq!(report.cases.len(), 44);
+    assert_eq!(report.cases.len(), 47);
     for case in report.cases {
         let input = module(&case.source);
+        let input = if case.fixed_controls {
+            assert!(tellegen::validate_mc_module(&input).is_err());
+            tellegen::prepare_mc_fixed_controls(&input).unwrap()
+        } else {
+            input
+        };
         tellegen::validate_mc_module(&input).unwrap_or_else(|e| panic!("{}: {e}", case.name));
         let text = tellegen::ir::serialize_module(&input).unwrap();
         for envelope in [false, true] {

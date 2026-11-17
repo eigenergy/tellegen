@@ -31176,7 +31176,7 @@ return errors === 0;
 }
 validate431.evaluated = {"props":{"base_mva":true,"coords_kind":true,"coords_method":true,"diagnostics":true,"formulation":true,"gen_mw":true,"has_coords":true,"layer":true,"load_mw":true,"module_json":true,"n_analysis_branch":true,"n_analysis_bus":true,"n_branch":true,"n_bus":true,"n_gen":true,"name":true,"report":true,"topology":true,"view":true,"warnings":true},"dynamicProps":false,"dynamicItems":false};
 
-const schema221 = {"additionalProperties":true,"properties":{"base_frequency":{"format":"double","type":"number"},"coords_kind":{"$ref":"#/$defs/DistributionCoordinates"},"coords_space":{"$ref":"#/$defs/CoordinateSpace"},"diagnostics":{"items":{"additionalProperties":true,"type":"object"},"type":"array"},"gen_kw":{"format":"double","type":"number"},"geo_layer":{"type":["string","null"]},"graph":{"$ref":"#/$defs/DistributionGraph"},"has_coords":{"type":"boolean"},"input_retained":{"type":["boolean","null"]},"load_kw":{"format":"double","type":"number"},"mc_energized_only":{"type":["boolean","null"]},"mc_excluded_islands":{"items":{"$ref":"#/$defs/McExcludedIsland"},"type":["array","null"]},"mc_pf_enabled":{"type":["boolean","null"]},"mc_pf_reason":{"type":["string","null"]},"mc_pf_supported":{"type":["boolean","null"]},"mc_pf_unavailable_reason":{"type":["string","null"]},"model":{"$ref":"#/$defs/Model"},"module_json":{"type":"string"},"n_bus":{"format":"uint","minimum":0,"type":"integer"},"n_capacitor":{"format":"uint","minimum":0,"type":"integer"},"n_edge":{"format":"uint","minimum":0,"type":"integer"},"n_generator":{"format":"uint","minimum":0,"type":"integer"},"n_ibr":{"format":"uint","minimum":0,"type":"integer"},"n_line":{"format":"uint","minimum":0,"type":"integer"},"n_load":{"format":"uint","minimum":0,"type":"integer"},"n_shunt":{"format":"uint","minimum":0,"type":"integer"},"n_source":{"format":"uint","minimum":0,"type":"integer"},"n_switch":{"format":"uint","minimum":0,"type":"integer"},"n_transformer":{"format":"uint","minimum":0,"type":"integer"},"name":{"type":["string","null"]},"placed_buses":{"format":"uint","minimum":0,"type":"integer"}},"required":["name","model","n_bus","n_edge","n_line","n_switch","n_transformer","n_load","n_generator","n_ibr","n_source","n_shunt","n_capacitor","load_kw","gen_kw","base_frequency","has_coords","placed_buses","coords_space","coords_kind","diagnostics","graph","module_json"],"type":"object"};
+const schema221 = {"additionalProperties":true,"properties":{"base_frequency":{"format":"double","type":"number"},"coords_kind":{"$ref":"#/$defs/DistributionCoordinates"},"coords_space":{"$ref":"#/$defs/CoordinateSpace"},"diagnostics":{"items":{"additionalProperties":true,"type":"object"},"type":"array"},"gen_kw":{"format":"double","type":"number"},"geo_layer":{"type":["string","null"]},"graph":{"$ref":"#/$defs/DistributionGraph"},"has_coords":{"type":"boolean"},"input_retained":{"type":["boolean","null"]},"load_kw":{"format":"double","type":"number"},"mc_energized_only":{"type":["boolean","null"]},"mc_excluded_islands":{"items":{"$ref":"#/$defs/McExcludedIsland"},"type":["array","null"]},"mc_fixed_controls":{"type":["boolean","null"]},"mc_fixed_controls_available":{"type":["boolean","null"]},"mc_pf_enabled":{"type":["boolean","null"]},"mc_pf_reason":{"type":["string","null"]},"mc_pf_supported":{"type":["boolean","null"]},"mc_pf_unavailable_reason":{"type":["string","null"]},"model":{"$ref":"#/$defs/Model"},"module_json":{"type":"string"},"n_bus":{"format":"uint","minimum":0,"type":"integer"},"n_capacitor":{"format":"uint","minimum":0,"type":"integer"},"n_edge":{"format":"uint","minimum":0,"type":"integer"},"n_generator":{"format":"uint","minimum":0,"type":"integer"},"n_ibr":{"format":"uint","minimum":0,"type":"integer"},"n_line":{"format":"uint","minimum":0,"type":"integer"},"n_load":{"format":"uint","minimum":0,"type":"integer"},"n_shunt":{"format":"uint","minimum":0,"type":"integer"},"n_source":{"format":"uint","minimum":0,"type":"integer"},"n_switch":{"format":"uint","minimum":0,"type":"integer"},"n_transformer":{"format":"uint","minimum":0,"type":"integer"},"name":{"type":["string","null"]},"placed_buses":{"format":"uint","minimum":0,"type":"integer"}},"required":["name","model","n_bus","n_edge","n_line","n_switch","n_transformer","n_load","n_generator","n_ibr","n_source","n_shunt","n_capacitor","load_kw","gen_kw","base_frequency","has_coords","placed_buses","coords_space","coords_kind","diagnostics","graph","module_json"],"type":"object"};
 const schema222 = {"enum":["geographic","planar","synthetic"],"type":"string"};
 
 function validate506(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
@@ -32992,11 +32992,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_enabled !== undefined){
-let data14 = data.mc_pf_enabled;
+if(data.mc_fixed_controls !== undefined){
+let data14 = data.mc_fixed_controls;
 const _errs27 = errors;
 if((typeof data14 !== "boolean") && (data14 !== null)){
-validate505.errors = [{instancePath:instancePath+"/mc_pf_enabled",schemaPath:"#/properties/mc_pf_enabled/type",keyword:"type",params:{type: schema221.properties.mc_pf_enabled.type},message:"must be boolean,null"}];
+validate505.errors = [{instancePath:instancePath+"/mc_fixed_controls",schemaPath:"#/properties/mc_fixed_controls/type",keyword:"type",params:{type: schema221.properties.mc_fixed_controls.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs27 === errors;
@@ -33005,11 +33005,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_reason !== undefined){
-let data15 = data.mc_pf_reason;
+if(data.mc_fixed_controls_available !== undefined){
+let data15 = data.mc_fixed_controls_available;
 const _errs29 = errors;
-if((typeof data15 !== "string") && (data15 !== null)){
-validate505.errors = [{instancePath:instancePath+"/mc_pf_reason",schemaPath:"#/properties/mc_pf_reason/type",keyword:"type",params:{type: schema221.properties.mc_pf_reason.type},message:"must be string,null"}];
+if((typeof data15 !== "boolean") && (data15 !== null)){
+validate505.errors = [{instancePath:instancePath+"/mc_fixed_controls_available",schemaPath:"#/properties/mc_fixed_controls_available/type",keyword:"type",params:{type: schema221.properties.mc_fixed_controls_available.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs29 === errors;
@@ -33018,11 +33018,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_supported !== undefined){
-let data16 = data.mc_pf_supported;
+if(data.mc_pf_enabled !== undefined){
+let data16 = data.mc_pf_enabled;
 const _errs31 = errors;
 if((typeof data16 !== "boolean") && (data16 !== null)){
-validate505.errors = [{instancePath:instancePath+"/mc_pf_supported",schemaPath:"#/properties/mc_pf_supported/type",keyword:"type",params:{type: schema221.properties.mc_pf_supported.type},message:"must be boolean,null"}];
+validate505.errors = [{instancePath:instancePath+"/mc_pf_enabled",schemaPath:"#/properties/mc_pf_enabled/type",keyword:"type",params:{type: schema221.properties.mc_pf_enabled.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs31 === errors;
@@ -33031,11 +33031,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_unavailable_reason !== undefined){
-let data17 = data.mc_pf_unavailable_reason;
+if(data.mc_pf_reason !== undefined){
+let data17 = data.mc_pf_reason;
 const _errs33 = errors;
 if((typeof data17 !== "string") && (data17 !== null)){
-validate505.errors = [{instancePath:instancePath+"/mc_pf_unavailable_reason",schemaPath:"#/properties/mc_pf_unavailable_reason/type",keyword:"type",params:{type: schema221.properties.mc_pf_unavailable_reason.type},message:"must be string,null"}];
+validate505.errors = [{instancePath:instancePath+"/mc_pf_reason",schemaPath:"#/properties/mc_pf_reason/type",keyword:"type",params:{type: schema221.properties.mc_pf_reason.type},message:"must be string,null"}];
 return false;
 }
 var valid0 = _errs33 === errors;
@@ -33044,11 +33044,12 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.model !== undefined){
+if(data.mc_pf_supported !== undefined){
+let data18 = data.mc_pf_supported;
 const _errs35 = errors;
-if(!(validate529(data.model, {instancePath:instancePath+"/model",parentData:data,parentDataProperty:"model",rootData,dynamicAnchors}))){
-vErrors = vErrors === null ? validate529.errors : vErrors.concat(validate529.errors);
-errors = vErrors.length;
+if((typeof data18 !== "boolean") && (data18 !== null)){
+validate505.errors = [{instancePath:instancePath+"/mc_pf_supported",schemaPath:"#/properties/mc_pf_supported/type",keyword:"type",params:{type: schema221.properties.mc_pf_supported.type},message:"must be boolean,null"}];
+return false;
 }
 var valid0 = _errs35 === errors;
 }
@@ -33056,53 +33057,36 @@ else {
 var valid0 = true;
 }
 if(valid0){
+if(data.mc_pf_unavailable_reason !== undefined){
+let data19 = data.mc_pf_unavailable_reason;
+const _errs37 = errors;
+if((typeof data19 !== "string") && (data19 !== null)){
+validate505.errors = [{instancePath:instancePath+"/mc_pf_unavailable_reason",schemaPath:"#/properties/mc_pf_unavailable_reason/type",keyword:"type",params:{type: schema221.properties.mc_pf_unavailable_reason.type},message:"must be string,null"}];
+return false;
+}
+var valid0 = _errs37 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.model !== undefined){
+const _errs39 = errors;
+if(!(validate529(data.model, {instancePath:instancePath+"/model",parentData:data,parentDataProperty:"model",rootData,dynamicAnchors}))){
+vErrors = vErrors === null ? validate529.errors : vErrors.concat(validate529.errors);
+errors = vErrors.length;
+}
+var valid0 = _errs39 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
 if(data.module_json !== undefined){
-const _errs36 = errors;
+const _errs40 = errors;
 if(typeof data.module_json !== "string"){
 validate505.errors = [{instancePath:instancePath+"/module_json",schemaPath:"#/properties/module_json/type",keyword:"type",params:{type: "string"},message:"must be string"}];
 return false;
-}
-var valid0 = _errs36 === errors;
-}
-else {
-var valid0 = true;
-}
-if(valid0){
-if(data.n_bus !== undefined){
-let data20 = data.n_bus;
-const _errs38 = errors;
-if(!(((typeof data20 == "number") && (!(data20 % 1) && !isNaN(data20))) && (isFinite(data20)))){
-validate505.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
-return false;
-}
-if(errors === _errs38){
-if((typeof data20 == "number") && (isFinite(data20))){
-if(data20 < 0 || isNaN(data20)){
-validate505.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
-return false;
-}
-}
-}
-var valid0 = _errs38 === errors;
-}
-else {
-var valid0 = true;
-}
-if(valid0){
-if(data.n_capacitor !== undefined){
-let data21 = data.n_capacitor;
-const _errs40 = errors;
-if(!(((typeof data21 == "number") && (!(data21 % 1) && !isNaN(data21))) && (isFinite(data21)))){
-validate505.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
-return false;
-}
-if(errors === _errs40){
-if((typeof data21 == "number") && (isFinite(data21))){
-if(data21 < 0 || isNaN(data21)){
-validate505.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
-return false;
-}
-}
 }
 var valid0 = _errs40 === errors;
 }
@@ -33110,17 +33094,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_edge !== undefined){
-let data22 = data.n_edge;
+if(data.n_bus !== undefined){
+let data22 = data.n_bus;
 const _errs42 = errors;
 if(!(((typeof data22 == "number") && (!(data22 % 1) && !isNaN(data22))) && (isFinite(data22)))){
-validate505.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs42){
 if((typeof data22 == "number") && (isFinite(data22))){
 if(data22 < 0 || isNaN(data22)){
-validate505.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33131,17 +33115,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_generator !== undefined){
-let data23 = data.n_generator;
+if(data.n_capacitor !== undefined){
+let data23 = data.n_capacitor;
 const _errs44 = errors;
 if(!(((typeof data23 == "number") && (!(data23 % 1) && !isNaN(data23))) && (isFinite(data23)))){
-validate505.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs44){
 if((typeof data23 == "number") && (isFinite(data23))){
 if(data23 < 0 || isNaN(data23)){
-validate505.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33152,17 +33136,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_ibr !== undefined){
-let data24 = data.n_ibr;
+if(data.n_edge !== undefined){
+let data24 = data.n_edge;
 const _errs46 = errors;
 if(!(((typeof data24 == "number") && (!(data24 % 1) && !isNaN(data24))) && (isFinite(data24)))){
-validate505.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs46){
 if((typeof data24 == "number") && (isFinite(data24))){
 if(data24 < 0 || isNaN(data24)){
-validate505.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33173,17 +33157,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_line !== undefined){
-let data25 = data.n_line;
+if(data.n_generator !== undefined){
+let data25 = data.n_generator;
 const _errs48 = errors;
 if(!(((typeof data25 == "number") && (!(data25 % 1) && !isNaN(data25))) && (isFinite(data25)))){
-validate505.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs48){
 if((typeof data25 == "number") && (isFinite(data25))){
 if(data25 < 0 || isNaN(data25)){
-validate505.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33194,17 +33178,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_load !== undefined){
-let data26 = data.n_load;
+if(data.n_ibr !== undefined){
+let data26 = data.n_ibr;
 const _errs50 = errors;
 if(!(((typeof data26 == "number") && (!(data26 % 1) && !isNaN(data26))) && (isFinite(data26)))){
-validate505.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs50){
 if((typeof data26 == "number") && (isFinite(data26))){
 if(data26 < 0 || isNaN(data26)){
-validate505.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33215,17 +33199,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_shunt !== undefined){
-let data27 = data.n_shunt;
+if(data.n_line !== undefined){
+let data27 = data.n_line;
 const _errs52 = errors;
 if(!(((typeof data27 == "number") && (!(data27 % 1) && !isNaN(data27))) && (isFinite(data27)))){
-validate505.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs52){
 if((typeof data27 == "number") && (isFinite(data27))){
 if(data27 < 0 || isNaN(data27)){
-validate505.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33236,17 +33220,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_source !== undefined){
-let data28 = data.n_source;
+if(data.n_load !== undefined){
+let data28 = data.n_load;
 const _errs54 = errors;
 if(!(((typeof data28 == "number") && (!(data28 % 1) && !isNaN(data28))) && (isFinite(data28)))){
-validate505.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs54){
 if((typeof data28 == "number") && (isFinite(data28))){
 if(data28 < 0 || isNaN(data28)){
-validate505.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33257,17 +33241,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_switch !== undefined){
-let data29 = data.n_switch;
+if(data.n_shunt !== undefined){
+let data29 = data.n_shunt;
 const _errs56 = errors;
 if(!(((typeof data29 == "number") && (!(data29 % 1) && !isNaN(data29))) && (isFinite(data29)))){
-validate505.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs56){
 if((typeof data29 == "number") && (isFinite(data29))){
 if(data29 < 0 || isNaN(data29)){
-validate505.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33278,17 +33262,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_transformer !== undefined){
-let data30 = data.n_transformer;
+if(data.n_source !== undefined){
+let data30 = data.n_source;
 const _errs58 = errors;
 if(!(((typeof data30 == "number") && (!(data30 % 1) && !isNaN(data30))) && (isFinite(data30)))){
-validate505.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs58){
 if((typeof data30 == "number") && (isFinite(data30))){
 if(data30 < 0 || isNaN(data30)){
-validate505.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33299,12 +33283,20 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.name !== undefined){
-let data31 = data.name;
+if(data.n_switch !== undefined){
+let data31 = data.n_switch;
 const _errs60 = errors;
-if((typeof data31 !== "string") && (data31 !== null)){
-validate505.errors = [{instancePath:instancePath+"/name",schemaPath:"#/properties/name/type",keyword:"type",params:{type: schema221.properties.name.type},message:"must be string,null"}];
+if(!(((typeof data31 == "number") && (!(data31 % 1) && !isNaN(data31))) && (isFinite(data31)))){
+validate505.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
+}
+if(errors === _errs60){
+if((typeof data31 == "number") && (isFinite(data31))){
+if(data31 < 0 || isNaN(data31)){
+validate505.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+return false;
+}
+}
 }
 var valid0 = _errs60 === errors;
 }
@@ -33312,17 +33304,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.placed_buses !== undefined){
-let data32 = data.placed_buses;
+if(data.n_transformer !== undefined){
+let data32 = data.n_transformer;
 const _errs62 = errors;
 if(!(((typeof data32 == "number") && (!(data32 % 1) && !isNaN(data32))) && (isFinite(data32)))){
-validate505.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate505.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs62){
 if((typeof data32 == "number") && (isFinite(data32))){
 if(data32 < 0 || isNaN(data32)){
-validate505.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate505.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -33331,6 +33323,42 @@ var valid0 = _errs62 === errors;
 }
 else {
 var valid0 = true;
+}
+if(valid0){
+if(data.name !== undefined){
+let data33 = data.name;
+const _errs64 = errors;
+if((typeof data33 !== "string") && (data33 !== null)){
+validate505.errors = [{instancePath:instancePath+"/name",schemaPath:"#/properties/name/type",keyword:"type",params:{type: schema221.properties.name.type},message:"must be string,null"}];
+return false;
+}
+var valid0 = _errs64 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.placed_buses !== undefined){
+let data34 = data.placed_buses;
+const _errs66 = errors;
+if(!(((typeof data34 == "number") && (!(data34 % 1) && !isNaN(data34))) && (isFinite(data34)))){
+validate505.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+return false;
+}
+if(errors === _errs66){
+if((typeof data34 == "number") && (isFinite(data34))){
+if(data34 < 0 || isNaN(data34)){
+validate505.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+return false;
+}
+}
+}
+var valid0 = _errs66 === errors;
+}
+else {
+var valid0 = true;
+}
+}
 }
 }
 }
@@ -36029,7 +36057,7 @@ return errors === 0;
 validate753.evaluated = {"props":{"base_mva":true,"coords_kind":true,"coords_method":true,"diagnostics":true,"formulation":true,"gen_mw":true,"has_coords":true,"layer":true,"load_mw":true,"module_json":true,"n_analysis_branch":true,"n_analysis_bus":true,"n_branch":true,"n_bus":true,"n_gen":true,"name":true,"report":true,"topology":true,"view":true,"warnings":true},"dynamicProps":false,"dynamicItems":false};
 
 export const ingest_distribution = validate759;
-const schema244 = {"additionalProperties":true,"properties":{"base_frequency":{"format":"double","type":"number"},"coords_kind":{"$ref":"#/$defs/DistributionCoordinates"},"coords_space":{"$ref":"#/$defs/CoordinateSpace"},"diagnostics":{"items":{"additionalProperties":true,"type":"object"},"type":"array"},"gen_kw":{"format":"double","type":"number"},"geo_layer":{"type":["string","null"]},"graph":{"$ref":"#/$defs/DistributionGraph"},"has_coords":{"type":"boolean"},"input_retained":{"type":["boolean","null"]},"load_kw":{"format":"double","type":"number"},"mc_energized_only":{"type":["boolean","null"]},"mc_excluded_islands":{"items":{"$ref":"#/$defs/McExcludedIsland"},"type":["array","null"]},"mc_pf_enabled":{"type":["boolean","null"]},"mc_pf_reason":{"type":["string","null"]},"mc_pf_supported":{"type":["boolean","null"]},"mc_pf_unavailable_reason":{"type":["string","null"]},"model":{"$ref":"#/$defs/Model"},"module_json":{"type":["string","null"]},"n_bus":{"format":"uint","minimum":0,"type":"integer"},"n_capacitor":{"format":"uint","minimum":0,"type":"integer"},"n_edge":{"format":"uint","minimum":0,"type":"integer"},"n_generator":{"format":"uint","minimum":0,"type":"integer"},"n_ibr":{"format":"uint","minimum":0,"type":"integer"},"n_line":{"format":"uint","minimum":0,"type":"integer"},"n_load":{"format":"uint","minimum":0,"type":"integer"},"n_shunt":{"format":"uint","minimum":0,"type":"integer"},"n_source":{"format":"uint","minimum":0,"type":"integer"},"n_switch":{"format":"uint","minimum":0,"type":"integer"},"n_transformer":{"format":"uint","minimum":0,"type":"integer"},"name":{"type":["string","null"]},"placed_buses":{"format":"uint","minimum":0,"type":"integer"}},"required":["name","model","n_bus","n_edge","n_line","n_switch","n_transformer","n_load","n_generator","n_ibr","n_source","n_shunt","n_capacitor","load_kw","gen_kw","base_frequency","has_coords","placed_buses","coords_space","coords_kind","diagnostics","graph"],"type":"object"};
+const schema244 = {"additionalProperties":true,"properties":{"base_frequency":{"format":"double","type":"number"},"coords_kind":{"$ref":"#/$defs/DistributionCoordinates"},"coords_space":{"$ref":"#/$defs/CoordinateSpace"},"diagnostics":{"items":{"additionalProperties":true,"type":"object"},"type":"array"},"gen_kw":{"format":"double","type":"number"},"geo_layer":{"type":["string","null"]},"graph":{"$ref":"#/$defs/DistributionGraph"},"has_coords":{"type":"boolean"},"input_retained":{"type":["boolean","null"]},"load_kw":{"format":"double","type":"number"},"mc_energized_only":{"type":["boolean","null"]},"mc_excluded_islands":{"items":{"$ref":"#/$defs/McExcludedIsland"},"type":["array","null"]},"mc_fixed_controls":{"type":["boolean","null"]},"mc_fixed_controls_available":{"type":["boolean","null"]},"mc_pf_enabled":{"type":["boolean","null"]},"mc_pf_reason":{"type":["string","null"]},"mc_pf_supported":{"type":["boolean","null"]},"mc_pf_unavailable_reason":{"type":["string","null"]},"model":{"$ref":"#/$defs/Model"},"module_json":{"type":["string","null"]},"n_bus":{"format":"uint","minimum":0,"type":"integer"},"n_capacitor":{"format":"uint","minimum":0,"type":"integer"},"n_edge":{"format":"uint","minimum":0,"type":"integer"},"n_generator":{"format":"uint","minimum":0,"type":"integer"},"n_ibr":{"format":"uint","minimum":0,"type":"integer"},"n_line":{"format":"uint","minimum":0,"type":"integer"},"n_load":{"format":"uint","minimum":0,"type":"integer"},"n_shunt":{"format":"uint","minimum":0,"type":"integer"},"n_source":{"format":"uint","minimum":0,"type":"integer"},"n_switch":{"format":"uint","minimum":0,"type":"integer"},"n_transformer":{"format":"uint","minimum":0,"type":"integer"},"name":{"type":["string","null"]},"placed_buses":{"format":"uint","minimum":0,"type":"integer"}},"required":["name","model","n_bus","n_edge","n_line","n_switch","n_transformer","n_load","n_generator","n_ibr","n_source","n_shunt","n_capacitor","load_kw","gen_kw","base_frequency","has_coords","placed_buses","coords_space","coords_kind","diagnostics","graph"],"type":"object"};
 
 function validate759(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
 let vErrors = null;
@@ -36246,11 +36274,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_enabled !== undefined){
-let data14 = data.mc_pf_enabled;
+if(data.mc_fixed_controls !== undefined){
+let data14 = data.mc_fixed_controls;
 const _errs27 = errors;
 if((typeof data14 !== "boolean") && (data14 !== null)){
-validate759.errors = [{instancePath:instancePath+"/mc_pf_enabled",schemaPath:"#/properties/mc_pf_enabled/type",keyword:"type",params:{type: schema244.properties.mc_pf_enabled.type},message:"must be boolean,null"}];
+validate759.errors = [{instancePath:instancePath+"/mc_fixed_controls",schemaPath:"#/properties/mc_fixed_controls/type",keyword:"type",params:{type: schema244.properties.mc_fixed_controls.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs27 === errors;
@@ -36259,11 +36287,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_reason !== undefined){
-let data15 = data.mc_pf_reason;
+if(data.mc_fixed_controls_available !== undefined){
+let data15 = data.mc_fixed_controls_available;
 const _errs29 = errors;
-if((typeof data15 !== "string") && (data15 !== null)){
-validate759.errors = [{instancePath:instancePath+"/mc_pf_reason",schemaPath:"#/properties/mc_pf_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_reason.type},message:"must be string,null"}];
+if((typeof data15 !== "boolean") && (data15 !== null)){
+validate759.errors = [{instancePath:instancePath+"/mc_fixed_controls_available",schemaPath:"#/properties/mc_fixed_controls_available/type",keyword:"type",params:{type: schema244.properties.mc_fixed_controls_available.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs29 === errors;
@@ -36272,11 +36300,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_supported !== undefined){
-let data16 = data.mc_pf_supported;
+if(data.mc_pf_enabled !== undefined){
+let data16 = data.mc_pf_enabled;
 const _errs31 = errors;
 if((typeof data16 !== "boolean") && (data16 !== null)){
-validate759.errors = [{instancePath:instancePath+"/mc_pf_supported",schemaPath:"#/properties/mc_pf_supported/type",keyword:"type",params:{type: schema244.properties.mc_pf_supported.type},message:"must be boolean,null"}];
+validate759.errors = [{instancePath:instancePath+"/mc_pf_enabled",schemaPath:"#/properties/mc_pf_enabled/type",keyword:"type",params:{type: schema244.properties.mc_pf_enabled.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs31 === errors;
@@ -36285,11 +36313,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_unavailable_reason !== undefined){
-let data17 = data.mc_pf_unavailable_reason;
+if(data.mc_pf_reason !== undefined){
+let data17 = data.mc_pf_reason;
 const _errs33 = errors;
 if((typeof data17 !== "string") && (data17 !== null)){
-validate759.errors = [{instancePath:instancePath+"/mc_pf_unavailable_reason",schemaPath:"#/properties/mc_pf_unavailable_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_unavailable_reason.type},message:"must be string,null"}];
+validate759.errors = [{instancePath:instancePath+"/mc_pf_reason",schemaPath:"#/properties/mc_pf_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_reason.type},message:"must be string,null"}];
 return false;
 }
 var valid0 = _errs33 === errors;
@@ -36298,11 +36326,12 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.model !== undefined){
+if(data.mc_pf_supported !== undefined){
+let data18 = data.mc_pf_supported;
 const _errs35 = errors;
-if(!(validate529(data.model, {instancePath:instancePath+"/model",parentData:data,parentDataProperty:"model",rootData,dynamicAnchors}))){
-vErrors = vErrors === null ? validate529.errors : vErrors.concat(validate529.errors);
-errors = vErrors.length;
+if((typeof data18 !== "boolean") && (data18 !== null)){
+validate759.errors = [{instancePath:instancePath+"/mc_pf_supported",schemaPath:"#/properties/mc_pf_supported/type",keyword:"type",params:{type: schema244.properties.mc_pf_supported.type},message:"must be boolean,null"}];
+return false;
 }
 var valid0 = _errs35 === errors;
 }
@@ -36310,54 +36339,37 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.module_json !== undefined){
-let data19 = data.module_json;
-const _errs36 = errors;
+if(data.mc_pf_unavailable_reason !== undefined){
+let data19 = data.mc_pf_unavailable_reason;
+const _errs37 = errors;
 if((typeof data19 !== "string") && (data19 !== null)){
+validate759.errors = [{instancePath:instancePath+"/mc_pf_unavailable_reason",schemaPath:"#/properties/mc_pf_unavailable_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_unavailable_reason.type},message:"must be string,null"}];
+return false;
+}
+var valid0 = _errs37 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.model !== undefined){
+const _errs39 = errors;
+if(!(validate529(data.model, {instancePath:instancePath+"/model",parentData:data,parentDataProperty:"model",rootData,dynamicAnchors}))){
+vErrors = vErrors === null ? validate529.errors : vErrors.concat(validate529.errors);
+errors = vErrors.length;
+}
+var valid0 = _errs39 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.module_json !== undefined){
+let data21 = data.module_json;
+const _errs40 = errors;
+if((typeof data21 !== "string") && (data21 !== null)){
 validate759.errors = [{instancePath:instancePath+"/module_json",schemaPath:"#/properties/module_json/type",keyword:"type",params:{type: schema244.properties.module_json.type},message:"must be string,null"}];
 return false;
-}
-var valid0 = _errs36 === errors;
-}
-else {
-var valid0 = true;
-}
-if(valid0){
-if(data.n_bus !== undefined){
-let data20 = data.n_bus;
-const _errs38 = errors;
-if(!(((typeof data20 == "number") && (!(data20 % 1) && !isNaN(data20))) && (isFinite(data20)))){
-validate759.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
-return false;
-}
-if(errors === _errs38){
-if((typeof data20 == "number") && (isFinite(data20))){
-if(data20 < 0 || isNaN(data20)){
-validate759.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
-return false;
-}
-}
-}
-var valid0 = _errs38 === errors;
-}
-else {
-var valid0 = true;
-}
-if(valid0){
-if(data.n_capacitor !== undefined){
-let data21 = data.n_capacitor;
-const _errs40 = errors;
-if(!(((typeof data21 == "number") && (!(data21 % 1) && !isNaN(data21))) && (isFinite(data21)))){
-validate759.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
-return false;
-}
-if(errors === _errs40){
-if((typeof data21 == "number") && (isFinite(data21))){
-if(data21 < 0 || isNaN(data21)){
-validate759.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
-return false;
-}
-}
 }
 var valid0 = _errs40 === errors;
 }
@@ -36365,17 +36377,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_edge !== undefined){
-let data22 = data.n_edge;
+if(data.n_bus !== undefined){
+let data22 = data.n_bus;
 const _errs42 = errors;
 if(!(((typeof data22 == "number") && (!(data22 % 1) && !isNaN(data22))) && (isFinite(data22)))){
-validate759.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs42){
 if((typeof data22 == "number") && (isFinite(data22))){
 if(data22 < 0 || isNaN(data22)){
-validate759.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36386,17 +36398,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_generator !== undefined){
-let data23 = data.n_generator;
+if(data.n_capacitor !== undefined){
+let data23 = data.n_capacitor;
 const _errs44 = errors;
 if(!(((typeof data23 == "number") && (!(data23 % 1) && !isNaN(data23))) && (isFinite(data23)))){
-validate759.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs44){
 if((typeof data23 == "number") && (isFinite(data23))){
 if(data23 < 0 || isNaN(data23)){
-validate759.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36407,17 +36419,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_ibr !== undefined){
-let data24 = data.n_ibr;
+if(data.n_edge !== undefined){
+let data24 = data.n_edge;
 const _errs46 = errors;
 if(!(((typeof data24 == "number") && (!(data24 % 1) && !isNaN(data24))) && (isFinite(data24)))){
-validate759.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs46){
 if((typeof data24 == "number") && (isFinite(data24))){
 if(data24 < 0 || isNaN(data24)){
-validate759.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36428,17 +36440,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_line !== undefined){
-let data25 = data.n_line;
+if(data.n_generator !== undefined){
+let data25 = data.n_generator;
 const _errs48 = errors;
 if(!(((typeof data25 == "number") && (!(data25 % 1) && !isNaN(data25))) && (isFinite(data25)))){
-validate759.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs48){
 if((typeof data25 == "number") && (isFinite(data25))){
 if(data25 < 0 || isNaN(data25)){
-validate759.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36449,17 +36461,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_load !== undefined){
-let data26 = data.n_load;
+if(data.n_ibr !== undefined){
+let data26 = data.n_ibr;
 const _errs50 = errors;
 if(!(((typeof data26 == "number") && (!(data26 % 1) && !isNaN(data26))) && (isFinite(data26)))){
-validate759.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs50){
 if((typeof data26 == "number") && (isFinite(data26))){
 if(data26 < 0 || isNaN(data26)){
-validate759.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36470,17 +36482,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_shunt !== undefined){
-let data27 = data.n_shunt;
+if(data.n_line !== undefined){
+let data27 = data.n_line;
 const _errs52 = errors;
 if(!(((typeof data27 == "number") && (!(data27 % 1) && !isNaN(data27))) && (isFinite(data27)))){
-validate759.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs52){
 if((typeof data27 == "number") && (isFinite(data27))){
 if(data27 < 0 || isNaN(data27)){
-validate759.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36491,17 +36503,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_source !== undefined){
-let data28 = data.n_source;
+if(data.n_load !== undefined){
+let data28 = data.n_load;
 const _errs54 = errors;
 if(!(((typeof data28 == "number") && (!(data28 % 1) && !isNaN(data28))) && (isFinite(data28)))){
-validate759.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs54){
 if((typeof data28 == "number") && (isFinite(data28))){
 if(data28 < 0 || isNaN(data28)){
-validate759.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36512,17 +36524,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_switch !== undefined){
-let data29 = data.n_switch;
+if(data.n_shunt !== undefined){
+let data29 = data.n_shunt;
 const _errs56 = errors;
 if(!(((typeof data29 == "number") && (!(data29 % 1) && !isNaN(data29))) && (isFinite(data29)))){
-validate759.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs56){
 if((typeof data29 == "number") && (isFinite(data29))){
 if(data29 < 0 || isNaN(data29)){
-validate759.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36533,17 +36545,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_transformer !== undefined){
-let data30 = data.n_transformer;
+if(data.n_source !== undefined){
+let data30 = data.n_source;
 const _errs58 = errors;
 if(!(((typeof data30 == "number") && (!(data30 % 1) && !isNaN(data30))) && (isFinite(data30)))){
-validate759.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs58){
 if((typeof data30 == "number") && (isFinite(data30))){
 if(data30 < 0 || isNaN(data30)){
-validate759.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36554,12 +36566,20 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.name !== undefined){
-let data31 = data.name;
+if(data.n_switch !== undefined){
+let data31 = data.n_switch;
 const _errs60 = errors;
-if((typeof data31 !== "string") && (data31 !== null)){
-validate759.errors = [{instancePath:instancePath+"/name",schemaPath:"#/properties/name/type",keyword:"type",params:{type: schema244.properties.name.type},message:"must be string,null"}];
+if(!(((typeof data31 == "number") && (!(data31 % 1) && !isNaN(data31))) && (isFinite(data31)))){
+validate759.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
+}
+if(errors === _errs60){
+if((typeof data31 == "number") && (isFinite(data31))){
+if(data31 < 0 || isNaN(data31)){
+validate759.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+return false;
+}
+}
 }
 var valid0 = _errs60 === errors;
 }
@@ -36567,17 +36587,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.placed_buses !== undefined){
-let data32 = data.placed_buses;
+if(data.n_transformer !== undefined){
+let data32 = data.n_transformer;
 const _errs62 = errors;
 if(!(((typeof data32 == "number") && (!(data32 % 1) && !isNaN(data32))) && (isFinite(data32)))){
-validate759.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate759.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs62){
 if((typeof data32 == "number") && (isFinite(data32))){
 if(data32 < 0 || isNaN(data32)){
-validate759.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate759.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36586,6 +36606,42 @@ var valid0 = _errs62 === errors;
 }
 else {
 var valid0 = true;
+}
+if(valid0){
+if(data.name !== undefined){
+let data33 = data.name;
+const _errs64 = errors;
+if((typeof data33 !== "string") && (data33 !== null)){
+validate759.errors = [{instancePath:instancePath+"/name",schemaPath:"#/properties/name/type",keyword:"type",params:{type: schema244.properties.name.type},message:"must be string,null"}];
+return false;
+}
+var valid0 = _errs64 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.placed_buses !== undefined){
+let data34 = data.placed_buses;
+const _errs66 = errors;
+if(!(((typeof data34 == "number") && (!(data34 % 1) && !isNaN(data34))) && (isFinite(data34)))){
+validate759.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+return false;
+}
+if(errors === _errs66){
+if((typeof data34 == "number") && (isFinite(data34))){
+if(data34 < 0 || isNaN(data34)){
+validate759.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+return false;
+}
+}
+}
+var valid0 = _errs66 === errors;
+}
+else {
+var valid0 = true;
+}
+}
 }
 }
 }
@@ -36848,11 +36904,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_enabled !== undefined){
-let data14 = data.mc_pf_enabled;
+if(data.mc_fixed_controls !== undefined){
+let data14 = data.mc_fixed_controls;
 const _errs27 = errors;
 if((typeof data14 !== "boolean") && (data14 !== null)){
-validate565.errors = [{instancePath:instancePath+"/mc_pf_enabled",schemaPath:"#/properties/mc_pf_enabled/type",keyword:"type",params:{type: schema244.properties.mc_pf_enabled.type},message:"must be boolean,null"}];
+validate565.errors = [{instancePath:instancePath+"/mc_fixed_controls",schemaPath:"#/properties/mc_fixed_controls/type",keyword:"type",params:{type: schema244.properties.mc_fixed_controls.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs27 === errors;
@@ -36861,11 +36917,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_reason !== undefined){
-let data15 = data.mc_pf_reason;
+if(data.mc_fixed_controls_available !== undefined){
+let data15 = data.mc_fixed_controls_available;
 const _errs29 = errors;
-if((typeof data15 !== "string") && (data15 !== null)){
-validate565.errors = [{instancePath:instancePath+"/mc_pf_reason",schemaPath:"#/properties/mc_pf_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_reason.type},message:"must be string,null"}];
+if((typeof data15 !== "boolean") && (data15 !== null)){
+validate565.errors = [{instancePath:instancePath+"/mc_fixed_controls_available",schemaPath:"#/properties/mc_fixed_controls_available/type",keyword:"type",params:{type: schema244.properties.mc_fixed_controls_available.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs29 === errors;
@@ -36874,11 +36930,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_supported !== undefined){
-let data16 = data.mc_pf_supported;
+if(data.mc_pf_enabled !== undefined){
+let data16 = data.mc_pf_enabled;
 const _errs31 = errors;
 if((typeof data16 !== "boolean") && (data16 !== null)){
-validate565.errors = [{instancePath:instancePath+"/mc_pf_supported",schemaPath:"#/properties/mc_pf_supported/type",keyword:"type",params:{type: schema244.properties.mc_pf_supported.type},message:"must be boolean,null"}];
+validate565.errors = [{instancePath:instancePath+"/mc_pf_enabled",schemaPath:"#/properties/mc_pf_enabled/type",keyword:"type",params:{type: schema244.properties.mc_pf_enabled.type},message:"must be boolean,null"}];
 return false;
 }
 var valid0 = _errs31 === errors;
@@ -36887,11 +36943,11 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.mc_pf_unavailable_reason !== undefined){
-let data17 = data.mc_pf_unavailable_reason;
+if(data.mc_pf_reason !== undefined){
+let data17 = data.mc_pf_reason;
 const _errs33 = errors;
 if((typeof data17 !== "string") && (data17 !== null)){
-validate565.errors = [{instancePath:instancePath+"/mc_pf_unavailable_reason",schemaPath:"#/properties/mc_pf_unavailable_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_unavailable_reason.type},message:"must be string,null"}];
+validate565.errors = [{instancePath:instancePath+"/mc_pf_reason",schemaPath:"#/properties/mc_pf_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_reason.type},message:"must be string,null"}];
 return false;
 }
 var valid0 = _errs33 === errors;
@@ -36900,11 +36956,12 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.model !== undefined){
+if(data.mc_pf_supported !== undefined){
+let data18 = data.mc_pf_supported;
 const _errs35 = errors;
-if(!(validate529(data.model, {instancePath:instancePath+"/model",parentData:data,parentDataProperty:"model",rootData,dynamicAnchors}))){
-vErrors = vErrors === null ? validate529.errors : vErrors.concat(validate529.errors);
-errors = vErrors.length;
+if((typeof data18 !== "boolean") && (data18 !== null)){
+validate565.errors = [{instancePath:instancePath+"/mc_pf_supported",schemaPath:"#/properties/mc_pf_supported/type",keyword:"type",params:{type: schema244.properties.mc_pf_supported.type},message:"must be boolean,null"}];
+return false;
 }
 var valid0 = _errs35 === errors;
 }
@@ -36912,54 +36969,37 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.module_json !== undefined){
-let data19 = data.module_json;
-const _errs36 = errors;
+if(data.mc_pf_unavailable_reason !== undefined){
+let data19 = data.mc_pf_unavailable_reason;
+const _errs37 = errors;
 if((typeof data19 !== "string") && (data19 !== null)){
+validate565.errors = [{instancePath:instancePath+"/mc_pf_unavailable_reason",schemaPath:"#/properties/mc_pf_unavailable_reason/type",keyword:"type",params:{type: schema244.properties.mc_pf_unavailable_reason.type},message:"must be string,null"}];
+return false;
+}
+var valid0 = _errs37 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.model !== undefined){
+const _errs39 = errors;
+if(!(validate529(data.model, {instancePath:instancePath+"/model",parentData:data,parentDataProperty:"model",rootData,dynamicAnchors}))){
+vErrors = vErrors === null ? validate529.errors : vErrors.concat(validate529.errors);
+errors = vErrors.length;
+}
+var valid0 = _errs39 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.module_json !== undefined){
+let data21 = data.module_json;
+const _errs40 = errors;
+if((typeof data21 !== "string") && (data21 !== null)){
 validate565.errors = [{instancePath:instancePath+"/module_json",schemaPath:"#/properties/module_json/type",keyword:"type",params:{type: schema244.properties.module_json.type},message:"must be string,null"}];
 return false;
-}
-var valid0 = _errs36 === errors;
-}
-else {
-var valid0 = true;
-}
-if(valid0){
-if(data.n_bus !== undefined){
-let data20 = data.n_bus;
-const _errs38 = errors;
-if(!(((typeof data20 == "number") && (!(data20 % 1) && !isNaN(data20))) && (isFinite(data20)))){
-validate565.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
-return false;
-}
-if(errors === _errs38){
-if((typeof data20 == "number") && (isFinite(data20))){
-if(data20 < 0 || isNaN(data20)){
-validate565.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
-return false;
-}
-}
-}
-var valid0 = _errs38 === errors;
-}
-else {
-var valid0 = true;
-}
-if(valid0){
-if(data.n_capacitor !== undefined){
-let data21 = data.n_capacitor;
-const _errs40 = errors;
-if(!(((typeof data21 == "number") && (!(data21 % 1) && !isNaN(data21))) && (isFinite(data21)))){
-validate565.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
-return false;
-}
-if(errors === _errs40){
-if((typeof data21 == "number") && (isFinite(data21))){
-if(data21 < 0 || isNaN(data21)){
-validate565.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
-return false;
-}
-}
 }
 var valid0 = _errs40 === errors;
 }
@@ -36967,17 +37007,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_edge !== undefined){
-let data22 = data.n_edge;
+if(data.n_bus !== undefined){
+let data22 = data.n_bus;
 const _errs42 = errors;
 if(!(((typeof data22 == "number") && (!(data22 % 1) && !isNaN(data22))) && (isFinite(data22)))){
-validate565.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs42){
 if((typeof data22 == "number") && (isFinite(data22))){
 if(data22 < 0 || isNaN(data22)){
-validate565.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_bus",schemaPath:"#/properties/n_bus/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -36988,17 +37028,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_generator !== undefined){
-let data23 = data.n_generator;
+if(data.n_capacitor !== undefined){
+let data23 = data.n_capacitor;
 const _errs44 = errors;
 if(!(((typeof data23 == "number") && (!(data23 % 1) && !isNaN(data23))) && (isFinite(data23)))){
-validate565.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs44){
 if((typeof data23 == "number") && (isFinite(data23))){
 if(data23 < 0 || isNaN(data23)){
-validate565.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_capacitor",schemaPath:"#/properties/n_capacitor/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37009,17 +37049,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_ibr !== undefined){
-let data24 = data.n_ibr;
+if(data.n_edge !== undefined){
+let data24 = data.n_edge;
 const _errs46 = errors;
 if(!(((typeof data24 == "number") && (!(data24 % 1) && !isNaN(data24))) && (isFinite(data24)))){
-validate565.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs46){
 if((typeof data24 == "number") && (isFinite(data24))){
 if(data24 < 0 || isNaN(data24)){
-validate565.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_edge",schemaPath:"#/properties/n_edge/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37030,17 +37070,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_line !== undefined){
-let data25 = data.n_line;
+if(data.n_generator !== undefined){
+let data25 = data.n_generator;
 const _errs48 = errors;
 if(!(((typeof data25 == "number") && (!(data25 % 1) && !isNaN(data25))) && (isFinite(data25)))){
-validate565.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs48){
 if((typeof data25 == "number") && (isFinite(data25))){
 if(data25 < 0 || isNaN(data25)){
-validate565.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_generator",schemaPath:"#/properties/n_generator/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37051,17 +37091,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_load !== undefined){
-let data26 = data.n_load;
+if(data.n_ibr !== undefined){
+let data26 = data.n_ibr;
 const _errs50 = errors;
 if(!(((typeof data26 == "number") && (!(data26 % 1) && !isNaN(data26))) && (isFinite(data26)))){
-validate565.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs50){
 if((typeof data26 == "number") && (isFinite(data26))){
 if(data26 < 0 || isNaN(data26)){
-validate565.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_ibr",schemaPath:"#/properties/n_ibr/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37072,17 +37112,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_shunt !== undefined){
-let data27 = data.n_shunt;
+if(data.n_line !== undefined){
+let data27 = data.n_line;
 const _errs52 = errors;
 if(!(((typeof data27 == "number") && (!(data27 % 1) && !isNaN(data27))) && (isFinite(data27)))){
-validate565.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs52){
 if((typeof data27 == "number") && (isFinite(data27))){
 if(data27 < 0 || isNaN(data27)){
-validate565.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_line",schemaPath:"#/properties/n_line/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37093,17 +37133,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_source !== undefined){
-let data28 = data.n_source;
+if(data.n_load !== undefined){
+let data28 = data.n_load;
 const _errs54 = errors;
 if(!(((typeof data28 == "number") && (!(data28 % 1) && !isNaN(data28))) && (isFinite(data28)))){
-validate565.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs54){
 if((typeof data28 == "number") && (isFinite(data28))){
 if(data28 < 0 || isNaN(data28)){
-validate565.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_load",schemaPath:"#/properties/n_load/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37114,17 +37154,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_switch !== undefined){
-let data29 = data.n_switch;
+if(data.n_shunt !== undefined){
+let data29 = data.n_shunt;
 const _errs56 = errors;
 if(!(((typeof data29 == "number") && (!(data29 % 1) && !isNaN(data29))) && (isFinite(data29)))){
-validate565.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs56){
 if((typeof data29 == "number") && (isFinite(data29))){
 if(data29 < 0 || isNaN(data29)){
-validate565.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_shunt",schemaPath:"#/properties/n_shunt/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37135,17 +37175,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.n_transformer !== undefined){
-let data30 = data.n_transformer;
+if(data.n_source !== undefined){
+let data30 = data.n_source;
 const _errs58 = errors;
 if(!(((typeof data30 == "number") && (!(data30 % 1) && !isNaN(data30))) && (isFinite(data30)))){
-validate565.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs58){
 if((typeof data30 == "number") && (isFinite(data30))){
 if(data30 < 0 || isNaN(data30)){
-validate565.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_source",schemaPath:"#/properties/n_source/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37156,12 +37196,20 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.name !== undefined){
-let data31 = data.name;
+if(data.n_switch !== undefined){
+let data31 = data.n_switch;
 const _errs60 = errors;
-if((typeof data31 !== "string") && (data31 !== null)){
-validate565.errors = [{instancePath:instancePath+"/name",schemaPath:"#/properties/name/type",keyword:"type",params:{type: schema244.properties.name.type},message:"must be string,null"}];
+if(!(((typeof data31 == "number") && (!(data31 % 1) && !isNaN(data31))) && (isFinite(data31)))){
+validate565.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
+}
+if(errors === _errs60){
+if((typeof data31 == "number") && (isFinite(data31))){
+if(data31 < 0 || isNaN(data31)){
+validate565.errors = [{instancePath:instancePath+"/n_switch",schemaPath:"#/properties/n_switch/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+return false;
+}
+}
 }
 var valid0 = _errs60 === errors;
 }
@@ -37169,17 +37217,17 @@ else {
 var valid0 = true;
 }
 if(valid0){
-if(data.placed_buses !== undefined){
-let data32 = data.placed_buses;
+if(data.n_transformer !== undefined){
+let data32 = data.n_transformer;
 const _errs62 = errors;
 if(!(((typeof data32 == "number") && (!(data32 % 1) && !isNaN(data32))) && (isFinite(data32)))){
-validate565.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+validate565.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
 return false;
 }
 if(errors === _errs62){
 if((typeof data32 == "number") && (isFinite(data32))){
 if(data32 < 0 || isNaN(data32)){
-validate565.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+validate565.errors = [{instancePath:instancePath+"/n_transformer",schemaPath:"#/properties/n_transformer/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
 return false;
 }
 }
@@ -37188,6 +37236,42 @@ var valid0 = _errs62 === errors;
 }
 else {
 var valid0 = true;
+}
+if(valid0){
+if(data.name !== undefined){
+let data33 = data.name;
+const _errs64 = errors;
+if((typeof data33 !== "string") && (data33 !== null)){
+validate565.errors = [{instancePath:instancePath+"/name",schemaPath:"#/properties/name/type",keyword:"type",params:{type: schema244.properties.name.type},message:"must be string,null"}];
+return false;
+}
+var valid0 = _errs64 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.placed_buses !== undefined){
+let data34 = data.placed_buses;
+const _errs66 = errors;
+if(!(((typeof data34 == "number") && (!(data34 % 1) && !isNaN(data34))) && (isFinite(data34)))){
+validate565.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/type",keyword:"type",params:{type: "integer"},message:"must be integer"}];
+return false;
+}
+if(errors === _errs66){
+if((typeof data34 == "number") && (isFinite(data34))){
+if(data34 < 0 || isNaN(data34)){
+validate565.errors = [{instancePath:instancePath+"/placed_buses",schemaPath:"#/properties/placed_buses/minimum",keyword:"minimum",params:{comparison: ">=", limit: 0},message:"must be >= 0"}];
+return false;
+}
+}
+}
+var valid0 = _errs66 === errors;
+}
+else {
+var valid0 = true;
+}
+}
 }
 }
 }

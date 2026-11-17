@@ -78,6 +78,16 @@ def generate():
                         'new load.lv phases=3 bus1=lv.1.2.3.0 conn=wye kv=.4 kw=30 kvar=10 model=1',
                         'new load.third phases=3 bus1=third.1.2.3.0 conn=wye kv=4.16 kw=20 kvar=5 model=1']
             cases.append(reference(f'three_{connections.replace(" ", "_")}_{ppm}', commands, tolerance=1e-10))
+    for ppm in [None, 0, 50]:
+        written = '' if ppm is None else f' ppm_antifloat={ppm}'
+        commands = ['clear', 'set defaultbasefrequency=50',
+                    'new circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50',
+                    f'new transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1{written}',
+                    'new load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1',
+                    'new regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20']
+        case = reference(f'fixed_regulator_{ppm}', commands)
+        case['fixed_controls'] = True
+        cases.append(case)
     return {'backend': 'OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5', 'cases': cases}
 
 

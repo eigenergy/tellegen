@@ -1663,6 +1663,135 @@
           ]
         }
       }
+    },
+    {
+      "name": "fixed_regulator_None",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",
+      "voltages": {
+        "src.1": [
+          2399.994756,
+          -0.01041573612
+        ],
+        "lv.1": [
+          2458.515628,
+          -2.273869493
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            4.06673911,
+            -0.8172603059
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              4.168407568,
+              -0.8377345216
+            ],
+            "lv.1": [
+              -4.06673911,
+              0.8172603059
+            ]
+          },
+          "losses": [
+            4.165029705,
+            10.51504196
+          ]
+        }
+      },
+      "fixed_controls": true
+    },
+    {
+      "name": "fixed_regulator_0",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1 ppm_antifloat=0\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",
+      "voltages": {
+        "src.1": [
+          2399.994756,
+          -0.01041576713
+        ],
+        "lv.1": [
+          2458.515641,
+          -2.273874687
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            4.066739087,
+            -0.8172603101
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              4.168407564,
+              -0.8376918179
+            ],
+            "lv.1": [
+              -4.066739087,
+              0.8172603101
+            ]
+          },
+          "losses": [
+            4.165021256,
+            10.41255314
+          ]
+        }
+      },
+      "fixed_controls": true
+    },
+    {
+      "name": "fixed_regulator_50",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.reg phases=1 bus1=src.1.0 basekv=2.4 frequency=50\nnew transformer.tx phases=1 windings=2 buses=[src.1.0 lv.1.0] conns=[wye wye] kvs=[2.4 2.4] kvas=[100 100] taps=[1 1.025] %rs=[.2 .2] xhl=1 ppm_antifloat=50\nnew load.ld phases=1 bus1=lv.1.0 kv=2.4 kw=10 kvar=2 model=1\nnew regcontrol.r transformer=tx winding=2 vreg=120 ptratio=20\n",
+      "voltages": {
+        "src.1": [
+          2399.994751,
+          -0.01041421656
+        ],
+        "lv.1": [
+          2458.514989,
+          -2.273614959
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            4.066740251,
+            -0.8172600981
+          ]
+        }
+      },
+      "transformers": {
+        "tx": {
+          "ports": {
+            "src.1": [
+              4.168407741,
+              -0.8398270053
+            ],
+            "lv.1": [
+              -4.066740251,
+              0.8172600981
+            ]
+          },
+          "losses": [
+            4.165443989,
+            15.53699362
+          ]
+        }
+      },
+      "fixed_controls": true
     }
   ]
 }

@@ -1940,7 +1940,7 @@ export async function prepareMcFixedControls(
   moduleJson: string,
 ): Promise<IngestedDistCase> {
   assertEngineInputLength(moduleJson.length);
-  return JSON.parse(
+  return parseApiResult("ingest_distribution",
     expectText(
       await engineHost().call({
         op: "prepare_mc_fixed_controls",

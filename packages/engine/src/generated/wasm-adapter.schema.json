@@ -2468,6 +2468,18 @@
             "null"
           ]
         },
+        "mc_fixed_controls": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mc_fixed_controls_available": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "mc_pf_enabled": {
           "type": [
             "boolean",
@@ -7921,6 +7933,18 @@
             "null"
           ]
         },
+        "mc_fixed_controls": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mc_fixed_controls_available": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "mc_pf_enabled": {
           "type": [
             "boolean",
@@ -8159,7 +8183,7 @@
     "crates/tellegen-wasm/src/dist.rs": "d29481597b63d71382fb7925b1affa7b935257f9ddbe7123cc20430724480398",
     "crates/tellegen-wasm/src/geo.rs": "e08cf5ff7c5fb7f61c3e0a1f177721840054b19283e3ef0ce23d30c20b63a37a",
     "crates/tellegen-wasm/src/lib.rs": "70aae5d81572cb9a7d182172c6f7163533f310c4cb66c1a70ec75665c744e75a",
-    "crates/tellegen-wasm/src/outputs.rs": "c56e62e5aaf88be5733068f47cb2d035639e5983e63141d5315bf737ccf5f049",
+    "crates/tellegen-wasm/src/outputs.rs": "b332e34edd4d04c329feee63bddfc1e53b2c3440090a2e40de1792f65f1ac7ef",
     "crates/tellegen-wasm/src/synth.rs": "6bef7076d83cbe7dff57e7b9133b457ef5046536bb78439bcb8f73640da5cdb8",
     "crates/tellegen/src/ac_dc.rs": "b661a00679864444dd8b666a47c3fb8ae9baf0968569e4d950fe7d519cca7c15",
     "crates/tellegen/src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",

@@ -68,9 +68,18 @@ does not remove the source model's own voltage bounds.
 
 Passive definitions, profiles and monitoring records remain in the module.
 This is a fixed equipment snapshot: daily/yearly simulation, control execution,
-and an OpenDSS script's sequence of solves are not run. Active regulator/control
-objects, unresolved geometry or dependencies, floating source references,
-generator/IBR injections, voltage-dependent loads without a nominal voltage,
-general three-winding transformers, and unqualified transformer settings remain
+and an OpenDSS script's sequence of solves are not run. For supported regulator
+and capacitor controls, **Use written equipment settings** creates a separate
+case using the taps and capacitor values already represented in the input. The
+original case stays unchanged. Original control records are saved with the new
+case, and its fixed-settings choice remains visible after reload. The action is
+available only when all other electrical checks pass; it never runs controls or
+searches for their operating point.
+
+Finite two- and three-winding transformers support written taps and OpenDSS's
+default or written `ppm_antifloat` grounding admittance. Unresolved geometry or
+dependencies, floating source references, generator/IBR injections,
+voltage-dependent loads without a nominal voltage, unsupported active controls,
+unmodeled capacitor steps or filters, and unqualified transformer settings remain
 view-only with a reason. Convergence and operating voltage-limit compliance are
 reported separately. A runnable model can still fail to converge.
