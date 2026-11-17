@@ -479,8 +479,12 @@ reproduce the countries' installed interconnector ratings or converter controls.
 
 The report lists `synchronous_areas` and `planned_hvdc_links`. Saved modules
 retain these lists in `extensions["tellegen.synchronous_areas"]`, so the viewer
-can show them after reopening. The load values in the original network are
-unchanged by the transfer calculation.
+can show them after reopening. The Network panel lists each area's bus count,
+planned demand and geographic basis, followed by the planned links' direction,
+transfer and rating. **Inspect bus** selects a link endpoint; the selected bus's
+area is identified in the panel and the bus readout. These are planned transfers,
+not a new optimization of converter controls. The load values in the original
+network are unchanged by the transfer calculation.
 
 All four countries converge within 0.95–1.05 pu at seeds 1, 7 and 2026. Existing
 corridor-planning warnings are retained where the unconstrained planning

@@ -172,8 +172,9 @@ Render the full viewer:
 <TellegenViewer />
 ```
 
-The default viewer loads bundled cases from `/api`, parses dropped local case
-files in the browser, and runs supported local solves in WebAssembly.
+The default viewer opens local case files and runs supported calculations in
+browser WebAssembly. Set `apiBase` and `loadDefaultCases={true}` to load cases
+from a host application's server.
 
 `TellegenViewer` accepts:
 

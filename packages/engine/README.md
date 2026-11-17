@@ -84,29 +84,26 @@ Utilization alone does not establish enforcement or economic binding.
 Compact solutions also retain optional `formulation` and `status` from the solver.
 Legacy display payloads can omit them; absence does not establish solve success.
 
-ZIP and folder acquisition is optional. Call `await collectionSupported()` before
-offering collection controls. The ordinary build reports `false`; individual
-case imports remain available. A build with the `powerio-collections` feature
-provides `BrowserCaseCollection`. Its unsupported-build methods reject with an
-actionable error rather than failing on a missing WASM export.
-
-```sh
-TELLEGEN_POWERIO_FEATURES=powerio-collections npm run wasm
-```
+The normal browser build includes ZIP and folder imports through
+`BrowserCaseCollection`, including nested archives. Call
+`await collectionSupported()` before offering collection controls so custom
+builds can report that the feature is unavailable. Single-file imports remain
+available in builds without collections.
 
 The engine is built on PowerIO 0.12. Modules it saves state
 `"version": "0.12.0"` in their `pio-ir` header, which PowerIO 0.11 readers
 refuse; modules saved by earlier releases still load. A branch rating of
 positive infinity means no thermal bound and a zero rating a zero bound; display
 payloads still state an unrated branch as `0`. To test a PowerIO candidate,
-select it with the repository's pin script before building. The released
+use the repository's dependency update script before building. The released
 manifest and lockfile must reference published dependencies; a local candidate
 patch must never be published.
 
 ## Experimental AC OPF
 
-The ordinary package contains no POUNCE WASI asset. A development host must
-explicitly build and serve it, then probe it before offering AC OPF:
+The ordinary package contains no POUNCE WASI asset. A host must serve the
+separate release download or build it from source, then probe it before offering
+AC OPF:
 
 ```ts
 import { probeAcOpfWorker, solveAcOpfModule } from "@tellegen/engine";
@@ -121,10 +118,17 @@ const result = await solveAcOpfModule(wasmUrl, moduleJson, cancel.signal);
 ```
 
 `moduleJson` must hold a balanced network or canonical `AcOpfInstance`. Each
-call uses a fresh worker and solves the supplied base operating point. Edits,
-sensitivities, LMPs, retained Studies, and browser solution export are not
-supported. There is no server or main-thread fallback. A successful result is
-locally feasible, not a proof of global optimality.
+call solves the supplied base operating point. Repeated calls reuse the worker
+and compiled module with a fresh WASI instance for each solve. Results include
+LMPs and requested sensitivities; the optional fifth argument to
+`solveAcOpfModule` accepts the same sensitivity specifications as the engine.
+Degenerate active sets can make those derivatives unavailable. Call
+`releaseAcOpfWorker(wasmUrl)` when the host no longer needs it. Cancellation
+terminates the worker, and a later call creates another one.
+
+Case edits, retained AC OPF Studies, and browser solution export remain
+unsupported. There is no server or main-thread fallback. A successful result
+is locally feasible, not a proof of global optimality.
 
 See the [development setup and release gates](../../docs/src/formulations.md#acopf-pounce-decision-experimental-browser-abi)
 before building or distributing the separate asset.
