@@ -68,7 +68,7 @@ pub(crate) fn dq_ri_sc((s, c): (f64, f64), id: f64, iq: f64) -> (f64, f64) {
 /// same above `A`); `knee: false` does so too, for comparisons with it.
 #[inline]
 pub(crate) fn quadratic_se(a: f64, b: f64, x: f64, knee: bool) -> f64 {
-    if b == 0.0 || (knee && !(x > a)) {
+    if b == 0.0 || (knee && super::not_gt(x, a)) {
         0.0
     } else {
         b * (x - a).powi(2) / x.max(SAT_X_MIN)
@@ -106,7 +106,7 @@ impl Saturation {
         match self {
             Self::Quadratic { a, b, knee } => quadratic_se(a, b, x, knee),
             Self::Exponential { a, b } => {
-                if b == 0.0 || !(x > 0.0) {
+                if b == 0.0 || super::not_gt(x, 0.0) {
                     0.0
                 } else {
                     b * x.powf(a)

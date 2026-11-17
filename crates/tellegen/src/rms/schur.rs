@@ -452,7 +452,7 @@ fn factor(a: &mut [f64], k: usize, perm: &mut [u32]) -> bool {
                 (at, best) = (r, v);
             }
         }
-        if !(best > PIVOT_MIN * scale) {
+        if super::not_gt(best, PIVOT_MIN * scale) {
             return false;
         }
         if at != c {

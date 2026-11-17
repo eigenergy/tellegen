@@ -163,6 +163,9 @@ Rust schema (`src/generated/rms-types.ts`, checked by `npm run types:check`).
     `ingest()` (the `IngestedCase` a dropped `.pio.json` of that module
     produces; `coords_method: "generated"` marks its synthetic
     coordinates as sites on real geography), and `exportGridfm()`;
+  - `ingestWithStudy(formulation?)` resolves to `{ payload, study }`: the
+    payload of `ingest()` and a promise of a Study of the same module, which
+    builds on the study worker while the payload is prepared;
   - `cancel(reason?)` terminates the synthetic worker (interactive studies
     are untouched), and `free()` releases the session;
   - `hostKind` is `"worker"`, or `"direct"` when the page runs it.

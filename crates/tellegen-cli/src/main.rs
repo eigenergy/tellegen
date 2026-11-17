@@ -569,7 +569,7 @@ fn describe_value() -> Result<serde_json::Value, String> {
             "solve_response": ir_schema()?,
             "solve_request": serde_json::to_value(schemars::schema_for!(tellegen::SolveRequest))
                 .map_err(|error| error.to_string())?,
-            "solve_result": serde_json::to_value(schemars::schema_for!(tellegen::SolveResponse))
+            "solve_result": serde_json::to_value(schemars::schema_for!(tellegen::SolveOutput))
                 .map_err(|error| error.to_string())?,
             "capabilities_response":
                 serde_json::to_value(schemars::schema_for!(CapabilitiesResponse))

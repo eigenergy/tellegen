@@ -246,10 +246,13 @@ fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
         let Some(cost) = cost else {
             continue;
         };
-        let epigraph = s.cost_epigraph[generator].expect("piecewise epigraph primal");
-        let duals = s.cost_segment_duals[generator]
-            .as_mut()
-            .expect("piecewise segment duals");
+        // `DcKkt::new` checked that every piecewise cost has these values.
+        let (Some(epigraph), Some(duals)) = (
+            s.cost_epigraph[generator],
+            s.cost_segment_duals[generator].as_mut(),
+        ) else {
+            continue;
+        };
         for (segment, dual) in duals.iter_mut().enumerate() {
             let slack =
                 epigraph - cost.slopes[segment] * s.pg[generator] - cost.intercepts[segment];
@@ -310,11 +313,11 @@ fn kkt_triplets(
         e!(idx.rho_lb + j, col, s.rho_lb[j]);
         e!(idx.rho_ub + j, col, -s.rho_ub[j]);
         e!(idx.nu_bal + dc.gen_bus[j], col, 1.0);
-        if let Some(cost) = &dc.piecewise_costs[j] {
-            let duals = s.cost_segment_duals[j]
-                .as_ref()
-                .expect("piecewise segment duals");
-            let row_start = idx.cost_segment_dual[j].expect("piecewise dual rows");
+        if let (Some(cost), Some(duals), Some(row_start)) = (
+            &dc.piecewise_costs[j],
+            s.cost_segment_duals[j].as_ref(),
+            idx.cost_segment_dual[j],
+        ) {
             for (segment, &dual) in duals.iter().enumerate() {
                 e!(row_start + segment, col, -dual * cost.slopes[segment]);
             }
@@ -344,14 +347,14 @@ fn kkt_triplets(
 
     // Piecewise cost epigraph primal columns.
     for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
-        let Some(_) = cost else {
+        let (Some(_), Some(col), Some(row_start), Some(duals)) = (
+            cost,
+            idx.cost[generator],
+            idx.cost_segment_dual[generator],
+            s.cost_segment_duals[generator].as_ref(),
+        ) else {
             continue;
         };
-        let col = idx.cost[generator].expect("piecewise cost primal");
-        let row_start = idx.cost_segment_dual[generator].expect("piecewise dual rows");
-        let duals = s.cost_segment_duals[generator]
-            .as_ref()
-            .expect("piecewise segment duals");
         for (segment, &dual) in duals.iter().enumerate() {
             e!(row_start + segment, col, dual);
         }
@@ -412,12 +415,14 @@ fn kkt_triplets(
     // Piecewise segment dual columns: segment-line contributions to pg and
     // epigraph stationarity, plus segment complementarity.
     for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
-        let Some(cost) = cost else {
+        let (Some(cost), Some(epigraph), Some(cost_row), Some(dual_start)) = (
+            cost,
+            s.cost_epigraph[generator],
+            idx.cost[generator],
+            idx.cost_segment_dual[generator],
+        ) else {
             continue;
         };
-        let epigraph = s.cost_epigraph[generator].expect("piecewise epigraph primal");
-        let cost_row = idx.cost[generator].expect("piecewise cost primal");
-        let dual_start = idx.cost_segment_dual[generator].expect("piecewise dual rows");
         for segment in 0..cost.segment_count() {
             let col = dual_start + segment;
             e!(idx.pg + generator, col, cost.slopes[segment]);
@@ -532,18 +537,43 @@ pub struct DcKkt<'a> {
 
 impl<'a> DcKkt<'a> {
     /// Wrap a solved DC OPF, doing the one-time snap and `nu_flow` recovery.
-    pub fn new(dc: &'a DcNetwork, sol: &DcOpfSolution) -> Self {
+    ///
+    /// Fails when `sol` does not carry the piecewise cost values `dc` needs:
+    /// an epigraph value and one dual per segment for every generator with a
+    /// piecewise cost. That happens only when the solution belongs to another
+    /// model, and the system could not be assembled from it.
+    pub fn new(dc: &'a DcNetwork, sol: &DcOpfSolution) -> Result<Self, SensError> {
+        for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
+            let epigraph = sol.cost_epigraph.get(generator).copied().flatten();
+            let duals = sol
+                .cost_segment_duals
+                .get(generator)
+                .and_then(Option::as_ref);
+            let consistent = match cost {
+                Some(cost) => {
+                    epigraph.is_some()
+                        && duals.is_some_and(|duals| duals.len() == cost.segment_count())
+                }
+                None => epigraph.is_none() && duals.is_none(),
+            };
+            if !consistent {
+                return Err(SensError::Assembly(format!(
+                    "the solution's piecewise cost values do not match the model at generator \
+                     column {generator}"
+                )));
+            }
+        }
         let snapped = snap(dc, sol);
         let idx = KktIdx::new(dc);
         let linear = snap_linear(dc, &snapped);
         let nu_flow = nu_flow_values(dc, &snapped, &linear);
-        DcKkt {
+        Ok(DcKkt {
             dc,
             idx,
             snapped,
             linear,
             nu_flow,
-        }
+        })
     }
 }
 
@@ -818,7 +848,7 @@ mod tests {
         let dc = parse_case3();
         let sol = dc_opf(&dc).expect("solve");
         let buses: Vec<usize> = (0..dc.n).collect();
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         // m.values[i][j] = d(price_i)/d(demand_j).
         let m = sensitivity(&sys, PRICE, DEMAND, Some(&buses), Mode::Forward).expect("dlmp/dd");
         for j in 0..dc.n {
@@ -854,7 +884,7 @@ mod tests {
         let sol = dc_opf(&dc).expect("solve");
 
         let all: Vec<usize> = (0..dc.n).collect();
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         // m.values[i][j] = d(price_i)/d(demand_j); column j is the dLMP/dd column for
         // demand bus j.
         let m = sensitivity(&sys, PRICE, DEMAND, Some(&all), Mode::Forward).expect("dlmp/dd");
@@ -1034,7 +1064,7 @@ mod tests {
     /// nothing large, guarding against a missed term.
     fn check_parity(dc: &DcNetwork, label: &str) {
         let sol = dc_opf(dc).expect("solve");
-        let sys = DcKkt::new(dc, &sol);
+        let sys = DcKkt::new(dc, &sol).unwrap();
         for &op in &OPERANDS {
             let floor = 1e-4 * l2(&operand_vec(&sol, op)).max(1.0);
             for &par in &PARAMETERS {
@@ -1199,7 +1229,7 @@ mod tests {
         assert!((omitted.f[0].abs() - dc.fmax[0]).abs() < 1e-12);
         assert!(omitted.f[5].abs() > dc.fmax[5]);
         check_parity(&dc, "omitted limits");
-        let sys = DcKkt::new(&dc, &omitted);
+        let sys = DcKkt::new(&dc, &omitted).unwrap();
         for &op in &OPERANDS {
             for &par in &PARAMETERS {
                 if param_count(&dc, par) == 0 {
@@ -1223,7 +1253,7 @@ mod tests {
     fn constraint_limit_columns_agree_forward_and_adjoint() {
         let dc = constrained_case3();
         let sol = dc_opf(&dc).expect("solve");
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         let parameter = Parameter::ConstraintLimit;
         for operand in OPERANDS {
             let forward = sensitivity(&sys, operand, parameter, None, Mode::Forward).unwrap();
@@ -1248,7 +1278,7 @@ mod tests {
     fn a_binding_interface_moves_the_flow_one_for_one_with_its_limit() {
         let dc = constrained_case3();
         let sol = dc_opf(&dc).expect("solve");
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         let flow = Operand::Flow {
             power: Power::Active,
             end: End::From,
@@ -1322,7 +1352,7 @@ mod tests {
         // snap regimes, the demand `dcap` term); that the differentiated system
         // factorizes and every sensitivity is finite is the real check, and
         // `adjoint_equals_forward` (which includes this case) pins it further.
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         for &op in &OPERANDS {
             for &par in &PARAMETERS {
                 let m = sensitivity(&sys, op, par, None, Mode::Forward).expect("shed sensitivity");
@@ -1368,7 +1398,7 @@ mod tests {
         }
         // The binding line's limit must move prices, so the line-limit parity is a
         // real validation of dK/dfmax rather than a skipped near-zero column.
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         let lim = sensitivity(&sys, PRICE, Parameter::LineLimit, None, Mode::Forward)
             .expect("line-limit sensitivity");
         let lim_col = l2(&(0..dc.n)
@@ -1385,7 +1415,7 @@ mod tests {
     fn adjoint_equals_forward() {
         for dc in [parse_case3(), congested_case3(), shedding_case3()] {
             let sol = dc_opf(&dc).expect("solve");
-            let sys = DcKkt::new(&dc, &sol);
+            let sys = DcKkt::new(&dc, &sol).unwrap();
             for &op in &OPERANDS {
                 for &par in &PARAMETERS {
                     let fwd = sensitivity(&sys, op, par, None, Mode::Forward).expect("fwd");
@@ -1419,7 +1449,7 @@ mod tests {
             "piecewise fixture did not bind a branch"
         );
 
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         let weights = [(0, 0.75), (1, -0.25), (2, 0.5)];
         let analytic =
             weighted_sensitivity(&sys, PRICE, &weights, Parameter::LineLimit, Some(&[branch]))
@@ -1467,7 +1497,7 @@ mod tests {
     fn piecewise_generators_reject_coefficient_sensitivity() {
         let dc = piecewise_congested_case3();
         let sol = dc_opf(&dc).expect("solve piecewise congested case3");
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         let error = sensitivity(
             &sys,
             PRICE,
@@ -1487,7 +1517,7 @@ mod tests {
         // give the same matrix, so Auto must equal an explicit direction everywhere.
         let dc = congested_case3();
         let sol = dc_opf(&dc).expect("solve");
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         for &op in &OPERANDS {
             for &par in &PARAMETERS {
                 let auto = sensitivity(&sys, op, par, None, Mode::Auto).expect("auto");
@@ -1505,7 +1535,7 @@ mod tests {
     fn unsupported_requests_surface_errors() {
         let dc = parse_case3();
         let sol = dc_opf(&dc).expect("solve");
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         // Reactive price has no DC analogue.
         assert!(matches!(
             sensitivity(
@@ -1534,7 +1564,7 @@ mod tests {
     fn matrix_metadata_names_source_elements() {
         let dc = parse_case3();
         let sol = dc_opf(&dc).expect("solve");
-        let sys = DcKkt::new(&dc, &sol);
+        let sys = DcKkt::new(&dc, &sol).unwrap();
         // Dispatch (per generator) against demand (per bus): a non-square matrix.
         let m = sensitivity(
             &sys,
@@ -1567,7 +1597,7 @@ mod tests {
         ] {
             let dc = DcNetwork::from_network_with_formula(&source, formula).unwrap();
             let sol = dc_opf(&dc).unwrap();
-            let sys = DcKkt::new(&dc, &sol);
+            let sys = DcKkt::new(&dc, &sol).unwrap();
             // Opening the branch removes it from PowerIO's preparation, and the
             // case still solves without it.
             let mut open = source.clone();

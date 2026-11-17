@@ -1199,9 +1199,9 @@ impl CompiledGraph {
     fn run_blocks(&self, x: &[f64], ports: &[f64], f: &mut [f64], y: &mut [f64]) {
         let n = self.blocks.len();
         let mut u = vec![0.0; self.max_inputs];
-        for i in 0..n {
-            if self.blocks[i].state_output() {
-                y[i] = self.blocks[i].output_from_states(self.states(i, x));
+        for (i, block) in self.blocks.iter().enumerate() {
+            if block.state_output() {
+                y[i] = block.output_from_states(self.states(i, x));
             }
         }
         let mut scratch = [0.0; 2];
@@ -1323,7 +1323,7 @@ impl CompiledGraph {
         let mut g = residual(&z, &mut x);
         for _ in 0..50 {
             let g0 = norm(&g);
-            if !(g0 > 1e-12) {
+            if super::not_gt(g0, 1e-12) {
                 break;
             }
             // Forward-difference Jacobian and a damped Newton step.

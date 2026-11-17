@@ -30,9 +30,12 @@ dependencies = []
 # (`powerio.mcp.sandbox`), which is shared with PowerMCP rather than copied.
 # It also reads the PowerIO IR the engine writes, so it follows the engine's
 # PowerIO release series: a 0.11 wheel refuses a 0.12 document.
+# `pydantic` is imported directly by `tellegen.mcp` for its tool argument
+# schemas, so it is declared here and not left to arrive through `mcp`.
 mcp = [
   "mcp>=2,<3",
   "powerio>=0.12,<0.13",
+  "pydantic>=2,<3",
 ]
 
 [project.scripts]

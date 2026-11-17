@@ -33,6 +33,14 @@ fn bounds(lo: Option<f64>, hi: Option<f64>, name: &str) -> Result<(f64, f64), St
     Ok((lo, hi))
 }
 
+/// The position of DC node `id` in `grid.nodes`.
+fn node_position(grid: &dc_grid::DcGrid, id: &str) -> Result<usize, String> {
+    grid.nodes
+        .iter()
+        .position(|node| node.id == id)
+        .ok_or_else(|| format!("DC node {id} is not in the DC grid"))
+}
+
 pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, String> {
     if net.hvdc().iter().any(|h| h.in_service) {
         return Err("Joint AC/DC OPF refuses overlapping reduced HVDC links".into());
@@ -44,7 +52,12 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
         .as_ref()
         .ok_or("Detailed converters missing")?;
     let mut analysis = net.clone();
-    let ad = Arc::make_mut(analysis.detailed_connectivity_mut().as_mut().unwrap());
+    let ad = Arc::make_mut(
+        analysis
+            .detailed_connectivity_mut()
+            .as_mut()
+            .ok_or("Detailed converters missing")?,
+    );
     ad.voltage_source_converters.clear();
     ad.line_commutated_converters.clear();
     let instance = AcOpfInstance::from_network(analysis).map_err(|e| e.to_string())?;
@@ -65,14 +78,14 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                 .nodes
                 .iter()
                 .find(|v| v.id == node.id)
-                .unwrap()
+                .ok_or_else(|| format!("DC start has no voltage for node {}", node.id))?
                 .voltage_kv;
             voltage_columns.push(column(p, format!("dc_voltage[{}]", node.id), lo, hi, v));
         }
-        let node_index = |id: &str| grid.nodes.iter().position(|n| n.id == id).unwrap();
+        let node_index = |id: &str| node_position(&grid, id);
         let mut kcl = vec![Vec::new(); grid.nodes.len()];
         for b in grid.branches.iter().filter(|b| b.in_service) {
-            let (f, t) = (node_index(&b.from), node_index(&b.to));
+            let (f, t) = (node_index(&b.from)?, node_index(&b.to)?);
             let current = scaled(
                 1.0 / b.resistance_ohm,
                 subtract(variable(voltage_columns[f]), variable(voltage_columns[t])),
@@ -103,8 +116,12 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
             if vmin <= 0.0 {
                 return Err("Joint OPF requires positive minimum converter DC voltage".into());
             }
-            let (f, t) = (node_index(&c.positive), node_index(&c.negative));
-            let initial = start.converters.iter().find(|s| s.id == c.id).unwrap();
+            let (f, t) = (node_index(&c.positive)?, node_index(&c.negative)?);
+            let initial = start
+                .converters
+                .iter()
+                .find(|s| s.id == c.id)
+                .ok_or_else(|| format!("DC start has no result for converter {}", c.id))?;
             let imax = c.current_limit_ka.unwrap_or(INF);
             let i = column(
                 p,
@@ -285,8 +302,8 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
     let accepted = solve_compiled(model, None, POUNCE_OPTIONS, |model, x| {
         let mut check_grid = grid.clone();
         for (j, c) in converters.iter().enumerate() {
-            let f = grid.nodes.iter().position(|n| n.id == c.positive).unwrap();
-            let t = grid.nodes.iter().position(|n| n.id == c.negative).unwrap();
+            let f = node_position(&grid, &c.positive)?;
+            let t = node_position(&grid, &c.negative)?;
             let u = x[voltage_columns[f]] - x[voltage_columns[t]];
             let i = x[current_columns[j]];
             if c.loss[1] > 0.0 && i.abs() < 1e-9 {
@@ -298,7 +315,7 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                     .converters
                     .iter_mut()
                     .find(|v| v.id == c.id)
-                    .unwrap()
+                    .ok_or_else(|| format!("DC check grid has no converter {}", c.id))?
                     .control = DcControl::ActivePower { mw: pac };
             }
             model.preparation.buses.p_d[ac_rows[j]] += pac / model.preparation.base_mva;
@@ -310,8 +327,15 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                 .find(|v| v.component.to_string() == c.id)
             {
                 if vsc.voltage_regulator_on == Some(true) {
-                    let bus = net.buses().iter().find(|b| b.id.0 == c.ac_bus).unwrap();
-                    let target = vsc.voltage_setpoint_kv.unwrap() / bus.base_kv;
+                    let bus = net
+                        .buses()
+                        .iter()
+                        .find(|b| b.id.0 == c.ac_bus)
+                        .ok_or_else(|| format!("Converter {} AC bus is not in the case", c.id))?;
+                    let setpoint = vsc.voltage_setpoint_kv.ok_or_else(|| {
+                        format!("Converter {} regulates voltage without a setpoint", c.id)
+                    })?;
+                    let target = setpoint / bus.base_kv;
                     if (x[model.columns.vm[ac_rows[j]]] - target).abs() > 1e-6 {
                         return Err("Independent converter AC voltage check failed".into());
                     }
@@ -321,7 +345,7 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
                     .line_commutated_converters
                     .iter()
                     .find(|v| v.component.to_string() == c.id)
-                    .unwrap();
+                    .ok_or_else(|| format!("Converter {} has no detailed record", c.id))?;
                 let pf = ac_dc::lcc_power_factor(lcc)?;
                 if (q - pac.abs()
                     * powerio::electrical::calc_reactive_ratio(
@@ -347,7 +371,11 @@ pub(crate) fn solve_joint_ac_dc(net: &BalancedNetwork) -> Result<AcDcSolution, S
             ));
         }
         for (j, c) in converters.iter().enumerate() {
-            let s = checked.converters.iter().find(|s| s.id == c.id).unwrap();
+            let s = checked
+                .converters
+                .iter()
+                .find(|s| s.id == c.id)
+                .ok_or_else(|| format!("DC check has no result for converter {}", c.id))?;
             if (s.current_ka - x[current_columns[j]]).abs() > 1e-6 {
                 return Err("Independent DC check disagrees with joint OPF".into());
             }
