@@ -3456,11 +3456,29 @@ export class Controller {
 	useWrittenEquipmentSettings = async (c: MulticonductorCase): Promise<MulticonductorCase> => {
 		if (!c.summary?.mc_fixed_controls_available || !c.mcInput)
 			throw new Error('Written equipment settings are not available for this case');
-		const input = await mcInputJson(c.mcInput);
+		const source = c.mcInput;
+		const revision = c.revisionGeneration;
+		const isCurrent = () =>
+			!this.disposed &&
+			this.app.multiCases.includes(c) &&
+			c.mcInput === source &&
+			c.revisionGeneration === revision;
+		const requireCurrent = () => {
+			if (!isCurrent()) throw new DOMException('Case preparation cancelled', 'AbortError');
+		};
+		requireCurrent();
+		const input = await mcInputJson(source);
+		requireCurrent();
 		const prepare = this.mcTransport.prepareMcFixedControls ?? prepareMcFixedControls;
 		const payload = await prepare(input);
-		if (!payload.mc_fixed_controls || !payload.mc_pf_supported)
+		if (!isCurrent()) {
+			releaseMcInput(payload.input);
+			throw new DOMException('Case preparation cancelled', 'AbortError');
+		}
+		if (!payload.mc_fixed_controls || !payload.mc_pf_supported) {
+			releaseMcInput(payload.input);
 			throw new Error('The prepared case does not support written equipment settings');
+		}
 		return this.addMultiCase(c.fileName, payload, undefined, `${c.label} — fixed settings`);
 	};
 

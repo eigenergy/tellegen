@@ -1109,6 +1109,34 @@ describe('written equipment settings', () => {
 		expect(c.mcInput).toBe(original);
 		expect(c.summary?.mc_pf_unavailable_reason).toBe('Automatic control retained');
 	});
+	it.each(['removed', 'disposed', 'changed'])(
+		'discards a completed conversion when its source is %s',
+		async (reason) => {
+			const { app, ctrl, c } = host({ mc_fixed_controls_available: true });
+			let finish!: (value: IngestedDistCase) => void;
+			const prepare = vi.fn(
+				() =>
+					new Promise<IngestedDistCase>((resolve) => {
+						finish = resolve;
+					})
+			);
+			ctrl.mcTransport.prepareMcFixedControls = prepare;
+			const pending = ctrl.useWrittenEquipmentSettings(c);
+			await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+			if (reason === 'removed') app.removeMulti(c.id);
+			else if (reason === 'disposed') ctrl.dispose();
+			else c.revisionGeneration++;
+			const free = vi.fn();
+			finish({
+				...payload('prepared'),
+				mc_fixed_controls: true,
+				input: { free } as unknown as IngestedDistCase['input']
+			});
+			await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+			expect(free).toHaveBeenCalledOnce();
+			expect(app.multiCases.some((item) => item.summary?.mc_fixed_controls)).toBe(false);
+		}
+	);
 	it('does not prepare cases with unrelated unsupported features', async () => {
 		const { ctrl, c } = host({ mc_fixed_controls_available: false });
 		const prepare = vi.fn();
