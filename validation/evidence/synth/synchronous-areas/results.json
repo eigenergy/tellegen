@@ -1,0 +1,945 @@
+{
+  "binary_sha256": "sha256:c22d203d89ed244713b305ad0e369beec19e1863ec88d53e9688cbbfe8447e36",
+  "seeds": [
+    1,
+    7,
+    2026
+  ],
+  "runs": [
+    {
+      "case": "aus-s1",
+      "request_sha256": "a26f9fb2b0bd93aa72f90d48e7c54584a39e6fefe07621fce5a112e2beca4eb2",
+      "network_sha256": "62494c7a38d201c8f873b487973732228138cd04d3432243eff703b7c3a702e9",
+      "report_sha256": "76f0105ba65b02c9f9f21a8151207270d37d1267a465a2b2df6c7f0efeb9e4da",
+      "buses": 312,
+      "areas": [
+        {
+          "name": "AUS Mainland NEM",
+          "buses": 197,
+          "demand_mw": 34740.38266166595
+        },
+        {
+          "name": "AUS Western Australia",
+          "buses": 70,
+          "demand_mw": 5242.124996309781
+        },
+        {
+          "name": "AUS Tasmania",
+          "buses": 6,
+          "demand_mw": 593.7785454908288
+        },
+        {
+          "name": "AUS Northern Territory",
+          "buses": 39,
+          "demand_mw": 1212.1623286000743
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 24,
+          "to_bus": 12,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 37.1111590931768,
+          "transfer_mw": 29.688927274541445
+        },
+        {
+          "from_bus": 18,
+          "to_bus": 16,
+          "from_area": 3,
+          "to_area": 0,
+          "rating_mw": 75.76014553750461,
+          "transfer_mw": 60.60811643000369
+        },
+        {
+          "from_bus": 31,
+          "to_bus": 5,
+          "from_area": 1,
+          "to_area": 0,
+          "rating_mw": 160.4736733921978,
+          "transfer_mw": 128.37893871375826
+        }
+      ],
+      "voltage_range_pu": [
+        1.0185075732693305,
+        1.0215965973848322
+      ],
+      "ac_residual": 6.071001909524476e-09,
+      "dc_solve_ms": 7.630624999999995,
+      "ac_solve_ms": 1.9129590000000007,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 37 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.89), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 130.4\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "aus-s2026",
+      "request_sha256": "7bed59f59fa07a79d36966361b12d0b804482f4df23fb3a7712d0719d2c94198",
+      "network_sha256": "f327c72af746f4992648370204cab17f9f46a1c6ccabf684d125f616198745ce",
+      "report_sha256": "32f1bc2ece4dfa1a564564a23df35d14735d140e528f27219fcc909f50752a74",
+      "buses": 312,
+      "areas": [
+        {
+          "name": "AUS Mainland NEM",
+          "buses": 204,
+          "demand_mw": 34650.32323734527
+        },
+        {
+          "name": "AUS Western Australia",
+          "buses": 68,
+          "demand_mw": 5504.238628518127
+        },
+        {
+          "name": "AUS Tasmania",
+          "buses": 5,
+          "demand_mw": 558.7634825328317
+        },
+        {
+          "name": "AUS Northern Territory",
+          "buses": 35,
+          "demand_mw": 1075.123183670332
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 24,
+          "to_bus": 12,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 34.922717658301984,
+          "transfer_mw": 27.938174126641588
+        },
+        {
+          "from_bus": 18,
+          "to_bus": 16,
+          "from_area": 3,
+          "to_area": 0,
+          "rating_mw": 49.7304284130694,
+          "transfer_mw": 39.78434273045552
+        },
+        {
+          "from_bus": 31,
+          "to_bus": 5,
+          "from_area": 1,
+          "to_area": 0,
+          "rating_mw": 294.6649960649079,
+          "transfer_mw": 235.7319968519263
+        }
+      ],
+      "voltage_range_pu": [
+        1.0107743833738771,
+        1.021552041621863
+      ],
+      "ac_residual": 9.086311258954538e-09,
+      "dc_solve_ms": 6.993458000000004,
+      "ac_solve_ms": 2.212583000000002,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 30 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 192.9\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "aus-s7",
+      "request_sha256": "364490bd1f80974df18316a7d34da1190b6105b2f80bf4fad0210ff216d7d758",
+      "network_sha256": "c3d527b68fd5e43725558463e413fe0f26ddd52c041c1b6fc7bb5ab63ade2fdb",
+      "report_sha256": "f3ea71f9b15371fe9cf19270bf47ec6b59281aa70e231b17e680eda0d3a0788a",
+      "buses": 312,
+      "areas": [
+        {
+          "name": "AUS Mainland NEM",
+          "buses": 190,
+          "demand_mw": 34406.98423921622
+        },
+        {
+          "name": "AUS Western Australia",
+          "buses": 81,
+          "demand_mw": 5607.071475911947
+        },
+        {
+          "name": "AUS Tasmania",
+          "buses": 6,
+          "demand_mw": 631.4733432836995
+        },
+        {
+          "name": "AUS Northern Territory",
+          "buses": 35,
+          "demand_mw": 1142.919473654669
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 24,
+          "to_bus": 12,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 39.46708395523122,
+          "transfer_mw": 31.573667164184975
+        },
+        {
+          "from_bus": 18,
+          "to_bus": 16,
+          "from_area": 3,
+          "to_area": 0,
+          "rating_mw": 71.43246710341678,
+          "transfer_mw": 57.145973682733434
+        },
+        {
+          "from_bus": 5,
+          "to_bus": 31,
+          "from_area": 0,
+          "to_area": 1,
+          "rating_mw": 41.249266168219684,
+          "transfer_mw": 32.99941293457575
+        }
+      ],
+      "voltage_range_pu": [
+        1.0159873688703318,
+        1.0245064938402269
+      ],
+      "ac_residual": 2.971223614367524e-09,
+      "dc_solve_ms": 7.387207999999994,
+      "ac_solve_ms": 1.9295419999999979,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 39 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.89), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 171.7\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "chn-s1",
+      "request_sha256": "30646f47cab1a292d7270f2b37e9b3efc1f705b9bfd79fe59649ba772fd1832f",
+      "network_sha256": "c0dbe607c49725843b00c6cc4a37c9bc7f07d0d711387c8ce062e28075db5b9e",
+      "report_sha256": "0f3bd0240addc0d907661e7f57be036589812e308c557531c0ff01450c22a50f",
+      "buses": 3000,
+      "areas": [
+        {
+          "name": "CHN Eastern",
+          "buses": 408,
+          "demand_mw": 335141.0487776007
+        },
+        {
+          "name": "CHN Central",
+          "buses": 713,
+          "demand_mw": 343534.9224521059
+        },
+        {
+          "name": "CHN Northern",
+          "buses": 588,
+          "demand_mw": 317543.14633480733
+        },
+        {
+          "name": "CHN Southern",
+          "buses": 537,
+          "demand_mw": 318678.9775141043
+        },
+        {
+          "name": "CHN Northeast",
+          "buses": 394,
+          "demand_mw": 117093.10325528296
+        },
+        {
+          "name": "CHN Northwest",
+          "buses": 360,
+          "demand_mw": 51599.91220761088
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 21,
+          "to_bus": 2754,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 6615.482215308486,
+          "transfer_mw": 5292.385772246789
+        },
+        {
+          "from_bus": 261,
+          "to_bus": 259,
+          "from_area": 1,
+          "to_area": 2,
+          "rating_mw": 5623.614264581141,
+          "transfer_mw": 4498.891411664913
+        },
+        {
+          "from_bus": 291,
+          "to_bus": 328,
+          "from_area": 1,
+          "to_area": 3,
+          "rating_mw": 480.51897536839675,
+          "transfer_mw": 384.4151802947174
+        },
+        {
+          "from_bus": 284,
+          "to_bus": 337,
+          "from_area": 4,
+          "to_area": 2,
+          "rating_mw": 1207.2697181326205,
+          "transfer_mw": 965.8157745060964
+        },
+        {
+          "from_bus": 349,
+          "to_bus": 149,
+          "from_area": 5,
+          "to_area": 1,
+          "rating_mw": 1398.328504915228,
+          "transfer_mw": 1118.6628039321824
+        }
+      ],
+      "voltage_range_pu": [
+        1.0137502761549375,
+        1.0226434526072334
+      ],
+      "ac_residual": 7.215583464059705e-09,
+      "dc_solve_ms": 82.65462500000001,
+      "ac_solve_ms": 21.948124999999948,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 57 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 102.9\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "chn-s2026",
+      "request_sha256": "dadd52c58b06a2789092148a97a00145898d4d98b841ba98c03490c3b3fb7957",
+      "network_sha256": "1b77188dacc4135299ce95b8c6969c30a87f48ee8b763db741db219de3de3c74",
+      "report_sha256": "979fbc8c04a5bf0821bc9cedf4e37b567f4a6bda776b9ed17d142a9972d5e1d6",
+      "buses": 3000,
+      "areas": [
+        {
+          "name": "CHN Eastern",
+          "buses": 419,
+          "demand_mw": 331350.07265962777
+        },
+        {
+          "name": "CHN Central",
+          "buses": 729,
+          "demand_mw": 339667.82728696795
+        },
+        {
+          "name": "CHN Northern",
+          "buses": 572,
+          "demand_mw": 320873.17231198074
+        },
+        {
+          "name": "CHN Southern",
+          "buses": 548,
+          "demand_mw": 319742.40671339835
+        },
+        {
+          "name": "CHN Northeast",
+          "buses": 371,
+          "demand_mw": 119515.91518334737
+        },
+        {
+          "name": "CHN Northwest",
+          "buses": 361,
+          "demand_mw": 52441.71638619701
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 162,
+          "to_bus": 292,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 1996.3107397551971,
+          "transfer_mw": 1597.0485918041577
+        },
+        {
+          "from_bus": 259,
+          "to_bus": 261,
+          "from_area": 2,
+          "to_area": 1,
+          "rating_mw": 939.434274905959,
+          "transfer_mw": 751.5474199247673
+        },
+        {
+          "from_bus": 291,
+          "to_bus": 328,
+          "from_area": 1,
+          "to_area": 3,
+          "rating_mw": 7076.413068478499,
+          "transfer_mw": 5661.1304547827995
+        },
+        {
+          "from_bus": 337,
+          "to_bus": 284,
+          "from_area": 2,
+          "to_area": 4,
+          "rating_mw": 1072.112685615474,
+          "transfer_mw": 857.6901484923793
+        },
+        {
+          "from_bus": 149,
+          "to_bus": 349,
+          "from_area": 1,
+          "to_area": 5,
+          "rating_mw": 2331.509411382757,
+          "transfer_mw": 1865.2075291062058
+        }
+      ],
+      "voltage_range_pu": [
+        1.0136262796118924,
+        1.026347846992306
+      ],
+      "ac_residual": 3.979302443113397e-10,
+      "dc_solve_ms": 79.72874999999999,
+      "ac_solve_ms": 23.500958999999966,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 53 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 84.7\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "chn-s7",
+      "request_sha256": "fc58997852c5caa147242ee460b5ba8bb20f96b1150946a9df7f30cec7b93966",
+      "network_sha256": "ddd3c95dbc4ab6cc147d6b1681d17c81661132947a37c5c6677fd8c84961033c",
+      "report_sha256": "085515bcfb49bc19bfcb3590edee90ae61ac3dcb866fb7e6ee5ec16adbb9a503",
+      "buses": 3000,
+      "areas": [
+        {
+          "name": "CHN Eastern",
+          "buses": 400,
+          "demand_mw": 329262.69776662556
+        },
+        {
+          "name": "CHN Central",
+          "buses": 716,
+          "demand_mw": 342049.2759760645
+        },
+        {
+          "name": "CHN Northern",
+          "buses": 601,
+          "demand_mw": 321142.8364840822
+        },
+        {
+          "name": "CHN Southern",
+          "buses": 536,
+          "demand_mw": 320116.08631321293
+        },
+        {
+          "name": "CHN Northeast",
+          "buses": 404,
+          "demand_mw": 119875.37167341885
+        },
+        {
+          "name": "CHN Northwest",
+          "buses": 343,
+          "demand_mw": 51144.8423281103
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 162,
+          "to_bus": 292,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 3909.4736780591247,
+          "transfer_mw": 3127.5789424473
+        },
+        {
+          "from_bus": 261,
+          "to_bus": 259,
+          "from_area": 1,
+          "to_area": 2,
+          "rating_mw": 6690.475760085046,
+          "transfer_mw": 5352.380608068037
+        },
+        {
+          "from_bus": 328,
+          "to_bus": 291,
+          "from_area": 3,
+          "to_area": 1,
+          "rating_mw": 3131.582423122764,
+          "transfer_mw": 2505.265938498211
+        },
+        {
+          "from_bus": 284,
+          "to_bus": 337,
+          "from_area": 4,
+          "to_area": 2,
+          "rating_mw": 2953.4385216446917,
+          "transfer_mw": 2362.7508173157535
+        },
+        {
+          "from_bus": 149,
+          "to_bus": 349,
+          "from_area": 1,
+          "to_area": 5,
+          "rating_mw": 2662.3810288694995,
+          "transfer_mw": 2129.9048230955996
+        }
+      ],
+      "voltage_range_pu": [
+        1.0147052663457676,
+        1.0248823466302304
+      ],
+      "ac_residual": 6.216813147608136e-09,
+      "dc_solve_ms": 83.07770799999997,
+      "ac_solve_ms": 21.630750000000035,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 52 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 92.6\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "idn-s1",
+      "request_sha256": "5e251449e048cdd624ee8a1f00906a7e095228d99e3f3b416a4d1c19ee63e5da",
+      "network_sha256": "0fc241eeb4b101d9ac103dd72e1f3da1aefbbb9f7c7909999b6b71a727a99fbe",
+      "report_sha256": "f5dba2eb61096bf9f2fba333f6a0020500ddd205500579a327afde8d1c919bab",
+      "buses": 369,
+      "areas": [
+        {
+          "name": "IDN Java and Bali",
+          "buses": 166,
+          "demand_mw": 33829.05992514924
+        },
+        {
+          "name": "IDN Sumatra",
+          "buses": 89,
+          "demand_mw": 9549.073343880395
+        },
+        {
+          "name": "IDN Sulawesi",
+          "buses": 24,
+          "demand_mw": 3160.167498356548
+        },
+        {
+          "name": "IDN Kalimantan",
+          "buses": 55,
+          "demand_mw": 4764.733461399373
+        },
+        {
+          "name": "IDN Eastern islands",
+          "buses": 8,
+          "demand_mw": 822.859014697479
+        },
+        {
+          "name": "IDN Papua",
+          "buses": 27,
+          "demand_mw": 1295.607971846726
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 32,
+          "to_bus": 24,
+          "from_area": 3,
+          "to_area": 0,
+          "rating_mw": 54.58450483315433,
+          "transfer_mw": 43.667603866523464
+        },
+        {
+          "from_bus": 14,
+          "to_bus": 30,
+          "from_area": 1,
+          "to_area": 0,
+          "rating_mw": 56.0756850995416,
+          "transfer_mw": 44.86054807963328
+        },
+        {
+          "from_bus": 35,
+          "to_bus": 18,
+          "from_area": 2,
+          "to_area": 3,
+          "rating_mw": 65.83682288242808,
+          "transfer_mw": 52.66945830594247
+        },
+        {
+          "from_bus": 29,
+          "to_bus": 39,
+          "from_area": 4,
+          "to_area": 2,
+          "rating_mw": 12.124532531466162,
+          "transfer_mw": 9.69962602517293
+        },
+        {
+          "from_bus": 33,
+          "to_bus": 31,
+          "from_area": 5,
+          "to_area": 2,
+          "rating_mw": 7.1483553945069875,
+          "transfer_mw": 5.71868431560559
+        }
+      ],
+      "voltage_range_pu": [
+        1.0164635496844696,
+        1.0238649016923713
+      ],
+      "ac_residual": 3.808073370525911e-09,
+      "dc_solve_ms": 8.626249999999995,
+      "ac_solve_ms": 2.4241250000000036,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 16 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 144.6\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "idn-s2026",
+      "request_sha256": "5f7faf282191554ed637342f6986c7d872e02efaa93518f06f97efb75a05d78b",
+      "network_sha256": "c20d1de60c31f5cccb89a06d301d3d5e8554fa42fae639b1373d33bf53807aa5",
+      "report_sha256": "56a3d6dba4d85b4258be7bf3c751069bd3fcbd374ac026cc400a2c5f8cd226a5",
+      "buses": 369,
+      "areas": [
+        {
+          "name": "IDN Java and Bali",
+          "buses": 151,
+          "demand_mw": 33999.675008965976
+        },
+        {
+          "name": "IDN Sumatra",
+          "buses": 96,
+          "demand_mw": 9705.136060081055
+        },
+        {
+          "name": "IDN Sulawesi",
+          "buses": 27,
+          "demand_mw": 3102.829298912658
+        },
+        {
+          "name": "IDN Kalimantan",
+          "buses": 60,
+          "demand_mw": 4609.68860896322
+        },
+        {
+          "name": "IDN Eastern islands",
+          "buses": 13,
+          "demand_mw": 940.0912759083844
+        },
+        {
+          "name": "IDN Papua",
+          "buses": 22,
+          "demand_mw": 1064.0809624984176
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 32,
+          "to_bus": 24,
+          "from_area": 3,
+          "to_area": 0,
+          "rating_mw": 121.30551709048143,
+          "transfer_mw": 97.04441367238515
+        },
+        {
+          "from_bus": 14,
+          "to_bus": 30,
+          "from_area": 1,
+          "to_area": 0,
+          "rating_mw": 16.81078308891072,
+          "transfer_mw": 13.448626471128577
+        },
+        {
+          "from_bus": 35,
+          "to_bus": 18,
+          "from_area": 2,
+          "to_area": 3,
+          "rating_mw": 64.64227706068037,
+          "transfer_mw": 51.7138216485443
+        },
+        {
+          "from_bus": 29,
+          "to_bus": 39,
+          "from_area": 4,
+          "to_area": 2,
+          "rating_mw": 17.30889617920818,
+          "transfer_mw": 13.847116943366544
+        },
+        {
+          "from_bus": 33,
+          "to_bus": 31,
+          "from_area": 5,
+          "to_area": 2,
+          "rating_mw": 7.32600516202533,
+          "transfer_mw": 5.860804129620265
+        }
+      ],
+      "voltage_range_pu": [
+        1.0160210995599164,
+        1.0236202162938404
+      ],
+      "ac_residual": 5.198437430520286e-09,
+      "dc_solve_ms": 7.313125000000003,
+      "ac_solve_ms": 2.286625000000001,
+      "planning_warnings": [],
+      "checks": "passed"
+    },
+    {
+      "case": "idn-s7",
+      "request_sha256": "e8a93212f5495e0775c9def443c1f8edc1ba30de7a9980280365b5d49b6abd9d",
+      "network_sha256": "55af553d3ca3a2894efc8b82c1a83c6246dfba9c63b2b1c65f4100e18ee6006c",
+      "report_sha256": "7b5f31ac99c41d912bb44bb7d21d471ae2af147563d6560247d297d319907ade",
+      "buses": 369,
+      "areas": [
+        {
+          "name": "IDN Java and Bali",
+          "buses": 161,
+          "demand_mw": 33543.18010530779
+        },
+        {
+          "name": "IDN Sumatra",
+          "buses": 82,
+          "demand_mw": 9854.440681346396
+        },
+        {
+          "name": "IDN Sulawesi",
+          "buses": 28,
+          "demand_mw": 3064.044325106173
+        },
+        {
+          "name": "IDN Kalimantan",
+          "buses": 55,
+          "demand_mw": 4797.592561659294
+        },
+        {
+          "name": "IDN Eastern islands",
+          "buses": 19,
+          "demand_mw": 994.954023795033
+        },
+        {
+          "name": "IDN Papua",
+          "buses": 24,
+          "demand_mw": 1167.2895181150466
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 32,
+          "to_bus": 24,
+          "from_area": 3,
+          "to_area": 0,
+          "rating_mw": 149.92476755185294,
+          "transfer_mw": 119.93981404148235
+        },
+        {
+          "from_bus": 30,
+          "to_bus": 14,
+          "from_area": 0,
+          "to_area": 1,
+          "rating_mw": 60.96488465580706,
+          "transfer_mw": 48.77190772464565
+        },
+        {
+          "from_bus": 35,
+          "to_bus": 18,
+          "from_area": 2,
+          "to_area": 3,
+          "rating_mw": 59.286309465307,
+          "transfer_mw": 47.4290475722456
+        },
+        {
+          "from_bus": 29,
+          "to_bus": 39,
+          "from_area": 4,
+          "to_area": 2,
+          "rating_mw": 11.314573230589268,
+          "transfer_mw": 9.051658584471415
+        },
+        {
+          "from_bus": 33,
+          "to_bus": 31,
+          "from_area": 5,
+          "to_area": 2,
+          "rating_mw": 22.053002772278465,
+          "transfer_mw": 17.642402217822774
+        }
+      ],
+      "voltage_range_pu": [
+        1.0183419373589029,
+        1.0208035835500875
+      ],
+      "ac_residual": 9.645985607487084e-09,
+      "dc_solve_ms": 7.581124999999997,
+      "ac_solve_ms": 2.301583000000001,
+      "planning_warnings": [],
+      "checks": "passed"
+    },
+    {
+      "case": "usa-s1",
+      "request_sha256": "7dedfdee36d353973e1651e5eecec4063e8faf14a51c7026b8ca5310331d934b",
+      "network_sha256": "283372ffca39e15fa1c0245e98731ac0727236ce57c4d87ab095ff4faad9fcca",
+      "report_sha256": "8f358277920b2ae0920b753b53229df6d62f6adbb8128caf9bc155748d23315d",
+      "buses": 3000,
+      "areas": [
+        {
+          "name": "USA Eastern",
+          "buses": 1713,
+          "demand_mw": 450022.7691622733
+        },
+        {
+          "name": "USA Western",
+          "buses": 1022,
+          "demand_mw": 179385.644470646
+        },
+        {
+          "name": "USA Texas",
+          "buses": 265,
+          "demand_mw": 109037.46987733191
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 337,
+          "to_bus": 145,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 3407.420933666622,
+          "transfer_mw": 2725.936746933298
+        },
+        {
+          "from_bus": 27,
+          "to_bus": 284,
+          "from_area": 1,
+          "to_area": 2,
+          "rating_mw": 1834.6089827078267,
+          "transfer_mw": 1467.6871861662614
+        }
+      ],
+      "voltage_range_pu": [
+        1.0130625667465178,
+        1.0256620174709616
+      ],
+      "ac_residual": 1.6344500475273804e-09,
+      "dc_solve_ms": 90.80116600000008,
+      "ac_solve_ms": 25.386041999999975,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 49 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 125.9\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "usa-s2026",
+      "request_sha256": "961cc58746013c07634c1ff779a52868fe94e078b98d38ed9d35b08250b79d01",
+      "network_sha256": "a717482fa9049f38e35cb4f31818284dca79c848a5f1b1e16470ad2909e43180",
+      "report_sha256": "1924d368dc1cc23ed720b05d90fec7a9a30458f15b143b96d9acfc4a840e115f",
+      "buses": 3000,
+      "areas": [
+        {
+          "name": "USA Eastern",
+          "buses": 1695,
+          "demand_mw": 449518.4348525331
+        },
+        {
+          "name": "USA Western",
+          "buses": 1051,
+          "demand_mw": 180447.4573168594
+        },
+        {
+          "name": "USA Texas",
+          "buses": 254,
+          "demand_mw": 108479.99134085955
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 337,
+          "to_bus": 145,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 2447.0076830647736,
+          "transfer_mw": 1957.606146451819
+        },
+        {
+          "from_bus": 27,
+          "to_bus": 284,
+          "from_area": 1,
+          "to_area": 2,
+          "rating_mw": 3389.9997294018613,
+          "transfer_mw": 2711.999783521489
+        }
+      ],
+      "voltage_range_pu": [
+        1.0105047085453458,
+        1.0241608322287725
+      ],
+      "ac_residual": 2.0688264990020855e-10,
+      "dc_solve_ms": 86.64154200000007,
+      "ac_solve_ms": 25.187125000000037,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 57 round(s): 0 corridor(s) above their rating in the planning case (highest loading 0.90), 0 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 141.7\u00b0"
+        }
+      ],
+      "checks": "passed"
+    },
+    {
+      "case": "usa-s7",
+      "request_sha256": "fa13a42233abb107cb264bd3045d2fc3ab3a934d945b6b7247a3454a96d2b9e3",
+      "network_sha256": "b0af81d3b216aa36ed00d7d64b4db85f052ac7aff551be9d5461ca096f599355",
+      "report_sha256": "867ee585f266891acc31b03f791a29ffca023606c11f39ed879ac8ceaee95367",
+      "buses": 3000,
+      "areas": [
+        {
+          "name": "USA Eastern",
+          "buses": 1754,
+          "demand_mw": 452816.7305979778
+        },
+        {
+          "name": "USA Western",
+          "buses": 982,
+          "demand_mw": 178133.44874967457
+        },
+        {
+          "name": "USA Texas",
+          "buses": 264,
+          "demand_mw": 107495.70416259917
+        }
+      ],
+      "links": [
+        {
+          "from_bus": 337,
+          "to_bus": 145,
+          "from_area": 2,
+          "to_area": 0,
+          "rating_mw": 3359.240755081224,
+          "transfer_mw": 2687.3926040649794
+        },
+        {
+          "from_bus": 27,
+          "to_bus": 284,
+          "from_area": 1,
+          "to_area": 2,
+          "rating_mw": 1634.7785683235647,
+          "transfer_mw": 1307.8228546588518
+        }
+      ],
+      "voltage_range_pu": [
+        1.0115367145908487,
+        1.0394631260876255
+      ],
+      "ac_residual": 4.262812325350751e-12,
+      "dc_solve_ms": 85.91904099999999,
+      "ac_solve_ms": 36.024749999999926,
+      "planning_warnings": [
+        {
+          "code": "planning_incomplete",
+          "message": "the corridor plan stopped at its round or circuit cap after 54 round(s): 1 corridor(s) above their rating in the planning case (highest loading 1.17), 1 corridor(s) at the 4-circuit cap still short of capacity, widest island angle spread 194.7\u00b0"
+        }
+      ],
+      "checks": "passed"
+    }
+  ]
+}
