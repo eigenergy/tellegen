@@ -530,7 +530,7 @@ fn validate_wye_terminal_order(
     }
     if neutral_position != Some(names.len() - 1) {
         return Err(format!(
-            "{kind} `{name}` field `{field}` places an explicit neutral/earth terminal among phase coils; PowerIO v0.11 requires WYE phase terminals first and the neutral last"
+            "{kind} `{name}` field `{field}` places an explicit neutral/earth terminal among phase coils; this import requires WYE phase terminals first and the neutral last"
         ));
     }
     Ok(())
@@ -604,7 +604,7 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
     }
     if subtype == "n_winding" && (record.contains_key("tap") || record.contains_key("tap_ratio")) {
         return Err(format!(
-            "transformer `{name}` n_winding tap is not represented by PowerIO v0.11"
+            "transformer `{name}` top-level n_winding tap fields are not supported by this import"
         ));
     }
     if subtype != "n_winding" {
@@ -640,7 +640,7 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
         for key in winding.keys() {
             if !RETAINED.contains(&key.as_str()) {
                 return Err(format!(
-                    "transformer `{name}` winding {idx} field `{key}` is not losslessly represented by PowerIO v0.11"
+                    "transformer `{name}` winding {idx} field `{key}` is not accepted by the raw BMOPF import"
                 ));
             }
         }
