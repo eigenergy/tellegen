@@ -925,8 +925,24 @@ async fn case_module_json(
 async fn network(
     State(state): State<Arc<AppState>>,
     AxumPath(id): AxumPath<String>,
-) -> ApiResult<Json<NetworkPayload>> {
-    Ok(Json(state.case(&id)?.view.clone()))
+) -> ApiResult<Json<serde_json::Value>> {
+    let case = state.case(&id)?;
+    network_output(&case.view, &case.network)
+        .map(Json)
+        .map_err(|error| ApiError::internal(error.to_string()))
+}
+
+// Keep the public NetworkPayload constructor compatible while extending its JSON equipment.
+fn network_output(
+    view: &NetworkPayload,
+    network: &BalancedNetwork,
+) -> Result<serde_json::Value, serde_json::Error> {
+    let mut output = serde_json::to_value(view)?;
+    output["equipment"] = serde_json::to_value(tellegen::equipment::EquipmentOutput {
+        equipment: view.equipment.clone(),
+        node_breaker: tellegen::equipment::node_breaker::project(network),
+    })?;
+    Ok(output)
 }
 
 async fn solution(
@@ -2564,6 +2580,52 @@ mod tests {
         let expected = vec![[-122.0, 37.0], [-121.5, 37.2], [-121.0, 37.4]];
         assert_eq!(paths.get(&BranchPathKey::Id(7)), Some(&expected));
         assert_eq!(paths.get(&BranchPathKey::Edge(101, 202)), Some(&expected));
+    }
+
+    #[test]
+    fn network_json_retains_node_breaker_detail_without_changing_existing_fields() {
+        let module = powerio::parse(
+            powerio::Source::open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../tests/data/node-breaker"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("balanced fixture");
+        };
+        let coords = synthetic_layout(net, FALLBACK_SPECS[0].bbox);
+        let view = network_payload(
+            "station",
+            "Station",
+            net,
+            &coords,
+            &Stacks::new(),
+            None,
+            true,
+        )
+        .unwrap();
+        let output = network_output(&view, net).unwrap();
+        assert_eq!(output["buses"], serde_json::to_value(&view.buses).unwrap());
+        assert_eq!(
+            output["equipment"]["node_breaker"]["nodes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            5
+        );
+        assert_eq!(
+            output["equipment"]["node_breaker"]["switches"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            output["equipment"]["transformers"],
+            serde_json::to_value(&view.equipment.transformers).unwrap()
+        );
     }
 
     #[test]

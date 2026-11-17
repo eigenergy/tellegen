@@ -1,0 +1,10 @@
+{
+  "buses": 1000,
+  "topology": "meshed",
+  "renderMs": 458,
+  "selectionMs": 55,
+  "editMs": 111,
+  "layoutMs": 180,
+  "resultMs": 123,
+  "exportMs": 48
+}
