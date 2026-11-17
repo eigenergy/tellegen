@@ -8178,8 +8178,9 @@
   "x-rust-source-files": {
     "crates/tellegen-synth/src/report.rs": "337a271b876cbeea367ebc8ad36734812b35c08fc038d1546e9ccf4fefd06386",
     "crates/tellegen-synth/src/synchronous.rs": "45c048c14cebe1a60a924dd2d75842fe5da03195883986c2c24f7cf04fee5fb9",
-    "crates/tellegen-wasm/examples/adapter_schema.rs": "b05a70e2e0295c0fbf6044ba07737c0bd2f5a2808f365a96ae84fe6af9df061d",
-    "crates/tellegen-wasm/src/collection.rs": "60d99eea7aea65552dfb48db1c181af65e463e7db022051444dc0a6075e98b41",
+    "crates/tellegen-wasm/examples/adapter_schema.rs": "ed1203e56f35c64c9010fa532577c36f2f31ef440253c4b52374759a69c62083",
+    "crates/tellegen-wasm/src/collection.rs": "78568a6ad5ac086cf5bf63055fbe76510e50207ddb7cf1f63f47c8a073e1cbf6",
+    "crates/tellegen-wasm/src/collection/cgmes.rs": "de927a5e120581b5853ac183eecd3657ca7b881181b1dda6cedd5b6a50fd7506",
     "crates/tellegen-wasm/src/dist.rs": "d29481597b63d71382fb7925b1affa7b935257f9ddbe7123cc20430724480398",
     "crates/tellegen-wasm/src/geo.rs": "e08cf5ff7c5fb7f61c3e0a1f177721840054b19283e3ef0ce23d30c20b63a37a",
     "crates/tellegen-wasm/src/lib.rs": "70aae5d81572cb9a7d182172c6f7163533f310c4cb66c1a70ec75665c744e75a",
