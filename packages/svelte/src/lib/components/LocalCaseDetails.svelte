@@ -7,6 +7,7 @@
 	import type { PowerIoDiagnostic } from '@tellegen/engine';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import OutcomeVerdict from './OutcomeVerdict.svelte';
+	import SynchronousAreas from './SynchronousAreas.svelte';
 
 	/** Optional host content rendered under the case stats; `lead` goes right after
 	 * the result sentence, such as a selection readout. */
@@ -174,6 +175,11 @@
 			</details>
 		{/if}
 	{/if}
+	<SynchronousAreas
+		moduleJson={lc.studyInputJson}
+		selectedBus={app.selectedBus}
+		onselect={(bus) => { void ctrl.selectLocalBus(lc.id, bus); }}
+	/>
 	{@render note?.(lc)}
 	{@const exportUnavailable =
 		lc.summary && lc.studyInputJson ? ctrl.caseExportUnavailableReason(lc) : 'Not available'}
