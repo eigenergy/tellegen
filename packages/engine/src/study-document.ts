@@ -1,3 +1,4 @@
+import type { McStudySnapshot } from "./index.js";
 import { isolatedEngineHost, type EngineHost } from "./host.js";
 import type { CreateStudy, StudyBundle, StudyRequest, StudyOperationResult } from "./generated/study-types.js";
 
@@ -42,7 +43,9 @@ export interface StudyStore {
 
 function storageError(error: unknown): Error {
   const cause = error instanceof Error ? error.message : String(error);
-  return new Error(`Study was not saved: ${cause}. Free browser storage or export the Study and choose another destination before retrying.`);
+  const advice = error instanceof DOMException && error.name === "QuotaExceededError"
+    ? " Free browser storage or export the study before retrying." : "";
+  return new Error(`Study storage failed: ${cause}.${advice}`);
 }
 
 /** IndexedDB commits the complete document and its deduplicated artifact map together. */
@@ -50,8 +53,14 @@ export class IndexedDbStudyStore implements StudyStore {
   #database: Promise<IDBDatabase>;
   constructor(name = "tellegen-studies") {
     this.#database = new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("studies", { keyPath: "document.id" });
+      if (typeof indexedDB === "undefined") { reject(new Error("Browser storage is unavailable")); return; }
+      const request = indexedDB.open(name, 2);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains("studies")) db.createObjectStore("studies", { keyPath: "document.id" });
+        db.createObjectStore("distribution", { keyPath: "id" });
+        db.createObjectStore("settings");
+      };
       request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
       request.onerror = () => reject(storageError(request.error));
       request.onblocked = () => reject(new Error("Study storage is blocked by another tab; close its connection and reload"));
@@ -103,6 +112,99 @@ export class IndexedDbStudyStore implements StudyStore {
       tx.onabort = () => reject(conflict ?? storageError(tx.error));
       tx.onerror = () => reject(conflict ?? storageError(tx.error));
     });
+  }
+  /** Copy old distribution saves once. Leave the original database intact. */
+  async migrateDistribution(): Promise<void> {
+    const db = await this.#database;
+    const done = await this.#read<boolean>("settings", "distribution-migrated");
+    if (done) return;
+    const old = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("tellegen-multiconductor-studies-v1", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(storageError(request.error));
+      request.onblocked = () => reject(new Error("Close other study tabs to migrate saved studies"));
+    });
+    let snapshots: McStudySnapshot[];
+    try {
+      snapshots = old.objectStoreNames.contains("snapshots")
+        ? await new Promise<McStudySnapshot[]>((resolve, reject) => {
+          const request = old.transaction("snapshots").objectStore("snapshots").getAll();
+          request.onsuccess = () => resolve(request.result as McStudySnapshot[]);
+          request.onerror = () => reject(storageError(request.error));
+        }) : [];
+    } finally { old.close(); }
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(["distribution", "settings"], "readwrite");
+      const store = tx.objectStore("distribution");
+      let failure: unknown;
+      for (const snapshot of snapshots) {
+        const request = store.get(snapshot.id);
+        request.onsuccess = () => {
+          try { if (!request.result) store.add(snapshot); }
+          catch (error) { failure = error; tx.abort(); }
+        };
+      }
+      tx.objectStore("settings").put(true, "distribution-migrated");
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(storageError(failure ?? tx.error));
+    });
+  }
+  async #read<T>(store: string, id: string): Promise<T | null> {
+    const db = await this.#database;
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(store).objectStore(store).get(id);
+      request.onsuccess = () => resolve((request.result as T | undefined) ?? null);
+      request.onerror = () => reject(storageError(request.error));
+    });
+  }
+  async listDistribution(): Promise<McStudySnapshot[]> {
+    await this.migrateDistribution();
+    const db = await this.#database;
+    return new Promise((resolve, reject) => {
+      const request = db.transaction("distribution").objectStore("distribution").getAll();
+      request.onsuccess = () => resolve(request.result as McStudySnapshot[]);
+      request.onerror = () => reject(storageError(request.error));
+    });
+  }
+  async loadDistribution(id: string): Promise<McStudySnapshot | null> {
+    await this.migrateDistribution();
+    return this.#read("distribution", id);
+  }
+  async saveDistribution(snapshot: McStudySnapshot): Promise<void> {
+    await this.migrateDistribution();
+    await this.#change("distribution", (store) => store.add(snapshot));
+  }
+  async #change(name: string, change: (store: IDBObjectStore) => void): Promise<void> {
+    const db = await this.#database;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(name, "readwrite");
+      change(tx.objectStore(name));
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(storageError(tx.error));
+    });
+  }
+  async delete(id: string, kind: "study" | "distribution" = "study"): Promise<void> {
+    if (kind === "distribution") await this.migrateDistribution();
+    await this.#change(kind === "study" ? "studies" : "distribution", (store) => store.delete(id));
+  }
+  async rename(id: string, title: string, kind: "study" | "distribution" = "study"): Promise<void> {
+    title = title.trim();
+    if (!title) throw new Error("Enter a study name");
+    if (kind === "distribution") await this.migrateDistribution();
+    let missing = false;
+    await this.#change(kind === "study" ? "studies" : "distribution", (store) => {
+      const request = store.get(id);
+      request.onsuccess = () => {
+        if (!request.result) { missing = true; return; }
+        if (kind === "study") {
+          const bundle = request.result as StudyBundle;
+          bundle.document.title = title;
+          bundle.document.revision++;
+          store.put(bundle);
+        } else store.put({ ...request.result, title });
+      };
+    });
+    if (missing) throw new Error("Saved study was not found");
   }
   async close(): Promise<void> { (await this.#database).close(); }
 }

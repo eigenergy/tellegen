@@ -430,7 +430,10 @@ export class Controller {
 	};
 	private openCollection = async (read: Parameters<CollectionImport['start']>[0]) => {
 		if (!(await this.probeCollections()))
-			this.fail(COLLECTION_UNAVAILABLE, null, { title: 'Imports unavailable', stage: 'Open' });
+			this.fail(COLLECTION_UNAVAILABLE, null, {
+				title: 'Imports unavailable',
+				stage: 'Open'
+			});
 		else if (!this.disposed) await this.collectionImport.start(read);
 	};
 	readonly collectionImport = new CollectionImport((label, result) => {
@@ -531,7 +534,10 @@ export class Controller {
 
 	/** Whether the engine can run `formulation` on this case; see `calculationAvailable`. */
 	formulationAvailable(c: SolvableCase, formulation: Formulation): boolean {
-		return calculationAvailable(formulation, { edited: c.perturbed, acOpf: this.acOpfAvailable });
+		return calculationAvailable(formulation, {
+			edited: c.perturbed,
+			acOpf: this.acOpfAvailable
+		});
 	}
 
 	/** Whether a Calculation menu offers `formulation` for this case as it stands. */
@@ -2065,7 +2071,10 @@ export class Controller {
 		title: string | undefined,
 		stage: string | undefined,
 		cause: unknown,
-		known: Omit<ErrorContext, 'retry'> & { quiet?: boolean; retry?: (() => void) | null } = {}
+		known: Omit<ErrorContext, 'retry'> & {
+			quiet?: boolean;
+			retry?: (() => void) | null;
+		} = {}
 	) {
 		const { retry } = known;
 		this.app.reportError(cause, {
@@ -3347,7 +3356,8 @@ export class Controller {
 			name: string;
 			distribution?: MulticonductorCase['distribution'];
 		},
-		labelOverride?: string
+		labelOverride?: string,
+		frame = true
 	) {
 		if (!hosted) this.hostedLoadAbort?.abort();
 
@@ -3382,7 +3392,7 @@ export class Controller {
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.addMulti(c);
-		if (c.placed) this.app.requestFrame(c.id);
+		if (frame && c.placed) this.app.requestFrame(c.id);
 		return c;
 	}
 
@@ -3537,6 +3547,44 @@ export class Controller {
 				c.solveAbort = null;
 			}
 		}
+	};
+
+	/** Open saved distribution results without moving the camera or duplicating the case. */
+	restoreMultiSnapshot = async (snapshot: McStudySnapshot): Promise<MulticonductorCase> => {
+		const existing = this.app.multiCases.find((c) => c.mcSnapshot?.id === snapshot.id);
+		if (existing) {
+			this.hostedLoadAbort?.abort();
+			this.app.studyView = null;
+			this.app.activeCaseId = this.app.activeLocalId = null;
+			this.app.activeMultiId = existing.id;
+			return existing;
+		}
+		const payload = await (this.mcTransport.ingestDistCaseBytes ?? ingestDistCaseBytes)(
+			new TextEncoder().encode(snapshot.input_module),
+			'pio',
+			{
+				retain: true
+			}
+		);
+		const c = this.addMultiCase(
+			`${snapshot.title}.pio.json`,
+			payload,
+			undefined,
+			snapshot.title,
+			false
+		);
+		c.mcSnapshot = snapshot;
+		c.settings.baselines = { mc_ac_pf: { ...snapshot.options } };
+		c.mcOptions = { ...snapshot.options };
+		c.settings.revision++;
+		c.mcEnergizedOnly = !!snapshot.result.network_scope;
+		c.mcPreparedScope = snapshot.result.network_scope ?? null;
+		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
+		c.result = summarizeMcPfResult(snapshot.result);
+		c.mcFullResult = snapshot.result;
+		c.mcSavedAt = new Date().toISOString();
+		c.revisionGeneration++;
+		return c;
 	};
 
 	/** Materialize the current retained operating point only when a portable
