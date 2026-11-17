@@ -596,3 +596,7 @@ mod identity_tests {
             .contains("duplicated case-insensitively"));
     }
 }
+
+#[cfg(test)]
+#[path = "linear_comparison.rs"]
+mod linear_comparison;

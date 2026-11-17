@@ -117,6 +117,8 @@ fn resistive_two_wire_solution_matches_closed_form() {
         1e-8,
     );
     assert!(r.residuals.maximum() < 1e-7);
+    assert!(r.solution.residuals().max_active_power_mismatch.unwrap() < 1e-10);
+    assert!(r.solution.residuals().max_reactive_power_mismatch.unwrap() < 1e-10);
 }
 #[test]
 fn cheap_generator_dispatch_and_terminal_neutral_projection() {
@@ -483,6 +485,32 @@ fn independent_validator_rejects_corrupted_primal_auxiliary_objective_and_nonfin
     let x = t.final_x().unwrap().to_vec();
     let f = t.final_obj();
     validate::check(&m, &x, f, 1e-6).unwrap();
+    // Deliberately perturb the phase current without changing device currents.
+    // Its two end mismatches must be reported as terminal power in MW/MVAr.
+    let mut perturbed = x.clone();
+    for (axis, delta) in [(0, 0.001), (1, 0.002)] {
+        let (&index, &coefficient) = m.branch_current[0][0][axis]
+            .terms
+            .first_key_value()
+            .unwrap();
+        perturbed[index] += delta / coefficient;
+    }
+    let checked = validate::check(&m, &perturbed, f, 10.0).unwrap();
+    let max_voltage = [m.prep.branches[0].from[0], m.prep.branches[0].to[0]]
+        .into_iter()
+        .map(|i| m.voltage[i][0].value(&x).abs())
+        .fold(0.0_f64, f64::max);
+    let mw_base = m.prep.bases.power_base_va / 1e6;
+    near(
+        checked.power_residuals.max_active_power_mismatch.unwrap(),
+        0.001 * max_voltage * mw_base,
+        1e-10,
+    );
+    near(
+        checked.power_residuals.max_reactive_power_mismatch.unwrap(),
+        0.002 * max_voltage * mw_base,
+        1e-10,
+    );
     for index in [
         0,
         m.devices[0].power[0][0],
@@ -567,6 +595,8 @@ fn canonical_module_roundtrip_retains_instance_and_terminal_axes() {
         panic!("wrong result type")
     };
     assert_eq!(s.instance().network().loads()[0].name, "d");
+    assert!(s.residuals().max_active_power_mismatch.is_some());
+    assert!(s.residuals().max_reactive_power_mismatch.is_some());
     assert!(s.terminal_voltage_magnitude("b", "n").unwrap() > 0.);
     near(s.objective(), solve(network()).solution.objective(), 1e-10);
     let lossy = PioModule::new(PioValue::McAcOpfInstance((*instance(network())).clone()))
