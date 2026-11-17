@@ -613,9 +613,9 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
     let Some(windings) = record.get("windings").and_then(Value::as_array) else {
         return Ok(());
     };
-    if windings.len() != 2 {
+    if !(2..=3).contains(&windings.len()) {
         return Err(format!(
-            "transformer `{name}` n_winding has {} windings; the MC primitive supports exactly two",
+            "transformer `{name}` n_winding has {} windings; the MC primitive supports two or three",
             windings.len()
         ));
     }
@@ -841,6 +841,14 @@ pub(super) fn validate_mc_network(
                 "source {} retains unsupported property {}; finite source data must be normalized before MC Study mode",
                 source.name, key
             ));
+        }
+    }
+    for shunt in network.shunts() {
+        if let Some(property) = ["states", "numsteps", "cmatrix", "cuf", "r", "xl", "harm"]
+            .iter()
+            .find(|property| shunt.extras.contains_key(**property))
+        {
+            return Err(format!("shunt {} retains unsupported property {}; written capacitor steps must be normalized before calculation", shunt.name, property));
         }
     }
     for transformer in network.transformers() {

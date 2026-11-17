@@ -187,3 +187,26 @@ it("retains the prepared module separately from the original input", () => {
   expect(original.free).not.toHaveBeenCalled();
   expect(prepared.free).toHaveBeenCalledOnce();
 });
+
+it("routes an explicit fixed-settings request without changing retained inputs", () => {
+  const prepare = vi.fn(() => '{"mc_fixed_controls":true}');
+  const handles = emptyHandles();
+  const original = { free: vi.fn() };
+  handles.mcInputs.set(
+    2,
+    original as unknown as InstanceType<WasmModule["McInput"]>,
+  );
+  expect(
+    runRequest(
+      { prepare_mc_fixed_controls: prepare } as unknown as WasmModule,
+      handles,
+      {
+        op: "prepare_mc_fixed_controls",
+        module_json: "original module",
+      },
+    ),
+  ).toBe('{"mc_fixed_controls":true}');
+  expect(prepare).toHaveBeenCalledWith("original module");
+  expect(handles.mcInputs.get(2)).toBe(original);
+  expect(original.free).not.toHaveBeenCalled();
+});

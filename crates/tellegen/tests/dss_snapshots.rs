@@ -10,6 +10,12 @@ struct Reference {
     source: String,
     voltages: BTreeMap<String, [f64; 2]>,
     currents: BTreeMap<String, Current>,
+    transformers: BTreeMap<String, Transformer>,
+}
+#[derive(Deserialize)]
+struct Transformer {
+    ports: BTreeMap<String, [f64; 2]>,
+    losses: [f64; 2],
 }
 #[derive(Deserialize)]
 struct Current {
@@ -65,14 +71,20 @@ fn capability_rejects_missing_voltage_dependent_load_base() {
 #[test]
 fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
     let report: Report = serde_json::from_str(include_str!("data/dss_snapshots.json")).unwrap();
-    assert_eq!(report.cases.len(), 38);
+    assert_eq!(report.cases.len(), 44);
     for case in report.cases {
         let input = module(&case.source);
         tellegen::validate_mc_module(&input).unwrap_or_else(|e| panic!("{}: {e}", case.name));
         let text = tellegen::ir::serialize_module(&input).unwrap();
         for envelope in [false, true] {
             let options = McPfOptions {
-                tolerance: 1e-10,
+                // Absolute volts: the delta winding has a weak common-mode reference.
+                // Independent voltage/current comparisons below stay at 20 micro-units.
+                tolerance: if case.name.starts_with("three_") {
+                    1e-6
+                } else {
+                    1e-10
+                },
                 absolute_kcl_tolerance: 1e-7,
                 relative_kcl_tolerance: 1e-9,
                 voltage_envelope: envelope,
@@ -101,6 +113,39 @@ fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
                     (actual.re - expected[0]).hypot(actual.im - expected[1]) < 2e-5,
                     "{}: {node}: {actual:?} != {expected:?}",
                     case.name
+                );
+            }
+            for (name, expected) in &case.transformers {
+                let ports: Vec<_> = result
+                    .element_ports
+                    .iter()
+                    .filter(|port| {
+                        port.kind == "transformer" && port.element.eq_ignore_ascii_case(name)
+                    })
+                    .collect();
+                for (label, current) in &expected.ports {
+                    let (bus, terminal) = label.rsplit_once('.').unwrap();
+                    let port = ports
+                        .iter()
+                        .find(|port| {
+                            port.bus.eq_ignore_ascii_case(bus) && port.terminal == terminal
+                        })
+                        .unwrap();
+                    assert!(
+                        (port.current_into_element.re - current[0])
+                            .hypot(port.current_into_element.im - current[1])
+                            < 2e-5,
+                        "{}: transformer {name} port {label}",
+                        case.name
+                    );
+                }
+                let p: f64 = ports.iter().map(|port| port.power_into_element.re).sum();
+                let q: f64 = ports.iter().map(|port| port.power_into_element.im).sum();
+                assert!(
+                    (p - expected.losses[0]).hypot(q - expected.losses[1]) < 0.01,
+                    "{}: transformer {name} losses {p},{q} != {:?}",
+                    case.name,
+                    expected.losses
                 );
             }
             for (load, expected) in &case.currents {
@@ -184,14 +229,14 @@ fn floating_source_reference_is_rejected_by_capability_and_direct_solver() {
 }
 
 #[test]
-fn unsupported_transformer_properties_and_three_windings_are_view_only_and_leadlag_reads() {
+fn unsupported_transformer_properties_stay_view_only_and_leadlag_reads() {
     let unit = |extra: &str| {
         module(&format!("new circuit.qc basekv=11\nnew transformer.t phases=3 windings=2 buses=[sourcebus lb] conns=[delta wye] kvs=[11 .4] kvas=[100 100] xhl=4 {extra}\n"))
     };
     for extra in [
-        "windings=3 buses=[sourcebus lb lc] kvs=[11 .4 .4] kvas=[100 100 100]",
+        "windings=4 buses=[sourcebus lb lc ld] kvs=[11 .4 .4 .4] kvas=[100 100 100 100]",
         "%imag=garbage",
-        "ppm_antifloat=50",
+        "ppm_antifloat=garbage",
     ] {
         assert!(
             tellegen::validate_mc_module(&unit(extra)).is_err(),
