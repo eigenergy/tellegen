@@ -1170,7 +1170,7 @@ struct ViewBranch {
 
 #[derive(Serialize)]
 struct View<'a> {
-    equipment: &'a tellegen::equipment::Equipment,
+    equipment: &'a tellegen::equipment::EquipmentOutput,
     coordinate_space: &'static str,
     buses: Vec<ViewBus>,
     branches: Vec<ViewBranch>,
@@ -1272,7 +1272,7 @@ fn analysis_uids(
 
 #[derive(Serialize)]
 struct Topology<'a> {
-    equipment: &'a tellegen::equipment::Equipment,
+    equipment: &'a tellegen::equipment::EquipmentOutput,
     buses: Vec<TopologyBus>,
     branches: Vec<TopologyBranch>,
     substations: &'a [Substation],
@@ -1511,6 +1511,10 @@ pub(crate) fn ingest_value(
         .map(|d| format!("{}: {}", d.code(), d.message()))
         .chain(warnings.iter().cloned())
         .collect();
+    let equipment = tellegen::equipment::EquipmentOutput {
+        equipment,
+        node_breaker: tellegen::equipment::node_breaker::project(net),
+    };
     let topology = Topology {
         equipment: &equipment,
         substations: &grouping.substations,

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import EngineeringDrawing from './EngineeringDrawing.svelte';
+	import { networkWithDrawingGeometry } from '../diagram/drawing.js';
+	let editingDrawing = $state(false);
 	import type { Deck, OrthographicView, OrthographicViewState, PickingInfo } from '@deck.gl/core';
 	import { tick, untrack } from 'svelte';
 	import { txSchematicLayout } from '@tellegen/engine';
@@ -151,7 +154,7 @@
 		onselectbranch: (id: number) => void;
 		/** A click on empty canvas. */
 		onclear: () => void;
-		onclose: () => void;
+		onclose?: () => void;
 		/** The geographic view on screen, as a map camera, so the map can continue from it when the
 		 * diagram closes. */
 		ongeoview?: (view: CameraSnapshot) => void;
@@ -813,6 +816,35 @@
 	const maxZoom = $derived(maxZoomFor(geometry.bounds));
 	const fitAll = () => fitBounds(geometry.bounds, { width, height }, freeArea(), maxZoom);
 
+	const drawingOrigin = $derived.by((): [number, number] => {
+		const n = Math.max(1, network.buses.length);
+		return [
+			network.buses.reduce((sum, bus) => sum + bus.lon, 0) / n,
+			network.buses.reduce((sum, bus) => sum + bus.lat, 0) / n
+		];
+	});
+	$effect(() => {
+		if (geographic || layout !== 'source') return;
+		app.diagramCamera = {
+			caseId,
+			center: [camera.target[0] + drawingOrigin[0], camera.target[1] + drawingOrigin[1]],
+			scale: 2 ** camera.zoom
+		};
+	});
+	let restoredDrawingCamera = -1;
+	$effect(() => {
+		const seq = app.diagramCameraSeq;
+		const saved = app.diagramCameraRequest;
+		if (!deck || geographic || !saved || saved.caseId !== caseId || seq === restoredDrawingCamera)
+			return;
+		restoredDrawingCamera = seq;
+		untrack(() =>
+			setCamera({
+				target: [saved.center[0] - drawingOrigin[0], saved.center[1] - drawingOrigin[1], 0],
+				zoom: Math.log2(saved.scale)
+			})
+		);
+	});
 	function setCamera(next: DiagramCamera, fly = false) {
 		camera = next;
 		const animate = fly && kit && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1851,6 +1883,7 @@
 				{/each}
 			</div>
 		{/if}
+
 		{#if panels.compact}
 			<!-- On a phone the drawing controls wait behind Display, so the toolbar is one row. -->
 			<div class="mobile-view">
@@ -1859,11 +1892,16 @@
 					aria-controls="tx-display-options"
 					onclick={() => (displayOptions = !displayOptions)}>Display</button
 				>
-				<button onclick={onclose}>Show map</button>
+				{#if onclose}<button onclick={onclose}>Show map</button>{/if}
 			</div>
 		{/if}
 		{#if !panels.compact || displayOptions}
 			<div class="controls" id={panels.compact ? 'tx-display-options' : undefined}>
+				<button onclick={() => (editingDrawing = true)}
+					>{network.equipment?.node_breaker?.nodes.length
+						? 'Substation detail and drawing'
+						: 'Edit engineering drawing'}</button
+				>
 				{#if panels.compact}
 					<select
 						aria-label="Diagram layout"
@@ -2152,6 +2190,14 @@
 				: ''}
 	</p>
 </div>
+
+{#if editingDrawing}<EngineeringDrawing
+		network={networkWithDrawingGeometry(network, geometry)}
+		{solution}
+		{label}
+		{onselectbus}
+		onclose={() => (editingDrawing = false)}
+	/>{/if}
 
 <style>
 	.equipment-overlay {

@@ -1,4 +1,8 @@
 <script lang="ts">
+	import EngineeringDrawing from './EngineeringDrawing.svelte';
+	import { networkWithDrawingGeometry } from '../diagram/drawing.js';
+	import { multiDiagramNetwork } from '../multiconductor.js';
+	let editingDrawing = $state(false);
 	import type {
 		Deck,
 		Layer,
@@ -1311,6 +1315,9 @@
 		role="toolbar"
 		aria-label="Schematic"
 	>
+		<button disabled={!mc.view} onclick={() => (editingDrawing = true)}
+			>Edit engineering drawing</button
+		>
 		<div class="segmented" role="group" aria-label="Layout">
 			<button
 				aria-pressed={layout === 'source'}
@@ -1568,6 +1575,17 @@
 	{/if}
 	{#if status}<p class="status" role="status">{status}</p>{/if}
 </div>
+
+{#if editingDrawing && mc.view}<EngineeringDrawing
+		network={networkWithDrawingGeometry(multiDiagramNetwork(mc.id, mc.label, mc.view), geometry)}
+		distributionGraph={mc.graph ?? undefined}
+		label={mc.label}
+		onselectbus={(id) => {
+			const bus = mc.view?.buses[id];
+			if (bus) onselectbus(bus.id);
+		}}
+		onclose={() => (editingDrawing = false)}
+	/>{/if}
 
 <style>
 	.schematic-stage {

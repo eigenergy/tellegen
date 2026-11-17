@@ -177,12 +177,15 @@ test('8. a link reopens the saved study with its selection and view', async ({ p
 	await expect(page.getByRole('button', { name: 'Copy view link' })).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(page).toHaveURL(/[?&]study=[^&]+.*sel=bus%3Alb|sel=bus%3Alb.*study=/);
-	await expect(page).toHaveURL(/view=schematic/);
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await page.getByRole('button', { name: 'Copy view link' }).click();
+	const link = await page.evaluate(() => navigator.clipboard.readText());
+	expect(link).toMatch(/[?&]study=[^&]+.*sel=bus%3Alb|sel=bus%3Alb.*study=/);
+	expect(link).toContain('view=schematic');
 
 	const reopened = await context.newPage();
 	await reopened.route('**/api/cases', (route) => route.fulfill({ json: [] }));
-	await reopened.goto(page.url());
+	await reopened.goto(link);
 	const restored = reopened.getByRole('region', { name: 'Operating point overview' });
 	await expect(restored.getByRole('heading', { name: 'Phases at lb' })).toBeVisible({
 		timeout: 60_000
@@ -270,16 +273,33 @@ test('the schematic layout file loads back with the case as its diagram', async 
 		}
 	]);
 	await expect(
-		fresh.getByRole('application', { name: 'Network diagram', exact: true })
+		fresh.getByRole('application', { name: 'Single-line diagram', exact: true })
 	).toBeVisible({
 		timeout: 60_000
 	});
-	const circles = fresh.locator('[data-bus-id] circle');
-	await expect(circles.first()).toBeVisible();
-	// The imported layer replaces the drawn positions after the first paint; poll until it lands.
-	await expect
-		.poll(() => circles.evaluateAll((els) => els.map((el) => Number(el.getAttribute('cx')))))
-		.toContain(lb.geometry.coordinates[0]);
+	await fresh.getByRole('button', { name: 'Edit engineering drawing', exact: true }).click();
+	const drawingDownload = fresh.waitForEvent('download');
+	await fresh.getByRole('button', { name: 'Export drawing', exact: true }).click();
+	const drawing = JSON.parse(await readFile(await (await drawingDownload).path(), 'utf8'));
+	const lbObject = drawing.objects.find((o: { label: string }) => o.label === 'lb');
+	expect(lbObject).toBeDefined();
+	// The editor preserves relative source geometry, translated and uniformly scaled to its page.
+	const sourcePositions = parsed.features.filter(
+		(f: { geometry: { type: string } }) => f.geometry.type === 'Point'
+	);
+	const other = sourcePositions.find(
+		(f: { properties: { bus?: string } }) => f.properties.bus !== 'lb'
+	);
+	const otherObject = drawing.objects.find(
+		(o: { label: string }) => o.label === other.properties.bus
+	);
+	const sourceDelta = [
+		lb.geometry.coordinates[0] - other.geometry.coordinates[0],
+		lb.geometry.coordinates[1] - other.geometry.coordinates[1]
+	];
+	const drawnDelta = [lbObject.x - otherObject.x, lbObject.y - otherObject.y];
+	expect(drawnDelta[0] * sourceDelta[1] - drawnDelta[1] * sourceDelta[0]).toBeCloseTo(0, 3);
+	expect(drawnDelta[0] * sourceDelta[0] + drawnDelta[1] * sourceDelta[1]).toBeGreaterThan(0);
 });
 
 test('a selected line shows every conductor in the multi-wire view', async ({ page }) => {

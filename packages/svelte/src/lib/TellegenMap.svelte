@@ -65,7 +65,7 @@
 	import { displayFmt, priceText, quantity, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
-	import DiagramCanvas from './components/DiagramCanvas.svelte';
+	import { solveResponseToSolution } from '@tellegen/engine';
 	import SchematicCanvas from './components/SchematicCanvas.svelte';
 	import TransmissionCanvas from './components/TransmissionCanvas.svelte';
 
@@ -178,7 +178,7 @@
 	);
 	/** A multiconductor case shown as a schematic replaces both the map and the diagram canvas. */
 	const schematicCase = $derived(
-		!app.studyView && app.activeMulti?.schematic && app.activeMulti.graph ? app.activeMulti : null
+		!app.studyView && app.activeMulti?.graph && app.activeMulti.schematic ? app.activeMulti : null
 	);
 	/** A balanced case shown as a single-line diagram, likewise replacing the map. */
 	const txCase = $derived(ctrl.singleLineShown);
@@ -1817,14 +1817,39 @@
 		/>
 	{/key}
 {:else if diagramNetwork}
-	<DiagramCanvas
-		network={diagramNetwork}
-		multiconductor={diagramMulti}
-		caseId={diagramCaseId}
-		onbusclick={selectDiagramBus}
-		onbranchclick={selectDiagramBranch}
-		onclear={onmapclick}
-	/>
+	{#key diagramNetwork}
+		<TransmissionCanvas
+			network={diagramNetwork}
+			caseId={diagramCaseId}
+			label={app.studyView?.label ??
+				(diagramCase && ('label' in diagramCase ? diagramCase.label : diagramCase.name)) ??
+				'Drawing'}
+			solution={app.studyView?.solution
+				? solveResponseToSolution({
+						formulation: app.studyView.solution.formulation,
+						status: app.studyView.solution.status,
+						objective: app.studyView.solution.objective,
+						lmp: app.studyView.solution.lmp,
+						vm: app.studyView.solution.vm,
+						va: app.studyView.solution.va,
+						w: app.studyView.solution.w,
+						flows: app.studyView.solution.flows?.map((f) => ({
+							branch: f.branch,
+							pf: f.pf,
+							loading: f.loading,
+							qf: f.qf ?? undefined,
+							pt: f.pt ?? undefined,
+							qt: f.qt ?? undefined
+						})),
+						dispatch: app.studyView.solution.dispatch
+					})
+				: diagramCase?.solution}
+			onselectbus={selectDiagramBus}
+			onselectbranch={selectDiagramBranch}
+			onclear={onmapclick}
+			basemap={diagramBasemap}
+		/>
+	{/key}
 {:else}
 	{#key mapGen}
 		<div class="map-stage">
