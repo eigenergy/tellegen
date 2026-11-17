@@ -56,7 +56,10 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh
       - name: Build libraries for Rust examples
-        run: cargo build -p tellegen --features acopf,mc-opf
+        run: |
+          docs_toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          echo "RUSTUP_TOOLCHAIN=$docs_toolchain" >> "$GITHUB_ENV"
+          cargo build -p tellegen --features acopf,mc-opf
       - name: Test Rust examples
         run: mdbook test -L target/debug/deps
       - name: Configure Pages
