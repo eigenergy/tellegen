@@ -69,13 +69,16 @@ function validName(name: string): void {
 export class BrowserCaseCollection {
   readonly #handle = ++sequence;
   readonly #host: EngineHost;
+  readonly #family: Set<BrowserCaseCollection>;
   #closed = false;
   #busy = false;
   #detach: (() => void) | undefined;
   inspection!: CollectionInspection;
 
-  private constructor(host: EngineHost, signal?: AbortSignal) {
+  private constructor(host: EngineHost, signal?: AbortSignal, family = new Set<BrowserCaseCollection>()) {
     this.#host = host;
+    this.#family = family;
+    family.add(this);
     const abort = () => this.cancel();
     if (signal?.aborted) throw abortError();
     signal?.addEventListener("abort", abort, { once: true });
@@ -134,6 +137,21 @@ export class BrowserCaseCollection {
     } finally { this.#busy = false; }
   }
 
+  /** Child archives share the worker and PowerIO's cumulative resource bounds.
+   * Freeing a child keeps its parent usable; cancellation ends the whole family. */
+  async openNested(member: string): Promise<BrowserCaseCollection> {
+    validName(member);
+    if (this.#closed) throw new Error("collection was closed or cancelled");
+    const child = new BrowserCaseCollection(this.#host, undefined, this.#family);
+    try {
+      child.inspection = JSON.parse(text(await this.call({ op: "collection_nested", collection: child.#handle, parent: this.#handle, member })));
+      return child;
+    } catch (error) {
+      await child.free();
+      throw error;
+    }
+  }
+
   async ingest(selection: CollectionSelection): Promise<ImportedCollectionCase> {
     return JSON.parse(text(await this.call({ op: "collection_ingest", collection: this.#handle, selection: boundedJson(selection) })));
   }
@@ -152,20 +170,26 @@ export class BrowserCaseCollection {
 
   cancel(): void {
     if (this.#closed) return;
-    this.#closed = true;
-    this.#detach?.();
-    // A synchronous fallback cannot be interrupted. Its queued cleanup runs
-    // after the call; call() discards any late answer before publishing it.
+    const members = [...this.#family];
+    for (const member of members) {
+      member.#closed = true;
+      member.#detach?.();
+    }
+    this.#family.clear();
     if (!this.#host.cancel?.(abortError()))
-      void this.#host.call({ op: "collection_free", collection: this.#handle }).catch(() => {});
+      for (const member of members)
+        void this.#host.call({ op: "collection_free", collection: member.#handle }).catch(() => {});
   }
 
   async free(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
     this.#detach?.();
+    this.#family.delete(this);
     try { await this.#host.call({ op: "collection_free", collection: this.#handle }); }
     catch { /* A failed worker has already released all its handles. */ }
-    finally { this.#host.cancel?.(new Error("collection closed")); }
+    finally {
+      if (!this.#family.size) this.#host.cancel?.(new Error("collection closed"));
+    }
   }
 }

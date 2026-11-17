@@ -87,6 +87,15 @@
 			>
 		</details>
 	{/if}
+	{#each model.collections as collection (collection.id)}
+		{#each collection.inspection.entries.filter( (entry) => /\.zip$/i.test(entry.path) ) as entry (entry.path)}
+			<button
+				disabled={model.busy || model.isOpened(collection.id, entry.path)}
+				onclick={() => model.openNested(collection.id, entry.path)}
+				>Open ZIP: {collection.label} / {entry.path}</button
+			>
+		{/each}
+	{/each}
 	<div class="toolbar">
 		<label
 			>Filter candidates <input

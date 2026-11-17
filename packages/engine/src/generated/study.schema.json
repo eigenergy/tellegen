@@ -377,7 +377,7 @@
       "type": "object"
     },
     "Comparison": {
-      "additionalProperties": false,
+      "description": "Two saved results with their respective objective declarations.",
       "properties": {
         "goal": {
           "type": [
@@ -405,7 +405,7 @@
         "left_view": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SolveResponse"
+              "$ref": "#/$defs/SolveOutput"
             },
             {
               "type": "null"
@@ -425,7 +425,7 @@
         "right_view": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SolveResponse"
+              "$ref": "#/$defs/SolveOutput"
             },
             {
               "type": "null"
@@ -1593,6 +1593,21 @@
       ],
       "type": "object"
     },
+    "ObjectiveKind": {
+      "description": "What the solved OPF minimized, as PowerIO declared it for the case. A case\nwith no generator cost data declares a feasibility problem: the reported\n`objective` is then zero by construction and prices and limit multipliers\nare left out, because any feasible point is optimal and they are not unique.",
+      "oneOf": [
+        {
+          "const": "cost",
+          "description": "Total generator cost, in the case's cost units.",
+          "type": "string"
+        },
+        {
+          "const": "feasibility",
+          "description": "No cost was declared; the solve found a feasible operating point.",
+          "type": "string"
+        }
+      ]
+    },
     "ObservableWeight": {
       "additionalProperties": false,
       "description": "A weighted observable in the units reported by the selected formulation.",
@@ -2011,6 +2026,213 @@
         "objective",
         "inf_pr",
         "inf_du"
+      ],
+      "type": "object"
+    },
+    "SolveOutput": {
+      "description": "A solve result as the JSON entry points and adapters emit it: every\n[`SolveResponse`] field at the top level, plus facts about the solved\nproblem that the response does not hold.\n\n`objective_kind` is derived from the problem each time a result is emitted,\nnever stored: it says whether the OPF minimized a declared generator cost\nor only looked for a feasible point. It is present for every OPF\nformulation (`dcopf`, `socwr`, `acopf`) and absent for power flows.",
+      "properties": {
+        "branch_constraints": {
+          "description": "Thermal constraint state and marginal relief, when exposed by the formulation.",
+          "items": {
+            "$ref": "#/$defs/BranchConstraintResult"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "branch_susceptance_formula": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DcFormula"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Resolved DC convention; absent for AC results and older saved responses."
+        },
+        "constraints": {
+          "description": "The request's linear constraints, in request order (dcopf). Absent when\nthe request stated none.",
+          "items": {
+            "$ref": "#/$defs/ConstraintResult"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "diagnostics": {
+          "description": "How the solve treated the network's islands. Empty, and omitted, when\nevery island is supplied and referenced as stated.",
+          "items": {
+            "$ref": "#/$defs/SolveDiagnostic"
+          },
+          "type": "array"
+        },
+        "dispatch": {
+          "items": {
+            "$ref": "#/$defs/GenDispatch"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "flows": {
+          "items": {
+            "$ref": "#/$defs/BranchFlow"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "formulation": {
+          "$ref": "#/$defs/Problem",
+          "description": "The formulation that produced this, echoed for the client."
+        },
+        "initialization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AcPfInitialization"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Successful AC power-flow start. Absent for other formulations and legacy results."
+        },
+        "injections": {
+          "description": "Nodal injections (acpf), MW/MVAr.",
+          "items": {
+            "$ref": "#/$defs/BusInjection"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "iterations": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Iterations"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit_rounds": {
+          "description": "The solves a DC OPF ran under the request's `limits` (dcopf with\n`limits` only).",
+          "items": {
+            "$ref": "#/$defs/LimitRound"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "lmp": {
+          "description": "Active nodal price when the solved OPF declares a network generator\ncost objective. Feasibility solves leave this absent.",
+          "items": {
+            "$ref": "#/$defs/BusScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "lmp_q": {
+          "description": "Reactive nodal price. Always `None` in this build; the field is retained for\nwire-format stability.",
+          "items": {
+            "$ref": "#/$defs/BusScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "objective": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "objective_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectiveKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sensitivities": {
+          "description": "One self-describing matrix per requested cell, in request order. Each carries\nits own row/column element ids and the served-unit label.",
+          "items": {
+            "$ref": "#/$defs/SensitivityMatrix"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/SolveStatus"
+        },
+        "va": {
+          "description": "Voltage angle, radians (every path except socwr, which is W-space).",
+          "items": {
+            "$ref": "#/$defs/BusScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "vm": {
+          "description": "Voltage magnitude, per unit (ACPF or square root of SOCWR squared magnitude).",
+          "items": {
+            "$ref": "#/$defs/BusScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "w": {
+          "description": "Squared voltage magnitude `w = |V|^2`, per unit squared (socwr). The conic\nrelaxation does not guarantee a globally consistent set of voltage angles.",
+          "items": {
+            "$ref": "#/$defs/BusScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "wi": {
+          "items": {
+            "$ref": "#/$defs/BranchScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "wr": {
+          "description": "Real and imaginary oriented branch voltage products (SOCWR).",
+          "items": {
+            "$ref": "#/$defs/BranchScalar"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "formulation",
+        "status"
       ],
       "type": "object"
     },
@@ -2798,7 +3020,7 @@
       ]
     },
     "StudyOperationResult": {
-      "additionalProperties": false,
+      "description": "Study results for JSON callers, including the objective declared by each state.",
       "properties": {
         "comparison": {
           "anyOf": [
@@ -2811,7 +3033,6 @@
           ]
         },
         "demand_changes": {
-          "default": null,
           "items": {
             "$ref": "#/$defs/DemandChange"
           },
@@ -2829,7 +3050,7 @@
         "inspected_view": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SolveResponse"
+              "$ref": "#/$defs/SolveOutput"
             },
             {
               "type": "null"
@@ -3040,5 +3261,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "bfd0c4700fe286deb7ef127654b71f7bff9c84e5b9b1a5f2a4df15406f51b0e1"
+  "x-rust-source-sha256": "8f9ff0cb3d2f175349283c212316220c0bb8b81c5b155c4b22a39acb579984a5"
 }

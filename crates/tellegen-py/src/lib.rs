@@ -462,7 +462,8 @@ fn study_run(
         // Committed even on a cancelled run: the engine records the trials that
         // did finish, and dropping them would lose completed exact solves.
         store.commit(expected, &bundle)?;
-        let response = serde_json::json!({ "result": result, "progress": checkpoints });
+        let response =
+            serde_json::json!({ "result": result.output(&bundle)?, "progress": checkpoints });
         Ok(serde_json::to_string(&response).map_err(|error| error.to_string())?)
     })
     .map_err(|message| engine_error(py, message))

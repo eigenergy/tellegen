@@ -854,7 +854,10 @@ pub async fn study_document_run(
     })
     .await
     .map_err(jserr)?;
-    serde_json::to_string(&serde_json::json!({ "bundle": bundle, "result": result })).map_err(jserr)
+    serde_json::to_string(
+        &serde_json::json!({ "bundle": bundle, "result": result.output(&bundle).map_err(jserr)? }),
+    )
+    .map_err(jserr)
 }
 
 #[cfg(feature = "sensitivity")]
@@ -1787,7 +1790,7 @@ impl SynthSession {
 
     /// `ingest` without `module_json`, for a caller that already holds the
     /// text of `module` and adds it itself.
-    pub fn ingest_view(&self) -> Result<String, JsError> {
+    pub fn ingest_view(&self) -> Result<String, JsValue> {
         synth::ingest_view_impl(&self.0).map_err(synth_err)
     }
 
