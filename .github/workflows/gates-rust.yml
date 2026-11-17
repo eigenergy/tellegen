@@ -52,7 +52,7 @@ jobs:
       # The wasm adapter's RMS layer is feature-gated: lint it with the
       # features build-wasm.mjs ships.
       - name: Clippy (wasm adapter as it ships)
-        run: cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental -- -D warnings
+        run: cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental,powerio-collections -- -D warnings
       # Its own invocation, deliberately: the extension is linted with
       # `extension-module` ON, which is how it ships, and without
       # `--all-targets`, which would link libpython into this gate.
@@ -121,7 +121,7 @@ jobs:
           git diff --exit-code -- crates/tellegen/tests/data/dss_snapshots.json
           cargo test -p tellegen --test dss_snapshots
       - name: Test the wasm adapter as it ships
-        run: cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental
+        run: cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,powerio-collections
       # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,
       # ~32,000-terminal retained-session regression (#132). It fails only on
       # deterministic properties (warm/fresh agreement, one factorization, no

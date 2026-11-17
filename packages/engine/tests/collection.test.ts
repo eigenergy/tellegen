@@ -83,3 +83,25 @@ it("frees a WASM collection when inspection fails and transfers binary exports",
   const bytes = new Uint8Array([1, 2]);
   expect(transferables(bytes)).toEqual([bytes.buffer]);
 });
+
+ it("keeps the parent worker alive when a nested collection is freed", async () => {
+  const parent = await BrowserCaseCollection.fromZip("outer.zip", new Uint8Array([1]));
+  const child = await parent.openNested("inner.zip");
+  expect(call.mock.calls[1][0]).toMatchObject({ op: "collection_nested", member: "inner.zip" });
+  await child.free();
+  expect(mock.host!.cancel).not.toHaveBeenCalled();
+  await expect(parent.ingest({ primary: "case.m" })).resolves.toEqual(imported);
+  await parent.free();
+  expect(mock.host!.cancel).toHaveBeenCalledOnce();
+});
+
+it("a rejected child inspection leaves the parent usable; cancellation closes all descendants", async () => {
+  const parent = await BrowserCaseCollection.fromZip("outer.zip", new Uint8Array([1]));
+  call.mockRejectedValueOnce(new Error("ZIP decoding layer limit exceeded"));
+  await expect(parent.openNested("inner.zip")).rejects.toThrow("layer limit");
+  expect(mock.host!.cancel).not.toHaveBeenCalled();
+  const child = await parent.openNested("inner.zip");
+  parent.cancel();
+  await expect(child.ingest({ primary: "case.m" })).rejects.toThrow("closed");
+  expect(mock.host!.cancel).toHaveBeenCalledOnce();
+});

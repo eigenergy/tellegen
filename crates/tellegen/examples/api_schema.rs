@@ -30,6 +30,7 @@ fn main() {
         "src/dc_formula.rs",
         "src/error.rs",
         "src/sens/interface.rs",
+        "src/sens/mod.rs",
         "src/solve.rs",
         "src/plan.rs",
         "src/study.rs",

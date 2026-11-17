@@ -23,7 +23,7 @@ use crate::report::{
 use crate::request::Fuel;
 use crate::site::DraftBus;
 
-/// An HVDC link draft (OSM path).
+/// An HVDC link draft from mapped equipment or the synthetic area plan.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DraftHvdc {
     pub from: usize,
@@ -217,7 +217,13 @@ pub fn build_network(
         row.pt = link.setpoint_mw;
         row.extras.insert(
             EXTRAS_KEY.to_owned(),
-            serde_json::json!({ "osm_ids": link.osm_ids, "source": "osm", "circuits": link.circuits }),
+            serde_json::json!({
+                "osm_ids": link.osm_ids,
+                "source": if coords_kind == CoordsKind::Synthetic { "synthetic" } else { "osm" },
+                "circuits": link.circuits,
+                "from_area": buses[link.from].island,
+                "to_area": buses[link.to].island,
+            }),
         );
         hvdc_rows.push(row);
     }
@@ -351,14 +357,28 @@ fn annotate(
             id: branches.len() + k + 1,
             uid: uid(&hvdc_rows[k].uid),
             class_kv: 0.0,
-            length_km: 0.0,
+            length_km: crate::geom::haversine_km(
+                buses[link.from].lon,
+                buses[link.from].lat,
+                buses[link.to].lon,
+                buses[link.to].lat,
+            ),
             boundary_role: "hvdc".to_owned(),
             is_transformer: false,
             is_hvdc: true,
-            source: crate::report::ElementSource::Osm,
+            source: if buses[link.from].source == crate::report::ElementSource::Synthetic {
+                crate::report::ElementSource::Synthetic
+            } else {
+                crate::report::ElementSource::Osm
+            },
             circuits: link.circuits,
             circuit_index: 1,
-            rating_basis: "osm".to_owned(),
+            rating_basis: if buses[link.from].source == crate::report::ElementSource::Synthetic {
+                "scheduled_transfer"
+            } else {
+                "osm"
+            }
+            .to_owned(),
             osm_ids: link.osm_ids.clone(),
         });
     }

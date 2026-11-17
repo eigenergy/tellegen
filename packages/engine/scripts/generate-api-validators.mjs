@@ -26,12 +26,48 @@ const ajv = new Ajv2020({
   code: { source: true, esm: true, lines: true },
 });
 ajv.addSchema(schema, "tellegen-api");
-const exports = Object.fromEntries(
-  Object.keys(schema.properties).map((name) => [
+const httpSchema = JSON.parse(
+  readFileSync(
+    new URL("packages/engine/src/generated/http.schema.json", root),
+    "utf8",
+  ),
+);
+const serverHash = createHash("sha256")
+  .update(readFileSync(new URL("crates/tellegen-server/src/lib.rs", root)))
+  .digest("hex");
+for (const [file, expected] of Object.entries(
+  httpSchema["x-engine-source-files"],
+)) {
+  const actual = createHash("sha256")
+    .update(readFileSync(new URL(`crates/tellegen/${file}`, root)))
+    .digest("hex");
+  if (actual !== expected)
+    throw new Error(
+      `HTTP schema is stale for ${file}; regenerate with cargo run -p tellegen-server --example http_schema --features schema`,
+    );
+}
+if (serverHash !== httpSchema["x-server-source-sha256"])
+  throw new Error(
+    "HTTP schema is stale; regenerate with cargo run -p tellegen-server --example http_schema --features schema",
+  );
+// Older display responses lack solver context. Validate it when present while
+// continuing to accept those existing servers and saved display results.
+for (const name of ["SolutionPayload", "StreamSolution"])
+  if (httpSchema.$defs[name]?.required)
+    httpSchema.$defs[name].required = httpSchema.$defs[name].required.filter(
+      (field) => !["formulation", "status"].includes(field),
+    );
+ajv.addSchema(httpSchema, "tellegen-http");
+const exports = Object.fromEntries([
+  ...Object.keys(schema.properties).map((name) => [
     name,
     `tellegen-api#/properties/${name}`,
   ]),
-);
+  ...Object.keys(httpSchema.properties).map((name) => [
+    name,
+    `tellegen-http#/properties/${name}`,
+  ]),
+]);
 const code =
   "// @ts-nocheck\n// Generated from Rust API schemas by generate-api-validators.mjs.\n" +
   standaloneCode(ajv, exports).replaceAll(

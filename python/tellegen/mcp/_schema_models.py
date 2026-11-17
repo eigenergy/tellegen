@@ -11,9 +11,25 @@ from pydantic import ConfigDict, Field, create_model
 
 _SCHEMA = json.loads(Path(__file__).with_name("_engine_schema.json").read_text())
 _MODELS: Dict[str, Any] = {}
+_KEYWORDS = {
+    "$ref", "type", "const", "enum", "oneOf", "anyOf", "properties",
+    "additionalProperties", "required", "items", "default", "description",
+    "title", "format", "minimum", "exclusiveMinimum", "maximum",
+    "exclusiveMaximum", "minItems", "maxItems", "minLength", "maxLength", "pattern",
+}
 
 
 def _type(node: Any, name: str) -> Any:
+    if node is False or not isinstance(node, (dict, bool)):
+        raise ValueError(f"Unsupported Rust schema in {name}: {node}")
+    if isinstance(node, dict):
+        unsupported = set(node) - _KEYWORDS
+        if unsupported:
+            raise ValueError(f"Unsupported Rust schema keywords in {name}: {sorted(unsupported)}")
+        if node.get("format") not in {None, "double", "float", "uint", "uint32", "uint64", "int32", "int64"}:
+            raise ValueError(f"Unsupported Rust schema format in {name}: {node['format']}")
+        if "$ref" in node and not node["$ref"].startswith("#/$defs/"):
+            raise ValueError(f"Unsupported Rust schema reference in {name}: {node['$ref']}")
     base = _base_type(node, name)
     if not isinstance(node, dict):
         return base

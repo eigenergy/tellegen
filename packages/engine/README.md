@@ -192,6 +192,8 @@ Run the generators from the repository root after Rust API changes:
 
 ```sh
 cargo run -p tellegen --example api_schema --features schema,conic,mc-pf > packages/engine/src/generated/api.schema.json
+cargo run -p tellegen --example settings_schema --features schema,conic,mc-pf > packages/engine/src/generated/settings.schema.json
+cargo run -p tellegen-server --example http_schema --features schema > packages/engine/src/generated/http.schema.json
 npm run types
 ```
 
@@ -200,6 +202,10 @@ argument models. Solve, study, planning, and calculation results pass through on
 shared validation boundary before reaching callers. Malformed results fail with
 the result name and field path. The browser does not load a schema compiler at
 runtime. Python MCP inputs use the same Rust field definitions and constraints.
+HTTP solutions, saved results and streamed sensitivities use schemas from the
+server's serialized Rust records. Older display results may omit solver context;
+when supplied, that context is checked. Invalid streamed results close the stream
+and report an error without replacing the previous result.
 
 CI runs `npm run build:engine` from the repository root, and that runs
 `types:check`. Stale generated types fail the build.

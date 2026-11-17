@@ -86,7 +86,7 @@ pub fn preview_impl(session: &Generator) -> Result<String, String> {
 
 /// The report so far (complete after `Done`).
 pub fn report_impl(session: &Generator) -> Result<String, String> {
-    to_json(session.report())
+    to_json(&session.report_output())
 }
 
 /// The module as PowerIO IR text, from `Electrify` on.
@@ -132,7 +132,7 @@ pub fn generate_impl(request_json: &str, osm_json: Option<String>) -> Result<Str
         serde_json::from_str(&ingest_impl(&session)?).map_err(|e| other("build", e))?;
     to_json(&serde_json::json!({
         "module_json": module_impl(&session)?,
-        "report": session.report(),
+        "report": session.report_output(),
         "ingest": ingest,
     }))
 }

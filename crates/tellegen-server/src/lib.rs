@@ -304,6 +304,7 @@ struct CaseEntry {
 }
 
 #[derive(Clone, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct SavedCase {
     base_input: String,
     input: String,
@@ -406,12 +407,14 @@ pub struct NetworkBranch {
 /// common `BusScalar` / `BranchFlow` / `GenDispatch`; the server maps
 /// those to the DC-specific field names the frontend reads.
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PriceValue {
     pub bus: usize,
     pub value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FlowValue {
     pub branch: usize,
     pub mw: f64,
@@ -427,6 +430,7 @@ pub struct FlowValue {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DispatchValue {
     pub gen: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -435,18 +439,21 @@ pub struct DispatchValue {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ScalarValue {
     pub bus: usize,
     pub value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SensitivityValue {
     pub bus: usize,
     pub value: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SolutionPayload {
     pub formulation: tellegen::Problem,
     pub status: tellegen::SolveStatus,
@@ -470,6 +477,7 @@ pub struct SolutionPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SensitivityPayload {
     pub case: String,
     pub operand: &'static str,
@@ -480,6 +488,30 @@ pub struct SensitivityPayload {
     pub branch: Option<usize>,
     pub units: String,
     pub values: Vec<SensitivityValue>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+struct StreamSolution<'a> {
+    case: &'a str,
+    solve_ms: f64,
+    #[serde(flatten)]
+    solution: &'a SolutionPayload,
+    iterations: &'a [tellegen::SolveIteration],
+}
+
+/// The serialized HTTP result records, also consumed by browser validation.
+#[cfg(feature = "schema")]
+pub fn http_result_schema() -> serde_json::Value {
+    #[derive(schemars::JsonSchema)]
+    #[allow(dead_code)]
+    struct HttpResults {
+        http_solution: SolutionPayload,
+        http_stream_solution: StreamSolution<'static>,
+        http_sensitivity: SensitivityPayload,
+        http_saved_case: SavedCase,
+    }
+    serde_json::to_value(schemars::schema_for!(HttpResults)).expect("HTTP result schema")
 }
 
 #[derive(Debug, Deserialize)]
@@ -1085,17 +1117,12 @@ async fn solve_stream(
                 send_event(
                     &tx,
                     "solution",
-                    &serde_json::json!({
-                        "case": id_for_task.as_str(),
-                        "solve_ms": (solve_ms * 10.0).round() / 10.0,
-                        "objective": solution.objective,
-                        "prices": solution.prices,
-                        "va": solution.va,
-                        "w": solution.w,
-                        "flows": solution.flows,
-                        "dispatch": solution.dispatch,
-                        "iterations": iterations,
-                    }),
+                    &StreamSolution {
+                        case: id_for_task.as_str(),
+                        solve_ms: (solve_ms * 10.0).round() / 10.0,
+                        solution: &solution,
+                        iterations,
+                    },
                 )
                 .await;
                 #[cfg(feature = "sensitivity")]

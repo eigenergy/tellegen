@@ -1,4 +1,5 @@
 import { parseApiResult } from "./result-validation.js";
+export { parseApiResult, validateApiResult } from "./result-validation.js";
 import type { DcFormula } from "./generated/api-types.js";
 export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 import type { DcGrid, DcGridSolution } from "./dc-grid.js";

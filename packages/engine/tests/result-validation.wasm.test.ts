@@ -27,6 +27,17 @@ it("accepts actual balanced and multiconductor results from the browser engine",
     solve_module(input.module_json, "{}"),
   );
   expect(balanced.status).toBe("optimal");
+  // An actual infeasible solve must retain the engine error rather than turn
+  // into a complaint about JSON or missing result fields.
+  expect(() =>
+    parseApiResult(
+      "solve",
+      solve_module(
+        input.module_json,
+        JSON.stringify({ edits: { deltas: { "2": 1_000_000 } } }),
+      ),
+    ),
+  ).toThrow("DC OPF solve infeasible");
   const dist = JSON.parse(
     ingest_dist_case(
       "new circuit.test basekv=.4\nnew load.l phases=3 bus1=sourcebus kv=.4 kw=3 kvar=1\n",

@@ -54,6 +54,8 @@ struct State {
     buses: Vec<DraftBus>,
     corridors: Vec<Corridor>,
     interconnects: usize,
+    synchronous_areas: Vec<crate::SynchronousArea>,
+    planned_hvdc_links: Vec<crate::PlannedHvdcLink>,
     generators: Vec<DraftGenerator>,
     branches: Vec<DraftBranch>,
     built: Option<BuiltNetwork>,
@@ -185,6 +187,15 @@ impl Generator {
 
     pub fn report(&self) -> &GenerationReport {
         &self.report
+    }
+
+    /// The JSON report including the modelled AC areas and planned DC links.
+    pub fn report_output(&self) -> crate::GenerationReportOutput<'_> {
+        crate::GenerationReportOutput {
+            report: &self.report,
+            synchronous_areas: &self.state.synchronous_areas,
+            planned_hvdc_links: &self.state.planned_hvdc_links,
+        }
     }
 
     /// The network, from `Electrify` on.
@@ -399,6 +410,14 @@ impl Generator {
                 bus.population_weight = bus.load_mw / peak;
             }
         }
+        if self.state.osm.is_none() {
+            self.state.synchronous_areas =
+                crate::synchronous::partition(&mut self.state.buses, data);
+            counts.insert(
+                "synchronous_areas".into(),
+                self.state.synchronous_areas.len() as u64,
+            );
+        }
         self.state.hierarchical = hierarchical;
         self.state.layered = layered;
         counts.insert("buses_promoted".into(), loads.promoted as u64);
@@ -455,6 +474,23 @@ impl Generator {
             out.corridors.iter().map(|c| c.circuits as u64).sum(),
         );
         counts.insert("interconnects".into(), out.interconnects as u64);
+        for area in &mut self.state.synchronous_areas {
+            area.bus_ids = self
+                .state
+                .buses
+                .iter()
+                .enumerate()
+                .filter(|(_, bus)| bus.island == area.id)
+                .map(|(row, _)| row + 1)
+                .collect();
+            area.demand_mw = self
+                .state
+                .buses
+                .iter()
+                .filter(|bus| bus.island == area.id)
+                .map(|bus| bus.load_mw)
+                .sum();
+        }
         self.state.corridors = out.corridors;
         self.state.interconnects = out.interconnects;
         self.sync_osm_counts();
@@ -487,6 +523,13 @@ impl Generator {
                 warnings,
             )
         };
+        let (synthetic_hvdc, link_report) = crate::synchronous::plan_links(
+            &self.state.buses,
+            &generators,
+            &self.state.synchronous_areas,
+        );
+        self.state.planned_hvdc_links = link_report;
+        crate::synchronous::apply_transfers(&mut self.state.buses, &synthetic_hvdc, 1.0);
         let mut rng = Stream::new(self.request.seed, StreamTag::Electrical);
         let mut draws = draw_corridors(&self.state.corridors, self.request.fidelity, &mut rng);
         let mapped_circuits: Vec<u32> = self.state.corridors.iter().map(|c| c.circuits).collect();
@@ -685,6 +728,7 @@ impl Generator {
                 }
             }
         }
+        crate::synchronous::apply_transfers(&mut self.state.buses, &synthetic_hvdc, -1.0);
         let name = format!(
             "tellegen_synth_{}",
             &self.report.provenance.request_sha256[..16]
@@ -696,7 +740,7 @@ impl Generator {
                 Some(osm.branch_osm_ids(&branches)),
                 Some(osm.makeup_flags(&generators)),
             ),
-            None => (Vec::new(), CoordsKind::Synthetic, None, None),
+            None => (synthetic_hvdc, CoordsKind::Synthetic, None, None),
         };
         let mut built = build_network(
             &name,
@@ -1138,6 +1182,17 @@ impl Generator {
         let producer = Producer::new(PRODUCER_NAME, crate::VERSION)
             .map_err(|e| SynthError::Build(e.to_string()))?;
         let mut module = PioModule::new(net.clone()).with_producer(producer);
+        if !self.state.synchronous_areas.is_empty() {
+            module
+                .insert_extension(
+                    "tellegen.synchronous_areas",
+                    serde_json::json!({
+                        "areas": self.state.synchronous_areas,
+                        "links": self.state.planned_hvdc_links,
+                    }),
+                )
+                .map_err(|e| SynthError::Build(e.to_string()))?;
+        }
         // Reopening the generated module in a Study/viewer should use the
         // same stored-case start as validation. Explicit caller settings
         // can still select a flat start through the common settings API.

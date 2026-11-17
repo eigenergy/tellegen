@@ -24,6 +24,7 @@ powerio.workspace = true
 powerio-tx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+schemars = { workspace = true, optional = true }
 axum = "0.8.4"
 # Case modules are gzipped once at load rather than per request.
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
@@ -35,6 +36,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+sha2 = "0.11"
 
 [features]
 default = ["sensitivity", "conic"]
@@ -43,6 +45,11 @@ default = ["sensitivity", "conic"]
 powerio-012 = ["tellegen/powerio-012"]
 sensitivity = ["tellegen/sensitivity"]
 conic = ["tellegen/conic"]
+schema = ["dep:schemars", "tellegen/schema"]
+
+[[example]]
+name = "http_schema"
+required-features = ["schema"]
 
 [lints]
 workspace = true

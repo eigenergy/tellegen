@@ -14,6 +14,12 @@ _MODELS = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODELS)
 
 
+@pytest.mark.parametrize("node", [False, {"type": "number", "multipleOf": 2}, {"type": "string", "format": "email"}, {"$ref": "https://example.com/schema"}])
+def test_new_schema_constraints_require_explicit_support(node):
+    with pytest.raises(ValueError, match="Unsupported Rust schema"):
+        _MODELS._type(node, "FutureInput")
+
+
 def test_rust_defaults_and_tagged_sensitivity_enums():
     edits = _MODELS.model("Edits").model_validate({"deltas": {"2": 30}})
     assert edits.model_dump() == {"deltas": {"2": 30.0}, "rates": {}}
