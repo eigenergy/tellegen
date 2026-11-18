@@ -456,6 +456,19 @@ impl Report {
                 "canonical dispatch columns",
             )?;
         }
+        // A solution saved before PowerIO 0.12.3 has no per coil column.
+        if let Some(canonical) = solution.generator_coil_active_powers() {
+            let reported: Vec<_> = self
+                .devices
+                .iter()
+                .filter(|d| d.kind == powerio_matrix::McOpfDeviceKind::Generator)
+                .flat_map(|d| d.coil_power_va.iter().map(|p| p[0]))
+                .collect();
+            check(
+                reported.as_slice() == canonical,
+                "canonical per coil dispatch column",
+            )?;
+        }
         let objective: f64 = self
             .devices
             .iter()

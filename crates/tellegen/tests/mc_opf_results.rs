@@ -20,7 +20,9 @@ fn case(bundle: &str, name: &str) -> powerio::MulticonductorNetwork {
         _ => unreachable!(),
     };
     let cases: Value = serde_json::from_str(text).unwrap();
-    let mut case = cases[name].clone();
+    parse(cases[name].clone())
+}
+fn parse(mut case: Value) -> powerio::MulticonductorNetwork {
     legacy_bmopf::current_load_tokens(&mut case);
     let module = powerio::parse_with_options(
         powerio::Source::from_memory("case.bmopf.json", serde_json::to_vec(&case).unwrap())
@@ -192,6 +194,184 @@ fn complete_results_roundtrip_with_coil_terminal_and_rating_port_axes() {
                 .flat_map(|t| &t.ports)
                 .any(|p| p.name.ends_with(":neutral")));
         }
+    }
+}
+
+/// The first stored `generator_coil_active_power` column of a module document.
+fn stored_coil_column(value: &mut Value) -> Option<&mut Value> {
+    match value {
+        Value::Object(map) => {
+            if map.contains_key("generator_coil_active_power") {
+                return map.get_mut("generator_coil_active_power");
+            }
+            map.values_mut().find_map(stored_coil_column)
+        }
+        Value::Array(items) => items.iter_mut().find_map(stored_coil_column),
+        _ => None,
+    }
+}
+
+/// The four circuits of `validation/evidence/mc-opf-review` (WYE or DELTA
+/// generation, grounded or floating receiving neutral) and one with a DELTA
+/// generator ahead of a WYE generator. Coil limits and costs differ per coil,
+/// so a column in another order would not reproduce the cost.
+#[test]
+fn per_coil_generator_dispatch_reproduces_cost_and_roundtrips() {
+    let base: Value = serde_json::from_str(include_str!("data/mc_opf/unbalanced.json")).unwrap();
+    for (connections, grounded) in [
+        (&["WYE"][..], true),
+        (&["WYE"][..], false),
+        (&["DELTA"][..], true),
+        (&["DELTA"][..], false),
+        (&["DELTA", "WYE"][..], false),
+    ] {
+        let label = format!("{connections:?} grounded={grounded}");
+        let mut data = base.clone();
+        let template = data["generator"]["g"].clone();
+        data["generator"] = json!({});
+        for (row, connection) in connections.iter().enumerate() {
+            let mut generator = template.clone();
+            let map = if *connection == "WYE" {
+                json!(["a", "b", "c", "n"])
+            } else {
+                json!(["a", "b", "c"])
+            };
+            generator["i_max"] = json!(vec![2; map.as_array().unwrap().len()]);
+            generator["terminal_map"] = map;
+            generator["configuration"] = json!(connection);
+            generator["p_max"] = json!([50, 40, 30]);
+            let step = 0.03 * row as f64;
+            generator["cost"] = json!([0.05 + step, 0.06 + step, 0.07 + step]);
+            data["generator"][format!("g{row}")] = generator;
+        }
+        if grounded {
+            data["bus"]["b"]["perfectly_grounded_terminals"] = json!(["n"]);
+        }
+        let result = solve_mc_ac_opf_instance(instance(parse(data)), &Default::default()).unwrap();
+        assert_ledgers(&result);
+        let net = result.solution.instance().network();
+        assert_eq!(net.generators().len(), connections.len(), "{label}");
+        let ledgers = |kind| {
+            result
+                .devices
+                .iter()
+                .filter(move |d| d.kind == kind)
+                .collect::<Vec<_>>()
+        };
+        let generators = ledgers(powerio_matrix::McOpfDeviceKind::Generator);
+        let sources = ledgers(powerio_matrix::McOpfDeviceKind::Source);
+
+        // The per coil column, read against PowerIO's own coil rule.
+        let column = result.solution.generator_coil_active_powers().unwrap();
+        let mut position = 0;
+        let mut generator_cost = 0.0;
+        for (generator, ledger) in net.generators().iter().zip(&generators) {
+            assert!(ledger.identity.ends_with(&generator.name), "{label}");
+            let coils = powerio_dist::calc_element_connection(
+                net,
+                &generator.bus,
+                &generator.terminal_map,
+                generator.configuration,
+                None,
+            )
+            .unwrap();
+            assert_eq!(coils.len(), 3, "{label}");
+            assert_eq!(ledger.coils.len(), coils.len(), "{label}");
+            let id = |k: usize| McOpfTerminalId::new(&generator.bus, &generator.terminal_map[k]);
+            let (cost, p_max) = (
+                generator.cost.as_ref().unwrap(),
+                generator.p_max.as_ref().unwrap(),
+            );
+            for (k, coil) in coils.iter().enumerate() {
+                assert_eq!(ledger.coils[k].positive, id(coil.from), "{label}");
+                assert_eq!(ledger.coils[k].negative, coil.to.map(id), "{label}");
+                let dispatch = column[position];
+                assert_eq!(dispatch, ledger.coil_power_va[k][0], "{label}");
+                assert!(
+                    dispatch > 1.0 && dispatch <= p_max[k] * (1.0 + 1e-6),
+                    "{label}"
+                );
+                generator_cost += cost[k] * dispatch / 1000.0;
+                position += 1;
+            }
+            let terminal_sum: f64 = ledger.terminal_power_va.iter().map(|p| p[0]).sum();
+            let coil_sum: f64 = ledger.coil_power_va.iter().map(|p| p[0]).sum();
+            assert!((terminal_sum - coil_sum).abs() < 1e-7, "{label}");
+        }
+        assert_eq!(position, column.len(), "{label}");
+
+        // Cost times the per coil column is the generator part of the objective.
+        let mut source_cost = 0.0;
+        for (source, ledger) in net.sources().iter().zip(&sources) {
+            let rate = source.energy_cost_rate.as_ref().unwrap();
+            for (k, power) in ledger.coil_power_va.iter().enumerate() {
+                source_cost += rate[k % rate.len()] * power[0] / 1000.0;
+            }
+        }
+        let objective = result.solution.objective();
+        assert!(generator_cost > 1e-3 && source_cost > 1e-3, "{label}");
+        assert!(
+            (generator_cost - (objective - source_cost)).abs() <= 1e-9 * (1.0 + objective.abs()),
+            "{label}: objective {objective}, sources {source_cost}, cost times per coil dispatch {generator_cost}"
+        );
+
+        // The per terminal column keeps its layout and values.
+        let terminal: Vec<f64> = generators
+            .iter()
+            .flat_map(|d| d.terminal_power_va.iter().map(|p| p[0]))
+            .collect();
+        assert_eq!(
+            result.solution.generator_active_powers(),
+            terminal,
+            "{label}"
+        );
+        assert_eq!(
+            terminal.len(),
+            net.generators()
+                .iter()
+                .map(|g| g.terminal_map.len())
+                .sum::<usize>(),
+            "{label}"
+        );
+        // It equals the per coil column only for WYE with the neutral at zero.
+        let difference = net
+            .generators()
+            .iter()
+            .scan(0, |at, g| {
+                let start = *at;
+                *at += g.terminal_map.len();
+                Some(start)
+            })
+            .enumerate()
+            .flat_map(|(row, start)| (0..3).map(move |k| (start + k, 3 * row + k)))
+            .map(|(t, c)| (terminal[t] - column[c]).abs())
+            .fold(0.0, f64::max);
+        if connections.contains(&"DELTA") || !grounded {
+            assert!(difference > 1e-3, "{label}: {difference}");
+        } else {
+            assert!(difference < 1e-9, "{label}: {difference}");
+        }
+
+        // Both columns survive the saved module, and a changed entry is refused.
+        let text = result.to_module_json().unwrap();
+        let back = McOpfResult::from_module_json(&text).unwrap();
+        assert_eq!(
+            back.solution.generator_coil_active_powers(),
+            Some(column),
+            "{label}"
+        );
+        assert_eq!(
+            back.solution.generator_active_powers(),
+            result.solution.generator_active_powers(),
+            "{label}"
+        );
+        let mut document: Value = serde_json::from_str(&text).unwrap();
+        let stored = stored_coil_column(&mut document).unwrap();
+        assert_eq!(stored.as_array().unwrap().len(), column.len(), "{label}");
+        assert_eq!(stored[0].as_f64(), Some(column[0]), "{label}");
+        stored[0] = json!(column[0] + 1.0);
+        let error = McOpfResult::from_module_json(&document.to_string()).unwrap_err();
+        assert_eq!(error.kind, McOpfErrorKind::InvalidInput, "{label}");
     }
 }
 

@@ -24,8 +24,11 @@ repository = "https://github.com/eigenergy/tellegen"
 # PowerIO modules, values, problem instances, solutions, and numerical
 # preparation supply Tellegen's network data. The shared lockfile keeps
 # one exact PowerIO revision across the engine and every adapter.
-# PowerIO 0.12.3 supplies the adjustable OpenDSS read limits the command line
-# import uses, so the minimum dependency version starts there.
+# PowerIO 0.12.2 supplies the qualified general transformer primitives and
+# retained OpenDSS controls. PowerIO 0.12.3 adds the per coil generator
+# dispatch column of `McAcOpfSolution`, which the multiconductor OPF fills,
+# and the adjustable OpenDSS read limits the command line import uses,
+# so the minimum dependency version starts there.
 # No SINCAL: `powerio` turns off its default `sincal` feature, which compiles
 # SQLite that the wasm build could only link with a C compiler targeting
 # WebAssembly, and `powerio-dist` and `powerio-tx` come without default

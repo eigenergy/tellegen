@@ -1015,12 +1015,18 @@ failures; this change does not retune the solver or change its status mapping.
 
 ## Multiconductor OPF result conventions
 
-The canonical generator result uses terminal-map order, including the neutral,
-and injection-positive terminal powers. The detailed report also carries each
-coil's positive and negative terminal IDs and its generation-positive dispatch
-in `devices[].coil_power_va`. Use the coil values for generator cost and coil
+The canonical solution carries two generator columns. `generator_active_powers()`
+uses terminal-map order, including the neutral, and injection-positive terminal
+powers. `generator_coil_active_powers()` (PowerIO 0.12.3 and later) is the
+generation-positive active dispatch of each coil in watts: generators in table
+order, and each generator's coils in the order of its `p_min`, `p_max` and
+`cost` entries. A WYE generator has one coil per phase terminal in terminal-map
+order and no neutral entry; a three-terminal DELTA generator has coils from
+terminal 1 to 2, 2 to 3 and 3 to 1. The detailed report also carries each
+coil's positive and negative terminal IDs and its complex power in
+`devices[].coil_power_va`. Use the coil values for generator cost and coil
 bounds. For a DELTA device or a nonzero neutral voltage, coil and terminal
-powers differ. This patch preserves the existing field meanings.
+powers differ. The terminal column keeps its existing meaning.
 
 Canonical active/reactive mismatches are measured in MW/MVAr. The detailed
 report separately checks current balance, voltage equations, device power,

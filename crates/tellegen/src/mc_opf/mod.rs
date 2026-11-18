@@ -432,6 +432,15 @@ fn solve_prepared(
         .filter(|d| d.kind == powerio_matrix::McOpfDeviceKind::Generator)
         .flat_map(|d| d.terminal_power_va.iter().map(|p| p[0]))
         .collect();
+    // Per coil, in PowerIO's order: the preparation lists generators in
+    // table order and takes each one's coils from
+    // `powerio_dist::calc_element_connection`. Positive is generation.
+    let generator_coils = checked
+        .devices
+        .iter()
+        .filter(|d| d.kind == powerio_matrix::McOpfDeviceKind::Generator)
+        .flat_map(|d| d.coil_power_va.iter().map(|p| p[0]))
+        .collect();
     let solution = McAcOpfSolution::new(
         initial::canonical_instance(instance)?,
         Termination::Converged,
@@ -445,6 +454,8 @@ fn solve_prepared(
         generators,
         checked.objective,
     )
+    .map_err(|e| McOpfError::from_powerio(McOpfStage::Export, e))?
+    .with_generator_coil_active_powers(generator_coils)
     .map_err(|e| McOpfError::from_powerio(McOpfStage::Export, e))?
     .with_residuals(checked.power_residuals)
     .with_producer(format!(
