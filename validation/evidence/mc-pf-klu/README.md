@@ -9,7 +9,10 @@ matrix there (see "Where the 17 V comes from").
 Tellegen now imports the region, and the system it prepares itself shows the
 same thing: **17.232 V** between faer and KLU, again a shift of the two 69 kV
 sections (see "Tellegen's own regional system").
-No production solver behavior or backend selection changes in this study.
+The backend is unchanged. Since this study, Tellegen's power flow solves for
+voltage corrections from a current balance summed in twice the working
+precision on networks like this one, and its own answer is balanced on both
+sections (see "What Tellegen's power flow now returns").
 
 ## What was measured
 
@@ -123,8 +126,8 @@ holds the numbers. The system has 431,603 unknowns and 2,425,899 nonzeros.
 Outside the two sections 243 nodes differ by more than 1e-3 V. The refined
 solution is 7.68 V from KLU overall and 1.2e-3 V from it outside the sections;
 its corrections fall to 1.3e-11 V in five steps. Row-scaled backward residuals
-are 1.57e-11 for faer, 6.2e-15 for KLU and 3.9e-16 for faer after three
-ordinary refinement steps. KLU's condition estimate is 5.57e14, not 2.25e16,
+are 2.06e-11 for faer, 1.0e-14 for KLU and 4.0e-16 for faer after three
+ordinary refinement steps, which still leave it 10.6 V from KLU. KLU's condition estimate is 5.57e14, not 2.25e16,
 because the pieces with no source are not in this system. KLU with COLAMD
 differs from KLU with AMD by 20.65 V.
 
@@ -134,13 +137,39 @@ sections; here faer is the farther one on the first section and KLU on the
 second. Voltages between conductors agree to 0.013 V at 69 kV, and everything
 outside the sections agrees to 1.4 mV.
 
-The solved power flow was also compared with OpenDSS solving the same master
-file with `controlmode=off` (not part of the scripts here). Voltages to ground
-on the 657 nodes at 69 kV differ by up to 16.58 V; voltages between conductors
-there by up to 0.0141 V (2.0e-7 pu); the other 430,946 nodes by up to
-1.48e-3 V (2.1e-7 pu). Source power is 777,256.249 kW and 213,721.689 kvar
-against 777,256.257 kW and 213,721.846 kvar. With OpenDSS's default control
-mode the regulators move and voltages differ by up to 0.092 pu.
+The table is about one linear solve with each backend. It does not describe
+the power flow's answer, which no longer comes from a single solve here.
+
+#### What Tellegen's power flow now returns
+
+A linear solve in double precision cannot place these sections, with either
+backend, and three ordinary refinement steps do not help because the residual
+they use carries the same rounding error. Tellegen therefore changes the
+iteration on such networks. When the rounding error of a current balance can
+reach the absolute KCL tolerance, each iteration solves for the correction to
+the present voltages, from the current balance summed in twice the working
+precision (a compensated dot product). The error of the factorization is then
+proportional to the correction and shrinks with it. Nothing else changes: the
+same matrix, factorization, tolerances and converged equations.
+
+On the region the power flow then converges to 1e-4 V in 11 iterations, 1e-6 V
+in 14 and 1e-9 V in 18; before, it stopped improving at 2.5e-7 V. The mean of
+the three phase voltages is 3.6e-7 V on every bus of the first section and
+4.4e-7 V on the second, the values the `fx128` refinement gives above. Before
+the change Tellegen's answer had 17.0 V and 5.9 V there. The extra pass over
+the matrix adds about 0.03 s per iteration (0.37 s instead of 0.05 s in total
+for 11 iterations).
+
+The solved power flow was compared with OpenDSS solving the same master file
+with `controlmode=off` (not part of the scripts here). In that OpenDSS run the
+mean of the three phase voltages is 2.0 V and 6.1 V on the two sections.
+Voltages to ground on the 657 nodes at 69 kV therefore differ by up to 6.15 V,
+which is OpenDSS's own shift; voltages between conductors there differ by up
+to 0.0123 V (1.8e-7 pu), and the other 430,946 nodes by up to 1.30e-3 V
+(1.8e-7 pu). Source power is 777,256.114 kW and 213,721.518 kvar against
+OpenDSS's 777,256.257 kW and 213,721.846 kvar, a difference of 1.8e-7 and
+1.5e-6 of the totals. With OpenDSS's default control mode the regulators move
+and voltages differ by up to 0.092 pu.
 
 The faer factorization takes 0.19 s and a retained solve 5.2 ms; KLU with AMD
 takes 0.077 s and 5.0 ms. Retained allocations are 204 MB and 112 MB, measured
@@ -313,8 +342,9 @@ KLU remains the agreed reference except for voltages to ground on the two
 of its own matrix. Tellegen's regional system is now measured, and it shows the
 same shift, so the regional question of #153 has an answer for this region:
 the backends differ only in the voltage to ground of the two 69 kV sections,
-and neither is right there. There is no interval-validated solution and no
-demonstrated need for a WASM backend change. Whether Tellegen should refine
-its solution on such sections, or report their voltage to ground as poorly
-determined, is not decided here. The other original regions were located in
+and neither is right there. Tellegen's power flow no longer depends on that:
+it reaches the balanced solution with the faer backend. There is no
+interval-validated solution and no demonstrated need for a WASM backend
+change. The size of the source power difference from OpenDSS (0.14 kW and
+0.33 kvar) was not traced to individual elements. The other original regions were located in
 the same public data tree but were not remeasured.

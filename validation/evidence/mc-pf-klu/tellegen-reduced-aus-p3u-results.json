@@ -2,25 +2,25 @@
   "name": "tellegen-reduced-aus-p3u",
   "dimension": 431603,
   "nonzeros": 2425899,
-  "matrix_rhs_sha256": "3885c14dd125249c7c0df3031ed7caa41eb80bf128ceb1c20572785c025e1cf3",
+  "matrix_rhs_sha256": "8f4a7ae4116fd43ca46c887de45d285913c298dcf8f87e5d640ed3f0bc0fdc95",
   "faer": {
-    "factor_seconds": 0.188590875,
+    "factor_seconds": 0.191609917,
     "high_precision_correction_sizes": [
-      16.976079359352582,
-      0.0067109729813691335,
-      7.633290816968786e-06,
-      8.685390324001615e-09,
-      1.3391446792309511e-11,
-      1.3391446792347856e-11,
-      1.3391446792347797e-11,
-      1.3391446792347797e-11
+      16.97607940918213,
+      0.006710973014781098,
+      7.63329073554847e-06,
+      8.685484002228789e-09,
+      1.3291099947076327e-11,
+      1.2925736891268169e-11,
+      1.2925736891268169e-11,
+      1.2925736891268169e-11
     ],
     "retained_heap_bytes": 204243104,
-    "warm_solve_seconds": 0.00524323125
+    "warm_solve_seconds": 0.005317795849999999
   },
   "klu": {
-    "factor_seconds": 0.07727000000159023,
-    "warm_solve_seconds": 0.004962700000032782,
+    "factor_seconds": 0.07808500000101048,
+    "warm_solve_seconds": 0.005063499999960186,
     "retained_heap_bytes": 112146092.0,
     "peak_heap_bytes": 153688652.0,
     "factor_nonzeros": 3270086.0,
@@ -29,87 +29,87 @@
   },
   "klu_orderings": {
     "amd": {
-      "factor_seconds": 0.0762380000014673,
-      "warm_solve_seconds": 0.0049334499999531545,
+      "factor_seconds": 0.07794300000387011,
+      "warm_solve_seconds": 0.005040899999949033,
       "retained_heap_bytes": 112146092.0,
       "peak_heap_bytes": 153688652.0,
       "factor_nonzeros": 3270086.0,
       "condition_estimate": 556975540735007.8,
       "reciprocal_pivot_ratio": 1.054910833726304e-13,
       "difference_from_reference_v": 0.0,
-      "backward_residual": 6.218160474190728e-15
+      "backward_residual": 1.0050519252470899e-14
     },
     "colamd": {
-      "factor_seconds": 0.13155100000585662,
-      "warm_solve_seconds": 0.005417749999833177,
+      "factor_seconds": 0.13415399999939837,
+      "warm_solve_seconds": 0.005521050000243122,
       "retained_heap_bytes": 128004076.0,
       "peak_heap_bytes": 1046322060.0,
       "factor_nonzeros": 4060628.0,
       "condition_estimate": 556330449096317.0,
       "reciprocal_pivot_ratio": 2.344765688946584e-15,
-      "difference_from_reference_v": 20.65113688642737,
-      "backward_residual": 3.0209139435341187e-13
+      "difference_from_reference_v": 20.65118114813129,
+      "backward_residual": 2.949163943283335e-13
     }
   },
-  "max_voltage_difference_v": 17.232450439242644,
+  "max_voltage_difference_v": 17.232450739743726,
   "worst_terminal": [
-    "sb8_p3uhs21_1247_node_8_3",
+    "sb8_p3uhs21_1247_node_8_9",
     "1"
   ],
   "worst_reference_voltage_v": [
-    38714.69784074851,
-    -2609.6915564306514
+    38714.697887520095,
+    -2609.6915060602496
   ],
   "difference_by_terminal_v": {
-    "phase": 17.232450439242644
+    "phase": 17.232450739743726
   },
-  "high_precision_refined_difference_v": 7.675981876925701,
-  "faer_refined_difference_v": 20.9859039290367,
-  "scaled_faer_difference_v": 14.744909138154961,
-  "reverse_input_order_difference_v": 10.616679528385022,
-  "scaled_klu_difference_v": 20.127853753855224,
+  "high_precision_refined_difference_v": 7.675981865041936,
+  "faer_refined_difference_v": 10.598929873500742,
+  "scaled_faer_difference_v": 14.522107103867452,
+  "reverse_input_order_difference_v": 10.616680381904605,
+  "scaled_klu_difference_v": 20.127853324574005,
   "row_scaled_backward_residual": {
-    "faer": 1.5668723524793607e-11,
-    "klu": 6.218160474190728e-15,
-    "faer_refined": 3.8643670600523453e-16,
-    "faer_scaled": 1.7232830449477862e-14
+    "faer": 2.0585475955194802e-11,
+    "klu": 1.0050519252470899e-14,
+    "faer_refined": 3.9791954692372463e-16,
+    "faer_scaled": 2.1413911938016365e-14
   },
   "sections_at_69kv": [
     {
       "nodes": 315,
       "buses": 105,
-      "max_difference_to_ground_v": 17.232450439242644,
-      "common_shift_v": 17.229385414145643,
-      "max_difference_after_removing_shift_v": 0.010728066667884973,
-      "max_difference_between_conductors_of_a_bus_v": 0.013404811883136707,
+      "max_difference_to_ground_v": 17.232450739743726,
+      "common_shift_v": 17.229385661001306,
+      "max_difference_after_removing_shift_v": 0.01072788777234674,
+      "max_difference_between_conductors_of_a_bus_v": 0.01340463382717696,
       "mean_voltage_to_ground_v": {
-        "klu": 2.2737515181062014,
-        "faer": 16.968863084430726,
-        "faer_refined_with_fx128_residuals": 3.621087180722508e-07
+        "klu": 2.273751733221106,
+        "faer": 16.96886313279273,
+        "faer_refined_with_fx128_residuals": 3.62108620778144e-07
       }
     },
     {
       "nodes": 342,
       "buses": 114,
-      "max_difference_to_ground_v": 8.20152789462307,
-      "common_shift_v": 8.199633872078417,
-      "max_difference_after_removing_shift_v": 0.0059641465234376145,
-      "max_difference_between_conductors_of_a_bus_v": 0.0035729721335388035,
+      "max_difference_to_ground_v": 8.20152869966356,
+      "common_shift_v": 8.199634004264652,
+      "max_difference_after_removing_shift_v": 0.005964426682474792,
+      "max_difference_between_conductors_of_a_bus_v": 0.0035730246767987466,
       "mean_voltage_to_ground_v": {
-        "klu": 7.673493919168449,
-        "faer": 5.890500849061478,
-        "faer_refined_with_fx128_residuals": 4.3965989276681346e-07
+        "klu": 7.673494009028356,
+        "faer": 5.890500876544971,
+        "faer_refined_with_fx128_residuals": 4.3965964468266937e-07
       }
     }
   ],
   "elsewhere": {
     "nodes": 430946,
-    "max_difference_v": 0.001401529488700727,
+    "max_difference_v": 0.0014015108678827714,
     "worst_terminal": [
       "p3udt17315",
       "2"
     ],
     "nodes_above_1e-3_v": 243
   },
-  "refined_vs_klu_elsewhere_v": 0.001203013176783051
+  "refined_vs_klu_elsewhere_v": 0.0012029994702172373
 }
