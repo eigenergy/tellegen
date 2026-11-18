@@ -1,11 +1,12 @@
 //! Explicit snapshots using equipment settings already written in the input.
 use powerio::{PioModule, PioValue};
+use powerio_dist::{MulticonductorNetwork, UntypedObject};
 
 pub const FIXED_CONTROLS_EXTENSION: &str = "tellegen.fixed_controls";
 
-/// Keep written taps and capacitor states without running their controls.
-/// The input is unchanged. Original control records and source files remain in
-/// the returned module; all other calculation restrictions still apply.
+/// Keep written taps, capacitor states and closed fuses without running their
+/// controls. The input is unchanged. Original control records and source files
+/// remain in the returned module; all other calculation restrictions still apply.
 pub fn prepare_mc_fixed_controls(
     module: &PioModule<PioValue>,
 ) -> Result<PioModule<PioValue>, String> {
@@ -17,7 +18,9 @@ pub fn prepare_mc_fixed_controls(
         return Err("Written equipment settings require a multiconductor network".to_owned());
     };
     let is_control = |class: &str| {
-        class.eq_ignore_ascii_case("regcontrol") || class.eq_ignore_ascii_case("capcontrol")
+        ["regcontrol", "capcontrol", "fuse"]
+            .iter()
+            .any(|control| class.eq_ignore_ascii_case(control))
     };
     let controls: Vec<_> = network
         .untyped_objects()
@@ -26,44 +29,40 @@ pub fn prepare_mc_fixed_controls(
         .cloned()
         .collect();
     if controls.is_empty() {
-        return Err("This case has no regulator or capacitor controls to hold fixed".to_owned());
+        return Err(
+            "This case has no regulator controls, capacitor controls or fuses to hold fixed"
+                .to_owned(),
+        );
     }
     for control in &controls {
-        if control.class.eq_ignore_ascii_case("regcontrol") {
-            let target = control.props.iter().rev().find_map(|(key, value)| {
-                key.as_deref()
-                    .filter(|key| key.eq_ignore_ascii_case("transformer"))
-                    .map(|_| value.trim_matches(['\"', '\'']))
-            });
-            if !target.is_some_and(|target| {
+        if control.class.eq_ignore_ascii_case("regcontrol")
+            && !written(control, "transformer").is_some_and(|target| {
                 network
                     .transformers()
                     .iter()
                     .any(|transformer| transformer.name.eq_ignore_ascii_case(target))
-            }) {
-                return Err(format!(
-                    "Regulator control {} has no supported transformer target",
-                    control.name
-                ));
-            }
+            })
+        {
+            return Err(format!(
+                "Regulator control {} has no supported transformer target",
+                control.name
+            ));
         }
-        if control.class.eq_ignore_ascii_case("capcontrol") {
-            let target = control.props.iter().rev().find_map(|(key, value)| {
-                key.as_deref()
-                    .filter(|key| key.eq_ignore_ascii_case("capacitor"))
-                    .map(|_| value.trim_matches(['\"', '\'']))
-            });
-            if !target.is_some_and(|target| {
+        if control.class.eq_ignore_ascii_case("capcontrol")
+            && !written(control, "capacitor").is_some_and(|target| {
                 network
                     .shunts()
                     .iter()
                     .any(|shunt| shunt.name.eq_ignore_ascii_case(target))
-            }) {
-                return Err(format!(
-                    "Capacitor control {} has no supported capacitor target",
-                    control.name
-                ));
-            }
+            })
+        {
+            return Err(format!(
+                "Capacitor control {} has no supported capacitor target",
+                control.name
+            ));
+        }
+        if control.class.eq_ignore_ascii_case("fuse") {
+            check_closed_fuse(network, control)?;
         }
     }
     network
@@ -79,6 +78,98 @@ pub fn prepare_mc_fixed_controls(
         .map_err(|error| error.to_string())?;
     super::validate_mc_module(&prepared)?;
     Ok(prepared)
+}
+
+/// The last written value of a property, without quotes.
+fn written<'a>(object: &'a UntypedObject, property: &str) -> Option<&'a str> {
+    object.props.iter().rev().find_map(|(key, value)| {
+        key.as_deref()
+            .filter(|key| key.eq_ignore_ascii_case(property))
+            .map(|_| value.trim_matches(['\"', '\'']))
+    })
+}
+
+/// A fuse with every phase closed leaves the circuit unchanged while it does
+/// not blow, which is what OpenDSS solves with `controlmode=off`. A fuse
+/// written open on any phase disconnects that phase even when the fuse is
+/// disabled, and a fuse closes a terminal that an earlier `open` command
+/// opened; neither is represented here, so both are refused.
+fn check_closed_fuse(network: &MulticonductorNetwork, fuse: &UntypedObject) -> Result<(), String> {
+    const SETTINGS: &[&str] = &[
+        "monitoredobj",
+        "monitoredterm",
+        "switchedobj",
+        "switchedterm",
+        "fusecurve",
+        "ratedcurrent",
+        "delay",
+        "basefreq",
+        "enabled",
+    ];
+    for (key, value) in &fuse.props {
+        let key = key.as_deref().unwrap_or_default().to_ascii_lowercase();
+        if ["action", "normal", "state"].contains(&key.as_str()) {
+            let mut phases = value
+                .split(|c: char| c.is_whitespace() || "[](){}\"',".contains(c))
+                .filter(|phase| !phase.is_empty())
+                .peekable();
+            if phases.peek().is_none()
+                || phases.any(|phase| !phase.to_ascii_lowercase().starts_with('c'))
+            {
+                return Err(format!(
+                    "Fuse {} is written open; open fuses are not supported",
+                    fuse.name
+                ));
+            }
+        } else if !SETTINGS.contains(&key.as_str()) {
+            return Err(format!(
+                "Fuse {} has an unsupported property `{key}`",
+                fuse.name
+            ));
+        }
+    }
+    let target = written(fuse, "switchedobj")
+        .or_else(|| written(fuse, "monitoredobj"))
+        .unwrap_or_default();
+    let supported = target.split_once('.').is_some_and(|(class, name)| {
+        if class.eq_ignore_ascii_case("line") {
+            network
+                .lines()
+                .iter()
+                .any(|line| line.name.eq_ignore_ascii_case(name))
+                || network.untyped_objects().iter().any(|object| {
+                    super::input::is_disabled_line(object) && object.name.eq_ignore_ascii_case(name)
+                })
+        } else {
+            class.eq_ignore_ascii_case("transformer")
+                && network
+                    .transformers()
+                    .iter()
+                    .any(|transformer| transformer.name.eq_ignore_ascii_case(name))
+        }
+    });
+    if !supported {
+        return Err(format!(
+            "Fuse {} has no supported line or transformer target",
+            fuse.name
+        ));
+    }
+    let switched_by_command = network.commands().iter().any(|(verb, arguments)| {
+        (verb.eq_ignore_ascii_case("open") || verb.eq_ignore_ascii_case("close"))
+            && arguments.split_whitespace().next().is_some_and(|element| {
+                element
+                    .trim_matches(['\"', '\''])
+                    .trim_start_matches("object=")
+                    .eq_ignore_ascii_case(target)
+            })
+    });
+    if switched_by_command {
+        return Err(format!(
+            "Fuse {} protects {target}, which an open or close command also switches",
+            fuse.name
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -146,6 +237,96 @@ mod tests {
             prepare_mc_fixed_controls(&module(&source.replace("kvar=2", "kvar=2 states=[0]")))
                 .is_err()
         );
+    }
+
+    fn solved(module: &PioModule<PioValue>) -> super::super::McPfResult {
+        let text = crate::ir::serialize_module(module).unwrap();
+        let result =
+            super::super::solve_mc_module_json(&text, &super::super::McPfOptions::default())
+                .unwrap();
+        serde_json::from_str(&result).unwrap()
+    }
+
+    const LINE: &str = "new line.feed phases=3 bus1=load bus2=far r1=.01 x1=.02 r0=.02 x0=.04 c1=0 c0=0 length=1 units=km\nnew load.far bus1=far phases=3 kv=.4 kw=5 kvar=1";
+
+    #[test]
+    fn closed_fuses_are_held_closed_and_change_nothing() {
+        let without = solved(&prepare_mc_fixed_controls(&module(LINE)).unwrap());
+        for fuse in [
+            "new fuse.f monitoredobj=line.feed ratedcurrent=100",
+            // Far below the load current: it would blow if controls ran.
+            "new fuse.f monitoredobj=line.feed monitoredterm=2 ratedcurrent=.01 delay=0",
+            "new fuse.f monitoredobj=transformer.t fusecurve=tlink enabled=n",
+            "new fuse.f monitoredobj=load.far switchedobj=line.feed switchedterm=1",
+            "new fuse.f monitoredobj=line.feed action=close normal=closed state=[closed closed closed]",
+        ] {
+            let original = module(&format!("{LINE}\n{fuse}"));
+            assert!(super::super::validate_mc_module(&original).is_err());
+            let fixed = prepare_mc_fixed_controls(&original).unwrap();
+            let records = fixed.extensions()[FIXED_CONTROLS_EXTENSION]["controls"]
+                .as_array()
+                .unwrap();
+            assert!(
+                records.iter().any(|record| record["class"] == "fuse"),
+                "{fuse}"
+            );
+            let with = solved(&fixed);
+            assert!(with.converged);
+            assert_eq!(
+                serde_json::to_value(&with.terminals).unwrap(),
+                serde_json::to_value(&without.terminals).unwrap(),
+                "{fuse}"
+            );
+        }
+    }
+
+    #[test]
+    fn open_and_unsupported_fuses_are_refused() {
+        for (fuse, reason) in [
+            (
+                "new fuse.f monitoredobj=line.feed state=open",
+                "written open",
+            ),
+            (
+                "new fuse.f monitoredobj=line.feed action=open",
+                "written open",
+            ),
+            (
+                "new fuse.f monitoredobj=line.feed normal=open",
+                "written open",
+            ),
+            // OpenDSS keeps a phase open once any of these opened it.
+            (
+                "new fuse.f monitoredobj=line.feed normal=open state=closed",
+                "written open",
+            ),
+            (
+                "new fuse.f monitoredobj=line.feed state=[closed open closed]",
+                "written open",
+            ),
+            // A disabled fuse still opens the phases it is written open on.
+            (
+                "new fuse.f monitoredobj=line.feed state=open enabled=n",
+                "written open",
+            ),
+            ("new fuse.f monitoredobj=line.missing", "target"),
+            ("new fuse.f monitoredobj=load.far", "target"),
+            ("new fuse.f ratedcurrent=100", "target"),
+            ("new fuse.f line.feed 1", "unsupported property"),
+            // Shortened property names are not read.
+            ("new fuse.f mon=line.feed", "unsupported property"),
+            (
+                "open line.feed 1\nnew fuse.f monitoredobj=line.feed",
+                "target",
+            ),
+            (
+                "new fuse.f monitoredobj=line.feed\nopen line.feed 1\nclose line.feed 1",
+                "open or close command",
+            ),
+        ] {
+            let error = prepare_mc_fixed_controls(&module(&format!("{LINE}\n{fuse}"))).unwrap_err();
+            assert!(error.contains(reason), "{fuse}: {error}");
+        }
     }
 
     #[test]

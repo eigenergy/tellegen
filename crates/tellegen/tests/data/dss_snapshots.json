@@ -2020,6 +2020,167 @@
         }
       },
       "fixed_controls": true
+    },
+    {
+      "name": "disabled_line",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.fused phases=3 bus1=src.1.2.3 basekv=12.47 frequency=50\nnew line.a phases=3 bus1=src.1.2.3 bus2=mid.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\nnew line.b phases=3 bus1=mid.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\nnew load.ld phases=3 bus1=lb.1.2.3 conn=wye kv=12.47 kw=900 kvar=300 model=1\nnew line.tie phases=3 bus1=src.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km switch=y enabled=n\n",
+      "voltages": {
+        "src.1": [
+          7197.695137,
+          -2.887282263
+        ],
+        "src.2": [
+          -3601.348029,
+          -6231.943196
+        ],
+        "src.3": [
+          -3596.347107,
+          6234.83048
+        ],
+        "mid.1": [
+          7176.602573,
+          -23.71882583
+        ],
+        "mid.2": [
+          -3608.842393,
+          -6203.260728
+        ],
+        "mid.3": [
+          -3567.76018,
+          6226.979555
+        ],
+        "lb.1": [
+          7155.510009,
+          -44.55036939
+        ],
+        "lb.2": [
+          -3616.336757,
+          -6174.57826
+        ],
+        "lb.3": [
+          -3539.173252,
+          6219.128631
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            41.83710076,
+            -14.23572298
+          ]
+        }
+      },
+      "transformers": {}
+    },
+    {
+      "name": "closed_fuse",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.fused phases=3 bus1=src.1.2.3 basekv=12.47 frequency=50\nnew line.a phases=3 bus1=src.1.2.3 bus2=mid.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\nnew line.b phases=3 bus1=mid.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\nnew load.ld phases=3 bus1=lb.1.2.3 conn=wye kv=12.47 kw=900 kvar=300 model=1\nnew line.tie phases=3 bus1=src.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km switch=y enabled=n\nnew fuse.f monitoredobj=line.b monitoredterm=1 ratedcurrent=1000\nnew capacitor.c bus1=lb.1.2.3 phases=3 kv=12.47 kvar=300\nnew capcontrol.c capacitor=c element=line.b terminal=1 type=voltage vmin=110 vmax=118 ptratio=60\n",
+      "voltages": {
+        "src.1": [
+          7198.738269,
+          -3.146660181
+        ],
+        "src.2": [
+          -3602.094223,
+          -6232.716886
+        ],
+        "src.3": [
+          -3596.644046,
+          6235.863547
+        ],
+        "mid.1": [
+          7185.945925,
+          -28.11516513
+        ],
+        "mid.2": [
+          -3617.32141,
+          -6209.154138
+        ],
+        "mid.3": [
+          -3568.624514,
+          6237.269305
+        ],
+        "lb.1": [
+          7173.153581,
+          -53.08367009
+        ],
+        "lb.2": [
+          -3632.548598,
+          -6185.591391
+        ],
+        "lb.3": [
+          -3540.604982,
+          6238.675062
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            41.71715774,
+            -14.24959032
+          ]
+        }
+      },
+      "transformers": {},
+      "fixed_controls": true
+    },
+    {
+      "name": "overloaded_fuse_held_closed",
+      "tolerance": 1e-12,
+      "source": "clear\nset defaultbasefrequency=50\nnew circuit.fused phases=3 bus1=src.1.2.3 basekv=12.47 frequency=50\nnew line.a phases=3 bus1=src.1.2.3 bus2=mid.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\nnew line.b phases=3 bus1=mid.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\nnew load.ld phases=3 bus1=lb.1.2.3 conn=wye kv=12.47 kw=900 kvar=300 model=1\nnew line.tie phases=3 bus1=src.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km switch=y enabled=n\nnew fuse.f monitoredobj=line.b monitoredterm=1 ratedcurrent=1\nnew capacitor.c bus1=lb.1.2.3 phases=3 kv=12.47 kvar=300\nnew capcontrol.c capacitor=c element=line.b terminal=1 type=voltage vmin=110 vmax=118 ptratio=60\n",
+      "voltages": {
+        "src.1": [
+          7198.738269,
+          -3.146660181
+        ],
+        "src.2": [
+          -3602.094223,
+          -6232.716886
+        ],
+        "src.3": [
+          -3596.644046,
+          6235.863547
+        ],
+        "mid.1": [
+          7185.945925,
+          -28.11516513
+        ],
+        "mid.2": [
+          -3617.32141,
+          -6209.154138
+        ],
+        "mid.3": [
+          -3568.624514,
+          6237.269305
+        ],
+        "lb.1": [
+          7173.153581,
+          -53.08367009
+        ],
+        "lb.2": [
+          -3632.548598,
+          -6185.591391
+        ],
+        "lb.3": [
+          -3540.604982,
+          6238.675062
+        ]
+      },
+      "currents": {
+        "ld": {
+          "terminal": "1",
+          "value": [
+            41.71715774,
+            -14.24959032
+          ]
+        }
+      },
+      "transformers": {},
+      "fixed_controls": true
     }
   ]
 }

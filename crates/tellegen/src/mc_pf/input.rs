@@ -810,6 +810,7 @@ pub(super) fn validate_mc_network(
         .untyped_objects()
         .iter()
         .filter(|object| !PASSIVE_DEFINITIONS.contains(&object.class.to_ascii_lowercase().as_str()))
+        .filter(|object| !is_disabled_line(object))
         .collect();
     if !unsupported.is_empty() {
         let names = unsupported
@@ -870,6 +871,24 @@ pub(super) fn validate_mc_network(
         }
     }
     Ok(())
+}
+
+/// A line the source disables (`enabled=no`, or a final `disable` command).
+/// OpenDSS leaves it out of the circuit, so PowerIO keeps the record without a
+/// branch and marks it with a final `enabled=no`.
+pub(super) fn is_disabled_line(object: &powerio_dist::UntypedObject) -> bool {
+    object.class.eq_ignore_ascii_case("line")
+        && object
+            .props
+            .iter()
+            .rev()
+            .find(|(key, _)| {
+                key.as_deref()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("enabled"))
+            })
+            .is_some_and(|(_, value)| {
+                value.eq_ignore_ascii_case("no") || value.eq_ignore_ascii_case("false")
+            })
 }
 
 fn reject_lossy_diagnostics(module: &powerio::PioModule<PioValue>) -> Result<(), String> {

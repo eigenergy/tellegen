@@ -115,6 +115,24 @@ def generate():
         case = reference(f'fixed_regulator_{ppm}', commands)
         case['fixed_controls'] = True
         cases.append(case)
+    # A disabled line is left out of the circuit. A closed fuse and a capacitor
+    # control change nothing while their controls are not run; the second fuse
+    # is rated far below the load current and would blow if controls ran.
+    feeder = ['clear', 'set defaultbasefrequency=50',
+              'new circuit.fused phases=3 bus1=src.1.2.3 basekv=12.47 frequency=50',
+              'new line.a phases=3 bus1=src.1.2.3 bus2=mid.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km',
+              'new line.b phases=3 bus1=mid.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km',
+              'new load.ld phases=3 bus1=lb.1.2.3 conn=wye kv=12.47 kw=900 kvar=300 model=1']
+    tie = 'new line.tie phases=3 bus1=src.1.2.3 bus2=lb.1.2.3 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km switch=y enabled=n'
+    cases.append(reference('disabled_line', feeder + [tie]))
+    for name, rated in [('closed_fuse', 1000), ('overloaded_fuse_held_closed', 1)]:
+        commands = feeder + [tie,
+                             f'new fuse.f monitoredobj=line.b monitoredterm=1 ratedcurrent={rated}',
+                             'new capacitor.c bus1=lb.1.2.3 phases=3 kv=12.47 kvar=300',
+                             'new capcontrol.c capacitor=c element=line.b terminal=1 type=voltage vmin=110 vmax=118 ptratio=60']
+        case = reference(name, commands)
+        case['fixed_controls'] = True
+        cases.append(case)
     return {'backend': 'OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5', 'cases': cases}
 
 

@@ -77,7 +77,7 @@ fn capability_rejects_missing_voltage_dependent_load_base() {
 #[test]
 fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
     let report: Report = serde_json::from_str(include_str!("data/dss_snapshots.json")).unwrap();
-    assert_eq!(report.cases.len(), 50);
+    assert_eq!(report.cases.len(), 53);
     for case in report.cases {
         let input = module(&case.source);
         let input = if case.fixed_controls {
@@ -247,6 +247,45 @@ fn passive_records_stay_retained_but_controls_and_incomplete_sources_are_blocked
             "{extra}"
         );
     }
+}
+
+#[test]
+fn disabled_line_is_kept_as_a_record_and_left_out_of_the_circuit() {
+    let base = "new circuit.qc basekv=.4\nnew line.a phases=3 bus1=sourcebus bus2=lb r1=.1 x1=.2 r0=.2 x0=.4 c1=0 c0=0 length=1 units=km\nnew load.ld phases=3 bus1=lb kv=.4 kw=3 kvar=1 model=1\n";
+    let tie = "new line.tie phases=3 bus1=sourcebus bus2=lb r1=.1 x1=.2 r0=.2 x0=.4 c1=0 c0=0 length=1 units=km";
+    let voltages = |text: &str| {
+        let input = module(text);
+        tellegen::validate_mc_module(&input).unwrap();
+        let result: McPfResult = serde_json::from_str(
+            &tellegen::solve_mc_module_json(
+                &tellegen::ir::serialize_module(&input).unwrap(),
+                &Default::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(result.converged);
+        serde_json::to_value(&result.terminals).unwrap()
+    };
+    let without = voltages(base);
+    for disabled in [
+        format!("{base}{tie} enabled=n\n"),
+        format!("{base}{tie}\ndisable line.tie\n"),
+    ] {
+        assert_eq!(voltages(&disabled), without, "{disabled}");
+    }
+    assert_ne!(voltages(&format!("{base}{tie}\n")), without);
+
+    // The retained record cannot be switched back on without its branch.
+    let mut input = module(&format!("{base}{tie} enabled=n\n"));
+    let powerio::PioValue::MulticonductorNetwork(net) = input.value_mut() else {
+        panic!()
+    };
+    assert_eq!(net.untyped_objects().len(), 1);
+    net.untyped_objects_mut()[0]
+        .props
+        .push((Some("enabled".into()), "yes".into()));
+    assert!(tellegen::validate_mc_module(&input).is_err());
 }
 
 #[test]
