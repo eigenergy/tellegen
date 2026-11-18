@@ -131,11 +131,71 @@ impl CsrMatrix {
         self.row(row).map(|(c, value)| value * vector[c]).sum()
     }
 
+    /// `start` plus the row product, accumulated as if in twice the working
+    /// precision and rounded once at the end (the compensated dot product of
+    /// Ogita, Rump and Oishi, 2005). Every product and partial sum keeps its
+    /// rounding error, so cancellation between large terms loses nothing.
+    pub(crate) fn row_mul_twofold(
+        &self,
+        row: usize,
+        vector: &[Complex64],
+        start: Complex64,
+    ) -> Complex64 {
+        let mut re = Twofold::new(start.re);
+        let mut im = Twofold::new(start.im);
+        for (c, y) in self.row(row) {
+            let v = vector[c];
+            re.add_product(y.re, v.re);
+            re.add_product(-y.im, v.im);
+            im.add_product(y.re, v.im);
+            im.add_product(y.im, v.re);
+        }
+        Complex64::new(re.value(), im.value())
+    }
+
     pub(crate) fn row_fixed_mul(&self, row: usize, fixed: &[Option<Complex64>]) -> Complex64 {
         self.row(row)
             .filter_map(|(c, value)| fixed[c].map(|v| value * v))
             .sum()
     }
+}
+
+/// A sum of products carried with its accumulated rounding error.
+struct Twofold {
+    sum: f64,
+    error: f64,
+}
+
+impl Twofold {
+    fn new(sum: f64) -> Self {
+        Self { sum, error: 0.0 }
+    }
+
+    fn add_product(&mut self, a: f64, b: f64) {
+        // Dekker's product: `a * b == product + product_error` exactly.
+        let product = a * b;
+        let (a_high, a_low) = split(a);
+        let (b_high, b_low) = split(b);
+        let product_error =
+            ((a_high * b_high - product) + a_high * b_low + a_low * b_high) + a_low * b_low;
+        // Knuth's sum: `self.sum + product == sum + sum_error` exactly.
+        let sum = self.sum + product;
+        let shifted = sum - self.sum;
+        let sum_error = (self.sum - (sum - shifted)) + (product - shifted);
+        self.sum = sum;
+        self.error += product_error + sum_error;
+    }
+
+    fn value(&self) -> f64 {
+        self.sum + self.error
+    }
+}
+
+/// Veltkamp's split of a double into two halves of 26 significant bits.
+fn split(value: f64) -> (f64, f64) {
+    let scaled = 134_217_729.0 * value;
+    let high = scaled - (scaled - value);
+    (high, value - high)
 }
 
 /// A PowerIO failure as its message alone, without the diagnostic code
@@ -245,6 +305,10 @@ pub(crate) struct PreparedNetwork {
     pub(crate) loads: Vec<BranchLoad>,
     pub(crate) elements: Vec<PreparedElement>,
     pub(crate) factor: Option<RetainedComplexLu>,
+    /// The largest rounding error of a current balance per volt: over the
+    /// unknown rows, the number of entries times the unit roundoff times the
+    /// sum of the admittance magnitudes. Siemens.
+    pub(crate) balance_rounding_per_volt: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -531,8 +595,20 @@ impl PreparedNetwork {
             loads,
             elements,
             factor,
+            balance_rounding_per_volt: 0.0,
         };
         prepared.source_rhs = prepared.eliminate_fixed_terminals();
+        prepared.balance_rounding_per_volt = prepared
+            .unknown
+            .iter()
+            .map(|&row| {
+                let (terms, magnitude) = prepared
+                    .passive
+                    .row(row)
+                    .fold((0usize, 0.0), |(n, sum), (_, y)| (n + 1, sum + y.norm()));
+                terms as f64 * f64::EPSILON * magnitude
+            })
+            .fold(0.0, f64::max);
         let timing = PrepareTiming {
             assemble_ms: super::elapsed_ms(started, assembled),
             factor_ms: super::elapsed_ms(assembled, factored),
@@ -587,6 +663,17 @@ impl PreparedNetwork {
         terms as f64 * f64::EPSILON * magnitude
     }
 
+    /// The passive current at an unknown terminal plus `load`, summed in
+    /// twice the working precision ([`CsrMatrix::row_mul_twofold`]).
+    pub(crate) fn current_balance_twofold(
+        &self,
+        voltage: &[Complex64],
+        row: usize,
+        load: Complex64,
+    ) -> Complex64 {
+        self.passive.row_mul_twofold(row, voltage, load)
+    }
+
     pub(crate) fn fixed_voltage_vector(&self) -> Vec<Complex64> {
         self.fixed.iter().map(|x| x.unwrap_or_default()).collect()
     }
@@ -601,6 +688,52 @@ impl PreparedNetwork {
                     + self.yref.row_fixed_mul(i, &self.fixed))
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod twofold_tests {
+    use super::*;
+
+    #[test]
+    fn row_product_keeps_what_cancellation_between_large_terms_would_lose() {
+        // (7e7 + 7e7j) * (39837 + 2.7j) and its negative leave only the small
+        // third term; a plain sum of the rounded products loses it.
+        let mut stamped = StampedMatrix::zeros(1);
+        let large = Complex64::new(7.07e7, 7.07e7);
+        stamped.add(0, 0, large);
+        stamped.add(0, 1, -large);
+        stamped.add(0, 2, Complex64::new(1e-4, -2e-4));
+        let matrix = CsrMatrix::from_stamped(stamped, 3);
+        let v = Complex64::new(39_837.168_574_084_18, 2.75);
+        let nudge = Complex64::new(1.0 + f64::EPSILON, 1.0 - f64::EPSILON);
+        let vector = [v * nudge, v * nudge, Complex64::new(1.0, 1.0)];
+        let start = Complex64::new(0.25, -0.5);
+        let exact = start + Complex64::new(1e-4, -2e-4) * Complex64::new(1.0, 1.0);
+        assert_eq!(matrix.row_mul_twofold(0, &vector, start), exact);
+        // One term alone, with a real voltage: the two rounded products.
+        let single = [
+            Complex64::new(v.re, 0.0),
+            Complex64::default(),
+            Complex64::default(),
+        ];
+        assert_eq!(
+            matrix.row_mul_twofold(0, &single, Complex64::default()),
+            Complex64::new(large.re * v.re, large.im * v.re)
+        );
+        // Terms that do not cancel exactly: the sum is correct to the last place
+        // where a plain sum is off by many.
+        let third = 1.0 / 3.0;
+        let uneven = [
+            Complex64::new(third, 0.0),
+            Complex64::new(third * (1.0 - 1e-9), 0.0),
+            Complex64::default(),
+        ];
+        let twofold = matrix.row_mul_twofold(0, &uneven, Complex64::default());
+        // The difference of the two voltages is exact in double precision.
+        let expected = large * (uneven[0].re - uneven[1].re);
+        assert!((twofold - expected).norm() < 1e-15 * expected.norm());
+        assert!((matrix.row_mul(0, &uneven) - expected).norm() > 1e-12 * expected.norm());
     }
 }
 

@@ -59,6 +59,17 @@ very large admittances meet high voltages. A 0.001 km line of 1e-5 Ω/km at
 69 kV is a 7e7 S entry and leaves about 1e-3 A of rounding error, which no
 voltage vector in double precision can remove.
 
+Where that rounding error could reach the absolute KCL tolerance (the largest
+row bound per volt times the largest source voltage exceeds it), a linear solve
+returns voltages that are uncertain by that current times the network's
+impedance, which can be millivolts, or volts for a section tied to ground only
+through line capacitance. There each iteration solves for the correction to the
+present voltages instead, from the current balance summed in twice the working
+precision. The error of the factorization then shrinks with the correction. The
+equations, the tolerances and the converged point are the same, and each
+iteration costs one extra pass over the admittance matrix. Ordinary networks do
+not meet the condition and are solved exactly as before.
+
 OpenDSS documents a default solution tolerance of **0.0001**, applied to voltage
 magnitude changes and normalized by the bus voltage base when one is defined.
 Tellegen's **1e-4 V is not 1e-4 pu**, and its complex-voltage and KCL checks are not

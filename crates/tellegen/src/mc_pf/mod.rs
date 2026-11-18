@@ -1875,6 +1875,22 @@ fn iterate_cancellable(
             }
         }
     }
+    // Where rounding in a current balance can reach the current tolerance
+    // (admittances of very different size on one terminal), the voltages a
+    // linear solve returns are uncertain by that current times the network
+    // impedance, and the iteration can wander without settling. There each
+    // step instead solves for the correction to the present voltages, from
+    // the current balance summed in twice the working precision. The
+    // factorization's error then scales with the correction and shrinks with
+    // it. The equations and the converged point are the same.
+    let largest_fixed = prepared
+        .fixed
+        .iter()
+        .flatten()
+        .map(|value| value.norm())
+        .fold(0.0, f64::max);
+    let correct =
+        prepared.balance_rounding_per_volt * largest_fixed > options.absolute_kcl_tolerance;
     let mut load_current = vec![Complex64::default(); n];
     let mut compensated = vec![Complex64::default(); prepared.unknown.len()];
     let mut scratch = KclScratch::new(n);
@@ -1897,8 +1913,12 @@ fn iterate_cancellable(
         }
         let started = profile_now();
         for (u, &i) in prepared.unknown.iter().enumerate() {
-            let yv = prepared.yref.row_mul(i, &voltage);
-            compensated[u] = base_rhs[prepared.unknown_pos[i]] + yv - load_current[i];
+            compensated[u] = if correct {
+                -prepared.current_balance_twofold(&voltage, i, load_current[i])
+            } else {
+                let yv = prepared.yref.row_mul(i, &voltage);
+                base_rhs[prepared.unknown_pos[i]] + yv - load_current[i]
+            };
         }
         profile.kcl_and_matvec_ms += elapsed_ms(started, profile_now());
         if let Some(factor) = &prepared.factor {
@@ -1909,7 +1929,12 @@ fn iterate_cancellable(
         }
         final_change = 0.0;
         for (u, &i) in prepared.unknown.iter().enumerate() {
-            let next = voltage[i] + options.damping * (solved[u] - voltage[i]);
+            let target = if correct {
+                voltage[i] + solved[u]
+            } else {
+                solved[u]
+            };
+            let next = voltage[i] + options.damping * (target - voltage[i]);
             final_change = final_change.max((next - voltage[i]).norm());
             voltage[i] = next;
         }
