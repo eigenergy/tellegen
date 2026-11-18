@@ -82,6 +82,15 @@ pub fn prepare_mc_fixed_controls(
     Ok(prepared)
 }
 
+/// [`prepare_mc_fixed_controls`] followed by
+/// [`prepare_mc_energized_network`](super::prepare_mc_energized_network),
+/// checking the resulting network once instead of once in each.
+pub fn prepare_mc_fixed_controls_energized_network(
+    module: &PioModule<PioValue>,
+) -> Result<(PioModule<PioValue>, Vec<super::McExcludedIsland>), String> {
+    super::energized::record_selection(&prepare_mc_fixed_controls(module)?)
+}
+
 /// The last written value of a property, without quotes.
 fn written<'a>(object: &'a UntypedObject, property: &str) -> Option<&'a str> {
     object.props.iter().rev().find_map(|(key, value)| {
@@ -297,6 +306,32 @@ mod tests {
                 "{fuse}"
             );
         }
+    }
+
+    #[test]
+    fn written_settings_and_energized_network_together_match_the_two_steps() {
+        let original = module(&format!(
+            "{LINE}\nnew line.dead phases=3 bus1=island1 bus2=island2 r1=.01 x1=.02 r0=.02 x0=.04 c1=0 c0=0 length=1 units=km"
+        ));
+        let (together, islands) = prepare_mc_fixed_controls_energized_network(&original).unwrap();
+        let (stepwise, expected) = super::super::prepare_mc_energized_network(
+            &prepare_mc_fixed_controls(&original).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(islands, expected);
+        assert_eq!(islands.len(), 1);
+        assert_eq!(
+            crate::ir::serialize_module(&together).unwrap(),
+            crate::ir::serialize_module(&stepwise).unwrap()
+        );
+        assert!(solved(&together).converged);
+        // The same refusals as the first step alone.
+        assert!(
+            prepare_mc_fixed_controls_energized_network(&module(&format!(
+                "{LINE}\nnew fuse.f monitoredobj=line.feed state=open"
+            )))
+            .is_err()
+        );
     }
 
     #[test]

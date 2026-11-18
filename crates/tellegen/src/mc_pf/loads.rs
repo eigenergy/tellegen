@@ -558,7 +558,7 @@ fn connection_incidence(
     load: &DistLoad,
     index: &NetworkIndex,
 ) -> Result<Vec<Vec<(usize, Complex64)>>, String> {
-    let channels = load_channels(network, load, &load.terminal_map, load.p_nom.len())?;
+    let channels = load_channels(network, index, load, &load.terminal_map, load.p_nom.len())?;
     let nodes: Vec<usize> = load
         .terminal_map
         .iter()
@@ -583,8 +583,13 @@ fn connection_incidence(
 /// across two terminals: PowerIO also reads a single phase load with one
 /// power per terminal as grounded wye legs, which this solver has never
 /// accepted for a load stated single phase.
+///
+/// The bus's terminals come from `index`. PowerIO's function finds the bus by
+/// scanning the bus table, which for every load of a large network costs
+/// loads times buses.
 pub(crate) fn load_channels(
     network: &powerio_dist::MulticonductorNetwork,
+    index: &NetworkIndex,
     load: &DistLoad,
     terminals: &[String],
     powers: usize,
@@ -595,14 +600,29 @@ pub(crate) fn load_channels(
             load.name
         ));
     }
-    powerio_dist::calc_element_connection(
-        network,
-        &load.bus,
-        terminals,
-        load.configuration,
-        Some(powers),
-    )
-    .map_err(|error| format!("load `{}`: {error}", load.name))
+    let neutral = if load.configuration == Configuration::Wye {
+        let declared: Vec<&str> = index
+            .bus_terminals(&load.bus)
+            .into_iter()
+            .map(|position| index.terminal_ids()[position].1.as_str())
+            .collect();
+        if declared.is_empty() {
+            return Err(format!(
+                "load `{}`: bus `{}` is not declared",
+                load.name, load.bus
+            ));
+        }
+        powerio_dist::calc_mapped_neutral_position(
+            &declared,
+            terminals,
+            network.terminal_conventions(),
+        )
+        .map_err(|reason| format!("load `{}`: bus `{}` {reason}", load.name, load.bus))?
+    } else {
+        None
+    };
+    powerio_dist::calc_connection_channels(load.configuration, terminals.len(), powers, neutral)
+        .map_err(|error| format!("load `{}`: {error}", load.name))
 }
 
 #[cfg(test)]

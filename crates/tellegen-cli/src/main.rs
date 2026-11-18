@@ -324,12 +324,12 @@ fn import_opendss(args: &[String]) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .dss_limits(limits);
     let mut module = powerio::parse_with_options(source, &options).map_err(|e| e.to_string())?;
-    if written_settings {
-        module = tellegen::prepare_mc_fixed_controls(&module)?;
-    }
-    if energized {
-        module = tellegen::prepare_mc_energized_network(&module)?.0;
-    }
+    module = match (written_settings, energized) {
+        (true, true) => tellegen::prepare_mc_fixed_controls_energized_network(&module)?.0,
+        (true, false) => tellegen::prepare_mc_fixed_controls(&module)?,
+        (false, true) => tellegen::prepare_mc_energized_network(&module)?.0,
+        (false, false) => module,
+    };
     serialize_module(&module)
 }
 

@@ -183,12 +183,15 @@ fn export_comparison() {
             .max_include_bytes(1 << 30)
             .max_properties(1 << 26);
         let options = powerio::ParseOptions::default().dss_limits(limits);
-        let mut module =
+        let module =
             powerio::parse_with_options(powerio::Source::open(path).unwrap(), &options).unwrap();
-        if super::super::input::validate_mc_module(&module).is_err() {
-            module = super::super::prepare_mc_fixed_controls(&module).unwrap();
+        let module = if super::super::input::validate_mc_module(&module).is_err() {
+            super::super::prepare_mc_fixed_controls_energized_network(&module)
+        } else {
+            super::super::prepare_mc_energized_network(&module)
         }
-        let (module, _) = super::super::prepare_mc_energized_network(&module).unwrap();
+        .unwrap()
+        .0;
         input_at(&super::super::energized::instance(&module).unwrap(), true)
     } else {
         prepared_input(

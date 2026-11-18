@@ -768,6 +768,14 @@ pub fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), S
 pub(super) fn validate_mc_network(
     network: &powerio_dist::MulticonductorNetwork,
 ) -> Result<(), String> {
+    validate_mc_network_records(network)?;
+    validate_mc_network_elements(network)
+}
+
+/// The checks on the network as a whole and on its retained records.
+pub(super) fn validate_mc_network_records(
+    network: &powerio_dist::MulticonductorNetwork,
+) -> Result<(), String> {
     powerio_dist::require_electrical_readiness(network).map_err(|e| e.to_string())?;
     if !network.generators().is_empty() || !network.ibrs().is_empty() {
         return Err(
@@ -852,6 +860,16 @@ pub(super) fn validate_mc_network(
             return Err(format!("shunt {} retains unsupported property {}; written capacitor steps must be normalized before calculation", shunt.name, property));
         }
     }
+    Ok(())
+}
+
+/// The checks that compute something for every transformer and load. Each
+/// depends only on the element, its bus's terminals and the network's source
+/// format and terminal conventions, so a result holds for the same element
+/// in a selection of the network's buses.
+pub(super) fn validate_mc_network_elements(
+    network: &powerio_dist::MulticonductorNetwork,
+) -> Result<(), String> {
     for transformer in network.transformers() {
         powerio_matrix::calc_transformer_primitive_admittance(network, transformer)
             .map_err(|error| super::network::powerio_message(&error))?;

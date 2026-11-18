@@ -10,7 +10,10 @@ pub use energized::{
     mc_unpowered_islands, prepare_mc_energized_network, prepare_mc_energized_network_json,
     McEnergizedOutput, McExcludedEquipment, McExcludedIsland, McNetworkScope,
 };
-pub use fixed_controls::{prepare_mc_fixed_controls, FIXED_CONTROLS_EXTENSION};
+pub use fixed_controls::{
+    prepare_mc_fixed_controls, prepare_mc_fixed_controls_energized_network,
+    FIXED_CONTROLS_EXTENSION,
+};
 pub(crate) mod input;
 mod linear;
 mod loads;
@@ -414,9 +417,17 @@ pub struct McPfSession {
 impl McPfSession {
     /// Prepare, factor, and solve the initial operating point once.
     pub fn new(instance: McAcPfInstance, options: McPfOptions) -> Result<Self, String> {
+        Self::prepare(instance, options, false)
+    }
+
+    fn prepare(
+        instance: McAcPfInstance,
+        options: McPfOptions,
+        elements_validated: bool,
+    ) -> Result<Self, String> {
         validate_options(&options)?;
         let started = profile_now();
-        let (prepared, timing) = PreparedNetwork::prepare_timed(&instance)?;
+        let (prepared, timing) = PreparedNetwork::prepare_timed(&instance, elements_validated)?;
         let base_power = prepared
             .loads
             .iter()
@@ -494,7 +505,9 @@ impl McPfSession {
             None => input::instance_from_value(module.value())?,
         };
         let converted = profile_now();
-        let mut session = Self::new(instance, options)?;
+        // `validate_mc_module` above checked every element of the module's
+        // network, of which the instance's network is all or a selection.
+        let mut session = Self::prepare(instance, options, true)?;
         if module.extensions().contains_key(energized::EXTENSION) {
             if let powerio::PioValue::MulticonductorNetwork(network) = module.value() {
                 session.full_network = Some(network.clone());
@@ -1518,6 +1531,7 @@ fn expected_element_port_keys(
     for load in network.loads() {
         load_rows.entry(load.name.as_str()).or_insert(load);
     }
+    let index = network::NetworkIndex::new(network)?;
     for load_instance in instance.loads() {
         let load = load_rows
             .get(load_instance.load.as_str())
@@ -1529,16 +1543,21 @@ fn expected_element_port_keys(
                 )
             })?;
         let terminals = &load_instance.terminals;
-        let branches: Vec<Vec<&str>> =
-            crate::mc_pf::loads::load_channels(network, load, terminals, load_instance.p_w.len())?
-                .iter()
-                .map(|channel| {
-                    std::iter::once(channel.from)
-                        .chain(channel.to)
-                        .map(|position| terminals[position].as_str())
-                        .collect()
-                })
-                .collect();
+        let branches: Vec<Vec<&str>> = crate::mc_pf::loads::load_channels(
+            network,
+            &index,
+            load,
+            terminals,
+            load_instance.p_w.len(),
+        )?
+        .iter()
+        .map(|channel| {
+            std::iter::once(channel.from)
+                .chain(channel.to)
+                .map(|position| terminals[position].as_str())
+                .collect()
+        })
+        .collect();
         if branches.len() != load_instance.p_w.len() {
             return Err(format!(
                 "load `{}` branch count does not match its powers",

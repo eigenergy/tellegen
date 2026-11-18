@@ -272,11 +272,15 @@ pub(crate) struct PreparedElement {
 
 impl PreparedNetwork {
     pub(crate) fn prepare(instance: &McAcPfInstance) -> Result<Self, String> {
-        Self::prepare_timed(instance).map(|(prepared, _)| prepared)
+        Self::prepare_timed(instance, false).map(|(prepared, _)| prepared)
     }
 
+    /// `elements_validated` states that the caller has just run
+    /// `validate_mc_network` on this network, or on the network this one was
+    /// selected from, so the per-element checks are not repeated.
     pub(crate) fn prepare_timed(
         instance: &McAcPfInstance,
+        elements_validated: bool,
     ) -> Result<(Self, PrepareTiming), String> {
         let started = super::profile_now();
         let network = instance.network();
@@ -288,7 +292,10 @@ impl PreparedNetwork {
         if !instance.control_modes().is_empty() {
             return Err("active regulator/capacitor controls are unsupported; solve a fixed operating snapshot".to_owned());
         }
-        super::input::validate_mc_network(network)?;
+        super::input::validate_mc_network_records(network)?;
+        if !elements_validated {
+            super::input::validate_mc_network_elements(network)?;
+        }
         let index = NetworkIndex::new(network)?;
         let n = index.terminal_ids().len();
         // Name lookups keep the first matching row, exactly as the linear
