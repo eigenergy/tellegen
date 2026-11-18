@@ -1,6 +1,7 @@
 //! Explicit snapshots using equipment settings already written in the input.
 use powerio::{PioModule, PioValue};
 use powerio_dist::{MulticonductorNetwork, UntypedObject};
+use std::collections::HashSet;
 
 pub const FIXED_CONTROLS_EXTENSION: &str = "tellegen.fixed_controls";
 
@@ -34,6 +35,7 @@ pub fn prepare_mc_fixed_controls(
                 .to_owned(),
         );
     }
+    let fuse_targets = FuseTargets::new(network);
     for control in &controls {
         if control.class.eq_ignore_ascii_case("regcontrol")
             && !written(control, "transformer").is_some_and(|target| {
@@ -62,7 +64,7 @@ pub fn prepare_mc_fixed_controls(
             ));
         }
         if control.class.eq_ignore_ascii_case("fuse") {
-            check_closed_fuse(network, control)?;
+            fuse_targets.check_closed(control)?;
         }
     }
     network
@@ -89,87 +91,104 @@ fn written<'a>(object: &'a UntypedObject, property: &str) -> Option<&'a str> {
     })
 }
 
-/// A fuse with every phase closed leaves the circuit unchanged while it does
-/// not blow, which is what OpenDSS solves with `controlmode=off`. A fuse
-/// written open on any phase disconnects that phase even when the fuse is
-/// disabled, and a fuse closes a terminal that an earlier `open` command
-/// opened; neither is represented here, so both are refused.
-fn check_closed_fuse(network: &MulticonductorNetwork, fuse: &UntypedObject) -> Result<(), String> {
-    const SETTINGS: &[&str] = &[
-        "monitoredobj",
-        "monitoredterm",
-        "switchedobj",
-        "switchedterm",
-        "fusecurve",
-        "ratedcurrent",
-        "delay",
-        "basefreq",
-        "enabled",
-    ];
-    for (key, value) in &fuse.props {
-        let key = key.as_deref().unwrap_or_default().to_ascii_lowercase();
-        if ["action", "normal", "state"].contains(&key.as_str()) {
-            let mut phases = value
-                .split(|c: char| c.is_whitespace() || "[](){}\"',".contains(c))
-                .filter(|phase| !phase.is_empty())
-                .peekable();
-            if phases.peek().is_none()
-                || phases.any(|phase| !phase.to_ascii_lowercase().starts_with('c'))
-            {
+/// Lowercase `class.name` of the equipment a fuse may protect, and of the
+/// equipment an `open` or `close` command switches.
+struct FuseTargets {
+    equipment: HashSet<String>,
+    switched_by_command: HashSet<String>,
+}
+
+impl FuseTargets {
+    fn new(network: &MulticonductorNetwork) -> Self {
+        let lines = network.lines().iter().map(|line| &line.name).chain(
+            network
+                .untyped_objects()
+                .iter()
+                .filter(|object| super::input::is_disabled_line(object))
+                .map(|object| &object.name),
+        );
+        let transformers = network.transformers().iter().map(|unit| &unit.name);
+        Self {
+            equipment: lines
+                .map(|name| format!("line.{}", name.to_ascii_lowercase()))
+                .chain(
+                    transformers.map(|name| format!("transformer.{}", name.to_ascii_lowercase())),
+                )
+                .collect(),
+            switched_by_command: network
+                .commands()
+                .iter()
+                .filter(|(verb, _)| {
+                    verb.eq_ignore_ascii_case("open") || verb.eq_ignore_ascii_case("close")
+                })
+                .filter_map(|(_, arguments)| arguments.split_whitespace().next())
+                .map(|element| {
+                    let element = element.trim_matches(['"', '\'']).to_ascii_lowercase();
+                    element
+                        .strip_prefix("object=")
+                        .map_or(element.clone(), str::to_owned)
+                })
+                .collect(),
+        }
+    }
+
+    /// A fuse with every phase closed leaves the circuit unchanged while it does
+    /// not blow, which is what OpenDSS solves with `controlmode=off`. A fuse
+    /// written open on any phase disconnects that phase even when the fuse is
+    /// disabled, and a fuse closes a terminal that an earlier `open` command
+    /// opened; neither is represented here, so both are refused.
+    fn check_closed(&self, fuse: &UntypedObject) -> Result<(), String> {
+        const SETTINGS: &[&str] = &[
+            "monitoredobj",
+            "monitoredterm",
+            "switchedobj",
+            "switchedterm",
+            "fusecurve",
+            "ratedcurrent",
+            "delay",
+            "basefreq",
+            "enabled",
+        ];
+        for (key, value) in &fuse.props {
+            let key = key.as_deref().unwrap_or_default().to_ascii_lowercase();
+            if ["action", "normal", "state"].contains(&key.as_str()) {
+                let mut phases = value
+                    .split(|c: char| c.is_whitespace() || "[](){}\"',".contains(c))
+                    .filter(|phase| !phase.is_empty())
+                    .peekable();
+                if phases.peek().is_none()
+                    || phases.any(|phase| !phase.to_ascii_lowercase().starts_with('c'))
+                {
+                    return Err(format!(
+                        "Fuse {} is written open; open fuses are not supported",
+                        fuse.name
+                    ));
+                }
+            } else if !SETTINGS.contains(&key.as_str()) {
                 return Err(format!(
-                    "Fuse {} is written open; open fuses are not supported",
+                    "Fuse {} has an unsupported property `{key}`",
                     fuse.name
                 ));
             }
-        } else if !SETTINGS.contains(&key.as_str()) {
+        }
+        let target = written(fuse, "switchedobj")
+            .or_else(|| written(fuse, "monitoredobj"))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !self.equipment.contains(&target) {
             return Err(format!(
-                "Fuse {} has an unsupported property `{key}`",
+                "Fuse {} has no supported line or transformer target",
                 fuse.name
             ));
         }
-    }
-    let target = written(fuse, "switchedobj")
-        .or_else(|| written(fuse, "monitoredobj"))
-        .unwrap_or_default();
-    let supported = target.split_once('.').is_some_and(|(class, name)| {
-        if class.eq_ignore_ascii_case("line") {
-            network
-                .lines()
-                .iter()
-                .any(|line| line.name.eq_ignore_ascii_case(name))
-                || network.untyped_objects().iter().any(|object| {
-                    super::input::is_disabled_line(object) && object.name.eq_ignore_ascii_case(name)
-                })
-        } else {
-            class.eq_ignore_ascii_case("transformer")
-                && network
-                    .transformers()
-                    .iter()
-                    .any(|transformer| transformer.name.eq_ignore_ascii_case(name))
+        if self.switched_by_command.contains(&target) {
+            return Err(format!(
+                "Fuse {} protects {target}, which an open or close command also switches",
+                fuse.name
+            ));
         }
-    });
-    if !supported {
-        return Err(format!(
-            "Fuse {} has no supported line or transformer target",
-            fuse.name
-        ));
+        Ok(())
     }
-    let switched_by_command = network.commands().iter().any(|(verb, arguments)| {
-        (verb.eq_ignore_ascii_case("open") || verb.eq_ignore_ascii_case("close"))
-            && arguments.split_whitespace().next().is_some_and(|element| {
-                element
-                    .trim_matches(['\"', '\''])
-                    .trim_start_matches("object=")
-                    .eq_ignore_ascii_case(target)
-            })
-    });
-    if switched_by_command {
-        return Err(format!(
-            "Fuse {} protects {target}, which an open or close command also switches",
-            fuse.name
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
