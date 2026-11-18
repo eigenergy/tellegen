@@ -51,13 +51,23 @@ certify optimality or every supported equipment combination.
 | Signed fixed power factor | `original_pf_validation_detects_wrong_control_and_qualifies_tiny_dispatch` checks both signs at ordinary and near-zero power factor, rejects a wrong control equation, and reports unqualified relative accuracy at tiny or zero dispatch. `tiny_pf_solve_reports_relative_accuracy_and_preserves_it_on_import` checks a solved example and refuses a saved report with its warning removed. Absolute power tolerance is not presented as relative power-factor accuracy. |
 | Result acceptance | Both successful solver stopping levels pass the same independent current, voltage, power, limit and objective checks. A local nonlinear-solver failure is not reported as proof of infeasibility. Canonical power residuals now use MW/MVAr; the report retains its separate dimensionless residual families. |
 
-For the patch release, PowerIO's existing generator column remains in
-terminal-map order, neutral included, with injection-positive terminal powers.
-Use `devices[].coil_power_va` together with `devices[].coils` for generation
-costs, coil bounds and coil dispatch. DELTA coil powers and terminal powers
-are different quantities; multiplying costs by the legacy terminal column is
-incorrect. Changing that column's meaning requires a separately reviewed
-upstream compatibility change.
+PowerIO's existing generator column remains in terminal-map order, neutral
+included, with injection-positive terminal powers. DELTA coil powers and
+terminal powers are different quantities; multiplying costs by the terminal
+column is incorrect. From PowerIO 0.12.3 the canonical solution also carries a
+per-coil generator column, `generator_coil_active_powers()`, and Tellegen
+fills it: watts, generation-positive, generators in table order and each
+generator's coils in the order of its `p_min`, `p_max` and `cost` entries
+(WYE: one coil per phase terminal in terminal-map order, no neutral entry;
+three-terminal DELTA: terminal 1 to 2, 2 to 3, 3 to 1). Its entries equal the
+active parts of `devices[].coil_power_va`, and a saved report whose column
+disagrees with that ledger is rejected. Use either for generation costs, coil
+bounds and coil dispatch; `devices[].coils` names each coil's terminals.
+`mc_opf_results::per_coil_generator_dispatch_reproduces_cost_and_roundtrips`
+checks, for WYE and DELTA generation with a grounded or floating receiving
+neutral, that cost times this column plus the source cost equals the reported
+objective, and that both columns survive the saved module. A solution saved
+before 0.12.3 has no per-coil column and still reads.
 
 The OPF preparation contract rejects DELTA maps containing neutral or earth
 terminals before optimization, including direct instances and edited sessions.
