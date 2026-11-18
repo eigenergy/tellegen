@@ -30,10 +30,22 @@
 	const MAP_CONTROL_ROW = 64;
 	const dyn = ctrl.dynamics;
 	let timelineHeight = $state(0);
-	/** The live workbench replaces the playback dock while it is open. */
+	/** The live workbench replaces the playback dock while it is open, for the
+	 * case its session belongs to (or before a session starts). */
 	const workbenchShown = $derived(
-		app.mode === 'dynamics' && app.dynamicsEnabled && dyn.live.open && !!dyn.active
+		app.mode === 'dynamics' &&
+			app.dynamicsEnabled &&
+			dyn.live.open &&
+			!!dyn.active &&
+			(dyn.live.localId === null || dyn.live.localId === app.activeLocal?.id)
 	);
+	// Another case made active ends the live session: its plots, events and
+	// references belong to the case it was started on.
+	$effect(() => {
+		const id = app.activeLocal?.id ?? null;
+		const owner = dyn.live.localId;
+		if (owner !== null && owner !== id) untrack(() => dyn.live.stop());
+	});
 	const dynamicsShown = $derived(
 		workbenchShown ||
 			(app.mode === 'dynamics' &&

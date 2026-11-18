@@ -7,6 +7,7 @@
 	 * the units' voltage and power references. A bus clicked on the map is
 	 * the one the bus actions use, and its voltage and frequency are plotted. */
 	import type { RmsEvent } from '@tellegen/engine';
+	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';
 	import { SPEEDS, STEPS, WINDOWS } from '../../dynamics/live.svelte.js';
 	import { channelLabel, QUANTITIES, quantityOf, type Owner } from '../../dynamics/quantities.js';
@@ -31,8 +32,9 @@
 	let dockPx = $state<number | null>(
 		(() => {
 			try {
+				// A height stored in a taller window is clamped to this one.
 				const v = Number(localStorage.getItem(HEIGHT_KEY));
-				return Number.isFinite(v) && v >= MIN_DOCK ? v : null;
+				return Number.isFinite(v) && v >= MIN_DOCK ? clampDock(v) : null;
 			} catch {
 				return null;
 			}
@@ -218,19 +220,28 @@
 	let loadPct = $state(10);
 	let gen = $state(0);
 	let refs = $state<Record<string, { v: number; p: number }>>({});
+	// A new session starts from the case's references: the sliders too.
+	$effect(() => {
+		void live.generation;
+		refs = {};
+	});
 	$effect(() => {
 		if (!ins) return;
 		if (faultBus === null) faultBus = ins.generators[0]?.bus ?? ins.buses[0] ?? null;
 		if (loadBus === null) loadBus = ins.load_buses[0] ?? null;
 	});
-	// A bus picked on the map is the bus the actions use; plot it.
+	// A bus picked on the map is the bus the actions use; plot it. Only the
+	// pick (and the case) re-runs this: the plotted list is read untracked,
+	// so changing the plots does not reset a fault bus chosen in the list.
 	$effect(() => {
 		const b = app.selectedBus;
 		if (b === null || b === undefined || !ins?.buses.includes(b)) return;
 		faultBus = b;
 		if (ins.load_buses.includes(b)) loadBus = b;
-		const add = [`vm:${b}`, `f:${b}`].filter((k) => !live.plotted.includes(k));
-		if (add.length) live.plotted = [...live.plotted, ...add];
+		untrack(() => {
+			const add = [`vm:${b}`, `f:${b}`].filter((k) => !live.plotted.includes(k));
+			if (add.length) live.plotted = [...live.plotted, ...add];
+		});
 	});
 	const on = $derived(live.active && live.running);
 	const busFault = () =>

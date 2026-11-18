@@ -2,6 +2,7 @@
 	/** The Models tab (experimental): every generating unit of the active
 	 * case with its dynamic models, and the editor of the one picked (also
 	 * opened from a unit's glyph on the map). */
+	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';
 	import { unitKey, unitSummary } from '../../dynamics/units.svelte.js';
 	import DynamicsUnitEditor from './DynamicsUnitEditor.svelte';
@@ -21,12 +22,24 @@
 		return hit.slice(0, 80);
 	});
 	let picked = $state<string | null>(null);
-	// A bus selected on the map picks its first unit.
+	// A bus selected on the map picks its first unit. The units reload after
+	// every edit; that keeps the pick (another unit of the bus, or one picked
+	// from the list) as long as the unit still exists.
+	let pickedFor: number | null = null;
 	$effect(() => {
-		const b = app.selectedBus;
-		if (b === null || b === undefined) return;
-		const u = catalog.units.find((x) => x.bus === b);
-		if (u) picked = unitKey(u);
+		const b = app.selectedBus ?? null;
+		const units = catalog.units;
+		if (b === null) {
+			pickedFor = null;
+			return;
+		}
+		const cur = untrack(() => picked);
+		if (b === pickedFor && cur !== null && units.some((u) => unitKey(u) === cur)) return;
+		const u = units.find((x) => x.bus === b);
+		if (u) {
+			picked = unitKey(u);
+			pickedFor = b;
+		}
 	});
 </script>
 

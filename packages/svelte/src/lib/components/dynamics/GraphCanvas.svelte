@@ -11,10 +11,14 @@
 		graph = $bindable(),
 		check = $bindable(null),
 		values = null,
-		compact = false
+		compact = false,
+		wiring = $bindable(false)
 	}: {
 		graph: BlockGraph;
 		check?: { ok: true; states: string[] } | { ok: false; error: string } | null;
+		/** A wire is being drawn (an output picked, its input not yet):
+		 * Escape cancels the wire, not the dialog around the canvas. */
+		wiring?: boolean;
 		/** Output of each block by node id at the shown instant. */
 		values?: Record<string, number> | null;
 		compact?: boolean;
@@ -333,7 +337,11 @@
 		}
 		return { w, h: h + 40 };
 	});
-	const zoom = $derived(fit && canvasWidth > 0 ? Math.min(1, (canvasWidth - 8) / extent.w) : zoomLevel);
+	// While a block is dragged the zoom holds still: in `fit`, a block dragged
+	// past the right edge widens the extent, which would shrink the zoom and
+	// move the pointer's canvas position further out at every move.
+	let dragZoom = $state<number | null>(null);
+	const zoom = $derived(dragZoom ?? (fit && canvasWidth > 0 ? Math.min(1, (canvasWidth - 8) / extent.w) : zoomLevel));
 	function setZoom(z: number) {
 		fit = false;
 		zoomLevel = Math.max(0.3, Math.min(2, z));
@@ -565,6 +573,9 @@
 
 	// Wiring: click an output port, then an input port.
 	let pending = $state<string | null>(null);
+	$effect(() => {
+		wiring = pending !== null;
+	});
 	function clickOut(id: string, e: Event) {
 		e.stopPropagation();
 		pending = pending === id ? null : id;
@@ -585,6 +596,7 @@
 	function startDrag(n: GraphNode, e: PointerEvent) {
 		const [x, y] = point(e);
 		drag = { id: n.id, dx: x - (n.pos?.[0] ?? 0), dy: y - (n.pos?.[1] ?? 0) };
+		dragZoom = zoom;
 		selected = n.id;
 		(e.currentTarget as Element).setPointerCapture(e.pointerId);
 	}
@@ -594,6 +606,10 @@
 		if (!n) return;
 		const [x, y] = point(e);
 		n.pos = [Math.max(0, Math.round(x - drag.dx)), Math.max(0, Math.round(y - drag.dy))];
+	}
+	function endDrag() {
+		drag = null;
+		dragZoom = null;
 	}
 	function dropOnCanvas(e: DragEvent) {
 		e.preventDefault();
@@ -619,6 +635,8 @@
 		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
 		if (e.key === 'Escape' && pending) {
 			pending = null;
+			// Handled: the dialog around the canvas stays open.
+			e.preventDefault();
 			e.stopPropagation();
 		}
 		if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
@@ -662,7 +680,8 @@
 			height={extent.h * zoom}
 			viewBox={`0 0 ${extent.w} ${extent.h}`}
 			onpointermove={moveDrag}
-			onpointerup={() => (drag = null)}
+			onpointerup={endDrag}
+			onpointercancel={endDrag}
 			onclick={() => {
 				pending = null;
 				selected = null;

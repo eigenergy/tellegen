@@ -12,6 +12,8 @@
 </script>
 
 <script lang="ts">
+	import { clampZoom, niceTicks } from '../../dynamics/live-logic.js';
+
 	/** A zoomable line chart for the dynamics workbench. One y-axis; series in
 	 * fixed categorical order (the caller keeps a chart to eight). Drag to zoom
 	 * the x range, shift-drag to pan, wheel to zoom at the cursor, double-click
@@ -98,7 +100,9 @@
 			const a = Math.max(0, lowerBound(s.x, dom[0]) - 1);
 			const b = Math.min(s.x.length, lowerBound(s.x, dom[1]) + 1);
 			const pts: [number, number][] = [];
-			let col = -1;
+			// No column yet: `null`, not a number, since every number is a
+			// column (the point before a zoomed range can fall at -1).
+			let col: number | null = null;
 			let first: [number, number] | null = null;
 			let mn: [number, number] | null = null;
 			let mx: [number, number] | null = null;
@@ -114,13 +118,13 @@
 				const xv = s.x[i];
 				const c = Math.floor(px(xv));
 				const p: [number, number] = [xv, yv];
-				if (c !== col) {
-					if (col !== -1) flush();
+				if (c !== col || mn === null || mx === null) {
+					if (col !== null) flush();
 					col = c;
 					first = mn = mx = last = p;
 				} else {
-					if (yv < mn![1]) mn = p;
-					if (yv > mx![1]) mx = p;
+					if (yv < mn[1]) mn = p;
+					if (yv > mx[1]) mx = p;
 					last = p;
 				}
 				if (xv >= dom[0] && xv <= dom[1]) {
@@ -128,7 +132,7 @@
 					if (yv > hi) hi = yv;
 				}
 			}
-			if (col !== -1) flush();
+			if (col !== null) flush();
 			return { s, pts };
 		});
 		if (!Number.isFinite(lo)) [lo, hi] = [0, 1];
@@ -146,16 +150,6 @@
 	const py = (v: number) =>
 		pad.t + (1 - (v - prepared.y[0]) / (prepared.y[1] - prepared.y[0] || 1)) * plotH;
 
-	function niceTicks(lo: number, hi: number, count: number): number[] {
-		const span = hi - lo;
-		if (!(span > 0)) return [lo];
-		const raw = span / count;
-		const mag = 10 ** Math.floor(Math.log10(raw));
-		const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => span / s <= count) ?? 10 * mag;
-		const out: number[] = [];
-		for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
-		return out;
-	}
 	const yTicks = $derived(niceTicks(prepared.y[0], prepared.y[1], Math.max(3, Math.floor(plotH / 45))));
 	const xTicks = $derived.by(() => {
 		if (!logX) return niceTicks(dom[0], dom[1], Math.max(4, Math.floor(plotW / 90)));
@@ -205,11 +199,18 @@
 	function up(e: PointerEvent) {
 		if (brush) {
 			const [a, b] = [Math.min(brush.a, brush.b), Math.max(brush.a, brush.b)];
-			if (Math.abs(px(b) - px(a)) > 6) xDomain = [a, b];
+			if (Math.abs(px(b) - px(a)) > 6) xDomain = zoomTo(tx(a), tx(b));
 			else onseek?.(brush.a);
 		}
 		brush = null;
 		pan = null;
+	}
+	/** The x range `[a, b]` (axis units) as a domain, no narrower than the
+	 * chart zooms to: deeper, the ticks and the pixel mapping lose their
+	 * resolution. */
+	function zoomTo(a: number, b: number): [number, number] {
+		const [c, d] = clampZoom(a, b);
+		return [itx(c), itx(d)];
 	}
 	function wheel(node: SVGSVGElement) {
 		const handler = (e: WheelEvent) => {
@@ -219,14 +220,14 @@
 			const a = c - (c - u0) * factor;
 			const b = c + (u1 - c) * factor;
 			const [fa, fb] = [tx(fullX[0]), tx(fullX[1])];
-			xDomain = b - a >= fb - fa ? null : [itx(Math.max(fa, a)), itx(Math.min(fb, b))];
+			xDomain = b - a >= fb - fa ? null : zoomTo(Math.max(fa, a), Math.min(fb, b));
 		};
 		node.addEventListener('wheel', handler, { passive: false });
 		return { destroy: () => node.removeEventListener('wheel', handler) };
 	}
 	function keydown(e: KeyboardEvent) {
 		const span = u1 - u0;
-		if (e.key === '+' || e.key === '=') xDomain = [itx(u0 + span * 0.15), itx(u1 - span * 0.15)];
+		if (e.key === '+' || e.key === '=') xDomain = zoomTo(u0 + span * 0.15, u1 - span * 0.15);
 		else if (e.key === '-') xDomain = null;
 		else if (e.key === 'ArrowLeft') xDomain = [itx(u0 - span * 0.1), itx(u1 - span * 0.1)];
 		else if (e.key === 'ArrowRight') xDomain = [itx(u0 + span * 0.1), itx(u1 + span * 0.1)];
