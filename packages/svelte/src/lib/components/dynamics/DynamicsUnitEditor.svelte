@@ -19,6 +19,7 @@
 		type ModelRole
 	} from '@tellegen/engine';
 	import { getAppState, getController } from '../../context.svelte.js';
+	import { parseDrafts, recordsSignature } from '../../dynamics/live-logic.js';
 	import { unitKey as keyOf } from '../../dynamics/units.svelte.js';
 	import ControllerGraphEditor from './ControllerGraphEditor.svelte';
 
@@ -89,20 +90,23 @@
 
 	// ----- parameters -----
 	let draft = $state<Record<string, string>>({});
+	// Drafts belong to the records they were typed against: another unit, or
+	// any change of this unit's records (a model swapped, a preset, an edit
+	// applied), clears them, so no draft lands on a parameter that moved.
+	const signature = $derived(unit ? recordsSignature(unit.records) : '');
 	$effect(() => {
 		void unitKey;
+		void signature;
 		draft = {};
 	});
 	const draftCount = $derived(Object.keys(draft).length);
 	const applyParams = () =>
 		act('Parameters', async () => {
 			if (!unit) return;
-			const edits = Object.entries(draft).flatMap(([k, t]) => {
-				const [line, index] = k.split(':').map(Number);
-				const value = Number(t);
-				const p = unit.records.find((r) => r.line === line)?.parameters[index];
-				return p && t.trim() !== p.text && Number.isFinite(value) ? [{ line, index, value }] : [];
-			});
+			// Blank or non-numeric input is refused with the parameter named;
+			// the drafts stay for correction.
+			const { edits, errors } = parseDrafts(draft, unit.records);
+			if (errors.length) throw new Error(errors.join('; '));
 			if (edits.length) await dyn.editDynamics(await editDyr(text(), edits));
 			draft = {};
 		});

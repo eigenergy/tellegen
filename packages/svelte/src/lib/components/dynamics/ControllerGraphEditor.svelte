@@ -40,6 +40,22 @@
 	let busy = $state(false);
 	let applyError = $state<string | null>(null);
 
+	// Escape closes the editor, except while a wire is being drawn (the
+	// canvas cancels the wire) or a field has the focus (it leaves the field).
+	let wiring = $state(false);
+	function onkey(e: KeyboardEvent) {
+		if (e.key !== 'Escape' || wiring || e.defaultPrevented) return;
+		const t = e.target;
+		if (
+			t instanceof HTMLInputElement ||
+			t instanceof HTMLSelectElement ||
+			t instanceof HTMLTextAreaElement ||
+			(t instanceof HTMLElement && t.isContentEditable)
+		)
+			return;
+		onclose();
+	}
+
 	async function run(action: () => Promise<void>) {
 		busy = true;
 		applyError = null;
@@ -53,7 +69,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<svelte:window onkeydown={onkey} />
 
 <div class="editor dyn-form" role="dialog" aria-label={title} use:toRoot>
 	<header>
@@ -75,7 +91,7 @@
 		<button class="ghost" onclick={onclose}>Close</button>
 	</header>
 	{#if applyError}<p class="bad msg">{applyError}</p>{/if}
-	<GraphCanvas bind:graph={g} bind:check {values} />
+	<GraphCanvas bind:graph={g} bind:check bind:wiring {values} />
 </div>
 
 <style>

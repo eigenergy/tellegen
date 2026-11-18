@@ -16,6 +16,7 @@ import {
 	type RmsRunMeta
 } from '@tellegen/engine';
 import { toRmsEvents, type DynEvent } from './events.js';
+import { paceTarget } from './live-logic.js';
 
 /** Seconds of simulated time the live run can keep. */
 export const WINDOWS = [10, 20, 60] as const;
@@ -152,6 +153,9 @@ export class LiveView {
 	run: RmsRun | null = $state.raw(null);
 	/** The local case the session belongs to. */
 	localId = $state<string | null>(null);
+	/** Counts the sessions opened: controls that mirror the session's
+	 * state (the reference sliders) reset when it changes. */
+	generation = $state(0);
 	/** The channels the live plots show (`quantity:id`, derived ones too). */
 	plotted: string[] = $state.raw([]);
 
@@ -196,6 +200,7 @@ export class LiveView {
 				this.#session = s;
 				this.#inspection = input.inspection;
 				this.localId = localId;
+				this.generation += 1;
 				this.t = 0;
 				this.log = [];
 				this.#samples = new Samples();
@@ -298,7 +303,7 @@ export class LiveView {
 				const wall = (now - last) / 1000;
 				last = now;
 				wallAcc += wall;
-				expected = Math.min(expected + wall * this.speed, this.t + 2);
+				expected = paceTarget(expected, wall, this.speed, this.t);
 				const unpaced = !Number.isFinite(this.speed);
 				const behind = expected - this.t;
 				// Ahead of the clock: wait for it.
@@ -319,6 +324,8 @@ export class LiveView {
 				perfAcc.round += round;
 				perfAcc.n += 1;
 				this.t = slice.t;
+				// Unpaced, the clock target stays at the time reached.
+				if (unpaced) expected = this.t;
 				this.#append(slice.time, slice.keys, slice.series.bind(slice));
 				if (wallAcc > 1) {
 					this.achieved = simAcc / wallAcc;
