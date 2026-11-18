@@ -6,6 +6,9 @@ KLU reproduces live OpenDSS exactly. Its condition estimate is 2.253e16.
 The difference is a shift in the voltage to ground of two delta-bounded 69 kV
 sections; KLU and faer are both volts away from the exact solution of the
 matrix there (see "Where the 17 V comes from").
+Tellegen now imports the region, and the system it prepares itself shows the
+same thing: **17.232 V** between faer and KLU, again a shift of the two 69 kV
+sections (see "Tellegen's own regional system").
 No production solver behavior or backend selection changes in this study.
 
 ## What was measured
@@ -56,6 +59,8 @@ The full system has 2,427,669 nonzeros. Findings:
   This experiment isolates source elimination; it is **not** Tellegen's own
   regional reduced matrix.
 
+The next two parts record the import attempts made before PowerIO 0.12.3;
+"Tellegen's own regional system" below supersedes their conclusions.
 Actual Tellegen regional import was attempted without dropping diagnostics.
 PowerIO 0.12.1 refuses it at its 64 MiB include budget and line-history work
 budget (`tellegen-regional-import.json`). Consequently #153's regional
@@ -86,6 +91,60 @@ controls. No records were discarded or diagnostics bypassed. See
 `tellegen-imports-powerio-0.12.2.json`; the separate 0.12.1 evidence remains
 unchanged. These checks confirm that the original regional reduced-system question
 remains unresolved; they are a source-candidate test, not a registry-package test.
+
+### Tellegen's own regional system
+
+With PowerIO 0.12.3 and the import changes that accompany this section, the
+feeder, the substation and the region import and solve. Duplicate linecode
+definitions are one remark. The region needs PowerIO's read limits raised
+(`tellegen import-opendss --max-include-bytes 1073741824 --max-properties
+67108864`). Disabled lines stay as records. The 33 regulator controls, 144
+capacitor controls and 3,272 fuses are held at their written settings with
+every fuse closed, which is what OpenDSS solves with `controlmode=off`. The 48
+pieces with no source (98 buses, 294 nodes) are left out by the explicit
+energized-network selection; OpenDSS reports exactly 0 V on them.
+
+`run_tellegen_region.py` exports the matrix Tellegen factors (passive network
+plus load reference admittances, source terminals eliminated) and the
+right-hand side of the last accepted iteration of its power flow, then solves
+that system with faer and with KLU. `tellegen-reduced-aus-p3u-results.json`
+holds the numbers. The system has 431,603 unknowns and 2,425,899 nonzeros.
+
+| | 315-node section | 342-node section | elsewhere (430,946 nodes) |
+| --- | --- | --- | --- |
+| largest faer minus KLU, to ground | 17.232 V | 8.202 V | 1.40e-3 V |
+| common shift of the section | 17.229 V | 8.200 V | |
+| largest remainder after removing the shift | 0.0107 V | 0.0060 V | |
+| largest difference between conductors of one bus | 0.0134 V | 0.0036 V | |
+| mean voltage to ground, KLU | 2.274 V | 7.673 V | |
+| mean voltage to ground, faer | 16.969 V | 5.891 V | |
+| mean voltage to ground, faer refined with `fx128` residuals | 3.6e-7 V | 4.4e-7 V | |
+
+Outside the two sections 243 nodes differ by more than 1e-3 V. The refined
+solution is 7.68 V from KLU overall and 1.2e-3 V from it outside the sections;
+its corrections fall to 1.3e-11 V in five steps. Row-scaled backward residuals
+are 1.57e-11 for faer, 6.2e-15 for KLU and 3.9e-16 for faer after three
+ordinary refinement steps. KLU's condition estimate is 5.57e14, not 2.25e16,
+because the pieces with no source are not in this system. KLU with COLAMD
+differs from KLU with AMD by 20.65 V.
+
+So the answer for Tellegen's own system is the one found for the OpenDSS
+matrix. Neither float64 LU fixes the voltage to ground of the two 69 kV
+sections; here faer is the farther one on the first section and KLU on the
+second. Voltages between conductors agree to 0.013 V at 69 kV, and everything
+outside the sections agrees to 1.4 mV.
+
+The solved power flow was also compared with OpenDSS solving the same master
+file with `controlmode=off` (not part of the scripts here). Voltages to ground
+on the 657 nodes at 69 kV differ by up to 16.58 V; voltages between conductors
+there by up to 0.0141 V (2.0e-7 pu); the other 430,946 nodes by up to
+1.48e-3 V (2.1e-7 pu). Source power is 777,256.249 kW and 213,721.689 kvar
+against 777,256.257 kW and 213,721.846 kvar. With OpenDSS's default control
+mode the regulators move and voltages differ by up to 0.092 pu.
+
+The faer factorization takes 0.19 s and a retained solve 5.2 ms; KLU with AMD
+takes 0.077 s and 5.0 ms. Retained allocations are 204 MB and 112 MB, measured
+as described under "Timing and memory", with the same limitations.
 
 ## Where the 17 V comes from
 
@@ -181,8 +240,8 @@ recovers the balanced solution from either start in four or five steps.
 steps; only its size is accounted for. The remainders of up to 0.011 V at
 69 kV and 1.9 mV elsewhere were measured, not explained. The exact solution
 holds OpenDSS's compensation currents fixed, so it is not a re-converged power
-flow. Only this region was examined, and Tellegen's own regional matrix is
-still unavailable (below).
+flow. Only this region was examined. Tellegen's own regional matrix was
+measured afterwards (above) and was not put through these steps.
 
 ## Timing and memory
 
@@ -227,6 +286,7 @@ python recover_smartds.py /tmp/smartds-aus-p3u
 python run_smartds.py /path/to/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib /tmp/smartds-aus-p3u /tmp/smartds-results
 python export_gap_case.py /tmp/smartds-aus-p3u /tmp/smartds-gap
 python explain_gap.py /tmp/smartds-gap /path/to/test-executable > smartds-aus-p3u-gap-results.json
+python run_tellegen_region.py /path/to/test-executable /path/to/libklusolvex.dylib /tmp/klu-metrics.dylib /tmp/smartds-aus-p3u /tmp/tellegen-region
 ```
 
 `run_smartds.py` retains a roughly 144 MiB matrix JSON plus its result summary
@@ -234,8 +294,12 @@ in the chosen output directory. The two gap scripts also need scipy; the export
 keeps about 135 MB of matrices, and the test executable is optional (without
 it the faer rows are omitted). The Rust exporter compiles only for tests;
 its ignored test requires an explicit output path. `TELLEGEN_LINEAR_DSS`
-selects an actual DSS import attempt; `TELLEGEN_LINEAR_INPUT` selects an
-already exported matrix. Neither changes normal engine behavior.
+selects an actual DSS import: it raises the read limits, applies written
+equipment settings when the case needs them, leaves out pieces with no source,
+and exports the system of the converged power flow. `TELLEGEN_LINEAR_INPUT`
+selects an already exported matrix. Neither changes normal engine behavior.
+`run_tellegen_region.py` keeps a matrix JSON of about 200 MB in its output
+directory and needs about 7 GB of memory.
 
 The KLU wrapper reads back and exactly verifies its assembled matrix before
 solving. The direct C harness passes the identical CSC arrays to KLU and
@@ -246,8 +310,11 @@ no production dependency on KLU or new solver API is introduced.
 
 KLU remains the agreed reference except for voltages to ground on the two
 69 kV sections described above, where it is 17.46 V from the exact solution
-of its own matrix. There is no supported regional Tellegen
-import/preparation result, interval-validated solution, or demonstrated need
-for a WASM backend change. The other original regions were located in the
-same public data tree but were not remeasured here. This is a reproducible
-investigation of #153, not grounds to close its unresolved regional question.
+of its own matrix. Tellegen's regional system is now measured, and it shows the
+same shift, so the regional question of #153 has an answer for this region:
+the backends differ only in the voltage to ground of the two 69 kV sections,
+and neither is right there. There is no interval-validated solution and no
+demonstrated need for a WASM backend change. Whether Tellegen should refine
+its solution on such sections, or report their voltage to ground as poorly
+determined, is not decided here. The other original regions were located in
+the same public data tree but were not remeasured.
