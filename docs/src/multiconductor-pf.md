@@ -52,6 +52,12 @@ terminal, `|KCL residual| <= absolute_kcl_tolerance + relative_kcl_tolerance * I
 `I_scale` is the larger of the summed incident device-current magnitudes and the
 magnitude of the net load current. The reported scaled residual must be at most 1.
 For example, at a 100 A scale the new KCL allowance is 0.0011 A.
+The allowance also includes the rounding error of the current balance itself:
+the number of terms in the terminal's balance, times 2.2e-16, times the sum of
+each admittance magnitude times its voltage magnitude. This matters only where
+very large admittances meet high voltages. A 0.001 km line of 1e-5 Ω/km at
+69 kV is a 7e7 S entry and leaves about 1e-3 A of rounding error, which no
+voltage vector in double precision can remove.
 
 OpenDSS documents a default solution tolerance of **0.0001**, applied to voltage
 magnitude changes and normalized by the bus voltage base when one is defined.

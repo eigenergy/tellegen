@@ -289,6 +289,45 @@ fn disabled_line_is_kept_as_a_record_and_left_out_of_the_circuit() {
 }
 
 #[test]
+fn line_of_very_small_impedance_converges_with_default_tolerances() {
+    // A 0.001 km line of 1e-5 ohm/km puts 7e7 S beside ordinary admittances.
+    // At 69 kV the current balance at its ends then carries about 1e-3 A of
+    // rounding error, above the default absolute tolerance of 1e-4 A, while
+    // the lightly loaded spur carries too little current for the relative one.
+    let input = module(
+        "new circuit.hv phases=3 bus1=src basekv=69\n\
+         new line.a phases=3 bus1=src bus2=m1 r1=.2 x1=.5 r0=.4 x0=1.2 c1=10 c0=5 length=7 units=km\n\
+         new line.f1 phases=3 bus1=m1 bus2=m2 r1=1e-5 x1=1e-5 r0=1e-5 x0=1e-5 c1=0 c0=0 length=.001 units=km\n\
+         new line.f2 phases=3 bus1=m2 bus2=m3 r1=1e-5 x1=1e-5 r0=1e-5 x0=1e-5 c1=0 c0=0 length=.001 units=km\n\
+         new line.b phases=3 bus1=m3 bus2=lb r1=.2 x1=.5 r0=.4 x0=1.2 c1=10 c0=5 length=11 units=km\n\
+         new load.main phases=3 bus1=m1 kv=69 kw=31234.5 kvar=9876.5 model=1\n\
+         new load.spur phases=3 bus1=lb kv=69 kw=1500 kvar=500 model=1\n",
+    );
+    tellegen::validate_mc_module(&input).unwrap();
+    let result: McPfResult = serde_json::from_str(
+        &tellegen::solve_mc_module_json(
+            &tellegen::ir::serialize_module(&input).unwrap(),
+            &Default::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(result.converged);
+    assert!(result.scaled_kcl_residual <= 1.0);
+    // The two ends of the short lines are the same point to within millivolts.
+    let at = |bus: &str| {
+        let terminal = result
+            .terminals
+            .iter()
+            .find(|t| t.bus.eq_ignore_ascii_case(bus) && t.terminal == "1")
+            .unwrap();
+        (terminal.voltage.re, terminal.voltage.im)
+    };
+    let (m1, m3) = (at("m1"), at("m3"));
+    assert!((m1.0 - m3.0).hypot(m1.1 - m3.1) < 1e-2);
+}
+
+#[test]
 fn floating_source_reference_is_rejected_by_capability_and_direct_solver() {
     let mut input = module("new circuit.qc basekv=.4\n");
     let powerio::PioValue::MulticonductorNetwork(net) = input.value_mut() else {

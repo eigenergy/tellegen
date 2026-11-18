@@ -2390,8 +2390,15 @@ fn kcl_metrics(
         let residual = (passive_current(network, voltage, i) + load[i]).norm();
         let scale = incident[i].max(load[i].norm());
         raw = raw.max(residual);
+        // Very large admittances beside ordinary ones (a line of 0.001 length)
+        // leave a rounding error in the balance itself that can exceed the
+        // absolute tolerance; no voltage vector in double precision does better.
+        let rounding = network.passive_current_rounding(voltage, i);
         scaled = scaled.max(
-            residual / (options.absolute_kcl_tolerance + options.relative_kcl_tolerance * scale),
+            residual
+                / (options.absolute_kcl_tolerance
+                    + options.relative_kcl_tolerance * scale
+                    + rounding),
         );
     }
     (raw, scaled)

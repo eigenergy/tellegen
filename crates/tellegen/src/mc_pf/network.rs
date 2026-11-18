@@ -554,6 +554,32 @@ impl PreparedNetwork {
         }
     }
 
+    /// The largest rounding error double precision can leave in
+    /// [`Self::passive_current`] at `row`: the number of terms times the unit
+    /// roundoff times the sum of |admittance| · |voltage|. A current balance
+    /// below this bound cannot be told apart from zero.
+    pub(crate) fn passive_current_rounding(&self, voltage: &[Complex64], row: usize) -> f64 {
+        let (terms, magnitude) = match self.ground_ports.get(&row) {
+            Some(ports) => ports
+                .iter()
+                .flat_map(|&(element, port)| {
+                    let element = &self.elements[element];
+                    element.yprim[port]
+                        .iter()
+                        .zip(&element.terminals)
+                        .map(|(y, &terminal)| y.norm() * voltage[terminal].norm())
+                })
+                .fold((0usize, 0.0), |(n, sum), term| (n + 1, sum + term)),
+            None if self.index.is_ground(row) => (0, 0.0),
+            None => self
+                .passive
+                .row(row)
+                .map(|(c, value)| value.norm() * voltage[c].norm())
+                .fold((0usize, 0.0), |(n, sum), term| (n + 1, sum + term)),
+        };
+        terms as f64 * f64::EPSILON * magnitude
+    }
+
     pub(crate) fn fixed_voltage_vector(&self) -> Vec<Complex64> {
         self.fixed.iter().map(|x| x.unwrap_or_default()).collect()
     }
