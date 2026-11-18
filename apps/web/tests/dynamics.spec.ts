@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // The WECC 240 dynamics demo, end to end: open it, run a fault, read the
-// verdict, play it back. Dynamics is experimental, so these tests turn on
-// Settings → Experimental features first; dynamics-off.spec.ts covers the
+// verdict, play it back. These tests also turn on Settings → Experimental
+// features, for the Modes tab; dynamics-default.spec.ts covers the
 // default, with it off.
 // Screenshots land in DYNAMICS_SHOTS when set.
 const SHOTS = process.env.DYNAMICS_SHOTS;

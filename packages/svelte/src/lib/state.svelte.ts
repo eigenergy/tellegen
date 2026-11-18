@@ -602,10 +602,13 @@ export class AppState {
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
 	#mode = $state<'steady' | 'dynamics'>('steady');
-	/** Dynamics (RMS simulation) is experimental: it shows only after the
-	 * user turns on Settings → Experimental features. */
+	/** Dynamics (RMS simulation) is always on: it is validated against
+	 * PowerSimulationsDynamics.jl (crates/tellegen/tests/rms_psid_validation.rs). Settings →
+	 * Experimental features gates only the tools that are still being
+	 * validated (small-signal modes, frequency responses, default dynamic
+	 * data, the live view and unit editing). */
 	get dynamicsEnabled(): boolean {
-		return this.preferences.experimental;
+		return true;
 	}
 	/** Steady state (the static calculations) or dynamics (RMS simulation of
 	 * the active local case with its .dyr data). Reads as steady state while

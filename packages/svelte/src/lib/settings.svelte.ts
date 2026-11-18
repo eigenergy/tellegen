@@ -18,8 +18,10 @@ export class UserPreferences {
 	coloring = $state<'price' | 'angle' | 'voltage' | 'demand'>('price');
 	/** Hide panels: only the map shows; it survives a reload so a presenter keeps the view. */
 	zen = $state(false);
-	/** Experimental features: dynamics (RMS) simulation, which is still
-	 * being validated. Off by default. */
+	/** Experimental features: the dynamics tools that are still being
+	 * validated (small-signal modes, frequency responses, default dynamic
+	 * data, the live view and unit editing). Off by default; the RMS
+	 * simulation itself is always on. */
 	experimental = $state(false);
 	error = $state<string | null>(null);
 	revision = $state(0);

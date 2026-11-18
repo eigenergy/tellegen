@@ -14,7 +14,7 @@ categories = ["science", "mathematics"]
 # and so do the RMS integration tests built on it (the unit tests that read it
 # skip without it). `licenses/` (the BSD-3-Clause notices of the code the RMS
 # engine translates) is packaged.
-exclude = ["tests/data/rms_examples/", "tests/rms_*.rs"]
+exclude = ["tests/data/rms_examples/", "tests/data/rms_smib/", "tests/rms_*.rs"]
 
 [dependencies]
 powerio.workspace = true

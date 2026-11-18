@@ -2212,8 +2212,8 @@ export function createTellegenWebMcpAdapter(
 			},
 			selectCase: (input, signal) => enqueue(() => selectCase(ctrl, input, signal))
 		},
-		// Dynamics is experimental: simulate_dynamics is registered only while
-		// the user has it on in Settings.
+		// simulate_dynamics is registered while dynamics is enabled (always;
+		// see AppState.dynamicsEnabled).
 		dynamicsAvailable: () => ctrl.app.dynamicsEnabled,
 		onDynamicsAvailabilityChange(listener) {
 			let enabled = ctrl.app.dynamicsEnabled;
