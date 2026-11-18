@@ -58,7 +58,7 @@
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	onDestroy(
 		commands.registerSource((): Command[] => [
-			// Dynamics is experimental: no commands until Settings turns it on.
+			// Dynamics commands, while dynamics is enabled (always, see AppState.dynamicsEnabled).
 			...(app.dynamicsEnabled
 				? ([
 						{

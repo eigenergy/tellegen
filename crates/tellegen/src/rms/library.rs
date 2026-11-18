@@ -72,8 +72,10 @@ pub(super) const LIBRARY: &[LibraryModel] = &[
         name: "ESAC1A",
         label: "IEEE AC1A rotating rectifier exciter",
         engines: "RMS",
-        // The IEEE 14-bus example's set: the compiled model divides by TB, so
-        // the lead-lag cannot be bypassed with TB = 0.
+        // The exciters of PowerSimulationsDynamics.jl's IEEE 14-bus benchmark
+        // (`test/benchmarks/psse/GAST/dyn_data.dyr`, BSD-3-Clause), unchanged:
+        // the compiled model divides by TB, so the lead-lag cannot be
+        // bypassed with TB = 0.
         params: "0.001 0.2 0.001 400.0 0.02 10.0 -10.0 0.8 0.03 1.0 0.2 0.38 1.0 3.14 0.03 4.18 0.1 7.32 -7.32",
     },
     LibraryModel {

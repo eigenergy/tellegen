@@ -2,39 +2,25 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppState } from '../src/lib/state.svelte.js';
 import { UserPreferences } from '../src/lib/settings.svelte.js';
 
-// Dynamics (RMS) simulation is experimental: off until the user turns on
-// Settings → Experimental features.
-describe('dynamics behind the experimental setting', () => {
-	it('is off by default and the mode reads as steady state', () => {
+// Dynamics (RMS simulation) is always on; Settings → Experimental features
+// gates only the tools still being validated, not the mode itself.
+describe('dynamics and the experimental setting', () => {
+	it('is on by default, with the experimental setting off', () => {
 		const app = new AppState();
 		expect(app.preferences.experimental).toBe(false);
-		expect(app.dynamicsEnabled).toBe(false);
-		app.mode = 'dynamics';
-		expect(app.mode).toBe('steady');
-	});
-
-	it('comes back when the setting is on', () => {
-		const app = new AppState();
-		app.preferences.update({ experimental: true }, false);
 		expect(app.dynamicsEnabled).toBe(true);
 		app.mode = 'dynamics';
 		expect(app.mode).toBe('dynamics');
-		// Turning the setting off falls back to steady state.
-		app.preferences.update({ experimental: false }, false);
-		expect(app.mode).toBe('steady');
-		// A request for dynamics while it is off does not survive turning it on.
-		app.mode = 'dynamics';
-		app.preferences.update({ experimental: true }, false);
-		expect(app.mode).toBe('steady');
 	});
 
-	it('a saved dynamics mode falls back to steady state while the setting is off', () => {
+	it('does not depend on the experimental setting', () => {
 		const app = new AppState();
-		app.preferences.update({ experimental: true }, false);
 		app.mode = 'dynamics';
-		app.preferences.update({ experimental: false }, false);
-		expect(app.mode).toBe('steady');
 		app.preferences.update({ experimental: true }, false);
+		expect(app.dynamicsEnabled).toBe(true);
+		expect(app.mode).toBe('dynamics');
+		app.preferences.update({ experimental: false }, false);
+		expect(app.dynamicsEnabled).toBe(true);
 		expect(app.mode).toBe('dynamics');
 	});
 

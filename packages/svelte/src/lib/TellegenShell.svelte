@@ -55,7 +55,7 @@
 	$effect(() => {
 		dyn.theme = config.theme;
 	});
-	// Turning experimental features off stops any dynamics playback.
+	// Dynamics turned off (AppState.dynamicsEnabled) stops any playback.
 	$effect(() => {
 		if (!app.dynamicsEnabled) untrack(() => dyn.player.pause());
 	});
