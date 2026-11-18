@@ -168,6 +168,23 @@ tellegen solve-mc < case.pio.json
 tellegen solve-mc-bmopf '{"max_iterations":200}' < case.bmopf.json
 ```
 
+An OpenDSS master file is read from disk, with the files it includes, by a
+separate command that prints the PowerIO IR:
+
+```sh
+tellegen import-opendss Master.dss > case.pio.json
+tellegen import-opendss Master.dss --written-equipment-settings --energized-network \
+  --max-include-bytes 1073741824 --max-properties 67108864 > region.pio.json
+```
+
+`--written-equipment-settings` holds written taps and capacitor states and
+closed fuses, as **Use written equipment settings** does in the browser.
+`--energized-network` records the sections with no source so that the solve
+leaves them out. `--max-include-bytes` (default 64 MiB) and `--max-properties`
+(default 4,194,304) raise PowerIO's OpenDSS read limits for a case too large
+for the defaults; the second example fits a SMART-DS region of 430,000 nodes,
+which needs about 4 GB of memory to import and 5 GB to solve. The browser keeps the default limits.
+
 `OPTIONS_JSON` also takes two keys that choose what the command prints; neither is a solver setting:
 
 - `"output"` selects the view. `"full"` (the default) prints the complete `McPfResult`, as before. `"summary"` prints the constant-size `McPfSummary` (convergence, iterations, residuals, load voltage range and violation count, source power, passive loss, counts) without building per-terminal records. `"tables"` prints `{"summary": McPfSummary, "tables": McPfResultTables}` (the `mc_pf_tables_view` schema), the full result's rows as columns with each name stored once and complex values interleaved `[re, im]`.
