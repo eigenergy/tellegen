@@ -25,30 +25,32 @@ repository = "https://github.com/eigenergy/tellegen"
 # preparation supply Tellegen's network data. The shared lockfile keeps
 # one exact PowerIO revision across the engine and every adapter.
 # PowerIO 0.12.2 supplies the qualified general transformer primitives and
-# retained OpenDSS controls, so the minimum dependency version starts there.
+# retained OpenDSS controls. PowerIO 0.12.3 adds the per coil generator
+# dispatch column of `McAcOpfSolution`, which the multiconductor OPF fills,
+# so the minimum dependency version starts there.
 # No SINCAL: `powerio` turns off its default `sincal` feature, which compiles
 # SQLite that the wasm build could only link with a C compiler targeting
 # WebAssembly, and `powerio-dist` and `powerio-tx` come without default
 # features so none arrives through them. Tellegen reads no SINCAL projects.
-powerio = { version = "0.12.2", default-features = false }
+powerio = { version = "0.12.3", default-features = false }
 # The multiconductor distribution model and its lossless readers for OpenDSS,
 # PMD JSON, and BMOPF JSON. The wasm ingest path views distribution cases
 # through `MulticonductorNetwork::to_graph()`. Collection ingestion supplies
 # a confined named tree; includes never acquire host files or network data.
 
-powerio-dist = { version = "0.12.2", default-features = false }
+powerio-dist = { version = "0.12.3", default-features = false }
 # Lower level analysis views used only inside Tellegen's private solver and
 # display workspaces. Portable inputs and outputs still cross the `powerio`
 # module facade.
-powerio-tx = { version = "0.12.2", default-features = false }
+powerio-tx = { version = "0.12.3", default-features = false }
 # Typed problem instances and solutions (`DcOpfInstance`, `DcOpfSolution`, ...),
 # the shared owner of case interpretation.
-powerio-prob = "0.12.2"
+powerio-prob = "0.12.3"
 # The shared numerical assembly: `build_dc_opf_preparation` derives the matrix
 # free DC OPF arrays (demand, costs, bounds, limits, mappings) from a
 # `DcOpfInstance`, so the solver formulates over PowerIO's one assembly
 # instead of re-deriving it from the network.
-powerio-matrix = "0.12.2"
+powerio-matrix = "0.12.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
