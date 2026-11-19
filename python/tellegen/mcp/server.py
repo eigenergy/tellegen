@@ -23,6 +23,7 @@ import hashlib
 import inspect
 import json
 import os
+from collections import OrderedDict
 from importlib import resources
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Literal, Optional
@@ -578,6 +579,33 @@ def _record(table: Dict[str, Any], record_id: Optional[str], kind: str) -> Any:
     return table[record_id]
 
 
+# The Studies last paged through, so reading a section page by page exports,
+# parses and encodes the Study once instead of once per page. An entry is
+# keyed by the file a save leaves behind (each save replaces the file), and
+# holds the parsed bundle with the JSON text of every record read so far.
+_STUDY_CACHE_ENTRIES = 4
+_study_cache: "OrderedDict[tuple, tuple]" = OrderedDict()
+
+
+def _study_bundle(checked: str) -> tuple:
+    """The exported Study at `checked` and its table of encoded records."""
+    try:
+        stat = os.stat(checked)
+    except OSError:
+        key = None
+    else:
+        key = (checked, stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    if key is not None and key in _study_cache:
+        _study_cache.move_to_end(key)
+        return _study_cache[key]
+    entry = (json.loads(_tellegen.study_export(checked)), {})
+    if key is not None:
+        _study_cache[key] = entry
+        while len(_study_cache) > _STUDY_CACHE_ENTRIES:
+            _study_cache.popitem(last=False)
+    return entry
+
+
 @_tool(
     title="Inspect a study",
     output=StudyInspectOutput,
@@ -600,7 +628,7 @@ async def study_inspect(
         return study_summary(summary)
     if offset < 0:
         raise ValueError("offset must be nonnegative")
-    bundle = json.loads(_tellegen.study_export(checked))
+    bundle, encodings = _study_bundle(checked)
     document = bundle["document"]
     if expected_revision is not None and document["revision"] != expected_revision:
         raise ValueError("Study revision changed; restart the inspection")
@@ -621,7 +649,9 @@ async def study_inspect(
         raise ValueError(
             "section must be summary, goal, states, experiment or evidence"
         )
-    encoded = json.dumps(record)
+    encoded = encodings.get((section, record_id))
+    if encoded is None:
+        encoded = encodings[(section, record_id)] = json.dumps(record)
     fragment = encoded[offset : offset + STUDY_FRAGMENT_BYTES]
     following = offset + len(fragment)
     return {

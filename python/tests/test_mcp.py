@@ -399,6 +399,43 @@ def test_study_inspect_pages_a_section_in_bounded_fragments(study):
     assert len(page["fragment"]) <= server.STUDY_FRAGMENT_BYTES
 
 
+def test_paging_a_section_exports_the_study_once(study, monkeypatch):
+    """Every page used to export, parse and encode the whole Study again."""
+    calls = []
+    export = server._tellegen.study_export
+
+    def counted(path):
+        calls.append(path)
+        return export(path)
+
+    monkeypatch.setattr(server._tellegen, "study_export", counted)
+    monkeypatch.setattr(server, "STUDY_FRAGMENT_BYTES", 64)
+    server._study_cache.clear()
+    fragments, offset = [], 0
+    while offset is not None:
+        page = asyncio.run(
+            server.study_inspect(path=study, section="states", offset=offset)
+        )
+        fragments.append(page["fragment"])
+        offset = page["next_offset"]
+    assert len(fragments) > 1
+    assert len(calls) == 1
+    document = json.loads(export(study))["document"]
+    assert "".join(fragments) == json.dumps(document["states"])
+
+    # A saved change replaces the file, so the next page reads the new Study.
+    ran = asyncio.run(
+        server.study_run(
+            path=study,
+            expected_revision=page["revision"],
+            operation={"kind": "inspect", "state": document["inspected_state"]},
+        )
+    )
+    page = asyncio.run(server.study_inspect(path=study, section="states"))
+    assert page["revision"] == ran["revision"]
+    assert len(calls) == 2
+
+
 def test_an_unknown_section_says_what_the_sections_are(study):
     with pytest.raises(ValueError, match="section must be"):
         asyncio.run(server.study_inspect(path=study, section="nope"))
