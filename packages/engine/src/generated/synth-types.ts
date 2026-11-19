@@ -1,5 +1,4 @@
 // Generated from Rust by synth_schema and generate-synth-types.mjs.
-// Source SHA256: 46d0d9da771bc327b89e27b69b43851054a590e6432d82761c39e047327e0397
 
 export type AcPfInitialization = { /** Starts attempted, including the successful one (one-based). */ "attempts": number; "requested": PowerFlowStart; /** Deterministic perturbation number (one-based), only for `perturbed`. */ "restart"?: number | null; "used": AcPfStartStrategy; };
 

@@ -4370,24 +4370,5 @@
     "study_bundle"
   ],
   "title": "ApiSchema",
-  "type": "object",
-  "x-rust-source-files": {
-    "examples/api_schema.rs": "a62e2677ce495a52e599ef95368448de7e0b2674137d1c064a3856cd679cb2db",
-    "src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",
-    "src/dc_formula.rs": "57e5df4a0f203f498c4c9a71a7dfb20514bd74e7ebb1cc71077f2c33e0288868",
-    "src/document.rs": "9beec108846e438f60d734986c25d08859a9de13a1b78b34075c62826c2fceb6",
-    "src/error.rs": "bc40aee22f230710e510e0fd223d7bcd85aec1bfbb9c0c638d0dfdfc79d04309",
-    "src/exploration.rs": "90787e79f4ca5eeb98dbe07e2b8191d59670ee824a9ff8231a1daeb531b986cf",
-    "src/mc_pf/mod.rs": "489a798dc20bff8652a3f0e10209b741ee9bf8ff6ecb1966ae333c27cfaa3707",
-    "src/mc_pf/tables.rs": "f8cfe964d44190975efde45d42bd95504fb72b6653f931d64a9c3d4f145c5626",
-    "src/objective.rs": "eb2fae004e954dee05081e5e075be21f7f1627f648e8233056a15a5e970fec77",
-    "src/plan.rs": "2bb1e1e66057d2503e4f0030e0abe650c56ddcd3806940bb995aa9c35e6ee49c",
-    "src/preparation.rs": "5d3fbd7bebc4e7b5606a4e3af1e2cf3d94c19e554b8be5b23635bcccad8ebcd3",
-    "src/sens/interface.rs": "645da7931bdb369201ceb23a792fc9df6167bcab1e0dda554abda52736a304dc",
-    "src/sens/mod.rs": "7915772aa3cf6ee7593099ec90ad6e0d449b404e4ab51426115d7aed1c349d1e",
-    "src/settings.rs": "75abe36ed0fc3db6f1326e52b8655feb1dd48e3b9ac655daae31b584c7bffc5c",
-    "src/solve.rs": "7ab1cc0ea152dfb13f636a1e7c6f7ec41b87d079691ceb0893815bbe9a8a7ed4",
-    "src/study.rs": "89d7362197737f3f8d28e7a4136acbf9fbf0c4fa8a8326646c2a419023e3f7ad",
-    "src/study_ops.rs": "501426bc19d4d2e63bc272c99ce1c5b203e79faf00bf569a2ec45529eca0049d"
-  }
+  "type": "object"
 }

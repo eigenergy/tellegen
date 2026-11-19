@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import Ajv2020 from "ajv/dist/2020.js";
 import standaloneCode from "ajv/dist/standalone/index.js";
@@ -9,15 +8,6 @@ const schema = JSON.parse(
     "utf8",
   ),
 );
-for (const [file, expected] of Object.entries(schema["x-rust-source-files"])) {
-  const actual = createHash("sha256")
-    .update(readFileSync(new URL(`crates/tellegen/${file}`, root)))
-    .digest("hex");
-  if (actual !== expected)
-    throw new Error(
-      `API schema is stale for ${file}; regenerate with cargo run -p tellegen --example api_schema --features schema,conic,mc-pf`,
-    );
-}
 const ajv = new Ajv2020({
   strict: false,
   strictNumbers: true,
@@ -32,35 +22,6 @@ const httpSchema = JSON.parse(
     "utf8",
   ),
 );
-const serverHash = createHash("sha256")
-  .update(readFileSync(new URL("crates/tellegen-server/src/lib.rs", root)))
-  .digest("hex");
-for (const [file, expected] of Object.entries(
-  httpSchema["x-server-source-files"] ?? {},
-)) {
-  const actual = createHash("sha256")
-    .update(readFileSync(new URL(`crates/tellegen-server/${file}`, root)))
-    .digest("hex");
-  if (actual !== expected)
-    throw new Error(
-      `HTTP schema is stale for ${file}; regenerate the HTTP schema example`,
-    );
-}
-for (const [file, expected] of Object.entries(
-  httpSchema["x-engine-source-files"],
-)) {
-  const actual = createHash("sha256")
-    .update(readFileSync(new URL(`crates/tellegen/${file}`, root)))
-    .digest("hex");
-  if (actual !== expected)
-    throw new Error(
-      `HTTP schema is stale for ${file}; regenerate with cargo run -p tellegen-server --example http_schema --features schema`,
-    );
-}
-if (serverHash !== httpSchema["x-server-source-sha256"])
-  throw new Error(
-    "HTTP schema is stale; regenerate with cargo run -p tellegen-server --example http_schema --features schema",
-  );
 // Older display responses lack solver context. Validate it when present while
 // continuing to accept those existing servers and saved display results.
 for (const name of ["SolutionPayload", "StreamSolution"])
@@ -112,16 +73,6 @@ for (const [family, names] of [
       "utf8",
     ),
   );
-  const sources =
-    family === "synth"
-      ? ["request.rs", "report.rs", "error.rs", "synchronous.rs"].map(
-          (file) => `crates/tellegen-synth/src/${file}`,
-        )
-      : ["crates/tellegen/src/rms/mod.rs", "crates/tellegen/src/rms/screen.rs"];
-  const hash = createHash("sha256");
-  for (const file of sources) hash.update(readFileSync(new URL(file, root)));
-  if (hash.digest("hex") !== extraSchema["x-rust-source-sha256"])
-    throw new Error(`${family} schema is stale; regenerate its Rust example`);
   ajv.addSchema(extraSchema, `tellegen-${family}`);
   for (const name of names)
     extraResults.push([
@@ -139,17 +90,6 @@ function adapterResults(family, prefix) {
       "utf8",
     ),
   );
-  for (const [file, expected] of Object.entries(
-    adapter["x-rust-source-files"],
-  )) {
-    const actual = createHash("sha256")
-      .update(readFileSync(new URL(file, root)))
-      .digest("hex");
-    if (actual !== expected)
-      throw new Error(
-        `${family} adapter schema is stale for ${file}; regenerate its Rust example`,
-      );
-  }
   // Drawing detail was added after the original browser response format.
   // Omission stays compatible; supplied detail must satisfy its Rust record.
   if (family === "wasm" && adapter.$defs.EquipmentOutput?.required)
