@@ -24,7 +24,7 @@ COPY crates /build/crates
 # at the default wasm target, so it validates on Safari. Mirrors the `wasm`
 # script in packages/engine/package.json, including the places table the
 # generator reads beside the module.
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth,rms,rms-experimental,powerio-collections \
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth,rms,rms-experimental,protection,powerio-collections \
     && mkdir -p /out/data \
     && cp /build/crates/tellegen-synth/data/populated_places.json /out/data/
 
