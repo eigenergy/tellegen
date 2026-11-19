@@ -642,18 +642,28 @@ impl DynSystem {
         let dead = self.dead_buses();
         let mut gs = self.ac.gs.clone();
         let mut bs = self.ac.bs.clone();
-        for b in 0..self.n {
-            let mut extra = self.fault_y[b] + self.loads[b].admittance();
-            // A bus in an island without a live unit holds 0 V (a unit
-            // shunt keeps its rows regular).
-            if dead[b] {
-                extra += C64::new(1.0, 0.0);
+        let mut extra: Vec<C64> = (0..self.n)
+            .map(|b| {
+                let y = self.fault_y[b] + self.loads[b].admittance();
+                // A bus in an island without a live unit holds 0 V (a unit
+                // shunt keeps its rows regular).
+                if dead[b] {
+                    y + C64::new(1.0, 0.0)
+                } else {
+                    y
+                }
+            })
+            .collect();
+        // One pass in source order, so each bus adds its sources in the
+        // order a per-bus search of the list would.
+        for s in &self.sources {
+            if let Some(y) = extra.get_mut(s.bus) {
+                *y += s.y;
             }
-            for s in self.sources.iter().filter(|s| s.bus == b) {
-                extra += s.y;
-            }
-            gs[b] += extra.re;
-            bs[b] += extra.im;
+        }
+        for (b, y) in extra.iter().enumerate() {
+            gs[b] += y.re;
+            bs[b] += y.im;
         }
         let y = self.branches.calc_admittance_matrix(self.n, &gs, &bs);
         let mut entries: std::collections::BTreeMap<(usize, usize), C64> =
