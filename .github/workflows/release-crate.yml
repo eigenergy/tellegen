@@ -120,6 +120,12 @@ jobs:
         run: release-plz update
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # release-plz packages the crate at earlier commits, which downloads
+          # every dependency with no cache. Twice in one day a download failed
+          # with "Error in the HTTP2 framing layer" and stopped the release.
+          # Download one file per connection and retry more.
+          CARGO_HTTP_MULTIPLEXING: "false"
+          CARGO_NET_RETRY: "10"
       # release-plz sees a merged pull request as "Merge pull request #N" and
       # can miss one entirely. Replace the body of the section it wrote with one
       # entry per pull request that changed the crate, read from the merge
