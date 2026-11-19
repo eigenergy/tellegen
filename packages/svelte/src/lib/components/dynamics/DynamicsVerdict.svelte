@@ -1,4 +1,7 @@
 <script lang="ts">
+	/** The verdict of a run: a word and an icon first, then the numbers and
+	 * the checks of the engine's screening, and the details.
+	 * @block Verdict */
 	import type { DynRunRecord } from '../../dynamics/controller.svelte.js';
 	import { getController, getUiConfig } from '../../context.svelte.js';
 	import { announcement, checks, details, headline, stats } from '../../dynamics/verdict.js';

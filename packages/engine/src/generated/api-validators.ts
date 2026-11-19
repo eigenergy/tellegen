@@ -12162,7 +12162,7 @@ validate306.evaluated = {"props":{"max_speed_drift":true,"max_voltage_drift":tru
 
 export const rms_library = validate307;
 const schema132 = {"items":{"$ref":"#/$defs/LibraryModel"},"type":"array"};
-const schema109 = {"description":"One model of the library: role, PSS/E name, what it is, typical\nparameters (PSS/E order, on the machine base), and how the engines run it.","properties":{"engines":{"description":"The RMS engine's representation.","type":"string"},"label":{"type":"string"},"name":{"type":"string"},"role":{"description":"`machine`, `exciter`, `governor`, `stabilizer` or `inverter`.","type":"string"}},"required":["role","name","label","engines"],"type":"object"};
+const schema109 = {"description":"One model of the library: role, PSS/E name, what it is, typical\nparameters (PSS/E order, on the machine base), and how the engines run it.","properties":{"engines":{"description":"The RMS engine's representation.","type":"string"},"label":{"type":"string"},"name":{"type":"string"},"role":{"description":"`machine`, `exciter`, `governor`, `stabilizer`, `inverter` (a whole\ninverter-based unit), or one part of an inverter-based unit:\n`converter`, `electrical` (electrical control) or `plant` (plant\ncontroller).","type":"string"}},"required":["role","name","label","engines"],"type":"object"};
 
 function validate262(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
 let vErrors = null;

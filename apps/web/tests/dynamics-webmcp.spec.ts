@@ -11,7 +11,8 @@ const example = (name: string) =>
 
 test.setTimeout(180_000);
 
-// Dynamics is experimental: turn on Settings → Experimental features.
+// Settings → Experimental features is on here as in the Dynamics tests; the
+// tool itself is always registered.
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(() =>
 		localStorage.setItem(

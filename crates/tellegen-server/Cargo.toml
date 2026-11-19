@@ -34,6 +34,10 @@ tower-http = { version = "0.7", features = ["fs", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+[build-dependencies]
+# Draws the RMS block diagram from the engine's code at build time (build.rs).
+tellegen-blocks = { path = "../tellegen-blocks" }
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 sha2 = "0.11"

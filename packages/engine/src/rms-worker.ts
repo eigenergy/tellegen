@@ -10,6 +10,7 @@ import type {
   RmsWorkerRequest,
   RmsWorkerResponse,
 } from "./rms-protocol.js";
+import { clearLiveSessions, executeTool } from "./rms-tools-worker.js";
 import * as wasm from "./wasm-pkg/tellegen.js";
 
 type Wasm = typeof wasm;
@@ -121,6 +122,8 @@ async function execute(
         throw new Error("the model library is not in this engine build");
       return { value: x.rms_library(), transfer: [] };
     }
+    default:
+      return executeTool(mod, req);
   }
 }
 
@@ -139,6 +142,7 @@ scope.onmessage = async (ev: MessageEvent<RmsWorkerRequest>) => {
     scope.postMessage({ id: req.id, ok: false, error: errorText(e), fatal });
     if (fatal) {
       cases.clear();
+      clearLiveSessions();
       ready = null;
       scope.close();
     }

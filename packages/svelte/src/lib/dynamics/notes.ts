@@ -1,7 +1,8 @@
 /** The engine's notes, grouped for reading. Grouping is a convenience: every
  * note keeps its text verbatim and each lands in exactly one group, in the
  * engine's order. The patterns are conservative; anything they do not match
- * is "Other". Pure. */
+ * is "Other". Pure.
+ * @block Engine notes */
 
 export interface NoteGroup {
 	id: 'not_simulated' | 'held' | 'limit' | 'reactive' | 'other';

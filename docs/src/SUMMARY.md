@@ -13,6 +13,7 @@
 - [Network diagrams and layout](transmission-diagrams.md)
 - [Generate a grid](synthetic-generation.md)
 - [Dynamic simulation and models](dynamics.md)
+  - [Block diagrams from the code](block-docs.md)
 - [Agent tools in the browser](webmcp.md)
 - [Architecture](architecture.md)
 - [Validation methods and references](validation.md)

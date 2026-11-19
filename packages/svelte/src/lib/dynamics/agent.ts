@@ -1,6 +1,7 @@
 /** `simulate_dynamics` for agents: element ids as an agent writes them,
  * resolved against the case's inspection, and a compact summary of the
- * screened run that fits the WebMCP output budget. Pure. */
+ * screened run that fits the WebMCP output budget. Pure.
+ * @block Agent tool: simulate dynamics */
 
 import type { RmsInspection, RmsRun } from '@tellegen/engine';
 import {

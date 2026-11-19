@@ -123,14 +123,37 @@ export interface RmsMode {
   participation: { state: string; factor: number }[];
 }
 
+/** One frequency response of the linearized system. */
+export interface RmsBodeCurve {
+  label: string;
+  freq_hz: number[];
+  mag_db: number[];
+  phase_deg: number[];
+}
+
 export interface RmsLinearResult {
   states: string[];
   modes: RmsMode[];
-  bode: unknown[];
+  bode: RmsBodeCurve[];
+}
+
+/** A frequency response to compute: from a unit's reference to a unit's
+ * (or bus's) output. */
+export interface RmsBodeSpec {
+  input_bus: number;
+  input_machine?: string;
+  input: "v_ref" | "p_ref";
+  output: "omega" | "delta" | "efd" | "pe" | "vm";
+  output_bus: number;
+  output_machine?: string;
 }
 
 export interface RmsLinearRequest {
   participation_top?: number;
+  bode?: RmsBodeSpec[];
+  f_min?: number;
+  f_max?: number;
+  points?: number;
 }
 
 /** Thrown when an experimental tool is not in this engine build. */
@@ -264,6 +287,18 @@ function rmsHost(): RmsHost {
 export function setRmsWorkerFactory(factory: RmsWorkerFactory | null): void {
   host?.terminate(new Error("the RMS worker was replaced"));
   host = new RmsHost(factory ?? defaultFactory);
+}
+
+/** A call to the RMS worker (rms-tools.ts). `generation` changes when the
+ * worker was replaced, which ends its live sessions. */
+export function rmsCall(
+  op: RmsWorkerOp,
+  opts: { signal?: AbortSignal } = {},
+): Promise<{ value: unknown; workerMs: number }> {
+  return rmsHost().call(op, opts);
+}
+export function rmsGeneration(): number {
+  return rmsHost().generation;
 }
 
 // ---- API -------------------------------------------------------------------

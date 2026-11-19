@@ -1,5 +1,7 @@
 //! The elements of a prepared RMS system, numbered as the engine numbers
 //! them, and a view of the electrical quantities of a state.
+//!
+//! @block Topology and measurements
 
 use powerio::BalancedNetwork;
 use serde::{Deserialize, Serialize};
@@ -79,6 +81,7 @@ pub struct TopoUnit {
 }
 
 /// The simulation's elements, dense indices as the engine numbers them.
+// @block Topology
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Topology {
     pub sbase: f64,
@@ -138,6 +141,7 @@ impl Topology {
 
 /// The elements of a prepared system: devices, then sources, then held
 /// (inverter) units.
+// @block Number the elements
 pub(crate) fn topology(network: &BalancedNetwork, sys: &DynSystem, x0: &[f64]) -> Topology {
     let base_kv: Vec<f64> = sys
         .bus_numbers
@@ -249,6 +253,7 @@ pub(crate) fn topology(network: &BalancedNetwork, sys: &DynSystem, x0: &[f64]) -
 
 /// Bus voltages and unit currents of the state `x` at `t` (system per unit,
 /// units in [`Topology`] order).
+// @block Measurements
 pub(crate) struct RmsMeasure<'a> {
     sys: &'a DynSystem,
     x: &'a [f64],
@@ -328,6 +333,7 @@ pub(crate) fn trip_held(sys: &mut DynSystem, k: usize) {
 /// its buses go dead; and each island newly apart from the reference bus is
 /// named once (it runs at its own frequency, which renewable plants do not
 /// measure: they measure the reference's).
+// @block Switch off dead islands
 pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
     let mut out = Vec::new();
     for e in 0..sys.ac.m {

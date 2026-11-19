@@ -9,6 +9,7 @@ members = [
   "crates/tellegen-acopf-wasi",
   "crates/tellegen-server",
   "crates/tellegen-cli",
+  "crates/tellegen-blocks",
   "crates/tellegen-py",
   "crates/benchmarks",
 ]

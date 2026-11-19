@@ -54,7 +54,9 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 				'inspect_study',
 				'propose_study',
 				'record_study_evidence',
-				'revise_study_goal'
+				'revise_study_goal',
+				// Dynamics is on by default, so its tool is registered too.
+				'simulate_dynamics'
 			].sort()
 		);
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
@@ -432,7 +434,9 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				'inspect_study',
 				'propose_study',
 				'record_study_evidence',
-				'revise_study_goal'
+				'revise_study_goal',
+				// Dynamics is on by default, so its tool is registered too.
+				'simulate_dynamics'
 			].sort()
 		);
 });

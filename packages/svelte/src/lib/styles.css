@@ -746,3 +746,79 @@
 	font-weight: 500;
 	vertical-align: middle;
 }
+
+/* Experimental dynamics tools (unit editor, block diagrams, live workbench,
+   Bode): fields and buttons on the panel paper in both themes. `:where` keeps
+   the specificity at one class, so a component's own rules win. */
+.dyn-form :where(input:not([type='checkbox'], [type='radio'], [type='range']), select, textarea) {
+	min-width: 0;
+	min-height: 24px;
+	padding: 2px 6px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	background: var(--surface-control);
+	color: var(--ink);
+	font: inherit;
+	color-scheme: light;
+}
+:root[data-theme='dark'] .dyn-form :where(input, select, textarea) {
+	color-scheme: dark;
+}
+.dyn-form :where(select option) {
+	background: var(--paper);
+	color: var(--ink);
+}
+.dyn-form :where(input, select, textarea):hover:not(:disabled) {
+	border-color: var(--ink-faint);
+}
+.dyn-form :where(input, select, textarea):focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 1px;
+	border-color: var(--accent);
+}
+.dyn-form :where(input[type='range']) {
+	accent-color: var(--accent);
+}
+.dyn-form :where(button) {
+	min-height: 26px;
+	padding: 3px 10px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	background: var(--surface-control);
+	color: var(--ink);
+	font: inherit;
+	line-height: 1.25;
+	cursor: pointer;
+}
+.dyn-form :where(button.ghost) {
+	border-color: transparent;
+	background: transparent;
+	color: var(--text-secondary);
+}
+.dyn-form :where(button.primary) {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: var(--paper);
+	font-weight: 600;
+}
+.dyn-form :where(button:not(.primary)):hover:not(:disabled) {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--ink);
+}
+.dyn-form :where(button.primary):hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+.dyn-form :where(button):disabled {
+	cursor: default;
+	opacity: 0.55;
+}
+.dyn-form :where(button):focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 1px;
+}
+@media (pointer: coarse) {
+	.dyn-form :where(button, select, input:not([type='checkbox'], [type='radio'])) {
+		min-height: 44px;
+	}
+}

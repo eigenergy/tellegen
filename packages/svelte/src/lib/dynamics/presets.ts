@@ -2,7 +2,8 @@
  * 20 s runs at a 5 ms step on the network with the validation study's loads,
  * under the options that simulate what PowerSimulationsDynamics.jl 0.16.2
  * simulates. A run is "validated" only when all of that holds; the badge
- * names whatever differs. Pure. */
+ * names whatever differs. Pure.
+ * @block Validated WECC 240 scenarios */
 
 import type { RmsCaseOptions } from '@tellegen/engine';
 import { busFault, branchTrip, generatorTrip, type DynEvent } from './events.js';

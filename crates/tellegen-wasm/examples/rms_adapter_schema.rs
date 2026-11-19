@@ -9,6 +9,7 @@ fn main() {
         "crates/tellegen-wasm/examples/rms_adapter_schema.rs",
         "crates/tellegen-wasm/src/rms.rs",
         "crates/tellegen/src/rms/mod.rs",
+        "crates/tellegen/src/rms/api.rs",
         "crates/tellegen/src/rms/screen.rs",
         "crates/tellegen/src/rms/linear.rs",
         "crates/tellegen/src/rms/library.rs",
