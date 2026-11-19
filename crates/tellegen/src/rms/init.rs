@@ -90,7 +90,8 @@ pub(crate) fn build(
     let sbase = network.base_mva();
     let f0 = network.base_frequency();
     let bus_numbers: Vec<usize> = ac.bus_ids.clone();
-    let dense = |number: usize| bus_numbers.iter().position(|&b| b == number);
+    let bus_index = super::system::bus_index(&bus_numbers);
+    let dense = |number: usize| bus_index.get(&number).copied();
     let v: Vec<C64> = (0..n)
         .map(|b| C64::from_polar(pf.vm[b], pf.va[b]))
         .collect();
@@ -593,6 +594,7 @@ pub(crate) fn build(
     let mut sys = DynSystem {
         n,
         bus_numbers,
+        bus_index,
         sbase,
         f0,
         ac,
@@ -733,14 +735,23 @@ pub(crate) fn power_flow(
 /// case's operating point. Returns the number of such terminals.
 pub(crate) fn hold_remote_regulators(net: &BalancedNetwork, ac: &mut AcNetwork) -> usize {
     let mut held = 0;
+    // Built on the first remote regulator: most cases have none.
+    let mut index = None;
     for g in net.generators().iter().filter(|g| g.in_service) {
         if g.regulated_bus.is_none_or(|r| r == g.bus) {
             continue;
         }
-        let Some(k) = ac.bus_ids.iter().position(|&b| b == g.bus.0) else {
+        let (dense, rows) = index.get_or_insert_with(|| {
+            let ids: Vec<usize> = net.buses().iter().map(|b| b.id.0).collect();
+            (
+                super::system::bus_index(&ac.bus_ids),
+                super::system::bus_index(&ids),
+            )
+        });
+        let Some(&k) = dense.get(&g.bus.0) else {
             continue;
         };
-        let Some(bus) = net.buses().iter().find(|b| b.id == g.bus) else {
+        let Some(bus) = rows.get(&g.bus.0).map(|&row| &net.buses()[row]) else {
             continue;
         };
         if bus.vm > 0.0 && ac.vm_set[k] != bus.vm {

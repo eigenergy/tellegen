@@ -8,6 +8,8 @@
 //! current balance `Σ I_injected − Y V = 0` in system per unit, and each
 //! generator adds its stator current to its bus rows.
 
+use std::collections::HashMap;
+
 use num_complex::Complex;
 
 use powerio::electrical::{calc_squared_voltage_admittance, calc_voltage_power_term};
@@ -551,6 +553,8 @@ impl HeldUnit {
 pub(crate) struct DynSystem {
     pub n: usize,
     pub bus_numbers: Vec<usize>,
+    /// Dense index of each bus number in `bus_numbers` ([`bus_index`]).
+    pub bus_index: HashMap<usize, usize>,
     pub sbase: f64,
     pub f0: f64,
     /// The static network. Its PowerIO branch columns (`ac.branches`) are the
@@ -1059,8 +1063,18 @@ impl DynSystem {
     }
 
     pub(crate) fn dense_bus(&self, number: usize) -> Option<usize> {
-        self.bus_numbers.iter().position(|&b| b == number)
+        self.bus_index.get(&number).copied()
     }
+}
+
+/// Dense index of each bus number in `numbers`; the first position wins for
+/// a repeated number, as a linear search from the front would find it.
+pub(crate) fn bus_index(numbers: &[usize]) -> HashMap<usize, usize> {
+    let mut index = HashMap::with_capacity(numbers.len());
+    for (k, &number) in numbers.iter().enumerate() {
+        index.entry(number).or_insert(k);
+    }
+    index
 }
 
 /// The forward-difference step for a variable at `x`: [`FD_REL`] `· max(|x|, 1)`,
