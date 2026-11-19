@@ -108,5 +108,19 @@ describe("durable Study controller", () => {
     await controller.applyApprovedProposal(token);
     expect(controller.bundle.document.applied_state).toBe("candidate");
   });
+  it("copies the Study once per change and keeps the copy apart from its own", async () => {
+    const store = new Store(), engine = backend();
+    const controller = await StudyDocumentController.create(input, store, engine);
+    const first = controller.bundle;
+    expect(controller.bundle).toBe(first);
+    first.document.title = "Edited outside";
+    expect(controller.export()).not.toContain("Edited outside");
+    await controller.execute({ expected_revision: 0, operation: { kind: "inspect", state: "candidate" } });
+    const second = controller.bundle;
+    expect(second).not.toBe(first);
+    expect(second.document.revision).toBe(1);
+    expect(second.document.title).toBe("Study");
+    expect(controller.bundle).toBe(second);
+  });
 
 });

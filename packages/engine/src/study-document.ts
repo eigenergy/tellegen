@@ -258,6 +258,7 @@ export class StudyDocumentController {
   #backend: StudyBackend;
   #queue: Promise<unknown> = Promise.resolve();
   #approvals = new Map<string, Approval>();
+  #copy: { source: StudyBundle; value: StudyBundle } | null = null;
 
   private constructor(bundle: StudyBundle, store: StudyStore, backend: StudyBackend) {
     this.#bundle = bundle; this.#store = store; this.#backend = backend;
@@ -277,7 +278,13 @@ export class StudyDocumentController {
     const bundle = await backend.validate(text); await store.create(bundle);
     return new StudyDocumentController(bundle, store, backend);
   }
-  get bundle(): StudyBundle { return structuredClone(this.#bundle); }
+  /** A copy of the current Study, separate from the controller's own. The copy
+   * is made once per change and returned again until the Study next changes,
+   * so treat it as read-only. */
+  get bundle(): StudyBundle {
+    if (this.#copy?.source !== this.#bundle) this.#copy = { source: this.#bundle, value: structuredClone(this.#bundle) };
+    return this.#copy.value;
+  }
   export(): string { return JSON.stringify(this.#bundle); }
 
   execute(request: StudyRequest, signal?: AbortSignal): Promise<StudyOperationResult> {
