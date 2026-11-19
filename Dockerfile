@@ -58,17 +58,10 @@ COPY packages/webmcp packages/webmcp
 COPY packages/analytics packages/analytics
 COPY examples/browser-minimal examples/browser-minimal
 COPY examples/svelte-minimal examples/svelte-minimal
-# `types:check` (run by build:engine) reads the Rust records the generated
-# TypeScript mirrors, plus the shared result schemas and MCP argument schema.
-COPY crates/tellegen/src crates/tellegen/src
-COPY crates/tellegen/examples/api_schema.rs crates/tellegen/examples/api_schema.rs
-COPY crates/tellegen-server/src/lib.rs crates/tellegen-server/src/lib.rs
-COPY crates/tellegen-server/src/distribution.rs crates/tellegen-server/src/distribution.rs
-COPY crates/tellegen-server/examples/http_schema.rs crates/tellegen-server/examples/http_schema.rs
+# `types:check` (run by build:engine) reads three Rust files for the enum
+# names in api-types.ts, and the MCP argument schema it also writes.
+COPY crates/tellegen/src/api.rs crates/tellegen/src/dc_formula.rs crates/tellegen/src/error.rs crates/tellegen/src/
 COPY python/tellegen/mcp/_engine_schema.json python/tellegen/mcp/_engine_schema.json
-COPY crates/tellegen-synth/src crates/tellegen-synth/src
-COPY crates/tellegen-wasm/src crates/tellegen-wasm/src
-COPY crates/tellegen-wasm/examples crates/tellegen-wasm/examples
 # The WECC 240 dynamics demo: apps/web copies it into static/examples at build.
 COPY crates/tellegen/tests/data/rms_examples/wecc240 crates/tellegen/tests/data/rms_examples/wecc240
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
