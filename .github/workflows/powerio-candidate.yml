@@ -2,14 +2,17 @@ name: PowerIO Candidate
 
 # Run this before a PowerIO release to exercise Tellegen's Rust, WebAssembly,
 # WebMCP, and browser surfaces against the exact proposed commit.
+#
+# A pull request runs it only when it changes this workflow or the pin script.
+# A pull request that changes Cargo.lock or Cargo.toml does not: CI already runs
+# every gate below against the committed lockfile, and this job repeating them
+# one after another took 30 to 40 minutes.
 on:
   pull_request:
     paths:
       - .github/scripts/powerio-pin.py
       - .github/scripts/test-powerio-pin.py
       - .github/workflows/powerio-candidate.yml
-      - Cargo.lock
-      - Cargo.toml
   workflow_dispatch:
     inputs:
       powerio_ref:
