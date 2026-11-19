@@ -17,6 +17,7 @@
 		setUnitModel,
 		type BlockGraph,
 		type GraphSlot,
+		type InverterPart,
 		type ModelOverride,
 		type ModelRole
 	} from '@tellegen/engine';
@@ -106,13 +107,28 @@
 			await dyn.editDynamics(t, withoutUnit());
 		});
 	const setModel = (role: ModelRole, model: string) =>
-		act(`${role} ${model || 'removed'}`, async () => {
+		act(`${PART_LABEL[role as InverterPart] ?? role} ${model || 'removed'}`, async () => {
 			if (!unit) return;
+			// A controller graph belongs to a machine's control slot; the parts of
+			// an inverter carry none.
+			const slot = (['exciter', 'governor', 'stabilizer'] as string[]).includes(role);
 			await dyn.editDynamics(
 				await setUnitModel(text(), unit.bus, unit.machine_id, role, model || null),
-				role === 'machine' ? undefined : withoutSlot(role as GraphSlot)
+				slot ? withoutSlot(role as GraphSlot) : undefined
 			);
 		});
+
+	// ----- inverter parts -----
+	const PARTS: InverterPart[] = ['converter', 'electrical', 'plant'];
+	const PART_LABEL: Record<InverterPart, string> = {
+		converter: 'Converter',
+		electrical: 'Electrical control',
+		plant: 'Plant control'
+	};
+	const inverterRecords = $derived(unit?.inverter_records ?? []);
+	/** Every record whose parameters the editor shows: machine and controls,
+	 * then the inverter parts. */
+	const paramRecords = $derived(unit ? [...unit.records, ...inverterRecords] : []);
 	let presetId = $state('');
 	const applyPreset = () =>
 		act('Published unit', async () => {
@@ -128,7 +144,7 @@
 	// Drafts belong to the records they were typed against: another unit, or
 	// any change of this unit's records (a model swapped, a preset, an edit
 	// applied), clears them, so no draft lands on a parameter that moved.
-	const signature = $derived(unit ? recordsSignature(unit.records) : '');
+	const signature = $derived(unit ? recordsSignature(paramRecords) : '');
 	$effect(() => {
 		void unitKey;
 		void signature;
@@ -148,7 +164,7 @@
 			if (!unit) return;
 			// Blank or non-numeric input is refused with the parameter named;
 			// the drafts stay for correction.
-			const { edits, errors } = parseDrafts(draft, unit.records);
+			const { edits, errors } = parseDrafts(draft, paramRecords);
 			if (errors.length) throw new Error(errors.join('; '));
 			if (edits.length) await dyn.editDynamics(await editDyr(text(), edits));
 			draft = {};
@@ -326,14 +342,73 @@
 				</tbody>
 			</table>
 			</section>
+		{/if}
 
+		{#if inverterRecords.length}
+			{@const converter = inverterRecords.find((r) => r.role === 'converter')}
+			{@const chain = PARTS.map((p) => inverterRecords.find((r) => r.role === p)?.model ?? '')}
+			{@const others = inverterRecords.filter((r) => r.role === 'inverter')}
+			<section class="card" data-testid="dyn-inverter-models">
+				<h5>Models</h5>
+				<table class="roles">
+					<tbody>
+						{#each PARTS as part (part)}
+							{@const rec = inverterRecords.find((r) => r.role === part)}
+							{@const offered = catalog.ofRole(part)}
+							<tr>
+								<th>{PART_LABEL[part]}</th>
+								<td>
+									<select
+										value={rec?.model ?? ''}
+										disabled={busy || !converter}
+										aria-label={PART_LABEL[part]}
+										onchange={(e) => setModel(part, e.currentTarget.value)}
+									>
+										{#if part === 'plant'}<option value="">none (constant current)</option
+											>{:else if !rec}<option value="" disabled>missing</option>{/if}
+										{#if rec && !offered.some((m) => m.name === rec.model)}<option
+												value={rec.model}
+												disabled>{rec.model} (not simulated)</option
+											>{/if}
+										{#each offered as m (m.name)}<option value={m.name} title={m.label}
+												>{m.name}</option
+											>{/each}
+									</select>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				{#if others.length}
+					<p class="dim">
+						Other inverter records (not simulated): {others.map((r) => r.model).join(', ')}.
+					</p>
+				{/if}
+				<p class="dim hint-below">
+					{#if chain.join(' ') === 'REGCA1 REECB1 REPCA1'}
+						Simulated as a renewable plant (REGCA1 + REECB1 + REPCA1).
+					{:else if chain[0] === 'REGCA1' && chain[1] === 'REECB1' && !chain[2]}
+						Without a plant controller the unit is a constant current at its power-flow
+						output; add REPCA1 to simulate the plant.
+					{:else}
+						tellegen simulates the chain REGCA1 + REECB1 + REPCA1; with other models the unit
+						holds its power-flow output.
+					{/if}
+				</p>
+			</section>
+		{/if}
+
+		{#if paramRecords.some((r) => r.parameters.length)}
 			<section class="card">
 				<h5>Parameters</h5>
-				{#each unit.records as r (r.line)}
+				{#each paramRecords.filter((r) => r.parameters.length) as r (r.line)}
 					<details class="rec">
 						<summary
 							><span class="model">{r.model}</span>
-							<span class="meta">{r.role} · line {r.line} · {r.parameters.length}</span></summary
+							<span class="meta"
+								>{PART_LABEL[r.role as InverterPart] ?? r.role} · line {r.line} · {r.parameters
+									.length}</span
+							></summary
 						>
 						<div class="params">
 							{#each r.parameters as p, i (i)}
@@ -364,10 +439,11 @@
 					</div>
 				{/if}
 			</section>
-		{:else if unit.inverter.length}
-			<p class="dim">Inverter records: {unit.inverter.join(', ')}.</p>
-		{:else}
+		{/if}
+		{#if kind === 'static'}
 			<p class="dim">The unit holds its power-flow output. Add models above to simulate it.</p>
+		{:else if unit.inverter.length && !inverterRecords.length}
+			<p class="dim">Inverter records: {unit.inverter.join(', ')}.</p>
 		{/if}
 		{#if busy}<p class="dim" role="status">Initializing…</p>{/if}
 		{#if note}<p class="ok" role="status">{note}</p>{/if}
@@ -473,6 +549,9 @@
 	}
 	.hint {
 		margin-bottom: 6px;
+	}
+	.hint-below {
+		margin-top: 6px;
 	}
 	.meta,
 	.dim {

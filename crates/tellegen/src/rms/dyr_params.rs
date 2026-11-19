@@ -393,7 +393,379 @@ const SCHEMA: &[(&str, &[Param])] = &[
             ),
         ],
     ),
+    // The inverter-based plant (WECC generic renewable models), in the order
+    // the engine reads them (`renewable.rs`: PowerSystems.jl's DYR mapping).
+    (
+        "REGCA1",
+        &[
+            Param(
+                "LVPLSW",
+                "Flags",
+                "",
+                "low-voltage power logic on (1) or off (0)",
+            ),
+            Param(
+                "Tg",
+                "Time constants",
+                "s",
+                "converter current time constant",
+            ),
+            Param(
+                "Rrpwr",
+                "Ramps",
+                "pu/s",
+                "active current recovery rate after a fault",
+            ),
+            Param(
+                "Brkpt",
+                "Low-voltage logic",
+                "pu",
+                "LVPL breakpoint voltage",
+            ),
+            Param(
+                "Zerox",
+                "Low-voltage logic",
+                "pu",
+                "LVPL zero-crossing voltage",
+            ),
+            Param(
+                "Lvpl1",
+                "Low-voltage logic",
+                "pu",
+                "LVPL current limit at the breakpoint",
+            ),
+            Param(
+                "Volim",
+                "Current limits",
+                "pu",
+                "voltage limit of the high-voltage reactive current management",
+            ),
+            Param(
+                "Lvpnt1",
+                "Low-voltage logic",
+                "pu",
+                "upper voltage of the active current reduction",
+            ),
+            Param(
+                "Lvpnt0",
+                "Low-voltage logic",
+                "pu",
+                "lower voltage of the active current reduction",
+            ),
+            Param(
+                "Iolim",
+                "Current limits",
+                "pu",
+                "reactive current limit of the high-voltage management",
+            ),
+            Param(
+                "Tfltr",
+                "Time constants",
+                "s",
+                "voltage filter time constant of the LVPL",
+            ),
+            Param(
+                "Khv",
+                "Current limits",
+                "pu",
+                "gain of the high-voltage reactive current management",
+            ),
+            Param("Iqrmax", "Ramps", "pu/s", "reactive current rate up"),
+            Param("Iqrmin", "Ramps", "pu/s", "reactive current rate down"),
+            Param("Accel", "Other", "", "acceleration factor"),
+        ],
+    ),
+    (
+        "REECB1",
+        &[
+            Param(
+                "IREG",
+                "Flags",
+                "",
+                "regulated bus (0: the plant's own terminal)",
+            ),
+            Param(
+                "PFFLAG",
+                "Flags",
+                "",
+                "power factor control (1) or Q control (0)",
+            ),
+            Param(
+                "VFLAG",
+                "Flags",
+                "",
+                "voltage control (1) or Q control (0) of the inner loop",
+            ),
+            Param(
+                "QFLAG",
+                "Flags",
+                "",
+                "closed-loop voltage or Q control (1) or constant pf or Q (0)",
+            ),
+            Param(
+                "PQFLAG",
+                "Flags",
+                "",
+                "P priority (1) or Q priority (0) at the current limit",
+            ),
+            Param(
+                "Vdip",
+                "Voltage dip",
+                "pu",
+                "voltage below which the dip logic acts",
+            ),
+            Param(
+                "Vup",
+                "Voltage dip",
+                "pu",
+                "voltage above which the dip logic acts",
+            ),
+            Param(
+                "Trv",
+                "Time constants",
+                "s",
+                "terminal voltage filter time constant",
+            ),
+            Param("dbd1", "Voltage dip", "pu", "voltage error deadband, low"),
+            Param("dbd2", "Voltage dip", "pu", "voltage error deadband, high"),
+            Param(
+                "Kqv",
+                "Voltage dip",
+                "pu",
+                "reactive current gain during a voltage dip",
+            ),
+            Param(
+                "Iqh1",
+                "Voltage dip",
+                "pu",
+                "reactive current injection maximum",
+            ),
+            Param(
+                "Iql1",
+                "Voltage dip",
+                "pu",
+                "reactive current injection minimum",
+            ),
+            Param(
+                "Vref0",
+                "Reactive control",
+                "pu",
+                "voltage reference (0: the operating voltage)",
+            ),
+            Param(
+                "Tp",
+                "Time constants",
+                "s",
+                "electrical power filter time constant",
+            ),
+            Param("Qmax", "Reactive control", "pu", "reactive power maximum"),
+            Param("Qmin", "Reactive control", "pu", "reactive power minimum"),
+            Param("Vmax", "Reactive control", "pu", "voltage control maximum"),
+            Param("Vmin", "Reactive control", "pu", "voltage control minimum"),
+            Param(
+                "Kqp",
+                "Reactive control",
+                "pu",
+                "reactive power PI, proportional gain",
+            ),
+            Param(
+                "Kqi",
+                "Reactive control",
+                "pu",
+                "reactive power PI, integral gain",
+            ),
+            Param(
+                "Kvp",
+                "Reactive control",
+                "pu",
+                "voltage PI, proportional gain",
+            ),
+            Param("Kvi", "Reactive control", "pu", "voltage PI, integral gain"),
+            Param(
+                "Tiq",
+                "Time constants",
+                "s",
+                "reactive current filter time constant",
+            ),
+            Param("dPmax", "Active control", "pu/s", "active power ramp up"),
+            Param("dPmin", "Active control", "pu/s", "active power ramp down"),
+            Param("Pmax", "Active control", "pu", "active power maximum"),
+            Param("Pmin", "Active control", "pu", "active power minimum"),
+            Param("Imax", "Current limits", "pu", "converter current limit"),
+            Param(
+                "Tpord",
+                "Time constants",
+                "s",
+                "active power order time constant",
+            ),
+        ],
+    ),
+    (
+        "REPCA1",
+        &[
+            Param(
+                "IREG",
+                "Flags",
+                "",
+                "regulated bus (0: the plant's own terminal)",
+            ),
+            Param("from", "Flags", "", "monitored branch, from bus (0: none)"),
+            Param("to", "Flags", "", "monitored branch, to bus (0: none)"),
+            Param("circuit", "Flags", "", "monitored branch circuit"),
+            Param(
+                "VCFlag",
+                "Flags",
+                "",
+                "line drop compensation (1) or reactive droop (0)",
+            ),
+            Param(
+                "RefFlag",
+                "Flags",
+                "",
+                "voltage control (1) or Q control (0)",
+            ),
+            Param("Fflag", "Flags", "", "frequency control on (1) or off (0)"),
+            Param(
+                "Tfltr",
+                "Time constants",
+                "s",
+                "voltage and Q filter time constant",
+            ),
+            Param(
+                "Kp",
+                "Volt/var control",
+                "pu",
+                "volt/var PI, proportional gain",
+            ),
+            Param("Ki", "Volt/var control", "pu", "volt/var PI, integral gain"),
+            Param("Tft", "Time constants", "s", "lead time constant"),
+            Param("Tfv", "Time constants", "s", "lag time constant"),
+            Param(
+                "Vfrz",
+                "Volt/var control",
+                "pu",
+                "voltage below which the volt/var integrator freezes",
+            ),
+            Param(
+                "Rc",
+                "Volt/var control",
+                "pu",
+                "line drop compensation resistance",
+            ),
+            Param(
+                "Xc",
+                "Volt/var control",
+                "pu",
+                "line drop compensation reactance",
+            ),
+            Param("Kc", "Volt/var control", "pu", "reactive droop gain"),
+            Param("emax", "Volt/var control", "pu", "volt/var error maximum"),
+            Param("emin", "Volt/var control", "pu", "volt/var error minimum"),
+            Param(
+                "dbd1",
+                "Volt/var control",
+                "pu",
+                "volt/var error deadband, low",
+            ),
+            Param(
+                "dbd2",
+                "Volt/var control",
+                "pu",
+                "volt/var error deadband, high",
+            ),
+            Param(
+                "Qmax",
+                "Volt/var control",
+                "pu",
+                "plant reactive power maximum",
+            ),
+            Param(
+                "Qmin",
+                "Volt/var control",
+                "pu",
+                "plant reactive power minimum",
+            ),
+            Param(
+                "Kpg",
+                "Frequency control",
+                "pu",
+                "active power PI, proportional gain",
+            ),
+            Param(
+                "Kig",
+                "Frequency control",
+                "pu",
+                "active power PI, integral gain",
+            ),
+            Param(
+                "Tp",
+                "Time constants",
+                "s",
+                "active power filter time constant",
+            ),
+            Param(
+                "fdbd1",
+                "Frequency control",
+                "pu",
+                "frequency deadband, low",
+            ),
+            Param(
+                "fdbd2",
+                "Frequency control",
+                "pu",
+                "frequency deadband, high",
+            ),
+            Param(
+                "femax",
+                "Frequency control",
+                "pu",
+                "frequency error maximum",
+            ),
+            Param(
+                "femin",
+                "Frequency control",
+                "pu",
+                "frequency error minimum",
+            ),
+            Param(
+                "Pmax",
+                "Frequency control",
+                "pu",
+                "plant active power maximum",
+            ),
+            Param(
+                "Pmin",
+                "Frequency control",
+                "pu",
+                "plant active power minimum",
+            ),
+            Param(
+                "Tlag",
+                "Time constants",
+                "s",
+                "active power order lag time constant",
+            ),
+            Param(
+                "Ddn",
+                "Frequency control",
+                "pu",
+                "droop gain, over-frequency",
+            ),
+            Param(
+                "Dup",
+                "Frequency control",
+                "pu",
+                "droop gain, under-frequency",
+            ),
+        ],
+    ),
 ];
+
+/// The number of parameters of `model` the editor names, if it knows it.
+#[cfg(test)]
+pub(crate) fn param_count(model: &str) -> Option<usize> {
+    names(model).map(<[_]>::len)
+}
 
 fn names(model: &str) -> Option<&'static [Param]> {
     let m = model.trim().to_ascii_uppercase();
@@ -418,7 +790,9 @@ pub struct DyrRecordView {
     /// First line of the record in the file (1-based); edits name it.
     pub line: usize,
     pub model: String,
-    /// `machine`, `exciter`, `governor` or `stabilizer`.
+    /// `machine`, `exciter`, `governor` or `stabilizer`; for an inverter
+    /// record `converter`, `electrical`, `plant` or `inverter` (another
+    /// inverter record).
     pub role: String,
     pub parameters: Vec<DyrParameter>,
 }
@@ -437,9 +811,14 @@ pub struct DyrGeneratorView {
     pub vg: f64,
     /// Linked records (machine, exciter, governor, stabilizer).
     pub records: Vec<DyrRecordView>,
-    /// Inverter-based resource records of the unit (REGCA1, REECB1, ...),
-    /// kept and not simulated in RMS.
+    /// Inverter-based resource records of the unit (REGCA1, REECB1, ...) by
+    /// model name. RMS simulates a REGCA1 + REECB1 + REPCA1 chain as a plant
+    /// and keeps other inverter records at the power flow output.
     pub inverter: Vec<String>,
+    /// The same records with their parts and named parameters (converter,
+    /// electrical control, plant controller, in that order).
+    #[serde(default)]
+    pub inverter_records: Vec<DyrRecordView>,
 }
 
 /// One parameter edit: record line, parameter index (0-based, PSS/E order),
@@ -479,26 +858,45 @@ pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGe
             let Some(pnames) = names(&model) else {
                 continue;
             };
-            let parameters = rec
-                .parameters()
-                .iter()
-                .zip(pnames.iter())
-                .map(|(t, p)| DyrParameter {
-                    name: p.0.to_string(),
-                    text: t.trim().to_string(),
-                    value: t.trim().parse().unwrap_or(f64::NAN),
-                    group: p.1.to_string(),
-                    unit: p.2.to_string(),
-                    description: p.3.to_string(),
-                })
-                .collect();
             records.push(DyrRecordView {
                 line,
                 model,
                 role: role.to_string(),
-                parameters,
+                parameters: parameters(rec, pnames),
             });
         }
+        // The inverter records of the unit, each as one part of the plant
+        // (converter, electrical control, plant controller, or another
+        // inverter record), in chain order; a model the editor has no names
+        // for comes with no parameters.
+        let mut inverter_records: Vec<DyrRecordView> = dyr
+            .records()
+            .iter()
+            .filter(|r| {
+                r.bus_id().is_some_and(|b| b as usize == m.bus.0)
+                    && r.device_id()
+                        .unwrap_or("1")
+                        .trim()
+                        .eq_ignore_ascii_case(m.machine_id.trim())
+                    && super::library::is_inverter(r.model_name())
+            })
+            .map(|r| {
+                let model = r.model_name().trim().to_ascii_uppercase();
+                DyrRecordView {
+                    line: r.line(),
+                    role: super::library::inverter_part(&model).to_string(),
+                    parameters: names(&model).map_or_else(Vec::new, |p| parameters(r, p)),
+                    model,
+                }
+            })
+            .collect();
+        let order = |role: &str| {
+            super::library::INVERTER_PARTS
+                .iter()
+                .position(|p| *p == role)
+                .unwrap_or(usize::MAX)
+        };
+        inverter_records.sort_by_key(|r| (order(&r.role), r.line));
         let inverter = linking
             .issues
             .iter()
@@ -525,9 +923,26 @@ pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGe
             vg: g.vg,
             records,
             inverter,
+            inverter_records,
         });
     }
     out
+}
+
+/// The values of `rec` named by `pnames`, in record order.
+fn parameters(rec: &DynamicRecord, pnames: &[Param]) -> Vec<DyrParameter> {
+    rec.parameters()
+        .iter()
+        .zip(pnames.iter())
+        .map(|(t, p)| DyrParameter {
+            name: p.0.to_string(),
+            text: t.trim().to_string(),
+            value: t.trim().parse().unwrap_or(f64::NAN),
+            group: p.1.to_string(),
+            unit: p.2.to_string(),
+            description: p.3.to_string(),
+        })
+        .collect()
 }
 
 /// Byte spans of a record's fields: separated by whitespace or commas, a
@@ -743,9 +1158,28 @@ mod tests {
         let dyr = powerio::parse_dyr(&text).unwrap();
         let views = dyr_parameters(net, &dyr);
         assert!(!views.is_empty());
+        // A renewable plant: its three records as parts with named parameters.
+        let plant = views
+            .iter()
+            .find(|g| g.bus == 1032 && g.machine_id.trim() == "S")
+            .unwrap();
+        let parts: Vec<(&str, &str, usize)> = plant
+            .inverter_records
+            .iter()
+            .map(|r| (r.role.as_str(), r.model.as_str(), r.parameters.len()))
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                ("converter", "REGCA1", 15),
+                ("electrical", "REECB1", 30),
+                ("plant", "REPCA1", 34)
+            ]
+        );
+        assert_eq!(plant.inverter_records[1].parameters[28].name, "Imax");
         let mut edited = 0;
         for g in &views {
-            for r in &g.records {
+            for r in g.records.iter().chain(&g.inverter_records) {
                 let k = r.parameters.len() - 1;
                 let value = r.parameters[k].value + 0.25;
                 let out = dyr_edit(
