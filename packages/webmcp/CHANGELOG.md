@@ -1,5 +1,11 @@
 # @tellegen/webmcp
 
+## 0.4.2
+
+### Patch Changes
+
+- [#436](https://github.com/eigenergy/tellegen/pull/436) [`16b60f3`](https://github.com/eigenergy/tellegen/commit/16b60f32e23aa32f03cc2729bfca0f9316e463f9) Thanks [@samtalki](https://github.com/samtalki)! - Decide an infeasible solve from the engine's error code and a permanent wasm load failure from the error type, reading the message text only when those are missing. Reading a Study's `bundle` or the journal's `records` copies less, and `@tellegen/svelte` exports the `plain` and `signed` number formatters.
+
 ## 0.4.1
 
 ### Patch Changes

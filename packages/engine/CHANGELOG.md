@@ -1,5 +1,13 @@
 # @tellegen/engine
 
+## 0.10.2
+
+### Patch Changes
+
+- [#436](https://github.com/eigenergy/tellegen/pull/436) [`16b60f3`](https://github.com/eigenergy/tellegen/commit/16b60f32e23aa32f03cc2729bfca0f9316e463f9) Thanks [@samtalki](https://github.com/samtalki)! - Decide an infeasible solve from the engine's error code and a permanent wasm load failure from the error type, reading the message text only when those are missing. Reading a Study's `bundle` or the journal's `records` copies less, and `@tellegen/svelte` exports the `plain` and `signed` number formatters.
+
+- [#433](https://github.com/eigenergy/tellegen/pull/433) [`9411a0b`](https://github.com/eigenergy/tellegen/commit/9411a0b1cd70c931e52e1f8fe99f2c46bc5feddb) Thanks [@samtalki](https://github.com/samtalki)! - The multiconductor power flow imports OpenDSS cases with disabled lines and closed fuses, settles voltages where very short lines meet ordinary ones, and checks each transformer and load once per import. The multiconductor OPF result fills PowerIO's per coil generator dispatch. Requires PowerIO 0.12.3.
+
 ## 0.10.1
 
 ### Patch Changes

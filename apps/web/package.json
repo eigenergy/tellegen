@@ -30,8 +30,8 @@
 		"@deck.gl/layers": "^9.4.1",
 		"@deck.gl/maplibre": "^9.4.1",
 		"@tellegen/analytics": "^0.1.0",
-		"@tellegen/svelte": "^0.10.1",
-		"@tellegen/webmcp": "^0.4.1",
+		"@tellegen/svelte": "^0.10.2",
+		"@tellegen/webmcp": "^0.4.2",
 		"maplibre-gl": "^6.17.0"
 	},
 	"devDependencies": {
