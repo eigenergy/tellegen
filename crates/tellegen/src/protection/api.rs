@@ -2,6 +2,8 @@
 //! browser and the model-building tools. Each takes the case options last
 //! (`load_model` and the RMS options, as the app prepares its case; empty:
 //! constant-impedance loads and the defaults).
+//!
+//! @block Browser entry points
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,11 @@ use super::setting::{
 use super::testing::{standard_suite, ProtectionTest, SuiteOptions, SuiteReport};
 use super::{Direction, ProtectionFunction, ProtectionScheme, RelayLocation, Topology};
 use crate::rms::{prepare_module_json, LoadModel, RmsOptions, RmsSimulation};
+
+// @block Case and JSON
+// Every entry point prepares the RMS simulation of the stored case with the
+// app's load model and options, reads its JSON inputs (an empty input is the
+// default) and returns JSON.
 
 /// How the case is prepared: the load model and the RMS options, as the
 /// app prepares its RMS case (`load_model` and the [`RmsOptions`] fields).
@@ -49,6 +56,11 @@ fn parse<T: for<'de> Deserialize<'de> + Default>(json: &str, what: &str) -> Resu
 fn out<T: Serialize>(value: &T) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| e.to_string())
 }
+
+// @block Set and audit
+// A scheme set by the rules (on estimated ratings where the case has
+// none), or a given scheme, with its audit and the zone spans the app
+// draws on the network.
 
 /// A scheme by the setting rules, its audit and the zone spans to draw.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -116,6 +128,10 @@ pub fn audit_module_json(
         zones: zone_spans(sim.topology(), &scheme),
     })
 }
+
+// @block Studies and tests
+// The relays at the operating point, the static study of one fault, the
+// standard tests of a scheme, and a run of tests in RMS with the audit.
 
 /// The relays at the load flow operating point.
 ///
@@ -203,6 +219,11 @@ pub fn suite_module_json(
         tests: outcomes,
     })
 }
+
+// @block Zone spans
+// The stretches of the network each forward distance zone reaches, found by
+// walking the zone's reach along the line impedances from the relay, up to
+// two branches beyond its own line, without infeed.
 
 /// A stretch of a branch inside a distance zone, for drawing reaches:
 /// `start`/`end` as fractions from the branch's from bus.
@@ -293,6 +314,7 @@ fn walk(
         }
     }
 }
+// @end
 
 #[cfg(test)]
 mod tests {

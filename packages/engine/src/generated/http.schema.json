@@ -2308,7 +2308,7 @@
       "type": "object"
     },
     "Problem": {
-      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. The capabilities response reports whether the current build includes it.",
+      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.",
       "oneOf": [
         {
           "const": "dcpf",
@@ -2707,7 +2707,7 @@
           "type": "array"
         },
         "code": {
-          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\nThe message is PowerIO's finding; for an island an HVDC line fed, it\nnames the lines taken out of service with the island and the power\nthey scheduled into it.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.\n`TRANSFORM.INSTANCE.ASSUMPTION`: a bus coded PV has no in service\ngenerator to hold its voltage, so the AC power flow solves for that\nvoltage; `buses` is the bus.\n`settings_ignored`: a reopened Study could not apply some or all of the\ncalculation settings its saved module recorded, such as an option this\nengine does not know; engine defaults stand in for what was dropped.",
+          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\nThe message is PowerIO's finding; for an island an HVDC line fed, it\nnames the lines taken out of service with the island and the power\nthey scheduled into it.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.\n`BUILD.HVDC.FIXED_INJECTION`: PowerIO's statement of what the in-service\nHVDC lines inject as fixed transfers at their terminal buses.\n`BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus\noutside the solve, so neither end injects; `buses` are its two terminals.\n`settings_ignored`: a reopened Study could not apply some or all of the\ncalculation settings its saved module recorded, such as an option this\nengine does not know; engine defaults stand in for what was dropped.",
           "type": "string"
         },
         "message": {
@@ -3400,5 +3400,25 @@
     "http_saved_case"
   ],
   "title": "HttpResults",
-  "type": "object"
+  "type": "object",
+  "x-engine-source-files": {
+    "src/ac_dc.rs": "b661a00679864444dd8b666a47c3fb8ae9baf0968569e4d950fe7d519cca7c15",
+    "src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",
+    "src/dc_formula.rs": "57e5df4a0f203f498c4c9a71a7dfb20514bd74e7ebb1cc71077f2c33e0288868",
+    "src/dc_grid.rs": "525b5e2a7579aba78ed9b232e2b4e41a2c8c23be38e14269cb715e564abd1cfe",
+    "src/equipment.rs": "2bf1035149c4aaefe5f7e24e85891ff129987a5185d0153d99e7a0f017653d0c",
+    "src/equipment/node_breaker.rs": "aa0df2d5a72804f3c9aad60a17d22699411e40689c3db9101fb5f85122fbe443",
+    "src/preparation.rs": "5d3fbd7bebc4e7b5606a4e3af1e2cf3d94c19e554b8be5b23635bcccad8ebcd3",
+    "src/sens/interface.rs": "645da7931bdb369201ceb23a792fc9df6167bcab1e0dda554abda52736a304dc",
+    "src/sens/mod.rs": "7915772aa3cf6ee7593099ec90ad6e0d449b404e4ab51426115d7aed1c349d1e",
+    "src/settings.rs": "75abe36ed0fc3db6f1326e52b8655feb1dd48e3b9ac655daae31b584c7bffc5c",
+    "src/solve.rs": "7ab1cc0ea152dfb13f636a1e7c6f7ec41b87d079691ceb0893815bbe9a8a7ed4",
+    "src/substations.rs": "f74f5aef8d183c52112effe34272fbd1a217aaa394cc7f469d61e4678562bdf4"
+  },
+  "x-server-source-files": {
+    "examples/http_schema.rs": "045c215a16c0db9385fe4b3f30b892053ba9874571b59185e46ea5e52aa632b9",
+    "src/distribution.rs": "6ab5b35dbd30bbfa1eb50317a61101cd36ccdbf1ab5db9821de2a4d655f83864",
+    "src/lib.rs": "cd7950604687d11ce3acc6c492a91de3b72cfc3d5f989303fe5acd771877b882"
+  },
+  "x-server-source-sha256": "cd7950604687d11ce3acc6c492a91de3b72cfc3d5f989303fe5acd771877b882"
 }

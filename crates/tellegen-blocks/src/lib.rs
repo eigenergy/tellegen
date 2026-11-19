@@ -132,6 +132,46 @@ pub const RMS_INTRO: &str = "RMS (phasor-domain) dynamic simulation in tellegen,
     browser side that drives it and shows the results. Every block is drawn from `@block` tags in \
     the code and its own documentation; arrows are what the code uses.";
 
+/// The roots of this repository's protection diagram: the relay engine
+/// (`crates/tellegen/src/protection`), when it is there. Its link to RMS
+/// runs (`rms::protect`) and the app's protection views are blocks of the
+/// RMS dynamics diagram.
+#[must_use]
+pub fn protection_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
+    let root = Root {
+        dir: workspace.join("crates/tellegen/src/protection"),
+        module: "protection".to_owned(),
+    };
+    (
+        std::iter::once(root).filter(|r| r.dir.is_dir()).collect(),
+        Vec::new(),
+    )
+}
+
+/// The intro of the protection diagram's top level.
+pub const PROTECTION_INTRO: &str = "Protection relays in tellegen: the measuring-relay functions, \
+    their settings derived from the network with an audit, the standard test cases run in RMS, \
+    static fault studies, and the interface the app calls. The relays act in RMS runs and live \
+    sessions through `rms::protect` (see the RMS dynamics diagram). Every block is drawn from \
+    `@block` tags in the code and its own documentation; arrows are what the code uses.";
+
+/// A named diagram of this repository: its roots and headings, intro and
+/// title (`rms` or `protection`).
+#[must_use]
+pub fn preset(name: &str, workspace: &Path) -> Option<(Vec<Root>, Vec<Heading>, &'static str, &'static str)> {
+    match name {
+        "rms" => {
+            let (roots, headings) = rms_preset(workspace);
+            Some((roots, headings, RMS_INTRO, "tellegen RMS dynamics"))
+        }
+        "protection" => {
+            let (roots, headings) = protection_preset(workspace);
+            Some((roots, headings, PROTECTION_INTRO, "tellegen protection"))
+        }
+        _ => None,
+    }
+}
+
 /// Scan the roots and write the page to `html` (and the data to `json`).
 ///
 /// # Errors

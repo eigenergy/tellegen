@@ -4,6 +4,7 @@
 //! tellegen-blocks crates/tellegen/src/rms --title "tellegen RMS engine" --out target/blocks/rms.html
 //! tellegen-blocks crates/tellegen/src/rms --check     # fail on annotation issues
 //! tellegen-blocks --preset rms --out target/blocks/rms.html   # engine and app together
+//! tellegen-blocks --preset protection --out target/blocks/protection.html
 //! ```
 //!
 //! Options: `--module <name>` (the module path of `<dir>`, default its
@@ -12,7 +13,8 @@
 //! `blocks.html`), `--json <file.json>`, `--source-url <prefix>` (links each
 //! file to `<prefix><path>`), `--from <note>` (a revision or date shown in the
 //! footer), `--check` (exit 1 when there are issues), `--preset rms` (the
-//! RMS engine and the app's dynamics code of this repository, from `--base`).
+//! RMS engine and the app's dynamics code of this repository, from `--base`)
+//! or `--preset protection` (the relay engine).
 //!
 //! @block Command line
 
@@ -31,7 +33,7 @@ fn main() -> ExitCode {
     let mut json = None;
     let mut meta = Meta::default();
     let mut check = false;
-    let mut preset = false;
+    let mut preset: Option<String> = None;
     while let Some(a) = args.next() {
         let mut value = |name: &str| {
             args.next().unwrap_or_else(|| {
@@ -50,14 +52,14 @@ fn main() -> ExitCode {
             "--check" => check = true,
             "--preset" => {
                 let name = value("--preset");
-                if name != "rms" {
-                    eprintln!("unknown preset {name}; the one preset is rms");
+                if !matches!(name.as_str(), "rms" | "protection") {
+                    eprintln!("unknown preset {name}; the presets are rms and protection");
                     return ExitCode::from(2);
                 }
-                preset = true;
+                preset = Some(name);
             }
             "-h" | "--help" => {
-                println!("usage: tellegen-blocks (<dir> | --preset rms) [--module NAME] [--title TEXT] [--base DIR] [--out FILE.html] [--json FILE.json] [--source-url PREFIX] [--from NOTE] [--check]");
+                println!("usage: tellegen-blocks (<dir> | --preset rms|protection) [--module NAME] [--title TEXT] [--base DIR] [--out FILE.html] [--json FILE.json] [--source-url PREFIX] [--from NOTE] [--check]");
                 return ExitCode::SUCCESS;
             }
             _ if dir.is_none() && !a.starts_with('-') => dir = Some(PathBuf::from(a)),
@@ -68,10 +70,11 @@ fn main() -> ExitCode {
         }
     }
     let base = base.canonicalize().unwrap_or(base);
-    let result = if preset {
-        let (roots, headings) = tellegen_blocks::rms_preset(&base);
-        meta.intro = tellegen_blocks::RMS_INTRO.to_owned();
-        let title = title.unwrap_or_else(|| "tellegen RMS dynamics".to_owned());
+    let result = if let Some(name) = preset {
+        let (roots, headings, intro, default_title) =
+            tellegen_blocks::preset(&name, &base).expect("a known preset");
+        meta.intro = intro.to_owned();
+        let title = title.unwrap_or_else(|| default_title.to_owned());
         generate_roots(
             &roots,
             &headings,
@@ -83,7 +86,7 @@ fn main() -> ExitCode {
         )
     } else {
         let Some(dir) = dir else {
-            eprintln!("usage: tellegen-blocks <dir> [options] | --preset rms; see --help");
+            eprintln!("usage: tellegen-blocks <dir> [options] | --preset rms|protection; see --help");
             return ExitCode::from(2);
         };
         let module = module.unwrap_or_else(|| {

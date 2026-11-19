@@ -801,6 +801,7 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/cases/{id}/snapshot", get(saved_case))
         .merge(compute_routes)
         .route("/docs/blocks/rms", get(rms_blocks))
+        .route("/docs/blocks/protection", get(protection_blocks))
         .route("/api/{*path}", any(api_not_found))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -882,6 +883,13 @@ const RMS_BLOCKS: &str = include_str!(concat!(env!("OUT_DIR"), "/rms-blocks.html
 
 async fn rms_blocks() -> impl IntoResponse {
     axum::response::Html(RMS_BLOCKS)
+}
+
+/// The protection engine's block diagram, drawn the same way.
+const PROTECTION_BLOCKS: &str = include_str!(concat!(env!("OUT_DIR"), "/protection-blocks.html"));
+
+async fn protection_blocks() -> impl IntoResponse {
+    axum::response::Html(PROTECTION_BLOCKS)
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -2507,6 +2515,27 @@ mod tests {
         // The app's dynamics code is drawn too.
         assert!(page.contains("\"id\":\"app::logic::live::LiveView\""));
         assert!(page.contains("\"id\":\"rms::RmsSimulation::run_from\""));
+    }
+
+    /// The protection diagram is served the same way.
+    #[tokio::test]
+    async fn serves_the_protection_block_diagram() {
+        let response = router(fallback_state(), None)
+            .oneshot(
+                Request::builder()
+                    .uri("/docs/blocks/protection")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let page = std::str::from_utf8(&body).unwrap();
+        assert!(page.contains("<title>tellegen protection</title>"));
+        assert!(page.contains("\"id\":\"protection\""));
     }
 
     #[tokio::test]

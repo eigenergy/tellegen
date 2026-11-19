@@ -26,7 +26,8 @@
 //!   A series capacitor (negative series reactance) gets no line relay; the
 //!   lines next to it keep Z1 short of a fault beyond it, and their zones
 //!   are polarized with the pre-fault voltage, so the capacitor's voltage
-//!   inversion does not turn them (IEEE C37.116).//! - Line differential 87L above three times the charging current;
+//!   inversion does not turn them (IEEE C37.116).
+//! - Line differential 87L above three times the charging current;
 //!   backup 67 (directional, IEC standard inverse, 1.5 In) graded 0.3 s above Z3 at the
 //!   remote-bus fault current, at least 0.3 s above Z2 at any current; 67N (needs unbalance, not RMS); 50BF 150 ms; three-pole
 //!   auto-reclose 0.5 s dead time on Z1, POTT and 87L.
@@ -60,6 +61,8 @@
 //!   (this module's choice). These are indicative
 //!   values from the published ranges; the grid operator sets the actual
 //!   ones.
+//!
+//! @block Settings from the network
 
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +77,15 @@ use super::{
 // ---------------------------------------------------------------------------
 // Short circuit
 // ---------------------------------------------------------------------------
+
+// @block Short-circuit calculation
+// Balanced short circuits by the IEC 60909 equivalent source: every
+// synchronous unit a source `c` behind its subtransient reactance, inverters
+// contributing nothing. A fault on the intact network is solved by
+// superposition on one factorization; one with breakers open or units out
+// builds and factors its own network matrix. The results are the bus
+// voltages, the branch end currents, the fault current, and what a relay at
+// a branch end measures.
 
 /// Where a short circuit sits.
 #[derive(Clone, Copy, Debug)]
@@ -122,6 +134,7 @@ type Entries = Vec<(usize, usize, C64)>;
 /// A sparse complex LU of a network matrix: a fault calculation of a
 /// continental network solves hundreds of right-hand sides, each a few
 /// thousand times cheaper here than through dense factors.
+// @block Sparse network LU
 struct NetLu {
     lu: faer::sparse::linalg::solvers::Lu<usize, C64>,
 }
@@ -193,6 +206,7 @@ impl<'a> FaultCalc<'a> {
     /// A fault on the intact network by superposition on the factored
     /// matrix; `None` when the fault point needs the full solve (a fault
     /// inside a transformer).
+    // @block Fault by superposition
     fn solve_fast(&self, at: Option<FaultPoint>, zf: C64) -> Result<Option<ShortCircuit>, String> {
         let topo = self.topo;
         if let Some(FaultPoint::Branch(e, _)) = at {
@@ -201,6 +215,10 @@ impl<'a> FaultCalc<'a> {
                 return Ok(None);
             }
         }
+        // @block Factor the intact network once
+        // The admittance matrix with the sources, its LU, the pre-fault
+        // voltages and the branch end coefficients are kept for every later
+        // fault, and rebuilt only when the voltage factor changes.
         let mut cell = self
             .base
             .lock()
@@ -227,6 +245,11 @@ impl<'a> FaultCalc<'a> {
                 ends,
             });
         }
+        // @block Response at the fault point
+        // The impedance column of the fault bus (two columns combined for a
+        // point inside a line, kept as they are computed), the fault current
+        // from the pre-fault voltage there, and every bus voltage and branch
+        // end current changed by it.
         let base = cell.as_mut().expect("set above");
         let n = topo.bus_numbers.len();
         let zero = C64::new(0.0, 0.0);
@@ -339,6 +362,7 @@ impl<'a> FaultCalc<'a> {
     ///
     /// # Errors
     /// When the network matrix is singular.
+    // @block Fault with breakers open
     pub fn solve_with(
         &self,
         at: Option<FaultPoint>,
@@ -351,6 +375,10 @@ impl<'a> FaultCalc<'a> {
                 return Ok(sc);
             }
         }
+        // @block Network matrix
+        // The admittance matrix without the open branches and units out of
+        // service; a fault inside a branch splits it at an extra node, a
+        // fault impedance ties the fault node to ground.
         let at = at.unwrap_or(FaultPoint::Bus(usize::MAX));
         let is_open = |e: usize, end: End| open.contains(&(e, end));
         let out: Vec<usize> = (0..self.topo.branches.len())
@@ -424,6 +452,10 @@ impl<'a> FaultCalc<'a> {
         if fnode < size {
             y.push((fnode, fnode, yf));
         }
+        // @block Solve and branch currents
+        // One sparse solve for the voltages; the end currents of each branch
+        // follow from them (zero at an open end), and the fault current from
+        // the fault node's voltage.
         let v = NetLu::factor(size, &y)?.solve(&rhs)?;
         let branch = topo
             .branches
@@ -496,6 +528,12 @@ impl<'a> FaultCalc<'a> {
 // ---------------------------------------------------------------------------
 // Automatic settings
 // ---------------------------------------------------------------------------
+
+// @block Setting options and relay names
+// What the automatic setting covers (lines, line differential,
+// teleprotection, auto-reclose, transformers, busbars, units) and its
+// result, a scheme with the basis of each setting; the relay ids it gives
+// (`L<at>-<other>`, `T…`, `B…`, `G…`, `I…`) and the branches at a bus.
 
 /// What to protect and how.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -613,6 +651,12 @@ fn at_bus(topo: &Topology, b: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
+// @block Ratings of unrated branches
+// A branch the case leaves unrated gets the typical rating of its voltage
+// level, at least 125 % of its flow at the operating point, and the relays
+// set on it carry that rated current, so their overcurrent and thermal
+// stages do not operate at rest.
+
 /// A typical thermal rating (MVA) of an overhead line or transformer at a
 /// voltage level, for branches the case leaves unrated: round values of
 /// this module's own choosing, not from a standard or a utility table.
@@ -690,9 +734,17 @@ pub fn carry_ratings(scheme: &mut ProtectionScheme, topo: &Topology, on: &[usize
     }
 }
 
+// @block Setting rules
+// The rules of the module documentation applied to every element of the
+// network, and the interface protection every inverter-based unit gets.
+
 /// Set a scheme by the rules in the module documentation.
+// @block Set a scheme
 #[must_use]
 pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
+    // @block Common settings
+    // The breaker-failure and auto-reclose settings every relay shares, and
+    // a bolted fault at every bus, whose currents grade the backup stages.
     let mut relays = Vec::new();
     let mut notes = Vec::new();
     let calc = FaultCalc::new(topo);
@@ -714,6 +766,7 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
         "k0 = 0 on every line: the case has no zero-sequence data and the network model's lines are uncoupled phases (Z0 = Z1); with zero-sequence data set k0 = (Z0 − Z1)/(3 Z1)".into(),
     );
 
+    // @block Series capacitors
     // A branch with a negative series reactance is a series capacitor, not a
     // line: a distance relay does not protect it (the bank has its own
     // protection, IEEE C37.116, outside this model).
@@ -734,6 +787,12 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                 .join(", ")
         ));
     }
+    // @block Line relays
+    // A relay at each end of every line (series capacitors excepted):
+    // distance zones from what the relay measures, power swing blocking,
+    // POTT, a load blinder where needed, the line differential, a graded
+    // backup overcurrent, earth-fault and, on long charging lines,
+    // overvoltage.
     if opts.lines {
         for (e, br) in topo.branches.iter().enumerate() {
             if br.transformer {
@@ -745,6 +804,11 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
             let zl = br.z;
             let angle = zl.arg().to_degrees().clamp(30.0, 89.0);
             for (here, there, end) in [(br.from, br.to, End::From), (br.to, br.from, End::To)] {
+                // @block Zone reaches
+                // Z1 short of both the line and what a far-end fault measures
+                // (and of a fault beyond a series capacitor at the remote
+                // bus), Z2 past the remote bus, Z3 into the longest adjacent
+                // branch; the basis of each goes into the notes.
                 let at = topo.bus_numbers[here];
                 let zb = topo.z_base(here);
                 let adjacent: Vec<f64> = at_bus(topo, there)
@@ -812,6 +876,7 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                     z3 / zl_m * 100.0
                 );
                 basis.push_str(&cap_note);
+                // @block Load blinder
                 // Load encroachment: the load impedance at 0.9 pu and the
                 // rating stays outside every zone, by a blinder when the
                 // zones reach that far.
@@ -831,6 +896,11 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                     }
                 }
                 notes.push(basis);
+                // @block Distance function
+                // Four zones in primary ohms (Z1 instantaneous and starting
+                // the auto-recloser, Z2 0.4 s, Z3 1.0 s, a reverse Z4 1.5 s),
+                // with resistive reaches for a quadrilateral, power swing
+                // blocking, POTT on Z2 and the load blinder.
                 let ohm = |z: f64| z * zb;
                 let mut zones = vec![
                     Zone {
@@ -899,6 +969,12 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                     }),
                     load_encroachment: load,
                 })];
+                // @block Differential and backup stages
+                // 87L above three times the charging current; a directional
+                // inverse-time 67 whose time multiplier puts it 0.3 s above
+                // Z3 at the remote-bus fault current and whose minimum time
+                // keeps it 0.3 s above Z2; 67N; 59 on lines whose charging
+                // exceeds 30 % of their rating.
                 let i_nom = rated(topo, e);
                 if opts.line_differential {
                     let charging = (br.y_fr + br.y_to).norm();
@@ -971,12 +1047,17 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
         }
     }
 
+    // @block Z2 grading
     // Selectivity: a Z2 that sees past an adjacent line's Z1 (where that
     // line's own Z2 clears) waits a grading step (0.25 s) longer than that
     // Z2. Adjacent also through a series capacitor in service (a fault
     // current below its protective level leaves it in). The delays are
     // graded to a fixed point, so a chain of such overlaps cascades.
     if opts.lines {
+        // @block Overlapping zones
+        // For each line relay, a fault just past the Z1 of each adjacent
+        // line is solved; if this relay's Z2 holds what it measures there,
+        // it must wait for that line's Z2.
         // For each relay, the relays whose Z2 it must wait for.
         let mut waits_for: Vec<Vec<String>> = vec![Vec::new(); relays.len()];
         for (k, r) in relays.iter().enumerate() {
@@ -1049,6 +1130,9 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                 }
             }
         }
+        // @block Grade to a fixed point
+        // Each Z2 delay is raised to 0.25 s above the largest Z2 it waits
+        // for, capped at 1.4 s, round after round until nothing changes.
         let index: std::collections::HashMap<String, usize> = relays
             .iter()
             .enumerate()
@@ -1083,6 +1167,9 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                 break;
             }
         }
+        // @block Apply the grading
+        // A raised Z2 moves Z3 to at least 0.55 s above it and the backup
+        // 67 to at least 0.3 s above it, and the notes say why.
         for k in 0..relays.len() {
             let (Some(old), Some(new)) = (first[k], delay[k]) else {
                 continue;
@@ -1116,6 +1203,10 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
         }
     }
 
+    // @block Transformer relays
+    // 87T with second-harmonic blocking and an unrestrained stage above the
+    // largest through-fault current, 51 graded to 0.8 s at that current, 49
+    // and 24.
     if opts.transformers {
         for (e, br) in topo.branches.iter().enumerate() {
             if !br.transformer {
@@ -1187,6 +1278,8 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
         }
     }
 
+    // @block Busbar relays
+    // 87B on every bus with three or more feeders (branches and units).
     if opts.busbars {
         for (b, &number) in topo.bus_numbers.iter().enumerate() {
             let feeders = at_bus(topo, b).len() + topo.units.iter().filter(|u| u.bus == b).count();
@@ -1216,9 +1309,18 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
         }
     }
 
+    // @block Unit relays
+    // Every generating unit gets its relay: the synchronous unit functions
+    // of IEEE C37.102 practice, or the interface protection of an
+    // inverter-based unit.
     for (u, unit) in topo.units.iter().enumerate() {
         let scale = unit.mbase / topo.sbase;
         match unit.kind {
+            // @block Synchronous unit
+            // The machine reactances and the system impedance behind the
+            // terminal (from the bus fault) set 40 and 78; 87U where the
+            // unit is alone on its step-up transformer; 32 only for a unit
+            // that generates; then 81U/81O, 24, 27/59, 46 and 49.
             UnitKind::Machine if opts.generators => {
                 let xd_p = unit.xd_p.unwrap_or(0.3);
                 let xd = unit.xd.unwrap_or(1.5 * xd_p.max(0.3) + 0.6);
@@ -1335,6 +1437,8 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                     i_nom: None,
                 });
             }
+            // @block Inverter-based unit
+            // The interface protection of `inverter_interface`.
             UnitKind::Inverter if opts.inverters => {
                 relays.push(Relay {
                     id: format!("I{}-{}", unit.bus_number, unit.machine_id),
@@ -1353,6 +1457,9 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
             _ => {}
         }
     }
+    // @block Capacitor banks and the scheme
+    // Relay ids made unique, each series capacitor bank's MOV, and the
+    // scheme with the notes on its basis.
     if opts.inverters && topo.units.iter().any(|u| u.kind == UnitKind::Inverter) {
         notes.push("inverter interface protection: indicative values from the RfG ranges; the grid operator sets the actual ones".into());
     }
@@ -1393,6 +1500,7 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
 }
 
 /// The interface protection of an inverter-based unit.
+// @block Inverter interface protection
 #[must_use]
 pub fn inverter_interface(f0: f64) -> Vec<ProtectionFunction> {
     vec![
@@ -1443,6 +1551,13 @@ pub fn inverter_interface(f0: f64) -> Vec<ProtectionFunction> {
 // Audit
 // ---------------------------------------------------------------------------
 
+// @block Setting audit
+// A check of any scheme against the network by short circuits: zone
+// reaches, remote-bus coverage, selectivity and timing of the distance
+// zones, load encroachment, teleprotection partners, differential pickups,
+// lines and busbars without main protection, and the frequency and
+// ride-through limits of units. Each finding carries a severity.
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
@@ -1475,6 +1590,10 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
             message,
         });
     };
+    // @block Line relays
+    // Each enabled line relay is located on its branch and its distance and
+    // differential functions are checked; the ends that carry a main
+    // protection are counted for the coverage check.
     // Which branch ends carry a main protection (21 or 87L).
     let mut covered: Vec<[bool; 2]> = vec![[false; 2]; topo.branches.len()];
     for r in scheme.relays.iter().filter(|r| r.enabled) {
@@ -1520,6 +1639,9 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
         }
         for f in &r.functions {
             match f {
+                // @block Distance zones
+                // The forward zones against faults the calculation places on
+                // and beyond the line, as the relay measures them.
                 ProtectionFunction::Distance(d) => {
                     let zone = |n: &str| {
                         d.zones
@@ -1528,6 +1650,9 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
                     };
                     let in_zone =
                         |z: &Zone, zapp: C64| super::functions::zone_contains(d, z, zapp, zb);
+                    // @block Zone 1
+                    // Z1 must not reach within 5 % of a fault at the far end,
+                    // and should reach 70–90 % of the line.
                     if let Some(z1) = zone("Z1") {
                         let alpha_end = if end == End::From { 0.999 } else { 0.001 };
                         if let Some(za) = calc
@@ -1574,6 +1699,10 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
                             "no forward Z1".into(),
                         );
                     }
+                    // @block Zone 2
+                    // Z2 must reach 120 % of the line and hold a bolted fault at
+                    // the remote bus; where it sees past an adjacent line's Z1
+                    // it must be graded 0.25 s above that line's Z2.
                     let remote = calc.solve(
                         super::setting::FaultPoint::Bus(there),
                         C64::new(0.0, 0.0),
@@ -1665,6 +1794,10 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
                             "no forward Z2 (no remote-bus coverage)".into(),
                         );
                     }
+                    // @block Zone 3 and load
+                    // Z3 as remote backup for the far end of every adjacent
+                    // line (infeed may keep it out), the load impedance at
+                    // 0.9 pu and the rating outside it, and 0.25 s above Z2.
                     if let Some(z3) = zone("Z3") {
                         // Remote backup: the far end of every adjacent line.
                         for (k, _far) in at_bus(topo, there).into_iter().filter(|&(k, _)| k != e) {
@@ -1728,6 +1861,9 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
                             }
                         }
                     }
+                    // @block Timing and teleprotection
+                    // Z2 at least 0.25 s after Z1, and a teleprotection scheme
+                    // only with a partner of the same scheme at the other end.
                     if let (Some(z1), Some(z2)) = (zone("Z1"), zone("Z2")) {
                         let cti = z2.delay - z1.delay;
                         push(
@@ -1769,6 +1905,8 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
                         );
                     }
                 }
+                // @block Line differential
+                // 87L pickup at least twice the line's charging current.
                 ProtectionFunction::Differential(dset) => {
                     let charging =
                         (br.y_fr + br.y_to).norm() / r.i_nom.unwrap_or_else(|| rated(topo, e));
@@ -1790,6 +1928,9 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
             }
         }
     }
+    // @block Line coverage
+    // Every line needs main protection at both ends; a series capacitor is
+    // covered by its bank protection and the lines at its ends.
     for (e, br) in topo.branches.iter().enumerate() {
         if br.transformer {
             continue;
@@ -1832,6 +1973,12 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
             );
         }
     }
+    // @block Transformers and units
+    // 87T: its unrestrained stage above the largest through-fault current,
+    // and second-harmonic blocking against inrush. Units: 81U and 81O
+    // outside the frequency range they must ride through, and an
+    // inverter's ride-through profile at least as tolerant as the RfG
+    // type D reference.
     for r in scheme.relays.iter().filter(|r| r.enabled) {
         match &r.location {
             RelayLocation::Transformer { from, to, circuit } => {
@@ -1945,7 +2092,10 @@ pub fn audit(topo: &Topology, scheme: &ProtectionScheme) -> Vec<Finding> {
             _ => {}
         }
     }
+    // @block Busbar coverage
     // Busbars without differential protection.
+    // A bus with three or more branches and no busbar relay is noted (its
+    // faults clear in Z2 time); the findings are sorted, worst first.
     for (b, &number) in topo.bus_numbers.iter().enumerate() {
         let feeders = at_bus(topo, b).len();
         if feeders >= 3

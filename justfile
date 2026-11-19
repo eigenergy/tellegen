@@ -70,6 +70,7 @@ rms-test:
 # (target/blocks/rms.html); `just blocks --check` fails on annotation issues.
 blocks *flags="":
     cargo run -q -p tellegen-blocks -- --preset rms --out target/blocks/rms.html {{flags}}
+    cargo run -q -p tellegen-blocks -- --preset protection --out target/blocks/protection.html {{flags}}
 
 # CI gate: every RMS validation, the long WECC 240 runs included (release).
 rms-validation:

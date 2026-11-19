@@ -42,12 +42,33 @@
 //! breaker operating time; a breaker listed in
 //! [`ProtectionScheme::stuck_breakers`] does not open, which the breaker-failure
 //! function (50BF) of the relay detects.
+//!
+//! # Blocks
+//!
+//! The relay engine is built from the blocks below. The **settings** of a
+//! scheme say where each relay sits and what its functions pick up at; a run
+//! **binds** them to the simulated network, and the **relay runtime**
+//! evaluates every relay on the engine's measurements, runs the
+//! **measuring elements** and their timers, and schedules breakers,
+//! breaker-failure trips and reclosing. Around a run, the **settings from
+//! the network** set and audit a scheme by short-circuit calculation, a
+//! **static protection study** runs the same relays on a short circuit, and
+//! the **protection tests** check a scheme in RMS runs. The **browser entry
+//! points** offer all of this as JSON to the app.
+//!
+//! @block Protection relays
 
 pub mod api;
 mod functions;
+
+// @block Setting and checking a scheme
+// Work on a scheme outside a dynamic run: the short-circuit calculation and
+// the setting rules, the static study of one fault, and the standard test
+// cases run in RMS.
 pub mod setting;
 pub mod statics;
 pub mod testing;
+// @end
 
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
@@ -57,6 +78,10 @@ use serde::{Deserialize, Serialize};
 
 pub use functions::{curve_time, Curve};
 
+// @block Phasor helpers
+// Complex phasors and the symmetrical components every function measures
+// with: the operator `a`, a balanced three-phase set from one phasor, and
+// the zero, positive and negative sequences of a phase set.
 pub(crate) type C64 = Complex<f64>;
 
 /// `e^{j 120°}`.
@@ -80,10 +105,17 @@ pub(crate) fn sequences(p: [C64; 3]) -> [C64; 3] {
         (p[0] + a2 * p[1] + a * p[2]) / 3.0,
     ]
 }
+// @end
 
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
+
+// @block Scheme and relays
+// The settings a study starts from: the scheme with its relays, the
+// breakers made to fail, the measuring time and the series capacitor banks;
+// each relay with its location, its functions, its breaker time, and its
+// optional breaker-failure and auto-reclose functions.
 
 /// The protection of a case: relays and the breakers that are made to fail.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -250,6 +282,11 @@ pub enum Direction {
     NonDirectional,
 }
 
+// @block Function catalogue
+// Every function a relay can carry, by its ANSI device number, and the
+// short label that names it in the record and in the tests (`51`, `21 Z2`,
+// `87T`, or the label the setting gives it).
+
 /// One protection function.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -332,6 +369,12 @@ impl ProtectionFunction {
     }
 }
 
+// @block Current, voltage and frequency stages
+// The settings of the simple stages: an overcurrent stage (definite time or
+// an inverse curve, optionally directional), a definite-time voltage stage
+// (also used for V/Hz), a frequency stage blocked at low voltage, and the
+// rate of change of frequency over a sliding window.
+
 /// Overcurrent stage (IEC 60255-151). Pickup in multiples of the rated
 /// current. An inverse stage starts timing at `1.1 ×` pickup: the threshold
 /// the standard leaves to the relay, between the setting and `1.3 ×` it; its
@@ -406,6 +449,13 @@ pub struct Rocof {
 fn default_rocof_window() -> f64 {
     0.5
 }
+
+// @block Distance settings
+// The distance function (21): mho or quadrilateral zones with their reach,
+// angle, delay and direction, residual compensation `k0`, the minimum loop
+// current, and the optional extras around it: power swing blocking (68),
+// POTT or PUTT teleprotection with the relay at the other line end, and a
+// load-encroachment blinder that keeps heavy load out of the zones.
 
 /// Distance characteristic.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -534,6 +584,12 @@ fn default_min_current() -> f64 {
     0.2
 }
 
+// @block Differential settings
+// The biased differential (87T, 87U, 87L, 87B): the operate current against
+// the restraint current on a two-slope characteristic, an unrestrained
+// stage, optional second-harmonic blocking, and the channel time of a line
+// differential.
+
 /// Biased differential (IEC 60255-187-1): operate when
 /// `I_d > pickup` and `I_d > slope1 · I_r` (`I_r ≤ knee`) or
 /// `I_d > slope1 · knee + slope2 · (I_r − knee)`; at once above
@@ -578,6 +634,13 @@ fn default_knee() -> f64 {
 fn default_unrestrained() -> f64 {
     10.0
 }
+
+// @block Unit and thermal settings
+// The functions of a generating unit and the thermal image: reverse power
+// (32), loss of field by two offset mho circles (40), out of step by
+// blinders and slip counting (78), negative-sequence heating `I2² t` (46)
+// and the thermal overload of IEC 60255-149 (49), which transformers use
+// too.
 
 /// Reverse power: trips when the unit absorbs more than `pickup` (fraction
 /// of its MVA base) for `delay`.
@@ -653,6 +716,13 @@ fn default_thermal_k() -> f64 {
     1.1
 }
 
+// @block Ride-through, breaker failure and reclosing
+// The voltage-against-time envelope an inverter-based unit must ride
+// through, the breaker-failure function (50BF) that trips the neighbouring
+// breakers when current still flows after a trip, and three-pole
+// auto-reclose (79) with its dead time, reclaim time, shots and
+// synchronism check.
+
 /// Fault ride-through: below `start` (pu) the clock starts; the unit trips
 /// when the voltage is below the profile `points` (`[t, v]`, linear between
 /// points, the last value afterwards). The clock resets once the voltage is
@@ -723,6 +793,12 @@ fn default_reclaim() -> f64 {
 // Results
 // ---------------------------------------------------------------------------
 
+// @block Relay record
+// What the relays report from a run: every operation in time order
+// (pickups, resets, trips, breaker operations, reclosing, blocking, series
+// capacitor bypass), the first trip of each relay, and notes such as the
+// functions that stay inactive in RMS.
+
 /// What happened in a relay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -775,6 +851,13 @@ pub struct TripRecord {
 
 pub use crate::rms::{End, TopoBranch, TopoUnit, Topology, UnitKind};
 
+// @block Engine interface
+// What the relays need from an engine and give back to it. An engine
+// implements `Measure` (bus voltages, branch end, unit and feeder currents,
+// breaker and unit states at one instant), and applies the `Action`s the
+// relays return: opening and closing branch ends, tripping units, bypassing
+// and reinserting series capacitors.
+
 /// Phasor measurements at one instant (phase phasors in system per unit,
 /// phase-to-ground voltages scaled so a balanced set has `|V| = 1` pu).
 pub trait Measure: Sync {
@@ -819,6 +902,13 @@ pub enum Action {
     /// A series capacitor bank put back in.
     Reinsert(usize),
 }
+
+// @block Relay sites
+// A relay resolved against the network: the bus whose voltage it measures,
+// the current transformer it reads, the current transformers of its
+// differential zone, the breakers it trips (and those its breaker-failure
+// function trips), its rated current and impedance base; and the breaker
+// operations it has scheduled.
 
 /// A series capacitor bank during a run.
 #[derive(Clone, Debug)]
@@ -897,6 +987,13 @@ enum ScheduledKind {
     FailureCheck,
 }
 
+// @block Relay runtime
+// The relays during one run. The engine asks for the next deadline before
+// each step, takes the breaker actions due, lets the series capacitor
+// banks act, and has every relay evaluated on its measurements; the
+// runtime keeps the schedule of breakers and reclosing, the distance
+// relays' impedance channels and the record.
+
 /// The live state of the relays during one run.
 pub struct ProtectionRuntime {
     relays: Vec<functions::RelayState>,
@@ -928,7 +1025,11 @@ impl ProtectionRuntime {
     /// # Errors
     /// When a relay names a missing element or carries a function its
     /// location cannot measure.
+    // @block Bind a scheme
     pub fn bind(scheme: &ProtectionScheme, topo: &Topology, rms: bool) -> Result<Self, String> {
+        // @block Resolve the relays
+        // Each enabled relay is resolved to its site; in RMS a function that
+        // needs unbalance (46, 50N/51N, 59N) is noted as inactive.
         let mut relays = Vec::new();
         let mut notes = Vec::new();
         for r in scheme.relays.iter().filter(|r| r.enabled) {
@@ -951,6 +1052,7 @@ impl ProtectionRuntime {
             }
             relays.push(functions::RelayState::new(r.clone(), site));
         }
+        // @block Teleprotection partners
         // Teleprotection partners: the distance relay at the other end of
         // the same branch.
         let ends: Vec<Option<(usize, End)>> = relays.iter().map(|r| r.site.line).collect();
@@ -965,6 +1067,11 @@ impl ProtectionRuntime {
                     .map(|(j, _)| j);
             }
         }
+        // @block Stuck breakers and capacitor banks
+        // The breakers a study makes fail are resolved to branch ends or
+        // units; each series capacitor bank gets its protective level and
+        // reinsertion time. The measuring time is the scheme's in RMS, and a
+        // fixed short pickup time on an engine that samples waveforms.
         let mut stuck = Vec::new();
         for b in &scheme.stuck_breakers {
             let target = if let Some(id) = &b.machine_id {
@@ -1043,6 +1150,7 @@ impl ProtectionRuntime {
 
     /// The next instant something is due: a breaker, a reclose, or a relay
     /// timer expiring.
+    // @block Next deadline
     #[must_use]
     pub fn next_deadline(&self) -> Option<f64> {
         if let Some(d) = self.deadline.get() {
@@ -1117,6 +1225,7 @@ impl ProtectionRuntime {
     }
 
     /// Actions due at or before `t` (breakers opening, reclosing).
+    // @block Breaker actions due
     pub fn take_due(&mut self, t: f64, m: &dyn Measure) -> Vec<Action> {
         self.deadline.set(None);
         let tol = 1e-9;
@@ -1134,6 +1243,10 @@ impl ProtectionRuntime {
         for s in due {
             let id = self.relays[s.relay].spec.id.clone();
             match s.kind {
+                // @block Open a breaker
+                // A breaker made to fail stays closed and is logged as stuck;
+                // otherwise a closed end opens or a unit in service trips, and
+                // the relay learns when its own line end opened.
                 ScheduledKind::Open(target) => {
                     if self.stuck.contains(&target) {
                         self.log(
@@ -1166,6 +1279,11 @@ impl ProtectionRuntime {
                         actions.push(a);
                     }
                 }
+                // @block Reclose under the synchronism check
+                // An open line end closes when the line is dead from the other
+                // side or the angle across it is within the limit (25);
+                // otherwise it tries again every 20 ms until its deadline, then
+                // stays open and logs that the check held it.
                 ScheduledKind::Close(e, end, until) => {
                     if !m.end_closed(e, end) {
                         // Synchronism check (25): the line live from its other
@@ -1217,6 +1335,10 @@ impl ProtectionRuntime {
                         actions.push(a);
                     }
                 }
+                // @block Breaker-failure check
+                // 50BF: when current still flows through the relay's current
+                // transformer after its delay, the other breakers at the
+                // relay's bus are scheduled to open.
                 ScheduledKind::FailureCheck => {
                     let r = &self.relays[s.relay];
                     if r.current_flowing(m) {
@@ -1246,12 +1368,14 @@ impl ProtectionRuntime {
     }
 
     /// Evaluate every relay on the measurements at `m.time()`.
+    // @block Evaluate the relays
     pub fn evaluate(&mut self, m: &dyn Measure) {
         self.deadline.set(None);
         self.relay_deadline.set(None);
         let t = m.time();
         let dt = self.last_t.map_or(0.0, |t0| (t - t0).max(0.0));
         self.last_t = Some(t);
+        // @block Measure
         // Pass 1: measure and run each relay's elements. The relays are
         // independent here, so many of them run on several threads; their
         // operations join in relay order, as inline.
@@ -1286,6 +1410,7 @@ impl ProtectionRuntime {
                 r.measure(m, dt, f0, &mut ops);
             }
         }
+        // @block Teleprotection permission
         // Teleprotection permission from the partners' zones.
         let permission: Vec<(bool, bool)> = self
             .relays
@@ -1295,7 +1420,9 @@ impl ProtectionRuntime {
         for r in &mut self.relays {
             r.remote = r.partner.map(|p| permission[p]);
         }
-        // Pass 2: decide.
+        // @block Decide
+        // Pass 2: decide. Each relay names the function whose timer ran out
+        // first, if any; a relay trips once and then stays latched.
         let mut trips: Vec<(usize, String, bool, bool)> = Vec::new();
         for (i, r) in self.relays.iter_mut().enumerate() {
             if let Some((label, ar, zone_trip)) = r.decide(t, self.measuring_time, &mut ops) {
@@ -1303,6 +1430,10 @@ impl ProtectionRuntime {
             }
         }
         self.report.operations.extend(ops);
+        // @block Schedule the trips
+        // A trip is recorded, its breakers are scheduled after the breaker
+        // time (a unit after its breakers), the breaker-failure check after
+        // its delay, and auto-reclose is armed or locked out.
         for (i, label, ar, zone_trip) in trips {
             let r = &mut self.relays[i];
             let id = r.spec.id.clone();
@@ -1367,6 +1498,7 @@ impl ProtectionRuntime {
 
     /// Called by the engine once the breakers of a relay's line opened, to
     /// schedule its reclose.
+    // @block Schedule the reclose
     fn schedule_reclose(&mut self) {
         self.deadline.set(None);
         for (i, r) in self.relays.iter_mut().enumerate() {
@@ -1396,6 +1528,7 @@ impl ProtectionRuntime {
     /// back once the current has stayed below its rating for `reinsert`. The
     /// engine applies these at once, before the relays measure: a MOV acts
     /// within the cycle a fault starts.
+    // @block Series capacitor MOV
     pub fn bank_actions(&mut self, m: &dyn Measure) -> Vec<Action> {
         let t = m.time();
         let mut actions = Vec::new();
@@ -1478,6 +1611,7 @@ impl ProtectionRuntime {
     /// What each relay measures now (current through it, its bus voltage,
     /// the apparent impedance of distance relays); `ka(bus, i)` converts a
     /// current to kA at a bus.
+    // @block What each relay sees
     pub fn seen(&self, m: &dyn Measure, ka: impl Fn(usize, C64) -> f64) -> Vec<statics::RelaySeen> {
         self.relays
             .iter()
@@ -1521,6 +1655,12 @@ fn describe_action(a: &Action) -> String {
         Action::Reinsert(e) => format!("series capacitor #{e} reinserted"),
     }
 }
+
+// @block Resolving a relay
+// From a relay's location in bus numbers to its site in the topology: which
+// voltage and current it measures, which currents make up its differential
+// zone, which breakers it and its breaker-failure function trip, and its
+// rated current. A function the location cannot measure is an error.
 
 /// Resolve a relay's location.
 fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
@@ -1568,6 +1708,10 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
         v
     };
     let site = match &r.location {
+        // @block Line end
+        // A line relay measures its own end's current and bus voltage and
+        // trips that end; the zone of a line differential is both ends, with
+        // the line charging compensated; 50BF trips the rest of its bus.
         RelayLocation::Line {
             from,
             to,
@@ -1608,6 +1752,10 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
                 z_base: topo.z_base(bus),
             }
         }
+        // @block Transformer
+        // A transformer relay measures at the from end and trips both ends;
+        // its differential zone refers the from-side current through the
+        // tap ratio.
         RelayLocation::Transformer { from, to, circuit } => {
             let e = topo.branch(*from, *to, circuit)?;
             let br = &topo.branches[e];
@@ -1635,6 +1783,10 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
                 z_base: topo.z_base(br.from),
             }
         }
+        // @block Busbar
+        // A busbar zone sums every branch end, unit and load at the bus and
+        // trips all their breakers; it measures no single current, and its
+        // rated current is the largest feeder rating.
         RelayLocation::Busbar { bus } => {
             let b = topo.bus(*bus)?;
             let mut zone: Vec<Ct> = ends_at(b)
@@ -1673,6 +1825,11 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
                 z_base: topo.z_base(b),
             }
         }
+        // @block Generating unit
+        // A unit relay measures the unit's current (its generator functions
+        // work on the machine base) and trips the unit; a unit alone on its step-up transformer gets a
+        // unit differential zone across the transformer, which trips its
+        // ends too.
         RelayLocation::Generator { bus, machine_id }
         | RelayLocation::Inverter { bus, machine_id } => {
             let u = topo.unit(*bus, machine_id)?;
@@ -1721,6 +1878,9 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
             }
         }
     };
+    // @block Check the functions
+    // A function that needs a current cannot sit on a busbar relay, and a
+    // unit differential needs the zone across a step-up transformer.
     for f in &r.functions {
         let needs_current = !matches!(
             f,
@@ -1754,6 +1914,7 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
     }
     Ok(site)
 }
+// @end
 
 /// Threads to evaluate `n` relays on: one per thousand relays, at most the
 /// machine's parallelism; one (inline) in the browser build.

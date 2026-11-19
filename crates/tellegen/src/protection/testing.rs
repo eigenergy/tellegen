@@ -8,6 +8,8 @@
 //! trip, through faults do not; the same checks for lines and busbars) and the coordination checks of a protection study (selectivity,
 //! backup by Z2 when the busbar protection fails, breaker failure,
 //! auto-reclose, inverter ride-through).
+//!
+//! @block Protection tests
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +18,13 @@ use super::{
     RelayLocation, Topology, TripRecord, UnitKind,
 };
 use crate::rms::{RmsEvent, RmsRequest, RmsSimulation};
+
+// @block Test cases
+// A test is a disturbance in RMS events, the relays and functions switched
+// off for it, the breakers made to fail, and its expectations: a relay
+// trips within a window, does not trip, only the listed relays trip,
+// recloses, locks out, or its breaker-failure function acts. Its outcome
+// says per expectation what was observed.
 
 /// What a test expects.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -128,6 +137,11 @@ pub struct TestOutcome {
     pub seconds: f64,
 }
 
+// @block Running a test
+// The scheme as the test changes it, run with protection in the RMS engine
+// at a 2.5 ms step (1 ms if that does not converge), and the relays' record
+// checked against the expectations.
+
 /// The scheme as a test runs it.
 #[must_use]
 pub fn prepare_scheme(scheme: &ProtectionScheme, test: &ProtectionTest) -> ProtectionScheme {
@@ -203,6 +217,7 @@ fn web_now() -> f64 {
 }
 
 /// Check a run's relay record against the test's expectations.
+// @block Check the expectations
 #[must_use]
 pub fn evaluate(test: &ProtectionTest, report: &ProtectionReport, seconds: f64) -> TestOutcome {
     let t0 = test.fault_time;
@@ -323,6 +338,12 @@ pub fn evaluate(test: &ProtectionTest, report: &ProtectionReport, seconds: f64) 
     }
 }
 
+// @block Suite helpers
+// What the standard suite builds its tests from: its options, the pairs of
+// line relays, which trips count as the system's response rather than fault
+// clearing, a relay's zone delays and what its zones hold, and the
+// reactance of a bolted fault.
+
 /// Options of the standard suite.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SuiteOptions {
@@ -433,6 +454,12 @@ fn bolted_bus_x(topo: &Topology, number: usize) -> f64 {
     )
 }
 
+// @block The standard suite
+// The tests derived from a scheme and its network: for each line with
+// distance relays at both ends, faults along it and the checks around it;
+// for busbars, transformers, units and inverters their own faults; each
+// expectation set from what the relays measure for that fault.
+
 /// The standard tests of a scheme on a topology.
 #[must_use]
 pub fn standard_suite(
@@ -440,6 +467,10 @@ pub fn standard_suite(
     scheme: &ProtectionScheme,
     opts: &SuiteOptions,
 ) -> Vec<ProtectionTest> {
+    // @block Line pairs and fault events
+    // The pairs of distance relays at the two ends of a line, and the line
+    // fault every test applies: bolted, with a reactance small against the
+    // line's impedance.
     let t0 = opts.fault_time;
     let mt = scheme.measuring_time;
     let mut tests = Vec::new();
@@ -495,8 +526,15 @@ pub fn standard_suite(
             permanent,
         }
     };
+    // @block Line tests
+    // The tests of each line pair (all of them, or the first `max_lines`).
     let take = opts.max_lines.unwrap_or(usize::MAX);
     for p in pairs.iter().take(take) {
+        // @block What each end sees
+        // Per fault location, whether each end has infeed enough to measure
+        // the fault, and whether its Z1 and Z2 hold what it measures (a
+        // static short circuit of the test's own fault), so expectations
+        // follow the setting.
         let (Some(z2a), Some(z2b)) = (zone_delay(p.a, "Z2"), zone_delay(p.b, "Z2")) else {
             continue;
         };
@@ -596,6 +634,12 @@ pub fn standard_suite(
                 sees(p.b, end_b, "Z2"),
             )
         };
+        // @block Faults along the line
+        // Distance only (87L and POTT off), faults at 10, 50 and 90 %: an
+        // end that sees the fault in Z1 trips at once, one in Z2 in Z2 time,
+        // one that only sees it after the other end has opened sequentially;
+        // an end without infeed is not expected to trip. No other relay may
+        // trip while the fault lasts.
         for (loc, near_pos, far_pos) in [(0.1, true, false), (0.5, true, true), (0.9, false, true)]
         {
             let (near_z1, far_z1, near_z2, far_z2) = in_z1(loc, near_pos, far_pos);
@@ -692,6 +736,11 @@ pub fn standard_suite(
                 expect,
             });
         }
+        // @block POTT and line differential
+        // A fault at 90 % with 87L off: where both Z2 see it, POTT trips the
+        // end away from the fault at once instead of in Z2 time. With
+        // distance off, both ends trip by 87L at once for a fault in the
+        // middle.
         let (fed_a90, fed_b90) = fed(0.9);
         // POTT accelerates the far end, where both Z2 see the fault.
         let (_, _, pott_a, pott_b) = in_z1(0.9, false, true);
@@ -768,6 +817,7 @@ pub fn standard_suite(
                 ],
             });
         }
+        // @block Reverse fault
         // Reverse fault: a line behind the near end, cleared by its own
         // relays; the near end must stay.
         if let Some(behind) = pairs.iter().find(|q| {
@@ -800,6 +850,7 @@ pub fn standard_suite(
                 ],
             });
         }
+        // @block Breaker failure
         // Breaker failure at the near end, where current still flows through
         // the stuck breaker once the far end has opened (a bus with nothing
         // behind it feeds no fault, and there is nothing to detect).
@@ -866,7 +917,10 @@ pub fn standard_suite(
                 ],
             });
         }
-        // Auto-reclose.
+        // @block Auto-reclose
+        // Auto-reclose. A transient fault dies out in the dead time and
+        // both ends reclose (or the follower is held by the synchronism
+        // check); a permanent one trips again and locks out.
         if p.a.autoreclose.is_some() && p.b.autoreclose.is_some() {
             let dead = p.a.autoreclose.as_ref().map_or(0.5, |a| a.dead_time);
             tests.push(ProtectionTest {
@@ -916,8 +970,11 @@ pub fn standard_suite(
         }
     }
 
+    // @block Busbars
     // Busbars: internal fault, and Z2 backup when the busbar protection
-    // fails.
+    // fails. The busbar differential must clear the bus alone; with it off,
+    // the remote line ends that measure the fault in Z2 (and have the infeed
+    // to) trip in Z2 time and the ends at the bus stay.
     for r in scheme.relays.iter().filter(|r| r.enabled) {
         let RelayLocation::Busbar { bus } = &r.location else {
             continue;
@@ -1054,7 +1111,10 @@ pub fn standard_suite(
         }
     }
 
-    // Transformers: internal fault trips, external fault does not.
+    // @block Transformers
+    // Transformers: internal fault trips, external fault does not. A
+    // winding fault trips 87T at once (a unit differential across it may
+    // trip too); a cleared fault at the `to` bus leaves 87T stable.
     for r in scheme.relays.iter().filter(|r| r.enabled && has(r, "87T")) {
         let RelayLocation::Transformer { from, to, circuit } = &r.location else {
             continue;
@@ -1128,7 +1188,9 @@ pub fn standard_suite(
         });
     }
 
-    // Units.
+    // @block Units
+    // Units. A terminal fault trips 87U at once; an inverter rides through
+    // a 100 ms fault at its bus and trips by its envelope during a 1 s one.
     for r in scheme.relays.iter().filter(|r| r.enabled) {
         match &r.location {
             RelayLocation::Generator { bus, machine_id } if has(r, "87U") => {
@@ -1227,6 +1289,7 @@ pub fn standard_suite(
             _ => {}
         }
     }
+    // @block Unique names
     // Names identify a test (the UI keys on them): number any repeats.
     let mut seen = std::collections::HashMap::<String, usize>::new();
     for t in &mut tests {
@@ -1238,6 +1301,11 @@ pub fn standard_suite(
     }
     tests
 }
+
+// @block Running the suite
+// A suite's outcome: the audit of the scheme and every test run in RMS,
+// spread over the machine's cores in native builds and one after the other
+// in the browser.
 
 /// A whole suite's outcome.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

@@ -13,6 +13,11 @@ cannot drift from the code, because the code is all it reads.
   built, so it shows exactly the code that server runs).
 - **Locally:** `just blocks` writes `target/blocks/rms.html`.
 
+Protection relays (`crates/tellegen/src/protection`) are documented the same
+way: `/docs/blocks/protection` on a running server, and
+`target/blocks/protection.html` from `just blocks`. Their link to RMS runs
+(`rms::protect`) and the app's protection views are blocks of the RMS diagram.
+
 ## Declaring a block in Rust
 
 One tag in the documentation the code already has. There are three kinds,
@@ -98,12 +103,14 @@ script reports the same as build warnings.
 
 ```sh
 cargo run -p tellegen-blocks -- --preset rms --out target/blocks/rms.html
+cargo run -p tellegen-blocks -- --preset protection --out target/blocks/protection.html
 cargo run -p tellegen-blocks -- crates/tellegen/src/rms \
     --title "tellegen RMS engine" --out target/blocks/rms.html \
     [--json target/blocks/rms.json] [--source-url <prefix>] [--check]
 ```
 
-`--preset rms` draws the engine and the app's dynamics code together;
+`--preset rms` draws the engine and the app's dynamics code together,
+`--preset protection` the relay engine;
 `--source-url` links each block to its lines (for example
 `https://github.com/<org>/<repo>/blob/<rev>/`); `--check` exits with an error
 when there are annotation issues. The generator has no dependencies and works

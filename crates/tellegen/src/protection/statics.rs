@@ -5,6 +5,8 @@
 //! breakers open, the short circuit is solved again with them open, and the
 //! relays go on from there, until the fault is isolated or nothing more
 //! operates.
+//!
+//! @block Static protection study
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +15,11 @@ use super::{
     balanced, Action, End, Measure, Operation, ProtectionRuntime, ProtectionScheme, Topology,
     TripRecord, C64,
 };
+
+// @block Study input and result
+// The fault a study applies (at a bus or inside a branch, through an
+// impedance), what each relay measures at its inception, the steps in which
+// breakers open, and the trips, operations and clearing time.
 
 /// Where a static fault sits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -77,6 +84,12 @@ pub struct StaticStudy {
     pub notes: Vec<String>,
 }
 
+// @block Measurements from a short circuit
+// The relays read a solved short circuit as they read a running
+// simulation: balanced phasors of its voltages and currents, the breakers
+// and units the study has opened, and no load current (IEC 60909 neglects
+// loads).
+
 /// The relays' view of a solved short circuit.
 struct StaticMeasure<'a> {
     calc: &'a FaultCalc<'a>,
@@ -126,18 +139,23 @@ impl Measure for StaticMeasure<'_> {
         !self.units_out.contains(&u)
     }
 }
+// @end
 
 /// Run the static study of `fault` for up to `t_max` seconds.
 ///
 /// # Errors
 /// When the fault names a missing element, a relay does not bind, or the
 /// short circuit cannot be solved.
+// @block Run the study
 pub fn static_study(
     topo: &Topology,
     scheme: &ProtectionScheme,
     fault: &StaticFault,
     t_max: f64,
 ) -> Result<StaticStudy, String> {
+    // @block Fault point
+    // The fault in bus numbers becomes a fault point of the calculation,
+    // with the voltage factor `c = 1.0`.
     let mut calc = FaultCalc::new(topo);
     calc.c = 1.0;
     let (point, zf, faulted_branch, fault_bus) = match fault {
@@ -172,6 +190,10 @@ pub fn static_study(
             )
         }
     };
+    // @block Pre-fault and inception
+    // The relays are bound and evaluated once on the pre-fault state, which
+    // gives them their memory voltage; then the fault is solved, what each
+    // relay sees is recorded, and they evaluate it at `t = 0`.
     let mut runtime = ProtectionRuntime::bind(scheme, topo, true)?;
     let mut open: Vec<(usize, End)> = Vec::new();
     let mut units_out: Vec<usize> = Vec::new();
@@ -214,6 +236,11 @@ pub fn static_study(
         open: &open,
         units_out: &units_out,
     });
+    // @block Step from deadline to deadline
+    // The clock jumps to the relays' next deadline; the breaker actions due
+    // are applied, the short circuit is solved again with them (without the
+    // fault once it is isolated), and the relays evaluate the new state,
+    // until nothing is due within `t_max`.
     let isolated = |open: &[(usize, End)], units_out: &[usize]| -> bool {
         if let Some(e) = faulted_branch {
             return open.contains(&(e, End::From)) && open.contains(&(e, End::To));
@@ -308,6 +335,9 @@ pub fn static_study(
             units_out: &units_out,
         });
     }
+    // @block Study report
+    // Notes on clearing and on the method, and the relays' operations and
+    // trips.
     if study.cleared_at.is_none() {
         study
             .notes
@@ -322,6 +352,7 @@ pub fn static_study(
 
 /// The relays at the load flow operating point: what picks up (overload,
 /// voltage, load inside a zone) and what each relay measures.
+// @block Relays at the operating point
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct OperatingPoint {
     pub pickups: Vec<Operation>,

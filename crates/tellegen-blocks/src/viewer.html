@@ -98,6 +98,9 @@ aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; co
 .doc pre code { background: none; padding: 0; }
 .doc ul, .doc ol { padding-left: 20px; margin: 0 0 10px; }
 .doc h4 { margin: 14px 0 6px; font-size: 14px; }
+.doc table { border-collapse: collapse; margin: 0 0 10px; font-size: 12px; display: block; overflow-x: auto; }
+.doc th, .doc td { border: 1px solid var(--line, #8884); padding: 3px 6px; text-align: left; vertical-align: top; }
+.doc th { background: var(--code-bg); }
 .list { display: flex; flex-direction: column; gap: 4px; }
 .list button { text-align: left; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 6px 9px; cursor: pointer; font: inherit; }
 .list button:hover { border-color: var(--accent); }
@@ -223,6 +226,19 @@ function markdown(src) {
       while (i < lines.length && !lines[i].trim().startsWith('```')) body.push(lines[i++]);
       html += '<pre><code>' + esc(body.join('\n')) + '</code></pre>';
       i++;
+      continue;
+    }
+    // A table: `| a | b |` rows, the second a `|---|---|` separator.
+    if (t.startsWith('|') && i + 1 < lines.length && /^\|?[\s:|-]+\|?$/.test(lines[i + 1].trim()) && lines[i + 1].includes('-')) {
+      flush();
+      const cells = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => inline(c.trim()));
+      html += '<table><thead><tr>' + cells(t).map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        html += '<tr>' + cells(lines[i]).map(c => '<td>' + c + '</td>').join('') + '</tr>';
+        i++;
+      }
+      html += '</tbody></table>';
       continue;
     }
     const h = t.match(/^#{1,6}\s+(.*)$/);

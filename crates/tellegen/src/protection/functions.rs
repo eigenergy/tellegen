@@ -1,4 +1,13 @@
 //! The measuring elements and their timers.
+//!
+//! Each relay keeps one element per protection function. At every
+//! evaluation the relay measures: it takes its voltage and current phasors,
+//! keeps a memory voltage for polarization and a frequency estimate, and
+//! updates each element's pickup and timer (or its integral, for the
+//! inverse-time, thermal and negative-sequence functions). It then decides:
+//! the first function whose time has run out trips the relay.
+//!
+//! @block Measuring elements
 
 use std::collections::VecDeque;
 use std::f64::consts::PI;
@@ -9,6 +18,11 @@ use super::{
     op_a, sequences, Action, Characteristic, CtSource, Direction, Distance, End, Measure,
     Operation, OperationKind, ProtectionFunction, Relay, Site, Zone, C64,
 };
+
+// @block Inverse-time curves
+// The time–current curves of the overcurrent stages: the IEC and IEEE
+// constants, the operating time at a multiple of the setting (flat above 20
+// times), and the timed reset of the IEEE curves.
 
 /// Time–current curve of an overcurrent stage: IEC 60255-151:2009 Annex A,
 /// `t = TMS (k / (G^α − 1) + c)`, with the IEEE curves of IEEE C37.112,
@@ -71,6 +85,11 @@ fn reset_time(curve: Curve, tms: f64, g: f64) -> Option<f64> {
     let (_, _, _, tr) = curve.constants()?;
     (tr > 0.0 && g < 1.0).then(|| tms * tr / (1.0 - g * g))
 }
+
+// @block Timers
+// A pickup timer: it starts when its condition picks up, resets when it
+// drops, logs both (the first twenty per function, as relays evaluate every
+// sample), and says when its delay has run out.
 
 /// A pickup with its definite-time delay.
 #[derive(Clone, Debug, Default)]
@@ -141,6 +160,13 @@ fn op(time: f64, relay: &str, function: &str, kind: OperationKind, detail: Strin
         detail,
     }
 }
+
+// @block Element state
+// What each function remembers between evaluations: its timers, the
+// integral of an inverse-time or negative-sequence function, the thermal
+// state, the side of the out-of-step blinders, the ride-through clock, and
+// for distance the power swing tracker; per relay, the frequency estimate
+// and its history.
 
 /// Region of the out-of-step blinders.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -230,6 +256,13 @@ struct FrequencyEstimate {
     low_at: Option<f64>,
 }
 
+// @block Relay state
+// One relay during a run: its settings and site, an element per function,
+// the memory voltage, the teleprotection permission it sends and receives,
+// and its trip, breaker and reclose state. The runtime asks it for its next
+// deadline, has it measure and decide, and tells it when its breaker opened
+// or reclosed.
+
 /// A relay during a run.
 #[derive(Clone, Debug)]
 pub(crate) struct RelayState {
@@ -264,6 +297,9 @@ struct Pick {
 }
 
 impl RelayState {
+    /// A relay with one element per function, its timers reset, and a
+    /// frequency history kept only when it carries a RoCoF function.
+    // @block Elements from the settings
     pub(crate) fn new(spec: Relay, site: Site) -> Self {
         let elements =
             spec.functions
@@ -439,6 +475,7 @@ impl RelayState {
     }
 
     /// Earliest instant a running timer expires.
+    // @block Relay deadline
     pub(crate) fn deadline(&self, measuring: f64) -> Option<f64> {
         if self.latched {
             return None;
@@ -477,6 +514,7 @@ impl RelayState {
     }
 
     /// Measure and update the elements.
+    // @block Measure
     pub(crate) fn measure(&mut self, m: &dyn Measure, dt: f64, f0: f64, ops: &mut Vec<Operation>) {
         let t = m.time();
         let id = self.spec.id.clone();
@@ -486,6 +524,7 @@ impl RelayState {
         let i = self.current(m);
         let seq_i = i.map(sequences);
         let i_nom = self.site.i_nom.max(1e-9);
+        // @block Memory voltage
         // Positive-sequence memory voltage (polarization): the pre-fault
         // voltage is held for 100 ms after a collapse, then the relay
         // polarizes with the present voltage (blocked without one).
@@ -503,8 +542,9 @@ impl RelayState {
                 v1
             }
         };
+        // @block Frequency estimate
         // Frequency: the angle rate of V1 in the reference frame, filtered
-        // over 40 ms.
+        // over 40 ms. Below 5 % voltage the last estimate is kept.
         let freq = {
             let theta = v1.arg();
             let mut f_now = None;
@@ -536,6 +576,10 @@ impl RelayState {
             self.freq.last = Some((t, theta));
             self.freq.f.unwrap_or(f0)
         };
+        // @block Functions
+        // Each function updates its element from the measurements; one that
+        // trips without a timer (78, 46, 49) marks itself ready for the
+        // decision.
         let mut over = false;
         let mut under = false;
         for (k, f) in self.spec.functions.iter().enumerate() {
@@ -543,6 +587,13 @@ impl RelayState {
             let mut ready: Option<(String, bool, bool)> = None;
             let el = &mut self.elements[k];
             match (f, el) {
+                // @block Overcurrent
+                // 50/51/67 on the largest phase current, 50N/51N/67N on the
+                // residual current (unbalanced engines only). The direction
+                // compares the current with the polarizing voltage. A
+                // definite-time stage times its pickup; an inverse stage
+                // integrates `dt / t(G)` and trips at 1, resetting at once
+                // (IEC) or along the reset curve (IEEE).
                 (ProtectionFunction::Overcurrent(o) | ProtectionFunction::EarthFault(o), el) => {
                     let earth = matches!(f, ProtectionFunction::EarthFault(_));
                     let Some(ip) = i else { continue };
@@ -601,6 +652,11 @@ impl RelayState {
                         _ => {}
                     }
                 }
+                // @block Distance
+                // 21: the measuring loops are checked against every zone, the
+                // power swing detection may block the zones, and each zone's
+                // timer runs on what is left. The forward Z1 and overreaching
+                // zone pickups are the permission teleprotection sends.
                 (
                     ProtectionFunction::Distance(d),
                     Element::Distance {
@@ -611,7 +667,16 @@ impl RelayState {
                 ) => {
                     let Some(ip) = i else { continue };
                     let res = distance(d, &v, &ip, vmem, m.unbalanced(), &self.site, i_nom);
+                    // @block Power swing blocking
                     // Power swing detection on the positive-sequence impedance.
+                    // 68 watches two boundaries concentric with the largest
+                    // forward zone. An impedance that takes longer than
+                    // `delta_t` from the outer to the inner one, or keeps moving
+                    // across the characteristic inside the outer one, is a swing
+                    // and blocks the zones; a jump with the voltage falling is a
+                    // fault and does not. The block ends when the impedance
+                    // leaves the outer boundary or after the maximum blocking
+                    // time.
                     let mut blocked = false;
                     if let (Some(psb), Some(si)) = (&d.power_swing_blocking, seq_i) {
                         if si[1].norm() > d.min_current * i_nom {
@@ -754,6 +819,7 @@ impl RelayState {
                             swing.last_v = None;
                         }
                     }
+                    // @block Zone timers
                     // A zone that decided with the memory voltage holds its
                     // decision while fault current flows and no voltage is
                     // left to polarize with (directional latch): a sustained
@@ -782,6 +848,13 @@ impl RelayState {
                     });
                     let _ = scheme;
                 }
+                // @block Differential
+                // 87: per phase the operate current `|Σ I|` against the
+                // restraint `Σ |I| / 2` over the zone's current transformers,
+                // a line's charging current subtracted while both ends are
+                // closed. It operates above the biased characteristic or the
+                // unrestrained level; second-harmonic content above the
+                // setting blocks it below the unrestrained level (inrush).
                 (ProtectionFunction::Differential(dset), Element::Timer { timer, .. }) => {
                     let mut id_max: f64 = 0.0;
                     let mut ir_at: f64 = 0.0;
@@ -842,6 +915,11 @@ impl RelayState {
                         format!("Id {id_max:.2} In, Ir {ir_at:.2} In")
                     });
                 }
+                // @block Voltage and V/Hz
+                // 27 on the lowest and 59 on the highest phase-to-ground
+                // voltage, each with a small reset hysteresis; 59N on `3 V0`
+                // (unbalanced engines only); 24 on the voltage over the
+                // frequency, both per unit.
                 (ProtectionFunction::Undervoltage(s), Element::Timer { timer, .. }) => {
                     let vmin = phase_ground(&v, m.unbalanced())
                         .into_iter()
@@ -873,6 +951,9 @@ impl RelayState {
                         format!("V/Hz {vhz:.3} pu")
                     });
                 }
+                // @block Frequency
+                // 81U and 81O on the frequency estimate, blocked below their
+                // minimum voltage, with a 20 mHz reset hysteresis.
                 (ProtectionFunction::Underfrequency(s), Element::Timer { timer, .. }) => {
                     let held = timer.since.is_some();
                     let ok = v1.norm() >= s.min_voltage;
@@ -885,6 +966,10 @@ impl RelayState {
                     let picked = ok && (freq > s.pickup || (held && freq > s.pickup - 0.02));
                     timer.update(picked, t, ops, &id, label, || format!("f {freq:.3} Hz"));
                 }
+                // @block Rate of change of frequency
+                // 81R: the least-squares slope of the frequency over a full
+                // window, leaving out a voltage dip and the 50 ms after it;
+                // blocked below its minimum voltage.
                 (ProtectionFunction::Rocof(s), Element::Timer { timer, .. }) => {
                     let ok = v1.norm() >= s.min_voltage;
                     if !ok {
@@ -927,6 +1012,11 @@ impl RelayState {
                         format!("df/dt {rate:.2} Hz/s")
                     });
                 }
+                // @block Reverse power and loss of field
+                // 32 picks up when the unit's active power, on its machine
+                // base, is below minus the setting. 40 places the
+                // positive-sequence impedance on the machine base against two
+                // offset mho circles below the R axis, each with its delay.
                 (ProtectionFunction::ReversePower(s), Element::Timer { timer, .. }) => {
                     let Some(ip) = i else { continue };
                     let p: f64 = (0..3).map(|k| (v[k] * ip[k].conj()).re).sum::<f64>() / 3.0;
@@ -948,6 +1038,11 @@ impl RelayState {
                     z1.update(in1, t, ops, &id, format_args!("{label} Z1"), String::new);
                     z2.update(in2, t, ops, &id, format_args!("{label} Z2"), String::new);
                 }
+                // @block Out of step
+                // 78: the impedance is placed left of, between or right of
+                // the blinders (or outside the reach); a slip is a crossing
+                // from one side to the other that spent at least the minimum
+                // time between them. The set number of slips trips.
                 (
                     ProtectionFunction::OutOfStep(o),
                     Element::OutOfStep {
@@ -1001,6 +1096,12 @@ impl RelayState {
                         ready = Some((label.clone(), false, false));
                     }
                 }
+                // @block Negative sequence and thermal
+                // 46 integrates `I2² − I2c²` above the continuous capability
+                // and cools at that rate below it, tripping at `K`
+                // (unbalanced engines only). 49 follows the first-order
+                // thermal image of the largest phase current and trips at
+                // `θ = 1`, starting from the state of the first current.
                 (ProtectionFunction::NegativeSequence(n), Element::Integral { acc }) => {
                     if !m.unbalanced() {
                         continue;
@@ -1029,6 +1130,11 @@ impl RelayState {
                         ready = Some((label.clone(), false, false));
                     }
                 }
+                // @block Ride-through envelope
+                // FRT: a fall below the start voltage from a healthy state
+                // starts the clock, a recovery that lasts the reset time stops
+                // it, and the unit trips while the voltage is below the
+                // profile at the clock's time.
                 (
                     ProtectionFunction::FaultRideThrough(frt),
                     Element::Frt {
@@ -1086,6 +1192,7 @@ impl RelayState {
 
     /// Whether a function trips now: `(label, starts auto-reclose, unit
     /// zone trip)`.
+    // @block Decide
     pub(crate) fn decide(
         &mut self,
         t: f64,
@@ -1178,6 +1285,11 @@ impl RelayState {
     }
 }
 
+// @block Voltage helpers
+// Phase-to-ground and phase-to-phase voltage magnitudes, the voltages at
+// both ends of a line for its charging current, and the ride-through
+// profile at a time after the fault.
+
 /// Phase-to-ground voltage magnitudes (pu of the phase-to-ground base); in
 /// a balanced measurement the positive sequence.
 fn phase_ground(v: &[C64; 3], unbalanced: bool) -> [f64; 3] {
@@ -1226,6 +1338,12 @@ pub(crate) fn profile(points: &[[f64; 2]], t: f64) -> f64 {
     points.last().map_or(0.0, |p| p[1])
 }
 
+// @block Distance characteristic
+// The distance measurement: the measuring loops of a relay (six loops on
+// unbalanced phasors, the positive-sequence loop on balanced ones), the
+// load-encroachment region, and whether a loop's impedance lies inside a
+// mho or quadrilateral zone.
+
 struct DistanceResult {
     zones: Vec<bool>,
     /// The first loop's apparent impedance (Ω) outside the load region.
@@ -1244,6 +1362,7 @@ impl DistanceResult {
 
 /// Evaluate the zones of a distance function on the six loops (or the
 /// positive-sequence loop of balanced phasors).
+// @block Measuring loops
 fn distance(
     d: &Distance,
     v: &[C64; 3],
@@ -1334,6 +1453,11 @@ fn in_load(d: &Distance, z: C64) -> bool {
     })
 }
 
+/// Whether a loop (voltage `v`, current `i`, polarizing voltage `pol`) lies
+/// inside zone `z`: the polarized mho of the zone's reach along its angle,
+/// or the quadrilateral of its reactance and resistive reaches after a
+/// directional check.
+// @block Mho and quadrilateral
 fn in_zone(d: &Distance, z: &Zone, v: C64, i: C64, pol: C64, zb: f64) -> bool {
     let angle = z.angle.unwrap_or(d.line_angle).to_radians();
     let sign = if z.direction == Direction::Reverse {
@@ -1366,6 +1490,7 @@ fn in_zone(d: &Distance, z: &Zone, v: C64, i: C64, pol: C64, zb: f64) -> bool {
         }
     }
 }
+// @end
 
 #[cfg(test)]
 mod tests {
