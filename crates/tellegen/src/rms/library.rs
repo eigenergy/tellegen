@@ -17,7 +17,10 @@ use powerio::{BalancedNetwork, DynamicCase, DynamicRecord};
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LibraryModel {
-    /// `machine`, `exciter`, `governor`, `stabilizer` or `inverter`.
+    /// `machine`, `exciter`, `governor`, `stabilizer`, `inverter` (a whole
+    /// inverter-based unit), or one part of an inverter-based unit:
+    /// `converter`, `electrical` (electrical control) or `plant` (plant
+    /// controller).
     pub role: &'static str,
     pub name: &'static str,
     pub label: &'static str,
@@ -121,13 +124,63 @@ pub(super) const LIBRARY: &[LibraryModel] = &[
         name: "REGCA1",
         label: "Inverter-based resource (WECC REGCA1 + REECB1)",
         engines: "RMS: simulated with a REPCA1 plant controller (REGCA1 + REECB1 + REPCA1); without one, a constant current at its power flow output",
-        params: "1 0.02 10.0 0.9 0.5 1.22 1.2 0.8 0.4 1.3 0.02 0.7 999.0 -999.0 0.7",
+        params: REGCA1,
+    },
+    // The parts of an inverter-based unit, each swapped on its own.
+    LibraryModel {
+        role: "converter",
+        name: "REGCA1",
+        label: "Converter interface (WECC REGCA1)",
+        engines: "RMS: part of a REGCA1 + REECB1 + REPCA1 plant",
+        params: REGCA1,
+    },
+    LibraryModel {
+        role: "electrical",
+        name: "REECB1",
+        label: "Electrical control (WECC REECB1)",
+        engines: "RMS: part of a REGCA1 + REECB1 + REPCA1 plant",
+        params: REECB1,
+    },
+    LibraryModel {
+        role: "plant",
+        name: "REPCA1",
+        label: "Plant controller (WECC REPCA1)",
+        engines: "RMS: with REGCA1 + REECB1 a simulated plant; without a plant controller the unit is a constant current at its power flow output",
+        params: REPCA1,
     },
 ];
 
-/// The electrical controls the inverter chain's REGCA1 comes with.
+/// The converter of the inverter chain.
+const REGCA1: &str = "1 0.02 10.0 0.9 0.5 1.22 1.2 0.8 0.4 1.3 0.02 0.7 999.0 -999.0 0.7";
+
+/// The electrical controls the inverter chain's REGCA1 comes with: the five
+/// flags (IREG, PFFLAG, VFLAG, QFLAG, PQFLAG), then the 25 constants.
 const REECB1: &str =
-    "0 0 0 0 0.9 1.1 0.0 -0.05 0.05 0.0 1.1 -1.1 0.0 0.02 0.436 -0.436 1.1 0.9 0.0 0.1 0.0 1.0 0.02 1.0 -1.0 1.0 0.0 1.1 0.02";
+    "0 0 0 0 0 0.9 1.1 0.0 -0.05 0.05 0.0 1.1 -1.1 0.0 0.02 0.436 -0.436 1.1 0.9 0.0 0.1 0.0 1.0 0.02 1.0 -1.0 1.0 0.0 1.1 0.02";
+
+/// A plant controller regulating its own terminal, with no monitored branch
+/// (the only form the engine simulates): the values of the WECC 240 test
+/// case's plants.
+const REPCA1: &str = "0 0 0 '0' 0 0 1 0.02 18.0 5.0 0.0 0.05 0.0 0.0 0.0 0.02 0.1 -0.1 -1.0 1.0 0.43 -0.43 1.0 0.05 0.25 -1.0 1.0 99.0 -99.0 1.0 0.0 0.1 0.0 0.0";
+
+/// The roles of the parts of an inverter-based unit, in chain order.
+pub(crate) const INVERTER_PARTS: [&str; 3] = ["converter", "electrical", "plant"];
+
+/// The part an inverter record plays: `converter` (REGC*), `electrical`
+/// (REEC*), `plant` (REPC*), or `inverter` for another inverter record
+/// (wind turbine models, ...).
+pub(crate) fn inverter_part(name: &str) -> &'static str {
+    let n = name.trim().to_ascii_uppercase();
+    if n.starts_with("REGC") {
+        "converter"
+    } else if n.starts_with("REEC") {
+        "electrical"
+    } else if n.starts_with("REPC") {
+        "plant"
+    } else {
+        "inverter"
+    }
+}
 
 /// The model library (the roles and models a unit can get).
 #[must_use]
@@ -145,7 +198,7 @@ pub(crate) fn is_inverter(name: &str) -> bool {
 /// The role of a DYR record: a typed model's role, or `inverter`.
 fn role_of(rec: &DynamicRecord) -> Option<&'static str> {
     if is_inverter(rec.model_name()) {
-        return Some("inverter");
+        return Some(inverter_part(rec.model_name()));
     }
     Some(match powerio::typed_model(rec).ok()?.role() {
         powerio::ModelRole::Machine => "machine",
@@ -294,7 +347,9 @@ fn append(text: &mut String, record: &str) {
 /// Set the model of one role of the unit `(bus, id)`: `Some(name)` replaces
 /// that role's record by the library model with typical parameters (or adds
 /// it), `None` removes it. An inverter replaces the unit's machine and
-/// controls (and a machine its inverter records).
+/// controls (and a machine its inverter records). The parts of an
+/// inverter-based unit (`converter`, `electrical`, `plant`) swap one record
+/// of a unit that has a converter; only the plant controller can be removed.
 ///
 /// # Errors
 /// An unknown model, a model of another role, or DYR text that does not
@@ -309,9 +364,12 @@ pub fn dyr_set_model(
 ) -> Result<String, String> {
     let chosen = match model {
         Some(name) => {
+            let named = |m: &&LibraryModel| m.name.eq_ignore_ascii_case(name);
             let m = LIBRARY
                 .iter()
-                .find(|m| m.name.eq_ignore_ascii_case(name))
+                .filter(named)
+                .find(|m| m.role == role)
+                .or_else(|| LIBRARY.iter().find(named))
                 .ok_or_else(|| format!("model {name} is not in the library"))?;
             if m.role != role {
                 return Err(format!(
@@ -323,11 +381,43 @@ pub fn dyr_set_model(
         }
         None => None,
     };
+    // One part of an inverter-based unit: the unit must be one, and only the
+    // plant controller may go (the unit then holds a constant current); the
+    // converter and the electrical control are swapped, not removed.
+    if INVERTER_PARTS.contains(&role) {
+        if chosen.is_none() && role != "plant" {
+            return Err(format!(
+                "the {role} of an inverter-based unit can be swapped, not removed \
+                 (make the unit static to remove the inverter)"
+            ));
+        }
+        let dyr = powerio::parse_dyr(text).map_err(|e| format!("DYR: {e}"))?;
+        if !unit_records(&dyr, bus, id)
+            .iter()
+            .any(|r| role_of(r) == Some("converter"))
+        {
+            return Err(format!(
+                "unit {bus} {} has no inverter (REGCA1): give it one first",
+                quote_id(id)
+            ));
+        }
+    }
     // Roles whose records go: the role itself; for an inverter (or a
     // machine), also the other kind of unit.
+    const ALL: &[&str] = &[
+        "inverter",
+        "converter",
+        "electrical",
+        "plant",
+        "machine",
+        "exciter",
+        "governor",
+        "stabilizer",
+    ];
     let drop: &[&str] = match (role, chosen.is_some()) {
-        ("inverter", true) => &["inverter", "machine", "exciter", "governor", "stabilizer"],
-        ("machine", true) => &["machine", "inverter"],
+        ("inverter", true) => ALL,
+        ("inverter", false) => &["inverter", "converter", "electrical", "plant"],
+        ("machine", true) => &["machine", "inverter", "converter", "electrical", "plant"],
         ("machine", false) => &["machine", "exciter", "governor", "stabilizer"],
         _ => &[],
     };
@@ -486,6 +576,83 @@ mod tests {
         "/tests/support/wecc240.rs"
     ));
 
+    /// The parts of an inverter-based unit swap one at a time: the plant
+    /// controller goes and comes back (the plant count follows), a new
+    /// inverter takes the library's plant controller and is simulated as a
+    /// plant, and what cannot be done is refused with a reason.
+    #[test]
+    fn inverter_parts_swap_and_simulate() {
+        use crate::rms::{LoadModel, RmsRequest, RmsSimulation};
+        let Some(net) = shipped_wecc240_network() else {
+            return;
+        };
+        let dir = shipped_wecc240().unwrap();
+        let base = std::fs::read_to_string(dir.join("case.dyr")).unwrap();
+        let plants = |text: &str| -> usize {
+            let dyr = powerio::parse_dyr(text).unwrap();
+            let res = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance)
+                .unwrap()
+                .run(&RmsRequest {
+                    t_end: 0.2,
+                    dt: 0.005,
+                    output_step: 0.05,
+                    load_model: Some(LoadModel::ConstantImpedance),
+                    events: vec![],
+                    small_signal: false,
+                    record: None,
+                })
+                .unwrap();
+            res.notes
+                .iter()
+                .find_map(|n| {
+                    n.strip_suffix(" renewable plant(s) simulated as REGCA1 + REECB1 + REPCA1")
+                        .and_then(|k| k.parse().ok())
+                })
+                .unwrap_or(0)
+        };
+        let models = |text: &str, bus: usize, id: &str| -> Vec<String> {
+            let dyr = powerio::parse_dyr(text).unwrap();
+            unit_records(&dyr, bus, id)
+                .iter()
+                .map(|r| r.model_name().trim().to_string())
+                .collect()
+        };
+        let n0 = plants(&base);
+        assert!(n0 > 0);
+        // The plant controller out and back in.
+        let without = dyr_set_model(&base, 1032, "S", "plant", None).unwrap();
+        assert_eq!(models(&without, 1032, "S"), ["REGCA1", "REECB1"]);
+        assert_eq!(plants(&without), n0 - 1);
+        let back = dyr_set_model(&without, 1032, "S", "plant", Some("REPCA1")).unwrap();
+        assert_eq!(models(&back, 1032, "S"), ["REGCA1", "REECB1", "REPCA1"]);
+        assert_eq!(plants(&back), n0);
+        // Swapping the electrical control keeps the chain.
+        let swapped = dyr_set_model(&back, 1032, "S", "electrical", Some("REECB1")).unwrap();
+        assert_eq!(models(&swapped, 1032, "S"), ["REGCA1", "REPCA1", "REECB1"]);
+        assert_eq!(plants(&swapped), n0);
+        // A machine made an inverter, with the library's plant controller.
+        let inv = dyr_set_model(&base, 1034, "G", "inverter", Some("REGCA1")).unwrap();
+        let inv = dyr_set_model(&inv, 1034, "G", "plant", Some("REPCA1")).unwrap();
+        assert_eq!(models(&inv, 1034, "G"), ["REGCA1", "REECB1", "REPCA1"]);
+        assert_eq!(plants(&inv), n0 + 1);
+        // Refused: removing the converter or the electrical control, a part
+        // on a machine, an inverter part in another role.
+        for (bus, id, role, model) in [
+            (1032, "S", "converter", None),
+            (1032, "S", "electrical", None),
+            (1032, "C", "plant", Some("REPCA1")),
+            (1032, "S", "plant", Some("REECB1")),
+        ] {
+            assert!(
+                dyr_set_model(&base, bus, id, role, model).is_err(),
+                "{bus} {id} {role} {model:?}"
+            );
+        }
+        // A whole inverter still replaces every part; removing it takes all.
+        let none = dyr_set_model(&base, 1032, "S", "inverter", None).unwrap();
+        assert!(models(&none, 1032, "S").is_empty());
+    }
+
     /// Every library record parses through powerio's schema (typed models)
     /// with the arity the engine expects.
     #[test]
@@ -496,6 +663,15 @@ mod tests {
             let r = &dyr.records()[0];
             if m.role == "inverter" {
                 assert!(is_inverter(r.model_name()));
+            } else if INVERTER_PARTS.contains(&m.role) {
+                assert!(is_inverter(r.model_name()), "{}", m.name);
+                assert_eq!(role_of(r), Some(m.role), "{}", m.name);
+                assert_eq!(
+                    r.parameters().len(),
+                    super::super::dyr_params::param_count(m.name).unwrap_or(0),
+                    "{}",
+                    m.name
+                );
             } else {
                 let typed = powerio::typed_model(r).unwrap_or_else(|e| panic!("{}: {e}", m.name));
                 assert_eq!(role_of(r), Some(m.role), "{}", m.name);

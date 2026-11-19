@@ -28,17 +28,19 @@ export interface DyrParameter {
   description?: string;
 }
 
-/** A DYR record linked to a generator. */
+/** A DYR record linked to a generator. An inverter record's role is its part
+ * of the plant: `converter` (REGC*), `electrical` (REEC*), `plant` (REPC*),
+ * or `inverter` for another inverter record. */
 export interface DyrRecordView {
   /** First line of the record in the file (1-based); edits name it. */
   line: number;
   model: string;
-  role: "machine" | "exciter" | "governor" | "stabilizer";
+  role: "machine" | "exciter" | "governor" | "stabilizer" | InverterPart | "inverter";
   parameters: DyrParameter[];
 }
 
 /** A generating unit of the case: its linked DYR records (none for a static
- * unit) and its inverter records. */
+ * unit) and its inverter records (by name, and as parts with parameters). */
 export interface DyrGeneratorView {
   bus: number;
   machine_id: string;
@@ -50,10 +52,23 @@ export interface DyrGeneratorView {
   vg: number;
   records: DyrRecordView[];
   inverter: string[];
+  /** Converter, electrical control and plant controller, in that order;
+   * a model without named parameters has none. */
+  inverter_records?: DyrRecordView[];
 }
 
-/** Role of a dynamic model in a generating unit. */
-export type ModelRole = "machine" | "exciter" | "governor" | "stabilizer" | "inverter";
+/** A part of an inverter-based unit, swapped on its own. */
+export type InverterPart = "converter" | "electrical" | "plant";
+
+/** Role of a dynamic model in a generating unit: a synchronous machine and
+ * its controls, a whole inverter-based unit, or one part of one. */
+export type ModelRole =
+  | "machine"
+  | "exciter"
+  | "governor"
+  | "stabilizer"
+  | "inverter"
+  | InverterPart;
 
 /** One model of the library. */
 export interface LibraryModel {
