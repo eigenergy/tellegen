@@ -14,7 +14,9 @@ import {
 	rmsSupport,
 	type BrowserRmsCase,
 	type ModelOverride,
+	type ProtectionScheme,
 	type RmsCaseOptions,
+	type RmsEvent,
 	type RmsFlatCheck,
 	type RmsInspection,
 	type RmsLinearRequest,
@@ -33,6 +35,8 @@ import {
 } from './layers.js';
 import { LiveView } from './live.svelte.js';
 import { UnitCatalog, unitGlyphLayer, unitSummary, unitKey as catalogKey } from './units.svelte.js';
+import { ProtectionController } from './protection.svelte.js';
+import { protectionLayers, RELAY_LAYER } from './protection-layers.js';
 import { DynamicsPlayer, startTime } from './player.svelte.js';
 import {
 	VALIDATION_DT,
@@ -150,6 +154,24 @@ export interface DynRunRecord {
 	/** Started by an agent (WebMCP). */
 	agent: boolean;
 	experimental: boolean;
+	/** A protection test or a fault left to the relays: its name and the
+	 * engine's events (the run has no {@link events} of its own). */
+	replay?: { label: string; events: RmsEvent[] };
+	/** The relays that acted during the run. */
+	protection?: ProtectionScheme;
+}
+
+/** A run of given engine events instead of the picked ones (a protection
+ * test, a fault left to the relays). */
+export interface DynReplay {
+	label: string;
+	events: RmsEvent[];
+	tEnd: number;
+	outputStep?: number;
+	/** The relays acting (null: none). */
+	protection: ProtectionScheme | null;
+	/** Where playback starts, s. */
+	seek?: number;
 }
 
 export const STEP_CHOICES = [
@@ -194,7 +216,8 @@ export class DynamicsController {
 	/** The step, duration and options before a validated scenario replaced
 	 * them; Clear events restores them. */
 	beforePreset: { options: RmsCaseOptions; dt: number; tEnd: number } | null = $state.raw(null);
-	support: { rms: boolean; experimental: boolean } | null = $state.raw(null);
+	support: { rms: boolean; experimental: boolean; protection?: boolean } | null =
+		$state.raw(null);
 	/** Experimental: the modes of the open case. */
 	modes: RmsLinearResult | null = $state.raw(null);
 	modesError = $state<string | null>(null);
@@ -210,6 +233,8 @@ export class DynamicsController {
 	readonly catalog = new UnitCatalog();
 	/** The Models tab consumes the selection made on the map. */
 	inspectUnit: { caseId: string; key: string } | null = $state.raw(null);
+	/** Experimental: the relays of the local cases. */
+	readonly protection: ProtectionController;
 	#textLayer: typeof import('@deck.gl/layers').TextLayer | null = $state.raw(null);
 	layerCtors: LayerCtors | null = $state.raw(null);
 	/** Base URL of the bundled examples. */
@@ -228,7 +253,9 @@ export class DynamicsController {
 	constructor(
 		private readonly app: AppState,
 		private readonly ingest: (files: File[]) => Promise<void>
-	) {}
+	) {
+		this.protection = new ProtectionController(app, this);
+	}
 
 	/** The active local case's attachment. */
 	get active(): DynAttachment | null {
@@ -459,6 +486,7 @@ export class DynamicsController {
 	/** Forget a closed local case: its attachment, runs and worker cases. */
 	forget(localId: string): void {
 		if (this.live.localId === localId) this.live.stop();
+		this.protection.forget(localId);
 		this.#free(localId);
 		this.#described.delete(localId);
 		if (!(localId in this.attachments) && !this.runs.some((r) => r.localId === localId)) return;
@@ -705,7 +733,10 @@ export class DynamicsController {
 	// A run in the RMS worker, its record (run, screening, notes) and the
 	// last runs kept for comparison and playback.
 
-	async run(opts: { agent?: boolean } = {}): Promise<DynRunRecord | null> {
+	/** Run the picked events, or (`replay`) given engine events. The relays
+	 * of the case act when its protection layer is on. */
+	async run(opts: { agent?: boolean; replay?: DynReplay } = {}): Promise<DynRunRecord | null> {
+		const replay = opts.replay ?? null;
 		const local = this.app.activeLocal;
 		const a = this.active;
 		if (!local || !a || a.status !== 'ready') {
@@ -720,23 +751,24 @@ export class DynamicsController {
 			this.error = 'Modes running';
 			return null;
 		}
-		const errs = this.eventErrors;
+		const errs = replay ? new Map<string, string>() : this.eventErrors;
 		if (errs.size) {
 			this.error = [...errs.values()][0];
 			return null;
 		}
 		this.error = null;
 		this.running = true;
-		this.progress = { t: 0, tEnd: this.tEnd };
+		this.progress = { t: 0, tEnd: replay ? replay.tEnd : this.tEnd };
 		this.player.pause();
 		const abort = new AbortController();
 		this.#abort = abort;
 		const started = performance.now();
-		const events = this.events.map((e) => ({ ...e }));
+		const events: DynEvent[] = replay ? [] : this.events.map((e) => ({ ...e }));
 		const options = { ...this.options };
 		const dt = this.dt;
-		const tEnd = this.tEnd;
-		const badge = this.badge;
+		const tEnd = replay ? replay.tEnd : this.tEnd;
+		const badge = replay ? null : this.badge;
+		const protection = replay ? replay.protection : this.protection.schemeFor(local.id);
 		const useValidation = !!badge && a.demo;
 		const record: DynRunRecord = {
 			id: ++this.#seq,
@@ -751,7 +783,9 @@ export class DynamicsController {
 			network: useValidation ? 'validation' : 'case',
 			wallMs: 0,
 			agent: !!opts.agent,
-			experimental: a.synthetic
+			experimental: a.synthetic,
+			...(replay ? { replay: { label: replay.label, events: replay.events } } : {}),
+			...(protection ? { protection } : {})
 		};
 		try {
 			void this.#loadCtors();
@@ -760,7 +794,13 @@ export class DynamicsController {
 			record.heldUnits = c.inspection.held_units ?? [];
 			record.branchKeys = c.inspection.branches;
 			record.run = await c.run(
-				{ events: allRmsEvents(events), t_end: tEnd, dt },
+				{
+					events: replay ? replay.events : allRmsEvents(events),
+					t_end: tEnd,
+					dt,
+					...(replay?.outputStep ? { output_step: replay.outputStep } : {}),
+					...(protection ? { protection } : {})
+				},
 				{
 					signal: abort.signal,
 					onProgress: (p) => {
@@ -785,6 +825,10 @@ export class DynamicsController {
 		record.wallMs = performance.now() - started;
 		this.runs = [record, ...this.runs].slice(0, HISTORY);
 		this.select(record.id);
+		if (replay?.seek !== undefined && record.run) {
+			this.player.pause();
+			this.player.seek(Math.min(replay.seek, record.run.time[record.run.time.length - 1]));
+		}
 		this.onRun?.(record);
 		return record;
 	}
@@ -796,6 +840,8 @@ export class DynamicsController {
 	/** Show run `id`: load the player and start playback. */
 	select(id: number): void {
 		this.currentRunId = id;
+		// A static protection study gives way to the run.
+		this.protection.study = null;
 		const r = this.current;
 		if (!r?.run) return;
 		const times = markers(r.events, this.f0).map((m) => m.t);
@@ -886,8 +932,25 @@ export class DynamicsController {
 			this.theme,
 			(bus) => this.onBusClick?.(bus)
 		);
-		// Experimental: a clickable chip per unit opens its editor.
+		// Experimental: the relays, their zones and what they switched.
 		const local = this.app.activeLocal;
+		const prot = this.protection.on;
+		const view = prot ? this.protection.view : null;
+		if (prot && view && local?.view)
+			layers.push(
+				...protectionLayers(
+					prot,
+					view,
+					this.protection.selectedRelay,
+					local.view.buses,
+					local.view.branches,
+					ctors,
+					(id) => {
+						this.protection.selectedRelay = this.protection.selectedRelay === id ? null : id;
+					}
+				)
+			);
+		// Experimental: a clickable chip per unit opens its editor.
 		if (this.app.preferences.experimental && this.#textLayer && local?.view && this.catalog.units.length)
 			layers.push(
 				unitGlyphLayer(this.#textLayer, this.catalog.units, local.view.buses, this.theme, (u) => {
@@ -907,6 +970,10 @@ export class DynamicsController {
 			return {
 				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu<br>${when}`
 			};
+		}
+		if (info.layer?.id === RELAY_LAYER && info.object) {
+			const m = info.object as { id: string; state: string };
+			return { html: `<b>Relay ${esc(m.id)}</b><br>${esc(m.state)}<br>click to draw its zones` };
 		}
 		if (info.layer?.id === 'dyn-units' && info.object) {
 			const u = (info.object as { unit: import('@tellegen/engine').DyrGeneratorView }).unit;
@@ -949,7 +1016,8 @@ export class DynamicsController {
 			moduleJson: l.studyInputJson,
 			dynText: this.dynText(a),
 			inspection: a.inspection,
-			loadModel: this.options.load_model ?? 'power_flow'
+			loadModel: this.options.load_model ?? 'power_flow',
+			protection: this.protection.schemeFor(l.id)
 		});
 	}
 
@@ -1011,7 +1079,8 @@ export class DynamicsController {
 					dt: r.dt,
 					output_step: r.run?.outputStep ?? 0.01,
 					load_model: r.options.load_model ?? 'power_flow',
-					events: allRmsEvents(r.events)
+					events: r.replay?.events ?? allRmsEvents(r.events),
+					...(r.protection ? { protection: r.protection } : {})
 				},
 				criteria: r.run?.screening.criteria ?? null
 			},

@@ -554,6 +554,13 @@ impl HeldUnit {
     }
 }
 
+/// Series reactance of a bypassed series capacitor, system pu: a near short
+/// (0.25 Ω at 500 kV on 100 MVA, a percent of a typical bank).
+#[cfg(feature = "protection")]
+const BYPASS_X: f64 = 1e-4;
+#[cfg(not(feature = "protection"))]
+const BYPASS_X: f64 = 1.0;
+
 /// The assembled RMS system.
 // @block The system
 #[derive(Clone, Debug)]
@@ -593,6 +600,10 @@ pub(crate) struct DynSystem {
     pub epoch: u64,
     /// Per branch, whether its `[from, to]` end breaker is open.
     pub end_open: Vec<[bool; 2]>,
+    /// Per branch, whether a series capacitor's protection bypasses it (its
+    /// MOV conducting during a fault): the branch is then a near short.
+    #[cfg(feature = "protection")]
+    pub bypassed: Vec<bool>,
     /// Per branch, a fault inside it.
     pub branch_faults: Vec<Option<BranchFault>>,
     pub held: Vec<HeldUnit>,
@@ -693,12 +704,28 @@ impl DynSystem {
     /// or an inner fault carrying its terminal equivalent
     /// ([`Self::terminal_equivalent`]) in its series and charging columns.
     /// The tap and shift columns stay the branch's own.
+    /// Whether branch `e` (a series capacitor) is bypassed by its protection.
+    fn is_bypassed(&self, e: usize) -> bool {
+        #[cfg(feature = "protection")]
+        {
+            self.bypassed.get(e).copied().unwrap_or(false)
+        }
+        #[cfg(not(feature = "protection"))]
+        {
+            let _ = e;
+            false
+        }
+    }
+
     fn switched_branches(&self) -> AcBranchData {
         let mut br = self.ac.branches.clone();
         for e in 0..self.ac.m {
             let (series, y_fr, y_to) = if !self.closed[e] {
                 let zero = C64::new(0.0, 0.0);
                 (zero, zero, zero)
+            } else if self.is_bypassed(e) {
+                let zero = C64::new(0.0, 0.0);
+                (C64::new(0.0, -1.0 / BYPASS_X), zero, zero)
             } else if self.is_special(e) {
                 self.terminal_equivalent(e)
             } else {

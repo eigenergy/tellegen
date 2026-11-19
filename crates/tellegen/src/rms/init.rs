@@ -651,6 +651,8 @@ pub(crate) fn build(
         omega_ref,
         epoch: 0,
         end_open: vec![[false; 2]; m_branches],
+        #[cfg(feature = "protection")]
+        bypassed: vec![false; m_branches],
         branch_faults: vec![None; m_branches],
         held,
         low_voltage,

@@ -85,6 +85,9 @@ rms = ["sensitivity"]
 # graphs, small-signal analysis, live sessions and checkpoints, DYR editing,
 # the model library and "dynamize", and case editing.
 rms-experimental = ["rms"]
+# Protection relays (IEC 60255 measuring-relay functions) acting on RMS
+# runs: relay schemes, their settings from the network, and test cases.
+protection = ["rms"]
 
 [lints]
 workspace = true

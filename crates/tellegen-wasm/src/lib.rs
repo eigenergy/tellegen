@@ -44,6 +44,8 @@ pub fn output_schema() -> serde_json::Value {
     outputs::schema()
 }
 
+#[cfg(feature = "protection")]
+mod protection;
 #[cfg(feature = "rms")]
 pub mod rms;
 #[cfg(feature = "rms-experimental")]
@@ -62,6 +64,12 @@ pub fn rms_supported() -> bool {
 #[wasm_bindgen]
 pub fn rms_experimental_supported() -> bool {
     cfg!(feature = "rms-experimental")
+}
+
+/// Whether this build carries the protection relays.
+#[wasm_bindgen]
+pub fn protection_supported() -> bool {
+    cfg!(feature = "protection")
 }
 
 const MAX_INPUT_BYTES: usize = 128 * 1024 * 1024;

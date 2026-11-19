@@ -101,6 +101,8 @@ mod schur;
 mod events;
 #[cfg(feature = "rms-experimental")]
 mod live;
+#[cfg(feature = "protection")]
+mod protect;
 mod record;
 
 // @block Analysing a run
@@ -304,6 +306,74 @@ impl RmsSimulation {
     #[must_use]
     pub fn topology(&self) -> &Topology {
         &self.topology
+    }
+
+    /// Run with protection relays: as [`Self::run`], with the relays of
+    /// `scheme` measuring the network at every step and their breakers
+    /// opening, reclosing and tripping units as they decide. The relay
+    /// channels (`z_r:`, `z_x:` and the like) join the result's channels.
+    ///
+    /// # Errors
+    /// As [`Self::run`], or when a relay does not bind to this network.
+    #[cfg(feature = "protection")]
+    pub fn run_with_protection(
+        &self,
+        request: &RmsRequest,
+        scheme: &crate::protection::ProtectionScheme,
+    ) -> Result<(RmsResult, crate::protection::ProtectionReport), String> {
+        self.run_with_protection_cancellable(request, scheme, &mut || false)
+    }
+
+    /// [`Self::run_with_protection`], polling `cancelled` between output
+    /// samples (a caller reports progress from it).
+    ///
+    /// # Errors
+    /// As [`Self::run_with_protection`], or when `cancelled` returns true.
+    #[cfg(feature = "protection")]
+    pub fn run_with_protection_cancellable(
+        &self,
+        request: &RmsRequest,
+        scheme: &crate::protection::ProtectionScheme,
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> Result<(RmsResult, crate::protection::ProtectionReport), String> {
+        // Series capacitor banks act without relays too.
+        if scheme.relays.is_empty() && scheme.series_capacitors.is_empty() {
+            return Ok((
+                self.run_cancellable(request, cancelled)?,
+                crate::protection::ProtectionReport::default(),
+            ));
+        }
+        let mut relays = crate::protection::ProtectionRuntime::bind(scheme, &self.topology, true)?;
+        let result = self.run_from(request, None, cancelled, Some(&mut relays))?;
+        Ok((result, relays.into_report()))
+    }
+
+    /// The relays of `scheme` at the operating point (the power flow): what
+    /// each measures and which functions pick up.
+    ///
+    /// # Errors
+    /// When a relay does not bind to this network.
+    #[cfg(feature = "protection")]
+    pub fn relays_at_operating_point(
+        &self,
+        scheme: &crate::protection::ProtectionScheme,
+    ) -> Result<crate::protection::statics::OperatingPoint, String> {
+        let mut r = crate::protection::ProtectionRuntime::bind(scheme, &self.topology, true)?;
+        let m = protect::RelayMeasure::new(&self.sys, &self.x0, 0.0);
+        r.evaluate(&m);
+        let topo = &self.topology;
+        let seen = r.seen(&m, |b, i| {
+            let kv = topo.base_kv.get(b).copied().unwrap_or(1.0).max(1e-9);
+            i.norm() * topo.sbase / (3f64.sqrt() * kv)
+        });
+        let pickups = r
+            .report()
+            .operations
+            .iter()
+            .filter(|o| o.kind == crate::protection::OperationKind::Pickup)
+            .cloned()
+            .collect();
+        Ok(crate::protection::statics::OperatingPoint { pickups, seen })
     }
 
     /// The apparent power at the more loaded end of every branch at the
@@ -604,7 +674,13 @@ impl RmsSimulation {
         request: &RmsRequest,
         cancelled: &mut dyn FnMut() -> bool,
     ) -> Result<RmsResult, String> {
-        self.run_from(request, None, cancelled)
+        self.run_from(
+            request,
+            None,
+            cancelled,
+            #[cfg(feature = "protection")]
+            None,
+        )
     }
 
     /// Run `request` from a checkpoint of an earlier run of the same
@@ -617,7 +693,13 @@ impl RmsSimulation {
     /// As [`Self::run`], or a checkpoint of another system.
     #[cfg(feature = "rms-experimental")]
     pub fn replay(&self, request: &RmsRequest, from: &Checkpoint) -> Result<RmsResult, String> {
-        self.run_from(request, Some(from), &mut || false)
+        self.run_from(
+            request,
+            Some(from),
+            &mut || false,
+            #[cfg(feature = "protection")]
+            None,
+        )
     }
 
     /// A run from the start, or from a checkpoint of an earlier run of the
@@ -628,6 +710,9 @@ impl RmsSimulation {
         request: &RmsRequest,
         start: Option<&Checkpoint>,
         cancelled: &mut dyn FnMut() -> bool,
+        #[cfg(feature = "protection")] mut relays: Option<
+            &mut crate::protection::ProtectionRuntime,
+        >,
     ) -> Result<RmsResult, String> {
         // @block Check the request
         // The load model must be the prepared one, the steps positive and
@@ -724,6 +809,12 @@ impl RmsSimulation {
             });
             next_checkpoint = t + checkpoint_step;
         }
+        #[cfg(feature = "protection")]
+        if let Some(r) = relays.as_deref_mut() {
+            let m = protect::RelayMeasure::new(&sys, &x, t);
+            r.evaluate(&m);
+            r.channels(&m);
+        }
         let mut applied: Vec<String> = Vec::new();
         let mut steps = 0usize;
         let mut iterations = 0usize;
@@ -752,6 +843,16 @@ impl RmsSimulation {
                     next_event += 1;
                     changed = true;
                 }
+                // Then the relays' breaker actions due now.
+                #[cfg(feature = "protection")]
+                if let Some(r) = relays.as_deref_mut() {
+                    let actions = r.take_due(t, &protect::RelayMeasure::new(&sys, &x, t));
+                    for a in &actions {
+                        applied.push(protect::apply_action(&mut sys, &x, a, t));
+                        changed = true;
+                    }
+                    r.applied();
+                }
                 if changed {
                     applied.extend(topology::extinguish(&mut sys, t));
                     sys.rebuild_ybus();
@@ -760,6 +861,18 @@ impl RmsSimulation {
                     iterations += stepper
                         .reinit(&sys, &mut x, &mut f)
                         .map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))?;
+                    #[cfg(feature = "protection")]
+                    if let Some(r) = relays.as_deref_mut() {
+                        iterations += protect::settle_banks(
+                            r,
+                            &mut sys,
+                            &mut x,
+                            &mut f,
+                            &mut stepper,
+                            t,
+                            &mut applied,
+                        )?;
+                    }
                 }
 
                 // @block Integrate one step
@@ -769,6 +882,12 @@ impl RmsSimulation {
                 let mut t_next = (t + h).min(t_target);
                 if next_event < events.len() {
                     t_next = t_next.min(events[next_event].time());
+                }
+                #[cfg(feature = "protection")]
+                if let Some(d) = relays.as_deref().and_then(|r| r.next_deadline()) {
+                    if d > t + tol {
+                        t_next = t_next.min(d);
+                    }
                 }
                 iterations += step_adaptive(
                     &sys,
@@ -794,12 +913,29 @@ impl RmsSimulation {
                 })?;
                 steps += 1;
                 t = t_next;
+                #[cfg(feature = "protection")]
+                if let Some(r) = relays.as_deref_mut() {
+                    iterations += protect::settle_banks(
+                        r,
+                        &mut sys,
+                        &mut x,
+                        &mut f,
+                        &mut stepper,
+                        t,
+                        &mut applied,
+                    )?;
+                    r.evaluate(&protect::RelayMeasure::new(&sys, &x, t));
+                }
             }
 
             // @block Record a sample
             // The selected channels at the output time.
             t = t_target;
             rec.record(&sys, t, &x);
+            #[cfg(feature = "protection")]
+            if let Some(r) = relays.as_deref_mut() {
+                r.channels(&protect::RelayMeasure::new(&sys, &x, t));
+            }
 
             // @block Take a checkpoint
             // At the requested interval: the full state, the integrator's
@@ -822,6 +958,10 @@ impl RmsSimulation {
                 });
                 next_checkpoint = t + checkpoint_step;
             }
+        }
+        #[cfg(feature = "protection")]
+        if let Some(r) = relays {
+            r.take_channels(&mut rec.channels);
         }
 
         // @block Assemble the result

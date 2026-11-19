@@ -62,6 +62,8 @@ export type RmsToolOp =
   | { op: "live_step"; session: number; dt: number }
   | { op: "live_advance"; session: number; seconds: number }
   | { op: "live_apply"; session: number; event_json: string }
+  /** Relays acting from now on (`ProtectionScheme` JSON; empty: none). */
+  | { op: "live_protection"; session: number; scheme_json: string }
   | { op: "live_free"; session: number };
 
 /** The value of a `live_advance`: the JSON head and the samples, transferred. */

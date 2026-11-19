@@ -1357,5 +1357,6 @@
     "event"
   ],
   "title": "RmsSchema",
-  "type": "object"
+  "type": "object",
+  "x-rust-source-sha256": "a6dc7702188300a6f0fc6fbc8b26dbf9706867bb99320fe17920f1e2cb94989f"
 }

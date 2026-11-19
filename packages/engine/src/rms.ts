@@ -29,6 +29,7 @@ import type {
   RmsScreening,
   ScreeningCriteria,
 } from "./generated/rms-types.js";
+import type { ProtectionReport, ProtectionScheme } from "./protection.js";
 
 export type {
   AngleScreen,
@@ -63,6 +64,9 @@ export interface RmsRunRequest {
   dt?: number;
   output_step?: number;
   events: RmsEvent[];
+  /** Relays acting during the run (an engine build with `protection`);
+   * their record comes back in {@link RmsRunMeta.protection}. */
+  protection?: ProtectionScheme;
 }
 
 /** The drift of a run without events. */
@@ -90,6 +94,8 @@ export interface RmsRunMeta {
   t_end: number;
   screening: RmsScreening;
   request: RmsRequest;
+  /** The relays' record, when the request carried protection. */
+  protection?: ProtectionReport;
 }
 
 /** A finished run. `series(key)` is a view into one shared buffer: keys are
@@ -303,15 +309,16 @@ export function rmsGeneration(): number {
 
 // ---- API -------------------------------------------------------------------
 
-/** Whether this engine build carries RMS simulation and its experimental
- * tools. */
+/** Whether this engine build carries RMS simulation, its experimental
+ * tools and the protection relays. */
 export async function rmsSupport(): Promise<{
   rms: boolean;
   experimental: boolean;
+  protection?: boolean;
 }> {
   try {
     const { value } = await rmsHost().call({ op: "support" });
-    return value as { rms: boolean; experimental: boolean };
+    return value as { rms: boolean; experimental: boolean; protection?: boolean };
   } catch {
     return { rms: false, experimental: false };
   }
@@ -504,6 +511,7 @@ export function buildRunRequest(
 ): Required<Pick<RmsRunRequest, "t_end" | "dt" | "output_step">> & {
   events: RmsEvent[];
   load_model: LoadModel;
+  protection?: ProtectionScheme;
 } {
   const dt = request.dt ?? RMS_RUN_DEFAULTS.dt;
   // The output step is a multiple of the integration step.
@@ -515,6 +523,7 @@ export function buildRunRequest(
     output_step,
     events: request.events,
     load_model: options.load_model ?? "power_flow",
+    ...(request.protection ? { protection: request.protection } : {}),
   };
 }
 

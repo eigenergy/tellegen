@@ -64,7 +64,7 @@ struct Group {
 pub(super) struct Recorder {
     /// Further channels recorded at every output sample (aligned with the
     /// main group).
-    channels: BTreeMap<String, Vec<f64>>,
+    pub(super) channels: BTreeMap<String, Vec<f64>>,
     gen_keys: Vec<String>,
     branch_keys: Vec<String>,
     outs: Vec<GenOut>,

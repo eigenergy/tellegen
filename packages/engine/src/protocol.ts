@@ -152,7 +152,57 @@ export type EngineRequest =
   | { op: "synth_session_ingest_view"; session: number }
   | { op: "synth_session_export_gridfm"; session: number }
   | { op: "synth_session_free"; session: number }
-  | { op: "synth_generate"; request: string; osm: string | null };
+  | { op: "synth_generate"; request: string; osm: string | null }
+  | { op: "protection_supported" }
+  | { op: "protection_auto"; module_json: string; dyr: string; options: string; case?: string }
+  | { op: "protection_audit"; module_json: string; dyr: string; scheme: string; case?: string }
+  | {
+      op: "protection_tests";
+      module_json: string;
+      dyr: string;
+      scheme: string;
+      options: string;
+      case?: string;
+    }
+  | {
+      op: "protection_suite";
+      module_json: string;
+      dyr: string;
+      scheme: string;
+      tests: string;
+      options: string;
+      case?: string;
+    }
+  | { op: "protection_operating"; module_json: string; dyr: string; scheme: string; case?: string }
+  | {
+      op: "protection_static";
+      module_json: string;
+      dyr: string;
+      scheme: string;
+      fault: string;
+      t_max: number;
+      case?: string;
+    };
+
+/** The protection exports, present only in a build with `protection`. */
+type ProtectionExports = {
+  protection_supported?: () => boolean;
+  protection_auto?: (m: string, d: string, o: string, c: string) => string;
+  protection_audit?: (m: string, d: string, s: string, c: string) => string;
+  protection_tests?: (m: string, d: string, s: string, o: string, c: string) => string;
+  protection_suite?: (m: string, d: string, s: string, t: string, o: string, c: string) => string;
+  protection_operating?: (m: string, d: string, s: string, c: string) => string;
+  protection_static?: (m: string, d: string, s: string, f: string, t: number, c: string) => string;
+};
+
+function protectionExport<K extends Exclude<keyof ProtectionExports, "protection_supported">>(
+  mod: WasmModule,
+  name: K,
+): NonNullable<ProtectionExports[K]> {
+  const f = (mod as unknown as ProtectionExports)[name];
+  if (typeof f !== "function") throw new Error("protection relays are not in this engine build");
+  return f as NonNullable<ProtectionExports[K]>;
+}
 
 export type WorkerRequest =
   | (EngineRequest & { id: number })
@@ -570,5 +620,46 @@ export function runRequest(
       return null;
     case "synth_generate":
       return mod.synth_generate(req.request, req.osm ?? undefined);
+    case "protection_supported": {
+      const f = (mod as unknown as ProtectionExports).protection_supported;
+      return JSON.stringify(typeof f === "function" && f());
+    }
+    case "protection_auto":
+      return protectionExport(mod, "protection_auto")(req.module_json, req.dyr, req.options, req.case ?? "");
+    case "protection_audit":
+      return protectionExport(mod, "protection_audit")(req.module_json, req.dyr, req.scheme, req.case ?? "");
+    case "protection_tests":
+      return protectionExport(mod, "protection_tests")(
+        req.module_json,
+        req.dyr,
+        req.scheme,
+        req.options,
+        req.case ?? "",
+      );
+    case "protection_suite":
+      return protectionExport(mod, "protection_suite")(
+        req.module_json,
+        req.dyr,
+        req.scheme,
+        req.tests,
+        req.options,
+        req.case ?? "",
+      );
+    case "protection_operating":
+      return protectionExport(mod, "protection_operating")(
+        req.module_json,
+        req.dyr,
+        req.scheme,
+        req.case ?? "",
+      );
+    case "protection_static":
+      return protectionExport(mod, "protection_static")(
+        req.module_json,
+        req.dyr,
+        req.scheme,
+        req.fault,
+        req.t_max,
+        req.case ?? "",
+      );
   }
 }

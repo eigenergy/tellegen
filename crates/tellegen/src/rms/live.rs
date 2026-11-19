@@ -234,6 +234,10 @@ pub struct RmsChunk {
     /// The watch set's frame channels since the previous chunk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frames: Option<RmsSeries>,
+    /// The relays' operations since the previous chunk.
+    #[cfg(feature = "protection")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relays: Vec<crate::protection::Operation>,
 }
 
 /// A running simulation that advances on demand and takes events at its
@@ -262,6 +266,12 @@ pub struct RmsLive {
     /// The COI, separation and bus frequencies at each sample, as a batch
     /// run's screening derives them.
     derive: screen::LiveDerive,
+    /// Relays acting on the session ([`RmsLive::set_protection`]) and how
+    /// many of their operations the chunks have carried.
+    #[cfg(feature = "protection")]
+    relays: Option<crate::protection::ProtectionRuntime>,
+    #[cfg(feature = "protection")]
+    relays_sent: usize,
 }
 
 impl RmsSimulation {
@@ -301,6 +311,10 @@ impl RmsSimulation {
             load_scales: vec![(1.0, 1.0); self.sys.loads.len()],
             base_sources: self.sys.sources.iter().map(|s| (s.y, s.e)).collect(),
             derive,
+            #[cfg(feature = "protection")]
+            relays: None,
+            #[cfg(feature = "protection")]
+            relays_sent: 0,
         }
     }
 }
@@ -392,6 +406,24 @@ impl RmsLive {
         self.stepper
             .reinit(&sys, &mut x, &mut f)
             .map_err(|e| format!("re-solving the network: {e}"))?;
+        // A series capacitor's MOV acts at once, before the relays measure.
+        #[cfg(feature = "protection")]
+        if let Some(r) = &mut self.relays {
+            let mut notes = Vec::new();
+            super::protect::settle_banks(
+                r,
+                &mut sys,
+                &mut x,
+                &mut f,
+                &mut self.stepper,
+                now,
+                &mut notes,
+            )?;
+            for note in notes {
+                text.push('\n');
+                text.push_str(&note);
+            }
+        }
         self.sys = sys;
         self.x = x;
         self.f = f;
@@ -770,6 +802,8 @@ impl RmsLive {
             events: std::mem::take(&mut self.applied),
             t: self.t,
             frames,
+            #[cfg(feature = "protection")]
+            relays: self.new_relay_operations(),
         })
     }
 
@@ -800,6 +834,10 @@ impl RmsLive {
             "events": std::mem::take(&mut self.applied),
             "layout": self.rec.layout,
         });
+        #[cfg(feature = "protection")]
+        {
+            meta["relays"] = serde_json::json!(self.new_relay_operations());
+        }
         // Without a catalog (before the first sample, or after a new record
         // spec) there are no samples to name.
         if self.rec.layout != known_layout && !self.rec.catalog.is_empty() {
@@ -821,11 +859,21 @@ impl RmsLive {
         let end = self.t + duration.max(0.0);
         let mut euler = 0usize;
         while self.t < end - 1e-12 {
-            let h = self
+            // Breakers and reclosers due now.
+            #[cfg(feature = "protection")]
+            self.relay_actions()?;
+            #[cfg_attr(not(feature = "protection"), allow(unused_mut))]
+            let mut h = self
                 .h
                 .min(self.output_step - self.since_output)
                 .max(1e-9)
                 .min(end - self.t);
+            #[cfg(feature = "protection")]
+            if let Some(d) = self.relays.as_ref().and_then(|r| r.next_deadline()) {
+                if d > self.t + 1e-9 {
+                    h = h.min(d - self.t);
+                }
+            }
             step_adaptive(
                 &self.sys,
                 &mut self.x,
@@ -838,6 +886,20 @@ impl RmsLive {
             .map_err(|e| format!("integration failed at t = {:.4} s: {e}", self.t))?;
             self.t += h;
             self.since_output += h;
+            #[cfg(feature = "protection")]
+            if let Some(r) = &mut self.relays {
+                let t = self.t;
+                super::protect::settle_banks(
+                    r,
+                    &mut self.sys,
+                    &mut self.x,
+                    &mut self.f,
+                    &mut self.stepper,
+                    t,
+                    &mut self.applied,
+                )?;
+                r.evaluate(&super::protect::RelayMeasure::new(&self.sys, &self.x, t));
+            }
             if self.since_output >= self.output_step - 1e-12 {
                 self.since_output = 0.0;
                 self.t = (self.t / self.output_step).round() * self.output_step;
@@ -864,4 +926,82 @@ pub fn live_from_module_json(
     let network = network_from_module_json(module_json)?;
     let (dynamics, models) = read_dynamics(dyr_text)?;
     Ok(RmsSimulation::with_models(&network, &dynamics, &models, load_model)?.live(dt, output_step))
+}
+
+#[cfg(feature = "protection")]
+impl RmsLive {
+    /// Let relays act from now on (`None` switches them off). Their
+    /// operations come with the chunks.
+    ///
+    /// # Errors
+    /// When a relay names a missing element.
+    pub fn set_protection(
+        &mut self,
+        scheme: Option<&crate::protection::ProtectionScheme>,
+    ) -> Result<(), String> {
+        self.relays = match scheme {
+            Some(s) if !s.relays.is_empty() || !s.series_capacitors.is_empty() => {
+                let mut r = crate::protection::ProtectionRuntime::bind(s, &self.topology, true)?;
+                r.evaluate(&super::protect::RelayMeasure::new(
+                    &self.sys, &self.x, self.t,
+                ));
+                Some(r)
+            }
+            _ => None,
+        };
+        self.relays_sent = 0;
+        Ok(())
+    }
+
+    /// The relay operations since the last call.
+    fn new_relay_operations(&mut self) -> Vec<crate::protection::Operation> {
+        match &self.relays {
+            Some(r) => {
+                let ops = &r.report().operations;
+                let new = ops[self.relays_sent.min(ops.len())..].to_vec();
+                self.relays_sent = ops.len();
+                new
+            }
+            None => Vec::new(),
+        }
+    }
+
+    /// Apply the breaker and recloser actions due now and re-solve.
+    fn relay_actions(&mut self) -> Result<(), String> {
+        let t = self.t;
+        let Some(r) = &mut self.relays else {
+            return Ok(());
+        };
+        if !r.next_deadline().is_some_and(|d| d <= t + 1e-9) {
+            return Ok(());
+        }
+        let actions = r.take_due(t, &super::protect::RelayMeasure::new(&self.sys, &self.x, t));
+        r.applied();
+        if actions.is_empty() {
+            return Ok(());
+        }
+        for a in &actions {
+            self.applied
+                .push(super::protect::apply_action(&mut self.sys, &self.x, a, t));
+        }
+        self.applied.extend(topology::extinguish(&mut self.sys, t));
+        self.sys.rebuild_ybus();
+        self.sys.rebuild_mass();
+        let mut f = vec![0.0; self.sys.nx];
+        self.sys.residual(&self.x, &mut f, None);
+        self.stepper
+            .reinit(&self.sys, &mut self.x, &mut f)
+            .map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))?;
+        self.f = f;
+        super::protect::settle_banks(
+            r,
+            &mut self.sys,
+            &mut self.x,
+            &mut self.f,
+            &mut self.stepper,
+            t,
+            &mut self.applied,
+        )?;
+        Ok(())
+    }
 }

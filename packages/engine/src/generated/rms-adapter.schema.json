@@ -324,7 +324,7 @@
           "type": "string"
         },
         "role": {
-          "description": "`machine`, `exciter`, `governor`, `stabilizer`, `inverter` (a whole\ninverter-based unit), or one part of an inverter-based unit:\n`converter`, `electrical` (electrical control) or `plant` (plant\ncontroller).",
+          "description": "`machine`, `exciter`, `governor`, `stabilizer` or `inverter`.",
           "type": "string"
         }
       },
@@ -1436,5 +1436,13 @@
     "library"
   ],
   "title": "OutputSchema",
-  "type": "object"
+  "type": "object",
+  "x-rust-source-files": {
+    "crates/tellegen-wasm/examples/rms_adapter_schema.rs": "39145d019db07828c6328414020e265eb1908eefe7c039f30f344757e5a82922",
+    "crates/tellegen-wasm/src/rms.rs": "33dc7c9ec25e5c0cb3e0d6434d584707b20231cf7f4fd192b7e8855848e69187",
+    "crates/tellegen/src/rms/library.rs": "d9fdcb99482a1b2f78f3e0fe8a10058bd7936e16b1839eab66ca71b500c4052c",
+    "crates/tellegen/src/rms/linear.rs": "6501e8e0d2a40695f542b75338b708917267a88b48ee72133b12a826fe5f6bbd",
+    "crates/tellegen/src/rms/mod.rs": "04d90880f4ad3914c0f6aca8a32d94b7541721f034c8e43fbbfc82dacfdbbfff",
+    "crates/tellegen/src/rms/screen.rs": "e797aae0b2d309f3edd7fe2ec6995f943026630cd9aeda5c70c76d836e5229e8"
+  }
 }

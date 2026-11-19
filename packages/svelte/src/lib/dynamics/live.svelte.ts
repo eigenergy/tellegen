@@ -10,6 +10,8 @@
 
 import {
 	BrowserRmsLive,
+	type ProtectionScheme,
+	type RelayOperation,
 	type RmsEvent,
 	type RmsInspection,
 	type RmsLoadModel
@@ -130,7 +132,25 @@ interface Input {
 	dynText: string;
 	inspection: RmsInspection;
 	loadModel: RmsLoadModel;
+	/** Relays acting from the start (an engine build with `protection`). */
+	protection?: ProtectionScheme | null;
 }
+
+/** Relay operations the live view keeps, newest last. */
+const MAX_RELAY_OPS = 500;
+/** Relay operations that go to the event log (pickups and resets do not). */
+const LOGGED = new Set<RelayOperation['kind']>([
+	'trip',
+	'breaker_open',
+	'breaker_stuck',
+	'breaker_failure',
+	'reclose',
+	'lockout',
+	'blocked',
+	'bypassed',
+	'reinserted',
+	'sync_held'
+]);
 
 /** The live session of one case: the engine paced to the clock, the events
  * picked while it runs, and the kept window published as a run.
@@ -154,6 +174,8 @@ export class LiveView {
 	error = $state<string | null>(null);
 	/** What the engine did, newest last: `[t, text]`. */
 	log: [number, string][] = $state.raw([]);
+	/** What the relays did, newest last (with relays acting). */
+	relays: RelayOperation[] = $state.raw([]);
 	/** The kept window as a run (null before the first slice). */
 	run: MapSamples | null = $state.raw(null);
 	/** The local case the session belongs to. */
@@ -205,6 +227,14 @@ export class LiveView {
 				if (generation !== this.generation) return;
 				await opening.setRecord({ channels: RECORD, frames: [], frame_step: 0 });
 				if (generation !== this.generation) return;
+				if (input.protection) {
+					try {
+						await opening.setProtection(input.protection);
+					} catch (e) {
+						this.error = `protection: ${(e as Error).message}`;
+					}
+					if (generation !== this.generation) return;
+				}
 				this.#session = opening;
 				opening = null;
 				this.#inspection = input.inspection;
@@ -216,6 +246,7 @@ export class LiveView {
 				];
 				this.t = 0;
 				this.log = [];
+				this.relays = [];
 				this.#samples = new Samples();
 				this.#pending = [];
 			} catch (e) {
@@ -255,6 +286,7 @@ export class LiveView {
 		this.#inspection = null;
 		this.t = 0;
 		this.log = [];
+		this.relays = [];
 		this.error = null;
 		this.running = false;
 		this.#session?.free();
@@ -276,6 +308,16 @@ export class LiveView {
 			this.dt = await this.#session.setStep(dt);
 		} catch (e) {
 			this.error = (e as Error).message;
+		}
+	}
+
+	/** Let the relays of `scheme` act from now on (null: none). */
+	async setProtection(scheme: ProtectionScheme | null): Promise<void> {
+		if (!this.#session?.alive) return;
+		try {
+			await this.#session.setProtection(scheme);
+		} catch (e) {
+			this.error = `protection: ${(e as Error).message}`;
 		}
 	}
 
@@ -372,6 +414,7 @@ export class LiveView {
 				perfAcc.round += round;
 				perfAcc.n += 1;
 				this.t = slice.t;
+				if (slice.relays.length) this.#relays(slice.relays);
 				// Unpaced, the clock target stays at the time reached.
 				if (unpaced) expected = this.t;
 				this.#append(slice.time, slice.keys, slice.series.bind(slice));
@@ -397,6 +440,25 @@ export class LiveView {
 		}
 	}
 
+	/** Keep the relays' operations and log what they switched. */
+	#relays(ops: RelayOperation[]): void {
+		this.relays = [...this.relays, ...ops].slice(-MAX_RELAY_OPS);
+		const logged = ops
+			.filter((o) => LOGGED.has(o.kind))
+			.map(
+				(o) =>
+					[
+						o.time,
+						`${o.relay} ${o.function} ${o.kind.replace(/_/g, ' ')}${o.detail ? ` (${o.detail})` : ''}`
+					] as [number, string]
+			);
+		if (logged.length) this.log = [...this.log, ...logged].slice(-40);
+	}
+
+	/** Add a slice: write its samples, derive the new samples' bus
+	 * frequencies, centre of inertia and screening columns, drop what left
+	 * the window and schedule a redraw. Work is per new sample, not per
+	 * kept sample, so it does not grow with the window or the redraw rate. */
 	/** Append the recorded samples, keeping gaps when a channel is absent.
 	 * @block Append a slice */
 	#append(time: number[], keys: string[], series: (k: string) => Float64Array | undefined): void {

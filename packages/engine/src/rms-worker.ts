@@ -63,6 +63,11 @@ async function execute(
           experimental:
             typeof mod.rms_experimental_supported === "function" &&
             mod.rms_experimental_supported(),
+          protection: (() => {
+            const f = (mod as unknown as { protection_supported?: () => boolean })
+              .protection_supported;
+            return typeof f === "function" && f();
+          })(),
         },
         transfer: [],
       };

@@ -44,11 +44,17 @@
 		if (ins.load_buses.includes(b)) loadBus = b;
 	});
 	const on = $derived(live.active && live.running);
-	const busFault = () =>
-		faultBus !== null &&
-		live.now(
-			busFaultEvent(faultBus, ins!.base_frequency, { at: 0, clearAfter: faultMs / 1000, x: faultX })
-		);
+	/** With the case's relays acting, they clear the faults (busbar
+	 * differential, line distance and differential), nothing else does. */
+	const byRelays = $derived(!!live.localId && !!dyn.protection.schemeFor(live.localId));
+	const busFault = () => {
+		if (faultBus === null) return;
+		if (byRelays) live.applyNow({ kind: 'bus_fault', time: 0, bus: faultBus, r: 0, x: faultX });
+		else
+			live.now(
+				busFaultEvent(faultBus, ins!.base_frequency, { at: 0, clearAfter: faultMs / 1000, x: faultX })
+			);
+	};
 	const br = () => ins?.branches[branch];
 	const lineEv = (kind: 'branch_trip' | 'branch_close'): RmsEvent => {
 		const [from, to, circuit] = br()!;
@@ -68,10 +74,12 @@
 				x: DEFAULT_FAULT_X,
 				permanent: true
 			},
-			[
-				{ kind: 'breaker_open', time: 0, from, to, circuit, at: from },
-				{ kind: 'breaker_open', time: 0, from, to, circuit, at: to }
-			],
+			byRelays
+				? []
+				: [
+						{ kind: 'breaker_open', time: 0, from, to, circuit, at: from },
+						{ kind: 'breaker_open', time: 0, from, to, circuit, at: to }
+					],
 			lineMs / 1000
 		);
 	}
@@ -112,9 +120,13 @@
 				<select bind:value={faultBus} aria-label="fault bus">
 					{#each ins.buses as b (b)}<option value={b}>bus {b}</option>{/each}
 				</select>
-				<label>
-					Clear after <input type="number" min="10" step="10" bind:value={faultMs} /> ms
-				</label>
+				{#if byRelays}
+					<span class="dim">cleared by the relays</span>
+				{:else}
+					<label>
+						Clear after <input type="number" min="10" step="10" bind:value={faultMs} /> ms
+					</label>
+				{/if}
 				<label>X (pu) <input type="number" min="0.0001" step="0.0001" bind:value={faultX} /></label>
 				<button
 					class="act"
@@ -155,7 +167,11 @@
 				<label>
 					fault at <input type="number" min="1" max="99" step="5" bind:value={lineAt} /> %
 				</label>
-				<label>open after <input type="number" min="10" step="10" bind:value={lineMs} /> ms</label>
+				{#if byRelays}
+					<span class="dim">cleared by the relays</span>
+				{:else}
+					<label>open after <input type="number" min="10" step="10" bind:value={lineMs} /> ms</label>
+				{/if}
 				<button
 					class="act"
 					disabled={!on ||

@@ -14,6 +14,8 @@ interface LiveCase {
   set_step(dt: number): number;
   advance(seconds: number): LiveSlice;
   apply(event: string): string;
+  /** Present only in a build with `protection`. */
+  set_protection?(scheme: string): void;
   free(): void;
 }
 type Tools = {
@@ -103,6 +105,13 @@ export function executeTool(
     }
     case "live_apply":
       return plain(session(req.session).apply(req.event_json));
+    case "live_protection": {
+      const s = session(req.session);
+      if (typeof s.set_protection !== "function")
+        throw new Error("protection relays are not in this engine build");
+      s.set_protection(req.scheme_json);
+      return plain(null);
+    }
     case "live_free":
       sessions.get(req.session)?.free();
       sessions.delete(req.session);

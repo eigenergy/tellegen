@@ -75,6 +75,10 @@ struct SliceMeta<'a> {
     keys: Vec<&'a str>,
     /// Events applied since the previous slice.
     events: &'a [String],
+    /// The relays' operations since the previous slice.
+    #[cfg(feature = "protection")]
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    relays: &'a [tellegen::protection::Operation],
 }
 
 /// A simulation that advances on demand and takes events at its current
@@ -146,6 +150,8 @@ impl RmsLiveCase {
             time: &chunk.time,
             keys: chunk.channels.keys().map(String::as_str).collect(),
             events: &chunk.events,
+            #[cfg(feature = "protection")]
+            relays: &chunk.relays,
         };
         Ok(RmsLiveSlice {
             meta: serde_json::to_string(&meta).map_err(jserr)?,
@@ -178,6 +184,23 @@ impl RmsLiveCase {
     }
 }
 
+#[cfg(feature = "protection")]
+#[wasm_bindgen]
+impl RmsLiveCase {
+    /// Let relays act from now on (`ProtectionScheme` JSON; empty switches
+    /// them off). Their operations come with the slices (`relays`).
+    pub fn set_protection(&mut self, scheme_json: &str) -> Result<(), JsValue> {
+        install_panic_hook();
+        let scheme: Option<tellegen::protection::ProtectionScheme> =
+            if scheme_json.trim().is_empty() {
+                None
+            } else {
+                Some(serde_json::from_str(scheme_json).map_err(jserr)?)
+            };
+        self.0.set_protection(scheme.as_ref()).map_err(jserr)
+    }
+}
+
 /// The samples of one live slice: `values` holds `keys.len()` blocks of
 /// `time.len()` samples each (see the `meta` JSON).
 #[wasm_bindgen]
@@ -188,7 +211,7 @@ pub struct RmsLiveSlice {
 
 #[wasm_bindgen]
 impl RmsLiveSlice {
-    /// `{t, time, keys, events}` JSON.
+    /// `{t, time, keys, events, relays?}` JSON.
     pub fn meta(&self) -> String {
         self.meta.clone()
     }
