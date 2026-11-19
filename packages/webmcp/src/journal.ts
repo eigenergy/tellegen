@@ -157,7 +157,7 @@ export class ExperimentJournal {
   }
 
   get records(): ExperimentRecord[] {
-    return JSON.parse(JSON.stringify(this.#records));
+    return structuredClone(this.#records);
   }
 
   export(): ExperimentJournalDocument {

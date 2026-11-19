@@ -1407,9 +1407,9 @@ export class Controller {
 		copy.formulation = source.formulation;
 		copy.settings.calculation = source.settings.calculation;
 		copy.settings.accepted = source.settings.accepted;
-		copy.settings.baselines = JSON.parse(JSON.stringify(source.settings.baselines));
-		copy.settings.options = JSON.parse(JSON.stringify(source.settings.options));
-		copy.settings.resolved = JSON.parse(JSON.stringify(source.settings.resolved));
+		copy.settings.baselines = $state.snapshot(source.settings.baselines);
+		copy.settings.options = $state.snapshot(source.settings.options);
+		copy.settings.resolved = $state.snapshot(source.settings.resolved);
 		copy.deltas = { ...source.deltas };
 		copy.ratings = { ...source.ratings };
 		copy.solution = source.solution;
