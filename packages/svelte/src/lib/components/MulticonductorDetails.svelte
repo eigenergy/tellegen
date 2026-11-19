@@ -127,8 +127,8 @@
 			</p>
 		{:else if s.mc_fixed_controls_available}
 			<p class="footnote">
-				Create a separate case with the written taps and capacitor settings. Automatic controls will
-				not run.
+				Create a separate case with the written taps and capacitor settings and every fuse closed.
+				Automatic controls will not run.
 			</p>
 			<button
 				class="reset"

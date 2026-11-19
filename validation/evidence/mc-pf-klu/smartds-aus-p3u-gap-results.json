@@ -1,0 +1,748 @@
+{
+  "dimension": 431897,
+  "nonzeros": 2427669,
+  "exact_refinement_last_correction_v": 4.701263508206993e-10,
+  "faer_high_precision_refined_vs_exact_v": 7.279509460923746e-12,
+  "line_shunt_formula_max_relative_mismatch": 3.584869106193804e-05,
+  "sections": [
+    {
+      "nodes": 315,
+      "buses": 105,
+      "klu_voltage_magnitude_range_v": [
+        38388.68333237445,
+        39477.187206452814
+      ],
+      "rhs_max_a": 0.0,
+      "coupling_of_common_shift_to_other_nodes_s": 0.0,
+      "transformers": {
+        "delta 69 kV 40 MVA / wye 12.47 kV 40 MVA": 7,
+        "delta 69 kV 300 MVA / wye 12.47 kV 300 MVA": 1,
+        "delta 69 kV 30 MVA / wye 12.47 kV 30 MVA": 5,
+        "delta 69 kV 16 MVA / wye 12.47 kV 16 MVA": 2,
+        "delta 230 kV 300 MVA / delta 69 kV 300 MVA": 2
+      },
+      "antifloat_ppm": [
+        1.0
+      ],
+      "antifloat_admittance_s": [
+        0.0,
+        -2.860743541638344e-07
+      ],
+      "lines": 107,
+      "line_length_km": 78.570914,
+      "matrix_admittance_to_ground_s": [
+        6.187381633871586e-08,
+        8.676573485916354e-05
+      ],
+      "model_admittance_to_ground_s": [
+        0.0,
+        8.674303663259089e-05
+      ],
+      "largest_matrix_entry_s": 70711385.22543593,
+      "ulp_of_largest_entry_s": 7.450580596923828e-09,
+      "nodes_touching_entries_above_1e7_s": 36,
+      "largest_node_shunt_difference_matrix_vs_model_s": 4.590404223100449e-09,
+      "max_spread_of_node_shunt_across_phases_of_a_bus_s": 4.440892098500626e-16,
+      "common_shift_from_one_ulp_of_largest_entry_v": 3.3899083631620863,
+      "solutions": {
+        "klu": {
+          "common_voltage_v": [
+            -1.3393616513335487,
+            -2.3657361236002457
+          ],
+          "common_voltage_magnitude_v": 2.7185652538738236,
+          "net_current_to_ground_a": 0.00023587451146112458,
+          "net_current_over_admittance_v": 2.7185207601742873
+        },
+        "superlu_colamd": {
+          "common_voltage_v": [
+            -7.397005132548645,
+            -9.01767224520718
+          ],
+          "common_voltage_magnitude_v": 11.663365622877938,
+          "net_current_to_ground_a": 0.0010119750303850224,
+          "net_current_over_admittance_v": 11.663299742893603
+        },
+        "superlu_mmd_at_plus_a": {
+          "common_voltage_v": [
+            7.2355968736231535,
+            -12.595812722418524
+          ],
+          "common_voltage_magnitude_v": 14.526126815356717,
+          "net_current_to_ground_a": 0.0012603751243057397,
+          "net_current_over_admittance_v": 14.526181399625761
+        },
+        "faer": {
+          "common_voltage_v": [
+            2.3625923746179778,
+            -7.091889295447941
+          ],
+          "common_voltage_magnitude_v": 7.475074347957491,
+          "net_current_to_ground_a": 0.0006485755396971355,
+          "net_current_over_admittance_v": 7.475017365318422
+        },
+        "exact": {
+          "common_voltage_v": [
+            5.707836299691172e-08,
+            2.716173545946182e-07
+          ],
+          "common_voltage_magnitude_v": 2.775498636990942e-07,
+          "net_current_to_ground_a": 2.937537641754386e-17,
+          "net_current_over_admittance_v": 3.3855955920946893e-13
+        }
+      },
+      "common_shift_from_rounding_of_stored_entries_v": 2.7755882613352377e-07
+    },
+    {
+      "nodes": 342,
+      "buses": 114,
+      "klu_voltage_magnitude_range_v": [
+        38139.656797557225,
+        39633.65205418465
+      ],
+      "rhs_max_a": 0.0,
+      "coupling_of_common_shift_to_other_nodes_s": 0.0,
+      "transformers": {
+        "delta 69 kV 30 MVA / wye 12.47 kV 30 MVA": 5,
+        "delta 69 kV 40 MVA / wye 12.47 kV 40 MVA": 8,
+        "delta 69 kV 16 MVA / wye 12.47 kV 16 MVA": 1,
+        "delta 69 kV 20 MVA / wye 12.47 kV 20 MVA": 2,
+        "delta 69 kV 25 MVA / wye 12.47 kV 25 MVA": 1,
+        "delta 69 kV 300 MVA / wye 12.47 kV 300 MVA": 1,
+        "delta 230 kV 300 MVA / delta 69 kV 300 MVA": 3
+      },
+      "antifloat_ppm": [
+        1.0
+      ],
+      "antifloat_admittance_s": [
+        0.0,
+        -3.6777987823949365e-07
+      ],
+      "lines": 114,
+      "line_length_km": 68.826634,
+      "matrix_admittance_to_ground_s": [
+        5.6943274547027745e-08,
+        8.704531763474456e-05
+      ],
+      "model_admittance_to_ground_s": [
+        0.0,
+        8.702477081682684e-05
+      ],
+      "largest_matrix_entry_s": 70711385.22543593,
+      "ulp_of_largest_entry_s": 7.450580596923828e-09,
+      "nodes_touching_entries_above_1e7_s": 36,
+      "largest_node_shunt_difference_matrix_vs_model_s": 4.590404223100449e-09,
+      "max_spread_of_node_shunt_across_phases_of_a_bus_s": 9.930136612989092e-16,
+      "common_shift_from_one_ulp_of_largest_entry_v": 3.3924128697379743,
+      "solutions": {
+        "klu": {
+          "common_voltage_v": [
+            16.41479765423252,
+            -5.945795602539278
+          ],
+          "common_voltage_magnitude_v": 17.458466925150468,
+          "net_current_to_ground_a": 0.0015196687129372707,
+          "net_current_over_admittance_v": 17.458358807331397
+        },
+        "superlu_colamd": {
+          "common_voltage_v": [
+            -1.7925234545537927,
+            -0.5394751985055889
+          ],
+          "common_voltage_magnitude_v": 1.8719438626540348,
+          "net_current_to_ground_a": 0.00016293762000913433,
+          "net_current_over_admittance_v": 1.8718707630914475
+        },
+        "superlu_mmd_at_plus_a": {
+          "common_voltage_v": [
+            8.72349408362232,
+            -7.410840827520661
+          ],
+          "common_voltage_magnitude_v": 11.44639291645367,
+          "net_current_to_ground_a": 0.000996351988770863,
+          "net_current_over_admittance_v": 11.446356939690425
+        },
+        "faer": {
+          "common_voltage_v": [
+            -0.08618440216022788,
+            -0.2189861592045875
+          ],
+          "common_voltage_magnitude_v": 0.2353352695600318,
+          "net_current_to_ground_a": 2.0484438424221226e-05,
+          "net_current_over_admittance_v": 0.2353306828864762
+        },
+        "exact": {
+          "common_voltage_v": [
+            -7.26732422243014e-07,
+            -2.1230820631941953e-06
+          ],
+          "common_voltage_magnitude_v": 2.244018150683305e-06,
+          "net_current_to_ground_a": 4.477163384196123e-17,
+          "net_current_over_admittance_v": 5.143484506518789e-13
+        }
+      },
+      "common_shift_from_rounding_of_stored_entries_v": 2.244041509191769e-06
+    }
+  ],
+  "nodes_at_69kv": 657,
+  "differences": {
+    "klu_minus_exact": {
+      "sections": [
+        {
+          "max_difference_v": 2.7213047403225676,
+          "common_shift_v": [
+            -1.3393617084119869,
+            -2.365736395217537
+          ],
+          "common_shift_magnitude_v": 2.7185655183602147,
+          "common_share_of_squared_norm": 0.9999991294396793,
+          "after_removing_common_max_v": 0.00761968792206567,
+          "after_removing_common_rms_v": 0.0025365266376314944,
+          "max_between_coupled_nodes_v": 0.01177689116139784
+        },
+        {
+          "max_difference_v": 17.461980148942978,
+          "common_shift_v": [
+            16.414798380965156,
+            -5.945793479457105
+          ],
+          "common_shift_magnitude_v": 17.45846688538518,
+          "common_share_of_squared_norm": 0.9999999539349572,
+          "after_removing_common_max_v": 0.007746995329390676,
+          "after_removing_common_rms_v": 0.0037470704091692995,
+          "max_between_coupled_nodes_v": 0.009370351693972925
+        }
+      ],
+      "max_outside_sections_v": 0.0012699353309005162,
+      "nodes_outside_sections_above_1e-3_v": 752
+    },
+    "superlu_colamd_minus_exact": {
+      "sections": [
+        {
+          "max_difference_v": 11.665665035299584,
+          "common_shift_v": [
+            -7.397005189627008,
+            -9.01767251682454
+          ],
+          "common_shift_magnitude_v": 11.663365869081769,
+          "common_share_of_squared_norm": 0.9999999900230896,
+          "after_removing_common_max_v": 0.003456498143147874,
+          "after_removing_common_rms_v": 0.0011649893201151709,
+          "max_between_coupled_nodes_v": 0.003313730174624501
+        },
+        {
+          "max_difference_v": 1.8729991735599656,
+          "common_shift_v": [
+            -1.7925227278213705,
+            -0.5394730754235962
+          ],
+          "common_shift_magnitude_v": 1.8719425549047064,
+          "common_share_of_squared_norm": 0.9999995689690289,
+          "after_removing_common_max_v": 0.002754119846786322,
+          "after_removing_common_rms_v": 0.0012289857555467818,
+          "max_between_coupled_nodes_v": 0.0031209039220917657
+        }
+      ],
+      "max_outside_sections_v": 0.0003826535243967286,
+      "nodes_outside_sections_above_1e-3_v": 0
+    },
+    "superlu_mmd_at_plus_a_minus_exact": {
+      "sections": [
+        {
+          "max_difference_v": 14.528766919961997,
+          "common_shift_v": [
+            7.235596816544698,
+            -12.595812994035866
+          ],
+          "common_shift_magnitude_v": 14.526127022448707,
+          "common_share_of_squared_norm": 0.9999999862196524,
+          "after_removing_common_max_v": 0.005040754877841637,
+          "after_removing_common_rms_v": 0.0017052180765908052,
+          "max_between_coupled_nodes_v": 0.003287253482147515
+        },
+        {
+          "max_difference_v": 11.447470133478532,
+          "common_shift_v": [
+            8.723494810354731,
+            -7.410838704438549
+          ],
+          "common_shift_magnitude_v": 11.44639209574311,
+          "common_share_of_squared_norm": 0.9999999830245662,
+          "after_removing_common_max_v": 0.0032722164519171106,
+          "after_removing_common_rms_v": 0.0014913482211490953,
+          "max_between_coupled_nodes_v": 0.0022597320210023066
+        }
+      ],
+      "max_outside_sections_v": 0.0003250081173436322,
+      "nodes_outside_sections_above_1e-3_v": 0
+    },
+    "superlu_colamd_minus_klu": {
+      "sections": [
+        {
+          "max_difference_v": 9.002712226901576,
+          "common_shift_v": [
+            -6.057643481215021,
+            -6.651936121607001
+          ],
+          "common_shift_magnitude_v": 8.996849376945622,
+          "common_share_of_squared_norm": 0.999999923883855,
+          "after_removing_common_max_v": 0.007757348274003798,
+          "after_removing_common_rms_v": 0.002482154772469971,
+          "max_between_coupled_nodes_v": 0.012881746648980268
+        },
+        {
+          "max_difference_v": 18.998643327189484,
+          "common_shift_v": [
+            -18.207321108786527,
+            5.406320404033509
+          ],
+          "common_shift_magnitude_v": 18.993020883196348,
+          "common_share_of_squared_norm": 0.9999999711357458,
+          "after_removing_common_max_v": 0.008555425942428233,
+          "after_removing_common_rms_v": 0.0032268161757978936,
+          "max_between_coupled_nodes_v": 0.012000188892890869
+        }
+      ],
+      "max_outside_sections_v": 0.0014646829749764057,
+      "nodes_outside_sections_above_1e-3_v": 1580
+    },
+    "faer_minus_klu": {
+      "sections": [
+        {
+          "max_difference_v": 6.006226671964677,
+          "common_shift_v": [
+            3.7019540259514745,
+            -4.7261531718477725
+          ],
+          "common_shift_magnitude_v": 6.00341464618471,
+          "common_share_of_squared_norm": 0.9999998028798815,
+          "after_removing_common_max_v": 0.007092982709629325,
+          "after_removing_common_rms_v": 0.0026654089936237134,
+          "max_between_coupled_nodes_v": 0.011381247962151108
+        },
+        {
+          "max_difference_v": 17.47305203616741,
+          "common_shift_v": [
+            -16.500982056393013,
+            5.726809443334605
+          ],
+          "common_shift_magnitude_v": 17.466503806591366,
+          "common_share_of_squared_norm": 0.9999999386779963,
+          "after_removing_common_max_v": 0.010857595523093557,
+          "after_removing_common_rms_v": 0.004325279378315616,
+          "max_between_coupled_nodes_v": 0.015041209408136387
+        }
+      ],
+      "max_outside_sections_v": 0.001857039179351496,
+      "nodes_outside_sections_above_1e-3_v": 3451
+    },
+    "faer_minus_exact": {
+      "sections": [
+        {
+          "max_difference_v": 7.477134785290075,
+          "common_shift_v": [
+            2.3625923175394874,
+            -7.091889567065309
+          ],
+          "common_shift_magnitude_v": 7.475074587610908,
+          "common_share_of_squared_norm": 0.9999999808355307,
+          "after_removing_common_max_v": 0.003649254554170857,
+          "after_removing_common_rms_v": 0.0010348179028978515,
+          "max_between_coupled_nodes_v": 0.0035783762194955527
+        },
+        {
+          "max_difference_v": 0.23840991047127133,
+          "common_shift_v": [
+            -0.08618367542785882,
+            -0.21898403612249936
+          ],
+          "common_shift_magnitude_v": 0.23533302782812832,
+          "common_share_of_squared_norm": 0.9999770234757365,
+          "after_removing_common_max_v": 0.0033140747328856326,
+          "after_removing_common_rms_v": 0.0011280543846927578,
+          "max_between_coupled_nodes_v": 0.005675967838222939
+        }
+      ],
+      "max_outside_sections_v": 0.0007781708716291196,
+      "nodes_outside_sections_above_1e-3_v": 0
+    }
+  },
+  "element_flows_vs_klu": {
+    "elements": 259,
+    "largest_conductor_current_a": 2421.5131960096437,
+    "largest_terminal_power_va": 235496232.791729,
+    "superlu_colamd": {
+      "max_conductor_current_difference_a": 0.002189275996756831,
+      "max_terminal_power_difference_va": 215.56962055374706
+    },
+    "superlu_mmd_at_plus_a": {
+      "max_conductor_current_difference_a": 0.0018804803326330573,
+      "max_terminal_power_difference_va": 205.03376440054134
+    },
+    "faer": {
+      "max_conductor_current_difference_a": 0.0026818535094711693,
+      "max_terminal_power_difference_va": 282.997055143094
+    },
+    "exact": {
+      "max_conductor_current_difference_a": 0.0017636970293585356,
+      "max_terminal_power_difference_va": 193.22631560765706
+    }
+  },
+  "one_ulp_perturbations": {
+    "all_entries": {
+      "entries_perturbed": 2427669,
+      "common_shift_magnitude_v_per_draw_and_section": [
+        [
+          19.503253442931726,
+          13.261534581454224
+        ],
+        [
+          2.8590942190647946,
+          62.22074514601501
+        ],
+        [
+          5.7002588226623905,
+          41.155036868907594
+        ],
+        [
+          56.426310376584844,
+          46.67503133526131
+        ],
+        [
+          22.865208222664208,
+          40.36220116663924
+        ]
+      ],
+      "max_after_removing_common_v": 0.018107936943329003,
+      "max_outside_sections_v": 0.0018473603795856669
+    },
+    "only_69kv_entries_above_1e7_s": {
+      "entries_perturbed": 144,
+      "common_shift_magnitude_v_per_draw_and_section": [
+        [
+          57.40466670642302,
+          15.716050049012878
+        ],
+        [
+          21.776276233150767,
+          51.13521596040429
+        ],
+        [
+          45.93155818225292,
+          24.881363129158956
+        ],
+        [
+          35.98081025225922,
+          29.088771797295692
+        ],
+        [
+          43.08950316297106,
+          13.448875678956206
+        ]
+      ],
+      "max_after_removing_common_v": 0.017210055080119822,
+      "max_outside_sections_v": 0.001991976085806977
+    },
+    "all_other_entries": {
+      "entries_perturbed": 2427525,
+      "common_shift_magnitude_v_per_draw_and_section": [
+        [
+          0.0005339933286111806,
+          0.0011021826819051725
+        ],
+        [
+          0.00026805123331346105,
+          0.0016641512896063402
+        ],
+        [
+          0.0008936940541525835,
+          0.0010040091195203254
+        ],
+        [
+          0.0010603020014869056,
+          0.0002191933711784441
+        ],
+        [
+          0.0009824114071075596,
+          0.0007594320753876614
+        ]
+      ],
+      "max_after_removing_common_v": 0.00020587993737511016,
+      "max_outside_sections_v": 0.0002862625556139362
+    }
+  },
+  "singular_values": {
+    "largest_s": 141422063.349394,
+    "pieces_not_connected_to_source": 48,
+    "nodes_in_those_pieces": 294,
+    "max_klu_voltage_in_those_pieces_v": 0.0,
+    "max_rhs_in_those_pieces_a": 0.0,
+    "max_solver_difference_in_those_pieces_v": 0.0,
+    "smallest_in_those_pieces_s": 6.276365095324825e-09,
+    "ratio_largest_to_smallest_overall": 2.2532478783736988e+16,
+    "smallest_six_in_main_piece_s": [
+      2.5460749269357973e-07,
+      2.7537723782849966e-07,
+      0.0004036878566490833,
+      0.00048235008775771027,
+      0.0005105056462353483,
+      0.0005227570109274114
+    ],
+    "ratio_largest_to_smallest_main_piece": 555451302132712.7,
+    "sections": [
+      {
+        "indicator_rayleigh_quotient_s": 2.749151514816208e-07,
+        "indicator_share_in_two_smallest_singular_vectors": 0.9999999999172877
+      },
+      {
+        "indicator_rayleigh_quotient_s": 2.5424587460234525e-07,
+        "indicator_share_in_two_smallest_singular_vectors": 0.9999999999172353
+      }
+    ]
+  },
+  "antifloat_scaling": {
+    "x0.1": {
+      "max_rhs_change_a": 0.0005655310516354914,
+      "matrix_admittance_to_ground_s": [
+        [
+          6.187381633871586e-08,
+          8.699446879762011e-05
+        ],
+        [
+          5.6943274547027745e-08,
+          8.734115949242273e-05
+        ]
+      ],
+      "klu": {
+        "sections": [
+          {
+            "max_difference_v": 3.6494723946626553,
+            "common_shift_v": [
+              -2.8907832802313003,
+              2.213566053162906
+            ],
+            "common_shift_magnitude_v": 3.6409480420599305,
+            "common_share_of_squared_norm": 0.9999979248154601,
+            "after_removing_common_max_v": 0.009855694410974059,
+            "after_removing_common_rms_v": 0.00524497344400891,
+            "max_between_coupled_nodes_v": 0.016943041506206794
+          },
+          {
+            "max_difference_v": 6.972854383544728,
+            "common_shift_v": [
+              -6.831439835142409,
+              1.3729988146668275
+            ],
+            "common_shift_magnitude_v": 6.9680482178474525,
+            "common_share_of_squared_norm": 0.9999996688585294,
+            "after_removing_common_max_v": 0.007042849968476932,
+            "after_removing_common_rms_v": 0.004009756551354663,
+            "max_between_coupled_nodes_v": 0.009579306735131212
+          }
+        ],
+        "max_outside_sections_v": 0.0024509040301989643,
+        "nodes_outside_sections_above_1e-3_v": 103038
+      },
+      "exact": {
+        "sections": [
+          {
+            "max_difference_v": 0.009761323821348849,
+            "common_shift_v": [
+              -1.4927839705099661e-10,
+              -7.142954841367013e-10
+            ],
+            "common_shift_magnitude_v": 7.297274001188386e-10,
+            "common_share_of_squared_norm": 1.9238175659336952e-14,
+            "after_removing_common_max_v": 0.009761323906899487,
+            "after_removing_common_rms_v": 0.005261126093987359,
+            "max_between_coupled_nodes_v": 0.016886367713123122
+          },
+          {
+            "max_difference_v": 0.005532030752568834,
+            "common_shift_v": [
+              2.45674198073994e-09,
+              7.192136840599525e-09
+            ],
+            "common_shift_magnitude_v": 7.60015878083076e-09,
+            "common_share_of_squared_norm": 4.1428219740576654e-12,
+            "after_removing_common_max_v": 0.005532024971948614,
+            "after_removing_common_rms_v": 0.003734001860390294,
+            "max_between_coupled_nodes_v": 0.009581721695687398
+          }
+        ],
+        "max_outside_sections_v": 0.002448119845652157,
+        "nodes_outside_sections_above_1e-3_v": 102751
+      },
+      "klu_common_voltage_magnitude_v": [
+        4.232881036880239,
+        10.618437622922432
+      ],
+      "exact_common_voltage_magnitude_v": [
+        2.76820247927418e-07,
+        2.236417981521755e-06
+      ]
+    },
+    "x10": {
+      "max_rhs_change_a": 0.002086504529510988,
+      "matrix_admittance_to_ground_s": [
+        [
+          6.187381633871586e-08,
+          8.412077272185318e-05
+        ],
+        [
+          5.6943274547027745e-08,
+          8.366222295567873e-05
+        ]
+      ],
+      "klu": {
+        "sections": [
+          {
+            "max_difference_v": 15.379265914446451,
+            "common_shift_v": [
+              -12.966279934952619,
+              8.111300484094487
+            ],
+            "common_shift_magnitude_v": 15.294365331546986,
+            "common_share_of_squared_norm": 0.9999896289169427,
+            "after_removing_common_max_v": 0.09153277694587426,
+            "after_removing_common_rms_v": 0.04925448336417477,
+            "max_between_coupled_nodes_v": 0.15727917288279844
+          },
+          {
+            "max_difference_v": 28.672736221584405,
+            "common_shift_v": [
+              -17.181208763701065,
+              22.899248018303542
+            ],
+            "common_shift_magnitude_v": 28.62812418559164,
+            "common_share_of_squared_norm": 0.9999983796310283,
+            "after_removing_common_max_v": 0.058707514897273896,
+            "after_removing_common_rms_v": 0.036441832154377574,
+            "max_between_coupled_nodes_v": 0.09715881727880046
+          }
+        ],
+        "max_outside_sections_v": 0.02078981516124106,
+        "nodes_outside_sections_above_1e-3_v": 127056
+      },
+      "exact": {
+        "sections": [
+          {
+            "max_difference_v": 0.09169123841972376,
+            "common_shift_v": [
+              1.7875988435532365e-09,
+              8.541003389548258e-09
+            ],
+            "common_shift_magnitude_v": 8.726067185493571e-09,
+            "common_share_of_squared_norm": 2.972931390080107e-14,
+            "after_removing_common_max_v": 0.09169124609789474,
+            "after_removing_common_rms_v": 0.05060880809093143,
+            "max_between_coupled_nodes_v": 0.1588147935222889
+          },
+          {
+            "max_difference_v": 0.056081825510014185,
+            "common_shift_v": [
+              -2.932636413113241e-08,
+              -8.586746043768508e-08
+            ],
+            "common_shift_magnitude_v": 9.073729329867175e-08,
+            "common_share_of_squared_norm": 5.974953376119488e-12,
+            "after_removing_common_max_v": 0.056081910741446354,
+            "after_removing_common_rms_v": 0.03712090534406158,
+            "max_between_coupled_nodes_v": 0.09713752117952457
+          }
+        ],
+        "max_outside_sections_v": 0.020985527825217603,
+        "nodes_outside_sections_above_1e-3_v": 127056
+      },
+      "klu_common_voltage_magnitude_v": [
+        15.416318983981364,
+        16.97076706581942
+      ],
+      "exact_common_voltage_magnitude_v": [
+        2.862760614644781e-07,
+        2.3347554828299506e-06
+      ]
+    },
+    "x100": {
+      "max_rhs_change_a": 0.026167381789881664,
+      "matrix_admittance_to_ground_s": [
+        [
+          6.187381633871586e-08,
+          5.843110664743993e-05
+        ],
+        [
+          5.6943274547027745e-08,
+          5.063593307145944e-05
+        ]
+      ],
+      "klu": {
+        "sections": [
+          {
+            "max_difference_v": 24.683686124365178,
+            "common_shift_v": [
+              -22.661567666339465,
+              6.850574959868434
+            ],
+            "common_shift_magnitude_v": 23.674396008702285,
+            "common_share_of_squared_norm": 0.9994515977299656,
+            "after_removing_common_max_v": 1.0133638122660822,
+            "after_removing_common_rms_v": 0.5545588577852344,
+            "max_between_coupled_nodes_v": 1.7545930226653805
+          },
+          {
+            "max_difference_v": 42.4489107030368,
+            "common_shift_v": [
+              6.332706120235433,
+              41.430494906481286
+            ],
+            "common_shift_magnitude_v": 41.91168184410212,
+            "common_share_of_squared_norm": 0.9999066295652943,
+            "after_removing_common_max_v": 0.6179996128146729,
+            "after_removing_common_rms_v": 0.4050046925315091,
+            "max_between_coupled_nodes_v": 1.0668517628080234
+          }
+        ],
+        "max_outside_sections_v": 0.2339013251573113,
+        "nodes_outside_sections_above_1e-3_v": 430928
+      },
+      "exact": {
+        "sections": [
+          {
+            "max_difference_v": 1.0137586464204758,
+            "common_shift_v": [
+              2.752768480041552e-08,
+              1.3173011688022166e-07
+            ],
+            "common_shift_magnitude_v": 1.345756186080818e-07,
+            "common_share_of_squared_norm": 5.860212708202011e-14,
+            "after_removing_common_max_v": 1.0137587635995924,
+            "after_removing_common_rms_v": 0.5559166670186922,
+            "max_between_coupled_nodes_v": 1.7558891947599433
+          },
+          {
+            "max_difference_v": 0.6157887083209395,
+            "common_shift_v": [
+              -5.207541469336154e-07,
+              -1.5270264220976458e-06
+            ],
+            "common_shift_magnitude_v": 1.61337986083033e-06,
+            "common_share_of_squared_norm": 1.583323034372817e-11,
+            "after_removing_common_max_v": 0.6157902246918878,
+            "after_removing_common_rms_v": 0.40546359485026784,
+            "max_between_coupled_nodes_v": 1.0665769494701085
+          }
+        ],
+        "max_outside_sections_v": 0.23411579689255266,
+        "nodes_outside_sections_above_1e-3_v": 430928
+      },
+      "klu_common_voltage_magnitude_v": [
+        24.416354918358202,
+        42.14988508478553
+      ],
+      "exact_common_voltage_magnitude_v": [
+        4.121253753575557e-07,
+        3.857397469157723e-06
+      ]
+    }
+  }
+}

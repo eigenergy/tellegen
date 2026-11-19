@@ -91,7 +91,34 @@ fn prepared_input(sections: usize) -> Input {
 }
 
 fn instance_input(instance: &McAcPfInstance) -> Input {
+    input_at(instance, false)
+}
+
+/// With `loaded`, the right-hand side is the one the last accepted iteration
+/// of the power flow solved, so the solution is the loaded operating point;
+/// otherwise it is the source term alone.
+fn input_at(instance: &McAcPfInstance, loaded: bool) -> Input {
     let prepared = PreparedNetwork::prepare(instance).unwrap();
+    let rhs = if loaded {
+        let point = super::super::iterate(
+            &prepared,
+            &super::super::McPfOptions::default(),
+            None,
+            &mut super::super::McPfProfile::default(),
+        )
+        .unwrap();
+        prepared
+            .unknown
+            .iter()
+            .enumerate()
+            .map(|(u, &i)| {
+                prepared.source_rhs[u] + prepared.yref.row_mul(i, &point.voltage)
+                    - point.load_current[i]
+            })
+            .collect()
+    } else {
+        prepared.source_rhs.clone()
+    };
     let mut entries = BTreeMap::<(usize, usize), Complex64>::new();
     for (row, &global) in prepared.unknown.iter().enumerate() {
         for matrix in [&prepared.passive, &prepared.yref] {
@@ -138,11 +165,7 @@ fn instance_input(instance: &McAcPfInstance) -> Input {
             .filter(|(_, value)| value.norm() > 0.0)
             .map(|((row, col), value)| (row, col, [value.re, value.im]))
             .collect(),
-        rhs: prepared
-            .source_rhs
-            .iter()
-            .map(|value| [value.re, value.im])
-            .collect(),
+        rhs: rhs.iter().map(|value| [value.re, value.im]).collect(),
     }
 }
 
@@ -152,12 +175,24 @@ fn export_comparison() {
     let input: Input = if let Ok(path) = std::env::var("TELLEGEN_LINEAR_INPUT") {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     } else if let Ok(path) = std::env::var("TELLEGEN_LINEAR_DSS") {
-        let module = powerio::parse(powerio::Source::open(path).unwrap()).unwrap();
-        super::super::input::validate_mc_module(&module).unwrap();
-        let powerio::PioValue::MulticonductorNetwork(network) = module.into_value() else {
-            panic!("expected a multiconductor network");
-        };
-        instance_input(&McAcPfInstance::from_network(network).unwrap())
+        // Read limits raised as `tellegen import-opendss` allows, then the two
+        // explicit preparations a caller would choose: written equipment
+        // settings when the case has controls or fuses, and the sections
+        // with a source.
+        let limits = powerio::dist::DssReadLimits::default()
+            .max_include_bytes(1 << 30)
+            .max_properties(1 << 26);
+        let options = powerio::ParseOptions::default().dss_limits(limits);
+        let module =
+            powerio::parse_with_options(powerio::Source::open(path).unwrap(), &options).unwrap();
+        let module = if super::super::input::validate_mc_module(&module).is_err() {
+            super::super::prepare_mc_fixed_controls_energized_network(&module)
+        } else {
+            super::super::prepare_mc_energized_network(&module)
+        }
+        .unwrap()
+        .0;
+        input_at(&super::super::energized::instance(&module).unwrap(), true)
     } else {
         prepared_input(
             std::env::var("TELLEGEN_LINEAR_SECTIONS").map_or(1000, |s| s.parse().unwrap()),

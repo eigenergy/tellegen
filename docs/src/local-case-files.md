@@ -217,15 +217,22 @@ always take precedence over the optional low- and high-voltage fallback; disabli
 does not remove the source model's own voltage bounds.
 
 Passive definitions, profiles and monitoring records remain in the module.
+A disabled line also remains as a record and is left out of the circuit.
 This is a fixed equipment snapshot: daily/yearly simulation, control execution,
 and an OpenDSS script's sequence of solves are not run. For retained regulator
-and capacitor controls, **Use written equipment settings** creates a separate
-case using the written taps and capacitor values. The action is available only
+controls, capacitor controls and fuses, **Use written equipment settings** creates a separate
+case using the written taps and capacitor values, with every fuse closed. The action is available only
 when all other electrical checks pass. It preserves the original
-case and source data, archives the validated control records, and retains the
+case and source data, archives the validated control and fuse records, and retains the
 choice when the derived case is saved. Regulator and capacitor controls are
-never executed or used to search for an operating point. Missing control targets,
-malformed controls, unsupported capacitor steps or filters, fuses and unsupported switch objects still prevent
+never executed or used to search for an operating point, and a fuse is not
+opened when the calculated current exceeds its rating. This matches OpenDSS
+with `controlmode=off`; with its default control mode OpenDSS may move taps,
+switch capacitors or blow fuses. Missing control targets,
+malformed controls, unsupported capacitor steps or filters, a fuse written open
+on any phase (`Action`, `Normal` or `State`), a fuse on equipment that an `open`
+or `close` command also switches, a fuse with shortened or unnamed properties,
+relays, reclosers and unsupported switch objects still prevent
 a calculation. Duplicate definitions and import limits remain errors.
 
 Finite two- and three-winding transformers support the qualified connections,

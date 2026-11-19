@@ -311,6 +311,13 @@ pub fn prepare_mc_energized_network(
     module: &PioModule<PioValue>,
 ) -> Result<(PioModule<PioValue>, Vec<McExcludedIsland>), String> {
     super::input::validate_mc_module(module)?;
+    record_selection(module)
+}
+
+/// [`prepare_mc_energized_network`] for a module the caller has just validated.
+pub(super) fn record_selection(
+    module: &PioModule<PioValue>,
+) -> Result<(PioModule<PioValue>, Vec<McExcludedIsland>), String> {
     if matches!(module.value(), PioValue::McAcPfInstance(_)) {
         return Ok((module.clone(), Vec::new()));
     }

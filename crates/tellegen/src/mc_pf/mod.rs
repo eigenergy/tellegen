@@ -10,7 +10,10 @@ pub use energized::{
     mc_unpowered_islands, prepare_mc_energized_network, prepare_mc_energized_network_json,
     McEnergizedOutput, McExcludedEquipment, McExcludedIsland, McNetworkScope,
 };
-pub use fixed_controls::{prepare_mc_fixed_controls, FIXED_CONTROLS_EXTENSION};
+pub use fixed_controls::{
+    prepare_mc_fixed_controls, prepare_mc_fixed_controls_energized_network,
+    FIXED_CONTROLS_EXTENSION,
+};
 pub(crate) mod input;
 mod linear;
 mod loads;
@@ -414,9 +417,17 @@ pub struct McPfSession {
 impl McPfSession {
     /// Prepare, factor, and solve the initial operating point once.
     pub fn new(instance: McAcPfInstance, options: McPfOptions) -> Result<Self, String> {
+        Self::prepare(instance, options, false)
+    }
+
+    fn prepare(
+        instance: McAcPfInstance,
+        options: McPfOptions,
+        elements_validated: bool,
+    ) -> Result<Self, String> {
         validate_options(&options)?;
         let started = profile_now();
-        let (prepared, timing) = PreparedNetwork::prepare_timed(&instance)?;
+        let (prepared, timing) = PreparedNetwork::prepare_timed(&instance, elements_validated)?;
         let base_power = prepared
             .loads
             .iter()
@@ -494,7 +505,9 @@ impl McPfSession {
             None => input::instance_from_value(module.value())?,
         };
         let converted = profile_now();
-        let mut session = Self::new(instance, options)?;
+        // `validate_mc_module` above checked every element of the module's
+        // network, of which the instance's network is all or a selection.
+        let mut session = Self::prepare(instance, options, true)?;
         if module.extensions().contains_key(energized::EXTENSION) {
             if let powerio::PioValue::MulticonductorNetwork(network) = module.value() {
                 session.full_network = Some(network.clone());
@@ -1518,6 +1531,7 @@ fn expected_element_port_keys(
     for load in network.loads() {
         load_rows.entry(load.name.as_str()).or_insert(load);
     }
+    let index = network::NetworkIndex::new(network)?;
     for load_instance in instance.loads() {
         let load = load_rows
             .get(load_instance.load.as_str())
@@ -1529,16 +1543,21 @@ fn expected_element_port_keys(
                 )
             })?;
         let terminals = &load_instance.terminals;
-        let branches: Vec<Vec<&str>> =
-            crate::mc_pf::loads::load_channels(network, load, terminals, load_instance.p_w.len())?
-                .iter()
-                .map(|channel| {
-                    std::iter::once(channel.from)
-                        .chain(channel.to)
-                        .map(|position| terminals[position].as_str())
-                        .collect()
-                })
-                .collect();
+        let branches: Vec<Vec<&str>> = crate::mc_pf::loads::load_channels(
+            network,
+            &index,
+            load,
+            terminals,
+            load_instance.p_w.len(),
+        )?
+        .iter()
+        .map(|channel| {
+            std::iter::once(channel.from)
+                .chain(channel.to)
+                .map(|position| terminals[position].as_str())
+                .collect()
+        })
+        .collect();
         if branches.len() != load_instance.p_w.len() {
             return Err(format!(
                 "load `{}` branch count does not match its powers",
@@ -1856,6 +1875,22 @@ fn iterate_cancellable(
             }
         }
     }
+    // Where rounding in a current balance can reach the current tolerance
+    // (admittances of very different size on one terminal), the voltages a
+    // linear solve returns are uncertain by that current times the network
+    // impedance, and the iteration can wander without settling. There each
+    // step instead solves for the correction to the present voltages, from
+    // the current balance summed in twice the working precision. The
+    // factorization's error then scales with the correction and shrinks with
+    // it. The equations and the converged point are the same.
+    let largest_fixed = prepared
+        .fixed
+        .iter()
+        .flatten()
+        .map(|value| value.norm())
+        .fold(0.0, f64::max);
+    let correct =
+        prepared.balance_rounding_per_volt * largest_fixed > options.absolute_kcl_tolerance;
     let mut load_current = vec![Complex64::default(); n];
     let mut compensated = vec![Complex64::default(); prepared.unknown.len()];
     let mut scratch = KclScratch::new(n);
@@ -1878,8 +1913,12 @@ fn iterate_cancellable(
         }
         let started = profile_now();
         for (u, &i) in prepared.unknown.iter().enumerate() {
-            let yv = prepared.yref.row_mul(i, &voltage);
-            compensated[u] = base_rhs[prepared.unknown_pos[i]] + yv - load_current[i];
+            compensated[u] = if correct {
+                -prepared.current_balance_twofold(&voltage, i, load_current[i])
+            } else {
+                let yv = prepared.yref.row_mul(i, &voltage);
+                base_rhs[prepared.unknown_pos[i]] + yv - load_current[i]
+            };
         }
         profile.kcl_and_matvec_ms += elapsed_ms(started, profile_now());
         if let Some(factor) = &prepared.factor {
@@ -1890,7 +1929,12 @@ fn iterate_cancellable(
         }
         final_change = 0.0;
         for (u, &i) in prepared.unknown.iter().enumerate() {
-            let next = voltage[i] + options.damping * (solved[u] - voltage[i]);
+            let target = if correct {
+                voltage[i] + solved[u]
+            } else {
+                solved[u]
+            };
+            let next = voltage[i] + options.damping * (target - voltage[i]);
             final_change = final_change.max((next - voltage[i]).norm());
             voltage[i] = next;
         }
@@ -2390,8 +2434,15 @@ fn kcl_metrics(
         let residual = (passive_current(network, voltage, i) + load[i]).norm();
         let scale = incident[i].max(load[i].norm());
         raw = raw.max(residual);
+        // Very large admittances beside ordinary ones (a line of 0.001 length)
+        // leave a rounding error in the balance itself that can exceed the
+        // absolute tolerance; no voltage vector in double precision does better.
+        let rounding = network.passive_current_rounding(voltage, i);
         scaled = scaled.max(
-            residual / (options.absolute_kcl_tolerance + options.relative_kcl_tolerance * scale),
+            residual
+                / (options.absolute_kcl_tolerance
+                    + options.relative_kcl_tolerance * scale
+                    + rounding),
         );
     }
     (raw, scaled)

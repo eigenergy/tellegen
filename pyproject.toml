@@ -34,7 +34,7 @@ dependencies = []
 # schemas, so it is declared here and not left to arrive through `mcp`.
 mcp = [
   "mcp>=2,<3",
-  "powerio>=0.12.2,<0.13",
+  "powerio>=0.12.3,<0.13",
   "pydantic>=2,<3",
 ]
 

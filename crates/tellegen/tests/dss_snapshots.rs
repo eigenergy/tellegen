@@ -77,7 +77,7 @@ fn capability_rejects_missing_voltage_dependent_load_base() {
 #[test]
 fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
     let report: Report = serde_json::from_str(include_str!("data/dss_snapshots.json")).unwrap();
-    assert_eq!(report.cases.len(), 50);
+    assert_eq!(report.cases.len(), 53);
     for case in report.cases {
         let input = module(&case.source);
         let input = if case.fixed_controls {
@@ -246,6 +246,99 @@ fn passive_records_stay_retained_but_controls_and_incomplete_sources_are_blocked
             .is_err(),
             "{extra}"
         );
+    }
+}
+
+#[test]
+fn disabled_line_is_kept_as_a_record_and_left_out_of_the_circuit() {
+    let base = "new circuit.qc basekv=.4\nnew line.a phases=3 bus1=sourcebus bus2=lb r1=.1 x1=.2 r0=.2 x0=.4 c1=0 c0=0 length=1 units=km\nnew load.ld phases=3 bus1=lb kv=.4 kw=3 kvar=1 model=1\n";
+    let tie = "new line.tie phases=3 bus1=sourcebus bus2=lb r1=.1 x1=.2 r0=.2 x0=.4 c1=0 c0=0 length=1 units=km";
+    let voltages = |text: &str| {
+        let input = module(text);
+        tellegen::validate_mc_module(&input).unwrap();
+        let result: McPfResult = serde_json::from_str(
+            &tellegen::solve_mc_module_json(
+                &tellegen::ir::serialize_module(&input).unwrap(),
+                &Default::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(result.converged);
+        serde_json::to_value(&result.terminals).unwrap()
+    };
+    let without = voltages(base);
+    for disabled in [
+        format!("{base}{tie} enabled=n\n"),
+        format!("{base}{tie}\ndisable line.tie\n"),
+    ] {
+        assert_eq!(voltages(&disabled), without, "{disabled}");
+    }
+    assert_ne!(voltages(&format!("{base}{tie}\n")), without);
+
+    // The retained record cannot be switched back on without its branch.
+    let mut input = module(&format!("{base}{tie} enabled=n\n"));
+    let powerio::PioValue::MulticonductorNetwork(net) = input.value_mut() else {
+        panic!()
+    };
+    assert_eq!(net.untyped_objects().len(), 1);
+    net.untyped_objects_mut()[0]
+        .props
+        .push((Some("enabled".into()), "yes".into()));
+    assert!(tellegen::validate_mc_module(&input).is_err());
+}
+
+#[test]
+fn lines_of_very_small_impedance_converge() {
+    // A 0.001 km line of 1e-5 ohm/km puts 7e7 S beside ordinary admittances.
+    // At 69 kV the current balance at its ends then carries about 1e-3 A of
+    // rounding error, above the default absolute tolerance of 1e-4 A, while
+    // the lightly loaded spur carries too little current for the relative
+    // one. That current times the few ohms back to the source is millivolts:
+    // with the 1.5 kW spur the voltages from successive linear solves kept
+    // moving by 5.9e-3 V and never met the 1e-4 V tolerance.
+    for (spur, tolerance) in [
+        ("kw=150 kvar=50", 1e-4),
+        ("kw=1.5 kvar=.5", 1e-4),
+        ("kw=1.5 kvar=.5", 1e-8),
+    ] {
+        let input = module(&format!(
+            "new circuit.hv phases=3 bus1=src basekv=69\n\
+             new line.a phases=3 bus1=src bus2=m1 r1=.2 x1=.5 r0=.4 x0=1.2 c1=10 c0=5 length=7 units=km\n\
+             new line.f1 phases=3 bus1=m1 bus2=m2 r1=1e-5 x1=1e-5 r0=1e-5 x0=1e-5 c1=0 c0=0 length=.001 units=km\n\
+             new line.f2 phases=3 bus1=m2 bus2=m3 r1=1e-5 x1=1e-5 r0=1e-5 x0=1e-5 c1=0 c0=0 length=.001 units=km\n\
+             new line.b phases=3 bus1=m3 bus2=lb r1=.2 x1=.5 r0=.4 x0=1.2 c1=10 c0=5 length=11 units=km\n\
+             new load.main phases=3 bus1=m1 kv=69 kw=31234.5 kvar=9876.5 model=1\n\
+             new load.spur phases=3 bus1=lb kv=69 {spur} model=1\n"
+        ));
+        tellegen::validate_mc_module(&input).unwrap();
+        let options = McPfOptions {
+            tolerance,
+            ..Default::default()
+        };
+        let result: McPfResult = serde_json::from_str(
+            &tellegen::solve_mc_module_json(
+                &tellegen::ir::serialize_module(&input).unwrap(),
+                &options,
+            )
+            .unwrap_or_else(|e| panic!("{spur} at {tolerance}: {e}")),
+        )
+        .unwrap();
+        assert!(result.converged);
+        assert!(result.voltage_change <= tolerance);
+        assert!(result.scaled_kcl_residual <= 1.0);
+        assert!(result.iterations < 20, "{spur}: {}", result.iterations);
+        // The two ends of the short lines are the same point to within millivolts.
+        let at = |bus: &str| {
+            let terminal = result
+                .terminals
+                .iter()
+                .find(|t| t.bus.eq_ignore_ascii_case(bus) && t.terminal == "1")
+                .unwrap();
+            (terminal.voltage.re, terminal.voltage.im)
+        };
+        let (m1, m3) = (at("m1"), at("m3"));
+        assert!((m1.0 - m3.0).hypot(m1.1 - m3.1) < 1e-2);
     }
 }
 

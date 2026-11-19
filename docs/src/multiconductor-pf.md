@@ -52,6 +52,23 @@ terminal, `|KCL residual| <= absolute_kcl_tolerance + relative_kcl_tolerance * I
 `I_scale` is the larger of the summed incident device-current magnitudes and the
 magnitude of the net load current. The reported scaled residual must be at most 1.
 For example, at a 100 A scale the new KCL allowance is 0.0011 A.
+The allowance also includes the rounding error of the current balance itself:
+the number of terms in the terminal's balance, times 2.2e-16, times the sum of
+each admittance magnitude times its voltage magnitude. This matters only where
+very large admittances meet high voltages. A 0.001 km line of 1e-5 Ω/km at
+69 kV is a 7e7 S entry and leaves about 1e-3 A of rounding error, which no
+voltage vector in double precision can remove.
+
+Where that rounding error could reach the absolute KCL tolerance (the largest
+row bound per volt times the largest source voltage exceeds it), a linear solve
+returns voltages that are uncertain by that current times the network's
+impedance, which can be millivolts, or volts for a section tied to ground only
+through line capacitance. There each iteration solves for the correction to the
+present voltages instead, from the current balance summed in twice the working
+precision. The error of the factorization then shrinks with the correction. The
+equations, the tolerances and the converged point are the same, and each
+iteration costs one extra pass over the admittance matrix. Ordinary networks do
+not meet the condition and are solved exactly as before.
 
 OpenDSS documents a default solution tolerance of **0.0001**, applied to voltage
 magnitude changes and normalized by the bus voltage base when one is defined.
@@ -161,6 +178,23 @@ The command line accepts either PowerIO IR or BMOPF JSON:
 tellegen solve-mc < case.pio.json
 tellegen solve-mc-bmopf '{"max_iterations":200}' < case.bmopf.json
 ```
+
+An OpenDSS master file is read from disk, with the files it includes, by a
+separate command that prints the PowerIO IR:
+
+```sh
+tellegen import-opendss Master.dss > case.pio.json
+tellegen import-opendss Master.dss --written-equipment-settings --energized-network \
+  --max-include-bytes 1073741824 --max-properties 67108864 > region.pio.json
+```
+
+`--written-equipment-settings` holds written taps and capacitor states and
+closed fuses, as **Use written equipment settings** does in the browser.
+`--energized-network` records the sections with no source so that the solve
+leaves them out. `--max-include-bytes` (default 64 MiB) and `--max-properties`
+(default 4,194,304) raise PowerIO's OpenDSS read limits for a case too large
+for the defaults; the second example fits a SMART-DS region of 430,000 nodes,
+which needs about 4 GB of memory to import and 5 GB to solve. The browser keeps the default limits.
 
 `OPTIONS_JSON` also takes two keys that choose what the command prints; neither is a solver setting:
 

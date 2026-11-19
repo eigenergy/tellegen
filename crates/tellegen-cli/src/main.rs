@@ -58,6 +58,12 @@ const USAGE: &str =
                    and \"profile\": true (phase timings in the result).\n\
      solve-mc-bmopf [OPTIONS_JSON]\n\
                    solve a BMOPF JSON case with the same AC power flow solver.\n\
+     import-opendss PATH [--written-equipment-settings] [--energized-network]\n\
+                    [--max-include-bytes N] [--max-properties N]\n\
+                   read an OpenDSS master file and print the PowerIO module\n\
+                   for solve-mc. The first flag holds written taps and\n\
+                   capacitor states and closed fuses; the second leaves out\n\
+                   sections with no source; the limits admit larger cases.\n\
      study create|inspect|run|export|import PATH\n\
                    create, inspect, continue or move a durable Study.\n\
      plan\n\
@@ -154,6 +160,10 @@ fn main() -> ExitCode {
                 let input = read_stdin()?;
                 solve_mc_command(arg == "solve-mc-bmopf", &input, options, view)
             });
+        }
+        "import-opendss" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            return run(|| import_opendss(&args));
         }
         "generate" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
@@ -280,6 +290,47 @@ fn solve_mc_command(
             profile,
         ),
     }
+}
+
+const IMPORT_OPENDSS_USAGE: &str = "usage: tellegen import-opendss PATH [--written-equipment-settings] [--energized-network] [--max-include-bytes N] [--max-properties N]";
+
+/// Read an OpenDSS master file from disk, with its includes, and return the
+/// stored module `solve-mc` accepts. Diagnostics stay in the module.
+fn import_opendss(args: &[String]) -> Result<String, String> {
+    let mut path = None;
+    let mut written_settings = false;
+    let mut energized = false;
+    let mut limits = powerio::dist::DssReadLimits::default();
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let mut count = || {
+            it.next()
+                .and_then(|value| value.parse::<usize>().ok())
+                .ok_or_else(|| IMPORT_OPENDSS_USAGE.to_owned())
+        };
+        match arg.as_str() {
+            "--written-equipment-settings" => written_settings = true,
+            "--energized-network" => energized = true,
+            "--max-include-bytes" => limits = limits.max_include_bytes(count()?),
+            "--max-properties" => limits = limits.max_properties(count()?),
+            other if path.is_none() && !other.starts_with("--") => path = Some(other),
+            _ => return Err(IMPORT_OPENDSS_USAGE.to_owned()),
+        }
+    }
+    let path = path.ok_or_else(|| IMPORT_OPENDSS_USAGE.to_owned())?;
+    let source = powerio::Source::open(path).map_err(|e| e.to_string())?;
+    let options = powerio::ParseOptions::default()
+        .format("dss")
+        .map_err(|e| e.to_string())?
+        .dss_limits(limits);
+    let mut module = powerio::parse_with_options(source, &options).map_err(|e| e.to_string())?;
+    module = match (written_settings, energized) {
+        (true, true) => tellegen::prepare_mc_fixed_controls_energized_network(&module)?.0,
+        (true, false) => tellegen::prepare_mc_fixed_controls(&module)?,
+        (false, true) => tellegen::prepare_mc_energized_network(&module)?.0,
+        (false, false) => module,
+    };
+    serialize_module(&module)
 }
 
 /// The `"tables"` view: the summary and the columnar result tables.
@@ -647,6 +698,59 @@ mpc.gencost = [
                 "exact_solve_budget": 2
             }
         })
+    }
+
+    #[test]
+    fn import_opendss_reads_includes_and_applies_the_requested_preparation() {
+        let dir = std::env::temp_dir().join(format!("tellegen-import-dss-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Master.dss"),
+            "clear\nnew circuit.c basekv=12.47\nredirect Lines.dss\nredirect Loads.dss\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("Loads.dss"),
+            "new load.ld bus1=lb phases=3 kv=12.47 kw=90 kvar=30\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("Lines.dss"),
+            "new line.a phases=3 bus1=sourcebus bus2=lb r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\n\
+             new line.dead phases=3 bus1=island1 bus2=island2 r1=.3 x1=.6 r0=.6 x0=1.2 c1=0 c0=0 length=1 units=km\n\
+             new fuse.f monitoredobj=line.a ratedcurrent=100\n",
+        )
+        .unwrap();
+        let master = dir.join("Master.dss").to_string_lossy().into_owned();
+        let args = |extra: &[&str]| -> Vec<String> {
+            std::iter::once(master.as_str())
+                .chain(extra.iter().copied())
+                .map(str::to_owned)
+                .collect()
+        };
+        // As written, the fuse blocks a calculation; the module still imports.
+        let plain = import_opendss(&args(&[])).unwrap();
+        assert!(tellegen::solve_mc_module_json(&plain, &Default::default()).is_err());
+        let prepared = import_opendss(&args(&[
+            "--written-equipment-settings",
+            "--energized-network",
+            "--max-include-bytes",
+            "1048576",
+            "--max-properties",
+            "100000",
+        ]))
+        .unwrap();
+        let solved: serde_json::Value = serde_json::from_str(
+            &tellegen::solve_mc_module_json(&prepared, &Default::default()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(solved["converged"], true);
+        assert_eq!(solved["network_scope"]["excluded_bus_count"], 2);
+        // Past the limit the next include is refused and the read fails.
+        assert!(import_opendss(&args(&["--max-include-bytes", "1"])).is_err());
+        assert!(import_opendss(&args(&["--max-properties"])).is_err());
+        assert!(import_opendss(&[]).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
