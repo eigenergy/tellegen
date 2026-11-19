@@ -1,6 +1,7 @@
 /** Series a display derives from a run: totals, rotor angles relative to
  * the centre of inertia, envelopes. Pure; inputs are the run's own samples
- * (views into its buffer), outputs fresh arrays. */
+ * (views into its buffer), outputs fresh arrays.
+ * @block Derived series */
 
 export interface SeriesSource {
 	time: Float64Array;

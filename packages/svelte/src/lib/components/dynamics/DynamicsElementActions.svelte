@@ -1,4 +1,8 @@
 <script lang="ts">
+	/** What can happen to the bus, branch or unit picked on the map: a fault,
+	 * a trip or close, a load step, a unit trip. Each becomes an event of the
+	 * next run, or applies at once while the live view runs on the case.
+	 * @block Actions on a map element */
 	import { getAppState, getController } from '../../context.svelte.js';
 	import {
 		branchTrip,

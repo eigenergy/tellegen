@@ -1,7 +1,8 @@
 <script lang="ts">
 	/** The Models tab (experimental): every generating unit of the active
 	 * case with its dynamic models, and the editor of the one picked (also
-	 * opened from a unit's glyph on the map). */
+	 * opened from a unit's glyph on the map).
+	 * @block Models tab */
 	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';
 	import { unitKey, unitSummary } from '../../dynamics/units.svelte.js';

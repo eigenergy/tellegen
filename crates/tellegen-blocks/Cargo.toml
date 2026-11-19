@@ -1,0 +1,13 @@
+[package]
+name = "tellegen-blocks"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Block diagrams the code draws of itself, from @block tags in its documentation."
+
+# No dependencies: it runs in build scripts, so it should cost nothing to build.
+
+[lints]
+workspace = true

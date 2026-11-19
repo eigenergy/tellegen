@@ -1,7 +1,8 @@
 <script lang="ts">
 	/** The Live tab (experimental): opens the live workbench at the bottom,
 	 * where the case runs as it goes and disturbances apply the moment they
-	 * are picked. */
+	 * are picked.
+	 * @block Live tab */
 	import { getAppState, getController } from '../../context.svelte.js';
 
 	const app = getAppState();

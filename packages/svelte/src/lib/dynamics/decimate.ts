@@ -1,6 +1,7 @@
 /** M4 decimation for line charts: per pixel column the first, lowest,
  * highest and last sample, so the drawn line keeps every extremum (a fault
- * dip or a frequency nadir is never smoothed away). Pure. */
+ * dip or a frequency nadir is never smoothed away). Pure.
+ * @block Decimation for line charts */
 
 /** Indices of `y` (sampled at `x`, ascending) to draw across `width`
  * columns of the range `[x0, x1]`. NaN samples are skipped; with `breaks`,

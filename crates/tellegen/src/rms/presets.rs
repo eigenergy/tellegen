@@ -15,6 +15,8 @@
 //! S(1.0) S(1.2); SEXS TA/TB TB K TE EMIN EMAX; TGOV1 R T1 VMAX VMIN T2 T3
 //! Dt; HYGOV R r Tr Tf Tg VELM GMAX GMIN TW At Dturb qNL; GAST R T1 T2 T3
 //! AT KT VMAX VMIN Dturb; IEEEST ICS IB A1..A6 T1..T6 KS LSMAX LSMIN VCU VCL.
+//!
+//! @block Published unit data
 
 use serde::Serialize;
 
@@ -26,6 +28,7 @@ pub struct PresetModel {
 }
 
 /// A generating unit from published data.
+// @block Unit preset
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct UnitPreset {
     pub id: &'static str,

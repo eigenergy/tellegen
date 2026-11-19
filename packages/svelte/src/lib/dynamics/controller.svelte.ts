@@ -3,7 +3,8 @@
  *
  * Everything numerical happens in the engine (`@tellegen/engine` RMS
  * worker); this class holds what the panel, the timeline and the map show,
- * and the ids that tie them together. */
+ * and the ids that tie them together.
+ * @block Dynamics controller */
 
 import {
 	dynamicInput,
@@ -146,6 +147,10 @@ const optionsKey = (o: RmsCaseOptions, network: string) => JSON.stringify([netwo
 /** Why dynamics is unavailable while it is turned off. */
 export const DYNAMICS_OFF = 'Dynamics is turned off in this build';
 
+/** The dynamics state of the app: the dynamic data attached to each case,
+ * the events and options of the next run, the runs, playback ({@link
+ * DynamicsPlayer}), the live view ({@link LiveView}) and the map layers.
+ * @block DynamicsController */
 export class DynamicsController {
 	attachments: Record<string, DynAttachment> = $state.raw({});
 	events: DynEvent[] = $state.raw([]);
@@ -234,7 +239,8 @@ export class DynamicsController {
 		}
 	}
 
-	/** Attach `text` to `local` and open it in the RMS worker. */
+	/** Attach `text` to `local` and open it in the RMS worker.
+	 * @block Attach dynamic data */
 	async attach(
 		local: LocalCase,
 		fileName: string,
@@ -332,7 +338,8 @@ export class DynamicsController {
 	}
 
 	/** Prepare the active case for the current options and network, so the
-	 * panel describes the case the next run uses. */
+	 * panel describes the case the next run uses.
+	 * @block Refresh the attachment */
 	async refresh(): Promise<void> {
 		const local = this.app.activeLocal;
 		const a = this.active;
@@ -377,7 +384,8 @@ export class DynamicsController {
 	}
 
 	/** Replace the active case's dynamic data (edited parameters or models,
-	 * controller graphs) and prepare it again; the live view ends. */
+	 * controller graphs) and prepare it again; the live view ends.
+	 * @block Edit the dynamic data */
 	async editDynamics(text: string, models?: ModelOverride[]): Promise<void> {
 		const local = this.app.activeLocal;
 		const a = this.active;
@@ -444,7 +452,8 @@ export class DynamicsController {
 		return this.#validationModule;
 	}
 
-	/** Open the bundled WECC 240 demo: its case, dynamic data and coordinates. */
+	/** Open the bundled WECC 240 demo: its case, dynamic data and coordinates.
+	 * @block Open the demo */
 	async openDemo(): Promise<void> {
 		if (!this.app.dynamicsEnabled) throw new Error(DYNAMICS_OFF);
 		this.app.mode = 'dynamics';
@@ -472,7 +481,9 @@ export class DynamicsController {
 		return this.#demoNext;
 	}
 
-	// ---- hosted model library ----
+	// @block Hosted model library
+	// The catalog a deployment serves (examples/models/index.json) and
+	// opening one of its models as the active case.
 
 	/** The hosted model library; null until loaded, empty when none is hosted. */
 	examples: ModelLibrary | null = $state.raw(null);
@@ -515,7 +526,8 @@ export class DynamicsController {
 
 	/** Open a library model: its case files, and with them its dynamic data,
 	 * coordinates and controller graphs. A model with dynamic data opens in
-	 * Dynamics, any other in steady state. */
+	 * Dynamics, any other in steady state.
+	 * @block Open a library model */
 	async openExample(id: string): Promise<void> {
 		const library = await this.loadExamples();
 		const m = library.cases.find((c) => c.id === id);
@@ -547,7 +559,9 @@ export class DynamicsController {
 		}
 	}
 
-	// ---- events ----
+	// @block Events of the next run
+	// Adding, changing and removing events, the validated scenarios, the
+	// options, and the checks that name an event the engine would refuse.
 
 	add(e: DynEvent): string | null {
 		if (this.events.length >= MAX_EVENTS) return `at most ${MAX_EVENTS} events`;
@@ -578,7 +592,8 @@ export class DynamicsController {
 		void this.refresh();
 	}
 
-	/** Errors per event id. */
+	/** Errors per event id.
+	 * @block Check the events */
 	get eventErrors(): Map<string, string> {
 		const out = new Map<string, string>();
 		const inspection = this.active?.inspection;
@@ -626,7 +641,9 @@ export class DynamicsController {
 		});
 	}
 
-	// ---- runs ----
+	// @block Runs
+	// A run in the RMS worker, its record (run, screening, notes) and the
+	// last runs kept for comparison and playback.
 
 	async run(opts: { agent?: boolean } = {}): Promise<DynRunRecord | null> {
 		const local = this.app.activeLocal;
@@ -741,7 +758,9 @@ export class DynamicsController {
 		this.layerCtors = { ScatterplotLayer, PathLayer };
 	}
 
-	// ---- map ----
+	// @block Map
+	// What the map shows of a run or the live view: the layers of the
+	// current frame and the tooltips of buses, branches and units.
 
 	/** The run the map draws: the selected run of the active case, else (in
 	 * Dynamics mode, before a run) that case at rest. */
@@ -862,7 +881,9 @@ export class DynamicsController {
 		return null;
 	};
 
-	// ---- experimental ----
+	// @block Experimental tools
+	// Behind Settings, Experimental features: small-signal modes, frequency
+	// responses and the export of a run.
 
 	async computeModes(): Promise<void> {
 		const local = this.app.activeLocal;

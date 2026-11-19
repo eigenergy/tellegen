@@ -5,7 +5,8 @@
 	 * controls and the disturbances applied at the moment they are picked:
 	 * bus faults, line trips, closes and faults, load steps, unit trips and
 	 * the units' voltage and power references. A bus clicked on the map is
-	 * the one the bus actions use, and its voltage and frequency are plotted. */
+	 * the one the bus actions use, and its voltage and frequency are plotted.
+	 * @block Live workbench */
 	import type { RmsEvent } from '@tellegen/engine';
 	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';

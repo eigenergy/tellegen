@@ -1,4 +1,7 @@
 <script lang="ts" module>
+	/** A zoomable line chart of the live workbench and the Bode plots; the
+	 * component script below says how it zooms, pans and decimates.
+	 * @block Zoom chart */
 	export interface ZoomSeries {
 		key: string;
 		label: string;

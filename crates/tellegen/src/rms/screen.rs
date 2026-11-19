@@ -14,6 +14,8 @@
 //! screened on its own COI. An island holding a voltage source (an infinite
 //! bus, `ZSORCE`) is referred to the source: its COI turns at the synchronous
 //! speed with the source's angle.
+//!
+//! @block Screening a run
 
 use std::collections::BTreeMap;
 
@@ -23,6 +25,7 @@ use super::{apply_event, topology, unit_key, RmsEvent, RmsRequest, RmsResult, Rm
 
 /// The screening criteria. Every field has a default (`version` 1); a
 /// request may override any of them.
+// @block Screening criteria
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -268,6 +271,7 @@ pub struct IslandScreen {
 }
 
 /// The screening of a run.
+// @block Screening result
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RmsScreening {
@@ -495,6 +499,7 @@ impl RmsSimulation {
     /// When the run does not record the channels a screening needs
     /// (`omega:`, `delta:`, `vm:`, `va:`), naming the missing ones, or an
     /// event names an element the system lacks.
+    // @block Screen a run
     pub fn screen(
         &self,
         request: &RmsRequest,
@@ -534,6 +539,10 @@ impl RmsSimulation {
         Ok((a.screening, a.series))
     }
 
+    /// Everything the screening says, from the run's own samples: the islands
+    /// between events, each island's centre of inertia, the frequency, angle
+    /// and voltage figures, and the verdict with its reasons.
+    // @block Analyse a run
     #[allow(clippy::too_many_lines)]
     fn analyse(
         &self,
@@ -541,6 +550,9 @@ impl RmsSimulation {
         result: &RmsResult,
         criteria: &ScreeningCriteria,
     ) -> Result<Analysis, String> {
+        // @block Inputs
+        // The criteria and the run's samples are checked, and every channel the
+        // screening reads must be in the result.
         criteria.check()?;
         let time = &result.time;
         let ns = time.len();
@@ -582,6 +594,7 @@ impl RmsSimulation {
 
         let tol = 1e-9 * request.dt.max(1e-9);
         let segments = self.segments(&request.events, tol)?;
+        // @block Segments between events
         // The segment of each sample: the last that starts before it (a
         // sample at an event's time is the state before the event).
         let seg_of: Vec<usize> = time
@@ -614,6 +627,7 @@ impl RmsSimulation {
         };
         let weight = |j: usize| sys.devices[j].shaft.h * sys.devices[j].scale * sys.sbase;
 
+        // @block Centre of inertia
         // COI per sample and island.
         let island_coi = |s: usize, isl: &SegIsland| -> Option<(f64, f64)> {
             if let Some(a) = isl.source_angle {
@@ -642,6 +656,7 @@ impl RmsSimulation {
         }
         let coi_f: Vec<f64> = coi_omega.iter().map(|o| f0 * o).collect();
 
+        // @block Frequency
         // Frequency: nadir, peak, RoCoF, final, lowest unit.
         let mut fr = FrequencyScreen {
             nominal_hz: f0,
@@ -686,6 +701,7 @@ impl RmsSimulation {
         }
         fr.final_hz = coi_f[ns - 1];
 
+        // @block Bus frequencies
         // Bus frequencies.
         let mut series: BTreeMap<String, Vec<f64>> = BTreeMap::new();
         for (b, number) in sys.bus_numbers.iter().enumerate() {
@@ -723,6 +739,7 @@ impl RmsSimulation {
             fr.lowest_unit_hz = f64::NAN;
         }
 
+        // @block Rotor angles
         // Angles: separation, COI angle, pole slips. `s_pre`: the last
         // sample before the first event (the sample at its time).
         let first_event = event_times.first().copied();
@@ -781,6 +798,7 @@ impl RmsSimulation {
             .collect();
         an.pole_slips.sort_by(|a, b| a.t.total_cmp(&b.t));
         an.initial_separation_deg = sep[s_pre];
+        // @block First swing
         // First swing: from the value before the first event to the first
         // extremum after the last event.
         let s0 = time.partition_point(|&t| t <= last_event + tol).min(ns - 1);
@@ -821,6 +839,7 @@ impl RmsSimulation {
                 }
             }
         }
+        // @block Trend and settling
         // Trend and settling.
         let final_sep = sep[ns - 1];
         let dev: Vec<f64> = sep[s0..].iter().map(|v| (v - final_sep).abs()).collect();
@@ -838,6 +857,7 @@ impl RmsSimulation {
                 .filter(|&s| in_window(s))
                 .all(|s| (sep[s] - final_sep).abs() <= criteria.settle_angle_deg);
 
+        // @block Voltages
         // Voltages.
         let mut vo = VoltageScreen {
             min_pu: f64::INFINITY,
@@ -881,6 +901,7 @@ impl RmsSimulation {
             .recovered_s
             .is_some_and(|r| r <= criteria.voltage_recovery_s + tol);
 
+        // @block Islands at the end
         // Islands at the end.
         let last_seg = &segments[seg_of[ns - 1]];
         let mut islands = Vec::new();
@@ -898,6 +919,7 @@ impl RmsSimulation {
             });
         }
 
+        // @block Verdict
         // The verdict and its reasons.
         let mut reasons = Vec::new();
         let reason = |code: &str, text: String| Reason {

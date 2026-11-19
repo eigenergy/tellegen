@@ -58,6 +58,8 @@
 //! as `FixedFrequency` does). Voltage-dip freezing (`Vdip`, `Vup`, `Vfrz`) and
 //! the plant's remote branch flow are not modelled, as in
 //! PowerSimulationsDynamics.jl.
+//!
+//! @block Renewable plant (WECC)
 
 use super::blocks::{ordered, pi_nonwindup, LIMIT_TAU};
 use super::system::C64;
@@ -67,6 +69,7 @@ use super::system::C64;
 const V_LB: f64 = 0.01;
 
 /// `REGCA1`: the converter interface.
+// @block Converter (REGCA1)
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Regca1 {
     pub lvpl_sw: bool,
@@ -90,6 +93,7 @@ pub(crate) struct Regca1 {
 }
 
 /// `REECB1`: the electrical control.
+// @block Electrical control (REECB1)
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Reecb1 {
     pub pf_flag: u8,
@@ -121,6 +125,7 @@ pub(crate) struct Reecb1 {
 }
 
 /// `REPCA1`: the plant control.
+// @block Plant control (REPCA1)
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Repca1 {
     pub vc_flag: u8,
@@ -156,6 +161,7 @@ pub(crate) struct Repca1 {
 
 /// A renewable plant: the three models and the references its operating
 /// point sets.
+// @block The plant
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Plant {
     pub regc: Regca1,
@@ -531,6 +537,7 @@ impl Plant {
     /// The right-hand side `f` (mass-matrix rows) and the current into the
     /// network, system base, at terminal voltage `vr + j vi` and system
     /// frequency `omega_sys`.
+    // @block Plant equations
     pub(crate) fn eval(&self, x: &[f64], vr: f64, vi: f64, omega_sys: f64, f: &mut [f64]) -> C64 {
         let (repc, reec, regc) = (&self.repc, &self.reec, &self.regc);
         let [na, nr, _, _] = parts(repc, reec);
@@ -684,6 +691,7 @@ impl Plant {
     /// it inject another current than the power flow's. The error
     /// names each limit and value (or, failing that, the state that moves),
     /// and the caller holds the plant at its power flow output.
+    // @block Initialize the plant
     pub(crate) fn initialize(&mut self, s: C64, v: C64) -> Result<(Vec<f64>, Vec<String>), String> {
         let mut notes = Vec::new();
         let vt = v.norm();

@@ -1,7 +1,8 @@
 <script lang="ts">
 	/** A controller graph full screen: the block canvas with its palette and
 	 * form, the engine's check, and the actions that put the graph into the
-	 * case or take it out again. */
+	 * case or take it out again.
+	 * @block Controller graph editor */
 	import { GRAPH_PORTS, type BlockGraph } from '@tellegen/engine';
 	import GraphCanvas from './GraphCanvas.svelte';
 	import { getUiConfig } from '../../context.svelte.js';

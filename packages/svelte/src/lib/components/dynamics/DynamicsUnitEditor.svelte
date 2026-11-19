@@ -5,7 +5,8 @@
 	 * controller as a block diagram to change it or build one. Each change
 	 * writes new DYR text (or a controller graph) and initializes the case
 	 * again; the engine refuses what does not initialize. Used in the Models
-	 * tab and in the popup a unit's glyph on the map opens. */
+	 * tab and in the popup a unit's glyph on the map opens.
+	 * @block Unit editor */
 	import {
 		applyUnitPreset,
 		editDyr,

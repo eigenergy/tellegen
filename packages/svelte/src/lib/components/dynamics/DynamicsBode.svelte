@@ -2,7 +2,8 @@
 	/** Frequency responses of the linearized case (experimental): from a
 	 * unit's voltage or power reference to a unit's speed, angle, field
 	 * voltage, power or terminal voltage, as Bode magnitude and phase. The
-	 * curves are the engine's (`linear_analysis` with `bode`). */
+	 * curves are the engine's (`linear_analysis` with `bode`).
+	 * @block Bode plots */
 	import type { RmsBodeCurve, RmsBodeSpec } from '@tellegen/engine';
 	import { getController } from '../../context.svelte.js';
 	import ZoomChart from './ZoomChart.svelte';

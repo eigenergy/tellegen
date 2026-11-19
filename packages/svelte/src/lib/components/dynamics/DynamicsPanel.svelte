@@ -1,4 +1,8 @@
 <script lang="ts">
+	/** The Dynamics panel: attach dynamic data to the active case (or open a
+	 * model of the hosted library), then its tabs: Run (events, options and
+	 * the verdict), Live, Models and Modes. The engine's notes go to the Log.
+	 * @block Dynamics panel */
 	import { rmsDynamize } from '@tellegen/engine';
 	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';

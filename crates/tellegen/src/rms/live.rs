@@ -2,6 +2,8 @@
 //! sessions that advance on demand and take events as they run, replay from
 //! checkpoints, results packed as flat buffers, and small-signal analysis of
 //! a stored module.
+//!
+//! @block Live sessions
 
 use std::collections::BTreeMap;
 
@@ -39,6 +41,9 @@ fn pack_series(channels: &mut BTreeMap<String, Vec<f64>>) -> (Vec<String>, Vec<u
     (keys, lengths, values)
 }
 
+/// Pack a result or chunk as JSON metadata plus flat `f64` buffers, so the
+/// browser reads the samples without parsing them.
+// @block Flat buffers
 fn pack<T: Serialize>(
     mut value: T,
     channels: impl FnOnce(
@@ -107,6 +112,7 @@ fn pack<T: Serialize>(
 ///
 /// # Errors
 /// When the result does not serialize.
+// @block Pack results as buffers
 pub fn pack_result(result: RmsResult) -> Result<RmsBuffers, String> {
     pack(result, |r| {
         let cps = std::mem::take(&mut r.checkpoints);
@@ -232,6 +238,7 @@ pub struct RmsChunk {
 
 /// A running simulation that advances on demand and takes events at its
 /// current time: the engine of the live view.
+// @block Live session
 pub struct RmsLive {
     sys: DynSystem,
     x: Vec<f64>,
@@ -256,6 +263,7 @@ pub struct RmsLive {
 
 impl RmsSimulation {
     /// Start a live session at the initial operating point.
+    // @block Start a live session
     #[must_use]
     pub fn live(&self, dt: f64, output_step: f64) -> RmsLive {
         let mut f = vec![0.0; self.sys.nx];
@@ -347,6 +355,7 @@ impl RmsLive {
     /// # Errors
     /// When the event names a missing element or the network cannot be
     /// re-solved.
+    // @block Take an event while running
     pub fn apply(&mut self, mut event: RmsEvent) -> Result<String, String> {
         let now = self.t;
         match &mut event {
@@ -398,6 +407,7 @@ impl RmsLive {
     /// # Errors
     /// When the unit is in service or does not exist, or the network cannot
     /// be re-solved.
+    // @block Synchronize a unit
     pub fn synchronize_unit(
         &mut self,
         unit: usize,
@@ -532,6 +542,10 @@ impl RmsLive {
         self.resolve_network(sys)
     }
 
+    // @block Read the present state
+    // What the live view shows between steps: loads, unit powers, the
+    // frequency, unit speeds, references, breakers, faults and taps.
+
     /// Operating point load per bus (dense), system per unit at `v0`.
     #[must_use]
     pub fn base_loads(&self) -> Vec<C64> {
@@ -624,6 +638,11 @@ impl RmsLive {
             None
         }
     }
+
+    // @block Change setpoints
+    // Operator actions on a running session (unit and voltage references,
+    // breakers' state, taps) with the reads that go with them; a change
+    // re-solves the network.
 
     /// Set active power references (see [`RmsLive::unit_reference`]); held
     /// inverters keep their power factor. One re-solve when an inverter
@@ -732,6 +751,7 @@ impl RmsLive {
     ///
     /// # Errors
     /// When the integration fails; the session stays at the last good point.
+    // @block Advance
     pub fn advance(&mut self, duration: f64) -> Result<RmsChunk, String> {
         self.integrate(duration)?;
         let (time, channels, frames) = self.rec.take();
@@ -787,6 +807,7 @@ impl RmsLive {
     }
 
     /// Integrate `duration` seconds, recording on the way.
+    // @block Integrate a stretch
     fn integrate(&mut self, duration: f64) -> Result<(), String> {
         let end = self.t + duration.max(0.0);
         let mut euler = 0usize;

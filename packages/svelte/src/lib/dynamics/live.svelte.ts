@@ -5,7 +5,8 @@
  *
  * The numbers are the engine's (`BrowserRmsLive` in the RMS worker); this
  * class paces it, schedules an event's follow-ups (a fault's clearing) and
- * derives the centre-of-inertia frequency from the machine speeds. */
+ * derives the centre-of-inertia frequency from the machine speeds.
+ * @block Live view */
 
 import {
 	BrowserRmsLive,
@@ -128,6 +129,9 @@ interface Input {
 	loadModel: string;
 }
 
+/** The live session of one case: the engine paced to the clock, the events
+ * picked while it runs, and the kept window published as a run.
+ * @block LiveView */
 export class LiveView {
 	/** The live workbench is open (docked at the bottom). */
 	open = $state(false);
@@ -183,7 +187,8 @@ export class LiveView {
 		return !!this.#session;
 	}
 
-	/** Start (or resume) the live session of `input` for case `localId`. */
+	/** Start (or resume) the live session of `input` for case `localId`.
+	 * @block Start a live session */
 	async start(localId: string, input: Input): Promise<void> {
 		if (this.running || this.starting) return;
 		this.error = null;
@@ -262,7 +267,8 @@ export class LiveView {
 	}
 
 	/** Apply `e` now: its first engine event at the current time, the rest
-	 * (clearing, breakers) as far after it as the event states. */
+	 * (clearing, breakers) as far after it as the event states.
+	 * @block Apply an event now */
 	now(e: DynEvent): void {
 		const evs = toRmsEvents({ ...e, at: 0 } as DynEvent);
 		const first = evs.filter((ev) => ev.time <= 1e-12);
@@ -282,6 +288,11 @@ export class LiveView {
 		}
 	}
 
+	/** The pacing loop: queued events and due follow-ups first, then a slice
+	 * of simulated time sized to keep up with the clock at the chosen speed
+	 * ({@link paceTarget}; unpaced, as fast as the engine goes), then the
+	 * slice's samples.
+	 * @block Pacing loop */
 	async #run(): Promise<void> {
 		let last = performance.now();
 		let expected = this.t;
@@ -290,6 +301,10 @@ export class LiveView {
 		let perfAcc = { sim: 0, worker: 0, round: 0, n: 0 };
 		try {
 			while (this.running && this.#session) {
+				// @block Apply picked events
+				// Events picked since the last slice apply at the current time; their
+				// follow-ups (a fault's clearing) wait for their own time.
+
 				// A follow-up counts from the moment its event applies.
 				for (const q of this.#queued.splice(0)) {
 					await this.#apply({ ...q.ev, time: this.t } as RmsEvent);
@@ -299,6 +314,10 @@ export class LiveView {
 				}
 				while (this.#pending.length && this.#pending[0].time <= this.t + 1e-9)
 					await this.#apply(this.#pending.shift()!);
+
+				// @block Pace to the clock
+				// The simulated time to aim for after the wall time since the last
+				// slice; ahead of it, wait.
 				const now = performance.now();
 				const wall = (now - last) / 1000;
 				last = now;
@@ -314,6 +333,10 @@ export class LiveView {
 				let adv = unpaced ? 0.2 : Math.min(0.25 * this.speed, Math.max(0.04 * this.speed, behind));
 				// Stop at the next follow-up so it applies on time.
 				if (this.#pending.length) adv = Math.max(this.dt, Math.min(adv, this.#pending[0].time - this.t));
+
+				// @block Advance one slice
+				// The engine integrates the slice in its worker; the samples are
+				// appended and the performance figures updated.
 				const started = performance.now();
 				const slice = await this.#session.advance(adv);
 				const round = performance.now() - started;
@@ -352,7 +375,8 @@ export class LiveView {
 	/** Add a slice: write its samples, derive the new samples' bus
 	 * frequencies, centre of inertia and screening columns, drop what left
 	 * the window and schedule a redraw. Work is per new sample, not per
-	 * kept sample, so it does not grow with the window or the redraw rate. */
+	 * kept sample, so it does not grow with the window or the redraw rate.
+	 * @block Append a slice */
 	#append(time: number[], keys: string[], series: (k: string) => Float64Array | undefined): void {
 		const n = time.length;
 		if (!n) return;
@@ -432,7 +456,8 @@ export class LiveView {
 
 	/** Bus frequencies (from the bus angles: f0 + dθ/dt / 2π), the centre of
 	 * inertia (frequency and angle, weighted by H · MBASE, equal weights
-	 * without H) and the per-sample screening columns for samples [a, b). */
+	 * without H) and the per-sample screening columns for samples [a, b).
+	 * @block Derived columns */
 	#derive(L: Layout, a: number, b: number): void {
 		const t = this.#samples.time;
 		const f0 = this.#inspection!.base_frequency;
@@ -489,7 +514,8 @@ export class LiveView {
 	#drawQueued = false;
 	/** Publish the window as {@link run} at the next animation frame, at
 	 * most every {@link DRAW_MS}: the engine keeps computing while the page
-	 * draws, and a slow frame delays the next publish instead of piling up. */
+	 * draws, and a slow frame delays the next publish instead of piling up.
+	 * @block Publish at the next frame */
 	#scheduleDraw(): void {
 		if (this.#drawQueued) return;
 		this.#drawQueued = true;
@@ -516,7 +542,8 @@ export class LiveView {
 	/** The kept window as an {@link RmsRun}: views into the kept columns
 	 * (bus angles appear as bus frequencies `f:<bus>`), the centre-of-inertia
 	 * frequency `coi:f` and angle `coi:delta`, and a screening summary of the
-	 * window for the traces. Nothing is copied. */
+	 * window for the traces. Nothing is copied.
+	 * @block The window as a run */
 	#asRun(): RmsRun {
 		const ins = this.#inspection!;
 		const s = this.#samples;
