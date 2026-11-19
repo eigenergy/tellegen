@@ -3,6 +3,11 @@ name: Gates (rust)
 # CI and both release workflows call this. Add a Rust gate here, not in a caller.
 # Concurrency comes from the caller: do not add a group here, or a release will
 # queue behind a CI run.
+#
+# The gates run as four jobs side by side: `lint`, `workspace`, `rms` and
+# `opf`. Each builds the engine for its own feature sets, so the wait is the
+# slowest job, not the sum. `rust` at the end is the required check and passes
+# only when all four did. Add a gate to the job whose features it shares.
 
 on:
   workflow_call:
@@ -17,29 +22,33 @@ on:
 
 permissions: {}
 
+env:
+  # A bare runner has no external solver. Let the tests use the bundled one.
+  TELLEGEN_ALLOW_FALLBACK: "1"
+  # The feature matrix links many native test binaries. Keep source-line
+  # backtraces without duplicating full debug information in every binary
+  # and exhausting the hosted runner's disk.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 jobs:
-  rust:
-    # Skip here, not in the caller: a skipped job still reports the required
-    # `rust / rust` check, and a skipped caller reports nothing.
+  # Everything that checks the code without running it, and the packaged crate.
+  lint:
     if: inputs.needed
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      # A bare runner has no external solver. Let the tests use the bundled one.
-      TELLEGEN_ALLOW_FALLBACK: "1"
-      # The feature matrix links many native test binaries. Keep source-line
-      # backtraces without duplicating full debug information in every binary
-      # and exhausting the hosted runner's disk.
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Only main saves a cache. A pull request reads main's; one saved from a
+      # pull request is readable by that pull request alone and pushes main's
+      # out of the repository's cache quota.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: .
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Verify the PowerIO dependency source
         run: python3 .github/scripts/powerio-pin.py
@@ -58,6 +67,11 @@ jobs:
       # `--all-targets`, which would link libpython into this gate.
       - name: Clippy (python extension)
         run: cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
+      - name: Clippy (RMS and the opt-in OPF paths)
+        run: |
+          cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
+          cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema -- -D warnings
+          cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Licenses, advisories, bans, sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
@@ -70,67 +84,6 @@ jobs:
 
       - name: EPL guard
         run: scripts/epl-guard.sh
-
-      # `tellegen-py` is excluded: a cdylib-only pyo3 crate has no portable
-      # cargo-test harness. Without `extension-module` the test binary links
-      # libpython and aborts; with it, it has undefined Python symbols that do
-      # not link on Linux. Its logic is covered through the loaded extension by
-      # the Python gate (gates-python.yml).
-      - name: Test the workspace
-        run: cargo test --workspace --exclude tellegen-py
-      - name: Test the independent multiconductor feature
-        run: cargo test -p tellegen --no-default-features --features mc-pf
-      # The conic runs use non-default features, which the workspace run
-      # above does not reach. Keep them separate: `tellegen-wasm` takes
-      # `tellegen` with `default-features = false`, so this is the only run that
-      # tests the feature set the browser ships.
-      - name: Test the engine's conic path
-        run: cargo test -p tellegen --features conic
-      # RMS is behind its own features, which no run above reaches. Mirrors
-      # `just rms-test` and `just rms-validation`: the debug run skips the
-      # 20 s WECC 240 validation runs, the release run includes them.
-      - name: Test the RMS dynamic simulation
-        run: |
-          cargo test -p tellegen --no-default-features --features rms
-          cargo test -p tellegen --features rms-experimental
-          cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
-          cargo test --release -p tellegen --features rms --test rms_psid_validation --test rms_physics --test rms_validation -- --include-ignored
-      # Exercise the native feature explicitly; shipping adapters still exclude it.
-      - name: Test and lint the opt-in AC and multiconductor OPF paths
-        run: |
-          python3 scripts/test_enwl_ivr_study.py
-          cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
-          cargo test -p tellegen --no-default-features --features mc-opf --locked
-          cargo test -p tellegen-acopf-wasi --features acopf --locked
-          cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema -- -D warnings
-          cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
-      - name: Run the exact-derivative POUNCE feasibility probe
-        run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
-      - name: Reproduce the pinned multiconductor OpenDSS oracle
-        run: |
-          python3 -m pip install --disable-pip-version-check \
-            opendssdirect.py==0.9.4 dss-python==0.15.7 dss-python-backend==0.14.5
-          git clone --no-checkout --filter=blob:none https://github.com/frederikgeth/BMOPFTools.jl.git /tmp/BMOPFTools.jl
-          git -C /tmp/BMOPFTools.jl checkout --detach 8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b
-          python3 crates/tellegen/tests/generate_mc_pf_oracle.py \
-            --dss-dir /tmp/BMOPFTools.jl/test/data/pf_comparison
-          cargo test -p tellegen --test mc_pf_oracle
-          python3 crates/tellegen/tests/generate_mc_load_oracle.py
-          cargo test -p tellegen --test mc_load_oracle
-          python3 crates/tellegen/tests/generate_dss_snapshot_oracle.py
-          git diff --exit-code -- crates/tellegen/tests/data/dss_snapshots.json
-          cargo test -p tellegen --test dss_snapshots
-      - name: Test the wasm adapter as it ships
-        run: cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,powerio-collections
-      # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,
-      # ~32,000-terminal retained-session regression (#132). It fails only on
-      # deterministic properties (warm/fresh agreement, one factorization, no
-      # network materialization during edits, payload budgets, a flat retained
-      # heap, the calibrated shape) and reports timings without gating on them.
-      - name: Generated multiconductor session regression
-        run: |
-          cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- \
-            --preset feeder-10k --check --out target/mc-pf-bench
 
       # release-plz's GitHub App token is deliberately absent from pull-request
       # CI. Check generated, same-repository release PRs here so API comparison
@@ -162,3 +115,133 @@ jobs:
       # mc-opf could need an unpublished PowerIO while this gate stays green.
       - name: Package and verify the published crate
         run: cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
+
+  # The default features, the two feature sets the adapters ship, and the
+  # OpenDSS reference cases, which use the default features too.
+  workspace:
+    if: inputs.needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: .
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # `tellegen-py` is excluded: a cdylib-only pyo3 crate has no portable
+      # cargo-test harness. Without `extension-module` the test binary links
+      # libpython and aborts; with it, it has undefined Python symbols that do
+      # not link on Linux. Its logic is covered through the loaded extension by
+      # the Python gate (gates-python.yml).
+      - name: Test the workspace
+        run: cargo test --workspace --exclude tellegen-py
+      - name: Reproduce the pinned multiconductor OpenDSS oracle
+        run: |
+          python3 -m pip install --disable-pip-version-check \
+            opendssdirect.py==0.9.4 dss-python==0.15.7 dss-python-backend==0.14.5
+          git clone --no-checkout --filter=blob:none https://github.com/frederikgeth/BMOPFTools.jl.git /tmp/BMOPFTools.jl
+          git -C /tmp/BMOPFTools.jl checkout --detach 8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b
+          python3 crates/tellegen/tests/generate_mc_pf_oracle.py \
+            --dss-dir /tmp/BMOPFTools.jl/test/data/pf_comparison
+          cargo test -p tellegen --test mc_pf_oracle
+          python3 crates/tellegen/tests/generate_mc_load_oracle.py
+          cargo test -p tellegen --test mc_load_oracle
+          python3 crates/tellegen/tests/generate_dss_snapshot_oracle.py
+          git diff --exit-code -- crates/tellegen/tests/data/dss_snapshots.json
+          cargo test -p tellegen --test dss_snapshots
+      - name: Test the independent multiconductor feature
+        run: cargo test -p tellegen --no-default-features --features mc-pf
+      # The conic runs use non-default features, which the workspace run
+      # above does not reach. Keep them separate: `tellegen-wasm` takes
+      # `tellegen` with `default-features = false`, so this is the only run that
+      # tests the feature set the browser ships.
+      - name: Test the engine's conic path
+        run: cargo test -p tellegen --features conic
+      - name: Test the wasm adapter as it ships
+        run: cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,powerio-collections
+
+  # RMS is behind its own features, which no other job reaches. Mirrors
+  # `just rms-test` and `just rms-validation`: the debug run skips the 20 s
+  # WECC 240 validation runs, the release run includes them. `just rms-test`
+  # also lints; here the `lint` job does.
+  rms:
+    if: inputs.needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: .
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Test the RMS dynamic simulation
+        run: |
+          cargo test -p tellegen --no-default-features --features rms
+          cargo test -p tellegen --features rms-experimental
+      # The release profile links with whole-program optimization to keep the
+      # wasm module small. A test binary gains nothing from it and took four
+      # minutes to link, so this run turns it off.
+      - name: Run every RMS validation, the long WECC 240 runs included
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "off"
+        run: cargo test --release -p tellegen --features rms --test rms_psid_validation --test rms_physics --test rms_validation -- --include-ignored
+
+  # Exercise the native feature explicitly; shipping adapters still exclude it.
+  opf:
+    if: inputs.needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: .
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Test the opt-in AC and multiconductor OPF paths
+        run: |
+          python3 scripts/test_enwl_ivr_study.py
+          cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
+          cargo test -p tellegen --no-default-features --features mc-opf --locked
+          cargo test -p tellegen-acopf-wasi --features acopf --locked
+      - name: Run the exact-derivative POUNCE feasibility probe
+        run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
+      # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,
+      # ~32,000-terminal retained-session regression (#132). It fails only on
+      # deterministic properties (warm/fresh agreement, one factorization, no
+      # network materialization during edits, payload budgets, a flat retained
+      # heap, the calibrated shape) and reports timings without gating on them.
+      # Nothing it fails on depends on link-time optimization, which took most
+      # of the three minute build, so this run turns it off.
+      - name: Generated multiconductor session regression
+        env:
+          CARGO_PROFILE_RELEASE_PY_LTO: "off"
+        run: |
+          cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- \
+            --preset feeder-10k --check --out target/mc-pf-bench
+
+  # The required `rust / rust` check. Skip here, not in the caller: a skipped
+  # job still reports the check, and a skipped caller reports nothing.
+  rust:
+    needs: [lint, workspace, rms, opf]
+    if: ${{ always() && inputs.needed }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Every Rust gate passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "lint, workspace, rms, opf: $RESULTS"
+          [ "$RESULTS" = "success success success success" ]

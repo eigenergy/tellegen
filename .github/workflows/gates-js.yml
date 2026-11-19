@@ -3,6 +3,11 @@ name: Gates (js)
 # CI and the npm release call this. Add a JavaScript gate here, not in a caller.
 # Concurrency comes from the caller: do not add a group here, or a release will
 # queue behind a CI run.
+#
+# `static` needs no build and starts at once. `build` compiles the two wasm
+# modules, the packages and the demo once and passes them on; `checks` and the
+# four `browser` jobs then run side by side on that one build. `js` at the end
+# is the required check and passes only when all of them did.
 
 on:
   workflow_call:
@@ -18,9 +23,9 @@ on:
 permissions: {}
 
 jobs:
-  js:
-    # Skip here, not in the caller: a skipped job still reports the required
-    # `js / js` check, and a skipped caller reports nothing.
+  # The gates that need neither wasm module, so a formatting error does not
+  # wait for a build.
+  static:
     if: inputs.needed
     runs-on: ubuntu-latest
     permissions:
@@ -30,8 +35,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/js-setup
-
-      # Cheapest deterministic gates first, so a formatting error does not wait for a browser.
+        with:
+          rust: "false"
       - run: npm run lint:web
       - run: npm run check:webmcp
       - run: npm run pack:webmcp
@@ -39,34 +44,9 @@ jobs:
       - run: npm run pack:analytics
       - run: python3 scripts/test-acopf-release.py
       - run: python3 scripts/test-pack-acopf-release.py
-      - run: npm run wasm
-      - run: rustup target add wasm32-wasip1
-      # The website bundles this separate reactor and its EPL/source notices.
-      - run: npm run wasm:acopf
-      - run: npm run check:engine
-      - run: npm run build:engine
-      - run: npm run test:import
-      - run: npm run check:svelte
-      - run: npm run test:svelte
-      - run: npm run check:web
-      - run: npm run test:svelte-packed
-      # Call the frontend build directly. `build:web` rebuilds @tellegen/svelte,
-      # which `check:web` above already built.
-      - run: npm --workspace tellegen-frontend run build
-      # The README presents both examples as working integrations; build them
-      # against the workspace packages so a public API change cannot break
-      # them unnoticed.
-      - run: npm run build:example
-      - run: npm run smoke:web
       # The WebMCP challenge evidence harness (validation/evidence/capacity-plan) has its own
       # unit tests and nothing else runs them.
       - run: npm run test:evidence
-      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
-      - name: Build the native Study interface for browser parity
-        run: cargo build -p tellegen-cli --features conic
-      - run: npm run test:browser
-        env:
-          TELLEGEN_STUDY_CLI: ${{ github.workspace }}/target/debug/tellegen
       # The npm counterpart of cargo-deny. Keep this mandatory, but run it
       # after deterministic checks: a registry outage must not conceal their
       # results. The line is `high`. Below it sit a SvelteKit request handling
@@ -76,3 +56,111 @@ jobs:
       # endpoint itself fails, which once turned main red without an advisory.
       - if: ${{ !cancelled() }}
         run: .github/scripts/npm-audit.sh
+
+  build:
+    if: inputs.needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+      - run: npm run wasm
+      - run: rustup target add wasm32-wasip1
+      # The website bundles this separate reactor and its EPL/source notices.
+      - run: npm run wasm:acopf
+      - run: npm run build:engine
+      - run: npm run build:web
+      - name: Build the native Study interface for browser parity
+        run: cargo build -p tellegen-cli --features conic
+      # Everything the build wrote that git ignores, except installed
+      # dependencies and cargo's own directory, plus the two files the later
+      # jobs read from cargo's directory.
+      - name: Collect the build
+        run: |
+          git ls-files --others --ignored --exclude-standard -z -- apps packages examples \
+            | grep -zv -e '\(^\|/\)node_modules/' > /tmp/built.list
+          printf '%s\0' target/experimental-acopf target/debug/tellegen >> /tmp/built.list
+          tar --null --files-from=/tmp/built.list --zstd -cf /tmp/js-build.tar.zst
+          ls -l /tmp/js-build.tar.zst
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: js-build
+          path: /tmp/js-build.tar.zst
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  checks:
+    needs: build
+    if: inputs.needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+        with:
+          rust: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-build
+          path: /tmp
+      - run: tar --zstd -xf /tmp/js-build.tar.zst
+      - run: npm run check:engine
+      - run: npm run test:import
+      - run: npm run check:svelte
+      - run: npm run test:svelte
+      - run: npm run check:web
+      - run: npm run test:svelte-packed
+      # The README presents both examples as working integrations; build them
+      # against the workspace packages so a public API change cannot break
+      # them unnoticed.
+      - run: npm run build:example
+      - run: npm run smoke:web
+
+  browser:
+    needs: build
+    if: inputs.needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+        with:
+          rust: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-build
+          path: /tmp
+      - run: tar --zstd -xf /tmp/js-build.tar.zst
+      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+      - run: npm --workspace tellegen-frontend run test:browser -- --shard=${{ matrix.shard }}/4
+        env:
+          TELLEGEN_STUDY_CLI: ${{ github.workspace }}/target/debug/tellegen
+
+  # The required `js / js` check. Skip here, not in the caller: a skipped job
+  # still reports the check, and a skipped caller reports nothing.
+  js:
+    needs: [static, build, checks, browser]
+    if: ${{ always() && inputs.needed }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Every JavaScript gate passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "static, build, checks, browser: $RESULTS"
+          [ "$RESULTS" = "success success success success" ]
