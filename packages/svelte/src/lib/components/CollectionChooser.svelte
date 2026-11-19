@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getController } from '../context.svelte.js';
 	import type { CollectionRow } from '../collection-import.svelte.js';
+	import { download } from '../format.js';
 	const model = getController().collectionImport;
 	let dialog: HTMLDialogElement;
 	let query = $state('');
@@ -28,17 +29,13 @@
 		}
 		if (!model.open && dialog?.open) dialog.close();
 	});
-	async function download(id: number, row?: CollectionRow) {
+	async function saveZip(id: number, row?: CollectionRow) {
 		try {
 			const bytes = await model.download(id, row, exportScope);
-			const url = URL.createObjectURL(
-				new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/zip' })
+			download(
+				new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/zip' }),
+				row ? `case-${exportScope}.zip` : 'original-collection.zip'
 			);
-			const link = document.createElement('a');
-			link.href = url;
-			link.download = row ? `case-${exportScope}.zip` : 'original-collection.zip';
-			link.click();
-			setTimeout(() => URL.revokeObjectURL(url), 1000);
 		} catch (error) {
 			if (error instanceof DOMException && error.name === 'AbortError') return;
 			model.errors.push(error instanceof Error ? error.message : String(error));
@@ -68,7 +65,7 @@
 					{collection.label}: {collection.inspection.entries.length} files
 					{#if collection.inspection.original_zip}<button
 							disabled={model.busy}
-							onclick={() => download(collection.id)}
+							onclick={() => saveZip(collection.id)}
 							>Download original ZIP — {collection.label}</button
 						>{/if}
 				</p>
@@ -82,8 +79,7 @@
 			>
 			<button
 				disabled={model.busy || selected.length !== 1}
-				onclick={() => download(selected[0].session, selected[0])}
-				>Export selected source ZIP</button
+				onclick={() => saveZip(selected[0].session, selected[0])}>Export selected source ZIP</button
 			>
 		</details>
 	{/if}

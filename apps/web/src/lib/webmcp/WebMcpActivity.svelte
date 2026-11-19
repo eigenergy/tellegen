@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import AgentGuide from './AgentGuide.svelte';
-	import { PanelFrame, getAppState } from '@tellegen/svelte';
+	import { MISSING, PanelFrame, getAppState, plain, signed } from '@tellegen/svelte';
 	import type {
 		ExperimentRecord,
 		JsonValue,
@@ -133,15 +133,15 @@
 		return typeof value === 'number' && Number.isFinite(value) ? value : null;
 	}
 
-	function formatNumber(value: number | null, digits = 2): string {
-		return value === null
-			? '—'
-			: value.toLocaleString(undefined, { maximumFractionDigits: digits });
+	const twoDecimals = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+	const whole = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
+	function formatNumber(value: number | null, digits: 0 | 2 = 2): string {
+		return value === null ? MISSING : plain(value, digits === 0 ? whole : twoDecimals);
 	}
 
 	function formatDelta(value: number | null): string {
-		if (value === null) return '—';
-		return `${value >= 0 ? '+' : ''}${formatNumber(value)}`;
+		return value === null ? MISSING : signed(value, twoDecimals);
 	}
 
 	function elapsed(activity: TellegenToolActivityEvent): string {

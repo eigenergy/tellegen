@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { PUBLIC_WEBMCP_EXPOSED_TO } from '$app/env/public';
 	import { trackUsage } from '../analytics/client.js';
-	import { getController } from '@tellegen/svelte';
+	import { downloadText, getController } from '@tellegen/svelte';
 	import {
 		ExperimentJournal,
 		modelContextFeatures,
@@ -63,16 +63,11 @@
 
 	function exportJournal() {
 		const document = { ...journal.export(), capacityPlans: planning.entries };
-		const url = URL.createObjectURL(
-			new Blob([JSON.stringify(document, null, 2)], {
-				type: 'application/json'
-			})
+		downloadText(
+			JSON.stringify(document, null, 2),
+			'tellegen-experiments.json',
+			'application/json'
 		);
-		const link = window.document.createElement('a');
-		link.href = url;
-		link.download = 'tellegen-experiments.json';
-		link.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1_000);
 	}
 
 	// The one reactive watcher registration follows: the active case, its
