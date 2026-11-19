@@ -2,7 +2,8 @@
  * unit speed halos, and the events (a faulted bus while the fault is on,
  * tripped branches from their trip). A frame writes into preallocated typed
  * arrays and builds three light layer objects; the static layers are not
- * touched. */
+ * touched.
+ * @block Map layers of playback */
 
 import type { Layer } from '@deck.gl/core';
 import type { NetworkBranch, NetworkBus, RmsRun } from '@tellegen/engine';

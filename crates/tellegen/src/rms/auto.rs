@@ -35,6 +35,8 @@
 //! beyond its MVA base, so the field voltage or the governor limit cannot
 //! hold it) falls back to a classical machine (GENCLS, H 3 s, D 0), which
 //! always initializes; the reason says so.
+//!
+//! @block Automatic dynamic models
 
 use powerio::network::GeneratorEnergySource;
 use powerio::BalancedNetwork;
@@ -75,6 +77,7 @@ fn has_records(text: &str, bus: usize, id: &str) -> Result<bool, String> {
 ///
 /// # Errors
 /// When the DYR text does not parse.
+// @block Assign models by rule
 pub fn dyr_auto(network: &BalancedNetwork, text: &str) -> Result<AutoDynamics, String> {
     let ids = powerio::psse_machine_ids(network);
     let mut out = AutoDynamics {
@@ -239,6 +242,7 @@ fn guess_role(name: &str) -> &'static str {
 }
 
 /// Replace the unit's records whose models are not simulated.
+// @block Replace unsupported models
 fn substitute_unsupported(text: &mut String, bus: usize, id: &str) -> Result<Substitution, String> {
     let dyr = powerio::parse_dyr(text).map_err(|e| format!("DYR: {e}"))?;
     let mine: Vec<powerio::DynamicRecord> = dyr
@@ -301,6 +305,7 @@ fn substitute_unsupported(text: &mut String, bus: usize, id: &str) -> Result<Sub
 
 /// Initialize the completed model; a generated unit that does not reach its
 /// operating point becomes a classical machine.
+// @block Fall back where initialization fails
 fn fall_back_where_init_fails(
     network: &BalancedNetwork,
     out: &mut AutoDynamics,

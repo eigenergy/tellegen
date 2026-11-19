@@ -1,7 +1,8 @@
 /** The generating units of the active case for the unit editor (experimental):
  * every unit with its DYR records as named parameters (static units too),
  * the model library and the published units; and the map glyphs that open a
- * unit's editor. The data is the engine's (`dyrParameters`). */
+ * unit's editor. The data is the engine's (`dyrParameters`).
+ * @block Units for the editor */
 
 import {
 	dyrParameters,

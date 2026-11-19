@@ -1,4 +1,8 @@
 <script lang="ts">
+	/** The traces of a run under the timeline, one tab per quantity
+	 * (frequency, rotor angles, voltages, loads), with bands of all units, the
+	 * pinned ones drawn on top, zoom, and a table view.
+	 * @block Traces */
 	import type { RmsRun } from '@tellegen/engine';
 	import { getAppState, getController } from '../../context.svelte.js';
 	import type { DynEvent } from '../../dynamics/events.js';

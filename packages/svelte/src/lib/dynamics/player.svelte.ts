@@ -1,6 +1,7 @@
 /** Playback of a dynamics run: the time shown on the map and the charts,
  * play/pause, speed, and the slow-motion windows around events. The rAF
- * loop only advances `t`; the map layers and the chart playhead read it. */
+ * loop only advances `t`; the map layers and the chart playhead read it.
+ * @block Playback */
 
 export const SPEEDS = [0.1, 0.25, 1, 4] as const;
 export type Speed = (typeof SPEEDS)[number];

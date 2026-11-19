@@ -1,6 +1,7 @@
 /** The quantities a dynamics plot shows: what each channel prefix of the
  * engine (and the derived `f:` and `coi:`) is, its unit and how it scales
- * from the engine's per unit. */
+ * from the engine's per unit.
+ * @block Plotted quantities */
 
 export type Owner = 'bus' | 'unit' | 'branch' | 'system';
 

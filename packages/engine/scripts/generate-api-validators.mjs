@@ -117,7 +117,11 @@ for (const [family, names] of [
       ? ["request.rs", "report.rs", "error.rs", "synchronous.rs"].map(
           (file) => `crates/tellegen-synth/src/${file}`,
         )
-      : ["crates/tellegen/src/rms/mod.rs", "crates/tellegen/src/rms/screen.rs"];
+      : [
+          "crates/tellegen/src/rms/mod.rs",
+          "crates/tellegen/src/rms/api.rs",
+          "crates/tellegen/src/rms/screen.rs",
+        ];
   const hash = createHash("sha256");
   for (const file of sources) hash.update(readFileSync(new URL(file, root)));
   if (hash.digest("hex") !== extraSchema["x-rust-source-sha256"])

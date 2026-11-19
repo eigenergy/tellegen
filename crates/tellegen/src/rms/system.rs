@@ -7,6 +7,8 @@
 //! `[Vr(1..n); Vi(1..n); device states]`, the bus rows are the algebraic
 //! current balance `Σ I_injected − Y V = 0` in system per unit, and each
 //! generator adds its stator current to its bus rows.
+//!
+//! @block Differential-algebraic system
 
 use num_complex::Complex;
 
@@ -20,6 +22,7 @@ use crate::model::AcNetwork;
 pub(crate) type C64 = Complex<f64>;
 
 /// One synchronous generator with its controls.
+// @block Generating unit
 #[derive(Clone, Debug)]
 pub(crate) struct GenDevice {
     pub bus_number: usize,
@@ -212,6 +215,7 @@ impl GenDevice {
 
 /// A Thevenin source `E` behind `Z`, as a Norton equivalent: `y` enters the
 /// admittance matrix and `y E` is a constant injection.
+// @block Thevenin source
 #[derive(Clone, Debug)]
 pub(crate) struct Source {
     pub bus_number: usize,
@@ -235,6 +239,7 @@ pub(crate) struct Source {
 /// current (`γ = 1`), constant power (`γ = 0`) and the other exponents are
 /// the nonlinear current `I = (P − jQ) V / |V|²` ([`Self::nonlinear_current`]),
 /// with their low-voltage behaviour set by [`LowVoltage`].
+// @block Static load
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BusLoad {
     pub v0: f64,
@@ -495,6 +500,7 @@ fn soft_vm(vm: f64, v0: f64) -> f64 {
 
 /// A unit without a simulated model (an inverter chain), held as a
 /// constant-current injection `conj(s) V/|V| / v0` inside its bus's load.
+// @block Held unit
 #[derive(Clone, Debug)]
 pub(crate) struct HeldUnit {
     pub bus_number: usize,
@@ -547,6 +553,7 @@ impl HeldUnit {
 }
 
 /// The assembled RMS system.
+// @block The system
 #[derive(Clone, Debug)]
 pub(crate) struct DynSystem {
     pub n: usize,
@@ -596,6 +603,10 @@ pub(crate) struct DynSystem {
 }
 
 impl DynSystem {
+    // @block Layout and matrices
+    // The state vector's names, the bus admittance matrix with every switched
+    // branch, fault, shunt and source, and the mass matrix.
+
     /// Names of every global state, `bus:quantity` for buses and
     /// `G<bus>[ 'id'].<state>` for devices.
     pub(crate) fn variable_names(&self) -> Vec<String> {
@@ -706,20 +717,28 @@ impl DynSystem {
     }
 
     /// `f(x)`, and the device outputs when `outs` is given.
+    // @block Residual f(x)
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
         let n = self.n;
         f.iter_mut().for_each(|v| *v = 0.0);
         let (vr, rest) = x.split_at(n);
         let vi = &rest[..n];
+        // @block Network current balance
+        // The bus rows start as `−Y V`: the current the network draws.
         for &(r, c, y) in &self.ybus {
             f[r] -= y.re * vr[c] - y.im * vi[c];
             f[n + r] -= y.im * vr[c] + y.re * vi[c];
         }
+        // @block Thevenin sources
+        // Each source injects its Norton current.
         for s in &self.sources {
             let i = s.y * s.e;
             f[s.bus] += i.re;
             f[n + s.bus] += i.im;
         }
+        // @block Voltage-dependent loads
+        // The constant-power and constant-current parts draw their current at the
+        // bus voltage (the impedance part is in the admittance matrix).
         for (b, load) in self.loads.iter().enumerate() {
             if load.is_nonlinear() {
                 let (ir, ii) = load.nonlinear_current(vr[b], vi[b], self.low_voltage);
@@ -731,6 +750,10 @@ impl DynSystem {
         if let Some(outs) = outs.as_deref_mut() {
             outs.clear();
         }
+        // @block Generating units
+        // Each unit evaluates its machine and controllers at its bus voltage and
+        // the frame speed, writes its state rows and adds its stator current to
+        // its bus.
         for d in &self.devices {
             let k = d.n_states();
             let out = d.eval(
@@ -746,6 +769,9 @@ impl DynSystem {
                 outs.push(out);
             }
         }
+        // @block Simulated plants
+        // Each renewable plant's states and its current into its bus; a tripped
+        // plant's rows hold its states.
         for h in &self.held {
             let Some(p) = &h.plant else { continue };
             let k = p.n_states();
@@ -782,6 +808,10 @@ impl DynSystem {
         u.sort_unstable();
         u
     }
+
+    // @block Jacobian
+    // `∂f/∂x`: exact for the network and loads, forward differences for each
+    // unit's own block.
 
     /// `∂f/∂x` as triplets. The network and load parts are exact; device
     /// blocks are forward differences of their local functions with the
@@ -894,6 +924,10 @@ impl DynSystem {
         }
     }
 
+    // @block Branch flows
+    // The flows at both ends of every branch, open ends and inner faults
+    // included.
+
     /// The terminal flows of every branch at the state `x`, system base:
     /// PowerIO's `AcBranchData::calc_branch_flows` over the switched branch
     /// columns, so an open end carries no flow and a faulted branch the flow
@@ -959,6 +993,10 @@ impl DynSystem {
         let series = -out[0][1];
         (series, out[0][0] - series, out[1][1] + out[1][0])
     }
+
+    // @block Islands
+    // Which buses hang together over closed branches, which islands have no
+    // unit left, and how a split network is named in messages.
 
     /// The electrical islands over branches closed at both ends, each its
     /// dense buses in ascending order, in order of each island's first bus:

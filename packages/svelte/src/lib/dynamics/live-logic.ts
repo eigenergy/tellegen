@@ -1,11 +1,13 @@
 /** Pure helpers of the live workbench, the unit editor and their charts,
- * apart from the components so they are tested without a browser. */
+ * apart from the components so they are tested without a browser.
+ * @block Live workbench logic */
 
 /** The simulated time the live view's pacing loop aims for after `wall`
  * seconds of wall time at `speed`. Paced, it follows the clock but runs at
  * most 2 s ahead of the session time `t`; unpaced (`Infinity`) it stays at
  * `t`, so a switch back to a pace starts from the time reached (a product
- * `0 · Infinity` would otherwise leave it `NaN` and stall the loop). */
+ * `0 · Infinity` would otherwise leave it `NaN` and stall the loop).
+ * @block Pacing target */
 export function paceTarget(expected: number, wall: number, speed: number, t: number): number {
 	if (!Number.isFinite(speed) || !Number.isFinite(expected)) return t;
 	return Math.min(expected + wall * speed, t + 2);
@@ -13,7 +15,8 @@ export function paceTarget(expected: number, wall: number, speed: number, t: num
 
 /** Round axis ticks between `lo` and `hi`, about `count` of them. The loop
  * is bounded and stops where the values no longer differ, so a range at the
- * limit of the floating-point resolution cannot hang it. */
+ * limit of the floating-point resolution cannot hang it.
+ * @block Axis ticks */
 export function niceTicks(lo: number, hi: number, count: number): number[] {
 	const span = hi - lo;
 	if (!Number.isFinite(span) || !(span > 0)) return Number.isFinite(lo) ? [lo] : [];
@@ -40,7 +43,8 @@ export function minZoomSpan(a: number, b: number): number {
 	return 1e-6 * Math.max(1, Math.abs(a), Math.abs(b));
 }
 
-/** `[a, b]` widened about its centre to at least {@link minZoomSpan}. */
+/** `[a, b]` widened about its centre to at least {@link minZoomSpan}.
+ * @block Zoom limit */
 export function clampZoom(a: number, b: number): [number, number] {
 	const min = minZoomSpan(a, b);
 	if (b - a >= min) return [a, b];
@@ -59,7 +63,8 @@ export interface DraftRecord {
 /** The parameter edits of the unit editor's drafts (`line:index` → typed
  * text): changed values become edits; blank or non-numeric text is an
  * error naming the parameter; a draft whose parameter no longer exists is
- * dropped. */
+ * dropped.
+ * @block Parameter drafts */
 export function parseDrafts(
 	draft: Record<string, string>,
 	records: readonly DraftRecord[]
@@ -81,7 +86,8 @@ export function parseDrafts(
 }
 
 /** What the drafts were typed against: the records' lines, models and
- * parameter texts. Drafts are cleared when it changes. */
+ * parameter texts. Drafts are cleared when it changes.
+ * @block Draft signature */
 export function recordsSignature(records: readonly DraftRecord[]): string {
 	return records.map((r) => `${r.line} ${r.model} ${r.parameters.map((p) => p.text).join(' ')}`).join('\n');
 }

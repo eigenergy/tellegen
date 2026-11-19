@@ -9,6 +9,8 @@
 //! steady state as PowerSimulationsDynamics.jl (`src/initialization/*`): each
 //! generator is solved for its states and references such that all
 //! derivatives vanish and it injects exactly its power flow current.
+//!
+//! @block Build and initialize
 
 use powerio::electrical::{calc_impedance_rebase, RebaseOrder};
 use powerio::{BalancedNetwork, DynamicCase, MachineDynamics};
@@ -37,6 +39,7 @@ pub(crate) struct InitReport {
 }
 
 /// Build the system and its initial state.
+// @block Build the system from a case
 pub(crate) fn build(
     network: &BalancedNetwork,
     dynamics: &DynamicCase,
@@ -44,6 +47,10 @@ pub(crate) fn build(
     load_model: LoadModel,
     options: super::RmsOptions,
 ) -> Result<(DynSystem, Vec<f64>, InitReport), String> {
+    // @block Solve the power flow
+    // The AC power flow the dynamics start from, with the low-voltage load
+    // behaviour checked first; notes record voltage-dependent loads and
+    // remote regulation, and a power flow that does not converge stops here.
     let mut report = InitReport::default();
     let low_voltage = match options.low_voltage_load {
         LowVoltageLoad::Break { v_break } => {
@@ -86,6 +93,9 @@ pub(crate) fn build(
             pf.residual
         ));
     }
+    // @block Network data
+    // Bus numbering, bases, the solved bus voltages and the branch keys that
+    // events and flows name.
     let n = ac.n;
     let sbase = network.base_mva();
     let f0 = network.base_frequency();
@@ -111,6 +121,11 @@ pub(crate) fn build(
             )
         })
         .collect();
+
+    // @block Loads at the operating point
+    // Each bus load at the power flow voltage, split into constant power,
+    // current and impedance parts (or one law for the whole bus demand), so
+    // the loads draw exactly the power flow demand at `t = 0`.
 
     // Loads at the power flow voltage.
     let (pd, qd) = ac.demand_at(&pf.vm);
@@ -158,6 +173,11 @@ pub(crate) fn build(
             }
         }
     }
+
+    // @block Link the dynamic data
+    // Each DYR record is matched to its unit (bus and machine id). Records
+    // without a typed view, out-of-service units and unsupported models are
+    // counted and named in the notes.
 
     // Generator dispatch from the power flow: the bus generation is the net
     // injection plus the bus demand, shared among the bus's generators.
@@ -211,6 +231,10 @@ pub(crate) fn build(
                 .push(model_name.as_str());
         }
     }
+    // @block Find renewable plants
+    // Units with a complete REGCA1 + REECB1 + REPCA1 chain are simulated as
+    // plants; other inverter records leave the unit at its power flow output.
+
     // Renewable plants: REGCA1 + REECB1 + REPCA1 of one unit, simulated
     // ([`super::renewable`]); a unit with other inverter records, or with a
     // record that does not parse, keeps its power flow output. A later record
@@ -233,6 +257,10 @@ pub(crate) fn build(
     let mut dynamic_plants = 0usize;
     let simulate_plants = options.renewable_plants;
     let mut static_units = 0usize;
+    // @block Dispatch per unit
+    // The power each unit carries at the operating point: a bus's generation
+    // (net injection plus demand) shared among its units by their scheduled
+    // output.
     let mut at_bus: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut entries: Vec<(&MachineDynamics, usize)> = Vec::new();
     for m in &linking.machines {
@@ -348,6 +376,11 @@ pub(crate) fn build(
         }
     }
 
+    // @block Initialize each unit
+    // Every linked unit becomes what its data allows: a simulated machine with
+    // its controllers (solved for the states and references that make all
+    // derivatives vanish at its power flow current), a renewable plant, a
+    // Thevenin source, or a held constant-current injection.
     let mut devices: Vec<GenDevice> = Vec::new();
     let mut device_x0: Vec<Vec<f64>> = Vec::new();
     let mut sources: Vec<Source> = Vec::new();
@@ -575,6 +608,10 @@ pub(crate) fn build(
             "{dynamic_plants} renewable plant(s) simulated as REGCA1 + REECB1 + REPCA1"
         ));
     }
+    // @block Reference frame
+    // The network turns at the speed of a dynamic machine at the slack bus;
+    // with none there, at the constant synchronous speed.
+
     // Reference frame: the speed of a dynamic machine at the slack bus, else
     // the constant synchronous frame.
     let omega_ref = ac.slacks.first().and_then(|&slack| {
@@ -588,6 +625,9 @@ pub(crate) fn build(
         }
     });
 
+    // @block Assemble the system
+    // The `DynSystem` from its parts, with the bus admittance and mass
+    // matrices built once (events rebuild them).
     let m_branches = ac.m;
     let branches = ac.branches.clone();
     let mut sys = DynSystem {
@@ -618,6 +658,10 @@ pub(crate) fn build(
     sys.rebuild_ybus();
     sys.rebuild_mass();
 
+    // @block The steady state
+    // The initial state: bus voltages from the power flow, then each device's
+    // and held unit's own initial states. The residual `f(x0)` must vanish;
+    // a case that does not rest at `t = 0` is refused with its residual.
     let mut x0 = vec![0.0; nx];
     for b in 0..n {
         x0[b] = v[b].re;
@@ -656,6 +700,7 @@ pub(crate) fn build(
 /// constant power) and notes naming every generator bus whose solution and
 /// setpoint disagree: a bus released at a reactive limit (its voltage off the
 /// setpoint), or, without limits, a bus whose reactive generation exceeds them.
+// @block Operating point (AC power flow)
 pub(crate) fn power_flow(
     network: &BalancedNetwork,
     reactive_limits: bool,
@@ -809,6 +854,7 @@ fn inf_norm(r: &[f64]) -> f64 {
 }
 
 /// Dense Newton with a forward-difference Jacobian on a small square system.
+// @block Small Newton solver
 pub(crate) fn newton(
     mut u: Vec<f64>,
     mut g: impl FnMut(&[f64], &mut [f64]),
@@ -884,6 +930,7 @@ pub(crate) fn newton(
 /// steady states are solved with their limits removed and then checked
 /// against them: one that leaves no steady state fails naming the limit and
 /// the value the dispatch needs.
+// @block Initialize one unit
 pub(crate) fn init_device(
     dev: &mut GenDevice,
     v: C64,

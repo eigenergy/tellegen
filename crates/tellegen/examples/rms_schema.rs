@@ -21,6 +21,8 @@ struct RmsSchema {
 fn main() {
     let sources = [
         include_str!("../src/rms/mod.rs"),
+        // The request and result types live here since the split of mod.rs.
+        include_str!("../src/rms/api.rs"),
         include_str!("../src/rms/screen.rs"),
     ];
     let mut hash = Sha256::new();

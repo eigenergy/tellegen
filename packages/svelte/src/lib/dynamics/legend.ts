@@ -1,4 +1,5 @@
-/** Legend helpers shared by the map legend and the layers. */
+/** Legend helpers shared by the map legend and the layers.
+ * @block Legend helpers */
 export { dynVoltageGradient } from '../colors.js';
 import { haloRadius } from './layers.js';
 

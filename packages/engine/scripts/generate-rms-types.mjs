@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const output = join(root, "packages/engine/src/generated/rms-types.ts");
 const schemaPath = join(root, "packages/engine/src/generated/rms.schema.json");
 const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
-const sources = ["rms/mod.rs", "rms/screen.rs"];
+const sources = ["rms/mod.rs", "rms/api.rs", "rms/screen.rs"];
 const hash = createHash("sha256");
 for (const source of sources) hash.update(readFileSync(join(root, "crates/tellegen/src", source)));
 if (hash.digest("hex") !== schema["x-rust-source-sha256"]) {

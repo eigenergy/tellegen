@@ -23,6 +23,8 @@
 //!   contraction rate, is below the tolerance (the stopping test of DASSL and
 //!   IDA), instead of waiting for one more correction below it;
 //! - the step works in buffers kept across steps ([`Stepper`]).
+//!
+//! @block Time integration
 
 use std::sync::Arc;
 
@@ -82,6 +84,7 @@ impl Patterns {
 }
 
 /// A sparse LU of a square matrix.
+// @block Sparse LU
 pub(super) struct SparseLu {
     pattern: Arc<Pattern>,
     numeric: NumericLu<usize, f64>,
@@ -152,6 +155,7 @@ enum Lu {
 /// A Jacobian factorization kept across steps (the "very dishonest Newton" of
 /// production transient-stability programs): reused while the step size, the
 /// method and the system epoch are unchanged, refreshed when Newton stalls.
+// @block Step matrix factorization
 struct Factor {
     lu: Lu,
     /// The step the matrix was built with.
@@ -331,6 +335,7 @@ impl History {
 
 /// The integrator of one run: the factorization it reuses, the last points
 /// and its buffers.
+// @block The stepper's state
 #[derive(Default)]
 pub(crate) struct Stepper {
     factor: Option<Factor>,
@@ -414,6 +419,7 @@ impl Stepper {
     /// Advance `(x, f)` by one step `h` with weight `theta` (`0.5`
     /// trapezoidal, `1.0` backward Euler). Returns the Newton iterations; on
     /// an error `x` and `f` are unchanged.
+    // @block One step
     pub(crate) fn step(
         &mut self,
         sys: &DynSystem,
@@ -435,6 +441,7 @@ impl Stepper {
     /// differential states (a filterless IEEEST, for instance), that system
     /// is singular; the fallback then holds every device state and re-solves
     /// the network voltages. On an error `x` and `f` are unchanged.
+    // @block Re-solve after an event
     pub(crate) fn reinit(
         &mut self,
         sys: &DynSystem,
@@ -463,6 +470,7 @@ impl Stepper {
     /// Otherwise (at the start and for two steps after an event): the
     /// differential states move by `h ẋ_n` (with `ẋ_n = f_n / M`); algebraic
     /// states start at their last value.
+    // @block Predictor
     fn predict(
         history: &History,
         epoch: u64,
@@ -498,6 +506,7 @@ impl Stepper {
     /// Solve one step from `(xn, fn_)` into `work.x`, `work.f` (`h = 0`
     /// re-solves the algebraic variables only). `cached` uses and keeps the
     /// factorization.
+    // @block Newton solve of one step
     #[allow(clippy::too_many_arguments)]
     fn solve(
         &mut self,
@@ -509,6 +518,9 @@ impl Stepper {
         hold_devices: bool,
         cached: bool,
     ) -> Result<usize, String> {
+        // @block Set up the step
+        // Work buffers sized to the system, and the mass matrix (with device rows
+        // held for the re-solve fallback).
         let nx = sys.nx;
         let Self {
             factor,
@@ -542,6 +554,10 @@ impl Stepper {
             h,
             theta,
         };
+        // @block Predict
+        // Newton starts from the parabola through the last points (or an Euler
+        // step), so the first correction is small.
+
         // The predictor needs `ẋ_n`, which a held device row does not have;
         // the re-solve after an event (`h = 0`) starts from the event point
         // itself.
@@ -550,6 +566,10 @@ impl Stepper {
         } else {
             x.copy_from_slice(xn);
         }
+        // @block Reuse a factorization
+        // The factorization of an earlier step is kept while the step size, the
+        // method and the system (its epoch) are the same.
+
         // Start from the cached factorization when it was built for this
         // step. One that was not is dropped, and so is any on an error.
         let mut lu: Option<Factor> = None;
@@ -565,6 +585,9 @@ impl Stepper {
                 }
             }
         }
+        // @block Newton iterations
+        // Up to 25 corrections of the step equations, each from the current
+        // factorization, with a line search and a stopping test.
         let mut stalls = 0usize;
         let mut last_step = f64::INFINITY;
         let mut rnorm = step.residual(x, f, r);
@@ -578,6 +601,10 @@ impl Stepper {
                 }
                 return Ok(iter);
             }
+            // @block Refresh the factorization
+            // A reused factorization stays while it converges; a fresh one is
+            // rebuilt every other iteration and every iteration from the fourth.
+
             // A reused factorization stays until the iteration stalls; a
             // fresh one is refreshed every other iteration, and every
             // iteration from the fourth.
@@ -598,6 +625,10 @@ impl Stepper {
             if !dnorm.is_finite() {
                 return Err("the Newton step is not finite (singular Jacobian?)".into());
             }
+            // @block Line search
+            // Backtrack along the Newton direction until the residual drops; a
+            // direction that lowers nothing refactorizes once, then fails the step.
+
             // A step length that lowers the residual (or reaches the
             // tolerance). None: the direction is not a descent one. From a
             // reused factorization, refactorize at this iterate and try
@@ -630,6 +661,11 @@ impl Stepper {
             if super::not_lt(rnorm, 0.5 * previous) {
                 stalls += 1;
             }
+            // @block Stopping test
+            // Stop when the correction, extrapolated with the observed contraction
+            // rate, is below the tolerance (the test of DASSL and IDA), and keep the
+            // factorization for the next step.
+
             // Error left in `x`: for a contraction with rate `rho`, at most
             // `rho / (1 − rho)` times the correction just applied. The rate
             // is the larger of two observations: this correction against
@@ -663,6 +699,7 @@ impl Stepper {
 /// residual at rounding level cannot be lowered), with that residual.
 /// `None` when no step length does: a step that raises the residual is never
 /// taken.
+// @block Backtracking
 fn backtrack(rnorm: f64, mut trial: impl FnMut(f64) -> f64) -> Option<(f64, f64)> {
     let mut alpha = 1.0;
     while alpha >= 1.0 / 64.0 {
@@ -676,6 +713,7 @@ fn backtrack(rnorm: f64, mut trial: impl FnMut(f64) -> f64) -> Option<(f64, f64)
 }
 
 /// The equations of one step from `(xn, fn_)`.
+// @block Step equations
 struct Step<'a> {
     sys: &'a DynSystem,
     mass: &'a [f64],
@@ -724,6 +762,45 @@ fn largest_residual(sys: &DynSystem, r: &[f64]) -> String {
     match sys.variable_names().into_iter().nth(i) {
         Some(name) if !name.is_empty() => name,
         _ => format!("variable {i}"),
+    }
+}
+
+/// Take a trapezoidal step in place; on Newton failure fall back to an
+/// L-stable backward-Euler step (which damps the chatter of limiters and
+/// rectifiers that switch inside the step), then halve the step. On an error
+/// `x` and `f` are unchanged.
+// @block Step with fallbacks
+pub(super) fn step_adaptive(
+    sys: &DynSystem,
+    x: &mut Vec<f64>,
+    f: &mut Vec<f64>,
+    h: f64,
+    depth: usize,
+    euler_steps: &mut usize,
+    stepper: &mut Stepper,
+) -> Result<usize, String> {
+    match stepper.step(sys, x, f, h, 0.5) {
+        Ok(ok) => Ok(ok),
+        Err(trap) => {
+            if let Ok(ok) = stepper.step(sys, x, f, h, 1.0) {
+                *euler_steps += 1;
+                return Ok(ok);
+            }
+            if depth >= 10 {
+                return Err(trap);
+            }
+            let start = (x.clone(), f.clone());
+            let halves = step_adaptive(sys, x, f, 0.5 * h, depth + 1, euler_steps, stepper)
+                .and_then(|i1| {
+                    step_adaptive(sys, x, f, 0.5 * h, depth + 1, euler_steps, stepper)
+                        .map(|i2| i1 + i2)
+                });
+            if halves.is_err() {
+                (*x, *f) = start;
+                stepper.forget();
+            }
+            halves
+        }
     }
 }
 

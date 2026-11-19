@@ -1,4 +1,7 @@
 <script lang="ts">
+	/** The oscillatory modes of the linearized case: frequency over damping,
+	 * with the least damped modes listed and unstable ones counted.
+	 * @block Mode plot */
 	import type { RmsLinearResult } from '@tellegen/engine';
 	import StatBoxes from '../StatBoxes.svelte';
 	import { modeGenerators } from '../../dynamics/verdict.js';

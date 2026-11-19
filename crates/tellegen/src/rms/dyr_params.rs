@@ -6,6 +6,8 @@
 //! token of the edited parameter in the record's original text, so every
 //! other byte of the file (comments, layout, records tellegen does not read)
 //! stays as it was; the edited text is read back to check the edit.
+//!
+//! @block DYR parameter editing
 
 use serde::{Deserialize, Serialize};
 
@@ -455,6 +457,7 @@ fn record_at(dyr: &DynamicCase, line: usize) -> Option<&DynamicRecord> {
 
 /// Every in-service generator, its linked records as named parameters
 /// (PSS/E order) and its inverter records; a static unit has none.
+// @block Read parameters
 #[must_use]
 pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGeneratorView> {
     let linking = powerio::link_machines(network, dyr);
@@ -594,6 +597,7 @@ fn number_text(v: f64) -> String {
 /// When a line names no record, the index is out of range, the value is not
 /// finite, or the record's text cannot be located; the result is read back
 /// and must parse to the edited values.
+// @block Edit parameters in place
 pub fn dyr_edit(text: &str, edits: &[DyrEdit]) -> Result<String, String> {
     let mut out = text.to_string();
     for e in edits {

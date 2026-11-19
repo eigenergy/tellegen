@@ -2,7 +2,8 @@
 	/** The unit editor opened from a unit's glyph on the map (experimental),
 	 * beside the clicked point and movable by its header. It also keeps the
 	 * unit catalog in step with the active case, so the glyphs are there
-	 * whether or not the Dynamics panel is open. */
+	 * whether or not the Dynamics panel is open.
+	 * @block Unit editor on the map */
 	import { getAppState, getController } from '../../context.svelte.js';
 	import { unitKey, unitSummary } from '../../dynamics/units.svelte.js';
 	import DynamicsElementActions from './DynamicsElementActions.svelte';

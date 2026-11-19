@@ -4,7 +4,8 @@
 	 * and then an input port to wire them) and a form for the selected block.
 	 * Shows each block's output value when `values` are given (live run or
 	 * playback). The engine checks the graph as it changes. Used inline in the
-	 * unit popup on the map and diagram, and full screen. */
+	 * unit popup on the map and diagram, and full screen.
+	 * @block Block-diagram canvas */
 	import { checkGraph, GRAPH_PORTS, type BlockGraph, type GraphBlock, type GraphNode } from '@tellegen/engine';
 
 	let {
