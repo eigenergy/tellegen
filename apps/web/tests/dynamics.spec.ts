@@ -94,7 +94,10 @@ test('the WECC 240 demo opens, a bus fault runs, plays back and screens stable',
 		'aria-label',
 		/^Frequency, lowest 59\.\d+ Hz$/
 	);
-	await page.waitForTimeout(1500);
+	const playbackTime = () =>
+		page.getByTestId('dyn-scrubber').evaluate((el: HTMLInputElement) => Number(el.value));
+	const playbackStart = await playbackTime();
+	await expect.poll(playbackTime).toBeGreaterThan(playbackStart);
 	await shot(page, '03-playback');
 
 	// The demo has a name, not its RAW header sentence.

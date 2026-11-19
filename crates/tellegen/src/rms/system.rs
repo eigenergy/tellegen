@@ -8,6 +8,8 @@
 //! current balance `Σ I_injected − Y V = 0` in system per unit, and each
 //! generator adds its stator current to its bus rows.
 
+use std::collections::HashMap;
+
 use num_complex::Complex;
 
 use powerio::electrical::{calc_squared_voltage_admittance, calc_voltage_power_term};
@@ -551,6 +553,8 @@ impl HeldUnit {
 pub(crate) struct DynSystem {
     pub n: usize,
     pub bus_numbers: Vec<usize>,
+    /// Dense index of each bus number in `bus_numbers` ([`bus_index`]).
+    pub bus_index: HashMap<usize, usize>,
     pub sbase: f64,
     pub f0: f64,
     /// The static network. Its PowerIO branch columns (`ac.branches`) are the
@@ -638,18 +642,28 @@ impl DynSystem {
         let dead = self.dead_buses();
         let mut gs = self.ac.gs.clone();
         let mut bs = self.ac.bs.clone();
-        for b in 0..self.n {
-            let mut extra = self.fault_y[b] + self.loads[b].admittance();
-            // A bus in an island without a live unit holds 0 V (a unit
-            // shunt keeps its rows regular).
-            if dead[b] {
-                extra += C64::new(1.0, 0.0);
+        let mut extra: Vec<C64> = (0..self.n)
+            .map(|b| {
+                let y = self.fault_y[b] + self.loads[b].admittance();
+                // A bus in an island without a live unit holds 0 V (a unit
+                // shunt keeps its rows regular).
+                if dead[b] {
+                    y + C64::new(1.0, 0.0)
+                } else {
+                    y
+                }
+            })
+            .collect();
+        // One pass in source order, so each bus adds its sources in the
+        // order a per-bus search of the list would.
+        for s in &self.sources {
+            if let Some(y) = extra.get_mut(s.bus) {
+                *y += s.y;
             }
-            for s in self.sources.iter().filter(|s| s.bus == b) {
-                extra += s.y;
-            }
-            gs[b] += extra.re;
-            bs[b] += extra.im;
+        }
+        for (b, y) in extra.iter().enumerate() {
+            gs[b] += y.re;
+            bs[b] += y.im;
         }
         let y = self.branches.calc_admittance_matrix(self.n, &gs, &bs);
         let mut entries: std::collections::BTreeMap<(usize, usize), C64> =
@@ -1059,8 +1073,18 @@ impl DynSystem {
     }
 
     pub(crate) fn dense_bus(&self, number: usize) -> Option<usize> {
-        self.bus_numbers.iter().position(|&b| b == number)
+        self.bus_index.get(&number).copied()
     }
+}
+
+/// Dense index of each bus number in `numbers`; the first position wins for
+/// a repeated number, as a linear search from the front would find it.
+pub(crate) fn bus_index(numbers: &[usize]) -> HashMap<usize, usize> {
+    let mut index = HashMap::with_capacity(numbers.len());
+    for (k, &number) in numbers.iter().enumerate() {
+        index.entry(number).or_insert(k);
+    }
+    index
 }
 
 /// The forward-difference step for a variable at `x`: [`FD_REL`] `· max(|x|, 1)`,

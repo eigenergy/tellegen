@@ -431,8 +431,17 @@ pub(crate) fn run(
 /// Numerical convergence is separate from the stated operating limits.
 pub(crate) fn operating_violations(n: &BalancedNetwork, s: &SolveResponse) -> Vec<String> {
     let mut out = Vec::new();
+    // Row of each bus id; the first row wins for a repeated id, as a search
+    // from the front would find it.
+    let mut rows: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    if s.vm.is_some() {
+        rows.reserve(n.buses().len());
+        for (row, b) in n.buses().iter().enumerate() {
+            rows.entry(b.id.0).or_insert(row);
+        }
+    }
     for v in s.vm.iter().flatten() {
-        if let Some(b) = n.buses().iter().find(|b| b.id.0 == v.bus) {
+        if let Some(b) = rows.get(&v.bus).map(|&row| &n.buses()[row]) {
             if v.value < b.vmin - 1e-7 || v.value > b.vmax + 1e-7 {
                 out.push(format!("AC bus {} exceeds its voltage range", v.bus));
             }

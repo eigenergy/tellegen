@@ -33,7 +33,7 @@ function wasmModule(): Promise<WasmModule> {
       // Don't cache a rejected init: a transient failure must not disable the
       // engine for the whole session. A capability failure is permanent.
       wasmReady = null;
-      if (isPermanentWasmLoadFailure(message)) wasmUnsupported = message;
+      if (isPermanentWasmLoadFailure(message, e)) wasmUnsupported = message;
       throw e;
     });
   return wasmReady;

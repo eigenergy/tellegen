@@ -34,7 +34,7 @@ export function engineModule(): Promise<WasmModule> {
       // Don't cache a rejected load: a transient failure (chunk fetch or
       // instantiate) must not disable the engine for the whole session.
       engineReady = null;
-      if (isPermanentWasmLoadFailure(message)) engineUnsupported = message;
+      if (isPermanentWasmLoadFailure(message, e)) engineUnsupported = message;
       throw e;
     });
   return engineReady;

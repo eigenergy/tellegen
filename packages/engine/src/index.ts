@@ -2073,9 +2073,13 @@ export { errorCode, errorText, type EngineError } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
  * recover from in this browser. Nothing solves client side when this is true;
- * the caller decides whether a server fallback exists. */
-export function isPermanentEngineFailure(message: string): boolean {
-  return isPermanentWasmLoadFailure(message);
+ * the caller decides whether a server fallback exists. Pass the thrown value
+ * as `error` when it is at hand, so its type decides before the message text. */
+export function isPermanentEngineFailure(
+  message: string,
+  error?: unknown,
+): boolean {
+  return isPermanentWasmLoadFailure(message, error);
 }
 
 /** One in-place network mutation for the Study handle: a demand delta in MW, or a

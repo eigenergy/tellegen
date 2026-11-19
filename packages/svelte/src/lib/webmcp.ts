@@ -2146,7 +2146,7 @@ export function createTellegenWebMcpAdapter(
 						...displayedContext(ctrl),
 						editable: false,
 						calculation: ctrl.app.studyView.formulation,
-						accepted: recorded?.effective ? JSON.parse(JSON.stringify(recorded.effective)) : null,
+						accepted: recorded?.effective ? structuredClone(recorded.effective) : null,
 						provenance: recorded ? 'recorded' : 'unavailable'
 					};
 				}

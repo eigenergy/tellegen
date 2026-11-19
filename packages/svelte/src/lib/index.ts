@@ -88,7 +88,9 @@ export {
 	degrees,
 	MISSING,
 	download,
-	downloadText
+	downloadText,
+	plain,
+	signed
 } from './format.js';
 export type { QuantityUnit, QuantityOptions } from './format.js';
 export { distExtensionFormat } from './drop-classify.js';
