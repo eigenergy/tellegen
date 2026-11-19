@@ -40,7 +40,13 @@ export function engineError(
   return error;
 }
 
-export function isPermanentWasmLoadFailure(message: string): boolean {
+/** True for a load failure the engine module can never recover from in this
+ * browser. Pass the thrown value as `error` when it is at hand: its type
+ * decides first, and the message text is read only when the type says nothing. */
+export function isPermanentWasmLoadFailure(
+  message: string,
+  error?: unknown,
+): boolean {
   // Latch only genuine browser-capability failures the engine module can
   // never recover from in this browser: no WebAssembly, or an opcode the
   // engine rejects. Transient fetch or
@@ -48,6 +54,12 @@ export function isPermanentWasmLoadFailure(message: string): boolean {
   // the .wasm URL or "Failed to fetch" in their message, so keying on the bare
   // word "wasm"/"compile" wrongly disables the engine for the whole session.
   // Those stay retryable.
+  if (typeof WebAssembly === "undefined") return true;
+  if (
+    error instanceof WebAssembly.CompileError ||
+    error instanceof WebAssembly.LinkError
+  )
+    return true;
   if (/Failed to fetch|NetworkError|load failed|aborted|ERR_/i.test(message))
     return false;
   return /CompileError|LinkError|invalid opcode|unsupported|relaxed|WebAssembly is not defined/i.test(

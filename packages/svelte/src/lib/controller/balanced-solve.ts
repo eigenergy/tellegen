@@ -153,7 +153,7 @@ export class BalancedSolveActions {
 				const message = errorText(e);
 				// Only a genuine browser-capability failure is permanent; latch it so the
 				// case stays on the fallback path. Transient errors stay retryable.
-				if (isPermanentEngineFailure(message)) {
+				if (isPermanentEngineFailure(message, e)) {
 					this.host.studyUnavailable.set(c, 'browser study wasm is not supported by this browser');
 				}
 				c.solveFallbackReason ??= `browser study unavailable: ${message}`;
