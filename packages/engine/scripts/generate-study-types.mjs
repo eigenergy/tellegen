@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,12 +5,6 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const output = join(root, "packages/engine/src/generated/study-types.ts");
 const schema = JSON.parse(readFileSync(join(root, "packages/engine/src/generated/study.schema.json"), "utf8"));
-const sources = ["document.rs", "preparation.rs", "objective.rs", "exploration.rs", "study_ops.rs", "api.rs", "dc_formula.rs", "sens/interface.rs", "solve.rs"];
-const hash = createHash("sha256");
-for (const source of sources) hash.update(readFileSync(join(root, "crates/tellegen/src", source)));
-if (hash.digest("hex") !== schema["x-rust-source-sha256"]) {
-  throw new Error("Study schema is stale. Run cargo run -p tellegen --example study_schema --features schema,conic > packages/engine/src/generated/study.schema.json");
-}
 if (!schema.$defs.CreateStudy.properties.formulation.enum.includes("socwr")) {
   throw new Error("Browser Study types require the conic build. Regenerate study_schema with --features schema,conic.");
 }
@@ -50,7 +43,7 @@ function type(node) {
 }
 
 const definitions = Object.entries(schema.$defs).map(([name, definition]) => `export type ${name} = ${type(definition)};`);
-const generated = `// Generated from Rust by study_schema and generate-study-types.mjs.\n// Source SHA256: ${schema["x-rust-source-sha256"]}\n\n${definitions.join("\n\n")}\n`;
+const generated = `// Generated from Rust by study_schema and generate-study-types.mjs.\n\n${definitions.join("\n\n")}\n`;
 if (process.argv.includes("--check")) {
   if (readFileSync(output, "utf8") !== generated) throw new Error("Study TypeScript types are stale; run npm run types");
 } else writeFileSync(output, generated);

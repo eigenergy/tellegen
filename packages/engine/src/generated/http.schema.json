@@ -3400,25 +3400,5 @@
     "http_saved_case"
   ],
   "title": "HttpResults",
-  "type": "object",
-  "x-engine-source-files": {
-    "src/ac_dc.rs": "b661a00679864444dd8b666a47c3fb8ae9baf0968569e4d950fe7d519cca7c15",
-    "src/api.rs": "77898e3048370fbd1602a6b686320fafd02485bf86263d714790eab32401741c",
-    "src/dc_formula.rs": "57e5df4a0f203f498c4c9a71a7dfb20514bd74e7ebb1cc71077f2c33e0288868",
-    "src/dc_grid.rs": "525b5e2a7579aba78ed9b232e2b4e41a2c8c23be38e14269cb715e564abd1cfe",
-    "src/equipment.rs": "2bf1035149c4aaefe5f7e24e85891ff129987a5185d0153d99e7a0f017653d0c",
-    "src/equipment/node_breaker.rs": "aa0df2d5a72804f3c9aad60a17d22699411e40689c3db9101fb5f85122fbe443",
-    "src/preparation.rs": "5d3fbd7bebc4e7b5606a4e3af1e2cf3d94c19e554b8be5b23635bcccad8ebcd3",
-    "src/sens/interface.rs": "645da7931bdb369201ceb23a792fc9df6167bcab1e0dda554abda52736a304dc",
-    "src/sens/mod.rs": "7915772aa3cf6ee7593099ec90ad6e0d449b404e4ab51426115d7aed1c349d1e",
-    "src/settings.rs": "75abe36ed0fc3db6f1326e52b8655feb1dd48e3b9ac655daae31b584c7bffc5c",
-    "src/solve.rs": "7ab1cc0ea152dfb13f636a1e7c6f7ec41b87d079691ceb0893815bbe9a8a7ed4",
-    "src/substations.rs": "f74f5aef8d183c52112effe34272fbd1a217aaa394cc7f469d61e4678562bdf4"
-  },
-  "x-server-source-files": {
-    "examples/http_schema.rs": "045c215a16c0db9385fe4b3f30b892053ba9874571b59185e46ea5e52aa632b9",
-    "src/distribution.rs": "6ab5b35dbd30bbfa1eb50317a61101cd36ccdbf1ab5db9821de2a4d655f83864",
-    "src/lib.rs": "afc60057b05e6f5b9e904984ac197e3686d3c395620e6888f73d4002341d0f91"
-  },
-  "x-server-source-sha256": "afc60057b05e6f5b9e904984ac197e3686d3c395620e6888f73d4002341d0f91"
+  "type": "object"
 }

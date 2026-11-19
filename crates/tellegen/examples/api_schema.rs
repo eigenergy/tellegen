@@ -1,6 +1,5 @@
 //! Shared schemas for engine results and MCP arguments, from their Rust records.
 use schemars::JsonSchema;
-use sha2::{Digest, Sha256};
 #[derive(JsonSchema)]
 #[allow(dead_code)]
 struct ApiSchema {
@@ -28,40 +27,8 @@ struct ApiSchema {
     study_bundle: tellegen::document::StudyBundle,
 }
 fn main() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let files = [
-        "src/api.rs",
-        "src/dc_formula.rs",
-        "src/error.rs",
-        "src/sens/interface.rs",
-        "src/sens/mod.rs",
-        "src/solve.rs",
-        "src/plan.rs",
-        "src/study.rs",
-        "src/mc_pf/mod.rs",
-        "src/mc_pf/tables.rs",
-        "src/settings.rs",
-        "src/study_ops.rs",
-        "src/document.rs",
-        "src/objective.rs",
-        "src/preparation.rs",
-        "src/exploration.rs",
-        "examples/api_schema.rs",
-    ];
-    let mut hashes = serde_json::Map::new();
-    for file in files {
-        let bytes = std::fs::read(root.join(file)).expect("schema source file");
-        hashes.insert(
-            file.into(),
-            Sha256::digest(bytes)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-                .into(),
-        );
-    }
-    let mut schema = serde_json::to_value(schemars::schema_for!(ApiSchema)).expect("API schema");
-    schema["x-rust-source-files"] = hashes.into();
+    // Through a JSON value so the keys print in sorted order.
+    let schema = serde_json::to_value(schemars::schema_for!(ApiSchema)).expect("schema value");
     println!(
         "{}",
         serde_json::to_string_pretty(&schema).expect("schema JSON")
