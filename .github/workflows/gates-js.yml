@@ -145,6 +145,10 @@ jobs:
           name: js-build
           path: /tmp
       - run: tar --zstd -xf /tmp/js-build.tar.zst
+      # SvelteKit writes the tsconfig its `$app` alias resolves to under
+      # apps/web/node_modules, which the build does not pass on. The test
+      # servers that compile the fixtures on request need it.
+      - run: npm --workspace tellegen-frontend exec -- svelte-kit sync
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
       - run: npm --workspace tellegen-frontend run test:browser -- --shard=${{ matrix.shard }}/4
         env:
