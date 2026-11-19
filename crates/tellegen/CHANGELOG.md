@@ -4,6 +4,13 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.8.2](https://github.com/eigenergy/tellegen/compare/v0.8.1...v0.8.2) - 2026-11-19
+
+### Fixed
+
+- Import large OpenDSS cases and report per coil generator dispatch ([#433](https://github.com/eigenergy/tellegen/pull/433))
+- Error codes over message text, and fewer copies and scans ([#436](https://github.com/eigenergy/tellegen/pull/436))
+
 ## [0.8.1](https://github.com/eigenergy/tellegen/compare/v0.8.0...v0.8.1) - 2026-11-17
 
 ### Added
