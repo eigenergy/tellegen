@@ -1,5 +1,6 @@
 import {
 	createStudy,
+	errorCode,
 	isPermanentEngineFailure,
 	resolveSettings,
 	sensitivityColumn,
@@ -58,6 +59,14 @@ type SolveDependencies = {
 		known?: Omit<ErrorContext, 'retry'> & { quiet?: boolean; retry?: (() => void) | null }
 	) => void;
 };
+/** True when a failed solve reports that the operating point has no solution.
+ * The engine's error code decides; the message text is read only when the
+ * error carries no code. */
+function isInfeasible(e: unknown): boolean {
+	const code = errorCode(e);
+	if (code !== undefined) return code === 'infeasible';
+	return /infeasible/i.test(errorText(e));
+}
 /** Owns browser Study creation, cancellation, sensitivity and the server fallback. */
 export class BalancedSolveActions {
 	constructor(
@@ -381,7 +390,7 @@ export class BalancedSolveActions {
 					// expected outcome — demand pushed past what the network can serve — not a
 					// broken Study. Keep the Study (it solves other points) and say so plainly,
 					// instead of the misleading "study unavailable".
-					if (c.formulation !== 'dcopf' && /infeasible/i.test(msg)) {
+					if (c.formulation !== 'dcopf' && isInfeasible(e)) {
 						c.solving = false;
 						this.host.app.previewActive = false;
 						this.host.app.previewDeltaMw = null;
