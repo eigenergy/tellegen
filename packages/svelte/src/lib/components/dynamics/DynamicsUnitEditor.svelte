@@ -7,6 +7,7 @@
 	 * again; the engine refuses what does not initialize. Used in the Models
 	 * tab and in the popup a unit's glyph on the map opens.
 	 * @block Unit editor */
+	import { untrack } from 'svelte';
 	import {
 		applyUnitPreset,
 		editDyr,
@@ -21,7 +22,7 @@
 	} from '@tellegen/engine';
 	import { getAppState, getController } from '../../context.svelte.js';
 	import { parseDrafts, recordsSignature } from '../../dynamics/live-logic.js';
-	import { unitKey as keyOf } from '../../dynamics/units.svelte.js';
+	import { unitKey as keyOf, unitKind, type UnitKind } from '../../dynamics/units.svelte.js';
 	import ControllerGraphEditor from './ControllerGraphEditor.svelte';
 
 	let { unitKey }: { unitKey: string } = $props();
@@ -32,6 +33,24 @@
 	const att = $derived(dyn.active);
 	const local = $derived(app.activeLocal);
 	const unit = $derived(catalog.find(unitKey));
+	const ROLES = ['machine', 'exciter', 'governor', 'stabilizer'] as const;
+	/** What the unit is now, shown above any change. */
+	const kind = $derived<UnitKind>(unit ? unitKind(unit) : 'static');
+	// The letters match the unit glyphs on the map.
+	const KIND_LABEL: Record<UnitKind, string> = {
+		machine: 'G · Synchronous machine',
+		inverter: 'I · Inverter-based unit',
+		static: 'S · Static unit'
+	};
+	const currentModels = $derived(
+		!unit
+			? ''
+			: kind === 'machine'
+				? unit.records.map((r) => r.model).join(' · ')
+				: kind === 'inverter'
+					? unit.inverter.join(' · ')
+					: 'power flow only'
+	);
 
 	let busy = $state(false);
 	let error = $state<string | null>(null);
@@ -50,7 +69,22 @@
 		}
 	}
 	const text = () => att?.text ?? '';
-	let pick = $state({ machine: 'GENROU', exciter: 'SEXS', governor: 'TGOV1', stabilizer: '' });
+	// The machine + controls a "Replace with" / "Add" writes. A machine unit
+	// starts from its own models (a model the library does not offer keeps the
+	// default); an inverter or static unit starts from the default set.
+	const DEFAULT_PICK = { machine: 'GENROU', exciter: 'SEXS', governor: 'TGOV1', stabilizer: '' };
+	function startPick() {
+		const p = { ...DEFAULT_PICK };
+		if (!unit || unitKind(unit) !== 'machine') return p;
+		for (const role of ROLES) {
+			const model = unit.records.find((r) => r.role === role)?.model;
+			if (!model) {
+				if (role !== 'machine') p[role] = '';
+			} else if (catalog.ofRole(role).some((m) => m.name === model)) p[role] = model;
+		}
+		return p;
+	}
+	let pick = $state({ ...DEFAULT_PICK });
 	const makeDynamic = (machine: string) =>
 		act(machine === 'REGCA1' ? 'Inverter' : 'Machine and controls', async () => {
 			if (!unit || !local?.studyInputJson) return;
@@ -99,6 +133,14 @@
 		void unitKey;
 		void signature;
 		draft = {};
+	});
+	// The replacement picks follow the same rule: another unit, or a change of
+	// this unit's models, starts them again from what the unit now has.
+	$effect(() => {
+		void unitKey;
+		void signature;
+		void kind;
+		pick = untrack(startPick);
 	});
 	const draftCount = $derived(Object.keys(draft).length);
 	const applyParams = () =>
@@ -172,7 +214,6 @@
 		}
 		return Object.keys(out).length ? out : null;
 	});
-	const ROLES = ['machine', 'exciter', 'governor', 'stabilizer'] as const;
 </script>
 
 {#if unit}
@@ -181,8 +222,26 @@
 			Unit {unit.bus} '{unit.machine_id.trim()}'
 			<span class="meta">{unit.mbase.toFixed(0)} MVA · P {unit.pg.toFixed(1)} MW</span>
 		</h4>
-		<section class="card">
-			<h5>Unit type</h5>
+		<p class="current" data-testid="dyn-unit-kind">
+			<span class={`kind-badge ${kind}`}>{KIND_LABEL[kind]}</span>
+			<span class="mono">{currentModels}</span>
+		</p>
+		<!-- A change of the unit type is its own step: closed until opened,
+		     except on a static unit, where adding models is the next step. -->
+		<details class="card change" open={kind === 'static'}>
+			<summary>
+				<h5>{kind === 'static' ? 'Add models' : 'Change unit type'}</h5>
+			</summary>
+			<p class="dim hint">
+				{#if kind === 'machine'}
+					Starts from this unit's models. A replacement writes new records and initializes the
+					case again.
+				{:else if kind === 'inverter'}
+					A machine + controls replaces the inverter records ({unit.inverter.join(', ')}).
+				{:else}
+					Pick a machine and its controls, or add an inverter.
+				{/if}
+			</p>
 			<div class="picks">
 				{#each ROLES as role (role)}
 					<label
@@ -227,7 +286,7 @@
 						{catalog.presets.find((p) => p.id === presetId)?.source}
 					</p>{/if}
 			{/if}
-		</section>
+		</details>
 
 		{#if unit.records.length}
 			<section class="card">
@@ -308,7 +367,7 @@
 		{:else if unit.inverter.length}
 			<p class="dim">Inverter records: {unit.inverter.join(', ')}.</p>
 		{:else}
-			<p class="dim">Static: the unit holds its power-flow output. Add models above to simulate it.</p>
+			<p class="dim">The unit holds its power-flow output. Add models above to simulate it.</p>
 		{/if}
 		{#if busy}<p class="dim" role="status">Initializing…</p>{/if}
 		{#if note}<p class="ok" role="status">{note}</p>{/if}
@@ -375,6 +434,45 @@
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
 		background: var(--surface-chip);
+	}
+	.current {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 4px 8px;
+		font-size: var(--fs-control);
+	}
+	.kind-badge {
+		padding: 1px 7px;
+		border: 1px solid var(--border-default);
+		border-radius: 999px;
+		font-size: var(--fs-meta);
+		font-weight: 600;
+	}
+	.kind-badge.static {
+		color: var(--text-secondary);
+	}
+	.change summary {
+		cursor: pointer;
+		list-style: none;
+	}
+	.change summary::-webkit-details-marker {
+		display: none;
+	}
+	.change summary h5 {
+		display: inline;
+	}
+	.change summary h5::before {
+		content: '▸ ';
+	}
+	.change[open] summary h5::before {
+		content: '▾ ';
+	}
+	.change[open] summary {
+		margin-bottom: 6px;
+	}
+	.hint {
+		margin-bottom: 6px;
 	}
 	.meta,
 	.dim {
