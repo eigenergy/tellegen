@@ -1,23 +1,27 @@
-# ---- rust: wasm module ----
+# ---- rust: toolchain and sources shared by the two wasm builds ----
 # Pin the build and runtime to the same Debian release (trixie) so the server
 # binary's glibc matches the runtime image; an unpinned rust:slim floats to the
 # latest Debian and broke against debian:bookworm-slim (glibc 2.41 vs 2.36).
-FROM rust:1.96.0-slim-trixie AS wasm
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
+FROM rust:1.96.0-slim-trixie AS wasm-base
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates python3 \
     && rm -rf /var/lib/apt/lists/*
-
+RUN rustup target add wasm32-unknown-unknown wasm32-wasip1
+# The whole Cargo workspace: both builds resolve against the root lockfile.
 # The tellegen crates depend on the crates.io powerio release, so cargo fetches
 # the source itself; nothing to clone here.
-RUN rustup target add wasm32-unknown-unknown
+COPY Cargo.toml Cargo.lock /build/
+COPY crates /build/crates
+
+# ---- rust: wasm module ----
+# `wasm` and `acopf` both start from `wasm-base`, so BuildKit builds them at
+# the same time. Do not base one on the other: the second then waits for the
+# first one's whole build.
+FROM wasm-base AS wasm
 # Prebuilt wasm-pack binary (statically linked), verified against a pinned digest.
 RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/wasm-pack.tar.gz \
     && echo 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  /tmp/wasm-pack.tar.gz' | sha256sum -c - \
     && tar -xzf /tmp/wasm-pack.tar.gz -C /usr/local/bin --strip-components=1 --wildcards '*/wasm-pack' \
     && rm -f /tmp/wasm-pack.tar.gz
-# The whole Cargo workspace: wasm-pack builds the tellegen-wasm member, which
-# depends on the tellegen engine and resolves against the root lockfile.
-COPY Cargo.toml Cargo.lock /build/
-COPY crates /build/crates
 # The one wasm module: the `conic` feature carries the whole engine (DC optimal
 # power flow, AC power flow, the SOCWR relaxation, the Study) with sensitivities,
 # and `synth` adds synthetic grid generation sessions. It stays off relaxed SIMD
@@ -30,10 +34,7 @@ RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm
 
 # Separate reactor: keep POUNCE out of the ordinary wasm-bindgen module and
 # native server. The website runs nonlinear AC OPF in a terminable worker.
-FROM wasm AS acopf
-RUN apt-get update && apt-get install -y --no-install-recommends python3 \
-    && rm -rf /var/lib/apt/lists/*
-RUN rustup target add wasm32-wasip1
+FROM wasm-base AS acopf
 COPY scripts/build-acopf-wasi.sh scripts/acopf-release.py /build/scripts/
 COPY licenses /build/licenses
 ARG TELLEGEN_SOURCE_REVISION=""
