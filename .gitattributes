@@ -2,3 +2,12 @@
 # cases; they are upstream data, not project source. Mark them vendored so they
 # don't skew the GitHub language breakdown.
 crates/tellegen-server/fixtures/pglib/*.m linguist-vendored
+
+# Written by packages/engine/scripts from the Rust API records, not by hand.
+# One of these files, api-validators.ts, is 2.7 MB and alone made GitHub
+# report the repository as mostly TypeScript.
+packages/engine/src/generated/** linguist-generated
+python/tellegen/mcp/_engine_schema.json linguist-generated
+
+# Every MATPOWER case file here is case data, not project source.
+*.m linguist-vendored

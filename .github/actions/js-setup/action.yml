@@ -14,6 +14,12 @@ inputs:
     description: Whether setup-node should restore the npm cache.
     required: false
     default: "true"
+  rust:
+    description: >
+      Whether to restore the Rust cache and install wasm-pack. A job that only
+      runs built JavaScript sets this to false.
+    required: false
+    default: "true"
   wasm-pack-version:
     description: wasm-pack release version, without the leading v.
     required: false
@@ -28,13 +34,19 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+    # Only main saves a cache. A pull request reads main's; one saved from a
+    # pull request is readable by that pull request alone and pushes main's
+    # out of the repository's cache quota.
+    - if: inputs.rust == 'true'
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: .
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     # The Dockerfile installs wasm-pack too, and it has no rust-toolchain.toml
     # in its build context. Change both together.
     - name: Install wasm-pack ${{ inputs.wasm-pack-version }}
+      if: inputs.rust == 'true'
       shell: bash
       env:
         VERSION: ${{ inputs.wasm-pack-version }}
