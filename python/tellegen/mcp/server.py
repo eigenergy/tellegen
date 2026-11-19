@@ -598,7 +598,8 @@ def _study_bundle(checked: str) -> tuple:
     if key is not None and key in _study_cache:
         _study_cache.move_to_end(key)
         return _study_cache[key]
-    entry = (json.loads(_tellegen.study_export(checked)), {})
+    encodings: dict = {}
+    entry = (json.loads(_tellegen.study_export(checked)), encodings)
     if key is not None:
         _study_cache[key] = entry
         while len(_study_cache) > _STUDY_CACHE_ENTRIES:
