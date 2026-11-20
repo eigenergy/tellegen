@@ -156,6 +156,38 @@ pub(super) fn hvdc_diagnostics(network: &BalancedNetwork) -> Vec<crate::api::Sol
         .collect()
 }
 
+/// PowerIO's statement of each bus coded PV that the instance specifies as PQ
+/// because no in service generator is there; `buses` names that bus.
+pub(super) fn voltage_control_diagnostics(
+    instance: &powerio::AcPfInstance,
+) -> Vec<crate::api::SolveDiagnostic> {
+    let network = instance.network();
+    // PowerIO reports the buses in table order; pair each with its id.
+    let freed = network
+        .buses()
+        .iter()
+        .zip(instance.specifications())
+        .filter(|(bus, specification)| {
+            bus.kind == BusType::Pv
+                && matches!(specification, powerio::AcBusSpecification::Pq { .. })
+                && !network
+                    .generators()
+                    .iter()
+                    .any(|generator| generator.in_service && generator.bus == bus.id)
+        })
+        .map(|(bus, _)| bus.id.0);
+    instance
+        .voltage_control_diagnostics()
+        .into_iter()
+        .zip(freed)
+        .map(|(diagnostic, bus)| crate::api::SolveDiagnostic {
+            code: diagnostic.code().to_owned(),
+            message: diagnostic.message().to_owned(),
+            buses: vec![bus],
+        })
+        .collect()
+}
+
 /// Validate a caller's network for a model PowerIO prepares straight from it.
 /// PowerIO's normalized marker is authoritative: a network that declares itself
 /// normalized is already per unit and radians, and the preparation reads it so.

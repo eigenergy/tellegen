@@ -910,6 +910,9 @@ pub struct SolveDiagnostic {
     /// HVDC lines inject as fixed transfers at their terminal buses.
     /// `BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus
     /// outside the solve, so neither end injects; `buses` are its two terminals.
+    /// `TRANSFORM.INSTANCE.ASSUMPTION`: a bus coded PV has no in service
+    /// generator to hold its voltage, so the AC power flow solves for that
+    /// voltage; `buses` is the bus.
     /// `settings_ignored`: a reopened Study could not apply some or all of the
     /// calculation settings its saved module recorded, such as an option this
     /// engine does not know; engine defaults stand in for what was dropped.
@@ -3755,6 +3758,13 @@ mod tests {
             (vm - stated).abs() > 1e-3,
             "bus 2 stayed at its stated {stated}"
         );
+        let freed: Vec<_> = response
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "TRANSFORM.INSTANCE.ASSUMPTION")
+            .collect();
+        assert_eq!(freed.len(), 1, "{:?}", response.diagnostics);
+        assert_eq!(freed[0].buses, vec![2]);
     }
 
     #[cfg(feature = "sensitivity")]
