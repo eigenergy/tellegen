@@ -4,6 +4,13 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.8.3](https://github.com/eigenergy/tellegen/compare/v0.8.2...v0.8.3) - 2026-11-20
+
+### Changed
+
+- Compare regenerated schemas instead of hashing source files (#439)
+- Move to PowerIO 0.12.4 and quick-xml 0.42 (#440)
+
 ## [0.8.2](https://github.com/eigenergy/tellegen/compare/v0.8.1...v0.8.2) - 2026-11-19
 
 ### Fixed

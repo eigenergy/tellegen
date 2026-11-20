@@ -1,6 +1,6 @@
 [package]
 name = "tellegen"
-version = "0.8.2"
+version = "0.8.3"
 edition.workspace = true
 # MIT, with the RMS engine (`src/rms`) a translation of BSD-3-Clause code
 # (PowerSimulationsDynamics.jl, PowerSystems.jl; notices in `licenses/`).
