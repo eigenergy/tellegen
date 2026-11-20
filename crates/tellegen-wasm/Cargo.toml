@@ -23,7 +23,7 @@ js-sys = "0.3"
 serde.workspace = true
 serde_json.workspace = true
 schemars = { workspace = true, optional = true }
-quick-xml = { version = "0.41", optional = true }
+quick-xml = { version = "0.42", optional = true }
 # Forwards Rust panics to a readable console.error with a JS stack, instead of the bare
 # `unreachable` trap a wasm panic otherwise surfaces. Installed once per entry point.
 console_error_panic_hook = "0.1"

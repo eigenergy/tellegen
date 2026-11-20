@@ -13,7 +13,7 @@ struct StudySchema {
 
 fn main() {
     // Through a JSON value so the keys print in sorted order.
-    let schema = serde_json::to_value(schemars::schema_for!(StudySchema)).expect("schema value");
+    let schema = schemars::schema_for!(StudySchema).to_value();
     println!(
         "{}",
         serde_json::to_string_pretty(&schema).expect("Study schema JSON")

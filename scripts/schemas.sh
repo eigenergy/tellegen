@@ -12,16 +12,17 @@ out=packages/engine/src/generated
 check=0
 [ "${1:-}" = "--check" ] && check=1
 
-# name | package | example | features
+# name | package | example | features. The rms rows carry the features of
+# their neighbours, which they do not need, so each package builds once.
 schemas="
 api|tellegen|api_schema|schema,conic,mc-pf
 settings|tellegen|settings_schema|schema,conic,mc-pf
 study|tellegen|study_schema|schema,conic,mc-pf
 synth|tellegen-synth|synth_schema|schema
-rms|tellegen|rms_schema|schema,rms-experimental
+rms|tellegen|rms_schema|schema,conic,mc-pf,rms-experimental
 http|tellegen-server|http_schema|schema
 wasm-adapter|tellegen-wasm|adapter_schema|schema,conic,synth,powerio-collections
-rms-adapter|tellegen-wasm|rms_adapter_schema|schema,rms-experimental
+rms-adapter|tellegen-wasm|rms_adapter_schema|schema,conic,synth,powerio-collections,rms-experimental
 "
 
 tmp=$(mktemp -d)

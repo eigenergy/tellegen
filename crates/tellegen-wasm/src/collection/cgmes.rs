@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use powerio::{Collection, CollectionSelection};
 use quick_xml::{events::Event, name::ResolveResult, NsReader};
 
-const MD: &[u8] = b"http://iec.ch/TC57/61970-552/ModelDescription/1#";
-const RDF: &[u8] = b"http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+const MD: &str = "http://iec.ch/TC57/61970-552/ModelDescription/1#";
+const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 const HEADER_BYTES: usize = 1 << 20;
 const INSPECTION_BYTES: usize = 8 << 20;
 
@@ -23,7 +23,7 @@ struct Header {
 fn rdf_attribute(
     reader: &NsReader<&[u8]>,
     event: &quick_xml::events::BytesStart<'_>,
-    name: &[u8],
+    name: &str,
 ) -> Option<String> {
     for attribute in event.attributes() {
         let attribute = attribute.ok()?;
@@ -32,7 +32,7 @@ fn rdf_attribute(
             && matches!(namespace, ResolveResult::Bound(ns) if ns.as_ref() == RDF)
         {
             return attribute
-                .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                 .ok()
                 .map(|s| s.into_owned());
         }
@@ -68,28 +68,24 @@ fn header(bytes: &[u8], complete_document: bool) -> Option<Header> {
                     continue;
                 }
                 match local.as_ref() {
-                    b"FullModel" if !in_model => {
+                    "FullModel" if !in_model => {
                         if !result.id.is_empty() {
                             result.single_model = false;
                             return Some(result);
                         }
-                        result.id = rdf_attribute(&reader, &event, b"about")?;
+                        result.id = rdf_attribute(&reader, &event, "about")?;
                         in_model = true;
                     }
-                    b"Model.DependentOn" if in_model => {
+                    "Model.DependentOn" if in_model => {
                         result
                             .dependencies
-                            .insert(rdf_attribute(&reader, &event, b"resource")?);
+                            .insert(rdf_attribute(&reader, &event, "resource")?);
                     }
-                    b"Model.profile" | b"Model.scenarioTime" if in_model => {
-                        let is_profile = local.as_ref() == b"Model.profile";
+                    "Model.profile" | "Model.scenarioTime" if in_model => {
+                        let is_profile = local.as_ref() == "Model.profile";
                         let text = reader.read_text(event.name()).ok()?;
                         depth = depth.checked_sub(1)?;
-                        let decoded = text.decode().ok()?;
-                        let text = quick_xml::escape::unescape(&decoded)
-                            .ok()?
-                            .trim()
-                            .to_owned();
+                        let text = quick_xml::escape::unescape(&text).ok()?.trim().to_owned();
                         if is_profile {
                             result.profiles.insert(text);
                         } else {
@@ -101,7 +97,7 @@ fn header(bytes: &[u8], complete_document: bool) -> Option<Header> {
             }
             Event::End(event) if in_model => {
                 let (namespace, local) = reader.resolver().resolve_element(event.name());
-                if local.as_ref() == b"FullModel"
+                if local.as_ref() == "FullModel"
                     && matches!(namespace, ResolveResult::Bound(ns) if ns.as_ref() == MD)
                 {
                     in_model = false;

@@ -5,7 +5,7 @@ import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
 
 // PowerIO 0.12 writes the release whose schema an IR document follows.
-const expectedIrVersion = '0.12.3';
+const expectedIrVersion = '0.12.4';
 
 test('a materialized PowerIO module downloads and loads as a fresh case', async ({ page }) => {
 	await page.route('**/api/cases', (route) => {

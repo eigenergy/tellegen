@@ -231,8 +231,6 @@ jobs:
           cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- \
             --preset feeder-10k --check --out target/mc-pf-bench
 
-  # The required `rust / rust` check. Skip here, not in the caller: a skipped
-  # job still reports the check, and a skipped caller reports nothing.
   # The committed JSON schemas match what the Rust records generate now.
   schemas:
     if: inputs.needed
@@ -250,6 +248,8 @@ jobs:
       - name: Regenerate the schemas and compare
         run: scripts/schemas.sh --check
 
+  # The required `rust / rust` check. Skip here, not in the caller: a skipped
+  # job still reports the check, and a skipped caller reports nothing.
   rust:
     needs: [lint, workspace, rms, opf, schemas]
     if: ${{ always() && inputs.needed }}

@@ -910,6 +910,9 @@ pub struct SolveDiagnostic {
     /// HVDC lines inject as fixed transfers at their terminal buses.
     /// `BUILD.HVDC.TERMINAL_INACTIVE`: an in-service HVDC line has a terminal bus
     /// outside the solve, so neither end injects; `buses` are its two terminals.
+    /// `TRANSFORM.INSTANCE.ASSUMPTION`: a bus coded PV has no in service
+    /// generator to hold its voltage, so the AC power flow solves for that
+    /// voltage; `buses` is the bus.
     /// `settings_ignored`: a reopened Study could not apply some or all of the
     /// calculation settings its saved module recorded, such as an option this
     /// engine does not know; engine defaults stand in for what was dropped.
@@ -3709,6 +3712,48 @@ mod tests {
         assert_eq!(response.vm.as_ref().unwrap().len(), 3);
         assert_eq!(response.injections.as_ref().unwrap().len(), 3);
         assert!(response.lmp.is_none());
+    }
+
+    /// A bus coded PV whose only generator is out of service has nothing to
+    /// hold its voltage. PowerIO 0.12.4 specifies it as PQ, so the voltage is
+    /// solved for; it was held at the stated magnitude before.
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn ac_pf_frees_a_pv_bus_whose_generator_is_out_of_service() {
+        let mut network = case9_network();
+        let bus = powerio::BusId(2);
+        let position = network
+            .buses()
+            .iter()
+            .position(|b| b.id == bus)
+            .expect("bus 2");
+        assert_eq!(network.buses()[position].kind, powerio::BusType::Pv);
+        for generator in network.generators_mut() {
+            if generator.bus == bus {
+                generator.in_service = false;
+            }
+        }
+        let instance = AcPfInstance::from_network(network).expect("instance");
+        assert!(matches!(
+            instance.specifications()[position],
+            powerio::AcBusSpecification::Pq { .. }
+        ));
+        let request = SolveRequest {
+            formulation: Problem::AcPf,
+            ..Default::default()
+        };
+        let response = solve_ac_pf_instance(&instance, &request).expect("typed AC PF");
+        let vm = by_bus(response.vm.as_ref().expect("magnitudes"))[&2];
+        // pypowsybl 1.16.1 solves the same case to 1.0109 pu at this bus; held
+        // at its stated magnitude it would be 1.0.
+        assert!((vm - 1.0109).abs() < 1e-3, "bus 2 solved to {vm}");
+        let freed: Vec<_> = response
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "TRANSFORM.INSTANCE.ASSUMPTION")
+            .collect();
+        assert_eq!(freed.len(), 1, "{:?}", response.diagnostics);
+        assert_eq!(freed[0].buses, vec![2]);
     }
 
     #[cfg(feature = "sensitivity")]

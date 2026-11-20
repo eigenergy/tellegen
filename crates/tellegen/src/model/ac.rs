@@ -272,6 +272,9 @@ impl AcNetwork {
             .extend(hvdc_diagnostics(instance.network()));
         model
             .diagnostics
+            .extend(super::voltage_control_diagnostics(instance));
+        model
+            .diagnostics
             .retain(|d| d.code != "island_extra_reference");
         if instance.specifications().len() != instance.network().buses().len() {
             return Err(format!(
