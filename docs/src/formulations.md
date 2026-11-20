@@ -1046,3 +1046,71 @@ DELTA support; those changes are not part of this patch. Saved report versions
 6, 7 and 8 are checked under their original rank rules before upgrade to
 version 9, and altered rank claims are rejected. Report versions are separate
 from package versions.
+
+## Optimal transmission switching
+
+The native `ots` feature runs LACOTS, DCOTS and nonlinear ACOTS on a
+PowerIO `AcOtsInstance`. Its branch table supplies the physical row identities,
+initial statuses and switching costs. The solver visits combinations of
+switchable rows in increasing order of the number of changes. PowerIO checks
+the open-line budget and islanding policy and fixes each accepted topology.
+Initially open lines can close when the instance selects them. Fixed lines
+retain their status. A switching cost enters the objective when the instance
+selects that term.
+
+For LACOTS, let $u_i=|V_i|-1$ and measure angles in radians. For either
+terminal of a closed branch, Tellegen uses the flat-point complex power and
+the polar derivatives from PowerIO's pi model,
+
+$$
+S^{\mathrm{lac}}_{ij}=S_{ij}(\mathbf 1,\mathbf 0)
++J_{ij}(\mathbf 1,\mathbf 0)
+[\theta_i,u_i,\theta_j,u_j]^\top.
+$$
+
+The affine offset matters for taps, phase shifts and terminal charging.
+At bus $i$ the shunt draws $(g_i-jb_i)(1+2u_i)$. Summing terminal powers
+for a network of series elements with unit taps gives the bus blocks
+$[G,-B;-B,-G]$ acting on $[u;\theta]$.
+Clarabel enforces active and reactive balance. Both ends of each rated
+branch satisfy $\lVert(P,Q)\rVert_2\le S_{\max}$.
+A stated terminal current limit imposes
+$\lVert(P,Q)\rVert_2\le I_{\max}(1+u_i)$ at that end.
+The voltage, generator and angle bounds come from the fixed instance.
+
+
+DCOTS uses MATPOWER's tap-adjusted reactance and phase shift,
+$P_{ij}=(\theta_i-\theta_j-\phi_{ij})/(x_{ij}\tau_{ij})$, at unit
+voltage. Both approximations retain convex quadratic or convex piecewise
+linear generation costs. ACOTS runs Tellegen's polar AC OPF on each legal
+topology and returns the lowest-cost validated local solution it found.
+The search is useful for small switching budgets. With $k$ switchable rows
+and budget $b$ it visits up to $\sum_{j=0}^b {k\choose j}$ status vectors.
+The output records whether the search exhausted them. A local nonlinear
+failure leaves that topology unresolved.
+
+`restore_ac` replays the chosen dispatch against $S=V\overline{YV}$,
+holds the branch statuses and all loads fixed, and starts nonlinear AC OPF
+from the predicted dispatch. For a DC plan the replay uses unit voltage and
+scheduled reactive generation. A failed warm solve gets one retry from the
+case initialization. A successful restoration carries the PowerIO
+`AcOtsSolution`, active and reactive mismatch in physical units, and
+$\sum_g |P_g^{\mathrm{AC}}-P_g^{\mathrm{plan}}|$ in MW. The AC solve
+checks generation and bus bounds, angle differences and terminal ratings.
+Voltage-dependent loads, storage dispatch and terminal ratings on a folded
+self-loop are outside the supported AC model.
+
+Run the comparison from the repository root.
+
+```sh
+cargo run --locked -p tellegen-cli --features ots -- ots-compare \
+  crates/tellegen/tests/data/dc_variants/case3_variants.m --max-switched 1
+```
+
+The command reads a network case or a stored `.pio.json` instance and prints
+JSON. For a network the default budget allows one change. A typed OTS input
+keeps its own budget unless `--max-switched` overrides it. The default
+`--topology-limit 1000` counts visited status vectors, including policy
+rejections. Each model reports its own search time. The restoration record
+gives its elapsed time and the recovered dispatch. Rust callers can use
+`tellegen::ots::{solve_ots, restore_ac}` directly.

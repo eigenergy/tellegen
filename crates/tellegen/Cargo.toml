@@ -70,6 +70,8 @@ conic = ["sensitivity"]
 # Exact nonlinear AC OPF with opt-in EPL-2.0 POUNCE. Ordinary wasm, CLI,
 # server and Python adapters do not enable it; the separate AC OPF WASI adapter does.
 acopf = ["dep:pounce-nl", "dep:pounce-rs", "dep:num-complex"]
+# Native transmission switching and fixed-topology AC recovery.
+ots = ["acopf"]
 # Experimental native multiconductor IVR OPF; no adapter enables this.
 mc-opf = ["acopf", "dep:faer"]
 # JSON Schema derives for the CLI's `describe` output. Kept out of the

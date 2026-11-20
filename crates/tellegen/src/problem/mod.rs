@@ -125,6 +125,14 @@ impl ProgramBuilder {
         }
     }
 
+    #[cfg(feature = "ots")]
+    pub(crate) fn append_rows(&mut self, count: usize) -> usize {
+        let first = self.ncon;
+        self.ncon += count;
+        self.b.resize(self.ncon, 0.0);
+        first
+    }
+
     /// Diagonal objective-Hessian entry `P[c, c] += v` (skips zeros). Both
     /// formulations have a diagonal `P`.
     pub(crate) fn quad(&mut self, c: usize, v: f64) {

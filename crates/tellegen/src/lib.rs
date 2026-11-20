@@ -70,6 +70,8 @@ mod model;
 mod nlp;
 #[cfg(feature = "sensitivity")]
 pub mod objective;
+#[cfg(feature = "ots")]
+pub mod ots;
 #[cfg(feature = "sensitivity")]
 pub mod plan;
 mod problem;

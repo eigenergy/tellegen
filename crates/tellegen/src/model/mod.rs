@@ -39,6 +39,8 @@ pub(crate) use ac::AcNetwork;
 pub(crate) use acopf::AcOpfDualPoint;
 #[cfg(feature = "acopf")]
 pub(crate) use acopf::{solve_ac_opf_cancellable, solve_joint_ac_dc, AcOpfSolved};
+#[cfg(feature = "ots")]
+pub(crate) use acopf::{solve_ots_dispatch, validate_supported};
 pub(crate) use dc::{csr_row, DcNetwork, LinearRow};
 
 #[cfg(all(test, feature = "sensitivity"))]
