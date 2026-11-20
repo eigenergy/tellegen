@@ -1636,9 +1636,9 @@ dependencies = [
 
 [[package]]
 name = "powerio"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1b1b758f90f426977a258070ef4c53253197695bcf50645c0e1db8855fc5e54"
+checksum = "12a0dbb233fe24e46d3010c85c03f61c95ee5cf828df4c60a43207cf67497b7b"
 dependencies = [
  "num-complex",
  "powerio-archive",
@@ -1654,9 +1654,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-archive"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ede0c9cc441d632d526c0aa8011efea9af4b370f214cf9bcd1e8924376cbfeb"
+checksum = "46c4e464e85259fcf5503054ec0cce1fd44712dbe811f07e9614483701c91629"
 dependencies = [
  "memchr",
  "powerio-core",
@@ -1665,9 +1665,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-core"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e0cfb09a5abf80427660b6773ce70f0718954f80a00b2b5ff13330790a12d82"
+checksum = "a0096118a2c9c780a4aefa77dd0a0814fe08c424fc9f4028df1b8aab02ff1015"
 dependencies = [
  "errno",
  "libc",
@@ -1680,14 +1680,14 @@ dependencies = [
 
 [[package]]
 name = "powerio-dist"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c227738377aee66dc81fd32680fecb92a51de225df589f712a51406071d0e04"
+checksum = "924cc8f84dbcc6f6ba679fff5ea6e35822b204c8e64afad0e477e7ef92457ad1"
 dependencies = [
  "memchr",
  "num-complex",
  "powerio-core",
- "quick-xml 0.41.0",
+ "quick-xml",
  "regex",
  "schemars",
  "serde",
@@ -1698,9 +1698,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-matrix"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf5c267a8f301d767b05560f49c9ddb6966080ab0be56bcbbca4bdd26c21e9ed"
+checksum = "722c0bcad0e2980056628a76cdd52fde6a33629770a2c196b23472d9a6ada7c7"
 dependencies = [
  "faer",
  "num-complex",
@@ -1721,9 +1721,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ee994ebae77629d9a70159d46197f698082608cab051ab7414e8cf8c5dfabff"
+checksum = "e01e7b60e31a94303c2eab15b773e7ebffe7c1e1aa5859c25eb23eaa43ca0988"
 dependencies = [
  "powerio-core",
  "powerio-dist",
@@ -1736,9 +1736,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-synth"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aef42eddf5d7046db163182f3b7bcca7da8709037e2b25c4c9d227ba2f92d9da"
+checksum = "572e5e8d4d6987e858e9cee3e6c06112e3f5dcb6a4eeba46c4f2a6c6a17b6564"
 dependencies = [
  "powerio-tx",
  "rand",
@@ -1748,9 +1748,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-tnd"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e231d205003137931e54d7679493b184f5a6d4e6e2b26edca60daec5da58b8af"
+checksum = "9243305e4d6f0d24d3245340f898108a821f3005a44271be97b937eaf0d78f66"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1763,16 +1763,16 @@ dependencies = [
 
 [[package]]
 name = "powerio-tx"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5b71660ff3388e8ba76ca9e851692966bff931ed91482d9013690636c53e23a"
+checksum = "8c681869e800d6e81d97f65b31ef2f9d8686eb7247364d762f02dfa1c4b7e495"
 dependencies = [
  "lexical-core",
  "memchr",
  "num-complex",
  "powerio-archive",
  "powerio-core",
- "quick-xml 0.41.0",
+ "quick-xml",
  "schemars",
  "serde",
  "serde_json",
@@ -1905,20 +1905,11 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
-dependencies = [
- "encoding_rs",
- "memchr",
-]
-
-[[package]]
-name = "quick-xml"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
+ "encoding_rs",
  "memchr",
 ]
 
@@ -2428,7 +2419,7 @@ dependencies = [
  "powerio",
  "powerio-dist",
  "powerio-tx",
- "quick-xml 0.42.0",
+ "quick-xml",
  "schemars",
  "serde",
  "serde_json",

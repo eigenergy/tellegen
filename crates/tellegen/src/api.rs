@@ -3711,6 +3711,52 @@ mod tests {
         assert!(response.lmp.is_none());
     }
 
+    /// A bus coded PV whose only generator is out of service has nothing to
+    /// hold its voltage. PowerIO 0.12.4 specifies it as PQ, so the voltage is
+    /// solved for; it was held at the stated magnitude before.
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn ac_pf_frees_a_pv_bus_whose_generator_is_out_of_service() {
+        let mut network = crate::model::parse_matpower(crate::model::CASE9).expect("parse");
+        let bus = powerio::BusId(2);
+        let position = network
+            .buses()
+            .iter()
+            .position(|b| b.id == bus)
+            .expect("bus 2");
+        assert_eq!(network.buses()[position].kind, powerio::BusType::Pv);
+        let stated = network.buses()[position].vm;
+        for generator in network.generators_mut() {
+            if generator.bus == bus {
+                generator.in_service = false;
+            }
+        }
+        let instance = AcPfInstance::from_network(network).expect("instance");
+        assert!(matches!(
+            instance.specifications()[position],
+            powerio::AcBusSpecification::Pq { .. }
+        ));
+        let request = SolveRequest {
+            formulation: Problem::AcPf,
+            ..Default::default()
+        };
+        let response = solve_ac_pf_instance(&instance, &request).expect("typed AC PF");
+        let vm = response
+            .vm
+            .as_ref()
+            .expect("magnitudes")
+            .iter()
+            .find(|entry| entry.bus == 2)
+            .expect("bus 2 magnitude")
+            .value;
+        // pypowsybl 1.16.1 solves the same case to 1.0109 pu at this bus.
+        assert!((vm - 1.0109).abs() < 1e-3, "bus 2 solved to {vm}");
+        assert!(
+            (vm - stated).abs() > 1e-3,
+            "bus 2 stayed at its stated {stated}"
+        );
+    }
+
     #[cfg(feature = "sensitivity")]
     #[test]
     fn dc_pf_reports_angles_and_flows() {
