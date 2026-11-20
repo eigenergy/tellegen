@@ -5,7 +5,11 @@
 //! layer, while all electrical semantics and stable source/index maps live here.
 
 mod hybrid;
+#[cfg(feature = "ots")]
+mod switching;
 pub(crate) use hybrid::solve_joint_ac_dc;
+#[cfg(feature = "ots")]
+pub(crate) use switching::solve_ots_dispatch;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -324,7 +328,7 @@ fn element_name(kind: &str, row: usize, uid: Option<&str>) -> String {
     )
 }
 
-fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
+pub(crate) fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
     let network = instance.network();
     network.validate().map_err(|error| error.to_string())?;
     validate_canonical_identity(network)?;
