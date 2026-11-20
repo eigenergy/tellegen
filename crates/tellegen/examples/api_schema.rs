@@ -28,7 +28,7 @@ struct ApiSchema {
 }
 fn main() {
     // Through a JSON value so the keys print in sorted order.
-    let schema = serde_json::to_value(schemars::schema_for!(ApiSchema)).expect("schema value");
+    let schema = schemars::schema_for!(ApiSchema).to_value();
     println!(
         "{}",
         serde_json::to_string_pretty(&schema).expect("schema JSON")

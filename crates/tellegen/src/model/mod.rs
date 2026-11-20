@@ -156,14 +156,14 @@ pub(super) fn hvdc_diagnostics(network: &BalancedNetwork) -> Vec<crate::api::Sol
         .collect()
 }
 
-/// PowerIO's statement of each bus coded PV that the instance specifies as PQ
-/// because no in service generator is there; `buses` names that bus.
+/// One diagnostic per bus coded PV that the instance specifies as PQ because
+/// no in service generator is there to hold its voltage. The code is the one
+/// PowerIO's `AcPfInstance::voltage_control_diagnostics` uses.
 pub(super) fn voltage_control_diagnostics(
     instance: &powerio::AcPfInstance,
 ) -> Vec<crate::api::SolveDiagnostic> {
     let network = instance.network();
-    // PowerIO reports the buses in table order; pair each with its id.
-    let freed = network
+    network
         .buses()
         .iter()
         .zip(instance.specifications())
@@ -175,15 +175,13 @@ pub(super) fn voltage_control_diagnostics(
                     .iter()
                     .any(|generator| generator.in_service && generator.bus == bus.id)
         })
-        .map(|(bus, _)| bus.id.0);
-    instance
-        .voltage_control_diagnostics()
-        .into_iter()
-        .zip(freed)
-        .map(|(diagnostic, bus)| crate::api::SolveDiagnostic {
-            code: diagnostic.code().to_owned(),
-            message: diagnostic.message().to_owned(),
-            buses: vec![bus],
+        .map(|(bus, _)| crate::api::SolveDiagnostic {
+            code: "TRANSFORM.INSTANCE.ASSUMPTION".to_owned(),
+            message: format!(
+                "bus {} is coded PV but has no in service generator; its voltage is solved for",
+                bus.id
+            ),
+            buses: vec![bus.id.0],
         })
         .collect()
 }

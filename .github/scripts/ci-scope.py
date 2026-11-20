@@ -155,11 +155,12 @@ RELEASE_SCRIPTS = skip(
 # so markdown under crates/ counts. It runs scripts/acopf-release.py,
 # scripts/epl-guard.sh and .github/scripts/powerio-pin.py, which no rule skips.
 # No Rust code or test reads docs/ (the benchmarks crate writes
-# docs/src/benchmark-results.md only when asked to), scripts/, apps/,
-# packages/ or examples/.
+# docs/src/benchmark-results.md only when asked to), apps/ or examples/. Of
+# packages/ it reads only the committed JSON schemas, which the `schemas` job
+# compares with what the Rust records generate.
 RUST = Rules(
     True,
-    run("crates/**"),
+    run("crates/**", "packages/engine/src/generated/*.schema.json"),
     NOT_BUILT,
     RELEASE_SCRIPTS,
     skip(

@@ -3720,7 +3720,7 @@ mod tests {
     #[cfg(feature = "sensitivity")]
     #[test]
     fn ac_pf_frees_a_pv_bus_whose_generator_is_out_of_service() {
-        let mut network = crate::model::parse_matpower(crate::model::CASE9).expect("parse");
+        let mut network = case9_network();
         let bus = powerio::BusId(2);
         let position = network
             .buses()
@@ -3728,7 +3728,6 @@ mod tests {
             .position(|b| b.id == bus)
             .expect("bus 2");
         assert_eq!(network.buses()[position].kind, powerio::BusType::Pv);
-        let stated = network.buses()[position].vm;
         for generator in network.generators_mut() {
             if generator.bus == bus {
                 generator.in_service = false;
@@ -3744,20 +3743,10 @@ mod tests {
             ..Default::default()
         };
         let response = solve_ac_pf_instance(&instance, &request).expect("typed AC PF");
-        let vm = response
-            .vm
-            .as_ref()
-            .expect("magnitudes")
-            .iter()
-            .find(|entry| entry.bus == 2)
-            .expect("bus 2 magnitude")
-            .value;
-        // pypowsybl 1.16.1 solves the same case to 1.0109 pu at this bus.
+        let vm = by_bus(response.vm.as_ref().expect("magnitudes"))[&2];
+        // pypowsybl 1.16.1 solves the same case to 1.0109 pu at this bus; held
+        // at its stated magnitude it would be 1.0.
         assert!((vm - 1.0109).abs() < 1e-3, "bus 2 solved to {vm}");
-        assert!(
-            (vm - stated).abs() > 1e-3,
-            "bus 2 stayed at its stated {stated}"
-        );
         let freed: Vec<_> = response
             .diagnostics
             .iter()

@@ -346,4 +346,4 @@ its engine error and diagnostics.
 
 After changing those Rust types, regenerate the schemas and TypeScript/Python
 files using the commands in the [engine package guide](https://github.com/eigenergy/tellegen/tree/main/packages/engine#generated-types).
-The build rejects stale schemas, including changes in shared result records.
+CI runs `scripts/schemas.sh --check`, which rejects a committed schema that differs from the Rust records, including changes in shared result records.

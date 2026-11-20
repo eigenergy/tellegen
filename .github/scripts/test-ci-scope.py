@@ -91,6 +91,9 @@ CASES = {
     "shared generated schema": (
         ["python/tellegen/mcp/_engine_schema.json"], gates("js", "python", "macos", "image"),
     ),
+    "committed engine schema": (
+        ["packages/engine/src/generated/api.schema.json"], gates("rust", "js", "image"),
+    ),
     "python lint config": (["ruff.toml"], gates("python")),
     "binding crate": (["crates/tellegen-py/src/lib.rs"], gates("rust", "python", "macos")),
     "engine crate": (["crates/tellegen/src/lib.rs"], gates(*CI)),
