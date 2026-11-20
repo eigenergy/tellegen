@@ -1,5 +1,13 @@
 # @tellegen/svelte
 
+## 0.10.3
+
+### Patch Changes
+
+- [#440](https://github.com/eigenergy/tellegen/pull/440) [`f2a739d`](https://github.com/eigenergy/tellegen/commit/f2a739dd2758b3f57b188b1e6ff42a82fe781ec3) Thanks [@samtalki](https://github.com/samtalki)! - The engine builds on PowerIO 0.12.4. AC power flow on a case with HVDC lines or on a PowerIO module solves for the voltage at a bus coded PV whose generators are all out of service, and reports the bus in a `TRANSFORM.INSTANCE.ASSUMPTION` diagnostic; it held that bus at its stated voltage before. `@tellegen/svelte` is rebuilt on the new engine.
+- Updated dependencies [[`f2a739d`](https://github.com/eigenergy/tellegen/commit/f2a739dd2758b3f57b188b1e6ff42a82fe781ec3)]:
+  - @tellegen/engine@0.10.3
+
 ## 0.10.2
 
 ### Patch Changes
