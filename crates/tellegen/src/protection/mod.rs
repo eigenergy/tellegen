@@ -86,7 +86,9 @@ pub(crate) type C64 = Complex<f64>;
 
 /// `e^{j 120°}`.
 pub(crate) fn op_a() -> C64 {
-    C64::from_polar(1.0, 2.0 * PI / 3.0)
+    // Computed once: every phase conversion of every relay asks for it.
+    static A: std::sync::OnceLock<C64> = std::sync::OnceLock::new();
+    *A.get_or_init(|| C64::from_polar(1.0, 2.0 * PI / 3.0))
 }
 
 /// Balanced phase phasors `[a, b, c]` of a positive-sequence phasor.
@@ -997,9 +999,6 @@ enum ScheduledKind {
 /// The live state of the relays during one run.
 pub struct ProtectionRuntime {
     relays: Vec<functions::RelayState>,
-    /// Threads that evaluate the relays (1: inline; native builds with many
-    /// relays use more, the browser build one).
-    threads: usize,
     /// Per distance relay, its apparent impedance at each output sample
     /// (`z_r:` and `z_x:` channels), named only when taken.
     traces: Vec<(usize, Vec<f64>, Vec<f64>)>,
@@ -1017,6 +1016,17 @@ pub struct ProtectionRuntime {
     /// The earliest relay timer expiring, kept from the last evaluation
     /// (`None`: to be computed); breaker actions that change relays clear it.
     relay_deadline: std::cell::Cell<Option<Option<f64>>>,
+    /// The least time from an evaluation to anything it can make due that
+    /// the evaluation before did not announce, an inverse-time pickup aside:
+    /// a timer's measuring time, or the breaker (or breaker-failure check)
+    /// of an element that decides at once.
+    lead: f64,
+    /// The shortest operate time of any inverse-time element (infinite
+    /// without one).
+    inverse_min_time: f64,
+    /// After the last evaluation, an inverse-time element picked up or
+    /// still integrating.
+    inverse_running: bool,
 }
 
 impl ProtectionRuntime {
@@ -1115,9 +1125,14 @@ impl ProtectionRuntime {
             .filter(|(_, r)| r.has_distance())
             .map(|(k, _)| (k, Vec::new(), Vec::new()))
             .collect();
-        let threads = relay_threads(relays.len());
-        Ok(Self {
-            threads,
+        let inverse_min_time = relays
+            .iter()
+            .filter_map(functions::RelayState::inverse_min_time)
+            .fold(f64::INFINITY, f64::min);
+        let mut rt = Self {
+            lead: 0.0,
+            inverse_min_time,
+            inverse_running: false,
             traces,
             relays,
             stuck,
@@ -1140,7 +1155,22 @@ impl ProtectionRuntime {
             last_t: None,
             deadline: std::cell::Cell::new(None),
             relay_deadline: std::cell::Cell::new(None),
-        })
+        };
+        // A trip on a timer comes at a deadline the engine knows from the
+        // evaluation before (and waits on); only the elements that decide
+        // at once trip unannounced, a breaker time or a breaker-failure
+        // delay after the evaluation.
+        let unannounced = rt
+            .relays
+            .iter()
+            .filter(|r| r.decides_at_once())
+            .flat_map(|r| {
+                let bf = r.spec.breaker_failure.as_ref().map(|b| b.delay);
+                std::iter::once(r.spec.breaker_time).chain(bf)
+            })
+            .fold(f64::INFINITY, f64::min);
+        rt.lead = rt.measuring_time.min(unannounced.max(0.0));
+        Ok(rt)
     }
 
     #[must_use]
@@ -1174,30 +1204,14 @@ impl ProtectionRuntime {
         d
     }
 
-    /// The earliest timer expiring over all relays, on the relay threads.
+    /// The earliest timer expiring over all relays (after a breaker
+    /// operation; an evaluation keeps it as it goes).
     fn relays_deadline(&self) -> Option<f64> {
         let mt = self.measuring_time;
-        let min = |part: &[functions::RelayState]| {
-            part.iter()
-                .filter_map(|r| r.deadline(mt))
-                .min_by(f64::total_cmp)
-        };
-        if self.threads > 1 {
-            let chunk = self.relays.len().div_ceil(self.threads);
-            std::thread::scope(|s| {
-                let handles: Vec<_> = self
-                    .relays
-                    .chunks(chunk)
-                    .map(|part| s.spawn(move || min(part)))
-                    .collect();
-                handles
-                    .into_iter()
-                    .filter_map(|h| h.join().expect("a relay thread panicked"))
-                    .min_by(f64::total_cmp)
-            })
-        } else {
-            min(&self.relays)
-        }
+        self.relays
+            .iter()
+            .filter_map(|r| r.deadline(mt))
+            .min_by(f64::total_cmp)
     }
 
     /// The next breaker operation due (an open, a reclose or a
@@ -1222,6 +1236,30 @@ impl ProtectionRuntime {
             })
             .fold(f64::INFINITY, f64::min)
             .max(0.0)
+    }
+
+    /// Whether the evaluation at `t` may run beside the integration step to
+    /// `t_next` (steps at most `h` long) and still act exactly as if it had
+    /// run first. It may when no breaker operation is due at `t` (the
+    /// engine then leaves the relays alone until `t_next`), no known
+    /// deadline falls before `t_next` (one the evaluation could still move),
+    /// and nothing the evaluation starts can fall due before `t_next`: a
+    /// timer runs at least the measuring time, a breaker opens at least its
+    /// breaker time after the trip, an inverse-time curve at least its
+    /// shortest operate time after the pickup (less the step it integrated
+    /// over) as long as no inverse-time element is already running.
+    #[must_use]
+    pub fn can_run_beside(&self, t: f64, t_next: f64, h: f64) -> bool {
+        let tol = 1e-9;
+        let span = t_next - t;
+        if self.inverse_running
+            || self.lead <= span + tol
+            || self.inverse_min_time - h <= span + tol
+            || self.next_due().is_some_and(|d| d <= t + tol)
+        {
+            return false;
+        }
+        self.next_deadline().is_none_or(|d| d >= t_next)
     }
 
     /// Actions due at or before `t` (breakers opening, reclosing).
@@ -1377,56 +1415,72 @@ impl ProtectionRuntime {
         self.last_t = Some(t);
         // @block Measure
         // Pass 1: measure and run each relay's elements. The relays are
-        // independent here, so many of them run on several threads; their
-        // operations join in relay order, as inline.
-        let mut ops: Vec<Operation> = Vec::new();
+        // independent here, so a large scheme runs in chunks on the thread
+        // pool; the operations join in relay order, as inline. Each chunk
+        // also names its busy relays (see `RelayState::busy`), in relay
+        // order.
         let f0 = self.f0;
-        if self.threads > 1 {
-            let chunk = self.relays.len().div_ceil(self.threads);
-            let parts: Vec<Vec<Operation>> = std::thread::scope(|s| {
-                let handles: Vec<_> = self
-                    .relays
-                    .chunks_mut(chunk)
-                    .map(|part| {
-                        s.spawn(move || {
-                            let mut o = Vec::new();
-                            for r in part {
-                                r.measure(m, dt, f0, &mut o);
-                            }
-                            o
-                        })
-                    })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|h| h.join().expect("a relay thread panicked"))
-                    .collect()
-            });
-            for p in parts {
-                ops.extend(p);
+        let measure = |c: usize, part: &mut [functions::RelayState]| {
+            let mut o = Vec::new();
+            let mut b = Vec::new();
+            let mut inverse = false;
+            for (k, r) in part.iter_mut().enumerate() {
+                r.measure(m, dt, f0, &mut o);
+                if r.busy() {
+                    b.push(c * RELAY_CHUNK + k);
+                }
+                inverse |= r.inverse_running();
             }
-        } else {
-            for r in &mut self.relays {
-                r.measure(m, dt, f0, &mut ops);
-            }
+            (o, b, inverse)
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = {
+            use rayon::prelude::*;
+            self.relays
+                .par_chunks_mut(RELAY_CHUNK)
+                .enumerate()
+                .map(|(c, part)| measure(c, part))
+                .collect()
+        };
+        #[cfg(target_arch = "wasm32")]
+        let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = self
+            .relays
+            .chunks_mut(RELAY_CHUNK)
+            .enumerate()
+            .map(|(c, part)| measure(c, part))
+            .collect();
+        let mut ops: Vec<Operation> = Vec::new();
+        let mut busy: Vec<usize> = Vec::new();
+        self.inverse_running = false;
+        for (o, b, inverse) in parts {
+            ops.extend(o);
+            busy.extend(b);
+            self.inverse_running |= inverse;
         }
         // @block Teleprotection permission
-        // Teleprotection permission from the partners' zones.
-        let permission: Vec<(bool, bool)> = self
-            .relays
-            .iter()
-            .map(|r| (r.overreach_fwd, r.underreach_fwd))
-            .collect();
-        for r in &mut self.relays {
-            r.remote = r.partner.map(|p| permission[p]);
+        // Teleprotection permission from the partners' zones, for the relays
+        // that decide below.
+        for &i in &busy {
+            let remote = self.relays[i]
+                .partner
+                .map(|p| (self.relays[p].overreach_fwd, self.relays[p].underreach_fwd));
+            self.relays[i].remote = remote;
         }
         // @block Decide
         // Pass 2: decide. Each relay names the function whose timer ran out
-        // first, if any; a relay trips once and then stays latched.
+        // first, if any; a relay trips once and then stays latched. Only
+        // the busy relays are visited (an idle one gives nothing and keeps
+        // its state), in relay order; the earliest timer of the relays as
+        // they stand is kept on the way.
         let mut trips: Vec<(usize, String, bool, bool)> = Vec::new();
-        for (i, r) in self.relays.iter_mut().enumerate() {
+        let mut earliest: Option<f64> = None;
+        for i in busy {
+            let r = &mut self.relays[i];
             if let Some((label, ar, zone_trip)) = r.decide(t, self.measuring_time, &mut ops) {
                 trips.push((i, label, ar, zone_trip));
+            }
+            if let Some(d) = r.deadline(self.measuring_time) {
+                earliest = Some(earliest.map_or(d, |e: f64| e.min(d)));
             }
         }
         self.report.operations.extend(ops);
@@ -1491,9 +1545,7 @@ impl ProtectionRuntime {
                 });
             }
         }
-        // The relays changed: their earliest timer, once, on the relay threads.
-        let d = self.relays_deadline();
-        self.relay_deadline.set(Some(d));
+        self.relay_deadline.set(Some(earliest));
     }
 
     /// Called by the engine once the breakers of a relay's line opened, to
@@ -1916,17 +1968,7 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
 }
 // @end
 
-/// Threads to evaluate `n` relays on: one per thousand relays, at most the
-/// machine's parallelism; one (inline) in the browser build.
-fn relay_threads(n: usize) -> usize {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = n;
-        1
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
-        (n / 1000).clamp(1, cores.max(1))
-    }
-}
+/// Relays per task of an evaluation on the thread pool: enough work per task
+/// to amortize its scheduling, small enough to balance the threads.
+const RELAY_CHUNK: usize = 64;
+

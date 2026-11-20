@@ -51,6 +51,11 @@ schemars = { workspace = true, optional = true }
 pounce-nl = { workspace = true, optional = true }
 pounce-rs = { workspace = true, optional = true }
 
+# The relays of a protected RMS run measure on a persistent thread pool, next to
+# the integration (native builds; the browser engine runs them inline).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { version = "1.12", optional = true }
+
 [features]
 default = ["sensitivity", "mc-pf"]
 # No-op. This once selected the PowerIO 0.12 code paths while the shipping
@@ -87,7 +92,7 @@ rms = ["sensitivity"]
 rms-experimental = ["rms"]
 # Protection relays (IEC 60255 measuring-relay functions) acting on RMS
 # runs: relay schemes, their settings from the network, and test cases.
-protection = ["rms"]
+protection = ["rms", "dep:rayon"]
 
 [lints]
 workspace = true

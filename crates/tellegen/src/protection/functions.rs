@@ -270,6 +270,9 @@ pub(crate) struct RelayState {
     pub site: Site,
     elements: Vec<Element>,
     freq: FrequencyEstimate,
+    /// A function reads the frequency (under-/overfrequency, rate of change,
+    /// V/Hz): only then is it estimated.
+    uses_frequency: bool,
     /// Memory voltage and when it was taken.
     vmem: Option<(C64, f64)>,
     pub partner: Option<usize>,
@@ -372,6 +375,15 @@ impl RelayState {
             .functions
             .iter()
             .any(|f| matches!(f, ProtectionFunction::Rocof(_)));
+        let uses_frequency = spec.functions.iter().any(|f| {
+            matches!(
+                f,
+                ProtectionFunction::Underfrequency(_)
+                    | ProtectionFunction::Overfrequency(_)
+                    | ProtectionFunction::Rocof(_)
+                    | ProtectionFunction::Overexcitation(_)
+            )
+        });
         let labels = spec
             .functions
             .iter()
@@ -385,6 +397,7 @@ impl RelayState {
                 keep_history,
                 ..Default::default()
             },
+            uses_frequency,
             vmem: None,
             partner: None,
             remote: None,
@@ -469,9 +482,74 @@ impl RelayState {
         if !self.has_distance() {
             return None;
         }
-        let i1 = sequences(self.current(m)?)[1];
-        let v1 = sequences(m.bus_voltage(self.site.bus))[1];
+        let (i, v) = (self.current(m)?, m.bus_voltage(self.site.bus));
+        let (i1, v1) = if m.unbalanced() {
+            (sequences(i)[1], sequences(v)[1])
+        } else {
+            (i[0], v[0])
+        };
         (i1.norm() > 0.05 * self.site.i_nom).then(|| v1 / i1 * self.site.z_base)
+    }
+
+    /// Whether an element trips the moment it decides (out-of-step,
+    /// negative-sequence and thermal: no timer whose deadline the engine
+    /// knows beforehand).
+    pub(crate) fn decides_at_once(&self) -> bool {
+        self.elements.iter().any(|el| {
+            matches!(
+                el,
+                Element::OutOfStep { .. } | Element::Integral { .. } | Element::Thermal { .. }
+            )
+        })
+    }
+
+    /// An inverse-time element picked up or still integrating (its integral
+    /// decays after a drop-off): its operate estimate can fall due at any
+    /// moment of the next evaluations.
+    pub(crate) fn inverse_running(&self) -> bool {
+        self.elements.iter().any(|el| {
+            matches!(el, Element::Inverse { integral, eta, .. } if *integral > 0.0 || eta.is_some())
+        })
+    }
+
+    /// The shortest operate time of the relay's inverse-time elements (the
+    /// curves stop falling at 20 times the setting).
+    pub(crate) fn inverse_min_time(&self) -> Option<f64> {
+        self.spec
+            .functions
+            .iter()
+            .zip(&self.elements)
+            .filter_map(|(f, el)| match (f, el) {
+                (
+                    ProtectionFunction::Overcurrent(o) | ProtectionFunction::EarthFault(o),
+                    Element::Inverse { .. },
+                ) => curve_time(o.curve, o.tms, 20.0),
+                _ => None,
+            })
+            .min_by(f64::total_cmp)
+    }
+
+    /// Whether [`Self::decide`] or [`Self::deadline`] can act on this relay:
+    /// not latched, and a function ready, a timer running, an inverse-time
+    /// operate estimate, or an overreaching zone that teleprotection
+    /// permission may complete. An idle relay gives `None` to both and
+    /// keeps its state there, so the runtime skips it.
+    pub(crate) fn busy(&self) -> bool {
+        if self.latched {
+            return false;
+        }
+        if self.overreach_fwd || self.picks.iter().any(|p| p.ready.is_some()) {
+            return true;
+        }
+        self.elements.iter().any(|el| match el {
+            Element::Timer { timer, .. } | Element::Frt { timer, .. } => timer.since.is_some(),
+            Element::Inverse { timer, eta, .. } => timer.since.is_some() || eta.is_some(),
+            Element::Distance { zones, scheme, .. } => {
+                scheme.since.is_some() || zones.iter().any(|z| z.since.is_some())
+            }
+            Element::LossOfField { z1, z2 } => z1.since.is_some() || z2.since.is_some(),
+            Element::OutOfStep { .. } | Element::Integral { .. } | Element::Thermal { .. } => false,
+        })
     }
 
     /// Earliest instant a running timer expires.
@@ -517,19 +595,27 @@ impl RelayState {
     // @block Measure
     pub(crate) fn measure(&mut self, m: &dyn Measure, dt: f64, f0: f64, ops: &mut Vec<Operation>) {
         let t = m.time();
-        let id = self.spec.id.clone();
+        let id = self.spec.id.as_str();
         let v = m.bus_voltage(self.site.bus);
-        let seq_v = sequences(v);
+        // A balanced measurement is a positive-sequence phasor in phase a
+        // (the other phases rotated): its components are read off directly,
+        // and one phase stands for all three.
+        let bal = !m.unbalanced();
+        let np = if bal { 1 } else { 3 };
+        let pos = |p: [C64; 3]| if bal { [C64::new(0.0, 0.0), p[0], C64::new(0.0, 0.0)] } else { sequences(p) };
+        let seq_v = pos(v);
         let v1 = seq_v[1];
+        // Its magnitude, read by several elements.
+        let v1n = v1.norm();
         let i = self.current(m);
-        let seq_i = i.map(sequences);
+        let seq_i = i.map(pos);
         let i_nom = self.site.i_nom.max(1e-9);
         // @block Memory voltage
         // Positive-sequence memory voltage (polarization): the pre-fault
         // voltage is held for 100 ms after a collapse, then the relay
         // polarizes with the present voltage (blocked without one).
         let vmem = match self.vmem {
-            Some((vm, since)) if v1.norm() < 0.9 * vm.norm() => {
+            Some((vm, since)) if v1n < 0.9 * vm.norm() => {
                 if t - since <= 0.1 {
                     self.vmem = Some((vm, since));
                     vm
@@ -544,8 +630,11 @@ impl RelayState {
         };
         // @block Frequency estimate
         // Frequency: the angle rate of V1 in the reference frame, filtered
-        // over 40 ms. Below 5 % voltage the last estimate is kept.
-        let freq = {
+        // over 40 ms (for the relays that read it). Below 5 % voltage the
+        // last estimate is kept.
+        let freq = if !self.uses_frequency {
+            f0
+        } else {
             let theta = v1.arg();
             let mut f_now = None;
             if let Some((t_prev, th_prev)) = self.freq.last {
@@ -564,7 +653,7 @@ impl RelayState {
                     f_now = Some(prev + a * (inst - prev));
                 }
             }
-            if v1.norm() < 0.05 {
+            if v1n < 0.05 {
                 f_now = self.freq.f;
             }
             if let Some(f) = f_now.or(self.freq.f).or(Some(f0 * m.frame_speed())) {
@@ -603,7 +692,7 @@ impl RelayState {
                         }
                         (ip[0] + ip[1] + ip[2]).norm()
                     } else {
-                        ip.iter().map(|x| x.norm()).fold(0.0, f64::max)
+                        ip[..np].iter().map(|x| x.norm()).fold(0.0, f64::max)
                     };
                     let g = mag / (o.pickup * i_nom).max(1e-12);
                     let directed = match o.direction {
@@ -615,7 +704,7 @@ impl RelayState {
                                     |s| if earth { s[0] } else { s[1] },
                                 );
                             let pol = if earth { -seq_v[0] } else { vmem };
-                            let fwd = (s * C64::from_polar(1.0, 60f64.to_radians()) * pol.conj())
+                            let fwd = (s * rotate_60() * pol.conj())
                                 .re
                                 > 0.0;
                             (d == Direction::Forward) == fwd
@@ -625,7 +714,7 @@ impl RelayState {
                         Element::Timer { timer, delay } => {
                             let held = timer.since.is_some();
                             let picked = directed && (g >= 1.0 || (held && g >= 0.95));
-                            timer.update(picked, t, ops, &id, label, || format!("{:.2} × I>", g));
+                            timer.update(picked, t, ops, id, label, || format!("{:.2} × I>", g));
                             let _ = delay;
                         }
                         Element::Inverse {
@@ -635,7 +724,7 @@ impl RelayState {
                         } => {
                             let held = timer.since.is_some();
                             let picked = directed && (g >= 1.1 || (held && g >= 0.95));
-                            timer.update(picked, t, ops, &id, label, || format!("{:.2} × I>", g));
+                            timer.update(picked, t, ops, id, label, || format!("{:.2} × I>", g));
                             if picked {
                                 if let Some(top) = curve_time(o.curve, o.tms, g) {
                                     *integral += dt / top;
@@ -666,7 +755,9 @@ impl RelayState {
                     },
                 ) => {
                     let Some(ip) = i else { continue };
-                    let res = distance(d, &v, &ip, vmem, m.unbalanced(), &self.site, i_nom);
+                    // Balanced: the positive sequence the relay computed.
+                    let seq1 = bal.then(|| (v1, seq_i.map_or(C64::new(0.0, 0.0), |s| s[1])));
+                    let res = distance(d, &v, &ip, seq1, vmem, &self.site, i_nom);
                     // @block Power swing blocking
                     // Power swing detection on the positive-sequence impedance.
                     // 68 watches two boundaries concentric with the largest
@@ -717,7 +808,7 @@ impl RelayState {
                             }
                             // A jump with the voltage falling is a fault starting; with
                             // it rising, one cleared (into a swing, maybe).
-                            let vm = v1.norm();
+                            let vm = v1n;
                             if jump {
                                 swing.fault = swing.last_v.is_some_and(|v0| vm < 0.8 * v0);
                             }
@@ -770,7 +861,7 @@ impl RelayState {
                                         && step <= 0.5 * moved
                                     {
                                         swing.blocked_since = Some(t);
-                                        ops.push(op(t, &id, "68", OperationKind::Blocked, format!("power swing: the impedance moves {rate:.2} reaches/s inside the outer boundary")));
+                                        ops.push(op(t, id, "68", OperationKind::Blocked, format!("power swing: the impedance moves {rate:.2} reaches/s inside the outer boundary")));
                                     }
                                 }
                             }
@@ -778,7 +869,7 @@ impl RelayState {
                                 if swing.blocked_since.is_some() {
                                     ops.push(op(
                                         t,
-                                        &id,
+                                        id,
                                         "68",
                                         OperationKind::Unblocked,
                                         "impedance left the outer boundary".into(),
@@ -792,7 +883,7 @@ impl RelayState {
                                 if let Some(t_out) = swing.outer_since {
                                     if t - t_out >= psb.delta_t {
                                         swing.blocked_since = Some(t);
-                                        ops.push(op(t, &id, "68", OperationKind::Blocked, format!("power swing: {:.0} ms from the outer to the inner boundary", (t - t_out) * 1e3)));
+                                        ops.push(op(t, id, "68", OperationKind::Blocked, format!("power swing: {:.0} ms from the outer to the inner boundary", (t - t_out) * 1e3)));
                                     }
                                 }
                                 swing.outer_since = None;
@@ -802,7 +893,7 @@ impl RelayState {
                                     swing.blocked_since = None;
                                     ops.push(op(
                                         t,
-                                        &id,
+                                        id,
                                         "68",
                                         OperationKind::Unblocked,
                                         "maximum blocking time".into(),
@@ -824,26 +915,26 @@ impl RelayState {
                     // decision while fault current flows and no voltage is
                     // left to polarize with (directional latch): a sustained
                     // close-in fault still reaches its zone time.
-                    let hold = res.unpolarized && !res.zones.iter().any(|&p| p);
+                    let hold = res.unpolarized && !res.zones.as_slice().iter().any(|&p| p);
                     for (zi, (z, timer)) in d.zones.iter().zip(zones.iter_mut()).enumerate() {
                         let decided = if hold {
                             timer.since.is_some()
                         } else {
-                            res.zones[zi]
+                            res.zones.as_slice()[zi]
                         };
                         let picked = decided && !blocked;
-                        timer.update(picked, t, ops, &id, format_args!("21 {}", z.name), || {
+                        timer.update(picked, t, ops, id, format_args!("21 {}", z.name), || {
                             res.detail()
                         });
                     }
-                    let over_name = d
+                    let over_name: &str = d
                         .teleprotection
                         .as_ref()
-                        .map_or("Z2".to_owned(), |tp| tp.zone.clone());
-                    over = d.zones.iter().zip(&res.zones).any(|(z, &p)| {
+                        .map_or("Z2", |tp| tp.zone.as_str());
+                    over = d.zones.iter().zip(res.zones.as_slice()).any(|(z, &p)| {
                         p && !blocked && z.name == over_name && z.direction == Direction::Forward
                     });
-                    under = d.zones.iter().zip(&res.zones).any(|(z, &p)| {
+                    under = d.zones.iter().zip(res.zones.as_slice()).any(|(z, &p)| {
                         p && !blocked && z.name == "Z1" && z.direction == Direction::Forward
                     });
                     let _ = scheme;
@@ -862,7 +953,7 @@ impl RelayState {
                     let mut mags = [0.0; 3];
                     for ct in &self.site.zone {
                         let c = Self::ct(m, ct.source);
-                        for p in 0..3 {
+                        for p in 0..np {
                             let x = c[p] * ct.factor;
                             sums[p] += x;
                             mags[p] += x.norm();
@@ -872,14 +963,14 @@ impl RelayState {
                         let topo_ends = (m.end_closed(e, End::From), m.end_closed(e, End::To));
                         if topo_ends.0 && topo_ends.1 {
                             if let Some((vf, vt)) = line_voltages(m, &self.site, e) {
-                                for p in 0..3 {
+                                for p in 0..np {
                                     sums[p] -= y_fr * vf[p] + y_to * vt[p];
                                 }
                             }
                         }
                     }
                     let mut operate = false;
-                    for p in 0..3 {
+                    for p in 0..np {
                         let idf = sums[p].norm() / i_nom;
                         let ir = mags[p] / 2.0 / i_nom;
                         let restrained = if ir <= dset.knee {
@@ -911,7 +1002,7 @@ impl RelayState {
                             }
                         }
                     }
-                    timer.update(operate, t, ops, &id, label, || {
+                    timer.update(operate, t, ops, id, label, || {
                         format!("Id {id_max:.2} In, Ir {ir_at:.2} In")
                     });
                 }
@@ -921,33 +1012,33 @@ impl RelayState {
                 // (unbalanced engines only); 24 on the voltage over the
                 // frequency, both per unit.
                 (ProtectionFunction::Undervoltage(s), Element::Timer { timer, .. }) => {
-                    let vmin = phase_ground(&v, m.unbalanced())
+                    let vmin = phase_ground_of(&v, m.unbalanced(), v1n)
                         .into_iter()
                         .fold(f64::INFINITY, f64::min);
                     let held = timer.since.is_some();
                     let picked = vmin < s.pickup || (held && vmin < 1.02 * s.pickup);
-                    timer.update(picked, t, ops, &id, label, || format!("V {vmin:.3} pu"));
+                    timer.update(picked, t, ops, id, label, || format!("V {vmin:.3} pu"));
                 }
                 (ProtectionFunction::Overvoltage(s), Element::Timer { timer, .. }) => {
-                    let vmax = phase_ground(&v, m.unbalanced())
+                    let vmax = phase_ground_of(&v, m.unbalanced(), v1n)
                         .into_iter()
                         .fold(0.0, f64::max);
                     let held = timer.since.is_some();
                     let picked = vmax > s.pickup || (held && vmax > 0.98 * s.pickup);
-                    timer.update(picked, t, ops, &id, label, || format!("V {vmax:.3} pu"));
+                    timer.update(picked, t, ops, id, label, || format!("V {vmax:.3} pu"));
                 }
                 (ProtectionFunction::NeutralOvervoltage(s), Element::Timer { timer, .. }) => {
                     if !m.unbalanced() {
                         continue;
                     }
                     let v0 = 3.0 * seq_v[0].norm();
-                    timer.update(v0 > s.pickup, t, ops, &id, label, || {
+                    timer.update(v0 > s.pickup, t, ops, id, label, || {
                         format!("3V0 {v0:.3} pu")
                     });
                 }
                 (ProtectionFunction::Overexcitation(s), Element::Timer { timer, .. }) => {
-                    let vhz = v1.norm() / (freq / f0).max(1e-3);
-                    timer.update(vhz > s.pickup, t, ops, &id, label, || {
+                    let vhz = v1n / (freq / f0).max(1e-3);
+                    timer.update(vhz > s.pickup, t, ops, id, label, || {
                         format!("V/Hz {vhz:.3} pu")
                     });
                 }
@@ -956,22 +1047,22 @@ impl RelayState {
                 // minimum voltage, with a 20 mHz reset hysteresis.
                 (ProtectionFunction::Underfrequency(s), Element::Timer { timer, .. }) => {
                     let held = timer.since.is_some();
-                    let ok = v1.norm() >= s.min_voltage;
+                    let ok = v1n >= s.min_voltage;
                     let picked = ok && (freq < s.pickup || (held && freq < s.pickup + 0.02));
-                    timer.update(picked, t, ops, &id, label, || format!("f {freq:.3} Hz"));
+                    timer.update(picked, t, ops, id, label, || format!("f {freq:.3} Hz"));
                 }
                 (ProtectionFunction::Overfrequency(s), Element::Timer { timer, .. }) => {
                     let held = timer.since.is_some();
-                    let ok = v1.norm() >= s.min_voltage;
+                    let ok = v1n >= s.min_voltage;
                     let picked = ok && (freq > s.pickup || (held && freq > s.pickup - 0.02));
-                    timer.update(picked, t, ops, &id, label, || format!("f {freq:.3} Hz"));
+                    timer.update(picked, t, ops, id, label, || format!("f {freq:.3} Hz"));
                 }
                 // @block Rate of change of frequency
                 // 81R: the least-squares slope of the frequency over a full
                 // window, leaving out a voltage dip and the 50 ms after it;
                 // blocked below its minimum voltage.
                 (ProtectionFunction::Rocof(s), Element::Timer { timer, .. }) => {
-                    let ok = v1.norm() >= s.min_voltage;
+                    let ok = v1n >= s.min_voltage;
                     if !ok {
                         self.freq.low_at = Some(t);
                     }
@@ -985,19 +1076,20 @@ impl RelayState {
                     while hist.len() > 2 && hist.front().is_some_and(|(th, _)| t - th > s.window) {
                         hist.pop_front();
                     }
-                    let window: Vec<(f64, f64)> =
-                        hist.iter().copied().filter(|&(th, _)| th > after).collect();
+                    // The samples after `after`: the history runs in time,
+                    // so they are its tail.
+                    let start = hist.partition_point(|&(th, _)| th <= after);
+                    let window = hist.range(start..);
                     // Least-squares slope over the window: a phase jump's
                     // brief frequency spike does not read as a rate.
-                    let rate = match (window.first(), window.last()) {
+                    let rate = match (window.clone().next(), window.clone().next_back()) {
                         (Some(&(ta, _)), Some(&(tb, _))) if tb - ta >= 0.95 * s.window => {
-                            let hist = &window;
-                            let n = hist.len() as f64;
-                            let (st, sf) = hist
-                                .iter()
+                            let n = window.len() as f64;
+                            let (st, sf) = window
+                                .clone()
                                 .fold((0.0, 0.0), |(a, b), &(t, f)| (a + t, b + f));
                             let (mt, mf) = (st / n, sf / n);
-                            let (num, den) = hist.iter().fold((0.0, 0.0), |(a, b), &(t, f)| {
+                            let (num, den) = window.fold((0.0, 0.0), |(a, b), &(t, f)| {
                                 (a + (t - mt) * (f - mf), b + (t - mt) * (t - mt))
                             });
                             if den > 0.0 {
@@ -1008,7 +1100,7 @@ impl RelayState {
                         }
                         _ => 0.0,
                     };
-                    timer.update(ok && rate.abs() > s.pickup, t, ops, &id, label, || {
+                    timer.update(ok && rate.abs() > s.pickup, t, ops, id, label, || {
                         format!("df/dt {rate:.2} Hz/s")
                     });
                 }
@@ -1019,9 +1111,13 @@ impl RelayState {
                 // offset mho circles below the R axis, each with its delay.
                 (ProtectionFunction::ReversePower(s), Element::Timer { timer, .. }) => {
                     let Some(ip) = i else { continue };
-                    let p: f64 = (0..3).map(|k| (v[k] * ip[k].conj()).re).sum::<f64>() / 3.0;
+                    let p: f64 = if bal {
+                        (v[0] * ip[0].conj()).re
+                    } else {
+                        (0..3).map(|k| (v[k] * ip[k].conj()).re).sum::<f64>() / 3.0
+                    };
                     let p_mach = p / self.site.scale;
-                    timer.update(p_mach < -s.pickup, t, ops, &id, label, || {
+                    timer.update(p_mach < -s.pickup, t, ops, id, label, || {
                         format!("P {p_mach:.4} pu")
                     });
                 }
@@ -1035,8 +1131,8 @@ impl RelayState {
                     } else {
                         (false, false)
                     };
-                    z1.update(in1, t, ops, &id, format_args!("{label} Z1"), String::new);
-                    z2.update(in2, t, ops, &id, format_args!("{label} Z2"), String::new);
+                    z1.update(in1, t, ops, id, format_args!("{label} Z1"), String::new);
+                    z2.update(in2, t, ops, id, format_args!("{label} Z2"), String::new);
                 }
                 // @block Out of step
                 // 78: the impedance is placed left of, between or right of
@@ -1075,7 +1171,7 @@ impl RelayState {
                                         *slips += 1;
                                         ops.push(op(
                                             t,
-                                            &id,
+                                            id,
                                             label,
                                             OperationKind::Pickup,
                                             format!(
@@ -1119,7 +1215,7 @@ impl RelayState {
                 }
                 (ProtectionFunction::Thermal(th), Element::Thermal { theta }) => {
                     let Some(ip) = i else { continue };
-                    let imax = ip.iter().map(|x| x.norm()).fold(0.0, f64::max);
+                    let imax = ip[..np].iter().map(|x| x.norm()).fold(0.0, f64::max);
                     let q = (imax / (th.k * i_nom)).powi(2);
                     let next = match *theta {
                         None => q,
@@ -1147,7 +1243,7 @@ impl RelayState {
                     let vm = if m.unbalanced() {
                         phase_phase(&v).into_iter().fold(f64::INFINITY, f64::min)
                     } else {
-                        v1.norm()
+                        v1n
                     };
                     // The profile is that of a fault (RfG Art. 14(3) and 16(3):
                     // the voltage during and after it, from a pre-fault state):
@@ -1163,7 +1259,7 @@ impl RelayState {
                             *t0 = Some(t);
                             ops.push(op(
                                 t,
-                                &id,
+                                id,
                                 label,
                                 OperationKind::Pickup,
                                 format!("ride-through started at {vm:.3} pu"),
@@ -1174,11 +1270,11 @@ impl RelayState {
                         if t - s >= frt.reset {
                             *t0 = None;
                             *above_since = None;
-                            ops.push(op(t, &id, label, OperationKind::Reset, String::new()));
+                            ops.push(op(t, id, label, OperationKind::Reset, String::new()));
                         }
                     }
                     let below = t0.is_some_and(|s| vm < profile(&frt.points, t - s));
-                    timer.update(below, t, ops, &id, format_args!("{label} envelope"), || {
+                    timer.update(below, t, ops, id, format_args!("{label} envelope"), || {
                         format!("V {vm:.3} pu")
                     });
                 }
@@ -1301,6 +1397,22 @@ fn phase_ground(v: &[C64; 3], unbalanced: bool) -> [f64; 3] {
     }
 }
 
+/// [`phase_ground`] where the positive-sequence magnitude `v1n` of `v` is
+/// already known (the balanced case reads only it).
+fn phase_ground_of(v: &[C64; 3], unbalanced: bool, v1n: f64) -> [f64; 3] {
+    if unbalanced {
+        phase_ground(v, true)
+    } else {
+        [v1n; 3]
+    }
+}
+
+/// The 60° rotation of the directional overcurrent characteristic.
+fn rotate_60() -> C64 {
+    static R: std::sync::OnceLock<C64> = std::sync::OnceLock::new();
+    *R.get_or_init(|| C64::from_polar(1.0, 60f64.to_radians()))
+}
+
 /// Phase-to-phase voltages divided by √3.
 fn phase_phase(v: &[C64; 3]) -> [f64; 3] {
     let s = 3f64.sqrt();
@@ -1343,9 +1455,42 @@ pub(crate) fn profile(points: &[[f64; 2]], t: f64) -> f64 {
 // unbalanced phasors, the positive-sequence loop on balanced ones), the
 // load-encroachment region, and whether a loop's impedance lies inside a
 // mho or quadrilateral zone.
+/// Which zones of a distance function see the fault: inline up to
+/// `INLINE_ZONES` (every practical scheme), on the heap beyond. Relays
+/// evaluate every step, so the common case allocates nothing.
+enum ZoneFlags {
+    Inline([bool; INLINE_ZONES], usize),
+    Heap(Vec<bool>),
+}
+
+const INLINE_ZONES: usize = 8;
+
+impl ZoneFlags {
+    fn new(n: usize) -> Self {
+        if n <= INLINE_ZONES {
+            Self::Inline([false; INLINE_ZONES], n)
+        } else {
+            Self::Heap(vec![false; n])
+        }
+    }
+
+    fn as_slice(&self) -> &[bool] {
+        match self {
+            Self::Inline(a, n) => &a[..*n],
+            Self::Heap(v) => v,
+        }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [bool] {
+        match self {
+            Self::Inline(a, n) => &mut a[..*n],
+            Self::Heap(v) => v,
+        }
+    }
+}
 
 struct DistanceResult {
-    zones: Vec<bool>,
+    zones: ZoneFlags,
     /// The first loop's apparent impedance (Ω) outside the load region.
     z_ohm: Option<C64>,
     /// A loop carried fault current but had no voltage to polarize with
@@ -1367,46 +1512,52 @@ fn distance(
     d: &Distance,
     v: &[C64; 3],
     i: &[C64; 3],
+    seq1: Option<(C64, C64)>,
     vmem: C64,
-    unbalanced: bool,
     site: &Site,
     i_nom: f64,
 ) -> DistanceResult {
     let a = op_a();
     let k0 = C64::new(d.k0[0], d.k0[1]);
     let imin = d.min_current * i_nom;
-    // (loop voltage, loop current, polarizing voltage)
-    let mut loops: Vec<(C64, C64, C64)> = Vec::new();
-    if unbalanced {
+    // (loop voltage, loop current, polarizing voltage): at most the three
+    // phase-to-phase and three phase-to-ground loops, kept inline.
+    let zero = C64::new(0.0, 0.0);
+    let mut loops = [(zero, zero, zero); 6];
+    let mut n_loops = 0;
+    let mut push = |l: (C64, C64, C64)| {
+        loops[n_loops] = l;
+        n_loops += 1;
+    };
+    if let Some((v1, i1)) = seq1 {
+        if i1.norm() > imin {
+            push((v1, i1, vmem));
+        }
+    } else {
         let i_res = i[0] + i[1] + i[2];
         let pol_ph = [vmem, vmem * a * a, vmem * a];
         for p in 0..3 {
             let q = (p + 1) % 3;
             let il = i[p] - i[q];
             if il.norm() > 3f64.sqrt() * imin {
-                loops.push((v[p] - v[q], il, pol_ph[p] - pol_ph[q]));
+                push((v[p] - v[q], il, pol_ph[p] - pol_ph[q]));
             }
         }
         if i_res.norm() > 0.1 * i_nom {
             for p in 0..3 {
                 let il = i[p] + k0 * i_res;
                 if i[p].norm() > imin {
-                    loops.push((v[p], il, pol_ph[p]));
+                    push((v[p], il, pol_ph[p]));
                 }
             }
         }
-    } else {
-        let v1 = sequences(*v)[1];
-        let i1 = sequences(*i)[1];
-        if i1.norm() > imin {
-            loops.push((v1, i1, vmem));
-        }
     }
     let zb = site.z_base;
-    let mut zones = vec![false; d.zones.len()];
+    let mut flags = ZoneFlags::new(d.zones.len());
+    let zones = flags.as_mut_slice();
     let mut first: Option<C64> = None;
     let mut unpolarized = false;
-    for (vl, il, pol) in &mut loops {
+    for (vl, il, pol) in &loops[..n_loops] {
         // Polarized with the pre-fault (memory) voltage for 100 ms after a
         // collapse, then with the present voltage: the memory keeps the
         // direction right for close-in faults and through the voltage
@@ -1418,7 +1569,6 @@ fn distance(
             unpolarized = true;
             continue;
         }
-        let (vl, il, pol) = (&*vl, &*il, &*pol);
         let z_ohm = vl / il * zb;
         if in_load(d, z_ohm) {
             continue;
@@ -1432,7 +1582,7 @@ fn distance(
         }
     }
     DistanceResult {
-        zones,
+        zones: flags,
         z_ohm: first,
         unpolarized,
     }
@@ -1622,3 +1772,4 @@ mod tests {
         assert_eq!(profile(&p, 3.0), 0.85);
     }
 }
+

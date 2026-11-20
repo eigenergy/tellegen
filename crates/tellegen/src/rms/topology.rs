@@ -7,7 +7,7 @@ use powerio::BalancedNetwork;
 use serde::{Deserialize, Serialize};
 
 use super::models::Machine;
-use super::system::{DynSystem, GenOut, C64};
+use super::system::{DynSystem, C64};
 
 /// Which end of a branch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,15 +257,11 @@ pub(crate) fn topology(network: &BalancedNetwork, sys: &DynSystem, x0: &[f64]) -
 pub(crate) struct RmsMeasure<'a> {
     sys: &'a DynSystem,
     x: &'a [f64],
-    outs: Vec<GenOut>,
 }
 
 impl<'a> RmsMeasure<'a> {
     pub(crate) fn new(sys: &'a DynSystem, x: &'a [f64]) -> Self {
-        let mut f = vec![0.0; sys.nx];
-        let mut outs = Vec::new();
-        sys.residual(x, &mut f, Some(&mut outs));
-        Self { sys, x, outs }
+        Self { sys, x }
     }
 
     /// Voltage at a dense bus.
@@ -283,7 +279,24 @@ impl<'a> RmsMeasure<'a> {
             if d.tripped.is_some() {
                 return C64::new(0.0, 0.0);
             }
-            let o = self.outs[u];
+            // This device alone, as the residual evaluates it (its state
+            // derivatives go to scratch).
+            let k = d.n_states();
+            let mut scratch = [0.0; 64];
+            let mut heap = Vec::new();
+            let df: &mut [f64] = if k <= scratch.len() {
+                &mut scratch[..k]
+            } else {
+                heap.resize(k, 0.0);
+                &mut heap
+            };
+            let o = d.eval(
+                &self.x[d.offset..d.offset + k],
+                self.x[d.bus],
+                self.x[self.sys.n + d.bus],
+                self.sys.omega_sys(self.x),
+                df,
+            );
             C64::new(o.ir, o.ii)
         } else if u < nd + ns {
             let s = &sys.sources[u - nd];

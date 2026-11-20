@@ -815,6 +815,9 @@ impl RmsSimulation {
             r.evaluate(&m);
             r.channels(&m);
         }
+        // The relays' evaluation of the state just reached, not yet run.
+        #[cfg(feature = "protection")]
+        let mut pending: Option<protect::Pending> = None;
         let mut applied: Vec<String> = Vec::new();
         let mut steps = 0usize;
         let mut iterations = 0usize;
@@ -830,6 +833,35 @@ impl RmsSimulation {
                 return Err("cancelled".into());
             }
             while t < t_target - tol {
+                // @block Relays beside the step
+                // The relays' evaluation of the state at `t` runs beside the
+                // step from `t` when that acts exactly as running it first
+                // (`ProtectionRuntime::can_run_beside`: nothing due now, and
+                // nothing it can start falls due within the step); otherwise
+                // it runs first, and the step proceeds as below.
+                #[cfg(feature = "protection")]
+                let beside = {
+                    let mut t_next = (t + h).min(t_target);
+                    if next_event < events.len() {
+                        t_next = t_next.min(events[next_event].time());
+                    }
+                    let event_due =
+                        next_event < events.len() && events[next_event].time() <= t + tol;
+                    match (&pending, relays.as_deref()) {
+                        (Some(_), Some(r)) => {
+                            cfg!(not(target_arch = "wasm32"))
+                                && !event_due
+                                && r.can_run_beside(t, t_next, h)
+                        }
+                        _ => false,
+                    }
+                };
+                #[cfg(feature = "protection")]
+                if !beside {
+                    if let (Some(p), Some(r)) = (pending.take(), relays.as_deref_mut()) {
+                        p.run(r, &sys);
+                    }
+                }
                 // @block Apply due events
                 // Every event due now changes the network; units left
                 // without a path to a source are switched off, the
@@ -843,9 +875,10 @@ impl RmsSimulation {
                     next_event += 1;
                     changed = true;
                 }
-                // Then the relays' breaker actions due now.
+                // Then the relays' breaker actions due now (none when the
+                // evaluation runs beside the step).
                 #[cfg(feature = "protection")]
-                if let Some(r) = relays.as_deref_mut() {
+                if let Some(r) = relays.as_deref_mut().filter(|_| !beside) {
                     let actions = r.take_due(t, &protect::RelayMeasure::new(&sys, &x, t));
                     for a in &actions {
                         applied.push(protect::apply_action(&mut sys, &x, a, t));
@@ -889,7 +922,43 @@ impl RmsSimulation {
                         t_next = t_next.min(d);
                     }
                 }
-                iterations += step_adaptive(
+                #[cfg(feature = "protection")]
+                let stepped = match (beside, pending.take(), relays.as_deref_mut()) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    (true, Some(p), Some(r)) => {
+                        // Both only read the network: the relays measure
+                        // their own copy of the state at `t`.
+                        let sys = &sys;
+                        std::thread::scope(|s| {
+                            let relays_done = s.spawn(move || p.run(r, sys));
+                            let stepped = step_adaptive(
+                                sys,
+                                &mut x,
+                                &mut f,
+                                t_next - t,
+                                0,
+                                &mut euler_steps,
+                                &mut stepper,
+                            );
+                            relays_done.join().expect("the relay evaluation panicked");
+                            stepped
+                        })
+                    }
+                    (_, p, _) => {
+                        pending = p;
+                        step_adaptive(
+                            &sys,
+                            &mut x,
+                            &mut f,
+                            t_next - t,
+                            0,
+                            &mut euler_steps,
+                            &mut stepper,
+                        )
+                    }
+                };
+                #[cfg(not(feature = "protection"))]
+                let stepped = step_adaptive(
                     &sys,
                     &mut x,
                     &mut f,
@@ -897,8 +966,8 @@ impl RmsSimulation {
                     0,
                     &mut euler_steps,
                     &mut stepper,
-                )
-                .map_err(|e| {
+                );
+                iterations += stepped.map_err(|e| {
                     let islands: Vec<String> =
                         sys.detached_islands().into_iter().map(|(_, s)| s).collect();
                     if islands.is_empty() {
@@ -915,7 +984,7 @@ impl RmsSimulation {
                 t = t_next;
                 #[cfg(feature = "protection")]
                 if let Some(r) = relays.as_deref_mut() {
-                    iterations += protect::settle_banks(
+                        iterations += protect::settle_banks(
                         r,
                         &mut sys,
                         &mut x,
@@ -924,7 +993,8 @@ impl RmsSimulation {
                         t,
                         &mut applied,
                     )?;
-                    r.evaluate(&protect::RelayMeasure::new(&sys, &x, t));
+                    // Evaluated at the next step: beside it, or first.
+                    pending = Some(protect::Pending::new(t, &x));
                 }
             }
 
@@ -934,7 +1004,17 @@ impl RmsSimulation {
             rec.record(&sys, t, &x);
             #[cfg(feature = "protection")]
             if let Some(r) = relays.as_deref_mut() {
-                r.channels(&protect::RelayMeasure::new(&sys, &x, t));
+                // The relay channels of this output sample, recorded after
+                // the evaluation of the same state.
+                match pending.as_mut().filter(|p| p.channels.is_none()) {
+                    Some(p) => p.channels = Some(t),
+                    None => {
+                        if let Some(p) = pending.take() {
+                            p.run(r, &sys);
+                        }
+                        r.channels(&protect::RelayMeasure::new(&sys, &x, t));
+                    }
+                }
             }
 
             // @block Take a checkpoint
@@ -961,6 +1041,9 @@ impl RmsSimulation {
         }
         #[cfg(feature = "protection")]
         if let Some(r) = relays {
+            if let Some(p) = pending.take() {
+                p.run(r, &sys);
+            }
             r.take_channels(&mut rec.channels);
         }
 

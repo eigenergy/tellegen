@@ -192,3 +192,35 @@ pub(crate) fn settle_banks(
     }
     Ok(iterations)
 }
+
+/// The relays' evaluation of a state the engine reached, not yet run: the
+/// state, and the output time whose relay channels it records afterwards.
+/// The engine runs it beside the next integration step when that acts
+/// exactly as running it first (see
+/// [`ProtectionRuntime::can_run_beside`](crate::protection::ProtectionRuntime::can_run_beside)).
+// @block Pending evaluation
+pub(crate) struct Pending {
+    t: f64,
+    x: Vec<f64>,
+    pub(crate) channels: Option<f64>,
+}
+
+impl Pending {
+    pub(crate) fn new(t: f64, x: &[f64]) -> Self {
+        Self {
+            t,
+            x: x.to_vec(),
+            channels: None,
+        }
+    }
+
+    /// Evaluate the relays on the state in the network `sys` it was reached
+    /// in, then record their channels when an output sample asked for them.
+    pub(crate) fn run(self, r: &mut crate::protection::ProtectionRuntime, sys: &DynSystem) {
+        let m = RelayMeasure::new(sys, &self.x, self.t);
+        r.evaluate(&m);
+        if let Some(tc) = self.channels {
+            r.channels(&RelayMeasure::new(sys, &self.x, tc));
+        }
+    }
+}

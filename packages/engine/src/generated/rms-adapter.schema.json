@@ -324,7 +324,7 @@
           "type": "string"
         },
         "role": {
-          "description": "`machine`, `exciter`, `governor`, `stabilizer` or `inverter`.",
+          "description": "`machine`, `exciter`, `governor`, `stabilizer`, `inverter` (a whole\ninverter-based unit), or one part of an inverter-based unit:\n`converter`, `electrical` (electrical control) or `plant` (plant\ncontroller).",
           "type": "string"
         }
       },
@@ -1438,11 +1438,12 @@
   "title": "OutputSchema",
   "type": "object",
   "x-rust-source-files": {
-    "crates/tellegen-wasm/examples/rms_adapter_schema.rs": "39145d019db07828c6328414020e265eb1908eefe7c039f30f344757e5a82922",
+    "crates/tellegen-wasm/examples/rms_adapter_schema.rs": "fb784b0fee577a0526b0dc7ffb4975ac22edd1f3e4a78d03265eab942395d8f3",
     "crates/tellegen-wasm/src/rms.rs": "33dc7c9ec25e5c0cb3e0d6434d584707b20231cf7f4fd192b7e8855848e69187",
-    "crates/tellegen/src/rms/library.rs": "d9fdcb99482a1b2f78f3e0fe8a10058bd7936e16b1839eab66ca71b500c4052c",
-    "crates/tellegen/src/rms/linear.rs": "6501e8e0d2a40695f542b75338b708917267a88b48ee72133b12a826fe5f6bbd",
-    "crates/tellegen/src/rms/mod.rs": "04d90880f4ad3914c0f6aca8a32d94b7541721f034c8e43fbbfc82dacfdbbfff",
-    "crates/tellegen/src/rms/screen.rs": "e797aae0b2d309f3edd7fe2ec6995f943026630cd9aeda5c70c76d836e5229e8"
+    "crates/tellegen/src/rms/api.rs": "525dd53fecd1460779bd24967666a0492220c94e4a29ddf6f819281c8c5f02a5",
+    "crates/tellegen/src/rms/library.rs": "20d121ef8d6d3451c2797d5face2e85b810db4efd8a443737d52e7dfbcd343c7",
+    "crates/tellegen/src/rms/linear.rs": "aeaddeb873467f69a74a81d93e212a79dc1823a1349a635c2d8d6ac1c8d14768",
+    "crates/tellegen/src/rms/mod.rs": "3e7162833b055e6b9b44a21f1d544ff7021a3871471a37bc08fc23daf22ff9de",
+    "crates/tellegen/src/rms/screen.rs": "18724a66463cc83e5fce6ce2e971e921b155c615a3ee6961cfea43ca80b8ef01"
   }
 }
