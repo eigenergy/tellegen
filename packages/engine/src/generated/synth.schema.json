@@ -3089,6 +3089,5 @@
     "error"
   ],
   "title": "SynthSchema",
-  "type": "object",
-  "x-rust-source-sha256": "46d0d9da771bc327b89e27b69b43851054a590e6432d82761c39e047327e0397"
+  "type": "object"
 }

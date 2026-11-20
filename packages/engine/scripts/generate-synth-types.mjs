@@ -1,8 +1,7 @@
 // TypeScript types for synthetic grid generation, generated from the
 // JSON Schema that `crates/tellegen-synth/examples/synth_schema.rs` emits.
-// `--check` fails when the schema is older than the Rust records or the
-// TypeScript is older than the schema.
-import { createHash } from "node:crypto";
+// `--check` fails when the TypeScript is older than the schema;
+// `scripts/schemas.sh --check` compares the schema with the Rust records.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,14 +9,6 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const generatedDir = join(root, "packages/engine/src/generated");
 const schema = JSON.parse(readFileSync(join(generatedDir, "synth.schema.json"), "utf8"));
-const sources = ["request.rs", "report.rs", "error.rs", "synchronous.rs"];
-const hash = createHash("sha256");
-for (const source of sources) hash.update(readFileSync(join(root, "crates/tellegen-synth/src", source)));
-if (hash.digest("hex") !== schema["x-rust-source-sha256"]) {
-  throw new Error(
-    "Synth schema is stale. Run cargo run -p tellegen-synth --example synth_schema --features schema > packages/engine/src/generated/synth.schema.json",
-  );
-}
 
 // A field's Rust doc comment as JSDoc, so editors show it on hover.
 function doc(node) {
@@ -65,7 +56,7 @@ function type(node) {
 }
 
 const definitions = Object.entries(schema.$defs).map(([name, definition]) => `export type ${name} = ${type(definition)};`);
-const generated = `// Generated from Rust by synth_schema and generate-synth-types.mjs.\n// Source SHA256: ${schema["x-rust-source-sha256"]}\n\n${definitions.join("\n\n")}\n`;
+const generated = `// Generated from Rust by synth_schema and generate-synth-types.mjs.\n\n${definitions.join("\n\n")}\n`;
 const typesOutput = join(generatedDir, "synth-types.ts");
 const schemaOutput = join(generatedDir, "synth-schema.ts");
 const schemaSource = `// Generated from the Rust synthetic generation types.\nexport const synthSchema: Record<string, unknown> = ${JSON.stringify(schema)};\n`;

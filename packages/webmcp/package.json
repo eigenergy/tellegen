@@ -77,6 +77,6 @@
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^5.1.0",
-    "webmcp-types": "0.1.10"
+    "webmcp-types": "0.1.11"
   }
 }

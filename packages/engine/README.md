@@ -192,19 +192,16 @@ give the full credits.
 
 `ENGINE_VERSION` is the package version. `API_SOURCE_SHA256` records the `crates/tellegen/src/api.rs` content used to generate `src/generated/api-types.ts`.
 
-Run the generators from the repository root after Rust API changes:
+After changing a Rust record, regenerate the schemas and the TypeScript from
+the repository root:
 
 ```sh
-cargo run -p tellegen --example api_schema --features schema,conic,mc-pf > packages/engine/src/generated/api.schema.json
-cargo run -p tellegen --example settings_schema --features schema,conic,mc-pf > packages/engine/src/generated/settings.schema.json
-cargo run -p tellegen --example study_schema --features schema,conic,mc-pf > packages/engine/src/generated/study.schema.json
-cargo run -p tellegen-synth --example synth_schema --features schema > packages/engine/src/generated/synth.schema.json
-cargo run -p tellegen --example rms_schema --features schema,rms-experimental > packages/engine/src/generated/rms.schema.json
-cargo run -p tellegen-server --example http_schema --features schema > packages/engine/src/generated/http.schema.json
-cargo run -p tellegen-wasm --example adapter_schema --features schema,conic,synth,powerio-collections > packages/engine/src/generated/wasm-adapter.schema.json
-cargo run -p tellegen-wasm --example rms_adapter_schema --features schema,rms-experimental > packages/engine/src/generated/rms-adapter.schema.json
+scripts/schemas.sh
 npm run types
 ```
+
+CI runs `scripts/schemas.sh --check`, which regenerates each schema and fails
+only when the output differs from the committed file.
 
 Rust records also generate browser result validators and Python MCP argument
 models. Imports, solves, studies, settings, layouts, generation and RMS responses

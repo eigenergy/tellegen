@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 const root = new URL("../../../", import.meta.url);
@@ -8,13 +7,6 @@ const artifact = JSON.parse(
     "utf8",
   ),
 );
-const hash = createHash("sha256");
-for (const path of ["settings.rs", "api.rs", "mc_pf/mod.rs"])
-  hash.update(readFileSync(new URL(`crates/tellegen/src/${path}`, root)));
-if (hash.digest("hex") !== artifact["x-rust-source-sha256"])
-  throw new Error(
-    "Settings schema is stale. Regenerate with cargo run -p tellegen --example settings_schema --features schema,conic.",
-  );
 function type(node) {
   if (node === false) return "never";
   if (node === true || !node) return "unknown";

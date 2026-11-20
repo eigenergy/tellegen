@@ -62,9 +62,6 @@ rms-experimental = ["rms", "tellegen/rms-experimental"]
 name = "rms_buffers"
 required-features = ["rms"]
 
-[dev-dependencies]
-sha2 = "0.11"
-
 [[example]]
 name = "rms_adapter_schema"
 required-features = ["schema", "rms-experimental"]
