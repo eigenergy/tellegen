@@ -52,9 +52,10 @@ mc-pf-test:
 
 # CI gate: every shipping numerical feature and the frozen OPF references.
 mc-opf-test:
-    cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked
+    cargo test -p tellegen --features sensitivity,mc-pf,conic,acopf,mc-opf,ots,schema --locked
     cargo test -p tellegen --no-default-features --features mc-opf --locked
-    cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,schema --locked -- -D warnings
+    cargo test -p tellegen-cli --features ots --locked
+    cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,ots,schema --locked -- -D warnings
 
 # CI gate: the RMS dynamic simulation, both feature levels (neither is a
 # default feature, so `test` skips it). The 20 s WECC 240 validation runs
@@ -93,7 +94,7 @@ mc-pf-bench preset="feeder-10k" *flags="":
 # regeneration stays CI-only (it clones BMOPFTools.jl and runs OpenDSS); the
 # checked-in references are compared by `cargo test --workspace`.
 crate-package:
-    cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,schema
+    cargo package -p tellegen --locked --features sensitivity,mc-pf,conic,acopf,mc-opf,ots,schema
 
 # ---- JavaScript workspace ----
 

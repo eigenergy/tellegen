@@ -31,6 +31,7 @@ default = []
 # dependency (see the `tellegen` crate's `powerio-012` feature).
 powerio-012 = ["tellegen/powerio-012", "tellegen-synth/powerio-012"]
 conic = ["tellegen/conic"]
+ots = ["tellegen/ots"]
 
 [lints]
 workspace = true

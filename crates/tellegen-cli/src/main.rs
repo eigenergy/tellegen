@@ -34,6 +34,8 @@ use tellegen::ir::{balanced_module, deserialize_module, serialize_module};
 
 use tellegen::plan::CapacityPlanSpec;
 
+#[cfg(feature = "ots")]
+mod ots;
 mod synth;
 
 const USAGE: &str =
@@ -84,6 +86,8 @@ fn main() -> ExitCode {
     let arg = std::env::args().nth(1).unwrap_or_default();
 
     match arg.as_str() {
+        #[cfg(feature = "ots")]
+        "ots-compare" => return run(|| ots::compare(std::env::args().skip(2))),
         "settings" => {
             return run(|| match std::env::args().nth(2).as_deref() {
                 None | Some("describe") => Ok(tellegen::settings::describe().to_string()),
@@ -122,6 +126,8 @@ fn main() -> ExitCode {
         "study" => return run(study_command),
         "-h" | "--help" => {
             println!("{USAGE}");
+            #[cfg(feature = "ots")]
+            println!("{}", ots::USAGE);
             return ExitCode::SUCCESS;
         }
         "solve-module" => {
