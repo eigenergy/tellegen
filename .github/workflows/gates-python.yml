@@ -103,7 +103,7 @@ jobs:
       - name: Install the built wheel
         run: |
           wheel=$(ls dist/*.whl)
-          python -m pip install --force-reinstall "${wheel}[mcp]"
+          python -m pip install --force-reinstall "${wheel}[mcp,switching]"
 
       - name: Type-check
         run: python -m mypy python/tellegen
@@ -152,7 +152,7 @@ jobs:
           import tellegen
           print("versions:", tellegen.versions())
           print("formulations:", tellegen.formulations())
-          assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
+          assert set(tellegen.formulations()) == {"dcpf", "dcopf", "acpf", "socwr", "acopf"}
           # The base package must not drag in a numeric stack.
           assert "numpy" not in sys.modules, "numpy imported by the base package"
           assert "scipy" not in sys.modules, "scipy imported by the base package"
@@ -206,8 +206,12 @@ jobs:
           python - <<'PY'
           import tellegen
 
-          assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
-          solution = tellegen.load("case3.m").solve()
+          assert set(tellegen.formulations()) == {"dcpf", "dcopf", "acpf", "socwr", "acopf"}
+          case = tellegen.load("case3.m")
+          solution = case.solve()
+          switched = tellegen.solve_ots(case.module_json, topology_limit=1)
+          assert switched["restoration"]["status"] == "ac_feasible", switched
+          assert switched["ac_solution_ir"] and not switched["exhausted"]
           assert solution["status"] == "optimal", solution["status"]
           # The same number the CLI, the browser engine and PowerMCP #67 produce.
           assert abs(solution["objective"] - 626.9487) < 1e-3, solution["objective"]
@@ -248,7 +252,11 @@ jobs:
           cd "${RUNNER_TEMP}"
           python - <<'PY'
           import tellegen
-          solution = tellegen.load("case3.m").solve()
+          case = tellegen.load("case3.m")
+          solution = case.solve()
+          switched = tellegen.solve_ots(case.module_json, topology_limit=1)
+          assert switched["restoration"]["status"] == "ac_feasible", switched
+          assert switched["ac_solution_ir"] and not switched["exhausted"]
           assert solution["status"] == "optimal", solution
           assert abs(solution["objective"] - 626.9487) < 1e-3, solution
           print("source distribution solves case3", tellegen.versions())

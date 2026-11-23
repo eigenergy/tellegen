@@ -1,0 +1,70 @@
+Tellegen Python wheel
+
+The native extension contains the following unmodified POUNCE crates under
+the Eclipse Public License 2.0. Each URL supplies its corresponding source.
+The license accompanies this notice in POUNCE-EPL-2.0.txt. Tellegen's own
+code is available under MIT.
+
+pounce-algorithm 0.16.0
+https://static.crates.io/crates/pounce-algorithm/pounce-algorithm-0.16.0.crate
+SHA-256 04fd4ebc87ddbf5141fa02fbe5a7cc43c4130cee0b48ed23c8266d00d5269ba5
+
+pounce-common 0.16.0
+https://static.crates.io/crates/pounce-common/pounce-common-0.16.0.crate
+SHA-256 8b66c81f8667589cbe1eeffaf6845eba546aa25e7e01f5156640a03a96ffb681
+
+pounce-convex 0.16.0
+https://static.crates.io/crates/pounce-convex/pounce-convex-0.16.0.crate
+SHA-256 0636e85a061e4aaeb0d54722612972227690f1a02480b6655b454143d1648b7f
+
+pounce-feral 0.16.0
+https://static.crates.io/crates/pounce-feral/pounce-feral-0.16.0.crate
+SHA-256 3e7c34ed640c69f47c79bd8136bb8387307c5aca3b6ee89ff6ed17f288e3186a
+
+pounce-l1penalty 0.16.0
+https://static.crates.io/crates/pounce-l1penalty/pounce-l1penalty-0.16.0.crate
+SHA-256 8aff78f71d79babbeba295a614535ce61ac46a6ad85f2b0441188d9143f27d57
+
+pounce-linalg 0.16.0
+https://static.crates.io/crates/pounce-linalg/pounce-linalg-0.16.0.crate
+SHA-256 4799a08a8de5c47b3763eadc5847b47e499f7111f902f2fb634979eeb878dfc8
+
+pounce-linsol 0.16.0
+https://static.crates.io/crates/pounce-linsol/pounce-linsol-0.16.0.crate
+SHA-256 96c9210ba7d78d4ec91325ff7159896f3c5a27d9f3f55a3b4f3adce3cc5ccd57
+
+pounce-nl 0.16.0
+https://static.crates.io/crates/pounce-nl/pounce-nl-0.16.0.crate
+SHA-256 695d09059c2d7412d14b1f827d8a5c6ca763738a28f499ad4e758568c2c00e80
+
+pounce-nlp 0.16.0
+https://static.crates.io/crates/pounce-nlp/pounce-nlp-0.16.0.crate
+SHA-256 fcc3d80f383fe59afdd7981849bd0cd584dea83d27259be63edca5f6fd445baf
+
+pounce-observability 0.16.0
+https://static.crates.io/crates/pounce-observability/pounce-observability-0.16.0.crate
+SHA-256 aeaff5bd333fe616a5c9c6fb545cd19023f27bd7c9cd076b9f8f0e556d8d6d7f
+
+pounce-presolve 0.16.0
+https://static.crates.io/crates/pounce-presolve/pounce-presolve-0.16.0.crate
+SHA-256 e1e9b9ea66cacf789fb3099ca2173ac856337ecb3d4199c7d3069e0e83b7b24a
+
+pounce-qp 0.16.0
+https://static.crates.io/crates/pounce-qp/pounce-qp-0.16.0.crate
+SHA-256 d45e6c9305c45fc5478a44b75b23164d550a09bee2ec9ffcb031ec0598300567
+
+pounce-restoration 0.16.0
+https://static.crates.io/crates/pounce-restoration/pounce-restoration-0.16.0.crate
+SHA-256 6ecd4bada8ad000dc80e511aa077493940a5ea2ed30b077d57da5931f72e9573
+
+pounce-rs 0.16.0
+https://static.crates.io/crates/pounce-rs/pounce-rs-0.16.0.crate
+SHA-256 d4575bf897f1de24a06ef26991f7b85d5cc1dc411449ae4c0090d9fc31928357
+
+pounce-sens-core 0.16.0
+https://static.crates.io/crates/pounce-sens-core/pounce-sens-core-0.16.0.crate
+SHA-256 5745a03922204a8fc1c73383701f21628b71e5c95fa21503e04dda39595edf9a
+
+pounce-solve-report 0.16.0
+https://static.crates.io/crates/pounce-solve-report/pounce-solve-report-0.16.0.crate
+SHA-256 13b60f101c6d2c4740338778bd4675287d38a0cc68a919a38a446cb2a7d8b7c4

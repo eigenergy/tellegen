@@ -71,12 +71,11 @@ def test_versions_separates_the_binding_from_the_engine():
     assert versions["powerio_ir"] == "pio-ir/0.12.4"
 
 
-def test_capabilities_reports_acopf_as_unavailable():
-    """`acopf` is a wire-stable tag that this build never solves."""
+def test_wheel_exposes_acopf_capabilities():
     by_name = {entry["formulation"]: entry for entry in tellegen.capabilities()}
-    assert by_name["acopf"]["available"] is False
-    assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
-    assert "acopf" not in tellegen.FORMULATIONS
+    assert by_name["acopf"]["available"]
+    assert set(tellegen.formulations()) == {"dcpf", "dcopf", "acpf", "socwr", "acopf"}
+    assert tellegen.FORMULATIONS == tellegen.formulations()
 
 
 # -- loading -----------------------------------------------------------------
@@ -197,7 +196,7 @@ def test_ac_power_flow_returns_voltages_and_no_prices(case: tellegen.Case):
 
 def test_an_unavailable_formulation_is_refused_before_solving(case: tellegen.Case):
     with pytest.raises(tellegen.TellegenInputError, match="formulation must be"):
-        case.formulation = "acopf"
+        case.formulation = "unrecognized"
 
 
 def test_rating_edits_are_rejected_by_dc_power_flow(case: tellegen.Case):

@@ -194,7 +194,7 @@ jobs:
           CARGO_PROFILE_RELEASE_LTO: "off"
         run: cargo test --release -p tellegen --features rms --test rms_psid_validation --test rms_physics --test rms_validation -- --include-ignored
 
-  # Exercise the native feature explicitly; shipping adapters still exclude it.
+  # Exercise the native feature explicitly as well as through the Python wheel.
   opf:
     if: inputs.needed
     runs-on: ubuntu-latest

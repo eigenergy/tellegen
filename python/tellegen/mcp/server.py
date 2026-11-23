@@ -120,8 +120,7 @@ OPERATIONS = frozenset(
     }
 )
 
-#: Formulations this build solves. `acopf` is a wire-stable tag that is never
-#: available, so it is refused before any engine work.
+#: Formulations exposed through the MCP solve and solve_module tools.
 FORMULATIONS = ("dcpf", "dcopf", "acpf", "socwr")
 
 #: Bundled example cases, served as resources and accepted as a `path`.

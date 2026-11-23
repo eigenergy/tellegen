@@ -13,6 +13,9 @@
 //! threaded, allocation local and free of global mutable state, so a solve is
 //! safe to run with the interpreter unlocked.
 
+#[cfg(feature = "ots")]
+mod switching;
+
 use powerio::Source;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -491,6 +494,10 @@ fn _tellegen(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("TellegenError", py.get_type::<TellegenError>())?;
     m.add("TellegenInputError", py.get_type::<TellegenInputError>())?;
     m.add("TellegenSolveError", py.get_type::<TellegenSolveError>())?;
+    #[cfg(feature = "ots")]
+    m.add_function(wrap_pyfunction!(switching::solve_ots_module, m)?)?;
+    #[cfg(feature = "ots")]
+    m.add_function(wrap_pyfunction!(switching::lacots_perspective_data, m)?)?;
     m.add_function(wrap_pyfunction!(solve_module, m)?)?;
     m.add_function(wrap_pyfunction!(capabilities_json, m)?)?;
     m.add_function(wrap_pyfunction!(parse_case, m)?)?;
