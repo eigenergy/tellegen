@@ -403,8 +403,11 @@ def _summarized(response: Dict[str, Any]) -> Dict[str, Any]:
     idempotent=True,
 )
 async def capabilities() -> Dict[str, Any]:
-    """The installed Tellegen build's versions, and per formulation whether it is available and which sensitivity operands and parameters it supports."""
-    return {"versions": _versions(), "capabilities": _capabilities()}
+    """Engine versions and the formulations available through the MCP solve tools."""
+    capabilities = _capabilities()
+    for entry in capabilities:
+        entry["available"] = entry["available"] and entry["formulation"] in FORMULATIONS
+    return {"versions": _versions(), "capabilities": capabilities}
 
 
 @_tool(

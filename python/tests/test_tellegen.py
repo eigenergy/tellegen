@@ -9,6 +9,7 @@ pytest from a directory where the repo tree cannot shadow it.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from importlib.metadata import requires
 from pathlib import Path
@@ -41,8 +42,11 @@ def case(case3_path: Path) -> tellegen.Case:
 
 def test_the_base_import_pulls_in_no_numeric_stack():
     """`import tellegen` must stay dependency free; arrays are an extra."""
-    assert "numpy" not in sys.modules
-    assert "scipy" not in sys.modules
+    subprocess.run(
+        [sys.executable, "-I", "-c", "import sys, tellegen; "
+         "assert 'numpy' not in sys.modules and 'scipy' not in sys.modules"],
+        check=True,
+    )
 
 
 def test_installed_mcp_extra_requires_the_qualified_reader():
