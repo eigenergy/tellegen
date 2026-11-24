@@ -95,6 +95,18 @@ pub(super) struct Patterns {
     sub: Vec<std::sync::Mutex<Patterns>>,
     /// Pivot every factorization afresh ([`super::RmsOptions::refactor_values`] off).
     pub(super) pivot_always: bool,
+    /// Experimental: the separator and the unknowns' places of the last region split,
+    /// for the system epoch, size and bus count it was made for ([`RegionLu`]).
+    split: Option<std::sync::Arc<Split>>,
+}
+
+/// The separator of a region split and every unknown's block and index ([`RegionLu`]).
+pub(super) struct Split {
+    key: (u64, usize, usize),
+    blk: Vec<u32>,
+    idx: Vec<u32>,
+    sizes: Vec<usize>,
+    sep: Vec<usize>,
 }
 
 impl Patterns {
@@ -139,6 +151,7 @@ impl Patterns {
             && a.pattern.is_some()
             && a.keys.len() == trip.len()
             && a.keys.iter().zip(trip).all(|(&(r, c), t)| r == t.row && c == t.col);
+        STATS[if same { 14 } else { 15 }].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if same {
             let p = Arc::clone(a.pattern.as_ref().expect("checked"));
             let mut val = vec![0.0; p.row_idx.len()];
@@ -146,6 +159,32 @@ impl Patterns {
                 val[s] += t.val;
             }
             return Ok((p, val));
+        }
+        // Experimental: a different triplet sequence (a finite-difference entry that is
+        // exactly zero this time, a limiter that cut a dependence) whose entries all lie in the last
+        // pattern takes that pattern by a direct look-up of each entry's slot, without sorting the
+        // triplets. The last pattern is the first one the search below would pick for it (the most
+        // recently used one that holds it), so the values, ordering and pivots are the same.
+        if a.n == n {
+            if let Some(p) = a.pattern.as_ref().filter(|p| self.kept.first().is_some_and(|k| Arc::ptr_eq(k, p))) {
+                let mut slot = Vec::with_capacity(trip.len());
+                let found = trip.iter().all(|t| {
+                    let rows = &p.row_idx[p.col_ptr[t.col]..p.col_ptr[t.col + 1]];
+                    rows.binary_search(&t.row).map(|k| slot.push(p.col_ptr[t.col] + k)).is_ok()
+                });
+                if found {
+                    STATS[9].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let p = Arc::clone(p);
+                    let mut val = vec![0.0; p.row_idx.len()];
+                    for (t, &k) in trip.iter().zip(&slot) {
+                        val[k] += t.val;
+                    }
+                    a.keys.clear();
+                    a.keys.extend(trip.iter().map(|t| (t.row, t.col)));
+                    a.slot = slot;
+                    return Ok((p, val));
+                }
+            }
         }
         let mat = SparseColMat::<usize, f64>::try_new_from_triplets(n, n, trip)
             .map_err(|e| format!("Jacobian assembly failed: {e:?}"))?;
@@ -591,6 +630,14 @@ const TOL_RES: f64 = 1e-10;
 /// The residual below which the iteration stops without the test on the
 /// correction.
 const TOL_RES_EXIT: f64 = 0.1 * TOL_RES;
+/// Experimental: `TELLEGEN_TOL=<x>` scales the Newton tolerances (`TOL_DX`,
+/// `TOL_RES_EXIT` and the residual bound of the stopping test) by `x / 1e-10`; unset, they are the
+/// defaults above and the results unchanged.
+fn tol_scale() -> f64 {
+    static S: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *S.get_or_init(|| std::env::var("TELLEGEN_TOL").ok().and_then(|v| v.parse::<f64>().ok()).map_or(1.0, |t| t / 1e-10))
+}
+
 /// Safety factor on the error extrapolated with the contraction rate. With
 /// the second-order predictor most steps end after two corrections, where the
 /// rate is one observation: the factor (and the fresher of two rate
@@ -682,7 +729,7 @@ impl History {
 pub(crate) static STATS: [std::sync::atomic::AtomicUsize; 16] = [const { std::sync::atomic::AtomicUsize::new(0) }; 16];
 /// Wall time in microseconds (experimental): relay evaluations run first, waits for
 /// relays beside the step, bank settling, integration steps.
-pub(crate) static TIMES: [std::sync::atomic::AtomicU64; 8] = [const { std::sync::atomic::AtomicU64::new(0) }; 8];
+pub(crate) static TIMES: [std::sync::atomic::AtomicU64; 16] = [const { std::sync::atomic::AtomicU64::new(0) }; 16];
 
 pub(crate) fn time_add(k: usize, t0: crate::rms::clock::Instant) {
     TIMES[k].fetch_add(t0.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
@@ -706,11 +753,70 @@ pub fn lu_stats() -> String {
         "factorizations: reinit {}, new {}, refresh {} (line search {}, stall {}, cap {}); pivoted {} (new patterns {}, pivot fails {}); steps {}, newton iterations {}
          relays: {} evaluations first ({:.1} s), {} beside (wait {:.1} s); banks {:.1} s; steps {:.1} s
          in steps: residual {:.1} s, factorizations {:.1} s, solves {:.1} s, jacobian {:.1} s
+         in factorizations: assembly {:.1} s, unit blocks {:.1} s, network LU {:.1} s; pattern reuse {} of {} (+{} by look-up); limit switches {}
+         in network LU: split {:.1} s, region LUs and A_rr^-1 B_r {:.1} s, Schur complement {:.1} s, its dense LU {:.1} s
          {}",
         g(0), g(1), g(2), g(6), g(7), g(8), g(3), g(12), g(13), g(4), g(5),
-        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), regions
+        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), tm(8), tm(9), tm(10), g(14), g(14) + g(15), g(9), LIMIT_SWITCHES.load(std::sync::atomic::Ordering::Relaxed), tm(11), tm(12), tm(13), tm(14), regions
     )
 }
+
+
+/// Experimental: `TELLEGEN_TRACE=<file>` writes one line per accepted step:
+/// wall microseconds of the step, Newton iterations, factorizations refreshed in it, and the
+/// residual after each iteration. Off (no cost but one OnceLock read) without the variable.
+pub(crate) fn trace_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("TELLEGEN_TRACE").is_some())
+}
+static TRACE: std::sync::Mutex<Option<(std::io::BufWriter<std::fs::File>, Vec<f64>)>> = std::sync::Mutex::new(None);
+fn trace_res(r: f64) {
+    if trace_on() {
+        let mut g = TRACE.lock().expect("trace");
+        if g.is_none() {
+            let path = std::env::var("TELLEGEN_TRACE").expect("trace path");
+            *g = Some((std::io::BufWriter::new(std::fs::File::create(path).expect("trace file")), Vec::new()));
+        }
+        g.as_mut().expect("trace").1.push(r);
+    }
+}
+static TRACE_WHERE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+fn trace_where(sys: &DynSystem, r: &[f64]) {
+    if trace_on() {
+        let mut g = TRACE_WHERE.lock().expect("trace");
+        if !g.is_empty() {
+            g.push('|');
+        }
+        g.push_str(&largest_residual(sys, r).replace(' ', "_"));
+    }
+}
+fn trace_fail(us: u128, h: f64, theta: f64, depth: usize, why: &str) {
+    use std::io::Write;
+    if trace_on() {
+        let mut g = TRACE.lock().expect("trace");
+        if let Some((w, res)) = g.as_mut() {
+            let rs: Vec<String> = res.iter().map(|v| format!("{v:.1e}")).collect();
+            let _ = writeln!(w, "FAIL {us} {h} {theta} {depth} {} | {why}", rs.join(","));
+            res.clear();
+        }
+    }
+}
+fn trace_step(us: u128, iters: usize, refreshes: usize, h: f64, theta: f64) {
+    use std::io::Write;
+    if trace_on() {
+        let mut g = TRACE.lock().expect("trace");
+        if let Some((w, res)) = g.as_mut() {
+            let rs: Vec<String> = res.iter().map(|v| format!("{v:.1e}")).collect();
+            let wh = std::mem::take(&mut *TRACE_WHERE.lock().expect("trace"));
+            let _ = writeln!(w, "{us} {iters} {refreshes} {h} {theta} {} {wh}", rs.join(","));
+            let _ = w.flush();
+            res.clear();
+        }
+    }
+}
+
+/// Experimental: frozen limit modes that switched after a step.
+pub(crate) static LIMIT_SWITCHES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Experimental: `TELLEGEN_STALL` (the residual ratio that counts as a stalled Newton
 /// iteration, 0.5) and `TELLEGEN_RELAXED=1` (keep any factorization until Newton stalls).
@@ -828,7 +934,12 @@ impl Stepper {
         h: f64,
         theta: f64,
     ) -> Result<usize, String> {
+        let (t_trace, r_trace) = (crate::rms::clock::Instant::now(), STATS[2].load(std::sync::atomic::Ordering::Relaxed));
         let iterations = self.solve(sys, x, f, h, theta, false, true)?;
+        // Experimental: frozen limits take their new modes once the step is taken.
+        let switched = sys.update_limit_modes();
+        LIMIT_SWITCHES.fetch_add(switched, std::sync::atomic::Ordering::Relaxed);
+        trace_step(t_trace.elapsed().as_micros(), iterations, STATS[2].load(std::sync::atomic::Ordering::Relaxed) - r_trace, h, theta);
         STATS[4].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         STATS[5].fetch_add(iterations, std::sync::atomic::Ordering::Relaxed);
         std::mem::swap(x, &mut self.work.x);
@@ -854,6 +965,7 @@ impl Stepper {
             Ok(n) => n,
             Err(_) => self.solve(sys, x, f, 0.0, 0.5, true, false)?,
         };
+        LIMIT_SWITCHES.fetch_add(sys.update_limit_modes(), std::sync::atomic::Ordering::Relaxed);
         std::mem::swap(x, &mut self.work.x);
         std::mem::swap(f, &mut self.work.f);
         self.history.len = 0;
@@ -969,6 +1081,9 @@ impl Stepper {
         } else {
             x.copy_from_slice(xn);
         }
+        if h > 0.0 && !hold_devices && diag_due() {
+            diag_step(&step, x);
+        }
         // @block Reuse a factorization
         // The factorization of an earlier step is kept while the step size, the
         // method and the system (its epoch) are the same.
@@ -1012,7 +1127,7 @@ impl Stepper {
             if !rnorm.is_finite() {
                 return Err("the Newton iteration produced a non-finite residual".into());
             }
-            if rnorm < TOL_RES_EXIT && iter > 0 {
+            if rnorm < TOL_RES_EXIT * tol_scale() && iter > 0 {
                 if cached {
                     *factor = lu;
                 } else if keep && h == 0.0 {
@@ -1103,6 +1218,11 @@ impl Stepper {
             std::mem::swap(r, r_trial);
             let previous = rnorm;
             rnorm = trial_norm;
+            trace_res(rnorm);
+            // `TELLEGEN_TRACE_WHERE=1`: also the variable with the largest residual (slow: it names every variable).
+            if iter <= 4 && trace_on() && std::env::var_os("TELLEGEN_TRACE_WHERE").is_some() {
+                trace_where(sys, r);
+            }
             if super::not_lt(rnorm, stall_settings().0 * previous) {
                 stalls += 1;
             }
@@ -1127,7 +1247,8 @@ impl Stepper {
                 f64::INFINITY
             };
             last_step = step_norm;
-            if (step_norm < TOL_DX || remaining < RATE_SAFETY * TOL_DX) && rnorm < 1e-6 {
+            let ts = tol_scale();
+            if (step_norm < TOL_DX * ts || remaining < RATE_SAFETY * TOL_DX * ts) && rnorm < 1e-6 * ts.max(1.0) {
                 if cached {
                     *factor = lu;
                 } else if keep && h == 0.0 {
@@ -1137,6 +1258,150 @@ impl Stepper {
             }
         }
         Err(format!("Newton did not converge in {MAX_ITERS} iterations"))
+    }
+}
+
+/// Experimental: `TELLEGEN_DIAG_STEP=<k>[,<k>...]` analyses the Newton solve of the step
+/// that follows `k` accepted steps (written to `TELLEGEN_DIAG_OUT`, default `diag.txt`), on copies:
+/// pure Newton with a fresh Jacobian every iteration, the residual and the correction by class of
+/// state, then the step matrix against directional differences of the residual (forward and
+/// backward, so a kink shows as the two disagreeing). The run itself is unchanged.
+fn diag_due() -> bool {
+    static STEPS: std::sync::OnceLock<Vec<usize>> = std::sync::OnceLock::new();
+    let steps = STEPS.get_or_init(|| {
+        std::env::var("TELLEGEN_DIAG_STEP")
+            .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+            .unwrap_or_default()
+    });
+    !steps.is_empty() && steps.contains(&STATS[4].load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn diag_class(name: &str) -> String {
+    if let Some(rest) = name.strip_prefix("bus ") {
+        return format!("bus {}", rest.rsplit(' ').next().unwrap_or(""));
+    }
+    let model = if name.starts_with('G') { "machine" } else if name.starts_with('R') { "plant" } else { "other" };
+    format!("{model} {}", name.rsplit(' ').next().unwrap_or(""))
+}
+
+fn diag_step(step: &Step<'_>, x0: &[f64]) {
+    use std::fmt::Write as _;
+    let sys = step.sys;
+    let nx = sys.nx;
+    let names = sys.variable_names();
+    let class: Vec<String> = names.iter().map(|n| diag_class(n)).collect();
+    let mut out = String::new();
+    let k = STATS[4].load(std::sync::atomic::Ordering::Relaxed);
+    let _ = writeln!(out, "=== step after {k} accepted steps, h = {}, theta = {}, nx = {nx}", step.h, step.theta);
+    let by_class = |v: &[f64]| -> Vec<(String, f64, usize)> {
+        let mut m: std::collections::BTreeMap<&str, (f64, usize)> = std::collections::BTreeMap::new();
+        for i in 0..nx {
+            let e = m.entry(class[i].as_str()).or_insert((0.0, 0));
+            if v[i].abs() > e.0 {
+                *e = (v[i].abs(), i);
+            }
+        }
+        let mut l: Vec<(String, f64, usize)> = m.into_iter().map(|(c, (a, i))| (c.to_string(), a, i)).collect();
+        l.sort_by(|a, b| b.1.total_cmp(&a.1));
+        l
+    };
+    let top = |v: &[f64], n: usize| -> String {
+        let mut idx: Vec<usize> = (0..nx).collect();
+        idx.sort_by(|&a, &b| v[b].abs().total_cmp(&v[a].abs()));
+        idx.iter().take(n).map(|&i| format!("{} {:.2e}", names[i], v[i])).collect::<Vec<_>>().join("; ")
+    };
+    let mut x = x0.to_vec();
+    let mut f = vec![0.0; nx];
+    let mut r = vec![0.0; nx];
+    let mut pat = Patterns::default();
+    let mut last_dx = vec![0.0; nx];
+    for it in 0..10 {
+        let rn = step.residual(&x, &mut f, &mut r);
+        let _ = writeln!(out, "-- pure Newton iteration {it}: max |r| {rn:.3e}");
+        for (c, a, i) in by_class(&r).iter().take(6) {
+            let _ = writeln!(out, "     r  {c:<24} {a:.2e} at {}", names[*i]);
+        }
+        if rn < 1e-13 {
+            break;
+        }
+        let mut lu = match Factor::new(sys, step.mass, &x, step.h, step.theta, &mut pat) {
+            Ok(lu) => lu,
+            Err(e) => {
+                let _ = writeln!(out, "   factorization failed: {e}");
+                break;
+            }
+        };
+        let mut dx: Vec<f64> = r.iter().map(|v| -v).collect();
+        lu.solve(&mut dx);
+        let dn = dx.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
+        let _ = writeln!(out, "   max |dx| {dn:.3e}; largest: {}", top(&dx, 6));
+        for (c, a, i) in by_class(&dx).iter().take(6) {
+            let _ = writeln!(out, "     dx {c:<24} {a:.2e} at {}", names[*i]);
+        }
+        for i in 0..nx {
+            x[i] += dx[i];
+        }
+        last_dx = dx;
+    }
+    // The step matrix against the residual's directional differences along the last correction
+    // (and along each class's part of it).
+    let _ = step.residual(&x, &mut f, &mut r);
+    let r0 = r.clone();
+    let jf = sys.jacobian(&x);
+    let check = |v: &[f64], label: &str, out: &mut String| {
+        let vn = v.iter().fold(0.0_f64, |a, b| a.max(b.abs()));
+        if vn == 0.0 {
+            return;
+        }
+        let mut av = vec![0.0; nx];
+        for &(row, col, j) in &jf {
+            av[row] += step_entry(step.mass, row, j, step.h, step.theta) * v[col];
+        }
+        for i in 0..nx {
+            if step.mass[i] != 0.0 {
+                av[i] += step.mass[i] * v[i];
+            }
+        }
+        let mut res = vec![[0.0; 2]; 0];
+        for (s, sign) in [(0usize, 1.0_f64), (1, -1.0)] {
+            let eps = 1e-6 / vn * sign;
+            let xe: Vec<f64> = x.iter().zip(v).map(|(a, b)| a + eps * b).collect();
+            let mut fe = vec![0.0; nx];
+            let mut re = vec![0.0; nx];
+            let _ = step.residual(&xe, &mut fe, &mut re);
+            if res.is_empty() {
+                res = vec![[0.0; 2]; nx];
+            }
+            for i in 0..nx {
+                res[i][s] = (re[i] - r0[i]) / eps;
+            }
+        }
+        let mut err: Vec<f64> = (0..nx).map(|i| res[i][0] - av[i]).collect();
+        let kink: Vec<f64> = (0..nx).map(|i| res[i][0] - res[i][1]).collect();
+        let scale = av.iter().fold(0.0_f64, |a, b| a.max(b.abs())).max(1e-300);
+        let _ = writeln!(out, "-- Jacobian check along {label}: max |A v| {scale:.2e}");
+        let _ = writeln!(out, "   forward difference - A v, largest: {}", top(&err, 8));
+        let _ = writeln!(out, "   forward - backward difference (kinks), largest: {}", top(&kink, 8));
+        for (c, a, i) in by_class(&err).iter().take(6) {
+            let _ = writeln!(out, "     err  {c:<24} {a:.2e} at {}", names[*i]);
+        }
+        for (c, a, i) in by_class(&kink).iter().take(6) {
+            let _ = writeln!(out, "     kink {c:<24} {a:.2e} at {}", names[*i]);
+        }
+        err.clear();
+    };
+    check(&last_dx, "the last correction", &mut out);
+    let mut classes: Vec<String> = class.clone();
+    classes.sort();
+    classes.dedup();
+    for c in classes {
+        let v: Vec<f64> = (0..nx).map(|i| if class[i] == c { last_dx[i] } else { 0.0 }).collect();
+        check(&v, &format!("the last correction's part in [{c}]"), &mut out);
+    }
+    let path = std::env::var("TELLEGEN_DIAG_OUT").unwrap_or_else(|_| "diag.txt".into());
+    if let Ok(mut fh) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        use std::io::Write as _;
+        let _ = fh.write_all(out.as_bytes());
     }
 }
 
@@ -1227,12 +1492,18 @@ pub(super) fn step_adaptive(
     euler_steps: &mut usize,
     stepper: &mut Stepper,
 ) -> Result<usize, String> {
-    match stepper.step(sys, x, f, h, 0.5) {
+    let t_try = crate::rms::clock::Instant::now();
+    match stepper.step(sys, x, f, h, step_theta()) {
         Ok(ok) => Ok(ok),
         Err(trap) => {
-            if let Ok(ok) = stepper.step(sys, x, f, h, 1.0) {
-                *euler_steps += 1;
-                return Ok(ok);
+            trace_fail(t_try.elapsed().as_micros(), h, step_theta(), depth, &trap);
+            let t_be = crate::rms::clock::Instant::now();
+            match stepper.step(sys, x, f, h, 1.0) {
+                Ok(ok) => {
+                    *euler_steps += 1;
+                    return Ok(ok);
+                }
+                Err(e) => trace_fail(t_be.elapsed().as_micros(), h, 1.0, depth, &e),
             }
             if depth >= 10 {
                 return Err(trap);
@@ -1252,6 +1523,13 @@ pub(super) fn step_adaptive(
     }
 }
 
+/// Experimental: `TELLEGEN_THETA=<θ>` sets the weight of the step method
+/// (0.5 trapezoidal, the default and unchanged results; 1.0 backward Euler).
+fn step_theta() -> f64 {
+    static T: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *T.get_or_init(|| std::env::var("TELLEGEN_THETA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.5))
+}
+
 // @block Network LU by regions
 // Experimental: the network matrix in bordered block form. One end
 // bus of every line between two regions (and the frame speed) forms the
@@ -1261,7 +1539,7 @@ pub(super) fn step_adaptive(
 // to rounding.
 
 /// `f(0..n)` on the spin pool (serially on wasm).
-fn par_for(n: usize, f: &(dyn Fn(usize) + Sync)) {
+pub(super) fn par_for(n: usize, f: &(dyn Fn(usize) + Sync)) {
     #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
     super::spin_pool::SpinPool::global().run(n, f);
     #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
@@ -1281,10 +1559,11 @@ impl NetLu {
         trip: &[Triplet<usize, usize, f64>],
         patterns: &mut Patterns,
         regions: Option<&[u16]>,
+        epoch: u64,
     ) -> Result<Self, String> {
         match regions {
             Some(reg) if reg.len() == n && n > 0 && size >= 2 * n => {
-                Ok(Self::Regions(Box::new(RegionLu::new(size, n, trip, patterns, reg)?)))
+                Ok(Self::Regions(Box::new(RegionLu::new(size, n, trip, patterns, reg, epoch)?)))
             }
             _ => Ok(Self::One(SparseLu::new(size, trip, patterns)?)),
         }
@@ -1328,36 +1607,50 @@ impl RegionLu {
         trip: &[Triplet<usize, usize, f64>],
         patterns: &mut Patterns,
         reg: &[u16],
+        epoch: u64,
     ) -> Result<Self, String> {
+        let t_split = crate::rms::clock::Instant::now();
         let n2 = 2 * n;
         let nb = reg.iter().copied().max().map_or(1, |m| usize::from(m) + 1);
         // The separator: of each line between two regions, the end bus in the
-        // higher region; and every unknown past the bus voltages.
-        let mut sep_bus = vec![false; n];
-        for t in trip {
-            if t.row < n2 && t.col < n2 {
-                let (a, b) = (t.row % n, t.col % n);
-                if reg[a] != reg[b] {
-                    sep_bus[if reg[a] > reg[b] { a } else { b }] = true;
+        // higher region; and every unknown past the bus voltages. Experimental: kept
+        // for the system epoch, since only the network matrix couples buses and it changes
+        // only with a new epoch; a coupling outside a kept separator still fails below.
+        let key = (epoch, size, n);
+        let split = match patterns.split.as_ref().filter(|sp| sp.key == key) {
+            Some(sp) => std::sync::Arc::clone(sp),
+            None => {
+                let mut sep_bus = vec![false; n];
+                for t in trip {
+                    if t.row < n2 && t.col < n2 {
+                        let (a, b) = (t.row % n, t.col % n);
+                        if reg[a] != reg[b] {
+                            sep_bus[if reg[a] > reg[b] { a } else { b }] = true;
+                        }
+                    }
                 }
+                let mut blk = vec![0u32; size];
+                let mut idx = vec![0u32; size];
+                let mut sizes = vec![0usize; nb];
+                let mut sep = Vec::new();
+                for u in 0..size {
+                    if u >= n2 || sep_bus[u % n] {
+                        blk[u] = nb as u32;
+                        idx[u] = sep.len() as u32;
+                        sep.push(u);
+                    } else {
+                        let r = usize::from(reg[u % n]);
+                        blk[u] = r as u32;
+                        idx[u] = sizes[r] as u32;
+                        sizes[r] += 1;
+                    }
+                }
+                let sp = std::sync::Arc::new(Split { key, blk, idx, sizes, sep });
+                patterns.split = Some(std::sync::Arc::clone(&sp));
+                sp
             }
-        }
-        let mut blk = vec![0u32; size];
-        let mut idx = vec![0u32; size];
-        let mut sizes = vec![0usize; nb];
-        let mut sep = Vec::new();
-        for u in 0..size {
-            if u >= n2 || sep_bus[u % n] {
-                blk[u] = nb as u32;
-                idx[u] = sep.len() as u32;
-                sep.push(u);
-            } else {
-                let r = usize::from(reg[u % n]);
-                blk[u] = r as u32;
-                idx[u] = sizes[r] as u32;
-                sizes[r] += 1;
-            }
-        }
+        };
+        let (blk, idx, sizes, sep) = (split.blk.clone(), split.idx.clone(), split.sizes.clone(), split.sep.clone());
         let ns = sep.len();
         let mut trips: Vec<Vec<Triplet<usize, usize, f64>>> = vec![Vec::new(); nb];
         let mut bents: Vec<Vec<(u32, u32, f64)>> = vec![Vec::new(); nb];
@@ -1384,6 +1677,8 @@ impl RegionLu {
         for p in &mut patterns.sub {
             p.get_mut().expect("region patterns").pivot_always = patterns.pivot_always;
         }
+        time_add(11, t_split);
+        let t_reg = crate::rms::clock::Instant::now();
         // Each block: its LU and `A_rr⁻¹ B_r`.
         let blocks: Vec<std::sync::Mutex<Option<SparseLu>>> =
             (0..nb).map(|_| std::sync::Mutex::new(None)).collect();
@@ -1431,6 +1726,8 @@ impl RegionLu {
             xcols.push(cols);
             x.push(v);
         }
+        time_add(12, t_reg);
+        let t_schur = crate::rms::clock::Instant::now();
         // S = A_SS − Σ C_r A_rr⁻¹ B_r.
         for r in 0..nb {
             let m = sizes[r];
@@ -1440,8 +1737,12 @@ impl RegionLu {
                 }
             }
         }
+        time_add(13, t_schur);
+        let t_dense = crate::rms::clock::Instant::now();
         let mut s_piv = vec![0usize; ns];
-        if !dense_lu(&mut s, ns, &mut s_piv) {
+        let dense_ok = dense_lu(&mut s, ns, &mut s_piv);
+        time_add(14, t_dense);
+        if !dense_ok {
             return Err("Jacobian factorization failed: the separator's Schur complement is singular".into());
         }
         let work = sizes.iter().map(|&m| std::sync::Mutex::new(vec![0.0; m])).collect();

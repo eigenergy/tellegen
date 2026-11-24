@@ -384,6 +384,101 @@ impl Shaft {
     }
 }
 
+/// Experimental: `TELLEGEN_FREEZE=1` freezes the non-windup limits of the SEXS field
+/// voltage during a step (see [`LimitMode`]); unset, the limits act within the step as before.
+pub(crate) fn freeze_limits() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("TELLEGEN_FREEZE").is_ok_and(|v| v == "1"))
+}
+
+/// Experimental: `TELLEGEN_FREEZE_HYST=<pu>` (default 1e-3): how far the free rate
+/// `K u − y` must pull back from a limit before the limiter lets go.
+fn freeze_hysteresis() -> f64 {
+    static H: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *H.get_or_init(|| std::env::var("TELLEGEN_FREEZE_HYST").ok().and_then(|v| v.parse().ok()).unwrap_or(1e-3))
+}
+
+/// Experimental: a non-windup limit's mode, frozen while Newton solves a step and
+/// updated once the step is taken, from the state and free rate of the last evaluation (the
+/// accepted point). A limit binds when the state reaches it while the free rate pushes on; it lets
+/// go only once the free rate pulls back by more than the hysteresis, so it cannot switch on and
+/// off from one step to the next. Before the first update the mode is unset and the limit acts as
+/// without freezing.
+#[derive(Debug)]
+pub(crate) struct LimitMode {
+    mode: std::sync::atomic::AtomicU8,
+    y: std::sync::atomic::AtomicU64,
+    rate: std::sync::atomic::AtomicU64,
+}
+
+impl LimitMode {
+    pub(crate) const FREE: u8 = 0;
+    pub(crate) const AT_MAX: u8 = 1;
+    pub(crate) const AT_MIN: u8 = 2;
+    const UNSET: u8 = 255;
+
+    pub(crate) fn mode(&self) -> u8 {
+        self.mode.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn record(&self, y: f64, rate: f64) {
+        self.y.store(y.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        self.rate.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The mode for the next step, from the recorded state and free rate. Returns whether it changed.
+    pub(crate) fn update(&self, y_min: f64, y_max: f64) -> bool {
+        let y = f64::from_bits(self.y.load(std::sync::atomic::Ordering::Relaxed));
+        let rate = f64::from_bits(self.rate.load(std::sync::atomic::Ordering::Relaxed));
+        if !(y.is_finite() && rate.is_finite()) {
+            return false;
+        }
+        let hyst = freeze_hysteresis();
+        let old = self.mode();
+        let new = match old {
+            Self::AT_MAX if rate > -hyst => Self::AT_MAX,
+            Self::AT_MIN if rate < hyst => Self::AT_MIN,
+            _ if y >= y_max && rate > 0.0 => Self::AT_MAX,
+            _ if y <= y_min && rate < 0.0 => Self::AT_MIN,
+            _ => Self::FREE,
+        };
+        self.mode.store(new, std::sync::atomic::Ordering::Relaxed);
+        new != old && old != Self::UNSET
+    }
+}
+
+impl Default for LimitMode {
+    fn default() -> Self {
+        Self {
+            mode: std::sync::atomic::AtomicU8::new(Self::UNSET),
+            y: std::sync::atomic::AtomicU64::new(f64::NAN.to_bits()),
+            rate: std::sync::atomic::AtomicU64::new(f64::NAN.to_bits()),
+        }
+    }
+}
+
+impl Clone for LimitMode {
+    fn clone(&self) -> Self {
+        let r = std::sync::atomic::Ordering::Relaxed;
+        Self {
+            mode: std::sync::atomic::AtomicU8::new(self.mode.load(r)),
+            y: std::sync::atomic::AtomicU64::new(self.y.load(r)),
+            rate: std::sync::atomic::AtomicU64::new(self.rate.load(r)),
+        }
+    }
+}
+
+impl Avr {
+    /// Experimental: update the frozen limit modes after a taken step; returns the
+    /// number that switched.
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        match self {
+            Self::Sexs { v_min, v_max, lim, .. } => usize::from(lim.update(*v_min, *v_max)),
+            _ => 0,
+        }
+    }
+}
+
 /// Exciters. `Fixed` holds `Vf = V_ref`.
 // @block Exciters
 #[derive(Clone, Debug)]
@@ -402,6 +497,9 @@ pub(crate) enum Avr {
         /// The field voltage's clamp: `[EMIN, EMAX]`, widened to a state
         /// that rests past them at initialization ([`Avr::rest_at`]).
         out: (f64, f64),
+        /// Experimental: the field voltage limiter's mode, frozen during a step
+        /// (`TELLEGEN_FREEZE=1`).
+        lim: LimitMode,
     },
     Esac1a {
         tr: f64,
@@ -680,6 +778,7 @@ impl Avr {
                 v_min,
                 v_max,
                 out,
+                lim,
             } => {
                 // avr_models.jl, SEXS, with the field voltage the state
                 // clamped (PSS/E; avr_models.jl applies the state itself,
@@ -688,7 +787,20 @@ impl Avr {
                 let (vf, vr) = (x[0], x[1]);
                 let v_in = u.v_ref + u.vs - u.vt;
                 let (v_ll, dvr) = lead_lag_mm(v_in, vr, 1.0, tb * ta_tb, *tb);
-                let (_, dvf) = low_pass_nonwindup_mm(v_ll, vf, *k, *te, *v_min, *v_max);
+                let dvf = if freeze_limits() && *te >= f64::EPSILON {
+                    // Experimental: the non-windup limit in the mode of the step's
+                    // start, so the step's equations are smooth; the free rate and the state
+                    // are kept for the mode's update after the step.
+                    let rate = k * v_ll - vf;
+                    lim.record(vf, rate);
+                    match lim.mode() {
+                        LimitMode::FREE => rate,
+                        LimitMode::AT_MAX | LimitMode::AT_MIN => 0.0,
+                        _ => low_pass_nonwindup_mm(v_ll, vf, *k, *te, *v_min, *v_max).1,
+                    }
+                } else {
+                    low_pass_nonwindup_mm(v_ll, vf, *k, *te, *v_min, *v_max).1
+                };
                 f[0] = dvf;
                 f[1] = dvr;
                 vf.clamp(out.0, out.1)
@@ -1306,6 +1418,7 @@ pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
             v_min: s.emin,
             v_max: s.emax,
             out: (s.emin, s.emax),
+            lim: LimitMode::default(),
         },
         DynamicModel::Esac1a(e) => Avr::Esac1a {
             tr: e.tr,

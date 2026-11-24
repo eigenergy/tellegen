@@ -924,6 +924,15 @@ impl DynSystem {
 
     /// `f(x)`, and the device outputs when `outs` is given.
     // @block Residual f(x)
+    /// Experimental: after a taken step, the frozen limit modes from the last
+    /// evaluation (`TELLEGEN_FREEZE=1`); returns how many switched.
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        if !super::models::freeze_limits() {
+            return 0;
+        }
+        self.devices.iter().map(|d| d.avr.update_limit_modes()).sum()
+    }
+
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
         if outs.is_none() {
             if let Some(ri) = super::regions::region_index(self) {

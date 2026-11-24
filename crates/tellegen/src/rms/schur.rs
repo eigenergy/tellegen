@@ -45,6 +45,11 @@ use super::system::DynSystem;
 /// A pivot below this fraction of its block's largest entry counts as zero.
 const PIVOT_MIN: f64 = 1e-13;
 
+/// Experimental: units from which their blocks are factorized on the spin pool,
+/// and the number of chunks they are split into.
+const PAR_UNITS_MIN: usize = 256;
+const PAR_UNIT_CHUNKS: usize = 64;
+
 /// One unit's place in the factorization.
 struct Unit {
     /// First state in the device part (global index minus `2 n`).
@@ -159,6 +164,7 @@ impl BlockLu {
         let mut b = vec![0.0; 2 * states];
         // `[C_k  E_k]` first, `D_k⁻¹` times it after the factorization.
         let mut w = vec![0.0; 3 * states];
+        let t_asm = crate::rms::clock::Instant::now();
         let mut trip: Vec<Triplet<usize, usize, f64>> =
             Vec::with_capacity(4 * sys.ybus.len() + 8 * units.len() + 8);
         for &(row, col, v) in jf {
@@ -210,8 +216,7 @@ impl BlockLu {
             return Ok(None);
         }
         let mut perm = vec![0u32; states];
-        let mut tmp = vec![0.0; widest];
-        let mut rhs_col = vec![0.0; widest];
+        let tmp = vec![0.0; widest];
         let mut factors = Factors {
             col: Vec::with_capacity(block / 2),
             val: Vec::with_capacity(block / 2),
@@ -220,47 +225,119 @@ impl BlockLu {
             inv: Vec::with_capacity(states),
         };
         factors.start.push(0);
-        for u in &units {
-            let k = u.k;
-            let block = &mut lu[u.block..u.block + k * k];
-            let p = &mut perm[u.first..u.first + k];
-            if !factor(block, k, p) {
+        super::integrate::time_add(8, t_asm);
+        let t_units = crate::rms::clock::Instant::now();
+        // Experimental: the units' blocks in chunks on the spin pool. Each chunk owns
+        // its units' contiguous parts of `lu`, `perm` and `w` and builds its own compressed
+        // factors; they are joined in unit order afterwards, with the network entries, so the
+        // arrays and the triplets are those of the serial loop, value for value.
+        let nu = units.len();
+        let pooled = sys.threads && nu >= PAR_UNITS_MIN && super::spin_pool::SpinPool::global().threads() > 0;
+        let nchunks = if pooled { PAR_UNIT_CHUNKS.min(nu) } else { 1 };
+        let bounds: Vec<usize> = (0..=nchunks).map(|c| c * nu / nchunks).collect();
+        type ChunkOut = (Factors, Vec<[[f64; 3]; 2]>, bool);
+        let mut parts: Vec<std::sync::Mutex<(&mut [f64], &mut [u32], &mut [f64], ChunkOut)>> = Vec::with_capacity(nchunks);
+        {
+            let (mut lu_rest, mut perm_rest, mut w_rest): (&mut [f64], &mut [u32], &mut [f64]) =
+                (&mut lu[..], &mut perm[..], &mut w[..]);
+            let (mut lu_at, mut st_at) = (0usize, 0usize);
+            for c in 0..nchunks {
+                let next = bounds[c + 1];
+                let lu_end = if next < nu { units[next].block } else { block };
+                let st_end = if next < nu { units[next].first } else { states };
+                let (l, lr) = std::mem::take(&mut lu_rest).split_at_mut(lu_end - lu_at);
+                let (pm, pr) = std::mem::take(&mut perm_rest).split_at_mut(st_end - st_at);
+                let (wv, wr) = std::mem::take(&mut w_rest).split_at_mut(3 * (st_end - st_at));
+                (lu_rest, perm_rest, w_rest) = (lr, pr, wr);
+                (lu_at, st_at) = (lu_end, st_end);
+                let f = Factors {
+                    col: Vec::new(),
+                    val: Vec::new(),
+                    start: vec![0],
+                    mid: Vec::new(),
+                    inv: Vec::new(),
+                };
+                parts.push(std::sync::Mutex::new((l, pm, wv, (f, Vec::new(), true))));
+            }
+        }
+        let run_chunk = |c: usize| {
+            let mut guard = parts[c].lock().expect("unit chunk");
+            let (lu_c, perm_c, w_c, (fac, contrib, ok)) = &mut *guard;
+            let (a, z) = (bounds[c], bounds[c + 1]);
+            if a == z {
+                return;
+            }
+            let (lu0, st0) = (units[a].block, units[a].first);
+            let mut tmp = vec![0.0; widest];
+            let mut rhs_col = vec![0.0; widest];
+            contrib.reserve(z - a);
+            for u in &units[a..z] {
+                let k = u.k;
+                let (fl, fs) = (u.first - st0, u.block - lu0);
+                let blk = &mut lu_c[fs..fs + k * k];
+                let p = &mut perm_c[fl..fl + k];
+                if !factor(blk, k, p) {
+                    *ok = false;
+                    return;
+                }
+                if fac.push(blk, k).is_err() {
+                    *ok = false;
+                    return;
+                }
+                // `D_k⁻¹ [C_k  E_k]`, a column at a time.
+                for col in 0..3 {
+                    for i in 0..k {
+                        rhs_col[i] = w_c[3 * (fl + i) + col];
+                    }
+                    fac.solve(fl, k, p, &mut rhs_col[..k], &mut tmp);
+                    for i in 0..k {
+                        w_c[3 * (fl + i) + col] = rhs_col[i];
+                    }
+                }
+                if w_c[3 * fl..3 * (fl + k)].iter().any(|v| !v.is_finite()) {
+                    *ok = false;
+                    return;
+                }
+                // The unit's contribution to its bus: `−B_k D_k⁻¹ [C_k  E_k]`.
+                let mut sc = [[0.0; 3]; 2];
+                for i in 0..k {
+                    let (b0, b1) = (b[2 * (u.first + i)], b[2 * (u.first + i) + 1]);
+                    for col in 0..3 {
+                        let wv = w_c[3 * (fl + i) + col];
+                        sc[0][col] -= b0 * wv;
+                        sc[1][col] -= b1 * wv;
+                    }
+                }
+                contrib.push(sc);
+            }
+        };
+        if nchunks > 1 {
+            super::integrate::par_for(nchunks, &run_chunk);
+        } else {
+            run_chunk(0);
+        }
+        // Join in unit order: the compressed factors, then the network entries.
+        for (c, part) in parts.into_iter().enumerate() {
+            let (_, _, _, (fac, contrib, ok)) = part.into_inner().expect("unit chunk");
+            if !ok {
                 return Ok(None);
             }
-            factors.push(block, k)?;
-            // `D_k⁻¹ [C_k  E_k]`, a column at a time.
-            for c in 0..3 {
-                for i in 0..k {
-                    rhs_col[i] = w[3 * (u.first + i) + c];
-                }
-                factors.solve(u.first, k, p, &mut rhs_col[..k], &mut tmp);
-                for i in 0..k {
-                    w[3 * (u.first + i) + c] = rhs_col[i];
-                }
-            }
-            if w[3 * u.first..3 * (u.first + k)]
-                .iter()
-                .any(|v| !v.is_finite())
-            {
-                return Ok(None);
-            }
-            // The unit's contribution to its bus: `−B_k D_k⁻¹ [C_k  E_k]`.
-            // Always entered, zero or not, so the network's pattern stays.
-            let mut s = [[0.0; 3]; 2];
-            for i in 0..k {
-                let (b0, b1) = (b[2 * (u.first + i)], b[2 * (u.first + i) + 1]);
-                for c in 0..3 {
-                    let wv = w[3 * (u.first + i) + c];
-                    s[0][c] -= b0 * wv;
-                    s[1][c] -= b1 * wv;
-                }
-            }
-            let rows = [u.bus, n + u.bus];
-            for (r, &row) in rows.iter().enumerate() {
-                trip.push(Triplet::new(row, u.bus, s[r][0]));
-                trip.push(Triplet::new(row, n + u.bus, s[r][1]));
-                if reference.is_some() {
-                    trip.push(Triplet::new(row, n2, s[r][2]));
+            let off = u32::try_from(factors.col.len()).map_err(|e| e.to_string())?;
+            u32::try_from(factors.col.len() + fac.col.len()).map_err(|e| e.to_string())?;
+            factors.col.extend_from_slice(&fac.col);
+            factors.val.extend_from_slice(&fac.val);
+            factors.inv.extend_from_slice(&fac.inv);
+            factors.mid.extend(fac.mid.iter().map(|m| m + off));
+            factors.start.extend(fac.start[1..].iter().map(|m| m + off));
+            // The unit's contribution: always entered, zero or not, so the network's pattern stays.
+            for (u, sc) in units[bounds[c]..bounds[c + 1]].iter().zip(&contrib) {
+                let rows = [u.bus, n + u.bus];
+                for (r, &row) in rows.iter().enumerate() {
+                    trip.push(Triplet::new(row, u.bus, sc[r][0]));
+                    trip.push(Triplet::new(row, n + u.bus, sc[r][1]));
+                    if reference.is_some() {
+                        trip.push(Triplet::new(row, n2, sc[r][2]));
+                    }
                 }
             }
         }
@@ -271,7 +348,10 @@ impl BlockLu {
             trip.push(Triplet::new(n2, u.bus, w[3 * r]));
             trip.push(Triplet::new(n2, n + u.bus, w[3 * r + 1]));
         }
-        let net = NetLu::new(size, n, &trip, patterns, if sys.threads { region_map(sys) } else { None })?;
+        super::integrate::time_add(9, t_units);
+        let t_net = crate::rms::clock::Instant::now();
+        let net = NetLu::new(size, n, &trip, patterns, if sys.threads { region_map(sys) } else { None }, sys.epoch)?;
+        super::integrate::time_add(10, t_net);
         let Factors {
             col,
             val,
