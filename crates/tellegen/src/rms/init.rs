@@ -1112,11 +1112,11 @@ pub(crate) fn init_device(
             },
             &name,
         )?;
-        x[p..].copy_from_slice(&xp);
+        x[p..p + xp.len()].copy_from_slice(&xp);
     }
     let mut scratch = vec![0.0; dev.pss.n_states()];
     let vs0 = dev.pss.eval(
-        &x[p..],
+        &x[p..p + dev.pss.n_states()],
         1.0,
         alg.te * dev.scale,
         vt,
@@ -1130,8 +1130,13 @@ pub(crate) fn init_device(
         avr => {
             let na = avr.n_states();
             let s_m = v * i_m.conj();
+            // the compensator's lag at rest: its state is the reactive current of the start
+            let z0 = s_m.im / vt.max(1e-3);
+            if dev.lag_states() > 0 {
+                x[k - 1] = z0;
+            }
             let input = super::models::AvrIn {
-                vt: super::system::avr_vt(dev.vcomp, v.re, v.im, i_m.re, i_m.im),
+                vt: super::system::avr_vt(dev.vcomp, v.re, v.im, i_m.re, i_m.im, z0),
                 vs: vs0,
                 xad_ifd: alg.xad_ifd,
                 v_ref: vt,

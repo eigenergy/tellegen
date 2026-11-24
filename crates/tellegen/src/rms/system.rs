@@ -51,7 +51,7 @@ pub(crate) struct GenDevice {
     /// Experimental: under-excitation limiter `[q_lim, gain]`, see [`set_uel`].
     pub uel: Option<[f64; 2]>,
     /// Experimental: load compensator of the AVR input `[rc, xc]`, see [`set_vcomp`].
-    pub vcomp: Option<[f64; 2]>,
+    pub vcomp: Option<[f64; 3]>,
 }
 
 /// What a generator evaluation reports besides its derivatives.
@@ -72,6 +72,12 @@ impl GenDevice {
             + self.avr.n_states()
             + self.gov.n_states()
             + self.pss.n_states()
+            + self.lag_states()
+    }
+
+    /// Experimental: the compensator's lag state (one with a time constant, else none).
+    pub(crate) fn lag_states(&self) -> usize {
+        usize::from(self.vcomp.is_some_and(|c| c[2] > 0.0))
     }
 
     /// Local offsets of `(machine, shaft, avr, governor, stabilizer)`.
@@ -92,6 +98,9 @@ impl GenDevice {
         names.extend(self.avr.state_names().iter().map(|s| (*s).to_owned()));
         names.extend(self.gov.state_names().iter().map(|s| (*s).to_owned()));
         names.extend(self.pss.state_names().iter().map(|s| (*s).to_owned()));
+        if self.lag_states() > 0 {
+            names.push("vcomp_lag".into());
+        }
         names
     }
 
@@ -105,7 +114,8 @@ impl GenDevice {
         let [_, _, a, g, p] = self.layout();
         self.avr.mass(&mut m[a..g]);
         self.gov.mass(&mut m[g..p]);
-        self.pss.mass(&mut m[p..]);
+        let pe = p + self.pss.n_states();
+        self.pss.mass(&mut m[p..pe]);
         if self.tripped.is_some() {
             // A frozen state is algebraic: `0 = x_trip − x`.
             m.iter_mut().for_each(|v| *v = 0.0);
@@ -143,7 +153,7 @@ impl GenDevice {
         let mut scratch = vec![0.0; n];
         let vs = self
             .pss
-            .eval(&x[p..n], omega, pe, vt, self.scale, &mut scratch[p..n])
+            .eval(&x[p..p + self.pss.n_states()], omega, pe, vt, self.scale, &mut scratch[p..p + self.pss.n_states()])
             + self.vs_ext;
         let mut out = Vec::new();
         let mut push = |slot: &str, gr: &super::graph::CompiledGraph, xs: &[f64], ports: &[f64]| {
@@ -157,7 +167,7 @@ impl GenDevice {
                 "exciter",
                 gr,
                 &x[a..g],
-                &[avr_vt(self.vcomp, vr, vi, ir, ii), vs, alg.xad_ifd, self.v_ref, vr * ir + vi * ii, vi * ir - vr * ii],
+                &[avr_vt(self.vcomp, vr, vi, ir, ii, if self.lag_states() > 0 { x[n - 1] } else { 0.0 }), vs, alg.xad_ifd, self.v_ref, vr * ir + vi * ii, vi * ir - vr * ii],
             );
         }
         if let Governor::Graph(gr) = &self.gov {
@@ -167,7 +177,7 @@ impl GenDevice {
             push(
                 "stabilizer",
                 gr,
-                &x[p..n],
+                &x[p..p + self.pss.n_states()],
                 &[omega, pe, vt, pe / self.scale],
             );
         }
@@ -200,9 +210,10 @@ impl GenDevice {
         let (fs, rest) = rest.split_at_mut(2);
         let (fa, rest) = rest.split_at_mut(g - a);
         let (fg, fp) = rest.split_at_mut(p - g);
+        let (fp, fc) = fp.split_at_mut(self.pss.n_states());
         let vs = self
             .pss
-            .eval(&x[p..n], omega, alg.te * self.scale, vt, self.scale, fp)
+            .eval(&x[p..p + self.pss.n_states()], omega, alg.te * self.scale, vt, self.scale, fp)
             + self.vs_ext;
         let (ir, ii) = dq_ri_sc(sc, alg.id, alg.iq);
         // Experimental: under-excitation limiter of the summing-point type (IEEE Std 421.5,
@@ -218,7 +229,7 @@ impl GenDevice {
         let vf = self.avr.eval(
             &x[a..g],
             super::models::AvrIn {
-                vt: avr_vt(self.vcomp, vr, vi, ir, ii),
+                vt: avr_vt(self.vcomp, vr, vi, ir, ii, if self.lag_states() > 0 { x[n - 1] } else { 0.0 }),
                 vs,
                 xad_ifd: alg.xad_ifd,
                 v_ref: self.v_ref,
@@ -227,6 +238,10 @@ impl GenDevice {
             },
             fa,
         );
+        if let (Some([_, _, t]), 1) = (self.vcomp, self.lag_states()) {
+            // the compensator's lag of the reactive current (machine base)
+            fc[0] = ((vi * ir - vr * ii) / vt.max(1e-3) - x[n - 1]) / t;
+        }
         let tm = self.gov.eval(&x[g..p], omega, self.p_ref, fg);
         self.machine.ode(&x[m..s], &alg, vf, fm);
         let (fd, fw) = self.shaft.ode(omega, omega_sys, alg.te, tm, self.f0);
@@ -411,21 +426,23 @@ pub(crate) fn uel_of(bus_number: usize) -> Option<[f64; 2]> {
 
 // Experimental: load compensators of the AVR input by bus number, `[rc, xc]` in pu of MBASE
 // (IEEE Std 421.5, Vc = |Vt + (Rc + j Xc) It|): positive values give reactive droop.
-static VCOMP: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> = std::sync::RwLock::new(None);
+static VCOMP: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 3]>>> = std::sync::RwLock::new(None);
 
 /// Sets the AVR load compensators (experimental). Call before the system is built.
-pub fn set_vcomp(map: std::collections::HashMap<usize, [f64; 2]>) {
+pub fn set_vcomp(map: std::collections::HashMap<usize, [f64; 3]>) {
     *VCOMP.write().expect("vcomp lock") = Some(map);
 }
 
-pub(crate) fn vcomp_of(bus_number: usize) -> Option<[f64; 2]> {
+pub(crate) fn vcomp_of(bus_number: usize) -> Option<[f64; 3]> {
     VCOMP.read().expect("vcomp lock").as_ref().and_then(|m| m.get(&bus_number).copied())
 }
 
 /// The voltage the regulator sees: the terminal voltage, or the compensated one.
-pub(crate) fn avr_vt(vcomp: Option<[f64; 2]>, vr: f64, vi: f64, ir: f64, ii: f64) -> f64 {
+pub(crate) fn avr_vt(vcomp: Option<[f64; 3]>, vr: f64, vi: f64, ir: f64, ii: f64, z: f64) -> f64 {
     match vcomp {
-        Some([rc, xc]) => mag(vr + rc * ir - xc * ii, vi + rc * ii + xc * ir),
+        // with a time constant: the droop through the lag state z (reactive current, Q / Vt)
+        Some([rc, xc, t]) if t > 0.0 => mag(vr + rc * ir, vi + rc * ii) + xc * z,
+        Some([rc, xc, _]) => mag(vr + rc * ir - xc * ii, vi + rc * ii + xc * ir),
         None => mag(vr, vi),
     }
 }
