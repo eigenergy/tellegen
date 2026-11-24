@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +14,10 @@ writeFileSync(
   join(targetDir, ".npmignore"),
   "# Include wasm-pack output in the @tellegen/engine tarball.\n",
 );
+
+// Experimental: the RMS engine build with SIMD and threads, when built.
+if (existsSync(join(sourceDir, "wasm-pkg-mt")))
+  cpSync(join(sourceDir, "wasm-pkg-mt"), join(distDir, "wasm-pkg-mt"), { recursive: true });
 
 // The synthetic generator's places table, fetched beside the module.
 cpSync(join(sourceDir, "data"), join(distDir, "data"), { recursive: true });

@@ -84,6 +84,9 @@ mod topology;
 pub(crate) mod blocks;
 #[cfg(feature = "rms-experimental")]
 pub mod graph;
+// Experimental: ESST1A, ESAC6A, PSS2B, OELIT, UELPQ as block graphs.
+#[cfg(feature = "rms-experimental")]
+pub(crate) mod ext_models;
 pub(crate) mod models;
 mod renewable;
 
@@ -92,6 +95,14 @@ mod renewable;
 // step a Newton solve; the step matrix is factorized unit by unit (a Schur
 // complement onto the network) or as one sparse LU.
 mod integrate;
+pub(crate) mod clock;
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+pub(crate) mod spin_pool;
+pub(crate) mod regions;
+pub use regions::region_stats;
+pub use clock::set_clock;
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+pub use spin_pool::{configure as configure_threads, Spawner};
 mod schur;
 
 // @block Running a simulation
@@ -140,6 +151,14 @@ use events::apply_event;
 use integrate::step_adaptive;
 use record::Recorder;
 use system::DynSystem;
+// Experimental: model switches, set by the caller before a run.
+pub use system::set_gast_rate;
+pub use system::set_load_recovery;
+pub use system::set_plant_q_exponent;
+pub use system::set_load_rise;
+pub use system::set_load_saturation;
+pub use system::set_uel;
+pub use integrate::lu_stats;
 
 #[cfg(feature = "rms-experimental")]
 pub use dyr_params::{
@@ -572,7 +591,12 @@ impl RmsSimulation {
     #[cfg(feature = "rms-experimental")]
     pub fn linear_analysis(&self, request: &LinearRequest) -> Result<LinearResult, String> {
         let sys = self.linearized(models::REST_MARGIN);
-        let (states, modes) = linear::modes(&sys, &self.x0, request.participation_top)?;
+        // experimental: a system too large for the dense eigensolver still gets its frequency responses
+        let (states, modes) = if linear::check_eigen_size(&sys).is_ok() {
+            linear::modes(&sys, &self.x0, request.participation_top)?
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let bode = linear::bode(&sys, &self.x0, request)?;
         Ok(LinearResult {
             states,
@@ -736,6 +760,10 @@ impl RmsSimulation {
         #[cfg_attr(not(feature = "rms-experimental"), allow(unused_mut))]
         let mut k0 = 0usize;
         let mut stepper = integrate::Stepper::new();
+        #[cfg(feature = "protection")]
+        if let Some(r) = relays.as_deref_mut() {
+            r.set_threads(sys.threads);
+        }
 
         // @block Resume from a checkpoint
         // Replay only: the events before the checkpoint are applied to the
@@ -849,7 +877,8 @@ impl RmsSimulation {
                         next_event < events.len() && events[next_event].time() <= t + tol;
                     match (&pending, relays.as_deref()) {
                         (Some(_), Some(r)) => {
-                            cfg!(not(target_arch = "wasm32"))
+                            cfg!(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))
+                                && sys.threads
                                 && !event_due
                                 && r.can_run_beside(t, t_next, h)
                         }
@@ -859,7 +888,10 @@ impl RmsSimulation {
                 #[cfg(feature = "protection")]
                 if !beside {
                     if let (Some(p), Some(r)) = (pending.take(), relays.as_deref_mut()) {
+                        let t0 = crate::rms::clock::Instant::now();
                         p.run(r, &sys);
+                        integrate::time_add(0, t0);
+                        integrate::STATS[10].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 // @block Apply due events
@@ -891,8 +923,25 @@ impl RmsSimulation {
                     sys.rebuild_ybus();
                     sys.rebuild_mass();
                     sys.residual(&x, &mut f, None);
-                    iterations += stepper
-                        .reinit(&sys, &mut x, &mut f)
+                    // Experimental: relief in a collapse, see `topology::relieve`.
+                    let x_keep = x.clone();
+                    let mut solved = stepper.reinit(&sys, &mut x, &mut f);
+                    for level in RELIEF_LEVELS {
+                        let Err(message) = &solved else { break };
+                        let hint = topology::hint_bus(message);
+                        x.clone_from(&x_keep);
+                        let notes = topology::relieve(&mut sys, &x, t, level, hint);
+                        if notes.is_empty() {
+                            continue;
+                        }
+                        applied.extend(notes);
+                        applied.extend(topology::extinguish(&mut sys, t));
+                        sys.rebuild_ybus();
+                        sys.rebuild_mass();
+                        sys.residual(&x, &mut f, None);
+                        solved = stepper.reinit(&sys, &mut x, &mut f);
+                    }
+                    iterations += solved
                         .map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))?;
                     #[cfg(feature = "protection")]
                     if let Some(r) = relays.as_deref_mut() {
@@ -922,15 +971,19 @@ impl RmsSimulation {
                         t_next = t_next.min(d);
                     }
                 }
+                // Experimental: relief in a collapse, see `topology::relieve`.
+                let x_keep = x.clone();
                 #[cfg(feature = "protection")]
-                let stepped = match (beside, pending.take(), relays.as_deref_mut()) {
+                let mut stepped = match (beside, pending.take(), relays.as_deref_mut()) {
                     #[cfg(not(target_arch = "wasm32"))]
                     (true, Some(p), Some(r)) => {
                         // Both only read the network: the relays measure
                         // their own copy of the state at `t`.
                         let sys = &sys;
+                        integrate::STATS[11].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         std::thread::scope(|s| {
                             let relays_done = s.spawn(move || p.run(r, sys));
+                            let t0 = crate::rms::clock::Instant::now();
                             let stepped = step_adaptive(
                                 sys,
                                 &mut x,
@@ -940,13 +993,43 @@ impl RmsSimulation {
                                 &mut euler_steps,
                                 &mut stepper,
                             );
+                            integrate::time_add(3, t0);
+                            let t1 = crate::rms::clock::Instant::now();
                             relays_done.join().expect("the relay evaluation panicked");
+                            integrate::time_add(1, t1);
+                            stepped
+                        })
+                    }
+                    // In the browser: the relays on the side pool's Web Worker.
+                    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+                    (true, Some(p), Some(r)) => {
+                        let sys = &sys;
+                        integrate::STATS[11].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let job = std::sync::Mutex::new(Some((p, r)));
+                        let side = |_: usize| {
+                            if let Some((p, r)) = job.lock().expect("relay job").take() {
+                                p.run(r, sys);
+                            }
+                        };
+                        spin_pool::SpinPool::side().beside(&side, || {
+                            let t0 = crate::rms::clock::Instant::now();
+                            let stepped = step_adaptive(
+                                sys,
+                                &mut x,
+                                &mut f,
+                                t_next - t,
+                                0,
+                                &mut euler_steps,
+                                &mut stepper,
+                            );
+                            integrate::time_add(3, t0);
                             stepped
                         })
                     }
                     (_, p, _) => {
                         pending = p;
-                        step_adaptive(
+                        let t0 = crate::rms::clock::Instant::now();
+                        let st = step_adaptive(
                             &sys,
                             &mut x,
                             &mut f,
@@ -954,11 +1037,13 @@ impl RmsSimulation {
                             0,
                             &mut euler_steps,
                             &mut stepper,
-                        )
+                        );
+                        integrate::time_add(3, t0);
+                        st
                     }
                 };
                 #[cfg(not(feature = "protection"))]
-                let stepped = step_adaptive(
+                let mut stepped = step_adaptive(
                     &sys,
                     &mut x,
                     &mut f,
@@ -967,6 +1052,34 @@ impl RmsSimulation {
                     &mut euler_steps,
                     &mut stepper,
                 );
+                for level in RELIEF_LEVELS {
+                    let Err(message) = &stepped else { break };
+                    let hint = topology::hint_bus(message);
+                    x.clone_from(&x_keep);
+                    let notes = topology::relieve(&mut sys, &x, t, level, hint);
+                    if notes.is_empty() {
+                        continue;
+                    }
+                    applied.extend(notes);
+                    applied.extend(topology::extinguish(&mut sys, t));
+                    sys.rebuild_ybus();
+                    sys.rebuild_mass();
+                    sys.residual(&x, &mut f, None);
+                    match stepper.reinit(&sys, &mut x, &mut f) {
+                        Err(e) => stepped = Err(e),
+                        Ok(_) => {
+                            stepped = step_adaptive(
+                                &sys,
+                                &mut x,
+                                &mut f,
+                                t_next - t,
+                                0,
+                                &mut euler_steps,
+                                &mut stepper,
+                            );
+                        }
+                    }
+                }
                 iterations += stepped.map_err(|e| {
                     let islands: Vec<String> =
                         sys.detached_islands().into_iter().map(|(_, s)| s).collect();
@@ -981,9 +1094,11 @@ impl RmsSimulation {
                     }
                 })?;
                 steps += 1;
+                sys.relax_loads(&x, t_next - t);
                 t = t_next;
                 #[cfg(feature = "protection")]
                 if let Some(r) = relays.as_deref_mut() {
+                        let _tb = integrate::Timer(2, crate::rms::clock::Instant::now());
                         iterations += protect::settle_banks(
                         r,
                         &mut sys,
@@ -1122,6 +1237,11 @@ impl RmsSimulation {
 // @block Step and output times
 // How a run divides time: the output samples up to `t_end`, the
 // integration steps per output step, and the bounds on both.
+
+/// Experimental: the order of the collapse reliefs tried at one instant
+/// (see `topology::relieve`): small islands, then the named bus (each failure
+/// names a new one), then its neighbours, then everything below 0.3 pu.
+const RELIEF_LEVELS: [usize; 12] = [0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3];
 
 /// The smallest integration step a run takes, s.
 const MIN_DT: f64 = 1e-6;

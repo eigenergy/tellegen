@@ -180,6 +180,8 @@ pub(crate) struct Plant {
     /// The converter's `Q_ref` (its sign picks the `Iq` rate limit).
     pub q_ref_converter: f64,
     pub omega_ref: f64,
+    /// Experimental: voltage exponent of the reactive power set point (0: fixed).
+    pub q_vexp: f64,
 }
 
 fn flag(v: f64, name: &str, allowed: &[u8]) -> Result<u8, String> {
@@ -601,7 +603,13 @@ impl Plant {
             };
             (v_flt_input, self.v_ref - xr[0])
         } else {
-            (q_elec, self.q_ref - xr[0])
+            // Experimental: the set point follows the voltage with the exponent `q_vexp`.
+            let q_set = if self.q_vexp != 0.0 && self.v_ref0 > 0.0 {
+                self.q_ref * (vt_filt.max(V_LB) / self.v_ref0).powf(self.q_vexp)
+            } else {
+                self.q_ref
+            };
+            (q_elec, q_set - xr[0])
         };
         let q_err = deadband(error, repc.dbd1, repc.dbd2).clamp(repc.e_min, repc.e_max);
         fr[0] = input - xr[0];
@@ -1023,6 +1031,7 @@ mod tests {
             v_ref0: 0.0,
             q_ref_converter: 0.0,
             omega_ref: 1.0,
+            q_vexp: 0.0,
         }
     }
 

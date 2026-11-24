@@ -29,117 +29,453 @@
 use std::sync::Arc;
 
 use faer::dyn_stack::{MemBuffer, MemStack};
-use faer::sparse::linalg::lu::{factorize_symbolic_lu, LuRef, NumericLu, SymbolicLu};
+use faer::sparse::linalg::lu::{factorize_symbolic_lu, SymbolicLu};
 use faer::sparse::{SparseColMat, Triplet};
-use faer::{ColMut, Conj};
 
 use super::schur::BlockLu;
 use super::system::DynSystem;
 
 /// The sparsity pattern of a step matrix with its symbolic LU (the column
 /// ordering and the structure of the factors), shared by every numeric
-/// factorization of a matrix with exactly this pattern.
+/// factorization of a matrix with exactly this pattern. `pivots` holds the
+/// row order and the factor structure of the first numeric factorization:
+/// later matrices of this pattern are refactorized in that order, values
+/// only (KLU's refactorization), while the pivots stay acceptable.
 struct Pattern {
     col_ptr: Vec<usize>,
     row_idx: Vec<usize>,
     lu: SymbolicLu<usize>,
+    pivots: std::sync::Mutex<Option<Arc<Pivots>>>,
 }
 
-/// The symbolic factorizations of the last few patterns, newest first. The
-/// pattern follows the Jacobian's nonzeros (a finite difference that is zero
-/// at one point, a limiter at its stop, is not stored), so after an event it
-/// moves between a few variants. A factorization depends only on its own
-/// matrix, never on what was cached: a run and its replay from a checkpoint
-/// factorize alike.
+/// The row order and the factor structure of a pivoted factorization, in
+/// the permuted index space: `L` unit lower triangular (its unit diagonal
+/// not stored), `U` upper triangular with its off-diagonal rows ascending
+/// and the diagonal apart.
+struct Pivots {
+    /// Original row of each pivot position.
+    row_perm: Vec<usize>,
+    /// Pivot position of each original row.
+    row_perm_inv: Vec<usize>,
+    /// Original column of each factor column.
+    col_perm: Vec<usize>,
+    l_ptr: Vec<usize>,
+    l_idx: Vec<usize>,
+    u_ptr: Vec<usize>,
+    u_idx: Vec<usize>,
+}
+
+/// A refactorization accepts a pivot down to this fraction of the largest
+/// entry below it (the threshold of KLU's refactorization check); a smaller
+/// one pivots afresh.
+const PIVOT_TOL: f64 = 1e-3;
+
+/// `TELLEGEN_PIVOT_TOL` overrides [`PIVOT_TOL`] (experimental).
+fn pivot_tol() -> f64 {
+    static P: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *P.get_or_init(|| std::env::var("TELLEGEN_PIVOT_TOL").ok().and_then(|v| v.parse().ok()).unwrap_or(PIVOT_TOL))
+}
+
+/// The triplet layout of the last matrix assembled: the same sequence of
+/// `(row, col)` adds its values into the same slots, without sorting.
 #[derive(Default)]
-pub(super) struct Patterns(Vec<Arc<Pattern>>);
+pub(super) struct Assembly {
+    keys: Vec<(usize, usize)>,
+    slot: Vec<usize>,
+    n: usize,
+    pattern: Option<Arc<Pattern>>,
+}
+
+/// The symbolic factorizations of the last few patterns, newest first.
+#[derive(Default)]
+pub(super) struct Patterns {
+    kept: Vec<Arc<Pattern>>,
+    assembly: Assembly,
+    /// Per region, the patterns of its block (experimental: [`RegionLu`]).
+    sub: Vec<std::sync::Mutex<Patterns>>,
+    /// Pivot every factorization afresh ([`super::RmsOptions::refactor_values`] off).
+    pub(super) pivot_always: bool,
+}
 
 impl Patterns {
     const KEPT: usize = 4;
 
-    /// The symbolic factorization for a matrix with this structure.
     fn of(
         &mut self,
+        col_ptr: &[usize],
+        row_idx: &[usize],
         sym: faer::sparse::SymbolicSparseColMatRef<'_, usize>,
     ) -> Result<Arc<Pattern>, faer::sparse::FaerError> {
-        let (col_ptr, row_idx) = (sym.col_ptr(), sym.row_idx());
         if let Some(k) = self
-            .0
+            .kept
             .iter()
             .position(|p| p.col_ptr == col_ptr && p.row_idx == row_idx)
         {
-            let p = self.0.remove(k);
-            self.0.insert(0, Arc::clone(&p));
+            let p = self.kept.remove(k);
+            self.kept.insert(0, Arc::clone(&p));
             return Ok(p);
         }
+        STATS[12].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let p = Arc::new(Pattern {
             col_ptr: col_ptr.to_vec(),
             row_idx: row_idx.to_vec(),
             lu: factorize_symbolic_lu(sym, Default::default())?,
+            pivots: std::sync::Mutex::new(None),
         });
-        self.0.truncate(Self::KEPT - 1);
-        self.0.insert(0, Arc::clone(&p));
+        self.kept.truncate(Self::KEPT - 1);
+        self.kept.insert(0, Arc::clone(&p));
         Ok(p)
     }
+
+    /// The matrix of `trip` in compressed columns (repeated entries add up)
+    /// and its pattern. A triplet sequence seen last time reuses its slots.
+    fn assemble(
+        &mut self,
+        n: usize,
+        trip: &[Triplet<usize, usize, f64>],
+    ) -> Result<(Arc<Pattern>, Vec<f64>), String> {
+        let a = &mut self.assembly;
+        let same = a.n == n
+            && a.pattern.is_some()
+            && a.keys.len() == trip.len()
+            && a.keys.iter().zip(trip).all(|(&(r, c), t)| r == t.row && c == t.col);
+        if same {
+            let p = Arc::clone(a.pattern.as_ref().expect("checked"));
+            let mut val = vec![0.0; p.row_idx.len()];
+            for (t, &s) in trip.iter().zip(&a.slot) {
+                val[s] += t.val;
+            }
+            return Ok((p, val));
+        }
+        let mat = SparseColMat::<usize, f64>::try_new_from_triplets(n, n, trip)
+            .map_err(|e| format!("Jacobian assembly failed: {e:?}"))?;
+        let sym = mat.symbolic();
+        let (col_ptr, row_idx) = (sym.col_ptr(), sym.row_idx());
+        // A kept pattern that holds this one keeps its ordering and pivots: a
+        // branch that opened, a unit that tripped, leave their entries as zeros.
+        let holder = self.kept.iter().position(|p| contains(&p.col_ptr, &p.row_idx, col_ptr, row_idx));
+        let pattern = match holder {
+            Some(k) => {
+                let p = self.kept.remove(k);
+                self.kept.insert(0, Arc::clone(&p));
+                p
+            }
+            None => {
+                // Experimental: a pattern of a size seen before is merged with
+                // that one, so the variants (finite differences that happen to be
+                // zero) end up in one pattern with one ordering and one row order.
+                let same = self.kept.iter().find(|p| p.col_ptr.len() == col_ptr.len()).cloned();
+                match same {
+                    Some(old) => {
+                        let (ucp, uri) = union(&old.col_ptr, &old.row_idx, col_ptr, row_idx);
+                        let usym = unsafe {
+                            faer::sparse::SymbolicSparseColMatRef::new_unchecked(n, n, &ucp, None, &uri)
+                        };
+                        self.of(&ucp, &uri, usym)
+                            .map_err(|e| format!("Jacobian factorization failed: {e:?}"))?
+                    }
+                    None => self
+                        .of(col_ptr, row_idx, sym)
+                        .map_err(|e| format!("Jacobian factorization failed: {e:?}"))?,
+                }
+            }
+        };
+        // The slot of each triplet: its row's position within its column.
+        let mut slot = Vec::with_capacity(trip.len());
+        for t in trip {
+            let rows = &pattern.row_idx[pattern.col_ptr[t.col]..pattern.col_ptr[t.col + 1]];
+            let k = rows
+                .binary_search(&t.row)
+                .map_err(|_| "Jacobian assembly: an entry outside its pattern".to_string())?;
+            slot.push(pattern.col_ptr[t.col] + k);
+        }
+        let mut val = vec![0.0; pattern.row_idx.len()];
+        for (t, &k) in trip.iter().zip(&slot) {
+            val[k] += t.val;
+        }
+        let a = &mut self.assembly;
+        a.keys.clear();
+        a.keys.extend(trip.iter().map(|t| (t.row, t.col)));
+        a.slot = slot;
+        a.n = n;
+        a.pattern = Some(Arc::clone(&pattern));
+        Ok((pattern, val))
+    }
+}
+
+/// The union of two patterns of the same size (rows ascending in each column).
+fn union(cp: &[usize], ri: &[usize], cp2: &[usize], ri2: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let mut ucp = Vec::with_capacity(cp.len());
+    let mut uri = Vec::with_capacity(ri.len() + ri2.len() / 16);
+    ucp.push(0);
+    for j in 0..cp.len() - 1 {
+        let (a, b) = (&ri[cp[j]..cp[j + 1]], &ri2[cp2[j]..cp2[j + 1]]);
+        let (mut i, mut k) = (0, 0);
+        while i < a.len() || k < b.len() {
+            let next = match (a.get(i), b.get(k)) {
+                (Some(&x), Some(&y)) if x == y => {
+                    i += 1;
+                    k += 1;
+                    x
+                }
+                (Some(&x), Some(&y)) if x < y => {
+                    i += 1;
+                    x
+                }
+                (Some(_), Some(&y)) => {
+                    k += 1;
+                    y
+                }
+                (Some(&x), None) => {
+                    i += 1;
+                    x
+                }
+                (None, Some(&y)) => {
+                    k += 1;
+                    y
+                }
+                (None, None) => unreachable!(),
+            };
+            uri.push(next);
+        }
+        ucp.push(uri.len());
+    }
+    (ucp, uri)
+}
+
+/// Whether the pattern `(cp, ri)` holds every entry of `(cp2, ri2)` (same
+/// size, rows ascending in each column).
+fn contains(cp: &[usize], ri: &[usize], cp2: &[usize], ri2: &[usize]) -> bool {
+    if cp.len() != cp2.len() || ri.len() < ri2.len() {
+        return false;
+    }
+    for j in 0..cp.len() - 1 {
+        let (a, b) = (&ri[cp[j]..cp[j + 1]], &ri2[cp2[j]..cp2[j + 1]]);
+        if b.len() > a.len() {
+            return false;
+        }
+        let mut k = 0;
+        for &r in b {
+            while k < a.len() && a[k] < r {
+                k += 1;
+            }
+            if k == a.len() || a[k] != r {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// A sparse LU of a square matrix.
 // @block Sparse LU
 pub(super) struct SparseLu {
-    pattern: Arc<Pattern>,
-    numeric: NumericLu<usize, f64>,
-    /// Scratch of a solve.
-    scratch: MemBuffer,
+    pivots: Arc<Pivots>,
+    l_val: Vec<f64>,
+    u_val: Vec<f64>,
+    u_diag: Vec<f64>,
+    work: Vec<f64>,
 }
 
 impl SparseLu {
-    /// Factorize the `n × n` matrix of `trip` (repeated entries add up),
-    /// the symbolic part from `patterns` when the matrix has a pattern seen
-    /// before.
+    /// Factorize the `n × n` matrix of `trip` (repeated entries add up):
+    /// in the row order of the pattern's first factorization when its pivots
+    /// hold, pivoting afresh otherwise.
     pub(super) fn new(
         n: usize,
         trip: &[Triplet<usize, usize, f64>],
         patterns: &mut Patterns,
     ) -> Result<Self, String> {
-        let mat = SparseColMat::<usize, f64>::try_new_from_triplets(n, n, trip)
-            .map_err(|e| format!("Jacobian assembly failed: {e:?}"))?;
+        let (pattern, val) = patterns.assemble(n, trip)?;
+        let known = if patterns.pivot_always {
+            None
+        } else {
+            pattern.pivots.lock().expect("pivots lock").clone()
+        };
+        if let Some(pv) = known {
+            if let Some(lu) = Self::refactor(&pattern, &pv, &val) {
+                return Ok(lu);
+            }
+            STATS[13].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        STATS[3].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let lu = Self::pivoted(n, &pattern, &val)?;
+        *pattern.pivots.lock().expect("pivots lock") = Some(Arc::clone(&lu.pivots));
+        Ok(lu)
+    }
+
+    /// A pivoted factorization (faer's simplicial LU) and its structure.
+    fn pivoted(n: usize, pattern: &Pattern, val: &[f64]) -> Result<Self, String> {
+        use faer::sparse::linalg::lu::simplicial::{
+            factorize_simplicial_numeric_lu, factorize_simplicial_numeric_lu_scratch, SimplicialLu,
+        };
+        use faer::sparse::{SparseColMatRef, SymbolicSparseColMatRef};
         let failed = |e: &dyn std::fmt::Debug| format!("Jacobian factorization failed: {e:?}");
-        let pattern = patterns.of(mat.symbolic()).map_err(|e| failed(&e))?;
-        let par = faer::get_global_parallelism();
-        let mut numeric = NumericLu::new();
-        let mut work = MemBuffer::try_new(
-            pattern
-                .lu
-                .factorize_numeric_lu_scratch::<f64>(par, Default::default()),
+        let a = SparseColMatRef::new(
+            unsafe { SymbolicSparseColMatRef::new_unchecked(n, n, &pattern.col_ptr, None, &pattern.row_idx) },
+            val,
+        );
+        let col_perm = pattern.lu.col_perm();
+        let mut row_perm = vec![0usize; n];
+        let mut row_perm_inv = vec![0usize; n];
+        let mut lu = SimplicialLu::<usize, f64>::new();
+        let mut mem = MemBuffer::try_new(factorize_simplicial_numeric_lu_scratch::<usize, f64>(n, n))
+            .map_err(|e| failed(&e))?;
+        factorize_simplicial_numeric_lu(
+            &mut row_perm,
+            &mut row_perm_inv,
+            &mut lu,
+            a,
+            col_perm,
+            MemStack::new(&mut mem),
         )
         .map_err(|e| failed(&e))?;
-        pattern
-            .lu
-            .factorize_numeric_lu(
-                &mut numeric,
-                mat.as_ref(),
-                par,
-                MemStack::new(&mut work),
-                Default::default(),
-            )
-            .map_err(|e| failed(&e))?;
-        let scratch = MemBuffer::new(pattern.lu.solve_in_place_scratch::<f64>(1, par));
+        let l = lu.l_factor_unsorted();
+        let u = lu.u_factor_unsorted();
+        // L: each column's first entry is its unit pivot; the rest are below.
+        let mut l_ptr = Vec::with_capacity(n + 1);
+        let mut l_idx = Vec::new();
+        let mut l_val = Vec::new();
+        l_ptr.push(0);
+        for j in 0..n {
+            for (&i, &v) in l.row_idx_of_col_raw(j).iter().zip(l.val_of_col(j)) {
+                if i != j {
+                    l_idx.push(i);
+                    l_val.push(v);
+                }
+            }
+            l_ptr.push(l_idx.len());
+        }
+        // U: the diagonal apart, the rest ascending (a topological order of
+        // the column's updates, since L is lower triangular).
+        let mut u_ptr = Vec::with_capacity(n + 1);
+        let mut u_idx = Vec::new();
+        let mut u_val = Vec::new();
+        let mut u_diag = vec![0.0; n];
+        let mut col: Vec<(usize, f64)> = Vec::new();
+        u_ptr.push(0);
+        for j in 0..n {
+            col.clear();
+            for (&i, &v) in u.row_idx_of_col_raw(j).iter().zip(u.val_of_col(j)) {
+                if i == j {
+                    u_diag[j] = v;
+                } else {
+                    col.push((i, v));
+                }
+            }
+            col.sort_unstable_by_key(|e| e.0);
+            for &(i, v) in &col {
+                u_idx.push(i);
+                u_val.push(v);
+            }
+            u_ptr.push(u_idx.len());
+        }
+        // A zero pivot: the matrix is singular (the simplicial LU does not say
+        // so itself); the caller falls back as on any failed factorization.
+        if let Some(j) = u_diag.iter().position(|d| *d == 0.0 || !d.is_finite()) {
+            return Err(format!("Jacobian factorization failed: zero pivot in column {j}"));
+        }
+        let (fwd, _) = col_perm.arrays();
+        if std::env::var("TELLEGEN_FILL").is_ok() {
+            eprintln!("pivoted LU: n {n}, nnz(A) {}, nnz(L) {}, nnz(U) {} (+{} diagonal)", pattern.row_idx.len(), l_idx.len(), u_idx.len(), n);
+        }
+        let pivots = Arc::new(Pivots {
+            row_perm,
+            row_perm_inv,
+            col_perm: fwd.to_vec(),
+            l_ptr,
+            l_idx,
+            u_ptr,
+            u_idx,
+        });
         Ok(Self {
-            pattern,
-            numeric,
-            scratch,
+            pivots,
+            l_val,
+            u_val,
+            u_diag,
+            work: vec![0.0; n],
+        })
+    }
+
+    /// The factors of a matrix of `pattern` in the row order `pv`, or
+    /// `None` when a pivot falls below [`PIVOT_TOL`] of its column.
+    fn refactor(pattern: &Pattern, pv: &Arc<Pivots>, val: &[f64]) -> Option<Self> {
+        let n = pv.row_perm.len();
+        let tol = pivot_tol();
+        let mut x = vec![0.0; n];
+        let mut l_val = vec![0.0; pv.l_idx.len()];
+        let mut u_val = vec![0.0; pv.u_idx.len()];
+        let mut u_diag = vec![0.0; n];
+        for j in 0..n {
+            let c = pv.col_perm[j];
+            for p in pattern.col_ptr[c]..pattern.col_ptr[c + 1] {
+                x[pv.row_perm_inv[pattern.row_idx[p]]] += val[p];
+            }
+            for p in pv.u_ptr[j]..pv.u_ptr[j + 1] {
+                let k = pv.u_idx[p];
+                let xk = x[k];
+                u_val[p] = xk;
+                x[k] = 0.0;
+                if xk != 0.0 {
+                    for q in pv.l_ptr[k]..pv.l_ptr[k + 1] {
+                        x[pv.l_idx[q]] -= l_val[q] * xk;
+                    }
+                }
+            }
+            let d = x[j];
+            x[j] = 0.0;
+            let mut below = 0.0_f64;
+            for q in pv.l_ptr[j]..pv.l_ptr[j + 1] {
+                below = below.max(x[pv.l_idx[q]].abs());
+            }
+            if !(d.abs() > tol * below) || !d.is_finite() {
+                return None;
+            }
+            u_diag[j] = d;
+            let inv = 1.0 / d;
+            for q in pv.l_ptr[j]..pv.l_ptr[j + 1] {
+                let i = pv.l_idx[q];
+                l_val[q] = x[i] * inv;
+                x[i] = 0.0;
+            }
+        }
+        Some(Self {
+            pivots: Arc::clone(pv),
+            l_val,
+            u_val,
+            u_diag,
+            work: x,
         })
     }
 
     /// Solve in place.
     pub(super) fn solve(&mut self, rhs: &mut [f64]) {
-        LuRef::<'_, usize, f64>::new_unchecked(&self.pattern.lu, &self.numeric)
-            .solve_in_place_with_conj(
-                Conj::No,
-                ColMut::from_slice_mut(rhs).as_mat_mut(),
-                faer::get_global_parallelism(),
-                MemStack::new(&mut self.scratch),
-            );
+        let pv = &*self.pivots;
+        let n = pv.row_perm.len();
+        let z = &mut self.work;
+        for j in 0..n {
+            z[j] = rhs[pv.row_perm[j]];
+        }
+        for j in 0..n {
+            let zj = z[j];
+            if zj != 0.0 {
+                for q in pv.l_ptr[j]..pv.l_ptr[j + 1] {
+                    z[pv.l_idx[q]] -= self.l_val[q] * zj;
+                }
+            }
+        }
+        for j in (0..n).rev() {
+            let zj = z[j] / self.u_diag[j];
+            z[j] = zj;
+            if zj != 0.0 {
+                for p in pv.u_ptr[j]..pv.u_ptr[j + 1] {
+                    z[pv.u_idx[p]] -= self.u_val[p] * zj;
+                }
+            }
+        }
+        for j in 0..n {
+            rhs[pv.col_perm[j]] = z[j];
+        }
     }
 }
 
@@ -162,6 +498,8 @@ struct Factor {
     h: f64,
     theta: f64,
     epoch: u64,
+    /// Experimental: built with every device state held (the re-solve fallback).
+    held: bool,
     /// The iterate the Jacobian was taken at: with `h` and `theta` it
     /// rebuilds this factorization exactly (`Stepper::restore_factor`).
     #[cfg_attr(not(feature = "rms-experimental"), allow(dead_code))]
@@ -181,7 +519,11 @@ impl Factor {
         theta: f64,
         patterns: &mut Patterns,
     ) -> Result<Self, String> {
-        let jf = sys.jacobian(x);
+        patterns.pivot_always = !sys.refactor_values;
+        let jf = {
+            let _t = Timer(7, crate::rms::clock::Instant::now());
+            sys.jacobian(x)
+        };
         let by_blocks = if sys.factorize_by_blocks {
             BlockLu::new(sys, mass, &jf, h, theta, patterns)?
         } else {
@@ -196,6 +538,7 @@ impl Factor {
             h,
             theta,
             epoch: sys.epoch,
+            held: false,
             at: x.to_vec(),
         })
     }
@@ -333,12 +676,69 @@ impl History {
     }
 }
 
+/// Factorization counters of the process (experimental): re-solves after events,
+/// new step factorizations (epoch or step size changed), refreshes within Newton, pivoted LUs;
+/// then steps and Newton iterations. Printed by [`lu_stats`].
+pub(crate) static STATS: [std::sync::atomic::AtomicUsize; 16] = [const { std::sync::atomic::AtomicUsize::new(0) }; 16];
+/// Wall time in microseconds (experimental): relay evaluations run first, waits for
+/// relays beside the step, bank settling, integration steps.
+pub(crate) static TIMES: [std::sync::atomic::AtomicU64; 8] = [const { std::sync::atomic::AtomicU64::new(0) }; 8];
+
+pub(crate) fn time_add(k: usize, t0: crate::rms::clock::Instant) {
+    TIMES[k].fetch_add(t0.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Adds its elapsed time to `TIMES[.0]` when dropped.
+pub(crate) struct Timer(pub(crate) usize, pub(crate) crate::rms::clock::Instant);
+impl Drop for Timer {
+    fn drop(&mut self) {
+        time_add(self.0, self.1);
+    }
+}
+
+/// The counters of [`STATS`] as one line.
+#[must_use]
+pub fn lu_stats() -> String {
+    let regions = super::regions::region_stats();
+    let g = |k: usize| STATS[k].load(std::sync::atomic::Ordering::Relaxed);
+    let tm = |k: usize| TIMES[k].load(std::sync::atomic::Ordering::Relaxed) as f64 * 1e-6;
+    format!(
+        "factorizations: reinit {}, new {}, refresh {} (line search {}, stall {}, cap {}); pivoted {} (new patterns {}, pivot fails {}); steps {}, newton iterations {}
+         relays: {} evaluations first ({:.1} s), {} beside (wait {:.1} s); banks {:.1} s; steps {:.1} s
+         in steps: residual {:.1} s, factorizations {:.1} s, solves {:.1} s, jacobian {:.1} s
+         {}",
+        g(0), g(1), g(2), g(6), g(7), g(8), g(3), g(12), g(13), g(4), g(5),
+        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), regions
+    )
+}
+
+/// Experimental: `TELLEGEN_STALL` (the residual ratio that counts as a stalled Newton
+/// iteration, 0.5) and `TELLEGEN_RELAXED=1` (keep any factorization until Newton stalls).
+/// Without `TELLEGEN_RELAXED`, [`super::RmsOptions::keep_factorization`] decides.
+fn stall_settings() -> (f64, Option<bool>) {
+    static T: std::sync::OnceLock<(f64, Option<bool>)> = std::sync::OnceLock::new();
+    *T.get_or_init(|| {
+        let stall = std::env::var("TELLEGEN_STALL").ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+        let relaxed = std::env::var("TELLEGEN_RELAXED").ok().map(|v| v == "1");
+        (stall, relaxed)
+    })
+}
+
+/// Experimental: `TELLEGEN_KEEP_EPOCH=1` keeps factorizations across events.
+/// Without it, [`super::RmsOptions::keep_factorization`] decides.
+fn keep_epoch() -> Option<bool> {
+    static K: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    *K.get_or_init(|| std::env::var("TELLEGEN_KEEP_EPOCH").ok().map(|v| v == "1"))
+}
+
 /// The integrator of one run: the factorization it reuses, the last points
 /// and its buffers.
 // @block The stepper's state
 #[derive(Default)]
 pub(crate) struct Stepper {
     factor: Option<Factor>,
+    /// Experimental: the factorization of the last re-solve after an event.
+    reinit_factor: Option<Factor>,
     patterns: Patterns,
     history: History,
     work: Work,
@@ -429,6 +829,8 @@ impl Stepper {
         theta: f64,
     ) -> Result<usize, String> {
         let iterations = self.solve(sys, x, f, h, theta, false, true)?;
+        STATS[4].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        STATS[5].fetch_add(iterations, std::sync::atomic::Ordering::Relaxed);
         std::mem::swap(x, &mut self.work.x);
         std::mem::swap(f, &mut self.work.f);
         // `work.x` is the point just left.
@@ -524,6 +926,7 @@ impl Stepper {
         let nx = sys.nx;
         let Self {
             factor,
+            reinit_factor,
             patterns,
             history,
             work,
@@ -574,12 +977,25 @@ impl Stepper {
         // step. One that was not is dropped, and so is any on an error.
         let mut lu: Option<Factor> = None;
         let mut fresh = true;
+        // Experimental: with `TELLEGEN_KEEP_EPOCH=1`, a factorization stays
+        // across events too (the step's, and the re-solve's for the next
+        // re-solve) until Newton stalls; the residual decides convergence, so
+        // the solution is the same.
+        let keep = keep_epoch().unwrap_or(sys.keep_factorization);
+        let relaxed = stall_settings().1.unwrap_or(sys.keep_factorization);
         if cached {
             if let Some(c) = factor.take() {
                 if (c.h - h).abs() <= SAME_STEP * h.abs()
                     && c.theta == theta
-                    && c.epoch == sys.epoch
+                    && (c.epoch == sys.epoch || keep)
                 {
+                    lu = Some(c);
+                    fresh = false;
+                }
+            }
+        } else if keep && h == 0.0 {
+            if let Some(c) = reinit_factor.take() {
+                if c.h == 0.0 && c.theta == theta && c.held == hold_devices {
                     lu = Some(c);
                     fresh = false;
                 }
@@ -589,6 +1005,7 @@ impl Stepper {
         // Up to 25 corrections of the step equations, each from the current
         // factorization, with a line search and a stopping test.
         let mut stalls = 0usize;
+        let mut since_refresh = 0usize;
         let mut last_step = f64::INFINITY;
         let mut rnorm = step.residual(x, f, r);
         for iter in 0..MAX_ITERS {
@@ -598,6 +1015,8 @@ impl Stepper {
             if rnorm < TOL_RES_EXIT && iter > 0 {
                 if cached {
                     *factor = lu;
+                } else if keep && h == 0.0 {
+                    *reinit_factor = lu;
                 }
                 return Ok(iter);
             }
@@ -608,19 +1027,45 @@ impl Stepper {
             // A reused factorization stays until the iteration stalls; a
             // fresh one is refreshed every other iteration, and every
             // iteration from the fourth.
-            let refresh = if fresh {
-                lu.is_none() || iter % 2 == 0 || iter >= 4
+            let refresh = if lu.is_none() {
+                true
+            } else if relaxed {
+                // Experimental: a factorization, fresh or reused, stays
+                // until Newton stalls; Newton's stopping test decides convergence.
+                stalls >= 2 || iter >= since_refresh + 8
+            } else if fresh {
+                iter % 2 == 0 || iter >= 4
             } else {
                 stalls >= 2 || iter >= 6
             };
             if refresh {
+                let cause = if !cached {
+                    0
+                } else if lu.is_none() && iter == 0 {
+                    1
+                } else {
+                    STATS[if lu.is_none() { 6 } else if stalls >= 2 { 7 } else { 8 }]
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    2
+                };
+                STATS[cause].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if relaxed {
+                    stalls = 0;
+                    since_refresh = iter;
+                }
                 fresh = true;
-                lu = Some(Factor::new(sys, mass, x, h, theta, patterns)?);
+                let _t = Timer(5, crate::rms::clock::Instant::now());
+                let mut fresh_lu = Factor::new(sys, mass, x, h, theta, patterns)?;
+                fresh_lu.held = hold_devices;
+                lu = Some(fresh_lu);
             }
             for i in 0..nx {
                 dx[i] = -r[i];
             }
-            lu.as_mut().expect("factorized above").solve(dx);
+            {
+                let _t = Timer(6, crate::rms::clock::Instant::now());
+                lu.as_mut().expect("factorized above").solve(dx);
+            }
             let dnorm = dx.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
             if !dnorm.is_finite() {
                 return Err("the Newton step is not finite (singular Jacobian?)".into());
@@ -658,7 +1103,7 @@ impl Stepper {
             std::mem::swap(r, r_trial);
             let previous = rnorm;
             rnorm = trial_norm;
-            if super::not_lt(rnorm, 0.5 * previous) {
+            if super::not_lt(rnorm, stall_settings().0 * previous) {
                 stalls += 1;
             }
             // @block Stopping test
@@ -685,6 +1130,8 @@ impl Stepper {
             if (step_norm < TOL_DX || remaining < RATE_SAFETY * TOL_DX) && rnorm < 1e-6 {
                 if cached {
                     *factor = lu;
+                } else if keep && h == 0.0 {
+                    *reinit_factor = lu;
                 }
                 return Ok(iter + 1);
             }
@@ -727,6 +1174,7 @@ impl Step<'_> {
     /// `f(x)` into `f`, the step residual into `r`; returns its largest
     /// magnitude (NaN when any entry is).
     fn residual(&self, x: &[f64], f: &mut [f64], r: &mut [f64]) -> f64 {
+        let _t = Timer(4, crate::rms::clock::Instant::now());
         self.sys.residual(x, f, None);
         let n = r.len();
         let (x, f) = (&x[..n], &f[..n]);
@@ -801,6 +1249,324 @@ pub(super) fn step_adaptive(
             }
             halves
         }
+    }
+}
+
+// @block Network LU by regions
+// Experimental: the network matrix in bordered block form. One end
+// bus of every line between two regions (and the frame speed) forms the
+// separator; each region's block is factorized and solved on its own task,
+// and the separator's Schur complement, small and dense, couples them. The
+// linear system is the same as with one sparse LU: Newton's iterates agree
+// to rounding.
+
+/// `f(0..n)` on the spin pool (serially on wasm).
+fn par_for(n: usize, f: &(dyn Fn(usize) + Sync)) {
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    super::spin_pool::SpinPool::global().run(n, f);
+    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+    (0..n).for_each(f);
+}
+
+/// The LU of the network matrix: whole, or by regions.
+pub(super) enum NetLu {
+    One(SparseLu),
+    Regions(Box<RegionLu>),
+}
+
+impl NetLu {
+    pub(super) fn new(
+        size: usize,
+        n: usize,
+        trip: &[Triplet<usize, usize, f64>],
+        patterns: &mut Patterns,
+        regions: Option<&[u16]>,
+    ) -> Result<Self, String> {
+        match regions {
+            Some(reg) if reg.len() == n && n > 0 && size >= 2 * n => {
+                Ok(Self::Regions(Box::new(RegionLu::new(size, n, trip, patterns, reg)?)))
+            }
+            _ => Ok(Self::One(SparseLu::new(size, trip, patterns)?)),
+        }
+    }
+
+    pub(super) fn solve(&mut self, rhs: &mut [f64]) {
+        match self {
+            Self::One(l) => l.solve(rhs),
+            Self::Regions(r) => r.solve(rhs),
+        }
+    }
+}
+
+/// The separator and the blocks of the network matrix by regions.
+pub(super) struct RegionLu {
+    /// Per unknown: its block (`nb` for the separator) and its index there.
+    blk: Vec<u32>,
+    idx: Vec<u32>,
+    nb: usize,
+    blocks: Vec<std::sync::Mutex<Option<SparseLu>>>,
+    sizes: Vec<usize>,
+    /// The separator's unknowns.
+    sep: Vec<usize>,
+    /// Per block: the separator columns it couples to, and `A_rr⁻¹ B_r` for
+    /// them (column after column).
+    xcols: Vec<Vec<usize>>,
+    x: Vec<Vec<f64>>,
+    /// Per block: `C_r` as (separator row, block column, value).
+    c: Vec<Vec<(u32, u32, f64)>>,
+    /// The Schur complement's LU (row-major) and its pivots.
+    s_lu: Vec<f64>,
+    s_piv: Vec<usize>,
+    /// Per block: its part of a right-hand side.
+    work: Vec<std::sync::Mutex<Vec<f64>>>,
+}
+
+impl RegionLu {
+    fn new(
+        size: usize,
+        n: usize,
+        trip: &[Triplet<usize, usize, f64>],
+        patterns: &mut Patterns,
+        reg: &[u16],
+    ) -> Result<Self, String> {
+        let n2 = 2 * n;
+        let nb = reg.iter().copied().max().map_or(1, |m| usize::from(m) + 1);
+        // The separator: of each line between two regions, the end bus in the
+        // higher region; and every unknown past the bus voltages.
+        let mut sep_bus = vec![false; n];
+        for t in trip {
+            if t.row < n2 && t.col < n2 {
+                let (a, b) = (t.row % n, t.col % n);
+                if reg[a] != reg[b] {
+                    sep_bus[if reg[a] > reg[b] { a } else { b }] = true;
+                }
+            }
+        }
+        let mut blk = vec![0u32; size];
+        let mut idx = vec![0u32; size];
+        let mut sizes = vec![0usize; nb];
+        let mut sep = Vec::new();
+        for u in 0..size {
+            if u >= n2 || sep_bus[u % n] {
+                blk[u] = nb as u32;
+                idx[u] = sep.len() as u32;
+                sep.push(u);
+            } else {
+                let r = usize::from(reg[u % n]);
+                blk[u] = r as u32;
+                idx[u] = sizes[r] as u32;
+                sizes[r] += 1;
+            }
+        }
+        let ns = sep.len();
+        let mut trips: Vec<Vec<Triplet<usize, usize, f64>>> = vec![Vec::new(); nb];
+        let mut bents: Vec<Vec<(u32, u32, f64)>> = vec![Vec::new(); nb];
+        let mut c: Vec<Vec<(u32, u32, f64)>> = vec![Vec::new(); nb];
+        let mut s = vec![0.0; ns * ns];
+        for t in trip {
+            let (br, bc) = (blk[t.row] as usize, blk[t.col] as usize);
+            let (ir, ic) = (idx[t.row], idx[t.col]);
+            match (br == nb, bc == nb) {
+                (false, false) => {
+                    if br != bc {
+                        return Err("region LU: a coupling between two regions outside the separator".into());
+                    }
+                    trips[br].push(Triplet::new(ir as usize, ic as usize, t.val));
+                }
+                (false, true) => bents[br].push((ir, ic, t.val)),
+                (true, false) => c[bc].push((ir, ic, t.val)),
+                (true, true) => s[ir as usize * ns + ic as usize] += t.val,
+            }
+        }
+        if patterns.sub.len() != nb {
+            patterns.sub = (0..nb).map(|_| std::sync::Mutex::new(Patterns::default())).collect();
+        }
+        for p in &mut patterns.sub {
+            p.get_mut().expect("region patterns").pivot_always = patterns.pivot_always;
+        }
+        // Each block: its LU and `A_rr⁻¹ B_r`.
+        let blocks: Vec<std::sync::Mutex<Option<SparseLu>>> =
+            (0..nb).map(|_| std::sync::Mutex::new(None)).collect();
+        let xs: Vec<std::sync::Mutex<(Vec<usize>, Vec<f64>)>> =
+            (0..nb).map(|_| std::sync::Mutex::new((Vec::new(), Vec::new()))).collect();
+        let errors: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        let sub = &patterns.sub;
+        par_for(nb, &|r| {
+            if sizes[r] == 0 {
+                return;
+            }
+            let lu = {
+                let mut pat = sub[r].lock().expect("region patterns");
+                SparseLu::new(sizes[r], &trips[r], &mut pat)
+            };
+            let mut lu = match lu {
+                Ok(lu) => lu,
+                Err(e) => {
+                    *errors.lock().expect("errors") = Some(e);
+                    return;
+                }
+            };
+            let mut cols: Vec<usize> = bents[r].iter().map(|e| e.1 as usize).collect();
+            cols.sort_unstable();
+            cols.dedup();
+            let m = sizes[r];
+            let mut x = vec![0.0; m * cols.len()];
+            for &(row, col, v) in &bents[r] {
+                let j = cols.binary_search(&(col as usize)).expect("column listed");
+                x[j * m + row as usize] += v;
+            }
+            for j in 0..cols.len() {
+                lu.solve(&mut x[j * m..(j + 1) * m]);
+            }
+            *blocks[r].lock().expect("block") = Some(lu);
+            *xs[r].lock().expect("x") = (cols, x);
+        });
+        if let Some(e) = errors.into_inner().expect("errors") {
+            return Err(e);
+        }
+        let mut xcols = Vec::with_capacity(nb);
+        let mut x = Vec::with_capacity(nb);
+        for m in xs {
+            let (cols, v) = m.into_inner().expect("x");
+            xcols.push(cols);
+            x.push(v);
+        }
+        // S = A_SS − Σ C_r A_rr⁻¹ B_r.
+        for r in 0..nb {
+            let m = sizes[r];
+            for &(k, l, v) in &c[r] {
+                for (jj, &j) in xcols[r].iter().enumerate() {
+                    s[k as usize * ns + j] -= v * x[r][jj * m + l as usize];
+                }
+            }
+        }
+        let mut s_piv = vec![0usize; ns];
+        if !dense_lu(&mut s, ns, &mut s_piv) {
+            return Err("Jacobian factorization failed: the separator's Schur complement is singular".into());
+        }
+        let work = sizes.iter().map(|&m| std::sync::Mutex::new(vec![0.0; m])).collect();
+        Ok(Self {
+            blk,
+            idx,
+            nb,
+            blocks,
+            sizes,
+            sep,
+            xcols,
+            x,
+            c,
+            s_lu: s,
+            s_piv,
+            work,
+        })
+    }
+
+    fn solve(&mut self, rhs: &mut [f64]) {
+        let nb = self.nb;
+        let ns = self.sep.len();
+        for (u, v) in rhs.iter().enumerate() {
+            let b = self.blk[u] as usize;
+            if b < nb {
+                self.work[b].get_mut().expect("work")[self.idx[u] as usize] = *v;
+            }
+        }
+        {
+            let (blocks, work) = (&self.blocks, &self.work);
+            par_for(nb, &|r| {
+                if let Some(lu) = blocks[r].lock().expect("block").as_mut() {
+                    lu.solve(&mut work[r].lock().expect("work"));
+                }
+            });
+        }
+        let mut bs: Vec<f64> = self.sep.iter().map(|&u| rhs[u]).collect();
+        for r in 0..nb {
+            let y = self.work[r].get_mut().expect("work");
+            for &(k, l, v) in &self.c[r] {
+                bs[k as usize] -= v * y[l as usize];
+            }
+        }
+        dense_solve(&self.s_lu, ns, &self.s_piv, &mut bs);
+        {
+            let (xcols, x, sizes, work) = (&self.xcols, &self.x, &self.sizes, &self.work);
+            let bs_ref = &bs;
+            par_for(nb, &|r| {
+                let m = sizes[r];
+                let mut y = work[r].lock().expect("work");
+                for (jj, &j) in xcols[r].iter().enumerate() {
+                    let xj = bs_ref[j];
+                    if xj != 0.0 {
+                        let col = &x[r][jj * m..(jj + 1) * m];
+                        for l in 0..m {
+                            y[l] -= col[l] * xj;
+                        }
+                    }
+                }
+            });
+        }
+        for (k, &u) in self.sep.iter().enumerate() {
+            rhs[u] = bs[k];
+        }
+        for (u, v) in rhs.iter_mut().enumerate() {
+            let b = self.blk[u] as usize;
+            if b < nb {
+                *v = self.work[b].get_mut().expect("work")[self.idx[u] as usize];
+            }
+        }
+    }
+}
+
+/// LU with partial pivoting of the row-major `n × n` matrix `a` in place.
+fn dense_lu(a: &mut [f64], n: usize, piv: &mut [usize]) -> bool {
+    for k in 0..n {
+        let mut p = k;
+        let mut best = a[k * n + k].abs();
+        for i in k + 1..n {
+            let v = a[i * n + k].abs();
+            if v > best {
+                best = v;
+                p = i;
+            }
+        }
+        if !(best > 0.0) {
+            return false;
+        }
+        piv[k] = p;
+        if p != k {
+            for j in 0..n {
+                a.swap(k * n + j, p * n + j);
+            }
+        }
+        let d = a[k * n + k];
+        for i in k + 1..n {
+            let f = a[i * n + k] / d;
+            a[i * n + k] = f;
+            if f != 0.0 {
+                for j in k + 1..n {
+                    a[i * n + j] -= f * a[k * n + j];
+                }
+            }
+        }
+    }
+    true
+}
+
+fn dense_solve(a: &[f64], n: usize, piv: &[usize], b: &mut [f64]) {
+    for k in 0..n {
+        b.swap(k, piv[k]);
+    }
+    for i in 0..n {
+        let mut s = b[i];
+        for j in 0..i {
+            s -= a[i * n + j] * b[j];
+        }
+        b[i] = s;
+    }
+    for i in (0..n).rev() {
+        let mut s = b[i];
+        for j in i + 1..n {
+            s -= a[i * n + j] * b[j];
+        }
+        b[i] = s / a[i * n + i];
     }
 }
 

@@ -39,7 +39,7 @@
 
 use faer::sparse::Triplet;
 
-use super::integrate::{step_entry, Patterns, SparseLu};
+use super::integrate::{step_entry, NetLu, Patterns};
 use super::system::DynSystem;
 
 /// A pivot below this fraction of its block's largest entry counts as zero.
@@ -85,11 +85,29 @@ pub(super) struct BlockLu {
     /// The frame speed's place in the device part, when the frame moves.
     reference: Option<usize>,
     /// The network with the units' contributions (and the frame speed).
-    net: SparseLu,
+    net: NetLu,
     /// Right-hand side of the network system.
     rhs: Vec<f64>,
     /// A unit's states during its solve.
     tmp: Vec<f64>,
+}
+
+/// Experimental: the region of each dense bus from `TELLEGEN_REGIONS` (a JSON map
+/// of bus number to region), or `None` without one.
+pub(super) fn region_map(sys: &DynSystem) -> Option<&'static [u16]> {
+    static MAP: std::sync::OnceLock<Option<(usize, Vec<u16>)>> = std::sync::OnceLock::new();
+    let m = MAP.get_or_init(|| {
+        let path = std::env::var("TELLEGEN_REGIONS").ok()?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let by_number: std::collections::HashMap<String, u16> = serde_json::from_str(&text).ok()?;
+        let v = sys
+            .bus_numbers
+            .iter()
+            .map(|b| by_number.get(&b.to_string()).copied().unwrap_or(0))
+            .collect();
+        Some((sys.n, v))
+    });
+    m.as_ref().filter(|(n, _)| *n == sys.n).map(|(_, v)| v.as_slice())
 }
 
 impl BlockLu {
@@ -253,7 +271,7 @@ impl BlockLu {
             trip.push(Triplet::new(n2, u.bus, w[3 * r]));
             trip.push(Triplet::new(n2, n + u.bus, w[3 * r + 1]));
         }
-        let net = SparseLu::new(size, &trip, patterns)?;
+        let net = NetLu::new(size, n, &trip, patterns, if sys.threads { region_map(sys) } else { None })?;
         let Factors {
             col,
             val,

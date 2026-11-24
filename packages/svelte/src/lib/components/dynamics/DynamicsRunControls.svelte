@@ -38,6 +38,40 @@
 		['constant_current', 'Current (I)'],
 		['constant_power', 'Power (P)']
 	];
+
+	/** The solver's speed-ups, all on by default; each can be switched off to
+	 * compare. None changes the results beyond rounding. */
+	const SPEEDUPS: [
+		'factorize_by_blocks' | 'refactor_values' | 'keep_factorization' | 'fast_engine' | 'threads',
+		string,
+		string
+	][] = [
+		[
+			'factorize_by_blocks',
+			'Factorize by blocks',
+			'Eliminate each unit onto its bus before the sparse LU of the network'
+		],
+		[
+			'refactor_values',
+			'Reuse pivot order',
+			'Refactorize a known matrix pattern in its earlier pivot order, values only'
+		],
+		[
+			'keep_factorization',
+			'Keep factorization',
+			'Keep the step matrix factorization until Newton stalls, also across events'
+		],
+		[
+			'fast_engine',
+			'Fast browser engine',
+			'The engine build with SIMD and threads, where the page is cross-origin isolated; off: the plain build'
+		],
+		[
+			'threads',
+			'Parallel threads',
+			'Run the relays beside the step and split work over threads where the browser allows'
+		]
+	];
 </script>
 
 <section aria-labelledby="dyn-run-h">
@@ -146,6 +180,20 @@
 				onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
 			/>
 		</div>
+	</details>
+	<details>
+		<summary>Speed-ups</summary>
+		{#each SPEEDUPS as [key, label, title] (key)}
+			<div class="setting" {title}>
+				<label for="dyn-{key}">{label}</label>
+				<input
+					id="dyn-{key}"
+					type="checkbox"
+					checked={o[key] ?? true}
+					onchange={(e) => dyn.setOptions({ ...o, [key]: e.currentTarget.checked })}
+				/>
+			</div>
+		{/each}
 	</details>
 </section>
 <!-- The Run button stays in view at the panel's bottom edge while the options above scroll. -->

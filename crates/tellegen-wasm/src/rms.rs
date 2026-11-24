@@ -19,6 +19,10 @@ use wasm_bindgen::prelude::*;
 
 use crate::{ensure_input_text, install_panic_hook, jserr};
 
+/// Experimental: the engine's threads, in a build with shared memory.
+#[cfg(target_feature = "atomics")]
+pub mod threads;
+
 /// The most values (channels × samples) one run moves to JavaScript; a
 /// longer run records at a coarser output step and says so in its notes.
 pub const MAX_VALUES: f64 = 4e6;

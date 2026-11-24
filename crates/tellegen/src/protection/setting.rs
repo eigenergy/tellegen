@@ -1022,7 +1022,7 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                 }));
                 let q_charging = (br.y_fr + br.y_to).im.abs();
                 if br.rate > 0.0 && q_charging > 0.3 * br.rate {
-                    functions.push(ProtectionFunction::Overvoltage(VoltageStage {
+                    functions.push(ProtectionFunction::Overvoltage(VoltageStage { reset_ratio: None,
                         label: Some("59".into()),
                         pickup: 1.15,
                         delay: 2.0,
@@ -1263,7 +1263,7 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                         k: 1.1,
                         tau: 1800.0,
                     }),
-                    ProtectionFunction::Overexcitation(VoltageStage {
+                    ProtectionFunction::Overexcitation(VoltageStage { reset_ratio: None,
                         label: None,
                         pickup: 1.1,
                         delay: 10.0,
@@ -1373,6 +1373,8 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                     reverse_reach: 2.0 * xd_p,
                     min_traverse: 0.025,
                     slips: 1,
+                    beat_voltage: None,
+                    beat_delay: 0.0,
                 }));
                 functions.extend([
                     ProtectionFunction::Underfrequency(FrequencyStage {
@@ -1387,17 +1389,17 @@ pub fn auto_scheme(topo: &Topology, opts: &SettingOptions) -> AutoSetting {
                         delay: 1.0,
                         min_voltage: 0.3,
                     }),
-                    ProtectionFunction::Overexcitation(VoltageStage {
+                    ProtectionFunction::Overexcitation(VoltageStage { reset_ratio: None,
                         label: None,
                         pickup: 1.18,
                         delay: 2.0,
                     }),
-                    ProtectionFunction::Undervoltage(VoltageStage {
+                    ProtectionFunction::Undervoltage(VoltageStage { reset_ratio: None,
                         label: None,
                         pickup: 0.7,
                         delay: 3.0,
                     }),
-                    ProtectionFunction::Overvoltage(VoltageStage {
+                    ProtectionFunction::Overvoltage(VoltageStage { reset_ratio: None,
                         label: None,
                         pickup: 1.15,
                         delay: 2.0,
@@ -1510,17 +1512,17 @@ pub fn inverter_interface(f0: f64) -> Vec<ProtectionFunction> {
             start: 0.85,
             reset: 0.5,
         }),
-        ProtectionFunction::Undervoltage(VoltageStage {
+        ProtectionFunction::Undervoltage(VoltageStage { reset_ratio: None,
             label: None,
             pickup: 0.85,
             delay: 3.0,
         }),
-        ProtectionFunction::Overvoltage(VoltageStage {
+        ProtectionFunction::Overvoltage(VoltageStage { reset_ratio: None,
             label: Some("59 U>".into()),
             pickup: 1.1,
             delay: 60.0,
         }),
-        ProtectionFunction::Overvoltage(VoltageStage {
+        ProtectionFunction::Overvoltage(VoltageStage { reset_ratio: None,
             label: Some("59 U>>".into()),
             pickup: 1.2,
             delay: 0.1,

@@ -45,6 +45,8 @@ pub(crate) struct GenDevice {
     pub offset: usize,
     /// States frozen by a generator trip.
     pub tripped: Option<Vec<f64>>,
+    /// Experimental: under-excitation limiter `[q_lim, gain]`, see [`set_uel`].
+    pub uel: Option<[f64; 2]>,
 }
 
 /// What a generator evaluation reports besides its derivatives.
@@ -144,7 +146,13 @@ impl GenDevice {
             }
         };
         if let Avr::Graph(gr) = &self.avr {
-            push("exciter", gr, &x[a..g], &[vt, vs, alg.xad_ifd, self.v_ref]);
+            let (ir, ii) = super::models::dq_ri(x[s], alg.id, alg.iq);
+            push(
+                "exciter",
+                gr,
+                &x[a..g],
+                &[vt, vs, alg.xad_ifd, self.v_ref, vr * ir + vi * ii, vi * ir - vr * ii],
+            );
         }
         if let Governor::Graph(gr) = &self.gov {
             push("governor", gr, &x[g..p], &[omega, self.p_ref]);
@@ -190,6 +198,16 @@ impl GenDevice {
             .pss
             .eval(&x[p..n], omega, alg.te * self.scale, vt, self.scale, fp);
         let (ir, ii) = dq_ri_sc(sc, alg.id, alg.iq);
+        // Experimental: under-excitation limiter of the summing-point type (IEEE Std 421.5,
+        // UEL1/UEL2 reduced to its proportional path). The limit is `-q_lim Vt^2` of reactive power on
+        // the machine base; absorption beyond it raises the voltage error by `gain` times the excess.
+        let vs = match self.uel {
+            Some([q_lim, gain]) => {
+                let q = vi * ir - vr * ii;
+                vs + gain * (-q_lim * vt * vt - q).max(0.0)
+            }
+            None => vs,
+        };
         let vf = self.avr.eval(
             &x[a..g],
             super::models::AvrIn {
@@ -197,6 +215,8 @@ impl GenDevice {
                 vs,
                 xad_ifd: alg.xad_ifd,
                 v_ref: self.v_ref,
+                p: vr * ir + vi * ii,
+                q: vi * ir - vr * ii,
             },
             fa,
         );
@@ -258,6 +278,9 @@ pub(crate) struct BusLoad {
     /// conversion, no load scaling, and no `pl`/`ql` channel.
     pub u_p: f64,
     pub u_q: f64,
+    /// Experimental (load recovery): the slowly following voltage the
+    /// constant-power part refers to; 0 = not started (the power flow voltage).
+    pub vf: f64,
 }
 
 /// A load part `s0 (V / v0)^gamma` with an exponent other than 0, 1 or 2.
@@ -305,7 +328,9 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
             }
         }
         LowVoltage::Break(vb) => {
-            let vb = vb.min(v0);
+            // Experimental: a negative value is relative to the bus's
+            // power flow voltage (-0.95: the break at 95 % of it).
+            let vb = if vb < 0.0 { -vb * v0 } else { vb.min(v0) };
             if vm > vb {
                 (vm, 1.0 / vm)
             } else {
@@ -329,6 +354,81 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
     (w, (slope / (v0 * u * u) - 2.0 * w / u) * du)
 }
 
+// Experimental: saturation of the transformers behind a load above a knee voltage.
+// A load of active power P0 draws the extra reactive power `c P0 ((V - v_knee) / 0.1)^2` for
+// `V > v_knee` (pu of nominal). Off (c = 0) unless set.
+static LOAD_SAT_C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LOAD_SAT_VK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// Experimental: load recovery. The constant-power part of a load draws
+// `P (V / Vf)^alpha`, where `Vf` follows the bus voltage with the time constant `t`: in a fast
+// change the demand follows the voltage with the exponent `alpha`, and returns to its power
+// with `t` (tap changers, thermostats, converters). Off (alpha = 0) unless set.
+static LOAD_DYN_ALPHA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LOAD_DYN_T: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the load recovery (experimental).
+pub fn set_load_recovery(alpha: f64, t: f64) {
+    LOAD_DYN_ALPHA.store(alpha.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    LOAD_DYN_T.store(t.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+// Experimental: under-excitation limiters by bus number, `[q_lim, gain]`: reactive power
+// absorption limit in pu of MBASE at 1 pu terminal voltage and the limiter gain (pu voltage error per pu
+// of reactive power beyond the limit).
+static UEL: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> = std::sync::RwLock::new(None);
+
+/// Sets the under-excitation limiters (experimental). Call before the system is built.
+pub fn set_uel(map: std::collections::HashMap<usize, [f64; 2]>) {
+    *UEL.write().expect("uel lock") = Some(map);
+}
+
+pub(crate) fn uel_of(bus_number: usize) -> Option<[f64; 2]> {
+    UEL.read().expect("uel lock").as_ref().and_then(|m| m.get(&bus_number).copied())
+}
+
+// Experimental: reactive power of a load above its own power flow voltage `v0`:
+// the extra `c P0 ((V - v0) / 0.1)^2` for `V > v0`. With a mild law below, this gives the steep
+// rise seen for rising voltage without the load supporting the voltage in a dip.
+static LOAD_RISE_C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the one-sided rise of the loads' reactive power (experimental).
+pub fn set_load_rise(c: f64) {
+    LOAD_RISE_C.store(c.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+// Experimental: voltage exponent of the reactive power set point of renewable plants in
+// reactive power control, by bus number: Q_ref (V / V0)^n with the start voltage V0.
+static PLANT_QV: std::sync::RwLock<Option<std::collections::HashMap<usize, f64>>> = std::sync::RwLock::new(None);
+
+/// Sets the voltage exponent of the plants' reactive power set point (experimental). Call before the system is built.
+pub fn set_plant_q_exponent(map: std::collections::HashMap<usize, f64>) {
+    *PLANT_QV.write().expect("plant qv lock") = Some(map);
+}
+
+pub(crate) fn plant_qv_of(bus_number: usize) -> f64 {
+    PLANT_QV.read().expect("plant qv lock").as_ref().and_then(|m| m.get(&bus_number).copied()).unwrap_or(0.0)
+}
+
+// Experimental: opening and closing rate of the GAST fuel valve, pu of the turbine rating per
+// second; 0 leaves the plain lag of the model.
+static GAST_RATE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the rate limit of the GAST fuel valve (experimental). Call before the system is built.
+pub fn set_gast_rate(rate: f64) {
+    GAST_RATE.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn gast_rate() -> f64 {
+    f64::from_bits(GAST_RATE.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Sets the load saturation (experimental).
+pub fn set_load_saturation(c: f64, v_knee: f64) {
+    LOAD_SAT_C.store(c.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    LOAD_SAT_VK.store(v_knee.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
 impl BusLoad {
     /// Constant-impedance part as an admittance (enters `Y`).
     pub(crate) fn admittance(&self) -> C64 {
@@ -346,7 +446,14 @@ impl BusLoad {
             out[3] += q * dw;
         };
         if self.p_p != 0.0 || self.q_p != 0.0 {
-            add(self.p_p, self.q_p, part_weight(0.0, vm, self.v0, lv));
+            let alpha = f64::from_bits(LOAD_DYN_ALPHA.load(std::sync::atomic::Ordering::Relaxed));
+            if alpha > 0.0 {
+                let vf = if self.vf > 0.0 { self.vf } else { self.v0 };
+                add(self.p_p, 0.0, part_weight(alpha, vm, vf, lv));
+                add(0.0, self.q_p, part_weight(0.0, vm, self.v0, lv));
+            } else {
+                add(self.p_p, self.q_p, part_weight(0.0, vm, self.v0, lv));
+            }
         }
         if self.p_i != 0.0 || self.q_i != 0.0 {
             add(self.p_i, self.q_i, part_weight(1.0, vm, self.v0, lv));
@@ -365,6 +472,30 @@ impl BusLoad {
                 self.u_q,
                 part_weight(1.0, vm, self.v0, LowVoltage::Floor),
             );
+        }
+        let c = f64::from_bits(LOAD_SAT_C.load(std::sync::atomic::Ordering::Relaxed));
+        if c > 0.0 {
+            // never below the bus's own power flow voltage: no extra demand at the start
+            let vk = f64::from_bits(LOAD_SAT_VK.load(std::sync::atomic::Ordering::Relaxed)).max(self.v0);
+            let p0 = self.p0();
+            if vm > vk && p0 > 0.0 {
+                let x = (vm - vk) / 0.1;
+                let q = c * p0 * x * x;
+                let dq = c * p0 * 2.0 * x / 0.1;
+                out[1] += q / (vm * vm);
+                out[3] += (dq / (vm * vm) - 2.0 * q / (vm * vm * vm)) / vm;
+            }
+        }
+        let c2 = f64::from_bits(LOAD_RISE_C.load(std::sync::atomic::Ordering::Relaxed));
+        if c2 > 0.0 {
+            let p0 = self.p0();
+            if vm > self.v0 && p0 > 0.0 {
+                let x = (vm - self.v0) / 0.1;
+                let q = c2 * p0 * x * x;
+                let dq = c2 * p0 * 2.0 * x / 0.1;
+                out[1] += q / (vm * vm);
+                out[3] += (dq / (vm * vm) - 2.0 * q / (vm * vm * vm)) / vm;
+            }
         }
         out
     }
@@ -613,6 +744,12 @@ pub(crate) struct DynSystem {
     /// Factorize step matrices by blocks where possible
     /// ([`super::RmsOptions::factorize_by_blocks`]).
     pub factorize_by_blocks: bool,
+    /// [`super::RmsOptions::refactor_values`].
+    pub refactor_values: bool,
+    /// [`super::RmsOptions::keep_factorization`].
+    pub keep_factorization: bool,
+    /// [`super::RmsOptions::threads`].
+    pub threads: bool,
     /// The islands apart from the reference already named in the notes.
     pub noted_islands: Vec<Vec<usize>>,
 }
@@ -622,6 +759,29 @@ impl DynSystem {
     // The state vector's names, the bus admittance matrix with every switched
     // branch, fault, shunt and source, and the mass matrix.
 
+    /// Experimental: moves the reference voltage of every load towards its bus
+    /// voltage over `dt` (see `set_load_recovery`).
+    pub(crate) fn relax_loads(&mut self, x: &[f64], dt: f64) {
+        let alpha = f64::from_bits(LOAD_DYN_ALPHA.load(std::sync::atomic::Ordering::Relaxed));
+        let tc = f64::from_bits(LOAD_DYN_T.load(std::sync::atomic::Ordering::Relaxed));
+        if alpha <= 0.0 || tc <= 0.0 {
+            return;
+        }
+        let n = self.loads.len();
+        let a = (dt / tc).min(1.0);
+        for (b, l) in self.loads.iter_mut().enumerate() {
+            if l.p_p == 0.0 || b >= n || n + b >= x.len() {
+                continue;
+            }
+            let vm = (x[b] * x[b] + x[n + b] * x[n + b]).sqrt();
+            if l.vf <= 0.0 {
+                l.vf = l.v0;
+            }
+            if vm > 0.3 {
+                l.vf += a * (vm - l.vf);
+            }
+        }
+    }
     /// Names of every global state, `bus:quantity` for buses and
     /// `G<bus>[ 'id'].<state>` for devices.
     pub(crate) fn variable_names(&self) -> Vec<String> {
@@ -760,6 +920,12 @@ impl DynSystem {
     /// `f(x)`, and the device outputs when `outs` is given.
     // @block Residual f(x)
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
+        if outs.is_none() {
+            if let Some(ri) = super::regions::region_index(self) {
+                self.residual_by_regions(x, f, &ri);
+                return;
+            }
+        }
         let n = self.n;
         f.iter_mut().for_each(|v| *v = 0.0);
         let (vr, rest) = x.split_at(n);
@@ -795,6 +961,164 @@ impl DynSystem {
         // Each unit evaluates its machine and controllers at its bus voltage and
         // the frame speed, writes its state rows and adds its stator current to
         // its bus.
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        if self.devices.len() >= PAR_MIN_UNITS && self.threads && super::spin_pool::SpinPool::global().threads() > 0 {
+            // Experimental: the units in chunks on the spin pool, each writing
+            // only its own state rows and output; the bus currents are added
+            // below in unit order, as serially.
+            let nd = self.devices.len();
+            let mut res = vec![GenOut::default(); nd];
+            let fp = SendPtr(f.as_mut_ptr());
+            let rp = SendPtr(res.as_mut_ptr().cast::<f64>());
+            let chunks = nd.div_ceil(PAR_CHUNK);
+            super::spin_pool::SpinPool::global().run(chunks, &|c| {
+                for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(nd) {
+                    let d = &self.devices[u];
+                    let k = d.n_states();
+                    // SAFETY: each unit writes its own state rows and its own
+                    // output slot, no two alike.
+                    let fs = unsafe { std::slice::from_raw_parts_mut(fp.get().add(d.offset), k) };
+                    let out = d.eval(&x[d.offset..d.offset + k], vr[d.bus], vi[d.bus], w_sys, fs);
+                    unsafe { *rp.get().cast::<GenOut>().add(u) = out };
+                }
+            });
+            for (d, out) in self.devices.iter().zip(res) {
+                f[d.bus] += out.ir;
+                f[n + d.bus] += out.ii;
+                if let Some(outs) = outs.as_deref_mut() {
+                    outs.push(out);
+                }
+            }
+        } else {
+            self.residual_units_serial(x, f, w_sys, outs.as_deref_mut());
+        }
+        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+        self.residual_units_serial(x, f, w_sys, outs.as_deref_mut());
+        // @block Simulated plants
+        // Each renewable plant's states and its current into its bus; a tripped
+        // plant's rows hold its states.
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        if self.held.len() >= PAR_MIN_UNITS && self.threads && super::spin_pool::SpinPool::global().threads() > 0 {
+            let nh = self.held.len();
+            let mut res: Vec<Option<C64>> = vec![None; nh];
+            let fp = SendPtr(f.as_mut_ptr());
+            let rp = SendPtr(res.as_mut_ptr().cast::<f64>());
+            let chunks = nh.div_ceil(PAR_CHUNK);
+            super::spin_pool::SpinPool::global().run(chunks, &|c| {
+                for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(nh) {
+                    let h = &self.held[u];
+                    let Some(p) = h.plant.as_ref() else { continue };
+                    let k = p.n_states();
+                    // SAFETY: as for the units above.
+                    let fs = unsafe { std::slice::from_raw_parts_mut(fp.get().add(h.offset), k) };
+                    let out = if h.tripped {
+                        fs.iter_mut().for_each(|v| *v = 0.0);
+                        None
+                    } else {
+                        Some(p.eval(&x[h.offset..h.offset + k], vr[h.bus], vi[h.bus], w_sys, fs))
+                    };
+                    unsafe { *rp.get().cast::<Option<C64>>().add(u) = out };
+                }
+            });
+            for (h, i) in self.held.iter().zip(res) {
+                if let Some(i) = i {
+                    f[h.bus] += i.re;
+                    f[n + h.bus] += i.im;
+                }
+            }
+            return;
+        }
+        self.residual_plants_serial(x, f, w_sys);
+    }
+
+    /// Experimental: `f(x)` by regions, each region one task. A region writes
+    /// only its buses' rows and its units' states, and adds to each bus in the
+    /// order of [`Self::residual`] (network, sources, loads, units, plants), so
+    /// `f` is bit for bit the serial one.
+    fn residual_by_regions(&self, x: &[f64], f: &mut [f64], ri: &super::regions::RegionIndex) {
+        use super::regions::Shared;
+        let n = self.n;
+        let w_sys = self.omega_sys(x);
+        let fp = Shared(f.as_mut_ptr());
+        let ybus = &self.ybus;
+        let t_call = crate::rms::clock::Instant::now();
+        super::regions::par_for(ri.nr, &|r| {
+            let t_task = crate::rms::clock::Instant::now();
+            let _rt = super::regions::RegionTimer(r, t_task);
+            // The region's bus rows are summed here, in the order of the serial
+            // residual, and written once at the end: buses of different regions
+            // share cache lines in `f`.
+            let (vr, vi) = (&x[..n], &x[n..2 * n]);
+            let buses = &ri.buses[r];
+            let mut acc = vec![0.0_f64; 2 * buses.len()];
+            for (l, &b) in buses.iter().enumerate() {
+                let (mut ar, mut ai) = (0.0_f64, 0.0_f64);
+                let lo = ybus.partition_point(|e| e.0 < b);
+                let mut k = lo;
+                while k < ybus.len() && ybus[k].0 == b {
+                    let (_, c, y) = ybus[k];
+                    ar -= y.re * vr[c] - y.im * vi[c];
+                    ai -= y.im * vr[c] + y.re * vi[c];
+                    k += 1;
+                }
+                acc[2 * l] = ar;
+                acc[2 * l + 1] = ai;
+            }
+            let li = |b: usize| 2 * ri.local[b] as usize;
+            for &k in &ri.sources[r] {
+                let s = &self.sources[k];
+                let i = s.y * s.e;
+                acc[li(s.bus)] += i.re;
+                acc[li(s.bus) + 1] += i.im;
+            }
+            for (l, &b) in buses.iter().enumerate() {
+                let load = &self.loads[b];
+                if load.is_nonlinear() {
+                    let (ir, ii) = load.nonlinear_current(vr[b], vi[b], self.low_voltage);
+                    acc[2 * l] -= ir;
+                    acc[2 * l + 1] -= ii;
+                }
+            }
+            for &u in &ri.devices[r] {
+                let d = &self.devices[u];
+                let k = d.n_states();
+                // SAFETY: the unit's own state rows.
+                let fs = unsafe { fp.slice(d.offset, k) };
+                fs.fill(0.0);
+                let out = d.eval(&x[d.offset..d.offset + k], vr[d.bus], vi[d.bus], w_sys, fs);
+                acc[li(d.bus)] += out.ir;
+                acc[li(d.bus) + 1] += out.ii;
+            }
+            for &u in &ri.held[r] {
+                let h = &self.held[u];
+                let Some(p) = &h.plant else { continue };
+                let k = p.n_states();
+                // SAFETY: the plant's own state rows.
+                let fs = unsafe { fp.slice(h.offset, k) };
+                fs.fill(0.0);
+                if h.tripped {
+                    continue;
+                }
+                let i = p.eval(&x[h.offset..h.offset + k], vr[h.bus], vi[h.bus], w_sys, fs);
+                acc[li(h.bus)] += i.re;
+                acc[li(h.bus) + 1] += i.im;
+            }
+            for (l, &b) in buses.iter().enumerate() {
+                // SAFETY: this region's bus rows.
+                unsafe {
+                    *fp.at(b) = acc[2 * l];
+                    *fp.at(n + b) = acc[2 * l + 1];
+                }
+            }
+        });
+        super::regions::CALL_US.fetch_add(t_call.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        super::regions::CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn residual_units_serial(&self, x: &[f64], f: &mut [f64], w_sys: f64, mut outs: Option<&mut Vec<GenOut>>) {
+        let n = self.n;
+        let (vr, rest) = x.split_at(n);
+        let vi = &rest[..n];
         for d in &self.devices {
             let k = d.n_states();
             let out = d.eval(
@@ -810,9 +1134,12 @@ impl DynSystem {
                 outs.push(out);
             }
         }
-        // @block Simulated plants
-        // Each renewable plant's states and its current into its bus; a tripped
-        // plant's rows hold its states.
+    }
+
+    fn residual_plants_serial(&self, x: &[f64], f: &mut [f64], w_sys: f64) {
+        let n = self.n;
+        let (vr, rest) = x.split_at(n);
+        let vi = &rest[..n];
         for h in &self.held {
             let Some(p) = &h.plant else { continue };
             let k = p.n_states();
@@ -877,20 +1204,56 @@ impl DynSystem {
             t.push((n + b, n + b, -j[1][1]));
         }
         let w_sys = self.omega_sys(x);
-        for d in &self.devices {
+        let dev_block = |d: &GenDevice, t: &mut Vec<(usize, usize, f64)>| {
             let eval = |xl: &[f64], vr: f64, vi: f64, w: f64, f: &mut [f64]| {
                 let o = d.eval(xl, vr, vi, w, f);
                 (o.ir, o.ii)
             };
-            self.unit_block(x, w_sys, d.offset, d.n_states(), d.bus, eval, &mut t);
-        }
-        for h in self.held.iter().filter(|h| !h.tripped) {
-            let Some(p) = &h.plant else { continue };
+            self.unit_block(x, w_sys, d.offset, d.n_states(), d.bus, eval, t);
+        };
+        let plant_block = |h: &HeldUnit, t: &mut Vec<(usize, usize, f64)>| {
+            if h.tripped {
+                return;
+            }
+            let Some(p) = &h.plant else { return };
             let eval = |xl: &[f64], vr: f64, vi: f64, w: f64, f: &mut [f64]| {
                 let i = p.eval(xl, vr, vi, w, f);
                 (i.re, i.im)
             };
-            self.unit_block(x, w_sys, h.offset, p.n_states(), h.bus, eval, &mut t);
+            self.unit_block(x, w_sys, h.offset, p.n_states(), h.bus, eval, t);
+        };
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        if self.devices.len() + self.held.len() >= PAR_MIN_UNITS
+            && self.threads && super::spin_pool::SpinPool::global().threads() > 0
+        {
+            // Experimental: the units' blocks in chunks on the spin pool,
+            // joined in unit order (the same triplets in the same order).
+            let nd = self.devices.len();
+            let total = nd + self.held.len();
+            let chunks = total.div_ceil(PAR_CHUNK);
+            let parts: Vec<std::sync::Mutex<Vec<(usize, usize, f64)>>> =
+                (0..chunks).map(|_| std::sync::Mutex::new(Vec::new())).collect();
+            super::spin_pool::SpinPool::global().run(chunks, &|c| {
+                let mut v = Vec::new();
+                for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(total) {
+                    if u < nd {
+                        dev_block(&self.devices[u], &mut v);
+                    } else {
+                        plant_block(&self.held[u - nd], &mut v);
+                    }
+                }
+                *parts[c].lock().expect("jacobian part") = v;
+            });
+            for p in parts {
+                t.extend(p.into_inner().expect("jacobian part"));
+            }
+            return t;
+        }
+        for d in &self.devices {
+            dev_block(d, &mut t);
+        }
+        for h in &self.held {
+            plant_block(h, &mut t);
         }
         t
     }
@@ -1171,3 +1534,26 @@ pub(crate) fn fd_step(x: f64) -> f64 {
 /// functions summed in another order, depart from the compiled models by up
 /// to 7.5e-6 (`tests/rms_graph.rs`); with `1e-7` they agree to 1e-9.
 pub(crate) const FD_REL: f64 = 1e-7;
+
+/// Experimental: below this many units the residual and the Jacobian stay serial.
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+const PAR_MIN_UNITS: usize = 64;
+/// Experimental: units per task on the spin pool.
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+const PAR_CHUNK: usize = 48;
+
+/// A raw pointer that may cross threads: each thread writes a disjoint part.
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+#[derive(Clone, Copy)]
+struct SendPtr(*mut f64);
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+unsafe impl Send for SendPtr {}
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+unsafe impl Sync for SendPtr {}
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+impl SendPtr {
+    fn get(self) -> *mut f64 {
+        self.0
+    }
+}
+

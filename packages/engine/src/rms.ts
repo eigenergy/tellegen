@@ -56,6 +56,10 @@ export type {
 /** How a case is prepared: the load model and the engine's options. */
 export interface RmsCaseOptions extends Partial<RmsOptions> {
   load_model?: LoadModel;
+  /** Experimental: run in the engine build with SIMD and threads
+   * (shared memory) where the page is cross-origin isolated, the default,
+   * or in the plain build. */
+  fast_engine?: boolean;
 }
 
 /** A run: the events and steps; the display channels are recorded. */
@@ -182,10 +186,24 @@ export interface RmsWorkerLike {
 
 export type RmsWorkerFactory = () => RmsWorkerLike;
 
+/** Experimental: whether the next RMS worker loads the build with SIMD
+ * and threads ([`setRmsFastEngine`]). */
+let fastEngine = true;
+
 const defaultFactory: RmsWorkerFactory = () =>
   new Worker(new URL("./rms-worker.js", import.meta.url), {
     type: "module",
+    name: fastEngine ? "tellegen-rms-mt" : "tellegen-rms",
   }) as unknown as RmsWorkerLike;
+
+/** Experimental: run RMS cases in the engine build with SIMD and threads
+ * (where the page is cross-origin isolated) or in the plain build. A change
+ * replaces the RMS worker; open cases reopen in the new one. */
+export function setRmsFastEngine(on: boolean): void {
+  if (on === fastEngine) return;
+  fastEngine = on;
+  host?.terminate(new Error("the RMS engine build was switched"));
+}
 
 interface Pending {
   resolve(v: { value: unknown; workerMs: number }): void;
@@ -342,7 +360,9 @@ export async function openRmsCase(
 ): Promise<BrowserRmsCase> {
   assertEngineInputLength(moduleJson.length);
   assertEngineInputLength(dyrText.length);
-  const c = new BrowserRmsCase(moduleJson, dyrText, options);
+  const { fast_engine, ...engineOptions } = options;
+  setRmsFastEngine(fast_engine ?? true);
+  const c = new BrowserRmsCase(moduleJson, dyrText, engineOptions);
   await c.ready();
   return c;
 }

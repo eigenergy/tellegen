@@ -36,8 +36,9 @@ impl Slot {
     #[must_use]
     pub fn ports(self) -> &'static [&'static str] {
         match self {
-            // Terminal voltage, stabilizer signal, field current, voltage reference.
-            Self::Exciter => &["vt", "vs", "xad_ifd", "v_ref"],
+            // Terminal voltage, stabilizer signal, field current, voltage reference,
+            // and (experimental) active and reactive power on the machine base.
+            Self::Exciter => &["vt", "vs", "xad_ifd", "v_ref", "p", "q"],
             // Speed and power reference (the output is the mechanical torque).
             Self::Governor => &["omega", "p_ref"],
             // Speed, electrical power (system base), terminal voltage,
@@ -1987,6 +1988,13 @@ pub fn template_json(dyr_text: &str, line: usize) -> Result<String, String> {
         .iter()
         .find(|r| r.line() == line)
         .ok_or_else(|| format!("no record starts on line {line}"))?;
+    // Experimental: ESST1A, ESAC6A, PSS2B, OELIT, UELPQ.
+    let name = rec.model_name().trim().to_ascii_uppercase();
+    if super::ext_models::ext_role(&name).is_some() {
+        let p = super::ext_models::numbers(&name, rec.parameters())?;
+        let graph = super::ext_models::record_template(&name, &p)?;
+        return serde_json::to_string(&graph).map_err(|e| e.to_string());
+    }
     let model = powerio::typed_model(rec).map_err(|e| e.to_string())?;
     let graph =
         template(&model).ok_or_else(|| format!("{} has no block template yet", model.name()))?;

@@ -68,6 +68,8 @@ export type ModelRole =
   | "exciter"
   | "governor"
   | "stabilizer"
+  | "oel"
+  | "uel"
   | "inverter"
   | InverterPart;
 
@@ -210,7 +212,7 @@ export interface ModelOverride {
 
 /** Ports each slot's graph can read. */
 export const GRAPH_PORTS: Record<GraphSlot, string[]> = {
-  exciter: ["vt", "vs", "xad_ifd", "v_ref"],
+  exciter: ["vt", "vs", "xad_ifd", "v_ref", "p", "q"],
   governor: ["omega", "p_ref"],
   stabilizer: ["omega", "pe", "vt", "pe_m"],
 };

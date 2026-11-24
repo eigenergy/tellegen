@@ -36,6 +36,13 @@
 	const att = $derived(dyn.active);
 	const unit = $derived(catalog.find(unitKey));
 	const ROLES = ['machine', 'exciter', 'governor', 'stabilizer'] as const;
+	/** Excitation limiters (OELIT, UELPQ): records of their own that act at the
+	 * exciter's summing point, so their diagram is the exciter's. */
+	const LIMITERS = ['oel', 'uel'] as const;
+	const LIMITER_LABEL: Record<(typeof LIMITERS)[number], string> = {
+		oel: 'over-excitation limiter',
+		uel: 'under-excitation limiter'
+	};
 	/** What the unit is now, shown above any change. */
 	const kind = $derived<UnitKind>(unit ? unitKind(unit) : 'static');
 	// The letters match the unit glyphs on the map.
@@ -126,10 +133,17 @@
 			// A controller graph belongs to a machine's control slot; the parts of
 			// an inverter carry none.
 			const slot = (['exciter', 'governor', 'stabilizer'] as string[]).includes(role);
+			// A limiter is part of the exciter's graph: a diagram drawn for the
+			// exciter would hide the change, so it goes with it.
+			const limiter = (LIMITERS as readonly string[]).includes(role);
 			await dyn.editDynamics(
 				s.origin,
 				await setUnitModel(s.origin.text, s.unit.bus, s.unit.machine_id, role, model || null),
-				slot ? withoutUnit(s, role as GraphSlot) : undefined
+				slot
+					? withoutUnit(s, role as GraphSlot)
+					: limiter
+						? withoutUnit(s, 'exciter')
+						: undefined
 			);
 		});
 
@@ -366,6 +380,32 @@
 										>Diagram</button
 									>
 								{/if}
+							</td>
+						</tr>
+					{/each}
+					{#each LIMITERS as role (role)}
+						{@const rec = unit.records.find((r) => r.role === role)}
+						<tr>
+							<th title={LIMITER_LABEL[role]}>{role}</th>
+							<td>
+								<select
+									value={rec?.model ?? ''}
+									disabled={busy || !unit.records.some((r) => r.role === 'exciter')}
+									onchange={(e) => setModel(role, e.currentTarget.value)}
+								>
+									<option value="">none</option>
+									{#each catalog.ofRole(role) as m (m.name)}<option value={m.name}>{m.name}</option
+										>{/each}
+								</select>
+							</td>
+							<td>
+								<button
+									class="ghost"
+									title="Open the exciter with its limiters as a block diagram"
+									disabled={busy || !rec}
+									onclick={() => openSlot('exciter')}
+									>Diagram</button
+								>
 							</td>
 						</tr>
 					{/each}

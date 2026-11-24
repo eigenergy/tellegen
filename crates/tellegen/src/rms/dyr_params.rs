@@ -759,6 +759,119 @@ const SCHEMA: &[(&str, &[Param])] = &[
             ),
         ],
     ),
+    // Experimental: models tellegen reads itself (rms/ext_models.rs).
+    (
+        "ESST1A",
+        &[
+            Param("UEL", "Inputs", "", "UEL input location (read, not used: limiters enter at the summing point)"),
+            Param("VOS", "Inputs", "", "stabilizer input: 1 voltage error, 2 after the regulator"),
+            Param("TR", "Measurement", "s", "voltage transducer time constant"),
+            Param("VIMAX", "Limits", "pu", "voltage error maximum"),
+            Param("VIMIN", "Limits", "pu", "voltage error minimum"),
+            Param("TC", "Regulator", "s", "lead-lag 1 lead time constant"),
+            Param("TB", "Regulator", "s", "lead-lag 1 lag time constant"),
+            Param("TC1", "Regulator", "s", "lead-lag 2 lead"),
+            Param("TB1", "Regulator", "s", "lead-lag 2 lag (0 bypasses)"),
+            Param("KA", "Regulator", "pu", "regulator gain"),
+            Param("TA", "Regulator", "s", "thyristor bridge time constant"),
+            Param("VAMAX", "Limits", "pu", "regulator output maximum"),
+            Param("VAMIN", "Limits", "pu", "regulator output minimum"),
+            Param("VRMAX", "Limits", "pu", "field voltage maximum (times Vt)"),
+            Param("VRMIN", "Limits", "pu", "field voltage minimum (times Vt)"),
+            Param("KC", "Exciter", "pu", "rectifier loading factor"),
+            Param("KF", "Feedback", "pu", "rate feedback gain"),
+            Param("TF", "Feedback", "s", "rate feedback time constant"),
+            Param("KLR", "Field current limit", "pu", "field current limiter gain"),
+            Param("ILR", "Field current limit", "pu", "field current limiter pickup"),
+        ],
+    ),
+    (
+        "ESAC6A",
+        &[
+            Param("TR", "Measurement", "s", "voltage transducer time constant"),
+            Param("KA", "Regulator", "pu", "regulator gain"),
+            Param("TA", "Regulator", "s", "regulator lag time constant"),
+            Param("TK", "Regulator", "s", "regulator lead time constant"),
+            Param("TB", "Regulator", "s", "lead-lag lag time constant"),
+            Param("TC", "Regulator", "s", "lead-lag lead time constant"),
+            Param("VAMAX", "Limits", "pu", "regulator output maximum"),
+            Param("VAMIN", "Limits", "pu", "regulator output minimum"),
+            Param("VRMAX", "Limits", "pu", "exciter field voltage maximum (times Vt)"),
+            Param("VRMIN", "Limits", "pu", "exciter field voltage minimum (times Vt)"),
+            Param("TE", "Exciter", "s", "exciter time constant"),
+            Param("VFELIM", "Field current limit", "pu", "exciter field current limit"),
+            Param("KH", "Field current limit", "pu", "exciter field current limiter gain (0 off)"),
+            Param("VHMAX", "Field current limit", "pu", "limiter output maximum"),
+            Param("TH", "Field current limit", "s", "limiter lag"),
+            Param("TJ", "Field current limit", "s", "limiter lead"),
+            Param("KC", "Exciter", "pu", "rectifier loading factor"),
+            Param("KD", "Exciter", "pu", "demagnetizing factor"),
+            Param("KE", "Exciter", "pu", "exciter constant"),
+            Param("E1", "Saturation", "pu", "first saturation point"),
+            Param("SE(E1)", "Saturation", "", "saturation at E1"),
+            Param("E2", "Saturation", "pu", "second saturation point"),
+            Param("SE(E2)", "Saturation", "", "saturation at E2"),
+        ],
+    ),
+    (
+        "PSS2B",
+        &[
+            Param("J1", "Inputs", "", "input 1 signal (1 speed)"),
+            Param("K1", "Inputs", "", "input 1 remote bus (0)"),
+            Param("J2", "Inputs", "", "input 2 signal (3 electrical power)"),
+            Param("K2", "Inputs", "", "input 2 remote bus (0)"),
+            Param("M", "Ramp tracking", "", "ramp-tracking filter order M"),
+            Param("N", "Ramp tracking", "", "ramp-tracking filter order N"),
+            Param("TW1", "Washouts", "s", "input 1 washout 1"),
+            Param("TW2", "Washouts", "s", "input 1 washout 2 (0 bypasses)"),
+            Param("T6", "Washouts", "s", "input 1 lag (0 bypasses)"),
+            Param("TW3", "Washouts", "s", "input 2 washout 1"),
+            Param("TW4", "Washouts", "s", "input 2 washout 2 (0 bypasses)"),
+            Param("T7", "Washouts", "s", "input 2 integrator lag"),
+            Param("KS2", "Gains", "pu", "input 2 gain (T7 / 2H)"),
+            Param("KS3", "Gains", "pu", "input 2 summing gain"),
+            Param("T8", "Ramp tracking", "s", "ramp-tracking lead"),
+            Param("T9", "Ramp tracking", "s", "ramp-tracking lag"),
+            Param("KS1", "Gains", "pu", "stabilizer gain"),
+            Param("T1", "Phase compensation", "s", "lead-lag 1 lead"),
+            Param("T2", "Phase compensation", "s", "lead-lag 1 lag"),
+            Param("T3", "Phase compensation", "s", "lead-lag 2 lead"),
+            Param("T4", "Phase compensation", "s", "lead-lag 2 lag"),
+            Param("T10", "Phase compensation", "s", "lead-lag 3 lead"),
+            Param("T11", "Phase compensation", "s", "lead-lag 3 lag"),
+            Param("VS1MAX", "Limits", "pu", "input 1 maximum"),
+            Param("VS1MIN", "Limits", "pu", "input 1 minimum"),
+            Param("VS2MAX", "Limits", "pu", "input 2 maximum"),
+            Param("VS2MIN", "Limits", "pu", "input 2 minimum"),
+            Param("VSTMAX", "Limits", "pu", "output maximum"),
+            Param("VSTMIN", "Limits", "pu", "output minimum"),
+        ],
+    ),
+    (
+        "OELIT",
+        &[
+            Param("IFDRAT", "Field current", "pu", "rated field current (air-gap line)"),
+            Param("IPICK", "Field current", "", "heating pickup / IFDRAT"),
+            Param("ICONT", "Field current", "", "continuous limit / IFDRAT"),
+            Param("ILIM", "Field current", "", "instantaneous limit / IFDRAT"),
+            Param("C", "Inverse time", "s", "inverse-time constant: t = C / ((I/Ipick)^2 - 1)"),
+            Param("TCOOL", "Inverse time", "s", "cooling time constant"),
+            Param("KP", "Limiter", "pu", "proportional gain (pu voltage per pu field current)"),
+            Param("KI", "Limiter", "1/s", "integral gain (dead-zone integrator, resets in 1 s)"),
+            Param("VOELMIN", "Limiter", "pu", "limiter output minimum"),
+        ],
+    ),
+    (
+        "UELPQ",
+        &[
+            Param("Q0", "Characteristic", "pu", "reactive power limit at P = 0 (MBASE)"),
+            Param("KQP", "Characteristic", "pu", "slope of the limit with P"),
+            Param("KV", "Characteristic", "", "voltage exponent of the limit (0, 1, 2)"),
+            Param("KP", "Limiter", "pu", "proportional gain (pu voltage per pu Q)"),
+            Param("KI", "Limiter", "1/s", "integral gain (dead-zone integrator, resets in 1 s)"),
+            Param("VUELMAX", "Limiter", "pu", "limiter output maximum"),
+        ],
+    ),
 ];
 
 /// The number of parameters of `model` the editor names, if it knows it.
@@ -865,6 +978,26 @@ pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGe
                 parameters: parameters(rec, pnames),
             });
         }
+        // Experimental: the unit's ESST1A, ESAC6A, PSS2B,
+        // OELIT and UELPQ records (powerio does not type them).
+        for r in dyr.records().iter().filter(|r| {
+            r.bus_id().is_some_and(|b| b as usize == m.bus.0)
+                && r.device_id()
+                    .unwrap_or("1")
+                    .trim()
+                    .eq_ignore_ascii_case(m.machine_id.trim())
+        }) {
+            let model = r.model_name().trim().to_ascii_uppercase();
+            let (Some(role), Some(pnames)) = (super::ext_models::ext_role(&model), names(&model)) else {
+                continue;
+            };
+            records.push(DyrRecordView {
+                line: r.line(),
+                role: role.to_string(),
+                parameters: parameters(r, pnames),
+                model,
+            });
+        }
         // The inverter records of the unit, each as one part of the plant
         // (converter, electrical control, plant controller, or another
         // inverter record), in chain order; a model the editor has no names
@@ -906,7 +1039,10 @@ pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGe
                     machine_id: Some(id),
                     error: powerio::ModelError::Unsupported { model_name },
                     ..
-                } if *bus == m.bus && id.eq_ignore_ascii_case(&m.machine_id) => {
+                } if *bus == m.bus
+                    && id.eq_ignore_ascii_case(&m.machine_id)
+                    && super::ext_models::ext_role(model_name).is_none() =>
+                {
                     Some(model_name.trim().to_ascii_uppercase())
                 }
                 _ => None,

@@ -447,6 +447,9 @@ pub(crate) struct AvrIn {
     pub vs: f64,
     pub xad_ifd: f64,
     pub v_ref: f64,
+    /// Experimental: active and reactive power on the machine base.
+    pub p: f64,
+    pub q: f64,
 }
 
 impl Avr {
@@ -668,7 +671,7 @@ impl Avr {
         match self {
             Self::Fixed => u.v_ref,
             #[cfg(feature = "rms-experimental")]
-            Self::Graph(g) => g.eval(x, &[u.vt, u.vs, u.xad_ifd, u.v_ref], f),
+            Self::Graph(g) => g.eval(x, &[u.vt, u.vs, u.xad_ifd, u.v_ref, u.p, u.q], f),
             Self::Sexs {
                 ta_tb,
                 tb,
@@ -1031,7 +1034,9 @@ impl Governor {
                 let (x1_sat, dx1) = low_pass_nonwindup(x_in, x[0], 1.0, *t1, *v_min, *v_max);
                 let (_, dx2) = low_pass(x1_sat, x[1], 1.0, *t2);
                 let (_, dx3) = low_pass(x[1], x[2], 1.0, *t3);
-                f[0] = dx1;
+                // Experimental: the fuel valve moves at most `set_gast_rate` pu/s.
+                let rate = super::system::gast_rate();
+                f[0] = if rate > 0.0 { dx1.clamp(-rate, rate) } else { dx1 };
                 f[1] = dx2;
                 f[2] = dx3;
                 (x[1] - d_turb * (omega - 1.0)) / omega
@@ -1530,6 +1535,8 @@ mod tests {
                 vs: 0.0,
                 xad_ifd: 2.5,
                 v_ref: 1.0,
+                p: 0.0,
+                q: 0.0,
             };
             let vf = avr.eval(&x, u, &mut f);
             assert!(vf.is_finite() && f.iter().all(|v| v.is_finite()), "VE {ve}");

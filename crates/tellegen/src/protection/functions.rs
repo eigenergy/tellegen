@@ -213,6 +213,11 @@ enum Element {
         side: Side,
         entered: Option<(Side, f64)>,
         slips: usize,
+        /// Experimental: minimum of the current dip and its time, the
+        /// voltage-time integral and duration of the oscillation, and the time
+        /// the voltage exceeded its average after the last beat.
+        beat: [f64; 4],
+        beat_ready: Option<f64>,
     },
     Integral {
         acc: f64,
@@ -359,6 +364,8 @@ impl RelayState {
                         side: Side::Outside,
                         entered: None,
                         slips: 0,
+                        beat: [0.0; 4],
+                        beat_ready: None,
                     },
                     ProtectionFunction::NegativeSequence(_) => Element::Integral { acc: 0.0 },
                     ProtectionFunction::Thermal(_) => Element::Thermal { theta: None },
@@ -1024,7 +1031,7 @@ impl RelayState {
                         .into_iter()
                         .fold(0.0, f64::max);
                     let held = timer.since.is_some();
-                    let picked = vmax > s.pickup || (held && vmax > 0.98 * s.pickup);
+                    let picked = vmax > s.pickup || (held && vmax > s.reset_ratio.unwrap_or(0.98) * s.pickup);
                     timer.update(picked, t, ops, id, label, || format!("V {vmax:.3} pu"));
                 }
                 (ProtectionFunction::NeutralOvervoltage(s), Element::Timer { timer, .. }) => {
@@ -1145,10 +1152,71 @@ impl RelayState {
                         side,
                         entered,
                         slips,
+                        beat,
+                        beat_ready,
                     },
                 ) => {
-                    let Some(si) = seq_i else { continue };
-                    let now = if si[1].norm() > 0.1 * i_nom {
+                    if let Some(vb) = o.beat_voltage {
+                        // Experimental: voltage beats. A beat is
+                        // counted once the voltage has passed a minimum below `vb` and has
+                        // been rising for four half-cycles (40 ms). After the last beat the
+                        // relay operates `beat_delay` after the voltage exceeds its average
+                        // over the oscillation. `entered` holds the start of the dip, `side`
+                        // is `Middle` once the dip has been counted.
+                        let vm = v1.norm();
+                        if entered.is_some() || *slips > 0 {
+                            beat[2] += vm * dt;
+                            beat[3] += dt;
+                        }
+                        if vm < vb {
+                            if entered.is_none() {
+                                *entered = Some((Side::Middle, t));
+                                *side = Side::Outside;
+                                beat[0] = vm;
+                                beat[1] = t;
+                            }
+                            if vm < beat[0] {
+                                beat[0] = vm;
+                                beat[1] = t;
+                            }
+                        }
+                        if entered.is_some() && *side != Side::Middle && t - beat[1] >= 0.04 && vm > beat[0] {
+                            *side = Side::Middle;
+                            *slips += 1;
+                            ops.push(op(
+                                t,
+                                id,
+                                label,
+                                OperationKind::Pickup,
+                                format!("voltage beat {} (minimum {:.2} pu, below {vb} pu)", *slips, beat[0]),
+                            ));
+                        }
+                        if vm > 1.1 * vb && *side == Side::Middle {
+                            *entered = None;
+                        }
+                        if *slips >= o.slips && beat_ready.is_none() && beat[3] > 0.0 && vm > beat[2] / beat[3] {
+                            *beat_ready = Some(t);
+                        }
+                        if let Some(tr) = *beat_ready {
+                            if t - tr >= o.beat_delay {
+                                ready = Some((label.clone(), false, false));
+                            }
+                        }
+                    }
+                    let si = match seq_i {
+                        Some(si) if o.beat_voltage.is_none() => si,
+                        _ => {
+                            if o.beat_voltage.is_some() {
+                                // fall through to the trip handling below
+                                [C64::new(0.0, 0.0); 3]
+                            } else {
+                                continue;
+                            }
+                        }
+                    };
+                    let now = if o.beat_voltage.is_some() {
+                        *side
+                    } else if si[1].norm() > 0.1 * i_nom {
                         let z = v1 / si[1] * self.site.scale;
                         if z.im > o.forward_reach || z.im < -o.reverse_reach {
                             Side::Outside
@@ -1188,7 +1256,7 @@ impl RelayState {
                         }
                         *side = now;
                     }
-                    if *slips >= o.slips {
+                    if o.beat_voltage.is_none() && *slips >= o.slips {
                         ready = Some((label.clone(), false, false));
                     }
                 }

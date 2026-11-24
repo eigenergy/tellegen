@@ -54,7 +54,8 @@ pub(crate) fn build(
     let mut report = InitReport::default();
     let low_voltage = match options.low_voltage_load {
         LowVoltageLoad::Break { v_break } => {
-            if !(v_break.is_finite() && v_break > 0.0) {
+            // Experimental: a negative value is relative to each bus's power flow voltage
+            if !(v_break.is_finite() && v_break != 0.0) {
                 return Err(format!(
                     "the load breakpoint v_break must be a positive voltage, not {v_break}"
                 ));
@@ -204,9 +205,15 @@ pub(crate) fn build(
         ));
     }
     let plant_model = |m: &str| matches!(m, "REGCA1" | "REECB1" | "REPCA1");
+    // Experimental: models read from their records as block graphs.
+    #[cfg(feature = "rms-experimental")]
+    let ext_model = |m: &str| super::ext_models::ext_role(m).is_some();
+    #[cfg(not(feature = "rms-experimental"))]
+    let ext_model = |_: &str| false;
     for (model, count) in untyped
         .iter()
         .filter(|(m, _)| !(options.renewable_plants && plant_model(m)))
+        .filter(|(m, _)| !ext_model(m))
     {
         report.notes.push(format!(
             "dyr: {count} {model} record(s) have no model in tellegen and are not simulated"
@@ -425,6 +432,7 @@ pub(crate) fn build(
                             v_ref0: 1.0,
                             q_ref_converter: 0.0,
                             omega_ref: 1.0,
+                            q_vexp: super::system::plant_qv_of(m.bus.0),
                         };
                         let (x, notes) = p.initialize(s, v[b])?;
                         Ok((p, x, notes))
@@ -567,6 +575,33 @@ pub(crate) fn build(
                     })
                     .transpose()
             };
+            // Experimental: ESST1A / ESAC6A / PSS2B / OELIT / UELPQ
+            // records of the unit, as block graphs; a graph override still wins.
+            let ext = super::ext_models::unit_records(dynamics, m.bus.0, &m.machine_id)
+                .map_err(&unit_err)?;
+            let (avr, pss) = if ext.is_empty() {
+                (avr, pss)
+            } else {
+                let compile = |g: super::graph::BlockGraph| {
+                    CompiledGraph::new(&g).map(Box::new).map_err(|e| {
+                        format!("generator {}-{} {}: {e}", m.bus, m.machine_id, g.name)
+                    })
+                };
+                let avr = match super::ext_models::exciter_graph(
+                    &ext,
+                    m.exciter.as_ref().map(|l| &l.model),
+                )
+                .map_err(&unit_err)?
+                {
+                    Some(g) => Avr::Graph(compile(g)?),
+                    None => avr,
+                };
+                let pss = match super::ext_models::stabilizer_graph(&ext).map_err(&unit_err)? {
+                    Some(g) => Stabilizer::Graph(compile(g)?),
+                    None => pss,
+                };
+                (avr, pss)
+            };
             let avr = graph(Slot::Exciter)?.map_or(avr, Avr::Graph);
             let gov = graph(Slot::Governor)?.map_or(gov, Governor::Graph);
             let pss = graph(Slot::Stabilizer)?.map_or(pss, Stabilizer::Graph);
@@ -587,6 +622,7 @@ pub(crate) fn build(
             p_ref: 1.0,
             offset: nx,
             tripped: None,
+            uel: super::system::uel_of(m.bus.0),
         };
         nx += dev.n_states();
         let (x0, notes) = init_device(&mut dev, v[b], i_sys)?;
@@ -657,6 +693,9 @@ pub(crate) fn build(
         held,
         low_voltage,
         factorize_by_blocks: options.factorize_by_blocks,
+        refactor_values: options.refactor_values,
+        keep_factorization: options.keep_factorization,
+        threads: options.threads,
         noted_islands: Vec::new(),
     };
     sys.rebuild_ybus();
@@ -721,8 +760,21 @@ pub(crate) fn power_flow(
     hold_remote_regulators(network, &mut ac);
     let (qmin, qmax) = (ac.qmin.clone(), ac.qmax.clone());
     if !reactive_limits {
-        ac.qmin.iter_mut().for_each(|q| *q = f64::NEG_INFINITY);
-        ac.qmax.iter_mut().for_each(|q| *q = f64::INFINITY);
+        // A bus whose generators all have a fixed reactive power (Qmin = Qmax)
+        // is no voltage-controlled bus: it keeps its limits and so its
+        // reactive power; every other generator holds its setpoint.
+        let mut fixed = vec![true; ac.bus_ids.len()];
+        for g in 0..ac.k {
+            if (qmax[g] - qmin[g]).abs() > 1e-9 {
+                fixed[ac.gen_bus[g]] = false;
+            }
+        }
+        for g in 0..ac.k {
+            if !fixed[ac.gen_bus[g]] {
+                ac.qmin[g] = f64::NEG_INFINITY;
+                ac.qmax[g] = f64::INFINITY;
+            }
+        }
     }
     let pf = ac_pf_with_start(&AcPolar, &ac, AcStart::Case)?;
     let terms = ac.load_terms.len();
@@ -1075,11 +1127,14 @@ pub(crate) fn init_device(
         Avr::Fixed => dev.v_ref = vf0,
         avr => {
             let na = avr.n_states();
+            let s_m = v * i_m.conj();
             let input = super::models::AvrIn {
                 vt,
                 vs: vs0,
                 xad_ifd: alg.xad_ifd,
                 v_ref: vt,
+                p: s_m.re,
+                q: s_m.im,
             };
             let guess = avr_start(avr, input, vf0);
             let limited = avr;
@@ -1175,7 +1230,7 @@ pub(crate) fn avr_start(avr: &Avr, u: super::models::AvrIn, vf: f64) -> Vec<f64>
     let (vt, vs, xad_ifd) = (u.vt, u.vs, u.xad_ifd);
     #[cfg(feature = "rms-experimental")]
     if let Avr::Graph(g) = avr {
-        let (mut x, v_ref) = g.initial_guess(&[vt, vs, xad_ifd, vt], vf);
+        let (mut x, v_ref) = g.initial_guess(&[vt, vs, xad_ifd, vt, u.p, u.q], vf);
         x.push(v_ref);
         return x;
     }
@@ -1457,6 +1512,7 @@ mod tests {
             p_ref: 1.0,
             offset: 0,
             tripped: None,
+            uel: crate::rms::system::uel_of(102),
         };
         let v = C64::new(1.0, 0.0);
         let i = (C64::new(0.8, 0.3) / v).conj();
@@ -1604,6 +1660,7 @@ mod tests {
                 p_ref: 1.0,
                 offset: 0,
                 tripped: None,
+                uel: crate::rms::system::uel_of(102),
             };
             let v = C64::new(1.0, 0.0);
             let i = (C64::new(0.8, 0.3) / v).conj();

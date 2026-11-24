@@ -91,6 +91,60 @@ pub(super) const LIBRARY: &[LibraryModel] = &[
         engines: "RMS",
         params: "0.02 0.1 -0.1 1.0 10.0 200.0 0.02 6.0 -6.0 0.05 0.0 1.0",
     },
+    // Experimental: read by tellegen
+    // itself (rms/ext_models.rs) and run as block graphs.
+    //
+    // The ESST1A of PowerSystems.jl 5.12.5's `test/test_dynamic_generator.jl`
+    // (BSD-3-Clause), unchanged.
+    LibraryModel {
+        role: "exciter",
+        name: "ESST1A",
+        label: "IEEE ST1A static (bus-fed thyristor) exciter",
+        engines: "RMS (block graph; validated against PowerSimulationsDynamics.jl 0.16.2)",
+        params: "1 1 0.0 99.0 -99.0 2.5 13.25 0.0 0.0 200.0 0.1 9.5 -9.5 9.5 -9.5 0.0 0.0 1.0 0.0 999.0",
+    },
+    // No published ESAC6A set: the regulator of the ESST1A above (KA, TA,
+    // TC/TB, VAMAX/VAMIN), no regulator lead (TK = 0), and the transducer, AC
+    // exciter and VRMAX/VRMIN of the ESAC1A above; the exciter field current
+    // limiter off (KH = 0).
+    LibraryModel {
+        role: "exciter",
+        name: "ESAC6A",
+        label: "IEEE AC6A brushless AC exciter",
+        engines: "RMS (block graph; validated against PowerSimulationsDynamics.jl 0.16.2 with its ESAC1A exciter equations)",
+        params: "0.001 200.0 0.1 0.0 13.25 2.5 9.5 -9.5 7.32 -7.32 0.8 99.0 0.0 99.0 0.0 0.0 0.2 0.38 1.0 3.14 0.03 4.18 0.1",
+    },
+    LibraryModel {
+        role: "stabilizer",
+        name: "PSS2B",
+        label: "IEEE PSS2B dual-input (speed, power) stabilizer",
+        engines: "RMS (block graph; validated against PowerSimulationsDynamics.jl 0.16.2)",
+        params: "1 0 3 0 5 1 1.5 1.5 0.0 1.5 0.0 1.5 0.1875 1.0 0.5 0.1 2.0 0.59451 0.0447 0.59451 0.0447 1.0 1.0 99.0 -99.0 99.0 -99.0 0.1 -0.1",
+    },
+    // OELIT and UELPQ are tellegen's own models; there are no published sets
+    // and these values are illustrative. OELIT: rated field current 2.4 (the
+    // unsaturated field current of a round-rotor unit with Xd = 1.8 pu at
+    // rated MVA, 1 pu voltage and 0.9 power factor), the IEEE C50.13
+    // short-time field capability `t = 33.75 / ((I/Irated)^2 - 1)` (pickup
+    // and continuous limit at rated current, C = 33.75 s, instantaneous limit
+    // its 10 s point 2.09), TCOOL 1200 s. UELPQ: the limit at P = 0 at 90 %
+    // of the steady-state stability limit -V^2/Xd for Xd = 1.8 pu (-0.5),
+    // rising by 0.1 per pu of P, scaled with Vt^2 as that limit is. Both act
+    // through KP 0.05, KI 0.5 and an output range of 0.5 pu.
+    LibraryModel {
+        role: "oel",
+        name: "OELIT",
+        label: "Over-excitation limiter, inverse time (summing point)",
+        engines: "RMS (block graph, part of the exciter)",
+        params: "2.4 1.0 1.0 2.09 33.75 1200.0 0.05 0.5 -0.5",
+    },
+    LibraryModel {
+        role: "uel",
+        name: "UELPQ",
+        label: "Under-excitation limiter, P-Q line (summing point)",
+        engines: "RMS (block graph, part of the exciter)",
+        params: "-0.5 0.1 2 0.05 0.5 0.5",
+    },
     LibraryModel {
         role: "governor",
         name: "TGOV1",
@@ -199,6 +253,10 @@ pub(crate) fn is_inverter(name: &str) -> bool {
 fn role_of(rec: &DynamicRecord) -> Option<&'static str> {
     if is_inverter(rec.model_name()) {
         return Some(inverter_part(rec.model_name()));
+    }
+    // Experimental: models tellegen reads itself.
+    if let Some(role) = super::ext_models::ext_role(rec.model_name()) {
+        return Some(role);
     }
     Some(match powerio::typed_model(rec).ok()?.role() {
         powerio::ModelRole::Machine => "machine",
@@ -418,7 +476,7 @@ pub fn dyr_set_model(
         ("inverter", true) => ALL,
         ("inverter", false) => &["inverter", "converter", "electrical", "plant"],
         ("machine", true) => &["machine", "inverter", "converter", "electrical", "plant"],
-        ("machine", false) => &["machine", "exciter", "governor", "stabilizer"],
+        ("machine", false) => &["machine", "exciter", "governor", "stabilizer", "oel", "uel"],
         _ => &[],
     };
     let mut out = text.to_string();
@@ -661,7 +719,15 @@ mod tests {
             let text = record(m, 1, "1");
             let dyr = powerio::parse_dyr(&text).unwrap();
             let r = &dyr.records()[0];
-            if m.role == "inverter" {
+            if super::super::ext_models::ext_role(m.name).is_some() {
+                assert_eq!(role_of(r), Some(m.role), "{}", m.name);
+                assert_eq!(
+                    r.parameters().len(),
+                    super::super::dyr_params::param_count(m.name).unwrap_or(0),
+                    "{}",
+                    m.name
+                );
+            } else if m.role == "inverter" {
                 assert!(is_inverter(r.model_name()));
             } else if INVERTER_PARTS.contains(&m.role) {
                 assert!(is_inverter(r.model_name()), "{}", m.name);

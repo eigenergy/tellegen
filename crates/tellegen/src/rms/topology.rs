@@ -392,5 +392,166 @@ pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
             sys.noted_islands.push(island);
         }
     }
+    // Experimental: a dead island (no unit in service) cannot feed its
+    // loads. A constant-power or constant-current part has no solution at 0 V,
+    // and the run would stop while re-solving the network; the island's demand
+    // is lost with it.
+    let dead = sys.dead_buses();
+    let mut lost = 0.0;
+    let mut buses = 0usize;
+    for b in 0..sys.n {
+        if dead[b] {
+            let p = sys.loads[b].p0();
+            if p != 0.0 || sys.loads[b].u_p != 0.0 || sys.loads[b].u_q != 0.0 {
+                lost += p;
+                buses += 1;
+                sys.loads[b].scale(0.0, 0.0);
+                sys.loads[b].u_p = 0.0;
+                sys.loads[b].u_q = 0.0;
+            }
+        }
+    }
+    if buses > 0 {
+        out.push(format!(
+            "t = {t:.4} s: {buses} dead bus(es) lose their load ({:.1} MW at the power flow voltage)",
+            lost * sys.sbase
+        ));
+    }
     out
+}
+
+/// Experimental: relief when the network cannot be solved in a
+/// collapse. Level 0: every pocket of fewer than 40 buses apart from the largest island loses its units (its
+/// load then goes with [`extinguish`]). Level 1: the bus the solver names
+/// (`hint`, a bus number) loses its load and its units, as load that stalls
+/// or drops out and units that trip on undervoltage. Level 2: that bus and
+/// its neighbours. Level 3: every bus below 0.3 pu.
+/// Returns what was done (empty: nothing to relieve).
+pub(crate) fn relieve(
+    sys: &mut DynSystem,
+    x: &[f64],
+    t: f64,
+    level: usize,
+    hint: Option<usize>,
+) -> Vec<String> {
+    let n = sys.n;
+    let mut out = Vec::new();
+    let islands = sys.islands();
+    let main = islands
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, i)| i.len())
+        .map(|(k, _)| k);
+    let mut in_main = vec![false; n];
+    if let Some(k) = main {
+        for &b in &islands[k] {
+            in_main[b] = true;
+        }
+    }
+    let vm = |b: usize| (x[b] * x[b] + x[n + b] * x[n + b]).sqrt();
+    let mut pick = vec![false; n];
+    match level {
+        0 => {
+            // small pockets only (under 40 buses): a large island apart from the
+            // largest one is a system
+            for island in &islands {
+                if island.len() < 40 && !island.iter().any(|&q| in_main[q]) {
+                    for &q in island {
+                        pick[q] = true;
+                    }
+                }
+            }
+        }
+        1 | 2 => {
+            let Some(hb) = hint.and_then(|num| sys.bus_numbers.iter().position(|&q| q == num))
+            else {
+                return out;
+            };
+            pick[hb] = true;
+            if level == 2 {
+                for e in 0..sys.ac.m {
+                    let (a, b) = (sys.ac.branches.from_bus[e], sys.ac.branches.to_bus[e]);
+                    if sys.closed[e] && a == hb {
+                        pick[b] = true;
+                    }
+                    if sys.closed[e] && b == hb {
+                        pick[a] = true;
+                    }
+                }
+            }
+        }
+        _ => {
+            for b in 0..n {
+                pick[b] = vm(b) < 0.3;
+            }
+        }
+    }
+    let mut units = 0usize;
+    for d in sys.devices.iter_mut() {
+        if d.tripped.is_none() && pick[d.bus] {
+            d.tripped = Some(x[d.offset..d.offset + d.n_states()].to_vec());
+            units += 1;
+        }
+    }
+    for s in sys.sources.iter_mut() {
+        if s.y != C64::new(0.0, 0.0) && pick[s.bus] {
+            s.y = C64::new(0.0, 0.0);
+            s.e = C64::new(0.0, 0.0);
+            units += 1;
+        }
+    }
+    let held: Vec<usize> = (0..sys.held.len())
+        .filter(|&k| !sys.held[k].tripped && pick[sys.held[k].bus])
+        .collect();
+    units += held.len();
+    for k in held {
+        trip_held(sys, k);
+    }
+    let mut lost = 0.0;
+    let mut buses = 0usize;
+    let mut lowest = f64::INFINITY;
+    if level > 0 {
+        for b in 0..n {
+            if pick[b] {
+                let p = sys.loads[b].p0();
+                if p != 0.0 || sys.loads[b].u_p != 0.0 || sys.loads[b].u_q != 0.0 {
+                    lost += p;
+                    buses += 1;
+                    lowest = lowest.min(vm(b));
+                    sys.loads[b].scale(0.0, 0.0);
+                    sys.loads[b].u_p = 0.0;
+                    sys.loads[b].u_q = 0.0;
+                }
+            }
+        }
+    }
+    if units > 0 || buses > 0 {
+        out.push(if level == 0 {
+            format!("t = {t:.4} s: the network could not be solved; {units} unit(s) in small pockets apart from the largest island trip")
+        } else {
+            format!(
+                "t = {t:.4} s: the network could not be solved (relief level {level}, bus {}); {units} unit(s) trip and {buses} bus(es) lose their load ({:.1} MW at the power flow voltage, lowest voltage {lowest:.2} pu)",
+                hint.map_or_else(|| "-".to_owned(), |h| h.to_string()),
+                lost * sys.sbase
+            )
+        });
+    }
+    out
+}
+
+/// The bus number a solver message names as carrying its largest residual
+/// (`largest in bus 123 Vr`, or a unit's state `largest in G123 ...`).
+pub(crate) fn hint_bus(message: &str) -> Option<usize> {
+    for key in ["largest in bus ", "largest in G", "largest in R"] {
+        if let Some(k) = message.find(key) {
+            let digits: String = message[k + key.len()..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            if let Ok(v) = digits.parse() {
+                return Some(v);
+            }
+        }
+    }
+    None
 }

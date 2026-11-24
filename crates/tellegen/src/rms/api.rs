@@ -329,6 +329,19 @@ pub struct RmsOptions {
     /// Factorize the step matrices by blocks where every unit allows it, the
     /// default, or always as one sparse LU over all unknowns.
     pub factorize_by_blocks: bool,
+    /// Refactorize a step matrix whose pattern was factorized before in that
+    /// factorization's pivot order, recomputing the values only, the
+    /// default, or pivot every factorization afresh. A pivot that has become
+    /// too small against its column falls back to a pivoted factorization.
+    pub refactor_values: bool,
+    /// Keep a step matrix's factorization until Newton stalls, also across
+    /// events, the default, or refresh it on a fixed schedule and after
+    /// every event. Newton's stopping test decides convergence either way.
+    pub keep_factorization: bool,
+    /// Run the relays beside the integration step and split work over
+    /// parallel threads where the platform has them, the default, or run
+    /// everything on one thread. The results are the same.
+    pub threads: bool,
     /// Low-voltage behaviour of the constant-power and constant-current load
     /// parts: PSS/E's `PQBRAK` conversion at 0.7 pu by default, or the exact
     /// law (PowerSimulationsDynamics.jl).
@@ -351,6 +364,9 @@ impl Default for RmsOptions {
             psid_converter_ramp: false,
             psid_saturation: false,
             factorize_by_blocks: true,
+            refactor_values: true,
+            keep_factorization: true,
+            threads: true,
             low_voltage_load: LowVoltageLoad::default(),
             reactive_limits: true,
         }

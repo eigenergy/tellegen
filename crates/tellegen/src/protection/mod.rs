@@ -413,6 +413,10 @@ pub struct VoltageStage {
     pub label: Option<String>,
     pub pickup: f64,
     pub delay: f64,
+    /// Drop-off to pick-up ratio of an overvoltage stage (default 0.98). Numerical relays commonly reset about
+    /// 5 % below the pick-up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_ratio: Option<f64>,
 }
 
 /// A definite-time frequency stage. Blocked below `min_voltage` (pu), as is
@@ -682,6 +686,18 @@ pub struct OutOfStep {
     pub min_traverse: f64,
     #[serde(default = "one_usize")]
     pub slips: usize,
+    /// Experimental: count voltage beats instead of impedance
+    /// traverses, as some loss-of-synchronism relays do: a beat is the
+    /// positive-sequence voltage at the relay falling
+    /// below this value (pu) for `min_traverse` s, after having been above
+    /// 1.1 times it. The relay operates in the `slips`-th beat.
+    #[serde(default)]
+    pub beat_voltage: Option<f64>,
+    /// Experimental: with `beat_voltage`, the delay after the last
+    /// beat, counted from the voltage exceeding its average over the
+    /// oscillation.
+    #[serde(default)]
+    pub beat_delay: f64,
 }
 
 fn default_traverse() -> f64 {
@@ -1027,6 +1043,9 @@ pub struct ProtectionRuntime {
     /// After the last evaluation, an inverse-time element picked up or
     /// still integrating.
     inverse_running: bool,
+    /// Evaluate the relays on parallel threads where the platform has them
+    /// ([`crate::rms::RmsOptions::threads`]).
+    threads: bool,
 }
 
 impl ProtectionRuntime {
@@ -1133,6 +1152,7 @@ impl ProtectionRuntime {
             lead: 0.0,
             inverse_min_time,
             inverse_running: false,
+            threads: true,
             traces,
             relays,
             stuck,
@@ -1405,6 +1425,11 @@ impl ProtectionRuntime {
         actions
     }
 
+    /// Evaluate the relays on parallel threads (the default) or on one.
+    pub fn set_threads(&mut self, on: bool) {
+        self.threads = on;
+    }
+
     /// Evaluate every relay on the measurements at `m.time()`.
     // @block Evaluate the relays
     pub fn evaluate(&mut self, m: &dyn Measure) {
@@ -1433,16 +1458,35 @@ impl ProtectionRuntime {
             }
             (o, b, inverse)
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = {
-            use rayon::prelude::*;
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = if !self.threads {
             self.relays
-                .par_chunks_mut(RELAY_CHUNK)
+                .chunks_mut(RELAY_CHUNK)
                 .enumerate()
                 .map(|(c, part)| measure(c, part))
                 .collect()
+        } else {
+            // Experimental: the chunks on the relays' own spin pool (a pool
+            // whose threads sleep between evaluations costs a kernel wake-up
+            // per step); joined in chunk order, as before.
+            let len = self.relays.len();
+            let nchunks = len.div_ceil(RELAY_CHUNK);
+            let slots: Vec<std::sync::Mutex<Option<(Vec<Operation>, Vec<usize>, bool)>>> =
+                (0..nchunks).map(|_| std::sync::Mutex::new(None)).collect();
+            let rp = crate::rms::regions::Shared(self.relays.as_mut_ptr());
+            crate::rms::spin_pool::SpinPool::relays().run(nchunks, &|c| {
+                let lo = c * RELAY_CHUNK;
+                let hi = (lo + RELAY_CHUNK).min(len);
+                // SAFETY: each chunk is one task's own.
+                let part = unsafe { rp.slice(lo, hi - lo) };
+                *slots[c].lock().expect("relay chunk") = Some(measure(c, part));
+            });
+            slots
+                .into_iter()
+                .map(|s| s.into_inner().expect("relay chunk").expect("relay chunk done"))
+                .collect()
         };
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
         let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = self
             .relays
             .chunks_mut(RELAY_CHUNK)

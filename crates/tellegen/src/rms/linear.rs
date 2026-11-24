@@ -323,7 +323,8 @@ pub(crate) fn bode(
     if req.bode.is_empty() {
         return Ok(Vec::new());
     }
-    if sys.nx > 2500 {
+    // experimental: no size limit, the sweep is a sparse LU per frequency
+    if sys.nx > 2_000_000 {
         return Err(format!(
             "frequency response is limited to 2500 states, this system has {}",
             sys.nx
