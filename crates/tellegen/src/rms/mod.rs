@@ -158,6 +158,7 @@ pub use system::set_plant_q_exponent;
 pub use system::set_load_rise;
 pub use system::set_load_saturation;
 pub use system::set_uel;
+pub use system::set_vcomp;
 pub use integrate::lu_stats;
 
 #[cfg(feature = "rms-experimental")]

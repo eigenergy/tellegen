@@ -624,6 +624,7 @@ pub(crate) fn build(
             offset: nx,
             tripped: None,
             uel: super::system::uel_of(m.bus.0),
+            vcomp: super::system::vcomp_of(m.bus.0),
         };
         nx += dev.n_states();
         let (x0, notes) = init_device(&mut dev, v[b], i_sys)?;
@@ -1130,7 +1131,7 @@ pub(crate) fn init_device(
             let na = avr.n_states();
             let s_m = v * i_m.conj();
             let input = super::models::AvrIn {
-                vt,
+                vt: super::system::avr_vt(dev.vcomp, v.re, v.im, i_m.re, i_m.im),
                 vs: vs0,
                 xad_ifd: alg.xad_ifd,
                 v_ref: vt,
@@ -1515,6 +1516,7 @@ mod tests {
             offset: 0,
             tripped: None,
             uel: crate::rms::system::uel_of(102),
+            vcomp: None,
         };
         let v = C64::new(1.0, 0.0);
         let i = (C64::new(0.8, 0.3) / v).conj();
@@ -1664,6 +1666,7 @@ mod tests {
                 offset: 0,
                 tripped: None,
                 uel: crate::rms::system::uel_of(102),
+            vcomp: None,
             };
             let v = C64::new(1.0, 0.0);
             let i = (C64::new(0.8, 0.3) / v).conj();

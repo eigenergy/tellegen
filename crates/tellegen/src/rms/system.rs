@@ -50,6 +50,8 @@ pub(crate) struct GenDevice {
     pub tripped: Option<Vec<f64>>,
     /// Experimental: under-excitation limiter `[q_lim, gain]`, see [`set_uel`].
     pub uel: Option<[f64; 2]>,
+    /// Experimental: load compensator of the AVR input `[rc, xc]`, see [`set_vcomp`].
+    pub vcomp: Option<[f64; 2]>,
 }
 
 /// What a generator evaluation reports besides its derivatives.
@@ -155,7 +157,7 @@ impl GenDevice {
                 "exciter",
                 gr,
                 &x[a..g],
-                &[vt, vs, alg.xad_ifd, self.v_ref, vr * ir + vi * ii, vi * ir - vr * ii],
+                &[avr_vt(self.vcomp, vr, vi, ir, ii), vs, alg.xad_ifd, self.v_ref, vr * ir + vi * ii, vi * ir - vr * ii],
             );
         }
         if let Governor::Graph(gr) = &self.gov {
@@ -216,7 +218,7 @@ impl GenDevice {
         let vf = self.avr.eval(
             &x[a..g],
             super::models::AvrIn {
-                vt,
+                vt: avr_vt(self.vcomp, vr, vi, ir, ii),
                 vs,
                 xad_ifd: alg.xad_ifd,
                 v_ref: self.v_ref,
@@ -405,6 +407,27 @@ pub fn set_uel(map: std::collections::HashMap<usize, [f64; 2]>) {
 
 pub(crate) fn uel_of(bus_number: usize) -> Option<[f64; 2]> {
     UEL.read().expect("uel lock").as_ref().and_then(|m| m.get(&bus_number).copied())
+}
+
+// Experimental: load compensators of the AVR input by bus number, `[rc, xc]` in pu of MBASE
+// (IEEE Std 421.5, Vc = |Vt + (Rc + j Xc) It|): positive values give reactive droop.
+static VCOMP: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> = std::sync::RwLock::new(None);
+
+/// Sets the AVR load compensators (experimental). Call before the system is built.
+pub fn set_vcomp(map: std::collections::HashMap<usize, [f64; 2]>) {
+    *VCOMP.write().expect("vcomp lock") = Some(map);
+}
+
+pub(crate) fn vcomp_of(bus_number: usize) -> Option<[f64; 2]> {
+    VCOMP.read().expect("vcomp lock").as_ref().and_then(|m| m.get(&bus_number).copied())
+}
+
+/// The voltage the regulator sees: the terminal voltage, or the compensated one.
+pub(crate) fn avr_vt(vcomp: Option<[f64; 2]>, vr: f64, vi: f64, ir: f64, ii: f64) -> f64 {
+    match vcomp {
+        Some([rc, xc]) => mag(vr + rc * ir - xc * ii, vi + rc * ii + xc * ir),
+        None => mag(vr, vi),
+    }
 }
 
 // Experimental: reactive power of a load above its own power flow voltage `v0`:
