@@ -790,6 +790,18 @@ fn trace_where(sys: &DynSystem, r: &[f64]) {
         g.push_str(&largest_residual(sys, r).replace(' ', "_"));
     }
 }
+fn trace_reinit(us: u128, iters: usize, refreshes: usize) {
+    use std::io::Write;
+    if trace_on() {
+        let mut g = TRACE.lock().expect("trace");
+        if let Some((w, res)) = g.as_mut() {
+            let rs: Vec<String> = res.iter().map(|v| format!("{v:.1e}")).collect();
+            let wh = std::mem::take(&mut *TRACE_WHERE.lock().expect("trace"));
+            let _ = writeln!(w, "REINIT {us} {iters} {refreshes} {} {wh}", rs.join(","));
+            res.clear();
+        }
+    }
+}
 fn trace_fail(us: u128, h: f64, theta: f64, depth: usize, why: &str) {
     use std::io::Write;
     if trace_on() {
@@ -848,6 +860,19 @@ pub(crate) struct Stepper {
     patterns: Patterns,
     history: History,
     work: Work,
+    /// Experimental: the system structure (states, units, tripped units) for which
+    /// the re-solve with the device states free failed on a singular matrix
+    /// (`TELLEGEN_REINIT_SKIP=1`).
+    reinit_singular: Option<(usize, usize, usize, usize, usize)>,
+}
+
+/// Experimental: `TELLEGEN_REINIT_SKIP=1`: once the re-solve after an event with the
+/// device states free has failed on a singular matrix, later re-solves of the same system
+/// structure go straight to the fallback that holds them (the same result, without the failing
+/// factorization of the whole system).
+fn reinit_skip() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("TELLEGEN_REINIT_SKIP").is_ok_and(|v| v == "1"))
 }
 
 impl Stepper {
@@ -961,10 +986,29 @@ impl Stepper {
         x: &mut Vec<f64>,
         f: &mut Vec<f64>,
     ) -> Result<usize, String> {
-        let iterations = match self.solve(sys, x, f, 0.0, 0.5, false, false) {
-            Ok(n) => n,
-            Err(_) => self.solve(sys, x, f, 0.0, 0.5, true, false)?,
+        let (t_re, r_re) = (crate::rms::clock::Instant::now(), STATS[2].load(std::sync::atomic::Ordering::Relaxed));
+        let key = (
+            sys.nx,
+            sys.devices.len(),
+            sys.devices.iter().filter(|d| d.tripped.is_some()).count(),
+            sys.held.len(),
+            sys.held.iter().filter(|h| h.tripped).count(),
+        );
+        let iterations = if reinit_skip() && self.reinit_singular == Some(key) {
+            self.solve(sys, x, f, 0.0, 0.5, true, false)?
+        } else {
+            match self.solve(sys, x, f, 0.0, 0.5, false, false) {
+                Ok(n) => n,
+                Err(e) => {
+                    trace_fail(t_re.elapsed().as_micros(), 0.0, 0.5, 0, &format!("reinit: {e}"));
+                    if e.contains("zero pivot") || e.contains("singular") {
+                        self.reinit_singular = Some(key);
+                    }
+                    self.solve(sys, x, f, 0.0, 0.5, true, false)?
+                }
+            }
         };
+        trace_reinit(t_re.elapsed().as_micros(), iterations, STATS[2].load(std::sync::atomic::Ordering::Relaxed) - r_re);
         LIMIT_SWITCHES.fetch_add(sys.update_limit_modes(), std::sync::atomic::Ordering::Relaxed);
         std::mem::swap(x, &mut self.work.x);
         std::mem::swap(f, &mut self.work.f);
@@ -1042,6 +1086,7 @@ impl Stepper {
             patterns,
             history,
             work,
+            ..
         } = self;
         work.fit(nx);
         let Work {
@@ -1220,7 +1265,7 @@ impl Stepper {
             rnorm = trial_norm;
             trace_res(rnorm);
             // `TELLEGEN_TRACE_WHERE=1`: also the variable with the largest residual (slow: it names every variable).
-            if iter <= 4 && trace_on() && std::env::var_os("TELLEGEN_TRACE_WHERE").is_some() {
+            if (iter <= 4 || h == 0.0) && trace_on() && std::env::var_os("TELLEGEN_TRACE_WHERE").is_some() {
                 trace_where(sys, r);
             }
             if super::not_lt(rnorm, stall_settings().0 * previous) {
@@ -1249,6 +1294,7 @@ impl Stepper {
             last_step = step_norm;
             let ts = tol_scale();
             if (step_norm < TOL_DX * ts || remaining < RATE_SAFETY * TOL_DX * ts) && rnorm < 1e-6 * ts.max(1.0) {
+
                 if cached {
                     *factor = lu;
                 } else if keep && h == 0.0 {
