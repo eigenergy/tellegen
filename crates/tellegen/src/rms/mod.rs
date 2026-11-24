@@ -764,6 +764,10 @@ impl RmsSimulation {
         if let Some(r) = relays.as_deref_mut() {
             r.set_threads(sys.threads);
         }
+        // Experimental: with `TELLEGEN_REINIT_SKIP=1`, a re-solve on copies before the
+        // run learns whether the one with the device states free is singular, so the first event
+        // does not pay for finding out.
+        integrate::probe_reinit(&mut stepper, &sys, &x, &f);
 
         // @block Resume from a checkpoint
         // Replay only: the events before the checkpoint are applied to the

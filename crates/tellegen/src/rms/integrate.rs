@@ -767,7 +767,7 @@ pub fn lu_stats() -> String {
 /// residual after each iteration. Off (no cost but one OnceLock read) without the variable.
 pub(crate) fn trace_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("TELLEGEN_TRACE").is_some())
+    *ON.get_or_init(|| std::env::var_os("TELLEGEN_TRACE").is_some()) && !TRACE_PAUSE.load(std::sync::atomic::Ordering::Relaxed)
 }
 static TRACE: std::sync::Mutex<Option<(std::io::BufWriter<std::fs::File>, Vec<f64>)>> = std::sync::Mutex::new(None);
 fn trace_res(r: f64) {
@@ -870,6 +870,20 @@ pub(crate) struct Stepper {
 /// device states free has failed on a singular matrix, later re-solves of the same system
 /// structure go straight to the fallback that holds them (the same result, without the failing
 /// factorization of the whole system).
+pub(crate) fn probe_reinit(stepper: &mut Stepper, sys: &DynSystem, x: &[f64], f: &[f64]) {
+    if !reinit_skip() {
+        return;
+    }
+    TRACE_PAUSE.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (mut xp, mut fp) = (x.to_vec(), f.to_vec());
+    let _ = stepper.reinit(sys, &mut xp, &mut fp);
+    stepper.forget();
+    TRACE_PAUSE.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Experimental: no trace lines while set (the probe before the run).
+static TRACE_PAUSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn reinit_skip() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("TELLEGEN_REINIT_SKIP").is_ok_and(|v| v == "1"))
