@@ -421,7 +421,7 @@ impl LimitMode {
         self.mode.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn record(&self, y: f64, rate: f64) {
+    pub(crate) fn record(&self, y: f64, rate: f64) {
         self.y.store(y.to_bits(), std::sync::atomic::Ordering::Relaxed);
         self.rate.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
     }
@@ -468,12 +468,38 @@ impl Clone for LimitMode {
     }
 }
 
+impl Governor {
+    /// Experimental: update a governor graph's frozen limit modes after a taken step.
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.update_limit_modes(),
+            #[allow(unreachable_patterns)]
+            _ => 0,
+        }
+    }
+}
+
+impl Stabilizer {
+    /// Experimental: update a stabilizer graph's frozen limit modes after a taken step.
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.update_limit_modes(),
+            #[allow(unreachable_patterns)]
+            _ => 0,
+        }
+    }
+}
+
 impl Avr {
     /// Experimental: update the frozen limit modes after a taken step; returns the
     /// number that switched.
     pub(crate) fn update_limit_modes(&self) -> usize {
         match self {
             Self::Sexs { v_min, v_max, lim, .. } => usize::from(lim.update(*v_min, *v_max)),
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.update_limit_modes(),
             _ => 0,
         }
     }

@@ -469,6 +469,9 @@ pub(crate) struct CompiledGraph {
     terms: Vec<(f64, u32)>,
     /// The input nodes of the tape's products, minima and maxima.
     args: Vec<u32>,
+    /// Experimental: per state, the frozen mode of a non-windup limited lag
+    /// (`TELLEGEN_FREEZE=1`, see [`super::models::LimitMode`]).
+    modes: Vec<super::models::LimitMode>,
 }
 
 /// Graphs up to this many nodes evaluate on the stack.
@@ -761,7 +764,9 @@ impl CompiledGraph {
             tape: Vec::new(),
             terms: Vec::new(),
             args: Vec::new(),
+            modes: Vec::new(),
         };
+        compiled.modes = (0..compiled.n_states).map(|_| super::models::LimitMode::default()).collect();
         compiled.compile()?;
         Ok(compiled)
     }
@@ -1038,6 +1043,20 @@ impl CompiledGraph {
         &x[self.offset[i]..self.offset[i] + self.blocks[i].n_states()]
     }
 
+    /// Experimental: update the frozen modes of the non-windup limited lags after a
+    /// taken step; returns how many switched.
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        let mut n = 0;
+        for op in &self.tape {
+            if let Op::LagLimitedRate { x: s, t, min, max, .. } = *op {
+                if t >= f64::EPSILON {
+                    n += usize::from(self.modes[s as usize].update(min, max));
+                }
+            }
+        }
+        n
+    }
+
     /// Slot output and state derivatives for the port values `ports`.
     pub(crate) fn eval(&self, x: &[f64], ports: &[f64], f: &mut [f64]) -> f64 {
         let n = self.blocks.len();
@@ -1186,8 +1205,20 @@ impl CompiledGraph {
                     min,
                     max,
                 } => {
-                    f[s as usize] =
-                        low_pass_nonwindup_mm(y[a as usize], x[s as usize], k, t, min, max).1;
+                    f[s as usize] = if super::models::freeze_limits() && t >= f64::EPSILON {
+                        // Experimental: the limit in the mode of the step's start.
+                        let (u, xs) = (y[a as usize], x[s as usize]);
+                        let rate = k * u - xs;
+                        let lim = &self.modes[s as usize];
+                        lim.record(xs, rate);
+                        match lim.mode() {
+                            super::models::LimitMode::FREE => rate,
+                            super::models::LimitMode::AT_MAX | super::models::LimitMode::AT_MIN => 0.0,
+                            _ => low_pass_nonwindup_mm(u, xs, k, t, min, max).1,
+                        }
+                    } else {
+                        low_pass_nonwindup_mm(y[a as usize], x[s as usize], k, t, min, max).1
+                    };
                 }
                 Op::IntegratorRate { a, x: s, k } => f[s as usize] = k * y[a as usize],
                 Op::Lag2Rate { a, x: s, k, t1 } => {

@@ -968,7 +968,7 @@ impl DynSystem {
         if !super::models::freeze_limits() {
             return 0;
         }
-        self.devices.iter().map(|d| d.avr.update_limit_modes()).sum()
+        self.devices.iter().map(|d| d.avr.update_limit_modes() + d.gov.update_limit_modes() + d.pss.update_limit_modes()).sum()
     }
 
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
