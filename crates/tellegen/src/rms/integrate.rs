@@ -559,12 +559,12 @@ impl Factor {
         patterns: &mut Patterns,
     ) -> Result<Self, String> {
         patterns.pivot_always = !sys.refactor_values;
-        let jf = {
+        let (jf, ranges) = {
             let _t = Timer(7, crate::rms::clock::Instant::now());
-            sys.jacobian(x)
+            sys.jacobian_units(x)
         };
         let by_blocks = if sys.factorize_by_blocks {
-            BlockLu::new(sys, mass, &jf, h, theta, patterns)?
+            BlockLu::new(sys, mass, &jf, Some(&ranges), h, theta, patterns)?
         } else {
             None
         };
@@ -729,7 +729,7 @@ impl History {
 pub(crate) static STATS: [std::sync::atomic::AtomicUsize; 16] = [const { std::sync::atomic::AtomicUsize::new(0) }; 16];
 /// Wall time in microseconds (experimental): relay evaluations run first, waits for
 /// relays beside the step, bank settling, integration steps.
-pub(crate) static TIMES: [std::sync::atomic::AtomicU64; 16] = [const { std::sync::atomic::AtomicU64::new(0) }; 16];
+pub(crate) static TIMES: [std::sync::atomic::AtomicU64; 20] = [const { std::sync::atomic::AtomicU64::new(0) }; 20];
 
 pub(crate) fn time_add(k: usize, t0: crate::rms::clock::Instant) {
     TIMES[k].fetch_add(t0.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
@@ -751,13 +751,14 @@ pub fn lu_stats() -> String {
     let tm = |k: usize| TIMES[k].load(std::sync::atomic::Ordering::Relaxed) as f64 * 1e-6;
     format!(
         "factorizations: reinit {}, new {}, refresh {} (line search {}, stall {}, cap {}); pivoted {} (new patterns {}, pivot fails {}); steps {}, newton iterations {}
-         relays: {} evaluations first ({:.1} s), {} beside (wait {:.1} s); banks {:.1} s; steps {:.1} s
-         in steps: residual {:.1} s, factorizations {:.1} s, solves {:.1} s, jacobian {:.1} s
-         in factorizations: assembly {:.1} s, unit blocks {:.1} s, network LU {:.1} s; pattern reuse {} of {} (+{} by look-up); limit switches {}
-         in network LU: split {:.1} s, region LUs and A_rr^-1 B_r {:.1} s, Schur complement {:.1} s, its dense LU {:.1} s
+         relays: {} evaluations first ({:.3} s), {} beside (wait {:.3} s); banks {:.3} s; steps {:.3} s
+         in steps: residual {:.3} s, factorizations {:.3} s, solves {:.3} s, jacobian {:.3} s
+         in factorizations: setup {:.3} s (dense blocks {} values), assembly {:.3} s, unit blocks {:.3} s (join {:.3} s), network LU {:.3} s; pattern reuse {} of {} (+{} by look-up); limit switches {}
+         Factor::new {:.3} s, dropping the old {:.3} s
+         in network LU: split {:.3} s, region LUs and A_rr^-1 B_r {:.3} s, Schur complement {:.3} s, its dense LU {:.3} s
          {}",
         g(0), g(1), g(2), g(6), g(7), g(8), g(3), g(12), g(13), g(4), g(5),
-        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), tm(8), tm(9), tm(10), g(14), g(14) + g(15), g(9), LIMIT_SWITCHES.load(std::sync::atomic::Ordering::Relaxed), tm(11), tm(12), tm(13), tm(14), regions
+        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), tm(15), super::schur::DBG_BLOCK.load(std::sync::atomic::Ordering::Relaxed), tm(8), tm(9), tm(18), tm(10), g(14), g(14) + g(15), g(9), LIMIT_SWITCHES.load(std::sync::atomic::Ordering::Relaxed), tm(16), tm(17), tm(11), tm(12), tm(13), tm(14), regions
     )
 }
 
@@ -1229,9 +1230,13 @@ impl Stepper {
                 }
                 fresh = true;
                 let _t = Timer(5, crate::rms::clock::Instant::now());
+                let t_new = crate::rms::clock::Instant::now();
                 let mut fresh_lu = Factor::new(sys, mass, x, h, theta, patterns)?;
+                time_add(16, t_new);
                 fresh_lu.held = hold_devices;
+                let t_drop = crate::rms::clock::Instant::now();
                 lu = Some(fresh_lu);
+                time_add(17, t_drop);
             }
             for i in 0..nx {
                 dx[i] = -r[i];

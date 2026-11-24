@@ -1199,6 +1199,14 @@ impl DynSystem {
     /// blocks are forward differences of their local functions with the
     /// scaled step of [`fd_step`].
     pub(crate) fn jacobian(&self, x: &[f64]) -> Vec<(usize, usize, f64)> {
+        self.jacobian_units(x).0
+    }
+
+    /// Experimental: [`Self::jacobian`], and where each unit's entries lie in it:
+    /// `(first state, start, end)` per device and per held plant with a model, in the order
+    /// they are built; the entries before the first unit's are the network's and the loads'.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn jacobian_units(&self, x: &[f64]) -> (Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>) {
         let n = self.n;
         let mut t: Vec<(usize, usize, f64)> = Vec::with_capacity(self.ybus.len() * 4 + self.nx * 8);
         for &(r, c, y) in &self.ybus {
@@ -1245,31 +1253,50 @@ impl DynSystem {
             let nd = self.devices.len();
             let total = nd + self.held.len();
             let chunks = total.div_ceil(PAR_CHUNK);
-            let parts: Vec<std::sync::Mutex<Vec<(usize, usize, f64)>>> =
-                (0..chunks).map(|_| std::sync::Mutex::new(Vec::new())).collect();
+            #[allow(clippy::type_complexity)]
+            let parts: Vec<std::sync::Mutex<(Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>)>> =
+                (0..chunks).map(|_| std::sync::Mutex::new((Vec::new(), Vec::new()))).collect();
             super::spin_pool::SpinPool::global().run(chunks, &|c| {
                 let mut v = Vec::new();
+                let mut r = Vec::new();
                 for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(total) {
+                    let s0 = v.len();
                     if u < nd {
                         dev_block(&self.devices[u], &mut v);
+                        r.push((self.devices[u].offset, s0, v.len()));
                     } else {
-                        plant_block(&self.held[u - nd], &mut v);
+                        let h = &self.held[u - nd];
+                        plant_block(h, &mut v);
+                        if h.plant.is_some() {
+                            r.push((h.offset, s0, v.len()));
+                        }
                     }
                 }
-                *parts[c].lock().expect("jacobian part") = v;
+                *parts[c].lock().expect("jacobian part") = (v, r);
             });
+            let mut ranges = Vec::with_capacity(total);
             for p in parts {
-                t.extend(p.into_inner().expect("jacobian part"));
+                let (v, r) = p.into_inner().expect("jacobian part");
+                let base = t.len();
+                ranges.extend(r.into_iter().map(|(o, a, b)| (o, a + base, b + base)));
+                t.extend(v);
             }
-            return t;
+            return (t, ranges);
         }
+        let mut ranges = Vec::with_capacity(self.devices.len() + self.held.len());
         for d in &self.devices {
+            let s0 = t.len();
             dev_block(d, &mut t);
+            ranges.push((d.offset, s0, t.len()));
         }
         for h in &self.held {
+            let s0 = t.len();
             plant_block(h, &mut t);
+            if h.plant.is_some() {
+                ranges.push((h.offset, s0, t.len()));
+            }
         }
-        t
+        (t, ranges)
     }
 
     /// Forward-difference block of one unit with `k` states at `off` on bus

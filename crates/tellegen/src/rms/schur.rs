@@ -47,6 +47,7 @@ const PIVOT_MIN: f64 = 1e-13;
 
 /// Experimental: units from which their blocks are factorized on the spin pool,
 /// and the number of chunks they are split into.
+pub(crate) static DBG_BLOCK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 const PAR_UNITS_MIN: usize = 256;
 const PAR_UNIT_CHUNKS: usize = 64;
 
@@ -101,6 +102,13 @@ pub(super) struct BlockLu {
     contrib: Vec<[f64; 2]>,
 }
 
+/// Experimental: `TELLEGEN_NET_ONE=1` factorizes the network as one sparse LU even with
+/// regions (which then still split the residual and the Jacobian).
+fn net_one() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("TELLEGEN_NET_ONE").is_ok_and(|v| v == "1"))
+}
+
 /// Experimental: the region of each dense bus from `TELLEGEN_REGIONS` (a JSON map
 /// of bus number to region), or `None` without one.
 pub(super) fn region_map(sys: &DynSystem) -> Option<&'static [u16]> {
@@ -131,10 +139,12 @@ impl BlockLu {
         sys: &DynSystem,
         mass: &[f64],
         jf: &[(usize, usize, f64)],
+        ranges: Option<&[(usize, usize, usize)]>,
         h: f64,
         theta: f64,
         patterns: &mut Patterns,
     ) -> Result<Option<Self>, String> {
+        let t_pre = crate::rms::clock::Instant::now();
         let n = sys.n;
         let n2 = 2 * n;
         // The units in state order; their states must fill the device part.
@@ -168,10 +178,40 @@ impl BlockLu {
         let mut b = vec![0.0; 2 * states];
         // `[C_k  E_k]` first, `D_k⁻¹` times it after the factorization.
         let mut w = vec![0.0; 3 * states];
+        super::integrate::time_add(15, t_pre);
+        DBG_BLOCK.store(block as u64, std::sync::atomic::Ordering::Relaxed);
         let t_asm = crate::rms::clock::Instant::now();
+        let nu = units.len();
+        let pooled = sys.threads && nu >= PAR_UNITS_MIN && super::spin_pool::SpinPool::global().threads() > 0;
+        let nchunks = if pooled { PAR_UNIT_CHUNKS.min(nu) } else { 1 };
+        let bounds: Vec<usize> = (0..=nchunks).map(|c| c * nu / nchunks).collect();
+        // Experimental: when the Jacobian says where each unit's entries lie, the
+        // units' entries are assembled by the chunks below (each entry lands where the serial
+        // loop puts it, and the network entries are joined in the Jacobian's order); here only
+        // the network's and loads' entries. The Jacobian builds devices, then plants: not the
+        // state order, so each range is mapped to its unit by its first state.
+        let unit_range: Option<Vec<(usize, usize)>> = ranges.filter(|_| pooled).and_then(|r| {
+            if r.len() != nu || !r.windows(2).all(|p| p[0].2 == p[1].1) || r.last().is_some_and(|l| l.2 != jf.len()) {
+                return None;
+            }
+            let mut ur = vec![(usize::MAX, 0); nu];
+            for &(off, a, b) in r {
+                let i = *owner.get(off.checked_sub(n2)?)? as usize;
+                if i >= nu || units[i].first != off - n2 || ur[i].0 != usize::MAX {
+                    return None;
+                }
+                ur[i] = (a, b);
+            }
+            Some(ur)
+        });
+        let split_asm = unit_range.is_some();
+        let prefix = match (split_asm, ranges) {
+            (true, Some(r)) => r.first().map_or(jf.len(), |f| f.1),
+            _ => jf.len(),
+        };
         let mut trip: Vec<Triplet<usize, usize, f64>> =
             Vec::with_capacity(4 * sys.ybus.len() + 8 * units.len() + 8);
-        for &(row, col, v) in jf {
+        for &(row, col, v) in &jf[..prefix] {
             let e = step_entry(mass, row, v, h, theta);
             if row < n2 {
                 if col < n2 {
@@ -207,11 +247,13 @@ impl BlockLu {
                 }
             }
         }
-        for u in &units {
-            for i in 0..u.k {
-                let m = mass[n2 + u.first + i];
-                if m != 0.0 {
-                    lu[u.block + i * u.k + i] += m;
+        if !split_asm {
+            for u in &units {
+                for i in 0..u.k {
+                    let m = mass[n2 + u.first + i];
+                    if m != 0.0 {
+                        lu[u.block + i * u.k + i] += m;
+                    }
                 }
             }
         }
@@ -235,15 +277,13 @@ impl BlockLu {
         // its units' contiguous parts of `lu`, `perm` and `w` and builds its own compressed
         // factors; they are joined in unit order afterwards, with the network entries, so the
         // arrays and the triplets are those of the serial loop, value for value.
-        let nu = units.len();
-        let pooled = sys.threads && nu >= PAR_UNITS_MIN && super::spin_pool::SpinPool::global().threads() > 0;
-        let nchunks = if pooled { PAR_UNIT_CHUNKS.min(nu) } else { 1 };
-        let bounds: Vec<usize> = (0..=nchunks).map(|c| c * nu / nchunks).collect();
-        type ChunkOut = (Factors, Vec<[[f64; 3]; 2]>, bool);
-        let mut parts: Vec<std::sync::Mutex<(&mut [f64], &mut [u32], &mut [f64], ChunkOut)>> = Vec::with_capacity(nchunks);
+        type ChunkOut = (Factors, Vec<[[f64; 3]; 2]>, bool, Vec<Triplet<usize, usize, f64>>, Vec<usize>);
+        #[allow(clippy::type_complexity)]
+        let mut parts: Vec<std::sync::Mutex<(&mut [f64], &mut [u32], &mut [f64], &mut [f64], ChunkOut)>> =
+            Vec::with_capacity(nchunks);
         {
-            let (mut lu_rest, mut perm_rest, mut w_rest): (&mut [f64], &mut [u32], &mut [f64]) =
-                (&mut lu[..], &mut perm[..], &mut w[..]);
+            let (mut lu_rest, mut perm_rest, mut w_rest, mut b_rest): (&mut [f64], &mut [u32], &mut [f64], &mut [f64]) =
+                (&mut lu[..], &mut perm[..], &mut w[..], &mut b[..]);
             let (mut lu_at, mut st_at) = (0usize, 0usize);
             for c in 0..nchunks {
                 let next = bounds[c + 1];
@@ -252,7 +292,8 @@ impl BlockLu {
                 let (l, lr) = std::mem::take(&mut lu_rest).split_at_mut(lu_end - lu_at);
                 let (pm, pr) = std::mem::take(&mut perm_rest).split_at_mut(st_end - st_at);
                 let (wv, wr) = std::mem::take(&mut w_rest).split_at_mut(3 * (st_end - st_at));
-                (lu_rest, perm_rest, w_rest) = (lr, pr, wr);
+                let (bv, br) = std::mem::take(&mut b_rest).split_at_mut(2 * (st_end - st_at));
+                (lu_rest, perm_rest, w_rest, b_rest) = (lr, pr, wr, br);
                 (lu_at, st_at) = (lu_end, st_end);
                 let f = Factors {
                     col: Vec::new(),
@@ -261,12 +302,12 @@ impl BlockLu {
                     mid: Vec::new(),
                     inv: Vec::new(),
                 };
-                parts.push(std::sync::Mutex::new((l, pm, wv, (f, Vec::new(), true))));
+                parts.push(std::sync::Mutex::new((l, pm, wv, bv, (f, Vec::new(), true, Vec::new(), vec![0]))));
             }
         }
         let run_chunk = |c: usize| {
             let mut guard = parts[c].lock().expect("unit chunk");
-            let (lu_c, perm_c, w_c, (fac, contrib, ok)) = &mut *guard;
+            let (lu_c, perm_c, w_c, b_c, (fac, contrib, ok, ntrip, spans)) = &mut *guard;
             let (a, z) = (bounds[c], bounds[c + 1]);
             if a == z {
                 return;
@@ -275,9 +316,62 @@ impl BlockLu {
             let mut tmp = vec![0.0; widest];
             let mut rhs_col = vec![0.0; widest];
             contrib.reserve(z - a);
-            for u in &units[a..z] {
+            for (ui, u) in units[a..z].iter().enumerate() {
+                let ui = a + ui;
                 let k = u.k;
                 let (fl, fs) = (u.first - st0, u.block - lu0);
+                if split_asm {
+                    // The unit's own entries, as the serial loop places them.
+                    let (e0, e1) = unit_range.as_ref().expect("checked")[ui];
+                    for &(row, col, v) in &jf[e0..e1] {
+                        let e = step_entry(mass, row, v, h, theta);
+                        if row < n2 {
+                            if col < n2 {
+                                ntrip.push(Triplet::new(row, col, e));
+                            } else if reference == Some(col - n2) {
+                                ntrip.push(Triplet::new(row, n2, e));
+                            } else {
+                                let which = if owner[col - n2] as usize != ui {
+                                    *ok = false;
+                                    return;
+                                } else if row == u.bus {
+                                    0
+                                } else if row == n + u.bus {
+                                    1
+                                } else {
+                                    *ok = false;
+                                    return;
+                                };
+                                b_c[2 * (col - n2 - st0) + which] += e;
+                            }
+                        } else {
+                            let s = row - n2;
+                            if owner[s] as usize != ui {
+                                *ok = false;
+                                return;
+                            }
+                            if col >= n2 && col - n2 >= u.first && col - n2 < u.first + u.k {
+                                lu_c[fs + (s - u.first) * k + (col - n2 - u.first)] += e;
+                            } else if col == u.bus {
+                                w_c[3 * (s - st0)] += e;
+                            } else if col == n + u.bus {
+                                w_c[3 * (s - st0) + 1] += e;
+                            } else if col >= n2 && reference == Some(col - n2) {
+                                w_c[3 * (s - st0) + 2] += e;
+                            } else {
+                                *ok = false;
+                                return;
+                            }
+                        }
+                    }
+                    for i in 0..k {
+                        let m = mass[n2 + u.first + i];
+                        if m != 0.0 {
+                            lu_c[fs + i * k + i] += m;
+                        }
+                    }
+                    spans.push(ntrip.len());
+                }
                 let blk = &mut lu_c[fs..fs + k * k];
                 let p = &mut perm_c[fl..fl + k];
                 if !factor(blk, k, p) {
@@ -305,7 +399,7 @@ impl BlockLu {
                 // The unit's contribution to its bus: `−B_k D_k⁻¹ [C_k  E_k]`.
                 let mut sc = [[0.0; 3]; 2];
                 for i in 0..k {
-                    let (b0, b1) = (b[2 * (u.first + i)], b[2 * (u.first + i) + 1]);
+                    let (b0, b1) = (b_c[2 * (fl + i)], b_c[2 * (fl + i) + 1]);
                     for col in 0..3 {
                         let wv = w_c[3 * (fl + i) + col];
                         sc[0][col] -= b0 * wv;
@@ -321,11 +415,23 @@ impl BlockLu {
             run_chunk(0);
         }
         // Join in unit order: the compressed factors, then the network entries.
-        for (c, part) in parts.into_iter().enumerate() {
-            let (_, _, _, (fac, contrib, ok)) = part.into_inner().expect("unit chunk");
-            if !ok {
-                return Ok(None);
+        let t_join = crate::rms::clock::Instant::now();
+        let outs: Vec<ChunkOut> = parts.into_iter().map(|p| p.into_inner().expect("unit chunk").4).collect();
+        if outs.iter().any(|o| !o.2) {
+            return Ok(None);
+        }
+        // The units' own network entries first (where the serial loop put them), then below the
+        // units' contributions.
+        if let (Some(r), true) = (ranges, split_asm) {
+            // In the Jacobian's order, as the serial loop adds them.
+            for &(off, _, _) in r {
+                let ui = owner[off - n2] as usize;
+                let c = bounds.partition_point(|&x| x <= ui) - 1;
+                let (o, j) = (&outs[c], ui - bounds[c]);
+                trip.extend_from_slice(&o.3[o.4[j]..o.4[j + 1]]);
             }
+        }
+        for (c, (fac, contrib, _, _, _)) in outs.into_iter().enumerate() {
             let off = u32::try_from(factors.col.len()).map_err(|e| e.to_string())?;
             u32::try_from(factors.col.len() + fac.col.len()).map_err(|e| e.to_string())?;
             factors.col.extend_from_slice(&fac.col);
@@ -345,6 +451,7 @@ impl BlockLu {
                 }
             }
         }
+        super::integrate::time_add(18, t_join);
         if let Some(r) = reference {
             // `w = e_ωᵀ y_ref` with `y_ref = D⁻¹ (r_ref − C_ref v)`.
             let u = &units[owner[r] as usize];
@@ -354,7 +461,7 @@ impl BlockLu {
         }
         super::integrate::time_add(9, t_units);
         let t_net = crate::rms::clock::Instant::now();
-        let net = NetLu::new(size, n, &trip, patterns, if sys.threads { region_map(sys) } else { None }, sys.epoch)?;
+        let net = NetLu::new(size, n, &trip, patterns, if sys.threads && !net_one() { region_map(sys) } else { None }, sys.epoch)?;
         super::integrate::time_add(10, t_net);
         let Factors {
             col,
@@ -755,7 +862,7 @@ mod tests {
         fn compare(sys: &DynSystem, x: &[f64], h: f64) -> f64 {
             let jf = sys.jacobian(x);
             let mut patterns = Patterns::default();
-            let mut blocks = BlockLu::new(sys, &sys.mass, &jf, h, 0.5, &mut patterns)
+            let mut blocks = BlockLu::new(sys, &sys.mass, &jf, None, h, 0.5, &mut patterns)
                 .unwrap()
                 .expect("the units' blocks are regular");
             let mut trip = Vec::new();
