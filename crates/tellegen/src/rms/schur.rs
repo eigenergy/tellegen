@@ -95,6 +95,10 @@ pub(super) struct BlockLu {
     rhs: Vec<f64>,
     /// A unit's states during its solve.
     tmp: Vec<f64>,
+    /// Experimental: unit chunks of the parallel solve (bounds into `units`; one
+    /// chunk = serial) and each unit's `B_k z_k`, added to the network side in unit order.
+    solve_chunks: Vec<usize>,
+    contrib: Vec<[f64; 2]>,
 }
 
 /// Experimental: the region of each dense bus from `TELLEGEN_REGIONS` (a JSON map
@@ -361,7 +365,6 @@ impl BlockLu {
         } = factors;
         Ok(Some(Self {
             n,
-            units,
             col,
             val,
             start,
@@ -374,6 +377,13 @@ impl BlockLu {
             net,
             rhs: vec![0.0; size],
             tmp,
+            solve_chunks: if pooled {
+                (0..=nchunks).map(|c| c * nu / nchunks).collect()
+            } else {
+                vec![0, nu]
+            },
+            contrib: vec![[0.0; 2]; nu],
+            units,
         }))
     }
 
@@ -401,24 +411,39 @@ impl BlockLu {
             mid: &self.mid,
             inv: &self.inv,
         };
-        for u in &self.units {
-            let k = u.k;
-            let z = &mut dev[u.first..u.first + k];
-            factors.solve(
-                u.first,
-                k,
-                &self.perm[u.first..u.first + k],
-                z,
-                &mut self.tmp,
-            );
-            let b = &self.b[2 * u.first..2 * (u.first + k)];
-            let (mut s0, mut s1) = (0.0, 0.0);
-            for (zi, bi) in z.iter().zip(b.chunks_exact(2)) {
-                s0 += bi[0] * zi;
-                s1 += bi[1] * zi;
+        let (units, perm, b, bounds) = (&self.units, &self.perm, &self.b, &self.solve_chunks);
+        let nchunks = bounds.len() - 1;
+        let one = |dev_c: &mut [f64], at: usize, contrib_c: &mut [[f64; 2]], c: usize, tmp: &mut [f64]| {
+            for (j, u) in units[bounds[c]..bounds[c + 1]].iter().enumerate() {
+                let k = u.k;
+                let z = &mut dev_c[u.first - at..u.first - at + k];
+                factors.solve(u.first, k, &perm[u.first..u.first + k], z, tmp);
+                let bb = &b[2 * u.first..2 * (u.first + k)];
+                let (mut s0, mut s1) = (0.0, 0.0);
+                for (zi, bi) in z.iter().zip(bb.chunks_exact(2)) {
+                    s0 += bi[0] * zi;
+                    s1 += bi[1] * zi;
+                }
+                contrib_c[j] = [s0, s1];
             }
-            rhs[u.bus] -= s0;
-            rhs[n + u.bus] -= s1;
+        };
+        if nchunks > 1 {
+            // Experimental: the units' solves in chunks on the spin pool; their
+            // contributions are added below in unit order, as the serial loop adds them.
+            let parts = split_units(units, bounds, dev, &mut self.contrib);
+            let widest = self.tmp.len();
+            super::integrate::par_for(nchunks, &|c| {
+                let mut g = parts[c].lock().expect("unit chunk");
+                let (dev_c, at, contrib_c) = &mut *g;
+                let mut tmp = vec![0.0; widest];
+                one(dev_c, *at, contrib_c, c, &mut tmp);
+            });
+        } else {
+            one(dev, 0, &mut self.contrib, 0, &mut self.tmp);
+        }
+        for (u, s) in units.iter().zip(&self.contrib) {
+            rhs[u.bus] -= s[0];
+            rhs[n + u.bus] -= s[1];
         }
         if let Some(r) = self.reference {
             rhs[n2] = dev[r];
@@ -428,7 +453,7 @@ impl BlockLu {
     /// The network's solution from `rhs` into `x`, and
     /// `y_k = z_k − D_k⁻¹ [C_k  E_k] (v_bus, w)`.
     // @block Back-substitute the units
-    fn substitute(&self, x: &mut [f64]) {
+    fn substitute(&mut self, x: &mut [f64]) {
         let n = self.n;
         let n2 = 2 * n;
         let (bus, dev) = x.split_at_mut(n2);
@@ -438,15 +463,53 @@ impl BlockLu {
         } else {
             0.0
         };
-        for u in &self.units {
-            let (vr, vi) = (bus[u.bus], bus[n + u.bus]);
-            let w = &self.w[3 * u.first..3 * (u.first + u.k)];
-            let y = &mut dev[u.first..u.first + u.k];
-            for (yi, wi) in y.iter_mut().zip(w.chunks_exact(3)) {
-                *yi -= wi[0] * vr + wi[1] * vi + wi[2] * dw;
+        let (units, wv, bounds) = (&self.units, &self.w, &self.solve_chunks);
+        let bus = &*bus;
+        let one = |dev_c: &mut [f64], at: usize, c: usize| {
+            for u in &units[bounds[c]..bounds[c + 1]] {
+                let (vr, vi) = (bus[u.bus], bus[n + u.bus]);
+                let w = &wv[3 * u.first..3 * (u.first + u.k)];
+                let y = &mut dev_c[u.first - at..u.first - at + u.k];
+                for (yi, wi) in y.iter_mut().zip(w.chunks_exact(3)) {
+                    *yi -= wi[0] * vr + wi[1] * vi + wi[2] * dw;
+                }
             }
+        };
+        let nchunks = bounds.len() - 1;
+        if nchunks > 1 {
+            let parts = split_units(units, bounds, dev, &mut self.contrib);
+            super::integrate::par_for(nchunks, &|c| {
+                let mut g = parts[c].lock().expect("unit chunk");
+                let (dev_c, at, _) = &mut *g;
+                one(dev_c, *at, c);
+            });
+        } else {
+            one(dev, 0, 0);
         }
     }
+}
+
+/// Experimental: the device part and the per-unit contributions split at the unit
+/// chunks' bounds, each chunk's part with the index of its first state.
+#[allow(clippy::type_complexity)]
+fn split_units<'a>(
+    units: &[Unit],
+    bounds: &[usize],
+    mut dev: &'a mut [f64],
+    mut contrib: &'a mut [[f64; 2]],
+) -> Vec<std::sync::Mutex<(&'a mut [f64], usize, &'a mut [[f64; 2]])>> {
+    let nu = units.len();
+    let mut out = Vec::with_capacity(bounds.len() - 1);
+    let mut at = 0usize;
+    for c in 0..bounds.len() - 1 {
+        let next = bounds[c + 1];
+        let end = if next < nu { units[next].first } else { at + dev.len() };
+        let (d, rest) = std::mem::take(&mut dev).split_at_mut(end - at);
+        let (k, krest) = std::mem::take(&mut contrib).split_at_mut(next - bounds[c]);
+        out.push(std::sync::Mutex::new((d, at, k)));
+        (dev, contrib, at) = (rest, krest, end);
+    }
+    out
 }
 
 /// The units' factors without their zeros while they are built (see
