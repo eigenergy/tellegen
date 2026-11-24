@@ -102,6 +102,15 @@ pub(super) struct BlockLu {
     contrib: Vec<[f64; 2]>,
 }
 
+/// Experimental: threads of the spin pool besides the caller (none on wasm without
+/// threads, where the unit chunks run serially).
+fn pool_threads() -> usize {
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    return super::spin_pool::SpinPool::global().threads();
+    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+    0
+}
+
 /// Experimental: `TELLEGEN_NET_ONE=1` factorizes the network as one sparse LU even with
 /// regions (which then still split the residual and the Jacobian).
 fn net_one() -> bool {
@@ -182,7 +191,7 @@ impl BlockLu {
         DBG_BLOCK.store(block as u64, std::sync::atomic::Ordering::Relaxed);
         let t_asm = crate::rms::clock::Instant::now();
         let nu = units.len();
-        let pooled = sys.threads && nu >= PAR_UNITS_MIN && super::spin_pool::SpinPool::global().threads() > 0;
+        let pooled = sys.threads && nu >= PAR_UNITS_MIN && pool_threads() > 0;
         let nchunks = if pooled { PAR_UNIT_CHUNKS.min(nu) } else { 1 };
         let bounds: Vec<usize> = (0..=nchunks).map(|c| c * nu / nchunks).collect();
         // Experimental: when the Jacobian says where each unit's entries lie, the
