@@ -315,6 +315,13 @@ pub(crate) enum LowVoltage {
     Floor,
 }
 
+/// Experimental: `TELLEGEN_PQBRAK_SMOOTH=<d>` (pu) rounds off the PQBRAK breakpoint
+/// over `Vb ± d` (see [`part_weight`]); unset or 0, the plain break.
+fn pqbrak_smooth() -> f64 {
+    static D: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *D.get_or_init(|| std::env::var("TELLEGEN_PQBRAK_SMOOTH").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0))
+}
+
 /// `w(V) = (u / v0)^γ / u²` and `(dw/dV) / V` for a part with exponent
 /// `gamma`: the part's current is `P0 w(V) V` (rotated by `−jQ0`). `u` is the
 /// magnitude the law is evaluated at ([`LowVoltage`]).
@@ -336,7 +343,15 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
             // Experimental: a negative value is relative to the bus's
             // power flow voltage (-0.95: the break at 95 % of it).
             let vb = if vb < 0.0 { -vb * v0 } else { vb.min(v0) };
-            if vm > vb {
+            let d = pqbrak_smooth();
+            // Only where the start lies above the band, so every bus starts on its own law.
+            if d > 0.0 && v0 - vb >= d && (vm - vb).abs() < d {
+                // Experimental: `u = max(V, Vb)` rounded off over `Vb ± d` by a
+                // parabola, so `u` and its slope are continuous (the plain break flips the
+                // current's slope at `Vb`); `u` is at most `d / 4` above the plain one, at `Vb`.
+                let z = vm - vb + d;
+                (vb + z * z / (4.0 * d), z / (2.0 * d) / vm)
+            } else if vm > vb {
                 (vm, 1.0 / vm)
             } else {
                 (vb, 0.0)
