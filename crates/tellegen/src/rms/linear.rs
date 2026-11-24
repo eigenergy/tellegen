@@ -299,6 +299,7 @@ fn signal_name(spec: &BodeSpec) -> String {
     let input = match spec.input {
         InputSignal::VRef => "V_ref",
         InputSignal::PRef => "P_ref",
+        InputSignal::Vs => "V_s",
     };
     let output = match spec.output {
         OutputSignal::Omega => format!("{} ω", gen(spec.output_bus, &spec.output_machine)),
@@ -362,6 +363,7 @@ pub(crate) fn bode(
         match spec.input {
             InputSignal::VRef => perturbed.devices[di].v_ref += h,
             InputSignal::PRef => perturbed.devices[di].p_ref += h,
+            InputSignal::Vs => perturbed.devices[di].vs_ext += h,
         }
         let mut f1 = vec![0.0; nx];
         perturbed.residual(x, &mut f1, None);

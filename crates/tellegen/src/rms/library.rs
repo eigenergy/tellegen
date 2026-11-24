@@ -117,7 +117,11 @@ pub(super) const LIBRARY: &[LibraryModel] = &[
     LibraryModel {
         role: "stabilizer",
         name: "PSS2B",
-        label: "IEEE PSS2B dual-input (speed, power) stabilizer",
+        // The PSS2B of PowerSimulationsDynamics.jl 0.16.2's
+        // `test/test_case53_pss2b.jl` (BSD-3-Clause), whose input limits VS1 and
+        // VS2 fit that test's operating point; here they are open (±99).
+        // KS2 = T7 / (2H): 0.1875 is for H = 4 s; set it from the unit's own H.
+        label: "IEEE PSS2B dual-input (speed, power) stabilizer (KS2 = T7/2H, here H = 4 s)",
         engines: "RMS (block graph; validated against PowerSimulationsDynamics.jl 0.16.2)",
         params: "1 0 3 0 5 1 1.5 1.5 0.0 1.5 0.0 1.5 0.1875 1.0 0.5 0.1 2.0 0.59451 0.0447 0.59451 0.0447 1.0 1.0 99.0 -99.0 99.0 -99.0 0.1 -0.1",
     },

@@ -828,7 +828,7 @@ const SCHEMA: &[(&str, &[Param])] = &[
             Param("TW3", "Washouts", "s", "input 2 washout 1"),
             Param("TW4", "Washouts", "s", "input 2 washout 2 (0 bypasses)"),
             Param("T7", "Washouts", "s", "input 2 integrator lag"),
-            Param("KS2", "Gains", "pu", "input 2 gain (T7 / 2H)"),
+            Param("KS2", "Gains", "pu", "input 2 gain, T7 / (2H) with H of this machine"),
             Param("KS3", "Gains", "pu", "input 2 summing gain"),
             Param("T8", "Ramp tracking", "s", "ramp-tracking lead"),
             Param("T9", "Ramp tracking", "s", "ramp-tracking lag"),

@@ -102,6 +102,10 @@ pub(super) fn apply_event(
                     d.p_ref = *value;
                     "P_ref"
                 }
+                InputSignal::Vs => {
+                    d.vs_ext = *value;
+                    "V_s"
+                }
             };
             format!("t = {time} s: generator {b} '{machine_id}' {name} = {value}")
         }

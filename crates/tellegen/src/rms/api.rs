@@ -20,6 +20,9 @@ pub enum InputSignal {
     VRef,
     /// Governor power reference (mechanical torque for a fixed governor).
     PRef,
+    /// Experimental: signal added at the exciter's summing point, where the
+    /// stabilizer enters (`vs`).
+    Vs,
 }
 
 /// How static loads respond to voltage during the simulation.

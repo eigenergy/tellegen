@@ -152,7 +152,7 @@ export interface RmsLinearResult {
 export interface RmsBodeSpec {
   input_bus: number;
   input_machine?: string;
-  input: "v_ref" | "p_ref";
+  input: "v_ref" | "p_ref" | "vs";
   output: "omega" | "delta" | "efd" | "pe" | "vm";
   output_bus: number;
   output_machine?: string;

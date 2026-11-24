@@ -41,6 +41,9 @@ pub(crate) struct GenDevice {
     pub pss: Stabilizer,
     pub v_ref: f64,
     pub p_ref: f64,
+    /// Experimental: external signal at the summing point, added to the
+    /// stabilizer output (`InputSignal::Vs`).
+    pub vs_ext: f64,
     /// First global state index.
     pub offset: usize,
     /// States frozen by a generator trip.
@@ -138,7 +141,8 @@ impl GenDevice {
         let mut scratch = vec![0.0; n];
         let vs = self
             .pss
-            .eval(&x[p..n], omega, pe, vt, self.scale, &mut scratch[p..n]);
+            .eval(&x[p..n], omega, pe, vt, self.scale, &mut scratch[p..n])
+            + self.vs_ext;
         let mut out = Vec::new();
         let mut push = |slot: &str, gr: &super::graph::CompiledGraph, xs: &[f64], ports: &[f64]| {
             for (id, v) in gr.node_ids().zip(gr.signals(xs, ports)) {
@@ -196,7 +200,8 @@ impl GenDevice {
         let (fg, fp) = rest.split_at_mut(p - g);
         let vs = self
             .pss
-            .eval(&x[p..n], omega, alg.te * self.scale, vt, self.scale, fp);
+            .eval(&x[p..n], omega, alg.te * self.scale, vt, self.scale, fp)
+            + self.vs_ext;
         let (ir, ii) = dq_ri_sc(sc, alg.id, alg.iq);
         // Experimental: under-excitation limiter of the summing-point type (IEEE Std 421.5,
         // UEL1/UEL2 reduced to its proportional path). The limit is `-q_lim Vt^2` of reactive power on
