@@ -357,6 +357,14 @@ pub struct RmsOptions {
     /// notes name every unit whose solved reactive power and setpoint
     /// disagree, and by how much.
     pub reactive_limits: bool,
+    /// Hold each non-windup limit (SEXS field voltage, the limited lags of
+    /// block graphs) in its state at the start of a step while Newton solves
+    /// the step, and let it switch after the step, with a small hysteresis,
+    /// the default; or let the limits switch within Newton's iterations. At
+    /// a limit's kink the latter often fails steps and falls back to shorter
+    /// ones. Validated against 1 ms references: the held limits are as close
+    /// or closer, a limit switches at most one step later.
+    pub freeze_limits: bool,
 }
 
 impl Default for RmsOptions {
@@ -372,6 +380,7 @@ impl Default for RmsOptions {
             threads: true,
             low_voltage_load: LowVoltageLoad::default(),
             reactive_limits: true,
+            freeze_limits: true,
         }
     }
 }

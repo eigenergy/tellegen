@@ -1445,10 +1445,10 @@
   "x-rust-source-files": {
     "crates/tellegen-wasm/examples/rms_adapter_schema.rs": "fb784b0fee577a0526b0dc7ffb4975ac22edd1f3e4a78d03265eab942395d8f3",
     "crates/tellegen-wasm/src/rms.rs": "d04d069c3ecd05bc14e550310e5f2eaf769543938389a8d857e4024bd32d98de",
-    "crates/tellegen/src/rms/api.rs": "d4dce5bb6a7ae0369f85494c2a071d6207703c25ef6f4f4a2324321c75521025",
+    "crates/tellegen/src/rms/api.rs": "2863684e002f65eab40b0ce71f44b985438b16a158715249ba10066d9fbdec39",
     "crates/tellegen/src/rms/library.rs": "87c52317981107115afce5e4de99204d33770ed6b4b11a5dced6d7620b597156",
     "crates/tellegen/src/rms/linear.rs": "72b2b7615ceb65ea1eba386bd1ed6b858e309f3309bb0b9f5df2a5176e833a56",
-    "crates/tellegen/src/rms/mod.rs": "8b512988b0f794a599c38b1c7fee42be8bd77d1115f31b948f8811e67525334f",
+    "crates/tellegen/src/rms/mod.rs": "e18dd65a487d31edd9acf230515238d37f124d0586eb1740bfcc070728f0b295",
     "crates/tellegen/src/rms/screen.rs": "18724a66463cc83e5fce6ce2e971e921b155c615a3ee6961cfea43ca80b8ef01"
   }
 }

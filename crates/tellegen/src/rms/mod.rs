@@ -863,6 +863,7 @@ impl RmsSimulation {
         // Experimental: with `TELLEGEN_PARTIAL=1` a run that cannot go on (a failed
         // step, a network that cannot be re-solved) ends there and returns what it recorded up to
         // the last output time, with the reason as a note, instead of an error.
+        models::set_freeze_limits(self.sys.freeze_limits);
         let partial = std::env::var("TELLEGEN_PARTIAL").is_ok_and(|v| v == "1");
         let mut stopped: Option<String> = None;
         'time: for &t_target in &targets[k0..] {

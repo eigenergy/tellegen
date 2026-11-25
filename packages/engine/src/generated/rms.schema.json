@@ -920,6 +920,7 @@
           "$ref": "#/$defs/RmsOptions",
           "default": {
             "factorize_by_blocks": true,
+            "freeze_limits": true,
             "keep_factorization": true,
             "low_voltage_load": {
               "kind": "break",
@@ -985,6 +986,11 @@
         "factorize_by_blocks": {
           "default": true,
           "description": "Factorize the step matrices by blocks where every unit allows it, the\ndefault, or always as one sparse LU over all unknowns.",
+          "type": "boolean"
+        },
+        "freeze_limits": {
+          "default": true,
+          "description": "Hold each non-windup limit (SEXS field voltage, the limited lags of\nblock graphs) in its state at the start of a step while Newton solves\nthe step, and let it switch after the step, with a small hysteresis,\nthe default; or let the limits switch within Newton's iterations. At\na limit's kink the latter often fails steps and falls back to shorter\nones. Validated against 1 ms references: the held limits are as close\nor closer, a limit switches at most one step later.",
           "type": "boolean"
         },
         "keep_factorization": {
@@ -1381,5 +1387,5 @@
   ],
   "title": "RmsSchema",
   "type": "object",
-  "x-rust-source-sha256": "582a39e4ab30658e079040c986f5dd992c90a3bc130a46c480a711de3e9500f6"
+  "x-rust-source-sha256": "196d0e5978d01770c2cc8239008bc175b53dcc3a7bfbc2f8eb50773be89a4941"
 }

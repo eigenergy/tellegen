@@ -856,6 +856,7 @@ impl RmsLive {
     /// Integrate `duration` seconds, recording on the way.
     // @block Integrate a stretch
     fn integrate(&mut self, duration: f64) -> Result<(), String> {
+        super::models::set_freeze_limits(self.sys.freeze_limits);
         let end = self.t + duration.max(0.0);
         let mut euler = 0usize;
         while self.t < end - 1e-12 {

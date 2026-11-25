@@ -40,12 +40,24 @@
 	];
 
 	/** The solver's speed-ups, all on by default; each can be switched off to
-	 * compare. None changes the results beyond rounding. */
+	 * compare. None changes the results beyond rounding, except held limits:
+	 * a limit then switches at most one step later (validated against 1 ms
+	 * references). */
 	const SPEEDUPS: [
-		'factorize_by_blocks' | 'refactor_values' | 'keep_factorization' | 'fast_engine' | 'threads',
+		| 'factorize_by_blocks'
+		| 'refactor_values'
+		| 'keep_factorization'
+		| 'fast_engine'
+		| 'threads'
+		| 'freeze_limits',
 		string,
 		string
 	][] = [
+		[
+			'freeze_limits',
+			'Hold limits within a step',
+			'Hold each non-windup limit (field voltage, limited lags) in its state at the step start while Newton solves the step, and switch it after the step; off: limits switch within the iterations, where steps often fail at the kink'
+		],
 		[
 			'factorize_by_blocks',
 			'Factorize by blocks',

@@ -797,6 +797,8 @@ const BYPASS_X: f64 = 1.0;
 // @block The system
 #[derive(Clone, Debug)]
 pub(crate) struct DynSystem {
+    /// Hold non-windup limits during a step ([`super::RmsOptions::freeze_limits`]).
+    pub freeze_limits: bool,
     /// Experimental: HVDC links in AC emulation ([`AcEmulation`]).
     pub hvdc_emulation: Vec<AcEmulation>,
     pub n: usize,

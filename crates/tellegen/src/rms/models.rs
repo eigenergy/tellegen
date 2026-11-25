@@ -384,11 +384,24 @@ impl Shaft {
     }
 }
 
-/// Experimental: `TELLEGEN_FREEZE=1` freezes the non-windup limits of the SEXS field
-/// voltage during a step (see [`LimitMode`]); unset, the limits act within the step as before.
+/// Experimental: whether the non-windup limits are held during a step (see [`LimitMode`]),
+/// set per run from [`super::RmsOptions::freeze_limits`] by [`set_freeze_limits`].
 pub(crate) fn freeze_limits() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("TELLEGEN_FREEZE").is_ok_and(|v| v == "1"))
+    FREEZE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static FREEZE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Hold the limits for the run or live stretch about to start ([`super::RmsOptions::freeze_limits`]);
+/// natively `TELLEGEN_FREEZE=0` / `1` overrides the option.
+pub(crate) fn set_freeze_limits(option: bool) {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| match std::env::var("TELLEGEN_FREEZE").as_deref() {
+        Ok("1") => Some(true),
+        Ok("0") => Some(false),
+        _ => None,
+    });
+    FREEZE.store(env.unwrap_or(option), std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Experimental: `TELLEGEN_FREEZE_HYST=<pu>` (default 1e-3): how far the free rate

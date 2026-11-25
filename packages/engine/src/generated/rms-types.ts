@@ -1,5 +1,5 @@
 // Generated from Rust by rms_schema and generate-rms-types.mjs.
-// Source SHA256: 582a39e4ab30658e079040c986f5dd992c90a3bc130a46c480a711de3e9500f6
+// Source SHA256: 196d0e5978d01770c2cc8239008bc175b53dcc3a7bfbc2f8eb50773be89a4941
 
 /** Rotor angle figures, degrees. */
 export type AngleScreen = { "first_swing_deg": number; "first_swing_unit"?: string | null; "initial_separation_deg"?: number; "max_coi_angle_deg": number; "max_coi_angle_t": number; "max_coi_angle_unit"?: string | null; "max_separation_deg": number; "pair": Array<string>; "pole_slips": Array<PoleSlip>; "separation_t": number; "settled": boolean; "trend"?: (SwingTrend) | (null); };
@@ -52,7 +52,7 @@ export type RmsInspection = { "base_frequency": number; "base_mva": number; "bra
 /** Choices of one prepared simulation, fixed when it is built. The defaults
  * are tellegen's own; the others exist to compare with another tool or
  * method, and affect only the simulation they are given to. */
-export type RmsOptions = { "factorize_by_blocks"?: boolean; "keep_factorization"?: boolean; "low_voltage_load"?: LowVoltageLoad; "psid_converter_ramp"?: boolean; "psid_lv_gain"?: boolean; "psid_saturation"?: boolean; "reactive_limits"?: boolean; "refactor_values"?: boolean; "renewable_plants"?: boolean; "threads"?: boolean; };
+export type RmsOptions = { "factorize_by_blocks"?: boolean; "freeze_limits"?: boolean; "keep_factorization"?: boolean; "low_voltage_load"?: LowVoltageLoad; "psid_converter_ramp"?: boolean; "psid_lv_gain"?: boolean; "psid_saturation"?: boolean; "reactive_limits"?: boolean; "refactor_values"?: boolean; "renewable_plants"?: boolean; "threads"?: boolean; };
 
 /** A simulation request. */
 export type RmsRequest = { "dt"?: number; "events"?: Array<RmsEvent>; "load_model"?: (LoadModel) | (null); "output_step"?: number; "record"?: (RecordSpec) | (null); "small_signal"?: boolean; "t_end"?: number; };

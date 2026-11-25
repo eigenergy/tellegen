@@ -700,6 +700,7 @@ pub(crate) fn build(
         threads: options.threads,
         noted_islands: Vec::new(),
         hvdc_emulation: Vec::new(),
+        freeze_limits: options.freeze_limits,
     };
     sys.rebuild_ybus();
     sys.rebuild_mass();
