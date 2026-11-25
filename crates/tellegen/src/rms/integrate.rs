@@ -638,6 +638,13 @@ fn tol_scale() -> f64 {
     *S.get_or_init(|| std::env::var("TELLEGEN_TOL").ok().and_then(|v| v.parse::<f64>().ok()).map_or(1.0, |t| t / 1e-10))
 }
 
+/// Experimental: whether an iteration stagnating at the rounding floor is taken
+/// ([`Stepper::solve`]); `TELLEGEN_FLOOR=0` switches it off.
+fn floor_exit() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("TELLEGEN_FLOOR").map_or(true, |v| v != "0"))
+}
+
 /// Safety factor on the error extrapolated with the contraction rate. With
 /// the second-order predictor most steps end after two corrections, where the
 /// rate is one observation: the factor (and the fresher of two rate
@@ -753,12 +760,12 @@ pub fn lu_stats() -> String {
         "factorizations: reinit {}, new {}, refresh {} (line search {}, stall {}, cap {}); pivoted {} (new patterns {}, pivot fails {}); steps {}, newton iterations {}
          relays: {} evaluations first ({:.3} s), {} beside (wait {:.3} s); banks {:.3} s; steps {:.3} s
          in steps: residual {:.3} s, factorizations {:.3} s, solves {:.3} s, jacobian {:.3} s
-         in factorizations: setup {:.3} s (dense blocks {} values), assembly {:.3} s, unit blocks {:.3} s (join {:.3} s), network LU {:.3} s; pattern reuse {} of {} (+{} by look-up); limit switches {}
+         in factorizations: setup {:.3} s (dense blocks {} values), assembly {:.3} s, unit blocks {:.3} s (join {:.3} s), network LU {:.3} s; pattern reuse {} of {} (+{} by look-up); limit switches {}; steps taken at the rounding floor {}
          Factor::new {:.3} s, dropping the old {:.3} s
          in network LU: split {:.3} s, region LUs and A_rr^-1 B_r {:.3} s, Schur complement {:.3} s, its dense LU {:.3} s
          {}",
         g(0), g(1), g(2), g(6), g(7), g(8), g(3), g(12), g(13), g(4), g(5),
-        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), tm(15), super::schur::DBG_BLOCK.load(std::sync::atomic::Ordering::Relaxed), tm(8), tm(9), tm(18), tm(10), g(14), g(14) + g(15), g(9), LIMIT_SWITCHES.load(std::sync::atomic::Ordering::Relaxed), tm(16), tm(17), tm(11), tm(12), tm(13), tm(14), regions
+        g(10), tm(0), g(11), tm(1), tm(2), tm(3), tm(4), tm(5), tm(6), tm(7), tm(15), super::schur::DBG_BLOCK.load(std::sync::atomic::Ordering::Relaxed), tm(8), tm(9), tm(18), tm(10), g(14), g(14) + g(15), g(9), LIMIT_SWITCHES.load(std::sync::atomic::Ordering::Relaxed), FLOOR_EXITS.load(std::sync::atomic::Ordering::Relaxed), tm(16), tm(17), tm(11), tm(12), tm(13), tm(14), regions
     )
 }
 
@@ -829,6 +836,8 @@ fn trace_step(us: u128, iters: usize, refreshes: usize, h: f64, theta: f64) {
 }
 
 /// Experimental: frozen limit modes that switched after a step.
+/// Experimental: Newton solves taken at the rounding floor ([`floor_exit`]).
+pub(crate) static FLOOR_EXITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub(crate) static LIMIT_SWITCHES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Experimental: `TELLEGEN_STALL` (the residual ratio that counts as a stalled Newton
@@ -1316,9 +1325,25 @@ impl Stepper {
             } else {
                 f64::INFINITY
             };
-            last_step = step_norm;
             let ts = tol_scale();
-            if (step_norm < TOL_DX * ts || remaining < RATE_SAFETY * TOL_DX * ts) && rnorm < 1e-6 * ts.max(1.0) {
+            // Experimental: the iteration at the rounding floor. Once the residual is
+            // down to the rounding of the network equations (of the order of 1e-11, above
+            // `TOL_RES_EXIT`), the corrections are that rounding through the step matrix: they
+            // stop contracting (rate near 1) and can stay just above `TOL_DX` (1e-10 to 6e-10 at
+            // h = 10 ms), so the test below never passes, the stalls refactorize and the step
+            // fails after `MAX_ITERS`. No further iteration makes the iterate more exact: it is
+            // taken when the residual is below `TOL_RES`, the corrections no longer contract and
+            // the last one is below ten times `TOL_DX`. `TELLEGEN_FLOOR=0` switches this off.
+            let at_floor = floor_exit()
+                && last_step.is_finite()
+                && rho >= 0.5
+                && rnorm < TOL_RES * ts
+                && step_norm < 10.0 * TOL_DX * ts;
+            if at_floor {
+                FLOOR_EXITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            last_step = step_norm;
+            if at_floor || (step_norm < TOL_DX * ts || remaining < RATE_SAFETY * TOL_DX * ts) && rnorm < 1e-6 * ts.max(1.0) {
 
                 if cached {
                     *factor = lu;
