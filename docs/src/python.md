@@ -37,6 +37,8 @@ if report["best"]:
 if report["ac_solution_ir"]:
     solution = powerio.deserialize(io.StringIO(report["ac_solution_ir"])).value
     print(solution.objective, solution.branches_open)
+    # PowerIO 0.12.5 exposes the fixed-topology dispatch and stable branch IDs.
+    print(solution.instance.branch_order, solution.ac_solution)
 ```
 
 Use `model="dcots"` for DC dispatch or `model="acots"` for nonlinear AC dispatch.

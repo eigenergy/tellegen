@@ -62,7 +62,7 @@ def test_installed_mcp_extra_requires_the_qualified_reader():
         and item.marker.evaluate({"extra": "mcp"})
     ]
     assert len(readers) == 1
-    assert "0.12.4" in readers[0].specifier
+    assert "0.12.5" in readers[0].specifier
     assert "0.12.2" not in readers[0].specifier
     assert "0.13.0" not in readers[0].specifier
 
@@ -72,7 +72,7 @@ def test_versions_separates_the_binding_from_the_engine():
     assert set(versions) == {"tellegen", "engine", "powerio_ir"}
     # The two can drift: nothing bumps the binding automatically, so they are
     # reported separately rather than conflated into one number.
-    assert versions["powerio_ir"] == "pio-ir/0.12.4"
+    assert versions["powerio_ir"] == "pio-ir/0.12.5"
 
 
 def test_wheel_exposes_acopf_capabilities():
@@ -89,7 +89,7 @@ def test_load_infers_the_format_from_the_extension(case3_path: Path):
     case = tellegen.load(case3_path)
     module = json.loads(case.module_json)
     assert module["schema"] == "pio-ir"
-    assert module["version"] == "0.12.4"
+    assert module["version"] == "0.12.5"
     assert module["value"]["type"] == "powerio.BalancedNetwork"
 
 

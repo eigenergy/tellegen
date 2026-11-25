@@ -21,6 +21,9 @@ def test_typed_switching_roundtrip(model):
     solution = powerio.deserialize(io.StringIO(report["ac_solution_ir"])).value
     assert isinstance(solution, powerio.AcOtsSolution)
     assert solution.branch_closed == report["best"]["closed"]
+    assert solution.instance.branch_order == report["branch_ids"]
+    assert isinstance(solution.ac_solution, powerio.AcOpfSolution)
+    assert solution.instance.initial_closed == [True] * len(report["branch_ids"])
     if model == "acots":
         assert solution.objective == pytest.approx(report["best"]["objective"])
     else:
