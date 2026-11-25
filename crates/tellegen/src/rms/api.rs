@@ -443,7 +443,10 @@ pub struct RmsSeries {
 
 /// The full state at `t` (differential and algebraic, in the engine's order)
 /// and the integrator's reusable factorization there, so a replay from it
-/// continues the run sample for sample.
+/// continues the run sample for sample. With [`RmsOptions::refactor_values`]
+/// (the default) the run refactorizes in the pivot order of a pattern's first
+/// factorization, which the checkpoint does not carry: a replay from a later
+/// checkpoint pivots afresh and agrees with the run to rounding.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {

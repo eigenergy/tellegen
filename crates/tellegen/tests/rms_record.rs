@@ -13,13 +13,17 @@ use tellegen::rms::{
 
 /// The recorder tests run on the WECC 240-bus case that ships with the code.
 fn sim() -> RmsSimulation {
+    sim_with(tellegen::rms::RmsOptions::default())
+}
+
+fn sim_with(options: tellegen::rms::RmsOptions) -> RmsSimulation {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/rms_examples/wecc240");
     let module = powerio::parse(powerio::Source::open(dir.join("case.raw")).unwrap()).unwrap();
     let powerio::PioValue::BalancedNetwork(net) = module.value() else {
         panic!("not a balanced network")
     };
     let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
-    RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap()
+    RmsSimulation::with_options(&net, &dyr, LoadModel::ConstantImpedance, options).unwrap()
 }
 
 fn request(record: Option<RecordSpec>) -> RmsRequest {
@@ -45,9 +49,27 @@ fn request(record: Option<RecordSpec>) -> RmsRequest {
     }
 }
 
+/// Pivoting every factorization afresh, a replay is the run bit for bit: the
+/// checkpoint carries all the state the run continues from.
 #[test]
 fn watch_set_frames_and_replay_reproduce_the_full_recording() {
-    let sim = sim();
+    watch_set_frames_and_replay(false);
+}
+
+/// With the default refactorization in a kept pivot order, that order is the
+/// one of the pattern's first factorization in the run, which a checkpoint
+/// does not carry: a replay from a later checkpoint pivots afresh there and
+/// agrees with the run to rounding.
+#[test]
+fn replay_with_kept_pivots_agrees_to_rounding() {
+    watch_set_frames_and_replay(true);
+}
+
+fn watch_set_frames_and_replay(refactor_values: bool) {
+    let sim = sim_with(tellegen::rms::RmsOptions {
+        refactor_values,
+        ..Default::default()
+    });
     let full = sim.run(&request(None)).unwrap();
     assert!(full.frames.is_none() && full.checkpoints.is_empty());
     let n = full.time.len();
@@ -105,9 +127,17 @@ fn watch_set_frames_and_replay_reproduce_the_full_recording() {
         assert_eq!(replay.time.len(), n - i0);
         assert!((replay.time[0] - cp.t).abs() < 1e-12);
         assert!(!replay.channels.is_empty());
-        // The replay is the run, sample for sample.
+        // The replay is the run, sample for sample (to rounding when the
+        // run refactorized in pivots the checkpoint does not carry).
         for (k, v) in &replay.channels {
-            assert_eq!(v.as_slice(), &full.channels[k][i0..], "{k} from {} s", cp.t);
+            let run = &full.channels[k][i0..];
+            if refactor_values {
+                for (a, b) in v.iter().zip(run) {
+                    assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{k} from {} s: {a} {b}", cp.t);
+                }
+            } else {
+                assert_eq!(v.as_slice(), run, "{k} from {} s", cp.t);
+            }
         }
     }
 

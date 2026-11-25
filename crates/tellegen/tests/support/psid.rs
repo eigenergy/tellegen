@@ -16,6 +16,9 @@ fn psid_options() -> RmsOptions {
         psid_saturation: true,
         psid_converter_ramp: true,
         low_voltage_load: LowVoltageLoad::Exact,
+        // PowerSimulationsDynamics.jl switches a non-windup limit within the
+        // step; held limits switch one step later.
+        freeze_limits: false,
         ..RmsOptions::default()
     }
 }
