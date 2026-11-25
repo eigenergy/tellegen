@@ -12,6 +12,7 @@ import {
 	BrowserRmsLive,
 	type ProtectionScheme,
 	type RelayOperation,
+	type RmsCaseOptions,
 	type RmsEvent,
 	type RmsInspection,
 	type RmsLoadModel
@@ -132,6 +133,8 @@ interface Input {
 	dynText: string;
 	inspection: RmsInspection;
 	loadModel: RmsLoadModel;
+	/** The case options of the Dynamics runs (reactive limits, held limits). */
+	options?: RmsCaseOptions | null;
 	/** Relays acting from the start (an engine build with `protection`). */
 	protection?: ProtectionScheme | null;
 }
@@ -221,6 +224,7 @@ export class LiveView {
 			try {
 				opening = await BrowserRmsLive.open(input.moduleJson, input.dynText, {
 					loadModel: input.loadModel,
+					caseOptions: input.options ?? null,
 					dt: this.dt,
 					outputStep: OUTPUT_STEP
 				});

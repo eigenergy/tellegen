@@ -913,7 +913,8 @@ impl RmsLive {
     }
 }
 
-/// A live session over a stored PowerIO module and DYR text.
+/// A live session over a stored PowerIO module and DYR text, prepared with
+/// `options` as a run of the same case is (its reactive limits, held limits).
 ///
 /// # Errors
 /// When the inputs do not parse or the case cannot be initialized.
@@ -921,12 +922,16 @@ pub fn live_from_module_json(
     module_json: &str,
     dyr_text: &str,
     load_model: LoadModel,
+    options: super::RmsOptions,
     dt: f64,
     output_step: f64,
 ) -> Result<RmsLive, String> {
     let network = network_from_module_json(module_json)?;
     let (dynamics, models) = read_dynamics(dyr_text)?;
-    Ok(RmsSimulation::with_models(&network, &dynamics, &models, load_model)?.live(dt, output_step))
+    Ok(
+        RmsSimulation::with_models_and_options(&network, &dynamics, &models, load_model, options)?
+            .live(dt, output_step),
+    )
 }
 
 #[cfg(feature = "protection")]

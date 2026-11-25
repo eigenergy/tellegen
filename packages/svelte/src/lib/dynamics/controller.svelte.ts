@@ -1032,6 +1032,7 @@ export class DynamicsController {
 			dynText: this.dynText(a),
 			inspection: a.inspection,
 			loadModel: this.options.load_model ?? 'power_flow',
+			options: this.options,
 			protection: this.protection.schemeFor(l.id)
 		});
 	}

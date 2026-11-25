@@ -7,7 +7,7 @@
 //! flat buffers.
 
 use serde::Serialize;
-use tellegen::rms::{LoadModel, RecordSpec, RmsEvent, RmsLive};
+use tellegen::rms::{RecordSpec, RmsEvent, RmsLive};
 use wasm_bindgen::prelude::*;
 
 use crate::{ensure_input_text, install_panic_hook, jserr};
@@ -90,6 +90,8 @@ pub struct RmsLiveCase(RmsLive);
 impl RmsLiveCase {
     /// Start at the initial operating point of `module_json` (a stored
     /// PowerIO module) with `dyn_text` (DYR, or `{"dyr", "models"}` JSON).
+    /// `load_model` is a load model name, or the case options as a run takes
+    /// them (`{"load_model", ...RmsOptions}` JSON, see `RmsCase::new`).
     #[wasm_bindgen(constructor)]
     pub fn new(
         module_json: &str,
@@ -101,12 +103,19 @@ impl RmsLiveCase {
         install_panic_hook();
         ensure_input_text(module_json)?;
         ensure_input_text(dyn_text)?;
-        let load_model: LoadModel = if load_model.trim().is_empty() {
-            LoadModel::default()
+        let text = load_model.trim();
+        let o = if text.starts_with('{') {
+            crate::rms::case_options(text).map_err(jserr)?
+        } else if text.is_empty() {
+            crate::rms::CaseOptions::default()
         } else {
-            serde_json::from_value(serde_json::Value::String(load_model.into())).map_err(jserr)?
+            crate::rms::CaseOptions {
+                load_model: serde_json::from_value(serde_json::Value::String(text.into()))
+                    .map_err(jserr)?,
+                ..Default::default()
+            }
         };
-        tellegen::rms::live_from_module_json(module_json, dyn_text, load_model, dt, output_step)
+        tellegen::rms::live_from_module_json(module_json, dyn_text, o.load_model, o.options, dt, output_step)
             .map(RmsLiveCase)
             .map_err(jserr)
     }

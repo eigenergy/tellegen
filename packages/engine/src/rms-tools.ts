@@ -6,7 +6,7 @@
 
 import { assertEngineInputLength } from "./input-limit.js";
 import type { RmsLiveSliceValue, RmsToolOp } from "./rms-protocol.js";
-import { ExperimentalUnavailable, rmsCall, rmsGeneration, rmsSupport } from "./rms.js";
+import { ExperimentalUnavailable, rmsCall, rmsGeneration, rmsSupport, type RmsCaseOptions } from "./rms.js";
 import type { LoadModel, RecordSpec, RmsEvent } from "./generated/rms-types.js";
 import type { ProtectionScheme, RelayOperation } from "./protection.js";
 
@@ -271,11 +271,17 @@ export class BrowserRmsLive {
   }
 
   /** Start at the initial operating point of `moduleJson` with `dynText`
-   * (DYR, or {@link dynamicInput} JSON). */
+   * (DYR, or {@link dynamicInput} JSON), prepared with `caseOptions` as a run
+   * of the case is (its reactive limits, held limits). */
   static async open(
     moduleJson: string,
     dynText: string,
-    options: { loadModel?: LoadModel; dt?: number; outputStep?: number } = {},
+    options: {
+      loadModel?: LoadModel;
+      caseOptions?: RmsCaseOptions | null;
+      dt?: number;
+      outputStep?: number;
+    } = {},
   ): Promise<BrowserRmsLive> {
     assertEngineInputLength(moduleJson.length);
     assertEngineInputLength(dynText.length);
@@ -287,7 +293,10 @@ export class BrowserRmsLive {
       session: live.#session,
       module_json: moduleJson,
       dyn_text: dynText,
-      load_model: options.loadModel ?? "power_flow",
+      // a load model name, or the case options as JSON (the engine takes both)
+      load_model: options.caseOptions
+        ? JSON.stringify({ ...options.caseOptions, load_model: options.loadModel ?? options.caseOptions.load_model ?? "power_flow" })
+        : (options.loadModel ?? "power_flow"),
       dt: options.dt ?? 0.005,
       output_step: options.outputStep ?? 0.02,
     });
