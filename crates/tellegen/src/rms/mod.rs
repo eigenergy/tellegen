@@ -859,7 +859,12 @@ impl RmsSimulation {
         // @block Time loop
         // Output step by output step up to `t_end`: integrate to the next
         // output time, stopping at every event on the way, then record.
-        for &t_target in &targets[k0..] {
+        // Experimental: with `TELLEGEN_PARTIAL=1` a run that cannot go on (a failed
+        // step, a network that cannot be re-solved) ends there and returns what it recorded up to
+        // the last output time, with the reason as a note, instead of an error.
+        let partial = std::env::var("TELLEGEN_PARTIAL").is_ok_and(|v| v == "1");
+        let mut stopped: Option<String> = None;
+        'time: for &t_target in &targets[k0..] {
             // @block Step to the next output time
             // Steps of at most `h`, cut short at the next event.
             if cancelled() {
@@ -946,8 +951,14 @@ impl RmsSimulation {
                         sys.residual(&x, &mut f, None);
                         solved = stepper.reinit(&sys, &mut x, &mut f);
                     }
-                    iterations += solved
-                        .map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))?;
+                    match solved.map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}")) {
+                        Ok(n) => iterations += n,
+                        Err(e) if partial => {
+                            stopped = Some(e);
+                            break 'time;
+                        }
+                        Err(e) => return Err(e),
+                    }
                     #[cfg(feature = "protection")]
                     if let Some(r) = relays.as_deref_mut() {
                         iterations += protect::settle_banks(
@@ -1085,7 +1096,7 @@ impl RmsSimulation {
                         }
                     }
                 }
-                iterations += stepped.map_err(|e| {
+                let stepped = stepped.map_err(|e| {
                     let islands: Vec<String> =
                         sys.detached_islands().into_iter().map(|(_, s)| s).collect();
                     if islands.is_empty() {
@@ -1097,7 +1108,15 @@ impl RmsSimulation {
                             islands.join("; an island of ")
                         )
                     }
-                })?;
+                });
+                match stepped {
+                    Ok(n) => iterations += n,
+                    Err(e) if partial => {
+                        stopped = Some(e);
+                        break 'time;
+                    }
+                    Err(e) => return Err(e),
+                }
                 steps += 1;
                 sys.relax_loads(&x, t_next - t);
                 t = t_next;
@@ -1174,6 +1193,9 @@ impl RmsSimulation {
         let (time, channels, frames) = rec.take();
         #[cfg_attr(feature = "rms-experimental", allow(unused_mut))]
         let mut run_notes: Vec<String> = Vec::new();
+        if let Some(e) = stopped {
+            run_notes.push(format!("stopped early (TELLEGEN_PARTIAL): {e}"));
+        }
         #[cfg(feature = "rms-experimental")]
         let eigenvalues = if request.small_signal && start.is_none() {
             self.eigenvalues().unwrap_or_else(|e| {
