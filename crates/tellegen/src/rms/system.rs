@@ -1056,6 +1056,26 @@ impl DynSystem {
         self.devices.iter().map(|d| d.avr.update_limit_modes() + d.gov.update_limit_modes() + d.pss.update_limit_modes()).sum()
     }
 
+    /// Experimental: with frozen limits, set the exciter states a step carried past
+    /// their clamps back onto them ([`super::models::Avr::project_limits`]); returns how many.
+    pub(crate) fn project_limits(&self, x: &mut [f64]) -> usize {
+        if !super::models::freeze_limits() {
+            return 0;
+        }
+        self.devices
+            .iter()
+            .filter(|d| d.tripped.is_none())
+            .map(|d| {
+                let [_, _, a, g, p] = d.layout();
+                let o = d.offset;
+                let np = d.pss.n_states();
+                usize::from(d.avr.project_limits(&mut x[o + a..o + g]))
+                    + usize::from(d.gov.project_limits(&mut x[o + g..o + p]))
+                    + usize::from(d.pss.project_limits(&mut x[o + p..o + p + np]))
+            })
+            .sum()
+    }
+
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
         if outs.is_none() {
             if let Some(ri) = super::regions::region_index(self) {

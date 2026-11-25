@@ -66,6 +66,10 @@ export interface LibraryModel {
 	files: { path: string; kind: 'case' | 'dyr' | 'geo' | 'models' }[];
 	/** It carries dynamic data: it opens in Dynamics, else in steady state. */
 	dynamics: boolean;
+	/** Case options the model needs to open (e.g. `reactive_limits: false` where the
+	 * initial power flow does not converge with them): set before it opens, the
+	 * earlier ones back when the next library model opens. */
+	options?: RmsCaseOptions | null;
 }
 export interface ModelLibrary {
 	title: string;
@@ -578,6 +582,8 @@ export class DynamicsController {
 	#examplesLoad: Promise<ModelLibrary> | null = null;
 	#exampleLabel: string | null = null;
 	#exampleModels: ModelOverride[] | null = null;
+	/** The options before a library model set its own ({@link LibraryModel.options}). */
+	#optionsBeforeExample: RmsCaseOptions | null = null;
 
 	/** Load examples/models/index.json once; an absent library is empty. */
 	loadExamples(): Promise<ModelLibrary> {
@@ -637,6 +643,15 @@ export class DynamicsController {
 			} else files.push(new File([blob], f.path.split('/').pop()!));
 		}
 		this.app.mode = m.dynamics ? 'dynamics' : 'steady';
+		if (this.#optionsBeforeExample) {
+			this.options = this.#optionsBeforeExample;
+			this.#optionsBeforeExample = null;
+		}
+		if (m.options && Object.keys(m.options).length) {
+			this.#optionsBeforeExample = this.options;
+			this.options = { ...this.options, ...m.options };
+			this.modes = null;
+		}
 		this.#exampleLabel = this.exampleName(m);
 		this.#exampleModels = models.length ? models : null;
 		try {

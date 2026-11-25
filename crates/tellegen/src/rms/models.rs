@@ -482,6 +482,20 @@ impl Clone for LimitMode {
 }
 
 impl Governor {
+    /// Experimental: a graph's limited lags back onto their clamps after a step
+    /// ([`Avr::project_limits`]).
+    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.project_limits(x),
+            #[allow(unreachable_patterns)]
+            _ => {
+                let _ = x;
+                false
+            }
+        }
+    }
+
     /// Experimental: update a governor graph's frozen limit modes after a taken step.
     pub(crate) fn update_limit_modes(&self) -> usize {
         match self {
@@ -494,6 +508,20 @@ impl Governor {
 }
 
 impl Stabilizer {
+    /// Experimental: a graph's limited lags back onto their clamps after a step
+    /// ([`Avr::project_limits`]).
+    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.project_limits(x),
+            #[allow(unreachable_patterns)]
+            _ => {
+                let _ = x;
+                false
+            }
+        }
+    }
+
     /// Experimental: update a stabilizer graph's frozen limit modes after a taken step.
     pub(crate) fn update_limit_modes(&self) -> usize {
         match self {
@@ -506,11 +534,32 @@ impl Stabilizer {
 }
 
 impl Avr {
+    /// Experimental: with frozen limits, a step in the free mode can carry a
+    /// non-windup lag's state past its clamp (by up to `h·K·e/T`); the state is set back onto the
+    /// clamp after the step, where the output is the same, so the limiter does not wind up.
+    /// Returns whether a state moved.
+    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+        let onto = |v: &mut f64, (lo, hi): (f64, f64)| {
+            let c = v.clamp(lo, hi);
+            let moved = c != *v && v.is_finite();
+            *v = c;
+            moved
+        };
+        match self {
+            Self::Sexs { te, out, .. } if *te >= f64::EPSILON => onto(&mut x[0], *out),
+            Self::Esac1a { ta, va_out, .. } if *ta >= f64::EPSILON => onto(&mut x[2], *va_out),
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.project_limits(x),
+            _ => false,
+        }
+    }
+
     /// Experimental: update the frozen limit modes after a taken step; returns the
     /// number that switched.
     pub(crate) fn update_limit_modes(&self) -> usize {
         match self {
             Self::Sexs { v_min, v_max, lim, .. } => usize::from(lim.update(*v_min, *v_max)),
+            Self::Esac1a { va_min, va_max, lim, .. } => usize::from(lim.update(*va_min, *va_max)),
             #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.update_limit_modes(),
             _ => 0,
@@ -560,6 +609,9 @@ pub(crate) enum Avr {
         sat: Saturation,
         vr_min: f64,
         vr_max: f64,
+        /// Experimental: `VA`'s non-windup limiter mode, frozen during a step
+        /// ([`super::RmsOptions::freeze_limits`]).
+        lim: LimitMode,
     },
     Exst1 {
         tr: f64,
@@ -861,6 +913,7 @@ impl Avr {
                 sat,
                 vr_min,
                 vr_max,
+                lim,
                 ..
             } => {
                 // avr_models.jl, ESAC1A, with VA the state clamped (PSS/E;
@@ -874,7 +927,19 @@ impl Avr {
                 let (v_f, dvr3) = high_pass(v_fe, vr3, *kf, *tf);
                 let v_in = u.v_ref + u.vs - vm - v_f;
                 let (y_ll, dvr1) = lead_lag_mm(v_in, vr1, 1.0, *tc, *tb);
-                let (_, dvr2) = low_pass_nonwindup_mm(y_ll, vr2, *ka, *ta, *va_min, *va_max);
+                let dvr2 = if freeze_limits() && *ta >= f64::EPSILON {
+                    // Experimental: VA's non-windup limit in the mode of the step's
+                    // start, as SEXS's field voltage.
+                    let rate = ka * y_ll - vr2;
+                    lim.record(vr2, rate);
+                    match lim.mode() {
+                        LimitMode::FREE => rate,
+                        LimitMode::AT_MAX | LimitMode::AT_MIN => 0.0,
+                        _ => low_pass_nonwindup_mm(y_ll, vr2, *ka, *ta, *va_min, *va_max).1,
+                    }
+                } else {
+                    low_pass_nonwindup_mm(y_ll, vr2, *ka, *ta, *va_min, *va_max).1
+                };
                 let v_r = vr2.clamp(va_out.0, va_out.1).clamp(*vr_min, *vr_max);
                 f[0] = dvm;
                 f[1] = dvr1;
@@ -1480,6 +1545,7 @@ pub(crate) fn avr_from_psse(model: &DynamicModel) -> Result<Avr, String> {
             },
             vr_min: e.vrmin,
             vr_max: e.vrmax,
+            lim: LimitMode::default(),
         },
         DynamicModel::Exst1(e) => Avr::Exst1 {
             tr: e.tr,
@@ -1674,6 +1740,7 @@ mod tests {
             sat: Saturation::Quadratic { a, b, knee: true },
             vr_min: -5.43,
             vr_max: 6.03,
+            lim: LimitMode::default(),
         };
         let mut f = vec![0.0; avr.n_states()];
         let mut m = vec![1.0; avr.n_states()];

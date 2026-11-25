@@ -1043,6 +1043,24 @@ impl CompiledGraph {
         &x[self.offset[i]..self.offset[i] + self.blocks[i].n_states()]
     }
 
+    /// Experimental: with frozen limits, set the states of limited lags with a time
+    /// constant whose output is their clamped state back onto that clamp after a step carried
+    /// them past it (as [`super::models::Avr::project_limits`]). Returns whether a state moved.
+    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+        let mut moved = false;
+        for op in &self.tape {
+            if let Op::StateClamped { x: s, min, max, .. } = *op {
+                let s = s as usize;
+                if self.mass[s] >= f64::EPSILON && x[s].is_finite() {
+                    let c = x[s].clamp(min, max);
+                    moved |= c != x[s];
+                    x[s] = c;
+                }
+            }
+        }
+        moved
+    }
+
     /// Experimental: update the frozen modes of the non-windup limited lags after a
     /// taken step; returns how many switched.
     pub(crate) fn update_limit_modes(&self) -> usize {
