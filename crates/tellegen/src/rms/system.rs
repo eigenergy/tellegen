@@ -413,6 +413,47 @@ pub fn set_load_recovery(alpha: f64, t: f64) {
 // Experimental: under-excitation limiters by bus number, `[q_lim, gain]`: reactive power
 // absorption limit in pu of MBASE at 1 pu terminal voltage and the limiter gain (pu voltage error per pu
 // of reactive power beyond the limit).
+// Experimental: HVDC links in AC emulation, `(from bus, to bus, K in MW/degree, limit in MW)`
+// by bus number; see [`AcEmulation`].
+static HVDC_EMULATION: std::sync::RwLock<Vec<(usize, usize, f64, f64)>> = std::sync::RwLock::new(Vec::new());
+
+/// Sets the HVDC links in AC emulation (experimental): `(from bus, to bus, K MW/degree,
+/// limit MW)`. Call before the system is built.
+pub fn set_hvdc_emulation(links: Vec<(usize, usize, f64, f64)>) {
+    *HVDC_EMULATION.write().expect("hvdc emulation lock") = links;
+}
+
+/// Experimental: the AC-emulation part of an HVDC link between two AC buses. The link's
+/// set point (its converters, as the case models them) is left as it is; on top, the link moves
+/// `dP = K (dtheta - dtheta0)` from `from` to `to`, `dtheta` the angle of `from` against `to` and
+/// `dtheta0` that angle at the start (so the start is unchanged), limited to `+-p_max`. As an AC line
+/// of reactance `1/K` would, for the active power. Lossless, no own dynamics (the converters'
+/// control is fast against electromechanical swings).
+#[derive(Clone, Debug)]
+pub(crate) struct AcEmulation {
+    pub from: usize,
+    pub to: usize,
+    /// pu power per radian.
+    pub k: f64,
+    pub p_max: f64,
+    pub dtheta0: f64,
+}
+
+impl AcEmulation {
+    /// The power moved from `from` to `to` (pu) at the given voltages.
+    pub(crate) fn power(&self, vr_f: f64, vi_f: f64, vr_t: f64, vi_t: f64) -> f64 {
+        let dtheta = (vi_f * vr_t - vr_f * vi_t).atan2(vr_f * vr_t + vi_f * vi_t);
+        (self.k * (dtheta - self.dtheta0)).clamp(-self.p_max, self.p_max)
+    }
+
+    /// The currents injected at `from` and `to` (real, imaginary), for active power only.
+    pub(crate) fn currents(&self, vr_f: f64, vi_f: f64, vr_t: f64, vi_t: f64) -> [f64; 4] {
+        let p = self.power(vr_f, vi_f, vr_t, vi_t);
+        let (mf, mt) = ((vr_f * vr_f + vi_f * vi_f).max(1e-6), (vr_t * vr_t + vi_t * vi_t).max(1e-6));
+        [-p * vr_f / mf, -p * vi_f / mf, p * vr_t / mt, p * vi_t / mt]
+    }
+}
+
 static UEL: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> = std::sync::RwLock::new(None);
 
 /// Sets the under-excitation limiters (experimental). Call before the system is built.
@@ -756,6 +797,8 @@ const BYPASS_X: f64 = 1.0;
 // @block The system
 #[derive(Clone, Debug)]
 pub(crate) struct DynSystem {
+    /// Experimental: HVDC links in AC emulation ([`AcEmulation`]).
+    pub hvdc_emulation: Vec<AcEmulation>,
     pub n: usize,
     pub bus_numbers: Vec<usize>,
     /// Dense index of each bus number in `bus_numbers` ([`bus_index`]).
@@ -979,6 +1022,29 @@ impl DynSystem {
 
     /// `f(x)`, and the device outputs when `outs` is given.
     // @block Residual f(x)
+    /// Experimental: the configured HVDC links in AC emulation, with their start angle
+    /// from the initial state `x0` (so `f(x0)` is unchanged).
+    pub(crate) fn set_hvdc_emulation_start(&mut self, x0: &[f64]) {
+        let cfg = HVDC_EMULATION.read().expect("hvdc emulation lock").clone();
+        let index: std::collections::HashMap<usize, usize> =
+            self.bus_numbers.iter().enumerate().map(|(i, &b)| (b, i)).collect();
+        let n = self.n;
+        self.hvdc_emulation = cfg
+            .iter()
+            .filter_map(|&(bf, bt, k_mw_deg, p_max_mw)| {
+                let (f, t) = (*index.get(&bf)?, *index.get(&bt)?);
+                let dtheta0 = (x0[n + f] * x0[t] - x0[f] * x0[n + t]).atan2(x0[f] * x0[t] + x0[n + f] * x0[n + t]);
+                Some(AcEmulation {
+                    from: f,
+                    to: t,
+                    k: k_mw_deg * 180.0 / std::f64::consts::PI / self.sbase,
+                    p_max: if p_max_mw > 0.0 { p_max_mw / self.sbase } else { f64::INFINITY },
+                    dtheta0,
+                })
+            })
+            .collect();
+    }
+
     /// Experimental: after a taken step, the frozen limit modes from the last
     /// evaluation (`TELLEGEN_FREEZE=1`); returns how many switched.
     pub(crate) fn update_limit_modes(&self) -> usize {
@@ -1021,6 +1087,13 @@ impl DynSystem {
                 f[b] -= ir;
                 f[n + b] -= ii;
             }
+        }
+        for e in &self.hvdc_emulation {
+            let c = e.currents(vr[e.from], vi[e.from], vr[e.to], vi[e.to]);
+            f[e.from] += c[0];
+            f[n + e.from] += c[1];
+            f[e.to] += c[2];
+            f[n + e.to] += c[3];
         }
         let w_sys = self.omega_sys(x);
         if let Some(outs) = outs.as_deref_mut() {
@@ -1146,6 +1219,14 @@ impl DynSystem {
                     let (ir, ii) = load.nonlinear_current(vr[b], vi[b], self.low_voltage);
                     acc[2 * l] -= ir;
                     acc[2 * l + 1] -= ii;
+                }
+                for e in &self.hvdc_emulation {
+                    if e.from == b || e.to == b {
+                        let c = e.currents(vr[e.from], vi[e.from], vr[e.to], vi[e.to]);
+                        let k = if e.from == b { 0 } else { 2 };
+                        acc[2 * l] += c[k];
+                        acc[2 * l + 1] += c[k + 1];
+                    }
                 }
             }
             for &u in &ri.devices[r] {
@@ -1279,6 +1360,23 @@ impl DynSystem {
             t.push((b, n + b, -j[0][1]));
             t.push((n + b, b, -j[1][0]));
             t.push((n + b, n + b, -j[1][1]));
+        }
+        // Experimental: HVDC links in AC emulation, forward differences, every entry
+        // entered (zero or not) so the pattern stays.
+        for e in &self.hvdc_emulation {
+            let cols = [e.from, n + e.from, e.to, n + e.to];
+            let v = |xs: &[f64; 4]| e.currents(xs[0], xs[1], xs[2], xs[3]);
+            let v0 = [x[e.from], x[n + e.from], x[e.to], x[n + e.to]];
+            let c0 = v(&v0);
+            for (j, &col) in cols.iter().enumerate() {
+                let mut vp = v0;
+                let h = fd_step(vp[j]);
+                vp[j] += h;
+                let c1 = v(&vp);
+                for (i, &row) in cols.iter().enumerate() {
+                    t.push((row, col, (c1[i] - c0[i]) / h));
+                }
+            }
         }
         let w_sys = self.omega_sys(x);
         let dev_block = |d: &GenDevice, t: &mut Vec<(usize, usize, f64)>| {

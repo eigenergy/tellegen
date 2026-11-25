@@ -699,6 +699,7 @@ pub(crate) fn build(
         keep_factorization: options.keep_factorization,
         threads: options.threads,
         noted_islands: Vec::new(),
+        hvdc_emulation: Vec::new(),
     };
     sys.rebuild_ybus();
     sys.rebuild_mass();
@@ -718,6 +719,7 @@ pub(crate) fn build(
     for (off, xh) in &held_x0 {
         x0[*off..*off + xh.len()].copy_from_slice(xh);
     }
+    sys.set_hvdc_emulation_start(&x0);
     let mut f = vec![0.0; nx];
     sys.residual(&x0, &mut f, None);
     report.steady_residual = f.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
