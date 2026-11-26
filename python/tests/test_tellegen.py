@@ -9,6 +9,7 @@ pytest from a directory where the repo tree cannot shadow it.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from importlib.metadata import requires
 from pathlib import Path
@@ -41,8 +42,11 @@ def case(case3_path: Path) -> tellegen.Case:
 
 def test_the_base_import_pulls_in_no_numeric_stack():
     """`import tellegen` must stay dependency free; arrays are an extra."""
-    assert "numpy" not in sys.modules
-    assert "scipy" not in sys.modules
+    subprocess.run(
+        [sys.executable, "-I", "-c", "import sys, tellegen; "
+         "assert 'numpy' not in sys.modules and 'scipy' not in sys.modules"],
+        check=True,
+    )
 
 
 def test_installed_mcp_extra_requires_the_qualified_reader():
@@ -58,7 +62,7 @@ def test_installed_mcp_extra_requires_the_qualified_reader():
         and item.marker.evaluate({"extra": "mcp"})
     ]
     assert len(readers) == 1
-    assert "0.12.4" in readers[0].specifier
+    assert "0.12.5" in readers[0].specifier
     assert "0.12.2" not in readers[0].specifier
     assert "0.13.0" not in readers[0].specifier
 
@@ -68,15 +72,14 @@ def test_versions_separates_the_binding_from_the_engine():
     assert set(versions) == {"tellegen", "engine", "powerio_ir"}
     # The two can drift: nothing bumps the binding automatically, so they are
     # reported separately rather than conflated into one number.
-    assert versions["powerio_ir"] == "pio-ir/0.12.4"
+    assert versions["powerio_ir"] == "pio-ir/0.12.5"
 
 
-def test_capabilities_reports_acopf_as_unavailable():
-    """`acopf` is a wire-stable tag that this build never solves."""
+def test_wheel_exposes_acopf_capabilities():
     by_name = {entry["formulation"]: entry for entry in tellegen.capabilities()}
-    assert by_name["acopf"]["available"] is False
-    assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
-    assert "acopf" not in tellegen.FORMULATIONS
+    assert by_name["acopf"]["available"]
+    assert set(tellegen.formulations()) == {"dcpf", "dcopf", "acpf", "socwr", "acopf"}
+    assert tellegen.FORMULATIONS == tellegen.formulations()
 
 
 # -- loading -----------------------------------------------------------------
@@ -86,7 +89,7 @@ def test_load_infers_the_format_from_the_extension(case3_path: Path):
     case = tellegen.load(case3_path)
     module = json.loads(case.module_json)
     assert module["schema"] == "pio-ir"
-    assert module["version"] == "0.12.4"
+    assert module["version"] == "0.12.5"
     assert module["value"]["type"] == "powerio.BalancedNetwork"
 
 
@@ -197,7 +200,7 @@ def test_ac_power_flow_returns_voltages_and_no_prices(case: tellegen.Case):
 
 def test_an_unavailable_formulation_is_refused_before_solving(case: tellegen.Case):
     with pytest.raises(tellegen.TellegenInputError, match="formulation must be"):
-        case.formulation = "acopf"
+        case.formulation = "unrecognized"
 
 
 def test_rating_edits_are_rejected_by_dc_power_flow(case: tellegen.Case):
@@ -366,3 +369,22 @@ def test_dc_formula_change_invalidates_cached_result(case):
     assert case.solution["branch_susceptance_formula"] == "tap_adjusted_reactance"
     with pytest.raises(tellegen.TellegenInputError, match="unknown"):
         case.branch_susceptance_formula = "not_a_formula"
+
+
+def test_lacots_gap_converts_native_panic(monkeypatch):
+    from tellegen import _tellegen
+
+    def panic(module_json):
+        raise _tellegen._PanicException("test panic")
+
+    monkeypatch.setattr(_tellegen, "lacots_perspective_data", panic)
+    with pytest.raises(tellegen.TellegenError, match="test panic") as caught:
+        tellegen.solve_lacots_gap("unused")
+    assert caught.value.code == tellegen.PANIC_CODE
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, 2 * sys.maxsize + 2])
+def test_ots_rejects_invalid_topology_limits_with_a_stable_code(limit):
+    with pytest.raises(tellegen.TellegenInputError, match="topology_limit") as caught:
+        tellegen.solve_ots("unused", topology_limit=limit)
+    assert caught.value.code == "REQUEST.MALFORMED"

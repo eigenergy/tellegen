@@ -66,7 +66,7 @@ jobs:
       # `extension-module` ON, which is how it ships, and without
       # `--all-targets`, which would link libpython into this gate.
       - name: Clippy (python extension)
-        run: cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
+        run: cargo clippy -p tellegen-py --no-deps --features extension-module,ots -- -D warnings
       - name: Clippy (RMS and the opt-in OPF paths)
         run: |
           cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
@@ -194,7 +194,7 @@ jobs:
           CARGO_PROFILE_RELEASE_LTO: "off"
         run: cargo test --release -p tellegen --features rms --test rms_psid_validation --test rms_physics --test rms_validation -- --include-ignored
 
-  # Exercise the native feature explicitly; shipping adapters still exclude it.
+  # Exercise the native feature explicitly as well as through the Python wheel.
   opf:
     if: inputs.needed
     runs-on: ubuntu-latest

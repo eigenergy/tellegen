@@ -1108,7 +1108,7 @@ cargo run --locked -p tellegen-cli --features ots -- ots-compare \
 ```
 
 The command reads a network case or a stored `.pio.json` instance and prints
-JSON. For a network the default budget allows one change. A typed OTS input
+JSON. A network allows any number of switching actions. A typed OTS input
 keeps its own budget unless `--max-switched` overrides it. The default
 `--topology-limit 1000` counts visited status vectors, including policy
 rejections. Each model reports its own search time. The restoration record

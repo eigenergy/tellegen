@@ -9,11 +9,28 @@ stale stub.
 from typing import Optional
 
 __all__ = [
-    "ENGINE_VERSION", "PANIC_CODE", "POWERIO_IR_VERSION", "TellegenError", "TellegenInputError",
-    "TellegenSolveError", "__version__", "_classify", "capabilities_json",
-    "parse_case", "plan_capacity", "resolve_format", "solve_module",
-    "solve_module_to_solution", "study_create", "study_export", "study_import",
-    "study_inspect", "study_run",
+    "ENGINE_VERSION",
+    "PANIC_CODE",
+    "POWERIO_IR_VERSION",
+    "TellegenError",
+    "TellegenInputError",
+    "TellegenSolveError",
+    "_PanicException",
+    "__version__",
+    "_classify",
+    "capabilities_json",
+    "lacots_perspective_data",
+    "parse_case",
+    "plan_capacity",
+    "resolve_format",
+    "solve_module",
+    "solve_module_to_solution",
+    "solve_ots_module",
+    "study_create",
+    "study_export",
+    "study_import",
+    "study_inspect",
+    "study_run",
 ]
 """Public names registered by the PyO3 module."""
 
@@ -28,6 +45,9 @@ POWERIO_IR_VERSION: str
 
 PANIC_CODE: str
 """The `.code` value carried by a TellegenError raised from a Rust panic."""
+
+_PanicException: type[BaseException]
+"""PyO3 panic type registered by this extension."""
 
 class TellegenError(ValueError):
     """Base engine error. Carries a `.code` naming the failure class."""
@@ -81,3 +101,7 @@ def study_run(
 
 def _classify(message: str) -> str:
     """The `.code` an engine message without a coded error would carry. Diagnostics only."""
+
+def solve_ots_module(module_json: str, model: str, topology_limit: int, restore: bool) -> str: ...
+
+def lacots_perspective_data(module_json: str) -> str: ...

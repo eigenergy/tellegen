@@ -10,7 +10,7 @@ scipy, or the `powerio` wheel.
 import tellegen
 
 case = tellegen.load("case30.m")              # parsed in Rust
-solution = case.solve()                        # dcpf | dcopf | acpf | socwr
+solution = case.solve()                        # dcpf | dcopf | acpf | socwr | acopf
 solution = case.update(demand={2: 50.0})       # absolute deltas, exact re-solve
 column = case.sensitivity({"Price": "Active"}, {"Demand": "Active"})
 ```
@@ -22,6 +22,70 @@ same state as once. `reset()` returns to the base case. Engine errors arrive as
 `EDIT.UNKNOWN_ELEMENT`; a panic that crosses the boundary is converted to a
 `TellegenError` with code `BIND.PY.PANIC` rather than escaping as a
 `BaseException`.
+
+## Optimal transmission switching
+
+```python
+import io
+import powerio
+import tellegen
+
+module = powerio.parse("case.m").to_ac_ots_instance()
+report = tellegen.solve_ots(powerio.serialize(module).text, model="lacots")
+if report["best"]:
+    print(dict(zip(report["branch_ids"], report["best"]["closed"])))
+if report["ac_solution_ir"]:
+    solution = powerio.deserialize(io.StringIO(report["ac_solution_ir"])).value
+    print(solution.objective, solution.branches_open)
+    # PowerIO 0.12.5 exposes the fixed-topology dispatch and stable branch IDs.
+    print(solution.instance.branch_order, solution.ac_solution)
+```
+
+Use `model="dcots"` for DC dispatch or `model="acots"` for nonlinear AC dispatch.
+With a plain case, `tellegen.load("case.m").module_json` works directly.
+A typed PowerIO instance supplies the switchable branch IDs, any opening
+budget and switching costs. The default permits multiple openings. The native
+solver enumerates candidate status vectors and minimizes dispatch cost plus
+applicable transition costs. Clarabel solves the fixed-topology DC and
+flat-start linearized AC problems. POUNCE solves the nonlinear AC problem
+and redispatches a linear model's chosen topology when `restore=True`.
+The result reports the approximate objective under `best` and the restored
+AC objective under `restoration`. If redispatch fails, inspect the error there.
+
+`topology_limit` defaults to 1,000 visited status vectors. Inspect `exhausted`
+and `failed` for an incomplete search. AC dispatch uses a local solver, so
+even an exhaustive ACOTS search does not certify global AC optimality.
+
+### LACOTS relaxation gap
+
+Install `tellegen[switching]` to compare the connected binary on/off
+formulation against the same model with each line status in [0, 1]. This extra
+uses SCIP through PySCIPOpt. The native `solve_ots` API requires only Tellegen.
+
+```python
+gap = tellegen.solve_lacots_gap(powerio.serialize(module).text, time_limit=120)
+print(gap["integer"]["status"], gap["relaxed"]["status"])
+print(gap["gap_percent"], gap["gap_interval"])
+```
+
+Each solve has its own time limit. Tellegen evaluates the cost of the returned
+dispatch and line statuses in the original cost units. The absolute gap interval
+uses those costs and SCIP's dual bounds, with an allowance for numerical error
+reported as `objective_tolerance` for each solve. A missing endpoint means SCIP
+did not return the required bound. After two optimal terminations, `gap_percent`
+is 100 times the cost difference divided by the integer optimum. It is `None`
+when either solve stops early or the integer cost falls within the combined
+numerical uncertainty of zero, including any remaining primal-dual gaps. It
+is also `None` for negative integer costs. This gap quantifies fractional
+switching within LACOTS.
+AC feasibility can be checked separately by redispatching the selected topology.
+
+The perspective model accepts one connected network with initially closed
+two-terminal branches, finite voltage boxes and forbidden islanding. It derives
+angle bounds from declared angle or terminal limits, or from nodal balance on
+networks with positive reciprocal active-flow slopes. An unsupported input
+raises an error before SCIP solves. Branch choices, opening costs and budgets
+come from the typed instance.
 
 ## Installing
 

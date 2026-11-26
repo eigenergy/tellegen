@@ -120,8 +120,7 @@ OPERATIONS = frozenset(
     }
 )
 
-#: Formulations this build solves. `acopf` is a wire-stable tag that is never
-#: available, so it is refused before any engine work.
+#: Formulations exposed through the MCP solve and solve_module tools.
 FORMULATIONS = ("dcpf", "dcopf", "acpf", "socwr")
 
 #: Bundled example cases, served as resources and accepted as a `path`.
@@ -404,8 +403,11 @@ def _summarized(response: Dict[str, Any]) -> Dict[str, Any]:
     idempotent=True,
 )
 async def capabilities() -> Dict[str, Any]:
-    """The installed Tellegen build's versions, and per formulation whether it is available and which sensitivity operands and parameters it supports."""
-    return {"versions": _versions(), "capabilities": _capabilities()}
+    """Engine versions and the formulations available through the MCP solve tools."""
+    capabilities = _capabilities()
+    for entry in capabilities:
+        entry["available"] = entry["available"] and entry["formulation"] in FORMULATIONS
+    return {"versions": _versions(), "capabilities": capabilities}
 
 
 @_tool(

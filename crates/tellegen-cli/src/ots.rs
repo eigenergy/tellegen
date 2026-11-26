@@ -28,7 +28,6 @@ pub(super) fn compare(mut args: impl Iterator<Item = String>) -> Result<String, 
         powerio::parse(&path)
     }
     .map_err(|e| e.to_string())?;
-    let typed = matches!(module.value(), PioValue::AcOtsInstance(_));
     let mut ots = match module.into_value() {
         PioValue::AcOtsInstance(ots) => ots,
         PioValue::AcOpfInstance(base) => {
@@ -44,11 +43,7 @@ pub(super) fn compare(mut args: impl Iterator<Item = String>) -> Result<String, 
             ))
         }
     };
-    let max_switched = match (budget, typed) {
-        (None, false) => Some(usize::from(ots.branches().iter().any(|b| b.switchable))),
-        _ => budget,
-    };
-    if let Some(max) = max_switched {
+    if let Some(max) = budget {
         let mut options = ots.options().clone();
         options.max_switched = Some(max);
         ots = AcOtsInstance::new(ots.base().clone(), options).map_err(|e| e.to_string())?;

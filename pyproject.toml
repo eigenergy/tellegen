@@ -25,6 +25,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+switching = ["pyscipopt>=6.3,<7", "networkx>=3,<4"]
 # The MCP server. `mcp` 2.x moved the server class to
 # `mcp.server.mcpserver.MCPServer`. `powerio` supplies the filesystem path policy
 # (`powerio.mcp.sandbox`), which is shared with PowerMCP rather than copied.
@@ -34,7 +35,7 @@ dependencies = []
 # schemas, so it is declared here and not left to arrive through `mcp`.
 mcp = [
   "mcp>=2,<3",
-  "powerio>=0.12.4,<0.13",
+  "powerio>=0.12.5,<0.13",
   "pydantic>=2,<3",
 ]
 
@@ -51,11 +52,11 @@ Repository = "https://github.com/eigenergy/tellegen"
 manifest-path = "crates/tellegen-py/Cargo.toml"
 module-name = "tellegen._tellegen"
 python-source = "python"
-features = ["extension-module"]
+features = ["extension-module", "ots"]
 # Not the root `release` profile: that one is opt-level = "s" for wasm size.
 profile = "release-py"
 strip = true
-include = [{ path = "LICENSE", format = "sdist" }]
+include = [{ path = "LICENSE", format = "sdist" }, { path = "licenses/POUNCE-EPL-2.0.txt", format = ["sdist", "wheel"] }, { path = "licenses/POUNCE-PYTHON-NOTICE.txt", format = ["sdist", "wheel"] }]
 # These are validation fixtures, not inputs required by the installed solver.
 # Keep their independent data licences out of the Python source distribution.
 exclude = ["**/tests/data/**", "**/tests/fixtures/**"]

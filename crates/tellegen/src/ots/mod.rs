@@ -2,6 +2,8 @@
 //! Enumerates status changes in increasing cardinality. All three dispatch
 //! models use the same legal topologies and the same switching objective.
 mod linear;
+mod perspective;
+pub use perspective::lacots_perspective_data;
 #[cfg(test)]
 mod tests;
 
