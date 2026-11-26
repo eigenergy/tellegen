@@ -1,4 +1,4 @@
-import { priceColor, sensColor, type RGBA } from '../colors.js';
+import { priceColor, sensColor, type RampTheme, type RGBA } from '../colors.js';
 import type { PairVoltage } from './snapshot.js';
 
 export type ColourMode = 'none' | 'voltage' | 'voltage-band' | 'loading' | 'loading-heat';
@@ -33,8 +33,8 @@ export function worstBand(pairs: PairVoltage[]): number | null {
 }
 
 /** The application's sequential ramp; light loads start part-way up so they stay visible on paper. */
-export const loadingColour = (loading: number): RGBA =>
-	priceColor(0.15 + 0.85 * Math.min(1, Math.max(0, loading / 100)));
+export const loadingColour = (loading: number, theme: RampTheme = 'light'): RGBA =>
+	priceColor(0.15 + 0.85 * Math.min(1, Math.max(0, loading / 100)), theme);
 
 /** The application's diverging ramp over the declared band, clamped at the limits. */
 export const bandColour = (t: number): RGBA => sensColor(Math.max(-1, Math.min(1, t)));

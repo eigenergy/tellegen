@@ -3,9 +3,11 @@ import type { RGBA } from '../../colors.js';
 import { fitText, TITLE_BLOCK_HEIGHT, viewportSvg, type titleBlock } from '../../diagram/index.js';
 import type { SchematicScene } from './layers.js';
 import { segmentColours, segmentWidths, strokeColours } from './paint.js';
-import { ACCENT, INK, PAPER, stateInk } from './palette.js';
+import { ACCENT, SCHEMATIC_PALETTES, stateInk, type SchematicPalette } from './palette.js';
 
 type TitleBlock = ReturnType<typeof titleBlock>;
+
+const css = (c: RGBA) => `rgb(${c[0]} ${c[1]} ${c[2]})`;
 
 export interface ExportView {
 	camera: { target: [number, number, number]; zoom: number };
@@ -22,7 +24,8 @@ export function canvasPng(
 	canvas: HTMLCanvasElement,
 	title: TitleBlock,
 	/** Optional CSS-pixel overlays drawn above the WebGL scene, before the title block. */
-	paintOverlay?: (ctx: CanvasRenderingContext2D) => void
+	paintOverlay?: (ctx: CanvasRenderingContext2D) => void,
+	palette: SchematicPalette = SCHEMATIC_PALETTES.light
 ): Promise<Blob | null> {
 	// Read the drawing buffer in the same task as a forced draw, before it is cleared.
 	deck.redraw('export');
@@ -32,7 +35,7 @@ export function canvasPng(
 	if (!ctx) return Promise.resolve(null);
 	out.width = canvas.width;
 	out.height = canvas.height + TITLE_BLOCK_HEIGHT * k;
-	ctx.fillStyle = 'rgb(252 251 247)';
+	ctx.fillStyle = css(palette.paper);
 	ctx.fillRect(0, 0, out.width, out.height);
 	ctx.drawImage(canvas, 0, 0);
 	if (paintOverlay) {
@@ -48,7 +51,7 @@ export function canvasPng(
 		lines.forEach((line, i) => {
 			const lead = col === 0 && i === 0;
 			ctx.font = `${lead ? '600 ' : ''}${(lead ? 12 : 11) * k}px "IBM Plex Sans", sans-serif`;
-			ctx.fillStyle = lead ? 'rgb(32 36 43)' : 'rgb(77 81 86)';
+			ctx.fillStyle = css(lead ? palette.ink : palette.muted);
 			ctx.fillText(
 				fitText(line, canvas.clientWidth / 2),
 				(col * out.width) / 2 + 12 * k,
@@ -65,16 +68,15 @@ export function sceneSvg(s: SchematicScene, view: ExportView, title: TitleBlock)
 	const scale = 2 ** camera.zoom;
 	const x0 = camera.target[0] - width / 2 / scale;
 	const y0 = camera.target[1] - height / 2 / scale;
-	const css = (c: RGBA) => `rgb(${c[0]} ${c[1]} ${c[2]})`;
 	const symbols = s.symbols;
 	return viewportSvg({
 		bounds: [x0, y0, x0 + width / scale, y0 + height / scale],
 		scale,
 		width: Math.round(width),
 		height: Math.round(height),
-		background: css(PAPER),
-		ink: css(INK),
-		muted: 'rgb(77 81 86)',
+		background: css(s.palette.paper),
+		ink: css(s.palette.ink),
+		muted: css(s.palette.muted),
 		lineSets: [
 			{
 				sources: d.sources,
@@ -88,7 +90,7 @@ export function sceneSvg(s: SchematicScene, view: ExportView, title: TitleBlock)
 						{
 							sources: symbols.sources,
 							targets: symbols.targets,
-							colors: strokeColours(symbols.owner, s.fan.edges, s.live),
+							colors: strokeColours(symbols.owner, s.fan.edges, s.live, s.palette.symbol),
 							count: symbols.sources.length / 3,
 							width: 1.25
 						},
@@ -97,7 +99,12 @@ export function sceneSvg(s: SchematicScene, view: ExportView, title: TitleBlock)
 									{
 										sources: symbols.ticks.sources,
 										targets: symbols.ticks.targets,
-										colors: strokeColours(symbols.ticks.edge, s.fan.edges, s.live),
+										colors: strokeColours(
+											symbols.ticks.edge,
+											s.fan.edges,
+											s.live,
+											s.palette.symbol
+										),
 										count: symbols.ticks.edge.length,
 										width: 1
 									}
@@ -127,7 +134,9 @@ export function sceneSvg(s: SchematicScene, view: ExportView, title: TitleBlock)
 			text: l.text,
 			dx: 6,
 			dy: -8,
-			color: css(stateInk(l.state))
+			color: css(
+				l.state === 'violation' || l.state === 'warning' ? stateInk(l.state) : s.palette.ink
+			)
 		})),
 		title
 	});

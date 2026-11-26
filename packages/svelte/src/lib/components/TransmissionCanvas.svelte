@@ -43,7 +43,7 @@
 	import { limitWords } from '../diagram/verdict.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import { basemapCredit, type BasemapSpec } from '../basemap.js';
+	import { basemapCredit, type BasemapSpec, type BasemapTheme } from '../basemap.js';
 	import {
 		BASEMAP_STYLE,
 		basemapCamera,
@@ -146,6 +146,7 @@
 		onclear,
 		onclose,
 		ongeoview,
+		theme = 'light',
 		basemap: basemapSpec = DEFAULT_BASEMAP
 	}: {
 		network: Network;
@@ -163,6 +164,7 @@
 		ongeoview?: (view: CameraSnapshot) => void;
 		/** The background map under geographic positions: the map's own basemap, in its theme. */
 		basemap?: BasemapSpec;
+		theme?: BasemapTheme;
 	} = $props();
 
 	type Colour = 'level' | 'results' | 'operating' | 'economics' | 'transfer';
@@ -434,6 +436,7 @@
 		wanted: basemapPref.value && geographic && !!geometry.mercatorOrigin,
 		container: mapBox,
 		spec: basemapSpec,
+		theme,
 		origin: geometry.mercatorOrigin ?? null,
 		camera,
 		size: [width, height]

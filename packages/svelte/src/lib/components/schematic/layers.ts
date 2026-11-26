@@ -35,6 +35,8 @@ import {
 	SYMBOL_INK,
 	ZONE_COLOURS,
 	ZONE_INK,
+	type SchematicPalette,
+	SCHEMATIC_PALETTES,
 	alpha,
 	lineWidths,
 	stateInk
@@ -63,7 +65,8 @@ const cartesian = (kit: DeckKit) => ({ coordinateSystem: kit.core.COORDINATE_SYS
 export function morphLayers(
 	kit: DeckKit,
 	morph: { s: Float32Array; t: Float32Array; cur: Float32Array; endpoints: Int32Array },
-	busCount: number
+	busCount: number,
+	palette = SCHEMATIC_PALETTES.light
 ): Layer[] {
 	const common = cartesian(kit);
 	return [
@@ -85,7 +88,7 @@ export function morphLayers(
 			...common,
 			id: 'morph-buses',
 			data: { length: busCount, attributes: { getPosition: { value: morph.cur, size: 3 } } },
-			getFillColor: INK,
+			getFillColor: palette.ink,
 			getRadius: 2,
 			radiusUnits: 'pixels'
 		})
@@ -138,6 +141,7 @@ export interface SchematicScene {
 	graph: DistGraph;
 	layout: 'schematic' | 'source';
 	colour: Colour;
+	palette: SchematicPalette;
 	/** The layout on screen, before stacks spread. */
 	shown: SchematicGeometry;
 	/** Bus positions as drawn (stacks spread). */
@@ -319,13 +323,13 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 					new LineLayer({
 						...common,
 						id: 'equipment',
-						data: cache.equipment([symbols, s.fan.edges, s.live], () => ({
+						data: cache.equipment([symbols, s.fan.edges, s.live, s.palette], () => ({
 							length: symbols.sources.length / 3,
 							attributes: {
 								getSourcePosition: { value: symbols.sources, size: 3 },
 								getTargetPosition: { value: symbols.targets, size: 3 },
 								getColor: {
-									value: strokeColours(symbols.owner, s.fan.edges, s.live),
+									value: strokeColours(symbols.owner, s.fan.edges, s.live, s.palette.symbol),
 									size: 4,
 									normalized: true
 								}
@@ -340,13 +344,18 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 								new LineLayer({
 									...common,
 									id: 'conductor-ticks',
-									data: cache.ticks([symbols, s.fan.edges, s.live], () => ({
+									data: cache.ticks([symbols, s.fan.edges, s.live, s.palette], () => ({
 										length: symbols.ticks.edge.length,
 										attributes: {
 											getSourcePosition: { value: symbols.ticks.sources, size: 3 },
 											getTargetPosition: { value: symbols.ticks.targets, size: 3 },
 											getColor: {
-												value: strokeColours(symbols.ticks.edge, s.fan.edges, s.live),
+												value: strokeColours(
+													symbols.ticks.edge,
+													s.fan.edges,
+													s.live,
+													s.palette.symbol
+												),
 												size: 4,
 												normalized: true
 											}
@@ -423,7 +432,7 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 			radiusMinPixels: 1,
 			pickable: true,
 			updateTriggers: {
-				getFillColor: [s.colour, s.snapshot],
+				getFillColor: [s.busColours],
 				getPosition: g,
 				getRadius: !!symbols
 			}
@@ -469,7 +478,7 @@ export function sceneLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 			id: 'keyboard-cursor',
 			data: s.cursor >= 0 ? [s.cursor] : [],
 			getPosition: point,
-			getLineColor: INK,
+			getLineColor: s.palette.ink,
 			stroked: true,
 			filled: false,
 			getRadius: 11,
@@ -566,7 +575,7 @@ function landmarkLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 			data: marks.placed,
 			getPosition: (l: Landmark) => [l.x, l.y, 0],
 			// Semi-transparent: lifts the marker without blanking the drawing under it.
-			getFillColor: paperText(150),
+			getFillColor: alpha(s.palette.paper, 150),
 			getRadius: 11,
 			radiusUnits: 'pixels',
 			pickable: true
@@ -579,7 +588,7 @@ function landmarkLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 				attributes: {
 					getSourcePosition: { value: marks.strokes.sources, size: 3 },
 					getTargetPosition: { value: marks.strokes.targets, size: 3 },
-					getColor: { value: landmarkColours(marks), size: 4, normalized: true }
+					getColor: { value: landmarkColours(marks, s.palette.ink), size: 4, normalized: true }
 				}
 			},
 			getWidth: 1.6,
@@ -684,7 +693,7 @@ function sharedRouteLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 								getTargetPosition: { value: Float32Array.from(mDst), size: 3 }
 							}
 						},
-						getColor: SYMBOL_INK,
+						getColor: s.palette.symbol,
 						getWidth: 1,
 						widthUnits: 'pixels'
 					})
@@ -893,13 +902,13 @@ function stackLayers(kit: DeckKit, s: SchematicScene): Layer[] {
 						filled: true,
 						getFillColor: [0, 0, 0, 1],
 						getLineColor: (d: { spread: boolean }) =>
-							d.spread ? alpha(SYMBOL_INK, 70) : SYMBOL_INK,
+							d.spread ? alpha(s.palette.symbol, 70) : s.palette.symbol,
 						getRadius: (d: { spread: boolean; n: number }) => (d.spread ? stackRadius(d.n) + 6 : 6),
 						radiusUnits: 'pixels',
 						lineWidthUnits: 'pixels',
 						getLineWidth: 1,
 						pickable: true,
-						updateTriggers: { getLineColor: s.spreadStacks, getRadius: s.spreadStacks }
+						updateTriggers: { getLineColor: [s.spreadStacks, s.palette], getRadius: s.spreadStacks }
 					})
 				]
 			: []),
