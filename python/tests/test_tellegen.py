@@ -218,15 +218,11 @@ def test_public_solve_accepts_a_json_request(case: tellegen.Case):
 
 
 def test_public_solve_converts_native_panics(case: tellegen.Case, monkeypatch):
-    from tellegen import _guard, _tellegen
-
-    class Panic(BaseException):
-        pass
+    from tellegen import _tellegen
 
     def panic(module, request):
-        raise Panic("test panic")
+        raise _tellegen._PanicException("test panic")
 
-    monkeypatch.setattr(_guard, "_panic_type", lambda: Panic)
     monkeypatch.setattr(_tellegen, "solve_module", panic)
     with pytest.raises(tellegen.TellegenError) as error:
         tellegen.solve(case.module_json, "{}")
