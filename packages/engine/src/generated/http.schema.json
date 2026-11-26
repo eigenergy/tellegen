@@ -2308,7 +2308,7 @@
       "type": "object"
     },
     "Problem": {
-      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.",
+      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. The capabilities response reports whether the current build includes it.",
       "oneOf": [
         {
           "const": "dcpf",

@@ -296,6 +296,7 @@
         "type": "object"
       },
       "Edits": {
+        "additionalProperties": false,
         "description": "Operating-point edits applied before the model is built: demand deltas in MW\nkeyed by bus (the operating point is `base demand + delta`) and branch rating\ndeltas in MW keyed by branch (the thermal limit is `base rating + delta`). Keys\nare [`ElementKey`]s — the original numeric id or the powerio row uid. A struct\n(not a bare map) so the structural-edit vocabulary (add line, add generator,\nretune a parameter) can grow without breaking the wire format: a client that\nknows only `deltas` keeps working.",
         "properties": {
           "deltas": {
