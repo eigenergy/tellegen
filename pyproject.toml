@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+requires = ["maturin>=1.9.3,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -7,15 +7,15 @@ name = "tellegen"
 # Read from crates/tellegen-py/Cargo.toml by maturin, so the wheel and the crate
 # carry one version.
 dynamic = ["version"]
-description = "DC optimal power flow, AC power flow, SOCWR, and KKT sensitivities."
+description = "AC and DC power flow, optimal power flow, transmission switching, and KKT sensitivities."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT AND EPL-2.0"
+license-files = ["LICENSE", "licenses/POUNCE-EPL-2.0.txt", "licenses/POUNCE-PYTHON-NOTICE.txt"]
 requires-python = ">=3.11"
 keywords = ["opf", "power-flow", "power-systems", "sensitivity", "lmp"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",

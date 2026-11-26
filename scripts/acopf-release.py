@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import zipfile
+from email.parser import BytesParser
 from pathlib import Path
 
 if sys.version_info < (3, 11):
@@ -84,6 +85,13 @@ def main():
         if args.check_python_wheel:
             license_path = 'licenses/POUNCE-EPL-2.0.txt'
             with zipfile.ZipFile(args.check_python_wheel) as wheel:
+                metadata_path, = (name for name in wheel.namelist() if name.endswith('.dist-info/METADATA'))
+                metadata = BytesParser().parsebytes(wheel.read(metadata_path), headersonly=True)
+                if metadata.get('License-Expression') != 'MIT AND EPL-2.0':
+                    raise SystemExit('wheel must declare the licenses of Tellegen and its linked solver')
+                required = {'LICENSE', str(notice_path), str(license_path)}
+                if not required.issubset(metadata.get_all('License-File', [])):
+                    raise SystemExit('wheel metadata is missing a license file')
                 for path, expected in [(notice_path, notice),
                                        (license_path, (ROOT / license_path).read_text(encoding='utf-8'))]:
                     actual = wheel.read(path).decode('utf-8').splitlines()
