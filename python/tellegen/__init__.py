@@ -42,6 +42,7 @@ __all__ = [
     "load",
     "load_ir",
     "resolve_format",
+    "solve",
     "solve_lacots_gap",
     "solve_ots",
     "versions",
@@ -120,6 +121,12 @@ def versions() -> Dict[str, str]:
         "engine": _tellegen.ENGINE_VERSION,
         "powerio_ir": f"pio-ir/{_tellegen.POWERIO_IR_VERSION}",
     }
+
+
+@guard
+def solve(module_json: str, request_json: str) -> Dict[str, Any]:
+    """Solve a PowerIO IR module with a JSON request and return the response dict."""
+    return json.loads(_tellegen.solve_module(module_json, request_json))
 
 
 @guard
@@ -263,8 +270,12 @@ class Case:
 
     # -- solving -------------------------------------------------------------
 
-    def _request(self, sensitivities: Optional[Sequence[Mapping[str, Any]]]) -> str:
+    def _request(
+        self, sensitivities: Optional[Sequence[Mapping[str, Any]]], start: Optional[str]
+    ) -> str:
         request: Dict[str, Any] = {"formulation": self._formulation}
+        if start is not None:
+            request["start"] = start
         if self._branch_susceptance_formula is not None:
             request["branch_susceptance_formula"] = self._branch_susceptance_formula
         edits: Dict[str, Any] = {}
@@ -279,16 +290,22 @@ class Case:
         return json.dumps(request)
 
     def solve(
-        self, *, sensitivities: Optional[Sequence[Mapping[str, Any]]] = None
+        self,
+        *,
+        sensitivities: Optional[Sequence[Mapping[str, Any]]] = None,
+        start: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Solve at the current edit set and return the response.
+
+        For AC power flow, `start="case"` starts Newton from the voltages
+        stored in the module. Omitting `start` or passing `"flat"` uses a
+        flat start. The choice applies to this call.
 
         The response carries only the blocks the formulation defines, so read
         `capabilities()` rather than assuming `lmp` is present: AC power flow has
         no prices, and DC power flow has neither prices nor dispatch.
         """
-        raw = _tellegen.solve_module(self._module_json, self._request(sensitivities))
-        solution = json.loads(raw)
+        solution = solve(self._module_json, self._request(sensitivities, start))
         if sensitivities is None:
             self._solution = solution
         return solution
