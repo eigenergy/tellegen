@@ -1,5 +1,13 @@
 # @tellegen/svelte
 
+## 0.10.4
+
+### Patch Changes
+
+- [#467](https://github.com/eigenergy/tellegen/pull/467) [`2bf8b5f`](https://github.com/eigenergy/tellegen/commit/2bf8b5f4b0df25d5930060c130bca66533943ced) Thanks [@samtalki](https://github.com/samtalki)! - Update diagram basemaps when the theme changes. Multiconductor schematics use a brighter dark-mode palette for voltage levels, buses and equipment, including exported drawings.
+- Updated dependencies [[`451a7fa`](https://github.com/eigenergy/tellegen/commit/451a7fa223ed3f462f47a5256249b03faeed0b0b), [`dc063d4`](https://github.com/eigenergy/tellegen/commit/dc063d421568e03c2df06d0600174db8e0179fd1)]:
+  - @tellegen/engine@0.10.4
+
 ## 0.10.3
 
 ### Patch Changes
