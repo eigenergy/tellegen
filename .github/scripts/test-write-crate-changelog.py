@@ -169,6 +169,22 @@ Header prose.
 """,
         )
 
+    def test_dependabot_solver_release_names_both_shipped_versions(self) -> None:
+        r = self.repo
+        initial(r)
+        manifest = ROOT_MANIFEST + 'pounce-rs = "=0.16.0"\npounce-nl = "=0.16.0"\n'
+        r.write("Cargo.toml", manifest)
+        r.write("crates/tellegen/Cargo.toml", CRATE_MANIFEST.format(version="0.1.0").replace(
+            "powerio.workspace = true", "powerio.workspace = true\npounce-rs.workspace = true"))
+        r.commit("Use POUNCE for AC OPF")
+        r.git("tag", "v0.1.0")
+        r.pull_request(18, "dependabot/cargo/pounce-abcdef", "Bump the group with 2 updates",
+                       "Cargo.toml", manifest.replace("0.16.0", "0.17.0"))
+        r.pull_request(19, "dependabot/cargo/rand", "Bump rand", "Cargo.lock", "# lockfile\n")
+        text = self.run_writer("--version", "0.1.1")
+        self.assertIn("### Changed\n\n- Update POUNCE from 0.16.0 to 0.17.0 for AC optimal power flow and transmission switching ([#18]", text)
+        self.assertNotIn("#19", text)
+
     def test_wheel_only_pr_with_an_empty_merge_body_uses_its_commit_subject(self) -> None:
         r = self.repo
         initial(r)

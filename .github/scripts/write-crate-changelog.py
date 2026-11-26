@@ -25,6 +25,7 @@ import datetime as dt
 import re
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,9 +34,8 @@ CRATE_MANIFEST = "crates/tellegen/Cargo.toml"
 CHANGELOG = "crates/tellegen/CHANGELOG.md"
 ROOT_MANIFEST = "Cargo.toml"
 
-# Bots and release machinery. Their merges change versions and lockfiles,
-# not the crate's behaviour.
-SKIP_BRANCH_PREFIXES = ("dependabot/", "release-plz-", "changeset-release/")
+# Version-only pull requests are release machinery.
+SKIP_BRANCH_PREFIXES = ("release-plz-", "changeset-release/")
 
 # Root manifest keys outside the dependency tables that reach the published
 # crate through `*.workspace = true`.
@@ -142,6 +142,16 @@ def touches_crate(rev: str, dependencies: set[str], cwd: Path) -> bool:
     return False
 
 
+def pounce_pin(rev: str, cwd: Path) -> str | None:
+    """The exact paired solver release used by the wheel and the WASI reactor."""
+    manifest = tomllib.loads(git("show", f"{rev}:{ROOT_MANIFEST}", cwd=cwd))
+    deps = manifest.get("workspace", {}).get("dependencies", {})
+    pin = deps.get("pounce-rs")
+    if isinstance(pin, str) and pin.startswith("=") and pin == deps.get("pounce-nl"):
+        return pin[1:]
+    return None
+
+
 def entry_for(rev: str, cwd: Path) -> Entry | None:
     parents, subject, body = git(
         "show", "-s", "--format=%P%x00%s%x00%b", rev, cwd=cwd
@@ -154,6 +164,16 @@ def entry_for(rev: str, cwd: Path) -> Entry | None:
         if branch.startswith(SKIP_BRANCH_PREFIXES):
             return None
         number = int(merge.group(1))
+        if branch.startswith("dependabot/"):
+            previous = pounce_pin(f"{rev}^1", cwd)
+            current = pounce_pin(rev, cwd)
+            if previous and current and previous != current:
+                return Entry(
+                    "Changed",
+                    f"Update POUNCE from {previous} to {current} for AC optimal power flow and transmission switching",
+                    number,
+                )
+            return None
         lines = [line.strip() for line in body.splitlines() if line.strip()]
         if lines:
             title = lines[0]
