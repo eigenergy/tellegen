@@ -66,7 +66,7 @@ jobs:
       # `extension-module` ON, which is how it ships, and without
       # `--all-targets`, which would link libpython into this gate.
       - name: Clippy (python extension)
-        run: cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
+        run: cargo clippy -p tellegen-py --no-deps --features extension-module,ots -- -D warnings
       - name: Clippy (RMS and the opt-in OPF paths)
         run: |
           cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings

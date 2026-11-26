@@ -1,16 +1,20 @@
 //! Native switching over PowerIO modules. The result document keeps the input's records.
 use std::sync::Arc;
 
-use powerio::{AcOtsSolution, PioModule, PioValue};
+use powerio::{AcOtsInstance, AcOtsSolution, PioModule, PioValue};
 use pyo3::prelude::*;
 use serde_json::json;
 use tellegen::ots::{restore_ac, solve_ots, OtsModel};
 
 use super::{engine_error, Failure};
 
-fn solution_ir(module: &PioModule<PioValue>, solution: &AcOtsSolution) -> Result<String, Failure> {
+fn solution_ir(
+    instance: PioModule<Arc<AcOtsInstance>>,
+    solution: &AcOtsSolution,
+) -> Result<String, Failure> {
+    let module = instance.map_value(|ots| PioValue::AcOtsInstance(Arc::unwrap_or_clone(ots)));
     let result = powerio::ac_ots_solution(
-        module,
+        &module,
         solution.instance(),
         solution.branch_closed().to_vec(),
         solution.ac_solution().clone(),
@@ -42,10 +46,10 @@ pub(super) fn solve_ots_module(
         if topology_limit == 0 {
             return Err(Failure::new("REQUEST.MALFORMED", "topology_limit must be positive"));
         }
-        let module = tellegen::ir::deserialize_module(&module_json)?;
-        let instance = powerio::to_ac_ots_instance(&module)
-            .map_err(|e| Failure::new("MODULE.UNSUPPORTED", e.to_string()))?;
-        let ots = Arc::new(instance.into_value());
+        let instance = powerio::to_ac_ots_instance(&tellegen::ir::deserialize_module(&module_json)?)
+            .map_err(|e| Failure::new("MODULE.UNSUPPORTED", e.to_string()))?
+            .map_value(Arc::new);
+        let ots = Arc::clone(instance.value());
         let result = solve_ots(Arc::clone(&ots), model, topology_limit)?;
         let mut report = serde_json::to_value(&result).map_err(|e| e.to_string())?;
         report["branch_ids"] = json!(ots.branch_order().collect::<Vec<_>>());
@@ -53,11 +57,11 @@ pub(super) fn solve_ots_module(
         report["restoration"] = serde_json::Value::Null;
         if let Some(plan) = &result.best {
             if let Some(solution) = &plan.ac_solution {
-                report["ac_solution_ir"] = json!(solution_ir(&module, solution)?);
+                report["ac_solution_ir"] = json!(solution_ir(instance, solution)?);
             } else if restore {
                 match restore_ac(ots, plan) {
                     Ok(r) => {
-                        report["ac_solution_ir"] = json!(solution_ir(&module, &r.solution)?);
+                        report["ac_solution_ir"] = json!(solution_ir(instance, &r.solution)?);
                         report["restoration"] = json!({"status":"ac_feasible","objective":r.solution.objective(),
                             "residuals":r.solution.residuals(),"dispatch":r.dispatch,
                             "redispatch_l1_mw":r.redispatch_l1_mw,"warm_start_error":r.warm_start_error,

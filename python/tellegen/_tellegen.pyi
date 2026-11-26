@@ -15,6 +15,7 @@ __all__ = [
     "TellegenError",
     "TellegenInputError",
     "TellegenSolveError",
+    "_PanicException",
     "__version__",
     "_classify",
     "capabilities_json",
@@ -44,6 +45,9 @@ POWERIO_IR_VERSION: str
 
 PANIC_CODE: str
 """The `.code` value carried by a TellegenError raised from a Rust panic."""
+
+_PanicException: type[BaseException]
+"""PyO3 panic type registered by this extension."""
 
 class TellegenError(ValueError):
     """Base engine error. Carries a `.code` naming the failure class."""

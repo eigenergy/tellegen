@@ -10,7 +10,7 @@ scipy, or the `powerio` wheel.
 import tellegen
 
 case = tellegen.load("case30.m")              # parsed in Rust
-solution = case.solve()                        # dcpf | dcopf | acpf | socwr
+solution = case.solve()                        # dcpf | dcopf | acpf | socwr | acopf
 solution = case.update(demand={2: 50.0})       # absolute deltas, exact re-solve
 column = case.sensitivity({"Price": "Active"}, {"Demand": "Active"})
 ```
@@ -68,11 +68,16 @@ print(gap["integer"]["status"], gap["relaxed"]["status"])
 print(gap["gap_percent"], gap["gap_interval"])
 ```
 
-Each solve has its own time limit. For positive integer cost and two optimal
-terminations, `gap_percent` is 100 times the cost difference divided by the
-integer optimum. Otherwise it is `None`. The absolute gap interval uses both
-solvers' primal and dual bounds. A missing endpoint means SCIP did not return
-the required bound. This gap quantifies fractional switching within LACOTS.
+Each solve has its own time limit. Tellegen evaluates the cost of the returned
+dispatch and line statuses in the original cost units. The absolute gap interval
+uses those costs and SCIP's dual bounds, with an allowance for numerical error
+reported as `objective_tolerance` for each solve. A missing endpoint means SCIP
+did not return the required bound. After two optimal terminations, `gap_percent`
+is 100 times the cost difference divided by the integer optimum. It is `None`
+when either solve stops early or the integer cost falls within the combined
+numerical uncertainty of zero, including any remaining primal-dual gaps. It
+is also `None` for negative integer costs. This gap quantifies fractional
+switching within LACOTS.
 AC feasibility can be checked separately by redispatching the selected topology.
 
 The perspective model accepts one connected network with initially closed

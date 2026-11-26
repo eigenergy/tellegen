@@ -56,8 +56,8 @@ forward or adjoint columns.
 
 The default engine is Rust and compiles to WebAssembly, so the same code runs
 natively and in the browser. The convex solves use Clarabel; the sensitivities
-use faer. The exact AC OPF backend runs in opt-in native builds and in the
-separately built experimental WASI worker. The ordinary browser solver module
+use faer. The Python wheel enables exact AC OPF. Native Rust callers enable the
+`acopf` feature, and the browser loads the separate experimental WASI worker. The ordinary browser solver module
 uses `wasm32-unknown-unknown`; the AC OPF module uses `wasm32-wasip1`.
 
 ## The two API faces

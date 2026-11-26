@@ -58,7 +58,7 @@ serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
 # Both halves of the opt-in AC OPF backend use the same published release.
 # Tellegen explicitly installs restoration and second-opinion recovery.
-# No shipping adapter enables these dependencies.
+# The Python wheel and the separate AC OPF WASI build enable this backend.
 pounce-nl = "=0.16.0"
 pounce-rs = "=0.16.0"
 
