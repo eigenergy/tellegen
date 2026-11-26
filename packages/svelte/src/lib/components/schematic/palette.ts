@@ -1,3 +1,4 @@
+import type { BasemapTheme } from '../../basemap.js';
 import type { RGBA } from '../../colors.js';
 import type { VoltageClass, ZoneState } from '../../diagram/index.js';
 
@@ -30,11 +31,42 @@ export const CORRIDOR_PX = 9;
 /** Line colour per voltage class in the topology view: shades of one blue, darker for higher
  * levels, and LV in the quiet grey that carries most of a distribution drawing. Clear of the
  * warning and violation colours and of the accent used for selection and flow. */
-export const LEVEL_COLOURS: Record<VoltageClass, RGBA> = {
+const LEVEL_COLOURS: Record<VoltageClass, RGBA> = {
 	hv: [38, 44, 112, 240],
 	sub: [30, 76, 140, 240],
 	mv: [58, 118, 178, 235],
 	lv: [138, 131, 117, 210]
+};
+
+export interface SchematicPalette {
+	levels: Record<VoltageClass, RGBA>;
+	ink: RGBA;
+	symbol: RGBA;
+	paper: RGBA;
+	muted: RGBA;
+}
+
+export const SCHEMATIC_PALETTES: Record<BasemapTheme, SchematicPalette> = {
+	light: {
+		levels: LEVEL_COLOURS,
+		ink: INK,
+		symbol: SYMBOL_INK,
+		paper: PAPER,
+		muted: [77, 81, 86, 255]
+	},
+	dark: {
+		// LV lines fade at overview zoom. Keep enough opacity for thin laterals against dark land.
+		levels: {
+			hv: [188, 184, 255, 255],
+			sub: [138, 185, 255, 255],
+			mv: [105, 175, 227, 255],
+			lv: [225, 214, 197, 255]
+		},
+		ink: [230, 234, 240, 255],
+		symbol: [203, 212, 223, 255],
+		paper: [17, 22, 29, 255],
+		muted: [178, 188, 200, 255]
+	}
 };
 
 /** Hover emphasis for a network and its feeder, beneath the lines, whatever the network's state. */

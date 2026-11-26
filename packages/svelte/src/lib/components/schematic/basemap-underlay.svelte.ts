@@ -3,7 +3,8 @@ import {
 	applyBasemapTuning,
 	attachBasemapFallback,
 	type BasemapProvider,
-	type BasemapSpec
+	type BasemapSpec,
+	type BasemapTheme
 } from '../../basemap.js';
 import { basemapCamera, ease, type DiagramCamera } from '../../diagram/index.js';
 
@@ -14,6 +15,7 @@ export interface UnderlayInputs {
 	wanted: boolean;
 	container: HTMLDivElement | undefined;
 	spec: BasemapSpec;
+	theme: BasemapTheme;
 	/** The Web Mercator point the drawing's positions are relative to. */
 	origin: [number, number] | null;
 	camera: DiagramCamera;
@@ -30,8 +32,6 @@ export class BasemapUnderlay {
 	/** Who serves the tiles on screen, for the credit line. */
 	provider = $state<BasemapProvider>('custom');
 	#map: import('maplibre-gl').Map | null = null;
-	#loading = false;
-	#destroyed = false;
 	#frame = 0;
 
 	constructor(inputs: () => UnderlayInputs) {
@@ -42,10 +42,17 @@ export class BasemapUnderlay {
 			const target = wanted ? 1 : 0;
 			untrack(() => this.#fade(target));
 		});
+		// Keep tiles mounted while the diagram fades out. Only a style or container change
+		// replaces the map; camera changes are handled by jumpTo below.
+		let activated = $state(false);
+		const container = $derived(inputs().container);
+		const spec = $derived(inputs().spec);
+		const theme = $derived(inputs().theme);
 		$effect(() => {
-			const { wanted, container } = inputs();
-			if (!wanted || !container || this.#map || this.#loading) return;
-			untrack(() => this.#create(container, inputs));
+			if (wanted) activated = true;
+		});
+		$effect(() => {
+			if (activated && container) return this.#create(container, spec, theme, inputs);
 		});
 		const follow = () => {
 			const { wanted, origin, camera } = inputs();
@@ -62,10 +69,7 @@ export class BasemapUnderlay {
 			follow();
 		});
 		$effect(() => () => {
-			this.#destroyed = true;
 			cancelAnimationFrame(this.#frame);
-			this.#map?.remove();
-			this.#map = null;
 		});
 	}
 
@@ -86,9 +90,14 @@ export class BasemapUnderlay {
 		this.#frame = requestAnimationFrame(step);
 	}
 
-	#create(container: HTMLDivElement, inputs: () => UnderlayInputs) {
-		this.#loading = true;
-		const { spec } = inputs();
+	#create(
+		container: HTMLDivElement,
+		spec: BasemapSpec,
+		theme: BasemapTheme,
+		inputs: () => UnderlayInputs
+	) {
+		let cancelled = false;
+		let detachFallback: (() => void) | undefined;
 		this.provider = spec.primaryProvider ?? 'custom';
 		Promise.all([
 			import('maplibre-gl'),
@@ -97,7 +106,7 @@ export class BasemapUnderlay {
 		])
 			.then(([maplibre, workerUrl]) => {
 				// Torn down while the imports loaded: no map, so no WebGL context left behind.
-				if (this.#destroyed) return;
+				if (cancelled) return;
 				maplibre.setWorkerUrl(workerUrl);
 				const { origin, camera } = inputs();
 				const m = new maplibre.Map({
@@ -109,14 +118,20 @@ export class BasemapUnderlay {
 				});
 				// The same style handling as the map: labels hidden when asked, OpenFreeMap tuned, and
 				// the fallback style when the primary cannot be shown.
-				m.on('style.load', () => applyBasemapTuning(m, spec, 'light'));
-				attachBasemapFallback(m, spec, {
+				m.on('style.load', () => applyBasemapTuning(m, spec, theme));
+				detachFallback = attachBasemapFallback(m, spec, {
 					onFallback: (reason) => (this.provider = reason.to ?? 'custom')
 				});
 				this.#map = m;
 			})
 			.catch(() => {
-				this.#loading = false;
+				// The diagram remains usable without a basemap.
 			});
+		return () => {
+			cancelled = true;
+			detachFallback?.();
+			this.#map?.remove();
+			this.#map = null;
+		};
 	}
 }

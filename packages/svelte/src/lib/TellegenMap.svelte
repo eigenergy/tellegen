@@ -1796,6 +1796,7 @@
 				if (id !== schematicCase.selectedEdgeId) onmultiedgeclick?.(schematicCase.id, id);
 			}}
 			onclose={() => (schematicCase.schematic = false)}
+			{theme}
 			basemap={diagramBasemap}
 		/>
 	{/key}
@@ -1813,6 +1814,7 @@
 			onclear={onmapclick}
 			onclose={() => (txCase.schematic = false)}
 			ongeoview={(view) => (txCase.lastGeoView = view)}
+			{theme}
 			basemap={diagramBasemap}
 		/>
 	{/key}
@@ -1848,6 +1850,7 @@
 			onselectbus={selectDiagramBus}
 			onselectbranch={selectDiagramBranch}
 			onclear={onmapclick}
+			{theme}
 			basemap={diagramBasemap}
 		/>
 	{/key}

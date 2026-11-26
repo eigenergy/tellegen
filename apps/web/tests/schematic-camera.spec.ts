@@ -1,15 +1,28 @@
 import { readFile } from 'node:fs/promises';
+import { openSettings } from './fixtures/chrome.js';
+import { paintedFraction } from './fixtures/painted-fraction.js';
 import { expect, test } from './fixtures/page-errors.js';
 
-test('a geographic feeder opens at a useful size after zooming the map out', async ({
-	page
-}, info) => {
+test.beforeEach(async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' });
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
-	const style = { version: 8, sources: {}, layers: [] };
 	await page.route(/^https:\/\/(basemaps\.cartocdn\.com|tiles\.openfreemap\.org)\//, (route) =>
-		route.fulfill({ json: style })
+		route.fulfill({
+			json: {
+				version: 8,
+				sources: {},
+				layers: [
+					{
+						id: 'land',
+						type: 'background',
+						paint: {
+							'background-color': route.request().url().includes('dark') ? '#263346' : '#ced6e2'
+						}
+					}
+				]
+			}
+		})
 	);
 	await page.goto('/');
 	await expect(page.getByText('No cases', { exact: true })).toBeVisible();
@@ -35,6 +48,11 @@ test('a geographic feeder opens at a useful size after zooming the map out', asy
 			)
 		}
 	]);
+});
+
+test('a geographic feeder opens at a useful size after zooming the map out', async ({
+	page
+}, info) => {
 	const open = page.getByRole('button', { name: 'Show diagram' });
 	await expect(open).toBeEnabled({ timeout: 60_000 });
 	// Reduced motion makes each camera step immediate, so the carried map view is deliberately
@@ -59,4 +77,25 @@ test('a geographic feeder opens at a useful size after zooming the map out', asy
 	const panel = await page.locator('#control-panel-body').boundingBox();
 	if (panel) expect(Math.min(...xs)).toBeGreaterThan(panel.x + panel.width);
 	await page.screenshot({ path: info.outputPath('schematic-opening.png') });
+});
+
+test('a geographic diagram follows light and dark themes in place', async ({ page }) => {
+	await page.getByRole('button', { name: 'Show diagram' }).click();
+	const diagram = page.getByRole('application', { name: 'Schematic diagram' });
+	await expect(diagram).toBeVisible();
+	await expect.poll(() => paintedFraction(page, [206, 214, 226])).toBeGreaterThan(0.15);
+	await openSettings(page);
+	const theme = page.getByRole('combobox', { name: 'Theme', exact: true });
+	const swatch = page
+		.getByRole('list', { name: 'Voltage levels', includeHidden: true })
+		.locator('path')
+		.first();
+	const lightStroke = await swatch.evaluate((path) => getComputedStyle(path).stroke);
+	await theme.selectOption('dark');
+	await expect.poll(() => paintedFraction(page, [38, 51, 70])).toBeGreaterThan(0.15);
+	await expect(swatch).not.toHaveCSS('stroke', lightStroke);
+	await theme.selectOption('light');
+	await expect.poll(() => paintedFraction(page, [206, 214, 226])).toBeGreaterThan(0.15);
+	await expect(swatch).toHaveCSS('stroke', lightStroke);
+	await expect(diagram).toBeVisible();
 });

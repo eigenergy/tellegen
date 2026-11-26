@@ -1,6 +1,6 @@
 import type { RGBA } from '../../colors.js';
 import type { Landmark, SchematicGeometry } from '../../diagram/index.js';
-import { DANGER, DEAD, HIDDEN, INK, SYMBOL_INK, WARNING, lineWidths } from './palette.js';
+import { DANGER, DEAD, HIDDEN, WARNING, lineWidths } from './palette.js';
 
 /** Per-segment widths: MV heavier than LV. */
 export function segmentWidths(
@@ -77,7 +77,8 @@ export function segmentColours(
 export function strokeColours(
 	owner: Int32Array,
 	fannedEdges: Set<number>,
-	live: { edges: ArrayLike<boolean | number>; buses: ArrayLike<boolean | number> }
+	live: { edges: ArrayLike<boolean | number>; buses: ArrayLike<boolean | number> },
+	symbolInk: RGBA
 ): Uint8Array {
 	const out = new Uint8Array(owner.length * 4);
 	for (let s = 0; s < owner.length; s++) {
@@ -87,20 +88,23 @@ export function strokeColours(
 			continue;
 		}
 		const on = o >= 0 ? live.edges[o] : live.buses[-o - 1];
-		out.set(on ? SYMBOL_INK : DEAD, s * 4);
+		out.set(on ? symbolInk : DEAD, s * 4);
 	}
 	return out;
 }
 
 /** Landmark strokes in ink; a transformer whose network has a problem takes that state's colour. */
-export function landmarkColours(m: {
-	placed: Landmark[];
-	strokes: { owner: Int32Array };
-}): Uint8Array {
+export function landmarkColours(
+	m: {
+		placed: Landmark[];
+		strokes: { owner: Int32Array };
+	},
+	ink: RGBA
+): Uint8Array {
 	const out = new Uint8Array(m.strokes.owner.length * 4);
 	for (let s = 0; s < m.strokes.owner.length; s++) {
 		const l = m.placed[m.strokes.owner[s]];
-		out.set(l.state === 'violation' ? DANGER : l.state === 'warning' ? WARNING : INK, s * 4);
+		out.set(l.state === 'violation' ? DANGER : l.state === 'warning' ? WARNING : ink, s * 4);
 	}
 	return out;
 }

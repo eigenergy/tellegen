@@ -14,7 +14,7 @@
 	import { mcSchematicLayout, type SchematicStrategy } from '@tellegen/engine';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import type { RGBA } from '../colors.js';
-	import { priceGradient, sensGradient } from '../colors.js';
+	import { priceGradient, priceGradientDark, sensGradient } from '../colors.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { getAppState } from '../context.svelte.js';
 	import {
@@ -99,12 +99,12 @@
 		type SchematicScene
 	} from './schematic/layers.js';
 	import type { FanState } from './schematic/paint.js';
-	import { DEAD, HALO, INK, LEVEL_COLOURS } from './schematic/palette.js';
+	import { DEAD, HALO, SCHEMATIC_PALETTES } from './schematic/palette.js';
 	import PickCard from './schematic/PickCard.svelte';
 	import { SchematicText, tooltip } from './schematic/text.js';
 	import { quantity } from '../format.js';
 	import { HoverPin, StoredFlag } from './schematic/view-prefs.svelte.js';
-	import { basemapCredit, type BasemapSpec } from '../basemap.js';
+	import { basemapCredit, type BasemapSpec, type BasemapTheme } from '../basemap.js';
 	import { BasemapUnderlay } from './schematic/basemap-underlay.svelte.js';
 
 	/** Without a basemap from the map: the keyless CARTO style it used to default to. */
@@ -121,6 +121,7 @@
 		onselectbus,
 		onselectedge,
 		onclose,
+		theme = 'light',
 		basemap: basemapSpec = DEFAULT_BASEMAP
 	}: {
 		mc: MulticonductorCase;
@@ -129,6 +130,7 @@
 		onclose: () => void;
 		/** The background map under geographic positions: the map's own basemap, in its theme. */
 		basemap?: BasemapSpec;
+		theme?: BasemapTheme;
 	} = $props();
 
 	type Layout = 'schematic' | 'source';
@@ -222,6 +224,7 @@
 		wanted: basemapWanted,
 		container: mapBox,
 		spec: basemapSpec,
+		theme,
 		origin: source?.mercatorOrigin ?? null,
 		camera,
 		size: [width, height]
@@ -575,13 +578,14 @@
 		};
 	});
 	/** Per-edge and per-bus colours for the active mode; results never recolour inactive branches. */
+	const palette = $derived(SCHEMATIC_PALETTES[theme]);
 	const edgeColours = $derived(
 		graph.edges.map((e, k): RGBA => {
 			if (!live.edges[k]) return DEAD;
-			if (!e.closed || colour === 'none' || !snapshot) return LEVEL_COLOURS[edgeClass[k]];
+			if (!e.closed || colour === 'none' || !snapshot) return palette.levels[edgeClass[k]];
 			if (colour === 'loading-heat') {
 				const loading = snapshot.branches[k].loading;
-				return loading === null ? MISSING_COLOUR : loadingColour(loading);
+				return loading === null ? MISSING_COLOUR : loadingColour(loading, theme);
 			}
 			const { from, to } = inputs.names.branches[k];
 			if (from < 0 || to < 0) return MISSING_COLOUR;
@@ -592,7 +596,7 @@
 	const busColours = $derived(
 		graph.buses.map((_, i): RGBA => {
 			if (!live.buses[i]) return DEAD;
-			if (colour !== 'voltage-band' || !snapshot) return INK;
+			if (colour !== 'voltage-band' || !snapshot) return palette.ink;
 			const t = worstBand(snapshot.buses[i].pairs);
 			return t === null ? MISSING_COLOUR : bandColour(t);
 		})
@@ -656,6 +660,7 @@
 			graph,
 			layout,
 			colour,
+			palette,
 			shown: shown ?? EMPTY_GEOMETRY,
 			geometry,
 			drawn,
@@ -702,7 +707,9 @@
 
 	function layers(): Layer[] {
 		if (!modules) return [];
-		return morph ? morphLayers(modules, morph, graph.buses.length) : sceneLayers(modules, scene());
+		return morph
+			? morphLayers(modules, morph, graph.buses.length, palette)
+			: sceneLayers(modules, scene());
 	}
 
 	/** The stack a pick belongs to: a stacked bus, a stack's ring, or the symbol of a branch
@@ -1261,7 +1268,7 @@
 	}
 	async function exportPng() {
 		if (!deck || !canvas) return;
-		const blob = await canvasPng(deck, canvas, exportTitle());
+		const blob = await canvasPng(deck, canvas, exportTitle(), undefined, palette);
 		if (blob) download(blob, `${fileStem(mc.label)}.png`);
 	}
 	/** The schematic as a PowerIO diagram layer: load it with the case to reuse the layout. */
@@ -1378,7 +1385,9 @@
 	{#if colour !== 'none' && snapshot}
 		<div class="legend" style:top="{panels.top + 50}px" style:left="{toolLeft}px">
 			{#if colour === 'loading-heat'}
-				Loading <span>0%</span><i style:background={priceGradient}></i><span>≥ 100%</span>
+				Loading <span>0%</span><i
+					style:background={theme === 'dark' ? priceGradientDark : priceGradient}
+				></i><span>≥ 100%</span>
 			{:else}
 				Voltage <span>min</span><i style:background={sensGradient}></i><span>max</span>
 			{/if}
@@ -1403,7 +1412,7 @@
 							<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
 								><path
 									class="level"
-									style:stroke="rgb({LEVEL_COLOURS[level.cls].slice(0, 3).join(' ')})"
+									style:stroke="rgb({palette.levels[level.cls].slice(0, 3).join(' ')})"
 									d="M-2 0H26"
 								/></svg
 							>{level.label}
@@ -1449,7 +1458,7 @@
 							<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
 								><path
 									class="level"
-									style:stroke="rgb({LEVEL_COLOURS[level.cls].slice(0, 3).join(' ')})"
+									style:stroke="rgb({palette.levels[level.cls].slice(0, 3).join(' ')})"
 									d="M-2 0H26"
 								/></svg
 							>{level.label}
