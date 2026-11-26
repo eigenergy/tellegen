@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the tellegen crate's newest changelog section from merged pull requests.
+"""Write the tellegen crate and wheel's newest changelog section from merged pull requests.
 
 release-plz writes a changelog section for a new version from commit
 subjects. This repository merges pull requests with merge commits, so what
@@ -7,7 +7,7 @@ release-plz sees of a pull request is "Merge pull request #N from ...", and
 it walks the history along one parent at a time, which can miss a pull
 request entirely. A merge commit's message is the pull request's title, so
 the title is already in git. This script replaces the body of the newest
-section with one entry per pull request that changed the crate, read from
+section with one entry per pull request that changed the crate or wheel, read from
 the first-parent history since the previous release. It needs no network
 access, and nobody edits the result by hand.
 
@@ -133,7 +133,7 @@ def touches_crate(rev: str, dependencies: set[str], cwd: Path) -> bool:
             if any(key != "version" for key in keys):
                 return True
             continue
-        if path.startswith(CRATE_DIR):
+        if path.startswith((CRATE_DIR, "crates/tellegen-py/", "python/tellegen/")) or path == "pyproject.toml":
             return True
         if path == ROOT_MANIFEST:
             keys = changed_keys(git("diff", "-U0", parent, rev, "--", path, cwd=cwd))
@@ -155,7 +155,14 @@ def entry_for(rev: str, cwd: Path) -> Entry | None:
             return None
         number = int(merge.group(1))
         lines = [line.strip() for line in body.splitlines() if line.strip()]
-        title = lines[0] if lines else branch
+        if lines:
+            title = lines[0]
+        else:
+            # GitHub can omit the PR title from its merge message. A one-commit
+            # PR still has an unambiguous subject in its second-parent history.
+            subjects = git("log", "-2", "--no-merges", "--format=%s",
+                           f"{rev}^1..{rev}^2", cwd=cwd).splitlines()
+            title = subjects[0] if len(subjects) == 1 else branch
     if not title:
         return None
 

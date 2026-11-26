@@ -169,6 +169,19 @@ Header prose.
 """,
         )
 
+    def test_wheel_only_pr_with_an_empty_merge_body_uses_its_commit_subject(self) -> None:
+        r = self.repo
+        initial(r)
+        r.git("tag", "v0.1.0")
+        r.git("checkout", "-qb", "fix/python-start")
+        r.write("python/tellegen/__init__.py", "# Python entry point\n")
+        r.commit("fix(python): forward the start option")
+        r.git("checkout", "-q", "main")
+        r.git("merge", "-q", "--no-ff", "-m",
+              "Merge pull request #18 from example/fix/python-start", "fix/python-start")
+        text = self.run_writer("--version", "0.1.1")
+        self.assertIn("### Fixed\n\n- Forward the start option ([#18]", text)
+
     def test_inserts_a_section_when_release_plz_wrote_none(self) -> None:
         self.build_history()
         self.repo.write(
