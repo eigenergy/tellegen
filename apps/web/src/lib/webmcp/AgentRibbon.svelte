@@ -86,9 +86,9 @@
 			<span class="who">Agent</span>
 			<span class="what">{current.title}</span>
 			<span class="time" aria-hidden="true">{elapsed}</span>
-			<span class="summary" data-testid="agent-ribbon-summary"
-				>{status === 'running' ? 'Working' : summary}</span
-			>
+			<span class="summary" data-testid="agent-ribbon-summary">
+				{status === 'running' ? 'Working' : summary}
+			</span>
 		</button>
 	</div>
 {/if}

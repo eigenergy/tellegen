@@ -3,9 +3,9 @@
 	import { resolve } from '$app/paths';
 </script>
 
-<svelte:head
-	><title>{page.status === 404 ? 'Page not found' : 'Error'} - tellegen</title></svelte:head
->
+<svelte:head>
+	<title>{page.status === 404 ? 'Page not found' : 'Error'} - tellegen</title>
+</svelte:head>
 
 <div class="error-page">
 	<!-- The app's own top bar, so the page reads as part of tellegen. -->

@@ -17,8 +17,9 @@
 		Calculate terminal voltages and currents, compare voltages to ground or neutral, and save or
 		export the result. Open the four-wire example from the list in Studies. This extends <a
 			href="https://github.com/eigenergy/tellegen/pull/109"
-			>Frederik Geth's multiconductor power-flow work</a
-		>.
+		>
+			Frederik Geth's multiconductor power-flow work
+		</a>.
 	</p>
 	<h2>Quieter messages</h2>
 	<p>
@@ -29,8 +30,10 @@
 	<p>
 		Anonymous counts and timings help improve case loading, calculations, Studies and agent tools.
 		Uploaded data, study text and equipment values stay out of analytics. Disable measurements in <a
-			href={resolve('/privacy')}>Privacy</a
-		>.
+			href={resolve('/privacy')}
+		>
+			Privacy
+		</a>.
 	</p>
 	<h2>Save a case, add a goal later</h2>
 	<p>
@@ -70,11 +73,11 @@
 		request. Activity shows which tools were called.
 	</p>
 	<div class="links">
-		<a href="https://eigenergy.github.io/tellegen/" target="_blank" rel="noreferrer"
-			>Documentation</a
-		><a href="https://github.com/eigenergy/tellegen/releases" target="_blank" rel="noreferrer"
-			>Package release notes</a
-		>
+		<a href="https://eigenergy.github.io/tellegen/" target="_blank" rel="noreferrer">
+			Documentation
+		</a><a href="https://github.com/eigenergy/tellegen/releases" target="_blank" rel="noreferrer">
+			Package release notes
+		</a>
 	</div>
 </main>
 

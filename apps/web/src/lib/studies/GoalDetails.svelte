@@ -87,33 +87,36 @@
 		<p>{objectiveLabel(goal.objective)}</p>
 		<table>
 			<thead><tr><th>Quantity</th><th>Element</th><th>Weight</th></tr></thead><tbody>
-				{#each terms.slice(currentPage * pageSize, (currentPage + 1) * pageSize) as term (term.id)}<tr
-						><td>{term.quantity}</td><td>{term.element}</td><td>{number(term.weight)}</td></tr
-					>{/each}
+				{#each terms.slice(currentPage * pageSize, (currentPage + 1) * pageSize) as term (term.id)}<tr>
+						<td>{term.quantity}</td><td>{term.element}</td><td>{number(term.weight)}</td>
+					</tr>{/each}
 			</tbody>
 		</table>
 		<p>Permitted changes</p>
 		<table>
-			<thead><tr><th>Element</th><th>Min</th><th>Max</th><th>Step</th><th>Unit</th></tr></thead
-			><tbody>
-				{#each goal.decisions.variables.slice(currentPage * pageSize, (currentPage + 1) * pageSize) as variable (variable.id)}<tr
-						><td
-							>{(variable.intervention === 'branch_rating' ? branchNames : busNames).get(
+			<thead>
+				<tr><th>Element</th><th>Min</th><th>Max</th><th>Step</th><th>Unit</th></tr>
+			</thead><tbody>
+				{#each goal.decisions.variables.slice(currentPage * pageSize, (currentPage + 1) * pageSize) as variable (variable.id)}<tr>
+						<td>
+							{(variable.intervention === 'branch_rating' ? branchNames : busNames).get(
 								String(variable.element)
-							) ?? variable.element}</td
-						><td>{number(variable.lower)}</td><td>{number(variable.upper)}</td><td
-							>{number(variable.increment)}</td
-						><td>{variable.intervention === 'branch_rating' ? ratingUnit : 'MW'}</td></tr
-					>{/each}
+							) ?? variable.element}
+						</td><td>{number(variable.lower)}</td><td>{number(variable.upper)}</td><td>
+							{number(variable.increment)}
+						</td><td>{variable.intervention === 'branch_rating' ? ratingUnit : 'MW'}</td>
+					</tr>{/each}
 			</tbody>
 		</table>
 		{#if pageCount > 1}<div class="pagination">
-				<button disabled={currentPage === 0} onclick={() => (page = currentPage - 1)}
-					>Previous</button
-				><span>Page {currentPage + 1} of {pageCount}</span><button
+				<button disabled={currentPage === 0} onclick={() => (page = currentPage - 1)}>
+					Previous
+				</button><span>Page {currentPage + 1} of {pageCount}</span><button
 					disabled={currentPage + 1 >= pageCount}
-					onclick={() => (page = currentPage + 1)}>Next</button
+					onclick={() => (page = currentPage + 1)}
 				>
+					Next
+				</button>
 			</div>{/if}
 	{/if}
 </details>

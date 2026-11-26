@@ -28,9 +28,9 @@
 		<h3>Distribution example and power flow</h3>
 		<p>
 			Frederik Geth at the University of Queensland contributed the multiconductor AC power-flow
-			solver and the 4-conductor example. The <a href="/examples/four-wire.LICENSE.md"
-				>example license</a
-			> includes its attribution and reuse terms.
+			solver and the 4-conductor example. The <a href="/examples/four-wire.LICENSE.md">
+				example license
+			</a> includes its attribution and reuse terms.
 		</p>
 		<h3>WECC 240 dynamics demo</h3>
 		<p>
@@ -38,15 +38,19 @@
 			<a
 				href="https://github.com/NREL-Sienna/PowerSimulationsDynamics.jl"
 				target="_blank"
-				rel="noreferrer">PowerSimulationsDynamics.jl</a
+				rel="noreferrer"
 			>
+				PowerSimulationsDynamics.jl
+			</a>
 			(<a href="/examples/wecc240/LICENSE-PowerSimulationsDynamics.jl">BSD-3-Clause</a>), with the
 			load values of the validation study from PowerSystemCaseBuilder.jl (<a
-				href="/examples/wecc240/LICENSE-PowerSystemCaseBuilder.jl">BSD-3-Clause</a
-			>) and bus coordinates from
-			<a href="https://github.com/eudoxys/wecc240" target="_blank" rel="noreferrer"
-				>eudoxys/wecc240</a
+				href="/examples/wecc240/LICENSE-PowerSystemCaseBuilder.jl"
 			>
+				BSD-3-Clause
+			</a>) and bus coordinates from
+			<a href="https://github.com/eudoxys/wecc240" target="_blank" rel="noreferrer">
+				eudoxys/wecc240
+			</a>
 			(<a href="/examples/wecc240/LICENSE-wecc240-coordinates">MIT</a>). The
 			<a href="/examples/wecc240/SOURCES.md">sources</a> list the exact files. The model is cited as:
 		</p>
@@ -58,9 +62,9 @@
 		<h3>ACTIVSg synthetic grids</h3>
 		<p>
 			The ACTIVSg cases are synthetic grids from the
-			<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer"
-				>Texas A&amp;M Electric Grid Test Case Repository</a
-			>. The case file headers request this citation:
+			<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer">
+				Texas A&amp;M Electric Grid Test Case Repository
+			</a>. The case file headers request this citation:
 		</p>
 		<p class="citation">
 			A. B. Birchfield, T. Xu, K. M. Gegner, K. S. Shetye, and T. J. Overbye, "Grid Structural
@@ -84,8 +88,10 @@
 				<a
 					href="https://github.com/WISPO-POP/CATS-CaliforniaTestSystem"
 					target="_blank"
-					rel="noreferrer">CATS repository</a
+					rel="noreferrer"
 				>
+					CATS repository
+				</a>
 			</li>
 			<li>CATS is distributed under the BSD 3 Clause license in its repository.</li>
 		</ul>
@@ -94,13 +100,13 @@
 		<p>
 			The <code>texas7k-p1uhs0_1247</code> example, when a deployment stages it, is derived from the
 			SMART-DS synthetic distribution substation that the
-			<a href="https://electricgrids.engr.tamu.edu/texas7k-td/" target="_blank" rel="noreferrer"
-				>Texas7k combined transmission and distribution dataset page</a
-			>
+			<a href="https://electricgrids.engr.tamu.edu/texas7k-td/" target="_blank" rel="noreferrer">
+				Texas7k combined transmission and distribution dataset page
+			</a>
 			identifies. It is published under the
-			<a href="https://creativecommons.org/licenses/by/3.0/us/" target="_blank" rel="noreferrer"
-				>Creative Commons Attribution 3.0 United States</a
-			>
+			<a href="https://creativecommons.org/licenses/by/3.0/us/" target="_blank" rel="noreferrer">
+				Creative Commons Attribution 3.0 United States
+			</a>
 			license. The source page requests this citation:
 		</p>
 		<p class="citation">
@@ -112,12 +118,12 @@
 		<p>
 			The demo uses a modified version. Frederik Geth converted it to a fixed nominal-load
 			power-flow snapshot in
-			<a href="https://github.com/frederikgeth/BMOPFDraftData" target="_blank" rel="noreferrer"
-				>BMOPFDraftData</a
-			>, with regulator taps frozen and disabled switches excluded. The hosted bundle keeps only the
-			main energized island, removing two unsupplied line sections, and shares identical line-code
-			records. No electrical value is rounded, and no endorsement by the original authors is
-			implied.
+			<a href="https://github.com/frederikgeth/BMOPFDraftData" target="_blank" rel="noreferrer">
+				BMOPFDraftData
+			</a>, with regulator taps frozen and disabled switches excluded. The hosted bundle keeps only
+			the main energized island, removing two unsupplied line sections, and shares identical
+			line-code records. No electrical value is rounded, and no endorsement by the original authors
+			is implied.
 		</p>
 	</section>
 
@@ -129,8 +135,9 @@
 				parses case files in Rust and WebAssembly.
 			</li>
 			<li>
-				<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer">tellegen</a
-				>
+				<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer">
+					tellegen
+				</a>
 				provides the solver, sensitivity, and visualization framework.
 			</li>
 			<li>
@@ -145,9 +152,9 @@
 				{#if PUBLIC_CARTO_BASEMAP_KEY}
 					The basemap is
 					<a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>'s, with data from
-					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer"
-						>OpenStreetMap contributors</a
-					>. When that style cannot be loaded the map falls back to
+					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+						OpenStreetMap contributors
+					</a>. When that style cannot be loaded the map falls back to
 					<a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>, which
 					uses the
 					<a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a>
@@ -157,9 +164,9 @@
 					<a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>, using
 					the <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a>
 					schema and data from
-					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer"
-						>OpenStreetMap contributors</a
-					>. When that style cannot be loaded the map falls back to
+					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+						OpenStreetMap contributors
+					</a>. When that style cannot be loaded the map falls back to
 					<a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>.
 				{/if}
 				The app adjusts OpenFreeMap's styles: roads start at zoom 8, and in the dark theme water and land
@@ -181,24 +188,26 @@
 				<a
 					href="https://ember-energy.org/data/yearly-electricity-data/"
 					target="_blank"
-					rel="noreferrer">Yearly Electricity Data</a
-				>, through Our World in Data's
-				<a href="https://github.com/owid/energy-data" target="_blank" rel="noreferrer"
-					>energy dataset</a
-				>, under
-				<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer"
-					>CC BY 4.0</a
-				>. The table keeps each country's latest year. Its population column is Our World in Data's
-				series, compiled from the
-				<a href="https://ourworldindata.org/population-sources" target="_blank" rel="noreferrer"
-					>sources it lists</a
-				>.
+					rel="noreferrer"
+				>
+					Yearly Electricity Data
+				</a>, through Our World in Data's
+				<a href="https://github.com/owid/energy-data" target="_blank" rel="noreferrer">
+					energy dataset
+				</a>, under
+				<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+					CC BY 4.0
+				</a>. The table keeps each country's latest year. Its population column is Our World in
+				Data's series, compiled from the
+				<a href="https://ourworldindata.org/population-sources" target="_blank" rel="noreferrer">
+					sources it lists
+				</a>.
 			</li>
 			<li>
 				Populated places and country areas from
-				<a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer"
-					>Natural Earth</a
-				>, in the public domain.
+				<a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">
+					Natural Earth
+				</a>, in the public domain.
 			</li>
 			<li>
 				National transmission voltage levels, compiled from the operator, regulator and standards

@@ -420,8 +420,8 @@
 	<div class="study-workspace">
 		{#if workspace.storageError}<p role="status">{workspace.storageError}</p>{/if}
 		<div class="storage">
-			<label
-				><span class="sr-only">Saved study</span><select
+			<label>
+				<span class="sr-only">Saved study</span><select
 					value={multi
 						? multi.mcSavedAt && mcDoc
 							? `mc:${mcDoc.id}`
@@ -448,14 +448,15 @@
 					}}
 				>
 					<option value="">Open a saved study</option>
-					{#each workspace.saved as saved (saved.id)}<option value={saved.id}>{saved.title}</option
-						>{/each}
-					{#each workspace.mcSaved as saved (saved.id)}<option value={`mc:${saved.id}`}
-							>{saved.title}, distribution</option
-						>{/each}
+					{#each workspace.saved as saved (saved.id)}<option value={saved.id}>
+							{saved.title}
+						</option>{/each}
+					{#each workspace.mcSaved as saved (saved.id)}<option value={`mc:${saved.id}`}>
+							{saved.title}, distribution
+						</option>{/each}
 					<option value={EXAMPLE}>Example: four-wire feeder</option>
-				</select></label
-			>
+				</select>
+			</label>
 			{#if (multi?.mcSavedAt && mcDoc) || (doc && !creating && !multi)}
 				<button
 					disabled={workspace.busy}
@@ -464,23 +465,27 @@
 						if (!saved) return;
 						const name = window.prompt('Study name', saved.title);
 						if (name !== null) void attempt(() => workspace.renameSaved(saved.id, name, !!multi));
-					}}>Rename</button
+					}}
 				>
+					Rename
+				</button>
 				<button
 					disabled={workspace.busy}
 					onclick={() => {
 						const saved = multi ? mcDoc : doc;
 						if (saved && window.confirm(`Delete saved study “${saved.title}”?`))
 							void attempt(() => workspace.deleteSaved(saved.id, !!multi));
-					}}>Delete</button
+					}}
 				>
+					Delete
+				</button>
 			{/if}
 
-			{#if doc && !creating && !multi}<button disabled={workspace.busy} onclick={newStudy}
-					>New study</button
-				>{/if}
-			<label class="file-button"
-				>Import<input
+			{#if doc && !creating && !multi}<button disabled={workspace.busy} onclick={newStudy}>
+					New study
+				</button>{/if}
+			<label class="file-button">
+				Import<input
 					type="file"
 					accept=".json,application/json"
 					disabled={workspace.busy}
@@ -501,8 +506,8 @@
 							});
 						event.currentTarget.value = '';
 					}}
-				/></label
-			>
+				/>
+			</label>
 			{#if multi ? multi.result : doc}<button
 					disabled={workspace.busy || !!multi?.solving}
 					onclick={() => {
@@ -513,8 +518,10 @@
 						} else {
 							download(workspace.export(), 'tellegen-study.json');
 						}
-					}}>Export</button
-				>{/if}
+					}}
+				>
+					Export
+				</button>{/if}
 		</div>
 		{#if doc && !creating && !multi}<nav aria-label="Study sections">
 				{#each ['case', 'history', 'plan'] as section (section)}<button
@@ -523,8 +530,10 @@
 						onclick={() => {
 							tab = section as typeof tab;
 							void resetScroll();
-						}}>{{ case: 'Case', history: 'History', plan: 'Plan' }[section]}</button
-					>{/each}
+						}}
+					>
+						{{ case: 'Case', history: 'History', plan: 'Plan' }[section]}
+					</button>{/each}
 			</nav>{/if}
 		<section class="workspace-content" aria-label="Study workspace" bind:this={content}>
 			{#if formError}<p class="error" role="alert">
@@ -547,11 +556,15 @@
 					{#snippet actions()}
 						<button
 							disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
-							onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
+							onclick={() => void attempt(() => workspace.saveMulti())}
 						>
-						{#if multi?.mcSnapshot && multi.mcSavedAt}<button onclick={() => void attempt(copyLink)}
-								>{linkCopied ? 'Link copied' : 'Copy view link'}</button
-							>{/if}
+							Save result
+						</button>
+						{#if multi?.mcSnapshot && multi.mcSavedAt}<button
+								onclick={() => void attempt(copyLink)}
+							>
+								{linkCopied ? 'Link copied' : 'Copy view link'}
+							</button>{/if}
 					{/snippet}
 				</McSolveControls>
 				{#if multi.result}<div bind:this={mcResultsStart}></div>{/if}
@@ -565,8 +578,10 @@
 					class="primary"
 					disabled={workspace.busy || !supportedSave}
 					title={ctrl.activeSolvable?.formulation === 'acopf' ? 'Not for AC OPF' : undefined}
-					onclick={() => void attempt(create)}>Save study</button
+					onclick={() => void attempt(create)}
 				>
+					Save study
+				</button>
 				{#if doc && creating}<button onclick={() => (creating = false)}>Cancel</button>{/if}
 			{:else if tab === 'case'}
 				<h3>{doc.title}</h3>
@@ -586,18 +601,21 @@
 				</dl>
 				<ModelDetails details={modelDetails} />
 				<div class="toolbar">
-					<button disabled={workspace.busy} onclick={() => void attempt(() => workspace.showView())}
-						>{network?.coordinate_space === 'diagram' ? 'Show diagram' : 'Show on map'}</button
+					<button
+						disabled={workspace.busy}
+						onclick={() => void attempt(() => workspace.showView())}
 					>
+						{network?.coordinate_space === 'diagram' ? 'Show diagram' : 'Show on map'}
+					</button>
 					<button onclick={() => workspace.closeView()}>Live case</button>
 				</div>
 				{#if ctrl.app.studyView}
 					{@const solved = ctrl.app.studyView.solution}
 					<!-- The same switch as the Network panel's map colours. -->
 					<div class="values-row">
-						<span id="study-map-values"
-							>{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}</span
-						>
+						<span id="study-map-values">
+							{network?.coordinate_space === 'diagram' ? 'Diagram values' : 'Map values'}
+						</span>
 						<div class="segment" role="group" aria-labelledby="study-map-values">
 							{#each [{ mode: 'price', label: 'Price', on: !!solved?.lmp?.length }, { mode: 'voltage', label: 'Voltage', on: !!solved?.vm?.length }, { mode: 'angle', label: 'Angle', on: !!solved?.va?.length }] as option (option.mode)}
 								<button
@@ -607,8 +625,9 @@
 									disabled={!option.on}
 									onclick={() =>
 										(ctrl.app.displayMode = option.mode as typeof ctrl.app.displayMode)}
-									>{option.label}</button
 								>
+									{option.label}
+								</button>
 							{/each}
 						</div>
 					</div>
@@ -621,35 +640,33 @@
 							class="primary"
 							disabled={workspace.busy}
 							onclick={() => void attempt(() => workspace.applyFromUser(latestProposal!))}
-							>Apply recommendation</button
 						>
+							Apply recommendation
+						</button>
 					</div>{/if}
 				<details class="demand-editor">
-					<summary
-						>Bus demand {#if changedDemand.length}<span>{changedDemand.length} changed</span
-							>{/if}</summary
-					>
+					<summary>
+						Bus demand {#if changedDemand.length}<span>{changedDemand.length} changed</span>{/if}
+					</summary>
 					<div class="toolbar">
-						<label
-							>Bus<input
-								bind:value={demandBus}
-								placeholder="ID or name"
-								list="study-bus-ids"
-							/></label
-						>
-						<datalist id="study-bus-ids"
-							>{#each network?.buses ?? [] as bus (bus.id)}<option value={String(bus.id)}
-									>{busLabel(bus)}</option
-								>{/each}</datalist
-						>
+						<label>
+							Bus<input bind:value={demandBus} placeholder="ID or name" list="study-bus-ids" />
+						</label>
+						<datalist id="study-bus-ids">
+							{#each network?.buses ?? [] as bus (bus.id)}<option value={String(bus.id)}>
+									{busLabel(bus)}
+								</option>{/each}
+						</datalist>
 						<label>Change (MW)<input type="number" bind:value={demandIncrement} /></label>
 					</div>
 					<button
 						disabled={workspace.busy || !doc.inspected_state || !demandBus.trim()}
-						onclick={() => void attempt(updateDemand)}>Update demand</button
+						onclick={() => void attempt(updateDemand)}
 					>
-					<label class="search"
-						>Find bus<input
+						Update demand
+					</button>
+					<label class="search">
+						Find bus<input
 							type="search"
 							value={demandSearch}
 							oninput={(event) => {
@@ -657,40 +674,46 @@
 								demandPage = 0;
 							}}
 							placeholder="Bus ID or name"
-						/></label
-					>
+						/>
+					</label>
 					<div class="table-scroll">
 						<table>
-							<thead><tr><th>Bus</th><th>Base</th><th>Current</th><th>Change</th></tr></thead><tbody
-							>
-								{#each demandRows.slice(demandPage * pageSize, (demandPage + 1) * pageSize) as row (row.bus)}<tr
-										><th title={row.name}>{row.bus}</th><td
-											>{number(doc.base_input ? row.baseMw : null)}</td
-										><td>{number(row.currentMw)}</td><td
-											>{number(doc.base_input ? row.deltaMw : null)}</td
-										></tr
-									>{/each}
+							<thead>
+								<tr><th>Bus</th><th>Base</th><th>Current</th><th>Change</th></tr>
+							</thead><tbody>
+								{#each demandRows.slice(demandPage * pageSize, (demandPage + 1) * pageSize) as row (row.bus)}<tr>
+										<th title={row.name}>{row.bus}</th><td>
+											{number(doc.base_input ? row.baseMw : null)}
+										</td><td>{number(row.currentMw)}</td><td>
+											{number(doc.base_input ? row.deltaMw : null)}
+										</td>
+									</tr>{/each}
 							</tbody>
 						</table>
 					</div>
 					{#if demandRows.length > pageSize}<div class="pagination">
-							<button disabled={demandPage === 0} onclick={() => demandPage--}>Previous</button
-							><span
-								>{demandPage * pageSize + 1}-{Math.min(
+							<button disabled={demandPage === 0} onclick={() => demandPage--}>
+								Previous
+							</button><span>
+								{demandPage * pageSize + 1}-{Math.min(
 									(demandPage + 1) * pageSize,
 									demandRows.length
-								)} of {demandRows.length}</span
-							><button
+								)} of {demandRows.length}
+							</span><button
 								disabled={(demandPage + 1) * pageSize >= demandRows.length}
-								onclick={() => demandPage++}>Next</button
+								onclick={() => demandPage++}
 							>
+								Next
+							</button>
 						</div>{/if}
 				</details>
 				<div class="toolbar">
 					<button
 						disabled={workspace.busy || !doc.base_input || !doc.inspected_state}
-						onclick={() => void attempt(() => workspace.resetFromUser())}>Reset to base case</button
+						onclick={() => void attempt(() => workspace.resetFromUser())}
 					>
+						Reset to base case
+					</button>
 				</div>
 				{#if !doc.base_input}<p class="hint">No base data</p>{/if}
 				{#if !goal}<button class="text-button" onclick={startGoal}>Add a planning goal</button>{/if}
@@ -700,61 +723,66 @@
 						<button class="primary" onclick={startGoal}>Set a goal</button>
 					{:else}
 						<h3>{goal ? 'New goal revision' : 'Planning goal'}</h3>
-						<label
-							>Objective<select
+						<label>
+							Objective<select
 								bind:value={form.objective}
 								onchange={() => {
 									busPage = 0;
 								}}
-								><option value="price" disabled={formulation === 'acpf'}>Lower price</option><option
+							>
+								<option value="price" disabled={formulation === 'acpf'}>Lower price</option><option
 									value="voltage"
-									disabled={formulation === 'dcopf'}>Voltage target</option
-								></select
-							></label
-						>
-						{#if form.objective === 'voltage'}<label
-								>Voltage target (pu)<input
+									disabled={formulation === 'dcopf'}
+								>
+									Voltage target
+								</option>
+							</select>
+						</label>
+						{#if form.objective === 'voltage'}<label>
+								Voltage target (pu)<input
 									type="number"
 									min="0.01"
 									step="0.01"
 									bind:value={form.target}
-								/></label
-							>{/if}
+								/>
+							</label>{/if}
 						<div class="form-grid">
-							<label
-								>Equipment<select bind:value={form.scope} onchange={changeScope}
-									><option value="network">Whole network</option><option
+							<label>
+								Equipment<select bind:value={form.scope} onchange={changeScope}>
+									<option value="network">Whole network</option><option
 										value="area"
-										disabled={!areas.length}>Area{areas.length ? '' : ' (unavailable)'}</option
-									><option value="selected">Selected equipment</option></select
-								></label
-							>
-							{#if form.scope === 'area'}<label
-									>Area<select bind:value={form.area} onchange={changeScope}
-										><option value="">Choose an area</option>{#each areas as area (area)}<option
-												value={area}>{area}</option
-											>{/each}</select
-									></label
-								>
-							{:else}<label
-									>Bus weighting<select bind:value={form.weighting}
-										><option value="demand">By demand</option><option value="equal">Equal</option
-										></select
-									></label
-								>{/if}
+										disabled={!areas.length}
+									>
+										Area{areas.length ? '' : ' (unavailable)'}
+									</option><option value="selected">Selected equipment</option>
+								</select>
+							</label>
+							{#if form.scope === 'area'}<label>
+									Area<select bind:value={form.area} onchange={changeScope}>
+										<option value="">Choose an area</option>{#each areas as area (area)}<option
+												value={area}
+											>
+												{area}
+											</option>{/each}
+									</select>
+								</label>
+							{:else}<label>
+									Bus weighting<select bind:value={form.weighting}>
+										<option value="demand">By demand</option><option value="equal">Equal</option>
+									</select>
+								</label>{/if}
 						</div>
 						<details open>
-							<summary
-								>Objective buses<span>{equipment.buses.length.toLocaleString()}</span></summary
-							>
-							{#if form.scope === 'area'}<label
-									>Bus weighting<select bind:value={form.weighting}
-										><option value="demand">By demand</option><option value="equal">Equal</option
-										></select
-									></label
-								>{/if}
-							<label class="search"
-								>Find bus<input
+							<summary>
+								Objective buses<span>{equipment.buses.length.toLocaleString()}</span>
+							</summary>
+							{#if form.scope === 'area'}<label>
+									Bus weighting<select bind:value={form.weighting}>
+										<option value="demand">By demand</option><option value="equal">Equal</option>
+									</select>
+								</label>{/if}
+							<label class="search">
+								Find bus<input
 									type="search"
 									value={busSearch}
 									oninput={(event) => {
@@ -762,23 +790,22 @@
 										busPage = 0;
 									}}
 									placeholder="Bus ID or name"
-								/></label
-							>
+								/>
+							</label>
 							{#if form.scope === 'selected'}<button
 									class="text-button"
 									disabled={ctrl.app.selectedBus == null}
 									onclick={() => addMapSelection('buses')}
-									>Add selected{ctrl.app.selectedBus != null
-										? ` ${ctrl.app.selectedBus}`
-										: ''}</button
-								>{/if}
+								>
+									Add selected{ctrl.app.selectedBus != null ? ` ${ctrl.app.selectedBus}` : ''}
+								</button>{/if}
 							<div class="table-scroll">
 								<table class="equipment-table">
 									<thead><tr><th>Bus</th><th>Demand (MW)</th><th>Weight</th></tr></thead><tbody>
-										{#each busRows.slice(busPage * pageSize, (busPage + 1) * pageSize) as bus (selectionKey(bus))}<tr
-												><th>
-													{#if form.scope === 'selected'}<label class="check"
-															><input
+										{#each busRows.slice(busPage * pageSize, (busPage + 1) * pageSize) as bus (selectionKey(bus))}<tr>
+												<th>
+													{#if form.scope === 'selected'}<label class="check">
+															<input
 																type="checkbox"
 																checked={form.buses.includes(selectionKey(bus))}
 																onchange={(event) =>
@@ -787,74 +814,66 @@
 																		selectionKey(bus),
 																		event.currentTarget.checked
 																	)}
-															/><span>{busLabel(bus)}</span></label
-														>{:else}{busLabel(bus)}{/if}
-												</th><td>{number(bus.demand_mw)}</td><td
-													>{weights.has(selectionKey(bus))
+															/><span>{busLabel(bus)}</span>
+														</label>{:else}{busLabel(bus)}{/if}
+												</th><td>{number(bus.demand_mw)}</td><td>
+													{weights.has(selectionKey(bus))
 														? percent(weights.get(selectionKey(bus))!)
-														: '-'}</td
-												></tr
-											>{/each}
+														: '-'}
+												</td>
+											</tr>{/each}
 									</tbody>
 								</table>
 							</div>
 							{#if busRows.length > pageSize}<div class="pagination">
-									<button disabled={busPage === 0} onclick={() => busPage--}>Previous</button><span
-										>{busPage * pageSize + 1}-{Math.min((busPage + 1) * pageSize, busRows.length)} of
-										{busRows.length}</span
-									><button
+									<button disabled={busPage === 0} onclick={() => busPage--}>Previous</button><span>
+										{busPage * pageSize + 1}-{Math.min((busPage + 1) * pageSize, busRows.length)} of
+										{busRows.length}
+									</span><button
 										disabled={(busPage + 1) * pageSize >= busRows.length}
-										onclick={() => busPage++}>Next</button
+										onclick={() => busPage++}
 									>
+										Next
+									</button>
 								</div>{/if}
 						</details>
-						<label
-							>Allowed changes<select bind:value={form.intervention} onchange={changeIntervention}
-								><option value="capacity" disabled={formulation === 'acpf'}>Line capacity</option
-								><option value="redistribution">Move demand</option><option value="placement"
-									>Add demand</option
-								></select
-							></label
-						>
+						<label>
+							Allowed changes<select bind:value={form.intervention} onchange={changeIntervention}>
+								<option value="capacity" disabled={formulation === 'acpf'}>
+									Line capacity
+								</option><option value="redistribution">Move demand</option><option
+									value="placement"
+								>
+									Add demand
+								</option>
+							</select>
+						</label>
 						<div class="form-grid">
-							<label
-								>Change budget ({changeUnit})<input
-									type="number"
-									min="0"
-									bind:value={form.budget}
-								/></label
-							><label
-								>Increment ({changeUnit})<input
+							<label>
+								Change budget ({changeUnit})<input type="number" min="0" bind:value={form.budget} />
+							</label><label>
+								Increment ({changeUnit})<input
 									type="number"
 									min="0.001"
 									step="any"
 									bind:value={form.increment}
-								/></label
-							>
-							<label
-								>Max changes<input
-									type="number"
-									min="1"
-									step="1"
-									bind:value={form.cardinality}
-								/></label
-							>
-							{#if form.intervention === 'placement'}<label
-									>Added demand (MW)<input
-										type="number"
-										min="0"
-										bind:value={form.increase}
-									/></label
-								>{/if}
+								/>
+							</label>
+							<label>
+								Max changes<input type="number" min="1" step="1" bind:value={form.cardinality} />
+							</label>
+							{#if form.intervention === 'placement'}<label>
+									Added demand (MW)<input type="number" min="0" bind:value={form.increase} />
+								</label>{/if}
 						</div>
 						<details>
-							<summary
-								>Candidate {form.intervention === 'capacity' ? 'lines' : 'buses'}<span
-									>{equipment.candidates.length.toLocaleString()}</span
-								></summary
-							>
-							<label class="search"
-								>Find candidate<input
+							<summary>
+								Candidate {form.intervention === 'capacity' ? 'lines' : 'buses'}<span>
+									{equipment.candidates.length.toLocaleString()}
+								</span>
+							</summary>
+							<label class="search">
+								Find candidate<input
 									type="search"
 									value={candidateSearch}
 									oninput={(event) => {
@@ -864,30 +883,31 @@
 									placeholder={form.intervention === 'capacity'
 										? 'Line ID or endpoints'
 										: 'Bus ID or name'}
-								/></label
-							>
+								/>
+							</label>
 							{#if form.scope === 'selected'}<button
 									class="text-button"
 									disabled={form.intervention === 'capacity'
 										? ctrl.app.selectedBranch == null
 										: ctrl.app.selectedBus == null}
 									onclick={() => addMapSelection('candidates')}
-									>Add selected map {form.intervention === 'capacity' ? 'line' : 'bus'}</button
-								>{/if}
+								>
+									Add selected map {form.intervention === 'capacity' ? 'line' : 'bus'}
+								</button>{/if}
 							<div class="table-scroll">
 								<table class="equipment-table bounds-table">
-									<thead
-										><tr
-											><th>{form.intervention === 'capacity' ? 'Line' : 'Bus'}</th><th
-												>Min ({changeUnit})</th
-											><th>Max ({changeUnit})</th></tr
-										></thead
-									><tbody>
+									<thead>
+										<tr>
+											<th>{form.intervention === 'capacity' ? 'Line' : 'Bus'}</th><th>
+												Min ({changeUnit})
+											</th><th>Max ({changeUnit})</th>
+										</tr>
+									</thead><tbody>
 										{#each candidateRows.slice(candidatePage * pageSize, (candidatePage + 1) * pageSize) as element (selectionKey(element))}{@const bounds =
-												candidateBounds(element, form)}<tr
-												><th>
-													{#if form.scope === 'selected'}<label class="check"
-															><input
+												candidateBounds(element, form)}<tr>
+												<th>
+													{#if form.scope === 'selected'}<label class="check">
+															<input
 																type="checkbox"
 																checked={form.candidates.includes(selectionKey(element))}
 																onchange={(event) =>
@@ -896,49 +916,49 @@
 																		selectionKey(element),
 																		event.currentTarget.checked
 																	)}
-															/><span
-																>{'from' in element
-																	? branchLabel(element)
-																	: busLabel(element)}</span
-															></label
-														>{:else}{'from' in element
+															/><span>
+																{'from' in element ? branchLabel(element) : busLabel(element)}
+															</span>
+														</label>{:else}{'from' in element
 															? branchLabel(element)
 															: busLabel(element)}{/if}
-												</th><td
-													><input
+												</th><td>
+													<input
 														aria-label={`Minimum change for ${'from' in element ? 'line' : 'bus'} ${element.id}`}
 														type="number"
 														step={form.increment}
 														value={bounds.lower}
 														oninput={(event) =>
 															updateBound(element, 'lower', event.currentTarget.valueAsNumber)}
-													/></td
-												><td
-													><input
+													/>
+												</td><td>
+													<input
 														aria-label={`Maximum change for ${'from' in element ? 'line' : 'bus'} ${element.id}`}
 														type="number"
 														step={form.increment}
 														value={bounds.upper}
 														oninput={(event) =>
 															updateBound(element, 'upper', event.currentTarget.valueAsNumber)}
-													/></td
-												></tr
-											>{/each}
+													/>
+												</td>
+											</tr>{/each}
 									</tbody>
 								</table>
 							</div>
 							{#if candidateRows.length > pageSize}<div class="pagination">
-									<button disabled={candidatePage === 0} onclick={() => candidatePage--}
-										>Previous</button
-									><span
-										>{candidatePage * pageSize + 1}-{Math.min(
+									<button disabled={candidatePage === 0} onclick={() => candidatePage--}>
+										Previous
+									</button><span>
+										{candidatePage * pageSize + 1}-{Math.min(
 											(candidatePage + 1) * pageSize,
 											candidateRows.length
-										)} of {candidateRows.length}</span
-									><button
+										)} of {candidateRows.length}
+									</span><button
 										disabled={(candidatePage + 1) * pageSize >= candidateRows.length}
-										onclick={() => candidatePage++}>Next</button
+										onclick={() => candidatePage++}
 									>
+										Next
+									</button>
 								</div>{/if}
 						</details>
 						<div class="toolbar">
@@ -946,8 +966,9 @@
 								class="primary"
 								disabled={workspace.busy || !equipment.buses.length || !equipment.candidates.length}
 								onclick={() => void attempt(saveGoal)}
-								>{goal ? 'Save goal revision' : 'Save goal'}</button
-							><button onclick={() => (editingGoal = false)}>Cancel</button>
+							>
+								{goal ? 'Save goal revision' : 'Save goal'}
+							</button><button onclick={() => (editingGoal = false)}>Cancel</button>
 						</div>
 					{/if}
 				{:else}
@@ -976,15 +997,15 @@
 					<GoalDetails {goal} {network} {ratingUnit} />
 					<button class="text-button" onclick={startGoal}>Change goal</button>
 					<div class="toolbar">
-						<label
-							>Solve budget<input
+						<label>
+							Solve budget<input
 								type="number"
 								min="1"
 								max="256"
 								step="1"
 								bind:value={solveBudget}
-							/></label
-						><button
+							/>
+						</label><button
 							class="primary"
 							disabled={workspace.busy || !doc.inspected_state || !doc.active_goal}
 							onclick={() =>
@@ -1001,15 +1022,19 @@
 										},
 										rationale: goal!.request
 									})
-								)}>Find a proposal</button
+								)}
 						>
+							Find a proposal
+						</button>
 					</div>
 					{#if latestProposal && doc.recommended_state !== doc.applied_state}<button
 							disabled={workspace.busy}
 							onclick={() => {
 								tab = 'case';
-							}}>Review recommendation</button
-						>{/if}
+							}}
+						>
+							Review recommendation
+						</button>{/if}
 				{/if}
 			{:else}
 				<h3>Saved states</h3>
@@ -1019,12 +1044,15 @@
 								class:selected={id === doc.inspected_state}
 								disabled={workspace.busy}
 								onclick={() => void attempt(() => operation({ kind: 'inspect', state: id }))}
-								><span>{state.label}</span><span class="state-flags"
-									>{#if id === doc.recommended_state}<small>Recommended</small
-										>{/if}{#if id === doc.applied_state}<small>Applied</small
-										>{/if}{#if !state.solution}<small>Not solved</small>{/if}</span
-								></button
-							><button
+							>
+								<span>{state.label}</span><span class="state-flags">
+									{#if id === doc.recommended_state}<small>
+											Recommended
+										</small>{/if}{#if id === doc.applied_state}<small>
+											Applied
+										</small>{/if}{#if !state.solution}<small>Not solved</small>{/if}
+								</span>
+							</button><button
 								class="text-button"
 								disabled={workspace.busy}
 								onclick={() =>
@@ -1034,25 +1062,32 @@
 											state: id,
 											rationale: `Continue from ${state.label}`
 										})
-									)}>Branch</button
+									)}
 							>
+								Branch
+							</button>
 						</li>{/each}
 				</ul>
 				{#if Object.keys(doc.states).length > historyLimit}<button
-						onclick={() => (historyLimit += 30)}>More states</button
-					>{/if}
-				<div class="toolbar">
-					{#if goal}<label
-							>Compare under goal<select bind:value={goalForComparison}
-								><option value="">Active goal</option
-								>{#each Object.entries(doc.goals) as [id, revision] (id)}<option value={id}
-										>{revision.request}</option
-									>{/each}</select
-							></label
-						>{/if}<button
-						disabled={workspace.busy || !doc.inspected_state}
-						onclick={() => void attempt(compare)}>Compare with starting point</button
+						onclick={() => (historyLimit += 30)}
 					>
+						More states
+					</button>{/if}
+				<div class="toolbar">
+					{#if goal}<label>
+							Compare under goal<select bind:value={goalForComparison}>
+								<option value="">
+									Active goal
+								</option>{#each Object.entries(doc.goals) as [id, revision] (id)}<option value={id}>
+										{revision.request}
+									</option>{/each}
+							</select>
+						</label>{/if}<button
+						disabled={workspace.busy || !doc.inspected_state}
+						onclick={() => void attempt(compare)}
+					>
+						Compare with starting point
+					</button>
 				</div>
 				{#if workspace.comparison}<div class="comparison">
 						<h3>
@@ -1065,13 +1100,15 @@
 							</p>{/if}
 						{#if consequences.length}<table>
 								<caption>Top changes</caption>
-								<thead><tr><th>Bus</th><th>Before</th><th>After</th><th>Change</th></tr></thead
-								><tbody
-									>{#each consequences as row (row.bus)}<tr
-											><th>{row.bus}</th><td>{number(row.before)}</td><td>{number(row.after)}</td
-											><td>{number(row.change)}</td></tr
-										>{/each}</tbody
-								>
+								<thead>
+									<tr><th>Bus</th><th>Before</th><th>After</th><th>Change</th></tr>
+								</thead><tbody>
+									{#each consequences as row (row.bus)}<tr>
+											<th>{row.bus}</th><td>{number(row.before)}</td><td>
+												{number(row.after)}
+											</td><td>{number(row.change)}</td>
+										</tr>{/each}
+								</tbody>
 							</table>{/if}
 					</div>{/if}
 				<h3>Activity</h3>
@@ -1079,10 +1116,9 @@
 				{#each doc.experiment_order.toReversed().slice(0, historyLimit) as id (id)}{@const event =
 						doc.experiments[id]}
 					<details>
-						<summary
-							>{activityLabel(event.kind)}<span>{event.termination.replaceAll('_', ' ')}</span
-							></summary
-						>
+						<summary>
+							{activityLabel(event.kind)}<span>{event.termination.replaceAll('_', ' ')}</span>
+						</summary>
 						<p>{event.rationale}</p>
 						<dl class="facts">
 							<div>
@@ -1107,13 +1143,13 @@
 			{/if}
 		</section>
 		{#if doc && !multi}<footer class="workspace-status">
-				<span
-					>{Object.keys(doc.states).length} saved {Object.keys(doc.states).length === 1
+				<span>
+					{Object.keys(doc.states).length} saved {Object.keys(doc.states).length === 1
 						? 'state'
-						: 'states'}</span
-				>{#if workspace.busy}<button onclick={() => workspace.cancel()}>Cancel</button>{:else}<span
-						>Saved</span
-					>{/if}
+						: 'states'}
+				</span>{#if workspace.busy}<button onclick={() => workspace.cancel()}>
+						Cancel
+					</button>{:else}<span>Saved</span>{/if}
 			</footer>{/if}
 	</div>
 </PanelFrame>
