@@ -18822,7 +18822,7 @@ return errors === 0;
 }
 validate329.evaluated = {"props":{"branch":true,"loading":true,"loading_info":true,"pf":true,"pt":true,"qf":true,"qt":true,"uid":true},"dynamicProps":false,"dynamicItems":false};
 
-const schema148 = {"description":"Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.","oneOf":[{"const":"dcpf","description":"DC power flow: angles and flows at the fixed generator setpoints. No prices,\nno dispatch, no sensitivity.","type":"string"},{"const":"dcopf","description":"DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.","type":"string"},{"const":"acpf","description":"AC polar Newton power flow. Voltages and nodal injections. Differentiable\nvia the AC Newton system.","type":"string"},{"const":"socwr","description":"SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.","type":"string"},{"const":"acopf","description":"Full nonlinear AC OPF through the opt-in POUNCE backend.","type":"string"}]};
+const schema148 = {"description":"Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. The capabilities response reports whether the current build includes it.","oneOf":[{"const":"dcpf","description":"DC power flow: angles and flows at the fixed generator setpoints. No prices,\nno dispatch, no sensitivity.","type":"string"},{"const":"dcopf","description":"DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.","type":"string"},{"const":"acpf","description":"AC polar Newton power flow. Voltages and nodal injections. Differentiable\nvia the AC Newton system.","type":"string"},{"const":"socwr","description":"SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.","type":"string"},{"const":"acopf","description":"Full nonlinear AC OPF through the opt-in POUNCE backend.","type":"string"}]};
 
 function validate339(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
 let vErrors = null;
@@ -53890,7 +53890,7 @@ return errors === 0;
 }
 validate840.evaluated = {"props":{"branch":true,"loading":true,"loading_info":true,"pf":true,"pt":true,"qf":true,"qt":true,"uid":true},"dynamicProps":false,"dynamicItems":false};
 
-const schema366 = {"description":"Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.","oneOf":[{"const":"dcpf","description":"DC power flow: angles and flows at the fixed generator setpoints. No prices,\nno dispatch, no sensitivity.","type":"string"},{"const":"dcopf","description":"DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.","type":"string"},{"const":"acpf","description":"AC polar Newton power flow. Voltages and nodal injections. Differentiable\nvia the AC Newton system.","type":"string"},{"const":"socwr","description":"SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.","type":"string"},{"const":"acopf","description":"Full nonlinear AC OPF through the opt-in POUNCE backend.","type":"string"}]};
+const schema366 = {"description":"Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. The capabilities response reports whether the current build includes it.","oneOf":[{"const":"dcpf","description":"DC power flow: angles and flows at the fixed generator setpoints. No prices,\nno dispatch, no sensitivity.","type":"string"},{"const":"dcopf","description":"DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.","type":"string"},{"const":"acpf","description":"AC polar Newton power flow. Voltages and nodal injections. Differentiable\nvia the AC Newton system.","type":"string"},{"const":"socwr","description":"SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.","type":"string"},{"const":"acopf","description":"Full nonlinear AC OPF through the opt-in POUNCE backend.","type":"string"}]};
 
 function validate850(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
 let vErrors = null;
@@ -55831,7 +55831,7 @@ return errors === 0;
 validate1075.evaluated = {"props":{"iterations":true,"sensitivities":true,"solution":true},"dynamicProps":false,"dynamicItems":false};
 
 export const edits = validate1079;
-const schema376 = {"description":"Operating-point edits applied before the model is built: demand deltas in MW\nkeyed by bus (the operating point is `base demand + delta`) and branch rating\ndeltas in MW keyed by branch (the thermal limit is `base rating + delta`). Keys\nare [`ElementKey`]s — the original numeric id or the powerio row uid. A struct\n(not a bare map) so the structural-edit vocabulary (add line, add generator,\nretune a parameter) can grow without breaking the wire format: a client that\nknows only `deltas` keeps working.","properties":{"deltas":{"additionalProperties":{"format":"double","type":"number"},"default":{},"description":"Active-power demand delta in MW per bus key.","type":"object"},"rates":{"additionalProperties":{"format":"double","type":"number"},"default":{},"description":"Thermal rating delta in MW per branch key. Supported by the DC OPF\nand SOCWR paths; the AC power flow has no flow limits and rejects them.","type":"object"}},"type":"object"};
+const schema376 = {"additionalProperties":false,"description":"Operating-point edits applied before the model is built: demand deltas in MW\nkeyed by bus (the operating point is `base demand + delta`) and branch rating\ndeltas in MW keyed by branch (the thermal limit is `base rating + delta`). Keys\nare [`ElementKey`]s — the original numeric id or the powerio row uid. A struct\n(not a bare map) so the structural-edit vocabulary (add line, add generator,\nretune a parameter) can grow without breaking the wire format: a client that\nknows only `deltas` keeps working.","properties":{"deltas":{"additionalProperties":{"format":"double","type":"number"},"default":{},"description":"Active-power demand delta in MW per bus key.","type":"object"},"rates":{"additionalProperties":{"format":"double","type":"number"},"default":{},"description":"Thermal rating delta in MW per branch key. Supported by the DC OPF\nand SOCWR paths; the AC power flow has no flow limits and rejects them.","type":"object"}},"type":"object"};
 
 function validate1079(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
 let vErrors = null;
@@ -55845,21 +55845,30 @@ evaluated0.items = undefined;
 }
 if(errors === 0){
 if(data && typeof data == "object" && !Array.isArray(data)){
+const _errs1 = errors;
+for(const key0 in data){
+if(!((key0 === "deltas") || (key0 === "rates"))){
+validate1079.errors = [{instancePath,schemaPath:"#/additionalProperties",keyword:"additionalProperties",params:{additionalProperty: key0},message:"must NOT have additional properties"}];
+return false;
+break;
+}
+}
+if(_errs1 === errors){
 if(data.deltas !== undefined){
 let data0 = data.deltas;
-const _errs1 = errors;
-if(errors === _errs1){
+const _errs2 = errors;
+if(errors === _errs2){
 if(data0 && typeof data0 == "object" && !Array.isArray(data0)){
-for(const key0 in data0){
-let data1 = data0[key0];
-const _errs4 = errors;
-if(errors === _errs4){
+for(const key1 in data0){
+let data1 = data0[key1];
+const _errs5 = errors;
+if(errors === _errs5){
 if(!((typeof data1 == "number") && (isFinite(data1)))){
-validate1079.errors = [{instancePath:instancePath+"/deltas/" + key0.replace(/~/g, "~0").replace(/\//g, "~1"),schemaPath:"#/properties/deltas/additionalProperties/type",keyword:"type",params:{type: "number"},message:"must be number"}];
+validate1079.errors = [{instancePath:instancePath+"/deltas/" + key1.replace(/~/g, "~0").replace(/\//g, "~1"),schemaPath:"#/properties/deltas/additionalProperties/type",keyword:"type",params:{type: "number"},message:"must be number"}];
 return false;
 }
 }
-var valid1 = _errs4 === errors;
+var valid1 = _errs5 === errors;
 if(!valid1){
 break;
 }
@@ -55870,7 +55879,7 @@ validate1079.errors = [{instancePath:instancePath+"/deltas",schemaPath:"#/proper
 return false;
 }
 }
-var valid0 = _errs1 === errors;
+var valid0 = _errs2 === errors;
 }
 else {
 var valid0 = true;
@@ -55878,19 +55887,19 @@ var valid0 = true;
 if(valid0){
 if(data.rates !== undefined){
 let data2 = data.rates;
-const _errs6 = errors;
-if(errors === _errs6){
+const _errs7 = errors;
+if(errors === _errs7){
 if(data2 && typeof data2 == "object" && !Array.isArray(data2)){
-for(const key1 in data2){
-let data3 = data2[key1];
-const _errs9 = errors;
-if(errors === _errs9){
+for(const key2 in data2){
+let data3 = data2[key2];
+const _errs10 = errors;
+if(errors === _errs10){
 if(!((typeof data3 == "number") && (isFinite(data3)))){
-validate1079.errors = [{instancePath:instancePath+"/rates/" + key1.replace(/~/g, "~0").replace(/\//g, "~1"),schemaPath:"#/properties/rates/additionalProperties/type",keyword:"type",params:{type: "number"},message:"must be number"}];
+validate1079.errors = [{instancePath:instancePath+"/rates/" + key2.replace(/~/g, "~0").replace(/\//g, "~1"),schemaPath:"#/properties/rates/additionalProperties/type",keyword:"type",params:{type: "number"},message:"must be number"}];
 return false;
 }
 }
-var valid2 = _errs9 === errors;
+var valid2 = _errs10 === errors;
 if(!valid2){
 break;
 }
@@ -55901,10 +55910,11 @@ validate1079.errors = [{instancePath:instancePath+"/rates",schemaPath:"#/propert
 return false;
 }
 }
-var valid0 = _errs6 === errors;
+var valid0 = _errs7 === errors;
 }
 else {
 var valid0 = true;
+}
 }
 }
 }
@@ -55916,7 +55926,7 @@ return false;
 validate1079.errors = vErrors;
 return errors === 0;
 }
-validate1079.evaluated = {"props":{"deltas":true,"rates":true},"dynamicProps":false,"dynamicItems":false};
+validate1079.evaluated = {"props":true,"dynamicProps":false,"dynamicItems":false};
 
 export const mc_detail = validate1080;
 const schema377 = {"description":"One page of detailed values, in the same records as [`McPfResult`].","properties":{"element_port_total":{"description":"Ports matching the query before paging.","format":"uint","minimum":0,"type":"integer"},"element_ports":{"items":{"$ref":"#/$defs/McElementPort"},"type":"array"},"solve_count":{"format":"uint","minimum":0,"type":"integer"},"terminals":{"items":{"$ref":"#/$defs/McTerminalResult"},"type":"array"}},"required":["solve_count","terminals","element_ports","element_port_total"],"type":"object"};
@@ -74888,7 +74898,7 @@ return errors === 0;
 }
 validate1243.evaluated = {"props":{"branch":true,"loading":true,"loading_info":true,"mw":true,"pt":true,"qf":true,"qt":true},"dynamicProps":false,"dynamicItems":false};
 
-const schema514 = {"description":"Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.","oneOf":[{"const":"dcpf","description":"DC power flow: angles and flows at the fixed generator setpoints. No prices,\nno dispatch, no sensitivity.","type":"string"},{"const":"dcopf","description":"DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.","type":"string"},{"const":"acpf","description":"AC polar Newton power flow. Voltages and nodal injections. Differentiable\nvia the AC Newton system.","type":"string"},{"const":"socwr","description":"SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.","type":"string"},{"const":"acopf","description":"Full nonlinear AC OPF through the opt-in POUNCE backend.","type":"string"}]};
+const schema514 = {"description":"Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. The capabilities response reports whether the current build includes it.","oneOf":[{"const":"dcpf","description":"DC power flow: angles and flows at the fixed generator setpoints. No prices,\nno dispatch, no sensitivity.","type":"string"},{"const":"dcopf","description":"DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.","type":"string"},{"const":"acpf","description":"AC polar Newton power flow. Voltages and nodal injections. Differentiable\nvia the AC Newton system.","type":"string"},{"const":"socwr","description":"SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.","type":"string"},{"const":"acopf","description":"Full nonlinear AC OPF through the opt-in POUNCE backend.","type":"string"}]};
 
 function validate1253(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
 let vErrors = null;

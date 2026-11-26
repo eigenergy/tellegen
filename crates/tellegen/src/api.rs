@@ -44,7 +44,7 @@ use super::sens::{
 /// valid base-case DC OPF request.
 ///
 /// The `"acopf"` tag enables full nonlinear AC OPF only when the opt-in `acopf`
-/// feature is built. Shipping adapters do not forward that feature.
+/// feature is built. The capabilities response reports whether the current build includes it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
@@ -155,6 +155,7 @@ impl<'de> Deserialize<'de> for ElementKey {
 /// knows only `deltas` keeps working.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Edits {
     /// Active-power demand delta in MW per bus key.
     #[serde(default)]
@@ -3309,6 +3310,14 @@ mod tests {
         )
         .expect_err("retired solver options must not be ignored");
         assert!(error.contains("unknown field `options`"), "{error}");
+    }
+
+    #[test]
+    fn unknown_edit_fields_are_rejected_before_solving() {
+        let request = r#"{"formulation":"dcopf","edits":{"deltas":{"2":5},"outages":["1-4"]}}"#;
+        let error = solve_module_json(&case3_module_json(), request)
+            .expect_err("unsupported edits must not be silently discarded");
+        assert!(error.contains("unknown field `outages`"), "{error}");
     }
 
     #[test]
