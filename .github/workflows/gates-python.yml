@@ -83,7 +83,7 @@ jobs:
       # this gate red on a change that did not touch Python. Raise them here,
       # in a pull request of their own.
       - name: Install build and lint tooling
-        run: python -m pip install --upgrade "maturin>=1.7,<2.0" pytest==9.2.0 ruff==0.17.5 mypy==2.4.1
+        run: python -m pip install --upgrade "maturin>=1.9.3,<2.0" pytest==9.2.0 ruff==0.17.5 mypy==2.4.1
 
       # Lint and type-check the pure-Python layer before the slow Rust build, so
       # a formatting slip fails in seconds rather than minutes.
@@ -91,7 +91,7 @@ jobs:
         run: ruff check --no-fix .
 
       - name: Build the wheel
-        run: maturin build --profile release-py --out dist
+        run: maturin build --locked --profile release-py --out dist
 
       # An installed wheel, never `maturin develop`: `python/tellegen` shadows
       # the installed package on sys.path, so a develop install silently tests
@@ -103,7 +103,7 @@ jobs:
       - name: Install the built wheel
         run: |
           wheel=$(ls dist/*.whl)
-          python -m pip install --force-reinstall "${wheel}[mcp]"
+          python -m pip install --force-reinstall "${wheel}[mcp,switching]"
 
       - name: Type-check
         run: python -m mypy python/tellegen
@@ -152,7 +152,7 @@ jobs:
           import tellegen
           print("versions:", tellegen.versions())
           print("formulations:", tellegen.formulations())
-          assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
+          assert set(tellegen.formulations()) == {"dcpf", "dcopf", "acpf", "socwr", "acopf"}
           # The base package must not drag in a numeric stack.
           assert "numpy" not in sys.modules, "numpy imported by the base package"
           assert "scipy" not in sys.modules, "scipy imported by the base package"
@@ -190,8 +190,12 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.leg.target }}
-          args: --profile release-py --out dist
+          args: --locked --profile release-py --out dist
           manylinux: auto
+
+      - name: Check the wheel's POUNCE license and corresponding sources
+        shell: bash
+        run: python scripts/acopf-release.py --check-python-wheel dist/*.whl
 
       # Only where the runner can execute what it just built. The cross legs
       # (linux aarch64, macOS x86_64) prove the build, not the run; running
@@ -206,8 +210,12 @@ jobs:
           python - <<'PY'
           import tellegen
 
-          assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
-          solution = tellegen.load("case3.m").solve()
+          assert set(tellegen.formulations()) == {"dcpf", "dcopf", "acpf", "socwr", "acopf"}
+          case = tellegen.load("case3.m")
+          solution = case.solve()
+          switched = tellegen.solve_ots(case.module_json, topology_limit=1)
+          assert switched["restoration"]["status"] == "ac_feasible", switched
+          assert switched["ac_solution_ir"] and not switched["exhausted"]
           assert solution["status"] == "optimal", solution["status"]
           # The same number the CLI, the browser engine and PowerMCP #67 produce.
           assert abs(solution["objective"] - 626.9487) < 1e-3, solution["objective"]
@@ -248,7 +256,11 @@ jobs:
           cd "${RUNNER_TEMP}"
           python - <<'PY'
           import tellegen
-          solution = tellegen.load("case3.m").solve()
+          case = tellegen.load("case3.m")
+          solution = case.solve()
+          switched = tellegen.solve_ots(case.module_json, topology_limit=1)
+          assert switched["restoration"]["status"] == "ac_feasible", switched
+          assert switched["ac_solution_ir"] and not switched["exhausted"]
           assert solution["status"] == "optimal", solution
           assert abs(solution["objective"] - 626.9487) < 1e-3, solution
           print("source distribution solves case3", tellegen.versions())

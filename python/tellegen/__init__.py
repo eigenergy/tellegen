@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Union
 
 from . import _tellegen
 from ._guard import guard, guard_class
+from ._switching import solve_lacots_gap
 
 TellegenError = _tellegen.TellegenError
 TellegenInputError = _tellegen.TellegenInputError
@@ -40,12 +42,17 @@ __all__ = [
     "load",
     "load_ir",
     "resolve_format",
+    "solve_lacots_gap",
+    "solve_ots",
     "versions",
 ]
 
-#: Formulations this build can solve. `acopf` is a wire-stable tag that is never
-#: available; it is deliberately absent here.
-FORMULATIONS = ("dcpf", "dcopf", "acpf", "socwr")
+#: Formulations supported by the compiled engine.
+FORMULATIONS = tuple(
+    entry["formulation"]
+    for entry in json.loads(_tellegen.capabilities_json())
+    if entry["available"]
+)
 DC_FORMULAS = (
     "series_susceptance",
     "series_susceptance_no_phase_shift",
@@ -113,6 +120,32 @@ def versions() -> Dict[str, str]:
         "engine": _tellegen.ENGINE_VERSION,
         "powerio_ir": f"pio-ir/{_tellegen.POWERIO_IR_VERSION}",
     }
+
+
+@guard
+def solve_ots(
+    module_json: str, *, model: str = "lacots", topology_limit: int = 1000,
+    restore: bool = True,
+) -> Dict[str, Any]:
+    """Search a PowerIO network, AC OPF or AC OTS module for a switching plan.
+
+    Supply `powerio.serialize(module).text`. A typed instance retains its branch
+    choices, costs, limits and islanding policy. The search visits status vectors
+    in increasing number of changes. `topology_limit` bounds work and
+    `exhausted` reports whether the search finished. A local AC failure is
+    counted in `failed`. Inspect both fields before interpreting the incumbent.
+
+    `best` contains the selected status vector and dispatch or is None. DCOTS
+    and LACOTS attempt AC redispatch when requested. A successful restoration
+    or direct ACOTS solution supplies a PowerIO AcOtsSolution in `ac_solution_ir`.
+    """
+    # The native ABI accepts a Rust usize, whose maximum is 2 * sys.maxsize + 1.
+    if (isinstance(topology_limit, bool) or not isinstance(topology_limit, int)
+            or not 0 < topology_limit <= 2 * sys.maxsize + 1):
+        error = TellegenInputError("topology_limit must be a positive integer that fits in usize")
+        error.code = "REQUEST.MALFORMED"
+        raise error
+    return json.loads(_tellegen.solve_ots_module(module_json, model, topology_limit, restore))
 
 
 @guard

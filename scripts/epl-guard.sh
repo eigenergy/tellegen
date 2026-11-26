@@ -43,4 +43,5 @@ check_no_pounce workspace-default --workspace
 check_no_pounce cli-with-wasi -p tellegen-cli -p tellegen-acopf-wasi
 check_has_pounce tellegen-acopf -p tellegen --no-default-features --features acopf
 check_has_pounce tellegen-acopf-wasi -p tellegen-acopf-wasi --features acopf
-echo "ok: default workspace and shipping adapters exclude pounce; explicit AC OPF builds include it"
+check_has_pounce tellegen-python-wheel -p tellegen-py --features extension-module,ots
+echo "ok: default workspace excludes pounce; AC OPF targets and the Python wheel include it"

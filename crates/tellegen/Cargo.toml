@@ -67,8 +67,8 @@ sensitivity = ["dep:faer", "dep:num-complex"]
 # Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
 # paths, so `conic` pulls `sensitivity`. Additive, no new dependency.
 conic = ["sensitivity"]
-# Exact nonlinear AC OPF with opt-in EPL-2.0 POUNCE. Ordinary wasm, CLI,
-# server and Python adapters do not enable it; the separate AC OPF WASI adapter does.
+# Exact nonlinear AC OPF with opt-in EPL-2.0 POUNCE. The AC OPF WASI build
+# and the published Python wheel enable it. Default workspace builds omit it.
 acopf = ["dep:pounce-nl", "dep:pounce-rs", "dep:num-complex"]
 # Native transmission switching and fixed-topology AC recovery.
 ots = ["acopf"]

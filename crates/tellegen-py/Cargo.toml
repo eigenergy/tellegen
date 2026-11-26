@@ -24,6 +24,8 @@ default = []
 # dependency (see the `tellegen` crate's `powerio-012` feature).
 powerio-012 = ["tellegen/powerio-012"]
 extension-module = ["pyo3/extension-module"]
+# The published wheel opts in. Bare workspace builds keep the default dependency set.
+ots = ["tellegen/ots"]
 
 [dependencies]
 # No `version` field, deliberately: this unpublished adapter uses the workspace

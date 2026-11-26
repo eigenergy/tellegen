@@ -266,6 +266,9 @@ WHEEL = Rules(
         ".github/workflows/gates-python.yml",
         ".github/workflows/release-python.yml",
         "scripts/check-python-sdist.py",
+        "scripts/acopf-release.py",
+        "licenses/POUNCE-PYTHON-NOTICE.txt",
+        "licenses/POUNCE-EPL-2.0.txt",
     ),
 )
 

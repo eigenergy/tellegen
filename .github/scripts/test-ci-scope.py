@@ -108,6 +108,7 @@ CASES = {
     "Dockerfile": (["Dockerfile"], gates("image")),
     "deploy script": (["deploy/remote-deploy.sh"], gates("image")),
     "POUNCE notices": (["licenses/POUNCE-NOTICE.txt"], gates("js", "image")),
+    "Python POUNCE notice": (["licenses/POUNCE-PYTHON-NOTICE.txt"], gates("js", "python", "macos", "image")),
     "cargo-deny config": (["deny.toml"], gates("rust")),
     "release script": ([".github/scripts/write-crate-changelog.py"], gates("image")),
     "PowerIO pin guard": ([".github/scripts/powerio-pin.py"], gates("rust", "image")),

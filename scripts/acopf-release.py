@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the published POUNCE pin; optionally describe an opt-in WASI artifact."""
+"""Verify POUNCE versions and the source notices shipped with Python and WASI."""
 
 import argparse
 import hashlib
@@ -8,6 +8,8 @@ import os
 import re
 import subprocess
 import sys
+import zipfile
+from email.parser import BytesParser
 from pathlib import Path
 
 if sys.version_info < (3, 11):
@@ -37,6 +39,31 @@ def release_packages():
     return version, packages
 
 
+def python_notice(packages):
+    # Cargo.lock covers the whole workspace. Select normal runtime dependencies
+    # of the shipped extension, including target-specific crates across wheels.
+    tree = subprocess.check_output([
+        'cargo', 'tree', '--locked', '--package', 'tellegen-py', '--features',
+        'extension-module,ots', '--target', 'all', '--edges', 'normal',
+        '--prefix', 'none', '--format', '{p}',
+    ], cwd=ROOT, text=True)
+    linked = set(re.findall(r'^(pounce-[a-z0-9_-]+) v(\S+)', tree, re.MULTILINE))
+    if not {'pounce-nl', 'pounce-rs'} <= {name for name, _ in linked}:
+        raise SystemExit('the Python wheel must link the POUNCE solver')
+    rows = ["Tellegen Python wheel", "",
+            "The native extension contains the following unmodified POUNCE crates under",
+            "the Eclipse Public License 2.0. Each URL supplies its corresponding source.",
+            "The license accompanies this notice in POUNCE-EPL-2.0.txt. Tellegen's own",
+            "code is available under MIT."]
+    for package in packages:
+        name, version = package['name'], package['version']
+        if (name, version) in linked:
+            rows.extend(['', f'{name} {version}',
+                         f'https://static.crates.io/crates/{name}/{name}-{version}.crate',
+                         f"SHA-256 {package['checksum']}"])
+    return '\n'.join(rows) + '\n'
+
+
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -44,8 +71,33 @@ def digest(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--asset', type=Path, help='write provenance beside this built WASI asset')
+    parser.add_argument('--write-python-notice', action='store_true',
+                        help='refresh the wheel source notice after a POUNCE update')
+    parser.add_argument('--check-python-wheel', type=Path,
+                        help='verify the EPL license and resolved sources in a wheel')
     args = parser.parse_args()
     version, packages = release_packages()
+    if args.write_python_notice or args.check_python_wheel:
+        notice_path = 'licenses/POUNCE-PYTHON-NOTICE.txt'
+        notice = python_notice(packages)
+        if args.write_python_notice:
+            (ROOT / notice_path).write_text(notice, encoding='utf-8')
+        if args.check_python_wheel:
+            license_path = 'licenses/POUNCE-EPL-2.0.txt'
+            with zipfile.ZipFile(args.check_python_wheel) as wheel:
+                metadata_path, = (name for name in wheel.namelist() if name.endswith('.dist-info/METADATA'))
+                metadata = BytesParser().parsebytes(wheel.read(metadata_path), headersonly=True)
+                if metadata.get('License-Expression') != 'MIT AND EPL-2.0':
+                    raise SystemExit('wheel must declare the licenses of Tellegen and its linked solver')
+                required = {'LICENSE', str(notice_path), str(license_path)}
+                if not required.issubset(metadata.get_all('License-File', [])):
+                    raise SystemExit('wheel metadata is missing a license file')
+                for path, expected in [(notice_path, notice),
+                                       (license_path, (ROOT / license_path).read_text(encoding='utf-8'))]:
+                    actual = wheel.read(path).decode('utf-8').splitlines()
+                    if actual != expected.splitlines():
+                        raise SystemExit(f'{path} in {args.check_python_wheel} differs from the source; '
+                                         'refresh the notice with --write-python-notice and rebuild')
     if args.asset:
         revision = os.environ.get('TELLEGEN_SOURCE_REVISION', '').strip()
         if revision and not re.fullmatch(r'[0-9a-f]{40}', revision):

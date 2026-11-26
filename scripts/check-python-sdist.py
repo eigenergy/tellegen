@@ -17,7 +17,8 @@ def check(path: str) -> None:
                    for i, part in enumerate(relative.parts) if i > 0):
                 raise ValueError(f"test fixture leaked into source package: {relative}")
             names.append(str(relative))
-        required = {"LICENSE", "pyproject.toml", "python/tellegen/_tellegen.pyi",
+        required = {"LICENSE", "licenses/POUNCE-EPL-2.0.txt",
+                    "licenses/POUNCE-PYTHON-NOTICE.txt", "pyproject.toml", "python/tellegen/_tellegen.pyi",
                     "python/tellegen/py.typed", "crates/tellegen-py/Cargo.toml"}
         missing = required - set(names)
         if missing:
