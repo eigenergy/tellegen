@@ -1,5 +1,13 @@
 # @tellegen/engine
 
+## 0.10.4
+
+### Patch Changes
+
+- [#450](https://github.com/eigenergy/tellegen/pull/450) [`451a7fa`](https://github.com/eigenergy/tellegen/commit/451a7fa223ed3f462f47a5256249b03faeed0b0b) Thanks [@samtalki](https://github.com/samtalki)! - Read and write PowerIO 0.12.5 modules in the browser engine.
+
+- [#468](https://github.com/eigenergy/tellegen/pull/468) [`dc063d4`](https://github.com/eigenergy/tellegen/commit/dc063d421568e03c2df06d0600174db8e0179fd1) Thanks [@samtalki](https://github.com/samtalki)! - Reject unknown keys in solve request edits so a misspelled or unsupported edit reports an input error.
+
 ## 0.10.3
 
 ### Patch Changes
