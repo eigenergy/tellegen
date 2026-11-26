@@ -4,6 +4,22 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.8.4](https://github.com/eigenergy/tellegen/compare/v0.8.3...v0.8.4) - 2026-11-26
+
+### Added
+
+- Solve typed transmission switching problems and restore AC feasibility ([#447](https://github.com/eigenergy/tellegen/pull/447))
+- Expose optimal transmission switching, AC restoration and LACOTS gap bounds in Python with PowerIO 0.12.5 ([#450](https://github.com/eigenergy/tellegen/pull/450))
+- Support case-voltage starts and expose guarded raw solve requests ([#469](https://github.com/eigenergy/tellegen/pull/469))
+
+### Changed
+
+- Update POUNCE from 0.16.0 to 0.17.0 for AC optimal power flow and transmission switching ([#459](https://github.com/eigenergy/tellegen/pull/459))
+
+### Fixed
+
+- Reject unknown solve edit fields in Rust, Python and the browser ([#468](https://github.com/eigenergy/tellegen/pull/468))
+
 ## [0.8.3](https://github.com/eigenergy/tellegen/compare/v0.8.2...v0.8.3) - 2026-11-20
 
 ### Changed
