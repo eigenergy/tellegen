@@ -32,15 +32,17 @@ archives.
 
 The non-default native `tellegen/acopf` feature depends on
 [POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
-licensed under EPL-2.0. It uses the checksummed crates.io release
-`0.15.0`. The default engine and the
-published WASM, server, CLI, and Python adapters do not enable this feature.
-`scripts/epl-guard.sh` checks that boundary from Cargo's resolved dependency
-trees. The separate `tellegen-acopf-wasi` adapter deliberately enables it.
-The website bundles that generated asset, its EPL-2.0 license, notices, and
-`POUNCE-SOURCE.json` under `/experimental-acopf/`. The manifest records exact
-source archive URLs and checksums. The native server and ordinary npm packages
-do not contain the solver asset.
+licensed under EPL-2.0. `Cargo.lock` records its exact crates.io versions and checksums.
+The published Python wheel enables `tellegen/ots`, which uses this backend for
+nonlinear AC dispatch and feasibility restoration. Its `licenses/` directory
+contains the EPL-2.0 license and `POUNCE-PYTHON-NOTICE.txt`, with a source
+archive URL and SHA-256 checksum for each linked POUNCE crate. After updating
+POUNCE, run `python scripts/acopf-release.py --write-python-notice`.
+
+The website bundles the separate `tellegen-acopf-wasi` reactor under
+`/experimental-acopf/` with its license, notices, and `POUNCE-SOURCE.json`.
+The default Rust engine, ordinary npm packages, native server, and default CLI
+build omit this backend. `scripts/epl-guard.sh` checks their dependency trees.
 
 Before any binary containing POUNCE is distributed, the release owner must
 approve the EPL-2.0 obligations, ship the POUNCE license and notices, and state

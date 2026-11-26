@@ -404,3 +404,22 @@ def test_dc_formula_change_invalidates_cached_result(case):
     assert case.solution["branch_susceptance_formula"] == "tap_adjusted_reactance"
     with pytest.raises(tellegen.TellegenInputError, match="unknown"):
         case.branch_susceptance_formula = "not_a_formula"
+
+
+def test_lacots_gap_converts_native_panic(monkeypatch):
+    from tellegen import _tellegen
+
+    def panic(module_json):
+        raise _tellegen._PanicException("test panic")
+
+    monkeypatch.setattr(_tellegen, "lacots_perspective_data", panic)
+    with pytest.raises(tellegen.TellegenError, match="test panic") as caught:
+        tellegen.solve_lacots_gap("unused")
+    assert caught.value.code == tellegen.PANIC_CODE
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, 2 * sys.maxsize + 2])
+def test_ots_rejects_invalid_topology_limits_with_a_stable_code(limit):
+    with pytest.raises(tellegen.TellegenInputError, match="topology_limit") as caught:
+        tellegen.solve_ots("unused", topology_limit=limit)
+    assert caught.value.code == "REQUEST.MALFORMED"

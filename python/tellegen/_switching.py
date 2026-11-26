@@ -5,6 +5,9 @@ import json
 import math
 
 from . import _tellegen
+from ._guard import guard
+
+_COST_SCALE = 1000.0
 
 
 def _angle_boxes(data):
@@ -48,12 +51,36 @@ def _angle_boxes(data):
         lo, hi = line["angle"] or (None, None)
         lo = max(-cap, lo) if lo is not None else -cap
         hi = min(cap, hi) if hi is not None else cap
-        if not math.isfinite(hi - lo) or lo > hi:
+        if lo > hi:
+            # This line cannot be closed. Other topologies can still dispatch.
+            intervals.append(None)
+            continue
+        if not math.isfinite(hi - lo):
             raise ValueError(
                 f"no valid finite on-state angle interval for {line['id']}"
             )
         intervals.append((lo, hi))
     return intervals
+
+
+def _path_bounds(intervals, max_edges):
+    """Bound each off-state path with the largest other edge weights."""
+    weights = [max(map(abs, bounds)) if bounds else 0.0 for bounds in intervals]
+    ranked = sorted(range(len(weights)), key=weights.__getitem__, reverse=True)
+    selected = ranked[:max_edges]
+    prefix = [0.0]
+    for edge in selected:
+        prefix.append(prefix[-1] + weights[edge])
+    global_bound = prefix[-1]
+    off_bounds = [global_bound] * len(weights)
+    # Accumulate both sides of the omitted edge. Subtracting a dominant
+    # weight from the total could discard every smaller edge by rounding.
+    suffix = weights[ranked[max_edges]] if max_edges < len(ranked) else 0.0
+    for index in reversed(range(len(selected))):
+        edge = selected[index]
+        off_bounds[edge] = prefix[index] + suffix
+        suffix += weights[edge]
+    return global_bound, off_bounds
 
 
 def _solve(data, intervals, bridges, discrete, seconds):
@@ -68,8 +95,7 @@ def _solve(data, intervals, bridges, discrete, seconds):
     buses = data["buses"]
     n = len(buses)
     root = data["root"]
-    weights = [max(abs(a), abs(b)) for a, b in intervals]
-    theta_bound = sum(sorted(weights, reverse=True)[: n - 1])
+    theta_bound, off_bounds = _path_bounds(intervals, n - 1)
     inf = m.infinity()
 
     def var(name, lo, hi):
@@ -88,18 +114,20 @@ def _solve(data, intervals, bridges, discrete, seconds):
     h = [var(f"dv_{i}", *bus["h"]) for i, bus in enumerate(buses)]
     pnet, qnet, commodity = ([[] for _ in buses] for _ in range(3))
     objective = []
+    pg_vars = []
     for i, g in enumerate(data["generators"]):
         pg = var(f"pg_{i}", *(g["p"] or [None, None]))
+        pg_vars.append(pg)
         qg = var(f"qg_{i}", *(g["q"] or [None, None]))
         pnet[g["bus"]].append(pg)
         qnet[g["bus"]].append(qg)
-        objective.append(g["constant"] / 1000)
+        objective.append(g["constant"])
         ep = var(f"cost_{i}", None, None)
         if g["segments"] is not None:
             for a, b in g["segments"]:
-                m.addCons(ep >= (a * pg + b) / 1000)
+                m.addCons(ep >= a * pg + b)
         else:
-            m.addCons(ep >= (g["quadratic"] * pg * pg + g["linear"] * pg) / 1000)
+            m.addCons(ep >= g["quadratic"] * pg * pg + g["linear"] * pg)
         objective.append(ep)
 
     def on_state(name, value, lo, hi, z):
@@ -117,14 +145,16 @@ def _solve(data, intervals, bridges, discrete, seconds):
         z = m.addVar(
             f"z_{k}", vtype="B" if discrete and not fixed else "C", lb=int(fixed), ub=1
         )
+        if interval is None:
+            m.addCons(z == 0)
         states.append(z)
-        objective.append(line["cost"] * (1 - z) / 1000)
+        objective.append(line["cost"] * (1 - z))
         flow = var(f"connect_{k}", 1 - n, n - 1)
         m.addCons(flow <= (n - 1) * z)
         m.addCons(flow >= -(n - 1) * z)
         commodity[f].append(flow)
         commodity[t].append(-flow)
-        lo, hi = interval
+        lo, hi = interval or (0.0, 0.0)
         d = theta[f] - theta[t]
         if fixed:
             df, hf, ht = d, h[f], h[t]
@@ -132,7 +162,7 @@ def _solve(data, intervals, bridges, discrete, seconds):
             m.addCons(d <= hi)
         else:
             # A connected off-state admits a simple path of at most n-1 other lines.
-            off = sum(sorted(weights[:k] + weights[k + 1 :], reverse=True)[: n - 1])
+            off = off_bounds[k]
             df = var(f"on_angle_{k}", min(0, lo), max(0, hi))
             m.addCons(df >= lo * z)
             m.addCons(df <= hi * z)
@@ -165,25 +195,50 @@ def _solve(data, intervals, bridges, discrete, seconds):
     for cap in (data["max_open"], data["max_switched"]):
         if cap is not None:
             m.addCons(quicksum(states) >= len(states) - cap)
-    m.setObjective(quicksum(objective))
+    # Only scale the objective. Scaling each epigraph constraint would also
+    # multiply its accepted feasibility error in the original cost units.
+    m.setObjective(quicksum(objective) / _COST_SCALE)
     m.optimize()
-    lower = m.getDualbound()
+    bound = m.getDualbound()
+    lower = _COST_SCALE * bound if abs(bound) < 0.9 * inf else None
     sol = m.getBestSol()
+    closed, cost = None, None
+    # Allow a solver feasibility tolerance in scaled objective units and
+    # one in cost units for each generation cost epigraph.
+    tolerance = m.feastol() * (_COST_SCALE + len(pg_vars))
+    if sol is not None:
+        closed = [m.getSolVal(sol, z) for z in states]
+        terms = [line["cost"] * (1 - z) for line, z in zip(data["branches"], closed, strict=True)]
+        for g, var_pg in zip(data["generators"], pg_vars, strict=True):
+            value = m.getSolVal(sol, var_pg)
+            terms.append(g["constant"])
+            if g["segments"] is None:
+                terms.extend((g["quadratic"] * value**2, g["linear"] * value))
+            else:
+                terms.append(max(a * value + b for a, b in g["segments"]))
+        cost = math.fsum(terms)
+        scip_cost = _COST_SCALE * m.getSolObjVal(sol)
+        tolerance = max(tolerance, abs(scip_cost - cost), math.ulp(math.fsum(map(abs, terms))))
+        if lower is not None:
+            lower = min(lower, cost)
     return {
         "status": str(m.getStatus()),
         "seconds": m.getSolvingTime(),
-        "lower_bound": 1000 * lower if abs(lower) < 0.9 * inf else None,
-        "objective": 1000 * m.getSolObjVal(sol) if sol is not None else None,
-        "closed": [m.getSolVal(sol, z) for z in states] if sol is not None else None,
+        "lower_bound": lower,
+        "objective": cost,
+        "objective_tolerance": tolerance,
+        "closed": closed,
     }
 
 
+@guard
 def solve_lacots_gap(module_json: str, *, time_limit: float = 120.0) -> dict:
     """Compare integer switching with z in [0,1] using SCIP, in cost units.
 
     Each solve gets time_limit seconds. The interval bounds the absolute
-    objective gap even when SCIP stops early. A point percentage requires
-    optimal termination of both solves and a positive integer objective.
+    objective gap to solver tolerances even when SCIP stops early. A point
+    percentage requires two optimal solves and an integer objective above
+    their combined numerical uncertainty.
     """
     try:
         import networkx as nx
@@ -203,15 +258,16 @@ def solve_lacots_gap(module_json: str, *, time_limit: float = 120.0) -> dict:
     integer = _solve(data, intervals, bridges, True, time_limit)
     lb, ub = integer["lower_bound"], integer["objective"]
     rl, ru = relaxed["lower_bound"], relaxed["objective"]
+    tolerance = integer["objective_tolerance"] + relaxed["objective_tolerance"]
     interval = [
-        max(0.0, lb - ru) if lb is not None and ru is not None else None,
-        max(0.0, ub - rl) if ub is not None and rl is not None else None,
+        max(0.0, lb - ru - tolerance) if lb is not None and ru is not None else None,
+        max(0.0, ub - rl + tolerance) if ub is not None and rl is not None else None,
     ]
     percent = None
     if (
         integer["status"] == relaxed["status"] == "optimal"
-        and ub is not None
-        and ub > 0
+        and None not in (lb, ub, rl, ru)
+        and ub > tolerance + (ub - lb) + (ru - rl)
     ):
         percent = 100 * max(0.0, ub - ru) / ub
     return {

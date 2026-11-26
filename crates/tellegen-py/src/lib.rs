@@ -194,8 +194,7 @@ fn solve_module(py: Python<'_>, module_json: &str, request_json: &str) -> PyResu
 
 /// The formulation, operand and parameter support matrix of this build, as JSON.
 ///
-/// Static: it takes no network and cannot fail. `acopf` reports
-/// `available: false`.
+/// Reports the enabled formulations for this build, including AC OPF in the wheel.
 #[pyfunction]
 fn capabilities_json() -> String {
     tellegen::capabilities_json()
@@ -491,6 +490,10 @@ fn _tellegen(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ENGINE_VERSION", tellegen::VERSION)?;
     m.add("POWERIO_IR_VERSION", powerio::IR_VERSION)?;
     m.add("PANIC_CODE", PANIC_CODE)?;
+    m.add(
+        "_PanicException",
+        py.get_type::<pyo3::panic::PanicException>(),
+    )?;
     m.add("TellegenError", py.get_type::<TellegenError>())?;
     m.add("TellegenInputError", py.get_type::<TellegenInputError>())?;
     m.add("TellegenSolveError", py.get_type::<TellegenSolveError>())?;

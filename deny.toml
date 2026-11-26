@@ -1,9 +1,9 @@
 # Supply-chain governance for the tellegen workspace.
 #
 # Every crate in the default shipping graph must carry a permissive license.
-# POUNCE is EPL-2.0 and appears only behind the opt-in native `tellegen/acopf`
-# development feature. The exceptions below identify that reviewed family;
-# scripts/epl-guard.sh separately proves it is absent from shipping adapters.
+# The Python wheel and the AC OPF WASI build enable `tellegen/acopf`.
+# The exceptions below identify its EPL-2.0 POUNCE crates. scripts/epl-guard.sh
+# checks which targets link the solver.
 
 [licenses]
 # Anything not listed here is denied. Permissive licenses only; copyleft is excluded

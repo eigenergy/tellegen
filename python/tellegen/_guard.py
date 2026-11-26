@@ -18,31 +18,14 @@ from . import _tellegen
 _F = TypeVar("_F", bound=Callable[..., Any])
 
 
-@functools.lru_cache(maxsize=1)
-def _panic_type() -> Any:
-    """The PanicException class, resolved once.
-
-    It lives in the pyo3 runtime module rather than in our extension, so it is
-    looked up lazily; an empty tuple makes the `except` clause below a no-op on
-    a build that has no such class.
-    """
-    try:  # pragma: no cover - depends on the pyo3 runtime module
-        import pyo3_runtime
-
-        return pyo3_runtime.PanicException
-    except Exception:  # pragma: no cover - a build without it
-        return ()
-
-
 def guard(function: _F) -> _F:
     """Wrap one callable so a Rust panic becomes a `TellegenError`."""
 
     @functools.wraps(function)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        panic = _panic_type()
         try:
             return function(*args, **kwargs)
-        except panic as exc:
+        except _tellegen._PanicException as exc:
             error = _tellegen.TellegenError(
                 f"the tellegen engine panicked: {exc}".strip()
             )

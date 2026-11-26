@@ -91,7 +91,7 @@ jobs:
         run: ruff check --no-fix .
 
       - name: Build the wheel
-        run: maturin build --profile release-py --out dist
+        run: maturin build --locked --profile release-py --out dist
 
       # An installed wheel, never `maturin develop`: `python/tellegen` shadows
       # the installed package on sys.path, so a develop install silently tests
@@ -190,8 +190,12 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.leg.target }}
-          args: --profile release-py --out dist
+          args: --locked --profile release-py --out dist
           manylinux: auto
+
+      - name: Check the wheel's POUNCE license and corresponding sources
+        shell: bash
+        run: python scripts/acopf-release.py --check-python-wheel dist/*.whl
 
       # Only where the runner can execute what it just built. The cross legs
       # (linux aarch64, macOS x86_64) prove the build, not the run; running

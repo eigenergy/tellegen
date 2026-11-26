@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Union
 
 from . import _tellegen
@@ -145,8 +146,12 @@ def solve_ots(
     and LACOTS attempt AC redispatch when requested. A successful restoration
     or direct ACOTS solution supplies a PowerIO AcOtsSolution in `ac_solution_ir`.
     """
-    if isinstance(topology_limit, bool) or not isinstance(topology_limit, int) or topology_limit <= 0:
-        raise TellegenInputError("topology_limit must be a positive integer")
+    # The native ABI accepts a Rust usize, whose maximum is 2 * sys.maxsize + 1.
+    if (isinstance(topology_limit, bool) or not isinstance(topology_limit, int)
+            or not 0 < topology_limit <= 2 * sys.maxsize + 1):
+        error = TellegenInputError("topology_limit must be a positive integer that fits in usize")
+        error.code = "REQUEST.MALFORMED"
+        raise error
     return json.loads(_tellegen.solve_ots_module(module_json, model, topology_limit, restore))
 
 
