@@ -173,19 +173,25 @@
 			<button
 				class={{ active: tab === 'activity' }}
 				aria-pressed={tab === 'activity'}
-				onclick={() => (tab = 'activity')}>Activity</button
+				onclick={() => (tab = 'activity')}
 			>
+				Activity
+			</button>
 			<button
 				{@attach takeFocus}
 				class={{ active: tab === 'connect' }}
 				aria-pressed={tab === 'connect'}
-				onclick={() => (tab = 'connect')}>Connect</button
+				onclick={() => (tab = 'connect')}
 			>
+				Connect
+			</button>
 			{#if experiments.length > 0}<button
 					class="export"
 					data-testid="export-experiment-journal"
-					onclick={exportJournal}>Export</button
-				>{/if}
+					onclick={exportJournal}
+				>
+					Export
+				</button>{/if}
 		</nav>
 		<div class="agent-content">
 			{#if tab === 'connect'}<AgentGuide
@@ -226,16 +232,18 @@
 										<span
 											class="chip-status mono"
 											data-testid="capacity-plan-status"
-											data-status={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</span
+											data-status={status}
 										>
+											{status.charAt(0).toUpperCase() + status.slice(1)}
+										</span>
 									</div>
 									{#if outcome}
 										<div class="phi mono">
 											<span class="label">Weighted price</span>
-											<span
-												>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)} $/MWh
-												({formatDelta(exactPhiDelta(entry))})</span
-											>
+											<span>
+												{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)} $/MWh
+												({formatDelta(exactPhiDelta(entry))})
+											</span>
 										</div>
 										<div class="phi-detail mono">
 											<span>Predicted {formatDelta(predictedPhiDelta(entry))}</span>
@@ -255,9 +263,9 @@
 									{#if isStaged(entry)}
 										<div class="review">
 											{#if isApproved(entry)}
-												<span class="approved mono" data-testid="capacity-plan-approved"
-													>Approved</span
-												>
+												<span class="approved mono" data-testid="capacity-plan-approved">
+													Approved
+												</span>
 											{:else}
 												<button
 													class="approve mono"
@@ -380,10 +388,11 @@
 			aria-label="Dismiss introduction"
 			title="Dismiss"
 			onclick={dismiss}
-			><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
-				><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" /></svg
-			></button
 		>
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+				<path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" />
+			</svg>
+		</button>
 	</aside>{/if}
 
 <style>

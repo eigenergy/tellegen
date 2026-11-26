@@ -89,9 +89,9 @@
 			{#if status.id === 'error'}
 				<button class="secondary" onclick={() => location.reload()}>Reload</button>
 			{:else if ready}
-				<button class="secondary" onclick={() => copy(copiedPrompt)}
-					>{copied === copiedPrompt ? 'Copied' : 'Copy prompt'}</button
-				>
+				<button class="secondary" onclick={() => copy(copiedPrompt)}>
+					{copied === copiedPrompt ? 'Copied' : 'Copy prompt'}
+				</button>
 			{/if}
 			<a href="{docs}/webmcp.html#getting-started" target="_blank" rel="noreferrer">Docs</a>
 		</div>
@@ -105,8 +105,10 @@
 				<button
 					class="cmd-copy"
 					aria-label={copied === flagUrl ? 'Copied flag address' : 'Copy flag address'}
-					onclick={() => copy(flagUrl)}>{copied === flagUrl ? 'Copied' : 'Copy'}</button
+					onclick={() => copy(flagUrl)}
 				>
+					{copied === flagUrl ? 'Copied' : 'Copy'}
+				</button>
 			</div>
 		{/if}
 		{#if copyError}<p role="status" class="hint">Copy failed</p>{/if}

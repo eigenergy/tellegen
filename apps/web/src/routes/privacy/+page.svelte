@@ -61,14 +61,14 @@
 			as a field of the record, and may hold them in its operational logs. Records are kept for two
 			years in the United States.
 		</p>
-		<label class="analytics-choice"
-			><input
+		<label class="analytics-choice">
+			<input
 				type="checkbox"
 				disabled={!ready || browserBlocked}
 				checked={optedOut || browserBlocked}
 				onchange={(event) => browserAnalytics()?.setOptOut(event.currentTarget.checked)}
-			/>Disable usage analytics in this browser</label
-		>
+			/>Disable usage analytics in this browser
+		</label>
 		<p class="preference" role="status">
 			{browserBlocked
 				? 'Your browser privacy setting disables analytics.'

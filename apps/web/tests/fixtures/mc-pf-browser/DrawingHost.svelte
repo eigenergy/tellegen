@@ -110,6 +110,8 @@
 					}
 				}
 			};
-		}}>Change switch states</button
+		}}
 	>
+		Change switch states
+	</button>
 {/if}
