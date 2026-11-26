@@ -147,6 +147,14 @@ and source archive that passed the Python gates.
 - `python/tests/`: pytest suites run against the installed wheel in CI on
   Python 3.11 and 3.13, with wheels built for Linux, macOS, and Windows.
 
+## AC power flow starts
+
+`Case.solve(start="case")` uses the stored voltages to initialize AC power
+flow when `case.formulation = "acpf"`. The response's `initialization` field
+reports which start the solver used. Each solve defaults to a flat start.
+For a complete JSON request, `tellegen.solve(case.module_json, request_json)`
+returns a response dict and uses the same exception guard as `Case.solve`.
+
 ## DC branch conventions
 
 ```python

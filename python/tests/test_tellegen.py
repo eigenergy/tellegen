@@ -198,6 +198,41 @@ def test_ac_power_flow_returns_voltages_and_no_prices(case: tellegen.Case):
     assert solution.get("lmp") is None, "AC power flow has no prices"
 
 
+def test_acpf_start_applies_to_one_solve(case: tellegen.Case):
+    case.formulation = "acpf"
+    warm = case.solve(start="case")
+    assert warm["initialization"]["requested"] == "case"
+    assert case.solution is warm
+    assert case.solve()["initialization"]["requested"] == "flat"
+    assert case.solve(start="flat")["initialization"]["requested"] == "flat"
+
+    with pytest.raises(tellegen.TellegenInputError, match="unknown variant") as error:
+        case.solve(start="warm")
+    assert error.value.code == "REQUEST.MALFORMED"
+
+
+def test_public_solve_accepts_a_json_request(case: tellegen.Case):
+    response = tellegen.solve(case.module_json, '{"formulation":"acpf","start":"case"}')
+    assert response["status"] == "feasible"
+    assert response["initialization"]["requested"] == "case"
+
+
+def test_public_solve_converts_native_panics(case: tellegen.Case, monkeypatch):
+    from tellegen import _guard, _tellegen
+
+    class Panic(BaseException):
+        pass
+
+    def panic(module, request):
+        raise Panic("test panic")
+
+    monkeypatch.setattr(_guard, "_panic_type", lambda: Panic)
+    monkeypatch.setattr(_tellegen, "solve_module", panic)
+    with pytest.raises(tellegen.TellegenError) as error:
+        tellegen.solve(case.module_json, "{}")
+    assert error.value.code == tellegen.PANIC_CODE
+
+
 def test_an_unavailable_formulation_is_refused_before_solving(case: tellegen.Case):
     with pytest.raises(tellegen.TellegenInputError, match="formulation must be"):
         case.formulation = "unrecognized"
