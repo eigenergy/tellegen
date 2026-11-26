@@ -799,12 +799,13 @@ version from commit subjects, but on this repository most of those read "Merge
 pull request #N", and it walks the history along one parent at a time, which
 can miss a pull request. So the crate release workflow then runs
 `.github/scripts/write-crate-changelog.py`, which replaces that section's body.
-It reads the first-parent merge commits since the last `v*` tag, keeps those
-that changed `crates/tellegen/` or a root `Cargo.toml` entry the crate builds
-with, and skips Dependabot, release-plz and changesets merges and version-only
-bumps. A title starting `feat:` files the entry under Added, `fix:` under Fixed,
-and `!:` under Breaking; anything else goes under Changed. Write pull request
-titles for a reader of the changelog. The section itself must stay, because
+It reads first-parent merges since the last `v*` tag and includes changes to
+the published crate, the Python wheel, or a workspace dependency the crate uses.
+The PR title supplies the entry. If a one-commit PR has an empty merge message,
+the generator uses that commit’s subject. It records both solver versions when
+Dependabot updates the paired POUNCE pins. Other Dependabot updates and version
+merges are skipped. A `feat:` title goes under Added and a `fix:` title under
+Fixed. The section itself must stay, because
 `release-plz release` takes the GitHub release body from it, so the
 `commit_parsers` in `release-plz.toml` keep merge commits.
 
