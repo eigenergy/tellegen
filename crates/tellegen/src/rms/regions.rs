@@ -146,3 +146,38 @@ pub fn region_stats() -> String {
         tasks.join(" ")
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::{par_for, region_index};
+
+    /// `par_for` runs `f` once for every index.
+    #[test]
+    fn par_for_runs_every_index_once() {
+        for n in [0, 1, 5, 300] {
+            let hits: Vec<AtomicUsize> = (0..n).map(|_| AtomicUsize::new(0)).collect();
+            par_for(n, &|i| {
+                hits[i].fetch_add(1, Ordering::Relaxed);
+            });
+            assert!(hits.iter().all(|h| h.load(Ordering::Relaxed) == 1), "{n}");
+        }
+    }
+
+    /// Without a region map, or with the threads off, a system has no region
+    /// index (the index from a map is checked in a child process, in
+    /// `system`'s tests).
+    #[test]
+    fn no_region_index_without_a_map_or_threads() {
+        let Some(sim) = crate::rms::system::tests::star(&[("smib_genrou_sexs_tgov1", 3)]) else {
+            return;
+        };
+        let mut sys = sim.sys.clone();
+        sys.threads = false;
+        assert!(region_index(&sys).is_none());
+        if std::env::var_os("TELLEGEN_REGIONS").is_none() {
+            assert!(region_index(&sim.sys).is_none());
+        }
+    }
+}

@@ -828,6 +828,145 @@ mod tests {
         assert!(!factor(&mut s, 2, &mut [0u32; 2]));
     }
 
+    /// `split_units` cuts the device part and the units' contributions at
+    /// the chunks' bounds: each chunk gets its units' states (from its first
+    /// unit's first state to the next chunk's), the index of its first
+    /// state, and one contribution per unit; together they cover both in
+    /// order.
+    #[test]
+    fn split_units_cuts_at_the_chunk_bounds() {
+        let sizes = [3, 1, 4, 1, 5, 9, 2];
+        let mut units = Vec::new();
+        let mut first = 0;
+        for (i, &k) in sizes.iter().enumerate() {
+            units.push(Unit {
+                first,
+                k,
+                bus: i,
+                block: 0,
+            });
+            first += k;
+        }
+        let mut dev: Vec<f64> = (0..first).map(|i| i as f64).collect();
+        let mut contrib = vec![[0.0; 2]; units.len()];
+        let bounds = [0, 2, 2, 5, 7];
+        let parts = split_units(&units, &bounds, &mut dev, &mut contrib);
+        assert_eq!(parts.len(), bounds.len() - 1);
+        let mut next = 0;
+        for (c, p) in parts.into_iter().enumerate() {
+            let (d, at, k) = p.into_inner().unwrap();
+            assert_eq!(at, next, "chunk {c}");
+            let states: usize = units[bounds[c]..bounds[c + 1]].iter().map(|u| u.k).sum();
+            assert_eq!(d.len(), states, "chunk {c}");
+            assert!(d.iter().enumerate().all(|(i, &v)| v == (at + i) as f64));
+            assert_eq!(k.len(), bounds[c + 1] - bounds[c], "chunk {c}");
+            next += states;
+        }
+        assert_eq!(next, first);
+        // One chunk: everything.
+        let parts = split_units(&units, &[0, units.len()], &mut dev, &mut contrib);
+        let (d, at, k) = parts.into_iter().next().unwrap().into_inner().unwrap();
+        assert_eq!((d.len(), at, k.len()), (first, 0, units.len()));
+    }
+
+    /// `pool_threads` is the spin pool's thread count where there is one.
+    #[test]
+    fn pool_threads_is_the_spin_pools() {
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        assert_eq!(
+            pool_threads(),
+            super::super::spin_pool::SpinPool::global().threads()
+        );
+        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+        assert_eq!(pool_threads(), 0);
+    }
+
+    /// The fields of a block factorization, value for value.
+    fn fingerprint(b: &BlockLu) -> Vec<u64> {
+        let mut v: Vec<u64> = Vec::new();
+        v.extend(b.col.iter().map(|&c| u64::from(c)));
+        v.extend(b.val.iter().map(|x| x.to_bits()));
+        v.extend(b.start.iter().map(|&c| u64::from(c)));
+        v.extend(b.mid.iter().map(|&c| u64::from(c)));
+        v.extend(b.inv.iter().map(|x| x.to_bits()));
+        v.extend(b.perm.iter().map(|&c| u64::from(c)));
+        v.extend(b.b.iter().map(|x| x.to_bits()));
+        v.extend(b.w.iter().map(|x| x.to_bits()));
+        v
+    }
+
+    /// With enough units the units' blocks are assembled, factorized and
+    /// solved in chunks on the spin pool (`eliminate`, `substitute`); the
+    /// factors, the network's matrix and every solution are those of the
+    /// serial loop, value for value, whether the chunks assemble the units'
+    /// entries themselves (with the Jacobian's unit ranges) or not. Without
+    /// regions, as here, `region_map` gives none.
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    #[test]
+    fn unit_chunks_factorize_and_solve_as_the_serial_loop() {
+        use crate::rms::system::tests::{perturbed, star};
+        let Some(sim) = star(&[
+            ("smib_genrou_sexs_tgov1", 100),
+            ("smib_genrou_hygov_sexs", 60),
+            ("smib_regca1_reecb1_repca1", 70),
+            ("smib_genrou_gast_sexs", 50),
+        ]) else {
+            return;
+        };
+        if std::env::var_os("TELLEGEN_REGIONS").is_none() {
+            assert!(region_map(&sim.sys).is_none());
+        }
+        let mut serial = sim.sys.clone();
+        serial.threads = false;
+        let pooled = &sim.sys;
+        assert!(pooled.threads && pooled.state_units().len() >= PAR_UNITS_MIN);
+        let chunked = pool_threads() > 0;
+        if !chunked {
+            eprintln!("the spin pool has no threads (TELLEGEN_THREADS=0): one chunk");
+        }
+        let x = perturbed(&sim.x0, 1e-4);
+        let (jf, ranges) = pooled.jacobian_units(&x);
+        let rhs = perturbed(&vec![0.0; pooled.nx], 1.0);
+        for h in [0.0, 0.005] {
+            let build = |sys: &DynSystem, ranges: Option<&[(usize, usize, usize)]>| {
+                BlockLu::new(
+                    sys,
+                    &sys.mass,
+                    &jf,
+                    ranges,
+                    h,
+                    0.5,
+                    &mut Patterns::default(),
+                )
+                .unwrap()
+                .expect("the units' blocks are regular")
+            };
+            let mut one = build(&serial, Some(&ranges));
+            assert_eq!(one.solve_chunks, [0, one.units.len()]);
+            let mut want = rhs.clone();
+            one.solve(&mut want);
+            for ranges in [Some(&ranges[..]), None] {
+                let mut many = build(pooled, ranges);
+                if chunked {
+                    assert_eq!(many.solve_chunks.len(), PAR_UNIT_CHUNKS + 1);
+                }
+                assert!(
+                    fingerprint(&many) == fingerprint(&one),
+                    "h {h}, ranges {}",
+                    ranges.is_some()
+                );
+                let mut got = rhs.clone();
+                many.solve(&mut got);
+                assert_eq!(
+                    got.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    want.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    "h {h}, ranges {}",
+                    ranges.is_some()
+                );
+            }
+        }
+    }
+
     /// Whole-case comparisons on dynamized cases (`rms-experimental`).
     #[cfg(feature = "rms-experimental")]
     mod dynamized {

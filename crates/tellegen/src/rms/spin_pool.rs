@@ -290,3 +290,256 @@ fn spin_limit() -> u32 {
     static S: OnceLock<u32> = OnceLock::new();
     *S.get_or_init(|| std::env::var("TELLEGEN_SPIN").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Mutex;
+    use std::thread::ThreadId;
+    use std::time::Duration;
+
+    use super::{spin_limit, SpinPool};
+
+    /// Bound on every wait below, so a broken pool fails instead of hanging.
+    const PATIENCE: Duration = Duration::from_secs(10);
+
+    /// Spin until `done()` holds or [`PATIENCE`] runs out; whether it holds.
+    fn wait_for(done: impl Fn() -> bool) -> bool {
+        let t0 = std::time::Instant::now();
+        while !done() {
+            if t0.elapsed() > PATIENCE {
+                return false;
+            }
+            std::hint::spin_loop();
+        }
+        true
+    }
+
+    /// A pool whose threads have all started and wait for jobs. A thread
+    /// takes part only in the jobs published after it started, so jobs of
+    /// short tasks run until each thread and the caller have taken one.
+    fn settled(threads: usize) -> SpinPool {
+        let pool = SpinPool::new(threads);
+        let t0 = std::time::Instant::now();
+        loop {
+            let on = Mutex::new(HashSet::new());
+            pool.run(64, &|_| {
+                on.lock().unwrap().insert(std::thread::current().id());
+                std::thread::sleep(Duration::from_micros(100));
+            });
+            if on.into_inner().unwrap().len() == threads + 1 {
+                return pool;
+            }
+            assert!(t0.elapsed() < PATIENCE, "the pool's threads did not start");
+        }
+    }
+
+    /// Every task of every job runs exactly once, for task counts from none
+    /// to many, job after job on the same pool.
+    #[test]
+    fn run_runs_every_task_exactly_once() {
+        let pool = settled(3);
+        for tasks in [0, 1, 2, 3, 4, 7, 64, 1000] {
+            for _ in 0..20 {
+                let hits: Vec<AtomicUsize> = (0..tasks).map(|_| AtomicUsize::new(0)).collect();
+                pool.run(tasks, &|k| {
+                    hits[k].fetch_add(1, Ordering::Relaxed);
+                });
+                assert!(
+                    hits.iter().all(|h| h.load(Ordering::Relaxed) == 1),
+                    "{tasks} tasks"
+                );
+            }
+        }
+    }
+
+    /// The pool starts the threads it is asked for, and the caller and every
+    /// thread each take a task of one job: a job of one task more than the
+    /// pool has threads, whose tasks each wait until all have started,
+    /// finishes only if all of them run at once. This holds also after the
+    /// threads have been idle long past their spinning (`spin_limit`) and
+    /// sleep in short naps.
+    #[test]
+    fn run_shares_a_job_between_the_caller_and_every_thread() {
+        assert!(spin_limit() > 0);
+        let pool = settled(3);
+        assert_eq!(pool.threads(), 3);
+        for idle in [Duration::ZERO, Duration::from_millis(120)] {
+            std::thread::sleep(idle);
+            let tasks = pool.threads() + 1;
+            let started = AtomicUsize::new(0);
+            let all_met = AtomicBool::new(true);
+            let ran_on: Mutex<Vec<ThreadId>> = Mutex::new(Vec::new());
+            pool.run(tasks, &|_| {
+                ran_on.lock().unwrap().push(std::thread::current().id());
+                started.fetch_add(1, Ordering::AcqRel);
+                if !wait_for(|| started.load(Ordering::Acquire) == tasks) {
+                    all_met.store(false, Ordering::Relaxed);
+                }
+            });
+            assert!(
+                all_met.load(Ordering::Relaxed),
+                "idle {idle:?}: the tasks did not all run at once"
+            );
+            let ran_on = ran_on.into_inner().unwrap();
+            let distinct: HashSet<ThreadId> = ran_on.iter().copied().collect();
+            assert_eq!(distinct.len(), tasks, "idle {idle:?}");
+            assert!(
+                distinct.contains(&std::thread::current().id()),
+                "the caller took no task"
+            );
+        }
+    }
+
+    /// A pool without threads, and a job of one task, run on the caller
+    /// alone, in task order.
+    #[test]
+    fn run_without_threads_or_with_one_task_stays_on_the_caller() {
+        let me = std::thread::current().id();
+        let bare = SpinPool::new(0);
+        assert_eq!(bare.threads(), 0);
+        let order = Mutex::new(Vec::new());
+        bare.run(5, &|k| {
+            assert_eq!(std::thread::current().id(), me);
+            order.lock().unwrap().push(k);
+        });
+        assert_eq!(*order.lock().unwrap(), [0, 1, 2, 3, 4]);
+        let pool = settled(2);
+        let on = Mutex::new(None);
+        pool.run(1, &|_| {
+            *on.lock().unwrap() = Some(std::thread::current().id())
+        });
+        assert_eq!(*on.lock().unwrap(), Some(me));
+    }
+
+    /// A job started from inside a task of another job on the same pool
+    /// runs all its tasks on that task's thread, each once.
+    #[test]
+    fn a_nested_run_stays_on_its_caller() {
+        let pool = settled(3);
+        let inner_runs = AtomicUsize::new(0);
+        let elsewhere = AtomicUsize::new(0);
+        pool.run(8, &|_| {
+            let me = std::thread::current().id();
+            let hits: Vec<AtomicUsize> = (0..5).map(|_| AtomicUsize::new(0)).collect();
+            pool.run(5, &|k| {
+                hits[k].fetch_add(1, Ordering::Relaxed);
+                if std::thread::current().id() != me {
+                    elsewhere.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+            assert!(hits.iter().all(|h| h.load(Ordering::Relaxed) == 1));
+            inner_runs.fetch_add(1, Ordering::Relaxed);
+        });
+        assert_eq!(inner_runs.load(Ordering::Relaxed), 8);
+        assert_eq!(elsewhere.load(Ordering::Relaxed), 0);
+    }
+
+    /// While one caller's job holds the pool, a job another thread starts
+    /// runs all its tasks on that thread, each once, and returns while the
+    /// first job is still going.
+    #[test]
+    fn a_concurrent_run_stays_on_its_caller() {
+        let pool = settled(2);
+        let first_going = AtomicBool::new(false);
+        let second_done = AtomicBool::new(false);
+        let first_waited = AtomicBool::new(true);
+        std::thread::scope(|s| {
+            let second = s.spawn(|| {
+                assert!(wait_for(|| first_going.load(Ordering::Acquire)));
+                let me = std::thread::current().id();
+                let on: Mutex<Vec<(usize, ThreadId)>> = Mutex::new(Vec::new());
+                pool.run(6, &|k| {
+                    on.lock().unwrap().push((k, std::thread::current().id()))
+                });
+                second_done.store(true, Ordering::Release);
+                let on = on.into_inner().unwrap();
+                assert_eq!(
+                    on.iter().map(|e| e.0).collect::<Vec<_>>(),
+                    [0, 1, 2, 3, 4, 5]
+                );
+                assert!(on.iter().all(|e| e.1 == me));
+            });
+            pool.run(3, &|_| {
+                first_going.store(true, Ordering::Release);
+                if !wait_for(|| second_done.load(Ordering::Acquire)) {
+                    first_waited.store(false, Ordering::Relaxed);
+                }
+            });
+            second.join().unwrap();
+        });
+        assert!(
+            first_waited.load(Ordering::Relaxed),
+            "the second job did not finish while the first held the pool"
+        );
+    }
+
+    /// With a free thread, `beside` runs the side task on a pool thread while
+    /// the caller runs `main` (which here waits for the side task to start),
+    /// runs it once, and returns `main`'s result.
+    #[test]
+    fn beside_runs_the_side_task_on_a_pool_thread() {
+        let pool = settled(1);
+        let me = std::thread::current().id();
+        for round in 0..20 {
+            let started = AtomicBool::new(false);
+            let runs = AtomicUsize::new(0);
+            let on = Mutex::new(None);
+            let r = pool.beside(
+                &|k| {
+                    assert_eq!(k, 0);
+                    *on.lock().unwrap() = Some(std::thread::current().id());
+                    runs.fetch_add(1, Ordering::Relaxed);
+                    started.store(true, Ordering::Release);
+                },
+                || (round * 10, wait_for(|| started.load(Ordering::Acquire))),
+            );
+            assert_eq!(r, (round * 10, true), "round {round}");
+            assert_eq!(runs.load(Ordering::Relaxed), 1);
+            let side = on.lock().unwrap().expect("side ran");
+            assert_ne!(side, me, "round {round}: the side task ran on the caller");
+        }
+    }
+
+    /// Without a free thread (a pool without threads, or one busy with a
+    /// job) the caller runs the side task first, then `main`, and returns
+    /// `main`'s result.
+    #[test]
+    fn beside_without_a_free_thread_runs_the_side_task_first() {
+        let log = Mutex::new(Vec::new());
+        let bare = SpinPool::new(0);
+        let r = bare.beside(&|_| log.lock().unwrap().push("side"), || {
+            log.lock().unwrap().push("main");
+            7
+        });
+        assert_eq!(r, 7);
+        assert_eq!(*log.lock().unwrap(), ["side", "main"]);
+
+        let pool = settled(2);
+        let fine = AtomicUsize::new(0);
+        pool.run(4, &|_| {
+            let me = std::thread::current().id();
+            let order = Mutex::new(Vec::new());
+            let r = pool.beside(
+                &|_| {
+                    order
+                        .lock()
+                        .unwrap()
+                        .push(("side", std::thread::current().id()))
+                },
+                || {
+                    order
+                        .lock()
+                        .unwrap()
+                        .push(("main", std::thread::current().id()));
+                    3
+                },
+            );
+            if r == 3 && *order.lock().unwrap() == [("side", me), ("main", me)] {
+                fine.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        assert_eq!(fine.load(Ordering::Relaxed), 4);
+    }
+}

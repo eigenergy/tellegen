@@ -164,6 +164,14 @@ name = "rms_graph"
 required-features = ["rms-experimental"]
 
 [[test]]
+name = "rms_speedups"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_regions"
+required-features = ["rms"]
+
+[[test]]
 name = "rms_validation"
 required-features = ["rms"]
 

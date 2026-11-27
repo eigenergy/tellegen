@@ -1981,7 +1981,14 @@ fn dense_solve(a: &[f64], n: usize, piv: &[usize], b: &mut [f64]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{backtrack, TOL_RES};
+    use std::sync::Arc;
+
+    use faer::sparse::Triplet;
+
+    use super::{
+        backtrack, contains, dense_lu, dense_solve, union, NetLu, Patterns, SparseLu, PIVOT_TOL,
+        TOL_RES,
+    };
 
     /// A step length that lowers the residual is taken, the longest first.
     #[test]
@@ -2024,5 +2031,328 @@ mod tests {
     fn backtracking_accepts_the_tolerance() {
         let r = backtrack(0.5 * TOL_RES, |_| 0.9 * TOL_RES);
         assert_eq!(r, Some((1.0, 0.9 * TOL_RES)));
+    }
+
+    /// A deterministic pseudo-random number in `[-0.5, 0.5)`.
+    fn noise(s: &mut u64) -> f64 {
+        *s = s
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (*s >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+    }
+
+    /// `A x` for the triplets of `A` (repeated entries add up).
+    fn times(n: usize, trip: &[Triplet<usize, usize, f64>], x: &[f64]) -> Vec<f64> {
+        let mut y = vec![0.0; n];
+        for t in trip {
+            y[t.row] += t.val * x[t.col];
+        }
+        y
+    }
+
+    /// The largest entry of `a − b` against the largest entry of `b`.
+    fn rel_diff(a: &[f64], b: &[f64]) -> f64 {
+        let scale = b.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+        let diff = a
+            .iter()
+            .zip(b)
+            .fold(0.0_f64, |m, (p, q)| m.max((p - q).abs()));
+        diff / scale
+    }
+
+    /// An `n × n` sparse matrix with three entries per row and column whose
+    /// pattern does not depend on `seed`: a diagonally dominant matrix (its
+    /// diagonal and the entries 1 and 7 to its right, cyclically) with its
+    /// rows shifted by 3, so that its own diagonal is zero and a
+    /// factorization has to pivot.
+    fn shifted_matrix(n: usize, seed: u64) -> Vec<Triplet<usize, usize, f64>> {
+        let mut s = seed;
+        let mut trip = Vec::new();
+        for i in 0..n {
+            let row = (i + 3) % n;
+            trip.push(Triplet::new(row, i, 4.0 + noise(&mut s)));
+            trip.push(Triplet::new(row, (i + 1) % n, noise(&mut s)));
+            trip.push(Triplet::new(row, (i + 7) % n, noise(&mut s)));
+        }
+        trip
+    }
+
+    /// The known solution of the sparse tests.
+    fn known(n: usize) -> Vec<f64> {
+        (0..n)
+            .map(|i| 1.0 + i as f64 * 0.25 - (i % 3) as f64)
+            .collect()
+    }
+
+    /// `dense_lu` with `dense_solve` solves systems with known solutions: one
+    /// whose first pivot must come from the last row (and the pivot records
+    /// that row), and a full one of size 6.
+    #[test]
+    fn dense_lu_solves_with_partial_pivoting() {
+        let a0 = [0.0, 2.0, 1.0, 1.0, 1.0, 0.0, 4.0, -1.0, 3.0];
+        let want = [1.5, -2.0, 0.25];
+        let mut b: Vec<f64> = (0..3)
+            .map(|i| (0..3).map(|j| a0[i * 3 + j] * want[j]).sum())
+            .collect();
+        let mut a = a0;
+        let mut piv = [0usize; 3];
+        assert!(dense_lu(&mut a, 3, &mut piv));
+        assert_eq!(piv[0], 2, "the largest entry of the first column");
+        dense_solve(&a, 3, &piv, &mut b);
+        assert!(rel_diff(&b, &want) < 1e-15, "{b:?}");
+
+        let n = 6;
+        let mut s = 7;
+        let a0: Vec<f64> = (0..n * n).map(|_| noise(&mut s)).collect();
+        let want: Vec<f64> = (0..n).map(|i| i as f64 - 2.5).collect();
+        let mut b: Vec<f64> = (0..n)
+            .map(|i| (0..n).map(|j| a0[i * n + j] * want[j]).sum())
+            .collect();
+        let mut a = a0;
+        let mut piv = vec![0usize; n];
+        assert!(dense_lu(&mut a, n, &mut piv));
+        assert!(piv.iter().enumerate().all(|(k, &p)| p >= k && p < n));
+        dense_solve(&a, n, &piv, &mut b);
+        assert!(rel_diff(&b, &want) < 1e-12, "{b:?}");
+    }
+
+    /// `dense_lu` reports a singular matrix: two proportional rows, a zero
+    /// column, a NaN entry.
+    #[test]
+    fn dense_lu_detects_a_singular_matrix() {
+        let mut piv = [0usize; 3];
+        assert!(!dense_lu(&mut [1.0, 2.0, 2.0, 4.0], 2, &mut piv[..2]));
+        assert!(!dense_lu(&mut [1.0, 0.0, 3.0, 0.0], 2, &mut piv[..2]));
+        assert!(!dense_lu(
+            &mut [1.0, 0.0, 0.0, 0.0, f64::NAN, 0.0, 0.0, 0.0, 1.0],
+            3,
+            &mut piv
+        ));
+        assert!(dense_lu(&mut [], 0, &mut []));
+    }
+
+    /// `union` merges two patterns column by column with the rows
+    /// ascending; `contains` holds exactly for the patterns that hold every
+    /// entry of the other, of the same size.
+    #[test]
+    fn union_and_contains_of_patterns() {
+        let (cp, ri) = (vec![0, 2, 3, 3], vec![0, 2, 1]);
+        let (cp2, ri2) = (vec![0, 1, 3, 4], vec![1, 0, 2, 0]);
+        let (ucp, uri) = union(&cp, &ri, &cp2, &ri2);
+        assert_eq!(ucp, [0, 3, 6, 7]);
+        assert_eq!(uri, [0, 1, 2, 0, 1, 2, 0]);
+        assert!(contains(&ucp, &uri, &cp, &ri));
+        assert!(contains(&ucp, &uri, &cp2, &ri2));
+        assert!(contains(&cp, &ri, &cp, &ri));
+        assert!(!contains(&cp, &ri, &cp2, &ri2));
+        assert!(!contains(&cp2, &ri2, &ucp, &uri));
+        assert_eq!(union(&cp, &ri, &cp, &ri), (cp.clone(), ri.clone()));
+        // Another size is never contained.
+        assert!(!contains(&ucp, &uri, &[0, 1, 1], &[0]));
+    }
+
+    /// The first factorization of a pattern pivots; a later matrix of that
+    /// pattern is refactorized in its pivot order (the same row order), and
+    /// solves as the pivoted factorization of that matrix does, to rounding.
+    /// Refactorizing the first matrix in its own order reproduces its
+    /// solution to rounding too.
+    #[test]
+    fn refactorization_in_the_first_pivot_order_solves_as_pivoting_does() {
+        let n = 40;
+        let x = known(n);
+        let (a, b) = (shifted_matrix(n, 1), shifted_matrix(n, 2));
+        let mut patterns = Patterns::default();
+        let mut first = SparseLu::new(n, &a, &mut patterns).unwrap();
+        let mut ya = times(n, &a, &x);
+        first.solve(&mut ya);
+        assert!(
+            rel_diff(&ya, &x) < 1e-13,
+            "pivoted: {:e}",
+            rel_diff(&ya, &x)
+        );
+
+        let mut again = SparseLu::new(n, &b, &mut patterns).unwrap();
+        assert!(
+            Arc::ptr_eq(&first.pivots, &again.pivots),
+            "not refactorized"
+        );
+        let mut fresh = SparseLu::new(n, &b, &mut Patterns::default()).unwrap();
+        let rhs = times(n, &b, &x);
+        let (mut y1, mut y2) = (rhs.clone(), rhs);
+        again.solve(&mut y1);
+        fresh.solve(&mut y2);
+        assert!(rel_diff(&y1, &y2) < 1e-13, "{:e}", rel_diff(&y1, &y2));
+        assert!(rel_diff(&y1, &x) < 1e-13, "{:e}", rel_diff(&y1, &x));
+
+        let (pattern, val) = patterns.assemble(n, &a).unwrap();
+        let mut own =
+            SparseLu::refactor(&pattern, &first.pivots, &val).expect("its own pivots hold");
+        let mut y = times(n, &a, &x);
+        own.solve(&mut y);
+        assert!(rel_diff(&y, &ya) < 1e-14, "{:e}", rel_diff(&y, &ya));
+    }
+
+    /// A matrix whose first pivot (in the kept order) is below `PIVOT_TOL`
+    /// of the largest entry under it is not refactorized: it is pivoted
+    /// afresh, solves its system, and its row order is kept for the matrices
+    /// after it.
+    #[test]
+    fn a_pivot_below_the_tolerance_pivots_afresh() {
+        let n = 40;
+        let x = known(n);
+        let a = shifted_matrix(n, 1);
+        let mut patterns = Patterns::default();
+        let first = SparseLu::new(n, &a, &mut patterns).unwrap();
+        let pv = Arc::clone(&first.pivots);
+        let (r, c) = (pv.row_perm[0], pv.col_perm[0]);
+        let below = a
+            .iter()
+            .filter(|t| t.col == c && t.row != r)
+            .fold(0.0_f64, |m, t| m.max(t.val.abs()));
+        assert!(below > 0.0);
+        let mut weak = a.clone();
+        for t in weak.iter_mut().filter(|t| t.row == r && t.col == c) {
+            t.val = 0.1 * PIVOT_TOL * below;
+        }
+        let (pattern, val) = patterns.assemble(n, &weak).unwrap();
+        assert!(SparseLu::refactor(&pattern, &pv, &val).is_none());
+        // Just above the tolerance it is still refactorized.
+        let mut fair = a.clone();
+        for t in fair.iter_mut().filter(|t| t.row == r && t.col == c) {
+            t.val = 10.0 * PIVOT_TOL * below;
+        }
+        let (pattern, val) = patterns.assemble(n, &fair).unwrap();
+        assert!(SparseLu::refactor(&pattern, &pv, &val).is_some());
+
+        let mut lu = SparseLu::new(n, &weak, &mut patterns).unwrap();
+        assert!(
+            !Arc::ptr_eq(&lu.pivots, &pv),
+            "refactorized on a small pivot"
+        );
+        let rhs = times(n, &weak, &x);
+        let mut y = rhs.clone();
+        lu.solve(&mut y);
+        let back = times(n, &weak, &y);
+        assert!(rel_diff(&back, &rhs) < 1e-12, "{:e}", rel_diff(&back, &rhs));
+        let next = SparseLu::new(n, &shifted_matrix(n, 2), &mut patterns).unwrap();
+        assert!(
+            Arc::ptr_eq(&next.pivots, &lu.pivots),
+            "the new row order is not kept"
+        );
+    }
+
+    /// With `pivot_always` (`RmsOptions::refactor_values` off) every
+    /// factorization pivots afresh: no row order is shared, and each solves
+    /// bit for bit as a first factorization of its matrix.
+    #[test]
+    fn pivot_always_pivots_every_factorization() {
+        let n = 40;
+        let x = known(n);
+        let mut patterns = Patterns {
+            pivot_always: true,
+            ..Patterns::default()
+        };
+        let first = SparseLu::new(n, &shifted_matrix(n, 1), &mut patterns).unwrap();
+        for seed in 2..5 {
+            let m = shifted_matrix(n, seed);
+            let mut lu = SparseLu::new(n, &m, &mut patterns).unwrap();
+            assert!(!Arc::ptr_eq(&lu.pivots, &first.pivots));
+            let mut fresh = SparseLu::new(n, &m, &mut Patterns::default()).unwrap();
+            let rhs = times(n, &m, &x);
+            let (mut y1, mut y2) = (rhs.clone(), rhs);
+            lu.solve(&mut y1);
+            fresh.solve(&mut y2);
+            assert_eq!(
+                y1.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                y2.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                "seed {seed}"
+            );
+        }
+    }
+
+    /// A network-shaped matrix: `n` buses with two unknowns each (rows and
+    /// columns `b` and `n + b`), coupled in 2 × 2 blocks along a chain and
+    /// by the lines `extra`, and one border unknown `2 n` coupled to a few
+    /// buses (the frame speed of the block factorization).
+    fn network_matrix(
+        n: usize,
+        extra: &[(usize, usize)],
+        seed: u64,
+    ) -> Vec<Triplet<usize, usize, f64>> {
+        let mut s = seed;
+        let mut trip = Vec::new();
+        let mut block = |trip: &mut Vec<Triplet<usize, usize, f64>>, r: usize, c: usize, d: f64| {
+            let (g, h) = (d + noise(&mut s), noise(&mut s));
+            trip.push(Triplet::new(r, c, g));
+            trip.push(Triplet::new(r, n + c, h));
+            trip.push(Triplet::new(n + r, c, -h));
+            trip.push(Triplet::new(n + r, n + c, g));
+        };
+        let lines: Vec<(usize, usize)> = (0..n - 1)
+            .map(|b| (b, b + 1))
+            .chain(extra.iter().copied())
+            .collect();
+        for b in 0..n {
+            block(&mut trip, b, b, 6.0);
+        }
+        for &(a, b) in &lines {
+            block(&mut trip, a, b, 0.0);
+            block(&mut trip, b, a, 0.0);
+        }
+        let w = 2 * n;
+        trip.push(Triplet::new(w, w, 1.0));
+        trip.push(Triplet::new(w, 2, 0.3));
+        trip.push(Triplet::new(w, n + 2, -0.2));
+        for b in [1, n / 2, n - 1] {
+            trip.push(Triplet::new(b, w, 0.1 + noise(&mut s)));
+        }
+        trip
+    }
+
+    /// The network LU by regions (a separator and one block per region)
+    /// solves the same system as one sparse LU, to rounding: at the first
+    /// factorization, at a refactorization of new values with the kept
+    /// separator, and at a new system epoch with a new line between two
+    /// regions. A line between two regions that the kept separator does not
+    /// cover is refused within the epoch. Without a usable region map the
+    /// network is one sparse LU.
+    #[test]
+    fn the_region_lu_solves_what_one_sparse_lu_does() {
+        let n = 12;
+        let size = 2 * n + 1;
+        let reg: Vec<u16> = (0..n).map(|b| (b / 4) as u16).collect();
+        let x: Vec<f64> = (0..size).map(|i| (i as f64 * 0.37).sin() + 0.5).collect();
+        let mut by_regions = Patterns::default();
+        let check = |trip: &[Triplet<usize, usize, f64>], patterns: &mut Patterns, epoch: u64| {
+            let mut lu = NetLu::new(size, n, trip, patterns, Some(&reg), epoch).unwrap();
+            assert!(matches!(lu, NetLu::Regions(_)));
+            let mut one = NetLu::new(size, n, trip, &mut Patterns::default(), None, epoch).unwrap();
+            assert!(matches!(one, NetLu::One(_)));
+            let rhs = times(size, trip, &x);
+            let (mut y1, mut y2) = (rhs.clone(), rhs);
+            lu.solve(&mut y1);
+            one.solve(&mut y2);
+            assert!(
+                rel_diff(&y1, &y2) < 1e-13,
+                "epoch {epoch}: {:e}",
+                rel_diff(&y1, &y2)
+            );
+            assert!(
+                rel_diff(&y1, &x) < 1e-13,
+                "epoch {epoch}: {:e}",
+                rel_diff(&y1, &x)
+            );
+        };
+        // Lines 3-4, 7-8 (the chain) and 0-11 cross regions.
+        check(&network_matrix(n, &[(0, 11)], 1), &mut by_regions, 0);
+        check(&network_matrix(n, &[(0, 11)], 2), &mut by_regions, 0);
+        let across = network_matrix(n, &[(0, 11), (1, 9)], 3);
+        let refused = NetLu::new(size, n, &across, &mut by_regions, Some(&reg), 0);
+        assert!(refused.is_err_and(|e| e.contains("outside the separator")));
+        check(&across, &mut by_regions, 1);
+
+        let short = &reg[..n - 1];
+        let lu = NetLu::new(size, n, &across, &mut Patterns::default(), Some(short), 1).unwrap();
+        assert!(matches!(lu, NetLu::One(_)));
     }
 }

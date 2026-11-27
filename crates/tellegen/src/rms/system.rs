@@ -1790,3 +1790,296 @@ impl SendPtr {
     }
 }
 
+#[cfg(test)]
+pub(super) mod tests {
+    use super::super::{LoadModel, RmsOptions, RmsSimulation};
+    use super::DynSystem;
+
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/smib.rs"
+    ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
+
+    /// The first line of `text` that starts with `head`.
+    fn line_of<'a>(text: &'a str, head: &str) -> &'a str {
+        text.lines()
+            .find(|l| l.starts_with(head))
+            .unwrap_or_else(|| panic!("no line {head:?}"))
+    }
+
+    /// Many single-machine cases of the shipped example on one infinite
+    /// bus: `count` units of each kind (a SMIB case id), each at its own bus
+    /// (from 1000 on) with its own two lines to bus 101, its records and
+    /// dispatch as in its SMIB case. The units barely see each other, so
+    /// the case starts at rest like its SMIB cases; it is there for its many
+    /// units. `None` without the shipped case data.
+    pub(in crate::rms) fn star(kinds: &[(&str, usize)]) -> Option<RmsSimulation> {
+        shipped_wecc240()?;
+        let cases = wecc240_smib_cases();
+        let case = |id: &str| {
+            cases
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap_or_else(|| panic!("no SMIB case {id}"))
+        };
+        let first = case(kinds[0].0);
+        let mut buses = String::new();
+        let mut gens = String::new();
+        let mut branches = String::new();
+        let mut dyr = format!("{}\n", line_of(&first.dyr, "    101 'GENCLS'"));
+        let mut num = 1000;
+        for &(id, count) in kinds {
+            let c = case(id);
+            for _ in 0..count {
+                let at = format!("{num:>6},");
+                buses.push_str(&line_of(&c.raw, "   102,'UNIT'").replacen("   102,", &at, 1));
+                buses.push('\n');
+                gens.push_str(&line_of(&c.raw, "   102,'1 '").replacen("   102,", &at, 1));
+                gens.push('\n');
+                for l in c.raw.lines().filter(|l| l.starts_with("   101,    102,")) {
+                    branches.push_str(&l.replacen("    102,", &format!("{num:>7},"), 1));
+                    branches.push('\n');
+                }
+                for rec in c.dyr.split('/').map(str::trim) {
+                    if let Some(rest) = rec.strip_prefix("102 ") {
+                        dyr.push_str(&format!("{num:>7} {rest} /\n"));
+                    }
+                }
+                num += 1;
+            }
+        }
+        let raw = format!(
+            "{}\n\n\n{}\n{buses} 0 /End of Bus data, Begin Load data\n 0 /End of Load data, Begin Fixed shunt data\n 0 /End of Fixed shunt data, Begin Generator data\n{}\n{gens} 0 /End of Generator data, Begin Branch data\n{branches}{SMIB_TAIL}",
+            first.raw.lines().next().unwrap(),
+            line_of(&first.raw, "   101,'INF BUS'"),
+            line_of(&first.raw, "   101,'1 '"),
+        );
+        let src = powerio::Source::from_memory("case.raw", raw.into_bytes()).unwrap();
+        let module = powerio::parse(src).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        let dyr = powerio::parse_dyr(&dyr).unwrap();
+        Some(
+            RmsSimulation::with_options(
+                net,
+                &dyr,
+                LoadModel::ConstantImpedance,
+                RmsOptions::default(),
+            )
+            .unwrap(),
+        )
+    }
+
+    /// The machines and renewable plants of the star tests: enough of both
+    /// for the units' and the plants' chunks on the spin pool.
+    pub(in crate::rms) const MIXED: [(&str, usize); 4] = [
+        ("smib_genrou_sexs_tgov1", 40),
+        ("smib_genrou_hygov_sexs", 40),
+        ("smib_regca1_reecb1_repca1", 70),
+        ("smib_genrou_gast_sexs", 40),
+    ];
+
+    /// `x` moved off its rest point by up to `rel` of each entry (and an
+    /// absolute `rel` on zeros), deterministically.
+    pub(in crate::rms) fn perturbed(x: &[f64], rel: f64) -> Vec<f64> {
+        let mut s = 0x2545_f491_4f6c_dd1d_u64;
+        x.iter()
+            .map(|&v| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                let u = (s >> 11) as f64 / (1u64 << 53) as f64 - 0.5;
+                v + rel * u * v.abs().max(1.0)
+            })
+            .collect()
+    }
+
+    fn bits(v: &[f64]) -> Vec<u64> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    fn jacobian_bits(t: &[(usize, usize, f64)]) -> Vec<(usize, usize, u64)> {
+        t.iter().map(|&(r, c, v)| (r, c, v.to_bits())).collect()
+    }
+
+    /// The system with the parallel parts on (the default) and off.
+    fn both(sim: &RmsSimulation) -> (DynSystem, DynSystem) {
+        let mut serial = sim.sys.clone();
+        serial.threads = false;
+        let mut pooled = sim.sys.clone();
+        pooled.threads = true;
+        (pooled, serial)
+    }
+
+    /// The units' and the plants' residual in chunks on the spin pool is the
+    /// serial one (`residual_units_serial`, `residual_plants_serial`) bit for
+    /// bit, with and without the units' outputs; so is the Jacobian built in
+    /// chunks (the same triplets in the same order, the same unit ranges).
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    #[test]
+    fn unit_chunks_give_the_serial_residual_and_jacobian() {
+        let Some(sim) = star(&MIXED) else { return };
+        let (pooled, serial) = both(&sim);
+        assert!(pooled.devices.len() >= super::PAR_MIN_UNITS);
+        assert!(pooled.held.iter().filter(|h| h.plant.is_some()).count() >= super::PAR_MIN_UNITS);
+        if super::super::spin_pool::SpinPool::global().threads() == 0 {
+            eprintln!("skipped: the spin pool has no threads (TELLEGEN_THREADS=0)");
+            return;
+        }
+        for x in [sim.x0.clone(), perturbed(&sim.x0, 1e-3)] {
+            let (mut fp, mut fs) = (vec![0.0; pooled.nx], vec![0.0; pooled.nx]);
+            pooled.residual(&x, &mut fp, None);
+            serial.residual(&x, &mut fs, None);
+            assert_eq!(bits(&fp), bits(&fs));
+            let (mut op, mut os) = (Vec::new(), Vec::new());
+            pooled.residual(&x, &mut fp, Some(&mut op));
+            serial.residual(&x, &mut fs, Some(&mut os));
+            assert_eq!(bits(&fp), bits(&fs));
+            assert_eq!(format!("{op:?}"), format!("{os:?}"));
+            let (jp, rp) = pooled.jacobian_units(&x);
+            let (js, rs) = serial.jacobian_units(&x);
+            assert_eq!(jacobian_bits(&jp), jacobian_bits(&js));
+            assert_eq!(rp, rs);
+            assert_eq!(rp.len(), pooled.state_units().len());
+        }
+    }
+
+    /// The region of each star bus in the region map of the region tests:
+    /// the units' buses in turn over four regions; bus 101 is not in the map
+    /// and so in region 0.
+    fn star_region(bus: usize) -> u16 {
+        if bus >= 1000 {
+            ((bus - 1000) % 4) as u16
+        } else {
+            0
+        }
+    }
+
+    /// The region index from `TELLEGEN_REGIONS` and the residual by regions
+    /// are checked in a child process of this test binary
+    /// (`regions_in_a_child_process`), since the map is read once per
+    /// process: the parent writes the map and runs the child with it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_residual_by_regions_is_the_serial_residual() {
+        if shipped_wecc240().is_none() {
+            return;
+        }
+        let path =
+            std::env::temp_dir().join(format!("tellegen-regions-unit-{}.json", std::process::id()));
+        let mut map: std::collections::BTreeMap<String, u16> = (1000..1000 + 190)
+            .map(|b| (b.to_string(), star_region(b)))
+            .collect();
+        // A bus the case does not have is ignored.
+        map.insert("99999".into(), 3);
+        std::fs::write(&path, serde_json::to_string(&map).unwrap()).unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "rms::system::tests::regions_in_a_child_process",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("TELLEGEN_REGIONS", &path)
+            .env("TELLEGEN_THREADS", "3")
+            .env_remove("TELLEGEN_NET_ONE")
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(&path);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "the child failed:\n{text}"
+        );
+        assert!(
+            text.contains("regions checked"),
+            "the child skipped:\n{text}"
+        );
+    }
+
+    /// Run by `the_residual_by_regions_is_the_serial_residual` with a region
+    /// map; without one it does nothing. `region_map` gives each bus its
+    /// region from the map; `regions::region_index` groups the buses, units,
+    /// plants and sources by region, each bus with its index in its region,
+    /// once per system shape, and gives none with the threads off; the
+    /// residual by regions writes every row and is the serial residual bit
+    /// for bit, also through `residual`, which takes it without outputs.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "run in a child process by the_residual_by_regions_is_the_serial_residual"]
+    fn regions_in_a_child_process() {
+        use std::sync::atomic::Ordering::Relaxed;
+        use std::sync::Arc;
+
+        use super::super::regions::{region_index, CALLS};
+        use super::super::schur::region_map;
+        if std::env::var_os("TELLEGEN_REGIONS").is_none() {
+            eprintln!("skipped: no region map (TELLEGEN_REGIONS)");
+            return;
+        }
+        let sim = star(&MIXED).expect("the shipped case data");
+        let sys = &sim.sys;
+        let want: Vec<u16> = sys.bus_numbers.iter().map(|&b| star_region(b)).collect();
+        assert_eq!(region_map(sys).expect("a region map"), want.as_slice());
+        let ri = region_index(sys).expect("a region index");
+        assert_eq!(ri.nr, 4);
+        let mut seen = vec![false; sys.n];
+        for (r, buses) in ri.buses.iter().enumerate() {
+            assert!(buses.windows(2).all(|w| w[0] < w[1]));
+            for (l, &b) in buses.iter().enumerate() {
+                assert_eq!(usize::from(want[b]), r);
+                assert_eq!(ri.local[b] as usize, l);
+                seen[b] = true;
+            }
+        }
+        assert!(seen.iter().all(|&s| s));
+        let grouped = |lists: &[Vec<usize>], len: usize, bus: &dyn Fn(usize) -> usize| {
+            let mut all: Vec<usize> = lists.iter().flatten().copied().collect();
+            all.sort_unstable();
+            assert_eq!(all, (0..len).collect::<Vec<_>>());
+            for (r, l) in lists.iter().enumerate() {
+                assert!(l.iter().all(|&k| usize::from(want[bus(k)]) == r));
+            }
+        };
+        grouped(&ri.devices, sys.devices.len(), &|k| sys.devices[k].bus);
+        grouped(&ri.held, sys.held.len(), &|k| sys.held[k].bus);
+        grouped(&ri.sources, sys.sources.len(), &|k| sys.sources[k].bus);
+        assert!(
+            Arc::ptr_eq(&ri, &region_index(sys).unwrap()),
+            "built again for the same system"
+        );
+        let mut serial = sys.clone();
+        serial.threads = false;
+        assert!(region_index(&serial).is_none());
+
+        for x in [sim.x0.clone(), perturbed(&sim.x0, 1e-3)] {
+            let mut direct = vec![f64::NAN; sys.nx];
+            sys.residual_by_regions(&x, &mut direct, &ri);
+            let calls = CALLS.load(Relaxed);
+            let mut by_regions = vec![f64::NAN; sys.nx];
+            sys.residual(&x, &mut by_regions, None);
+            assert!(
+                CALLS.load(Relaxed) > calls,
+                "the residual did not go by regions"
+            );
+            let mut with_outs = vec![0.0; sys.nx];
+            sys.residual(&x, &mut with_outs, Some(&mut Vec::new()));
+            let mut one = vec![0.0; sys.nx];
+            serial.residual(&x, &mut one, None);
+            assert!(one.iter().all(|v| v.is_finite()));
+            assert_eq!(bits(&direct), bits(&one));
+            assert_eq!(bits(&by_regions), bits(&one));
+            assert_eq!(bits(&with_outs), bits(&one));
+        }
+        println!("regions checked");
+    }
+}
