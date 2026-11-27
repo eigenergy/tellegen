@@ -170,9 +170,9 @@ function answer(r: RmsWorkerRequest): unknown {
 afterEach(() => setRmsWorkerFactory(null));
 
 describe("RMS run buffers", () => {
-  it("unpacks channel-major values into zero-copy views", () => {
+  it("unpacks channel-major values into zero-copy views", async () => {
     const values = new Float64Array([1, 2, 3, 4, 5, 6]);
-    const run = unpackRun(
+    const run = await unpackRun(
       { events: [] },
       { meta: meta(["a", "b"]), time: new Float64Array([0, 1, 2]), values },
       5,
@@ -184,8 +184,8 @@ describe("RMS run buffers", () => {
     expect(run.bytes).toBe(9 * 8);
   });
 
-  it("refuses buffers that do not match their keys", () => {
-    expect(() =>
+  it("refuses buffers that do not match their keys", async () => {
+    await expect(
       unpackRun(
         { events: [] },
         {
@@ -195,7 +195,7 @@ describe("RMS run buffers", () => {
         },
         0,
       ),
-    ).toThrow(/2 channels × 3 samples/);
+    ).rejects.toThrow(/2 channels × 3 samples/);
   });
 
   it("fills the run defaults and keeps the output step a multiple of dt", () => {
@@ -279,7 +279,7 @@ describe("RMS result validation", () => {
     time: new Float64Array([0, 0.01]),
     values: new Float64Array([1, 1]),
   });
-  it("accepts unavailable screening extrema returned by Rust", () => {
+  it("accepts unavailable screening extrema returned by Rust", async () => {
     const value = validRun();
     const parsed = JSON.parse(value.meta);
     for (const key of [
@@ -293,12 +293,12 @@ describe("RMS result validation", () => {
     for (const key of ["min_pu", "final_min_pu", "final_max_pu"])
       parsed.screening.voltage[key] = null;
     value.meta = JSON.stringify(parsed);
-    const run = unpackRun({ events: [] }, value, 1);
+    const run = await unpackRun({ events: [] }, value, 1);
     expect(run.screening.voltage.min_pu).toBeNull();
     expect(run.screening.frequency.coi_nadir_hz).toBeNull();
     expect(run.time).toBe(value.time);
   });
-  it("rejects malformed run metadata before exposing channels", () => {
+  it("rejects malformed run metadata before exposing channels", async () => {
     for (const change of [
       (m: any) => {
         m.keys = ["vm:1", "vm:1"];
@@ -323,10 +323,12 @@ describe("RMS result validation", () => {
       const parsed = JSON.parse(value.meta);
       change(parsed);
       value.meta = JSON.stringify(parsed);
-      expect(() => unpackRun({ events: [] }, value, 1)).toThrow(/RMS|rms/);
+      await expect(unpackRun({ events: [] }, value, 1)).rejects.toThrow(
+        /RMS|rms/,
+      );
     }
   });
-  it("rejects wrong buffer types, invalid sample times and invalid worker duration", () => {
+  it("rejects wrong buffer types, invalid sample times and invalid worker duration", async () => {
     for (const patch of [
       { time: [0, 1] },
       { values: new Float32Array([1, 1]) },
@@ -334,21 +336,21 @@ describe("RMS result validation", () => {
       { time: new Float64Array([0, 0]) },
       { time: new Float64Array([0, Infinity]) },
     ])
-      expect(() =>
+      await expect(
         unpackRun(
           { events: [] },
           { ...validRun(), ...patch } as RmsRunValue,
           1,
         ),
-      ).toThrow(/RMS/);
-    expect(() => unpackRun({ events: [] }, validRun(), NaN)).toThrow(
+      ).rejects.toThrow(/RMS/);
+    await expect(unpackRun({ events: [] }, validRun(), NaN)).rejects.toThrow(
       /duration/,
     );
   });
-  it("keeps unavailable frequency samples and their binary buffer intact", () => {
+  it("keeps unavailable frequency samples and their binary buffer intact", async () => {
     const value = validRun();
     value.values[1] = NaN;
-    const run = unpackRun({ events: [] }, value, 1);
+    const run = await unpackRun({ events: [] }, value, 1);
     expect(run.time).toBe(value.time);
     expect(run.series("vm:1")!.buffer).toBe(value.values.buffer);
     expect(run.series("vm:1")![1]).toBeNaN();

@@ -1,5 +1,10 @@
 import { parseApiResult, validateApiResult } from "./result-validation.js";
-export { parseApiResult, validateApiResult } from "./result-validation.js";
+export {
+  parseApiResult,
+  preloadValidators,
+  validateApiResult,
+  type ResultName,
+} from "./result-validation.js";
 import type { DcFormula, SensitivityMatrix } from "./generated/api-types.js";
 export type { DcFormula, StudyOptions } from "./generated/api-types.js";
 import type { DcGrid, DcGridSolution } from "./dc-grid.js";
@@ -678,7 +683,7 @@ async function readRetainedResult<T>(
   response: Promise<EngineValue>,
 ): Promise<T> {
   try {
-    return parseApiResult<T>(name, await response);
+    return await parseApiResult<T>(name, await response);
   } catch (error) {
     await releaseUnownedInput(host, input);
     throw error;
@@ -868,7 +873,7 @@ export async function applyMcGeo(
   layer: string,
 ): Promise<AppliedMcGeoCase> {
   assertEngineInputLength(moduleJson.length);
-  const result = parseApiResult<AppliedMcGeoCase>("ingest_distribution",
+  const result = await parseApiResult<AppliedMcGeoCase>("ingest_distribution",
     expectText(
       await engineHost().call({
         op: "apply_geo",
@@ -1547,7 +1552,9 @@ export function mcPfResultTables(result: McPfResult): McPfResultTables {
 
 /** Views into the engine's packed columns, in the order its
  * `McPfResultBuffers` documents. No values are copied. */
-function unpackResultTables(value: EngineValue): McPfResultTables {
+async function unpackResultTables(
+  value: EngineValue,
+): Promise<McPfResultTables> {
   if (
     value === null ||
     typeof value !== "object" ||
@@ -1564,8 +1571,8 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
   if (value.indices.length !== 2 * t + 5 * p + 2 * s ||
       value.values.length !== 6 * t + 4 * p + 4 * s)
     throw new Error("Engine result table lengths do not match counts");
-  const strings = parseApiResult<string[]>("mc_strings", value.strings);
-  const metadata = parseApiResult<Pick<McPfResultTables, "load_model" | "network_scope" | "excluded_islands">>("mc_metadata", value.metadata);
+  const strings = await parseApiResult<string[]>("mc_strings", value.strings);
+  const metadata = await parseApiResult<Pick<McPfResultTables, "load_model" | "network_scope" | "excluded_islands">>("mc_metadata", value.metadata);
   let at = 0;
   const indices = (rows: number) => value.indices.subarray(at, (at += rows));
   const terminalBus = indices(t);
@@ -1740,7 +1747,7 @@ export class BrowserMcPfSession {
     });
     const received = performance.now();
     const text = expectText(answer.value);
-    const summary = parseApiResult("mc_summary", text) as McPfSummary;
+    const summary = await parseApiResult("mc_summary", text) as McPfSummary;
     this.lastTiming = {
       engine_ms: answer.engineMs,
       round_trip_ms: received - started,
@@ -1877,7 +1884,7 @@ export async function createMcPfSession(
   // A kept module lives in one engine worker; its session must too.
   const host = typeof input === "string" ? engineHost() : input.host;
   const handle = ++mcPfSessionSeq;
-  const summary = parseApiResult(
+  const summary = await parseApiResult(
     "mc_summary",
     expectText(
       await host.call(
@@ -1994,7 +2001,7 @@ export async function solveMcModule(
       options: JSON.stringify(options),
     });
     signal?.throwIfAborted();
-    return parseApiResult("mc_result", expectText(result));
+    return await parseApiResult("mc_result", expectText(result));
   } finally {
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
@@ -2025,7 +2032,7 @@ export async function solveMcStudy(
       options: JSON.stringify(options),
     });
     signal?.throwIfAborted();
-    return parseApiResult("mc_study", expectText(result));
+    return await parseApiResult("mc_study", expectText(result));
   } finally {
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
@@ -2449,7 +2456,7 @@ export class BrowserStudy {
       });
       signal?.throwIfAborted();
       this.#atBase = edits.length === 0;
-      return parseApiResult("commit", expectText(result));
+      return await parseApiResult("commit", expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
       throw error;
@@ -2539,7 +2546,7 @@ export class BrowserStudy {
     if (this.#formulation === "acpf") {
       return { prices: [], objectiveDelta: null, units: null };
     }
-    const out: StudyPreview = parseApiResult(
+    const out: StudyPreview = await parseApiResult(
       "preview",
       expectText(
         await this.#host.call({
@@ -2665,7 +2672,7 @@ export class BrowserStudy {
         spec: JSON.stringify(spec),
       });
       signal?.throwIfAborted();
-      return parseApiResult("plan", expectText(result));
+      return await parseApiResult("plan", expectText(result));
     } catch (error) {
       signal?.throwIfAborted();
       throw error;
@@ -2904,7 +2911,7 @@ async function loadPlacesOn(
   bytes: Uint8Array,
 ): Promise<SynthPlacesInfo> {
   assertEngineInputBytes(bytes);
-  const info = parseApiResult<SynthPlacesInfo>("synth_places",
+  const info = await parseApiResult<SynthPlacesInfo>("synth_places",
     expectText(await callSynth(host, { op: "synth_load_places", bytes })),
   );
   placesLoaded.set(host, host.kind);
@@ -3007,7 +3014,7 @@ export class BrowserSynthSession {
     options: { withPreview?: boolean } = {},
   ): Promise<SynthAdvance & { preview?: SynthPreview }> {
     this.#check();
-    const outcome = parseApiResult<SynthAdvance>("synth_step",
+    const outcome = await parseApiResult<SynthAdvance>("synth_step",
       expectText(
         await callSynth(this.host, {
           op: "synth_session_advance",
@@ -3088,7 +3095,7 @@ export class BrowserSynthSession {
    * dropped `.pio.json` produces, so it opens without a second parse. */
   async ingest(): Promise<IngestedCase> {
     this.#check();
-    return parseApiResult("ingest_balanced",
+    return await parseApiResult("ingest_balanced",
       expectText(
         await callSynth(this.host, {
           op: "synth_session_ingest",
@@ -3114,7 +3121,7 @@ export class BrowserSynthSession {
     // as unhandled while the payload is on its way.
     study.catch(() => {});
     try {
-      const view = parseApiResult("ingest_balanced_view",
+      const view = await parseApiResult("ingest_balanced_view",
         expectText(
           await callSynth(this.host, {
             op: "synth_session_ingest_view",
@@ -3255,7 +3262,7 @@ export async function generateSynthetic(
   };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
-    const out = parseApiResult<{
+    const out = await parseApiResult<{
       module_json: string;
       report: GenerationReport;
       ingest: IngestedCase;

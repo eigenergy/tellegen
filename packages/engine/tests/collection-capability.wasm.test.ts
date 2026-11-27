@@ -7,7 +7,7 @@ import {
   initSync,
 } from "../src/wasm-pkg/tellegen.js";
 
-it("matches collection availability to the compiled backend and keeps its API actionable", () => {
+it("matches collection availability to the compiled backend and keeps its API actionable", async () => {
   initSync({
     module: readFileSync(
       new URL("../src/wasm-pkg/tellegen_bg.wasm", import.meta.url),
@@ -25,15 +25,19 @@ it("matches collection availability to the compiled backend and keeps its API ac
   );
   try {
     expect(
-      parseApiResult<{ candidates: unknown[] }>(
-        "collection_inspection",
-        collection.inspect(),
+      (
+        await parseApiResult<{ candidates: unknown[] }>(
+          "collection_inspection",
+          collection.inspect(),
+        )
       ).candidates,
     ).toHaveLength(1);
     expect(
-      parseApiResult<{ kind: string }>(
-        "collection_import",
-        collection.ingest('{"primary":"case.m"}'),
+      (
+        await parseApiResult<{ kind: string }>(
+          "collection_import",
+          collection.ingest('{"primary":"case.m"}'),
+        )
       ).kind,
     ).toBe("balanced");
   } finally {

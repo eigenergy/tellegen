@@ -344,6 +344,19 @@ responses release the new worker allocation. Older responses may omit newer
 optional fields, which are checked when present. A failed calculation retains
 its engine error and diagnostics.
 
+The validators are split into a few modules by result family, and each module
+is imported the first time one of its results is checked, so the package root
+loads none of them:
+
+- `parseApiResult(name, text)` and `validateApiResult(name, value)` return a
+  promise of the validated result.
+- `preloadValidators(names)` imports the modules for those results ahead of
+  their first use.
+- `@tellegen/engine/validators` exports `parseApiResultSync` and
+  `validateApiResultSync` for a host that cannot await validation. That entry
+  imports every validator when it loads.
+- `unpackRun(request, value, workerMs)` returns a promise of the `RmsRun`.
+
 After changing those Rust types, regenerate the schemas and TypeScript/Python
 files using the commands in the [engine package guide](https://github.com/eigenergy/tellegen/tree/main/packages/engine#generated-types).
 CI runs `scripts/schemas.sh --check`, which rejects a committed schema that differs from the Rust records, including changes in shared result records.

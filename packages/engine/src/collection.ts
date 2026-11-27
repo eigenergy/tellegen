@@ -163,7 +163,7 @@ export class BrowserCaseCollection {
 
   private async open(request: EngineRequest): Promise<this> {
     try {
-      this.inspection = parseApiResult(
+      this.inspection = await parseApiResult(
         "collection_inspection",
         await this.call(request),
       );
@@ -199,7 +199,7 @@ export class BrowserCaseCollection {
       this.#family,
     );
     try {
-      child.inspection = parseApiResult(
+      child.inspection = await parseApiResult(
         "collection_inspection",
         await this.call({
           op: "collection_nested",
