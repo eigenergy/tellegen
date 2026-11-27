@@ -1061,9 +1061,10 @@ impl Stepper {
         // Experimental: frozen limits take their new modes once the step is taken.
         let switched = sys.update_limit_modes();
         LIMIT_SWITCHES.fetch_add(switched, std::sync::atomic::Ordering::Relaxed);
-        // A state carried past its clamp goes back onto it, and after a switch or such a move the
-        // derivative the next step starts from is the one of the new mode, not the free rate.
-        let projected = sys.project_limits(&mut self.work.x);
+        // A state carried past its clamp or limit goes back onto it, and after a switch or such a
+        // move the derivative the next step starts from is the one of the new mode, not the free
+        // rate.
+        let projected = sys.project_limits(x, &mut self.work.x);
         if switched + projected > 0 {
             sys.residual(&self.work.x, &mut self.work.f, None);
         }

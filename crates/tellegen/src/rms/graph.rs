@@ -1046,16 +1046,38 @@ impl CompiledGraph {
         &x[self.offset[i]..self.offset[i] + self.blocks[i].n_states()]
     }
 
-    /// Experimental: with frozen limits, set the states of limited lags with a time
-    /// constant whose output is their clamped state back onto that clamp after a step carried
-    /// them past it (as [`super::models::Avr::project_limits`]). Returns whether a state moved.
-    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+    /// Experimental: with held limits, after a step from `from` to `x`, set the
+    /// state of each limited lag with a time constant back where its limits stop it.
+    /// A lag whose output is its clamped state goes back onto that clamp (as
+    /// [`super::models::Avr::project_limits`]). A lag whose output is the state
+    /// itself (`clamp_output: false`) has no clamp to fall back on, but its
+    /// non-windup limit lets the state neither cross a limit from within nor move
+    /// further out from beyond one, so a state a free step carried past a limit goes
+    /// back onto it, and one that started beyond goes back to where it started. The
+    /// mode that then binds holds it there. Returns whether a state moved.
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> bool {
         let mut moved = false;
         for op in &self.tape {
             if let Op::StateClamped { x: s, min, max, .. } = *op {
                 let s = s as usize;
                 if self.mass[s] >= f64::EPSILON && x[s].is_finite() {
                     let c = x[s].clamp(min, max);
+                    moved |= c != x[s];
+                    x[s] = c;
+                }
+            }
+        }
+        for (i, block) in self.blocks.iter().enumerate() {
+            if let Block::LagLimited {
+                min,
+                max,
+                clamp_output: false,
+                ..
+            } = *block
+            {
+                let s = self.offset[i];
+                if self.mass[s] >= f64::EPSILON && x[s].is_finite() && from[s].is_finite() {
+                    let c = x[s].clamp(min.min(from[s]), max.max(from[s]));
                     moved |= c != x[s];
                     x[s] = c;
                 }
@@ -2453,45 +2475,83 @@ mod tests {
 
     /// After a step, a graph sets the state of each limited lag with a time
     /// constant whose output is its clamped state back onto that clamp (as
-    /// [`super::super::models::Avr::project_limits`]); an algebraic lag and
-    /// one whose output is the state itself are left alone. The clamp is
-    /// the one set at rest (widened to a state resting past its limit). The
-    /// exciter, governor and stabilizer graphs do the same.
+    /// [`super::super::models::Avr::project_limits`]); an algebraic lag is
+    /// left alone, and so is a lag whose output is the state itself while it
+    /// stays on the side of its limit it started from or does not move further
+    /// out. The clamp is the one set at rest (widened to a state resting past
+    /// its limit). The exciter, governor and stabilizer graphs do the same.
     #[test]
     fn project_limits_puts_clamped_lags_back_on_their_clamp() {
         let c = limited_lags(Slot::Exciter, "v_ref");
         assert_eq!(c.state_names(), ["a", "b", "c"]);
         let mut x = [1.3, 1.3, 1.3];
-        assert!(c.project_limits(&mut x));
+        assert!(c.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [1.0, 1.3, 1.3]);
         let mut x = [-0.2, -0.2, -0.2];
-        assert!(c.project_limits(&mut x));
+        assert!(c.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [0.0, -0.2, -0.2]);
         let mut x = [0.5, 2.0, 2.0];
-        assert!(!c.project_limits(&mut x));
+        assert!(!c.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [0.5, 2.0, 2.0]);
         let mut x = [f64::NAN, 0.0, 0.0];
-        assert!(!c.project_limits(&mut x));
+        assert!(!c.project_limits(&x.clone(), &mut x));
         // At rest past its limit: the clamp widened to the state.
         let mut rest = c.clone();
         rest.rest_at(&[1.2, 0.0, 0.0], 0.0);
         let mut x = [1.2, 0.0, 0.0];
-        assert!(!rest.project_limits(&mut x));
+        assert!(!rest.project_limits(&x.clone(), &mut x));
         let mut x = [1.3, 0.0, 0.0];
-        assert!(rest.project_limits(&mut x));
+        assert!(rest.project_limits(&x.clone(), &mut x));
         assert_eq!(x[0], 1.2);
 
         use super::super::models::{Avr, Governor, Stabilizer};
+        // A step from within the limits that carries the lags past them: the
+        // lag whose output is its state goes back onto the limit too (state c).
+        let from = [0.9, 0.9, 0.9];
         let mut x = [1.3, 1.3, 1.3];
-        assert!(Avr::Graph(Box::new(c)).project_limits(&mut x));
+        assert!(c.project_limits(&from, &mut x));
+        assert_eq!(x, [1.0, 1.3, 1.0]);
+        let mut x = [-0.2, -0.2, -0.2];
+        assert!(c.project_limits(&[0.1; 3], &mut x));
+        assert_eq!(x, [0.0, -0.2, 0.0]);
+        // Within the limits it is left alone.
+        let mut x = [0.95, 0.95, 0.95];
+        assert!(!c.project_limits(&from, &mut x));
+        assert_eq!(x, [0.95, 0.95, 0.95]);
+        // Beyond a limit at the step's start (at rest past it): it may come
+        // back towards the limit, but not move further out.
+        let mut x = [1.0, 0.0, 1.15];
+        assert!(!c.project_limits(&[1.0, 0.0, 1.2], &mut x));
+        assert_eq!(x[2], 1.15);
+        let mut x = [1.0, 0.0, 1.25];
+        assert!(c.project_limits(&[1.0, 0.0, 1.2], &mut x));
+        assert_eq!(x[2], 1.2);
+        let mut x = [0.0, 0.0, -0.3];
+        assert!(c.project_limits(&[0.0, 0.0, -0.25], &mut x));
+        assert_eq!(x[2], -0.25);
+        let mut x = [0.5, 0.0, 1.3];
+        assert!(!c.project_limits(&[0.5, 0.0, f64::NAN], &mut x));
+        // The exciter, governor and stabilizer graphs alike.
+        for slot in [
+            Avr::Graph(Box::new(c.clone())).project_limits(&from, &mut [1.3; 3]),
+            Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")))
+                .project_limits(&from, &mut [0.9, 0.9, 1.3]),
+            Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")))
+                .project_limits(&from, &mut [0.9, 0.9, 1.3]),
+        ] {
+            assert!(slot);
+        }
+
+        let mut x = [1.3, 1.3, 1.3];
+        assert!(Avr::Graph(Box::new(c)).project_limits(&x.clone(), &mut x));
         assert_eq!(x, [1.0, 1.3, 1.3]);
         let mut x = [1.3, 1.3, 1.3];
         let gov = Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")));
-        assert!(gov.project_limits(&mut x));
+        assert!(gov.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [1.0, 1.3, 1.3]);
         let mut x = [1.3, 1.3, 1.3];
         let pss = Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")));
-        assert!(pss.project_limits(&mut x));
+        assert!(pss.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [1.0, 1.3, 1.3]);
     }
 

@@ -288,11 +288,12 @@ fn smib_model_variants_against_psid() {
 /// state of its non-windup lag) and PSS2B's output. tellegen runs with its
 /// default held limits (`RmsOptions::freeze_limits`) and with limits that
 /// switch within the step, each within its own tolerances. Where the narrowed
-/// ESST1A's fault drives VA into VAMAX, VA comes to rest above the limit by
-/// what the step that reaches it overshoots: 1.5e-2 with held limits, 3.4e-3
-/// with limits switching within the step (both shrink in proportion to the
-/// step), so the field voltage differs by up to 4.9e-3 and 1.1e-3 once VA
-/// leaves the limit, the rotor angle by 6.4e-5 and 1.5e-5 rad. The reference is
+/// ESST1A's fault drives VA into VAMAX, held limits put VA back onto the limit
+/// after the step that carries it past (VA within 8.4e-5 of the reference),
+/// while limits switching within the step leave it above the limit by what
+/// that step overshoots (3.4e-3, in proportion to the step), so the field
+/// voltage differs by up to 2.4e-5 and 1.1e-3 once VA leaves the limit, the
+/// rotor angle by 2.5e-6 and 1.5e-5 rad. The reference is
 /// `tests/data/rms_smib/psid_reference_ext_models.json`, written by
 /// `validation/rms-models/psid-smib/generate.jl`; see the `SOURCES.md` next
 /// to it. Set `RMS_PSID_MEASURED=<file>` to write the differences, from

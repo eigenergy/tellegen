@@ -514,15 +514,15 @@ impl Governor {
         }
     }
 
-    /// Experimental: a graph's limited lags back onto their clamps after a step
-    /// ([`Avr::project_limits`]).
-    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+    /// Experimental: a graph's limited lags back onto their limits after a step
+    /// from `from` ([`Avr::project_limits`]).
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> bool {
         match self {
             #[cfg(feature = "rms-experimental")]
-            Self::Graph(g) => g.project_limits(x),
+            Self::Graph(g) => g.project_limits(from, x),
             #[allow(unreachable_patterns)]
             _ => {
-                let _ = x;
+                let _ = (from, x);
                 false
             }
         }
@@ -552,15 +552,15 @@ impl Stabilizer {
         }
     }
 
-    /// Experimental: a graph's limited lags back onto their clamps after a step
-    /// ([`Avr::project_limits`]).
-    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+    /// Experimental: a graph's limited lags back onto their limits after a step
+    /// from `from` ([`Avr::project_limits`]).
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> bool {
         match self {
             #[cfg(feature = "rms-experimental")]
-            Self::Graph(g) => g.project_limits(x),
+            Self::Graph(g) => g.project_limits(from, x),
             #[allow(unreachable_patterns)]
             _ => {
-                let _ = x;
+                let _ = (from, x);
                 false
             }
         }
@@ -592,8 +592,10 @@ impl Avr {
     /// Experimental: with frozen limits, a step in the free mode can carry a
     /// non-windup lag's state past its clamp (by up to `h·K·e/T`); the state is set back onto the
     /// clamp after the step, where the output is the same, so the limiter does not wind up.
+    /// A graph's lags whose output is the state itself go back onto their limits, measured
+    /// against `from`, the state at the step's start.
     /// Returns whether a state moved.
-    pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> bool {
         let onto = |v: &mut f64, (lo, hi): (f64, f64)| {
             let c = v.clamp(lo, hi);
             let moved = c != *v && v.is_finite();
@@ -604,8 +606,11 @@ impl Avr {
             Self::Sexs { te, out, .. } if *te >= f64::EPSILON => onto(&mut x[0], *out),
             Self::Esac1a { ta, va_out, .. } if *ta >= f64::EPSILON => onto(&mut x[2], *va_out),
             #[cfg(feature = "rms-experimental")]
-            Self::Graph(g) => g.project_limits(x),
-            _ => false,
+            Self::Graph(g) => g.project_limits(from, x),
+            _ => {
+                let _ = from;
+                false
+            }
         }
     }
 
@@ -1961,29 +1966,31 @@ mod tests {
             (3.0, 3.0, false),
         ] {
             let mut x = [v, 0.7];
-            assert_eq!(avr.project_limits(&mut x), moved, "Efd {v}");
+            assert_eq!(avr.project_limits(&x.clone(), &mut x), moved, "Efd {v}");
             assert_eq!(x, [back, 0.7]);
         }
         let mut x = [f64::NAN, 0.7];
-        assert!(!sexs(0.1).project_limits(&mut x));
+        assert!(!sexs(0.1).project_limits(&x.clone(), &mut x));
         let mut x = [3.2, 0.7];
-        assert!(!sexs(0.0).project_limits(&mut x), "TE = 0");
+        assert!(!sexs(0.0).project_limits(&x.clone(), &mut x), "TE = 0");
         assert_eq!(x, [3.2, 0.7]);
 
         let avr = esac1a(0.02, (-14.5, 14.5));
         let mut x = [20.0, 20.0, 15.0, 20.0, 20.0];
-        assert!(avr.project_limits(&mut x));
+        assert!(avr.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [20.0, 20.0, 14.5, 20.0, 20.0]);
         let mut x = [1.0, 0.0, -16.0, 1.0, 0.0];
-        assert!(avr.project_limits(&mut x));
+        assert!(avr.project_limits(&x.clone(), &mut x));
         assert_eq!(x[2], -14.5);
         // VA resting past VAMAX at the start: its clamp widened to it.
         let mut x = [1.0, 0.0, 15.0, 1.0, 0.0];
-        assert!(!esac1a(0.02, (-14.5, 15.0)).project_limits(&mut x));
+        assert!(!esac1a(0.02, (-14.5, 15.0)).project_limits(&x.clone(), &mut x));
         assert_eq!(x[2], 15.0);
-        assert!(!esac1a(0.0, (-14.5, 14.5)).project_limits(&mut [1.0, 0.0, 15.0, 1.0, 0.0]));
+        assert!(
+            !esac1a(0.0, (-14.5, 14.5)).project_limits(&[0.0; 5], &mut [1.0, 0.0, 15.0, 1.0, 0.0])
+        );
 
-        assert!(!Avr::Fixed.project_limits(&mut []));
+        assert!(!Avr::Fixed.project_limits(&[], &mut []));
         let exst1 = Avr::Exst1 {
             tr: 0.02,
             vi_min: -0.2,
@@ -1999,7 +2006,7 @@ mod tests {
             tf: 1.0,
         };
         let mut x = [9.0; 4];
-        assert!(!exst1.project_limits(&mut x));
+        assert!(!exst1.project_limits(&x.clone(), &mut x));
         assert_eq!(x, [9.0; 4]);
         assert_eq!(exst1.update_limit_modes(), 0);
         assert_eq!(Avr::Fixed.update_limit_modes(), 0);

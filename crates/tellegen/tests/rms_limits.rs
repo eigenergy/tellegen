@@ -213,9 +213,6 @@ const ESST1A_VAMAX: &str = "    102 'ESST1A' 1 1 1 0.02 99.0 -99.0 1.0 10.0 0.0 
 /// reference as limits switching within Newton's iterations.
 #[cfg(feature = "rms-experimental")]
 #[test]
-#[ignore = "held limits leave ESST1A's VA above VAMAX by a free step's overshoot \
-            (5.06 against 5.01 free, 5.002 at 0.1 ms), not projected back: the field \
-            voltage and rotor angle errors are about 4x those of free limits"]
 fn held_limits_on_a_graph_lag_without_output_clamp_are_as_accurate() {
     if shipped_wecc240().is_none() {
         return;
@@ -235,6 +232,7 @@ fn held_limits_on_a_graph_lag_without_output_clamp_are_as_accurate() {
     for ch in ["delta:102", "efd:102"] {
         let e_held = max_diff(&held.channels[ch], &fine.channels[ch]);
         let e_free = max_diff(&free.channels[ch], &fine.channels[ch]);
+        eprintln!("ESST1A {ch}: error held {e_held:.3e}, free {e_free:.3e}");
         assert!(
             e_held <= e_free,
             "{ch}: error held {e_held:.3e}, free {e_free:.3e}"

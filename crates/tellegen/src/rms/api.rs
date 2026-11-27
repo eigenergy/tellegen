@@ -357,13 +357,17 @@ pub struct RmsOptions {
     /// notes name every unit whose solved reactive power and setpoint
     /// disagree, and by how much.
     pub reactive_limits: bool,
-    /// Hold each non-windup limit (SEXS field voltage, the limited lags of
-    /// block graphs) in its state at the start of a step while Newton solves
-    /// the step, and let it switch after the step, with a small hysteresis,
-    /// the default; or let the limits switch within Newton's iterations. At
-    /// a limit's kink the latter often fails steps and falls back to shorter
-    /// ones. Validated against 1 ms references: the held limits are as close
-    /// or closer, a limit switches at most one step later.
+    /// Hold each non-windup limit (SEXS field voltage, ESAC1A `VA`, the
+    /// limited lags of block graphs) in its state at the start of a step
+    /// while Newton solves the step, and let it switch after the step, with a
+    /// small hysteresis, a state the step carried past its limit going back
+    /// onto it, the default; or let the limits switch within Newton's
+    /// iterations. At a limit's kink the latter often fails steps and falls
+    /// back to shorter ones. Validated against PowerSimulationsDynamics.jl
+    /// (at a 1 ms step) and against runs at a 0.1 ms step: the held limits
+    /// are as close or closer on every compared channel but those of a fault
+    /// on a unit with SEXS and PSS2B (rotor angle 5.3e-5 against 1.1e-5 rad),
+    /// and a limit switches at most one step later.
     pub freeze_limits: bool,
 }
 

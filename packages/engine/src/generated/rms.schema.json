@@ -990,7 +990,7 @@
         },
         "freeze_limits": {
           "default": true,
-          "description": "Hold each non-windup limit (SEXS field voltage, the limited lags of\nblock graphs) in its state at the start of a step while Newton solves\nthe step, and let it switch after the step, with a small hysteresis,\nthe default; or let the limits switch within Newton's iterations. At\na limit's kink the latter often fails steps and falls back to shorter\nones. Validated against 1 ms references: the held limits are as close\nor closer, a limit switches at most one step later.",
+          "description": "Hold each non-windup limit (SEXS field voltage, ESAC1A `VA`, the\nlimited lags of block graphs) in its state at the start of a step\nwhile Newton solves the step, and let it switch after the step, with a\nsmall hysteresis, a state the step carried past its limit going back\nonto it, the default; or let the limits switch within Newton's\niterations. At a limit's kink the latter often fails steps and falls\nback to shorter ones. Validated against PowerSimulationsDynamics.jl\n(at a 1 ms step) and against runs at a 0.1 ms step: the held limits\nare as close or closer on every compared channel but those of a fault\non a unit with SEXS and PSS2B (rotor angle 5.3e-5 against 1.1e-5 rad),\nand a limit switches at most one step later.",
           "type": "boolean"
         },
         "keep_factorization": {
@@ -1387,5 +1387,5 @@
   ],
   "title": "RmsSchema",
   "type": "object",
-  "x-rust-source-sha256": "c0179764f390b1383e37aa952d3a9b571048f5f11a52715636611feb6d4b0aad"
+  "x-rust-source-sha256": "39eaf501c3569ec1571e068693419453ba7cbf4ce136ea500489ed806bda1c54"
 }

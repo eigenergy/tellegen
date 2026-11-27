@@ -1148,9 +1148,10 @@ impl DynSystem {
             .sum()
     }
 
-    /// Experimental: with frozen limits, set the exciter states a step carried past
-    /// their clamps back onto them ([`super::models::Avr::project_limits`]); returns how many.
-    pub(crate) fn project_limits(&self, x: &mut [f64]) -> usize {
+    /// Experimental: with frozen limits, set the controller states a step from `from`
+    /// carried past their limits back onto them ([`super::models::Avr::project_limits`]);
+    /// returns how many units had a state moved.
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> usize {
         if !self.freeze_limits {
             return 0;
         }
@@ -1161,9 +1162,10 @@ impl DynSystem {
                 let [_, _, a, g, p] = d.layout();
                 let o = d.offset;
                 let np = d.pss.n_states();
-                usize::from(d.avr.project_limits(&mut x[o + a..o + g]))
-                    + usize::from(d.gov.project_limits(&mut x[o + g..o + p]))
-                    + usize::from(d.pss.project_limits(&mut x[o + p..o + p + np]))
+                let (ra, rg, rp) = (o + a..o + g, o + g..o + p, o + p..o + p + np);
+                usize::from(d.avr.project_limits(&from[ra.clone()], &mut x[ra]))
+                    + usize::from(d.gov.project_limits(&from[rg.clone()], &mut x[rg]))
+                    + usize::from(d.pss.project_limits(&from[rp.clone()], &mut x[rp]))
             })
             .sum()
     }
