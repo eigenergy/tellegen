@@ -151,6 +151,48 @@ impl Timer {
     }
 }
 
+/// Time constant of the frequency filter, s.
+const FREQUENCY_TAU: f64 = 0.04;
+
+/// Time constant of the filter on the filtered frequency's rate of change,
+/// s (this module's choice: half the frequency filter's, so the correction
+/// settles within a few tens of milliseconds of a ramp's start).
+const FREQUENCY_RATE_TAU: f64 = 0.02;
+
+impl FrequencyEstimate {
+    /// The estimate after the angle rate `inst` (Hz) measured over the
+    /// last `h` s. The angle rate goes through a first-order filter of
+    /// 40 ms, which on a ramp of `r` Hz/s trails by `τ r`. That lag is made
+    /// up by adding `τ` times the filtered frequency's own rate of change
+    /// (itself filtered over 20 ms): a type-2 estimate, exact on a steady
+    /// ramp. The correction only ever moves the filtered value towards the
+    /// median of the last three angle rates and never past it: a step lands
+    /// on the new frequency without overshoot, and a phase jump (one
+    /// sample's spike of the angle rate, which the median leaves out) moves
+    /// the estimate no further than the filter alone does.
+    fn update(&mut self, inst: f64, h: f64) -> f64 {
+        // The filter starts from the reference frequency, as before any
+        // angle rate was measured.
+        let prev = self.filtered.or(self.f).unwrap_or(inst);
+        let lowpass = prev + (h / FREQUENCY_TAU).min(1.0) * (inst - prev);
+        self.filtered = Some(lowpass);
+        self.rate += (h / FREQUENCY_RATE_TAU).min(1.0) * ((lowpass - prev) / h - self.rate);
+        self.recent.rotate_left(1);
+        self.recent[2] = inst;
+        self.n_recent = (self.n_recent + 1).min(3);
+        if self.n_recent < 3 {
+            return lowpass;
+        }
+        let towards = median3(self.recent[0], self.recent[1], self.recent[2]);
+        median3(lowpass, lowpass + FREQUENCY_TAU * self.rate, towards)
+    }
+}
+
+/// The middle one of three values.
+fn median3(a: f64, b: f64, c: f64) -> f64 {
+    a.max(b).min(a.min(b).max(c))
+}
+
 fn op(time: f64, relay: &str, function: &str, kind: OperationKind, detail: String) -> Operation {
     Operation {
         time,
@@ -272,7 +314,15 @@ struct Swing {
 #[derive(Clone, Debug, Default)]
 struct FrequencyEstimate {
     last: Option<(f64, f64)>,
+    /// The estimate the functions read.
     f: Option<f64>,
+    /// The angle rate through the first-order filter.
+    filtered: Option<f64>,
+    /// The rate of change of `filtered`, through a filter of its own, Hz/s.
+    rate: f64,
+    /// The last three angle rates, the latest last (fewer at the start).
+    recent: [f64; 3],
+    n_recent: usize,
     /// `(t, f)` for the rate of change of frequency, kept only by a relay
     /// with that function (which also trims it to its window).
     history: VecDeque<(f64, f64)>,
@@ -674,8 +724,11 @@ impl RelayState {
         };
         // @block Frequency estimate
         // Frequency: the angle rate of V1 in the reference frame, filtered
-        // over 40 ms (for the relays that read it). Below 5 % voltage the
-        // last estimate is kept.
+        // over 40 ms, with the filter's lag on a ramp made up (for the relays
+        // that read it): on a steady ramp the estimate trails by one and a
+        // half evaluation steps (1.5 mHz at 1 Hz/s and 1 ms steps, against
+        // the 10 mHz IEC/IEEE 60255-118-1 allows a P-class measurement on a
+        // 1 Hz/s ramp). Below 5 % voltage the last estimate is kept.
         let freq = if !self.uses_frequency {
             f0
         } else {
@@ -683,7 +736,7 @@ impl RelayState {
             let mut f_now = None;
             if let Some((t_prev, th_prev)) = self.freq.last {
                 let h = t - t_prev;
-                if h > 1e-6 {
+                if h > 1e-6 && v1n >= 0.05 {
                     let mut d = theta - th_prev;
                     while d > PI {
                         d -= 2.0 * PI;
@@ -692,13 +745,8 @@ impl RelayState {
                         d += 2.0 * PI;
                     }
                     let inst = f0 * m.frame_speed() + d / (2.0 * PI * h);
-                    let prev = self.freq.f.unwrap_or(inst);
-                    let a = (h / 0.04).min(1.0);
-                    f_now = Some(prev + a * (inst - prev));
+                    f_now = Some(self.freq.update(inst, h));
                 }
-            }
-            if v1n < 0.05 {
-                f_now = self.freq.f;
             }
             if let Some(f) = f_now.or(self.freq.f).or(Some(f0 * m.frame_speed())) {
                 self.freq.f = Some(f);

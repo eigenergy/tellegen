@@ -685,15 +685,27 @@ fn frequency_profile(vm: f64, f: impl Fn(f64) -> f64 + Copy) -> impl Fn(f64) -> 
     }
 }
 
-/// The time the relay's frequency measurement (a first-order filter of
-/// 40 ms on the angle rate) needs to cross `pickup` after a step from 50 Hz
-/// to `f1`, at the injection step.
+/// The time the relay's frequency measurement needs to cross `pickup`
+/// after a step from 50 Hz to `f1`, at the injection step. The measurement
+/// is the angle rate through a first-order filter of 40 ms, plus 40 ms
+/// times the filtered value's rate of change (filtered over 20 ms), held
+/// between the filtered value and the median of the last three angle
+/// rates.
 fn filter_crossing(f1: f64, pickup: f64) -> f64 {
-    let a = DT / 0.04;
-    let mut f = F0;
+    let (a, a_rate) = (DT / 0.04, DT / 0.02);
+    let middle = |mut x: [f64; 3]| {
+        x.sort_by(f64::total_cmp);
+        x[1]
+    };
+    let (mut filtered, mut rate, mut f) = (F0, 0.0, F0);
+    let mut rates = [F0; 3];
     let mut k = 0usize;
     while (f - pickup).signum() == (F0 - pickup).signum() {
-        f += a * (f1 - f);
+        let before = filtered;
+        filtered += a * (f1 - filtered);
+        rate += a_rate * ((filtered - before) / DT - rate);
+        rates = [rates[1], rates[2], f1];
+        f = middle([filtered, filtered + 0.04 * rate, middle(rates)]);
         k += 1;
     }
     k as f64 * DT

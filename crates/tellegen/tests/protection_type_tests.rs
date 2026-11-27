@@ -759,9 +759,11 @@ fn frequency_shots(
     }
 }
 
-/// The lag of the relays' frequency measurement behind a frequency ramp:
-/// a first-order filter of 40 ms on the angle rate.
-const FREQUENCY_LAG: f64 = 0.04;
+/// The lag of the relays' frequency measurement behind a steady frequency
+/// ramp. The 40 ms filter's own lag is made up; what is left is the median
+/// of the last three angle rates the correction stops at, each the mean
+/// over its step: the frequency one and a half steps back.
+const FREQUENCY_LAG: f64 = 1.5 * DT;
 
 /// IEEE C37.102 overexcitation (24), definite time, on `(V/V_n)/(f/f_n)`:
 /// a voltage ramp at rated frequency starts the stage at its setting, and
@@ -770,7 +772,7 @@ const FREQUENCY_LAG: f64 = 0.04;
 /// measurement's lag below). The stage has no drop-off hysteresis. A step
 /// to 1.2 pu operates in the delay plus the measuring time.
 /// Tolerance: ramp resolution 0.02 % of the setting; on the frequency
-/// ramp 1 mHz beyond the lag of the 40 ms filter.
+/// ramp 1 mHz beyond the measurement's lag.
 #[test]
 fn ieee_c37_102_overexcitation() {
     let setting = 1.1;
@@ -844,7 +846,7 @@ fn frequency_stage(under: bool, pickup: f64, delay: f64, min_voltage: f64) -> Pr
 /// through it to 0.05 Hz beyond and back. The stage starts where the
 /// measured frequency crosses the setting and drops off 20 mHz back inside;
 /// the true frequency at either instant lies the measurement's lag
-/// (rate × 40 ms) behind. Tolerance: 1 mHz after the lag is removed.
+/// (rate × 1.5 ms) behind. Tolerance: 1 mHz after the lag is removed.
 #[test]
 fn iec_60255_181_start_value_and_drop_off_by_slow_ramp() {
     let rate = 0.05;
@@ -885,9 +887,9 @@ fn iec_60255_181_start_value_and_drop_off_by_slow_ramp() {
 /// IEC 60255-181, operate time on frequency ramps of ±0.2 and ±1 Hz/s from
 /// rated frequency: the stage operates its delay plus the measuring time
 /// after the measured frequency crosses the setting, which is the true
-/// crossing plus the measurement's lag of 40 ms.
-/// Tolerance: 2 ms (the filter's lag before it settles on the ramp, and
-/// the half step of the angle difference) plus one step.
+/// crossing plus the measurement's lag of 1.5 ms (its 40 ms filter's lag
+/// made up). Tolerance: 2 ms (the correction settling on the ramp) plus
+/// one step.
 #[test]
 fn iec_60255_181_operate_time_on_ramps() {
     for (under, setting) in [(true, 49.0), (false, 51.0)] {
@@ -955,7 +957,6 @@ fn iec_60255_181_voltage_blocking_threshold() {
 /// instant the measurement crosses an 81U and an 81O setting on the ramp,
 /// the true frequency there against the setting.
 #[test]
-#[ignore = "IEC 60255-118-1 P class, frequency ramp of 1 Hz/s: the frequency measurement trails by 39 mHz (its 40 ms first-order filter), at most 10 mHz required"]
 fn iec_60255_118_1_frequency_error_on_ramp() {
     for (under, setting) in [(true, 49.0), (false, 51.0)] {
         let sign = if under { -1.0 } else { 1.0 };
@@ -1030,9 +1031,9 @@ fn iec_60255_181_rocof_start_value() {
 /// and 4 times the setting starts from rated frequency. The least-squares
 /// slope over the window of `W` = 500 ms, a fraction `x` of it on the ramp,
 /// is `r x² (3 − 2x)`; the stage starts once that exceeds the setting,
-/// the measurement's 40 ms lag later, and operates its delay plus the
+/// the measurement's lag of 1.5 ms later, and operates its delay plus the
 /// measuring time after. Tolerance: 5 ms (the filter rounds the corner of
-/// the ramp) plus one step.
+/// the ramp before its lag is made up) plus one step.
 #[test]
 fn iec_60255_181_rocof_operate_time() {
     let setting = 1.0;
