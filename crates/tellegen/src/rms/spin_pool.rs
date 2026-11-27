@@ -12,6 +12,8 @@
 //! In the browser (a WebAssembly build with shared memory) the adapter starts
 //! the threads as Web Workers through [`configure`], before the first run; a
 //! build or page without them runs everything on the caller.
+//!
+//! @block Spin pool
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -88,6 +90,10 @@ struct Shared {
     stop: AtomicBool,
 }
 
+/// A pool of spinning threads: [`Self::run`] hands out the tasks of one job to
+/// the threads and the caller, [`Self::beside`] runs one task on a thread while
+/// the caller does other work.
+// @block The pool
 pub(crate) struct SpinPool {
     shared: Arc<Shared>,
     threads: usize,
@@ -145,6 +151,7 @@ impl SpinPool {
 
     /// Run `f(0..tasks)`, the caller taking part; returns when all are done.
     /// A nested or concurrent call runs its tasks on the caller alone.
+    // @block Run a job
     pub(crate) fn run<'a>(&self, tasks: usize, f: &'a (dyn Fn(usize) + Sync + 'a)) {
         if tasks == 0 {
             return;
@@ -164,6 +171,7 @@ impl SpinPool {
     /// Run `side(0)` on a pool thread while the caller runs `main`, and
     /// return `main`'s result once both are done. Without a free thread the
     /// caller runs `side` first.
+    // @block Run beside the caller
     pub(crate) fn beside<'a, R>(&self, side: &'a (dyn Fn(usize) + Sync + 'a), main: impl FnOnce() -> R) -> R {
         let guard = match self.busy.try_lock() {
             Ok(g) if self.threads > 0 => g,

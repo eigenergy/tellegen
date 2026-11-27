@@ -306,7 +306,11 @@ fn contains(cp: &[usize], ri: &[usize], cp2: &[usize], ri2: &[usize]) -> bool {
     true
 }
 
-/// A sparse LU of a square matrix.
+/// A sparse LU of a square matrix. The first factorization of a sparsity
+/// pattern pivots (faer's simplicial LU) and records its row order and factor
+/// structure; later matrices of that pattern are refactorized in that order,
+/// values only, while every pivot stays above [`PIVOT_TOL`] of its column, and
+/// pivot afresh otherwise ([`super::RmsOptions::refactor_values`] off: always).
 // @block Sparse LU
 pub(super) struct SparseLu {
     pivots: Arc<Pivots>,
@@ -1008,7 +1012,10 @@ impl Stepper {
     /// states held. When a device's algebraic state only constrains
     /// differential states (a filterless IEEEST, for instance), that system
     /// is singular; the fallback then holds every device state and re-solves
-    /// the network voltages. On an error `x` and `f` are unchanged.
+    /// the network voltages. With `TELLEGEN_REINIT_SKIP=1` a system structure
+    /// whose free re-solve was singular goes straight to the fallback
+    /// ([`probe_reinit`] learns it before the run). On an error `x` and `f` are
+    /// unchanged.
     // @block Re-solve after an event
     pub(crate) fn reinit(
         &mut self,
@@ -1160,8 +1167,10 @@ impl Stepper {
             diag_step(&step, x);
         }
         // @block Reuse a factorization
-        // The factorization of an earlier step is kept while the step size, the
-        // method and the system (its epoch) are the same.
+        // The factorization of an earlier step is kept while the step size and
+        // the method are the same, by default also across events
+        // (`RmsOptions::keep_factorization`; off, a new system epoch drops it);
+        // a re-solve after an event keeps its own the same way.
 
         // Start from the cached factorization when it was built for this
         // step. One that was not is dropped, and so is any on an error.
@@ -1211,11 +1220,10 @@ impl Stepper {
                 return Ok(iter);
             }
             // @block Refresh the factorization
-            // A reused factorization stays while it converges; a fresh one is
-            // rebuilt every other iteration and every iteration from the fourth.
-
-            // A reused factorization stays until the iteration stalls; a
-            // fresh one is refreshed every other iteration, and every
+            // By default (`RmsOptions::keep_factorization`) a factorization,
+            // fresh or reused, stays until the iteration stalls twice or eight
+            // iterations pass. Otherwise a reused one stays while it converges
+            // and a fresh one is rebuilt every other iteration and every
             // iteration from the fourth.
             let refresh = if lu.is_none() {
                 true
@@ -1307,8 +1315,9 @@ impl Stepper {
             }
             // @block Stopping test
             // Stop when the correction, extrapolated with the observed contraction
-            // rate, is below the tolerance (the test of DASSL and IDA), and keep the
-            // factorization for the next step.
+            // rate, is below the tolerance (the test of DASSL and IDA), or when the
+            // iteration stagnates at the rounding floor of the network equations,
+            // and keep the factorization for the next step.
 
             // Error left in `x`: for a contraction with rate `rho`, at most
             // `rho / (1 − rho)` times the correction just applied. The rate

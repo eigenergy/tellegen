@@ -22,7 +22,9 @@
 //! Supported models: machines `GENCLS`, `GENROU`, `GENROE`, `GENSAL`,
 //! `GENSAE`; exciters `SEXS`, `ESAC1A`, `EXST1`; governors `TGOV1`, `GAST`,
 //! `HYGOV`; stabilizer `IEEEST`; renewable plants `REGCA1` + `REECB1` +
-//! `REPCA1` ([`renewable`]). Each static load keeps the voltage law the AC
+//! `REPCA1` ([`renewable`]). With `rms-experimental`, exciters `ESST1A` and
+//! `ESAC6A`, stabilizer `PSS2B` and the excitation limiters `OELIT` and
+//! `UELPQ` run as block graphs (`ext_models`). Each static load keeps the voltage law the AC
 //! power flow solved it with (constant power, ZIP and exponential parts,
 //! [`LoadModel::PowerFlow`]), or the whole bus demand follows one law
 //! ([`LoadModel`]); constant-power and constant-current parts convert to
@@ -80,7 +82,8 @@ mod topology;
 // @block Device models
 // The equations of each unit: synchronous machines with their shaft,
 // exciter, governor and stabilizer, the WECC renewable plant, the control
-// blocks they share, and controllers drawn as block diagrams at run time.
+// blocks they share, and controllers drawn as block diagrams at run time,
+// among them the models PowerIO does not type, read from their records.
 pub(crate) mod blocks;
 #[cfg(feature = "rms-experimental")]
 pub mod graph;
@@ -93,7 +96,12 @@ mod renewable;
 // @block Numerical solver
 // Time integration of `M ẋ = f(x)` by the implicit trapezoidal rule, each
 // step a Newton solve; the step matrix is factorized unit by unit (a Schur
-// complement onto the network) or as one sparse LU.
+// complement onto the network) or as one sparse LU, which keeps the pivot
+// order of a pattern's first factorization and recomputes only the values.
+// With regions, the network matrix is factorized region by region around a
+// separator. The fine-grained parts of a step (the units' residual,
+// Jacobian, factorization and solves) run on a pool of spinning threads,
+// joined in the serial order, so the results do not depend on the threads.
 mod integrate;
 pub(crate) mod clock;
 #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
@@ -912,7 +920,9 @@ impl RmsSimulation {
                 // admittance and mass matrices are rebuilt, and the
                 // algebraic part (bus voltages, currents) is re-solved with
                 // the differential states held, so the next step starts from
-                // a consistent point.
+                // a consistent point. When that re-solve fails, the collapse is
+                // relieved level by level (`topology::relieve`) and it is tried
+                // again.
                 let mut changed = false;
                 while next_event < events.len() && events[next_event].time() <= t + tol {
                     applied.push(apply_event(&mut sys, &mut x, &events[next_event])?);
@@ -977,8 +987,11 @@ impl RmsSimulation {
 
                 // @block Integrate one step
                 // A trapezoidal step to the next output time or event, with
-                // the integrator's fallbacks (backward Euler, halved steps);
-                // a failure names the islands the network has split into.
+                // the integrator's fallbacks (backward Euler, halved steps).
+                // A step that still fails is retried after the same reliefs as
+                // the re-solve; a failure then names the islands the network
+                // has split into. After the step, recovering loads follow their
+                // bus voltage (`DynSystem::relax_loads`).
                 let mut t_next = (t + h).min(t_target);
                 if next_event < events.len() {
                     t_next = t_next.min(events[next_event].time());

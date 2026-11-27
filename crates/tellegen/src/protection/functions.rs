@@ -1015,7 +1015,8 @@ impl RelayState {
                 }
                 // @block Voltage and V/Hz
                 // 27 on the lowest and 59 on the highest phase-to-ground
-                // voltage, each with a small reset hysteresis; 59N on `3 V0`
+                // voltage, each with a small reset hysteresis (an overvoltage
+                // stage drops off at its reset ratio, 0.98 by default); 59N on `3 V0`
                 // (unbalanced engines only); 24 on the voltage over the
                 // frequency, both per unit.
                 (ProtectionFunction::Undervoltage(s), Element::Timer { timer, .. }) => {
@@ -1145,7 +1146,11 @@ impl RelayState {
                 // 78: the impedance is placed left of, between or right of
                 // the blinders (or outside the reach); a slip is a crossing
                 // from one side to the other that spent at least the minimum
-                // time between them. The set number of slips trips.
+                // time between them. The set number of slips trips. With a
+                // beat voltage set, it counts voltage beats instead (the
+                // positive-sequence voltage dipping below it and recovering)
+                // and operates a delay after the voltage exceeds its average
+                // over the oscillation.
                 (
                     ProtectionFunction::OutOfStep(o),
                     Element::OutOfStep {

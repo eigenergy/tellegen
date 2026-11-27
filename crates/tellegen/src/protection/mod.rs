@@ -1440,8 +1440,8 @@ impl ProtectionRuntime {
         self.last_t = Some(t);
         // @block Measure
         // Pass 1: measure and run each relay's elements. The relays are
-        // independent here, so a large scheme runs in chunks on the thread
-        // pool; the operations join in relay order, as inline. Each chunk
+        // independent here, so a large scheme runs in chunks on the relays'
+        // spin pool; the operations join in relay order, as inline. Each chunk
         // also names its busy relays (see `RelayState::busy`), in relay
         // order.
         let f0 = self.f0;

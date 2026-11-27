@@ -3,12 +3,15 @@
 //! does as one task on the spin pool. Every region owns its buses' rows and the
 //! states of the units at its buses, and evaluates them in the order the whole
 //! system does, so the results are the serial ones bit for bit.
+//!
+//! @block Network regions
 
 use std::sync::{Arc, Mutex, OnceLock};
 
 use super::system::DynSystem;
 
 /// The buses, units, plants and sources of each region.
+// @block Region index
 #[derive(Debug)]
 pub(crate) struct RegionIndex {
     pub(crate) nr: usize,

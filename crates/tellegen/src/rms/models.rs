@@ -417,6 +417,7 @@ fn freeze_hysteresis() -> f64 {
 /// go only once the free rate pulls back by more than the hysteresis, so it cannot switch on and
 /// off from one step to the next. Before the first update the mode is unset and the limit acts as
 /// without freezing.
+// @block Held limits
 #[derive(Debug)]
 pub(crate) struct LimitMode {
     mode: std::sync::atomic::AtomicU8,
@@ -567,7 +568,10 @@ impl Avr {
     }
 }
 
-/// Exciters. `Fixed` holds `Vf = V_ref`.
+/// Exciters. `Fixed` holds `Vf = V_ref`. With held limits
+/// ([`super::RmsOptions::freeze_limits`]) SEXS's field voltage and ESAC1A's
+/// `VA` take their limit mode at a step's start ([`LimitMode`]), and a state a
+/// free step carried past its clamp goes back onto it after the step.
 // @block Exciters
 #[derive(Clone, Debug)]
 pub(crate) enum Avr {

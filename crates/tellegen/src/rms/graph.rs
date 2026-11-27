@@ -1063,6 +1063,7 @@ impl CompiledGraph {
 
     /// Experimental: update the frozen modes of the non-windup limited lags after a
     /// taken step; returns how many switched.
+    // @block Held limits of a graph
     pub(crate) fn update_limit_modes(&self) -> usize {
         let mut n = 0;
         for op in &self.tape {

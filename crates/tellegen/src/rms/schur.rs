@@ -63,7 +63,10 @@ struct Unit {
     block: usize,
 }
 
-/// The factorization of one step matrix by blocks.
+/// The factorization of one step matrix by blocks. With enough units the
+/// units' blocks are assembled, factorized and solved in chunks on the spin
+/// pool; the chunks join in unit order, so every array and the network's
+/// triplets are those of the serial loop, value for value.
 // @block Factorization by blocks
 pub(super) struct BlockLu {
     /// Buses.
@@ -512,7 +515,9 @@ impl BlockLu {
 
     /// `z_k = D_k⁻¹ r_k` in place of each unit's right-hand side, and the
     /// network's right-hand side `r_v − Σ B_k z_k` (with the frame speed's
-    /// row) into `rhs`.
+    /// row) into `rhs`. The units' solves run in chunks on the spin pool; their
+    /// contributions are added in unit order afterwards, as the serial loop
+    /// adds them.
     // @block Eliminate the units
     fn eliminate(&mut self, x: &mut [f64]) {
         let n = self.n;
@@ -567,7 +572,7 @@ impl BlockLu {
     }
 
     /// The network's solution from `rhs` into `x`, and
-    /// `y_k = z_k − D_k⁻¹ [C_k  E_k] (v_bus, w)`.
+    /// `y_k = z_k − D_k⁻¹ [C_k  E_k] (v_bus, w)`, unit chunks on the spin pool.
     // @block Back-substitute the units
     fn substitute(&mut self, x: &mut [f64]) {
         let n = self.n;

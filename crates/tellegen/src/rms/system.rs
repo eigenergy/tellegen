@@ -391,6 +391,14 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
     (w, (slope / (v0 * u * u) - 2.0 * w / u) * du)
 }
 
+// @block Model switches
+// Experimental: model options a native caller sets before it builds a
+// system: load saturation, load recovery and the one-sided rise of load
+// reactive power, under-excitation limiters and AVR load compensators by bus,
+// the voltage exponent of plants' reactive set point, the GAST valve rate
+// limit, and HVDC links in AC emulation. Each is off unless set, and the
+// browser engine never sets them.
+
 // Experimental: saturation of the transformers behind a load above a knee voltage.
 // A load of active power P0 draws the extra reactive power `c P0 ((V - v_knee) / 0.1)^2` for
 // `V > v_knee` (pu of nominal). Off (c = 0) unless set.
@@ -429,6 +437,7 @@ pub fn set_hvdc_emulation(links: Vec<(usize, usize, f64, f64)>) {
 /// `dtheta0` that angle at the start (so the start is unchanged), limited to `+-p_max`. As an AC line
 /// of reactance `1/K` would, for the active power. Lossless, no own dynamics (the converters'
 /// control is fast against electromechanical swings).
+// @block HVDC link in AC emulation
 #[derive(Clone, Debug)]
 pub(crate) struct AcEmulation {
     pub from: usize,
@@ -529,6 +538,7 @@ pub fn set_load_saturation(c: f64, v_knee: f64) {
     LOAD_SAT_C.store(c.to_bits(), std::sync::atomic::Ordering::Relaxed);
     LOAD_SAT_VK.store(v_knee.to_bits(), std::sync::atomic::Ordering::Relaxed);
 }
+// @end
 
 impl BusLoad {
     /// Constant-impedance part as an admittance (enters `Y`).
@@ -1022,8 +1032,6 @@ impl DynSystem {
         self.omega_ref.map_or(1.0, |i| x[i])
     }
 
-    /// `f(x)`, and the device outputs when `outs` is given.
-    // @block Residual f(x)
     /// Experimental: the configured HVDC links in AC emulation, with their start angle
     /// from the initial state `x0` (so `f(x0)` is unchanged).
     pub(crate) fn set_hvdc_emulation_start(&mut self, x0: &[f64]) {
@@ -1076,6 +1084,10 @@ impl DynSystem {
             .sum()
     }
 
+    /// `f(x)`, and the device outputs when `outs` is given. Without outputs and with
+    /// regions (`TELLEGEN_REGIONS`) it is evaluated by regions (`Self::residual_by_regions`),
+    /// with the same result bit for bit.
+    // @block Residual f(x)
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
         if outs.is_none() {
             if let Some(ri) = super::regions::region_index(self) {
@@ -1110,6 +1122,9 @@ impl DynSystem {
                 f[n + b] -= ii;
             }
         }
+        // @block HVDC links in AC emulation
+        // Each emulated link moves `K (Δθ − Δθ0)` (limited) from one end bus to the
+        // other ([`AcEmulation`]).
         for e in &self.hvdc_emulation {
             let c = e.currents(vr[e.from], vi[e.from], vr[e.to], vi[e.to]);
             f[e.from] += c[0];
@@ -1199,6 +1214,7 @@ impl DynSystem {
     /// only its buses' rows and its units' states, and adds to each bus in the
     /// order of [`Self::residual`] (network, sources, loads, units, plants), so
     /// `f` is bit for bit the serial one.
+    // @block Residual by regions
     fn residual_by_regions(&self, x: &[f64], f: &mut [f64], ri: &super::regions::RegionIndex) {
         use super::regions::Shared;
         let n = self.n;
@@ -1351,7 +1367,8 @@ impl DynSystem {
 
     // @block Jacobian
     // `∂f/∂x`: exact for the network and loads, forward differences for each
-    // unit's own block.
+    // unit's own block (and for HVDC links in AC emulation). The units' blocks
+    // are built in chunks on the spin pool and joined in unit order.
 
     /// `∂f/∂x` as triplets. The network and load parts are exact; device
     /// blocks are forward differences of their local functions with the

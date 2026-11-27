@@ -345,7 +345,9 @@ pub(crate) fn trip_held(sys: &mut DynSystem, k: usize) {
 /// held units (nothing that holds a voltage and a frequency) loses them, so
 /// its buses go dead; and each island newly apart from the reference bus is
 /// named once (it runs at its own frequency, which renewable plants do not
-/// measure: they measure the reference's).
+/// measure: they measure the reference's). A dead island (no unit in service)
+/// also loses its load: its constant-power and constant-current parts have
+/// no solution at 0 V.
 // @block Switch off dead islands
 pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
     let mut out = Vec::new();
@@ -427,6 +429,7 @@ pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
 /// or drops out and units that trip on undervoltage. Level 2: that bus and
 /// its neighbours. Level 3: every bus below 0.3 pu.
 /// Returns what was done (empty: nothing to relieve).
+// @block Relieve a collapse
 pub(crate) fn relieve(
     sys: &mut DynSystem,
     x: &[f64],
@@ -541,6 +544,7 @@ pub(crate) fn relieve(
 
 /// The bus number a solver message names as carrying its largest residual
 /// (`largest in bus 123 Vr`, or a unit's state `largest in G123 ...`).
+// @block Bus named by a solver failure
 pub(crate) fn hint_bus(message: &str) -> Option<usize> {
     for key in ["largest in bus ", "largest in G", "largest in R"] {
         if let Some(k) = message.find(key) {

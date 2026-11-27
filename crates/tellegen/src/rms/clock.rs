@@ -2,6 +2,8 @@
 //! pool's idle naps. In the browser (`wasm32-unknown-unknown`)
 //! `std::time::Instant` panics; there the adapter hands in a clock
 //! ([`set_clock`], milliseconds), and without one every time reads zero.
+//!
+//! @block Timing clock
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use std::time::Instant;

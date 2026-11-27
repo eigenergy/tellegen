@@ -455,6 +455,7 @@ fn uel_nodes(p: &[f64]) -> Result<Vec<GraphNode>, String> {
 /// `graph` (an exciter) with the limiters of `oel` / `uel` at its summing
 /// point: its `vs` input node becomes `vs_pss`, and `vs` is the sum of the
 /// stabilizer signal and the limiter outputs.
+// @block Limiters at the summing point
 pub(crate) fn with_limiters(
     mut graph: BlockGraph,
     oel: Option<&[f64]>,
@@ -498,6 +499,7 @@ pub(crate) fn with_limiters(
 /// the template of its compiled exciter `compiled` when only limiters are
 /// given, with the limiters at the summing point. `None` when the unit has
 /// neither an extension exciter nor a limiter.
+// @block Exciter of a unit's records
 pub(crate) fn exciter_graph(
     ext: &ExtRecords,
     compiled: Option<&powerio::DynamicModel>,
@@ -521,6 +523,7 @@ pub(crate) fn exciter_graph(
 }
 
 /// The stabilizer graph of a unit's extension records, if any.
+// @block Stabilizer of a unit's records
 pub(crate) fn stabilizer_graph(ext: &ExtRecords) -> Result<Option<BlockGraph>, String> {
     match &ext.stabilizer {
         Some((m, p)) if m == "PSS2B" => pss2b(p).map(Some),
