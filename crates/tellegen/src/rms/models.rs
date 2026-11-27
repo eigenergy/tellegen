@@ -1768,4 +1768,236 @@ mod tests {
         }
         assert!(last.abs() < 1e-12, "Efd {last} at VE ≤ 0");
     }
+
+    /// The hysteresis held limits use: `TELLEGEN_FREEZE_HYST`, 1e-3 pu
+    /// without it.
+    #[test]
+    fn freeze_hysteresis_defaults_to_a_thousandth() {
+        let h = freeze_hysteresis();
+        match std::env::var("TELLEGEN_FREEZE_HYST")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+        {
+            Some(v) => assert_eq!(h, v),
+            None => assert_eq!(h, 1e-3),
+        }
+    }
+
+    /// A held limit's mode: unset before the first update (and an update
+    /// without a recorded evaluation leaves it so); it binds when the state
+    /// reaches a limit while the free rate pushes on, not while the rate
+    /// pulls back; it holds while the rate pulls back by less than the
+    /// hysteresis and lets go beyond it. A switch is counted, the first
+    /// update from unset is not; a non-finite record changes nothing; a
+    /// clone carries the mode and the record.
+    #[test]
+    fn limit_mode_binds_and_lets_go_with_hysteresis() {
+        let h = freeze_hysteresis();
+        let (lo, hi) = (-1.0, 3.0);
+        let lim = LimitMode::default();
+        assert_eq!(lim.mode(), LimitMode::UNSET);
+        assert!(!lim.update(lo, hi));
+        assert_eq!(lim.mode(), LimitMode::UNSET, "nothing recorded");
+        let step = |y: f64, rate: f64| {
+            lim.record(y, rate);
+            let switched = lim.update(lo, hi);
+            (lim.mode(), switched)
+        };
+        // At the maximum, pushing on: binds; the first update is no switch.
+        assert_eq!(step(3.0, 0.5), (LimitMode::AT_MAX, false));
+        // Pulled back by less than the hysteresis: held.
+        assert_eq!(step(3.0, -0.5 * h), (LimitMode::AT_MAX, false));
+        assert_eq!(step(3.0, 0.0), (LimitMode::AT_MAX, false));
+        // Beyond it: let go.
+        assert_eq!(step(3.0, -2.0 * h), (LimitMode::FREE, true));
+        // At the maximum but pulling back: stays free.
+        assert_eq!(step(3.0, -0.1), (LimitMode::FREE, false));
+        // Inside the limits, pushing up: free.
+        assert_eq!(step(2.9, 1.0), (LimitMode::FREE, false));
+        // Past the maximum (a step overshoot), pushing on: binds.
+        assert_eq!(step(3.2, 1e-9), (LimitMode::AT_MAX, true));
+        // The minimum, mirrored.
+        assert_eq!(step(-1.0, -0.2), (LimitMode::AT_MIN, true));
+        assert_eq!(step(-1.0, 0.5 * h), (LimitMode::AT_MIN, false));
+        assert_eq!(step(-1.0, 2.0 * h), (LimitMode::FREE, true));
+        assert_eq!(step(-1.0, 0.2), (LimitMode::FREE, false));
+        // A non-finite evaluation is ignored.
+        assert_eq!(step(-1.0, -0.2), (LimitMode::AT_MIN, true));
+        assert_eq!(step(f64::NAN, 1.0), (LimitMode::AT_MIN, false));
+        assert_eq!(step(0.0, f64::INFINITY), (LimitMode::AT_MIN, false));
+        // A clone keeps the mode and the record.
+        lim.record(3.0, 1.0);
+        let copy = lim.clone();
+        assert_eq!(copy.mode(), LimitMode::AT_MIN);
+        assert!(copy.update(lo, hi));
+        assert_eq!(copy.mode(), LimitMode::AT_MAX);
+        assert_eq!(lim.mode(), LimitMode::AT_MIN, "the original is apart");
+        // A fresh limit whose first update finds it free.
+        let fresh = LimitMode::default();
+        fresh.record(0.0, 1.0);
+        assert!(!fresh.update(lo, hi));
+        assert_eq!(fresh.mode(), LimitMode::FREE);
+    }
+
+    fn sexs(te: f64) -> Avr {
+        Avr::Sexs {
+            ta_tb: 0.1,
+            tb: 10.0,
+            k: 100.0,
+            te,
+            v_min: 0.0,
+            v_max: 3.0,
+            out: (0.0, 3.0),
+            lim: LimitMode::default(),
+        }
+    }
+
+    fn esac1a(ta: f64, va_out: (f64, f64)) -> Avr {
+        let (a, b) = quadratic_saturation((3.1, 4.2), (0.03, 0.1)).unwrap();
+        Avr::Esac1a {
+            tr: 0.02,
+            tb: 0.0,
+            tc: 0.0,
+            ka: 400.0,
+            ta,
+            va_min: -14.5,
+            va_max: 14.5,
+            va_out,
+            te: 0.8,
+            kf: 0.03,
+            tf: 1.0,
+            kc: 0.2,
+            kd: 0.38,
+            ke: 1.0,
+            sat: Saturation::Quadratic { a, b, knee: true },
+            vr_min: -5.43,
+            vr_max: 6.03,
+            lim: LimitMode::default(),
+        }
+    }
+
+    /// After a step a held limit's state goes back onto its output clamp:
+    /// SEXS's field voltage (state 0) onto `[EMIN, EMAX]`, ESAC1A's `VA`
+    /// (state 2) onto its clamp (widened at rest, so a state resting past
+    /// the limit stays), the other states untouched. Without a time
+    /// constant (algebraic) nothing moves, nor does a non-finite state;
+    /// exciters without held limits never move. The return says whether a
+    /// state moved.
+    #[test]
+    fn avr_project_limits_puts_states_back_on_their_clamp() {
+        let avr = sexs(0.1);
+        for (v, back, moved) in [
+            (3.2, 3.0, true),
+            (-0.1, 0.0, true),
+            (2.0, 2.0, false),
+            (3.0, 3.0, false),
+        ] {
+            let mut x = [v, 0.7];
+            assert_eq!(avr.project_limits(&mut x), moved, "Efd {v}");
+            assert_eq!(x, [back, 0.7]);
+        }
+        let mut x = [f64::NAN, 0.7];
+        assert!(!sexs(0.1).project_limits(&mut x));
+        let mut x = [3.2, 0.7];
+        assert!(!sexs(0.0).project_limits(&mut x), "TE = 0");
+        assert_eq!(x, [3.2, 0.7]);
+
+        let avr = esac1a(0.02, (-14.5, 14.5));
+        let mut x = [20.0, 20.0, 15.0, 20.0, 20.0];
+        assert!(avr.project_limits(&mut x));
+        assert_eq!(x, [20.0, 20.0, 14.5, 20.0, 20.0]);
+        let mut x = [1.0, 0.0, -16.0, 1.0, 0.0];
+        assert!(avr.project_limits(&mut x));
+        assert_eq!(x[2], -14.5);
+        // VA resting past VAMAX at the start: its clamp widened to it.
+        let mut x = [1.0, 0.0, 15.0, 1.0, 0.0];
+        assert!(!esac1a(0.02, (-14.5, 15.0)).project_limits(&mut x));
+        assert_eq!(x[2], 15.0);
+        assert!(!esac1a(0.0, (-14.5, 14.5)).project_limits(&mut [1.0, 0.0, 15.0, 1.0, 0.0]));
+
+        assert!(!Avr::Fixed.project_limits(&mut []));
+        let exst1 = Avr::Exst1 {
+            tr: 0.02,
+            vi_min: -0.2,
+            vi_max: 0.2,
+            tc: 1.0,
+            tb: 10.0,
+            ka: 200.0,
+            ta: 0.02,
+            vr_min: -5.0,
+            vr_max: 5.0,
+            kc: 0.05,
+            kf: 0.0,
+            tf: 1.0,
+        };
+        let mut x = [9.0; 4];
+        assert!(!exst1.project_limits(&mut x));
+        assert_eq!(x, [9.0; 4]);
+        assert_eq!(exst1.update_limit_modes(), 0);
+        assert_eq!(Avr::Fixed.update_limit_modes(), 0);
+    }
+
+    /// SEXS's field voltage and ESAC1A's `VA` update their held-limit mode
+    /// from the last evaluation against `[EMIN, EMAX]` (`[VAMIN, VAMAX]`):
+    /// binding from unset counts no switch, letting go counts one.
+    #[test]
+    fn avr_update_limit_modes_counts_switches() {
+        let h = freeze_hysteresis();
+        let avr = sexs(0.1);
+        let Avr::Sexs { lim, .. } = &avr else {
+            unreachable!()
+        };
+        assert_eq!(avr.update_limit_modes(), 0, "nothing recorded");
+        lim.record(3.0, 0.4);
+        assert_eq!(avr.update_limit_modes(), 0);
+        assert_eq!(lim.mode(), LimitMode::AT_MAX);
+        lim.record(3.0, -2.0 * h);
+        assert_eq!(avr.update_limit_modes(), 1);
+        assert_eq!(lim.mode(), LimitMode::FREE);
+        lim.record(0.0, -0.4);
+        assert_eq!(avr.update_limit_modes(), 1);
+        assert_eq!(lim.mode(), LimitMode::AT_MIN);
+
+        let avr = esac1a(0.02, (-14.5, 14.5));
+        let Avr::Esac1a { lim, .. } = &avr else {
+            unreachable!()
+        };
+        lim.record(14.0, 1.0);
+        assert_eq!(avr.update_limit_modes(), 0);
+        assert_eq!(lim.mode(), LimitMode::FREE, "below VAMAX");
+        lim.record(14.5, 1.0);
+        assert_eq!(avr.update_limit_modes(), 1);
+        assert_eq!(lim.mode(), LimitMode::AT_MAX);
+    }
+
+    /// Before the first update a held limit is unset and SEXS's field
+    /// voltage evaluates as without held limits (the non-windup lag),
+    /// whether or not the limits are held in this process.
+    #[test]
+    fn an_unset_limit_acts_as_without_freezing() {
+        let avr = sexs(0.1);
+        let Avr::Sexs { lim, .. } = &avr else {
+            unreachable!()
+        };
+        let u = AvrIn {
+            vt: 0.9,
+            vs: 0.0,
+            xad_ifd: 1.0,
+            v_ref: 2.0,
+            p: 0.0,
+            q: 0.0,
+        };
+        // The lead-lag's output at rest (its state zero).
+        let (v_ll, _) = lead_lag_mm(1.1, 0.0, 1.0, 1.0, 10.0);
+        for (vf, held) in [(1.0, false), (3.0, true), (3.1, true), (0.0, false)] {
+            let x = [vf, 0.0];
+            let mut f = [0.0; 2];
+            let out = avr.eval(&x, u, &mut f);
+            let (_, d) = low_pass_nonwindup_mm(v_ll, vf, 100.0, 0.1, 0.0, 3.0);
+            assert_eq!(f[0], d, "Efd state {vf}");
+            assert_eq!(d == 0.0, held, "Efd state {vf}: rate {d}");
+            assert_eq!(out, vf.clamp(0.0, 3.0));
+            assert_eq!(lim.mode(), LimitMode::UNSET);
+        }
+    }
 }

@@ -613,4 +613,605 @@ mod tests {
         assert_eq!(ext_role("OELIT"), Some("oel"));
         assert_eq!(ext_role("SEXS"), None);
     }
+
+    // Exciter ports: vt, vs, xad_ifd, v_ref, p, q.
+
+    /// The output of node `id` at the states `x` and ports `ports`.
+    fn signal(c: &CompiledGraph, x: &[f64], ports: &[f64], id: &str) -> f64 {
+        let i = c
+            .node_ids()
+            .position(|n| n == id)
+            .unwrap_or_else(|| panic!("{}: no node {id}", c.graph.name));
+        c.signals(x, ports)[i]
+    }
+
+    /// The index of the state named `name`.
+    fn state(c: &CompiledGraph, name: &str) -> usize {
+        c.state_names()
+            .iter()
+            .position(|n| n == name)
+            .unwrap_or_else(|| panic!("{}: no state {name}", c.graph.name))
+    }
+
+    /// Explicit Euler steps `h` from `t0` to `t1` of a graph whose states
+    /// all have a time constant, the ports given by `ports(t)`; `each` sees
+    /// the time and the states after every step.
+    fn integrate(
+        c: &CompiledGraph,
+        x: &mut [f64],
+        (t0, t1, h): (f64, f64, f64),
+        ports: impl Fn(f64) -> [f64; 6],
+        mut each: impl FnMut(f64, &[f64]),
+    ) {
+        let n = c.n_states();
+        let mut m = vec![0.0; n];
+        c.mass(&mut m);
+        assert!(
+            m.iter().all(|&v| v > 0.0),
+            "{}: algebraic states",
+            c.graph.name
+        );
+        let mut f = vec![0.0; n];
+        let steps = ((t1 - t0) / h).round() as usize;
+        for k in 0..steps {
+            let t = t0 + k as f64 * h;
+            c.eval(x, &ports(t), &mut f);
+            for i in 0..n {
+                x[i] += h * f[i] / m[i];
+            }
+            each(t + h, x);
+        }
+    }
+
+    /// An OELIT alone on the unity exciter (its only states are the
+    /// limiter's).
+    fn oel_alone(p: &[f64]) -> CompiledGraph {
+        CompiledGraph::new(&record_template("OELIT", p).unwrap()).unwrap()
+    }
+
+    /// A UELPQ alone on the unity exciter.
+    fn uel_alone(p: &[f64]) -> CompiledGraph {
+        CompiledGraph::new(&record_template("UELPQ", p).unwrap()).unwrap()
+    }
+
+    /// With both limiters at their summing point, ESST1A and ESAC6A start
+    /// at rest with the limiters inactive: the steady state solves for the
+    /// same voltage reference as without them, VOEL and VUEL are zero, and
+    /// every state (the limiters' heating and integrators among them) is at
+    /// rest.
+    #[test]
+    fn limiters_start_inactive_and_leave_the_steady_state_unchanged() {
+        // Field current below the OEL pickup (1.0 × 2.4), reactive power
+        // above the UEL line (−0.5 + 0.1 × 0.8 at 1 pu).
+        let ports = [1.0, 0.0, 1.5, 1.0, 0.8, 0.1];
+        for base in [esst1a(&ESST1A).unwrap(), esac6a(&ESAC6A).unwrap()] {
+            let plain = CompiledGraph::new(&base).unwrap();
+            let limited =
+                CompiledGraph::new(&with_limiters(base.clone(), Some(&OEL), Some(&UEL)).unwrap())
+                    .unwrap();
+            let (_, v_ref0) = plain.initial_guess(&ports, 2.0);
+            let (x, v_ref) = limited.initial_guess(&ports, 2.0);
+            let name = &limited.graph.name;
+            assert!(
+                (v_ref - v_ref0).abs() < 1e-9,
+                "{name}: V_ref {v_ref} against {v_ref0}"
+            );
+            let mut p = ports;
+            p[3] = v_ref;
+            let mut f = vec![0.0; limited.n_states()];
+            let efd = limited.eval(&x, &p, &mut f);
+            assert!((efd - 2.0).abs() < 1e-9, "{name}: Efd {efd}");
+            assert_eq!(signal(&limited, &x, &p, "VOEL"), 0.0, "{name}");
+            assert_eq!(signal(&limited, &x, &p, "VUEL"), 0.0, "{name}");
+            for s in ["oel_acc", "oel_x", "uel_x"] {
+                let i = state(&limited, s);
+                assert_eq!((x[i], f[i]), (0.0, 0.0), "{name}: {s}");
+            }
+            let worst = f.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
+            assert!(worst < 1e-9, "{name}: largest derivative at rest {worst}");
+        }
+    }
+
+    /// OELIT's limit follows its heating state: `ILIM` while the
+    /// accumulated heating is below 95 % of C, `ICONT` from C on, linear in
+    /// between; the heating grows by `(Ifd/Ipick)² − 1` above the pickup
+    /// and cools by `acc/TCOOL`, alone below it.
+    #[test]
+    fn oel_limit_follows_the_heating_state() {
+        let [ifdrat, ipick, icont, ilim, c, tcool, ..] = OEL;
+        let g = oel_alone(&OEL);
+        let acc = state(&g, "oel_acc");
+        let mut m = vec![0.0; g.n_states()];
+        g.mass(&mut m);
+        let mut f = vec![0.0; g.n_states()];
+        let mut x = vec![0.0; g.n_states()];
+        for (frac, limit) in [
+            (0.0, ilim),
+            (0.95, ilim),
+            (0.97, ilim - (ilim - icont) * 0.4),
+            (1.0, icont),
+            (1.5, icont),
+        ] {
+            x[acc] = frac * c;
+            let got = signal(&g, &x, &[1.0, 0.0, 1.0, 1.0, 0.0, 0.0], "oel_limit");
+            assert!(
+                (got - limit * ifdrat).abs() < 1e-12,
+                "acc {frac} C: limit {got}, expected {}",
+                limit * ifdrat
+            );
+        }
+        x[acc] = 0.5 * c;
+        // Below the pickup: cooling alone.
+        g.eval(&x, &[1.0, 0.0, 0.9 * ipick * ifdrat, 1.0, 0.0, 0.0], &mut f);
+        assert!((f[acc] / m[acc] + 0.5 * c / tcool).abs() < 1e-12);
+        // Above it: heating less cooling.
+        let ifd = 1.3 * ifdrat;
+        g.eval(&x, &[1.0, 0.0, ifd, 1.0, 0.0, 0.0], &mut f);
+        let heat = (ifd / (ipick * ifdrat)).powi(2) - 1.0;
+        assert!((f[acc] / m[acc] - (heat - 0.5 * c / tcool)).abs() < 1e-12);
+    }
+
+    /// A field current between the continuous and the instantaneous limit
+    /// leaves OELIT inactive until its heating has reached C, after
+    /// `−TCOOL ln(1 − C / (heat TCOOL))` s (the documented
+    /// `C / ((I/Ipick)² − 1)` lengthened slightly by the cooling); from
+    /// then on VOEL < 0, and it saturates at VOELMIN, never beyond. A field
+    /// current above the instantaneous limit acts at once.
+    #[test]
+    fn oel_acts_after_its_inverse_time() {
+        let [ifdrat, ipick, icont, ilim, c, tcool, kp, _, voelmin] = OEL;
+        let g = oel_alone(&OEL);
+        let (acc, xi) = (state(&g, "oel_acc"), state(&g, "oel_x"));
+        let ifd = 1.3 * ifdrat;
+        assert!(ifd > icont * ifdrat && ifd < ilim * ifdrat);
+        let heat = (ifd / (ipick * ifdrat)).powi(2) - 1.0;
+        let t_cont = -tcool * (1.0 - c / (heat * tcool)).ln();
+        let t_95 = -tcool * (1.0 - 0.95 * c / (heat * tcool)).ln();
+        let approx = c / heat;
+        assert!(
+            t_cont > approx && t_cont < 1.025 * approx,
+            "{t_cont} s against {approx} s"
+        );
+        let ports = move |_: f64| [1.0, 0.0, ifd, 1.0, 0.0, 0.0];
+        let mut x = vec![0.0; g.n_states()];
+        let mut first = None;
+        let mut lowest: f64 = 0.0;
+        integrate(&g, &mut x, (0.0, t_cont + 6.0, 0.01), ports, |t, x| {
+            let voel = signal(&g, x, &ports(t), "VOEL");
+            if t < t_95 - 0.02 {
+                assert_eq!(voel, 0.0, "inactive at {t} s");
+            }
+            if first.is_none() && voel < 0.0 {
+                first = Some(t);
+            }
+            lowest = lowest.min(voel);
+            assert!(
+                (0.0..=-voelmin + 1e-12).contains(&x[xi]),
+                "x {} at {t} s",
+                x[xi]
+            );
+        });
+        let first = first.expect("OELIT acts");
+        assert!(
+            first > t_95 - 0.02 && first < t_cont + 0.02,
+            "acts at {first} s"
+        );
+        let exact = heat * tcool * (1.0 - (-(t_cont + 6.0) / tcool).exp());
+        assert!(
+            (x[acc] - exact).abs() < 1e-3 * exact,
+            "acc {} against {exact}",
+            x[acc]
+        );
+        let voel = signal(&g, &x, &ports(0.0), "VOEL");
+        assert!((voel - voelmin).abs() < 1e-12, "VOEL {voel}");
+        assert!(lowest >= voelmin, "VOEL down to {lowest}");
+
+        // Above the instantaneous limit: the proportional part at once.
+        let over = 2.2 * ifdrat;
+        let x0 = vec![0.0; g.n_states()];
+        let voel = signal(&g, &x0, &[1.0, 0.0, over, 1.0, 0.0, 0.0], "VOEL");
+        assert!(
+            (voel + kp * (over - ilim * ifdrat)).abs() < 1e-12,
+            "VOEL {voel}"
+        );
+    }
+
+    /// Once the field current is back below its limit, OELIT's integrator
+    /// winds back to zero (never below) and VOEL returns to zero, while the
+    /// heating cools down with TCOOL.
+    #[test]
+    fn oel_winds_back_and_cools() {
+        let [ifdrat, _, _, _, c, tcool, _, _, voelmin] = OEL;
+        let g = oel_alone(&OEL);
+        let (acc, xi) = (state(&g, "oel_acc"), state(&g, "oel_x"));
+        let mut x = vec![0.0; g.n_states()];
+        x[acc] = 1.2 * c;
+        x[xi] = -voelmin;
+        let ports = move |_: f64| [1.0, 0.0, 0.9 * ifdrat, 1.0, 0.0, 0.0];
+        assert!(signal(&g, &x, &ports(0.0), "VOEL") < 0.0);
+        let mut last = x[xi];
+        integrate(&g, &mut x, (0.0, 20.0, 0.005), ports, |t, x| {
+            assert!(x[xi] >= 0.0 && x[xi] <= last, "x {} at {t} s", x[xi]);
+            last = x[xi];
+        });
+        let voel = signal(&g, &x, &ports(0.0), "VOEL");
+        assert!(voel <= 0.0 && voel > -1e-4, "VOEL {voel} after 20 s");
+        let cooled = 1.2 * c * (-20.0 / tcool).exp();
+        assert!(
+            (x[acc] - cooled).abs() < 1e-6 * c,
+            "acc {} against {cooled}",
+            x[acc]
+        );
+    }
+
+    /// UELPQ acts (VUEL > 0) exactly when the reactive power absorbed
+    /// exceeds `(Q0 + KQP P) Vt^KV`, for each voltage exponent: within the
+    /// limit VUEL stays zero; past it VUEL is `KP e + KI e t` while the
+    /// integrator has room and settles at VUELMAX.
+    #[test]
+    fn uel_acts_when_absorption_exceeds_its_line() {
+        let [q0, kqp, _, kp, ki, vuelmax] = UEL;
+        let (p, vt) = (0.5, 0.95_f64);
+        for kv in [0, 1, 2] {
+            let mut prm = UEL;
+            prm[2] = f64::from(kv);
+            let g = uel_alone(&prm);
+            let qlim = (q0 + kqp * p) * vt.powi(kv);
+            let at = |q: f64| [vt, 0.0, 1.0, 1.0, p, q];
+            let x0 = vec![0.0; g.n_states()];
+            for q in [qlim - 0.05, qlim + 0.05] {
+                let e = signal(&g, &x0, &at(q), "uel_e");
+                assert!((e - (qlim - q)).abs() < 1e-12, "KV {kv}: e {e}");
+            }
+            // Inside the limit: inactive.
+            let mut x = x0.clone();
+            integrate(
+                &g,
+                &mut x,
+                (0.0, 3.0, 0.01),
+                |_| at(qlim + 0.01),
+                |t, x| {
+                    assert_eq!(
+                        signal(&g, x, &at(qlim + 0.01), "VUEL"),
+                        0.0,
+                        "KV {kv} at {t} s"
+                    );
+                },
+            );
+            // Past it: proportional and integral action.
+            let e = 0.02;
+            let q = qlim - e;
+            assert!((signal(&g, &x0, &at(q), "VUEL") - kp * e).abs() < 1e-12);
+            let mut x = x0.clone();
+            integrate(&g, &mut x, (0.0, 1.0, 0.01), |_| at(q), |_, _| {});
+            let vuel = signal(&g, &x, &at(q), "VUEL");
+            assert!(
+                (vuel - (kp * e + ki * e)).abs() < 1e-9,
+                "KV {kv}: VUEL {vuel}"
+            );
+            integrate(
+                &g,
+                &mut x,
+                (1.0, 30.0, 0.01),
+                |_| at(qlim - 0.5),
+                |_, x| {
+                    assert!(x[0] <= vuelmax + 1e-12);
+                },
+            );
+            let vuel = signal(&g, &x, &at(qlim - 0.5), "VUEL");
+            assert!((vuel - vuelmax).abs() < 1e-12, "KV {kv}: VUEL {vuel}");
+        }
+    }
+
+    /// The dead-zone PI alone, on a violation fed through a port: at rest
+    /// (`e < 0`) `x = 0` is its only steady state; in a loop that the
+    /// output pushes back on, it integrates the violation to zero (the
+    /// limit held exactly); afterwards it winds back with the reset time
+    /// (`x e^(−t/TR)` when the violation is deep), staying in `[0, xmax]`.
+    #[test]
+    fn dead_zone_pi_holds_the_limit_and_winds_back() {
+        let (kp, ki, xmax) = (0.5, 2.0, 1.0);
+        let mut nodes = vec![input("e", "v_ref")];
+        nodes.extend(dead_zone_pi("t", "e", kp, ki, xmax));
+        let g = CompiledGraph::new(&BlockGraph {
+            slot: Slot::Exciter,
+            name: "dead zone".into(),
+            nodes,
+            output: "t_pi".into(),
+        })
+        .unwrap();
+        assert_eq!(g.n_states(), 1);
+        let ports = |e: f64| [0.0, 0.0, 0.0, e, 0.0, 0.0];
+        let mut f = [0.0];
+        for &x in &[0.0, 1e-6, 0.3, 1.0] {
+            let out = g.eval(&[x], &ports(-0.2), &mut f);
+            assert!((out - x).abs() < 1e-15);
+            if x == 0.0 {
+                assert_eq!(f[0], 0.0);
+            } else {
+                assert!(f[0] < 0.0, "x {x}: rate {}", f[0]);
+            }
+        }
+        // A disturbance d = 0.4 that the output pushes back through a lag
+        // (T = 0.2 s): e = d − v, T dv/dt = out − v.
+        let (d, tp, h) = (0.4, 0.2, 1e-3);
+        let (mut x, mut v) = (0.0_f64, 0.0_f64);
+        for _ in 0..20_000 {
+            let out = g.eval(&[x], &ports(d - v), &mut f);
+            x += h * f[0];
+            v += h * (out - v) / tp;
+            assert!((0.0..=xmax + 1e-12).contains(&x));
+        }
+        let out = g.eval(&[x], &ports(d - v), &mut f);
+        assert!((d - v).abs() < 1e-6, "violation left: {}", d - v);
+        assert!((out - d).abs() < 1e-6, "output {out}");
+        // A deep return inside the limit: wound back with TR = 1 s.
+        let x0 = x;
+        for _ in 0..1000 {
+            g.eval(&[x], &ports(-10.0), &mut f);
+            x += h * f[0];
+            assert!(x >= 0.0);
+        }
+        let expected = x0 * (-1.0_f64).exp();
+        assert!((x - expected).abs() < 1e-3 * x0, "x {x} against {expected}");
+        // A violation past what xmax covers: the integrator stops at xmax.
+        let mut x = 0.0;
+        for _ in 0..20_000 {
+            g.eval(&[x], &ports(5.0), &mut f);
+            x += h * f[0];
+            assert!(x <= xmax + 1e-12);
+        }
+        assert!((x - xmax).abs() < 1e-6);
+        assert_eq!(g.eval(&[x], &ports(5.0), &mut f), xmax);
+    }
+
+    /// The limiters enter at the summing point: the exciter's stabilizer
+    /// input becomes `vs_pss` and `vs` sums it with VOEL and VUEL, so the
+    /// unity exciter's field voltage is `V_ref + Vs + VOEL − Vt`. Without a
+    /// limiter the graph is returned as it was; a graph without a
+    /// stabilizer input gets one (and its terminal voltage and field current
+    /// inputs), and one whose `vs` is another node is refused.
+    #[test]
+    fn with_limiters_sums_at_the_stabilizer_input() {
+        let base = esst1a(&ESST1A).unwrap();
+        let same = with_limiters(base.clone(), None, None).unwrap();
+        assert_eq!(same, base);
+
+        let g = with_limiters(base.clone(), Some(&OEL), Some(&UEL)).unwrap();
+        assert_eq!(g.name, "ESST1A+OELIT+UELPQ");
+        let node = |id: &str| g.nodes.iter().find(|n| n.id == id).unwrap();
+        assert_eq!(node("vs_pss").block, Block::Input { port: "vs".into() });
+        assert_eq!(node("vs").inputs, ["vs_pss", "VOEL", "VUEL"]);
+        assert_eq!(
+            node("vs").block,
+            Block::Sum {
+                signs: vec![1.0; 3]
+            }
+        );
+        assert_eq!(
+            with_limiters(base.clone(), None, Some(&UEL)).unwrap().name,
+            "ESST1A+UELPQ"
+        );
+
+        // On the unity exciter with OELIT acting.
+        let c = oel_alone(&OEL);
+        let ifd = 2.2 * OEL[0];
+        let ports = [0.98, 0.03, ifd, 1.05, 0.0, 0.0];
+        let x = vec![0.0; c.n_states()];
+        let voel = signal(&c, &x, &ports, "VOEL");
+        assert!(voel < 0.0);
+        let efd = c.eval(&x, &ports, &mut vec![0.0; c.n_states()]);
+        assert!((efd - (1.05 + 0.03 + voel - 0.98)).abs() < 1e-12);
+
+        // No stabilizer input, no field current input.
+        let bare = BlockGraph {
+            slot: Slot::Exciter,
+            name: "bare".into(),
+            nodes: vec![
+                input("u", "v_ref"),
+                nd("Efd", Block::Lag { k: 1.0, t: 0.1 }, &["u"]),
+            ],
+            output: "Efd".into(),
+        };
+        let g = with_limiters(bare.clone(), Some(&OEL), None).unwrap();
+        for (id, port) in [("vs_pss", "vs"), ("vt", "vt"), ("ifd", "xad_ifd")] {
+            let n = g.nodes.iter().find(|n| n.id == id).unwrap();
+            assert_eq!(n.block, Block::Input { port: port.into() }, "{id}");
+        }
+        CompiledGraph::new(&g).unwrap();
+
+        // A `vs` node that is not the stabilizer input.
+        let mut wrong = bare;
+        wrong.nodes.push(konst("vs", 0.0));
+        let e = with_limiters(wrong, Some(&OEL), None).unwrap_err();
+        assert!(e.contains("not the stabilizer input"), "{e}");
+    }
+
+    /// Limiter records with parameters out of their range are refused:
+    /// OELIT with a non-positive IFDRAT, IPICK, C or TCOOL or a positive
+    /// VOELMIN, UELPQ with KV outside 0..2 or a negative VUELMAX.
+    #[test]
+    fn limiter_parameters_are_checked() {
+        let base = || esst1a(&ESST1A).unwrap();
+        for (i, v) in [(0, 0.0), (1, -1.0), (4, 0.0), (5, 0.0), (8, 0.1)] {
+            let mut p = OEL;
+            p[i] = v;
+            let e = with_limiters(base(), Some(&p), None).unwrap_err();
+            assert!(e.starts_with("OELIT"), "CON {i} = {v}: {e}");
+        }
+        for (i, v) in [(2, 3.0), (2, -1.0), (5, -0.1)] {
+            let mut p = UEL;
+            p[i] = v;
+            let e = with_limiters(base(), None, Some(&p)).unwrap_err();
+            assert!(e.starts_with("UELPQ"), "CON {i} = {v}: {e}");
+        }
+    }
+
+    fn rec(model: &str, p: &[f64]) -> (String, Vec<f64>) {
+        (model.into(), p.to_vec())
+    }
+
+    /// The exciter of a unit's records: none without an extension exciter
+    /// or limiter; ESST1A or ESAC6A with the limiters at its summing point;
+    /// limiters alone on the template of the compiled exciter (the same
+    /// nodes as the template with the limiters added). A stabilizer in the
+    /// exciter's place, limiters without any exciter, and a compiled model
+    /// without a template are errors.
+    #[test]
+    fn exciter_graph_of_a_units_records() {
+        assert!(exciter_graph(&ExtRecords::default(), None)
+            .unwrap()
+            .is_none());
+        let stab_only = ExtRecords {
+            stabilizer: Some(rec("PSS2B", &PSS2B)),
+            ..ExtRecords::default()
+        };
+        assert!(exciter_graph(&stab_only, None).unwrap().is_none());
+
+        let ext = ExtRecords {
+            exciter: Some(rec("ESST1A", &ESST1A)),
+            oel: Some(OEL.to_vec()),
+            ..ExtRecords::default()
+        };
+        let g = exciter_graph(&ext, None).unwrap().unwrap();
+        assert_eq!(
+            g,
+            with_limiters(esst1a(&ESST1A).unwrap(), Some(&OEL), None).unwrap()
+        );
+        let ext = ExtRecords {
+            exciter: Some(rec("ESAC6A", &ESAC6A)),
+            uel: Some(UEL.to_vec()),
+            ..ExtRecords::default()
+        };
+        assert_eq!(
+            exciter_graph(&ext, None).unwrap().unwrap().name,
+            "ESAC6A+UELPQ"
+        );
+        let ext = ExtRecords {
+            exciter: Some(rec("ESAC6A", &ESAC6A)),
+            ..ExtRecords::default()
+        };
+        assert_eq!(
+            exciter_graph(&ext, None).unwrap().unwrap(),
+            esac6a(&ESAC6A).unwrap()
+        );
+
+        let wrong = ExtRecords {
+            exciter: Some(rec("PSS2B", &PSS2B)),
+            ..ExtRecords::default()
+        };
+        assert_eq!(
+            exciter_graph(&wrong, None).unwrap_err(),
+            "PSS2B is not an exciter"
+        );
+
+        let limiters = ExtRecords {
+            oel: Some(OEL.to_vec()),
+            uel: Some(UEL.to_vec()),
+            ..ExtRecords::default()
+        };
+        let e = exciter_graph(&limiters, None).unwrap_err();
+        assert!(e.contains("needs an exciter"), "{e}");
+
+        let dyr = powerio::parse_dyr(
+            "102 'SEXS' 1 0.1 10.0 100.0 0.1 0.0 3.0 /\n102 'GENCLS' 1 3.0 0.0 /\n",
+        )
+        .unwrap();
+        let sexs = powerio::typed_model(&dyr.records()[0]).unwrap();
+        let g = exciter_graph(&limiters, Some(&sexs)).unwrap().unwrap();
+        let template = super::super::graph::template(&sexs).unwrap();
+        assert_eq!(g.name, "SEXS+OELIT+UELPQ");
+        assert_eq!(
+            g,
+            with_limiters(template.clone(), Some(&OEL), Some(&UEL)).unwrap()
+        );
+        for n in &template.nodes {
+            let id = if n.id == "vs" { "vs_pss" } else { &n.id };
+            assert!(g.nodes.iter().any(|m| m.id == id), "{id} kept");
+        }
+        CompiledGraph::new(&g).unwrap();
+        // Limiters only on a model without a template.
+        let gencls = powerio::typed_model(&dyr.records()[1]).unwrap();
+        let e = exciter_graph(&limiters, Some(&gencls)).unwrap_err();
+        assert!(e.contains("no block template"), "{e}");
+    }
+
+    /// The stabilizer of a unit's records: none without one, PSS2B's graph,
+    /// and an exciter in the stabilizer's place refused.
+    #[test]
+    fn stabilizer_graph_of_a_units_records() {
+        assert!(stabilizer_graph(&ExtRecords::default()).unwrap().is_none());
+        let ext = ExtRecords {
+            stabilizer: Some(rec("PSS2B", &PSS2B)),
+            ..ExtRecords::default()
+        };
+        assert_eq!(
+            stabilizer_graph(&ext).unwrap().unwrap(),
+            pss2b(&PSS2B).unwrap()
+        );
+        let wrong = ExtRecords {
+            stabilizer: Some(rec("ESST1A", &ESST1A)),
+            ..ExtRecords::default()
+        };
+        assert_eq!(
+            stabilizer_graph(&wrong).unwrap_err(),
+            "ESST1A is not a stabilizer"
+        );
+    }
+
+    /// The record readers: a record's numbers (quotes trimmed, extra tokens
+    /// ignored, too few or a non-number refused, named in the error); a
+    /// unit's extension records by bus and machine id (the id compared
+    /// without case or padding, the last record of a role winning, other
+    /// models and units skipped, a bad record named with its unit); the
+    /// emptiness of a unit's records; and an unknown model's template refused.
+    #[test]
+    fn records_are_read_per_unit() {
+        let tokens = |s: &[&str]| s.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
+        let p = numbers(
+            "UELPQ",
+            &tokens(&["-0.4", "'0.1'", "2", "0.05", "0.5", "0.5", "9"]),
+        )
+        .unwrap();
+        assert_eq!(p, [-0.4, 0.1, 2.0, 0.05, 0.5, 0.5]);
+        let e = numbers("UELPQ", &tokens(&["1", "2"])).unwrap_err();
+        assert_eq!(e, "UELPQ: 2 parameters, 6 expected");
+        let e = numbers("UELPQ", &tokens(&["1", "x", "1", "1", "1", "1"])).unwrap_err();
+        assert_eq!(e, "UELPQ: parameter 'x' is not a number");
+
+        let join = |p: &[f64]| p.iter().map(f64::to_string).collect::<Vec<_>>().join(" ");
+        let mut oel2 = OEL;
+        oel2[0] = 3.1;
+        let text = format!(
+            "102 'SEXS' 'G1' 0.1 10.0 100.0 0.1 0.0 3.0 /\n\
+             102 'ESST1A' 'G1' {} /\n\
+             102 'OELIT' 'G1' {} /\n\
+             102 'oelit' ' g1 ' {} /\n\
+             102 'UELPQ' 'G2' {} /\n\
+             103 'PSS2B' 'G1' {} /\n",
+            join(&ESST1A),
+            join(&OEL),
+            join(&oel2),
+            join(&UEL),
+            join(&PSS2B),
+        );
+        let dyr = powerio::parse_dyr(&text).unwrap();
+        let ext = unit_records(&dyr, 102, "G1").unwrap();
+        assert!(!ext.is_empty());
+        assert_eq!(ext.exciter, Some(rec("ESST1A", &ESST1A)));
+        assert_eq!(ext.oel.as_deref(), Some(&oel2[..]));
+        assert!(ext.stabilizer.is_none() && ext.uel.is_none());
+        let ext = unit_records(&dyr, 102, "G2").unwrap();
+        assert_eq!(ext.uel.as_deref(), Some(&UEL[..]));
+        assert!(ext.exciter.is_none() && ext.oel.is_none() && ext.stabilizer.is_none());
+        assert!(unit_records(&dyr, 104, "G1").unwrap().is_empty());
+        assert!(ExtRecords::default().is_empty());
+
+        let bad = powerio::parse_dyr("102 'UELPQ' 1 -0.4 0.2 /\n").unwrap();
+        let e = unit_records(&bad, 102, "1").unwrap_err();
+        assert_eq!(e, "generator 102-1: UELPQ: 2 parameters, 6 expected");
+
+        let e = record_template("SEXS", &[]).unwrap_err();
+        assert_eq!(e, "SEXS is not an extension model");
+    }
 }

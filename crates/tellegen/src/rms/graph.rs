@@ -2399,4 +2399,148 @@ mod tests {
         let (x, r) = c.initial_guess(&[1.0, 0.0, 0.0, 1.0], 1.6);
         assert!((r - 0.8).abs() < 1e-10 && (x[0] - 1.6).abs() < 1e-10);
     }
+    /// A held limit's mode before its first update.
+    const UNSET: u8 = 255;
+
+    /// Three limited lags on one input of `slot` (from its port `port`),
+    /// within `[0, 1]`: `a` with a time constant and its output the clamped
+    /// state, `b` without a time constant (algebraic), `c` with a time
+    /// constant and its output the state itself.
+    fn limited_lags(slot: Slot, port: &str) -> CompiledGraph {
+        let lag = |t: f64, clamp_output: bool| Block::LagLimited {
+            k: 1.0,
+            t,
+            min: 0.0,
+            max: 1.0,
+            clamp_output,
+        };
+        CompiledGraph::new(&BlockGraph {
+            slot,
+            name: "limited lags".into(),
+            nodes: vec![
+                input("u", port),
+                node("a", lag(0.5, true), &["u"]),
+                node("b", lag(0.0, true), &["u"]),
+                node("c", lag(0.5, false), &["u"]),
+                node(
+                    "y",
+                    Block::Sum {
+                        signs: vec![1.0; 3],
+                    },
+                    &["a", "b", "c"],
+                ),
+            ],
+            output: "y".into(),
+        })
+        .unwrap()
+    }
+
+    /// After a step, a graph sets the state of each limited lag with a time
+    /// constant whose output is its clamped state back onto that clamp (as
+    /// [`super::super::models::Avr::project_limits`]); an algebraic lag and
+    /// one whose output is the state itself are left alone. The clamp is
+    /// the one set at rest (widened to a state resting past its limit). The
+    /// exciter, governor and stabilizer graphs do the same.
+    #[test]
+    fn project_limits_puts_clamped_lags_back_on_their_clamp() {
+        let c = limited_lags(Slot::Exciter, "v_ref");
+        assert_eq!(c.state_names(), ["a", "b", "c"]);
+        let mut x = [1.3, 1.3, 1.3];
+        assert!(c.project_limits(&mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+        let mut x = [-0.2, -0.2, -0.2];
+        assert!(c.project_limits(&mut x));
+        assert_eq!(x, [0.0, -0.2, -0.2]);
+        let mut x = [0.5, 2.0, 2.0];
+        assert!(!c.project_limits(&mut x));
+        assert_eq!(x, [0.5, 2.0, 2.0]);
+        let mut x = [f64::NAN, 0.0, 0.0];
+        assert!(!c.project_limits(&mut x));
+        // At rest past its limit: the clamp widened to the state.
+        let mut rest = c.clone();
+        rest.rest_at(&[1.2, 0.0, 0.0], 0.0);
+        let mut x = [1.2, 0.0, 0.0];
+        assert!(!rest.project_limits(&mut x));
+        let mut x = [1.3, 0.0, 0.0];
+        assert!(rest.project_limits(&mut x));
+        assert_eq!(x[0], 1.2);
+
+        use super::super::models::{Avr, Governor, Stabilizer};
+        let mut x = [1.3, 1.3, 1.3];
+        assert!(Avr::Graph(Box::new(c)).project_limits(&mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+        let mut x = [1.3, 1.3, 1.3];
+        let gov = Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")));
+        assert!(gov.project_limits(&mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+        let mut x = [1.3, 1.3, 1.3];
+        let pss = Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")));
+        assert!(pss.project_limits(&mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+    }
+
+    /// A graph updates the held-limit mode of each limited lag with a time
+    /// constant (clamped output or not) from its last evaluation and counts
+    /// the switches (binding from unset is none); an algebraic lag's mode
+    /// stays unset. The exciter, governor and stabilizer graphs count the
+    /// same.
+    #[test]
+    fn update_limit_modes_counts_switches_of_lags_with_a_time_constant() {
+        use super::super::models::{Avr, Governor, LimitMode, Stabilizer};
+        let c = limited_lags(Slot::Exciter, "v_ref");
+        assert_eq!(c.update_limit_modes(), 0, "nothing recorded");
+        for m in &c.modes {
+            m.record(1.0, 0.5);
+        }
+        assert_eq!(c.update_limit_modes(), 0);
+        let modes = |c: &CompiledGraph| c.modes.iter().map(LimitMode::mode).collect::<Vec<_>>();
+        assert_eq!(modes(&c), [LimitMode::AT_MAX, UNSET, LimitMode::AT_MAX]);
+        for m in &c.modes {
+            m.record(1.0, -0.5);
+        }
+        assert_eq!(c.update_limit_modes(), 2);
+        assert_eq!(modes(&c), [LimitMode::FREE, UNSET, LimitMode::FREE]);
+
+        for m in &c.modes {
+            m.record(0.0, -0.5);
+        }
+        let avr = Avr::Graph(Box::new(c.clone()));
+        assert_eq!(avr.update_limit_modes(), 2);
+        let gov = Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")));
+        let pss = Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")));
+        let (Governor::Graph(g), Stabilizer::Graph(p)) = (&gov, &pss) else {
+            unreachable!()
+        };
+        let record = |y: f64, rate: f64| {
+            for m in g.modes.iter().chain(&p.modes) {
+                m.record(y, rate);
+            }
+        };
+        record(0.0, -0.5);
+        assert_eq!(gov.update_limit_modes(), 0);
+        assert_eq!(pss.update_limit_modes(), 0);
+        record(0.0, 0.5);
+        assert_eq!(gov.update_limit_modes(), 2);
+        assert_eq!(pss.update_limit_modes(), 2);
+    }
+
+    /// Before the first update every limited lag's mode is unset and the
+    /// graph evaluates as without held limits (the non-windup lag holds a
+    /// state at a limit only while the input pushes it further), whether or
+    /// not the limits are held in this process.
+    #[test]
+    fn unset_limit_modes_evaluate_as_without_freezing() {
+        let c = limited_lags(Slot::Exciter, "v_ref");
+        let mut f = [0.0; 3];
+        for (x, u, expected) in [
+            ([0.5, 0.5, 0.5], 2.0, [1.5, 0.5, 1.5]),
+            ([1.0, 1.0, 1.0], 2.0, [0.0, 0.0, 0.0]),
+            ([1.0, 1.0, 1.0], 0.4, [-0.6, -0.6, -0.6]),
+            ([0.0, 0.0, 0.0], -1.0, [0.0, 0.0, 0.0]),
+        ] {
+            c.eval(&x, &[1.0, 0.0, 0.0, u], &mut f);
+            assert_eq!(f, expected, "x {x:?}, u {u}");
+        }
+        assert!(c.modes.iter().all(|m| m.mode() == UNSET));
+    }
 }
