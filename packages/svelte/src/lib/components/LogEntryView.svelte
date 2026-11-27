@@ -100,7 +100,7 @@
 	.bare {
 		grid-template-columns: minmax(0, 1fr);
 	}
-	:global(:root[data-theme='dark']) .entry {
+	:global(.tellegen[data-theme='dark']) .entry {
 		--log-warning: #f0c36d;
 	}
 	.severity {

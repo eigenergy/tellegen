@@ -494,7 +494,13 @@
 			: 0
 	);
 	/** Toolbar and legend start right of the left dock, so no panel covers them. */
-	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
+	/** The overlays' left edge: past the left dock, which starts at
+	 * --tellegen-dock-left, so a host that moves the dock moves them too. */
+	const toolLeft = $derived(
+		panels.compact
+			? 'var(--tellegen-dock-left, 12px)'
+			: `calc(var(--tellegen-dock-left, 16px) + ${panels.dockWidth('left') + 8}px)`
+	);
 	const busIndex = $derived(new Map(graph.buses.map((b, i) => [b.id, i])));
 	const selectedBus = $derived(
 		mc.selectedBusId === null ? -1 : (busIndex.get(mc.selectedBusId) ?? -1)
@@ -1318,7 +1324,7 @@
 	<div
 		class="toolbar"
 		style:top="{panels.top + 8}px"
-		style:left="{toolLeft}px"
+		style:left={toolLeft}
 		role="toolbar"
 		aria-label="Schematic"
 	>
@@ -1383,7 +1389,7 @@
 		{#if layout === 'schematic'}<button onclick={exportLayer}>Layout</button>{/if}
 	</div>
 	{#if colour !== 'none' && snapshot}
-		<div class="legend" style:top="{panels.top + 50}px" style:left="{toolLeft}px">
+		<div class="legend" style:top="{panels.top + 50}px" style:left={toolLeft}>
 			{#if colour === 'loading-heat'}
 				Loading <span>0%</span><i
 					style:background={theme === 'dark' ? priceGradientDark : priceGradient}
@@ -1400,7 +1406,7 @@
 		<details
 			class="key"
 			style:bottom="{panels.compact ? app.sheetInset + 12 : 24}px"
-			style:left="{toolLeft}px"
+			style:left={toolLeft}
 			open={keyPref.value}
 			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
 		>
@@ -1446,7 +1452,7 @@
 		<details
 			class="key"
 			style:bottom="{panels.compact ? app.sheetInset + 12 : 24}px"
-			style:left="{toolLeft}px"
+			style:left={toolLeft}
 			open={keyPref.value}
 			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
 		>

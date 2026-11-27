@@ -1,4 +1,4 @@
-import { getContext, setContext, type Snippet } from 'svelte';
+import { getContext, setContext, untrack, type Snippet } from 'svelte';
 
 export type PanelSide = 'left' | 'right';
 export type PanelPosition = PanelSide | 'floating';
@@ -36,6 +36,34 @@ const STORAGE_KEY = 'tellegen.panel-layout.v1';
 export const PANEL_BREAKPOINT = 960;
 export const PANEL_MIN_DOCK_HEIGHT = 500;
 export const PANEL_COMPACT_QUERY = `(max-width: ${PANEL_BREAKPOINT}px), (max-height: ${PANEL_MIN_DOCK_HEIGHT - 1}px)`;
+
+export interface SheetInsetInput {
+	/** The phone layout is in use and zen mode is off. */
+	active: boolean;
+	/** The tab strip is shown. */
+	stripShown: boolean;
+	/** Px from the bottom edge to the strip, or to the top of the open sheet. */
+	stripBottom: number;
+	stripHeight: number;
+	handleHeight: number;
+	/** A panel is open in the sheet. */
+	open: boolean;
+	/** The open panel's header sits above the sheet, on the strip's row. */
+	headerAbove: boolean;
+}
+
+/** Height in px the phone sheet covers at the bottom of the map: the open
+ * panel, its header when that sits above the sheet, and the tab strip with
+ * its handle when they are shown. 0 when nothing is there. */
+export function sheetInset(input: SheetInsetInput): number {
+	if (!input.active) return 0;
+	const strip = input.stripHeight + input.handleHeight;
+	if (input.open)
+		return (
+			input.stripBottom + (input.stripShown ? strip : input.headerAbove ? input.stripHeight : 0)
+		);
+	return input.stripShown ? input.stripBottom + strip : 0;
+}
 
 /** Layout belongs to one provider and stores presentation preferences only. */
 export class PanelLayout {
@@ -201,16 +229,22 @@ export class PanelLayout {
 			this.#openers.set(id, active);
 		else this.#openers.delete(id);
 	}
+	/** Close only this panel. The panels behind it in its dock stay open, and
+	 * the next one comes to the front. */
+	hide(panel: PanelRegistration) {
+		panel.setOpen(false);
+		if (this.drawer === panel.id) this.drawer = null;
+	}
 	/** Close a panel. Closing the front panel of a dock closes the panels
-	 * behind it too, so the dock collapses and the map is clear. */
+	 * behind it too, so the dock collapses and the map is clear. Use hide()
+	 * to close one panel alone. */
 	close(panel: PanelRegistration) {
 		const side = this.position(panel);
 		if (!this.compact && side !== 'floating' && this.preferred(panel)) {
 			for (const other of this.ordered(side))
 				if (other.open && other !== panel) other.setOpen(false);
 		}
-		panel.setOpen(false);
-		if (this.drawer === panel.id) this.drawer = null;
+		this.hide(panel);
 	}
 	dock(panel: PanelRegistration, side: PanelSide = panel.side) {
 		this.placements[panel.id] = { ...this.bounds(panel), position: side };
@@ -245,20 +279,34 @@ export class PanelLayout {
 			y: Math.max(this.top, Math.min(bounds.y, this.viewportHeight - height - this.bottom))
 		};
 	}
+	/** Record the viewport and clamp floating panels into it. Safe to call
+	 * from an effect: it reads the layout untracked, and it writes a value
+	 * only when it changes, so the same size leaves the layout untouched. */
 	resizeViewport(width: number, height: number, top: number) {
-		this.viewportWidth = width;
-		this.viewportHeight = height;
-		this.top = top;
-		const wasCompact = this.compact;
-		this.compact = width <= PANEL_BREAKPOINT || height < PANEL_MIN_DOCK_HEIGHT;
-		if (this.compact && !wasCompact && this.panels.length > 0) {
-			const latest = this.panels.find((panel) => panel.id === this.lastActive && panel.open);
-			this.drawer = latest?.id ?? this.panels.find((panel) => panel.open)?.id ?? null;
-		}
-		for (const [id, panel] of Object.entries(this.placements)) {
-			if (panel.position === 'floating')
-				this.placements[id] = { ...this.clamp(panel), position: 'floating' };
-		}
+		untrack(() => {
+			this.viewportWidth = width;
+			this.viewportHeight = height;
+			this.top = top;
+			const wasCompact = this.compact;
+			const compact = width <= PANEL_BREAKPOINT || height < PANEL_MIN_DOCK_HEIGHT;
+			if (compact !== wasCompact) this.compact = compact;
+			if (compact && !wasCompact && this.panels.length > 0) {
+				const latest = this.panels.find((panel) => panel.id === this.lastActive && panel.open);
+				const drawer = latest?.id ?? this.panels.find((panel) => panel.open)?.id ?? null;
+				if (drawer !== this.drawer) this.drawer = drawer;
+			}
+			for (const [id, panel] of Object.entries(this.placements)) {
+				if (panel.position !== 'floating') continue;
+				const next = this.clamp(panel);
+				if (
+					next.x !== panel.x ||
+					next.y !== panel.y ||
+					next.width !== panel.width ||
+					next.height !== panel.height
+				)
+					this.placements[id] = { ...next, position: 'floating' };
+			}
+		});
 	}
 	/** One width per dock, the widest panel that docks there, open or not, so
 	 * switching tabs never resizes the panel or rewraps its text. */

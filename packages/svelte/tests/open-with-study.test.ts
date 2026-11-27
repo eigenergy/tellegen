@@ -112,6 +112,39 @@ describe('Controller.openBalancedModule with a Study built ahead', () => {
 		expect(other.free).toHaveBeenCalledTimes(1);
 	});
 
+	it('keeps a given Study that ignored settings saved for another calculation, without the notice', async () => {
+		const ctrl = controller();
+		const notice = { code: 'settings_ignored', message: 'saved settings are for acpf' };
+		const island = { code: 'island_deenergized', message: 'island', buses: [2] };
+		const study = fakeStudy() as ReturnType<typeof fakeStudy> & {
+			commit: ReturnType<typeof vi.fn>;
+		};
+		study.currentSolution.mockResolvedValue({ diagnostics: [notice, island] });
+		study.commit = vi.fn(async () => ({
+			solution: { diagnostics: [notice, island] },
+			iterations: [],
+			sensitivity: null
+		}));
+		const local = await ctrl.openBalancedModule({
+			name: 'generated',
+			payload,
+			formulation: 'dcopf',
+			study: Promise.resolve(study),
+			activate: false
+		});
+		expect(await ctrl.getStudy(local, payload.module_json)).toBe(study);
+		expect(engine.createStudy).not.toHaveBeenCalled();
+		expect(study.free).not.toHaveBeenCalled();
+		expect(ctrl.caseStudies.get(local)?.baseSolution.diagnostics).toEqual([island]);
+
+		const record = vi.spyOn(ctrl.app.log, 'record');
+		ctrl.runSolve(local, null);
+		await vi.waitFor(() => expect(local.solving).toBe(false));
+		expect(local.solution?.diagnostics).toEqual([island]);
+		const logged = record.mock.calls.flatMap(([entries]) => entries);
+		expect(logged.some((e) => e.code === 'settings_ignored')).toBe(false);
+	});
+
 	it('frees the given Study when the case is removed before it is built', async () => {
 		const ctrl = controller();
 		const study = fakeStudy();

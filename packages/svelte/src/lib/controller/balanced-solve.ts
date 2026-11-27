@@ -13,7 +13,8 @@ import type { SensitivityColumn } from '../api.js';
 import {
 	acOpfSolveDetail,
 	defaultCalculationSettings,
-	hasCustomCalculationSettings
+	hasCustomCalculationSettings,
+	withoutIgnoredSettings
 } from '../controller/case-settings.js';
 import { browserSolveFailure, errorText, formulationLabel } from '../format.js';
 import { errorTitle, solveEntry, type ErrorContext } from '../log.svelte.js';
@@ -121,18 +122,11 @@ export class BalancedSolveActions {
 								baseline: c.settings.baselines[formulation]
 							})
 						: null);
-				const study = await createStudy(
-					studyInputJson,
-					formulation,
-					accepted
-						? {
-								settings: {
-									calculation: formulation,
-									overrides: accepted.effective
-								}
-							}
-						: {}
-				);
+				// Settings are always explicit, so the engine never reads a module's
+				// record made for another calculation and warns on every solve.
+				const study = await createStudy(studyInputJson, formulation, {
+					settings: { calculation: formulation, overrides: accepted?.effective ?? {} }
+				});
 				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
 				// list reloaded) while building; don't cache a now-unwanted Study, and free
@@ -366,12 +360,17 @@ export class BalancedSolveActions {
 				try {
 					const cached = this.host.caseStudies.get(c);
 					if (!c.baseSolution && cached?.study === study) c.baseSolution = cached.baseSolution;
-					const { solution, iterations, sensitivity } = await study.commit(
+					const committed = await study.commit(
 						c.id,
 						this.host.caseDeltas(c),
 						this.host.caseRatings(c),
 						target
 					);
+					const { iterations, sensitivity } = committed;
+					const solution =
+						cached?.study === study && cached.ignoresRecordedSettings
+							? withoutIgnoredSettings(committed.solution)
+							: committed.solution;
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
 					c.iterations = iterations;

@@ -11,6 +11,7 @@ import {
 	type ResolvedSettings,
 	type SolveResponse
 } from '@tellegen/engine';
+import { solveBackendLabel } from '../format.js';
 import type { Solution } from '../api.js';
 import type { Controller } from '../controller.svelte.js';
 import { LocalCase, MulticonductorCase, type SolvableCase } from '../state.svelte.js';
@@ -31,7 +32,7 @@ export function acOpfSolveDetail(response: SolveResponse): string {
 	const diagnostics = response.iterations;
 	return diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
 		? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
-		: 'POUNCE WASI';
+		: solveBackendLabel('pounce-wasi');
 }
 
 /** Whether this engine build knows `name` as a calculation. */
@@ -49,6 +50,18 @@ export function defaultCalculationSettings(calculation: Calculation): ResolvedSe
 		baseline: effective,
 		overrides: {},
 		effective
+	};
+}
+/** `solution` without the `settings_ignored` notices of a Study built from a
+ * module whose saved settings are for another calculation. A Study built with
+ * explicit settings reports none, and the import log already named any saved
+ * option this engine does not know. */
+export function withoutIgnoredSettings<T extends Solution>(solution: T): T {
+	const diagnostics = solution.diagnostics;
+	if (!diagnostics?.some((d) => d.code === 'settings_ignored')) return solution;
+	return {
+		...solution,
+		diagnostics: diagnostics.filter((d) => d.code !== 'settings_ignored')
 	};
 }
 export function hasCustomCalculationSettings(c: SolvableCase): boolean {

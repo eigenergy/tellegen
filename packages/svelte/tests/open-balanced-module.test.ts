@@ -226,6 +226,33 @@ describe('openBalancedModule', () => {
 		expect(local.declaredFormulation).toBe('dcopf');
 		expect(app.displayMode).toBe('voltage');
 	});
+
+	it('selects the overriding calculation when the module records settings for another', async () => {
+		const { ctrl } = host();
+		const module_json = JSON.stringify({
+			extensions: {
+				'tellegen.calculation_settings': {
+					version: 1,
+					calculation: 'acpf',
+					overrides: { start: 'case' }
+				}
+			}
+		});
+		const local = await ctrl.openBalancedModule({
+			name: 'synth',
+			payload: payload({ module_json }),
+			formulation: 'dcopf'
+		});
+		expect(local.formulation).toBe('dcopf');
+		expect(local.settings.calculation).toBe('dcopf');
+		// The recorded settings stay for a switch back to AC power flow.
+		expect(local.settings.baselines.acpf).toEqual({ start: 'case' });
+		engine.createStudy.mockClear();
+		await ctrl.getStudy(local, module_json);
+		expect(engine.createStudy).toHaveBeenCalledWith(module_json, 'dcopf', {
+			settings: { calculation: 'dcopf', overrides: {} }
+		});
+	});
 });
 
 describe('replaceLocalCase', () => {

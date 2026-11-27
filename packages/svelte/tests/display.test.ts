@@ -53,3 +53,18 @@ describe('demand display', () => {
 		expect(displaySeriesFor(unsolved, 'demand')).toEqual([]);
 	});
 });
+
+describe('legend gradients', () => {
+	it('draws voltage with the theme ramp, like price', () => {
+		const c = solvedCase();
+		const solved = {
+			...c,
+			solution: { ...c.solution, vm: [{ bus: 1, value: 1.01 }] }
+		} as unknown as SolvableCase;
+		const options = displayMetaFor(solved);
+		const price = options.find((o) => o.mode === 'price')?.gradient;
+		const voltage = options.find((o) => o.mode === 'voltage')?.gradient;
+		expect(voltage).toMatch(/^var\(--tellegen-price-ramp, /);
+		expect(voltage).toBe(price);
+	});
+});

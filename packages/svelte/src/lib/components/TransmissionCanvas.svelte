@@ -1599,7 +1599,13 @@
 				?.focus()
 		);
 	}
-	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
+	/** The overlays' left edge: past the left dock, which starts at
+	 * --tellegen-dock-left, so a host that moves the dock moves them too. */
+	const toolLeft = $derived(
+		panels.compact
+			? 'var(--tellegen-dock-left, 12px)'
+			: `calc(var(--tellegen-dock-left, 16px) + ${panels.dockWidth('left') + 8}px)`
+	);
 	const layoutName = $derived(
 		layout === 'schematic' ? 'Schematic' : geographic ? 'Geographic' : 'Drawing'
 	);
@@ -1870,12 +1876,11 @@
 		class="toolbar"
 		class:compact={panels.compact}
 		bind:clientHeight={toolbarHeight}
-		style:max-width="calc(100% - {toolLeft +
-			(panels.compact
-				? 12
-				: panels.dockWidth('right') + 24 + (summaryDocked ? SUMMARY_WIDTH + 16 : 0))}px)"
+		style:max-width="calc(100% - {toolLeft} - {panels.compact
+			? 12
+			: panels.dockWidth('right') + 24 + (summaryDocked ? SUMMARY_WIDTH + 16 : 0)}px)"
 		style:top="{panels.top + 8}px"
-		style:left="{toolLeft}px"
+		style:left={toolLeft}
 		role="toolbar"
 		aria-label="Single-line diagram"
 	>
@@ -1982,8 +1987,8 @@
 			id="tx-equipment-panel"
 			class="equipment-overlay"
 			style:top="{panels.top + toolbarHeight + 16}px"
-			style:left="{toolLeft}px"
-			style:max-width="calc(100% - {toolLeft + 12}px)"
+			style:left={toolLeft}
+			style:max-width="calc(100% - {toolLeft} - 12px)"
 			style:max-height="calc(100% - {panels.top +
 				toolbarHeight +
 				32 +
@@ -2006,7 +2011,7 @@
 			bind:clientHeight={legendHeight}
 			class:docked={summaryDocked}
 			style:top="{summaryDocked ? panels.top + 8 : panels.top + toolbarHeight + 16}px"
-			style:left={summaryDocked ? undefined : `${toolLeft}px`}
+			style:left={summaryDocked ? undefined : toolLeft}
 			style:right={summaryBelow
 				? undefined
 				: `${panels.compact ? 12 : panels.dockWidth('right') + (panels.dockWidth('right') ? 32 : 16)}px`}
@@ -2338,7 +2343,7 @@
 		--gauge-ink: var(--ink);
 		--gauge-warn: #8a5a00;
 	}
-	:global(:root[data-theme='dark']) .tx-stage {
+	:global(.tellegen[data-theme='dark']) .tx-stage {
 		--gauge-warn: #f2c14e;
 	}
 	.canvas,

@@ -1,6 +1,17 @@
 <script lang="ts" module>
 	import { DC_VARIANTS } from '../dc-variants.js';
 
+	/** Whether a transmission calculation can be chosen. AC OPF loads when it is
+	 * chosen here, so the engine reporting it unavailable before the first load
+	 * does not hide it while the controller offers it. */
+	export function transmissionSelectable(
+		value: string,
+		available: boolean,
+		offered: boolean
+	): boolean {
+		return (value === 'acopf' || available) && offered;
+	}
+
 	/** Plain names for the engine's settings, in place of its own labels. */
 	const LABELS: Record<string, string> = {
 		angle_difference: 'Angle limits',
@@ -67,7 +78,6 @@
 
 <script lang="ts">
 	import {
-		calculationAvailable,
 		type Formulation,
 		describeSettings,
 		settingsCatalog,
@@ -77,7 +87,7 @@
 	import { getAppState, getController } from '../context.svelte.js';
 	import { formulationLabel } from '../format.js';
 	import { recordedCalculationSettings } from '../settings.svelte.js';
-	import { LocalCase, MulticonductorCase, type SolvableCase } from '../state.svelte.js';
+	import { MulticonductorCase, type SolvableCase } from '../state.svelte.js';
 
 	/** The calculation section of Settings: the calculation and its options as label and control
 	 * rows. A change applies and reruns at once. */
@@ -169,14 +179,10 @@
 	function canSelect(value: string, available: boolean) {
 		if (!current) return false;
 		if (current instanceof MulticonductorCase) return value === 'mc_ac_pf' && available;
-		// AC OPF loads when it is chosen here, so a configured solver is enough.
-		return (
-			(value === 'acopf' || available) &&
-			calculationAvailable(value as Formulation, {
-				declared: current instanceof LocalCase ? current.declaredFormulation : null,
-				edited: current.perturbed,
-				acOpf: ctrl.acOpfConfigured
-			})
+		return transmissionSelectable(
+			value,
+			available,
+			ctrl.calculationOffered(current, value as Formulation)
 		);
 	}
 	function calculationLabel(value: string) {

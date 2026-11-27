@@ -236,7 +236,7 @@
 				{/if}
 
 				{#if ctrl.activeSolvable}
-					<FormulationSelector />
+					<div class="calculation"><FormulationSelector /></div>
 				{/if}
 				<!-- The steady-state solve keeps its Details in both modes, so the panel does not jump. -->
 				<SolveCard embedded />
@@ -278,6 +278,9 @@
 	}
 
 	/* The display key under the case stats on a phone: a gap, not touching. */
+	.calculation {
+		margin-top: 10px;
+	}
 	.compact-key {
 		margin-top: 12px;
 	}

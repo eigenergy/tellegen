@@ -38,7 +38,8 @@ import {
 import {
 	CaseSettingsActions,
 	defaultCalculationSettings,
-	hasCustomCalculationSettings
+	hasCustomCalculationSettings,
+	withoutIgnoredSettings
 } from './controller/case-settings.js';
 import { DistributionResultsActions } from './controller/distribution-results.js';
 import { DistributionSolveActions, releaseMcInput } from './controller/distribution-solve.js';
@@ -254,6 +255,8 @@ export class Controller {
 	private readonly acOpfProbeAbort = new AbortController();
 	private readonly acOpfSolves = new Map<SolvableCase, AbortController>();
 	acOpfAvailable = $state(false);
+	/** The optional AC OPF asset was probed and did not load. */
+	acOpfFailed = $state(false);
 
 	// Build-once browser Study per case: the retained PowerIO module is parsed and the model built
 	// when the Study is created, so a drag re-solves (commit) and previews without
@@ -267,6 +270,10 @@ export class Controller {
 			formulation: Formulation;
 			baseSolution: Solution;
 			settings?: ResolvedSettings;
+			/** Built ahead without settings from a module whose saved settings are
+			 * for another calculation: its solutions drop the `settings_ignored`
+			 * notices that build adds. */
+			ignoresRecordedSettings?: boolean;
 		}
 	>();
 	private detachedCaseCaptures = new WeakMap<
@@ -430,7 +437,8 @@ export class Controller {
 			declared: c instanceof LocalCase ? c.declaredFormulation : null,
 			edited: c.perturbed,
 			ratingsEdited: c.ratingsEdited,
-			acOpf: this.acOpfAvailable
+			// A configured asset loads on demand when chosen, until a probe fails.
+			acOpf: this.acOpfAvailable || (this.acOpfConfigured && !this.acOpfFailed)
 		});
 	}
 
@@ -449,9 +457,13 @@ export class Controller {
 			.then((available) => {
 				if (this.disposed) return false;
 				this.acOpfAvailable = available;
+				this.acOpfFailed = !available;
 				return available;
 			})
-			.catch(() => false)
+			.catch(() => {
+				if (!this.disposed) this.acOpfFailed = true;
+				return false;
+			})
 			.finally(() => {
 				this.acOpfLoading = false;
 				if (!this.acOpfAvailable) this.acOpfProbe = null;
@@ -2665,7 +2677,11 @@ export class Controller {
 
 	/** Build a local case from a balanced PowerIO ingest payload without activating
 	 * it yet; co-dropped placement data is applied before the first solve. */
-	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
+	private localFromBalancedPayload = (
+		fileName: string,
+		payload: IngestedCase,
+		override?: Formulation
+	): LocalCase => {
 		const { module_json, topology, view, formulation, ...summary } = payload;
 		const label = caseLabel(summary.name, fileName);
 		this.logImport(fileName, summary, module_json);
@@ -2673,7 +2689,7 @@ export class Controller {
 			id: `local-${++this.localSeq}`,
 			label,
 			fileName,
-			formulation,
+			formulation: override ?? formulation,
 			declaredFormulation: formulation,
 			summary,
 			studyInputJson: module_json,
@@ -2705,11 +2721,11 @@ export class Controller {
 		try {
 			const payload =
 				input.payload ?? (await this.ingestBalancedModule(input.name, input.moduleJson));
-			const local = this.localFromBalancedPayload(`${input.name}.pio.json`, {
-				...payload,
-				name: input.name
-			});
-			if (input.formulation) local.formulation = input.formulation;
+			const local = this.localFromBalancedPayload(
+				`${input.name}.pio.json`,
+				{ ...payload, name: input.name },
+				input.formulation
+			);
 			if (input.geoLayer) {
 				await this.applyGeoLayers(local, [
 					{
@@ -2737,7 +2753,10 @@ export class Controller {
 	 * pending build, so `getStudy` waits for it instead of building another.
 	 * It is used only as built: for the case's module and formulation, with no
 	 * calculation settings. Anything else, or a failed build, leaves the case
-	 * to build its own. */
+	 * to build its own with explicit settings. A Study that ignored saved
+	 * settings recorded for another calculation runs on engine defaults, as
+	 * the case's own build would, so it is kept and its solutions drop the
+	 * `settings_ignored` notice. */
 	private adoptStudy(c: LocalCase, pending: Promise<BrowserStudy>) {
 		const studyInputJson = c.studyInputJson;
 		const formulation = c.formulation;
@@ -2758,7 +2777,15 @@ export class Controller {
 				study = await pending;
 				if (study.formulation !== formulation)
 					throw new Error(`Study built for ${study.formulation}, not ${formulation}`);
-				const baseSolution = await study.currentSolution();
+				const built = await study.currentSolution();
+				// Built without settings from a module that records them for another
+				// calculation, the Study runs on engine defaults, as one built with
+				// explicit default settings would, but every solve repeats that it
+				// ignored the record. Keep it and drop that notice.
+				const ignoresRecordedSettings = built.diagnostics?.some(
+					(d) => d.code === 'settings_ignored'
+				);
+				const baseSolution = withoutIgnoredSettings(built);
 				// As in `getStudy`: the case may have changed or gone while this built.
 				if (c.formulation !== formulation || !current()) {
 					study.free();
@@ -2769,7 +2796,8 @@ export class Controller {
 					studyInputJson,
 					formulation,
 					baseSolution,
-					settings: defaultCalculationSettings(formulation)
+					settings: defaultCalculationSettings(formulation),
+					ignoresRecordedSettings
 				});
 				this.studyBuilds.delete(c);
 				return study;

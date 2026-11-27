@@ -15,6 +15,7 @@
 	import { createAppState } from './state.svelte.js';
 	import { PanelLayout, setPanelLayout } from './panels.svelte.js';
 	import { CommandRegistry, setCommandRegistry } from './commands.svelte.js';
+	import { hostRootTheme } from './root-theme.svelte.js';
 
 	interface Props extends TellegenUiOptions {
 		children?: Snippet;
@@ -36,12 +37,16 @@
 		children
 	}: Props = $props();
 
-	// A root theme already in the document before this provider runs belongs to the
-	// host's template; leave it alone. Otherwise, with no host or viewer choice, follow
-	// the operating system (styles.css covers first paint for the same case).
-	const hostRootTheme =
-		typeof document === 'undefined' ? undefined : document.documentElement.dataset.theme;
+	// A root theme in the document belongs to the host; follow it, including
+	// when the host switches it later. Otherwise, with no host or viewer
+	// choice, follow the operating system (styles.css covers first paint for
+	// the same case).
 	const systemDark = new MediaQuery('(prefers-color-scheme: dark)', false);
+	// The server cannot see the root attribute, the viewer's saved choice or the
+	// operating system, so until mount the element carries no data-theme unless
+	// the host passed one. styles.css paints the root's or the system's dark
+	// tokens meanwhile, and the server and first client render match.
+	let mounted = $state(false);
 
 	// Read once, at mount: `apiBase`, `acOpfWasmUrl` and `loadDefaultCases`
 	// configure the controller this provider owns, and the links and footer are
@@ -69,7 +74,8 @@
 		get theme() {
 			if (app.preferences.theme) return app.preferences.theme;
 			if (theme !== undefined) return resolveTheme(theme);
-			if (hostRootTheme === 'dark' || hostRootTheme === 'light') return hostRootTheme;
+			const root = hostRootTheme.current;
+			if (root) return root;
 			return systemDark.current ? 'dark' : 'light';
 		},
 		get cartoApiKey() {
@@ -77,7 +83,11 @@
 		}
 	};
 	const app = createAppState();
+	const themeAttribute = $derived(
+		theme !== undefined || app.preferences.theme || mounted ? config.theme : undefined
+	);
 	onMount(() => {
+		mounted = true;
 		let storage: Storage | undefined;
 		try {
 			storage = globalThis.localStorage;
@@ -153,6 +163,6 @@
 	onDestroy(() => ctrl.dispose());
 </script>
 
-<div class="tellegen" data-theme={config.theme} bind:this={element}>
+<div class="tellegen" data-theme={themeAttribute} bind:this={element}>
 	{@render children?.()}
 </div>

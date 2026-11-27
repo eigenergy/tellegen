@@ -307,6 +307,16 @@ depends on state.
   from `@tellegen/svelte/components`
 - basemap helpers, colors, display helpers, formatting helpers, and public types
 
+`FormulationSelector` picks the calculation for the active case, or for the
+case in its `currentCase` prop. `variant="segmented"` draws it as a row of
+buttons, a toolbar of toggle buttons whose arrow keys move between the
+calculations on offer; Space or Enter runs one. Give each selector on a page
+its own `id`. It offers AC OPF when the host configured the solver asset
+(`acOpfWasmUrl`), which then loads on first use; after a failed load it is no
+longer offered.
+`solveBackendLabel(case.solveBackend)` names the solver behind the last solve,
+for example `POUNCE (WebAssembly)`.
+
 <a id="frontend-package-custom-shells"></a>
 
 #### Custom shells
@@ -355,8 +365,15 @@ inside `TellegenProvider`:
 `ShellEnvironment` is renderless and keeps the compact-layout, pointer and
 viewport state in step, as the default shell does. `PanelHost` reads
 `--tellegen-dock-left`, `--tellegen-dock-right` and `--tellegen-dock-bottom`
-from an ancestor for its dock insets (defaults 20px, 20px and 100px), so a
-shell with its own rail or status bar moves the docks without restyling them.
+from an ancestor for its dock insets (defaults 16px left and right, 12px on a
+phone, and 100px at the bottom), so a shell with its own rail or status bar
+moves the docks without restyling them.
+The diagram toolbars and keys follow `--tellegen-dock-left` too. The docks
+start 8px below `app.headerInset`; with the tab strip shown, the left dock
+starts below the strip. On a phone, `PanelHost` sets `app.sheetInset` to the
+height the sheet covers, with or without the tab strip; hosts read it and do
+not write it. `layout.hide(panel)` closes one panel; `layout.close(panel)` on
+the front panel of a dock also closes the panels behind it.
 
 When a panel closes, focus moves to its toolbar button. Without the toolbar,
 focus goes back to the control that had focus when the panel opened. If there
@@ -610,15 +627,29 @@ instead of copying them:
 #### Dark theme
 
 `<TellegenProvider theme="dark">` (or `<TellegenViewer theme="dark">`) sets
-`data-theme="dark"` on the document root while mounted, which switches every
-token in `styles.css`. The default shell passes the theme to its map, so the
-basemap and the overlay palette follow. A custom shell passes
-`theme="dark"` to `TellegenMap` itself. A server-rendered host can put the
-attribute in its template to avoid a light first paint. With no `theme` prop,
-no attribute in the template and no saved viewer choice, the provider follows
-the operating system's `prefers-color-scheme`, and `styles.css` paints the dark
-tokens from the first frame. Text tokens keep at least 7:1 against the panel on
-either ground.
+`data-theme="dark"` on the provider's `.tellegen` element, which switches every
+token in `styles.css` and sets `color-scheme`, so native controls, scrollbars
+and menus match. The `theme` prop is live. The default shell passes the theme
+to its map, so the basemap and the overlay palette follow. A custom shell
+passes `theme="dark"` to `TellegenMap` itself.
+
+With no `theme` prop, the provider follows `data-theme` on the document root
+(`light` or `dark`), including when the host changes it later. With no prop,
+no root attribute and no saved viewer choice, it follows the operating
+system's `prefers-color-scheme`. The provider leaves `data-theme` off its
+element until it mounts, so on a server-rendered page `styles.css` paints the
+dark tokens from the first frame when the template's root has
+`data-theme="dark"`, or has no `data-theme` and the system prefers dark. Text
+tokens keep at least 7:1 against the panel on either ground.
+
+<a id="frontend-package-restyling"></a>
+
+#### Restyling the tokens
+
+The tokens are declared on `.tellegen`, not `:root`. A host that
+restyles them overrides them on `.tellegen` or an element inside it; a value
+set on `:root` loses to the kit's own. Dark values go under
+`.tellegen[data-theme='dark']`.
 
 <a id="frontend-package-opening-a-module-from-memory"></a>
 
