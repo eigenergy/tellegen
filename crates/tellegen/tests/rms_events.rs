@@ -277,6 +277,29 @@ fn the_step_is_never_coarser_than_asked() {
     assert!((live.step() - 0.005).abs() < 1e-15);
 }
 
+/// A live event may fall between integration steps. Its timestamp and the
+/// following output samples must stay on their respective clocks.
+#[cfg(feature = "rms-experimental")]
+#[test]
+fn live_stops_at_an_event_between_samples() {
+    let (net, dyr, _) = smib();
+    let sim = RmsSimulation::new(&net, &dyr, LoadModel::ConstantImpedance).unwrap();
+    let mut live = sim.live(0.005, 0.02);
+    let first = live.advance(0.013).unwrap();
+    assert!((first.t - 0.013).abs() < 1e-12);
+    live.apply(RmsEvent::BusFault {
+        time: 0.0,
+        bus: 102,
+        r: 0.0,
+        x: 0.01,
+    })
+    .unwrap();
+    let second = live.advance(0.024).unwrap();
+    assert!((second.t - 0.037).abs() < 1e-12);
+    assert_eq!(second.time.len(), 1);
+    assert!((second.time[0] - 0.02).abs() < 1e-12);
+}
+
 /// A fault needs an impedance: a bolted fault through zero is refused with a
 /// clear message, in a run and in a live session.
 #[cfg(feature = "rms-experimental")]
