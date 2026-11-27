@@ -31,12 +31,13 @@ export interface DyrParameter {
 
 /** A DYR record linked to a generator. An inverter record's role is its part
  * of the plant: `converter` (REGC*), `electrical` (REEC*), `plant` (REPC*),
- * or `inverter` for another inverter record. */
+ * or `inverter` for another inverter record; `oel` and `uel` for the
+ * excitation limiters that act at the exciter's summing point. */
 export interface DyrRecordView {
   /** First line of the record in the file (1-based); edits name it. */
   line: number;
   model: string;
-  role: "machine" | "exciter" | "governor" | "stabilizer" | InverterPart | "inverter";
+  role: ModelRole;
   parameters: DyrParameter[];
 }
 

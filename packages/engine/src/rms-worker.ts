@@ -15,11 +15,21 @@ import * as wasm from "./wasm-pkg/tellegen.js";
 
 type Wasm = typeof wasm;
 
+/** The parts of the threaded engine build (`wasm-pkg-mt`) this worker
+ * calls. That build is optional and made apart from `npm run wasm`, so it is
+ * loaded by URL at run time and not type-checked against. */
+interface ThreadedBuild {
+  default(init: { module_or_path: WebAssembly.Module }): Promise<{ memory: WebAssembly.Memory }>;
+  rms_threads_init(global: number, relays: number): void;
+}
+
 /** Experimental: the engine build with SIMD and threads (shared memory):
  * the module, its memory shared with one Web Worker per pool thread, and
  * the pools started before the first call. */
 async function threaded(): Promise<Wasm> {
-  const mt = await import("./wasm-pkg-mt/tellegen.js");
+  const mt = (await import(
+    /* @vite-ignore */ new URL("./wasm-pkg-mt/tellegen.js", import.meta.url).href
+  )) as ThreadedBuild;
   const url = new URL("./wasm-pkg-mt/tellegen_bg.wasm", import.meta.url);
   const module = await WebAssembly.compileStreaming(fetch(url));
   const out = await mt.default({ module_or_path: module });
