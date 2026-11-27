@@ -835,6 +835,7 @@ mod tests {
 
         use super::super::super::{LoadModel, RmsSimulation};
         use super::super::*;
+        use crate::rms::integrate::SparseLu;
 
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
