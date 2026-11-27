@@ -151,14 +151,19 @@ impl GenDevice {
         let vt = mag(vr, vi);
         let pe = alg.te * self.scale;
         let mut scratch = vec![0.0; n];
-        let vs = self.pss.eval(
-            &x[p..p + self.pss.n_states()],
-            omega,
-            pe,
+        let (ir, ii) = super::models::dq_ri(x[s], alg.id, alg.iq);
+        let vs = self.summing_point(
+            self.pss.eval(
+                &x[p..p + self.pss.n_states()],
+                omega,
+                pe,
+                vt,
+                self.scale,
+                &mut scratch[p..p + self.pss.n_states()],
+            ),
             vt,
-            self.scale,
-            &mut scratch[p..p + self.pss.n_states()],
-        ) + self.vs_ext;
+            vi * ir - vr * ii,
+        );
         let mut out = Vec::new();
         let mut push = |slot: &str, gr: &super::graph::CompiledGraph, xs: &[f64], ports: &[f64]| {
             for (id, v) in gr.node_ids().zip(gr.signals(xs, ports)) {
@@ -166,7 +171,6 @@ impl GenDevice {
             }
         };
         if let Avr::Graph(gr) = &self.avr {
-            let (ir, ii) = super::models::dq_ri(x[s], alg.id, alg.iq);
             push(
                 "exciter",
                 gr,
@@ -202,6 +206,22 @@ impl GenDevice {
         out
     }
 
+    /// The signal at the regulator's summing point: the stabilizer output
+    /// `vs_pss`, the external signal and, experimental, the under-excitation
+    /// limiter of the summing-point type (IEEE Std 421.5, UEL1/UEL2 reduced
+    /// to its proportional path) at the terminal voltage `vt` and the
+    /// reactive power `q` (machine base). The limit is `-q_lim Vt^2`;
+    /// absorption beyond it raises the voltage error by `gain` times the
+    /// excess. The initialization sets the voltage reference against this
+    /// whole signal, so a unit already beyond its limit starts at rest.
+    pub(crate) fn summing_point(&self, vs_pss: f64, vt: f64, q: f64) -> f64 {
+        let vs = vs_pss + self.vs_ext;
+        match self.uel {
+            Some([q_lim, gain]) => vs + gain * (-q_lim * vt * vt - q).max(0.0),
+            None => vs,
+        }
+    }
+
     /// Evaluate the device right-hand side `f` (local) and its outputs.
     pub(crate) fn eval(
         &self,
@@ -229,25 +249,16 @@ impl GenDevice {
         let (fa, rest) = rest.split_at_mut(g - a);
         let (fg, fp) = rest.split_at_mut(p - g);
         let (fp, fc) = fp.split_at_mut(self.pss.n_states());
-        let vs = self.pss.eval(
+        let vs_pss = self.pss.eval(
             &x[p..p + self.pss.n_states()],
             omega,
             alg.te * self.scale,
             vt,
             self.scale,
             fp,
-        ) + self.vs_ext;
+        );
         let (ir, ii) = dq_ri_sc(sc, alg.id, alg.iq);
-        // Experimental: under-excitation limiter of the summing-point type (IEEE Std 421.5,
-        // UEL1/UEL2 reduced to its proportional path). The limit is `-q_lim Vt^2` of reactive power on
-        // the machine base; absorption beyond it raises the voltage error by `gain` times the excess.
-        let vs = match self.uel {
-            Some([q_lim, gain]) => {
-                let q = vi * ir - vr * ii;
-                vs + gain * (-q_lim * vt * vt - q).max(0.0)
-            }
-            None => vs,
-        };
+        let vs = self.summing_point(vs_pss, vt, vi * ir - vr * ii);
         let vf = self.avr.eval(
             &x[a..g],
             super::models::AvrIn {

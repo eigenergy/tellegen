@@ -588,10 +588,9 @@ fn uel_starts_flat() {
 
 /// A unit that already absorbs reactive power beyond its limit at the power
 /// flow (here at 0.97 pu against the infinite bus, about -0.26 pu with a
-/// limit of -0.05 pu) should also start at rest: the limiter's output at the
-/// start belongs in the voltage reference the initialization solves for.
+/// limit of -0.05 pu) also starts at rest: the limiter's output at the start
+/// is in the voltage reference the initialization solves for.
 #[test]
-#[ignore = "the initialization leaves the limiter out: a unit starting beyond its limit is refused (device residual about 11)"]
 fn uel_reached_at_the_start_starts_flat() {
     let _s = switches();
     let raw = raw_case(
@@ -613,6 +612,16 @@ fn uel_reached_at_the_start_starts_flat() {
     let sim = RmsSimulation::new(&network(&raw), &dyr, LoadModel::ConstantPower)
         .expect("a unit beyond its limit at the start is built");
     assert_flat(&sim, "UEL reached at the start");
+    // With a load compensator, instantaneous or through its lag, as well.
+    for t in [0.0, 1.0] {
+        rms::set_vcomp(HashMap::from([(102, [0.01, 0.05, t])]));
+        let sim = RmsSimulation::new(&network(&raw), &dyr, LoadModel::ConstantPower)
+            .expect("a unit beyond its limit at the start is built");
+        assert_flat(
+            &sim,
+            &format!("UEL reached at the start, compensator T = {t}"),
+        );
+    }
 }
 
 /// The voltage reference lowered by 10 % drives the unit to absorb reactive

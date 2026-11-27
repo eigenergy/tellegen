@@ -1141,7 +1141,9 @@ pub(crate) fn init_device(
             }
             let input = super::models::AvrIn {
                 vt: super::system::avr_vt(dev.vcomp, v.re, v.im, i_m.re, i_m.im, z0),
-                vs: vs0,
+                // the whole summing-point signal at the start, the stabilizer's
+                // and the limiter's, so the reference takes it up
+                vs: dev.summing_point(vs0, vt, s_m.im),
                 xad_ifd: alg.xad_ifd,
                 v_ref: vt,
                 p: s_m.re,
