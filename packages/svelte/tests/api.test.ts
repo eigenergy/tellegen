@@ -164,7 +164,7 @@ describe('streamed result validation', () => {
 		}).openSolveStream('case-1', {}, null, handlers);
 		return { handlers, stream: FakeEventSource.last };
 	}
-	it('accepts existing server records with and without solver context', () => {
+	it('accepts existing server records with and without solver context, in order', async () => {
 		const { handlers, stream } = open();
 		stream.emit('solution', result);
 		stream.emit('solution', {
@@ -182,21 +182,48 @@ describe('streamed result validation', () => {
 			values: [{ bus: 4, value: 0.1 }]
 		});
 		stream.emit('done', { ok: true });
+		// The stream closes at once; the handlers follow in event order.
+		expect(stream.close).toHaveBeenCalledTimes(1);
+		await vi.waitFor(() => expect(handlers.ondone).toHaveBeenCalledTimes(1));
 		expect(handlers.onsolution).toHaveBeenCalledTimes(2);
 		expect(handlers.onsensitivity).toHaveBeenCalledTimes(1);
 		expect(handlers.onfail).not.toHaveBeenCalled();
-		expect(handlers.ondone).toHaveBeenCalledTimes(1);
+		expect(handlers.onsensitivity.mock.invocationCallOrder[0]).toBeGreaterThan(
+			handlers.onsolution.mock.invocationCallOrder[1]
+		);
+		expect(handlers.ondone.mock.invocationCallOrder[0]).toBeGreaterThan(
+			handlers.onsensitivity.mock.invocationCallOrder[0]
+		);
 		expect(stream.close).toHaveBeenCalledTimes(1);
 	});
-	it('closes a malformed result stream and ignores already queued results', () => {
+	it('closes a malformed result stream and ignores already queued results', async () => {
 		const { handlers, stream } = open();
 		stream.emit('solution', { ...result, solve_ms: 'invalid' });
 		stream.emit('solution', result);
 		stream.emit('done', { ok: true });
-		expect(handlers.onfail).toHaveBeenCalledWith(expect.stringContaining('/solve_ms'));
+		await vi.waitFor(() =>
+			expect(handlers.onfail).toHaveBeenCalledWith(expect.stringContaining('/solve_ms'))
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(handlers.onsolution).not.toHaveBeenCalled();
 		expect(handlers.ondone).not.toHaveBeenCalled();
 		expect(stream.close).toHaveBeenCalledTimes(1);
+	});
+	it('delivers nothing after the caller closes the stream', async () => {
+		const handlers = {
+			onsolution: vi.fn(),
+			onsensitivity: vi.fn(),
+			onfail: vi.fn(),
+			ondone: vi.fn()
+		};
+		const close = createApiClient({
+			fetch: async () => new Response('{}'),
+			EventSource: FakeEventSource as unknown as typeof EventSource
+		}).openSolveStream('case-1', {}, null, handlers);
+		FakeEventSource.last.emit('solution', result);
+		close();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(handlers.onsolution).not.toHaveBeenCalled();
 	});
 	it.each([
 		[
@@ -215,18 +242,42 @@ describe('streamed result validation', () => {
 			},
 			'/values/0/value'
 		]
-	])('rejects malformed nested %s data', (event, data, path) => {
+	])('rejects malformed nested %s data', async (event, data, path) => {
 		const { handlers, stream } = open();
 		stream.emit(event as string, data);
-		expect(handlers.onfail).toHaveBeenCalledWith(expect.stringContaining(path as string));
+		await vi.waitFor(() =>
+			expect(handlers.onfail).toHaveBeenCalledWith(expect.stringContaining(path as string))
+		);
 		expect(handlers.onsolution).not.toHaveBeenCalled();
 		expect(handlers.onsensitivity).not.toHaveBeenCalled();
 		expect(stream.close).toHaveBeenCalledTimes(1);
 	});
-	it('retains an actual server failure message', () => {
+	it('still delivers done after a handler throws', async () => {
+		const { handlers, stream } = open();
+		const reported = vi.fn();
+		vi.stubGlobal('reportError', reported);
+		const thrown = new Error('host handler failed');
+		handlers.onsolution.mockImplementationOnce(() => {
+			throw thrown;
+		});
+		try {
+			stream.emit('solution', result);
+			stream.emit('solution', result);
+			stream.emit('done', { ok: true });
+			await vi.waitFor(() => expect(handlers.ondone).toHaveBeenCalledTimes(1));
+			expect(handlers.onsolution).toHaveBeenCalledTimes(2);
+			expect(reported).toHaveBeenCalledWith(thrown);
+			expect(handlers.onfail).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+	it('retains an actual server failure message', async () => {
 		const { handlers, stream } = open();
 		stream.emit('fail', { error: 'DC OPF solve infeasible: PrimalInfeasible' });
-		expect(handlers.onfail).toHaveBeenCalledWith('DC OPF solve infeasible: PrimalInfeasible');
+		await vi.waitFor(() =>
+			expect(handlers.onfail).toHaveBeenCalledWith('DC OPF solve infeasible: PrimalInfeasible')
+		);
 		expect(handlers.onsolution).not.toHaveBeenCalled();
 	});
 });

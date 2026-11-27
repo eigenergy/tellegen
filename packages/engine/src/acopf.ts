@@ -88,15 +88,19 @@ function workerCall(
     /** End the call. A worker that answered stays alive for the next call;
      * one that was cancelled or failed is terminated, because a synchronous
      * solve cannot be interrupted any other way. */
-    const finish = (keep: boolean) => {
+    let ended = false;
+    const finish = (keep: boolean): boolean => {
+      if (ended) return false;
+      ended = true;
       signal?.removeEventListener("abort", abort);
       detach(worker);
       if (kept && keep) {
         kept.busy = false;
-        return;
+        return true;
       }
       if (kept && keptWorker === kept) keptWorker = null;
       worker.terminate();
+      return true;
     };
     const abort = () => {
       finish(false);
@@ -107,16 +111,18 @@ function workerCall(
       abort();
       return;
     }
-    worker.onmessage = ({ data }) => {
+    // Validation may first import its validators, so a cancellation can
+    // arrive while it runs; `finish` then reports that the call has ended.
+    const settle = async (data: AcOpfWorkerResponse) => {
       try {
         if (!data || typeof data !== "object")
           throw new Error("AC OPF worker returned an invalid message");
         switch (data.type) {
           case "result":
-            validateApiResult<SolveResponse>("solve", data.response);
+            await validateApiResult<SolveResponse>("solve", data.response);
             break;
           case "joint_result":
-            validateApiResult("ac_dc", data.response);
+            await validateApiResult("ac_dc", data.response);
             break;
           case "ready":
             break;
@@ -129,14 +135,14 @@ function workerCall(
             throw new Error("AC OPF worker returned an unknown message type");
         }
       } catch (error) {
-        finish(false);
-        reject(error);
+        if (finish(false)) reject(error);
         return;
       }
-      finish(true);
+      if (!finish(true)) return;
       if (data.type === "error") reject(engineError(data.message, data.code));
       else resolve(data);
     };
+    worker.onmessage = ({ data }) => void settle(data);
     worker.onerror = () => {
       finish(false);
       reject(new Error("AC OPF worker failed"));

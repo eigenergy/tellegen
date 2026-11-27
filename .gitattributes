@@ -4,8 +4,8 @@
 crates/tellegen-server/fixtures/pglib/*.m linguist-vendored
 
 # Written by packages/engine/scripts from the Rust API records, not by hand.
-# One of these files, api-validators.ts, is 2.7 MB and alone made GitHub
-# report the repository as mostly TypeScript.
+# The result validators under generated/validators/ total about 3 MB and would
+# make GitHub report the repository as mostly TypeScript.
 packages/engine/src/generated/** linguist-generated
 python/tellegen/mcp/_engine_schema.json linguist-generated
 

@@ -1,4 +1,4 @@
-import { parseApiResult, validateApiResult } from '@tellegen/engine';
+import { parseApiResult, preloadValidators, validateApiResult } from '@tellegen/engine';
 import type {
 	CaseSummary,
 	DemandDeltas,
@@ -150,7 +150,7 @@ async function getJson<T>(
 ): Promise<T> {
 	const res = await checkedFetch(fetchImpl, url, signal);
 	const value: unknown = await res.json();
-	return schema ? validateApiResult<T>(schema, value) : (value as T);
+	return schema ? await validateApiResult<T>(schema, value) : (value as T);
 }
 
 export interface SolveStreamHandlers {
@@ -177,9 +177,15 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 	const fetchImpl = options.fetch ?? defaultFetch();
 
 	return {
-		getCases: () => getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases'), undefined, 'http_cases'),
+		getCases: () =>
+			getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases'), undefined, 'http_cases'),
 		getNetwork: (caseId) =>
-			getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`), undefined, 'http_network'),
+			getJson<Network>(
+				fetchImpl,
+				apiPath(apiBase, `/cases/${caseId}/network`),
+				undefined,
+				'http_network'
+			),
 		async getCaseModuleJson(caseId, signal) {
 			const url = apiPath(apiBase, `/cases/${caseId}/case`);
 			const res = await checkedFetch(fetchImpl, url, signal);
@@ -220,7 +226,12 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			);
 		},
 		getComputeStatus(signal) {
-			return getJson<{ enabled: boolean }>(fetchImpl, apiPath(apiBase, `/compute`), signal, 'http_compute');
+			return getJson<{ enabled: boolean }>(
+				fetchImpl,
+				apiPath(apiBase, `/compute`),
+				signal,
+				'http_compute'
+			);
 		},
 		openSolveStream(caseId, deltas, sensBus, handlers) {
 			const EventSourceImpl = options.EventSource ?? defaultEventSource();
@@ -233,68 +244,98 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 				apiPath(apiBase, `/cases/${caseId}/solve${qs ? `?${qs}` : ''}`)
 			);
 			let finished = false;
+			let closed = false;
+			const close = () => {
+				if (closed) return;
+				closed = true;
+				es.close();
+			};
 			const finish = () => {
 				finished = true;
-				es.close();
+				close();
 			};
 			const invalid = (error: unknown) => {
 				finish();
 				handlers.onfail?.(error instanceof Error ? error.message : 'Invalid solve response');
 			};
-			es.addEventListener('solution', (e) => {
-				if (finished) return;
-				let solution: Parameters<NonNullable<SolveStreamHandlers['onsolution']>>[0];
-				try {
-					solution = parseApiResult('http_stream_solution', e.data);
-				} catch (error) {
-					invalid(error);
-					return;
-				}
-				handlers.onsolution?.(solution);
-			});
-			es.addEventListener('sensitivity', (e) => {
-				if (finished) return;
-				let column: SensitivityColumn;
-				try {
-					column = parseApiResult('http_sensitivity', e.data);
-				} catch (error) {
-					invalid(error);
-					return;
-				}
-				handlers.onsensitivity?.(column);
-			});
+			// Validation may first import its validators, so each event is handled
+			// after the ones before it: a late solution never follows "done". The
+			// stream closes as soon as it ends, so EventSource does not reconnect.
+			// A handler that throws is reported, and the events after it still run.
+			let queue = Promise.resolve();
+			const enqueue = (handle: () => void | Promise<void>) => {
+				queue = queue
+					.then(() => (finished ? undefined : handle()))
+					.catch((error: unknown) => {
+						if (typeof reportError === 'function') reportError(error);
+						else console.error(error);
+					});
+			};
+			void preloadValidators(['http_stream_solution', 'http_sensitivity']).catch(() => {});
+			es.addEventListener('solution', (e) =>
+				enqueue(async () => {
+					let solution: Parameters<NonNullable<SolveStreamHandlers['onsolution']>>[0];
+					try {
+						solution = await parseApiResult('http_stream_solution', e.data);
+					} catch (error) {
+						invalid(error);
+						return;
+					}
+					if (!finished) handlers.onsolution?.(solution);
+				})
+			);
+			es.addEventListener('sensitivity', (e) =>
+				enqueue(async () => {
+					let column: SensitivityColumn;
+					try {
+						column = await parseApiResult('http_sensitivity', e.data);
+					} catch (error) {
+						invalid(error);
+						return;
+					}
+					if (!finished) handlers.onsensitivity?.(column);
+				})
+			);
 			es.addEventListener('fail', (e) => {
-				if (finished) return;
-				finish();
-				let value: unknown;
-				try {
-					value = JSON.parse(e.data);
-				} catch {
-					handlers.onfail?.('Invalid solve failure response');
-					return;
-				}
-				handlers.onfail?.(
-					value && typeof value === 'object' && 'error' in value && typeof value.error === 'string'
-						? value.error
-						: 'Solve failed'
-				);
+				close();
+				enqueue(() => {
+					finish();
+					let value: unknown;
+					try {
+						value = JSON.parse(e.data);
+					} catch {
+						handlers.onfail?.('Invalid solve failure response');
+						return;
+					}
+					handlers.onfail?.(
+						value &&
+							typeof value === 'object' &&
+							'error' in value &&
+							typeof value.error === 'string'
+							? value.error
+							: 'Solve failed'
+					);
+				});
 			});
 			es.addEventListener('done', () => {
-				if (finished) return;
-				finish();
-				handlers.ondone?.();
+				close();
+				enqueue(() => {
+					finish();
+					handlers.ondone?.();
+				});
 			});
 			es.onerror = () => {
 				// EventSource auto-reconnects; a closed-by-server stream after "done"
-				// never reaches here because finish() already ran.
-				if (!finished) {
+				// never reaches here because the stream is already closed.
+				close();
+				enqueue(() => {
 					finish();
 					// EventSource exposes no status code, so this covers both a lost
 					// connection and a rate-limited stream open.
 					handlers.onfail?.(
 						'solve stream interrupted; server busy or rate limited, try again in a few seconds'
 					);
-				}
+				});
 			};
 			return finish;
 		}

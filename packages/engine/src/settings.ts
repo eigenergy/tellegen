@@ -89,7 +89,7 @@ export async function calculateWithSettings(
     host.cancel?.(new DOMException("Calculation cancelled", "AbortError"));
   signal?.addEventListener("abort", cancel, { once: true });
   try {
-    const result = parseApiResult<CalculationResult>(
+    const result = await parseApiResult<CalculationResult>(
       "calculation",
       await host.call({
         op: "settings_calculate",

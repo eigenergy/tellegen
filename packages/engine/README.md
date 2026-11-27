@@ -208,7 +208,11 @@ models. Imports, solves, studies, settings, layouts, generation and RMS response
 are checked before reaching callers, including results from the separate AC OPF
 worker. Packed results check their array lengths and indices. Malformed results
 identify the affected field; a rejected response releases any newly retained
-input. The browser does not load a schema compiler at runtime.
+input. The browser does not load a schema compiler at runtime. The validators
+for each result family load on first use, so `parseApiResult` and
+`validateApiResult` return promises; `preloadValidators(names)` loads them
+ahead of time, and `@tellegen/engine/validators` exports synchronous
+`parseApiResultSync` and `validateApiResultSync`, which import every validator.
 
 HTTP metadata, solutions, saved results and streamed sensitivities use schemas
 from the server's serialized Rust records. Older responses may omit newer
