@@ -863,7 +863,9 @@ const BYPASS_X: f64 = 1.0;
 // @block The system
 #[derive(Clone, Debug)]
 pub(crate) struct DynSystem {
-    /// Hold non-windup limits during a step ([`super::RmsOptions::freeze_limits`]).
+    /// Hold non-windup limits during a step ([`super::RmsOptions::freeze_limits`],
+    /// or `TELLEGEN_FREEZE`, see [`super::models::held_limits`]); set with
+    /// [`Self::hold_limits`], which passes it on to the units.
     pub freeze_limits: bool,
     /// Experimental: HVDC links in AC emulation ([`AcEmulation`]).
     pub hvdc_emulation: Vec<AcEmulation>,
@@ -1120,10 +1122,22 @@ impl DynSystem {
             .collect();
     }
 
+    /// Hold the non-windup limits during a step or not, in this system only:
+    /// the setting goes into every unit's limiters, which the evaluations read
+    /// on whichever thread they run.
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        self.freeze_limits = on;
+        for d in &mut self.devices {
+            d.avr.hold_limits(on);
+            d.gov.hold_limits(on);
+            d.pss.hold_limits(on);
+        }
+    }
+
     /// Experimental: after a taken step, the frozen limit modes from the last
-    /// evaluation (`TELLEGEN_FREEZE=1`); returns how many switched.
+    /// evaluation (with held limits); returns how many switched.
     pub(crate) fn update_limit_modes(&self) -> usize {
-        if !super::models::freeze_limits() {
+        if !self.freeze_limits {
             return 0;
         }
         self.devices
@@ -1137,7 +1151,7 @@ impl DynSystem {
     /// Experimental: with frozen limits, set the exciter states a step carried past
     /// their clamps back onto them ([`super::models::Avr::project_limits`]); returns how many.
     pub(crate) fn project_limits(&self, x: &mut [f64]) -> usize {
-        if !super::models::freeze_limits() {
+        if !self.freeze_limits {
             return 0;
         }
         self.devices

@@ -470,7 +470,8 @@ pub(crate) struct CompiledGraph {
     /// The input nodes of the tape's products, minima and maxima.
     args: Vec<u32>,
     /// Experimental: per state, the frozen mode of a non-windup limited lag
-    /// (`TELLEGEN_FREEZE=1`, see [`super::models::LimitMode`]).
+    /// (held limits, see [`super::models::LimitMode`]), each carrying whether the
+    /// simulation holds its limits ([`Self::hold_limits`]).
     modes: Vec<super::models::LimitMode>,
 }
 
@@ -1063,6 +1064,14 @@ impl CompiledGraph {
         moved
     }
 
+    /// Hold the non-windup limits of the limited lags during a step or not
+    /// ([`super::models::held_limits`]).
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        for m in &mut self.modes {
+            m.hold(on);
+        }
+    }
+
     /// Experimental: update the frozen modes of the non-windup limited lags after a
     /// taken step; returns how many switched.
     // @block Held limits of a graph
@@ -1229,11 +1238,11 @@ impl CompiledGraph {
                     min,
                     max,
                 } => {
-                    f[s as usize] = if super::models::freeze_limits() && t >= f64::EPSILON {
+                    let lim = &self.modes[s as usize];
+                    f[s as usize] = if lim.held() && t >= f64::EPSILON {
                         // Experimental: the limit in the mode of the step's start.
                         let (u, xs) = (y[a as usize], x[s as usize]);
                         let rate = k * u - xs;
-                        let lim = &self.modes[s as usize];
                         lim.record(xs, rate);
                         match lim.mode() {
                             super::models::LimitMode::FREE => rate,

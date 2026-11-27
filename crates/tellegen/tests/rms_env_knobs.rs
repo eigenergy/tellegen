@@ -1052,12 +1052,10 @@ fn tellegen_freeze_overrides_the_freeze_limits_option() {
         freeze_limits: false,
         ..held
     };
-    // The run with the option off in a child too: the option reaches the
-    // models through a process-wide flag (see
-    // `concurrent_runs_keep_their_own_freeze_limits`), so a run with it off
-    // here would change the runs of the tests beside this one.
+    // Each simulation keeps its own setting
+    // (`concurrent_runs_keep_their_own_freeze_limits`), so both runs here.
     let run_held = here("smib", held).unwrap();
-    let run_free = in_child("smib", free, &[]).run.unwrap();
+    let run_free = here("smib", free).unwrap();
     let (dmax, _) = largest_diff(&run_held, &run_free);
     assert!(dmax > 1e-3, "the option does not matter here: {dmax:e}");
     let child = |options, value| {
@@ -1245,12 +1243,10 @@ fn child_freeze_race() {
 /// `RmsOptions::freeze_limits` affects only the simulation it is given to
 /// (as `RmsOptions` states for every option): a run with it on is the same
 /// bit for bit while runs with it off start beside it in the same process.
-/// The option reaches the models through one process-wide flag that each run
-/// sets as it starts (`models::set_freeze_limits`), so the run beside takes
-/// the other setting partway. Run in a child process, so the runs with the
-/// option off cannot reach the tests beside this one.
+/// Each simulation carries the setting in its own models, which the
+/// evaluations read on whichever thread they run. Run in a child process of
+/// its own, so a regression cannot reach the tests beside this one.
 #[test]
-#[ignore = "bug: freeze_limits is a process-wide flag set at the start of each run, so concurrent runs with different settings change each other's results"]
 fn concurrent_runs_keep_their_own_freeze_limits() {
     if shipped_wecc240().is_none() {
         return;

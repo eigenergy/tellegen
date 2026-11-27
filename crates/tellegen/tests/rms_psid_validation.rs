@@ -45,7 +45,6 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde_json::Value;
 use tellegen::rms::{LoadModel, LowVoltageLoad, RmsEvent, RmsOptions, RmsRequest, RmsSimulation};
@@ -73,14 +72,6 @@ const OMEGA_TOL: f64 = 1e-4;
 /// of synchronism past about 180°). Observed: 0.0076° (single machines),
 /// 0.0089° (model variants), 0.0092° (extension models), 0.013° (WECC 240).
 const DELTA_TOL: f64 = 0.5 * std::f64::consts::PI / 180.0;
-
-/// One run at a time: whether limits are held (`RmsOptions::freeze_limits`)
-/// is a process-wide setting taken from the options at the start of each
-/// run, and the runs here do not all take the same.
-fn one_at_a_time() -> MutexGuard<'static, ()> {
-    static RUNS: Mutex<()> = Mutex::new(());
-    RUNS.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 fn reference() -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -179,7 +170,6 @@ fn compare_smib_with(
         let sim =
             RmsSimulation::with_options(&network, &dyr, LoadModel::ConstantImpedance, options)
                 .unwrap();
-        let turn = one_at_a_time();
         let ours = sim
             .run(&RmsRequest {
                 t_end: 3.0,
@@ -191,7 +181,6 @@ fn compare_smib_with(
                 record: None,
             })
             .unwrap();
-        drop(turn);
         let time = series(&run["time"]);
         let idx: Vec<usize> = time.iter().map(|t| (t / 0.01).round() as usize).collect();
         let channels = &run["channels"];
@@ -571,7 +560,6 @@ fn wecc240_scenarios_against_psid() {
             }
             events.push(event);
         }
-        let turn = one_at_a_time();
         let ours = sim
             .run(&RmsRequest {
                 t_end: 20.0,
@@ -583,7 +571,6 @@ fn wecc240_scenarios_against_psid() {
                 record: None,
             })
             .unwrap();
-        drop(turn);
         let time = series(&run["time"]);
         let idx: Vec<usize> = time.iter().map(|t| (t / 0.01).round() as usize).collect();
         let channels = &run["channels"];

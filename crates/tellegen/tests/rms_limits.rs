@@ -9,15 +9,10 @@
 //!   summing point: inactive at rest and until their limit is passed, then
 //!   acting against it within their output range.
 //!
-//! Whether limits are held is a process-wide setting taken from the options
-//! at the start of each run, so the runs here take turns.
-//!
 //! The cases are built from the shipped case data; without it (the
 //! published crate) every test here is skipped.
 
 #![cfg(feature = "rms")]
-
-use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tellegen::rms::{LoadModel, RmsEvent, RmsOptions, RmsRequest, RmsResult, RmsSimulation};
 
@@ -29,12 +24,6 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/wecc240.rs"
 ));
-
-/// One run at a time: the held-limits setting is process-wide.
-fn one_at_a_time() -> MutexGuard<'static, ()> {
-    static RUNS: Mutex<()> = Mutex::new(());
-    RUNS.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 fn network(raw: &str) -> powerio::BalancedNetwork {
     let src = powerio::Source::from_memory("case.raw", raw.as_bytes().to_vec()).unwrap();
@@ -142,7 +131,6 @@ fn held_limits_keep_the_steady_state() {
     if shipped_wecc240().is_none() {
         return;
     }
-    let _one = one_at_a_time();
     for exciter in [None, Some(ESAC1A)] {
         let (net, dyr, _) = smib(exciter);
         let (held, free) = (sim(&net, &dyr, true), sim(&net, &dyr, false));
@@ -170,7 +158,6 @@ fn held_limits_agree_through_a_fault() {
     if shipped_wecc240().is_none() {
         return;
     }
-    let _one = one_at_a_time();
     for exciter in [None, Some(ESAC1A)] {
         let (net, dyr, x_line) = smib(exciter);
         let events = fault(102, 0.2 * x_line, 0.1, 0.2);
@@ -233,7 +220,6 @@ fn held_limits_on_a_graph_lag_without_output_clamp_are_as_accurate() {
     if shipped_wecc240().is_none() {
         return;
     }
-    let _one = one_at_a_time();
     let (net, dyr, x_line) = smib(Some(ESST1A_VAMAX));
     let events = fault(102, 0.2 * x_line, 0.1, 0.2);
     let fine = run(&sim(&net, &dyr, false), 1.5, 1e-4, events.clone());
@@ -293,7 +279,6 @@ fn oelit_acts_on_the_field_current_in_a_run() {
     if shipped_wecc240().is_none() {
         return;
     }
-    let _one = one_at_a_time();
     let oel = "    102 'OELIT' 1 2.0 1.0 1.0 1.1 33.75 1200.0 0.05 0.5 -0.5 /\n";
     let (net, with, _) = smib(Some(&format!("{ESST1A}{oel}")));
     let (_, without, _) = smib(Some(ESST1A));
@@ -338,7 +323,6 @@ fn uelpq_acts_on_the_absorbed_reactive_power_in_a_run() {
     if shipped_wecc240().is_none() {
         return;
     }
-    let _one = one_at_a_time();
     let uel = "    102 'UELPQ' 1 -0.1 0.0 0.0 0.05 0.5 0.5 /\n";
     let (net, with, _) = smib(Some(&format!("{ESST1A}{uel}")));
     let (_, without, _) = smib(Some(ESST1A));

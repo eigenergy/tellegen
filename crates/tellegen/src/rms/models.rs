@@ -384,24 +384,20 @@ impl Shaft {
     }
 }
 
-/// Experimental: whether the non-windup limits are held during a step (see [`LimitMode`]),
-/// set per run from [`super::RmsOptions::freeze_limits`] by [`set_freeze_limits`].
-pub(crate) fn freeze_limits() -> bool {
-    FREEZE.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-static FREEZE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Hold the limits for the run or live stretch about to start ([`super::RmsOptions::freeze_limits`]);
-/// natively `TELLEGEN_FREEZE=0` / `1` overrides the option.
-pub(crate) fn set_freeze_limits(option: bool) {
+/// Whether a simulation built with [`super::RmsOptions::freeze_limits`] set to
+/// `option` holds its non-windup limits during a step (see [`LimitMode`]):
+/// natively `TELLEGEN_FREEZE=0` / `1` overrides the option, any other value
+/// leaves it in charge. The simulation carries the result in its models
+/// ([`LimitMode::hold`]), so simulations built with different settings run
+/// side by side without affecting each other.
+pub(crate) fn held_limits(option: bool) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
     let env = *ENV.get_or_init(|| match std::env::var("TELLEGEN_FREEZE").as_deref() {
         Ok("1") => Some(true),
         Ok("0") => Some(false),
         _ => None,
     });
-    FREEZE.store(env.unwrap_or(option), std::sync::atomic::Ordering::Relaxed);
+    env.unwrap_or(option)
 }
 
 /// Experimental: `TELLEGEN_FREEZE_HYST=<pu>` (default 1e-3): how far the free rate
@@ -421,10 +417,13 @@ fn freeze_hysteresis() -> f64 {
 /// accepted point). A limit binds when the state reaches it while the free rate pushes on; it lets
 /// go only once the free rate pulls back by more than the hysteresis, so it cannot switch on and
 /// off from one step to the next. Before the first update the mode is unset and the limit acts as
-/// without freezing.
+/// without freezing. Whether the limit is held at all is the simulation's setting
+/// ([`held_limits`]), carried by each limiter ([`Self::hold`]); a limiter not held acts as
+/// the plain non-windup lag throughout.
 // @block Held limits
 #[derive(Debug)]
 pub(crate) struct LimitMode {
+    held: bool,
     mode: std::sync::atomic::AtomicU8,
     y: std::sync::atomic::AtomicU64,
     rate: std::sync::atomic::AtomicU64,
@@ -438,6 +437,17 @@ impl LimitMode {
 
     pub(crate) fn mode(&self) -> u8 {
         self.mode.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether the limit is held during a step (the simulation's setting).
+    pub(crate) fn held(&self) -> bool {
+        self.held
+    }
+
+    /// Hold the limit during a step or not, as the simulation it belongs to
+    /// does ([`held_limits`]).
+    pub(crate) fn hold(&mut self, on: bool) {
+        self.held = on;
     }
 
     pub(crate) fn record(&self, y: f64, rate: f64) {
@@ -471,6 +481,7 @@ impl LimitMode {
 impl Default for LimitMode {
     fn default() -> Self {
         Self {
+            held: false,
             mode: std::sync::atomic::AtomicU8::new(Self::UNSET),
             y: std::sync::atomic::AtomicU64::new(f64::NAN.to_bits()),
             rate: std::sync::atomic::AtomicU64::new(f64::NAN.to_bits()),
@@ -482,6 +493,7 @@ impl Clone for LimitMode {
     fn clone(&self) -> Self {
         let r = std::sync::atomic::Ordering::Relaxed;
         Self {
+            held: self.held,
             mode: std::sync::atomic::AtomicU8::new(self.mode.load(r)),
             y: std::sync::atomic::AtomicU64::new(self.y.load(r)),
             rate: std::sync::atomic::AtomicU64::new(self.rate.load(r)),
@@ -490,6 +502,18 @@ impl Clone for LimitMode {
 }
 
 impl Governor {
+    /// Hold a graph's non-windup limits during a step or not ([`held_limits`]).
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.hold_limits(on),
+            #[allow(unreachable_patterns)]
+            _ => {
+                let _ = on;
+            }
+        }
+    }
+
     /// Experimental: a graph's limited lags back onto their clamps after a step
     /// ([`Avr::project_limits`]).
     pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
@@ -516,6 +540,18 @@ impl Governor {
 }
 
 impl Stabilizer {
+    /// Hold a graph's non-windup limits during a step or not ([`held_limits`]).
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        match self {
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.hold_limits(on),
+            #[allow(unreachable_patterns)]
+            _ => {
+                let _ = on;
+            }
+        }
+    }
+
     /// Experimental: a graph's limited lags back onto their clamps after a step
     /// ([`Avr::project_limits`]).
     pub(crate) fn project_limits(&self, x: &mut [f64]) -> bool {
@@ -542,6 +578,17 @@ impl Stabilizer {
 }
 
 impl Avr {
+    /// Hold the non-windup limits during a step or not ([`held_limits`]): SEXS's
+    /// field voltage, ESAC1A's `VA`, a graph's limited lags.
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        match self {
+            Self::Sexs { lim, .. } | Self::Esac1a { lim, .. } => lim.hold(on),
+            #[cfg(feature = "rms-experimental")]
+            Self::Graph(g) => g.hold_limits(on),
+            _ => {}
+        }
+    }
+
     /// Experimental: with frozen limits, a step in the free mode can carry a
     /// non-windup lag's state past its clamp (by up to `h·K·e/T`); the state is set back onto the
     /// clamp after the step, where the output is the same, so the limiter does not wind up.
@@ -604,7 +651,7 @@ pub(crate) enum Avr {
         /// that rests past them at initialization ([`Avr::rest_at`]).
         out: (f64, f64),
         /// Experimental: the field voltage limiter's mode, frozen during a step
-        /// (`TELLEGEN_FREEZE=1`).
+        /// ([`super::RmsOptions::freeze_limits`]).
         lim: LimitMode,
     },
     Esac1a {
@@ -899,7 +946,7 @@ impl Avr {
                 let (vf, vr) = (x[0], x[1]);
                 let v_in = u.v_ref + u.vs - u.vt;
                 let (v_ll, dvr) = lead_lag_mm(v_in, vr, 1.0, tb * ta_tb, *tb);
-                let dvf = if freeze_limits() && *te >= f64::EPSILON {
+                let dvf = if lim.held() && *te >= f64::EPSILON {
                     // Experimental: the non-windup limit in the mode of the step's
                     // start, so the step's equations are smooth; the free rate and the state
                     // are kept for the mode's update after the step.
@@ -948,7 +995,7 @@ impl Avr {
                 let (v_f, dvr3) = high_pass(v_fe, vr3, *kf, *tf);
                 let v_in = u.v_ref + u.vs - vm - v_f;
                 let (y_ll, dvr1) = lead_lag_mm(v_in, vr1, 1.0, *tc, *tb);
-                let dvr2 = if freeze_limits() && *ta >= f64::EPSILON {
+                let dvr2 = if lim.held() && *ta >= f64::EPSILON {
                     // Experimental: VA's non-windup limit in the mode of the step's
                     // start, as SEXS's field voltage.
                     let rate = ka * y_ll - vr2;
