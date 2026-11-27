@@ -18,10 +18,11 @@
 //! Two counting modes are tested: the impedance traverse between the
 //! blinders `R = ±b` (crossed at `δ = 2 atan(X_T / 2b)` and `360°` less
 //! that) with its minimum traverse time, and the voltage-beat mode (a beat
-//! is the voltage dipping below the beat voltage, counted once it has
-//! risen for 40 ms past its minimum; the function operates `beat_delay`
-//! after the voltage, past the last beat, exceeds its average over the
-//! oscillation).
+//! is the voltage dipping below the beat voltage while the swing passes
+//! the electrical centre, where the active power at the relay,
+//! `E1 E2 sin δ / X_T`, reverses; it is counted once the voltage has risen
+//! for 40 ms past its minimum; the function operates `beat_delay` after the
+//! voltage, past the last beat, exceeds its average over the oscillation).
 //!
 //! Times count from the injection step; the test set evaluates the relay
 //! every 1 ms. Out-of-step tripping has no measuring time of its own: it
@@ -407,11 +408,11 @@ fn voltage_beats_ignore_swings_above_the_beat_voltage() {
 /// A stable swing whose voltage dips below the beat voltage: out to 150°
 /// and back four times with the electrical centre at the relay (minimum
 /// `cos 75°` = 0.26 pu against a beat voltage of 0.4 pu), two slips set.
-/// Out-of-step tripping is for pole slips only (IEEE C37.102); the
+/// The angle never reaches 180°, so the active power at the relay keeps its
+/// sign. Out-of-step tripping is for pole slips only (IEEE C37.102); the
 /// impedance traverse of the same relay does not count this swing (see
 /// `impedance_traverse_ignores_stable_swings_and_remote_centres`).
 #[test]
-#[ignore = "out of step, voltage-beat mode: a stable swing to 150° and back (minimum 0.26 pu, beat voltage 0.4 pu) counts a beat 40 ms after each swing's peak (0.64 s, 1.64 s) and operates at 1.80 s with two slips set; required: no operation on a stable swing"]
 fn voltage_beats_ignore_a_stable_swing_below_the_beat_voltage() {
     let r = run(
         out_of_step(2, Some((0.4, 0.0)), MIN_TRAVERSE),

@@ -186,6 +186,10 @@ enum Side {
 /// moves at about 1).
 const SWING_RATE: f64 = 0.5;
 
+/// The active power through an out-of-step relay, as a fraction of its
+/// rated power, beyond which a voltage beat's power counts as reversed.
+const BEAT_POWER: f64 = 0.01;
+
 /// Drop-off of an overcurrent stage, multiples of its setting.
 const DROP_OFF: f64 = 0.95;
 
@@ -231,6 +235,9 @@ enum Element {
         /// the voltage exceeded its average after the last beat.
         beat: [f64; 4],
         beat_ready: Option<f64>,
+        /// Experimental: the least and the largest active power through the
+        /// relay during the dip not yet counted; a beat needs both signs.
+        power: [f64; 2],
     },
     Integral {
         acc: f64,
@@ -383,6 +390,7 @@ impl RelayState {
                         slips: 0,
                         beat: [0.0; 4],
                         beat_ready: None,
+                        power: [0.0; 2],
                     },
                     ProtectionFunction::NegativeSequence(_) => Element::Integral { acc: 0.0 },
                     ProtectionFunction::Thermal(_) => Element::Thermal { theta: None },
@@ -1194,9 +1202,10 @@ impl RelayState {
                 // from one side to the other that spent at least the minimum
                 // time between them. The set number of slips trips. With a
                 // beat voltage set, it counts voltage beats instead (the
-                // positive-sequence voltage dipping below it and recovering)
-                // and operates a delay after the voltage exceeds its average
-                // over the oscillation.
+                // positive-sequence voltage dipping below it, the active
+                // power through the relay reversing during the dip, and the
+                // voltage recovering) and operates a delay after the voltage
+                // exceeds its average over the oscillation.
                 (
                     ProtectionFunction::OutOfStep(o),
                     Element::OutOfStep {
@@ -1205,16 +1214,23 @@ impl RelayState {
                         slips,
                         beat,
                         beat_ready,
+                        power,
                     },
                 ) => {
                     if let Some(vb) = o.beat_voltage {
                         // Experimental: voltage beats. A beat is
                         // counted once the voltage has passed a minimum below `vb` and has
-                        // been rising for four half-cycles (40 ms). After the last beat the
-                        // relay operates `beat_delay` after the voltage exceeds its average
-                        // over the oscillation. `entered` holds the start of the dip, `side`
-                        // is `Middle` once the dip has been counted.
-                        let vm = v1.norm();
+                        // been rising for four half-cycles (40 ms), and only if the swing
+                        // passed through the electrical centre during the dip: the angle
+                        // between the sources passed 180°, where the active power through
+                        // the relay reverses and the voltage has its minimum. A stable
+                        // swing that dips and turns back keeps the power's sign; its dip
+                        // is forgotten once the voltage has recovered. After the last
+                        // beat the relay operates `beat_delay` after the voltage exceeds
+                        // its average over the oscillation. `entered` holds the start of
+                        // the dip, `side` is `Middle` once the dip has been counted.
+                        let vm = v1n;
+                        let p = seq_i.map_or(0.0, |si| (v1 * si[1].conj()).re);
                         if entered.is_some() || *slips > 0 {
                             beat[2] += vm * dt;
                             beat[3] += dt;
@@ -1225,29 +1241,46 @@ impl RelayState {
                                 *side = Side::Outside;
                                 beat[0] = vm;
                                 beat[1] = t;
+                                *power = [p, p];
                             }
                             if vm < beat[0] {
                                 beat[0] = vm;
                                 beat[1] = t;
                             }
                         }
-                        if entered.is_some()
-                            && *side != Side::Middle
-                            && t - beat[1] >= 0.04
-                            && vm > beat[0]
-                        {
-                            *side = Side::Middle;
-                            *slips += 1;
-                            ops.push(op(
-                                t,
-                                id,
-                                label,
-                                OperationKind::Pickup,
-                                format!(
-                                    "voltage beat {} (minimum {:.2} pu, below {vb} pu)",
-                                    *slips, beat[0]
-                                ),
-                            ));
+                        let open = entered.is_some() && *side != Side::Middle;
+                        if open {
+                            power[0] = power[0].min(p);
+                            power[1] = power[1].max(p);
+                        }
+                        // Both signs beyond 1 % of the rated power: a reversal,
+                        // not the noise of a power near zero.
+                        let p_min = BEAT_POWER * i_nom;
+                        let reversed = power[0] < -p_min && power[1] > p_min;
+                        if open && t - beat[1] >= 0.04 && vm > beat[0] {
+                            if reversed {
+                                *side = Side::Middle;
+                                *slips += 1;
+                                ops.push(op(
+                                    t,
+                                    id,
+                                    label,
+                                    OperationKind::Pickup,
+                                    format!(
+                                        "voltage beat {} (minimum {:.2} pu, below {vb} pu, active power reversed)",
+                                        *slips, beat[0]
+                                    ),
+                                ));
+                            } else if vm > 1.1 * vb {
+                                // A stable swing's dip: forgotten, and with no
+                                // beat counted yet the oscillation's average
+                                // starts again at the next dip.
+                                *entered = None;
+                                if *slips == 0 {
+                                    beat[2] = 0.0;
+                                    beat[3] = 0.0;
+                                }
+                            }
                         }
                         if vm > 1.1 * vb && *side == Side::Middle {
                             *entered = None;

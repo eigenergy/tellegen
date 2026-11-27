@@ -4,8 +4,9 @@
 //! - an overvoltage stage drops off at its reset ratio times its pickup
 //!   (0.98 by default);
 //! - the out-of-step function in its voltage-beat mode counts dips of the
-//!   positive-sequence voltage below its beat voltage and operates its
-//!   delay after the voltage then exceeds its average over the oscillation;
+//!   positive-sequence voltage below its beat voltage during which the
+//!   active power reverses, and operates its delay after the voltage then
+//!   exceeds its average over the oscillation;
 //! - relays evaluated on parallel threads and inline give the same
 //!   operations, by injection and in a run with relays beside the step.
 #![cfg(feature = "protection")]
@@ -306,20 +307,21 @@ fn beats(slips: usize, beat_delay: f64) -> ProtectionScheme {
 
 /// The unit's voltage beating at `f` Hz from 0.1 s: `mid + amp cos(2π f
 /// (t − 0.1))`, its minima at 0.1 + (k + ½)/f s, for `cycles` cycles; 1 pu
-/// before and `mid + amp` after.
+/// before and `mid + amp` after. The unit's current of 0.5 pu turns
+/// against the voltage at half the beat frequency, so the active power
+/// reverses at every minimum, as it does when the angle between the
+/// sources passes 180° in a pole slip.
 fn beating(mid: f64, amp: f64, f: f64, cycles: f64) -> impl Fn(f64) -> Shot + Copy {
     move |t| {
-        let s = t - 0.1;
-        let v = if s < 0.0 {
+        let s = (t - 0.1).clamp(0.0, cycles / f);
+        let v = if t < 0.1 {
             1.0
-        } else if s < cycles / f {
-            mid + amp * (2.0 * std::f64::consts::PI * f * s).cos()
         } else {
-            mid + amp
+            mid + amp * (2.0 * std::f64::consts::PI * f * s).cos()
         };
         Shot {
             v: [c(1.0, 0.0), c(v, 0.0)],
-            i: c(0.5, 0.0),
+            i: C64::from_polar(0.5, std::f64::consts::PI * f * s),
         }
     }
 }
@@ -422,6 +424,14 @@ fn out_of_step_counts_voltage_beats() {
     assert_eq!(first_trip(&r, "78"), None);
     // Dips down to 0.62 pu only: no beat.
     let (r, _) = inject(&beats(1, 0.0), false, 2.5, beating(0.81, 0.19, f, 4.0));
+    assert!(ops(&r, OperationKind::Pickup, "78").is_empty());
+    assert_eq!(first_trip(&r, "78"), None);
+    // The same dips with the active power keeping its sign (a stable
+    // swing): no beat.
+    let (r, _) = inject(&beats(1, 0.0), false, 2.5, move |t| Shot {
+        i: c(0.5, 0.0),
+        ..shot(t)
+    });
     assert!(ops(&r, OperationKind::Pickup, "78").is_empty());
     assert_eq!(first_trip(&r, "78"), None);
     // Four beats, five set.

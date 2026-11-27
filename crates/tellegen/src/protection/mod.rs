@@ -692,9 +692,15 @@ pub struct OutOfStep {
     pub slips: usize,
     /// Experimental: count voltage beats instead of impedance
     /// traverses, as some loss-of-synchronism relays do: a beat is the
-    /// positive-sequence voltage at the relay dipping below this value (pu),
-    /// counted once it has risen for 40 ms past the dip's minimum; the next
-    /// dip counts after the voltage was back above 1.1 times this value.
+    /// positive-sequence voltage at the relay dipping below this value (pu)
+    /// while the swing passes through the electrical centre, which the relay
+    /// sees as the active power through it reversing during the dip (the
+    /// angle between the sources passing 180°, where the voltage has its
+    /// minimum). It is counted once the voltage has risen for 40 ms past the
+    /// dip's minimum; the next dip counts after the voltage was back above
+    /// 1.1 times this value. A dip without a reversal (a stable swing) is
+    /// not counted, and is forgotten once the voltage is back above 1.1
+    /// times this value. The relay needs its current for this mode.
     /// `min_traverse` is not used in this mode. After the `slips`-th beat the
     /// relay operates `beat_delay` later (see there).
     #[serde(default)]
