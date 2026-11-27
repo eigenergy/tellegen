@@ -344,18 +344,21 @@ responses release the new worker allocation. Older responses may omit newer
 optional fields, which are checked when present. A failed calculation retains
 its engine error and diagnostics.
 
-The validators are split into a few modules by result family, and each module
-is imported the first time one of its results is checked, so the package root
-loads none of them:
+The validators are split into one module per result family. The package root
+imports none of them: `parseApiResult(name, text)` and
+`validateApiResult(name, value)` import a family the first time one of its
+results is checked, so both are async, as is `unpackRun`, which checks RMS
+metadata. `preloadValidators(names)` imports the families for those results
+ahead of their first use. The `@tellegen/engine/validators` entry imports every
+family when it loads and exports `parseApiResultSync` and
+`validateApiResultSync` for a host that cannot await validation.
 
-- `parseApiResult(name, text)` and `validateApiResult(name, value)` return a
-  promise of the validated result.
-- `preloadValidators(names)` imports the modules for those results ahead of
-  their first use.
-- `@tellegen/engine/validators` exports `parseApiResultSync` and
-  `validateApiResultSync` for a host that cannot await validation. That entry
-  imports every validator when it loads.
-- `unpackRun(request, value, workerMs)` returns a promise of the `RmsRun`.
+```ts
+parseApiResult<T>(name: ResultName, text: unknown): Promise<T>;
+validateApiResult<T>(name: ResultName, value: unknown): Promise<T>;
+preloadValidators(names: readonly ResultName[]): Promise<void>;
+unpackRun(request, value, workerMs): Promise<RmsRun>;
+```
 
 After changing those Rust types, regenerate the schemas and TypeScript/Python
 files using the commands in the [engine package guide](https://github.com/eigenergy/tellegen/tree/main/packages/engine#generated-types).

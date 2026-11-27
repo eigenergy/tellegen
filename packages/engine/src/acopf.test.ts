@@ -121,6 +121,30 @@ describe("experimental AC OPF worker host", () => {
     expect(workers[0].onmessage).toBeNull();
   });
 
+  it("ignores a result that arrives while a cancelled solve is validated", async () => {
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let index = 0;
+    const factory = () => workers[index++];
+    const abort = new AbortController();
+    const cancelled = solveAcOpfModule(
+      "/acopf.wasm",
+      "{}",
+      abort.signal,
+      factory,
+    );
+    // The reply starts validation, which awaits its validators; the abort
+    // lands before validation ends.
+    workers[0].reply(result);
+    abort.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(workers[0].terminated).toBe(true);
+    const next = solveAcOpfModule("/acopf.wasm", "{}", undefined, factory);
+    expect(index).toBe(2);
+    workers[1].reply(result);
+    await expect(next).resolves.toMatchObject({ formulation: "acopf" });
+  });
+
   it("starts a fresh worker after a cancelled solve", async () => {
     const workers = [new FakeWorker(), new FakeWorker()];
     let index = 0;

@@ -4,6 +4,7 @@ import {
   parseApiResult,
   preloadValidators,
   validateApiResult,
+  type ResultName,
 } from "../src/result-validation.js";
 import {
   parseApiResultSync,
@@ -115,4 +116,23 @@ it("validates synchronously through the eager entry with the same messages", asy
   const valid = { formulation: "dcopf", status: "optimal" };
   expect(validateApiResultSync("solve", valid)).toBe(valid);
   expect(parseApiResultSync("capabilities", "[]")).toEqual([]);
+});
+
+it("rejects result names that only Object.prototype defines", async () => {
+  const names = [
+    "toString",
+    "constructor",
+    "missing",
+  ] as unknown as ResultName[];
+  for (const name of names) {
+    expect(() => validateApiResultSync(name, {})).toThrow(
+      `Unknown engine result ${name}`,
+    );
+    await expect(validateApiResult(name, {})).rejects.toThrow(
+      `Unknown engine result ${name}`,
+    );
+    await expect(preloadValidators([name])).rejects.toThrow(
+      `Unknown engine result ${name}`,
+    );
+  }
 });

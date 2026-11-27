@@ -261,9 +261,15 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			// Validation may first import its validators, so each event is handled
 			// after the ones before it: a late solution never follows "done". The
 			// stream closes as soon as it ends, so EventSource does not reconnect.
+			// A handler that throws is reported, and the events after it still run.
 			let queue = Promise.resolve();
 			const enqueue = (handle: () => void | Promise<void>) => {
-				queue = queue.then(() => (finished ? undefined : handle()));
+				queue = queue
+					.then(() => (finished ? undefined : handle()))
+					.catch((error: unknown) => {
+						if (typeof reportError === 'function') reportError(error);
+						else console.error(error);
+					});
 			};
 			void preloadValidators(['http_stream_solution', 'http_sensitivity']).catch(() => {});
 			es.addEventListener('solution', (e) =>

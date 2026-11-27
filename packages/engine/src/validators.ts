@@ -13,7 +13,11 @@ export type { ResultName };
 
 /** Validate an engine result synchronously. */
 export function validateApiResultSync<T>(name: ResultName, value: unknown): T {
-  const validate = validators[name] as Validator | undefined;
+  // An own-property check, so a name such as "toString" from an untyped
+  // caller is unknown rather than a property of Object.prototype.
+  const validate = Object.hasOwn(validators, name)
+    ? (validators[name] as Validator)
+    : undefined;
   if (!validate) throw new Error(`Unknown engine result ${String(name)}`);
   return checkResult<T>(name, validate, value);
 }

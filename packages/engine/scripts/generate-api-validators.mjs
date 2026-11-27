@@ -147,12 +147,40 @@ const familyRules = [
         "memory_stats",
       ].includes(name),
   ],
-  ["study", () => true],
+  [
+    "study",
+    (name) =>
+      [
+        "ac_dc",
+        "calculation",
+        "commit",
+        "edits",
+        "energized",
+        "energized_retained",
+        "exported_case",
+        "plan",
+        "plan_spec",
+        "preview",
+        "regulated",
+        "sensitivity",
+        "settings",
+        "settings_catalog",
+        "solve",
+        "study_bundle",
+        "study_result",
+        "study_summary",
+      ].includes(name),
+  ],
 ];
+// A new result joins a family by name, so that no family grows unseen.
 const families = {};
 for (const name of Object.keys(exports).sort()) {
-  const [family] = familyRules.find(([, member]) => member(name));
-  (families[family] ??= {})[name] = exports[name];
+  const rule = familyRules.find(([, member]) => member(name));
+  if (!rule)
+    throw new Error(
+      `Result ${name} has no validator family; add it to familyRules`,
+    );
+  (families[rule[0]] ??= {})[name] = exports[name];
 }
 function standalone(members) {
   const code =

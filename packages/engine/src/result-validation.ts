@@ -31,12 +31,19 @@ function family(name: ResultFamily): Promise<Record<string, Validator>> {
   return loaded;
 }
 
+/** The family of a result. An own-property check, so a name such as
+ * "constructor" from an untyped caller is unknown. */
+function familyOf(name: ResultName): ResultFamily {
+  if (!Object.hasOwn(resultFamilies, name))
+    throw new Error(`Unknown engine result ${String(name)}`);
+  return resultFamilies[name];
+}
+
 async function validatorFor(name: ResultName): Promise<Validator> {
-  const familyName: ResultFamily | undefined = resultFamilies[name];
-  if (!familyName) throw new Error(`Unknown engine result ${String(name)}`);
-  const validate = (await family(familyName))[name];
-  if (!validate) throw new Error(`Unknown engine result ${String(name)}`);
-  return validate;
+  const members = await family(familyOf(name));
+  if (!Object.hasOwn(members, name))
+    throw new Error(`Unknown engine result ${String(name)}`);
+  return members[name];
 }
 
 /** Load the validators for these results now, so that their first
@@ -44,9 +51,7 @@ async function validatorFor(name: ResultName): Promise<Validator> {
 export async function preloadValidators(
   names: readonly ResultName[],
 ): Promise<void> {
-  await Promise.all(
-    [...new Set(names.map((name) => resultFamilies[name]))].map(family),
-  );
+  await Promise.all([...new Set(names.map(familyOf))].map(family));
 }
 
 /** Throw the first schema error, or return the value typed. */

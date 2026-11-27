@@ -252,6 +252,26 @@ describe('streamed result validation', () => {
 		expect(handlers.onsensitivity).not.toHaveBeenCalled();
 		expect(stream.close).toHaveBeenCalledTimes(1);
 	});
+	it('still delivers done after a handler throws', async () => {
+		const { handlers, stream } = open();
+		const reported = vi.fn();
+		vi.stubGlobal('reportError', reported);
+		const thrown = new Error('host handler failed');
+		handlers.onsolution.mockImplementationOnce(() => {
+			throw thrown;
+		});
+		try {
+			stream.emit('solution', result);
+			stream.emit('solution', result);
+			stream.emit('done', { ok: true });
+			await vi.waitFor(() => expect(handlers.ondone).toHaveBeenCalledTimes(1));
+			expect(handlers.onsolution).toHaveBeenCalledTimes(2);
+			expect(reported).toHaveBeenCalledWith(thrown);
+			expect(handlers.onfail).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
 	it('retains an actual server failure message', async () => {
 		const { handlers, stream } = open();
 		stream.emit('fail', { error: 'DC OPF solve infeasible: PrimalInfeasible' });

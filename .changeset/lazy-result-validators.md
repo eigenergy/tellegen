@@ -9,4 +9,4 @@ The package root no longer loads the generated result validators, which cuts its
 - `preloadValidators(names)` loads the validators for those results ahead of their first use.
 - `@tellegen/engine/validators` exports `parseApiResultSync` and `validateApiResultSync` for a host that cannot await validation. That entry imports every validator.
 
-`@tellegen/svelte` builds on this engine. Its HTTP client still handles solve stream events in the order they arrive and closes the stream as soon as it ends.
+`@tellegen/svelte` now requires this engine. Its HTTP client handles solve stream events in arrival order while validators load, and closes the stream as soon as it ends. A solve stream handler that throws is reported, and the events after it still arrive.
