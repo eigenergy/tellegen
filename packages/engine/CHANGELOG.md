@@ -1,5 +1,17 @@
 # @tellegen/engine
 
+## 0.11.0
+
+### Minor Changes
+
+- [#478](https://github.com/eigenergy/tellegen/pull/478) [`e0fc416`](https://github.com/eigenergy/tellegen/commit/e0fc416f5fc6ca3b8a1e724e5f71d290df952a52) Thanks [@samtalki](https://github.com/samtalki)! - The package root no longer loads the generated result validators, which cuts its static import graph from about 505 kB to 62 kB gzipped. The validators are split by result family, and each family loads the first time one of its results is checked.
+
+  - `parseApiResult`, `validateApiResult` and `unpackRun` return promises. Add `await` where you call them.
+  - `preloadValidators(names)` loads the validators for those results ahead of their first use.
+  - `@tellegen/engine/validators` exports `parseApiResultSync` and `validateApiResultSync` for a host that cannot await validation. That entry imports every validator.
+
+  `@tellegen/svelte` now requires this engine. Its HTTP client handles solve stream events in arrival order while validators load, and closes the stream as soon as it ends. A solve stream handler that throws is reported, and the events after it still arrive.
+
 ## 0.10.4
 
 ### Patch Changes

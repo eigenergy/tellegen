@@ -1,5 +1,49 @@
 # @tellegen/svelte
 
+## 0.11.0
+
+### Minor Changes
+
+- [#478](https://github.com/eigenergy/tellegen/pull/478) [`e0fc416`](https://github.com/eigenergy/tellegen/commit/e0fc416f5fc6ca3b8a1e724e5f71d290df952a52) Thanks [@samtalki](https://github.com/samtalki)! - The package root no longer loads the generated result validators, which cuts its static import graph from about 505 kB to 62 kB gzipped. The validators are split by result family, and each family loads the first time one of its results is checked.
+
+  - `parseApiResult`, `validateApiResult` and `unpackRun` return promises. Add `await` where you call them.
+  - `preloadValidators(names)` loads the validators for those results ahead of their first use.
+  - `@tellegen/engine/validators` exports `parseApiResultSync` and `validateApiResultSync` for a host that cannot await validation. That entry imports every validator.
+
+  `@tellegen/svelte` now requires this engine. Its HTTP client handles solve stream events in arrival order while validators load, and closes the stream as soon as it ends. A solve stream handler that throws is reported, and the events after it still arrive.
+
+### Patch Changes
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - Calculation menus offer AC OPF when the host configured the solver asset, before it has loaded; it loads when chosen, and a failed load stops the offer. The calculation settings use the same rule. `FormulationSelector` takes `currentCase`, `id` and `variant="segmented"` props and no longer sets its own top margin. The segmented variant is a toolbar of toggle buttons: arrow keys move focus, and Space, Enter or a click runs a calculation.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - The diagram toolbars and keys follow `--tellegen-dock-left`, so a host that moves the left dock moves them with it.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - Opening a module with a formulation override selects that calculation in the case's settings, and a Study the kit builds always has explicit settings. A Study built ahead of the case from a module that records settings for another calculation is still used; its solutions and the log no longer carry a `settings_ignored` warning for it.
+
+- [#477](https://github.com/eigenergy/tellegen/pull/477) [`0e7c92d`](https://github.com/eigenergy/tellegen/commit/0e7c92d71652a5059b3b206260331708f5b8b024) Thanks [@samtalki](https://github.com/samtalki)! - Add `cartoBasemap(theme, { cartoApiKey, hideLabels })`, a CARTO-only basemap: the keyed style with the keyless one as fallback, or the keyless style alone without a key. `TellegenMap` takes it through a new `basemap` prop, which keeps the provider names in fallback and failure reasons.
+
+  `TellegenMap` takes a `layers` prop (`branches`, `buses`, `substations`). Hiding branches, or all bus markers, keeps the layer's data; showing only buses or only substations filters the markers. `resolveMapLayers`, `busesForLayers`, `layerVisibility` and `ALL_MAP_LAYERS` give the same rules, and `resolveBasemap` takes a whole `basemap` spec.
+
+  Export the map's legend data: the line loading thresholds and colours (`LOADING_ATTENTION`, `LOADING_AT_LIMIT`, `LOADING_BASE`, `LOADING_AMBER`, `LOADING_RED`, `lineLoadingKey`), and `busColorScale`, which gives the bus colour stops, domain, unit and clamped ends in the map's theme. The voltage legend gradient now follows the dark theme.
+
+  `branchLoadingGradient`, `scalarStops`, `scalarGradient`, `displayRange` and the `ColorStop`, `RGBA`, `MapLayers`, `ResolvedMapLayers`, `MapLayerVisibility` and `CartoBasemap` types are exported too.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - Add `PanelLayout.hide(panel)`, which closes one panel. `close(panel)` on the front panel of a dock still closes the panels behind it.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - `PanelLayout.resizeViewport` can be called from an effect: it no longer subscribes the effect to the layout, and it leaves floating panels, `compact` and the drawer alone when they do not change. Calling it from an effect while a panel floats no longer throws `effect_update_depth_exceeded`.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - `TellegenProvider` follows the document root's `data-theme` when it has no `theme` prop, including later changes. `.tellegen` sets `color-scheme` for its theme, so native controls match. The log, the diagram's limit labels and the map controls read the provider's theme instead of the root's, and the voltage legend uses the dark ramp in the dark theme. Until it mounts, the provider leaves `data-theme` off its element unless the host passed `theme`, so a server-rendered page paints dark from the first frame when its root has `data-theme="dark"` or the operating system prefers dark.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - `app.sheetInset` is correct when `PanelHost` hides its tab strip: it counts the open panel's header above the sheet and is 0 when no panel is open.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - Add `solveBackendLabel(backend)`, which names a solve backend for readers, such as `POUNCE (WebAssembly)` and `Clarabel (WebAssembly)`. The solve card uses it.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - `kbd`, `code`, `pre` and `samp` text in the kit is never smaller than 12px, and the sparkline and eigenvalue plot labels use `--fs-micro`.
+
+- [#476](https://github.com/eigenergy/tellegen/pull/476) [`d2949cf`](https://github.com/eigenergy/tellegen/commit/d2949cffe47c92edf9aedd30766b8ea897030373) Thanks [@samtalki](https://github.com/samtalki)! - The theme tokens are declared on `.tellegen`, not `:root`, since 0.10.1: restyle them by overriding them on `.tellegen`. The docks start 8px below `app.headerInset` when the tab strip is hidden. The framework guide now says both.
+- Updated dependencies [[`e0fc416`](https://github.com/eigenergy/tellegen/commit/e0fc416f5fc6ca3b8a1e724e5f71d290df952a52)]:
+  - @tellegen/engine@0.11.0
+
 ## 0.10.4
 
 ### Patch Changes
