@@ -2,4 +2,4 @@
 '@tellegen/svelte': patch
 ---
 
-Opening a module with a formulation override selects that calculation in the case's settings, and the browser Study is always built with explicit settings, so a module that records settings for another calculation no longer logs a warning on every solve. When a Study built ahead of the case ignored those settings, the case builds and solves a second Study.
+Opening a module with a formulation override selects that calculation in the case's settings, and a Study the kit builds always has explicit settings. A Study built ahead of the case from a module that records settings for another calculation is still used; its solutions and the log no longer carry a `settings_ignored` warning for it.

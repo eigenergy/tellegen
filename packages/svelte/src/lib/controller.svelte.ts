@@ -38,7 +38,8 @@ import {
 import {
 	CaseSettingsActions,
 	defaultCalculationSettings,
-	hasCustomCalculationSettings
+	hasCustomCalculationSettings,
+	withoutIgnoredSettings
 } from './controller/case-settings.js';
 import { DistributionResultsActions } from './controller/distribution-results.js';
 import { DistributionSolveActions, releaseMcInput } from './controller/distribution-solve.js';
@@ -268,6 +269,10 @@ export class Controller {
 			formulation: Formulation;
 			baseSolution: Solution;
 			settings?: ResolvedSettings;
+			/** Built ahead without settings from a module whose saved settings are
+			 * for another calculation: its solutions drop the `settings_ignored`
+			 * notices that build adds. */
+			ignoresRecordedSettings?: boolean;
 		}
 	>();
 	private detachedCaseCaptures = new WeakMap<
@@ -2753,9 +2758,11 @@ export class Controller {
 	/** Make a Study that was started before the case existed the case's
 	 * pending build, so `getStudy` waits for it instead of building another.
 	 * It is used only as built: for the case's module and formulation, with no
-	 * calculation settings. Anything else, a Study that reports saved settings
-	 * it ignored, or a failed build, leaves the case to build its own with
-	 * explicit settings. */
+	 * calculation settings. Anything else, or a failed build, leaves the case
+	 * to build its own with explicit settings. A Study that ignored saved
+	 * settings recorded for another calculation runs on engine defaults, as
+	 * the case's own build would, so it is kept and its solutions drop the
+	 * `settings_ignored` notice. */
 	private adoptStudy(c: LocalCase, pending: Promise<BrowserStudy>) {
 		const studyInputJson = c.studyInputJson;
 		const formulation = c.formulation;
@@ -2776,13 +2783,15 @@ export class Controller {
 				study = await pending;
 				if (study.formulation !== formulation)
 					throw new Error(`Study built for ${study.formulation}, not ${formulation}`);
-				const baseSolution = await study.currentSolution();
+				const built = await study.currentSolution();
 				// Built without settings from a module that records them for another
-				// calculation: every solve would repeat that it ignored them. The case
-				// then builds and solves a second Study, since the Study built ahead
-				// cannot take explicit settings.
-				if (baseSolution.diagnostics?.some((d) => d.code === 'settings_ignored'))
-					throw new Error('Study ignored the saved calculation settings');
+				// calculation, the Study runs on engine defaults, as one built with
+				// explicit default settings would, but every solve repeats that it
+				// ignored the record. Keep it and drop that notice.
+				const ignoresRecordedSettings = built.diagnostics?.some(
+					(d) => d.code === 'settings_ignored'
+				);
+				const baseSolution = withoutIgnoredSettings(built);
 				// As in `getStudy`: the case may have changed or gone while this built.
 				if (c.formulation !== formulation || !current()) {
 					study.free();
@@ -2793,7 +2802,8 @@ export class Controller {
 					studyInputJson,
 					formulation,
 					baseSolution,
-					settings: defaultCalculationSettings(formulation)
+					settings: defaultCalculationSettings(formulation),
+					ignoresRecordedSettings
 				});
 				this.studyBuilds.delete(c);
 				return study;

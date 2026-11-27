@@ -52,6 +52,18 @@ export function defaultCalculationSettings(calculation: Calculation): ResolvedSe
 		effective
 	};
 }
+/** `solution` without the `settings_ignored` notices of a Study built from a
+ * module whose saved settings are for another calculation. A Study built with
+ * explicit settings reports none, and the import log already named any saved
+ * option this engine does not know. */
+export function withoutIgnoredSettings<T extends Solution>(solution: T): T {
+	const diagnostics = solution.diagnostics;
+	if (!diagnostics?.some((d) => d.code === 'settings_ignored')) return solution;
+	return {
+		...solution,
+		diagnostics: diagnostics.filter((d) => d.code !== 'settings_ignored')
+	};
+}
 export function hasCustomCalculationSettings(c: SolvableCase): boolean {
 	const accepted = c.settings.accepted;
 	return !!accepted && !sameSettings(accepted.effective, accepted.engine_defaults);
