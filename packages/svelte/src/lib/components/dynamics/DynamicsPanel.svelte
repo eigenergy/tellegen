@@ -173,6 +173,31 @@
 		}
 	}
 
+	$effect(() => {
+		const a = dyn.active;
+		const on = app.preferences.experimental && !!dyn.support?.experimental && a?.status === 'ready';
+		dyn.catalog.sync(
+			on && a ? app.activeLocal?.id ?? null : null,
+			app.activeLocal?.studyInputJson,
+			on && a ? a.text : null
+		);
+	});
+
+	let pickedUnit = $state<string | null>(null);
+	$effect(() => {
+		void local?.id;
+		pickedUnit = null;
+	});
+	$effect(() => {
+		const request = dyn.inspectUnit;
+		if (!request) return;
+		dyn.inspectUnit = null;
+		if (request.caseId !== local?.id || !experimental) return;
+		pickedUnit = request.key;
+		tab = 'models';
+		untrack(() => layout.show('dynamics'));
+	});
+
 	const counts = $derived(
 		ins
 			? [
@@ -247,10 +272,6 @@
 						</select>
 					</div>
 				{/if}
-				<!-- The run controls, as they read once the case has dynamic data. -->
-				<div class="setting">
-					<span>Event</span><span class="value">None</span>
-				</div>
 				<div class="actions">
 					{#if caseName}<button class="secondary" onclick={openDyr}>Open .dyr file…</button>{/if}
 					{#if experimental && local?.studyInputJson}<button
@@ -262,9 +283,9 @@
 						>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
 					>
 				</div>
-				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
+				{#if demoError}<p class="err" role="alert" title={demoError}>{demoError}</p>{/if}
 				{#if dynamizeError}<p class="err" title={dynamizeError}>
-						Dynamic data failed to build
+						{dynamizeError}
 					</p>{/if}
 				{#if catalog && dynModels.length > 0}
 					<div class="hosted" data-testid="dyn-hosted-models">
@@ -272,7 +293,6 @@
 						{@render hostedPicker()}
 					</div>
 				{/if}
-				<button class="run" disabled title="Needs dynamic data">Run simulation</button>
 			</section>
 		{:else}
 			<section class="block" aria-label="Dynamic data">
@@ -288,7 +308,7 @@
 				{#if att.status === 'opening'}
 					<p class="dim" role="status">Opening…</p>
 				{:else if att.status === 'failed'}
-					<p class="err" role="alert" title={att.error ?? undefined}>Dynamic data failed to open</p>
+					<p class="err" role="alert" >{att.error ?? 'Dynamic data failed to open'}</p>
 				{:else if ins}
 					<div class="counts" data-testid="dyn-counts">
 						<StatBoxes stats={counts} label="Dynamic model" />
@@ -370,7 +390,7 @@
 				{#if tab === 'live' && experimental}
 					<DynamicsLive />
 				{:else if tab === 'models' && experimental}
-					<DynamicsModels />
+					<DynamicsModels bind:picked={pickedUnit} />
 				{:else if tab === 'modes' && experimental}
 					<section class="block" aria-label="Small-signal modes" data-testid="dyn-modes">
 						{#if dyn.modes}
@@ -398,7 +418,7 @@
 								{dyn.modesError === 'Stopped' ? 'Stopped' : 'Modes failed'}
 							</p>{/if}
 					</section>
-					<DynamicsBode />
+					{#key att}<DynamicsBode />{/key}
 				{:else if att.status === 'ready'}
 					<DynamicsEventList />
 					<DynamicsRunControls />
@@ -458,22 +478,6 @@
 		justify-self: stretch;
 		min-height: 32px;
 	}
-	.run {
-		min-height: 36px;
-		border: 1px solid var(--accent-fill);
-		border-radius: var(--radius-sm);
-		background: var(--accent-fill);
-		color: var(--on-accent);
-		font: inherit;
-		font-weight: 600;
-	}
-	/* Disabled is a flat grey fill with no border, unlike any enabled button. */
-	.run:disabled {
-		border-color: transparent;
-		background: var(--surface-hover);
-		color: var(--text-tertiary);
-		cursor: default;
-	}
 	.secondary {
 		justify-self: start;
 		min-height: 28px;
@@ -493,8 +497,7 @@
 		cursor: default;
 	}
 	@media (pointer: coarse) {
-		.secondary,
-		.run {
+		.secondary {
 			min-height: 44px;
 		}
 	}

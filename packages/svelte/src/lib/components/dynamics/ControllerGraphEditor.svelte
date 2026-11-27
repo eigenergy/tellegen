@@ -5,14 +5,9 @@
 	 * @block Controller graph editor */
 	import { GRAPH_PORTS, type BlockGraph } from '@tellegen/engine';
 	import GraphCanvas from './GraphCanvas.svelte';
-	import { getUiConfig } from '../../context.svelte.js';
-
-	const config = getUiConfig();
-	/** Mount the dialog on the provider's root, above the panel dock and the
-	 * header: the theme tokens live there, so it keeps them. */
-	function toRoot(node: HTMLElement) {
-		(config.element ?? document.body).appendChild(node);
-		return { destroy: () => node.remove() };
+	function showEditor(dialog: HTMLDialogElement) {
+		dialog.showModal();
+		return { destroy: () => dialog.close() };
 	}
 
 	let {
@@ -41,21 +36,7 @@
 	let busy = $state(false);
 	let applyError = $state<string | null>(null);
 
-	// Escape closes the editor, except while a wire is being drawn (the
-	// canvas cancels the wire) or a field has the focus (it leaves the field).
 	let wiring = $state(false);
-	function onkey(e: KeyboardEvent) {
-		if (e.key !== 'Escape' || wiring || e.defaultPrevented) return;
-		const t = e.target;
-		if (
-			t instanceof HTMLInputElement ||
-			t instanceof HTMLSelectElement ||
-			t instanceof HTMLTextAreaElement ||
-			(t instanceof HTMLElement && t.isContentEditable)
-		)
-			return;
-		onclose();
-	}
 
 	async function run(action: () => Promise<void>) {
 		busy = true;
@@ -70,9 +51,15 @@
 	}
 </script>
 
-<svelte:window onkeydown={onkey} />
-
-<div class="editor dyn-form" role="dialog" aria-label={title} use:toRoot>
+<dialog
+	class="editor dyn-form"
+	aria-label={title}
+	use:showEditor
+	oncancel={(event) => {
+		event.preventDefault();
+		if (!wiring && !busy) onclose();
+	}}
+>
 	<header>
 		<h3>{title}</h3>
 		<input class="name mono" bind:value={g.name} aria-label="graph name" />
@@ -85,15 +72,20 @@
 				<span class="bad" title={check.error}>✗ {check.error}</span>
 			{/if}
 		{/if}
-		{#if onrevert}<button class="ghost" disabled={busy} onclick={() => onrevert && run(onrevert)}>Back to DYR record</button>{/if}
-		<button disabled={busy || !check?.ok} onclick={() => run(() => onapply(JSON.parse(JSON.stringify(g))))}>
+		{#if onrevert}<button class="ghost" disabled={busy} onclick={() => onrevert && run(onrevert)}>
+				Back to DYR record
+			</button>{/if}
+		<button
+			disabled={busy || !check?.ok}
+			onclick={() => run(() => onapply(JSON.parse(JSON.stringify(g))))}
+		>
 			{busy ? 'Initializing…' : 'Use in case'}
 		</button>
-		<button class="ghost" onclick={onclose}>Close</button>
+		<button class="ghost" disabled={busy} onclick={onclose}>Close</button>
 	</header>
 	{#if applyError}<p class="bad msg">{applyError}</p>{/if}
 	<GraphCanvas bind:graph={g} bind:check bind:wiring {values} />
-</div>
+</dialog>
 
 <style>
 	.editor {
@@ -102,7 +94,12 @@
 		right: 24px;
 		top: 64px;
 		bottom: 24px;
-		z-index: 60;
+		margin: auto;
+		padding: 0;
+		width: calc(100% - 48px);
+		height: calc(100% - 88px);
+		max-width: none;
+		max-height: none;
 		display: flex;
 		flex-direction: column;
 		background: var(--surface-menu);
@@ -111,6 +108,9 @@
 		box-shadow: 0 8px 28px rgb(0 0 0 / 0.22);
 		color: var(--text-primary);
 		font-size: var(--fs-control);
+	}
+	.editor::backdrop {
+		background: rgb(0 0 0 / 0.25);
 	}
 	header {
 		display: flex;

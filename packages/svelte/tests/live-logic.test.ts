@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { clampZoom, minZoomSpan, niceTicks } from '../src/lib/charts/axis.js';
 import {
-	clampZoom,
-	minZoomSpan,
-	niceTicks,
 	paceTarget,
 	parseDrafts,
 	recordsSignature,

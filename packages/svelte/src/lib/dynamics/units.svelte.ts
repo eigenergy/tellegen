@@ -31,44 +31,38 @@ export function unitSummary(u: DyrGeneratorView): string {
 	return u.records.map((r) => r.model).join(' · ');
 }
 
-/** A unit editor opened from the map, at the clicked point. */
-export interface UnitPopupAt {
-	/** A unit's editor, or a bus's actions and units. */
-	kind?: 'unit' | 'bus';
-	bus: number;
-	machineId: string;
-	x: number;
-	y: number;
-}
-
 export class UnitCatalog {
 	units: DyrGeneratorView[] = $state.raw([]);
 	library: LibraryModel[] = $state.raw([]);
 	presets: UnitPreset[] = $state.raw([]);
 	error = $state<string | null>(null);
-	#key = '';
+	#input: { id: string; moduleJson: string; dyrText: string } | null = null;
 	#static = false;
 
 	/** Load the units of `moduleJson` with `dyrText` (once per input). */
 	sync(id: string | null, moduleJson: string | null | undefined, dyrText: string | null): void {
 		if (!id || !moduleJson || dyrText === null) {
-			if (this.#key) {
-				this.#key = '';
+			if (this.#input) {
+				this.#input = null;
+				this.error = null;
 				this.units = [];
 			}
 			return;
 		}
-		const key = `${id}|${moduleJson.length}|${dyrText.length}|${hash(dyrText)}`;
-		if (key === this.#key) return;
-		this.#key = key;
+		const previous = this.#input;
+		if (id === previous?.id && moduleJson === previous.moduleJson && dyrText === previous.dyrText) return;
+		const input = { id, moduleJson, dyrText };
+		this.#input = input;
+		this.units = [];
+		this.error = null;
 		dyrParameters(moduleJson, dyrText).then(
 			(u) => {
-				if (this.#key !== key) return;
+				if (this.#input !== input) return;
 				this.units = u;
 				this.error = null;
 			},
 			(e) => {
-				if (this.#key === key) this.error = (e as Error).message;
+				if (this.#input === input) this.error = (e as Error).message;
 			}
 		);
 		if (!this.#static) {
@@ -93,13 +87,6 @@ export class UnitCatalog {
 	}
 }
 
-/** A short text hash, so an edit in the middle of the DYR text reloads. */
-function hash(s: string): number {
-	let h = 0;
-	for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
-	return h;
-}
-
 interface Glyph {
 	unit: DyrGeneratorView;
 	kind: UnitKind;
@@ -120,7 +107,7 @@ export function unitGlyphLayer(
 	units: readonly DyrGeneratorView[],
 	buses: readonly NetworkBus[],
 	theme: 'light' | 'dark',
-	onClick: (u: DyrGeneratorView, x: number, y: number) => void
+	onClick: (u: DyrGeneratorView) => void
 ): Layer {
 	const pos = new Map(buses.map((b) => [b.id, [b.lon, b.lat] as [number, number]]));
 	const count = new Map<number, number>();
@@ -147,7 +134,7 @@ export function unitGlyphLayer(
 		pickable: true,
 		onClick: (info) => {
 			if (!info.object) return false;
-			onClick(info.object.unit, info.x, info.y);
+			onClick(info.object.unit);
 			return true;
 		},
 		updateTriggers: { getBackgroundColor: theme, getColor: theme }

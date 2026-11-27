@@ -621,15 +621,22 @@
 	}
 
 	// ----- engine check (debounced) -----
-	let checkTimer: ReturnType<typeof setTimeout> | null = null;
 	$effect(() => {
-		const snapshot = JSON.parse(JSON.stringify(graph)) as BlockGraph;
-		if (checkTimer) clearTimeout(checkTimer);
-		checkTimer = setTimeout(() => {
-			checkGraph(snapshot)
-				.then((c) => (check = c))
-				.catch((e) => (check = { ok: false, error: e instanceof Error ? e.message : String(e) }));
+		const snapshot = $state.snapshot(graph);
+		let current = true;
+		check = null;
+		const timer = setTimeout(async () => {
+			try {
+				const result = await checkGraph(snapshot);
+				if (current) check = result;
+			} catch (error) {
+				if (current) check = { ok: false, error: error instanceof Error ? error.message : String(error) };
+			}
 		}, 150);
+		return () => {
+			current = false;
+			clearTimeout(timer);
+		};
 	});
 
 	function onkey(e: KeyboardEvent) {
@@ -1034,7 +1041,7 @@
 		pointer-events: none;
 		fill: var(--text-primary);
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: var(--fs-meta);
 	}
 	.node text.tf,
 	.node text.sym,
@@ -1046,21 +1053,21 @@
 		font-family: inherit;
 	}
 	.node text.small {
-		font-size: 8px;
+		font-size: var(--fs-meta);
 		fill: var(--text-tertiary);
 	}
 	.node text.sig {
 		text-anchor: middle;
-		font-size: 9px;
+		font-size: var(--fs-meta);
 		fill: var(--text-tertiary);
 	}
 	.node text.sign {
-		font-size: 11px;
+		font-size: var(--fs-meta);
 		font-weight: 700;
 		text-anchor: middle;
 	}
 	.node text.lim {
-		font-size: 9px;
+		font-size: var(--fs-meta);
 		fill: var(--text-secondary);
 	}
 	.node text.outname {
@@ -1068,7 +1075,7 @@
 	}
 	.node text.value {
 		fill: var(--text-accent);
-		font-size: 9px;
+		font-size: var(--fs-meta);
 		font-weight: 600;
 	}
 	.bar,

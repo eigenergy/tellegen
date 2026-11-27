@@ -242,3 +242,36 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 		.toBeGreaterThanOrEqual(0);
 	await shot(page, '09-phone');
 });
+
+test('live controls use the Dynamics panel and recorded traces survive a pause', async ({
+	page
+}) => {
+	const panel = await openDemo(page);
+	await panel.getByRole('tab', { name: 'Live' }).click();
+	await panel.getByRole('button', { name: 'Start live simulation' }).click();
+	const plots = page.getByRole('region', { name: 'Live simulation plots' });
+	const fault = panel.getByRole('button', { name: 'Apply fault', exact: true });
+	await expect(fault).toBeEnabled();
+	await fault.click();
+	await expect(panel.locator('ol.log')).toContainText(/clear/i);
+	await shot(page, 'live-desktop');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(plots).toBeInViewport();
+	await expect(page.getByRole('button', { name: 'Close live simulation' })).toBeInViewport();
+	await shot(page, 'live-phone');
+	await page.setViewportSize({ width: 1420, height: 900 });
+	await plots.getByRole('button', { name: 'Pause' }).click();
+	await expect(fault).toBeDisabled();
+	await plots.getByText(/Plot channels/).click();
+	await plots.getByRole('button', { name: 'Clear', exact: true }).click();
+	await expect(plots.getByText('Choose a channel to plot.')).toBeVisible();
+	await plots.getByRole('searchbox', { name: 'Search channels' }).fill('rotor speed');
+	await plots.getByRole('checkbox').first().check();
+	await plots.getByText(/Plot channels/).click();
+	await expect(plots.locator('svg').first()).toBeVisible();
+	await plots.getByRole('button', { name: 'Resume' }).click();
+	await expect(fault).toBeEnabled();
+	await plots.getByRole('button', { name: 'Close live simulation' }).click();
+	await expect(plots).toHaveCount(0);
+	await expect(panel.getByRole('button', { name: 'Start live simulation' })).toBeEnabled();
+});

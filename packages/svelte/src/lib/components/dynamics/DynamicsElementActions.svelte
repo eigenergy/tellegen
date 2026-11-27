@@ -56,10 +56,14 @@
 	/** The live view runs on this case: an action applies at once. */
 	const live = $derived(dyn.live.active && dyn.live.localId === app.activeLocal?.id);
 
+	function editModels(bus: number, machineId: string) {
+		if (app.activeLocal) dyn.inspectUnit = { caseId: app.activeLocal.id, key: `${bus}|${machineId.trim()}` };
+	}
+
 	function add(e: DynEvent) {
 		if (live) {
 			dyn.live.now(e);
-			message = `Applied at t = ${dyn.live.t.toFixed(2)} s: ${dyn.describe(e).split(' at ')[0].toLowerCase()}`;
+			message = dyn.live.running ? 'Queued for the next simulation step' : 'Queued for resume';
 			return;
 		}
 		message = dyn.add(e) ?? `Added ${dyn.describe(e).toLowerCase()}`;
@@ -82,7 +86,7 @@
 				<button class="action" onclick={() => add(busFault(bus, f0))}>Apply a fault here</button>
 				{#if hasLoad}
 					<div class="row">
-						<button class="action" onclick={() => add(loadStep(bus, loadPct))}>Change load</button>
+						<button class="action" disabled={!Number.isFinite(loadPct) || Math.abs(loadPct) > 100} onclick={() => add(loadStep(bus, loadPct))}>Change load</button>
 						<label class="pct"
 							><span class="sr-only">Load step in percent</span><input
 								type="number"
@@ -104,6 +108,9 @@
 									{g.machine_id.trim()}
 									<span class="dim">{g.mbase.toFixed(0)} MVA</span></span
 								>
+								{#if app.preferences.experimental && dyn.support?.experimental}
+									<button onclick={() => editModels(g.bus, g.machine_id)}>Edit models</button>
+								{/if}
 								<button onclick={() => add(generatorTrip(g.bus, g.machine_id.trim()))}>Trip</button>
 							</li>
 						{/each}

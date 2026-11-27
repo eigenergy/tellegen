@@ -21,7 +21,7 @@
 
 <script lang="ts">
 	import { minSpanFor, tickLabel, ticks, yDomain } from '../../dynamics/axis.js';
-	import { m4 } from '../../dynamics/decimate.js';
+	import { m4 } from '../../charts/decimate.js';
 	import { sampleAt } from '../../dynamics/series.js';
 
 	let {

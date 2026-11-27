@@ -651,7 +651,7 @@
 	.rec summary::before {
 		content: '▸';
 		color: var(--text-tertiary);
-		font-size: 10px;
+		font-size: var(--fs-meta);
 		transition: transform var(--dur-fast, 120ms) var(--ease-out, ease-out);
 	}
 	.rec[open] summary::before {

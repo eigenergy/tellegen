@@ -32,7 +32,7 @@ import {
 	type OpenBranch
 } from './layers.js';
 import { LiveView } from './live.svelte.js';
-import { UnitCatalog, unitGlyphLayer, unitSummary, type UnitPopupAt } from './units.svelte.js';
+import { UnitCatalog, unitGlyphLayer, unitSummary, unitKey as catalogKey } from './units.svelte.js';
 import { DynamicsPlayer, startTime } from './player.svelte.js';
 import {
 	VALIDATION_DT,
@@ -181,8 +181,8 @@ export class DynamicsController {
 	readonly live = new LiveView();
 	/** Experimental: the active case's units for the unit editor. */
 	readonly catalog = new UnitCatalog();
-	/** Experimental: the unit editor opened from a glyph on the map. */
-	unitPopup: UnitPopupAt | null = $state.raw(null);
+	/** The Models tab consumes the selection made on the map. */
+	inspectUnit: { caseId: string; key: string } | null = $state.raw(null);
 	#textLayer: typeof import('@deck.gl/layers').TextLayer | null = $state.raw(null);
 	layerCtors: LayerCtors | null = $state.raw(null);
 	/** Base URL of the bundled examples. */
@@ -824,19 +824,14 @@ export class DynamicsController {
 			this.#shown?.record?.events ?? [],
 			hoverBus,
 			this.theme,
-			(bus, x, y) => {
-				this.onBusClick?.(bus);
-				// Experimental: the bus's actions and units beside it.
-				if (this.app.preferences.experimental && x !== undefined && y !== undefined)
-					this.unitPopup = { bus, machineId: '', x, y, kind: 'bus' };
-			}
+			(bus) => this.onBusClick?.(bus)
 		);
 		// Experimental: a clickable chip per unit opens its editor.
 		const local = this.app.activeLocal;
 		if (this.app.preferences.experimental && this.#textLayer && local?.view && this.catalog.units.length)
 			layers.push(
-				unitGlyphLayer(this.#textLayer, this.catalog.units, local.view.buses, this.theme, (u, x, y) => {
-					this.unitPopup = { bus: u.bus, machineId: u.machine_id.trim(), x, y };
+				unitGlyphLayer(this.#textLayer, this.catalog.units, local.view.buses, this.theme, (u) => {
+					this.inspectUnit = { caseId: local.id, key: catalogKey(u) };
 				})
 			);
 		return layers;
@@ -848,7 +843,7 @@ export class DynamicsController {
 		const esc = (x: string) => x.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 		if (info.layer?.id === 'dyn-bus-v' && info.index >= 0) {
 			const v = f.vNow[info.index];
-			const when = this.atRest ? 'Before any event' : `Time ${this.player.t.toFixed(3)} s`;
+			const when = this.atRest ? 'Before any event' : `Time ${(this.summary?.t ?? this.player.t).toFixed(3)} s`;
 			return {
 				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu<br>${when}`
 			};
@@ -884,6 +879,19 @@ export class DynamicsController {
 	// @block Experimental tools
 	// Behind Settings, Experimental features: small-signal modes, frequency
 	// responses and the export of a run.
+
+	async startLive() {
+		const a = this.active;
+		const l = this.app.activeLocal;
+		if (!a?.inspection || !l?.studyInputJson || this.running || !this.app.preferences.experimental) return;
+		this.live.open = true;
+		await this.live.start(l.id, {
+			moduleJson: l.studyInputJson,
+			dynText: this.dynText(a),
+			inspection: a.inspection,
+			loadModel: this.options.load_model ?? 'power_flow'
+		});
+	}
 
 	async computeModes(): Promise<void> {
 		const local = this.app.activeLocal;

@@ -15,7 +15,6 @@
 	import TellegenMap from './TellegenMap.svelte';
 	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
 	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
-	import DynamicsUnitPopup from './components/dynamics/DynamicsUnitPopup.svelte';
 	import DynamicsWorkbench from './components/dynamics/DynamicsWorkbench.svelte';
 	import { getPanelLayout } from './panels.svelte.js';
 
@@ -44,7 +43,8 @@
 	$effect(() => {
 		const id = app.activeLocal?.id ?? null;
 		const owner = dyn.live.localId;
-		if (owner !== null && owner !== id) untrack(() => dyn.live.stop());
+		if ((dyn.live.open || owner !== null) && (app.studyView || app.mode !== 'dynamics' || !app.preferences.experimental || (owner !== null && owner !== id)))
+			untrack(() => dyn.live.close());
 	});
 	const dynamicsShown = $derived(
 		workbenchShown ||
@@ -201,11 +201,10 @@
 	<ControlPanel />
 	{#if !app.studyView && app.dynamicsEnabled}<DynamicsPanel />{/if}
 	{#if workbenchShown}
-		<DynamicsWorkbench bind:dockHeight={timelineHeight} />
+		<DynamicsWorkbench bind:dockHeight={timelineHeight} flush={sheetOpen} />
 	{:else if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} flush={sheetOpen} />
 	{/if}
-	{#if app.mode === 'dynamics' && app.dynamicsEnabled}<DynamicsUnitPopup />{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}
