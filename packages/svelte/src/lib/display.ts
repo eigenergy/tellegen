@@ -33,7 +33,8 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			label: 'Voltage',
 			unit: 'pu',
 			copy: 'Voltage',
-			gradient: priceGradient
+			// The map paints |V| on the price ramp, dark ramp included.
+			gradient: `var(--tellegen-price-ramp, ${priceGradient})`
 		});
 	}
 	if (c.solution.va.length > 0) {

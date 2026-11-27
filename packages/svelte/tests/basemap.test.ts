@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	CARTO_STYLES,
 	OPENFREEMAP_STYLES,
+	applyBasemapTuning,
 	attachBasemapFallback,
+	cartoBasemap,
 	cartoStyleUrl,
 	defaultBasemap,
 	isOpenFreeMapStyle,
@@ -14,7 +16,8 @@ import {
 	type BasemapMapEvent,
 	type BasemapMapLike,
 	type BasemapSpec,
-	type BasemapStyle
+	type BasemapStyle,
+	type TunableMap
 } from '../src/lib/basemap.js';
 import { resolveTellegenUiConfig } from '../src/lib/context.svelte.js';
 
@@ -156,9 +159,9 @@ describe('style URLs', () => {
 	it('trims the CARTO key, and a blank one counts as none', () => {
 		for (const blank of ['  ', '\n']) {
 			expect(defaultBasemap('light', { cartoApiKey: blank })).toEqual(defaultBasemap('light'));
-			expect(resolveBasemap({ theme: 'dark', hideBasemapLabels: true, cartoApiKey: blank })).toEqual(
-				defaultBasemap('dark')
-			);
+			expect(
+				resolveBasemap({ theme: 'dark', hideBasemapLabels: true, cartoApiKey: blank })
+			).toEqual(defaultBasemap('dark'));
 			expect(cartoStyleUrl(CARTO_STYLES.dark, blank)).toBe(CARTO_STYLES.dark);
 			expect(resolveTellegenUiConfig({ cartoApiKey: blank }).cartoApiKey).toBe('');
 		}
@@ -738,5 +741,142 @@ describe('attachBasemapFallback', () => {
 		map.emit('error', { error: ajaxError(0, 'Failed to fetch') });
 		expect(onFallback).not.toHaveBeenCalled();
 		expect(map.styles).toHaveLength(0);
+	});
+});
+
+describe('cartoBasemap', () => {
+	it('with a key, leads with the keyed CARTO style and falls back to the keyless one', () => {
+		expect(cartoBasemap('light', { cartoApiKey: 'k' })).toEqual({
+			primary: `${CARTO_STYLES['light-nolabels']}?key=k`,
+			fallback: CARTO_STYLES['light-nolabels'],
+			hideLabels: true,
+			primaryProvider: 'carto',
+			fallbackProvider: 'carto'
+		});
+		expect(cartoBasemap('dark', { cartoApiKey: 'k', hideLabels: false })).toEqual({
+			primary: `${CARTO_STYLES.dark}?key=k`,
+			fallback: CARTO_STYLES.dark,
+			hideLabels: false,
+			primaryProvider: 'carto',
+			fallbackProvider: 'carto'
+		});
+	});
+
+	it('without a key, leads with the keyless CARTO style and has no fallback', () => {
+		expect(cartoBasemap('light')).toEqual({
+			primary: CARTO_STYLES['light-nolabels'],
+			fallback: null,
+			hideLabels: true,
+			primaryProvider: 'carto',
+			fallbackProvider: null
+		});
+		expect(cartoBasemap('dark', { hideLabels: false }).primary).toBe(CARTO_STYLES.dark);
+	});
+
+	it('trims the key, and a blank one counts as none', () => {
+		for (const blank of ['', '  ', '\n']) {
+			expect(cartoBasemap('dark', { cartoApiKey: blank })).toEqual(cartoBasemap('dark'));
+		}
+		expect(cartoBasemap('light', { cartoApiKey: ' abc ' }).primary).toBe(
+			`${CARTO_STYLES['light-nolabels']}?key=abc`
+		);
+	});
+
+	it('never names OpenFreeMap', () => {
+		for (const theme of ['light', 'dark'] as const) {
+			for (const cartoApiKey of [undefined, 'k']) {
+				for (const hideLabels of [true, false]) {
+					const spec = cartoBasemap(theme, { cartoApiKey, hideLabels });
+					for (const url of [spec.primary, spec.fallback]) {
+						if (url !== null)
+							expect(url.startsWith('https://basemaps.cartocdn.com/gl/')).toBe(true);
+					}
+					expect(spec.fallbackProvider ?? 'carto').toBe('carto');
+				}
+			}
+		}
+	});
+
+	it('a failing keyed style falls back to keyless CARTO, and keyless failure reports failure', () => {
+		const keyed = new FakeMap();
+		const onKeyedFallback = vi.fn<(r: BasemapFallbackReason) => void>();
+		attachBasemapFallback(keyed, cartoBasemap('light', { cartoApiKey: 'k' }), {
+			onFallback: onKeyedFallback
+		});
+		keyed.emit('style.load');
+		keyed.emit('error', { sourceId: 'carto', error: ajaxError(403, 'Forbidden') });
+		expect(onKeyedFallback).toHaveBeenCalledWith(
+			expect.objectContaining({ from: 'carto', to: 'carto' })
+		);
+		expect(keyed.styles.map((s) => s.style)).toEqual([CARTO_STYLES['light-nolabels']]);
+
+		const keyless = new FakeMap();
+		const onFailure = vi.fn<(r: BasemapFallbackReason) => void>();
+		attachBasemapFallback(keyless, cartoBasemap('light'), { onFailure });
+		keyless.emit('error', { error: ajaxError(0, 'Failed to fetch') });
+		expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ from: 'carto', to: null }));
+		expect(keyless.styles).toEqual([]);
+	});
+});
+
+describe('applyBasemapTuning', () => {
+	/** A CARTO style's shape: one vector source on CARTO's tiles, text labels as symbol layers. */
+	const cartoStyle = (): StyleSpecification => ({
+		version: 8,
+		sources: {
+			carto: {
+				type: 'vector',
+				tiles: ['https://tiles.basemaps.cartocdn.com/vectortiles/carto.streets/v2/{z}/{x}/{y}.mvt']
+			}
+		},
+		layers: [
+			{ id: 'background', type: 'background', paint: { 'background-color': '#fafaf8' } },
+			{ id: 'water', type: 'fill', source: 'carto', 'source-layer': 'water' },
+			{
+				id: 'roads',
+				type: 'line',
+				source: 'carto',
+				'source-layer': 'transportation',
+				minzoom: 5
+			},
+			{
+				id: 'place_city',
+				type: 'symbol',
+				source: 'carto',
+				'source-layer': 'place',
+				layout: { 'text-field': '{name}' }
+			},
+			{
+				id: 'roadname',
+				type: 'symbol',
+				source: 'carto',
+				'source-layer': 'transportation_name',
+				layout: { 'text-field': '{name}' }
+			}
+		]
+	});
+	const tunable = (style: StyleSpecification) => {
+		const calls: unknown[][] = [];
+		const map: TunableMap = {
+			getStyle: () => style,
+			setLayoutProperty: (...args) => calls.push(['layout', ...args]),
+			setPaintProperty: (...args) => calls.push(['paint', ...args]),
+			setLayerZoomRange: (...args) => calls.push(['zoom', ...args])
+		};
+		return { map, calls };
+	};
+
+	it('hides the text labels of a CARTO style and leaves the rest of it alone', () => {
+		for (const theme of ['light', 'dark'] as const) {
+			const { map, calls } = tunable(cartoStyle());
+			applyBasemapTuning(map, cartoBasemap(theme, { hideLabels: false, cartoApiKey: 'k' }), theme);
+			expect(calls).toEqual([]);
+			const hidden = tunable(cartoStyle());
+			applyBasemapTuning(hidden.map, { ...cartoBasemap(theme), hideLabels: true }, theme);
+			expect(hidden.calls).toEqual([
+				['layout', 'place_city', 'visibility', 'none'],
+				['layout', 'roadname', 'visibility', 'none']
+			]);
+		}
 	});
 });

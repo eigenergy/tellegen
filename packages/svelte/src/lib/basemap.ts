@@ -9,7 +9,8 @@ import type { StyleSpecification } from 'maplibre-gl';
  * leads and the keyless CARTO style is the fallback. Whenever an OpenFreeMap
  * style renders, `openFreeMapEdits` tunes it towards CARTO's look. A host can
  * replace either style with its own URL or inline `StyleSpecification`, or
- * disable the fallback with `null`. */
+ * disable the fallback with `null`. `cartoBasemap` builds a spec from CARTO
+ * styles alone, for a host that passes it to `TellegenMap`'s `basemap`. */
 
 export type BasemapTheme = 'light' | 'dark';
 export type BasemapStyle = string | StyleSpecification;
@@ -119,6 +120,45 @@ export function defaultBasemap(
 				hideLabels,
 				primaryProvider: 'openfreemap',
 				fallbackProvider: 'carto'
+			};
+}
+
+/** What `cartoBasemap` returns: CARTO styles only. With a key the fallback is
+ * the keyless CARTO style; without one there is no fallback. */
+export interface CartoBasemap extends ResolvedBasemap {
+	primary: string;
+	fallback: string | null;
+	primaryProvider: 'carto';
+	fallbackProvider: 'carto' | null;
+}
+
+/** A CARTO-only basemap for a theme: Positron in the light theme, Dark Matter
+ * in the dark. With a key, the keyed style leads and the keyless style is the
+ * fallback, for a key that is revoked or refused for the page's host. Without
+ * a key, the keyless style leads and there is no fallback. Takes the same
+ * options as `defaultBasemap`. */
+export function cartoBasemap(
+	theme: BasemapTheme,
+	options: DefaultBasemapOptions = {}
+): CartoBasemap {
+	const hideLabels = options.hideLabels ?? true;
+	const variant = hideLabels ? (`${theme}-nolabels` as const) : theme;
+	const key = normalizeCartoApiKey(options.cartoApiKey);
+	const keyless = CARTO_STYLES[variant];
+	return key
+		? {
+				primary: cartoStyleUrl(keyless, key),
+				fallback: keyless,
+				hideLabels,
+				primaryProvider: 'carto',
+				fallbackProvider: 'carto'
+			}
+		: {
+				primary: keyless,
+				fallback: null,
+				hideLabels,
+				primaryProvider: 'carto',
+				fallbackProvider: null
 			};
 }
 
@@ -442,7 +482,8 @@ export interface TunableMap {
 }
 
 /** After a style loads: hide its labels when the spec asks, and tune an OpenFreeMap style (as the
- * primary or the fallback) towards CARTO's quieter look. `setStyle` undoes both, so run this on
+ * primary or the fallback) towards CARTO's quieter look. Labels are the style's `symbol` layers,
+ * hidden on any style, CARTO's and a host's own included. `setStyle` undoes both, so run this on
  * every `style.load`. */
 export function applyBasemapTuning(map: TunableMap, spec: BasemapSpec, theme: BasemapTheme) {
 	const style = map.getStyle();

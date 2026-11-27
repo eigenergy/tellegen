@@ -29,8 +29,10 @@
 		type BasemapFallbackReason,
 		type BasemapStyle,
 		type MapProjection,
-		type MapTheme
+		type MapTheme,
+		type ResolvedBasemap
 	} from './basemap.js';
+	import { busesForLayers, type MapLayers } from './map-layers.js';
 	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
 	import { declutterBuses, declutterZoom, withBus } from './declutter.js';
 	import {
@@ -82,11 +84,13 @@
 		onmapclick,
 		mapStyle,
 		fallbackMapStyle,
+		basemap: basemapProp,
 		theme = 'light',
 		projection = 'mercator',
 		initialCamera = DEFAULT_CAMERA,
 		hideBasemapLabels = true,
 		cartoApiKey,
+		layers: layersProp,
 		extraLayers = [],
 		dynamicsLayers = [],
 		dynamicsTooltip,
@@ -114,6 +118,12 @@
 		 * switch. Default: whichever of the CARTO and OpenFreeMap styles is not
 		 * the default primary. */
 		fallbackMapStyle?: BasemapStyle | null;
+		/** A whole basemap spec, such as `cartoBasemap(theme, { cartoApiKey })`
+		 * returns. When given, it replaces `mapStyle`, `fallbackMapStyle`,
+		 * `hideBasemapLabels` and `cartoApiKey`, and its providers name the
+		 * styles in fallback and failure reasons. Changing it rebuilds the map in
+		 * place and keeps the camera. */
+		basemap?: ResolvedBasemap;
 		/** Picks the default basemaps and the overlay palette (bus outlines,
 		 * hover highlight, unsolved grey). */
 		theme?: MapTheme;
@@ -128,6 +138,13 @@
 		 * CARTO style leads and OpenFreeMap is the fallback; without one, the
 		 * order flips. Trimmed; a blank key counts as none. */
 		cartoApiKey?: string;
+		/** Which network layers draw: `branches` (lines and transformers),
+		 * `buses` (bus markers other than substations) and `substations` (a
+		 * generated grid's substation buses and a display file's substation
+		 * points). A layer left out is shown. Hiding a layer sets deck.gl's
+		 * `visible`, so showing it again rebuilds nothing; a selected bus keeps
+		 * its marker. */
+		layers?: MapLayers;
 		/** deck.gl layers drawn after tellegen's own, in the same overlay. */
 		extraLayers?: Layer[];
 		/** Dynamics playback layers, drawn over tellegen's own and under
@@ -243,7 +260,8 @@
 	}
 
 	const basemap = $derived(
-		resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
+		basemapProp ??
+			resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
 	);
 	// Read as separate values, not one object, so a theme change that resolves
 	// to the same styles does not rebuild the map.
@@ -253,10 +271,6 @@
 	const basemapPrimaryProvider = $derived(basemap.primaryProvider);
 	const basemapFallbackProvider = $derived(basemap.fallbackProvider);
 	const palette = $derived(MAP_PALETTE[theme]);
-	/** The diagram's background map follows the map's theme; a host's own style is used as given. */
-	const diagramBasemap = $derived(
-		resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
-	);
 	// Set once a map has existed in this component instance: a rebuild (context
 	// loss or basemap change) restores the camera instead of reframing.
 	let hadMap = false;
@@ -497,14 +511,27 @@
 		return primary ? attachmentColor(primary) : busNeutral;
 	}
 
+	// The `layers` prop read entry by entry, so a host that passes a new object
+	// with the same values changes nothing downstream.
+	const showBranches = $derived(layersProp?.branches ?? true);
+	const showBuses = $derived(layersProp?.buses ?? true);
+	const showSubstations = $derived(layersProp?.substations ?? true);
+	// A bus layer stays visible while either of its marker kinds is shown;
+	// busesForLayers drops the other kind from its data.
+	const busesVisible = $derived(showBuses || showSubstations);
+
 	// The buses each bus layer could draw at the current zoom: with
 	// `declutterMarkers`, one per crowded spot (see declutterBuses). A generated
-	// grid's line taps are left out before thinning, and its bus kinds rank the
-	// buses. Selection is not read here, so selecting a bus thins nothing again.
+	// grid's line taps are left out before thinning, and so are the kinds
+	// `layers` hides; its bus kinds rank the buses. Selection is not read here,
+	// so selecting a bus thins nothing again.
 	const thinnedMarkers = $derived.by(() => {
 		const zoom = markerZoom;
-		const thin = (buses: NetworkBus[], kinds?: ReadonlyMap<number, string>) =>
-			declutterMarkers ? declutterBuses(buses, { zoom, kinds }) : buses;
+		const markers = { buses: showBuses, substations: showSubstations };
+		const thin = (buses: NetworkBus[], kinds?: ReadonlyMap<number, string>) => {
+			const kept = busesForLayers(buses, kinds, markers);
+			return declutterMarkers ? declutterBuses(kept, { zoom, kinds }) : kept;
+		};
 		const sets = new Map<string, NetworkBus[]>();
 		if (app.studyView) {
 			sets.set('study-buses', thin(app.studyView.network.buses));
@@ -1287,6 +1314,7 @@
 			layers.push(
 				new PathLayer<NetworkBranch>({
 					id: 'study-branches',
+					visible: showBranches,
 					data: study.network.branches,
 					getPath: (b) => unwrapLongitudePath(b.path),
 					wrapLongitude: true,
@@ -1306,6 +1334,7 @@
 				}),
 				new ScatterplotLayer<NetworkBus>({
 					id: 'study-buses',
+					visible: busesVisible,
 					data: busMarkers.get('study-buses') ?? study.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
@@ -1345,6 +1374,7 @@
 			layers.push(
 				new PathLayer<NetworkBranch>({
 					id: `branches-${c.id}`,
+					visible: showBranches,
 					data: c.network.branches,
 					getPath: (b) => unwrapLongitudePath(b.path),
 					wrapLongitude: true,
@@ -1379,6 +1409,7 @@
 				}),
 				new ScatterplotLayer<NetworkBus>({
 					id: `buses-${c.id}`,
+					visible: busesVisible,
 					data: busMarkers.get(`buses-${c.id}`) ?? c.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
@@ -1426,6 +1457,7 @@
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
+						visible: showBranches,
 						data: c.view.branches,
 						getPath: (b) => unwrapLongitudePath(b.path),
 						wrapLongitude: true,
@@ -1462,6 +1494,7 @@
 					}),
 					new ScatterplotLayer<NetworkBus>({
 						id: `local-buses-${c.id}`,
+						visible: busesVisible,
 						data: busMarkers.get(`local-buses-${c.id}`) ?? c.markerBuses,
 						getPosition: (b) => [b.lon, b.lat],
 						getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
@@ -1505,6 +1538,7 @@
 						lat: number;
 					}>({
 						id: `local-subs-${c.id}`,
+						visible: showSubstations,
 						data: c.substations.points,
 						getPosition: (s) => [s.lon, s.lat],
 						getRadius: 5,
@@ -1797,7 +1831,7 @@
 			}}
 			onclose={() => (schematicCase.schematic = false)}
 			{theme}
-			basemap={diagramBasemap}
+			{basemap}
 		/>
 	{/key}
 {:else if txCase?.network}
@@ -1815,7 +1849,7 @@
 			onclose={() => (txCase.schematic = false)}
 			ongeoview={(view) => (txCase.lastGeoView = view)}
 			{theme}
-			basemap={diagramBasemap}
+			{basemap}
 		/>
 	{/key}
 {:else if diagramNetwork}
@@ -1851,7 +1885,7 @@
 			onselectbranch={selectDiagramBranch}
 			onclear={onmapclick}
 			{theme}
-			basemap={diagramBasemap}
+			{basemap}
 		/>
 	{/key}
 {:else}

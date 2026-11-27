@@ -28,7 +28,7 @@ import {
 import type { BranchRatingDeltas, Network, NetworkBus, Solution } from './api.js';
 import { ApiError, createApiClient, RATE_LIMITED, type TellegenApiClient } from './api.js';
 import { CollectionImport } from './collection-import.svelte.js';
-import { previewScaleFor, scalarDomain, sensitivityDomain } from './colors.js';
+import { previewScaleFor, sensitivityDomain } from './colors.js';
 import { BalancedSolveActions } from './controller/balanced-solve.js';
 import {
 	CaseImportActions,
@@ -52,8 +52,9 @@ import {
 } from './display.js';
 import { DynamicsController } from './dynamics/controller.svelte.js';
 import { PIO_MODULE_EXPORT } from './export-formats.js';
-import { atLimit, downloadText, errorText, extent, formulationLabel } from './format.js';
+import { atLimit, downloadText, errorText, formulationLabel } from './format.js';
 import { errorTitle, powerIoEntry, type ErrorContext, type LogEntryInput } from './log.svelte.js';
+import { displayRange } from './map-legend.js';
 import { buildDiagramView, buildGeographicView, placeMultiView } from './multiconductor.js';
 import { recordedCalculationSettings } from './settings.svelte.js';
 import { DEAD_ZONE_MW } from './slider.js';
@@ -755,17 +756,10 @@ export class Controller {
 	});
 	displayStats = $derived.by(() => {
 		if (!this.activeDisplay) return null;
-		const values = this.activeDisplay.values.map((entry) => entry.value).filter(Number.isFinite);
-		if (values.length === 0) return null;
-		const domain = scalarDomain(this.activeDisplay.mode, values);
-		const { min, max } = extent(values);
-		const flatThreshold =
-			this.activeDisplay.mode === 'price' || this.activeDisplay.mode === 'demand' ? 1 : 1e-5;
-		return {
-			lo: { value: domain.lo, clamped: min < domain.lo - flatThreshold / 20 },
-			hi: { value: domain.hi, clamped: max > domain.hi + flatThreshold / 20 },
-			uniform: max - min < flatThreshold ? values[0] : null
-		};
+		return displayRange(
+			this.activeDisplay.mode,
+			this.activeDisplay.values.map((entry) => entry.value)
+		);
 	});
 
 	selectedBusData = $derived.by(() => {

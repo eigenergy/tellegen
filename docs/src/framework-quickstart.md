@@ -298,7 +298,7 @@ depends on state.
 
 `@tellegen/svelte` also exports lower level pieces for custom shells:
 
-- `TellegenMap`, with basemap, theme, projection, camera, extra-layer and
+- `TellegenMap`, with basemap, theme, projection, camera, layer, extra-layer and
   `onMapReady` props (see below)
 - `AppState`, `CaseState`, `LocalCase`, and `createAppState`
 - `Controller` and `createController`, including `openBalancedModule`
@@ -446,6 +446,10 @@ besides its click callbacks:
   style for `theme` with a key, else the OpenFreeMap style.
 - `fallbackMapStyle`: the style used when the primary fails; `null` disables
   the switch. Default: whichever of the two is not the primary.
+- `basemap`: a whole spec, such as `cartoBasemap(theme, { cartoApiKey })`
+  returns. It replaces `mapStyle`, `fallbackMapStyle`, `hideBasemapLabels`
+  and `cartoApiKey`, and its provider names reach the fallback and failure
+  reasons.
 - `cartoApiKey`: the CARTO key. It is trimmed, and an empty, blank or
   absent key means none.
 - `theme`: `'light'` (default) or `'dark'`. Picks the default styles and the
@@ -454,6 +458,11 @@ besides its click callbacks:
   style load, so a basemap switch keeps it.
 - `initialCamera`: `{ center, zoom, bearing, pitch }`, read once per mount.
 - `hideBasemapLabels`: default `true`.
+- `layers`: `{ branches, buses, substations }`, each `true` when left out.
+  `branches` covers lines and transformers. `substations` covers a generated
+  grid's substation buses and a display file's substation points; `buses`
+  covers every other bus marker. A hidden layer keeps its data, so showing it
+  again rebuilds nothing. A selected bus keeps its marker.
 - `extraLayers`: deck.gl layers drawn after tellegen's own, in the same
   overlay.
 - `attribution`: `'compact'` (default) or `'full'`. There is no off switch.
@@ -522,6 +531,10 @@ The helpers behind the defaults are exported too:
 - `OPENFREEMAP_STYLES` and `CARTO_STYLES`;
 - `cartoStyleUrl(url, apiKey)`;
 - `defaultBasemap(theme, { cartoApiKey })` and `resolveBasemap(props)`;
+- `cartoBasemap(theme, { cartoApiKey, hideLabels })`, which uses CARTO
+  alone: with a key, the keyed style leads and the keyless style is the
+  fallback; without one, the keyless style has no fallback. The keyless
+  styles, tiles, glyphs and sprites answer without a key;
 - `attachBasemapFallback(map, spec, handlers)`;
 - `isOpenFreeMapStyle(style)` and `openFreeMapEdits(style, theme)`.
 
@@ -533,6 +546,9 @@ the fallback is off. `defaultBasemap` is typed `DefaultBasemap`: two style
 URLs, one CARTO and one OpenFreeMap, so its providers are never `'custom'` and
 its fallback is never `null`. The fallback reasons use the same names in
 `from` and `to`.
+
+Label hiding works on every style: `hideLabels` hides the style's `symbol`
+layers after each style load, CARTO's included.
 
 A Content Security Policy must allow `https://tiles.openfreemap.org` and
 `https://*.cartocdn.com` in `connect-src` and `img-src`. The style, vector
@@ -556,6 +572,35 @@ pre-bundle that import, so the package's `./maplibre-worker` export has a
 That export is internal to `TellegenMap`. A host that excluded
 `@tellegen/svelte` from `optimizeDeps` to work around this can drop the
 exclusion.
+
+<a id="frontend-package-map-legend"></a>
+
+#### Map legend
+
+A host that draws its own legend reads the map's colours from the package
+instead of copying them:
+
+- `lineLoadingKey(formulation)`: the three line colours, each with its label
+  and the loading it starts at. `LOADING_ATTENTION` (0.9) starts amber and
+  `LOADING_AT_LIMIT` starts red; the colours are `LOADING_BASE`,
+  `LOADING_AMBER` and `LOADING_RED` (RGBA), and `branchLoadingGradient` is
+  the same key as a CSS gradient.
+- `busColorScale(display, theme)`: the bus colour scale for a display
+  variable and its values, such as the controller's `activeDisplay`. It gives
+  `stops` (offset and RGBA, demand on its square-root scale), `gradient`,
+  `label`, `unit`, the `lo` and `hi` ends with `clamped` set when buses lie
+  beyond them, and `uniform` when every bus has one value.
+- `scalarStops(mode, theme)`, `scalarGradient(mode, theme)` and
+  `displayRange(mode, values)` are the parts it is built from.
+
+```svelte
+<script lang="ts">
+	import { busColorScale, getController } from '@tellegen/svelte';
+	let { theme }: { theme: 'light' | 'dark' } = $props();
+	const ctrl = getController();
+	const scale = $derived(ctrl.activeDisplay ? busColorScale(ctrl.activeDisplay, theme) : null);
+</script>
+```
 
 <a id="frontend-package-dark-theme"></a>
 
