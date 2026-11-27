@@ -380,7 +380,11 @@ impl ProtectionFunction {
 /// Overcurrent stage (IEC 60255-151). Pickup in multiples of the rated
 /// current. An inverse stage starts timing at `1.1 ×` pickup: the threshold
 /// the standard leaves to the relay, between the setting and `1.3 ×` it; its
-/// curve is flat above 20 × pickup.
+/// curve is flat above 20 × pickup. A directional stage compares the current
+/// with the positive-sequence memory voltage (a residual stage with `−V0`);
+/// the direction decided while that voltage was valid holds while the
+/// current stays above the drop-off, and without a decided direction
+/// neither a forward nor a reverse stage operates.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Overcurrent {
     #[serde(default)]

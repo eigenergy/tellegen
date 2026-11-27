@@ -186,6 +186,19 @@ enum Side {
 /// moves at about 1).
 const SWING_RATE: f64 = 0.5;
 
+/// Drop-off of an overcurrent stage, multiples of its setting.
+const DROP_OFF: f64 = 0.95;
+
+/// The least positive-sequence polarizing voltage (or memory) that gives a
+/// phase directional element its direction, pu: below it no direction can
+/// be told, as for the distance loops.
+const MIN_POLARIZING_V1: f64 = 0.1;
+
+/// The least zero-sequence polarizing voltage `|V0|` of a residual
+/// directional element, pu (3 % of the rated voltage as `3 V0`, this
+/// module's choice).
+const MIN_POLARIZING_V0: f64 = 0.01;
+
 /// The state of one function.
 #[derive(Clone, Debug)]
 enum Element {
@@ -280,6 +293,10 @@ pub(crate) struct RelayState {
     uses_frequency: bool,
     /// Memory voltage and when it was taken.
     vmem: Option<(C64, f64)>,
+    /// Per function, the direction a directional overcurrent stage decided
+    /// (`true` forward) while its polarizing voltage was valid, held while
+    /// the current stays above the stage's drop-off.
+    directions: Vec<Option<bool>>,
     pub partner: Option<usize>,
     /// The partner's `(overreach, underreach)` forward pickups.
     pub remote: Option<(bool, bool)>,
@@ -406,6 +423,7 @@ impl RelayState {
             },
             uses_frequency,
             vmem: None,
+            directions: vec![None; n],
             partner: None,
             remote: None,
             overreach_fwd: false,
@@ -626,7 +644,9 @@ impl RelayState {
         // @block Memory voltage
         // Positive-sequence memory voltage (polarization): the pre-fault
         // voltage is held for 100 ms after a collapse, then the relay
-        // polarizes with the present voltage (blocked without one).
+        // polarizes with the present voltage. Without one, a directional
+        // element keeps the direction it decided before (see the
+        // overcurrent and distance functions).
         let vmem = match self.vmem {
             Some((vm, since)) if v1n < 0.9 * vm.norm() => {
                 if t - since <= 0.1 {
@@ -692,7 +712,11 @@ impl RelayState {
                 // @block Overcurrent
                 // 50/51/67 on the largest phase current, 50N/51N/67N on the
                 // residual current (unbalanced engines only). The direction
-                // compares the current with the polarizing voltage. A
+                // compares the current with the polarizing voltage; once
+                // that voltage (or its memory) is gone, the direction decided
+                // while it was valid holds as long as the current stays
+                // above the drop-off, and without a decided direction
+                // neither stage operates. A
                 // definite-time stage times its pickup; an inverse stage
                 // integrates `dt / t(G)` and trips at 1, resetting at once
                 // (IEC) or along the reset curve (IEEE).
@@ -716,15 +740,29 @@ impl RelayState {
                                     C64::new(0.0, 0.0),
                                     |s| if earth { s[0] } else { s[1] },
                                 );
-                            let pol = if earth { -seq_v[0] } else { vmem };
-                            let fwd = (s * rotate_60() * pol.conj()).re > 0.0;
-                            (d == Direction::Forward) == fwd
+                            let (pol, min_pol) = if earth {
+                                (-seq_v[0], MIN_POLARIZING_V0)
+                            } else {
+                                (vmem, MIN_POLARIZING_V1)
+                            };
+                            // Directional latch: the direction is decided while
+                            // the polarizing voltage is valid and held while the
+                            // current stays above the stage's drop-off (a
+                            // sustained close-in fault after the memory has
+                            // expired); below it the decision is forgotten.
+                            let latch = &mut self.directions[k];
+                            if g < DROP_OFF {
+                                *latch = None;
+                            } else if pol.norm() >= min_pol {
+                                *latch = Some((s * rotate_60() * pol.conj()).re > 0.0);
+                            }
+                            latch.is_some_and(|fwd| (d == Direction::Forward) == fwd)
                         }
                     };
                     match el {
                         Element::Timer { timer, delay } => {
                             let held = timer.since.is_some();
-                            let picked = directed && (g >= 1.0 || (held && g >= 0.95));
+                            let picked = directed && (g >= 1.0 || (held && g >= DROP_OFF));
                             timer.update(picked, t, ops, id, label, || format!("{:.2} × I>", g));
                             let _ = delay;
                         }
@@ -734,7 +772,7 @@ impl RelayState {
                             eta,
                         } => {
                             let held = timer.since.is_some();
-                            let picked = directed && (g >= 1.1 || (held && g >= 0.95));
+                            let picked = directed && (g >= 1.1 || (held && g >= DROP_OFF));
                             timer.update(picked, t, ops, id, label, || format!("{:.2} × I>", g));
                             if picked {
                                 if let Some(top) = curve_time(o.curve, o.tms, g) {

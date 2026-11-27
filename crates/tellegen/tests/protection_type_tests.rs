@@ -436,7 +436,6 @@ fn iec_60255_151_directional_boundary() {
 /// a fault. Test plan: forward and reverse stages, 0.3 s delay, longer than
 /// the 100 ms voltage memory.
 #[test]
-#[ignore = "directional security (67), sustained close-in forward fault: once the 100 ms voltage memory has expired the reverse stage operates (0.52 s) and the forward stage resets (no operation); required: no reverse operation, forward operation at 0.42 s"]
 fn iec_60255_151_directional_security_without_voltage() {
     let shot = |t: f64| {
         if t >= 0.1 {
