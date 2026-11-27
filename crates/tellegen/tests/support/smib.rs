@@ -278,6 +278,119 @@ pub fn model_variant_cases() -> Vec<SmibCase> {
         .collect()
 }
 
+/// The ESST1A set of tellegen's model library (`rms/library.rs`: the ESST1A of
+/// PowerSystems.jl 5.12.5's `test/test_dynamic_generator.jl`), ICONs UEL and
+/// VOS first: KA 200, TA 0.1 s, lead-lag TC/TB = 2.5/13.25 s, the second
+/// lead-lag bypassed (TC1 = TB1 = 0), no transducer lag, VI limits wide open.
+const ESST1A_LIBRARY: &str =
+    "1 1 0.0 99.0 -99.0 2.5 13.25 0.0 0.0 200.0 0.1 9.5 -9.5 9.5 -9.5 0.0 0.0 1.0 0.0 999.0";
+/// [`ESST1A_LIBRARY`] with its limits narrowed around the case's operating
+/// point (at rest VI = 0.0098, VA = Efd = 1.956, the field voltage limits
+/// Vt VRMIN = 1.88 and Vt VRMAX − KC Ifd = 2.64): VIMAX/VIMIN = 0.1/0.006,
+/// VAMAX/VAMIN = 3/1.8, VRMAX/VRMIN = 2.6/1.85.
+const ESST1A_LIMITED: &str =
+    "1 1 0.0 0.1 0.006 2.5 13.25 0.0 0.0 200.0 0.1 3.0 1.8 2.6 1.85 0.0 0.0 1.0 0.0 999.0";
+/// The PSS2B set of tellegen's model library (`rms/library.rs`: the PSS2B of
+/// PowerSimulationsDynamics.jl 0.16.2's `test/test_case53_pss2b.jl` with its
+/// input limits open): speed and electrical power inputs, ramp-tracking
+/// filter M = 5, N = 1 (T8 = 0.5 s, T9 = 0.1 s), with
+/// KS2 = T7 / (2H) = 1.5 / (2 · 2.41) for the unit's H.
+const PSS2B_LIBRARY: &str = "1 0 3 0 5 1 1.5 1.5 0.0 1.5 0.0 1.5 0.3112 1.0 0.5 0.1 2.0 0.59451 0.0447 0.59451 0.0447 1.0 1.0 99.0 -99.0 99.0 -99.0 0.1 -0.1";
+
+/// SMIB cases for the extension models ESST1A and PSS2B (feature
+/// `rms-experimental`), each made from `smib_genrou_sexs_tgov1` (same network,
+/// dispatch, MBASE, ZSORCE and voltage setpoint):
+///
+/// - `smib_genrou_esst1a_tgov1`: SEXS replaced by [`ESST1A_LIBRARY`];
+/// - `smib_genrou_esst1a_lim_tgov1`: ESST1A with its limits narrowed
+///   ([`ESST1A_LIMITED`]), so that the fault drives VI, VA and the field
+///   voltage into their upper limits and the trip into their lower ones;
+/// - `smib_genrou_pss2b_sexs_tgov1`: the unit with [`PSS2B_LIBRARY`] added;
+/// - `smib_genrou_esst1a_pss2b_tgov1`: [`ESST1A_LIBRARY`] and
+///   [`PSS2B_LIBRARY`] together.
+///
+/// Records are written as `model_variant_cases` writes them.
+#[allow(dead_code)]
+pub fn ext_model_variant_cases() -> Vec<SmibCase> {
+    let base = wecc240_smib_cases()
+        .into_iter()
+        .find(|c| c.id == "smib_genrou_sexs_tgov1")
+        .expect("WECC 240 has a GENROU + SEXS + TGOV1 unit");
+    let mut records: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for rec in base.dyr.split('/').map(str::trim).filter(|r| !r.is_empty()) {
+        let tok: Vec<String> = rec
+            .replace(',', " ")
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect();
+        if tok[0] == "102" {
+            records.insert(tok[1].trim_matches('\'').to_owned(), tok[3..].to_vec());
+        }
+    }
+    let split = |s: &str| s.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+    let (g, sexs, tgov1) = (
+        records["GENROU"].clone(),
+        records["SEXS"].clone(),
+        records["TGOV1"].clone(),
+    );
+    let variants: Vec<(&str, VariantRecords)> = vec![
+        (
+            "smib_genrou_esst1a_tgov1",
+            vec![
+                ("GENROU", g.clone()),
+                ("ESST1A", split(ESST1A_LIBRARY)),
+                ("TGOV1", tgov1.clone()),
+            ],
+        ),
+        (
+            "smib_genrou_esst1a_lim_tgov1",
+            vec![
+                ("GENROU", g.clone()),
+                ("ESST1A", split(ESST1A_LIMITED)),
+                ("TGOV1", tgov1.clone()),
+            ],
+        ),
+        (
+            "smib_genrou_pss2b_sexs_tgov1",
+            vec![
+                ("GENROU", g.clone()),
+                ("SEXS", sexs),
+                ("TGOV1", tgov1.clone()),
+                ("PSS2B", split(PSS2B_LIBRARY)),
+            ],
+        ),
+        (
+            "smib_genrou_esst1a_pss2b_tgov1",
+            vec![
+                ("GENROU", g),
+                ("ESST1A", split(ESST1A_LIBRARY)),
+                ("TGOV1", tgov1),
+                ("PSS2B", split(PSS2B_LIBRARY)),
+            ],
+        ),
+    ];
+    variants
+        .into_iter()
+        .map(|(id, recs)| {
+            let mut dyr = String::from("    101 'GENCLS' 1     0.0000       0.0000      /\n");
+            for (model, params) in &recs {
+                dyr.push_str(&format!("    102 '{model}' 1 {} /\n", params.join(" ")));
+            }
+            let mut models: Vec<String> = recs.iter().map(|(m, _)| (*m).to_owned()).collect();
+            models.sort();
+            SmibCase {
+                id: id.to_owned(),
+                models,
+                unit: base.unit.clone(),
+                raw: base.raw.clone(),
+                dyr,
+                x_line: base.x_line,
+            }
+        })
+        .collect()
+}
+
 /// The network and dynamic data of a SMIB case.
 #[allow(dead_code)]
 pub fn smib_study(case: &SmibCase) -> (powerio::BalancedNetwork, powerio::DynamicCase) {
