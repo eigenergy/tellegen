@@ -12,6 +12,8 @@
 //!
 //! Templates reproduce the compiled PSS/E models (`template`), so a user
 //! starts from a validated model and changes it.
+//!
+//! @block Controllers as block diagrams
 
 use std::collections::HashMap;
 
@@ -71,6 +73,7 @@ fn is_zero(v: &f64) -> bool {
 
 /// One block. Time constants sit in the mass matrix; zero makes the state
 /// algebraic.
+// @block Block types
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Block {
@@ -429,6 +432,7 @@ pub struct GraphNode {
 }
 
 /// A controller as a block diagram.
+// @block Block graph
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BlockGraph {
     pub slot: Slot,
@@ -441,6 +445,7 @@ pub struct BlockGraph {
 }
 
 /// A graph checked and ordered for evaluation.
+// @block Compiled graph
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledGraph {
     pub graph: BlockGraph,
@@ -762,6 +767,7 @@ impl CompiledGraph {
 
     /// Build the operation list ([`Op`]) from the blocks, their wiring and
     /// the evaluation order.
+    // @block Compile: order and states
     fn compile(&mut self) -> Result<(), String> {
         let at = |i: usize| u32::try_from(i).map_err(|_| "the graph is too large".to_owned());
         let n = self.blocks.len();
@@ -1062,6 +1068,7 @@ impl CompiledGraph {
 
     /// Every node's output into `y` (one per node) and the state
     /// derivatives into `f`: the operation list, once through.
+    // @block Evaluate the graph
     fn run(&self, x: &[f64], ports: &[f64], f: &mut [f64], y: &mut [f64]) {
         let (terms, args) = (self.terms.as_slice(), self.args.as_slice());
         let span = |first: u32, len: u32| first as usize..(first + len) as usize;
@@ -1270,6 +1277,7 @@ impl CompiledGraph {
     /// on the steady-state map (limits left out); the device's own Newton
     /// then solves the limited model from here. `ports` holds the operating
     /// point; its reference entry is replaced.
+    // @block Steady state of a graph
     pub(crate) fn initial_guess(&self, ports: &[f64], target: f64) -> (Vec<f64>, f64) {
         let r = self.graph.slot.reference_port();
         let integ: Vec<(usize, usize)> = (0..self.blocks.len())

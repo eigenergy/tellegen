@@ -113,8 +113,8 @@ export const TELLEGEN_ERROR_CODES = {
     next: "Apply the edit with `update_case`, which solves it exactly.",
   },
   DYNAMICS_OFF: {
-    when: "Dynamic simulation is turned off in Settings.",
-    next: "Ask the person to turn Dynamics on in Settings.",
+    when: "Dynamic simulation is turned off in this build.",
+    next: "Tell the person dynamic simulation is not available in this build.",
   },
   DYNAMICS_ATTACHED: {
     when: "The case already has dynamic data and the import would replace it.",

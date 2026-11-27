@@ -244,7 +244,7 @@ The message says what to do for that call; the code is stable.
 | `INVALID_SORT` | `sort_by` does not apply to that kind of element. | Choose another `sort_by`. |
 | `SENSITIVITY_UNAVAILABLE` | The calculation shown has no sensitivity for the requested target. | Run a calculation that has one (DC OPF for prices), or change the target. |
 | `PREVIEW_UNAVAILABLE` | The calculation shown cannot predict the effect of an edit. | Apply the edit with `update_case`, which solves it exactly. |
-| `DYNAMICS_OFF` | Dynamic simulation is turned off in Settings. | Ask the person to turn Dynamics on in Settings. |
+| `DYNAMICS_OFF` | Dynamic simulation is turned off in this build. | Tell the person dynamic simulation is not available in this build. |
 | `DYNAMICS_ATTACHED` | The case already has dynamic data and the import would replace it. | Ask the person, then call `import_case` with `replace_dynamics: true`. |
 | `TRACE_UNAVAILABLE` | The browser cannot compute the checksum that identifies the case data. | Use a browser with Web Crypto, on an https page or localhost. |
 | `IMPORT_FAILED` | The file could not be read as a case. | Check the file name's extension and the text; the message says what failed. |

@@ -1,4 +1,5 @@
-/** Axis ranges and ticks of the trace charts. Pure. */
+/** Axis ranges and ticks of the trace charts. Pure.
+ * @block Chart axes */
 
 /** The smallest y span a chart shows for `unit`: a flat trace (a case at
  * rest) gets a readable axis around its value instead of ticks that all

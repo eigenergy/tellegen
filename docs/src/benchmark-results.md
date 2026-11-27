@@ -574,6 +574,7 @@ The RMS engine is validated against
 | Test | Cases | Data | Runs |
 |---|---|---|---|
 | `tests/rms_psid_validation.rs` | single-machine cases built from WECC 240 (the renewable plant included) | ships with the code | always |
+| `tests/rms_psid_validation.rs` | single-machine cases for the models WECC 240 does not use (GENROE, GENSAL, GENSAE, GENCLS, ESAC1A, EXST1), ESAC1A also at its limits | ships with the code | always |
 | `tests/rms_psid_validation.rs` | WECC 240, four 20 s scenarios | ships with the code | release profile (`just rms-validation`; ignored in debug) |
 | `tests/rms_validation.rs` | PowerSimulationsDynamics.jl's PSS/E benchmark cases (`test/benchmarks/psse`) | case data repository (`$TELLEGEN_CASE_DATA`) | where the data is |
 
@@ -592,8 +593,9 @@ study, so a change to the trajectories shows. Every run also meets two fixed
 physical tolerances on every machine's speed and rotor angle against the
 reference: `|Δω| < 1e-4` pu (6 mHz at 60 Hz, below governor deadbands) and
 `|Δδ| < 0.5°` (small against the swings a transient stability study judges).
-The largest differences are 2.1e-6 pu and 0.0076° on the single machines,
-3.2e-6 pu and 0.013° on WECC 240.
+The largest differences are 2.1e-6 pu and 0.0076° on the single machines of
+WECC 240, 7.1e-6 pu and 0.0089° on the model variants, 3.2e-6 pu and 0.013° on
+WECC 240.
 
 <a id="rms-validation-single-machine-cases-from-wecc-240"></a>
 
@@ -638,6 +640,38 @@ tellegen's own (PSS/E) plant; a deep fault (through 1/8 of it) passes that
 range and runs with PowerSimulationsDynamics.jl's gain. Its network-side
 powers are not compared, since PowerSimulationsDynamics.jl 0.16.2 derives
 them in post-processing.
+
+<a id="rms-validation-model-variants"></a>
+
+### Single-machine cases for the other models
+
+tellegen also accepts six models no WECC 240 unit carries. Each runs on the
+single machine of WECC 240's GENROU + SEXS + TGOV1 unit with one record
+replaced (`model_variant_cases` in `tests/support/smib.rs`): the GENROU record
+as GENROE, its salient-pole subset as GENSAL and GENSAE, its H and D as GENCLS
+(without exciter and governor), or SEXS replaced by the typical ESAC1A or EXST1
+set of tellegen's model library. ESAC1A runs once more with its limits narrowed
+around the operating point (VAMAX/VAMIN = 4/2.2, VRMAX/VRMIN = 3.5/2.5, at rest
+VA = VR = 2.92): in the fault VA rests on VAMAX for 0.77 s and on VAMIN for
+0.23 s, after the trip on VAMIN for 1.03 s. Same events, reference solver, step
+and bounds as above; the reference is `tests/data/rms_smib/psid_reference_models.json`.
+
+| Models | Event | Largest `|V|` difference (pu) | Largest speed difference (pu) | Largest angle difference (°) |
+|---|---|---|---|---|
+| GENROE, SEXS, TGOV1 | trip | 5.7e-7 | 5.8e-7 | 0.0002 |
+| GENROE, SEXS, TGOV1 | fault | 3.2e-6 | 9.1e-7 | 0.0017 |
+| GENSAL, SEXS, TGOV1 | trip | 1.0e-6 | 5.3e-7 | 0.0002 |
+| GENSAL, SEXS, TGOV1 | fault | 8.3e-6 | 7.1e-7 | 0.0013 |
+| GENSAE, SEXS, TGOV1 | trip | 9.1e-7 | 5.2e-7 | 0.0002 |
+| GENSAE, SEXS, TGOV1 | fault | 7.4e-6 | 4.9e-7 | 0.0006 |
+| GENCLS | trip | 1.8e-6 | 1.5e-6 | 0.0016 |
+| GENCLS | fault | 6.3e-6 | 7.1e-6 | 0.0089 |
+| GENROU, ESAC1A, TGOV1 | trip | 5.4e-7 | 5.7e-7 | 0.0002 |
+| GENROU, ESAC1A, TGOV1 | fault | 1.8e-6 | 5.7e-7 | 0.0002 |
+| GENROU, ESAC1A at its limits, TGOV1 | trip | 5.2e-7 | 5.5e-7 | 0.0001 |
+| GENROU, ESAC1A at its limits, TGOV1 | fault | 1.8e-6 | 5.3e-7 | 0.0002 |
+| GENROU, EXST1, TGOV1 | trip | 5.3e-7 | 5.7e-7 | 0.0001 |
+| GENROU, EXST1, TGOV1 | fault | 1.3e-6 | 5.8e-7 | 0.0006 |
 
 <a id="rms-validation-wecc-240"></a>
 
@@ -724,13 +758,6 @@ read from `$TELLEGEN_CASE_DATA/rms_validation` and
 | `hygov` (B) | GENCLS, GENROU, SEXS, HYGOV | 6.2e-4 |
 | `load_constant_power`, `load_constant_current` (B) | GENCLS, GENROU | 3.1e-4, 2.8e-4 |
 | `tvc_exst1` (B) | GENCLS (infinite bus), GENSAL, EXST1, HYGOV | 1.1e-2 |
-
-Every single branch trip of the IEEE 14-bus system runs to completion
-(`ieee14_every_branch_trip_completes`). After the trip of line 1-2 the slack
-machine's ESAC1A (KC = 0.2) chatters between its rectifier and limiter bounds;
-a damped Newton iteration handles it, and the run agrees with
-PowerSimulationsDynamics.jl to 7.8e-4 in voltage and 5e-5 in speed
-(`ieee14_line_1_2_against_psd`).
 
 <a id="rms-validation-findings"></a>
 

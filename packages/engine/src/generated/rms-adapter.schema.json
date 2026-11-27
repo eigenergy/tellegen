@@ -324,7 +324,7 @@
           "type": "string"
         },
         "role": {
-          "description": "`machine`, `exciter`, `governor`, `stabilizer` or `inverter`.",
+          "description": "`machine`, `exciter`, `governor`, `stabilizer`, `inverter` (a whole\ninverter-based unit), or one part of an inverter-based unit:\n`converter`, `electrical` (electrical control) or `plant` (plant\ncontroller).",
           "type": "string"
         }
       },

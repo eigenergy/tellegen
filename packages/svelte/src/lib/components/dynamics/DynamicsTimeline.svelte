@@ -1,4 +1,7 @@
 <script lang="ts">
+	/** The playback bar of a finished run: play, pause and speed, the event
+	 * markers, the time since the last event in cycles, and the traces under it.
+	 * @block Timeline */
 	import { getAppState, getController } from '../../context.svelte.js';
 	import { markers, sinceEvent } from '../../dynamics/events.js';
 	import { SPEEDS, type Speed } from '../../dynamics/player.svelte.js';
@@ -87,7 +90,7 @@
 
 {#if run && record}
 	<section
-		class={['timeline', { compact: app.compactLayout, flush }]}
+		class={['timeline', 'dyn-form', { compact: app.compactLayout, flush }]}
 		aria-label="Dynamics playback"
 		data-dyn-timeline
 		bind:offsetHeight={dockHeight}

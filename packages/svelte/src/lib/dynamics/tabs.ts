@@ -1,5 +1,6 @@
 /** Keyboard behaviour of a tablist (WAI-ARIA tabs pattern, automatic
- * activation): arrows move and select, Home and End go to the ends. */
+ * activation): arrows move and select, Home and End go to the ends.
+ * @block Tab keys */
 
 /** The tab index a key moves to from `i` of `n`, or null for other keys. */
 export function tabKey(key: string, i: number, n: number): number | null {

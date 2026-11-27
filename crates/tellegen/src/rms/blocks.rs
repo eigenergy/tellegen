@@ -6,8 +6,14 @@
 //! `licenses/PowerSimulationsDynamics.jl-LICENSE`). Each `*_mm` function is the
 //! mass-matrix form `M ẋ = rhs` and returns `(output, rhs)`; the plain form
 //! returns `(output, ẋ)`.
+//!
+//! @block Control blocks
 
 const EPS: f64 = f64::EPSILON;
+
+// @block Lags, washouts and lead-lags
+// First-order blocks, each in its mass-matrix form (a zero time constant
+// makes the state algebraic) and its plain form.
 
 /// `K/(1 + sT)` as `T ẏ = K u − y`.
 pub(crate) fn low_pass_mm(u: f64, y: f64, k: f64) -> (f64, f64) {
@@ -81,6 +87,9 @@ pub(crate) fn lead_lag(u: f64, x: f64, k: f64, t1: f64, t2: f64) -> (f64, f64) {
     (y, rhs / t2)
 }
 
+// @block Second-order filters
+// The second-order low pass and lead-lag of the stabilizers.
+
 /// `K/(1 + sT1 + s²T2)`: states `(x, y)`, `T2 ẋ = K u − T1 x − y`, `ẏ = x`.
 pub(crate) fn low_pass_2nd_mm(u: f64, x: f64, y: f64, k: f64, t1: f64) -> (f64, f64, f64) {
     (y, k * u - t1 * x - y, x)
@@ -102,6 +111,10 @@ pub(crate) fn lead_lag_2nd_mm(
     let y = t4_t2 * u + (t3 - t1 * t4_t2) * x1 + (1.0 - t4_t2) * x2;
     (y, dx1, dx2)
 }
+
+// @block Controllers and limits
+// The non-windup PI controller, the time constant with which a limited
+// state settles onto its limit, and the checks of limit pairs.
 
 /// Time constant (s) with which a state that a limit stops (a non-windup
 /// PI's integrator, the REGCA1 active current under LVPL) settles onto the
@@ -148,6 +161,10 @@ pub(crate) fn ordered(
         "{model} limits are swapped: {lo_name} = {lo} is above {hi_name} = {hi}"
     ))
 }
+
+// @block Exciter curves
+// The rectifier regulation of AC exciters and the saturation curves
+// fitted through two points.
 
 /// Rectifier regulation `FEX(I_N)` of IEEE Std 421.5 AC exciters.
 pub(crate) fn rectifier(i: f64) -> f64 {

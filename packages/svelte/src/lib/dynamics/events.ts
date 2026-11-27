@@ -2,7 +2,8 @@
  * 1101, cleared after 6 cycles") and as the engine runs them (`RmsEvent`).
  * Pure: the defaults, the cycle arithmetic, the sentences and the checks are
  * tested without a renderer. The engine checks every event again; its
- * refusal is shown verbatim when it disagrees. */
+ * refusal is shown verbatim when it disagrees.
+ * @block Events */
 
 import type { RmsEvent, RmsInspection } from '@tellegen/engine';
 
