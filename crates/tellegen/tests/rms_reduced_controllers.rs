@@ -364,13 +364,6 @@ fn esac6a_against_reference() {
 /// same run but for a limiter that stays at zero).
 #[cfg(feature = "rms-experimental")]
 #[test]
-#[ignore = "tellegen does not initialize this unit: `generator 102-1: initialization did not \
-            converge (residual 2.115e-2)`. The reference rests at VR = VFE = 2.9246, inside \
-            Vt VRMIN = 2.8899 and Vt VRMAX = 3.6504, with VH = 0. tellegen's steady-state guess \
-            leaves the limits out (VH = KH (VFE - VFELIM) = -0.051, so the lead-lag ahead of VR \
-            rests at 2.874); with VH back on its floor that is below Vt VRMIN, where VR is \
-            clamped. VFELIM 2.93 (guess 2.914), or either the VR limits or the VH path alone, \
-            initializes"]
 fn esac6a_field_current_limiter_below_its_floor_at_rest_against_reference() {
     let _switches = switches();
     let failures = compare(VFELIM_RUNS);

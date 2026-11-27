@@ -354,3 +354,62 @@ fn uelpq_acts_on_the_absorbed_reactive_power_in_a_run() {
         "Q down to {lo} with UELPQ, {lo_bare} without"
     );
 }
+
+/// OELIT and UELPQ on ESST1A, each already past its limit at the power flow
+/// (OELIT with IFDRAT 1.5: continuous limit 1.5 pu against the unit's 1.85
+/// at rest, heated far beyond C; UELPQ with a flat limit at Q = +0.4 pu
+/// against the unit's +0.23): the unit starts at rest with the limiter held
+/// at its output limit (VOEL at VOELMIN, VUEL at VUELMAX), its integrator
+/// at the same bound, the voltage reference taking up that output, and a
+/// quiet run stays there.
+#[cfg(feature = "rms-experimental")]
+#[test]
+fn limiters_past_their_limit_at_the_start_start_at_rest() {
+    if shipped_wecc240().is_none() {
+        return;
+    }
+    let _one = one_at_a_time();
+    let oel = "    102 'OELIT' 1 1.5 1.0 1.0 1.1 33.75 1200.0 0.05 0.5 -0.5 /\n";
+    let uel = "    102 'UELPQ' 1 0.4 0.0 0.0 0.05 0.5 0.5 /\n";
+    let (net, bare, _) = smib(Some(ESST1A));
+    let v_ref_bare = sim(&net, &bare, true).generators()[0].v_ref;
+    for (records, signal, held) in [(oel, "VOEL", -0.5), (uel, "VUEL", 0.5)] {
+        let (_, dyr, _) = smib(Some(&format!("{ESST1A}{records}")));
+        let s = sim(&net, &dyr, true);
+        assert!(
+            s.initial_residual() < 1e-8,
+            "{signal}: f(x0) = {:e}",
+            s.initial_residual()
+        );
+        let unit = &s.generators()[0];
+        let r = run(&s, 1.0, 0.0025, Vec::new());
+        let v = &r.channels[&format!("sig:exciter.{signal}:102")];
+        assert!(
+            v.iter().all(|&x| (x - held).abs() < 1e-9),
+            "{signal} from {} to {}",
+            v[0],
+            v.last().unwrap()
+        );
+        let pre = &signal[1..].to_ascii_lowercase();
+        let i = unit
+            .states
+            .iter()
+            .position(|n| n == &format!("{pre}_x"))
+            .unwrap();
+        let x = unit.initial_states[i];
+        assert!((x - held.abs()).abs() < 1e-9, "{signal}: integrator at {x}");
+        // VOEL and VUEL enter the voltage error with the stabilizer signal.
+        let d = unit.v_ref - v_ref_bare;
+        assert!(
+            (d + held).abs() < 1e-6,
+            "{signal}: V_ref {} against {v_ref_bare} without the limiter",
+            unit.v_ref
+        );
+        for (key, series) in &r.channels {
+            let moved = series
+                .iter()
+                .fold(0.0_f64, |m, x| m.max((x - series[0]).abs()));
+            assert!(moved < 1e-8, "{signal}: {key} moves by {moved:e}");
+        }
+    }
+}

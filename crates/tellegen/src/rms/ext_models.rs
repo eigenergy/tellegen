@@ -846,6 +846,99 @@ mod tests {
         }
     }
 
+    /// The largest state derivative of `c` at `x` and its output, with the
+    /// reference `v_ref` in the ports.
+    fn at_rest(c: &CompiledGraph, x: &[f64], ports: [f64; 6], v_ref: f64) -> (f64, f64) {
+        let mut p = ports;
+        p[3] = v_ref;
+        let mut f = vec![0.0; c.n_states()];
+        let out = c.eval(x, &p, &mut f);
+        (f.iter().fold(0.0_f64, |a, v| a.max(v.abs())), out)
+    }
+
+    /// ESAC6A whose exciter field current limiter rests below its zero
+    /// floor next to the lower limit of VR: `KH (VFE − VFELIM)` is −0.05
+    /// and `Vt VRMIN` 0.02 below VFE. The steady state rests with VH on its
+    /// floor and VR = VFE within its limits; with the floor left out, VR's
+    /// input would rest below `Vt VRMIN`, where VR is clamped.
+    #[test]
+    fn esac6a_starts_at_rest_with_its_field_current_limiter_on_its_floor() {
+        let ports = [1.0, 0.0, 1.5, 1.0, 0.8, 0.1];
+        let efd = 2.0;
+        let plain = CompiledGraph::new(&esac6a(&ESAC6A).unwrap()).unwrap();
+        let (x, v_ref) = plain.initial_guess(&ports, efd);
+        let mut p = ports;
+        p[3] = v_ref;
+        let vfe = signal(&plain, &x, &p, "VFE");
+        let mut c = ESAC6A;
+        // VRMAX, VRMIN, VFELIM, KH, VHMAX, TH, TJ
+        c[8] = 2.0 * vfe;
+        c[9] = vfe - 0.02;
+        c[11] = vfe + 0.025;
+        c[12] = 2.0;
+        c[13] = 0.3;
+        c[14] = 0.2;
+        c[15] = 0.1;
+        let g = CompiledGraph::new(&esac6a(&c).unwrap()).unwrap();
+        let (x, v_ref) = g.initial_guess(&ports, efd);
+        let (worst, out) = at_rest(&g, &x, ports, v_ref);
+        assert!(worst < 1e-9, "largest derivative at rest {worst}");
+        assert!((out - efd).abs() < 1e-9, "Efd {out}");
+        p[3] = v_ref;
+        let vh_ll = signal(&g, &x, &p, "VH_ll");
+        assert!((vh_ll + 0.05).abs() < 1e-9, "VH lead-lag {vh_ll}");
+        assert_eq!(signal(&g, &x, &p, "VH"), 0.0);
+        let vr = signal(&g, &x, &p, "VR");
+        assert!((vr - vfe).abs() < 1e-9 && vr > c[9] * ports[0], "VR {vr}");
+        assert!(vfe + vh_ll < c[9] * ports[0]);
+    }
+
+    /// OELIT and UELPQ on ESAC6A, each already past its limit at rest
+    /// (field current 3.0 against a continuous limit of 2.4, heated far
+    /// beyond C; reactive power −0.5 against the line at −0.42): the steady
+    /// state holds the limiter's integrator at its bound and its output at
+    /// VOELMIN or VUELMAX, and the voltage reference takes up that output.
+    #[test]
+    fn limiters_past_their_limit_rest_at_their_output_limit() {
+        let plain = CompiledGraph::new(&esac6a(&ESAC6A).unwrap()).unwrap();
+        for (oel, uel, ports, id, held) in [
+            (
+                Some(&OEL[..]),
+                None,
+                [1.0, 0.0, 3.0, 1.0, 0.8, 0.1],
+                "VOEL",
+                -0.5,
+            ),
+            (
+                None,
+                Some(&UEL[..]),
+                [1.0, 0.0, 1.5, 1.0, 0.8, -0.5],
+                "VUEL",
+                0.5,
+            ),
+        ] {
+            let g = CompiledGraph::new(&with_limiters(esac6a(&ESAC6A).unwrap(), oel, uel).unwrap())
+                .unwrap();
+            let name = &g.graph.name;
+            let (_, v_ref0) = plain.initial_guess(&ports, 2.0);
+            let (x, v_ref) = g.initial_guess(&ports, 2.0);
+            let (worst, out) = at_rest(&g, &x, ports, v_ref);
+            assert!(worst < 1e-9, "{name}: largest derivative at rest {worst}");
+            assert!((out - 2.0).abs() < 1e-9, "{name}: Efd {out}");
+            let mut p = ports;
+            p[3] = v_ref;
+            let v = signal(&g, &x, &p, id);
+            assert!((v - held).abs() < 1e-9, "{name}: {id} {v}");
+            let pre = &id[1..].to_ascii_lowercase();
+            let xi = x[state(&g, &format!("{pre}_x"))];
+            assert!((xi - held.abs()).abs() < 1e-9, "{name}: integrator {xi}");
+            assert!(
+                (v_ref - (v_ref0 - held)).abs() < 1e-9,
+                "{name}: V_ref {v_ref} against {v_ref0}"
+            );
+        }
+    }
+
     /// OELIT's limit follows its heating state: `ILIM` while the
     /// accumulated heating is below 95 % of C, `ICONT` from C on, linear in
     /// between; the heating grows by `(Ifd/Ipick)² − 1` above the pickup
