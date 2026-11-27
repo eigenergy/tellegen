@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
 	import { displayFmt } from '../format.js';
-	import { limitWords } from '../diagram/verdict.js';
-	import { LOADING_AMBER, LOADING_ATTENTION, LOADING_BASE, LOADING_RED } from '../colors.js';
+	import { lineLoadingKey } from '../map-legend.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -11,11 +10,7 @@
 	const diagramOpen = $derived(!!ctrl.singleLineShown);
 	const rgb = (c: readonly number[]) => `rgb(${c.slice(0, 3).join(' ')})`;
 	/** The map's line colours, in the same three steps as the diagram's Limits key. */
-	const LINE_KEY = $derived([
-		{ label: `Below ${Math.round(LOADING_ATTENTION * 100)}%`, color: rgb(LOADING_BASE) },
-		{ label: 'Near limit', color: rgb(LOADING_AMBER) },
-		{ label: limitWords(ctrl.activeFormulation).key, color: rgb(LOADING_RED) }
-	]);
+	const LINE_KEY = $derived(lineLoadingKey(ctrl.activeFormulation));
 	/** The last calculation failed: the status line above already says so. */
 	const failed = $derived.by(() => {
 		const c = ctrl.activeSolvable;
@@ -75,8 +70,8 @@
 	</div>
 	<p class="legend-title">Lines</p>
 	<ul class="line-key" aria-label="Line colors">
-		{#each LINE_KEY as item (item.label)}
-			<li><i style:background={item.color}></i>{item.label}</li>
+		{#each LINE_KEY as item (item.key)}
+			<li><i style:background={rgb(item.color)}></i>{item.label}</li>
 		{/each}
 	</ul>
 {:else if ctrl.activeSolvable?.solving}

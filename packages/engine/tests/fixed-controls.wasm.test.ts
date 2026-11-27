@@ -9,7 +9,7 @@ import {
   ingest_json_drop,
 } from "../src/wasm-pkg/tellegen.js";
 
-it("requires an explicit fixed-settings choice and preserves it through browser-engine reload", () => {
+it("requires an explicit fixed-settings choice and preserves it through browser-engine reload", async () => {
   initSync({
     module: readFileSync(
       new URL("../src/wasm-pkg/tellegen_bg.wasm", import.meta.url),
@@ -20,21 +20,25 @@ it("requires an explicit fixed-settings choice and preserves it through browser-
   const original = JSON.parse(ingest_dist_case(source, "dss"));
   expect(original.mc_pf_supported).toBe(false);
   expect(original.mc_fixed_controls_available).toBe(true);
-  const fixed = parseApiResult<IngestedDistCase>(
+  const fixed = await parseApiResult<IngestedDistCase>(
     "ingest_distribution",
     prepare_mc_fixed_controls(original.module_json),
   );
   expect(fixed.mc_pf_supported).toBe(true);
   expect(fixed.mc_fixed_controls).toBe(true);
   expect(fixed.mc_fixed_controls_available).toBe(false);
-  expect(() => validateApiResult("ingest_distribution", {
-    ...fixed,
-    mc_fixed_controls: "true",
-  })).toThrow("/mc_fixed_controls");
-  expect(() => validateApiResult("ingest_distribution", {
-    ...fixed,
-    mc_fixed_controls_available: 1,
-  })).toThrow("/mc_fixed_controls_available");
+  await expect(
+    validateApiResult("ingest_distribution", {
+      ...fixed,
+      mc_fixed_controls: "true",
+    }),
+  ).rejects.toThrow("/mc_fixed_controls");
+  await expect(
+    validateApiResult("ingest_distribution", {
+      ...fixed,
+      mc_fixed_controls_available: 1,
+    }),
+  ).rejects.toThrow("/mc_fixed_controls_available");
   expect(fixed.module_json).not.toBe(original.module_json);
   const restored = JSON.parse(
     ingest_json_drop(new TextEncoder().encode(fixed.module_json)),

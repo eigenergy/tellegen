@@ -340,7 +340,10 @@ export class BrowserRmsCase {
       { signal },
     );
     this.#generation = h.generation;
-    this.#inspection = parseApiResult<RmsInspection>("rms_inspection", value);
+    this.#inspection = await parseApiResult<RmsInspection>(
+      "rms_inspection",
+      value,
+    );
   }
 
   /** Run `seconds` without events: how far the case drifts from rest. */
@@ -481,11 +484,11 @@ export function buildRunRequest(
 }
 
 /** Turn the worker's buffers into an {@link RmsRun} (no copy). */
-export function unpackRun(
+export async function unpackRun(
   request: RmsRunRequest,
   value: RmsRunValue,
   workerMs: number,
-): RmsRun {
+): Promise<RmsRun> {
   if (
     !value ||
     typeof value !== "object" ||
@@ -495,7 +498,7 @@ export function unpackRun(
     throw new Error(
       "RMS run must contain Float64Array time and values buffers",
     );
-  const meta = parseApiResult<RmsRunMeta>("rms_run_meta", value.meta);
+  const meta = await parseApiResult<RmsRunMeta>("rms_run_meta", value.meta);
   if (new Set(meta.keys).size !== meta.keys.length)
     throw new Error("RMS run contains duplicate channel keys");
   if (

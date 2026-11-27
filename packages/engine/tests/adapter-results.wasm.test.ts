@@ -31,23 +31,23 @@ beforeAll(() =>
   }),
 );
 
-it("validates actual import, geographic, layout and Study export responses", () => {
-  const input = balanced();
-  parseApiResult("classifier", wasm.classify_json(bytes(input.module_json)));
-  parseApiResult("json_drop", wasm.ingest_json_drop(bytes(input.module_json)));
-  parseApiResult("json_drop", wasm.ingest_json_drop(bytes("{}")));
-  const geo = parseApiResult<{ layer: string }>(
+it("validates actual import, geographic, layout and Study export responses", async () => {
+  const input = await balanced();
+  await parseApiResult("classifier", wasm.classify_json(bytes(input.module_json)));
+  await parseApiResult("json_drop", wasm.ingest_json_drop(bytes(input.module_json)));
+  await parseApiResult("json_drop", wasm.ingest_json_drop(bytes("{}")));
+  const geo = await parseApiResult<{ layer: string }>(
     "parsed_geo",
     wasm.parse_geo(
       bytes("bus_i,lat,lon\n1,33,-84\n2,34,-84\n3,34,-83\n"),
       "coords.csv",
     ),
   );
-  parseApiResult(
+  await parseApiResult(
     "ingest_balanced",
     wasm.apply_geo(input.module_json, geo.layer),
   );
-  parseApiResult(
+  await parseApiResult(
     "ingest_balanced",
     wasm.apply_layout(
       input.module_json,
@@ -55,7 +55,7 @@ it("validates actual import, geographic, layout and Study export responses", () 
       "manual",
     ),
   );
-  parseApiResult(
+  await parseApiResult(
     "tx_layout",
     wasm.tx_schematic_layout(
       JSON.stringify({
@@ -71,22 +71,22 @@ it("validates actual import, geographic, layout and Study export responses", () 
   );
   const study = new wasm.Study(input.module_json, "dcopf");
   try {
-    parseApiResult("exported_case", study.export("matpower"));
-    parseApiResult("geo_report", study.apply_geo(geo.layer));
+    await parseApiResult("exported_case", study.export("matpower"));
+    await parseApiResult("geo_report", study.apply_geo(geo.layer));
   } finally {
     study.free();
   }
-  parseApiResult("regulated", wasm.solve_regulated(input.module_json));
+  await parseApiResult("regulated", wasm.solve_regulated(input.module_json));
 });
 
-it("validates actual multiconductor preparation and reports unavailable formulations faithfully", () => {
-  const input = distribution();
-  parseApiResult("json_drop", wasm.ingest_json_drop(bytes(input.module_json)));
-  parseApiResult(
+it("validates actual multiconductor preparation and reports unavailable formulations faithfully", async () => {
+  const input = await distribution();
+  await parseApiResult("json_drop", wasm.ingest_json_drop(bytes(input.module_json)));
+  await parseApiResult(
     "mc_layout",
     wasm.mc_schematic_layout(JSON.stringify(input.graph), "{}"),
   );
-  parseApiResult(
+  await parseApiResult(
     "energized",
     wasm.prepare_mc_energized_network(input.module_json),
   );
@@ -95,10 +95,10 @@ it("validates actual multiconductor preparation and reports unavailable formulat
     const prepared = retained.prepare_energized();
     try {
       expect(
-        parseApiResult<{ input_retained: boolean }>(
+        (await parseApiResult<{ input_retained: boolean }>(
           "energized_retained",
           prepared.take_payload(),
-        ).input_retained,
+        )).input_retained,
       ).toBe(true);
       prepared.take_input()?.free();
     } finally {
@@ -107,7 +107,7 @@ it("validates actual multiconductor preparation and reports unavailable formulat
   } finally {
     retained.free();
   }
-  const capabilities = parseApiResult<
+  const capabilities = await parseApiResult<
     Array<{ formulation: string; available: boolean }>
   >("capabilities", wasm.capabilities_json());
   expect(
@@ -116,10 +116,10 @@ it("validates actual multiconductor preparation and reports unavailable formulat
   expect(
     capabilities.find((row) => row.formulation === "dcopf")?.available,
   ).toBe(true);
-  parseApiResult("memory_stats", wasm.memory_stats());
+  await parseApiResult("memory_stats", wasm.memory_stats());
 });
 
-it("validates actual detailed DC and coupled AC/DC results", () => {
+it("validates actual detailed DC and coupled AC/DC results", async () => {
   const converter = (id: string, positive: string, control: unknown) => ({
     id,
     positive,
@@ -155,8 +155,8 @@ it("validates actual detailed DC and coupled AC/DC results", () => {
       converter("load", "b", { kind: "active_power", mw: -100 }),
     ],
   };
-  parseApiResult("dc_grid", wasm.solve_dc_grid(JSON.stringify(grid)));
-  parseApiResult(
+  await parseApiResult("dc_grid", wasm.solve_dc_grid(JSON.stringify(grid)));
+  await parseApiResult(
     "ac_dc",
     wasm.solve_ac_dc(
       source("crates/tellegen/tests/data/transmission-mtdc.pio.json"),
@@ -166,8 +166,8 @@ it("validates actual detailed DC and coupled AC/DC results", () => {
   );
 });
 
-it("validates actual complete synthetic output and session ingestion", () => {
-  parseApiResult(
+it("validates actual complete synthetic output and session ingestion", async () => {
+  await parseApiResult(
     "synth_places",
     wasm.synth_load_places(
       bytes(
@@ -195,26 +195,26 @@ it("validates actual complete synthetic output and session ingestion", () => {
     target_bus_count: 10,
     seed: 7,
   });
-  parseApiResult("synth_queries", wasm.synth_overpass_queries(request));
-  parseApiResult("synth_generated", wasm.synth_generate(request));
+  await parseApiResult("synth_queries", wasm.synth_overpass_queries(request));
+  await parseApiResult("synth_generated", wasm.synth_generate(request));
   const session = new wasm.SynthSession(request);
   try {
     let done = false;
     for (let step = 0; step < 50 && !done; step++)
-      done = parseApiResult<{ done: boolean }>(
+      done = (await parseApiResult<{ done: boolean }>(
         "synth_step",
         session.advance(),
-      ).done;
+      )).done;
     expect(done).toBe(true);
-    parseApiResult("ingest_balanced", session.ingest());
-    parseApiResult("ingest_balanced_view", session.ingest_view());
+    await parseApiResult("ingest_balanced", session.ingest());
+    await parseApiResult("ingest_balanced_view", session.ingest_view());
   } finally {
     session.free();
   }
 });
 
 
-it("validates detailed drawing output from the licensed CGMES fixture", () => {
+it("validates detailed drawing output from the licensed CGMES fixture", async () => {
   const names = ["NodeBreaker_EQ.xml", "NodeBreaker_SSH.xml"];
   const files = names.map(name => bytes(source(`tests/data/node-breaker/${name}`)));
   const joined = new Uint8Array(files[0].length + files[1].length);
@@ -226,11 +226,11 @@ it("validates detailed drawing output from the licensed CGMES fixture", () => {
     const zipped = wasm.CaseCollection.from_zip("node-breaker.zip", zip);
     let imported: { payload: { topology: { equipment: NetworkEquipment } } };
     try {
-      const inspection = parseApiResult<{ candidates: { selection: { members: string[]; format: string } }[] }>("collection_inspection", zipped.inspect());
+      const inspection = await parseApiResult<{ candidates: { selection: { members: string[]; format: string } }[] }>("collection_inspection", zipped.inspect());
       expect(inspection.candidates).toHaveLength(1);
       expect(inspection.candidates[0].selection.members).toEqual(names);
       expect(inspection.candidates[0].selection.format).toBe("cgmes");
-      imported = parseApiResult("collection_import", zipped.ingest(JSON.stringify(inspection.candidates[0].selection)));
+      imported = await parseApiResult("collection_import", zipped.ingest(JSON.stringify(inspection.candidates[0].selection)));
       expect(() => zipped.ingest(JSON.stringify({ primary: names[0], format: "cgmes" }))).toThrow("companion documents");
     } finally { zipped.free(); }
     const equipment = imported.payload.topology.equipment;
@@ -240,12 +240,12 @@ it("validates detailed drawing output from the licensed CGMES fixture", () => {
     expect(drawing?.switches.find(item => item.name === "DSC1")?.open).toBe(true);
     if (!drawing) throw new Error("Current engine omitted detailed drawing output");
     const network = { id: "station", name: "Station", base_mva: 100, synthetic_coords: true, buses: [], branches: [], equipment };
-    validateApiResult("http_network", network);
+    await validateApiResult("http_network", network);
     const malformed = { ...equipment, node_breaker: { ...drawing, switches: drawing.switches.map((item, i) => i === 0 ? { ...item, open: "yes" } : item) } };
-    expect(() => validateApiResult("http_network", { ...network, equipment: malformed })).toThrow("/node_breaker/switches/0/open");
-    expect(() => validateApiResult("ingest_balanced", { ...imported.payload, topology: { ...imported.payload.topology, equipment: malformed } })).toThrow("/node_breaker/switches/0/open");
+    await expect(validateApiResult("http_network", { ...network, equipment: malformed })).rejects.toThrow("/node_breaker/switches/0/open");
+    await expect(validateApiResult("ingest_balanced", { ...imported.payload, topology: { ...imported.payload.topology, equipment: malformed } })).rejects.toThrow("/node_breaker/switches/0/open");
     const { node_breaker: _detail, ...legacy } = equipment;
-    validateApiResult("http_network", { ...network, equipment: legacy });
-    validateApiResult("ingest_balanced", { ...imported.payload, topology: { ...imported.payload.topology, equipment: legacy } });
+    await validateApiResult("http_network", { ...network, equipment: legacy });
+    await validateApiResult("ingest_balanced", { ...imported.payload, topology: { ...imported.payload.topology, equipment: legacy } });
   } finally { collection.free(); }
 });

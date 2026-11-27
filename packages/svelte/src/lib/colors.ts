@@ -125,6 +125,32 @@ export const demandGradient = `linear-gradient(90deg, ${DEMAND_STOPS.map(
 		`rgb(${s[0]} ${s[1]} ${s[2]}) ${((i / (DEMAND_STOPS.length - 1)) ** 2 * 100).toFixed(2)}%`
 ).join(', ')})`;
 
+/** One colour stop of a legend bar: its colour and its place along the bar,
+ * from 0 at the low end to 1 at the high end. */
+export interface ColorStop {
+	offset: number;
+	color: RGBA;
+}
+
+/** The stops of the bus colour ramp for `mode`, placed where `scalarColor`
+ * puts them, so a legend drawn from them matches the map. The demand stops
+ * sit on its square-root scale, as in `demandGradient`. */
+export function scalarStops(mode: DisplayMode, theme: RampTheme = 'light'): ColorStop[] {
+	const stops =
+		mode === 'demand'
+			? DEMAND_STOPS
+			: mode === 'angle'
+				? ANGLE_STOPS
+				: theme === 'dark'
+					? PRICE_STOPS_DARK
+					: PRICE_STOPS;
+	const last = stops.length - 1;
+	return stops.map((color, i) => ({
+		offset: mode === 'demand' ? (i / last) ** 2 : i / last,
+		color
+	}));
+}
+
 /** Trimmed nodal value color domain: 5th to 95th percentile, with a one-unit
  * minimum span. Nodal values are heavy tailed when one binding line pins a
  * handful of buses far from the pack) so min-max scaling compresses the pack
@@ -284,7 +310,7 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 export const LOADING_ATTENTION = 0.9;
 /** Loading from which a branch is drawn red: at its rating, less display rounding noise
  * (the diagram's `LOADING_TOLERANCE`). */
-const LOADING_AT_LIMIT = 1 - 1e-5;
+export const LOADING_AT_LIMIT = 1 - 1e-5;
 
 export const LOADING_BASE: RGBA = [124, 132, 143, 200];
 export const LOADING_AMBER: RGBA = [227, 160, 8, 240];

@@ -30,7 +30,7 @@ async function callIsolated(request: Parameters<EngineHost["call"]>[0], signal?:
 
 export const studyBackend: StudyBackend = {
   async create(request, signal) {
-    return parseApiResult(
+    return await parseApiResult(
       "study_bundle",
       await callIsolated(
         { op: "study_document_create", request: JSON.stringify(request) },
@@ -39,7 +39,7 @@ export const studyBackend: StudyBackend = {
     ) as StudyBundle;
   },
   async validate(text) {
-    return parseApiResult(
+    return await parseApiResult(
       "study_bundle",
       await callIsolated({ op: "study_document_import", bundle: text }),
     ) as StudyBundle;
@@ -59,8 +59,8 @@ export const studyBackend: StudyBackend = {
       throw new Error("Invalid engine Study response");
     const value = response as Record<string, unknown>;
     return {
-      bundle: validateApiResult<StudyBundle>("study_bundle", value.bundle),
-      result: validateApiResult<StudyOperationResult>(
+      bundle: await validateApiResult<StudyBundle>("study_bundle", value.bundle),
+      result: await validateApiResult<StudyOperationResult>(
         "study_result",
         value.result,
       ),
