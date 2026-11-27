@@ -481,15 +481,18 @@ impl RelayState {
         self.opened_at = None;
     }
 
+    /// Whether a trip at `t` may start a reclose (IEEE C37.104 multi-shot
+    /// sequence): the shots are counted per sequence, and a trip within the
+    /// reclaim time after a reclose continues the sequence, which locks out
+    /// once its shots are used up. A reclose that held for the reclaim time
+    /// was successful: the next trip starts a new sequence.
     pub(crate) fn ar_available(&mut self, t: f64) -> bool {
         let Some(ar) = &self.spec.autoreclose else {
             return false;
         };
-        if let Some(rt) = self.reclosed_at {
-            if t - rt <= ar.reclaim {
-                return false;
-            }
+        if self.reclosed_at.is_some_and(|rt| t - rt > ar.reclaim) {
             self.shots_used = 0;
+            self.reclosed_at = None;
         }
         self.shots_used < ar.shots
     }

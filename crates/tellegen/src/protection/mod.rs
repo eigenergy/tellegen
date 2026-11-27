@@ -787,7 +787,12 @@ fn default_bf_current() -> f64 {
     0.1
 }
 
-/// Three-pole auto-reclose (79) after trips of initiating functions.
+/// Three-pole auto-reclose (79) after trips of initiating functions. A
+/// sequence recloses up to `shots` times: a trip within the reclaim time
+/// after a reclose takes the next shot, and the trip after the last shot
+/// (or one by a function that does not start reclosing) locks out. A
+/// reclose that holds for the reclaim time ends the sequence; the next trip
+/// starts a new one.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AutoReclose {
     #[serde(default = "default_dead_time")]
@@ -1560,7 +1565,10 @@ impl ProtectionRuntime {
                 detail: String::new(),
             });
             r.trip_time = Some(t);
-            r.ar_pending = ar && r.ar_available(t);
+            // Asked for every trip: a reclose that held for the reclaim time
+            // ends its sequence even when this trip does not start reclosing.
+            let available = r.ar_available(t);
+            r.ar_pending = ar && available;
             let tb = t + r.spec.breaker_time;
             let mut targets = r.site.trips.clone();
             if zone_trip {
@@ -1595,7 +1603,12 @@ impl ProtectionRuntime {
                     relay: r.spec.id.clone(),
                     function: "79".into(),
                     kind: OperationKind::Lockout,
-                    detail: "trip within the reclaim time or shots used up".into(),
+                    detail: if ar {
+                        "trip within the reclaim time with the shots used up"
+                    } else {
+                        "trip within the reclaim time by a function that does not start reclosing"
+                    }
+                    .into(),
                 });
             }
         }

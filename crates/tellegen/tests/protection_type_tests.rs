@@ -1817,7 +1817,6 @@ fn ieee_c37_119_current_check_threshold() {
 /// shots the recloser recloses after the dead time following each of the
 /// first two trips and locks out at the third trip.
 #[test]
-#[ignore = "IEEE C37.104 multi-shot sequence, 2 shots set: one reclose (0.47 s) and lockout at the second trip (0.49 s), as any trip within the reclaim time after a reclose locks out; required: a second reclose and lockout at the third trip"]
 fn ieee_c37_104_multi_shot_sequence() {
     let mut d = distance(Characteristic::Mho, three_zones(), [0.0, 0.0]);
     d.zones[0].autoreclose = true;
