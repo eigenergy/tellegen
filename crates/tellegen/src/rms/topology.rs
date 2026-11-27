@@ -559,3 +559,293 @@ pub(crate) fn hint_bus(message: &str) -> Option<usize> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{extinguish, hint_bus, relieve};
+    use crate::rms::system::{DynSystem, C64};
+    use crate::rms::{LoadModel, RmsSimulation};
+
+    /// Five buses on 100 MVA: the infinite bus 1 feeds the load bus 3
+    /// (50 MW), which feeds 4 (30 MW), which feeds 5 (10 MW and a unit);
+    /// a unit at 2 feeds 3. Lines 1-3, 2-3, 3-4, 4-5.
+    const CHAIN_RAW: &str = "0,   100.00,  32, 0, 1, 60.00     / chain
+
+
+1,'B1', 230.0000,3,   1,   1,   1,1.00000,   0.0000
+2,'B2', 230.0000,2,   1,   1,   1,1.00000,   0.0000
+3,'B3', 230.0000,1,   1,   1,   1,1.00000,   0.0000
+4,'B4', 230.0000,1,   1,   1,   1,1.00000,   0.0000
+5,'B5', 230.0000,2,   1,   1,   1,1.00000,   0.0000
+ 0 /End of Bus data, Begin Load data
+3,'1 ',1,   1,   1, 50.000, 10.000, 0.000, 0.000, 0.000, 0.000,   1,1
+4,'1 ',1,   1,   1, 30.000, 5.000, 0.000, 0.000, 0.000, 0.000,   1,1
+5,'1 ',1,   1,   1, 10.000, 2.000, 0.000, 0.000, 0.000, 0.000,   1,1
+ 0 /End of Load data, Begin Fixed shunt data
+ 0 /End of Fixed shunt data, Begin Generator data
+1,'1 ', 0.000, 0.000, 9999.000, -9999.000,1.00000, 0, 100.000, 0.00000E+0, 1.00000E-5, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+2,'1 ', 30.000, 0.000, 9999.000, -9999.000,1.00000, 0, 100.000, 0.00000E+0, 3.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+5,'1 ', 20.000, 0.000, 9999.000, -9999.000,1.00000, 0, 100.000, 0.00000E+0, 3.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+ 0 /End of Generator data, Begin Branch data
+1, 3,'1 ', 0.00000E+0, 5.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+2, 3,'1 ', 0.00000E+0, 5.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+3, 4,'1 ', 0.00000E+0, 5.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+4, 5,'1 ', 0.00000E+0, 5.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+ 0 /End of Branch data, Begin Transformer data
+ 0 /End of Transformer data, Begin Area interchange data
+ 0 /End of Area interchange data, Begin Two-terminal dc line data
+ 0 /End of Two-terminal dc line data, Begin VSC dc line data
+ 0 /End of VSC dc line data, Begin Impedance correction table data
+ 0 /End of Impedance correction table data, Begin Multi-terminal dc line data
+ 0 /End of Multi-terminal dc line data, Begin Multi-section line data
+ 0 /End of Multi-section line data, Begin Zone data
+ 0 /End of Zone data, Begin Inter-area transfer data
+ 0 /End of Inter-area transfer data, Begin Owner data
+ 0 /End of Owner data, Begin FACTS device data
+ 0 /End of FACTS device data, Begin Switched shunt data
+ 0 /End of Switched shunt data, Begin GNE device data
+ 0 /End of GNE device data
+Q
+";
+
+    /// The chain's system (classical machines at 2 and 5, the infinite bus a
+    /// source) and its start state.
+    fn chain() -> (DynSystem, Vec<f64>) {
+        let src = powerio::Source::from_memory("case.raw", CHAIN_RAW.as_bytes().to_vec()).unwrap();
+        let module = powerio::parse(src).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        let dyr = powerio::parse_dyr(
+            "1 'GENCLS' 1 0.0 0.0 /\n2 'GENCLS' 1 3.0 0.0 /\n5 'GENCLS' 1 3.0 0.0 /\n",
+        )
+        .unwrap();
+        let sim = RmsSimulation::new(net, &dyr, LoadModel::ConstantPower).unwrap();
+        (sim.sys.clone(), sim.x0.clone())
+    }
+
+    /// Opens the branch `from`-`to` (bus numbers).
+    fn open(sys: &mut DynSystem, from: usize, to: usize) {
+        let e = sys
+            .branch_keys
+            .iter()
+            .position(|(a, b, _)| (*a, *b) == (from, to))
+            .unwrap();
+        sys.closed[e] = false;
+        sys.rebuild_ybus();
+    }
+
+    fn load_mw(sys: &DynSystem, bus: usize) -> f64 {
+        sys.loads[sys.dense_bus(bus).unwrap()].p0() * sys.sbase
+    }
+
+    fn unit_tripped(sys: &DynSystem, bus: usize) -> bool {
+        sys.devices
+            .iter()
+            .find(|d| d.bus_number == bus)
+            .unwrap()
+            .tripped
+            .is_some()
+    }
+
+    /// The load (MW) at buses 3, 4, 5 and whether the units at 2 and 5 and
+    /// the source at 1 are out.
+    fn state(sys: &DynSystem) -> ([f64; 3], [bool; 3]) {
+        (
+            [load_mw(sys, 3), load_mw(sys, 4), load_mw(sys, 5)],
+            [
+                sys.sources[0].y == C64::new(0.0, 0.0),
+                unit_tripped(sys, 2),
+                unit_tripped(sys, 5),
+            ],
+        )
+    }
+
+    const INTACT: ([f64; 3], [bool; 3]) = ([50.0, 30.0, 10.0], [false, false, false]);
+
+    fn assert_state(sys: &DynSystem, expected: ([f64; 3], [bool; 3]), what: &str) {
+        let (loads, out) = state(sys);
+        for (l, e) in loads.iter().zip(expected.0) {
+            assert!(
+                (l - e).abs() < 1e-9,
+                "{what}: loads {loads:?}, expected {:?}",
+                expected.0
+            );
+        }
+        assert_eq!(
+            out, expected.1,
+            "{what}: units out (source 1, unit 2, unit 5)"
+        );
+    }
+
+    /// The bus a solver failure names: its largest residual in a bus row
+    /// (`bus 123 Vr`), a unit's state (`G123 …`) or a plant's (`R123 …`);
+    /// nothing when no number follows.
+    #[test]
+    fn hint_bus_reads_the_bus_of_the_largest_residual() {
+        let fail = |what: &str| {
+            format!("the Newton step does not lower the residual 1.2e-3 (largest in {what})")
+        };
+        assert_eq!(hint_bus(&fail("bus 123 Vr")), Some(123));
+        assert_eq!(hint_bus(&fail("bus 7 Vi")), Some(7));
+        assert_eq!(hint_bus(&fail("G4567 'x' omega")), Some(4567));
+        assert_eq!(hint_bus(&fail("G88 psi_d")), Some(88));
+        assert_eq!(hint_bus(&fail("R31 inv.Iq")), Some(31));
+        assert_eq!(hint_bus(&fail("bus Vr")), None);
+        assert_eq!(hint_bus(&fail("Gx")), None);
+        assert_eq!(
+            hint_bus("the Newton step is not finite (singular Jacobian?)"),
+            None
+        );
+        assert_eq!(hint_bus(""), None);
+        // A bus row takes precedence over a unit named later in the text.
+        assert_eq!(
+            hint_bus("largest in G5 delta; largest in bus 9 Vr"),
+            Some(9)
+        );
+    }
+
+    /// Level 0 trips the units of small pockets apart from the largest
+    /// island and nothing else (their load goes with `extinguish`, which
+    /// then names the dead buses); with one island it does nothing.
+    #[test]
+    fn relief_level_0_trips_small_pockets() {
+        let (mut sys, x) = chain();
+        assert!(relieve(&mut sys, &x, 1.0, 0, None).is_empty());
+        assert_state(&sys, INTACT, "one island");
+        open(&mut sys, 4, 5);
+        let notes = relieve(&mut sys, &x, 1.0, 0, Some(3));
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("1 unit(s) in small pockets"), "{notes:?}");
+        assert_state(&sys, ([50.0, 30.0, 10.0], [false, false, true]), "level 0");
+        let notes = extinguish(&mut sys, 1.0);
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("1 dead bus(es) lose their load (10.0 MW")),
+            "{notes:?}"
+        );
+        assert_state(
+            &sys,
+            ([50.0, 30.0, 0.0], [false, false, true]),
+            "after extinguish",
+        );
+    }
+
+    /// Level 1 takes the named bus: its load and its units; a hint that is
+    /// missing or names no bus of the case does nothing.
+    #[test]
+    fn relief_level_1_takes_the_named_bus() {
+        let (sys0, x) = chain();
+        let mut sys = sys0.clone();
+        assert!(relieve(&mut sys, &x, 1.0, 1, None).is_empty());
+        assert!(relieve(&mut sys, &x, 1.0, 1, Some(99)).is_empty());
+        assert_state(&sys, INTACT, "no bus named");
+        let notes = relieve(&mut sys, &x, 1.0, 1, Some(4));
+        assert!(
+            notes[0].contains(
+                "(relief level 1, bus 4); 0 unit(s) trip and 1 bus(es) lose their load (30.0 MW"
+            ),
+            "{notes:?}"
+        );
+        assert_state(&sys, ([50.0, 0.0, 10.0], [false, false, false]), "bus 4");
+        let mut sys = sys0.clone();
+        let notes = relieve(&mut sys, &x, 1.0, 1, Some(5));
+        assert!(
+            notes[0].contains("1 unit(s) trip and 1 bus(es)"),
+            "{notes:?}"
+        );
+        assert_state(&sys, ([50.0, 30.0, 0.0], [false, false, true]), "bus 5");
+        let mut sys = sys0;
+        let notes = relieve(&mut sys, &x, 1.0, 1, Some(2));
+        assert!(
+            notes[0].contains("1 unit(s) trip and 0 bus(es)"),
+            "{notes:?}"
+        );
+        assert_state(&sys, ([50.0, 30.0, 10.0], [false, true, false]), "bus 2");
+    }
+
+    /// Level 2 takes the named bus and its neighbours over closed branches.
+    #[test]
+    fn relief_level_2_takes_the_neighbours_too() {
+        let (sys0, x) = chain();
+        let mut sys = sys0.clone();
+        let notes = relieve(&mut sys, &x, 1.0, 2, Some(4));
+        assert!(
+            notes[0].contains("1 unit(s) trip and 3 bus(es)"),
+            "{notes:?}"
+        );
+        assert_state(
+            &sys,
+            ([0.0, 0.0, 0.0], [false, false, true]),
+            "bus 4 and neighbours",
+        );
+        let mut sys = sys0.clone();
+        open(&mut sys, 4, 5);
+        relieve(&mut sys, &x, 1.0, 2, Some(4));
+        assert_state(&sys, ([0.0, 0.0, 10.0], [false, false, false]), "4-5 open");
+        let mut sys = sys0;
+        relieve(&mut sys, &x, 1.0, 2, Some(3));
+        assert_state(
+            &sys,
+            ([0.0, 0.0, 10.0], [true, true, false]),
+            "bus 3 and neighbours",
+        );
+    }
+
+    /// Level 3 takes every bus below 0.3 pu, whatever the hint; at normal
+    /// voltages it does nothing.
+    #[test]
+    fn relief_level_3_takes_the_buses_below_0_3_pu() {
+        let (mut sys, x) = chain();
+        assert!(relieve(&mut sys, &x, 1.0, 3, Some(4)).is_empty());
+        assert_state(&sys, INTACT, "normal voltages");
+        let mut low = x.clone();
+        let (n, b) = (sys.n, sys.dense_bus(4).unwrap());
+        low[b] *= 0.25;
+        low[n + b] *= 0.25;
+        let notes = relieve(&mut sys, &low, 1.0, 3, Some(3));
+        assert!(notes[0].contains("relief level 3"), "{notes:?}");
+        assert_state(
+            &sys,
+            ([50.0, 0.0, 10.0], [false, false, false]),
+            "bus 4 at 0.25 pu",
+        );
+    }
+
+    /// An island left without a unit in service loses its load (constant
+    /// power has no solution at 0 V), once; an island with a unit keeps it
+    /// and is named once as apart from the reference bus.
+    #[test]
+    fn extinguish_takes_the_load_of_a_dead_island() {
+        let (mut sys, _) = chain();
+        assert!(extinguish(&mut sys, 1.0).is_empty());
+        open(&mut sys, 3, 4);
+        let notes = extinguish(&mut sys, 1.0);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("apart from the reference bus"),
+            "{notes:?}"
+        );
+        assert!(extinguish(&mut sys, 1.0).is_empty(), "named once");
+        assert_state(&sys, INTACT, "a live island");
+        let d = sys.devices.iter().position(|d| d.bus_number == 5).unwrap();
+        sys.devices[d].tripped = Some(vec![0.0; sys.devices[d].n_states()]);
+        let notes = extinguish(&mut sys, 1.0);
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("2 dead bus(es) lose their load (40.0 MW")),
+            "{notes:?}"
+        );
+        assert_state(
+            &sys,
+            ([50.0, 0.0, 0.0], [false, false, true]),
+            "a dead island",
+        );
+        assert!(
+            extinguish(&mut sys, 1.0).is_empty(),
+            "a dead island loses its load once"
+        );
+    }
+}

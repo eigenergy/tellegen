@@ -2083,3 +2083,211 @@ pub(super) mod tests {
         println!("regions checked");
     }
 }
+
+#[cfg(test)]
+mod model_switch_tests {
+    use super::{avr_vt, AcEmulation, C64};
+    use crate::rms::{LoadModel, RmsSimulation};
+
+    /// Two areas on 100 MVA: classical machines at 1 (slack) and 2 feed the
+    /// constant-impedance loads at 3 and 4, joined by the tie 3-4.
+    const TWO_AREAS_RAW: &str = "0,   100.00,  32, 0, 1, 60.00     / two areas
+
+
+1,'B1', 230.0000,3,   1,   1,   1,1.00000,   0.0000
+2,'B2', 230.0000,2,   1,   1,   1,1.00000,   0.0000
+3,'B3', 230.0000,1,   1,   1,   1,1.00000,   0.0000
+4,'B4', 230.0000,1,   1,   1,   1,1.00000,   0.0000
+ 0 /End of Bus data, Begin Load data
+3,'1 ',1,   1,   1, 250.000, 0.000, 0.000, 0.000, 0.000, 0.000,   1,1
+4,'1 ',1,   1,   1, 250.000, 0.000, 0.000, 0.000, 0.000, 0.000,   1,1
+ 0 /End of Load data, Begin Fixed shunt data
+ 0 /End of Fixed shunt data, Begin Generator data
+1,'1 ', 0.000, 0.000, 9999.000, -9999.000,1.00000, 0, 500.000, 0.00000E+0, 3.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+2,'1 ', 200.000, 0.000, 9999.000, -9999.000,1.00000, 0, 500.000, 0.00000E+0, 3.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+ 0 /End of Generator data, Begin Branch data
+1, 3,'1 ', 0.00000E+0, 2.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+2, 4,'1 ', 0.00000E+0, 2.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+3, 4,'1 ', 0.00000E+0, 3.00000E-1, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+ 0 /End of Branch data, Begin Transformer data
+ 0 /End of Transformer data, Begin Area interchange data
+ 0 /End of Area interchange data, Begin Two-terminal dc line data
+ 0 /End of Two-terminal dc line data, Begin VSC dc line data
+ 0 /End of VSC dc line data, Begin Impedance correction table data
+ 0 /End of Impedance correction table data, Begin Multi-terminal dc line data
+ 0 /End of Multi-terminal dc line data, Begin Multi-section line data
+ 0 /End of Multi-section line data, Begin Zone data
+ 0 /End of Zone data, Begin Inter-area transfer data
+ 0 /End of Inter-area transfer data, Begin Owner data
+ 0 /End of Owner data, Begin FACTS device data
+ 0 /End of FACTS device data, Begin Switched shunt data
+ 0 /End of Switched shunt data, Begin GNE device data
+ 0 /End of GNE device data
+Q
+";
+
+    fn two_areas() -> RmsSimulation {
+        let src =
+            powerio::Source::from_memory("case.raw", TWO_AREAS_RAW.as_bytes().to_vec()).unwrap();
+        let module = powerio::parse(src).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        let dyr = powerio::parse_dyr("1 'GENCLS' 1 4.0 0.0 /\n2 'GENCLS' 1 4.0 0.0 /\n").unwrap();
+        RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap()
+    }
+
+    /// Without a compensator the regulator sees the terminal voltage; with
+    /// one and no time constant `|V + (Rc + j Xc) I|` (IEEE Std 421.5); with
+    /// a time constant `|V + Rc I| + Xc z`, `z` the lag state (the reactive
+    /// current, which it equals at rest).
+    #[test]
+    fn avr_vt_is_the_compensated_voltage() {
+        let (v, i) = (C64::new(1.02, 0.1), C64::new(0.6, -0.3));
+        assert_eq!(avr_vt(None, v.re, v.im, i.re, i.im, 0.7), v.norm());
+        let (rc, xc) = (0.01, 0.05);
+        let vc = (v + C64::new(rc, xc) * i).norm();
+        let now = avr_vt(Some([rc, xc, 0.0]), v.re, v.im, i.re, i.im, 0.7);
+        assert!((now - vc).abs() < 1e-15, "{now} against {vc}");
+        // A negative time constant is read as none.
+        let neg = avr_vt(Some([rc, xc, -1.0]), v.re, v.im, i.re, i.im, 0.7);
+        assert_eq!(neg, now);
+        let z = 0.4;
+        let lag = avr_vt(Some([rc, xc, 1.0]), v.re, v.im, i.re, i.im, z);
+        let expected = (v + rc * i).norm() + xc * z;
+        assert!((lag - expected).abs() < 1e-15, "{lag} against {expected}");
+        // At rest (z the reactive current Q / Vt) both forms give positive
+        // droop of the same first order: `Vt + Xc Q / Vt` for a pure Xc.
+        let q = (v * i.conj()).im;
+        let z0 = q / v.norm();
+        let a = avr_vt(Some([0.0, xc, 0.0]), v.re, v.im, i.re, i.im, 0.0);
+        let b = avr_vt(Some([0.0, xc, 1.0]), v.re, v.im, i.re, i.im, z0);
+        assert!(a > v.norm() && b > v.norm());
+        assert!((a - b).abs() < xc * xc * i.norm_sqr(), "{a} against {b}");
+    }
+
+    /// The link moves `K (Δθ − Δθ0)` from `from` to `to`: none at its start
+    /// angle, more as `from` leads, limited to `±p_max`; its currents carry
+    /// that active power and no reactive power (`V I*` is `−P` at `from`,
+    /// `+P` at `to`).
+    #[test]
+    fn ac_emulation_moves_active_power_with_the_angle() {
+        let e = AcEmulation {
+            from: 0,
+            to: 1,
+            k: 2.0,
+            p_max: 0.3,
+            dtheta0: 0.1,
+        };
+        let vt = C64::from_polar(0.98, -0.2);
+        let at = |d: f64| C64::from_polar(1.03, -0.2 + d);
+        assert!(e.power(at(0.1).re, at(0.1).im, vt.re, vt.im).abs() < 1e-14);
+        let p = e.power(at(0.15).re, at(0.15).im, vt.re, vt.im);
+        assert!((p - 2.0 * 0.05).abs() < 1e-13, "{p}");
+        let p = e.power(at(0.05).re, at(0.05).im, vt.re, vt.im);
+        assert!((p + 2.0 * 0.05).abs() < 1e-13, "{p}");
+        assert_eq!(e.power(at(1.0).re, at(1.0).im, vt.re, vt.im), 0.3);
+        assert_eq!(e.power(at(-1.0).re, at(-1.0).im, vt.re, vt.im), -0.3);
+        for d in [0.05, 0.12, 0.4, -0.6] {
+            let vf = at(d);
+            let p = e.power(vf.re, vf.im, vt.re, vt.im);
+            let c = e.currents(vf.re, vf.im, vt.re, vt.im);
+            let s_from = vf * C64::new(c[0], c[1]).conj();
+            let s_to = vt * C64::new(c[2], c[3]).conj();
+            assert!((s_from - C64::new(-p, 0.0)).norm() < 1e-14, "{s_from}");
+            assert!((s_to - C64::new(p, 0.0)).norm() < 1e-14, "{s_to}");
+        }
+        // The magnitude the currents divide by has a floor: finite at 0 V.
+        let c = e.currents(0.0, 0.0, vt.re, vt.im);
+        assert!(c.iter().all(|v| v.is_finite()));
+    }
+
+    /// The residual carries the link's currents at its two buses, and the
+    /// Jacobian its entries: with a link that carries power, the difference
+    /// to the system without it is `∂I/∂V` of the link at the four voltage
+    /// columns (checked against central differences); a link with `K = 0`
+    /// adds its 16 entries all the same (zero), so the pattern does not
+    /// change with `K`.
+    #[test]
+    fn ac_emulation_enters_the_residual_and_the_jacobian() {
+        let sim = two_areas();
+        let mut sys = sim.sys.clone();
+        let n = sys.n;
+        let (b3, b4) = (sys.dense_bus(3).unwrap(), sys.dense_bus(4).unwrap());
+        let angle = |x: &[f64]| {
+            (x[n + b3] * x[b4] - x[b3] * x[n + b4]).atan2(x[b3] * x[b4] + x[n + b3] * x[n + b4])
+        };
+        let dtheta0 = angle(&sim.x0);
+        // Bus 3 turned by 0.05 rad, so the link carries power.
+        let mut x = sim.x0.clone();
+        let v3 = C64::new(x[b3], x[n + b3]) * C64::from_polar(1.0, 0.05);
+        x[b3] = v3.re;
+        x[n + b3] = v3.im;
+        let link = AcEmulation {
+            from: b3,
+            to: b4,
+            k: 3.0,
+            p_max: f64::INFINITY,
+            dtheta0,
+        };
+        assert!(link.power(x[b3], x[n + b3], x[b4], x[n + b4]) > 0.1);
+        let mut f0 = vec![0.0; sys.nx];
+        sys.residual(&x, &mut f0, None);
+        let j0 = sys.jacobian(&x);
+        sys.hvdc_emulation = vec![link.clone()];
+        let mut f1 = vec![0.0; sys.nx];
+        sys.residual(&x, &mut f1, None);
+        let j1 = sys.jacobian(&x);
+        let rows = [b3, n + b3, b4, n + b4];
+        let c = link.currents(x[b3], x[n + b3], x[b4], x[n + b4]);
+        for (i, &r) in rows.iter().enumerate() {
+            assert!((f1[r] - f0[r] - c[i]).abs() < 1e-12, "row {r}");
+        }
+        for r in (0..sys.nx).filter(|r| !rows.contains(r)) {
+            assert_eq!(f1[r], f0[r], "row {r}");
+        }
+        assert_eq!(j1.len(), j0.len() + 16);
+        let diff = entry_difference(&j1, &j0);
+        let h = 1e-6;
+        for (j, &col) in rows.iter().enumerate() {
+            let (mut xp, mut xm) = (x.clone(), x.clone());
+            xp[col] += h;
+            xm[col] -= h;
+            let cp = link.currents(xp[b3], xp[n + b3], xp[b4], xp[n + b4]);
+            let cm = link.currents(xm[b3], xm[n + b3], xm[b4], xm[n + b4]);
+            for (i, &r) in rows.iter().enumerate() {
+                let expected = (cp[i] - cm[i]) / (2.0 * h);
+                let got = diff.get(&(r, col)).copied().unwrap_or(0.0);
+                assert!(
+                    (got - expected).abs() < 1e-5 * expected.abs().max(1.0),
+                    "∂f[{r}]/∂x[{col}]: {got} against {expected} (column {j})"
+                );
+            }
+        }
+        for (key, v) in &diff {
+            if !(rows.contains(&key.0) && rows.contains(&key.1)) {
+                assert!(v.abs() < 1e-12, "{key:?}: {v}");
+            }
+        }
+        sys.hvdc_emulation = vec![AcEmulation { k: 0.0, ..link }];
+        let jz = sys.jacobian(&x);
+        assert_eq!(jz.len(), j0.len() + 16);
+        let zero = entry_difference(&jz, &j0);
+        assert!(zero.values().all(|v| v.abs() < 1e-12), "{zero:?}");
+    }
+
+    /// `a − b` entry by entry, duplicates summed.
+    fn entry_difference(
+        a: &[(usize, usize, f64)],
+        b: &[(usize, usize, f64)],
+    ) -> std::collections::BTreeMap<(usize, usize), f64> {
+        let mut d = std::collections::BTreeMap::new();
+        for &(r, c, v) in a {
+            *d.entry((r, c)).or_default() += v;
+        }
+        for &(r, c, v) in b {
+            *d.entry((r, c)).or_default() -= v;
+        }
+        d
+    }
+}
