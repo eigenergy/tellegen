@@ -6,8 +6,9 @@
 	import { getCommandRegistry } from '../commands.svelte.js';
 
 	// The dock insets come from `--tellegen-dock-left/right/bottom` on an
-	// ancestor (defaults 20px, 20px, 100px), so a custom shell with its own
-	// rail or status bar can move the docks without restyling them.
+	// ancestor (defaults 16px, 16px and 100px; 12px at the sides on a phone),
+	// so a custom shell with its own rail or status bar can move the docks
+	// without restyling them.
 	let { showToolbar = true }: { showToolbar?: boolean } = $props();
 
 	const app = getAppState();

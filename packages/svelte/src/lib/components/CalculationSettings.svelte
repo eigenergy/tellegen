@@ -1,6 +1,17 @@
 <script lang="ts" module>
 	import { DC_VARIANTS } from '../dc-variants.js';
 
+	/** Whether a transmission calculation can be chosen. AC OPF loads when it is
+	 * chosen here, so the engine reporting it unavailable before the first load
+	 * does not hide it while the controller offers it. */
+	export function transmissionSelectable(
+		value: string,
+		available: boolean,
+		offered: boolean
+	): boolean {
+		return (value === 'acopf' || available) && offered;
+	}
+
 	/** Plain names for the engine's settings, in place of its own labels. */
 	const LABELS: Record<string, string> = {
 		angle_difference: 'Angle limits',
@@ -168,9 +179,10 @@
 	function canSelect(value: string, available: boolean) {
 		if (!current) return false;
 		if (current instanceof MulticonductorCase) return value === 'mc_ac_pf' && available;
-		// AC OPF loads when it is chosen here, so a configured solver is enough.
-		return (
-			(value === 'acopf' || available) && ctrl.calculationOffered(current, value as Formulation)
+		return transmissionSelectable(
+			value,
+			available,
+			ctrl.calculationOffered(current, value as Formulation)
 		);
 	}
 	function calculationLabel(value: string) {

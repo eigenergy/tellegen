@@ -11,6 +11,7 @@ import {
 	type ResolvedSettings,
 	type SolveResponse
 } from '@tellegen/engine';
+import { solveBackendLabel } from '../format.js';
 import type { Solution } from '../api.js';
 import type { Controller } from '../controller.svelte.js';
 import { LocalCase, MulticonductorCase, type SolvableCase } from '../state.svelte.js';
@@ -31,7 +32,7 @@ export function acOpfSolveDetail(response: SolveResponse): string {
 	const diagnostics = response.iterations;
 	return diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
 		? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
-		: 'POUNCE WASI';
+		: solveBackendLabel('pounce-wasi');
 }
 
 /** Whether this engine build knows `name` as a calculation. */

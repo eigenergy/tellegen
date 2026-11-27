@@ -2778,7 +2778,9 @@ export class Controller {
 					throw new Error(`Study built for ${study.formulation}, not ${formulation}`);
 				const baseSolution = await study.currentSolution();
 				// Built without settings from a module that records them for another
-				// calculation: every solve would repeat that it ignored them.
+				// calculation: every solve would repeat that it ignored them. The case
+				// then builds and solves a second Study, since the Study built ahead
+				// cannot take explicit settings.
 				if (baseSolution.diagnostics?.some((d) => d.code === 'settings_ignored'))
 					throw new Error('Study ignored the saved calculation settings');
 				// As in `getStudy`: the case may have changed or gone while this built.

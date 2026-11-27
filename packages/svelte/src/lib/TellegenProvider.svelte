@@ -42,6 +42,11 @@
 	// choice, follow the operating system (styles.css covers first paint for
 	// the same case).
 	const systemDark = new MediaQuery('(prefers-color-scheme: dark)', false);
+	// The server cannot see the root attribute, the viewer's saved choice or the
+	// operating system, so until mount the element carries no data-theme unless
+	// the host passed one. styles.css paints the root's or the system's dark
+	// tokens meanwhile, and the server and first client render match.
+	let mounted = $state(false);
 
 	// Read once, at mount: `apiBase`, `acOpfWasmUrl` and `loadDefaultCases`
 	// configure the controller this provider owns, and the links and footer are
@@ -78,7 +83,11 @@
 		}
 	};
 	const app = createAppState();
+	const themeAttribute = $derived(
+		theme !== undefined || app.preferences.theme || mounted ? config.theme : undefined
+	);
 	onMount(() => {
+		mounted = true;
 		let storage: Storage | undefined;
 		try {
 			storage = globalThis.localStorage;
@@ -154,6 +163,6 @@
 	onDestroy(() => ctrl.dispose());
 </script>
 
-<div class="tellegen" data-theme={config.theme} bind:this={element}>
+<div class="tellegen" data-theme={themeAttribute} bind:this={element}>
 	{@render children?.()}
 </div>
