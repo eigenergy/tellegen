@@ -12,3 +12,7 @@ Instantiate it once:
 ```sh
 julia --project=validation/rms-models -e 'using Pkg; Pkg.instantiate()'
 ```
+
+| Folder | What it writes |
+| --- | --- |
+| `psid-smib/` | `crates/tellegen/tests/data/rms_smib/psid_reference_ext_models.json`: single-machine runs of ESST1A and PSS2B |
