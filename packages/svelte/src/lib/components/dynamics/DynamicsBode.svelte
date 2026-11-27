@@ -6,7 +6,7 @@
 	 * @block Bode plots */
 	import type { RmsBodeCurve, RmsBodeSpec } from '@tellegen/engine';
 	import { getController } from '../../context.svelte.js';
-	import ZoomChart from './ZoomChart.svelte';
+	import ZoomChart from '../ZoomChart.svelte';
 
 	const dyn = getController().dynamics;
 	const ins = $derived(dyn.active?.inspection ?? null);
@@ -31,6 +31,7 @@
 		if (units.length && !units.some((u) => unitKey(u) === outputUnit)) outputUnit = inputUnit;
 	});
 
+	const validBand = $derived(Number.isFinite(fMin) && Number.isFinite(fMax) && fMin > 0 && fMax > fMin);
 	async function add() {
 		const [ib, iid] = inputUnit.split('|');
 		const [ob, oid] = outputUnit.split('|');
@@ -99,11 +100,12 @@
 		>
 		<label><span class="cap">f from [Hz]</span><input type="number" min="0.001" step="any" bind:value={fMin} /></label>
 		<label><span class="cap">to [Hz]</span><input type="number" min="0.01" step="any" bind:value={fMax} /></label>
-		<button disabled={busy || !units.length || dyn.running} onclick={add}
+		<button disabled={busy || !units.length || dyn.running || !validBand} onclick={add}
 			>{busy ? 'Computing…' : 'Add response'}</button
 		>
 	</div>
-	{#if error}<p class="err">{error}</p>{/if}
+	{#if !validBand}<p class="err">Enter positive frequencies in increasing order.</p>{/if}
+	{#if error}<p class="err" role="alert">{error}</p>{/if}
 	{#if curves.length}
 		<ul class="legend">
 			{#each curves as c, i (i)}
@@ -143,7 +145,8 @@
 <style>
 	.bode {
 		display: grid;
-		gap: 6px;		grid-template-columns: minmax(0, 1fr);
+		gap: 6px;
+		grid-template-columns: minmax(0, 1fr);
 		min-width: 0;
 	}
 	h4 {

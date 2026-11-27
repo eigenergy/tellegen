@@ -3,53 +3,72 @@
 	 * where the case runs as it goes and disturbances apply the moment they
 	 * are picked.
 	 * @block Live tab */
-	import { getAppState, getController } from '../../context.svelte.js';
+	import { getController } from '../../context.svelte.js';
 
-	const app = getAppState();
+	import LiveDisturbances from './LiveDisturbances.svelte';
+	import { SPEEDS, STEPS, WINDOWS } from '../../dynamics/live.svelte.js';
 	const dyn = getController().dynamics;
 	const live = dyn.live;
-
-	async function openAndStart() {
-		const a = dyn.active;
-		const l = app.activeLocal;
-		app.mode = 'dynamics';
-		live.open = true;
-		if (!a?.inspection || !l?.studyInputJson || live.running) return;
-		await live.start(l.id, {
-			moduleJson: l.studyInputJson,
-			dynText: dyn.dynText(a),
-			inspection: a.inspection,
-			loadModel: dyn.options.load_model ?? 'power_flow'
-		});
-	}
 </script>
 
 <section class="live" aria-label="Live simulation" data-testid="dyn-live">
-	<p>
-		Run the case as it goes, paced to the clock, and apply faults, trips, load steps and reference
-		changes the moment you pick them. Plots of any bus, unit or line below the map.
-		<span class="pill-experimental">Experimental</span>
-	</p>
 	<button
 		class="primary"
-		disabled={live.starting || dyn.active?.status !== 'ready' || dyn.running}
-		onclick={openAndStart}
+		disabled={live.running || live.starting || dyn.active?.status !== 'ready' || dyn.running}
+		onclick={() => dyn.startLive()}
 		data-testid="dyn-live-start"
-		>{live.starting
+	>
+		{live.starting
 			? 'Starting…'
 			: live.running
-				? 'Live is running'
+				? 'Live simulation running'
 				: live.active
-					? '▶ Resume live'
-					: '▶ Start live'}</button
-	>
-	<p class="dim">
-		While it runs, click a bus on the map to fault it or step its load, or a G or I chip to edit that
-		unit.
-	</p>
+					? 'Resume live simulation'
+					: 'Start live simulation'}
+	</button>
+	<div class="settings">
+		<label>
+			Pace <select bind:value={live.speed}>
+				{#each SPEEDS as s (s)}<option value={s}>
+						{Number.isFinite(s) ? `${s}×` : 'Unpaced'}
+					</option>{/each}
+			</select>
+		</label>
+		<label>
+			Plot window <select bind:value={live.windowS}>
+				{#each WINDOWS as w (w)}<option value={w}>{w} s</option>{/each}
+			</select>
+		</label>
+		<label>
+			Integration step <select
+				value={live.dt}
+				onchange={(e) => void live.setStep(Number(e.currentTarget.value))}
+			>
+				{#each STEPS as s (s)}<option value={s}>{s * 1000} ms</option>{/each}
+			</select>
+		</label>
+	</div>
+	{#if live.active}<LiveDisturbances />{/if}
+	{#if live.perf}
+		<details>
+			<summary>Timing</summary>
+			<dl>
+				<dt>Playback pace</dt>
+				<dd>{live.achieved?.toFixed(1)}×</dd>
+				<dt>Including worker transfer</dt>
+				<dd>{live.perf.roundX.toFixed(1)}× real time</dd>
+				<dt>Worker round trip</dt>
+				<dd>{live.perf.sliceMs.toFixed(1)} ms</dd>
+				{#if Number.isFinite(live.speed)}
+					<dt>Clock lag</dt>
+					<dd>{live.perf.lagMs.toFixed(0)} ms</dd>
+				{/if}
+			</dl>
+		</details>
+	{/if}
 	{#if live.error}<p class="err" role="alert">{live.error}</p>{/if}
 	{#if live.active && dyn.events.length}
-		<h5>Events of the list, now</h5>
+		<h5>Scheduled disturbances</h5>
 		<ul class="events">
 			{#each dyn.events as e (e.id)}
 				<li>
@@ -66,7 +85,6 @@
 		display: grid;
 		gap: 8px;
 	}
-	p,
 	h5 {
 		margin: 0;
 	}
@@ -94,8 +112,23 @@
 		gap: 6px;
 		align-items: center;
 	}
-	.dim {
-		color: var(--text-tertiary);
+	dl {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 4px;
+	}
+	dd {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.settings {
+		display: grid;
+		gap: 6px;
+	}
+	.settings label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
 	}
 	.err {
 		color: var(--text-danger);

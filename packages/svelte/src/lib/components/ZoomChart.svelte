@@ -7,7 +7,7 @@
 		label: string;
 		x: ArrayLike<number>;
 		y: ArrayLike<number>;
-		/** Categorical slot 1–8. */
+		/** Categorical color slot. */
 		slot: number;
 		/** SVG dash pattern for a compared recording. */
 		dash?: string;
@@ -15,7 +15,8 @@
 </script>
 
 <script lang="ts">
-	import { clampZoom, niceTicks } from '../../dynamics/live-logic.js';
+	import { m4 } from '../charts/decimate.js';
+	import { clampZoom, niceTicks } from '../charts/axis.js';
 
 	/** A zoomable line chart for the dynamics workbench. One y-axis; series in
 	 * fixed categorical order (the caller keeps a chart to eight). Drag to zoom
@@ -59,6 +60,7 @@
 		onseek?: (x: number) => void;
 	} = $props();
 
+	const clipId = $props.id();
 	let width = $state(600);
 	const pad = { l: 60, r: 14, t: 10, b: 26 };
 	const tx = (v: number) => (logX ? Math.log10(Math.max(v, 1e-12)) : v);
@@ -102,41 +104,17 @@
 		const out = series.map((s) => {
 			const a = Math.max(0, lowerBound(s.x, dom[0]) - 1);
 			const b = Math.min(s.x.length, lowerBound(s.x, dom[1]) + 1);
-			const pts: [number, number][] = [];
-			// No column yet: `null`, not a number, since every number is a
-			// column (the point before a zoomed range can fall at -1).
-			let col: number | null = null;
-			let first: [number, number] | null = null;
-			let mn: [number, number] | null = null;
-			let mx: [number, number] | null = null;
-			let last: [number, number] | null = null;
-			const flush = () => {
-				const group = [first, mn, mx, last].filter((p): p is [number, number] => p !== null);
-				group.sort((p, q) => p[0] - q[0]);
-				for (const p of group) if (pts[pts.length - 1] !== p) pts.push(p);
-			};
-			for (let i = a; i < b; i++) {
-				const yv = s.y[i];
-				if (!Number.isFinite(yv)) continue;
-				const xv = s.x[i];
-				const c = Math.floor(px(xv));
-				const p: [number, number] = [xv, yv];
-				if (c !== col || mn === null || mx === null) {
-					if (col !== null) flush();
-					col = c;
-					first = mn = mx = last = p;
-				} else {
-					if (yv < mn[1]) mn = p;
-					if (yv > mx[1]) mx = p;
-					last = p;
-				}
-				if (xv >= dom[0] && xv <= dom[1]) {
-					if (yv < lo) lo = yv;
-					if (yv > hi) hi = yv;
-				}
+			// Include one neighbour at each edge so a line crosses a zoomed viewport.
+			const n = Math.max(0, b - a);
+			const x = Array.from({ length: n }, (_, j) => Math.max(u0, Math.min(u1, tx(s.x[a + j]))));
+			const y = Array.from({ length: n }, (_, j) => s.y[a + j]);
+			const indices = m4(x, y, plotW, u0, u1, true);
+			for (const i of indices) {
+				if (i < 0) continue;
+				lo = Math.min(lo, y[i]);
+				hi = Math.max(hi, y[i]);
 			}
-			if (col !== null) flush();
-			return { s, pts };
+			return { s, indices, offset: a };
 		});
 		if (!Number.isFinite(lo)) [lo, hi] = [0, 1];
 		if (hi - lo < 1e-12 * Math.max(1, Math.abs(hi))) {
@@ -152,6 +130,20 @@
 	});
 	const py = (v: number) =>
 		pad.t + (1 - (v - prepared.y[0]) / (prepared.y[1] - prepared.y[0] || 1)) * plotH;
+
+	function linePath(s: ZoomSeries, indices: number[], offset: number) {
+		let move = true;
+		let path = '';
+		for (const i of indices) {
+			if (i < 0) {
+				move = true;
+				continue;
+			}
+			path += `${move ? 'M' : 'L'}${px(s.x[offset + i]).toFixed(1)},${py(s.y[offset + i]).toFixed(1)}`;
+			move = false;
+		}
+		return path;
+	}
 
 	const yTicks = $derived(niceTicks(prepared.y[0], prepared.y[1], Math.max(3, Math.floor(plotH / 45))));
 	const xTicks = $derived.by(() => {
@@ -251,6 +243,7 @@
 <div class="zc" bind:clientWidth={width}>
 	<div class="head">
 		{#if title}<span class="title">{title}</span>{/if}
+		{#if series.length === 1}<span class="unit">{series[0].label}</span>{/if}
 		{#if unit}<span class="unit">{unit}</span>{/if}
 		{#if xDomain && showReset}<button class="reset" onclick={() => (xDomain = null)}>reset zoom</button>{/if}
 	</div>
@@ -273,7 +266,7 @@
 		onkeydown={keydown}
 	>
 		<defs>
-			<clipPath id={`clip-${title}-${unit}`.replace(/[^a-zA-Z0-9-]/g, '_')}>
+			<clipPath id={clipId}>
 				<rect x={pad.l} y={pad.t} width={plotW} height={plotH} />
 			</clipPath>
 		</defs>
@@ -285,14 +278,14 @@
 			<line class="grid v" x1={px(v)} x2={px(v)} y1={pad.t} y2={pad.t + plotH} />
 			<text class="tick" x={px(v)} y={height - 8} text-anchor="middle">{fmtX(v)}</text>
 		{/each}
-		<g clip-path={`url(#${`clip-${title}-${unit}`.replace(/[^a-zA-Z0-9-]/g, '_')})`}>
+		<g clip-path={`url(#${clipId})`}>
 			{#each events as ev, i (i)}
 				<line class="event" x1={px(ev)} x2={px(ev)} y1={pad.t} y2={pad.t + plotH} />
 			{/each}
-			{#each prepared.out as { s, pts } (s.key)}
+			{#each prepared.out as { s, indices, offset } (s.key)}
 				<path
 					class="line"
-					d={pts.map((p, i) => `${i ? 'L' : 'M'}${px(p[0]).toFixed(1)},${py(p[1]).toFixed(1)}`).join('')}
+					d={linePath(s, indices, offset)}
 					style={`stroke: var(--series-${((s.slot - 1) % 6) + 1})`}
 					stroke-dasharray={s.dash ?? null}
 				/>
@@ -344,24 +337,6 @@
 	.zc {
 		position: relative;
 		width: 100%;
-		--dyn-series-1: #2a78d6;
-		--dyn-series-2: #eb6834;
-		--dyn-series-3: #1baf7a;
-		--dyn-series-4: #eda100;
-		--dyn-series-5: #e87ba4;
-		--dyn-series-6: #008300;
-		--dyn-series-7: #6250d6;
-		--dyn-series-8: #e34948;
-	}
-	:global(:root[data-theme='dark']) .zc {
-		--dyn-series-1: #3987e5;
-		--dyn-series-2: #d95926;
-		--dyn-series-3: #199e70;
-		--dyn-series-4: #c98500;
-		--dyn-series-5: #d55181;
-		--dyn-series-6: #008300;
-		--dyn-series-7: #9085e9;
-		--dyn-series-8: #e66767;
 	}
 	.head {
 		display: flex;
@@ -406,7 +381,7 @@
 	}
 	.tick,
 	.xl {
-		font-size: 10px;
+		font-size: var(--fs-meta);
 		fill: var(--text-tertiary);
 		font-family: var(--font-mono);
 	}
@@ -444,7 +419,7 @@
 		background: var(--surface-menu);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		font-size: 11px;
+		font-size: var(--fs-meta);
 		pointer-events: none;
 		box-shadow: 0 2px 8px rgb(0 0 0 / 0.14);
 		z-index: 3;
@@ -482,7 +457,7 @@
 		list-style: none;
 		margin: 2px 0 0;
 		padding: 0 0 0 60px;
-		font-size: 11px;
+		font-size: var(--fs-meta);
 		color: var(--text-secondary);
 	}
 	.legend li {

@@ -27,7 +27,7 @@ import {
 	traceSummary
 } from '../src/lib/dynamics/verdict.js';
 import { groupNotes } from '../src/lib/dynamics/notes.js';
-import { m4 } from '../src/lib/dynamics/decimate.js';
+import { m4 } from '../src/lib/charts/decimate.js';
 import { advance, rateAt, startTime } from '../src/lib/dynamics/player.svelte.js';
 import {
 	sampleAt,
