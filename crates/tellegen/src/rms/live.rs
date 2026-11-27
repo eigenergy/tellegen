@@ -812,7 +812,11 @@ impl RmsLive {
         let end = self.t + duration.max(0.0);
         let mut euler = 0usize;
         while self.t < end - 1e-12 {
-            let h = self.h.min(self.output_step - self.since_output).max(1e-9);
+            let h = self
+                .h
+                .min(self.output_step - self.since_output)
+                .max(1e-9)
+                .min(end - self.t);
             step_adaptive(
                 &self.sys,
                 &mut self.x,
