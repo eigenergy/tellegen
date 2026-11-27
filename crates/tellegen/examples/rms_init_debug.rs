@@ -8,7 +8,9 @@
 use std::path::Path;
 
 fn main() {
-    let dir = std::env::args().nth(1).expect("usage: rms_init_debug <case dir>");
+    let dir = std::env::args()
+        .nth(1)
+        .expect("usage: rms_init_debug <case dir>");
     let dir = Path::new(&dir);
     let raw = std::fs::read(dir.join("case.raw")).expect("case.raw");
     let dyr = std::fs::read_to_string(dir.join("case.dyr")).expect("case.dyr");
@@ -46,9 +48,11 @@ fn main() {
                 dt: 0.005,
                 output_step: 0.005,
                 record: Some(tellegen::rms::RecordSpec {
-                    channels: ["vm:", "va:", "pe:", "qe:", "p_from:", "q_from:", "p_to:", "q_to:"]
-                        .map(str::to_owned)
-                        .to_vec(),
+                    channels: [
+                        "vm:", "va:", "pe:", "qe:", "p_from:", "q_from:", "p_to:", "q_to:",
+                    ]
+                    .map(str::to_owned)
+                    .to_vec(),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -59,8 +63,11 @@ fn main() {
                 .iter()
                 .map(|(k, v)| (k.clone(), serde_json::json!(v[0])))
                 .collect();
-            std::fs::write(dir.join("snap.json"), serde_json::Value::Object(snap).to_string())
-                .expect("write snap.json");
+            std::fs::write(
+                dir.join("snap.json"),
+                serde_json::Value::Object(snap).to_string(),
+            )
+            .expect("write snap.json");
             println!("wrote {}", dir.join("snap.json").display());
         }
         Err(e) => {

@@ -609,7 +609,13 @@ impl RelayState {
         // and one phase stands for all three.
         let bal = !m.unbalanced();
         let np = if bal { 1 } else { 3 };
-        let pos = |p: [C64; 3]| if bal { [C64::new(0.0, 0.0), p[0], C64::new(0.0, 0.0)] } else { sequences(p) };
+        let pos = |p: [C64; 3]| {
+            if bal {
+                [C64::new(0.0, 0.0), p[0], C64::new(0.0, 0.0)]
+            } else {
+                sequences(p)
+            }
+        };
         let seq_v = pos(v);
         let v1 = seq_v[1];
         // Its magnitude, read by several elements.
@@ -711,9 +717,7 @@ impl RelayState {
                                     |s| if earth { s[0] } else { s[1] },
                                 );
                             let pol = if earth { -seq_v[0] } else { vmem };
-                            let fwd = (s * rotate_60() * pol.conj())
-                                .re
-                                > 0.0;
+                            let fwd = (s * rotate_60() * pol.conj()).re > 0.0;
                             (d == Direction::Forward) == fwd
                         }
                     };
@@ -1032,7 +1036,8 @@ impl RelayState {
                         .into_iter()
                         .fold(0.0, f64::max);
                     let held = timer.since.is_some();
-                    let picked = vmax > s.pickup || (held && vmax > s.reset_ratio.unwrap_or(0.98) * s.pickup);
+                    let picked = vmax > s.pickup
+                        || (held && vmax > s.reset_ratio.unwrap_or(0.98) * s.pickup);
                     timer.update(picked, t, ops, id, label, || format!("V {vmax:.3} pu"));
                 }
                 (ProtectionFunction::NeutralOvervoltage(s), Element::Timer { timer, .. }) => {
@@ -1185,7 +1190,11 @@ impl RelayState {
                                 beat[1] = t;
                             }
                         }
-                        if entered.is_some() && *side != Side::Middle && t - beat[1] >= 0.04 && vm > beat[0] {
+                        if entered.is_some()
+                            && *side != Side::Middle
+                            && t - beat[1] >= 0.04
+                            && vm > beat[0]
+                        {
                             *side = Side::Middle;
                             *slips += 1;
                             ops.push(op(
@@ -1193,13 +1202,20 @@ impl RelayState {
                                 id,
                                 label,
                                 OperationKind::Pickup,
-                                format!("voltage beat {} (minimum {:.2} pu, below {vb} pu)", *slips, beat[0]),
+                                format!(
+                                    "voltage beat {} (minimum {:.2} pu, below {vb} pu)",
+                                    *slips, beat[0]
+                                ),
                             ));
                         }
                         if vm > 1.1 * vb && *side == Side::Middle {
                             *entered = None;
                         }
-                        if *slips >= o.slips && beat_ready.is_none() && beat[3] > 0.0 && vm > beat[2] / beat[3] {
+                        if *slips >= o.slips
+                            && beat_ready.is_none()
+                            && beat[3] > 0.0
+                            && vm > beat[2] / beat[3]
+                        {
                             *beat_ready = Some(t);
                         }
                         if let Some(tr) = *beat_ready {
@@ -1845,4 +1861,3 @@ mod tests {
         assert_eq!(profile(&p, 3.0), 0.85);
     }
 }
-

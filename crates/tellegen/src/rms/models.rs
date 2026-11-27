@@ -408,7 +408,12 @@ pub(crate) fn set_freeze_limits(option: bool) {
 /// `K u − y` must pull back from a limit before the limiter lets go.
 fn freeze_hysteresis() -> f64 {
     static H: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *H.get_or_init(|| std::env::var("TELLEGEN_FREEZE_HYST").ok().and_then(|v| v.parse().ok()).unwrap_or(1e-3))
+    *H.get_or_init(|| {
+        std::env::var("TELLEGEN_FREEZE_HYST")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1e-3)
+    })
 }
 
 /// Experimental: a non-windup limit's mode, frozen while Newton solves a step and
@@ -436,8 +441,10 @@ impl LimitMode {
     }
 
     pub(crate) fn record(&self, y: f64, rate: f64) {
-        self.y.store(y.to_bits(), std::sync::atomic::Ordering::Relaxed);
-        self.rate.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        self.y
+            .store(y.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        self.rate
+            .store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The mode for the next step, from the recorded state and free rate. Returns whether it changed.
@@ -559,8 +566,15 @@ impl Avr {
     /// number that switched.
     pub(crate) fn update_limit_modes(&self) -> usize {
         match self {
-            Self::Sexs { v_min, v_max, lim, .. } => usize::from(lim.update(*v_min, *v_max)),
-            Self::Esac1a { va_min, va_max, lim, .. } => usize::from(lim.update(*va_min, *va_max)),
+            Self::Sexs {
+                v_min, v_max, lim, ..
+            } => usize::from(lim.update(*v_min, *v_max)),
+            Self::Esac1a {
+                va_min,
+                va_max,
+                lim,
+                ..
+            } => usize::from(lim.update(*va_min, *va_max)),
             #[cfg(feature = "rms-experimental")]
             Self::Graph(g) => g.update_limit_modes(),
             _ => 0,
@@ -1259,7 +1273,11 @@ impl Governor {
                 let (_, dx3) = low_pass(x[1], x[2], 1.0, *t3);
                 // Experimental: the fuel valve moves at most `set_gast_rate` pu/s.
                 let rate = super::system::gast_rate();
-                f[0] = if rate > 0.0 { dx1.clamp(-rate, rate) } else { dx1 };
+                f[0] = if rate > 0.0 {
+                    dx1.clamp(-rate, rate)
+                } else {
+                    dx1
+                };
                 f[1] = dx2;
                 f[2] = dx3;
                 (x[1] - d_turb * (omega - 1.0)) / omega

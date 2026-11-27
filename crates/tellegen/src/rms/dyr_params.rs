@@ -763,8 +763,18 @@ const SCHEMA: &[(&str, &[Param])] = &[
     (
         "ESST1A",
         &[
-            Param("UEL", "Inputs", "", "UEL input location (read, not used: limiters enter at the summing point)"),
-            Param("VOS", "Inputs", "", "stabilizer input: 1 voltage error, 2 after the regulator"),
+            Param(
+                "UEL",
+                "Inputs",
+                "",
+                "UEL input location (read, not used: limiters enter at the summing point)",
+            ),
+            Param(
+                "VOS",
+                "Inputs",
+                "",
+                "stabilizer input: 1 voltage error, 2 after the regulator",
+            ),
             Param("TR", "Measurement", "s", "voltage transducer time constant"),
             Param("VIMAX", "Limits", "pu", "voltage error maximum"),
             Param("VIMIN", "Limits", "pu", "voltage error minimum"),
@@ -781,8 +791,18 @@ const SCHEMA: &[(&str, &[Param])] = &[
             Param("KC", "Exciter", "pu", "rectifier loading factor"),
             Param("KF", "Feedback", "pu", "rate feedback gain"),
             Param("TF", "Feedback", "s", "rate feedback time constant"),
-            Param("KLR", "Field current limit", "pu", "field current limiter gain"),
-            Param("ILR", "Field current limit", "pu", "field current limiter pickup"),
+            Param(
+                "KLR",
+                "Field current limit",
+                "pu",
+                "field current limiter gain",
+            ),
+            Param(
+                "ILR",
+                "Field current limit",
+                "pu",
+                "field current limiter pickup",
+            ),
         ],
     ),
     (
@@ -796,12 +816,37 @@ const SCHEMA: &[(&str, &[Param])] = &[
             Param("TC", "Regulator", "s", "lead-lag lead time constant"),
             Param("VAMAX", "Limits", "pu", "regulator output maximum"),
             Param("VAMIN", "Limits", "pu", "regulator output minimum"),
-            Param("VRMAX", "Limits", "pu", "exciter field voltage maximum (times Vt)"),
-            Param("VRMIN", "Limits", "pu", "exciter field voltage minimum (times Vt)"),
+            Param(
+                "VRMAX",
+                "Limits",
+                "pu",
+                "exciter field voltage maximum (times Vt)",
+            ),
+            Param(
+                "VRMIN",
+                "Limits",
+                "pu",
+                "exciter field voltage minimum (times Vt)",
+            ),
             Param("TE", "Exciter", "s", "exciter time constant"),
-            Param("VFELIM", "Field current limit", "pu", "exciter field current limit"),
-            Param("KH", "Field current limit", "pu", "exciter field current limiter gain (0 off)"),
-            Param("VHMAX", "Field current limit", "pu", "limiter output maximum"),
+            Param(
+                "VFELIM",
+                "Field current limit",
+                "pu",
+                "exciter field current limit",
+            ),
+            Param(
+                "KH",
+                "Field current limit",
+                "pu",
+                "exciter field current limiter gain (0 off)",
+            ),
+            Param(
+                "VHMAX",
+                "Field current limit",
+                "pu",
+                "limiter output maximum",
+            ),
             Param("TH", "Field current limit", "s", "limiter lag"),
             Param("TJ", "Field current limit", "s", "limiter lead"),
             Param("KC", "Exciter", "pu", "rectifier loading factor"),
@@ -828,7 +873,12 @@ const SCHEMA: &[(&str, &[Param])] = &[
             Param("TW3", "Washouts", "s", "input 2 washout 1"),
             Param("TW4", "Washouts", "s", "input 2 washout 2 (0 bypasses)"),
             Param("T7", "Washouts", "s", "input 2 integrator lag"),
-            Param("KS2", "Gains", "pu", "input 2 gain, T7 / (2H) with H of this machine"),
+            Param(
+                "KS2",
+                "Gains",
+                "pu",
+                "input 2 gain, T7 / (2H) with H of this machine",
+            ),
             Param("KS3", "Gains", "pu", "input 2 summing gain"),
             Param("T8", "Ramp tracking", "s", "ramp-tracking lead"),
             Param("T9", "Ramp tracking", "s", "ramp-tracking lag"),
@@ -850,25 +900,65 @@ const SCHEMA: &[(&str, &[Param])] = &[
     (
         "OELIT",
         &[
-            Param("IFDRAT", "Field current", "pu", "rated field current (air-gap line)"),
+            Param(
+                "IFDRAT",
+                "Field current",
+                "pu",
+                "rated field current (air-gap line)",
+            ),
             Param("IPICK", "Field current", "", "heating pickup / IFDRAT"),
             Param("ICONT", "Field current", "", "continuous limit / IFDRAT"),
             Param("ILIM", "Field current", "", "instantaneous limit / IFDRAT"),
-            Param("C", "Inverse time", "s", "inverse-time constant: t = C / ((I/Ipick)^2 - 1)"),
+            Param(
+                "C",
+                "Inverse time",
+                "s",
+                "inverse-time constant: t = C / ((I/Ipick)^2 - 1)",
+            ),
             Param("TCOOL", "Inverse time", "s", "cooling time constant"),
-            Param("KP", "Limiter", "pu", "proportional gain (pu voltage per pu field current)"),
-            Param("KI", "Limiter", "1/s", "integral gain (dead-zone integrator, resets in 1 s)"),
+            Param(
+                "KP",
+                "Limiter",
+                "pu",
+                "proportional gain (pu voltage per pu field current)",
+            ),
+            Param(
+                "KI",
+                "Limiter",
+                "1/s",
+                "integral gain (dead-zone integrator, resets in 1 s)",
+            ),
             Param("VOELMIN", "Limiter", "pu", "limiter output minimum"),
         ],
     ),
     (
         "UELPQ",
         &[
-            Param("Q0", "Characteristic", "pu", "reactive power limit at P = 0 (MBASE)"),
+            Param(
+                "Q0",
+                "Characteristic",
+                "pu",
+                "reactive power limit at P = 0 (MBASE)",
+            ),
             Param("KQP", "Characteristic", "pu", "slope of the limit with P"),
-            Param("KV", "Characteristic", "", "voltage exponent of the limit (0, 1, 2)"),
-            Param("KP", "Limiter", "pu", "proportional gain (pu voltage per pu Q)"),
-            Param("KI", "Limiter", "1/s", "integral gain (dead-zone integrator, resets in 1 s)"),
+            Param(
+                "KV",
+                "Characteristic",
+                "",
+                "voltage exponent of the limit (0, 1, 2)",
+            ),
+            Param(
+                "KP",
+                "Limiter",
+                "pu",
+                "proportional gain (pu voltage per pu Q)",
+            ),
+            Param(
+                "KI",
+                "Limiter",
+                "1/s",
+                "integral gain (dead-zone integrator, resets in 1 s)",
+            ),
             Param("VUELMAX", "Limiter", "pu", "limiter output maximum"),
         ],
     ),
@@ -988,7 +1078,8 @@ pub fn dyr_parameters(network: &BalancedNetwork, dyr: &DynamicCase) -> Vec<DyrGe
                     .eq_ignore_ascii_case(m.machine_id.trim())
         }) {
             let model = r.model_name().trim().to_ascii_uppercase();
-            let (Some(role), Some(pnames)) = (super::ext_models::ext_role(&model), names(&model)) else {
+            let (Some(role), Some(pnames)) = (super::ext_models::ext_role(&model), names(&model))
+            else {
                 continue;
             };
             records.push(DyrRecordView {

@@ -766,7 +766,9 @@ impl CompiledGraph {
             args: Vec::new(),
             modes: Vec::new(),
         };
-        compiled.modes = (0..compiled.n_states).map(|_| super::models::LimitMode::default()).collect();
+        compiled.modes = (0..compiled.n_states)
+            .map(|_| super::models::LimitMode::default())
+            .collect();
         compiled.compile()?;
         Ok(compiled)
     }
@@ -1067,7 +1069,10 @@ impl CompiledGraph {
     pub(crate) fn update_limit_modes(&self) -> usize {
         let mut n = 0;
         for op in &self.tape {
-            if let Op::LagLimitedRate { x: s, t, min, max, .. } = *op {
+            if let Op::LagLimitedRate {
+                x: s, t, min, max, ..
+            } = *op
+            {
                 if t >= f64::EPSILON {
                     n += usize::from(self.modes[s as usize].update(min, max));
                 }
@@ -1232,7 +1237,9 @@ impl CompiledGraph {
                         lim.record(xs, rate);
                         match lim.mode() {
                             super::models::LimitMode::FREE => rate,
-                            super::models::LimitMode::AT_MAX | super::models::LimitMode::AT_MIN => 0.0,
+                            super::models::LimitMode::AT_MAX | super::models::LimitMode::AT_MIN => {
+                                0.0
+                            }
                             _ => low_pass_nonwindup_mm(u, xs, k, t, min, max).1,
                         }
                     } else {

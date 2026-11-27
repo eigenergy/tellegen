@@ -136,7 +136,9 @@ pub(super) fn region_map(sys: &DynSystem) -> Option<&'static [u16]> {
             .collect();
         Some((sys.n, v))
     });
-    m.as_ref().filter(|(n, _)| *n == sys.n).map(|(_, v)| v.as_slice())
+    m.as_ref()
+        .filter(|(n, _)| *n == sys.n)
+        .map(|(_, v)| v.as_slice())
 }
 
 impl BlockLu {
@@ -203,7 +205,10 @@ impl BlockLu {
         // the network's and loads' entries. The Jacobian builds devices, then plants: not the
         // state order, so each range is mapped to its unit by its first state.
         let unit_range: Option<Vec<(usize, usize)>> = ranges.filter(|_| pooled).and_then(|r| {
-            if r.len() != nu || !r.windows(2).all(|p| p[0].2 == p[1].1) || r.last().is_some_and(|l| l.2 != jf.len()) {
+            if r.len() != nu
+                || !r.windows(2).all(|p| p[0].2 == p[1].1)
+                || r.last().is_some_and(|l| l.2 != jf.len())
+            {
                 return None;
             }
             let mut ur = vec![(usize::MAX, 0); nu];
@@ -289,13 +294,24 @@ impl BlockLu {
         // its units' contiguous parts of `lu`, `perm` and `w` and builds its own compressed
         // factors; they are joined in unit order afterwards, with the network entries, so the
         // arrays and the triplets are those of the serial loop, value for value.
-        type ChunkOut = (Factors, Vec<[[f64; 3]; 2]>, bool, Vec<Triplet<usize, usize, f64>>, Vec<usize>);
+        type ChunkOut = (
+            Factors,
+            Vec<[[f64; 3]; 2]>,
+            bool,
+            Vec<Triplet<usize, usize, f64>>,
+            Vec<usize>,
+        );
         #[allow(clippy::type_complexity)]
-        let mut parts: Vec<std::sync::Mutex<(&mut [f64], &mut [u32], &mut [f64], &mut [f64], ChunkOut)>> =
-            Vec::with_capacity(nchunks);
+        let mut parts: Vec<
+            std::sync::Mutex<(&mut [f64], &mut [u32], &mut [f64], &mut [f64], ChunkOut)>,
+        > = Vec::with_capacity(nchunks);
         {
-            let (mut lu_rest, mut perm_rest, mut w_rest, mut b_rest): (&mut [f64], &mut [u32], &mut [f64], &mut [f64]) =
-                (&mut lu[..], &mut perm[..], &mut w[..], &mut b[..]);
+            let (mut lu_rest, mut perm_rest, mut w_rest, mut b_rest): (
+                &mut [f64],
+                &mut [u32],
+                &mut [f64],
+                &mut [f64],
+            ) = (&mut lu[..], &mut perm[..], &mut w[..], &mut b[..]);
             let (mut lu_at, mut st_at) = (0usize, 0usize);
             for c in 0..nchunks {
                 let next = bounds[c + 1];
@@ -314,7 +330,13 @@ impl BlockLu {
                     mid: Vec::new(),
                     inv: Vec::new(),
                 };
-                parts.push(std::sync::Mutex::new((l, pm, wv, bv, (f, Vec::new(), true, Vec::new(), vec![0]))));
+                parts.push(std::sync::Mutex::new((
+                    l,
+                    pm,
+                    wv,
+                    bv,
+                    (f, Vec::new(), true, Vec::new(), vec![0]),
+                )));
             }
         }
         let run_chunk = |c: usize| {
@@ -428,7 +450,10 @@ impl BlockLu {
         }
         // Join in unit order: the compressed factors, then the network entries.
         let t_join = crate::rms::clock::Instant::now();
-        let outs: Vec<ChunkOut> = parts.into_iter().map(|p| p.into_inner().expect("unit chunk").4).collect();
+        let outs: Vec<ChunkOut> = parts
+            .into_iter()
+            .map(|p| p.into_inner().expect("unit chunk").4)
+            .collect();
         if outs.iter().any(|o| !o.2) {
             return Ok(None);
         }
@@ -473,7 +498,18 @@ impl BlockLu {
         }
         super::integrate::time_add(9, t_units);
         let t_net = crate::rms::clock::Instant::now();
-        let net = NetLu::new(size, n, &trip, patterns, if sys.threads && !net_one() { region_map(sys) } else { None }, sys.epoch)?;
+        let net = NetLu::new(
+            size,
+            n,
+            &trip,
+            patterns,
+            if sys.threads && !net_one() {
+                region_map(sys)
+            } else {
+                None
+            },
+            sys.epoch,
+        )?;
         super::integrate::time_add(10, t_net);
         let Factors {
             col,
@@ -534,7 +570,11 @@ impl BlockLu {
         };
         let (units, perm, b, bounds) = (&self.units, &self.perm, &self.b, &self.solve_chunks);
         let nchunks = bounds.len() - 1;
-        let one = |dev_c: &mut [f64], at: usize, contrib_c: &mut [[f64; 2]], c: usize, tmp: &mut [f64]| {
+        let one = |dev_c: &mut [f64],
+                   at: usize,
+                   contrib_c: &mut [[f64; 2]],
+                   c: usize,
+                   tmp: &mut [f64]| {
             for (j, u) in units[bounds[c]..bounds[c + 1]].iter().enumerate() {
                 let k = u.k;
                 let z = &mut dev_c[u.first - at..u.first - at + k];
@@ -624,7 +664,11 @@ fn split_units<'a>(
     let mut at = 0usize;
     for c in 0..bounds.len() - 1 {
         let next = bounds[c + 1];
-        let end = if next < nu { units[next].first } else { at + dev.len() };
+        let end = if next < nu {
+            units[next].first
+        } else {
+            at + dev.len()
+        };
         let (d, rest) = std::mem::take(&mut dev).split_at_mut(end - at);
         let (k, krest) = std::mem::take(&mut contrib).split_at_mut(next - bounds[c]);
         out.push(std::sync::Mutex::new((d, at, k)));

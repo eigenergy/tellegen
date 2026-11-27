@@ -483,7 +483,16 @@ fn newton<F: AcPfFormulation>(
     let mut residual = inf_norm(&r);
     for it in 0..MAX_ITERS {
         iters = it;
-        if std::env::var_os("TELLEGEN_PF_TRACE").is_some() { let (mut wb, mut wv) = (0usize, 0.0f64); for (k, x) in r.iter().enumerate() { if x.abs() > wv { wv = x.abs(); wb = k; } } eprintln!("PF_TRACE it {it} residual {residual:.3e} worst row {wb}"); }
+        if std::env::var_os("TELLEGEN_PF_TRACE").is_some() {
+            let (mut wb, mut wv) = (0usize, 0.0f64);
+            for (k, x) in r.iter().enumerate() {
+                if x.abs() > wv {
+                    wv = x.abs();
+                    wb = k;
+                }
+            }
+            eprintln!("PF_TRACE it {it} residual {residual:.3e} worst row {wb}");
+        }
         if residual < TOL {
             break;
         }
@@ -640,13 +649,23 @@ fn solve_qlim<F: AcPfFormulation>(
                     kinds[b] = BusKind::Pq;
                     qsched[b] = qmax_bus[b];
                     converted[b] = 1;
-                    if std::env::var_os("TELLEGEN_PF_TRACE").is_some() { eprintln!("PF_SWITCH to-PQ at qmax bus {} qg {:.3} lim {:.3} vm {:.4}", net.bus_ids[b], qg, qsched[b], vm[b]); }
+                    if std::env::var_os("TELLEGEN_PF_TRACE").is_some() {
+                        eprintln!(
+                            "PF_SWITCH to-PQ at qmax bus {} qg {:.3} lim {:.3} vm {:.4}",
+                            net.bus_ids[b], qg, qsched[b], vm[b]
+                        );
+                    }
                     changed = true;
                 } else if qg < qmin_bus[b] - Q_TOL {
                     kinds[b] = BusKind::Pq;
                     qsched[b] = qmin_bus[b];
                     converted[b] = -1;
-                    if std::env::var_os("TELLEGEN_PF_TRACE").is_some() { eprintln!("PF_SWITCH to-PQ at qmin bus {} qg {:.3} lim {:.3} vm {:.4}", net.bus_ids[b], qg, qsched[b], vm[b]); }
+                    if std::env::var_os("TELLEGEN_PF_TRACE").is_some() {
+                        eprintln!(
+                            "PF_SWITCH to-PQ at qmin bus {} qg {:.3} lim {:.3} vm {:.4}",
+                            net.bus_ids[b], qg, qsched[b], vm[b]
+                        );
+                    }
                     changed = true;
                 }
             } else if converted[b] != 0 && !reverted[b] {
@@ -657,7 +676,12 @@ fn solve_qlim<F: AcPfFormulation>(
                 let revert = (converted[b] == 1 && vm[b] > vm_hold[b] + V_BACK)
                     || (converted[b] == -1 && vm[b] < vm_hold[b] - V_BACK);
                 if revert {
-                    if std::env::var_os("TELLEGEN_PF_TRACE").is_some() { eprintln!("PF_SWITCH back-to-PV bus {} vm {:.4} hold {:.4} conv {}", net.bus_ids[b], vm[b], vm_hold[b], converted[b]); }
+                    if std::env::var_os("TELLEGEN_PF_TRACE").is_some() {
+                        eprintln!(
+                            "PF_SWITCH back-to-PV bus {} vm {:.4} hold {:.4} conv {}",
+                            net.bus_ids[b], vm[b], vm_hold[b], converted[b]
+                        );
+                    }
                     kinds[b] = BusKind::Pv;
                     vm[b] = vm_hold[b];
                     qsched[b] = qg_bus[b];
@@ -864,11 +888,22 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             let r0 = layout0.residual(net, &net.pg, &net.qg, &vm0, &inj.p, &inj.q);
             let mut rows: Vec<(f64, usize, char)> = Vec::new();
             for b in 0..net.n {
-                if let Some(k) = layout0.p_row(b) { rows.push((r0[k].abs(), b, 'P')); }
-                if let Some(k) = layout0.q_row(b) { rows.push((r0[k].abs(), b, 'Q')); }
+                if let Some(k) = layout0.p_row(b) {
+                    rows.push((r0[k].abs(), b, 'P'));
+                }
+                if let Some(k) = layout0.q_row(b) {
+                    rows.push((r0[k].abs(), b, 'Q'));
+                }
             }
             rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-            eprintln!("PF_DEBUG case start: {} rows, slacks {:?}", rows.len(), net.slacks.iter().map(|&b| net.bus_ids[b]).collect::<Vec<_>>());
+            eprintln!(
+                "PF_DEBUG case start: {} rows, slacks {:?}",
+                rows.len(),
+                net.slacks
+                    .iter()
+                    .map(|&b| net.bus_ids[b])
+                    .collect::<Vec<_>>()
+            );
             for (v, b, w) in rows.iter().take(15) {
                 eprintln!("PF_DEBUG bus {} {} mismatch {:.4} vm {:.4} va {:.4} pg {:.4} qg {:.4} pd {:.4} qd {:.4} kind {:?}",
                     net.bus_ids[*b], w, v, vm0[*b], va0[*b], net.pg[*b], net.qg[*b], net.pd[*b], net.qd[*b], kinds0[*b]);
@@ -879,11 +914,19 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             let r1 = layout1.residual(net, &net.pg, &net.qg, &vm, &inj.p, &inj.q);
             let mut rows: Vec<(f64, usize, char)> = Vec::new();
             for b in 0..net.n {
-                if let Some(k) = layout1.p_row(b) { rows.push((r1[k].abs(), b, 'P')); }
-                if let Some(k) = layout1.q_row(b) { rows.push((r1[k].abs(), b, 'Q')); }
+                if let Some(k) = layout1.p_row(b) {
+                    rows.push((r1[k].abs(), b, 'P'));
+                }
+                if let Some(k) = layout1.q_row(b) {
+                    rows.push((r1[k].abs(), b, 'Q'));
+                }
             }
             rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-            let low: Vec<_> = (0..net.n).filter(|&b| vm[b] < 0.85).map(|b| (net.bus_ids[b], (vm[b] * 1000.0).round() / 1000.0)).take(20).collect();
+            let low: Vec<_> = (0..net.n)
+                .filter(|&b| vm[b] < 0.85)
+                .map(|b| (net.bus_ids[b], (vm[b] * 1000.0).round() / 1000.0))
+                .take(20)
+                .collect();
             eprintln!("PF_DEBUG best iterate: residual {:.3e} after {} iterations; buses below 0.85 pu: {:?}", residual, iters, low);
             for (v, b, w) in rows.iter().take(15) {
                 eprintln!("PF_DEBUG best bus {} {} mismatch {:.4} vm {:.4} (case {:.4}) va {:.4} (case {:.4}) kind {:?}",

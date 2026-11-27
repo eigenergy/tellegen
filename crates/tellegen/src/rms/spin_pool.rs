@@ -15,10 +15,10 @@
 //!
 //! @block Spin pool
 
+use crate::rms::clock::Instant;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
-use crate::rms::clock::Instant;
 
 type Job = dyn Fn(usize) + Sync + 'static;
 
@@ -51,7 +51,10 @@ fn counts() -> (usize, usize) {
         return set.unwrap_or((0, 0));
     }
     let (g, r) = set.unwrap_or((3, 2));
-    (env("TELLEGEN_THREADS").unwrap_or(g), env("TELLEGEN_RELAY_THREADS").unwrap_or(r))
+    (
+        env("TELLEGEN_THREADS").unwrap_or(g),
+        env("TELLEGEN_RELAY_THREADS").unwrap_or(r),
+    )
 }
 
 /// Start a thread running `f`; false where none can be started.
@@ -173,8 +176,15 @@ impl SpinPool {
     /// caller runs `side` first.
     // @block Run beside the caller
     // Only the browser build with threads runs the relays beside the step this way.
-    #[cfg_attr(not(all(target_arch = "wasm32", target_feature = "atomics")), allow(dead_code))]
-    pub(crate) fn beside<'a, R>(&self, side: &'a (dyn Fn(usize) + Sync + 'a), main: impl FnOnce() -> R) -> R {
+    #[cfg_attr(
+        not(all(target_arch = "wasm32", target_feature = "atomics")),
+        allow(dead_code)
+    )]
+    pub(crate) fn beside<'a, R>(
+        &self,
+        side: &'a (dyn Fn(usize) + Sync + 'a),
+        main: impl FnOnce() -> R,
+    ) -> R {
         let guard = match self.busy.try_lock() {
             Ok(g) if self.threads > 0 => g,
             _ => {
@@ -194,7 +204,8 @@ impl SpinPool {
         let s = &*self.shared;
         // SAFETY: the job is called only for tasks claimed under this job's
         // id, all of which finish before `finish` returns.
-        let job: &'static Job = unsafe { std::mem::transmute::<&'a (dyn Fn(usize) + Sync + 'a), &'static Job>(f) };
+        let job: &'static Job =
+            unsafe { std::mem::transmute::<&'a (dyn Fn(usize) + Sync + 'a), &'static Job>(f) };
         let id = s.epoch.load(Ordering::Relaxed) + 1;
         // SAFETY: a shared reference to a trait object is two words.
         let words: [usize; 2] = unsafe { std::mem::transmute::<&'static Job, [usize; 2]>(job) };
@@ -231,7 +242,10 @@ fn claim(s: &Shared, id: u64, tasks: usize) -> Option<usize> {
         if k >= tasks {
             return None;
         }
-        match s.ticket.compare_exchange_weak(v, v + 1, Ordering::AcqRel, Ordering::Acquire) {
+        match s
+            .ticket
+            .compare_exchange_weak(v, v + 1, Ordering::AcqRel, Ordering::Acquire)
+        {
             Ok(_) => return Some(k),
             Err(now) => v = now,
         }
@@ -270,7 +284,10 @@ fn worker(s: &Shared) {
         }
         seen = e;
         spins = 0;
-        let words = [s.job[0].load(Ordering::Acquire), s.job[1].load(Ordering::Acquire)];
+        let words = [
+            s.job[0].load(Ordering::Acquire),
+            s.job[1].load(Ordering::Acquire),
+        ];
         let tasks = s.tasks.load(Ordering::Acquire);
         if words[0] != 0 && s.epoch.load(Ordering::Acquire) == e {
             // SAFETY: the words of job `e` (see `Shared::job`); it is only called
@@ -288,7 +305,12 @@ fn worker(s: &Shared) {
 /// `TELLEGEN_SPIN`: busy-wait rounds before an idle worker yields (default 20000).
 fn spin_limit() -> u32 {
     static S: OnceLock<u32> = OnceLock::new();
-    *S.get_or_init(|| std::env::var("TELLEGEN_SPIN").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000))
+    *S.get_or_init(|| {
+        std::env::var("TELLEGEN_SPIN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20_000)
+    })
 }
 
 #[cfg(test)]

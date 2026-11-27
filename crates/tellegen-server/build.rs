@@ -33,8 +33,9 @@ fn draw(workspace: &Path, out_dir: &Path, name: &str) {
         ..tellegen_blocks::Meta::default()
     };
     let out = out_dir.join(format!("{name}-blocks.html"));
-    let doc = tellegen_blocks::generate_roots(&roots, &headings, workspace, title, &meta, &out, None)
-        .unwrap_or_else(|e| panic!("draw the {name} block diagram: {e}"));
+    let doc =
+        tellegen_blocks::generate_roots(&roots, &headings, workspace, title, &meta, &out, None)
+            .unwrap_or_else(|e| panic!("draw the {name} block diagram: {e}"));
     for issue in &doc.issues {
         println!("cargo:warning=block docs ({name}): {issue}");
     }

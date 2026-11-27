@@ -608,7 +608,8 @@ fn iec_60255_127_voltage_stages() {
     let topo = rig_topology(false, c(0.0, 1.0));
     let under = scheme(vec![line_relay(
         1,
-        vec![ProtectionFunction::Undervoltage(VoltageStage { reset_ratio: None,
+        vec![ProtectionFunction::Undervoltage(VoltageStage {
+            reset_ratio: None,
             label: None,
             pickup: 0.8,
             delay: 0.5,
@@ -647,7 +648,8 @@ fn iec_60255_127_voltage_stages() {
 
     let over = scheme(vec![line_relay(
         1,
-        vec![ProtectionFunction::Overvoltage(VoltageStage { reset_ratio: None,
+        vec![ProtectionFunction::Overvoltage(VoltageStage {
+            reset_ratio: None,
             label: None,
             pickup: 1.1,
             delay: 0.1,

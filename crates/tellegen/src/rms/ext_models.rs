@@ -37,7 +37,10 @@ pub(crate) const EXT_MODELS: &[(&str, &str, usize)] = &[
 /// The role of an extension model, if `name` is one.
 pub(crate) fn ext_role(name: &str) -> Option<&'static str> {
     let n = name.trim().to_ascii_uppercase();
-    EXT_MODELS.iter().find(|(m, _, _)| *m == n).map(|(_, r, _)| *r)
+    EXT_MODELS
+        .iter()
+        .find(|(m, _, _)| *m == n)
+        .map(|(_, r, _)| *r)
 }
 
 /// The records of one unit that name extension models: `(model, numbers)`
@@ -52,7 +55,10 @@ pub(crate) struct ExtRecords {
 
 impl ExtRecords {
     pub(crate) fn is_empty(&self) -> bool {
-        self.exciter.is_none() && self.stabilizer.is_none() && self.oel.is_none() && self.uel.is_none()
+        self.exciter.is_none()
+            && self.stabilizer.is_none()
+            && self.oel.is_none()
+            && self.uel.is_none()
     }
 }
 
@@ -87,7 +93,11 @@ pub(crate) fn unit_records(
     let mut out = ExtRecords::default();
     for r in dyr.records() {
         if r.bus_id().map(|b| b as usize) != Some(bus)
-            || !r.device_id().unwrap_or("1").trim().eq_ignore_ascii_case(id.trim())
+            || !r
+                .device_id()
+                .unwrap_or("1")
+                .trim()
+                .eq_ignore_ascii_case(id.trim())
         {
             continue;
         }
@@ -95,8 +105,8 @@ pub(crate) fn unit_records(
         let Some(role) = ext_role(&model) else {
             continue;
         };
-        let p = numbers(&model, r.parameters())
-            .map_err(|e| format!("generator {bus}-{id}: {e}"))?;
+        let p =
+            numbers(&model, r.parameters()).map_err(|e| format!("generator {bus}-{id}: {e}"))?;
         match role {
             "exciter" => out.exciter = Some((model, p)),
             "stabilizer" => out.stabilizer = Some((model, p)),
@@ -165,14 +175,41 @@ pub(crate) fn esst1a(p: &[f64]) -> Result<BlockGraph, String> {
         nd("Vm", Block::Lag { k: 1.0, t: tr }, &["vt"]),
     ];
     if vos == 1 {
-        nodes.push(sum("error", &[1.0, 1.0, -1.0, -1.0], &["v_ref", "vs", "Vm", "VF"]));
+        nodes.push(sum(
+            "error",
+            &[1.0, 1.0, -1.0, -1.0],
+            &["v_ref", "vs", "Vm", "VF"],
+        ));
     } else {
         nodes.push(sum("error", &[1.0, -1.0, -1.0], &["v_ref", "Vm", "VF"]));
     }
     nodes.extend([
-        nd("VI", Block::Clamp { min: vimin, max: vimax }, &["error"]),
-        nd("Vr1", Block::LeadLag { k: 1.0, t1: tc, t2: tb }, &["VI"]),
-        nd("Vr2", Block::LeadLag { k: 1.0, t1: tc1, t2: tb1 }, &["Vr1"]),
+        nd(
+            "VI",
+            Block::Clamp {
+                min: vimin,
+                max: vimax,
+            },
+            &["error"],
+        ),
+        nd(
+            "Vr1",
+            Block::LeadLag {
+                k: 1.0,
+                t1: tc,
+                t2: tb,
+            },
+            &["VI"],
+        ),
+        nd(
+            "Vr2",
+            Block::LeadLag {
+                k: 1.0,
+                t1: tc1,
+                t2: tb1,
+            },
+            &["Vr1"],
+        ),
         nd(
             "Va",
             Block::LagLimited {
@@ -233,13 +270,51 @@ pub(crate) fn esac6a(p: &[f64]) -> Result<BlockGraph, String> {
         input("v_ref", "v_ref"),
         nd("Vm", Block::Lag { k: 1.0, t: tr }, &["vt"]),
         sum("error", &[1.0, 1.0, -1.0], &["v_ref", "vs", "Vm"]),
-        nd("Va_ll", Block::LeadLag { k: ka, t1: tk, t2: ta }, &["error"]),
-        nd("Va", Block::Clamp { min: vamin, max: vamax }, &["Va_ll"]),
-        nd("Vr_ll", Block::LeadLag { k: 1.0, t1: tc, t2: tb }, &["Va"]),
+        nd(
+            "Va_ll",
+            Block::LeadLag {
+                k: ka,
+                t1: tk,
+                t2: ta,
+            },
+            &["error"],
+        ),
+        nd(
+            "Va",
+            Block::Clamp {
+                min: vamin,
+                max: vamax,
+            },
+            &["Va_ll"],
+        ),
+        nd(
+            "Vr_ll",
+            Block::LeadLag {
+                k: 1.0,
+                t1: tc,
+                t2: tb,
+            },
+            &["Va"],
+        ),
         konst("vfelim", vfelim),
         sum("vfe_over", &[1.0, -1.0], &["VFE", "vfelim"]),
-        nd("VH_ll", Block::LeadLag { k: kh, t1: tj, t2: th }, &["vfe_over"]),
-        nd("VH", Block::Clamp { min: 0.0, max: vhmax }, &["VH_ll"]),
+        nd(
+            "VH_ll",
+            Block::LeadLag {
+                k: kh,
+                t1: tj,
+                t2: th,
+            },
+            &["vfe_over"],
+        ),
+        nd(
+            "VH",
+            Block::Clamp {
+                min: 0.0,
+                max: vhmax,
+            },
+            &["VH_ll"],
+        ),
         sum("Vr_in", &[1.0, -1.0], &["Vr_ll", "VH"]),
         gain("lo", vrmin, "vt"),
         gain("hi", vrmax, "vt"),
@@ -292,9 +367,23 @@ pub(crate) fn pss2b(p: &[f64]) -> Result<BlockGraph, String> {
         input("pe_m", "pe_m"),
         konst("one", 1.0),
         sum("u1_raw", &[1.0, -1.0], &["omega", "one"]),
-        nd("u1", Block::Clamp { min: vs1min, max: vs1max }, &["u1_raw"]),
+        nd(
+            "u1",
+            Block::Clamp {
+                min: vs1min,
+                max: vs1max,
+            },
+            &["u1_raw"],
+        ),
         nd("u2_raw", Block::Product, &["pe_m", "omega"]),
-        nd("u2", Block::Clamp { min: vs2min, max: vs2max }, &["u2_raw"]),
+        nd(
+            "u2",
+            Block::Clamp {
+                min: vs2min,
+                max: vs2max,
+            },
+            &["u2_raw"],
+        ),
         nd("w1", Block::Washout { k: tw1, t: tw1 }, &["u1"]),
     ];
     let mut a = "w1".to_string();
@@ -318,7 +407,15 @@ pub(crate) fn pss2b(p: &[f64]) -> Result<BlockGraph, String> {
     if m > 0 {
         for i in 0..n {
             let id = format!("rtf{i}_ll");
-            nodes.push(nd(&id, Block::LeadLag { k: 1.0, t1: t8, t2: t9 }, &[&r]));
+            nodes.push(nd(
+                &id,
+                Block::LeadLag {
+                    k: 1.0,
+                    t1: t8,
+                    t2: t9,
+                },
+                &[&r],
+            ));
             r = id;
             for j in 1..m {
                 let id = format!("rtf{i}_lag{j}");
@@ -331,9 +428,32 @@ pub(crate) fn pss2b(p: &[f64]) -> Result<BlockGraph, String> {
         sum("x", &[1.0, -1.0], &[&r, "l7"]),
         gain("ks1", ks1, "x"),
         nd("ll1", Block::LeadLag { k: 1.0, t1, t2 }, &["ks1"]),
-        nd("ll2", Block::LeadLag { k: 1.0, t1: t3, t2: t4 }, &["ll1"]),
-        nd("ll3", Block::LeadLag { k: 1.0, t1: t10, t2: t11 }, &["ll2"]),
-        nd("Vst", Block::Clamp { min: vstmin, max: vstmax }, &["ll3"]),
+        nd(
+            "ll2",
+            Block::LeadLag {
+                k: 1.0,
+                t1: t3,
+                t2: t4,
+            },
+            &["ll1"],
+        ),
+        nd(
+            "ll3",
+            Block::LeadLag {
+                k: 1.0,
+                t1: t10,
+                t2: t11,
+            },
+            &["ll2"],
+        ),
+        nd(
+            "Vst",
+            Block::Clamp {
+                min: vstmin,
+                max: vstmax,
+            },
+            &["ll3"],
+        ),
     ]);
     Ok(BlockGraph {
         slot: Slot::Stabilizer,
@@ -406,12 +526,23 @@ fn dead_zone_pi(pre: &str, e: &str, kp: f64, ki: f64, xmax: f64) -> Vec<GraphNod
         konst(&id("cap"), c * xmax),
         sum(&id("room"), &[1.0, -c], &[&id("cap"), &id("x")]),
         nd(&id("lo"), Block::Max, &[e, &id("unwind")]),
-        nd(&id("in"), Block::Min { tie: 0.0 }, &[&id("lo"), &id("room")]),
+        nd(
+            &id("in"),
+            Block::Min { tie: 0.0 },
+            &[&id("lo"), &id("room")],
+        ),
         x,
         nd(&id("over"), Block::Max, &[e, &id("zero")]),
         gain(&id("p"), kp, &id("over")),
         sum(&id("sum"), &[1.0, 1.0], &[&id("p"), &id("x")]),
-        nd(&id("pi"), Block::Clamp { min: 0.0, max: xmax }, &[&id("sum")]),
+        nd(
+            &id("pi"),
+            Block::Clamp {
+                min: 0.0,
+                max: xmax,
+            },
+            &[&id("sum")],
+        ),
     ]
 }
 
@@ -444,9 +575,7 @@ fn uel_nodes(p: &[f64]) -> Result<Vec<GraphNode>, String> {
             "uel_qlim"
         }
     };
-    nodes.extend([
-        sum("uel_e", &[1.0, -1.0], &[lim, "uel_qin"]),
-    ]);
+    nodes.extend([sum("uel_e", &[1.0, -1.0], &[lim, "uel_qin"])]);
     nodes.extend(dead_zone_pi("uel", "uel_e", kp, ki, vuelmax));
     nodes.push(gain("VUEL", 1.0, "uel_pi"));
     Ok(nodes)
@@ -466,7 +595,9 @@ pub(crate) fn with_limiters(
     }
     let has = |g: &BlockGraph, id: &str| g.nodes.iter().any(|n| n.id == id);
     match graph.nodes.iter_mut().find(|n| n.id == "vs") {
-        Some(n) if matches!(&n.block, Block::Input { port } if port == "vs") => n.id = "vs_pss".into(),
+        Some(n) if matches!(&n.block, Block::Input { port } if port == "vs") => {
+            n.id = "vs_pss".into()
+        }
         Some(_) => return Err("exciter graph: node 'vs' is not the stabilizer input".into()),
         None => graph.nodes.push(input("vs_pss", "vs")),
     }
@@ -603,7 +734,10 @@ mod tests {
     #[test]
     fn rtf_has_m_n_blocks() {
         let g = pss2b(&PSS2B).unwrap();
-        assert_eq!(g.nodes.iter().filter(|n| n.id.starts_with("rtf0")).count(), 5);
+        assert_eq!(
+            g.nodes.iter().filter(|n| n.id.starts_with("rtf0")).count(),
+            5
+        );
     }
 
     #[test]

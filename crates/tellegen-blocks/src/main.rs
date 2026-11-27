@@ -86,7 +86,9 @@ fn main() -> ExitCode {
         )
     } else {
         let Some(dir) = dir else {
-            eprintln!("usage: tellegen-blocks <dir> [options] | --preset rms|protection; see --help");
+            eprintln!(
+                "usage: tellegen-blocks <dir> [options] | --preset rms|protection; see --help"
+            );
             return ExitCode::from(2);
         };
         let module = module.unwrap_or_else(|| {

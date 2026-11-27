@@ -133,7 +133,11 @@ fn watch_set_frames_and_replay(refactor_values: bool) {
             let run = &full.channels[k][i0..];
             if refactor_values {
                 for (a, b) in v.iter().zip(run) {
-                    assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{k} from {} s: {a} {b}", cp.t);
+                    assert!(
+                        (a - b).abs() <= 1e-9 * b.abs().max(1.0),
+                        "{k} from {} s: {a} {b}",
+                        cp.t
+                    );
                 }
             } else {
                 assert_eq!(v.as_slice(), run, "{k} from {} s", cp.t);

@@ -1485,7 +1485,11 @@ impl ProtectionRuntime {
             });
             slots
                 .into_iter()
-                .map(|s| s.into_inner().expect("relay chunk").expect("relay chunk done"))
+                .map(|s| {
+                    s.into_inner()
+                        .expect("relay chunk")
+                        .expect("relay chunk done")
+                })
                 .collect()
         };
         #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
@@ -2021,4 +2025,3 @@ type RelayChunk = (Vec<Operation>, Vec<usize>, bool);
 /// Relays per task of an evaluation on the thread pool: enough work per task
 /// to amortize its scheduling, small enough to balance the threads.
 const RELAY_CHUNK: usize = 64;
-

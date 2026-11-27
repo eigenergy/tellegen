@@ -115,9 +115,16 @@ impl RmsLiveCase {
                 ..Default::default()
             }
         };
-        tellegen::rms::live_from_module_json(module_json, dyn_text, o.load_model, o.options, dt, output_step)
-            .map(RmsLiveCase)
-            .map_err(jserr)
+        tellegen::rms::live_from_module_json(
+            module_json,
+            dyn_text,
+            o.load_model,
+            o.options,
+            dt,
+            output_step,
+        )
+        .map(RmsLiveCase)
+        .map_err(jserr)
     }
 
     /// Simulated time reached, s.

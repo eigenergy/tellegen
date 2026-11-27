@@ -151,10 +151,14 @@ impl GenDevice {
         let vt = mag(vr, vi);
         let pe = alg.te * self.scale;
         let mut scratch = vec![0.0; n];
-        let vs = self
-            .pss
-            .eval(&x[p..p + self.pss.n_states()], omega, pe, vt, self.scale, &mut scratch[p..p + self.pss.n_states()])
-            + self.vs_ext;
+        let vs = self.pss.eval(
+            &x[p..p + self.pss.n_states()],
+            omega,
+            pe,
+            vt,
+            self.scale,
+            &mut scratch[p..p + self.pss.n_states()],
+        ) + self.vs_ext;
         let mut out = Vec::new();
         let mut push = |slot: &str, gr: &super::graph::CompiledGraph, xs: &[f64], ports: &[f64]| {
             for (id, v) in gr.node_ids().zip(gr.signals(xs, ports)) {
@@ -167,7 +171,21 @@ impl GenDevice {
                 "exciter",
                 gr,
                 &x[a..g],
-                &[avr_vt(self.vcomp, vr, vi, ir, ii, if self.lag_states() > 0 { x[n - 1] } else { 0.0 }), vs, alg.xad_ifd, self.v_ref, vr * ir + vi * ii, vi * ir - vr * ii],
+                &[
+                    avr_vt(
+                        self.vcomp,
+                        vr,
+                        vi,
+                        ir,
+                        ii,
+                        if self.lag_states() > 0 { x[n - 1] } else { 0.0 },
+                    ),
+                    vs,
+                    alg.xad_ifd,
+                    self.v_ref,
+                    vr * ir + vi * ii,
+                    vi * ir - vr * ii,
+                ],
             );
         }
         if let Governor::Graph(gr) = &self.gov {
@@ -211,10 +229,14 @@ impl GenDevice {
         let (fa, rest) = rest.split_at_mut(g - a);
         let (fg, fp) = rest.split_at_mut(p - g);
         let (fp, fc) = fp.split_at_mut(self.pss.n_states());
-        let vs = self
-            .pss
-            .eval(&x[p..p + self.pss.n_states()], omega, alg.te * self.scale, vt, self.scale, fp)
-            + self.vs_ext;
+        let vs = self.pss.eval(
+            &x[p..p + self.pss.n_states()],
+            omega,
+            alg.te * self.scale,
+            vt,
+            self.scale,
+            fp,
+        ) + self.vs_ext;
         let (ir, ii) = dq_ri_sc(sc, alg.id, alg.iq);
         // Experimental: under-excitation limiter of the summing-point type (IEEE Std 421.5,
         // UEL1/UEL2 reduced to its proportional path). The limit is `-q_lim Vt^2` of reactive power on
@@ -229,7 +251,14 @@ impl GenDevice {
         let vf = self.avr.eval(
             &x[a..g],
             super::models::AvrIn {
-                vt: avr_vt(self.vcomp, vr, vi, ir, ii, if self.lag_states() > 0 { x[n - 1] } else { 0.0 }),
+                vt: avr_vt(
+                    self.vcomp,
+                    vr,
+                    vi,
+                    ir,
+                    ii,
+                    if self.lag_states() > 0 { x[n - 1] } else { 0.0 },
+                ),
                 vs,
                 xad_ifd: alg.xad_ifd,
                 v_ref: self.v_ref,
@@ -336,7 +365,12 @@ pub(crate) enum LowVoltage {
 /// over `Vb ± d` (see [`part_weight`]); unset or 0, the plain break.
 fn pqbrak_smooth() -> f64 {
     static D: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *D.get_or_init(|| std::env::var("TELLEGEN_PQBRAK_SMOOTH").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0))
+    *D.get_or_init(|| {
+        std::env::var("TELLEGEN_PQBRAK_SMOOTH")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0)
+    })
 }
 
 /// `w(V) = (u / v0)^γ / u²` and `(dw/dV) / V` for a part with exponent
@@ -425,7 +459,8 @@ pub fn set_load_recovery(alpha: f64, t: f64) {
 // of reactive power beyond the limit).
 // Experimental: HVDC links in AC emulation, `(from bus, to bus, K in MW/degree, limit in MW)`
 // by bus number; see [`AcEmulation`].
-static HVDC_EMULATION: std::sync::RwLock<Vec<(usize, usize, f64, f64)>> = std::sync::RwLock::new(Vec::new());
+static HVDC_EMULATION: std::sync::RwLock<Vec<(usize, usize, f64, f64)>> =
+    std::sync::RwLock::new(Vec::new());
 
 /// Sets the HVDC links in AC emulation (experimental): `(from bus, to bus, K MW/degree,
 /// limit MW)`. Call before the system is built.
@@ -460,12 +495,16 @@ impl AcEmulation {
     /// The currents injected at `from` and `to` (real, imaginary), for active power only.
     pub(crate) fn currents(&self, vr_f: f64, vi_f: f64, vr_t: f64, vi_t: f64) -> [f64; 4] {
         let p = self.power(vr_f, vi_f, vr_t, vi_t);
-        let (mf, mt) = ((vr_f * vr_f + vi_f * vi_f).max(1e-6), (vr_t * vr_t + vi_t * vi_t).max(1e-6));
+        let (mf, mt) = (
+            (vr_f * vr_f + vi_f * vi_f).max(1e-6),
+            (vr_t * vr_t + vi_t * vi_t).max(1e-6),
+        );
         [-p * vr_f / mf, -p * vi_f / mf, p * vr_t / mt, p * vi_t / mt]
     }
 }
 
-static UEL: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> = std::sync::RwLock::new(None);
+static UEL: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> =
+    std::sync::RwLock::new(None);
 
 /// Sets the under-excitation limiters (experimental). Call before the system is built.
 pub fn set_uel(map: std::collections::HashMap<usize, [f64; 2]>) {
@@ -473,12 +512,16 @@ pub fn set_uel(map: std::collections::HashMap<usize, [f64; 2]>) {
 }
 
 pub(crate) fn uel_of(bus_number: usize) -> Option<[f64; 2]> {
-    UEL.read().expect("uel lock").as_ref().and_then(|m| m.get(&bus_number).copied())
+    UEL.read()
+        .expect("uel lock")
+        .as_ref()
+        .and_then(|m| m.get(&bus_number).copied())
 }
 
 // Experimental: load compensators of the AVR input by bus number, `[rc, xc]` in pu of MBASE
 // (IEEE Std 421.5, Vc = |Vt + (Rc + j Xc) It|): positive values give reactive droop.
-static VCOMP: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 3]>>> = std::sync::RwLock::new(None);
+static VCOMP: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 3]>>> =
+    std::sync::RwLock::new(None);
 
 /// Sets the AVR load compensators (experimental). Call before the system is built.
 pub fn set_vcomp(map: std::collections::HashMap<usize, [f64; 3]>) {
@@ -486,7 +529,11 @@ pub fn set_vcomp(map: std::collections::HashMap<usize, [f64; 3]>) {
 }
 
 pub(crate) fn vcomp_of(bus_number: usize) -> Option<[f64; 3]> {
-    VCOMP.read().expect("vcomp lock").as_ref().and_then(|m| m.get(&bus_number).copied())
+    VCOMP
+        .read()
+        .expect("vcomp lock")
+        .as_ref()
+        .and_then(|m| m.get(&bus_number).copied())
 }
 
 /// The voltage the regulator sees: the terminal voltage, or the compensated one.
@@ -511,7 +558,8 @@ pub fn set_load_rise(c: f64) {
 
 // Experimental: voltage exponent of the reactive power set point of renewable plants in
 // reactive power control, by bus number: Q_ref (V / V0)^n with the start voltage V0.
-static PLANT_QV: std::sync::RwLock<Option<std::collections::HashMap<usize, f64>>> = std::sync::RwLock::new(None);
+static PLANT_QV: std::sync::RwLock<Option<std::collections::HashMap<usize, f64>>> =
+    std::sync::RwLock::new(None);
 
 /// Sets the voltage exponent of the plants' reactive power set point (experimental). Call before the system is built.
 pub fn set_plant_q_exponent(map: std::collections::HashMap<usize, f64>) {
@@ -519,7 +567,12 @@ pub fn set_plant_q_exponent(map: std::collections::HashMap<usize, f64>) {
 }
 
 pub(crate) fn plant_qv_of(bus_number: usize) -> f64 {
-    PLANT_QV.read().expect("plant qv lock").as_ref().and_then(|m| m.get(&bus_number).copied()).unwrap_or(0.0)
+    PLANT_QV
+        .read()
+        .expect("plant qv lock")
+        .as_ref()
+        .and_then(|m| m.get(&bus_number).copied())
+        .unwrap_or(0.0)
 }
 
 // Experimental: opening and closing rate of the GAST fuel valve, pu of the turbine rating per
@@ -589,7 +642,8 @@ impl BusLoad {
         let c = f64::from_bits(LOAD_SAT_C.load(std::sync::atomic::Ordering::Relaxed));
         if c > 0.0 {
             // never below the bus's own power flow voltage: no extra demand at the start
-            let vk = f64::from_bits(LOAD_SAT_VK.load(std::sync::atomic::Ordering::Relaxed)).max(self.v0);
+            let vk =
+                f64::from_bits(LOAD_SAT_VK.load(std::sync::atomic::Ordering::Relaxed)).max(self.v0);
             let p0 = self.p0();
             if vm > vk && p0 > 0.0 {
                 let x = (vm - vk) / 0.1;
@@ -1038,19 +1092,28 @@ impl DynSystem {
     /// from the initial state `x0` (so `f(x0)` is unchanged).
     pub(crate) fn set_hvdc_emulation_start(&mut self, x0: &[f64]) {
         let cfg = HVDC_EMULATION.read().expect("hvdc emulation lock").clone();
-        let index: std::collections::HashMap<usize, usize> =
-            self.bus_numbers.iter().enumerate().map(|(i, &b)| (b, i)).collect();
+        let index: std::collections::HashMap<usize, usize> = self
+            .bus_numbers
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| (b, i))
+            .collect();
         let n = self.n;
         self.hvdc_emulation = cfg
             .iter()
             .filter_map(|&(bf, bt, k_mw_deg, p_max_mw)| {
                 let (f, t) = (*index.get(&bf)?, *index.get(&bt)?);
-                let dtheta0 = (x0[n + f] * x0[t] - x0[f] * x0[n + t]).atan2(x0[f] * x0[t] + x0[n + f] * x0[n + t]);
+                let dtheta0 = (x0[n + f] * x0[t] - x0[f] * x0[n + t])
+                    .atan2(x0[f] * x0[t] + x0[n + f] * x0[n + t]);
                 Some(AcEmulation {
                     from: f,
                     to: t,
                     k: k_mw_deg * 180.0 / std::f64::consts::PI / self.sbase,
-                    p_max: if p_max_mw > 0.0 { p_max_mw / self.sbase } else { f64::INFINITY },
+                    p_max: if p_max_mw > 0.0 {
+                        p_max_mw / self.sbase
+                    } else {
+                        f64::INFINITY
+                    },
                     dtheta0,
                 })
             })
@@ -1063,7 +1126,12 @@ impl DynSystem {
         if !super::models::freeze_limits() {
             return 0;
         }
-        self.devices.iter().map(|d| d.avr.update_limit_modes() + d.gov.update_limit_modes() + d.pss.update_limit_modes()).sum()
+        self.devices
+            .iter()
+            .map(|d| {
+                d.avr.update_limit_modes() + d.gov.update_limit_modes() + d.pss.update_limit_modes()
+            })
+            .sum()
     }
 
     /// Experimental: with frozen limits, set the exciter states a step carried past
@@ -1143,7 +1211,10 @@ impl DynSystem {
         // the frame speed, writes its state rows and adds its stator current to
         // its bus.
         #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
-        if self.devices.len() >= PAR_MIN_UNITS && self.threads && super::spin_pool::SpinPool::global().threads() > 0 {
+        if self.devices.len() >= PAR_MIN_UNITS
+            && self.threads
+            && super::spin_pool::SpinPool::global().threads() > 0
+        {
             // Experimental: the units in chunks on the spin pool, each writing
             // only its own state rows and output; the bus currents are added
             // below in unit order, as serially.
@@ -1179,7 +1250,10 @@ impl DynSystem {
         // Each renewable plant's states and its current into its bus; a tripped
         // plant's rows hold its states.
         #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
-        if self.held.len() >= PAR_MIN_UNITS && self.threads && super::spin_pool::SpinPool::global().threads() > 0 {
+        if self.held.len() >= PAR_MIN_UNITS
+            && self.threads
+            && super::spin_pool::SpinPool::global().threads() > 0
+        {
             let nh = self.held.len();
             let mut res: Vec<Option<C64>> = vec![None; nh];
             let fp = SendPtr(f.as_mut_ptr());
@@ -1301,11 +1375,20 @@ impl DynSystem {
                 }
             }
         });
-        super::regions::CALL_US.fetch_add(t_call.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        super::regions::CALL_US.fetch_add(
+            t_call.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         super::regions::CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    fn residual_units_serial(&self, x: &[f64], f: &mut [f64], w_sys: f64, mut outs: Option<&mut Vec<GenOut>>) {
+    fn residual_units_serial(
+        &self,
+        x: &[f64],
+        f: &mut [f64],
+        w_sys: f64,
+        mut outs: Option<&mut Vec<GenOut>>,
+    ) {
         let n = self.n;
         let (vr, rest) = x.split_at(n);
         let vi = &rest[..n];
@@ -1383,7 +1466,10 @@ impl DynSystem {
     /// `(first state, start, end)` per device and per held plant with a model, in the order
     /// they are built; the entries before the first unit's are the network's and the loads'.
     #[allow(clippy::type_complexity)]
-    pub(crate) fn jacobian_units(&self, x: &[f64]) -> (Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>) {
+    pub(crate) fn jacobian_units(
+        &self,
+        x: &[f64],
+    ) -> (Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>) {
         let n = self.n;
         let mut t: Vec<(usize, usize, f64)> = Vec::with_capacity(self.ybus.len() * 4 + self.nx * 8);
         for &(r, c, y) in &self.ybus {
@@ -1440,7 +1526,8 @@ impl DynSystem {
         };
         #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
         if self.devices.len() + self.held.len() >= PAR_MIN_UNITS
-            && self.threads && super::spin_pool::SpinPool::global().threads() > 0
+            && self.threads
+            && super::spin_pool::SpinPool::global().threads() > 0
         {
             // Experimental: the units' blocks in chunks on the spin pool,
             // joined in unit order (the same triplets in the same order).
@@ -1448,8 +1535,11 @@ impl DynSystem {
             let total = nd + self.held.len();
             let chunks = total.div_ceil(PAR_CHUNK);
             #[allow(clippy::type_complexity)]
-            let parts: Vec<std::sync::Mutex<(Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>)>> =
-                (0..chunks).map(|_| std::sync::Mutex::new((Vec::new(), Vec::new()))).collect();
+            let parts: Vec<
+                std::sync::Mutex<(Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>)>,
+            > = (0..chunks)
+                .map(|_| std::sync::Mutex::new((Vec::new(), Vec::new())))
+                .collect();
             super::spin_pool::SpinPool::global().run(chunks, &|c| {
                 let mut v = Vec::new();
                 let mut r = Vec::new();

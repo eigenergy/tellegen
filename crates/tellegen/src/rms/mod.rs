@@ -102,13 +102,13 @@ mod renewable;
 // separator. The fine-grained parts of a step (the units' residual,
 // Jacobian, factorization and solves) run on a pool of spinning threads,
 // joined in the serial order, so the results do not depend on the threads.
-mod integrate;
 pub(crate) mod clock;
+mod integrate;
+pub(crate) mod regions;
 #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
 pub(crate) mod spin_pool;
-pub(crate) mod regions;
-pub use regions::region_stats;
 pub use clock::set_clock;
+pub use regions::region_stats;
 #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
 pub use spin_pool::{configure as configure_threads, Spawner};
 mod schur;
@@ -160,15 +160,15 @@ use integrate::step_adaptive;
 use record::Recorder;
 use system::DynSystem;
 // Experimental: model switches, set by the caller before a run.
+pub use integrate::lu_stats;
 pub use system::set_gast_rate;
+pub use system::set_hvdc_emulation;
 pub use system::set_load_recovery;
-pub use system::set_plant_q_exponent;
 pub use system::set_load_rise;
 pub use system::set_load_saturation;
+pub use system::set_plant_q_exponent;
 pub use system::set_uel;
-pub use system::set_hvdc_emulation;
 pub use system::set_vcomp;
-pub use integrate::lu_stats;
 
 #[cfg(feature = "rms-experimental")]
 pub use dyr_params::{
@@ -897,8 +897,10 @@ impl RmsSimulation {
                         next_event < events.len() && events[next_event].time() <= t + tol;
                     match (&pending, relays.as_deref()) {
                         (Some(_), Some(r)) => {
-                            cfg!(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))
-                                && sys.threads
+                            cfg!(not(all(
+                                target_arch = "wasm32",
+                                not(target_feature = "atomics")
+                            ))) && sys.threads
                                 && !event_due
                                 && r.can_run_beside(t, t_next, h)
                         }
@@ -963,7 +965,8 @@ impl RmsSimulation {
                         sys.residual(&x, &mut f, None);
                         solved = stepper.reinit(&sys, &mut x, &mut f);
                     }
-                    match solved.map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}")) {
+                    match solved.map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))
+                    {
                         Ok(n) => iterations += n,
                         Err(e) if partial => {
                             stopped = Some(e);
@@ -1137,8 +1140,8 @@ impl RmsSimulation {
                 t = t_next;
                 #[cfg(feature = "protection")]
                 if let Some(r) = relays.as_deref_mut() {
-                        let _tb = integrate::Timer(2, crate::rms::clock::Instant::now());
-                        iterations += protect::settle_banks(
+                    let _tb = integrate::Timer(2, crate::rms::clock::Instant::now());
+                    iterations += protect::settle_banks(
                         r,
                         &mut sys,
                         &mut x,

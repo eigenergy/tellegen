@@ -158,7 +158,10 @@ pub const PROTECTION_INTRO: &str = "Protection relays in tellegen: the measuring
 /// A named diagram of this repository: its roots and headings, intro and
 /// title (`rms` or `protection`).
 #[must_use]
-pub fn preset(name: &str, workspace: &Path) -> Option<(Vec<Root>, Vec<Heading>, &'static str, &'static str)> {
+pub fn preset(
+    name: &str,
+    workspace: &Path,
+) -> Option<(Vec<Root>, Vec<Heading>, &'static str, &'static str)> {
     match name {
         "rms" => {
             let (roots, headings) = rms_preset(workspace);
