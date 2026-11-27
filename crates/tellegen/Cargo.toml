@@ -172,5 +172,9 @@ name = "rms_psid_validation"
 required-features = ["rms"]
 
 [[example]]
+name = "rms_init_debug"
+required-features = ["rms-experimental"]
+
+[[example]]
 name = "api_schema"
 required-features = ["schema", "mc-pf"]

@@ -6,7 +6,9 @@
 //!
 //! @block Network regions
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+use std::sync::{Mutex, OnceLock};
 
 use super::system::DynSystem;
 
@@ -21,6 +23,8 @@ pub(crate) struct RegionIndex {
     pub(crate) sources: Vec<Vec<usize>>,
     /// Per bus, its index among its region's buses.
     pub(crate) local: Vec<u32>,
+    /// The system shape the index was built for (its cache key).
+    #[cfg_attr(not(not(all(target_arch = "wasm32", not(target_feature = "atomics")))), allow(dead_code))]
     key: (usize, usize, usize, usize),
 }
 
@@ -115,7 +119,6 @@ impl<T> Shared<T> {
 pub(crate) static CALL_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static TASK_US: [std::sync::atomic::AtomicU64; 16] = [const { std::sync::atomic::AtomicU64::new(0) }; 16];
-pub(crate) static TASK_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Adds a region task's time when dropped.
 pub(crate) struct RegionTimer(pub(crate) usize, pub(crate) crate::rms::clock::Instant);

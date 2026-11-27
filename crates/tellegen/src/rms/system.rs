@@ -1169,10 +1169,10 @@ impl DynSystem {
                 }
             }
         } else {
-            self.residual_units_serial(x, f, w_sys, outs.as_deref_mut());
+            self.residual_units_serial(x, f, w_sys, outs);
         }
         #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        self.residual_units_serial(x, f, w_sys, outs.as_deref_mut());
+        self.residual_units_serial(x, f, w_sys, outs);
         // @block Simulated plants
         // Each renewable plant's states and its current into its bus; a tripped
         // plant's rows hold its states.

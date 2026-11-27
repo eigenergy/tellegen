@@ -172,6 +172,8 @@ impl SpinPool {
     /// return `main`'s result once both are done. Without a free thread the
     /// caller runs `side` first.
     // @block Run beside the caller
+    // Only the browser build with threads runs the relays beside the step this way.
+    #[cfg_attr(not(all(target_arch = "wasm32", target_feature = "atomics")), allow(dead_code))]
     pub(crate) fn beside<'a, R>(&self, side: &'a (dyn Fn(usize) + Sync + 'a), main: impl FnOnce() -> R) -> R {
         let guard = match self.busy.try_lock() {
             Ok(g) if self.threads > 0 => g,

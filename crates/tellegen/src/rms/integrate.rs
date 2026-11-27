@@ -397,6 +397,7 @@ impl SparseLu {
         let mut u_diag = vec![0.0; n];
         let mut col: Vec<(usize, f64)> = Vec::new();
         u_ptr.push(0);
+        #[allow(clippy::needless_range_loop)]
         for j in 0..n {
             col.clear();
             for (&i, &v) in u.row_idx_of_col_raw(j).iter().zip(u.val_of_col(j)) {
@@ -454,6 +455,7 @@ impl SparseLu {
             for p in pattern.col_ptr[c]..pattern.col_ptr[c + 1] {
                 x[pv.row_perm_inv[pattern.row_idx[p]]] += val[p];
             }
+            #[allow(clippy::needless_range_loop)]
             for p in pv.u_ptr[j]..pv.u_ptr[j + 1] {
                 let k = pv.u_idx[p];
                 let xk = x[k];
@@ -471,11 +473,12 @@ impl SparseLu {
             for q in pv.l_ptr[j]..pv.l_ptr[j + 1] {
                 below = below.max(x[pv.l_idx[q]].abs());
             }
-            if !(d.abs() > tol * below) || !d.is_finite() {
+            if super::not_gt(d.abs(), tol * below) || !d.is_finite() {
                 return None;
             }
             u_diag[j] = d;
             let inv = 1.0 / d;
+            #[allow(clippy::needless_range_loop)]
             for q in pv.l_ptr[j]..pv.l_ptr[j + 1] {
                 let i = pv.l_idx[q];
                 l_val[q] = x[i] * inv;
@@ -1933,7 +1936,7 @@ fn dense_lu(a: &mut [f64], n: usize, piv: &mut [usize]) -> bool {
                 p = i;
             }
         }
-        if !(best > 0.0) {
+        if super::not_gt(best, 0.0) {
             return false;
         }
         piv[k] = p;
@@ -1957,8 +1960,8 @@ fn dense_lu(a: &mut [f64], n: usize, piv: &mut [usize]) -> bool {
 }
 
 fn dense_solve(a: &[f64], n: usize, piv: &[usize], b: &mut [f64]) {
-    for k in 0..n {
-        b.swap(k, piv[k]);
+    for (k, &p) in piv.iter().enumerate().take(n) {
+        b.swap(k, p);
     }
     for i in 0..n {
         let mut s = b[i];

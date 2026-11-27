@@ -1459,7 +1459,7 @@ impl ProtectionRuntime {
             (o, b, inverse)
         };
         #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
-        let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = if !self.threads {
+        let parts: Vec<RelayChunk> = if !self.threads {
             self.relays
                 .chunks_mut(RELAY_CHUNK)
                 .enumerate()
@@ -1471,7 +1471,7 @@ impl ProtectionRuntime {
             // per step); joined in chunk order, as before.
             let len = self.relays.len();
             let nchunks = len.div_ceil(RELAY_CHUNK);
-            let slots: Vec<std::sync::Mutex<Option<(Vec<Operation>, Vec<usize>, bool)>>> =
+            let slots: Vec<std::sync::Mutex<Option<RelayChunk>>> =
                 (0..nchunks).map(|_| std::sync::Mutex::new(None)).collect();
             let rp = crate::rms::regions::Shared(self.relays.as_mut_ptr());
             crate::rms::spin_pool::SpinPool::relays().run(nchunks, &|c| {
@@ -1487,7 +1487,7 @@ impl ProtectionRuntime {
                 .collect()
         };
         #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        let parts: Vec<(Vec<Operation>, Vec<usize>, bool)> = self
+        let parts: Vec<RelayChunk> = self
             .relays
             .chunks_mut(RELAY_CHUNK)
             .enumerate()
@@ -2011,6 +2011,10 @@ fn resolve(r: &Relay, topo: &Topology) -> Result<Site, String> {
     Ok(site)
 }
 // @end
+
+/// One chunk's result of the measure pass: its operations, its busy relays
+/// (by index) and whether an inverse-time element of it is running.
+type RelayChunk = (Vec<Operation>, Vec<usize>, bool);
 
 /// Relays per task of an evaluation on the thread pool: enough work per task
 /// to amortize its scheduling, small enough to balance the threads.

@@ -860,7 +860,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
         let (vm0, va0) = case_start(net);
         let kinds0 = default_kinds(net);
         let layout0 = AcPfLayout::with_kinds(net, &kinds0);
-        if let Ok(inj) = f.injections(&mut jacobian, &vm0, &va0) {
+        if let Ok(inj) = f.injections(&jacobian, &vm0, &va0) {
             let r0 = layout0.residual(net, &net.pg, &net.qg, &vm0, &inj.p, &inj.q);
             let mut rows: Vec<(f64, usize, char)> = Vec::new();
             for b in 0..net.n {
@@ -875,7 +875,7 @@ pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
             }
         }
         let layout1 = AcPfLayout::with_kinds(net, &kinds);
-        if let Ok(inj) = f.injections(&mut jacobian, &vm, &va) {
+        if let Ok(inj) = f.injections(&jacobian, &vm, &va) {
             let r1 = layout1.residual(net, &net.pg, &net.qg, &vm, &inj.p, &inj.q);
             let mut rows: Vec<(f64, usize, char)> = Vec::new();
             for b in 0..net.n {

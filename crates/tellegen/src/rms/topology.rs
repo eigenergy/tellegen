@@ -401,8 +401,8 @@ pub(crate) fn extinguish(sys: &mut DynSystem, t: f64) -> Vec<String> {
     let dead = sys.dead_buses();
     let mut lost = 0.0;
     let mut buses = 0usize;
-    for b in 0..sys.n {
-        if dead[b] {
+    for (b, _) in dead.iter().enumerate().take(sys.n).filter(|(_, &d)| d) {
+        {
             let p = sys.loads[b].p0();
             if p != 0.0 || sys.loads[b].u_p != 0.0 || sys.loads[b].u_q != 0.0 {
                 lost += p;
@@ -484,8 +484,8 @@ pub(crate) fn relieve(
             }
         }
         _ => {
-            for b in 0..n {
-                pick[b] = vm(b) < 0.3;
+            for (b, p) in pick.iter_mut().enumerate().take(n) {
+                *p = vm(b) < 0.3;
             }
         }
     }
@@ -514,8 +514,8 @@ pub(crate) fn relieve(
     let mut buses = 0usize;
     let mut lowest = f64::INFINITY;
     if level > 0 {
-        for b in 0..n {
-            if pick[b] {
+        for (b, _) in pick.iter().enumerate().take(n).filter(|(_, &p)| p) {
+            {
                 let p = sys.loads[b].p0();
                 if p != 0.0 || sys.loads[b].u_p != 0.0 || sys.loads[b].u_q != 0.0 {
                     lost += p;

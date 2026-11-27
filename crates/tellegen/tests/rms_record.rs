@@ -23,7 +23,7 @@ fn sim_with(options: tellegen::rms::RmsOptions) -> RmsSimulation {
         panic!("not a balanced network")
     };
     let dyr = powerio::parse_dyr(&std::fs::read_to_string(dir.join("case.dyr")).unwrap()).unwrap();
-    RmsSimulation::with_options(&net, &dyr, LoadModel::ConstantImpedance, options).unwrap()
+    RmsSimulation::with_options(net, &dyr, LoadModel::ConstantImpedance, options).unwrap()
 }
 
 fn request(record: Option<RecordSpec>) -> RmsRequest {
