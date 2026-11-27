@@ -412,7 +412,9 @@ static LOAD_SAT_VK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 static LOAD_DYN_ALPHA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static LOAD_DYN_T: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Sets the load recovery (experimental).
+/// Sets the load recovery (experimental). `alpha = 0` switches it off; with
+/// `alpha > 0` and `t <= 0` the demand follows the voltage with the exponent
+/// `alpha` and does not recover.
 pub fn set_load_recovery(alpha: f64, t: f64) {
     LOAD_DYN_ALPHA.store(alpha.to_bits(), std::sync::atomic::Ordering::Relaxed);
     LOAD_DYN_T.store(t.to_bits(), std::sync::atomic::Ordering::Relaxed);

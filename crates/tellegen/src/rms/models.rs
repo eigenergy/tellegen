@@ -640,8 +640,11 @@ pub(crate) struct AvrIn {
     pub vs: f64,
     pub xad_ifd: f64,
     pub v_ref: f64,
-    /// Experimental: active and reactive power on the machine base.
+    /// Experimental: active and reactive power on the machine base, read by
+    /// the excitation limiters of block graphs (`rms-experimental`).
+    #[cfg_attr(not(feature = "rms-experimental"), allow(dead_code))]
     pub p: f64,
+    #[cfg_attr(not(feature = "rms-experimental"), allow(dead_code))]
     pub q: f64,
 }
 

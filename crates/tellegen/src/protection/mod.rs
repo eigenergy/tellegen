@@ -688,9 +688,11 @@ pub struct OutOfStep {
     pub slips: usize,
     /// Experimental: count voltage beats instead of impedance
     /// traverses, as some loss-of-synchronism relays do: a beat is the
-    /// positive-sequence voltage at the relay falling
-    /// below this value (pu) for `min_traverse` s, after having been above
-    /// 1.1 times it. The relay operates in the `slips`-th beat.
+    /// positive-sequence voltage at the relay dipping below this value (pu),
+    /// counted once it has risen for 40 ms past the dip's minimum; the next
+    /// dip counts after the voltage was back above 1.1 times this value.
+    /// `min_traverse` is not used in this mode. After the `slips`-th beat the
+    /// relay operates `beat_delay` later (see there).
     #[serde(default)]
     pub beat_voltage: Option<f64>,
     /// Experimental: with `beat_voltage`, the delay after the last
