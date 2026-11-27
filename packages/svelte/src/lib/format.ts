@@ -1,5 +1,5 @@
 import type { RGBA } from './colors.js';
-import type { DisplayMode } from './state.svelte.js';
+import type { DisplayMode, SolveBackend } from './state.svelte.js';
 import { FORMULATIONS, type Formulation, type ObjectiveKind } from '@tellegen/engine';
 
 // errorText is defined once in wasm.ts (its first consumer) and surfaced here so UI
@@ -12,6 +12,18 @@ export function formulationLabel(id: Formulation, objectiveKind?: ObjectiveKind 
 	if (objectiveKind === 'feasibility' && id === 'acopf') return 'AC feasibility';
 	if (objectiveKind === 'feasibility' && id === 'socwr') return 'AC feasibility (relaxed)';
 	return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
+}
+
+const BACKEND_LABELS: Record<SolveBackend, string> = {
+	'clarabel-wasm': 'Clarabel (WebAssembly)',
+	'pounce-wasi': 'POUNCE (WebAssembly)',
+	'clarabel-wasm-server-sensitivity': 'Clarabel (WebAssembly), sensitivities on the server',
+	'rust-server': 'Server'
+};
+
+/** The solver behind a case's last solve, as a reader names it. */
+export function solveBackendLabel(backend: SolveBackend): string {
+	return BACKEND_LABELS[backend];
 }
 
 /** Older saved studies may not name their objective. Keep that distinct from feasibility. */

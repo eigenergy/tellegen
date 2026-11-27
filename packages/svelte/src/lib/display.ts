@@ -33,7 +33,8 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			label: 'Voltage',
 			unit: 'pu',
 			copy: 'Voltage',
-			gradient: priceGradient
+			// Voltage is painted with the price ramp, so its legend follows the theme too.
+			gradient: `var(--tellegen-price-ramp, ${priceGradient})`
 		});
 	}
 	if (c.solution.va.length > 0) {

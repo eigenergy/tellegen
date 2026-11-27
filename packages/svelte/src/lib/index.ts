@@ -90,7 +90,8 @@ export {
 	download,
 	downloadText,
 	plain,
-	signed
+	signed,
+	solveBackendLabel
 } from './format.js';
 export type { QuantityUnit, QuantityOptions } from './format.js';
 export { distExtensionFormat } from './drop-classify.js';

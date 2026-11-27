@@ -2102,8 +2102,8 @@
 
 	/* maplibre draws its zoom and attribution icons dark; on the dark panel they
 	   turn light. */
-	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-group .maplibregl-ctrl-icon),
-	:global(:root[data-theme='dark']) .map :global(.maplibregl-ctrl-attrib-button) {
+	:global(.tellegen[data-theme='dark']) .map :global(.maplibregl-ctrl-group .maplibregl-ctrl-icon),
+	:global(.tellegen[data-theme='dark']) .map :global(.maplibregl-ctrl-attrib-button) {
 		filter: invert(1);
 	}
 

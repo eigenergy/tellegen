@@ -67,7 +67,6 @@
 
 <script lang="ts">
 	import {
-		calculationAvailable,
 		type Formulation,
 		describeSettings,
 		settingsCatalog,
@@ -77,7 +76,7 @@
 	import { getAppState, getController } from '../context.svelte.js';
 	import { formulationLabel } from '../format.js';
 	import { recordedCalculationSettings } from '../settings.svelte.js';
-	import { LocalCase, MulticonductorCase, type SolvableCase } from '../state.svelte.js';
+	import { MulticonductorCase, type SolvableCase } from '../state.svelte.js';
 
 	/** The calculation section of Settings: the calculation and its options as label and control
 	 * rows. A change applies and reruns at once. */
@@ -171,12 +170,7 @@
 		if (current instanceof MulticonductorCase) return value === 'mc_ac_pf' && available;
 		// AC OPF loads when it is chosen here, so a configured solver is enough.
 		return (
-			(value === 'acopf' || available) &&
-			calculationAvailable(value as Formulation, {
-				declared: current instanceof LocalCase ? current.declaredFormulation : null,
-				edited: current.perturbed,
-				acOpf: ctrl.acOpfConfigured
-			})
+			(value === 'acopf' || available) && ctrl.calculationOffered(current, value as Formulation)
 		);
 	}
 	function calculationLabel(value: string) {

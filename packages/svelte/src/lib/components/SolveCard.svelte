@@ -8,7 +8,7 @@
 		solveVerdict,
 		statusWords
 	} from '../diagram/verdict.js';
-	import { formulationLabel, objectiveKind } from '../format.js';
+	import { formulationLabel, objectiveKind, solveBackendLabel } from '../format.js';
 	import Sparkline from '../Sparkline.svelte';
 	import PanelFrame from './PanelFrame.svelte';
 
@@ -53,7 +53,7 @@
 		!attempted &&
 			(active?.solveBackend === 'rust-server' ||
 				active?.solveBackend === 'clarabel-wasm-server-sensitivity')
-			? 'Server'
+			? solveBackendLabel(active.solveBackend)
 			: null
 	);
 	const fallback = $derived(

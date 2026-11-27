@@ -112,6 +112,28 @@ describe('Controller.openBalancedModule with a Study built ahead', () => {
 		expect(other.free).toHaveBeenCalledTimes(1);
 	});
 
+	it('builds its own Study with explicit settings when the given one ignored saved settings', async () => {
+		const ctrl = controller();
+		const noisy = fakeStudy();
+		noisy.currentSolution.mockResolvedValue({
+			diagnostics: [{ code: 'settings_ignored', message: 'saved settings are for acpf' }]
+		});
+		const own = fakeStudy();
+		engine.createStudy.mockResolvedValueOnce(own);
+		const local = await ctrl.openBalancedModule({
+			name: 'generated',
+			payload,
+			formulation: 'dcopf',
+			study: Promise.resolve(noisy),
+			activate: false
+		});
+		expect(await ctrl.getStudy(local, payload.module_json)).toBe(own);
+		expect(noisy.free).toHaveBeenCalledTimes(1);
+		expect(engine.createStudy).toHaveBeenCalledWith(payload.module_json, 'dcopf', {
+			settings: { calculation: 'dcopf', overrides: {} }
+		});
+	});
+
 	it('frees the given Study when the case is removed before it is built', async () => {
 		const ctrl = controller();
 		const study = fakeStudy();

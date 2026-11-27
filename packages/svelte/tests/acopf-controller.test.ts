@@ -405,3 +405,40 @@ it('reports a failed lazy probe and allows an explicit retry', async () => {
 	expect(probeAcOpfWorker).toHaveBeenCalledTimes(2);
 	ctrl.dispose();
 });
+
+describe('calculationOffered for AC OPF', () => {
+	function offering(acOpfWasmUrl: string | undefined) {
+		const app = new AppState();
+		const ctrl = new Controller(app, { apiBase: null, loadDefaultCases: false, acOpfWasmUrl });
+		const c = new LocalCase({
+			id: 'offer',
+			label: 'Offer',
+			fileName: 'case.pio.json',
+			formulation: 'dcopf',
+			studyInputJson: 'canonical-instance'
+		});
+		return { ctrl, c };
+	}
+
+	it('offers AC OPF when the asset is configured and not yet probed', () => {
+		const { ctrl, c } = offering('/solver.wasm');
+		expect(ctrl.acOpfAvailable).toBe(false);
+		expect(ctrl.calculationOffered(c, 'acopf')).toBe(true);
+		ctrl.dispose();
+	});
+
+	it('does not offer AC OPF without the asset', () => {
+		const { ctrl, c } = offering(undefined);
+		expect(ctrl.calculationOffered(c, 'acopf')).toBe(false);
+		ctrl.dispose();
+	});
+
+	it('stops offering AC OPF after a failed probe', async () => {
+		const { ctrl, c } = offering('/solver.wasm');
+		vi.mocked(probeAcOpfWorker).mockResolvedValue(false);
+		await expect(ctrl.loadAcOpf()).resolves.toBe(false);
+		expect(ctrl.acOpfFailed).toBe(true);
+		expect(ctrl.calculationOffered(c, 'acopf')).toBe(false);
+		ctrl.dispose();
+	});
+});

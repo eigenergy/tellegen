@@ -65,7 +65,7 @@
 	.label {
 		fill: var(--text-secondary);
 		font-family: var(--font-sans);
-		font-size: 11px;
+		font-size: var(--fs-micro);
 		font-variant-numeric: tabular-nums;
 	}
 

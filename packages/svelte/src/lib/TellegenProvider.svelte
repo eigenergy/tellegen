@@ -15,6 +15,7 @@
 	import { createAppState } from './state.svelte.js';
 	import { PanelLayout, setPanelLayout } from './panels.svelte.js';
 	import { CommandRegistry, setCommandRegistry } from './commands.svelte.js';
+	import { hostRootTheme } from './root-theme.svelte.js';
 
 	interface Props extends TellegenUiOptions {
 		children?: Snippet;
@@ -36,11 +37,10 @@
 		children
 	}: Props = $props();
 
-	// A root theme already in the document before this provider runs belongs to the
-	// host's template; leave it alone. Otherwise, with no host or viewer choice, follow
-	// the operating system (styles.css covers first paint for the same case).
-	const hostRootTheme =
-		typeof document === 'undefined' ? undefined : document.documentElement.dataset.theme;
+	// A root theme in the document belongs to the host; follow it, including
+	// when the host switches it later. Otherwise, with no host or viewer
+	// choice, follow the operating system (styles.css covers first paint for
+	// the same case).
 	const systemDark = new MediaQuery('(prefers-color-scheme: dark)', false);
 
 	// Read once, at mount: `apiBase`, `acOpfWasmUrl` and `loadDefaultCases`
@@ -69,7 +69,8 @@
 		get theme() {
 			if (app.preferences.theme) return app.preferences.theme;
 			if (theme !== undefined) return resolveTheme(theme);
-			if (hostRootTheme === 'dark' || hostRootTheme === 'light') return hostRootTheme;
+			const root = hostRootTheme.current;
+			if (root) return root;
 			return systemDark.current ? 'dark' : 'light';
 		},
 		get cartoApiKey() {

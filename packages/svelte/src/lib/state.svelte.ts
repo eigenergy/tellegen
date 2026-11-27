@@ -222,9 +222,11 @@ export class LocalCase {
 		if (recorded) {
 			if (!init.formulation && ['dcopf', 'acpf', 'socwr', 'acopf'].includes(recorded.calculation))
 				this.formulation = recorded.calculation as Formulation;
+			// The recorded baseline stays keyed under its own calculation, so
+			// switching back to it still applies it.
 			this.settings.baselines = { [recorded.calculation]: recorded.effective };
 			this.settings.options = { [recorded.calculation]: {} };
-			this.settings.calculation = recorded.calculation;
+			this.settings.calculation = init.formulation ?? recorded.calculation;
 		}
 		this.topology = init.topology;
 		this.coordsKind = init.coordsKind;
@@ -719,7 +721,8 @@ export class AppState {
 		if (value !== this.preferences.zen) this.preferences.update({ zen: value });
 	}
 	/** Height in px the bottom sheet covers; 0 when `compactLayout` is false.
-	 * Read by the map's camera padding and by chrome anchored above the sheet. */
+	 * Read by the map's camera padding and by chrome anchored above the sheet.
+	 * `PanelHost` writes it, with or without its tab strip; hosts read it. */
 	sheetInset = $state(0);
 	/** Height in px the header covers at the top of the map, measured by
 	 * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,

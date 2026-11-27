@@ -121,18 +121,11 @@ export class BalancedSolveActions {
 								baseline: c.settings.baselines[formulation]
 							})
 						: null);
-				const study = await createStudy(
-					studyInputJson,
-					formulation,
-					accepted
-						? {
-								settings: {
-									calculation: formulation,
-									overrides: accepted.effective
-								}
-							}
-						: {}
-				);
+				// Settings are always explicit, so the engine never reads a module's
+				// record made for another calculation and warns on every solve.
+				const study = await createStudy(studyInputJson, formulation, {
+					settings: { calculation: formulation, overrides: accepted?.effective ?? {} }
+				});
 				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
 				// list reloaded) while building; don't cache a now-unwanted Study, and free

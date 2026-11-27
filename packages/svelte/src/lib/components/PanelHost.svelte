@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { getAppState, getUiConfig } from '../context.svelte.js';
-	import { getPanelLayout } from '../panels.svelte.js';
+	import { getPanelLayout, sheetInset } from '../panels.svelte.js';
 	import PanelCard from './PanelCard.svelte';
 	import { getCommandRegistry } from '../commands.svelte.js';
 
@@ -215,9 +215,20 @@
 			layout.resizeViewport(window.innerWidth, window.innerHeight, top);
 		});
 	});
+	// With the strip hidden, a panel's overlay header still sits above the sheet.
+	const inset = $derived(
+		sheetInset({
+			active: !app.zen && layout.compact,
+			stripShown,
+			stripBottom,
+			stripHeight,
+			handleHeight: HANDLE_HEIGHT,
+			open: !!drawer,
+			headerAbove: !!drawer && !drawer.headerActions
+		})
+	);
 	$effect(() => {
-		app.sheetInset =
-			!app.zen && layout.compact ? stripBottom + (stripShown ? stripHeight + HANDLE_HEIGHT : 0) : 0;
+		app.sheetInset = inset;
 	});
 	// The main map's attribution and zoom, and the notices, sit above the strip or the
 	// open sheet.

@@ -4,6 +4,8 @@
    for one close to it. Map data uses its own colour-blind-safe ramps (colors.ts),
    which never borrow the interface accent. */
 .tellegen {
+	/* Native controls, scrollbars and menus follow the kit's theme. */
+	color-scheme: light;
 	/* primitives */
 	--bg: #e3e7eb; /* behind the map while tiles load */
 	--panel: #eef0f2; /* panel surface on the map */
@@ -155,6 +157,7 @@
 /* Dark theme: `TellegenProvider theme="dark"` sets the attribute (a host may
    also put it in its template). Ratios are against the panel surface. */
 .tellegen[data-theme='dark'] {
+	color-scheme: dark;
 	/* The price ramp on a dark map runs the other way: see PRICE_STOPS_DARK. */
 	--tellegen-price-ramp: linear-gradient(
 		90deg,
@@ -225,6 +228,7 @@
    block only covers first paint. Keep it in step with the block above. */
 @media (prefers-color-scheme: dark) {
 	.tellegen:not([data-theme]) {
+		color-scheme: dark;
 		--tellegen-price-ramp: linear-gradient(
 			90deg,
 			rgb(168 50 125),
@@ -469,7 +473,8 @@
 :where(.tellegen) pre,
 :where(.tellegen) samp {
 	font-family: var(--font-code);
-	font-size: 0.92em;
+	/* Slightly smaller than the text around it, never under the 12px floor. */
+	font-size: max(0.92em, var(--fs-micro));
 }
 
 :where(.tellegen) a {

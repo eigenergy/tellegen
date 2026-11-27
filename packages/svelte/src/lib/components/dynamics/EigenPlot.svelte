@@ -121,7 +121,7 @@
 	.tick,
 	.title {
 		fill: var(--text-secondary);
-		font-size: 11px;
+		font-size: var(--fs-micro);
 		font-variant-numeric: tabular-nums;
 	}
 	.pt {
