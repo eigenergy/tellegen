@@ -2355,4 +2355,20 @@ mod tests {
         let lu = NetLu::new(size, n, &across, &mut Patterns::default(), Some(short), 1).unwrap();
         assert!(matches!(lu, NetLu::One(_)));
     }
+
+    /// The step analysis (`TELLEGEN_DIAG_STEP`) groups variables by class:
+    /// a bus voltage by its part (`bus Vr`, `bus Vi`), a machine's or a
+    /// plant's state by the state's name whatever its unit and machine id,
+    /// anything else as `other`.
+    #[test]
+    fn diagnosis_classes_group_states_by_kind() {
+        use super::diag_class;
+        assert_eq!(diag_class("bus 1101 Vr"), "bus Vr");
+        assert_eq!(diag_class("bus 7 Vi"), "bus Vi");
+        assert_eq!(diag_class("G102 delta"), "machine delta");
+        assert_eq!(diag_class("G102 '2' omega"), "machine omega");
+        assert_eq!(diag_class("R1032 Ip"), "plant Ip");
+        assert_eq!(diag_class("R1032 'W' Iq"), "plant Iq");
+        assert_eq!(diag_class("variable 12"), "other 12");
+    }
 }
