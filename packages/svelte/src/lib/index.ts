@@ -45,6 +45,7 @@ export {
 	CARTO_STYLES,
 	OPENFREEMAP_STYLES,
 	attachBasemapFallback,
+	cartoBasemap,
 	cartoStyleUrl,
 	defaultBasemap,
 	isOpenFreeMapStyle,
@@ -52,6 +53,20 @@ export {
 	resolveBasemap
 } from './basemap.js';
 export { MAP_PALETTE } from './colors.js';
+export {
+	LOADING_AMBER,
+	LOADING_AT_LIMIT,
+	LOADING_ATTENTION,
+	LOADING_BASE,
+	LOADING_RED,
+	branchLoadingGradient,
+	scalarGradient,
+	scalarStops
+} from './colors.js';
+export { busColorScale, displayRange, lineLoadingKey } from './map-legend.js';
+export { ALL_MAP_LAYERS, busesForLayers, layerVisibility, resolveMapLayers } from './map-layers.js';
+export type { BusColorScale, LineLoadingStep, ScaleEnd } from './map-legend.js';
+export type { MapLayerVisibility, MapLayers, ResolvedMapLayers } from './map-layers.js';
 export { Controller, createController } from './controller.svelte.js';
 export {
 	DynamicsController,
@@ -138,13 +153,14 @@ export type {
 	BasemapStyle,
 	BasemapSwitch,
 	BasemapTheme,
+	CartoBasemap,
 	DefaultBasemap,
 	MapProjection,
 	MapTheme,
 	ResolvedBasemap,
 	StyleEdit
 } from './basemap.js';
-export type { MapPalette } from './colors.js';
+export type { ColorStop, MapPalette, RGBA } from './colors.js';
 export type { DisplayOption } from './display.js';
 export type {
 	BusSizing,
