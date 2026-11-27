@@ -368,7 +368,6 @@ fn limiters_past_their_limit_at_the_start_start_at_rest() {
     if shipped_wecc240().is_none() {
         return;
     }
-    let _one = one_at_a_time();
     let oel = "    102 'OELIT' 1 1.5 1.0 1.0 1.1 33.75 1200.0 0.05 0.5 -0.5 /\n";
     let uel = "    102 'UELPQ' 1 0.4 0.0 0.0 0.05 0.5 0.5 /\n";
     let (net, bare, _) = smib(Some(ESST1A));
