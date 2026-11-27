@@ -32,7 +32,7 @@
 		type MapTheme,
 		type ResolvedBasemap
 	} from './basemap.js';
-	import { busesForLayers, type MapLayers } from './map-layers.js';
+	import { busesForLayers, layerVisibility, type MapLayers } from './map-layers.js';
 	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
 	import { declutterBuses, declutterZoom, withBus } from './declutter.js';
 	import {
@@ -139,11 +139,12 @@
 		 * order flips. Trimmed; a blank key counts as none. */
 		cartoApiKey?: string;
 		/** Which network layers draw: `branches` (lines and transformers),
-		 * `buses` (bus markers other than substations) and `substations` (a
-		 * generated grid's substation buses and a display file's substation
-		 * points). A layer left out is shown. Hiding a layer sets deck.gl's
-		 * `visible`, so showing it again rebuilds nothing; a selected bus keeps
-		 * its marker. */
+		 * `buses` (bus markers other than substations, multiconductor buses
+		 * included) and `substations` (a generated grid's substation buses and a
+		 * display file's substation points). A layer left out is shown. Hiding
+		 * branches, or both bus kinds, sets deck.gl's `visible` and keeps the
+		 * layer's data; showing only buses or only substations filters the
+		 * markers. While one bus kind is shown, a selected bus keeps its marker. */
 		layers?: MapLayers;
 		/** deck.gl layers drawn after tellegen's own, in the same overlay. */
 		extraLayers?: Layer[];
@@ -260,8 +261,14 @@
 	}
 
 	const basemap = $derived(
-		basemapProp ??
-			resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
+		resolveBasemap({
+			basemap: basemapProp,
+			mapStyle,
+			fallbackMapStyle,
+			theme,
+			hideBasemapLabels,
+			cartoApiKey
+		})
 	);
 	// Read as separate values, not one object, so a theme change that resolves
 	// to the same styles does not rebuild the map.
@@ -513,12 +520,13 @@
 
 	// The `layers` prop read entry by entry, so a host that passes a new object
 	// with the same values changes nothing downstream.
-	const showBranches = $derived(layersProp?.branches ?? true);
 	const showBuses = $derived(layersProp?.buses ?? true);
 	const showSubstations = $derived(layersProp?.substations ?? true);
-	// A bus layer stays visible while either of its marker kinds is shown;
-	// busesForLayers drops the other kind from its data.
-	const busesVisible = $derived(showBuses || showSubstations);
+	const visibility = $derived(layerVisibility(layersProp));
+	const showBranches = $derived(visibility.branches);
+	const busesVisible = $derived(visibility.busMarkers);
+	const substationPointsVisible = $derived(visibility.substationPoints);
+	const multiBusesVisible = $derived(visibility.multiBuses);
 
 	// The buses each bus layer could draw at the current zoom: with
 	// `declutterMarkers`, one per crowded spot (see declutterBuses). A generated
@@ -534,7 +542,11 @@
 		};
 		const sets = new Map<string, NetworkBus[]>();
 		if (app.studyView) {
-			sets.set('study-buses', thin(app.studyView.network.buses));
+			// A study of a generated grid splits its markers by the kinds of the
+			// case it was opened on, as that case's own view does.
+			const caseId = app.studyView.caseId;
+			const kinds = app.localCases.find((c) => c.id === caseId)?.busKinds;
+			sets.set('study-buses', thin(app.studyView.network.buses, kinds));
 			return sets;
 		}
 		for (const c of app.cases) if (c.network) sets.set(`buses-${c.id}`, thin(c.network.buses));
@@ -1538,7 +1550,7 @@
 						lat: number;
 					}>({
 						id: `local-subs-${c.id}`,
-						visible: showSubstations,
+						visible: substationPointsVisible,
 						data: c.substations.points,
 						getPosition: (s) => [s.lon, s.lat],
 						getRadius: 5,
@@ -1567,6 +1579,7 @@
 			layers.push(
 				new PathLayer<PlacedMultiEdge>({
 					id: `multi-edges-${c.id}`,
+					visible: showBranches,
 					data: c.view.edges,
 					getPath: (e) => unwrapLongitudePath(e.path),
 					wrapLongitude: true,
@@ -1599,6 +1612,7 @@
 				// transformer edge beneath it.
 				new IconLayer<TransformerMark>({
 					id: `multi-xfmr-${c.id}`,
+					visible: showBranches,
 					data: transformerMarks(c.view.edges),
 					// deck.gl makes a texture from any image, canvas included, but types
 					// iconAtlas as a URL or a Texture.
@@ -1619,6 +1633,7 @@
 				}),
 				new ScatterplotLayer<PlacedMultiBus>({
 					id: `multi-buses-${c.id}`,
+					visible: multiBusesVisible,
 					data: c.view.buses,
 					getPosition: (b) => [b.lon, b.lat],
 					getRadius: (b) => busRadiusFor(app.busSizing, Math.max(b.load_kw, b.gen_kw)),

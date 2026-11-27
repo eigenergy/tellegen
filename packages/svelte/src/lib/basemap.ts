@@ -170,12 +170,17 @@ export interface ResolveBasemapInput {
 	theme: BasemapTheme;
 	hideBasemapLabels: boolean;
 	cartoApiKey?: string;
+	/** A whole spec, such as `cartoBasemap` returns. It wins over every other
+	 * entry and keeps its own provider names. */
+	basemap?: ResolvedBasemap;
 }
 
-/** The spec `TellegenMap` renders from its props: explicit styles win, the
- * theme fills in whatever is left, and `null` turns the fallback off. An
- * explicit style is `'custom'`, whichever host serves it. */
+/** The spec `TellegenMap` renders from its props: a whole `basemap` spec wins,
+ * then explicit styles, the theme fills in whatever is left, and `null` turns
+ * the fallback off. An explicit style is `'custom'`, whichever host serves
+ * it. */
 export function resolveBasemap(input: ResolveBasemapInput): ResolvedBasemap {
+	if (input.basemap) return input.basemap;
 	const defaults = defaultBasemap(input.theme, {
 		cartoApiKey: input.cartoApiKey,
 		hideLabels: input.hideBasemapLabels

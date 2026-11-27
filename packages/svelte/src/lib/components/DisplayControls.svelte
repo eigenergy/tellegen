@@ -29,10 +29,8 @@
 						type="button"
 						class={{ active: app.displayMode === option.mode }}
 						aria-pressed={app.displayMode === option.mode}
-						onclick={() => (app.displayMode = option.mode)}
+						onclick={() => (app.displayMode = option.mode)}>{option.label}</button
 					>
-						{option.label}
-					</button>
 				{/each}
 			</div>
 		{/if}

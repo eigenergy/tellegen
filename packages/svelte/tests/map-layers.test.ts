@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_MAP_LAYERS, busesForLayers, resolveMapLayers } from '../src/lib/map-layers.js';
+import {
+	ALL_MAP_LAYERS,
+	busesForLayers,
+	layerVisibility,
+	resolveMapLayers
+} from '../src/lib/map-layers.js';
 
 const buses = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
 const kinds: ReadonlyMap<number, string> = new Map([
@@ -39,5 +44,33 @@ describe('map layers', () => {
 			expect(busesForLayers(buses, none, { buses: true, substations: false })).toBe(buses);
 			expect(busesForLayers(buses, none, { buses: false, substations: true })).toEqual([]);
 		}
+	});
+
+	it('maps the layers prop to each layer kind', () => {
+		expect(layerVisibility(undefined)).toEqual({
+			branches: true,
+			busMarkers: true,
+			substationPoints: true,
+			multiBuses: true
+		});
+		expect(layerVisibility({ branches: false })).toMatchObject({ branches: false });
+		// A bus layer stays visible while either kind shows; its data drops the other.
+		expect(layerVisibility({ buses: false })).toEqual({
+			branches: true,
+			busMarkers: true,
+			substationPoints: true,
+			multiBuses: false
+		});
+		expect(layerVisibility({ substations: false })).toEqual({
+			branches: true,
+			busMarkers: true,
+			substationPoints: false,
+			multiBuses: true
+		});
+		expect(layerVisibility({ buses: false, substations: false })).toMatchObject({
+			busMarkers: false,
+			substationPoints: false,
+			multiBuses: false
+		});
 	});
 });

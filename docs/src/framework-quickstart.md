@@ -461,8 +461,10 @@ besides its click callbacks:
 - `layers`: `{ branches, buses, substations }`, each `true` when left out.
   `branches` covers lines and transformers. `substations` covers a generated
   grid's substation buses and a display file's substation points; `buses`
-  covers every other bus marker. A hidden layer keeps its data, so showing it
-  again rebuilds nothing. A selected bus keeps its marker.
+  covers every other bus marker, multiconductor buses included. Hiding
+  branches, or all bus markers, keeps the layer's data; showing only buses or
+  only substations filters the markers. While one bus kind is shown, a
+  selected bus keeps its marker.
 - `extraLayers`: deck.gl layers drawn after tellegen's own, in the same
   overlay.
 - `attribution`: `'compact'` (default) or `'full'`. There is no off switch.
@@ -530,7 +532,8 @@ The helpers behind the defaults are exported too:
 
 - `OPENFREEMAP_STYLES` and `CARTO_STYLES`;
 - `cartoStyleUrl(url, apiKey)`;
-- `defaultBasemap(theme, { cartoApiKey })` and `resolveBasemap(props)`;
+- `defaultBasemap(theme, { cartoApiKey })` and `resolveBasemap(props)`,
+  where a whole `basemap` spec wins over the other props;
 - `cartoBasemap(theme, { cartoApiKey, hideLabels })`, which uses CARTO
   alone: with a key, the keyed style leads and the keyless style is the
   fallback; without one, the keyless style has no fallback. The keyless

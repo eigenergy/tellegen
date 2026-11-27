@@ -64,9 +64,9 @@ export {
 	scalarStops
 } from './colors.js';
 export { busColorScale, displayRange, lineLoadingKey } from './map-legend.js';
-export { ALL_MAP_LAYERS, busesForLayers, resolveMapLayers } from './map-layers.js';
+export { ALL_MAP_LAYERS, busesForLayers, layerVisibility, resolveMapLayers } from './map-layers.js';
 export type { BusColorScale, LineLoadingStep, ScaleEnd } from './map-legend.js';
-export type { MapLayers, ResolvedMapLayers } from './map-layers.js';
+export type { MapLayerVisibility, MapLayers, ResolvedMapLayers } from './map-layers.js';
 export { Controller, createController } from './controller.svelte.js';
 export {
 	DynamicsController,

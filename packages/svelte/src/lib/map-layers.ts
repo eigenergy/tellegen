@@ -29,6 +29,30 @@ export function resolveMapLayers(layers: MapLayers | undefined): ResolvedMapLaye
 	};
 }
 
+/** The `visible` flag of each kind of network layer under `layers`. */
+export interface MapLayerVisibility {
+	/** Line paths and transformer symbols, multiconductor ones included. */
+	branches: boolean;
+	/** A bus marker layer: shown while either of its marker kinds is, and
+	 * `busesForLayers` drops the hidden kind from its data. */
+	busMarkers: boolean;
+	/** A display file's substation points. */
+	substationPoints: boolean;
+	/** A multiconductor case's buses, which have no substation kind. */
+	multiBuses: boolean;
+}
+
+/** Which network layers `TellegenMap` draws under `layers`. */
+export function layerVisibility(layers: MapLayers | undefined): MapLayerVisibility {
+	const { branches, buses, substations } = resolveMapLayers(layers);
+	return {
+		branches,
+		busMarkers: buses || substations,
+		substationPoints: substations,
+		multiBuses: buses
+	};
+}
+
 const NONE: never[] = [];
 
 /** The buses a marker layer draws under `layers`, given each bus's kind as a

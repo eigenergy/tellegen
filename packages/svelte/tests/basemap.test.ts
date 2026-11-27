@@ -220,6 +220,21 @@ describe('style URLs', () => {
 		});
 	});
 
+	it('lets a whole basemap spec win over every other prop, with its providers', () => {
+		const spec = cartoBasemap('dark', { cartoApiKey: 'k' });
+		const resolved = resolveBasemap({
+			basemap: spec,
+			mapStyle: 'https://a.example/s.json',
+			fallbackMapStyle: null,
+			theme: 'light',
+			hideBasemapLabels: false,
+			cartoApiKey: 'other'
+		});
+		expect(resolved).toBe(spec);
+		expect(resolved.primaryProvider).toBe('carto');
+		expect(resolved.fallbackProvider).toBe('carto');
+	});
+
 	it('names a host-supplied style custom even when CARTO or OpenFreeMap serves it', () => {
 		const resolved = resolveBasemap({
 			mapStyle: OPENFREEMAP_STYLES.dark,
