@@ -183,6 +183,10 @@ required-features = ["rms"]
 name = "rms_env_knobs"
 required-features = ["rms"]
 
+[[test]]
+name = "rms_reduced_network"
+required-features = ["rms"]
+
 [[example]]
 name = "rms_init_debug"
 required-features = ["rms-experimental"]
