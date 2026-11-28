@@ -25,7 +25,7 @@ fmt-check:
 # CI gate: clippy with warnings denied on the shipping crates.
 clippy:
     cargo clippy -p tellegen -p tellegen-synth -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
-    cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental,powerio-collections -- -D warnings
+    cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental,protection,powerio-collections -- -D warnings
     cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
 
 # CI gate: licenses, advisories, bans, sources.
@@ -34,7 +34,7 @@ deny:
 
 # CI gate: test the wasm adapter as it ships (`default = []`, so `test` skips it).
 wasm-adapter-test:
-    cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,powerio-collections
+    cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,protection,powerio-collections
 
 # CI gate: POUNCE stays out of the ordinary wasm module and native adapters.
 epl-guard:
@@ -57,13 +57,15 @@ mc-opf-test:
     cargo test -p tellegen-cli --features ots --locked
     cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,ots,schema --locked -- -D warnings
 
-# CI gate: the RMS dynamic simulation, both feature levels (neither is a
-# default feature, so `test` skips it). The 20 s WECC 240 validation runs
-# against PowerSimulationsDynamics.jl are ignored in the debug profile.
+# CI gate: the RMS dynamic simulation, both feature levels, the second with
+# the protection relays as the browser build ships them (none is a default
+# feature, so `test` skips them). The 20 s WECC 240 validation runs against
+# PowerSimulationsDynamics.jl are ignored in the debug profile.
 rms-test:
     cargo test -p tellegen --no-default-features --features rms
-    cargo test -p tellegen --features rms-experimental
+    cargo test -p tellegen --features rms-experimental,protection
     cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
+    cargo clippy -p tellegen --all-targets --features rms-experimental,protection -- -D warnings
 
 # Draw the RMS dynamics block diagram (the engine and the app's dynamics code)
 # from the @block annotations in the code
