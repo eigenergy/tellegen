@@ -259,6 +259,9 @@ pub struct RmsLive {
     /// `(admittance, source voltage)` of the voltage sources at the
     /// operating point, to bring a tripped one back.
     base_sources: Vec<(C64, C64)>,
+    /// The COI, separation and bus frequencies at each sample, as a batch
+    /// run's screening derives them.
+    derive: screen::LiveDerive,
 }
 
 impl RmsSimulation {
@@ -277,6 +280,9 @@ impl RmsSimulation {
         let output_step = output_step.max(dt);
         let substeps = substeps(output_step, dt);
         let mut rec = Recorder::new(&self.sys, None);
+        let mut derive = screen::LiveDerive::new(&self.sys);
+        rec.with_derived(derive.keys().to_vec());
+        rec.set_derived(derive.sample(&self.sys, 0.0, &self.x0));
         rec.record(&self.sys, 0.0, &self.x0);
         RmsLive {
             sys: self.sys.clone(),
@@ -294,6 +300,7 @@ impl RmsSimulation {
             base_loads: self.sys.loads.clone(),
             load_scales: vec![(1.0, 1.0); self.sys.loads.len()],
             base_sources: self.sys.sources.iter().map(|s| (s.y, s.e)).collect(),
+            derive,
         }
     }
 }
@@ -388,6 +395,7 @@ impl RmsLive {
         self.sys = sys;
         self.x = x;
         self.f = f;
+        self.derive.topology_changed(&self.sys, now);
         self.applied.push(text.clone());
         self.log.push(event);
         Ok(text)
@@ -489,6 +497,7 @@ impl RmsLive {
         self.sys = sys;
         self.x = x;
         self.f = f;
+        self.derive.topology_changed(&self.sys, self.t);
         let line = format!("t = {:.4} s: {text}", self.t);
         self.applied.push(line.clone());
         Ok(line)
@@ -832,6 +841,8 @@ impl RmsLive {
             if self.since_output >= self.output_step - 1e-12 {
                 self.since_output = 0.0;
                 self.t = (self.t / self.output_step).round() * self.output_step;
+                self.rec
+                    .set_derived(self.derive.sample(&self.sys, self.t, &self.x));
                 self.rec.record(&self.sys, self.t, &self.x);
             }
         }

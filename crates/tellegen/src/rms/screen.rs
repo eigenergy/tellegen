@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::system::DynSystem;
 use super::{apply_event, topology, unit_key, RmsEvent, RmsRequest, RmsResult, RmsSimulation};
 
 /// The screening criteria. Every field has a default (`version` 1); a
@@ -348,21 +349,130 @@ pub(crate) fn bus_frequency(
     tf: f64,
     hold: &dyn Fn(usize) -> bool,
 ) -> Vec<f64> {
-    let tau = std::f64::consts::TAU;
     let mut out = Vec::with_capacity(time.len());
     let mut y = 0.0; // filtered dva/dt, rad/s
     for k in 0..time.len() {
         if k > 0 && !hold(k) {
-            let dt = time[k] - time[k - 1];
-            if dt > 0.0 {
-                let d = wrap(va[k] - va[k - 1]) / dt;
-                // Backward Euler on y' = (d − y) / tf: exact for a ramp once settled.
-                y += dt / (tf + dt) * (d - y);
-            }
+            filter_step(&mut y, va[k] - va[k - 1], time[k] - time[k - 1], tf);
         }
-        out.push(f0 * omega_ref[k] + y / tau);
+        out.push(f0 * omega_ref[k] + y / std::f64::consts::TAU);
     }
     out
+}
+
+/// One step of the bus-frequency filter: `y`, the filtered `dva/dt`
+/// (rad/s), moves toward the angle change `dva` over `dt` by backward
+/// Euler on `y' = (d − y) / tf`, exact for a ramp once settled. The batch
+/// screening and a live session take the same step.
+fn filter_step(y: &mut f64, dva: f64, dt: f64, tf: f64) {
+    if dt > 0.0 {
+        let d = wrap(dva) / dt;
+        *y += dt / (tf + dt) * (d - *y);
+    }
+}
+
+/// The rotor-angle separation of one island: its largest angle less its
+/// smallest (0 for one machine or none).
+fn spread(angles: impl Iterator<Item = f64>) -> f64 {
+    let (lo, hi) = angles.fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), a| {
+        (l.min(a), h.max(a))
+    });
+    if lo <= hi {
+        hi - lo
+    } else {
+        0.0
+    }
+}
+
+/// A synchronous machine's weight in its island's COI: `H · MBASE` (MW·s).
+fn machine_weight(sys: &DynSystem, j: usize) -> f64 {
+    let d = &sys.devices[j];
+    d.shaft.h * d.scale * sys.sbase
+}
+
+/// The COI `(ω pu, δ rad)` of one island at one sample, from each machine's
+/// `speed` and `angle`; `None` without inertia. An island holding a voltage
+/// source, in the synchronous frame, turns with the source.
+fn island_coi(
+    sys: &DynSystem,
+    isl: &SegIsland,
+    weight: &dyn Fn(usize) -> f64,
+    speed: &dyn Fn(usize) -> f64,
+    angle: &dyn Fn(usize) -> f64,
+) -> Option<(f64, f64)> {
+    if let Some(a) = isl.source_angle {
+        if sys.omega_ref.is_none() {
+            return Some((1.0, a));
+        }
+    }
+    let w: Vec<f64> = isl.machines.iter().map(|&j| weight(j)).collect();
+    let o: Vec<f64> = isl.machines.iter().map(|&j| speed(j)).collect();
+    let d: Vec<f64> = isl.machines.iter().map(|&j| angle(j)).collect();
+    Some((coi(&w, &o)?, coi(&w, &d)?))
+}
+
+/// The islands of `sys` as it is from `start` on: those with a synchronous
+/// machine or a source, the machines in service in each, the dead buses and
+/// the island with the most inertia.
+fn segment(sys: &DynSystem, start: f64) -> Segment {
+    let dead = sys.dead_buses();
+    let mut island_of_bus = vec![usize::MAX; sys.n];
+    let mut islands = Vec::new();
+    for buses in sys.islands() {
+        if buses.iter().all(|&b| dead[b]) {
+            continue;
+        }
+        let k = islands.len();
+        for &b in &buses {
+            island_of_bus[b] = k;
+        }
+        let source_angle = sys
+            .sources
+            .iter()
+            .find(|s| s.y != super::system::C64::new(0.0, 0.0) && island_of_bus[s.bus] == k)
+            .map(|s| s.e.arg());
+        islands.push(SegIsland {
+            buses,
+            machines: Vec::new(),
+            weight: 0.0,
+            source_angle,
+            live_units: 0,
+        });
+    }
+    let mut island_of_device = vec![None; sys.devices.len()];
+    for (j, d) in sys.devices.iter().enumerate() {
+        let k = island_of_bus[d.bus];
+        if d.tripped.is_some() || k == usize::MAX {
+            continue;
+        }
+        islands[k].live_units += 1;
+        let w = machine_weight(sys, j);
+        if w > 0.0 {
+            islands[k].machines.push(j);
+            islands[k].weight += w;
+            island_of_device[j] = Some(k);
+        }
+    }
+    for h in sys.held.iter().filter(|h| !h.tripped) {
+        if let Some(isl) = islands.get_mut(island_of_bus[h.bus]) {
+            isl.live_units += 1;
+        }
+    }
+    let main = (0..islands.len())
+        .filter(|&k| islands[k].source_angle.is_some() || islands[k].weight > 0.0)
+        .max_by(|&a, &b| {
+            let key = |k: usize| (islands[k].source_angle.is_some(), islands[k].weight);
+            let (sa, wa) = key(a);
+            let (sb, wb) = key(b);
+            sa.cmp(&sb).then(wa.total_cmp(&wb))
+        });
+    Segment {
+        start,
+        islands,
+        island_of_device,
+        dead,
+        main,
+    }
 }
 
 /// The local maxima of `v` above `floor`, as `(index, value)`.
@@ -417,7 +527,7 @@ impl RmsSimulation {
         order.sort_by(|a, b| a.time().total_cmp(&b.time()));
         let mut sys = self.sys.clone();
         let mut x = self.x0.clone();
-        let mut out = vec![self.segment(&sys, f64::NEG_INFINITY)];
+        let mut out = vec![segment(&sys, f64::NEG_INFINITY)];
         let mut k = 0;
         while k < order.len() {
             let t = order[k].time();
@@ -427,70 +537,9 @@ impl RmsSimulation {
                 k += 1;
             }
             topology::extinguish(&mut sys, t);
-            out.push(self.segment(&sys, t));
+            out.push(segment(&sys, t));
         }
         Ok(out)
-    }
-
-    fn segment(&self, sys: &super::system::DynSystem, start: f64) -> Segment {
-        let dead = sys.dead_buses();
-        let mut island_of_bus = vec![usize::MAX; sys.n];
-        let mut islands = Vec::new();
-        for buses in sys.islands() {
-            if buses.iter().all(|&b| dead[b]) {
-                continue;
-            }
-            let k = islands.len();
-            for &b in &buses {
-                island_of_bus[b] = k;
-            }
-            let source_angle = sys
-                .sources
-                .iter()
-                .find(|s| s.y != super::system::C64::new(0.0, 0.0) && island_of_bus[s.bus] == k)
-                .map(|s| s.e.arg());
-            islands.push(SegIsland {
-                buses,
-                machines: Vec::new(),
-                weight: 0.0,
-                source_angle,
-                live_units: 0,
-            });
-        }
-        let mut island_of_device = vec![None; sys.devices.len()];
-        for (j, d) in sys.devices.iter().enumerate() {
-            let k = island_of_bus[d.bus];
-            if d.tripped.is_some() || k == usize::MAX {
-                continue;
-            }
-            islands[k].live_units += 1;
-            let w = d.shaft.h * d.scale * sys.sbase;
-            if w > 0.0 {
-                islands[k].machines.push(j);
-                islands[k].weight += w;
-                island_of_device[j] = Some(k);
-            }
-        }
-        for h in sys.held.iter().filter(|h| !h.tripped) {
-            if let Some(isl) = islands.get_mut(island_of_bus[h.bus]) {
-                isl.live_units += 1;
-            }
-        }
-        let main = (0..islands.len())
-            .filter(|&k| islands[k].source_angle.is_some() || islands[k].weight > 0.0)
-            .max_by(|&a, &b| {
-                let key = |k: usize| (islands[k].source_angle.is_some(), islands[k].weight);
-                let (sa, wa) = key(a);
-                let (sb, wb) = key(b);
-                sa.cmp(&sb).then(wa.total_cmp(&wb))
-            });
-        Segment {
-            start,
-            islands,
-            island_of_device,
-            dead,
-            main,
-        }
     }
 
     /// Screen a finished run of this simulation against `criteria`.
@@ -625,20 +674,12 @@ impl RmsSimulation {
             }
             None => vec![1.0; ns],
         };
-        let weight = |j: usize| sys.devices[j].shaft.h * sys.devices[j].scale * sys.sbase;
+        let weight = |j: usize| machine_weight(sys, j);
 
         // @block Centre of inertia
         // COI per sample and island.
         let island_coi = |s: usize, isl: &SegIsland| -> Option<(f64, f64)> {
-            if let Some(a) = isl.source_angle {
-                if sys.omega_ref.is_none() {
-                    return Some((1.0, a));
-                }
-            }
-            let w: Vec<f64> = isl.machines.iter().map(|&j| weight(j)).collect();
-            let o: Vec<f64> = isl.machines.iter().map(|&j| omega[j][s]).collect();
-            let d: Vec<f64> = isl.machines.iter().map(|&j| delta[j][s]).collect();
-            Some((coi(&w, &o)?, coi(&w, &d)?))
+            island_coi(sys, isl, &weight, &|j| omega[j][s], &|j| delta[j][s])
         };
         let mut coi_omega = vec![f64::NAN; ns];
         let mut coi_delta = vec![f64::NAN; ns];
@@ -1030,6 +1071,153 @@ impl RmsSimulation {
     }
 }
 
+/// The screening's derived channels of a live session, sample by sample,
+/// from the same islands, centre of inertia and bus-frequency filter as
+/// [`RmsSimulation::derived_series`] for a finished run (so a live session
+/// and a batch run of its events agree to the last digit):
+///
+/// - `coi:f` (Hz), `coi:omega` (pu), `coi:delta` (rad): the COI of the
+///   island with the most inertia;
+/// - `coi:sep` (rad): the largest rotor-angle separation within any one
+///   island (machines in different islands are not compared);
+/// - `coi:islands`: how many islands the network is in;
+/// - `f:<bus>` (Hz): each bus's frequency from its angle, in the reference
+///   frame's speed (`NaN` while the bus is dead);
+/// - `dcoi:<unit>` (rad): each machine's angle from the COI of its own
+///   island (`NaN` while it is out of service).
+///
+/// The session reports every change of the network
+/// ([`Self::topology_changed`]); the sample after it holds the bus
+/// filters, as a batch run holds them across an event.
+// @block Derived channels of a live session
+#[cfg(feature = "rms-experimental")]
+pub(crate) struct LiveDerive {
+    f0: f64,
+    filter_s: f64,
+    min_pu: f64,
+    /// The reference frame's speed state, from the start (as a batch run).
+    omega_ref: Option<usize>,
+    weights: Vec<f64>,
+    segment: Segment,
+    /// Per bus, the filtered `dva/dt` (rad/s).
+    y: Vec<f64>,
+    /// The previous sample's time, bus angles and magnitudes.
+    prev: Option<(f64, Vec<f64>, Vec<f64>)>,
+    /// The network changed since the previous sample.
+    changed: bool,
+    keys: Vec<String>,
+    values: Vec<f64>,
+}
+
+#[cfg(feature = "rms-experimental")]
+impl LiveDerive {
+    /// Index of the first `f:` key in [`Self::keys`].
+    const BUSES: usize = 5;
+
+    pub(crate) fn new(sys: &DynSystem) -> Self {
+        let criteria = ScreeningCriteria::default();
+        let mut keys: Vec<String> = ["coi:f", "coi:omega", "coi:delta", "coi:sep"]
+            .iter()
+            .map(|k| (*k).to_owned())
+            .collect();
+        keys.push("coi:islands".to_owned());
+        keys.extend(sys.bus_numbers.iter().map(|b| format!("f:{b}")));
+        keys.extend(
+            sys.devices
+                .iter()
+                .map(|d| format!("dcoi:{}", unit_key(d.bus_number, &d.machine_id))),
+        );
+        Self {
+            f0: sys.f0,
+            filter_s: criteria.bus_frequency_filter_s,
+            min_pu: criteria.bus_frequency_min_pu,
+            omega_ref: sys.omega_ref,
+            weights: (0..sys.devices.len())
+                .map(|j| machine_weight(sys, j))
+                .collect(),
+            segment: segment(sys, f64::NEG_INFINITY),
+            y: vec![0.0; sys.n],
+            prev: None,
+            changed: false,
+            values: vec![f64::NAN; keys.len()],
+            keys,
+        }
+    }
+
+    /// The channel keys, in the order of [`Self::sample`]'s values.
+    pub(crate) fn keys(&self) -> &[String] {
+        &self.keys
+    }
+
+    /// The network changed at `t` (an event, a unit back in service): the
+    /// islands are found again and the next sample holds the bus filters.
+    pub(crate) fn topology_changed(&mut self, sys: &DynSystem, t: f64) {
+        self.segment = segment(sys, t);
+        self.changed = true;
+    }
+
+    /// The derived channels at the sample `(t, x)`, in key order.
+    pub(crate) fn sample(&mut self, sys: &DynSystem, t: f64, x: &[f64]) -> &[f64] {
+        let n = sys.n;
+        let seg = &self.segment;
+        let state = |j: usize| {
+            let d = &sys.devices[j];
+            let [_, s, ..] = d.layout();
+            d.offset + s
+        };
+        let weights = &self.weights;
+        let cois: Vec<Option<(f64, f64)>> = seg
+            .islands
+            .iter()
+            .map(|isl| {
+                island_coi(sys, isl, &|j| weights[j], &|j| x[state(j) + 1], &|j| {
+                    x[state(j)]
+                })
+            })
+            .collect();
+        let v = &mut self.values;
+        v.fill(f64::NAN);
+        if let Some((o, d)) = seg.main.and_then(|m| cois[m]) {
+            v[0] = self.f0 * o;
+            v[1] = o;
+            v[2] = d;
+        }
+        v[3] = seg
+            .islands
+            .iter()
+            .map(|isl| spread(isl.machines.iter().map(|&j| x[state(j)])))
+            .fold(0.0, f64::max);
+        #[allow(clippy::cast_precision_loss)]
+        {
+            v[4] = seg.islands.len() as f64;
+        }
+        let base = Self::BUSES + n;
+        for (j, k) in seg.island_of_device.iter().enumerate() {
+            if let Some((_, dc)) = k.and_then(|k| cois[k]) {
+                v[base + j] = x[state(j)] - dc;
+            }
+        }
+        // Bus frequencies, as `bus_frequency` steps them.
+        let omega_ref = self.omega_ref.map_or(1.0, |i| x[i]);
+        let va: Vec<f64> = (0..n).map(|b| x[n + b].atan2(x[b])).collect();
+        let vm: Vec<f64> = (0..n).map(|b| x[b].hypot(x[n + b])).collect();
+        for b in 0..n {
+            if let Some((t0, va0, vm0)) = &self.prev {
+                let hold = self.changed || vm[b].min(vm0[b]) < self.min_pu || seg.dead[b];
+                if !hold {
+                    filter_step(&mut self.y[b], va[b] - va0[b], t - t0, self.filter_s);
+                }
+            }
+            if !seg.dead[b] {
+                v[Self::BUSES + b] = self.f0 * omega_ref + self.y[b] / std::f64::consts::TAU;
+            }
+        }
+        self.prev = Some((t, va, vm));
+        self.changed = false;
+        &self.values
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1062,6 +1250,66 @@ mod tests {
         // In a frame turning at 1.001 pu the same angle ramp is 60.06 − 0.05 Hz.
         let f = bus_frequency(&time, &va, &vec![1.001; time.len()], f0, 0.02, &|_| false);
         assert!((f[time.len() - 1] - (f0 * 1.001 + df)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn two_equal_machines_at_0_and_60_degrees() {
+        // Equal inertia: the COI is halfway, each machine 30° from it, and
+        // the pair 60° apart.
+        let (a, b) = (0.0_f64.to_radians(), 60.0_f64.to_radians());
+        let w = [4.0 * 873.0, 4.0 * 873.0];
+        let c = coi(&w, &[a, b]).unwrap();
+        assert!((c.to_degrees() - 30.0).abs() < 1e-12);
+        assert!(((a - c).to_degrees() + 30.0).abs() < 1e-12);
+        assert!(((b - c).to_degrees() - 30.0).abs() < 1e-12);
+        assert!((spread([a, b].into_iter()).to_degrees() - 60.0).abs() < 1e-12);
+        // Once a trip puts them in different islands, each is its own COI
+        // and there is no pair to separate.
+        for x in [a, b] {
+            assert!((coi(&w[..1], &[x]).unwrap() - x).abs() < 1e-15);
+            assert_eq!(spread([x].into_iter()), 0.0);
+        }
+    }
+
+    #[test]
+    fn a_bus_frequency_in_a_moving_frame() {
+        // A bus at a steady 59.95 Hz seen from a frame whose speed swings
+        // (a reference machine, 1 ± 0.002 pu at 0.5 Hz): its angle in the
+        // frame is ∫ 2π (f_bus − f0 ω_ref) dt, and the estimate adds the
+        // frame's speed back.
+        let (f0, f_bus) = (60.0, 59.95);
+        let dt = 0.005;
+        let time: Vec<f64> = (0..=1000).map(|k| f64::from(k) * dt).collect();
+        let omega_ref: Vec<f64> = time
+            .iter()
+            .map(|t| 1.0 + 0.002 * (std::f64::consts::TAU * 0.5 * t).sin())
+            .collect();
+        // The angle integrated exactly: ∫ ω_ref = t − 0.002 cos(πt) / π.
+        let va: Vec<f64> = time
+            .iter()
+            .map(|&t| {
+                let frame =
+                    t - 0.002 * ((std::f64::consts::PI * t).cos() - 1.0) / std::f64::consts::PI;
+                wrap(std::f64::consts::TAU * (f_bus * t - f0 * frame))
+            })
+            .collect();
+        let f = bus_frequency(&time, &va, &omega_ref, f0, 0.02, &|_| false);
+        // After the filter settles, within its lag on the frame's swing
+        // (f0 · max |dω_ref/dt| · (tf + dt) = 60 · 0.002π · 0.025 ≈ 0.009 Hz),
+        // far inside the frame's own 0.12 Hz swing.
+        let worst = f[100..]
+            .iter()
+            .map(|v| (v - f_bus).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 0.012, "{worst}");
+        // Without the frame's speed the same angle reads its swing.
+        let ones = vec![1.0; time.len()];
+        let fixed = bus_frequency(&time, &va, &ones, f0, 0.02, &|_| false);
+        let off = fixed[100..]
+            .iter()
+            .map(|v| (v - f_bus).abs())
+            .fold(0.0, f64::max);
+        assert!(off > 0.1, "{off}");
     }
 
     #[test]

@@ -85,10 +85,15 @@ class Samples {
 }
 /** The live output step, s. */
 const OUTPUT_STEP = 0.02;
-/** Channels the live session records: what the map and the traces read. */
+/** Channels the live session records: what the map and the traces read.
+ * `coi:`, `f:` and `dcoi:` are derived by the engine at each sample, as the
+ * screening of a batch run derives them. */
 const RECORD = [
 	'vm:',
 	'va:',
+	'f:',
+	'coi:',
+	'dcoi:',
 	'omega:',
 	'delta:',
 	'pe:',

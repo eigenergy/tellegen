@@ -39,6 +39,9 @@ pub(super) enum Source {
     QFrom(usize),
     PTo(usize),
     QTo(usize),
+    /// A channel the caller derives at each sample (a live session's COI and
+    /// bus frequencies), index into its values.
+    Derived(usize),
 }
 
 /// One recorded set of channels: indices into the catalog, its step and the
@@ -74,6 +77,9 @@ pub(super) struct Recorder {
     pub(super) layout: u32,
     main: Group,
     frames: Option<Group>,
+    /// Channels derived outside the recorder: their keys and the values of
+    /// the sample being recorded ([`Recorder::set_derived`]).
+    derived: Option<(Vec<String>, Vec<f64>)>,
 }
 
 impl Recorder {
@@ -133,6 +139,7 @@ impl Recorder {
             layout: 0,
             main: group(0.0),
             frames,
+            derived: None,
         }
     }
 
@@ -187,6 +194,11 @@ impl Recorder {
                 cat.push((format!("ql:{number}"), Source::Ql(b)));
             }
         }
+        if let Some((keys, _)) = &self.derived {
+            for (i, key) in keys.iter().enumerate() {
+                cat.push((key.clone(), Source::Derived(i)));
+            }
+        }
         for e in 0..sys.ac.m {
             let key = &self.branch_keys[e];
             cat.push((format!("p_from:{key}"), Source::PFrom(e)));
@@ -220,6 +232,23 @@ impl Recorder {
         }
         self.catalog = cat;
         self.layout += 1;
+    }
+
+    /// Offer channels derived outside the recorder under `keys`; the caller
+    /// gives their values before each sample ([`Self::set_derived`]).
+    #[cfg(feature = "rms-experimental")]
+    pub(super) fn with_derived(&mut self, keys: Vec<String>) {
+        let n = keys.len();
+        self.derived = Some((keys, vec![f64::NAN; n]));
+        self.catalog.clear();
+    }
+
+    /// The derived channels' values at the sample about to be recorded.
+    #[cfg(feature = "rms-experimental")]
+    pub(super) fn set_derived(&mut self, values: &[f64]) {
+        if let Some((_, v)) = &mut self.derived {
+            v.copy_from_slice(values);
+        }
     }
 
     /// Change what is recorded from the next sample on (a live session's
@@ -455,6 +484,7 @@ impl Recorder {
                 Source::QFrom(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).qf[e],
                 Source::PTo(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).pt[e],
                 Source::QTo(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).qt[e],
+                Source::Derived(i) => self.derived.as_ref().map_or(f64::NAN, |(_, v)| v[i]),
             };
             out.push(v);
         }

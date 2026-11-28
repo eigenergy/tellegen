@@ -316,8 +316,15 @@ same watch set (`set_record`) and gives any channel at its current time
 
 In the Live tab, select a disturbance in the Dynamics panel and follow its
 recorded channels in the plot dock. Select a unit on the map to open its
-models in that same panel. Live bus and rotor angles use the simulation
-reference. The completed run supplies island-aware frequency and angle screening.
+models in that same panel. Live bus and rotor angles (`va:`, `delta:`) use the
+simulation reference. Beside them, the live session derives at every sample
+what the screening of a completed run derives, with the same code: the
+system frequency at the centre of inertia of the largest island (`coi:f`),
+each bus's frequency from its angle in the moving reference frame (`f:`),
+each machine's angle from the COI of its own island (`dcoi:`) and the largest
+rotor-angle separation within an island (`coi:sep`); machines in different
+islands are never compared. A batch run of the same events gives the same
+numbers from the same samples (`crates/tellegen/tests/rms_live_derived.rs`).
 
 The chart accepts sampled coordinates and an axis unit. A future EMT solver
 can use it to plot instantaneous phase currents in amperes or phase-to-ground

@@ -89,8 +89,8 @@
 		if (!run) return [];
 		const groups = new Map<string, string[]>();
 		for (const k of live.plotted) {
-			const q = k.split(':')[0];
-			if (!quantityOf(k)) continue;
+			const q = quantityOf(k)?.q;
+			if (!q) continue;
 			groups.set(q, [...(groups.get(q) ?? []), k]);
 		}
 		return [...groups.entries()].map(([q, keys]) => {
