@@ -189,11 +189,16 @@ export class ProtectionController {
 		if (p && id) this.#set(id, { ...p, enabled: on });
 	}
 
-	/** Replace the scheme (an edited relay, a loaded file): audit again. */
+	/** Replace the scheme (an edited relay, a loaded file): audit again. The
+	 * result goes to the case the edit started on, and only if its relays did
+	 * not change meanwhile, so a slower audit never undoes a newer edit. */
 	async update(scheme: ProtectionScheme): Promise<void> {
 		const { localId, moduleJson, dyn } = this.#input();
+		const base = this.states[localId];
 		const { audit, zones } = await auditProtection(moduleJson, dyn, scheme, this.dyn.options);
 		const tests = await protectionTests(moduleJson, dyn, scheme, {}, this.dyn.options);
+		if (this.states[localId] !== base)
+			throw new Error('the relays changed while this edit was audited: edit again');
 		const prev = this.states[localId];
 		this.#set(localId, {
 			scheme,

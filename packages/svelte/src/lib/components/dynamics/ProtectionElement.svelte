@@ -9,6 +9,7 @@
 	import type { ProtectionFunction, ProtectionTest, Relay, StaticFault } from '@tellegen/engine';
 	import { getController } from '../../context.svelte.js';
 	import { elementMatch, eventTouches, FUNCTION_CODE } from '../../dynamics/protection.svelte.js';
+	import { numberError } from '../../dynamics/live-logic.js';
 
 	let {
 		target,
@@ -83,11 +84,30 @@
 	const name = (f: ProtectionFunction) =>
 		`${'label' in f && f.label ? f.label : (FUNCTION_CODE[f.type] ?? '')} ${LABEL[f.type] ?? f.type}`.trim();
 
-	const update = (r: Relay) => run('Auditing…', () => prot.updateRelay(r));
+	/** Every number in `v` is finite (no setting left empty or mistyped). */
+	const finite = (v: unknown): boolean =>
+		typeof v === 'number'
+			? Number.isFinite(v)
+			: Array.isArray(v)
+				? v.every(finite)
+				: v !== null && typeof v === 'object'
+					? Object.values(v).every(finite)
+					: true;
+	const update = (r: Relay) => {
+		if (!finite(r)) {
+			error = 'enter a number';
+			return;
+		}
+		return run('Auditing…', () => prot.updateRelay(r));
+	};
 	/** Replace function `k` of relay `r` with `next`. */
 	const setFn = (r: Relay, k: number, next: ProtectionFunction) =>
 		update({ ...r, functions: r.functions.map((f, i) => (i === k ? next : f)) });
-	const num = (e: Event) => Number((e.currentTarget as HTMLInputElement).value);
+	/** The typed number, or NaN (refused by `update`) when it is not one. */
+	const num = (e: Event) => {
+		const text = (e.currentTarget as HTMLInputElement).value;
+		return numberError(text) ? NaN : Number(text);
+	};
 
 	/** Every scalar setting of a function, for the full editor. */
 	const SKIP = new Set(['type', 'label', 'zones', 'teleprotection', 'power_swing_blocking', 'load_encroachment', 'points', 'k0']);
@@ -174,7 +194,7 @@
 											<tr>
 												<td><span class="sw {z.name}"></span>{z.name}{z.direction === 'reverse' ? ' rev' : ''}</td>
 												<td
-													><input
+													><input disabled={!!busy}
 														type="number"
 														step="0.1"
 														aria-label="{z.name} reach"
@@ -187,7 +207,7 @@
 													/> Ω</td
 												>
 												<td
-													><input
+													><input disabled={!!busy}
 														type="number"
 														step="0.05"
 														aria-label="{z.name} delay"
@@ -204,7 +224,7 @@
 									</tbody>
 								</table>
 								<label class="check"
-									><input
+									><input disabled={!!busy}
 										type="checkbox"
 										checked={!!f.teleprotection}
 										onchange={(e) =>
@@ -222,15 +242,15 @@
 										<label
 											>{key.replace(/_/g, ' ')}
 											{#if typeof value === 'boolean'}
-												<input
+												<input disabled={!!busy}
 													type="checkbox"
 													checked={value}
 													onchange={(e) => setField(r, k, f, key, e.currentTarget.checked)}
 												/>
 											{:else if typeof value === 'number'}
-												<input type="number" step="any" {value} onchange={(e) => setField(r, k, f, key, num(e))} />
+												<input disabled={!!busy} type="number" step="any" {value} onchange={(e) => setField(r, k, f, key, num(e))} />
 											{:else if CHOICES[key]}
-												<select {value} onchange={(e) => setField(r, k, f, key, e.currentTarget.value)}
+												<select disabled={!!busy} {value} onchange={(e) => setField(r, k, f, key, e.currentTarget.value)}
 													>{#each CHOICES[key] as c (c)}<option value={c}>{c.replace(/_/g, ' ')}</option>{/each}</select
 												>
 											{:else}
@@ -242,7 +262,7 @@
 							{:else if 'pickup' in f && typeof f.pickup === 'number'}
 								<span class="inputs">
 									<label
-										>pickup <input
+										>pickup <input disabled={!!busy}
 											type="number"
 											step="any"
 											value={f.pickup}
@@ -251,7 +271,7 @@
 									>
 									{#if 'delay' in f && typeof f.delay === 'number'}
 										<label
-											>delay <input
+											>delay <input disabled={!!busy}
 												type="number"
 												step="0.05"
 												value={f.delay}
@@ -266,7 +286,7 @@
 					{#if full}
 						<div class="inputs wrap">
 							<label
-								>breaker time <input
+								>breaker time <input disabled={!!busy}
 									type="number"
 									step="0.01"
 									value={r.breaker_time ?? 0.05}
@@ -274,7 +294,7 @@
 								/> s</label
 							>
 							<label
-								><input
+								><input disabled={!!busy}
 									type="checkbox"
 									checked={!!r.breaker_failure}
 									onchange={(e) =>
@@ -286,7 +306,7 @@
 							>
 							{#if r.breaker_failure}
 								<label
-									>delay <input
+									>delay <input disabled={!!busy}
 										type="number"
 										step="0.01"
 										value={r.breaker_failure.delay ?? 0.15}
@@ -296,7 +316,7 @@
 							{/if}
 							{#if r.location.kind === 'line'}
 								<label
-									><input
+									><input disabled={!!busy}
 										type="checkbox"
 										checked={!!r.autoreclose}
 										onchange={(e) =>
@@ -310,7 +330,7 @@
 								>
 								{#if r.autoreclose}
 									<label
-										>dead time <input
+										>dead time <input disabled={!!busy}
 											type="number"
 											step="0.1"
 											value={r.autoreclose.dead_time ?? 0.5}
@@ -318,7 +338,7 @@
 										/> s</label
 									>
 									<label
-										>shots <input
+										>shots <input disabled={!!busy}
 											type="number"
 											step="1"
 											min="1"
@@ -327,7 +347,7 @@
 										/></label
 									>
 									<label
-										>sync angle <input
+										>sync angle <input disabled={!!busy}
 											type="number"
 											step="5"
 											min="0"
