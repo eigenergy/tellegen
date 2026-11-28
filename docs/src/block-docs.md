@@ -18,7 +18,7 @@ cannot drift from the code, because the code is all it reads.
 One tag in the documentation the code already has. There are three kinds,
 nested by where they are:
 
-```rust
+```rust,ignore
 //! Time integration of `M ẋ = f(x)` with the implicit trapezoidal rule, …
 //!
 //! @block Time integration                 <- a module: the whole file

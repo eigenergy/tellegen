@@ -1,3 +1,7 @@
+/** Axis helpers shared by the charts: round tick values and zoom limits.
+ * Pure.
+ * @block Chart axes */
+
 /** Round axis ticks between `lo` and `hi`, about `count` of them. The loop
  * is bounded and stops where the values no longer differ, so a range at the
  * limit of the floating-point resolution cannot hang it. */

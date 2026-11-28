@@ -1,5 +1,5 @@
 ---
-"@tellegen/svelte": minor
+"@tellegen/svelte": patch
 "@tellegen/webmcp": patch
 ---
 

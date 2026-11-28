@@ -106,6 +106,7 @@ COPY crates ./crates
 # The block diagram the server serves (build.rs) also draws the app's dynamics code.
 COPY packages/svelte/src/lib/dynamics ./packages/svelte/src/lib/dynamics
 COPY packages/svelte/src/lib/components/dynamics ./packages/svelte/src/lib/components/dynamics
+COPY packages/svelte/src/lib/charts ./packages/svelte/src/lib/charts
 RUN cargo build --release --locked -p tellegen-server --bin tellegen-server
 
 # ---- runtime ----

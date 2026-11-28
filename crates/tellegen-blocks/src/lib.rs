@@ -79,6 +79,7 @@ pub fn rms_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
         ("crates/tellegen/src/rms", "rms"),
         ("packages/svelte/src/lib/dynamics", "app::logic"),
         ("packages/svelte/src/lib/components/dynamics", "app::ui"),
+        ("packages/svelte/src/lib/charts", "app::charts"),
     ];
     let roots = candidates
         .iter()
@@ -113,6 +114,12 @@ pub fn rms_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
             "Components",
             "`packages/svelte/src/lib/components/dynamics`: the Svelte components of the Dynamics \
              panel, the live workbench and the editors.",
+        ),
+        heading(
+            "app::charts",
+            "Chart helpers",
+            "`packages/svelte/src/lib/charts`: axis ticks and decimation shared by the live \
+             traces, the Bode plots and the app's other charts.",
         ),
     ];
     (roots, headings)
