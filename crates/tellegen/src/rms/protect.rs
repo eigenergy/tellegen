@@ -1,5 +1,7 @@
 //! The RMS engine's side of the protection relays: what they measure and
 //! what their breakers do.
+//!
+//! @block Relays on the RMS engine
 
 use super::system::{BusLoad, DynSystem, C64};
 use super::topology::{trip_held, RmsMeasure};

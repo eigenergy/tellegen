@@ -3,7 +3,8 @@
  * distance zones of the selected relay as coloured stretches along the
  * lines (Z1 green, Z2 amber, Z3 orange; every relay's Z1 faintly when none
  * is selected), faults inside lines, and the breakers the relays opened up
- * to the time shown. Pure geometry plus light deck.gl layers. */
+ * to the time shown. Pure geometry plus light deck.gl layers.
+ * @block Protection on the map */
 
 import type { Layer } from '@deck.gl/core';
 import type { RelayOperation } from '@tellegen/engine';

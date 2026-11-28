@@ -1,7 +1,8 @@
 <script lang="ts">
 	/** What the relays do, as it happens (experimental): the trips, breaker
 	 * operations, recloses and lockouts of the run shown (at the player's
-	 * time), the live session or a static study, newest first, over the map. */
+	 * time), the live session or a static study, newest first, over the map.
+	 * @block Relay ticker */
 	import type { RelayOperation } from '@tellegen/engine';
 	import { getController } from '../../context.svelte.js';
 

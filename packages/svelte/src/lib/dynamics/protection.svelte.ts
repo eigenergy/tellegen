@@ -6,7 +6,8 @@
  *
  * The numbers are the engine's (`@tellegen/engine` protection calls): the
  * settings and studies run on the engine worker, the test suite on an
- * isolated worker of its own, so neither holds up the RMS worker. */
+ * isolated worker of its own, so neither holds up the RMS worker.
+ * @block Protection layer */
 
 import {
 	auditProtection,

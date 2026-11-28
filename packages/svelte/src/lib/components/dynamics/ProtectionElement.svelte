@@ -4,7 +4,8 @@
 	 * with the main settings (editable), in service, what they did in the run
 	 * shown, the standard tests that concern the element, and a fault on it
 	 * left to the relays, on the load flow (static study) or in RMS. Without
-	 * relays, "protect by rule". */
+	 * relays, "protect by rule".
+	 * @block Relays of an element */
 	import type { ProtectionFunction, ProtectionTest, Relay, StaticFault } from '@tellegen/engine';
 	import { getController } from '../../context.svelte.js';
 	import { elementMatch, eventTouches, FUNCTION_CODE } from '../../dynamics/protection.svelte.js';

@@ -4,7 +4,8 @@
 	 * by rule (IEC 60255 functions), the setting audit, the standard tests
 	 * (run on a worker of their own, replayed on the map), the relays at the
 	 * operating point with static fault studies, and the relay record of the
-	 * run, study or live session shown. */
+	 * run, study or live session shown.
+	 * @block Protection tab */
 	import { describeExpectation } from '@tellegen/engine';
 	import type { Finding, ProtectionTest, RelayOperation, StaticFault } from '@tellegen/engine';
 	import { getAppState, getController } from '../../context.svelte.js';
