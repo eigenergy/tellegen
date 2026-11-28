@@ -61,7 +61,7 @@ jobs:
       # The wasm adapter's RMS layer is feature-gated: lint it with the
       # features build-wasm.mjs ships.
       - name: Clippy (wasm adapter as it ships)
-        run: cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental,powerio-collections -- -D warnings
+        run: cargo clippy -p tellegen-wasm --all-targets --features conic,synth,rms,rms-experimental,protection,powerio-collections -- -D warnings
       # Its own invocation, deliberately: the extension is linted with
       # `extension-module` ON, which is how it ships, and without
       # `--all-targets`, which would link libpython into this gate.
@@ -70,6 +70,7 @@ jobs:
       - name: Clippy (RMS and the opt-in OPF paths)
         run: |
           cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
+          cargo clippy -p tellegen --all-targets --features rms-experimental,protection -- -D warnings
           cargo clippy -p tellegen --all-targets --features sensitivity,mc-pf,conic,acopf,mc-opf,ots,schema -- -D warnings
           cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Licenses, advisories, bans, sources
@@ -162,7 +163,7 @@ jobs:
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
       - name: Test the wasm adapter as it ships
-        run: cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,powerio-collections
+        run: cargo test -p tellegen-wasm --features conic,synth,rms,rms-experimental,protection,powerio-collections
 
   # RMS is behind its own features, which no other job reaches. Mirrors
   # `just rms-test` and `just rms-validation`: the debug run skips the 20 s
@@ -185,7 +186,7 @@ jobs:
       - name: Test the RMS dynamic simulation
         run: |
           cargo test -p tellegen --no-default-features --features rms
-          cargo test -p tellegen --features rms-experimental
+          cargo test -p tellegen --features rms-experimental,protection
       # The release profile links with whole-program optimization to keep the
       # wasm module small. A test binary gains nothing from it and took four
       # minutes to link, so this run turns it off.

@@ -1,4 +1,8 @@
 <script lang="ts">
+	/** The Dynamics panel: attach dynamic data to the active case (or open a
+	 * model of the hosted library), then its tabs: Run (events, options and
+	 * the verdict), Live, Models and Modes. The engine's notes go to the Log.
+	 * @block Dynamics panel */
 	import { rmsDynamize } from '@tellegen/engine';
 	import { untrack } from 'svelte';
 	import { getAppState, getController } from '../../context.svelte.js';
@@ -8,6 +12,10 @@
 	import DynamicsRunControls from './DynamicsRunControls.svelte';
 	import DynamicsVerdict from './DynamicsVerdict.svelte';
 	import EigenPlot from './EigenPlot.svelte';
+	import DynamicsBode from './DynamicsBode.svelte';
+	import DynamicsLive from './DynamicsLive.svelte';
+	import DynamicsModels from './DynamicsModels.svelte';
+	import DynamicsProtection from './DynamicsProtection.svelte';
 	import { headline } from '../../dynamics/verdict.js';
 	import { onTabKey } from '../../dynamics/tabs.js';
 	import ModeSwitch from './ModeSwitch.svelte';
@@ -20,7 +28,20 @@
 	const dyn = ctrl.dynamics;
 
 	let open = $state(false);
-	let tab = $state<'run' | 'modes'>('run');
+	type Tab = 'run' | 'live' | 'models' | 'modes' | 'protection';
+	const TABS = $derived<[Tab, string][]>([
+		['run', 'Simulation'],
+		['live', 'Live'],
+		['models', 'Models'],
+		['modes', 'Modes'],
+		...(dyn.protection.available ? ([['protection', 'Protection']] as [Tab, string][]) : [])
+	]);
+	let tab = $state<Tab>('run');
+	// A relay picked (on the map or in an element's card) shows on the Protection tab.
+	$effect(() => {
+		if (dyn.protection.selectedRelay && dyn.protection.available)
+			untrack(() => (tab = 'protection'));
+	});
 	let demoBusy = $state(false);
 	let demoError = $state<string | null>(null);
 	const att = $derived(dyn.active);
@@ -50,6 +71,7 @@
 	});
 	$effect(() => {
 		void dyn.probe();
+		void dyn.loadExamples();
 	});
 
 	// The engine's notes go to the Log, where they can be read in full; the panel counts them.
@@ -87,6 +109,34 @@
 			)
 		);
 	});
+	// The hosted model library (examples/models/index.json): here, the
+	// models that carry dynamic data, grouped by library.
+	let exampleId = $state('');
+	let exampleBusy = $state(false);
+	let exampleError = $state<string | null>(null);
+	const catalog = $derived(dyn.examples);
+	const dynModels = $derived(catalog?.cases.filter((c) => c.dynamics) ?? []);
+	const dynLibraries = $derived(
+		(catalog?.libraries ?? []).filter((l) => dynModels.some((c) => c.library === l.id))
+	);
+	const picked = $derived(dynModels.find((c) => c.id === exampleId) ?? null);
+	const pickedLibrary = $derived(
+		picked ? (catalog?.libraries.find((l) => l.id === picked.library) ?? null) : null
+	);
+	const libraryTag = (l: { title: string; tag?: string | null }) =>
+		l.tag ? `${l.title} · ${l.tag}` : l.title;
+	async function openExample() {
+		if (!exampleId) return;
+		exampleBusy = true;
+		exampleError = null;
+		try {
+			await dyn.openExample(exampleId);
+		} catch (e) {
+			exampleError = (e as Error).message;
+		} finally {
+			exampleBusy = false;
+		}
+	}
 
 	async function demo() {
 		demoBusy = true;
@@ -130,6 +180,35 @@
 		}
 	}
 
+	$effect(() => {
+		const a = dyn.active;
+		// While the case opens again (an edit applied), the catalog keeps the
+		// units it has, so the unit list and the editor stay with the focus in
+		// them; it loads the new ones once the case is ready.
+		if (a?.status === 'opening' && dyn.catalog.caseId === app.activeLocal?.id) return;
+		const on = app.preferences.experimental && !!dyn.support?.experimental && a?.status === 'ready';
+		dyn.catalog.sync(
+			on && a ? app.activeLocal?.id ?? null : null,
+			app.activeLocal?.studyInputJson,
+			on && a ? a.text : null
+		);
+	});
+
+	let pickedUnit = $state<string | null>(null);
+	$effect(() => {
+		void local?.id;
+		pickedUnit = null;
+	});
+	$effect(() => {
+		const request = dyn.inspectUnit;
+		if (!request) return;
+		dyn.inspectUnit = null;
+		if (request.caseId !== local?.id || !experimental) return;
+		pickedUnit = request.key;
+		tab = 'models';
+		untrack(() => layout.show('dynamics'));
+	});
+
 	const counts = $derived(
 		ins
 			? [
@@ -141,6 +220,35 @@
 	const flatOk = $derived(!!att?.flat && att.flat.max_speed_drift <= 1e-6);
 </script>
 
+{#snippet hostedPicker()}
+	{#if catalog}
+		<label
+			>Model <select bind:value={exampleId} data-testid="dyn-hosted-select">
+				<option value="">Choose…</option>
+				{#each dynLibraries as l (l.id)}
+					<optgroup label={libraryTag(l)}>
+						{#each dynModels.filter((c) => c.library === l.id) as c (c.id)}
+							<option value={c.id}
+								>{dyn.exampleName(c)}{c.info ? ` · ${c.info}` : ''}</option
+							>
+						{/each}
+					</optgroup>
+				{/each}
+			</select></label
+		>
+		{#if pickedLibrary?.note}<p class="dim">{pickedLibrary.note}</p>{/if}
+		{#if picked?.licence}<p class="dim">Licence: {picked.licence}</p>{/if}
+		<button disabled={!exampleId || exampleBusy} onclick={openExample}
+			>{exampleBusy
+				? `Opening ${picked?.title ?? ''}…`
+				: picked
+					? `Open ${dyn.exampleName(picked)}`
+					: 'Open model'}</button
+		>
+		{#if exampleError}<p class="err" role="alert">{exampleError}</p>{/if}
+	{/if}
+{/snippet}
+
 <PanelFrame
 	id="dynamics"
 	title="Dynamics"
@@ -151,7 +259,7 @@
 	bind:open
 	onopen={() => (app.mode = 'dynamics')}
 >
-	<div class="dyn settings-list" data-testid="dynamics-panel">
+	<div class="dyn settings-list dyn-form" data-testid="dynamics-panel">
 		<!-- The switch appears once there is a simulation to show. -->
 		{#if dyn.runs.length > 0}<div class="setting">
 				<span>Map shows</span><ModeSwitch />
@@ -175,10 +283,6 @@
 						</select>
 					</div>
 				{/if}
-				<!-- The run controls, as they read once the case has dynamic data. -->
-				<div class="setting">
-					<span>Event</span><span class="value">None</span>
-				</div>
 				<div class="actions">
 					{#if caseName}<button class="secondary" onclick={openDyr}>Open .dyr file…</button>{/if}
 					{#if experimental && local?.studyInputJson}<button
@@ -190,11 +294,16 @@
 						>{demoBusy ? 'Opening…' : 'Open WECC 240 demo'}</button
 					>
 				</div>
-				{#if demoError}<p class="err" role="alert" title={demoError}>Demo failed to open</p>{/if}
+				{#if demoError}<p class="err" role="alert" title={demoError}>{demoError}</p>{/if}
 				{#if dynamizeError}<p class="err" title={dynamizeError}>
-						Dynamic data failed to build
+						{dynamizeError}
 					</p>{/if}
-				<button class="run" disabled title="Needs dynamic data">Run simulation</button>
+				{#if catalog && dynModels.length > 0}
+					<div class="hosted" data-testid="dyn-hosted-models">
+						<h4>{catalog.title}</h4>
+						{@render hostedPicker()}
+					</div>
+				{/if}
 			</section>
 		{:else}
 			<section class="block" aria-label="Dynamic data">
@@ -210,7 +319,7 @@
 				{#if att.status === 'opening'}
 					<p class="dim" role="status">Opening…</p>
 				{:else if att.status === 'failed'}
-					<p class="err" role="alert" title={att.error ?? undefined}>Dynamic data failed to open</p>
+					<p class="err" role="alert" >{att.error ?? 'Dynamic data failed to open'}</p>
 				{:else if ins}
 					<div class="counts" data-testid="dyn-counts">
 						<StatBoxes stats={counts} label="Dynamic model" />
@@ -248,30 +357,38 @@
 				{/if}
 			</section>
 
+			{#if catalog && dynModels.length > 0}
+				<details class="hosted" data-testid="dyn-hosted-models">
+					<summary>Open another model from {catalog.title}</summary>
+					{@render hostedPicker()}
+				</details>
+			{/if}
+
 			{#if experimental}
 				<div
 					class="tabs"
 					role="tablist"
 					aria-label="Dynamics views"
 					tabindex="-1"
-					onkeydown={(e) => onTabKey(e, ['run', 'modes'] as const, tab, (t) => (tab = t))}
+					onkeydown={(e) =>
+						onTabKey(
+							e,
+							TABS.map(([t]) => t),
+							tab,
+							(t) => (tab = t)
+						)}
 				>
-					<button
-						role="tab"
-						id="dyn-tab-run"
-						aria-selected={tab === 'run'}
-						aria-controls="dyn-tabpanel"
-						tabindex={tab === 'run' ? 0 : -1}
-						onclick={() => (tab = 'run')}>Simulation</button
-					>
-					<button
-						role="tab"
-						id="dyn-tab-modes"
-						aria-selected={tab === 'modes'}
-						aria-controls="dyn-tabpanel"
-						tabindex={tab === 'modes' ? 0 : -1}
-						onclick={() => (tab = 'modes')}>Modes</button
-					>
+					{#each TABS as [t, label] (t)}
+						<button
+							role="tab"
+							id={`dyn-tab-${t}`}
+							aria-selected={tab === t}
+							aria-controls="dyn-tabpanel"
+							tabindex={tab === t ? 0 : -1}
+							onclick={() => (tab = t)}
+							>{label}</button
+						>
+					{/each}
 				</div>
 			{/if}
 
@@ -279,13 +396,15 @@
 				class="tabpanel"
 				id="dyn-tabpanel"
 				role={experimental ? 'tabpanel' : undefined}
-				aria-labelledby={experimental
-					? tab === 'modes'
-						? 'dyn-tab-modes'
-						: 'dyn-tab-run'
-					: undefined}
+				aria-labelledby={experimental ? `dyn-tab-${tab}` : undefined}
 			>
-				{#if tab === 'modes' && experimental}
+				{#if tab === 'live' && experimental}
+					<DynamicsLive />
+				{:else if tab === 'models' && experimental}
+					<DynamicsModels bind:picked={pickedUnit} />
+				{:else if tab === 'protection' && dyn.protection.available}
+					<DynamicsProtection />
+				{:else if tab === 'modes' && experimental}
 					<section class="block" aria-label="Small-signal modes" data-testid="dyn-modes">
 						{#if dyn.modes}
 							<EigenPlot result={dyn.modes} bind:selected={dyn.selectedMode} />
@@ -312,6 +431,7 @@
 								{dyn.modesError === 'Stopped' ? 'Stopped' : 'Modes failed'}
 							</p>{/if}
 					</section>
+					{#key att}<DynamicsBode />{/key}
 				{:else if att.status === 'ready'}
 					<DynamicsEventList />
 					<DynamicsRunControls />
@@ -324,7 +444,11 @@
 								{@const h = headline(r.run?.screening ?? null, r.failure, r.tEnd)}
 								<button aria-pressed={r.id === dyn.currentRunId} onclick={() => dyn.select(r.id)}>
 									<span aria-hidden="true">{h.icon}</span>
-									{r.events.length ? dyn.describe(r.events[0]) : 'No events'}{r.events.length > 1
+									{r.replay
+										? r.replay.label
+										: r.events.length
+											? dyn.describe(r.events[0])
+											: 'No events'}{r.events.length > 1
 										? ` and ${r.events.length - 1} more`
 										: ''}
 									{#if r.agent}<span class="agent">Agent</span>{/if}
@@ -371,22 +495,6 @@
 		justify-self: stretch;
 		min-height: 32px;
 	}
-	.run {
-		min-height: 36px;
-		border: 1px solid var(--accent-fill);
-		border-radius: var(--radius-sm);
-		background: var(--accent-fill);
-		color: var(--on-accent);
-		font: inherit;
-		font-weight: 600;
-	}
-	/* Disabled is a flat grey fill with no border, unlike any enabled button. */
-	.run:disabled {
-		border-color: transparent;
-		background: var(--surface-hover);
-		color: var(--text-tertiary);
-		cursor: default;
-	}
 	.secondary {
 		justify-self: start;
 		min-height: 28px;
@@ -406,13 +514,33 @@
 		cursor: default;
 	}
 	@media (pointer: coarse) {
-		.secondary,
-		.run {
+		.secondary {
 			min-height: 44px;
 		}
 	}
 	.dim {
 		color: var(--text-secondary);
+	}
+	.hosted {
+		display: grid;
+		gap: 6px;
+		border-top: 1px solid var(--border, currentColor);
+		padding-top: 8px;
+	}
+	details.hosted summary {
+		cursor: pointer;
+		font-weight: 600;
+	}
+	details.hosted[open] {
+		display: grid;
+		gap: 6px;
+	}
+	.hosted label {
+		display: grid;
+		gap: 4px;
+	}
+	.hosted select {
+		max-width: 100%;
 	}
 	.err {
 		color: var(--text-danger);

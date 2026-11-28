@@ -14,7 +14,7 @@ categories = ["science", "mathematics"]
 # and so do the RMS integration tests built on it (the unit tests that read it
 # skip without it). `licenses/` (the BSD-3-Clause notices of the code the RMS
 # engine translates) is packaged.
-exclude = ["tests/data/rms_examples/", "tests/rms_*.rs"]
+exclude = ["tests/data/rms_examples/", "tests/data/rms_smib/", "tests/rms_*.rs"]
 
 [dependencies]
 powerio.workspace = true
@@ -51,6 +51,11 @@ schemars = { workspace = true, optional = true }
 pounce-nl = { workspace = true, optional = true }
 pounce-rs = { workspace = true, optional = true }
 
+# The relays of a protected RMS run measure on a persistent thread pool, next to
+# the integration (native builds; the browser engine runs them inline).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { version = "1.12", optional = true }
+
 [features]
 default = ["sensitivity", "mc-pf"]
 # No-op. This once selected the PowerIO 0.12 code paths while the shipping
@@ -85,6 +90,9 @@ rms = ["sensitivity"]
 # graphs, small-signal analysis, live sessions and checkpoints, DYR editing,
 # the model library and "dynamize", and case editing.
 rms-experimental = ["rms"]
+# Protection relays (IEC 60255 measuring-relay functions) acting on RMS
+# runs: relay schemes, their settings from the network, and test cases.
+protection = ["rms", "dep:rayon"]
 
 [lints]
 workspace = true
@@ -156,12 +164,32 @@ name = "rms_graph"
 required-features = ["rms-experimental"]
 
 [[test]]
+name = "rms_speedups"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_regions"
+required-features = ["rms"]
+
+[[test]]
 name = "rms_validation"
 required-features = ["rms"]
 
 [[test]]
 name = "rms_psid_validation"
 required-features = ["rms"]
+
+[[test]]
+name = "rms_env_knobs"
+required-features = ["rms"]
+
+[[test]]
+name = "rms_reduced_network"
+required-features = ["rms"]
+
+[[example]]
+name = "rms_init_debug"
+required-features = ["rms-experimental"]
 
 [[example]]
 name = "api_schema"

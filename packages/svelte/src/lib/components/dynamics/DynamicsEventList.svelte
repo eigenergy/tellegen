@@ -1,4 +1,8 @@
 <script lang="ts">
+	/** The events of the next run: pick a scenario or an element's action,
+	 * then set each event's start and, for a fault, its clearing in cycles;
+	 * an event the engine refuses is marked with its reason.
+	 * @block Event list */
 	import { getController } from '../../context.svelte.js';
 	import { cyclesToSeconds, secondsToCycles, type DynEvent } from '../../dynamics/events.js';
 	import { WECC240_PRESETS } from '../../dynamics/presets.js';

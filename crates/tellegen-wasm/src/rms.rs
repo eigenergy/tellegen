@@ -7,6 +7,8 @@
 //! (COI, bus frequencies), packs the channels channel-major and drops the
 //! bus angles once the bus frequencies are derived from them. The packing is
 //! plain Rust ([`run_buffers`]) so a native test checks it.
+//!
+//! @block Prepared RMS case
 
 use std::collections::BTreeMap;
 
@@ -18,6 +20,10 @@ use tellegen::rms::{
 use wasm_bindgen::prelude::*;
 
 use crate::{ensure_input_text, install_panic_hook, jserr};
+
+/// Experimental: the engine's threads, in a build with shared memory.
+#[cfg(target_feature = "atomics")]
+pub mod threads;
 
 /// The most values (channels × samples) one run moves to JavaScript; a
 /// longer run records at a coarser output step and says so in its notes.
@@ -65,6 +71,11 @@ pub struct RunMeta {
     pub screening: RmsScreening,
     /// The request as run (events, steps, load model), to reproduce it.
     pub request: RmsRequest,
+    /// The relays' record, when the run had relays acting.
+    #[cfg(feature = "protection")]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protection: Option<tellegen::protection::ProtectionReport>,
 }
 
 /// A run, packed: `values` holds `keys.len()` blocks of `time.len()`
@@ -100,6 +111,25 @@ pub fn run_request(json: &str) -> Result<RunRequest, String> {
     serde_json::from_str(json).map_err(|e| format!("request: {e}"))
 }
 
+/// The relays a run request carries (`protection`, a `ProtectionScheme`),
+/// if any.
+///
+/// # Errors
+/// When the JSON or the scheme does not parse.
+#[cfg(feature = "protection")]
+pub fn run_scheme(json: &str) -> Result<Option<tellegen::protection::ProtectionScheme>, String> {
+    #[derive(Deserialize)]
+    struct Relays {
+        #[serde(default)]
+        protection: Option<tellegen::protection::ProtectionScheme>,
+    }
+    if json.trim().is_empty() {
+        return Ok(None);
+    }
+    let r: Relays = serde_json::from_str(json).map_err(|e| format!("protection: {e}"))?;
+    Ok(r.protection)
+}
+
 /// The number of channels [`RecordSpec::display`] records for `sim`.
 fn display_channels(sim: &RmsSimulation) -> usize {
     let i = sim.inspection();
@@ -112,23 +142,16 @@ fn display_channels(sim: &RmsSimulation) -> usize {
         + 2 * i.load_buses.len()
 }
 
-/// Run `request` on `sim` with the display channels, screen it and pack the
-/// result. `progress(t)` is called before every output sample with the time
-/// reached.
-///
-/// # Errors
-/// When the run or its screening fails (the engine's message, verbatim).
-pub fn run_buffers(
-    sim: &RmsSimulation,
-    mut run: RunRequest,
-    progress: &mut dyn FnMut(f64),
-) -> Result<RunBuffers, String> {
+/// `request` recording the display channels when it names none, with the
+/// output step coarsened to keep the transfer bounded (and a note saying
+/// so).
+fn display_request(sim: &RmsSimulation, mut request: RmsRequest) -> (RmsRequest, Option<String>) {
     let mut coarse_note = None;
-    if run.request.record.is_none() {
-        run.request.record = Some(RecordSpec::display());
+    if request.record.is_none() {
+        request.record = Some(RecordSpec::display());
         // Keep the transfer bounded: coarsen the output step to a multiple
         // of dt when the display set would pass MAX_VALUES values.
-        let r = &mut run.request;
+        let r = &mut request;
         if r.dt > 0.0 && r.output_step > 0.0 && r.t_end > 0.0 {
             let ch = display_channels(sim) as f64;
             let samples = (r.t_end / r.output_step).floor() + 1.0;
@@ -143,7 +166,21 @@ pub fn run_buffers(
             }
         }
     }
-    let request = run.request;
+    (request, coarse_note)
+}
+
+/// Run `request` on `sim` with the display channels, screen it and pack the
+/// result. `progress(t)` is called before every output sample with the time
+/// reached.
+///
+/// # Errors
+/// When the run or its screening fails (the engine's message, verbatim).
+pub fn run_buffers(
+    sim: &RmsSimulation,
+    run: RunRequest,
+    progress: &mut dyn FnMut(f64),
+) -> Result<RunBuffers, String> {
+    let (request, coarse_note) = display_request(sim, run.request);
     let mut k = 0usize;
     let step = request.output_step;
     let result = sim.run_cancellable(&request, &mut || {
@@ -152,7 +189,39 @@ pub fn run_buffers(
         false
     })?;
     progress(request.t_end);
-    let (screening, derived) = sim.screen_with_series(&request, &result, &run.criteria)?;
+    pack(sim, request, &run.criteria, result, coarse_note)
+}
+
+/// [`run_buffers`] with the relays of `scheme` acting during the run; their
+/// record comes with the head (`protection`). The run reports its progress
+/// once, at the end.
+///
+/// # Errors
+/// As [`run_buffers`], or when a relay does not bind to the case.
+#[cfg(feature = "protection")]
+pub fn run_buffers_protected(
+    sim: &RmsSimulation,
+    run: RunRequest,
+    scheme: &tellegen::protection::ProtectionScheme,
+    progress: &mut dyn FnMut(f64),
+) -> Result<RunBuffers, String> {
+    let (request, coarse_note) = display_request(sim, run.request);
+    let (result, report) = sim.run_with_protection(&request, scheme)?;
+    progress(request.t_end);
+    let mut buffers = pack(sim, request, &run.criteria, result, coarse_note)?;
+    buffers.meta.protection = Some(report);
+    Ok(buffers)
+}
+
+/// Screen a finished run and pack its channels.
+fn pack(
+    sim: &RmsSimulation,
+    request: RmsRequest,
+    criteria: &ScreeningCriteria,
+    result: tellegen::rms::RmsResult,
+    coarse_note: Option<String>,
+) -> Result<RunBuffers, String> {
+    let (screening, derived) = sim.screen_with_series(&request, &result, criteria)?;
     let ns = result.time.len();
     let mut keys = Vec::new();
     let mut values = Vec::with_capacity((result.channels.len() + derived.len()) * ns);
@@ -195,6 +264,8 @@ pub fn run_buffers(
                 record: None,
                 ..request
             },
+            #[cfg(feature = "protection")]
+            protection: None,
         },
         time: result.time,
         values,
@@ -297,6 +368,13 @@ impl RmsCase {
                 let _ = progress.call1(&JsValue::NULL, &JsValue::from_f64(t));
             }
         };
+        #[cfg(feature = "protection")]
+        let b = match run_scheme(request_json).map_err(jserr)? {
+            Some(scheme) => run_buffers_protected(&self.0, run, &scheme, &mut report),
+            None => run_buffers(&self.0, run, &mut report),
+        }
+        .map_err(jserr)?;
+        #[cfg(not(feature = "protection"))]
         let b = run_buffers(&self.0, run, &mut report).map_err(jserr)?;
         Ok(RmsRunBuffers {
             meta: serde_json::to_string(&b.meta).map_err(jserr)?,

@@ -24,7 +24,7 @@ COPY crates /build/crates
 # at the default wasm target, so it validates on Safari. Mirrors the `wasm`
 # script in packages/engine/package.json, including the places table the
 # generator reads beside the module.
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth,rms,rms-experimental,powerio-collections \
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth,rms,rms-experimental,protection,powerio-collections \
     && mkdir -p /out/data \
     && cp /build/crates/tellegen-synth/data/populated_places.json /out/data/
 
@@ -103,6 +103,10 @@ COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json --locked -p tellegen-server --bin tellegen-server
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+# The block diagram the server serves (build.rs) also draws the app's dynamics code.
+COPY packages/svelte/src/lib/dynamics ./packages/svelte/src/lib/dynamics
+COPY packages/svelte/src/lib/components/dynamics ./packages/svelte/src/lib/components/dynamics
+COPY packages/svelte/src/lib/charts ./packages/svelte/src/lib/charts
 RUN cargo build --release --locked -p tellegen-server --bin tellegen-server
 
 # ---- runtime ----

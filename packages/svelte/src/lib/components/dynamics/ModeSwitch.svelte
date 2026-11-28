@@ -1,4 +1,6 @@
 <script lang="ts">
+	/** The switch between steady state and dynamics, which changes the whole app.
+	 * @block Mode switch */
 	import { getAppState } from '../../context.svelte.js';
 	const app = getAppState();
 </script>

@@ -15,6 +15,8 @@
 	import TellegenMap from './TellegenMap.svelte';
 	import DynamicsPanel from './components/dynamics/DynamicsPanel.svelte';
 	import DynamicsTimeline from './components/dynamics/DynamicsTimeline.svelte';
+	import DynamicsWorkbench from './components/dynamics/DynamicsWorkbench.svelte';
+	import ProtectionTicker from './components/dynamics/ProtectionTicker.svelte';
 	import { getPanelLayout } from './panels.svelte.js';
 
 	const app = getAppState();
@@ -28,13 +30,33 @@
 	const MAP_CONTROL_ROW = 64;
 	const dyn = ctrl.dynamics;
 	let timelineHeight = $state(0);
+	/** The live workbench replaces the playback dock while it is open, for the
+	 * case its session belongs to (or before a session starts). */
+	const workbenchShown = $derived(
+		app.mode === 'dynamics' &&
+			app.dynamicsEnabled &&
+			dyn.live.open &&
+			!!dyn.active &&
+			(dyn.live.localId === null || dyn.live.localId === app.activeLocal?.id)
+	);
+	// Another case made active ends the live session: its plots, events and
+	// references belong to the case it was started on.
+	$effect(() => {
+		const id = app.activeLocal?.id ?? null;
+		const owner = dyn.live.localId;
+		if ((dyn.live.open || owner !== null) && (app.studyView || app.mode !== 'dynamics' || !app.preferences.experimental || (owner !== null && owner !== id)))
+			untrack(() => dyn.live.close());
+	});
 	const dynamicsShown = $derived(
-		app.mode === 'dynamics' && !!dyn.current?.run && dyn.current.localId === app.activeLocal?.id
+		workbenchShown ||
+			(app.mode === 'dynamics' &&
+				!!dyn.current?.run &&
+				dyn.current.localId === app.activeLocal?.id)
 	);
 	$effect(() => {
 		dyn.theme = config.theme;
 	});
-	// Turning experimental features off stops any dynamics playback.
+	// Dynamics turned off (AppState.dynamicsEnabled) stops any playback.
 	$effect(() => {
 		if (!app.dynamicsEnabled) untrack(() => dyn.player.pause());
 	});
@@ -179,9 +201,13 @@
 	<CommandPalette />
 	<ControlPanel />
 	{#if !app.studyView && app.dynamicsEnabled}<DynamicsPanel />{/if}
-	{#if dynamicsShown}
+	{#if workbenchShown}
+		<DynamicsWorkbench bind:dockHeight={timelineHeight} flush={sheetOpen} />
+	{:else if dynamicsShown}
 		<DynamicsTimeline bind:dockHeight={timelineHeight} flush={sheetOpen} />
 	{/if}
+	{#if app.mode === 'dynamics' && app.dynamicsEnabled && dyn.protection.available}<ProtectionTicker
+		/>{/if}
 	<LogPanel />
 	<SettingsPanel />
 	{#if !app.studyView}

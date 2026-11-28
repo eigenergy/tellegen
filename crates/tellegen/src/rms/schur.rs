@@ -34,14 +34,22 @@
 //! A unit whose own block is singular (an algebraic state that only the
 //! network determines) cannot be eliminated first: [`BlockLu::new`] then
 //! returns `None` and the caller takes the sparse LU of the whole matrix.
+//!
+//! @block Block factorization
 
 use faer::sparse::Triplet;
 
-use super::integrate::{step_entry, Patterns, SparseLu};
+use super::integrate::{step_entry, NetLu, Patterns};
 use super::system::DynSystem;
 
 /// A pivot below this fraction of its block's largest entry counts as zero.
 const PIVOT_MIN: f64 = 1e-13;
+
+/// Experimental: units from which their blocks are factorized on the spin pool,
+/// and the number of chunks they are split into.
+pub(crate) static DBG_BLOCK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+const PAR_UNITS_MIN: usize = 256;
+const PAR_UNIT_CHUNKS: usize = 64;
 
 /// One unit's place in the factorization.
 struct Unit {
@@ -55,7 +63,11 @@ struct Unit {
     block: usize,
 }
 
-/// The factorization of one step matrix by blocks.
+/// The factorization of one step matrix by blocks. With enough units the
+/// units' blocks are assembled, factorized and solved in chunks on the spin
+/// pool; the chunks join in unit order, so every array and the network's
+/// triplets are those of the serial loop, value for value.
+// @block Factorization by blocks
 pub(super) struct BlockLu {
     /// Buses.
     n: usize,
@@ -82,11 +94,51 @@ pub(super) struct BlockLu {
     /// The frame speed's place in the device part, when the frame moves.
     reference: Option<usize>,
     /// The network with the units' contributions (and the frame speed).
-    net: SparseLu,
+    net: NetLu,
     /// Right-hand side of the network system.
     rhs: Vec<f64>,
     /// A unit's states during its solve.
     tmp: Vec<f64>,
+    /// Experimental: unit chunks of the parallel solve (bounds into `units`; one
+    /// chunk = serial) and each unit's `B_k z_k`, added to the network side in unit order.
+    solve_chunks: Vec<usize>,
+    contrib: Vec<[f64; 2]>,
+}
+
+/// Experimental: threads of the spin pool besides the caller (none on wasm without
+/// threads, where the unit chunks run serially).
+fn pool_threads() -> usize {
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    return super::spin_pool::SpinPool::global().threads();
+    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+    0
+}
+
+/// Experimental: `TELLEGEN_NET_ONE=1` factorizes the network as one sparse LU even with
+/// regions (which then still split the residual and the Jacobian).
+fn net_one() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("TELLEGEN_NET_ONE").is_ok_and(|v| v == "1"))
+}
+
+/// Experimental: the region of each dense bus from `TELLEGEN_REGIONS` (a JSON map
+/// of bus number to region), or `None` without one.
+pub(super) fn region_map(sys: &DynSystem) -> Option<&'static [u16]> {
+    static MAP: std::sync::OnceLock<Option<(usize, Vec<u16>)>> = std::sync::OnceLock::new();
+    let m = MAP.get_or_init(|| {
+        let path = std::env::var("TELLEGEN_REGIONS").ok()?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let by_number: std::collections::HashMap<String, u16> = serde_json::from_str(&text).ok()?;
+        let v = sys
+            .bus_numbers
+            .iter()
+            .map(|b| by_number.get(&b.to_string()).copied().unwrap_or(0))
+            .collect();
+        Some((sys.n, v))
+    });
+    m.as_ref()
+        .filter(|(n, _)| *n == sys.n)
+        .map(|(_, v)| v.as_slice())
 }
 
 impl BlockLu {
@@ -101,10 +153,12 @@ impl BlockLu {
         sys: &DynSystem,
         mass: &[f64],
         jf: &[(usize, usize, f64)],
+        ranges: Option<&[(usize, usize, usize)]>,
         h: f64,
         theta: f64,
         patterns: &mut Patterns,
     ) -> Result<Option<Self>, String> {
+        let t_pre = crate::rms::clock::Instant::now();
         let n = sys.n;
         let n2 = 2 * n;
         // The units in state order; their states must fill the device part.
@@ -138,9 +192,43 @@ impl BlockLu {
         let mut b = vec![0.0; 2 * states];
         // `[C_k  E_k]` first, `D_k⁻¹` times it after the factorization.
         let mut w = vec![0.0; 3 * states];
+        super::integrate::time_add(15, t_pre);
+        DBG_BLOCK.store(block as u64, std::sync::atomic::Ordering::Relaxed);
+        let t_asm = crate::rms::clock::Instant::now();
+        let nu = units.len();
+        let pooled = sys.threads && nu >= PAR_UNITS_MIN && pool_threads() > 0;
+        let nchunks = if pooled { PAR_UNIT_CHUNKS.min(nu) } else { 1 };
+        let bounds: Vec<usize> = (0..=nchunks).map(|c| c * nu / nchunks).collect();
+        // Experimental: when the Jacobian says where each unit's entries lie, the
+        // units' entries are assembled by the chunks below (each entry lands where the serial
+        // loop puts it, and the network entries are joined in the Jacobian's order); here only
+        // the network's and loads' entries. The Jacobian builds devices, then plants: not the
+        // state order, so each range is mapped to its unit by its first state.
+        let unit_range: Option<Vec<(usize, usize)>> = ranges.filter(|_| pooled).and_then(|r| {
+            if r.len() != nu
+                || !r.windows(2).all(|p| p[0].2 == p[1].1)
+                || r.last().is_some_and(|l| l.2 != jf.len())
+            {
+                return None;
+            }
+            let mut ur = vec![(usize::MAX, 0); nu];
+            for &(off, a, b) in r {
+                let i = *owner.get(off.checked_sub(n2)?)? as usize;
+                if i >= nu || units[i].first != off - n2 || ur[i].0 != usize::MAX {
+                    return None;
+                }
+                ur[i] = (a, b);
+            }
+            Some(ur)
+        });
+        let split_asm = unit_range.is_some();
+        let prefix = match (split_asm, ranges) {
+            (true, Some(r)) => r.first().map_or(jf.len(), |f| f.1),
+            _ => jf.len(),
+        };
         let mut trip: Vec<Triplet<usize, usize, f64>> =
             Vec::with_capacity(4 * sys.ybus.len() + 8 * units.len() + 8);
-        for &(row, col, v) in jf {
+        for &(row, col, v) in &jf[..prefix] {
             let e = step_entry(mass, row, v, h, theta);
             if row < n2 {
                 if col < n2 {
@@ -176,11 +264,13 @@ impl BlockLu {
                 }
             }
         }
-        for u in &units {
-            for i in 0..u.k {
-                let m = mass[n2 + u.first + i];
-                if m != 0.0 {
-                    lu[u.block + i * u.k + i] += m;
+        if !split_asm {
+            for u in &units {
+                for i in 0..u.k {
+                    let m = mass[n2 + u.first + i];
+                    if m != 0.0 {
+                        lu[u.block + i * u.k + i] += m;
+                    }
                 }
             }
         }
@@ -189,8 +279,7 @@ impl BlockLu {
             return Ok(None);
         }
         let mut perm = vec![0u32; states];
-        let mut tmp = vec![0.0; widest];
-        let mut rhs_col = vec![0.0; widest];
+        let tmp = vec![0.0; widest];
         let mut factors = Factors {
             col: Vec::with_capacity(block / 2),
             val: Vec::with_capacity(block / 2),
@@ -199,50 +288,207 @@ impl BlockLu {
             inv: Vec::with_capacity(states),
         };
         factors.start.push(0);
-        for u in &units {
-            let k = u.k;
-            let block = &mut lu[u.block..u.block + k * k];
-            let p = &mut perm[u.first..u.first + k];
-            if !factor(block, k, p) {
-                return Ok(None);
+        super::integrate::time_add(8, t_asm);
+        let t_units = crate::rms::clock::Instant::now();
+        // Experimental: the units' blocks in chunks on the spin pool. Each chunk owns
+        // its units' contiguous parts of `lu`, `perm` and `w` and builds its own compressed
+        // factors; they are joined in unit order afterwards, with the network entries, so the
+        // arrays and the triplets are those of the serial loop, value for value.
+        type ChunkOut = (
+            Factors,
+            Vec<[[f64; 3]; 2]>,
+            bool,
+            Vec<Triplet<usize, usize, f64>>,
+            Vec<usize>,
+        );
+        #[allow(clippy::type_complexity)]
+        let mut parts: Vec<
+            std::sync::Mutex<(&mut [f64], &mut [u32], &mut [f64], &mut [f64], ChunkOut)>,
+        > = Vec::with_capacity(nchunks);
+        {
+            let (mut lu_rest, mut perm_rest, mut w_rest, mut b_rest): (
+                &mut [f64],
+                &mut [u32],
+                &mut [f64],
+                &mut [f64],
+            ) = (&mut lu[..], &mut perm[..], &mut w[..], &mut b[..]);
+            let (mut lu_at, mut st_at) = (0usize, 0usize);
+            for c in 0..nchunks {
+                let next = bounds[c + 1];
+                let lu_end = if next < nu { units[next].block } else { block };
+                let st_end = if next < nu { units[next].first } else { states };
+                let (l, lr) = std::mem::take(&mut lu_rest).split_at_mut(lu_end - lu_at);
+                let (pm, pr) = std::mem::take(&mut perm_rest).split_at_mut(st_end - st_at);
+                let (wv, wr) = std::mem::take(&mut w_rest).split_at_mut(3 * (st_end - st_at));
+                let (bv, br) = std::mem::take(&mut b_rest).split_at_mut(2 * (st_end - st_at));
+                (lu_rest, perm_rest, w_rest, b_rest) = (lr, pr, wr, br);
+                (lu_at, st_at) = (lu_end, st_end);
+                let f = Factors {
+                    col: Vec::new(),
+                    val: Vec::new(),
+                    start: vec![0],
+                    mid: Vec::new(),
+                    inv: Vec::new(),
+                };
+                parts.push(std::sync::Mutex::new((
+                    l,
+                    pm,
+                    wv,
+                    bv,
+                    (f, Vec::new(), true, Vec::new(), vec![0]),
+                )));
             }
-            factors.push(block, k)?;
-            // `D_k⁻¹ [C_k  E_k]`, a column at a time.
-            for c in 0..3 {
+        }
+        let run_chunk = |c: usize| {
+            let mut guard = parts[c].lock().expect("unit chunk");
+            let (lu_c, perm_c, w_c, b_c, (fac, contrib, ok, ntrip, spans)) = &mut *guard;
+            let (a, z) = (bounds[c], bounds[c + 1]);
+            if a == z {
+                return;
+            }
+            let (lu0, st0) = (units[a].block, units[a].first);
+            let mut tmp = vec![0.0; widest];
+            let mut rhs_col = vec![0.0; widest];
+            contrib.reserve(z - a);
+            for (ui, u) in units[a..z].iter().enumerate() {
+                let ui = a + ui;
+                let k = u.k;
+                let (fl, fs) = (u.first - st0, u.block - lu0);
+                if split_asm {
+                    // The unit's own entries, as the serial loop places them.
+                    let (e0, e1) = unit_range.as_ref().expect("checked")[ui];
+                    for &(row, col, v) in &jf[e0..e1] {
+                        let e = step_entry(mass, row, v, h, theta);
+                        if row < n2 {
+                            if col < n2 {
+                                ntrip.push(Triplet::new(row, col, e));
+                            } else if reference == Some(col - n2) {
+                                ntrip.push(Triplet::new(row, n2, e));
+                            } else {
+                                let which = if owner[col - n2] as usize != ui {
+                                    *ok = false;
+                                    return;
+                                } else if row == u.bus {
+                                    0
+                                } else if row == n + u.bus {
+                                    1
+                                } else {
+                                    *ok = false;
+                                    return;
+                                };
+                                b_c[2 * (col - n2 - st0) + which] += e;
+                            }
+                        } else {
+                            let s = row - n2;
+                            if owner[s] as usize != ui {
+                                *ok = false;
+                                return;
+                            }
+                            if col >= n2 && col - n2 >= u.first && col - n2 < u.first + u.k {
+                                lu_c[fs + (s - u.first) * k + (col - n2 - u.first)] += e;
+                            } else if col == u.bus {
+                                w_c[3 * (s - st0)] += e;
+                            } else if col == n + u.bus {
+                                w_c[3 * (s - st0) + 1] += e;
+                            } else if col >= n2 && reference == Some(col - n2) {
+                                w_c[3 * (s - st0) + 2] += e;
+                            } else {
+                                *ok = false;
+                                return;
+                            }
+                        }
+                    }
+                    for i in 0..k {
+                        let m = mass[n2 + u.first + i];
+                        if m != 0.0 {
+                            lu_c[fs + i * k + i] += m;
+                        }
+                    }
+                    spans.push(ntrip.len());
+                }
+                let blk = &mut lu_c[fs..fs + k * k];
+                let p = &mut perm_c[fl..fl + k];
+                if !factor(blk, k, p) {
+                    *ok = false;
+                    return;
+                }
+                if fac.push(blk, k).is_err() {
+                    *ok = false;
+                    return;
+                }
+                // `D_k⁻¹ [C_k  E_k]`, a column at a time.
+                for col in 0..3 {
+                    for i in 0..k {
+                        rhs_col[i] = w_c[3 * (fl + i) + col];
+                    }
+                    fac.solve(fl, k, p, &mut rhs_col[..k], &mut tmp);
+                    for i in 0..k {
+                        w_c[3 * (fl + i) + col] = rhs_col[i];
+                    }
+                }
+                if w_c[3 * fl..3 * (fl + k)].iter().any(|v| !v.is_finite()) {
+                    *ok = false;
+                    return;
+                }
+                // The unit's contribution to its bus: `−B_k D_k⁻¹ [C_k  E_k]`.
+                let mut sc = [[0.0; 3]; 2];
                 for i in 0..k {
-                    rhs_col[i] = w[3 * (u.first + i) + c];
+                    let (b0, b1) = (b_c[2 * (fl + i)], b_c[2 * (fl + i) + 1]);
+                    for col in 0..3 {
+                        let wv = w_c[3 * (fl + i) + col];
+                        sc[0][col] -= b0 * wv;
+                        sc[1][col] -= b1 * wv;
+                    }
                 }
-                factors.solve(u.first, k, p, &mut rhs_col[..k], &mut tmp);
-                for i in 0..k {
-                    w[3 * (u.first + i) + c] = rhs_col[i];
-                }
+                contrib.push(sc);
             }
-            if w[3 * u.first..3 * (u.first + k)]
-                .iter()
-                .any(|v| !v.is_finite())
-            {
-                return Ok(None);
+        };
+        if nchunks > 1 {
+            super::integrate::par_for(nchunks, &run_chunk);
+        } else {
+            run_chunk(0);
+        }
+        // Join in unit order: the compressed factors, then the network entries.
+        let t_join = crate::rms::clock::Instant::now();
+        let outs: Vec<ChunkOut> = parts
+            .into_iter()
+            .map(|p| p.into_inner().expect("unit chunk").4)
+            .collect();
+        if outs.iter().any(|o| !o.2) {
+            return Ok(None);
+        }
+        // The units' own network entries first (where the serial loop put them), then below the
+        // units' contributions.
+        if let (Some(r), true) = (ranges, split_asm) {
+            // In the Jacobian's order, as the serial loop adds them.
+            for &(off, _, _) in r {
+                let ui = owner[off - n2] as usize;
+                let c = bounds.partition_point(|&x| x <= ui) - 1;
+                let (o, j) = (&outs[c], ui - bounds[c]);
+                trip.extend_from_slice(&o.3[o.4[j]..o.4[j + 1]]);
             }
-            // The unit's contribution to its bus: `−B_k D_k⁻¹ [C_k  E_k]`.
-            // Always entered, zero or not, so the network's pattern stays.
-            let mut s = [[0.0; 3]; 2];
-            for i in 0..k {
-                let (b0, b1) = (b[2 * (u.first + i)], b[2 * (u.first + i) + 1]);
-                for c in 0..3 {
-                    let wv = w[3 * (u.first + i) + c];
-                    s[0][c] -= b0 * wv;
-                    s[1][c] -= b1 * wv;
-                }
-            }
-            let rows = [u.bus, n + u.bus];
-            for (r, &row) in rows.iter().enumerate() {
-                trip.push(Triplet::new(row, u.bus, s[r][0]));
-                trip.push(Triplet::new(row, n + u.bus, s[r][1]));
-                if reference.is_some() {
-                    trip.push(Triplet::new(row, n2, s[r][2]));
+        }
+        for (c, (fac, contrib, _, _, _)) in outs.into_iter().enumerate() {
+            let off = u32::try_from(factors.col.len()).map_err(|e| e.to_string())?;
+            u32::try_from(factors.col.len() + fac.col.len()).map_err(|e| e.to_string())?;
+            factors.col.extend_from_slice(&fac.col);
+            factors.val.extend_from_slice(&fac.val);
+            factors.inv.extend_from_slice(&fac.inv);
+            factors.mid.extend(fac.mid.iter().map(|m| m + off));
+            factors.start.extend(fac.start[1..].iter().map(|m| m + off));
+            // The unit's contribution: always entered, zero or not, so the network's pattern stays.
+            for (u, sc) in units[bounds[c]..bounds[c + 1]].iter().zip(&contrib) {
+                let rows = [u.bus, n + u.bus];
+                for (r, &row) in rows.iter().enumerate() {
+                    trip.push(Triplet::new(row, u.bus, sc[r][0]));
+                    trip.push(Triplet::new(row, n + u.bus, sc[r][1]));
+                    if reference.is_some() {
+                        trip.push(Triplet::new(row, n2, sc[r][2]));
+                    }
                 }
             }
         }
+        super::integrate::time_add(18, t_join);
         if let Some(r) = reference {
             // `w = e_ωᵀ y_ref` with `y_ref = D⁻¹ (r_ref − C_ref v)`.
             let u = &units[owner[r] as usize];
@@ -250,7 +496,21 @@ impl BlockLu {
             trip.push(Triplet::new(n2, u.bus, w[3 * r]));
             trip.push(Triplet::new(n2, n + u.bus, w[3 * r + 1]));
         }
-        let net = SparseLu::new(size, &trip, patterns)?;
+        super::integrate::time_add(9, t_units);
+        let t_net = crate::rms::clock::Instant::now();
+        let net = NetLu::new(
+            size,
+            n,
+            &trip,
+            patterns,
+            if sys.threads && !net_one() {
+                region_map(sys)
+            } else {
+                None
+            },
+            sys.epoch,
+        )?;
+        super::integrate::time_add(10, t_net);
         let Factors {
             col,
             val,
@@ -260,7 +520,6 @@ impl BlockLu {
         } = factors;
         Ok(Some(Self {
             n,
-            units,
             col,
             val,
             start,
@@ -273,6 +532,13 @@ impl BlockLu {
             net,
             rhs: vec![0.0; size],
             tmp,
+            solve_chunks: if pooled {
+                (0..=nchunks).map(|c| c * nu / nchunks).collect()
+            } else {
+                vec![0, nu]
+            },
+            contrib: vec![[0.0; 2]; nu],
+            units,
         }))
     }
 
@@ -285,7 +551,10 @@ impl BlockLu {
 
     /// `z_k = D_k⁻¹ r_k` in place of each unit's right-hand side, and the
     /// network's right-hand side `r_v − Σ B_k z_k` (with the frame speed's
-    /// row) into `rhs`.
+    /// row) into `rhs`. The units' solves run in chunks on the spin pool; their
+    /// contributions are added in unit order afterwards, as the serial loop
+    /// adds them.
+    // @block Eliminate the units
     fn eliminate(&mut self, x: &mut [f64]) {
         let n = self.n;
         let n2 = 2 * n;
@@ -299,24 +568,43 @@ impl BlockLu {
             mid: &self.mid,
             inv: &self.inv,
         };
-        for u in &self.units {
-            let k = u.k;
-            let z = &mut dev[u.first..u.first + k];
-            factors.solve(
-                u.first,
-                k,
-                &self.perm[u.first..u.first + k],
-                z,
-                &mut self.tmp,
-            );
-            let b = &self.b[2 * u.first..2 * (u.first + k)];
-            let (mut s0, mut s1) = (0.0, 0.0);
-            for (zi, bi) in z.iter().zip(b.chunks_exact(2)) {
-                s0 += bi[0] * zi;
-                s1 += bi[1] * zi;
+        let (units, perm, b, bounds) = (&self.units, &self.perm, &self.b, &self.solve_chunks);
+        let nchunks = bounds.len() - 1;
+        let one = |dev_c: &mut [f64],
+                   at: usize,
+                   contrib_c: &mut [[f64; 2]],
+                   c: usize,
+                   tmp: &mut [f64]| {
+            for (j, u) in units[bounds[c]..bounds[c + 1]].iter().enumerate() {
+                let k = u.k;
+                let z = &mut dev_c[u.first - at..u.first - at + k];
+                factors.solve(u.first, k, &perm[u.first..u.first + k], z, tmp);
+                let bb = &b[2 * u.first..2 * (u.first + k)];
+                let (mut s0, mut s1) = (0.0, 0.0);
+                for (zi, bi) in z.iter().zip(bb.chunks_exact(2)) {
+                    s0 += bi[0] * zi;
+                    s1 += bi[1] * zi;
+                }
+                contrib_c[j] = [s0, s1];
             }
-            rhs[u.bus] -= s0;
-            rhs[n + u.bus] -= s1;
+        };
+        if nchunks > 1 {
+            // Experimental: the units' solves in chunks on the spin pool; their
+            // contributions are added below in unit order, as the serial loop adds them.
+            let parts = split_units(units, bounds, dev, &mut self.contrib);
+            let widest = self.tmp.len();
+            super::integrate::par_for(nchunks, &|c| {
+                let mut g = parts[c].lock().expect("unit chunk");
+                let (dev_c, at, contrib_c) = &mut *g;
+                let mut tmp = vec![0.0; widest];
+                one(dev_c, *at, contrib_c, c, &mut tmp);
+            });
+        } else {
+            one(dev, 0, &mut self.contrib, 0, &mut self.tmp);
+        }
+        for (u, s) in units.iter().zip(&self.contrib) {
+            rhs[u.bus] -= s[0];
+            rhs[n + u.bus] -= s[1];
         }
         if let Some(r) = self.reference {
             rhs[n2] = dev[r];
@@ -324,8 +612,9 @@ impl BlockLu {
     }
 
     /// The network's solution from `rhs` into `x`, and
-    /// `y_k = z_k − D_k⁻¹ [C_k  E_k] (v_bus, w)`.
-    fn substitute(&self, x: &mut [f64]) {
+    /// `y_k = z_k − D_k⁻¹ [C_k  E_k] (v_bus, w)`, unit chunks on the spin pool.
+    // @block Back-substitute the units
+    fn substitute(&mut self, x: &mut [f64]) {
         let n = self.n;
         let n2 = 2 * n;
         let (bus, dev) = x.split_at_mut(n2);
@@ -335,15 +624,57 @@ impl BlockLu {
         } else {
             0.0
         };
-        for u in &self.units {
-            let (vr, vi) = (bus[u.bus], bus[n + u.bus]);
-            let w = &self.w[3 * u.first..3 * (u.first + u.k)];
-            let y = &mut dev[u.first..u.first + u.k];
-            for (yi, wi) in y.iter_mut().zip(w.chunks_exact(3)) {
-                *yi -= wi[0] * vr + wi[1] * vi + wi[2] * dw;
+        let (units, wv, bounds) = (&self.units, &self.w, &self.solve_chunks);
+        let bus = &*bus;
+        let one = |dev_c: &mut [f64], at: usize, c: usize| {
+            for u in &units[bounds[c]..bounds[c + 1]] {
+                let (vr, vi) = (bus[u.bus], bus[n + u.bus]);
+                let w = &wv[3 * u.first..3 * (u.first + u.k)];
+                let y = &mut dev_c[u.first - at..u.first - at + u.k];
+                for (yi, wi) in y.iter_mut().zip(w.chunks_exact(3)) {
+                    *yi -= wi[0] * vr + wi[1] * vi + wi[2] * dw;
+                }
             }
+        };
+        let nchunks = bounds.len() - 1;
+        if nchunks > 1 {
+            let parts = split_units(units, bounds, dev, &mut self.contrib);
+            super::integrate::par_for(nchunks, &|c| {
+                let mut g = parts[c].lock().expect("unit chunk");
+                let (dev_c, at, _) = &mut *g;
+                one(dev_c, *at, c);
+            });
+        } else {
+            one(dev, 0, 0);
         }
     }
+}
+
+/// Experimental: the device part and the per-unit contributions split at the unit
+/// chunks' bounds, each chunk's part with the index of its first state.
+#[allow(clippy::type_complexity)]
+fn split_units<'a>(
+    units: &[Unit],
+    bounds: &[usize],
+    mut dev: &'a mut [f64],
+    mut contrib: &'a mut [[f64; 2]],
+) -> Vec<std::sync::Mutex<(&'a mut [f64], usize, &'a mut [[f64; 2]])>> {
+    let nu = units.len();
+    let mut out = Vec::with_capacity(bounds.len() - 1);
+    let mut at = 0usize;
+    for c in 0..bounds.len() - 1 {
+        let next = bounds[c + 1];
+        let end = if next < nu {
+            units[next].first
+        } else {
+            at + dev.len()
+        };
+        let (d, rest) = std::mem::take(&mut dev).split_at_mut(end - at);
+        let (k, krest) = std::mem::take(&mut contrib).split_at_mut(next - bounds[c]);
+        out.push(std::sync::Mutex::new((d, at, k)));
+        (dev, contrib, at) = (rest, krest, end);
+    }
+    out
 }
 
 /// The units' factors without their zeros while they are built (see
@@ -436,6 +767,7 @@ impl FactorsRef<'_> {
 /// pivoting: the unit lower factor below the diagonal, the upper factor
 /// with reciprocal pivots on it; `perm[i]` is the row that ends in place
 /// `i`. `false` when a pivot vanishes against the matrix's largest entry.
+// @block Dense LU of one unit
 fn factor(a: &mut [f64], k: usize, perm: &mut [u32]) -> bool {
     for (i, p) in perm.iter_mut().enumerate() {
         *p = i as u32;
@@ -540,6 +872,145 @@ mod tests {
         assert!(!factor(&mut s, 2, &mut [0u32; 2]));
     }
 
+    /// `split_units` cuts the device part and the units' contributions at
+    /// the chunks' bounds: each chunk gets its units' states (from its first
+    /// unit's first state to the next chunk's), the index of its first
+    /// state, and one contribution per unit; together they cover both in
+    /// order.
+    #[test]
+    fn split_units_cuts_at_the_chunk_bounds() {
+        let sizes = [3, 1, 4, 1, 5, 9, 2];
+        let mut units = Vec::new();
+        let mut first = 0;
+        for (i, &k) in sizes.iter().enumerate() {
+            units.push(Unit {
+                first,
+                k,
+                bus: i,
+                block: 0,
+            });
+            first += k;
+        }
+        let mut dev: Vec<f64> = (0..first).map(|i| i as f64).collect();
+        let mut contrib = vec![[0.0; 2]; units.len()];
+        let bounds = [0, 2, 2, 5, 7];
+        let parts = split_units(&units, &bounds, &mut dev, &mut contrib);
+        assert_eq!(parts.len(), bounds.len() - 1);
+        let mut next = 0;
+        for (c, p) in parts.into_iter().enumerate() {
+            let (d, at, k) = p.into_inner().unwrap();
+            assert_eq!(at, next, "chunk {c}");
+            let states: usize = units[bounds[c]..bounds[c + 1]].iter().map(|u| u.k).sum();
+            assert_eq!(d.len(), states, "chunk {c}");
+            assert!(d.iter().enumerate().all(|(i, &v)| v == (at + i) as f64));
+            assert_eq!(k.len(), bounds[c + 1] - bounds[c], "chunk {c}");
+            next += states;
+        }
+        assert_eq!(next, first);
+        // One chunk: everything.
+        let parts = split_units(&units, &[0, units.len()], &mut dev, &mut contrib);
+        let (d, at, k) = parts.into_iter().next().unwrap().into_inner().unwrap();
+        assert_eq!((d.len(), at, k.len()), (first, 0, units.len()));
+    }
+
+    /// `pool_threads` is the spin pool's thread count where there is one.
+    #[test]
+    fn pool_threads_is_the_spin_pools() {
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        assert_eq!(
+            pool_threads(),
+            super::super::spin_pool::SpinPool::global().threads()
+        );
+        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+        assert_eq!(pool_threads(), 0);
+    }
+
+    /// The fields of a block factorization, value for value.
+    fn fingerprint(b: &BlockLu) -> Vec<u64> {
+        let mut v: Vec<u64> = Vec::new();
+        v.extend(b.col.iter().map(|&c| u64::from(c)));
+        v.extend(b.val.iter().map(|x| x.to_bits()));
+        v.extend(b.start.iter().map(|&c| u64::from(c)));
+        v.extend(b.mid.iter().map(|&c| u64::from(c)));
+        v.extend(b.inv.iter().map(|x| x.to_bits()));
+        v.extend(b.perm.iter().map(|&c| u64::from(c)));
+        v.extend(b.b.iter().map(|x| x.to_bits()));
+        v.extend(b.w.iter().map(|x| x.to_bits()));
+        v
+    }
+
+    /// With enough units the units' blocks are assembled, factorized and
+    /// solved in chunks on the spin pool (`eliminate`, `substitute`); the
+    /// factors, the network's matrix and every solution are those of the
+    /// serial loop, value for value, whether the chunks assemble the units'
+    /// entries themselves (with the Jacobian's unit ranges) or not. Without
+    /// regions, as here, `region_map` gives none.
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    #[test]
+    fn unit_chunks_factorize_and_solve_as_the_serial_loop() {
+        use crate::rms::system::tests::{perturbed, star};
+        let Some(sim) = star(&[
+            ("smib_genrou_sexs_tgov1", 100),
+            ("smib_genrou_hygov_sexs", 60),
+            ("smib_regca1_reecb1_repca1", 70),
+            ("smib_genrou_gast_sexs", 50),
+        ]) else {
+            return;
+        };
+        if std::env::var_os("TELLEGEN_REGIONS").is_none() {
+            assert!(region_map(&sim.sys).is_none());
+        }
+        let mut serial = sim.sys.clone();
+        serial.threads = false;
+        let pooled = &sim.sys;
+        assert!(pooled.threads && pooled.state_units().len() >= PAR_UNITS_MIN);
+        let chunked = pool_threads() > 0;
+        if !chunked {
+            eprintln!("the spin pool has no threads (TELLEGEN_THREADS=0): one chunk");
+        }
+        let x = perturbed(&sim.x0, 1e-4);
+        let (jf, ranges) = pooled.jacobian_units(&x);
+        let rhs = perturbed(&vec![0.0; pooled.nx], 1.0);
+        for h in [0.0, 0.005] {
+            let build = |sys: &DynSystem, ranges: Option<&[(usize, usize, usize)]>| {
+                BlockLu::new(
+                    sys,
+                    &sys.mass,
+                    &jf,
+                    ranges,
+                    h,
+                    0.5,
+                    &mut Patterns::default(),
+                )
+                .unwrap()
+                .expect("the units' blocks are regular")
+            };
+            let mut one = build(&serial, Some(&ranges));
+            assert_eq!(one.solve_chunks, [0, one.units.len()]);
+            let mut want = rhs.clone();
+            one.solve(&mut want);
+            for ranges in [Some(&ranges[..]), None] {
+                let mut many = build(pooled, ranges);
+                if chunked {
+                    assert_eq!(many.solve_chunks.len(), PAR_UNIT_CHUNKS + 1);
+                }
+                assert!(
+                    fingerprint(&many) == fingerprint(&one),
+                    "h {h}, ranges {}",
+                    ranges.is_some()
+                );
+                let mut got = rhs.clone();
+                many.solve(&mut got);
+                assert_eq!(
+                    got.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    want.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    "h {h}, ranges {}",
+                    ranges.is_some()
+                );
+            }
+        }
+    }
+
     /// Whole-case comparisons on dynamized cases (`rms-experimental`).
     #[cfg(feature = "rms-experimental")]
     mod dynamized {
@@ -547,6 +1018,7 @@ mod tests {
 
         use super::super::super::{LoadModel, RmsSimulation};
         use super::super::*;
+        use crate::rms::integrate::SparseLu;
 
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -588,7 +1060,7 @@ mod tests {
         fn compare(sys: &DynSystem, x: &[f64], h: f64) -> f64 {
             let jf = sys.jacobian(x);
             let mut patterns = Patterns::default();
-            let mut blocks = BlockLu::new(sys, &sys.mass, &jf, h, 0.5, &mut patterns)
+            let mut blocks = BlockLu::new(sys, &sys.mass, &jf, None, h, 0.5, &mut patterns)
                 .unwrap()
                 .expect("the units' blocks are regular");
             let mut trip = Vec::new();

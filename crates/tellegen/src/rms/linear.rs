@@ -8,6 +8,8 @@
 //! factors `p_ki = |v_ki| |w_ik|` normalized per mode, `W = V⁻¹`. A frequency
 //! response solves the descriptor system directly,
 //! `H(jω) = C (jω M − J)⁻¹ E`, so algebraic states need no elimination.
+//!
+//! @block Small-signal analysis
 
 use faer::linalg::solvers::Solve;
 use faer::{c64, Mat};
@@ -151,6 +153,7 @@ fn dense_jacobian(sys: &DynSystem, x: &[f64]) -> Mat<f64> {
 }
 
 /// The reduced state matrix over the differential states and their indices.
+// @block Reduced state matrix
 pub(crate) fn reduced_a(sys: &DynSystem, x: &[f64]) -> (Mat<f64>, Vec<usize>) {
     let j = dense_jacobian(sys, x);
     let diff: Vec<usize> = (0..sys.nx).filter(|&i| sys.mass[i] != 0.0).collect();
@@ -188,6 +191,7 @@ pub(crate) fn reduced_a(sys: &DynSystem, x: &[f64]) -> (Mat<f64>, Vec<usize>) {
 }
 
 /// Modes with participation factors.
+// @block Modes and participation
 pub(crate) fn modes(
     sys: &DynSystem,
     x: &[f64],
@@ -295,6 +299,7 @@ fn signal_name(spec: &BodeSpec) -> String {
     let input = match spec.input {
         InputSignal::VRef => "V_ref",
         InputSignal::PRef => "P_ref",
+        InputSignal::Vs => "V_s",
     };
     let output = match spec.output {
         OutputSignal::Omega => format!("{} ω", gen(spec.output_bus, &spec.output_machine)),
@@ -310,6 +315,7 @@ fn signal_name(spec: &BodeSpec) -> String {
 }
 
 /// Frequency responses of the descriptor system.
+// @block Frequency responses
 pub(crate) fn bode(
     sys: &DynSystem,
     x: &[f64],
@@ -318,7 +324,8 @@ pub(crate) fn bode(
     if req.bode.is_empty() {
         return Ok(Vec::new());
     }
-    if sys.nx > 2500 {
+    // experimental: no size limit, the sweep is a sparse LU per frequency
+    if sys.nx > 2_000_000 {
         return Err(format!(
             "frequency response is limited to 2500 states, this system has {}",
             sys.nx
@@ -356,6 +363,7 @@ pub(crate) fn bode(
         match spec.input {
             InputSignal::VRef => perturbed.devices[di].v_ref += h,
             InputSignal::PRef => perturbed.devices[di].p_ref += h,
+            InputSignal::Vs => perturbed.devices[di].vs_ext += h,
         }
         let mut f1 = vec![0.0; nx];
         perturbed.residual(x, &mut f1, None);

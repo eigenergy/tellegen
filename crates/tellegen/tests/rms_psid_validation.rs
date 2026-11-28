@@ -7,6 +7,15 @@
 //!   step in the validation study. The renewable plant's trip and shallow fault
 //!   stay above its low-voltage gain range, so they check tellegen's own
 //!   (PSS/E) plant; its deep fault runs with PowerSimulationsDynamics.jl's gain.
+//! - The models tellegen accepts that no WECC 240 unit carries (GENROE,
+//!   GENSAL, GENSAE, GENCLS, ESAC1A, EXST1), each on the single machine of
+//!   WECC 240's GENROU + SEXS + TGOV1 unit with one record replaced, through
+//!   the same line trip and fault, and ESAC1A once more with limits that both
+//!   events reach (`tests/data/rms_smib`).
+//! - With `rms-experimental`, the extension models ESST1A and PSS2B on the
+//!   same single machine and events, ESST1A once more with limits that both
+//!   events reach, under held limits and under limits switching within the
+//!   step (`tests/data/rms_smib`).
 //! - WECC 240 itself as PowerSimulationsDynamics.jl's tutorial system holds it
 //!   (the loads as constant power at the solved voltage), four scenarios over
 //!   20 s at tellegen's 5 ms step: per quantity the channels with the largest
@@ -53,15 +62,15 @@ include!(concat!(
 /// 1e-4 pu is 6 mHz at 60 Hz, below the governor deadbands of interconnection
 /// practice (16.6 to 36 mHz) and a small fraction of the 0.1 to 0.5 Hz
 /// excursions these events cause, so a study reads the same frequency
-/// response from either tool. Observed: 2.1e-6 (single machines), 3.2e-6
-/// (WECC 240).
+/// response from either tool. Observed: 2.1e-6 (single machines), 7.1e-6
+/// (model variants), 2.6e-6 (extension models), 3.2e-6 (WECC 240).
 const OMEGA_TOL: f64 = 1e-4;
 
 /// The largest rotor angle difference to the reference any run may show
 /// (relative to the angle reference), rad: 0.5°, small against what a
 /// transient stability study judges (first swings of tens of degrees, loss
 /// of synchronism past about 180°). Observed: 0.0076° (single machines),
-/// 0.013° (WECC 240).
+/// 0.0089° (model variants), 0.0092° (extension models), 0.013° (WECC 240).
 const DELTA_TOL: f64 = 0.5 * std::f64::consts::PI / 180.0;
 
 fn reference() -> Value {
@@ -84,14 +93,40 @@ fn wrap(d: f64) -> f64 {
     d - two_pi * (d / two_pi).round()
 }
 
-#[test]
-fn smib_cases_against_psid() {
-    let reference = reference();
-    let cases = wecc240_smib_cases();
+/// Every SMIB run of `runs` (a reference's `smib` list) against tellegen at a
+/// 1 ms step under [`psid_options`]: per channel within its tolerance, and
+/// every machine's speed and rotor angle within [`OMEGA_TOL`] and
+/// [`DELTA_TOL`]. Returns the number of channels compared, the number of
+/// physical checks and the failures.
+fn compare_smib(runs: &[Value], cases: &[SmibCase]) -> (usize, usize, Vec<String>) {
+    let c = compare_smib_with(runs, cases, psid_options(), "tolerance");
+    (c.compared, c.physical_checks, c.failures)
+}
+
+/// What [`compare_smib_with`] found.
+struct SmibComparison {
+    compared: usize,
+    physical_checks: usize,
+    failures: Vec<String>,
+    /// The largest difference per run (`"<case> <event>"`) and channel.
+    #[cfg_attr(not(feature = "rms-experimental"), allow(dead_code))]
+    measured: BTreeMap<String, BTreeMap<String, f64>>,
+}
+
+/// [`compare_smib`] with tellegen run under `options` (each run's
+/// `psid_lv_gain` on top), against the tolerances a run holds under the key
+/// `tolerance`.
+fn compare_smib_with(
+    runs: &[Value],
+    cases: &[SmibCase],
+    options: RmsOptions,
+    tolerance: &str,
+) -> SmibComparison {
     let mut failures = Vec::new();
     let mut compared = 0;
     let mut physical_checks = 0;
-    for run in reference["smib"].as_array().unwrap() {
+    let mut measured: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
+    for run in runs {
         let id = run["case"].as_str().unwrap();
         let event = run["event"].as_str().unwrap();
         let case = cases.iter().find(|c| c.id == id).unwrap();
@@ -130,7 +165,7 @@ fn smib_cases_against_psid() {
         };
         let options = RmsOptions {
             psid_lv_gain: run["psid_lv_gain"].as_bool().unwrap_or(false),
-            ..psid_options()
+            ..options
         };
         let sim =
             RmsSimulation::with_options(&network, &dyr, LoadModel::ConstantImpedance, options)
@@ -150,7 +185,7 @@ fn smib_cases_against_psid() {
         let idx: Vec<usize> = time.iter().map(|t| (t / 0.01).round() as usize).collect();
         let channels = &run["channels"];
         let va101 = series(&channels["va:101"]);
-        for (key, tol) in run["tolerance"].as_object().unwrap() {
+        for (key, tol) in run[tolerance].as_object().unwrap() {
             let tol = tol.as_f64().unwrap();
             let r = series(&channels[key]);
             let o = ours
@@ -172,6 +207,10 @@ fn smib_cases_against_psid() {
                 })
                 .fold(0.0_f64, f64::max);
             compared += 1;
+            measured
+                .entry(format!("{id} {event}"))
+                .or_default()
+                .insert(key.clone(), d);
             if report() {
                 println!("{id} {event} {key}: {d:.2e} (bound {tol:.1e})");
             }
@@ -195,12 +234,143 @@ fn smib_cases_against_psid() {
             }
         }
     }
+    SmibComparison {
+        compared,
+        physical_checks,
+        failures,
+        measured,
+    }
+}
+
+#[test]
+fn smib_cases_against_psid() {
+    let reference = reference();
+    let (compared, physical_checks, failures) =
+        compare_smib(reference["smib"].as_array().unwrap(), &wecc240_smib_cases());
     // Six machine combinations with eight channels each, the plant's three
     // events with twelve.
     assert_eq!(compared, 12 * 8 + 3 * 12);
     // Every machine's speed and angle in every run (the plant has none).
     assert_eq!(physical_checks, 12 * 2);
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The models no WECC 240 unit carries (GENROE, GENSAL, GENSAE, GENCLS, ESAC1A,
+/// EXST1), each on a single machine made from WECC 240's GENROU + SEXS + TGOV1
+/// unit ([`model_variant_cases`]), through the same line trip and fault, and
+/// ESAC1A once more with narrowed limits (VA and VR at both bounds), against
+/// PowerSimulationsDynamics.jl 0.16.2 run unmodified. The reference is
+/// `tests/data/rms_smib/psid_reference_models.json`, see the `SOURCES.md` next
+/// to it.
+#[test]
+fn smib_model_variants_against_psid() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/rms_smib/psid_reference_models.json");
+    let reference: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let cases = model_variant_cases();
+    let runs = reference["smib"].as_array().unwrap();
+    // Every variant, both events.
+    assert_eq!(runs.len(), 2 * cases.len());
+    let (compared, physical_checks, failures) = compare_smib(runs, &cases);
+    assert_eq!(compared, 2 * (2 * 8 + 3 * 7 + 2 * 6));
+    // Every machine's speed and angle in every run.
+    assert_eq!(physical_checks, runs.len() * 2);
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The extension models ESST1A and PSS2B (feature `rms-experimental`), each
+/// on the single machine of WECC 240's GENROU + SEXS + TGOV1 unit
+/// ([`ext_model_variant_cases`]): ESST1A with the library set and once more
+/// with VI, VA and field voltage limits that both events reach, PSS2B (its
+/// ramp-tracking filter active) with SEXS and with ESST1A, through the same
+/// line trip and fault, against PowerSimulationsDynamics.jl 0.16.2 run
+/// unmodified. Besides the machine's channels it compares ESST1A's VA (the
+/// state of its non-windup lag) and PSS2B's output. tellegen runs with its
+/// default held limits (`RmsOptions::freeze_limits`) and with limits that
+/// switch within the step, each within its own tolerances. Where the narrowed
+/// ESST1A's fault drives VA into VAMAX, held limits put VA back onto the limit
+/// after the step that carries it past (VA within 8.4e-5 of the reference),
+/// while limits switching within the step leave it above the limit by what
+/// that step overshoots (3.4e-3, in proportion to the step), so the field
+/// voltage differs by up to 2.4e-5 and 1.1e-3 once VA leaves the limit, the
+/// rotor angle by 2.5e-6 and 1.5e-5 rad. The reference is
+/// `tests/data/rms_smib/psid_reference_ext_models.json`, written by
+/// `validation/rms-models/psid-smib/generate.jl`; see the `SOURCES.md` next
+/// to it. Set `RMS_PSID_MEASURED=<file>` to write the differences, from
+/// which that script derives the tolerances.
+#[cfg(feature = "rms-experimental")]
+#[test]
+fn smib_ext_models_against_psid() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/rms_smib/psid_reference_ext_models.json");
+    let reference: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let cases = ext_model_variant_cases();
+    // The reference was computed for these very cases.
+    for case in &cases {
+        let theirs = &reference["cases"][&case.id];
+        assert_eq!(
+            theirs["raw"].as_str(),
+            Some(case.raw.as_str()),
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            theirs["dyr"].as_str(),
+            Some(case.dyr.as_str()),
+            "{}",
+            case.id
+        );
+    }
+    let runs = reference["smib"].as_array().unwrap();
+    // Every variant, both events.
+    assert_eq!(runs.len(), 2 * cases.len());
+    let held = compare_smib_with(
+        runs,
+        &cases,
+        RmsOptions {
+            freeze_limits: true,
+            ..psid_options()
+        },
+        "tolerance",
+    );
+    let free = compare_smib_with(
+        runs,
+        &cases,
+        RmsOptions {
+            freeze_limits: false,
+            ..psid_options()
+        },
+        "tolerance_free_limits",
+    );
+    for (run, d) in &held.measured {
+        for (key, held_d) in d {
+            println!(
+                "{run} {key}: held {held_d:.2e}, switching within the step {:.2e}",
+                free.measured[run][key]
+            );
+        }
+    }
+    if let Some(out) = std::env::var_os("RMS_PSID_MEASURED") {
+        let measured = serde_json::json!({ "held": held.measured, "free": free.measured });
+        std::fs::write(out, serde_json::to_string_pretty(&measured).unwrap()).unwrap();
+    }
+    for c in [&held, &free] {
+        // Eight channels per run, ESST1A's VA where it runs and PSS2B's
+        // output where it runs.
+        assert_eq!(c.compared, 2 * (9 + 9 + 9 + 10));
+        // Every machine's speed and angle in every run.
+        assert_eq!(c.physical_checks, runs.len() * 2);
+    }
+    assert!(
+        held.failures.is_empty(),
+        "held limits: {:#?}",
+        held.failures
+    );
+    assert!(
+        free.failures.is_empty(),
+        "limits switching within the step: {:#?}",
+        free.failures
+    );
 }
 
 /// The WECC 240 raw file with the loads as the tutorial system stores them:

@@ -64,7 +64,10 @@ matches PowerSimulationsDynamics.jl 0.16.2 within 3.2e-6 pu speed, 1.2e-5 pu
 Duration (5–120 s), step (2.5 ms standard, 5 ms fast, 1 ms fine) and the
 load model are in the Run section; **Advanced** holds the low-voltage load
 law, reactive limits at initialization, held renewable plants and the
-PowerSimulationsDynamics.jl comparison switches. **Run** (Ctrl/Cmd+Enter)
+PowerSimulationsDynamics.jl comparison switches. **Speed-ups** holds the
+solver's speed-ups and held limits, all on by default; switching one off
+gives the same result more slowly (held limits: see
+[Models](dynamics.md#rms-models)). **Run** (Ctrl/Cmd+Enter)
 starts the run in its own worker with a progress bar; **Stop** ends it at
 once without touching steady-state results. The last three runs stay as
 chips.
@@ -97,7 +100,9 @@ chips.
 
 Screening criteria are tellegen's own, versioned (`tellegen-rms-screening-1`)
 and stated in the card: they are not a TPL-001 or WECC planning assessment,
-and no protection, under-frequency load shedding or motor loads are modelled.
+and no under-frequency load shedding or motor loads are modelled. Relays act
+only when the case's protection is switched on (see
+[Protection](dynamics.md#rms-protection)).
 
 ## Experimental tools
 
@@ -112,6 +117,12 @@ Experimental label on everything they affect:
 - **Add default dynamics** for a case without `.dyr` data: typical models
   from published unit data, stamped "Synthetic dynamic data: typical
   parameters, not the owner's".
+- **Protection** tab (an engine built with `protection`): the relays of the
+  case, set by rules for the whole network with an audit of what each rule
+  set, the standard tests, the relays at the operating point with static
+  fault studies, and the relay record of a run. Switched on, the relays act
+  in every RMS run and in the live session, and a fault applied live is
+  cleared by them rather than after a fixed time.
 
 ## Agents
 
@@ -164,6 +175,9 @@ Neither is a default feature of the `tellegen` crate.
   `rms-experimental` breaks no code written against `rms`.
   Small-signal analysis (a dense `O(n³)` eigensolve) runs only when a request
   asks for it (`small_signal` is false by default).
+- `protection` (implies `rms`, adds `rayon`): relays acting on RMS runs and
+  live sessions, their settings by rule and their tests
+  ([Protection](dynamics.md#rms-protection)).
 
 Julia is not a dependency. PowerSimulationsDynamics.jl is the reference the
 equations are translated from (BSD-3, see
@@ -183,13 +197,38 @@ equations are translated from (BSD-3, see
 | Renewable plant | `REGCA1` + `REECB1` + `REPCA1` (WECC generic converter, electrical and plant control) |
 | Loads | each load's static law (constant power, ZIP, exponential), or one law for every bus |
 
+With `rms-experimental`, tellegen also reads the exciters `ESST1A` and
+`ESAC6A`, the stabilizer `PSS2B`, an inverse-time over-excitation limiter
+(`OELIT`) and a P–Q under-excitation limiter (`UELPQ`) from their DYR records
+and runs them as block graphs; the limiters act at their exciter's summing
+point. They are in the model library and the unit editor, and are validated
+against PowerSimulationsDynamics.jl 0.16.2 or against models of their own
+written from IEEE 421.5 ([RMS validation](benchmark-results.md#rms-validation)).
+
 `RmsSimulation::with_options` (with graphs, `with_models_and_options`) takes `RmsOptions`, fixed for that simulation
 only: whether renewable plants are simulated (the default) or held at their
 power flow output, whether the initialization enforces reactive limits (the
 default), the loads' low-voltage behaviour, PowerSimulationsDynamics.jl
 0.16.2's low-voltage gain and saturation in place of the PSS/E ones (for
-comparing with that tool), and whether step matrices are factorized by blocks
-(the default) or as one sparse LU.
+comparing with that tool), and the solver's speed-ups, each on by default
+and each giving the same result when switched off:
+
+- `factorize_by_blocks`: step matrices factorized by blocks, not as one
+  sparse LU;
+- `refactor_values`: a matrix pattern factorized before is refactorized in
+  that factorization's pivot order, with the values only;
+- `keep_factorization`: a factorization is kept until Newton stalls;
+- `threads`: the units' residual, Jacobian and block solves, and the relays,
+  run on a small pool of threads beside the step, joined in serial order so
+  the result matches a serial run bit for bit.
+
+`freeze_limits` (on by default) holds each non-windup limit in its state at
+the start of a step while Newton solves it and switches it after the step,
+with a small hysteresis; a state the step carried past its limit goes back
+onto it. A limit then switches at most one step later. Off, limits switch
+within Newton's iterations, where steps often fail at the kink and fall back
+to shorter ones; the comparisons with PowerSimulationsDynamics.jl, which
+switches within the step, run with it off.
 
 <a id="rms-initialization"></a>
 
@@ -313,6 +352,27 @@ A live session (`RmsSimulation::live`) advances on demand and takes events at
 its current time; it reproduces a batch run of its event log. It takes the
 same watch set (`set_record`) and gives any channel at its current time
 (`snapshot`).
+
+In the Live tab, select a disturbance in the Dynamics panel and follow its
+recorded channels in the plot dock. Select a unit on the map to open its
+models in that same panel. Live bus and rotor angles (`va:`, `delta:`) use the
+simulation reference. Beside them, the live session derives at every sample
+what the screening of a completed run derives, with the same code: the
+system frequency at the centre of inertia of the largest island (`coi:f`),
+each bus's frequency from its angle in the moving reference frame (`f:`),
+each machine's angle from the COI of its own island (`dcoi:`) and the largest
+rotor-angle separation within an island (`coi:sep`); machines in different
+islands are never compared. A batch run of the same events gives the same
+numbers from the same samples (`crates/tellegen/tests/rms_live_derived.rs`).
+
+The chart accepts sampled coordinates and an axis unit. A future EMT solver
+can use it to plot instantaneous phase currents in amperes or phase-to-ground
+voltages in volts at its own output times. The EMT solver would supply its
+own network and device equations. A first check is an initially unenergized
+series RL circuit switched onto a DC source at time $t_s$. Compare the
+computed current with $i(t)=(V/R)(1-\exp[-R(t-t_s)/L])$ for $t\geq t_s$,
+including a switch time between output samples. The RMS live view's 20 ms
+recording interval is specific to that view.
 
 <a id="rms-screening"></a>
 
@@ -447,6 +507,40 @@ reference bus's included, has nothing to hold its voltage: those units trip
 and its buses go dead. When the
 integration fails with the network split, the error names the islands.
 
+<a id="rms-protection"></a>
+
+### Protection
+
+With the `protection` feature, `RmsSimulation::run_with_protection` runs a
+`ProtectionScheme` (`tellegen::protection`): relays at line ends,
+transformers, busbars, units and inverters measure the network at every step,
+and their breakers open, reclose and trip units as they decide. The relay
+channels join the result's channels and a `ProtectionReport` lists every
+operation. A live session takes a scheme with `RmsLive::set_protection`.
+
+| ANSI | Functions |
+|---|---|
+| 50/51, 67, 50N/51N/67N | overcurrent (IEC, IEEE and long-time curves), directional, residual |
+| 21, 68 | distance (mho, quadrilateral, zones, load encroachment), power-swing blocking |
+| 87 | biased differential (transformer, unit, line, busbar) |
+| 27/59, 59N, 24 | under/overvoltage, neutral overvoltage, V/Hz |
+| 81U/81O, 81R | under/overfrequency, rate of change of frequency |
+| 49, 32, 40, 46 | thermal, reverse power, loss of field, negative sequence |
+| 78 | out of step (blinders and slip counting, or voltage beats) |
+| 50BF, 79, POTT/PUTT | breaker failure, reclosing, teleprotection |
+
+The module documentation names the standard each function follows. The
+relays measure the positive-sequence phasors of the RMS network plus the
+relay's own measuring time; functions that need unbalance (46, 50N/51N, 59N)
+do not act in RMS. Overvoltage stages (59) drop off at a settable ratio, 0.98
+by default. The voltage-beat out-of-step mode counts a beat only when the
+swing passes the electrical centre (the active power reverses) and needs the
+relay's current. Settings come from rules applied to the whole network by
+short-circuit calculation, with an audit of what each rule set
+(`tellegen::protection::setting`), and every function is tested against
+IEC 60255 and IEEE type-test plans by secondary injection
+([RMS validation](benchmark-results.md#rms-validation)).
+
 <a id="rms-known-limitations"></a>
 
 ### Known limitations
@@ -458,9 +552,13 @@ integration fails with the network split, the error names the islands.
 - **Step size** is fixed (see Formulation), and switching limiters are not
   located inside a step.
 - **HVDC lines** are not modelled: a case with an in-service HVDC line is
-  refused (the static AC power flow holds them as fixed injections).
-- **Islands** run on (see Formulation); there is no under/over-frequency or
-  overspeed protection, so an island without load accelerates without bound
+  refused (the static AC power flow holds them as fixed injections). An
+  experimental AC emulation (`set_hvdc_emulation`) adds a link's
+  angle-proportional power between two buses whose converters the case
+  represents otherwise.
+- **Islands** run on (see Formulation); without relays
+  ([Protection](dynamics.md#rms-protection)) there is no under/over-frequency
+  or overspeed protection, so an island without load accelerates without bound
   (WECC 240 with transformer 1004-1034 open: bus 1034's units reach 1.9 pu
   speed in 9 s).
 - **Inverter-based resources** other than the `REGCA1` + `REECB1` + `REPCA1`

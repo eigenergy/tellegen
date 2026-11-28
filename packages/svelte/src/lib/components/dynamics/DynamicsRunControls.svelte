@@ -1,4 +1,7 @@
 <script lang="ts">
+	/** The options of a run (duration, step, load model and the advanced
+	 * choices) and the button that runs it and brings the verdict into view.
+	 * @block Run options */
 	import type { RmsLoadModel as LoadModel } from '@tellegen/engine';
 	import { tick } from 'svelte';
 	import { getController } from '../../context.svelte.js';
@@ -34,6 +37,52 @@
 		['constant_impedance', 'Impedance (Z)'],
 		['constant_current', 'Current (I)'],
 		['constant_power', 'Power (P)']
+	];
+
+	/** The solver's speed-ups, all on by default; each can be switched off to
+	 * compare. None changes the results beyond rounding, except held limits:
+	 * a limit then switches at most one step later (validated against 1 ms
+	 * references). */
+	const SPEEDUPS: [
+		| 'factorize_by_blocks'
+		| 'refactor_values'
+		| 'keep_factorization'
+		| 'fast_engine'
+		| 'threads'
+		| 'freeze_limits',
+		string,
+		string
+	][] = [
+		[
+			'freeze_limits',
+			'Hold limits within a step',
+			'Hold each non-windup limit (field voltage, limited lags) in its state at the step start while Newton solves the step, and switch it after the step; off: limits switch within the iterations, where steps often fail at the kink'
+		],
+		[
+			'factorize_by_blocks',
+			'Factorize by blocks',
+			'Eliminate each unit onto its bus before the sparse LU of the network'
+		],
+		[
+			'refactor_values',
+			'Reuse pivot order',
+			'Refactorize a known matrix pattern in its earlier pivot order, values only'
+		],
+		[
+			'keep_factorization',
+			'Keep factorization',
+			'Keep the step matrix factorization until Newton stalls, also across events'
+		],
+		[
+			'fast_engine',
+			'Fast browser engine',
+			'The engine build with SIMD and threads, where the page is cross-origin isolated; off: the plain build'
+		],
+		[
+			'threads',
+			'Parallel threads',
+			'Run the relays beside the step and split work over threads where the browser allows'
+		]
 	];
 </script>
 
@@ -143,6 +192,20 @@
 				onchange={(e) => dyn.setOptions({ ...o, psid_saturation: e.currentTarget.checked })}
 			/>
 		</div>
+	</details>
+	<details>
+		<summary>Speed-ups</summary>
+		{#each SPEEDUPS as [key, label, title] (key)}
+			<div class="setting" {title}>
+				<label for="dyn-{key}">{label}</label>
+				<input
+					id="dyn-{key}"
+					type="checkbox"
+					checked={o[key] ?? true}
+					onchange={(e) => dyn.setOptions({ ...o, [key]: e.currentTarget.checked })}
+				/>
+			</div>
+		{/each}
 	</details>
 </section>
 <!-- The Run button stays in view at the panel's bottom edge while the options above scroll. -->

@@ -193,6 +193,11 @@
           "const": "p_ref",
           "description": "Governor power reference (mechanical torque for a fixed governor).",
           "type": "string"
+        },
+        {
+          "const": "vs",
+          "description": "Experimental: signal added at the exciter's summing point, where the\nstabilizer enters (`vs`).",
+          "type": "string"
         }
       ]
     },
@@ -915,6 +920,8 @@
           "$ref": "#/$defs/RmsOptions",
           "default": {
             "factorize_by_blocks": true,
+            "freeze_limits": true,
+            "keep_factorization": true,
             "low_voltage_load": {
               "kind": "break",
               "v_break": 0.7
@@ -923,7 +930,9 @@
             "psid_lv_gain": false,
             "psid_saturation": false,
             "reactive_limits": true,
-            "renewable_plants": true
+            "refactor_values": true,
+            "renewable_plants": true,
+            "threads": true
           },
           "description": "The options the simulation was prepared with."
         },
@@ -979,6 +988,16 @@
           "description": "Factorize the step matrices by blocks where every unit allows it, the\ndefault, or always as one sparse LU over all unknowns.",
           "type": "boolean"
         },
+        "freeze_limits": {
+          "default": true,
+          "description": "Hold each non-windup limit (SEXS field voltage, ESAC1A `VA`, the\nlimited lags of block graphs) in its state at the start of a step\nwhile Newton solves the step, and let it switch after the step, with a\nsmall hysteresis, a state the step carried past its limit going back\nonto it, the default; or let the limits switch within Newton's\niterations. At a limit's kink the latter often fails steps and falls\nback to shorter ones. Validated against PowerSimulationsDynamics.jl\n(at a 1 ms step) and against runs at a 0.1 ms step: the held limits\nare as close or closer on every compared channel but those of a fault\non a unit with SEXS and PSS2B (rotor angle 5.3e-5 against 1.1e-5 rad),\nand a limit switches at most one step later.",
+          "type": "boolean"
+        },
+        "keep_factorization": {
+          "default": true,
+          "description": "Keep a step matrix's factorization until Newton stalls, also across\nevents, the default, or refresh it on a fixed schedule and after\nevery event. Newton's stopping test decides convergence either way.",
+          "type": "boolean"
+        },
         "low_voltage_load": {
           "$ref": "#/$defs/LowVoltageLoad",
           "default": {
@@ -1007,9 +1026,19 @@
           "description": "Initialize from the AC power flow with the generators' reactive\nlimits enforced (PV→PQ switching), the default and the same solve as\nthe static study, or with every generator at its voltage setpoint\nwhatever reactive power that takes (PowerSimulationsDynamics.jl, and\nPSS/E from a case solved without limits). Either way the result's\nnotes name every unit whose solved reactive power and setpoint\ndisagree, and by how much.",
           "type": "boolean"
         },
+        "refactor_values": {
+          "default": true,
+          "description": "Refactorize a step matrix whose pattern was factorized before in that\nfactorization's pivot order, recomputing the values only, the\ndefault, or pivot every factorization afresh. A pivot that has become\ntoo small against its column falls back to a pivoted factorization.",
+          "type": "boolean"
+        },
         "renewable_plants": {
           "default": true,
           "description": "Simulate renewable plants (`REGCA1` + `REECB1` + `REPCA1`), the\ndefault, or hold them at their power flow output as constant currents.",
+          "type": "boolean"
+        },
+        "threads": {
+          "default": true,
+          "description": "Run the relays beside the integration step and split work over\nparallel threads where the platform has them, the default, or run\neverything on one thread. The results are the same.",
           "type": "boolean"
         }
       },

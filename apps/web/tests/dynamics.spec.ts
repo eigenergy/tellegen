@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // The WECC 240 dynamics demo, end to end: open it, run a fault, read the
-// verdict, play it back. Dynamics is experimental, so these tests turn on
-// Settings → Experimental features first; dynamics-off.spec.ts covers the
+// verdict, play it back. These tests also turn on Settings → Experimental
+// features, for the Modes tab; dynamics-default.spec.ts covers the
 // default, with it off.
 // Screenshots land in DYNAMICS_SHOTS when set.
 const SHOTS = process.env.DYNAMICS_SHOTS;
@@ -241,4 +241,102 @@ test('on a phone the timeline stays above the drawer', async ({ page }) => {
 		})
 		.toBeGreaterThanOrEqual(0);
 	await shot(page, '09-phone');
+});
+
+test('live controls use the Dynamics panel and recorded traces survive a pause', async ({
+	page
+}) => {
+	const panel = await openDemo(page);
+	await panel.getByRole('tab', { name: 'Live' }).click();
+	await panel.getByRole('button', { name: 'Start live simulation' }).click();
+	const plots = page.getByRole('region', { name: 'Live simulation plots' });
+	const fault = panel.getByRole('button', { name: 'Apply fault', exact: true });
+	await expect(fault).toBeEnabled();
+	await fault.click();
+	await expect(panel.locator('ol.log')).toContainText(/clear/i);
+	await shot(page, 'live-desktop');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(plots).toBeInViewport();
+	await expect(page.getByRole('button', { name: 'Close live simulation' })).toBeInViewport();
+	await shot(page, 'live-phone');
+	await page.setViewportSize({ width: 1420, height: 900 });
+	await plots.getByRole('button', { name: 'Pause' }).click();
+	await expect(fault).toBeDisabled();
+	await plots.getByText(/Plot channels/).click();
+	await plots.getByRole('button', { name: 'Clear', exact: true }).click();
+	await expect(plots.getByText('Choose a channel to plot.')).toBeVisible();
+	await plots.getByRole('searchbox', { name: 'Search channels' }).fill('rotor speed');
+	await plots.getByRole('checkbox').first().check();
+	await plots.getByText(/Plot channels/).click();
+	await expect(plots.locator('svg').first()).toBeVisible();
+	await plots.getByRole('button', { name: 'Resume' }).click();
+	await expect(fault).toBeEnabled();
+	await plots.getByRole('button', { name: 'Close live simulation' }).click();
+	await expect(plots).toHaveCount(0);
+	await expect(panel.getByRole('button', { name: 'Start live simulation' })).toBeEnabled();
+});
+
+/** Press Tab (or Shift+Tab) until `reached` holds for the focused element,
+ * at most `max` times. */
+async function tabUntil(
+	page: import('@playwright/test').Page,
+	reached: () => boolean,
+	{ back = false, max = 120 } = {}
+) {
+	for (let i = 0; i < max; i++) {
+		if (await page.evaluate(reached)) return;
+		await page.keyboard.press(back ? 'Shift+Tab' : 'Tab');
+	}
+	throw new Error(`focus did not get there in ${max} presses`);
+}
+
+test('the keyboard reaches a second machine, changes a parameter and returns to it', async ({
+	page
+}) => {
+	const panel = await openDemo(page);
+	await panel.getByRole('tab', { name: 'Models' }).click();
+	const models = panel.getByTestId('dyn-models');
+	// Bus 1131 has two machines, C and G; G is the second.
+	await models.getByRole('searchbox', { name: 'Filter units' }).focus();
+	await page.keyboard.type('1131');
+	const second = models.getByRole('button', { name: /^1131 'G'/ });
+	await expect(second).toBeVisible();
+	await tabUntil(page, () => /^\s*1131 'G'/.test(document.activeElement?.textContent ?? ''));
+	await page.keyboard.press('Enter');
+	await expect(second).toHaveAttribute('aria-pressed', 'true');
+	const editor = models.getByRole('group', { name: "Unit 1131 'G'" });
+	await expect(editor).toBeVisible();
+
+	// Into its exciter's parameters, K from 100 to 120.
+	await tabUntil(page, () => {
+		const e = document.activeElement;
+		return e?.tagName === 'SUMMARY' && /SEXS/.test(e.textContent ?? '');
+	});
+	await page.keyboard.press('Enter');
+	await tabUntil(
+		page,
+		() =>
+			document.activeElement?.closest('label')?.querySelector('.pname')?.firstChild?.textContent ===
+			'K'
+	);
+	await expect(page.locator(':focus')).toHaveValue(/^100(\.0*)?$/);
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('120');
+	await tabUntil(page, () =>
+		/^Apply 1 change$/.test(document.activeElement?.textContent?.trim() ?? '')
+	);
+	await page.keyboard.press('Enter');
+	await expect(editor.getByRole('status')).toHaveText('Parameters: initialized.', {
+		timeout: 60_000
+	});
+
+	// Focus is back on the field it changed, which shows the new value …
+	await expect(page.locator(':focus')).toHaveAttribute('data-param', /^\d+:\d+$/);
+	await expect(page.locator(':focus')).toHaveValue(/^120(\.0*)?$/);
+	// … and the same machine is a few Shift+Tabs away, still the one open.
+	await tabUntil(page, () => /^\s*1131 'G'/.test(document.activeElement?.textContent ?? ''), {
+		back: true
+	});
+	await expect(page.locator(':focus')).toHaveAttribute('aria-pressed', 'true');
+	await expect(editor).toBeVisible();
 });

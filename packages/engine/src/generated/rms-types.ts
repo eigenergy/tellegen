@@ -8,7 +8,7 @@ export type FrequencyScreen = { "coi_nadir_hz"?: number | null; "coi_peak_hz"?: 
 
 /** A controller reference a [`RmsEvent::SetReference`] sets (and a frequency
  * response perturbs). */
-export type InputSignal = ("v_ref") | ("p_ref");
+export type InputSignal = ("v_ref") | ("p_ref") | ("vs");
 
 /** One island with a unit in service at the end of the run. */
 export type IslandScreen = { "buses": number; "final_hz"?: number | null; "inertia_mws": number; "machines": number; "runaway": boolean; };
@@ -51,7 +51,7 @@ export type RmsInspection = { "base_frequency": number; "base_mva": number; "bra
 /** Choices of one prepared simulation, fixed when it is built. The defaults
  * are tellegen's own; the others exist to compare with another tool or
  * method, and affect only the simulation they are given to. */
-export type RmsOptions = { "factorize_by_blocks"?: boolean; "low_voltage_load"?: LowVoltageLoad; "psid_converter_ramp"?: boolean; "psid_lv_gain"?: boolean; "psid_saturation"?: boolean; "reactive_limits"?: boolean; "renewable_plants"?: boolean; };
+export type RmsOptions = { "factorize_by_blocks"?: boolean; "freeze_limits"?: boolean; "keep_factorization"?: boolean; "low_voltage_load"?: LowVoltageLoad; "psid_converter_ramp"?: boolean; "psid_lv_gain"?: boolean; "psid_saturation"?: boolean; "reactive_limits"?: boolean; "refactor_values"?: boolean; "renewable_plants"?: boolean; "threads"?: boolean; };
 
 /** A simulation request. */
 export type RmsRequest = { "dt"?: number; "events"?: Array<RmsEvent>; "load_model"?: (LoadModel) | (null); "output_step"?: number; "record"?: (RecordSpec) | (null); "small_signal"?: boolean; "t_end"?: number; };

@@ -3,17 +3,23 @@
  *
  * Everything numerical happens in the engine (`@tellegen/engine` RMS
  * worker); this class holds what the panel, the timeline and the map show,
- * and the ids that tie them together. */
+ * and the ids that tie them together.
+ * @block Dynamics controller */
 
 import {
+	dynamicInput,
 	ingestCase,
 	looksLikeDyr,
 	openRmsCase,
 	rmsSupport,
 	type BrowserRmsCase,
+	type ModelOverride,
+	type ProtectionScheme,
 	type RmsCaseOptions,
+	type RmsEvent,
 	type RmsFlatCheck,
 	type RmsInspection,
+	type RmsLinearRequest,
 	type RmsLinearResult,
 	type RmsRun
 } from '@tellegen/engine';
@@ -27,6 +33,10 @@ import {
 	type LayerCtors,
 	type OpenBranch
 } from './layers.js';
+import { LiveView } from './live.svelte.js';
+import { UnitCatalog, unitGlyphLayer, unitSummary, unitKey as catalogKey } from './units.svelte.js';
+import { ProtectionController } from './protection.svelte.js';
+import { protectionLayers, RELAY_LAYER } from './protection-layers.js';
 import { DynamicsPlayer, startTime } from './player.svelte.js';
 import {
 	VALIDATION_DT,
@@ -39,6 +49,34 @@ import { failureTime } from './verdict.js';
 
 export type DynStatus = 'opening' | 'ready' | 'failed';
 
+/** One model of the hosted model library (examples/models/index.json,
+ * written at deploy time from a library config). */
+export interface LibraryModel {
+	id: string;
+	/** The library (group) it belongs to. */
+	library: string;
+	title: string;
+	/** Short facts shown beside the title, e.g. "10 buses". */
+	info?: string | null;
+	/** A short label shown with the title, such as a restriction of use. */
+	tag?: string | null;
+	licence?: string | null;
+	/** Files relative to examples/models/: case files, dynamic data (.dyr),
+	 * coordinates (.geo.csv, .geojson) and controller graphs (.models.json). */
+	files: { path: string; kind: 'case' | 'dyr' | 'geo' | 'models' }[];
+	/** It carries dynamic data: it opens in Dynamics, else in steady state. */
+	dynamics: boolean;
+	/** Case options the model needs to open (e.g. `reactive_limits: false` where the
+	 * initial power flow does not converge with them): set before it opens, the
+	 * earlier ones back when the next library model opens. */
+	options?: RmsCaseOptions | null;
+}
+export interface ModelLibrary {
+	title: string;
+	libraries: { id: string; title: string; tag?: string | null; note?: string | null }[];
+	cases: LibraryModel[];
+}
+
 /** The dynamic data attached to one local case. */
 export interface DynAttachment {
 	localId: string;
@@ -48,6 +86,8 @@ export interface DynAttachment {
 	demo: boolean;
 	/** Typical parameters from "Add default dynamics", not the owner's. */
 	synthetic: boolean;
+	/** Controller block graphs that replace or add a unit's controller. */
+	models: ModelOverride[];
 	status: DynStatus;
 	/** The prepared case the next run uses: its options and network. The
 	 * inspection and the flat check below describe that case. */
@@ -66,6 +106,33 @@ export interface DynAttachment {
 	 * the first run. */
 	rest: RmsRun | null;
 	openMs: number | null;
+	/** Increases with every attach, so an edit computed from older data
+	 * can tell that the data moved on while it ran. */
+	revision: number;
+}
+
+/** What an edit of the dynamic data starts from, taken before it awaits
+ * the worker: the local case, the attachment revision and the network it
+ * read. {@link DynamicsController.editDynamics} applies the result only
+ * while all three still hold.
+ * @block Edit origin */
+export interface EditOrigin {
+	localId: string;
+	revision: number;
+	/** The network JSON the edit read (`studyInputJson`). */
+	network: string | null;
+	/** The DYR text and controller graphs the edit starts from. */
+	text: string;
+	models: ModelOverride[];
+}
+
+/** An edit whose case changed (another case active, the data or the
+ * network replaced) while the worker computed it; nothing was applied. */
+export class StaleEditError extends Error {
+	constructor(label: string) {
+		super(`${label} changed while the edit was computed; nothing was applied. Try again.`);
+		this.name = 'StaleEditError';
+	}
 }
 
 /** One finished (or failed) run. */
@@ -91,6 +158,24 @@ export interface DynRunRecord {
 	/** Started by an agent (WebMCP). */
 	agent: boolean;
 	experimental: boolean;
+	/** A protection test or a fault left to the relays: its name and the
+	 * engine's events (the run has no {@link events} of its own). */
+	replay?: { label: string; events: RmsEvent[] };
+	/** The relays that acted during the run. */
+	protection?: ProtectionScheme;
+}
+
+/** A run of given engine events instead of the picked ones (a protection
+ * test, a fault left to the relays). */
+export interface DynReplay {
+	label: string;
+	events: RmsEvent[];
+	tEnd: number;
+	outputStep?: number;
+	/** The relays acting (null: none). */
+	protection: ProtectionScheme | null;
+	/** Where playback starts, s. */
+	seek?: number;
 }
 
 export const STEP_CHOICES = [
@@ -112,9 +197,13 @@ const REST_SECONDS = 0.02;
 
 const optionsKey = (o: RmsCaseOptions, network: string) => JSON.stringify([network, o]);
 
-/** Why dynamics is unavailable while the experimental setting is off. */
-export const DYNAMICS_OFF = 'Dynamics is off: turn on Experimental features in Settings';
+/** Why dynamics is unavailable while it is turned off. */
+export const DYNAMICS_OFF = 'Dynamics is turned off in this build';
 
+/** The dynamics state of the app: the dynamic data attached to each case,
+ * the events and options of the next run, the runs, playback ({@link
+ * DynamicsPlayer}), the live view ({@link LiveView}) and the map layers.
+ * @block DynamicsController */
 export class DynamicsController {
 	attachments: Record<string, DynAttachment> = $state.raw({});
 	events: DynEvent[] = $state.raw([]);
@@ -131,7 +220,8 @@ export class DynamicsController {
 	/** The step, duration and options before a validated scenario replaced
 	 * them; Clear events restores them. */
 	beforePreset: { options: RmsCaseOptions; dt: number; tEnd: number } | null = $state.raw(null);
-	support: { rms: boolean; experimental: boolean } | null = $state.raw(null);
+	support: { rms: boolean; experimental: boolean; protection?: boolean } | null =
+		$state.raw(null);
 	/** Experimental: the modes of the open case. */
 	modes: RmsLinearResult | null = $state.raw(null);
 	modesError = $state<string | null>(null);
@@ -141,6 +231,15 @@ export class DynamicsController {
 	error = $state<string | null>(null);
 	theme: 'light' | 'dark' = $state('light');
 	readonly player = new DynamicsPlayer();
+	/** Experimental: the active case simulated live. */
+	readonly live = new LiveView();
+	/** Experimental: the active case's units for the unit editor. */
+	readonly catalog = new UnitCatalog();
+	/** The Models tab consumes the selection made on the map. */
+	inspectUnit: { caseId: string; key: string } | null = $state.raw(null);
+	/** Experimental: the relays of the local cases. */
+	readonly protection: ProtectionController;
+	#textLayer: typeof import('@deck.gl/layers').TextLayer | null = $state.raw(null);
 	layerCtors: LayerCtors | null = $state.raw(null);
 	/** Base URL of the bundled examples. */
 	examplesBase = '/examples';
@@ -153,11 +252,14 @@ export class DynamicsController {
 	#validationModule: Promise<string> | null = null;
 	#abort: AbortController | null = null;
 	#seq = 0;
+	#revision = 0;
 
 	constructor(
 		private readonly app: AppState,
 		private readonly ingest: (files: File[]) => Promise<void>
-	) {}
+	) {
+		this.protection = new ProtectionController(app, this);
+	}
 
 	/** The active local case's attachment. */
 	get active(): DynAttachment | null {
@@ -196,15 +298,18 @@ export class DynamicsController {
 		}
 	}
 
-	/** Attach `text` to `local` and open it in the RMS worker. */
+	/** Attach `text` to `local` and open it in the RMS worker.
+	 * @block Attach dynamic data */
 	async attach(
 		local: LocalCase,
 		fileName: string,
 		text: string,
 		demo = false,
-		synthetic = false
+		synthetic = false,
+		models: ModelOverride[] = this.#exampleModels ?? []
 	): Promise<void> {
 		if (!local.studyInputJson) throw new Error(`${local.label} has no network to simulate`);
+		const revision = ++this.#revision;
 		this.#free(local.id);
 		this.#described.delete(local.id);
 		this.#set(local.id, {
@@ -213,6 +318,7 @@ export class DynamicsController {
 			text,
 			demo,
 			synthetic,
+			models,
 			status: 'opening',
 			inspection: null,
 			network: 'case',
@@ -222,22 +328,27 @@ export class DynamicsController {
 			flat: null,
 			flatError: null,
 			rest: null,
-			openMs: null
+			openMs: null,
+			revision
 		});
 		this.modes = null;
 		const started = performance.now();
 		const validation = this.#useValidation(local.id);
+		// A later attach of the same case owns what follows.
+		const current = () => this.attachments[local.id]?.revision === revision;
 		try {
 			const c = await this.#case(local, validation);
+			if (!current()) return;
 			this.#patch(local.id, {
 				status: 'ready',
 				openMs: performance.now() - started
 			});
 			await this.#describe(local.id, validation, c);
 		} catch (e) {
-			this.#patch(local.id, { status: 'failed', error: (e as Error).message });
+			if (current()) this.#patch(local.id, { status: 'failed', error: (e as Error).message });
 			return;
 		}
+		if (!current()) return;
 		// The options or the scenario may have changed while it opened.
 		await this.refresh();
 	}
@@ -292,7 +403,8 @@ export class DynamicsController {
 	}
 
 	/** Prepare the active case for the current options and network, so the
-	 * panel describes the case the next run uses. */
+	 * panel describes the case the next run uses.
+	 * @block Refresh the attachment */
 	async refresh(): Promise<void> {
 		const local = this.app.activeLocal;
 		const a = this.active;
@@ -330,8 +442,55 @@ export class DynamicsController {
 		}
 	}
 
+	/** The dynamic data of `a` as the engine reads it: DYR, with its
+	 * controller graphs when it has any. */
+	dynText(a: DynAttachment): string {
+		return dynamicInput(a.text, a.models);
+	}
+
+	/** Where an edit of the active case's dynamic data starts. Take it
+	 * before the first `await` of the edit and pass it to
+	 * {@link editDynamics}. */
+	editOrigin(): EditOrigin {
+		const local = this.app.activeLocal;
+		const a = this.active;
+		if (!local || !a) throw new Error('no dynamic data attached');
+		return {
+			localId: local.id,
+			revision: a.revision,
+			network: local.studyInputJson ?? null,
+			text: a.text,
+			models: a.models
+		};
+	}
+
+	/** Replace the dynamic data of the case `origin` names (edited
+	 * parameters or models, controller graphs) and prepare it again; that
+	 * case's live view ends. Refused with {@link StaleEditError}, changing
+	 * nothing, when the case was closed, its data attached again or its
+	 * network changed since `origin` was taken: the edit was computed from
+	 * data that is no longer there. Which case is active does not matter.
+	 * @block Edit the dynamic data */
+	async editDynamics(origin: EditOrigin, text: string, models?: ModelOverride[]): Promise<void> {
+		const local = this.app.localCases.find((c) => c.id === origin.localId);
+		const a = this.attachments[origin.localId];
+		if (
+			!local ||
+			!a ||
+			a.revision !== origin.revision ||
+			(local.studyInputJson ?? null) !== origin.network
+		)
+			throw new StaleEditError(local?.label ?? 'The case');
+		if (this.live.localId === local.id) this.live.stop();
+		await this.attach(local, a.fileName, text, a.demo, a.synthetic, models ?? a.models);
+		const now = this.attachments[local.id];
+		if (now?.status === 'failed') throw new Error(now.error ?? 'the case does not initialize');
+	}
+
 	/** Forget a closed local case: its attachment, runs and worker cases. */
 	forget(localId: string): void {
+		if (this.live.localId === localId) this.live.stop();
+		this.protection.forget(localId);
 		this.#free(localId);
 		this.#described.delete(localId);
 		if (!(localId in this.attachments) && !this.runs.some((r) => r.localId === localId)) return;
@@ -363,7 +522,7 @@ export class DynamicsController {
 			const module = validationNetwork
 				? this.#validationNetwork()
 				: Promise.resolve(local.studyInputJson!);
-			p = module.then((m) => openRmsCase(m, a.text, this.options));
+			p = module.then((m) => openRmsCase(m, dynamicInput(a.text, a.models), this.options));
 			p.catch(() => this.#cases.delete(key));
 			this.#cases.set(key, p);
 		}
@@ -385,7 +544,8 @@ export class DynamicsController {
 		return this.#validationModule;
 	}
 
-	/** Open the bundled WECC 240 demo: its case, dynamic data and coordinates. */
+	/** Open the bundled WECC 240 demo: its case, dynamic data and coordinates.
+	 * @block Open the demo */
 	async openDemo(): Promise<void> {
 		if (!this.app.dynamicsEnabled) throw new Error(DYNAMICS_OFF);
 		this.app.mode = 'dynamics';
@@ -413,7 +573,98 @@ export class DynamicsController {
 		return this.#demoNext;
 	}
 
-	// ---- events ----
+	// @block Hosted model library
+	// The catalog a deployment serves (examples/models/index.json) and
+	// opening one of its models as the active case.
+
+	/** The hosted model library; null until loaded, empty when none is hosted. */
+	examples: ModelLibrary | null = $state.raw(null);
+	#examplesLoad: Promise<ModelLibrary> | null = null;
+	#exampleLabel: string | null = null;
+	#exampleModels: ModelOverride[] | null = null;
+	/** The options before a library model set its own ({@link LibraryModel.options}). */
+	#optionsBeforeExample: RmsCaseOptions | null = null;
+
+	/** Load examples/models/index.json once; an absent library is empty. */
+	loadExamples(): Promise<ModelLibrary> {
+		const empty = (): ModelLibrary => ({ title: 'Model library', libraries: [], cases: [] });
+		this.#examplesLoad ??= fetch(`${this.examplesBase}/models/index.json`)
+			.then(async (r) => {
+				const json = (r.headers.get('content-type') ?? '').includes('json');
+				const c = r.ok && json ? ((await r.json()) as ModelLibrary) : empty();
+				const lib: ModelLibrary = {
+					title: c.title || 'Model library',
+					libraries: Array.isArray(c.libraries) ? c.libraries : [],
+					cases: Array.isArray(c.cases) ? c.cases.filter((m) => Array.isArray(m.files)) : []
+				};
+				this.examples = lib;
+				return lib;
+			})
+			.catch(() => {
+				const lib = empty();
+				this.examples = lib;
+				return lib;
+			});
+		return this.#examplesLoad;
+	}
+
+	/** How a library model is named: its title and tag. */
+	exampleName(m: LibraryModel): string {
+		return m.tag ? `${m.title} (${m.tag})` : m.title;
+	}
+
+	/** The label the next ingested case takes when a demo or library model opens it. */
+	get exampleLabel(): string | null {
+		return this.#demoNext ? DEMO_LABEL : this.#exampleLabel;
+	}
+
+	/** Open a library model: its case files, and with them its dynamic data,
+	 * coordinates and controller graphs. A model with dynamic data opens in
+	 * Dynamics, any other in steady state.
+	 * @block Open a library model */
+	async openExample(id: string): Promise<void> {
+		const library = await this.loadExamples();
+		const m = library.cases.find((c) => c.id === id);
+		if (!m) throw new Error(`no hosted model ${id}`);
+		if (!m.files.some((f) => f.kind === 'case')) throw new Error(`${m.title} has no case file`);
+		const base = `${this.examplesBase}/models`;
+		const get = async (path: string): Promise<Blob> => {
+			const r = await fetch(`${base}/${path.split('/').map(encodeURIComponent).join('/')}`);
+			if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+			return r.blob();
+		};
+		const files: File[] = [];
+		let models: ModelOverride[] = [];
+		for (const f of m.files) {
+			const blob = await get(f.path);
+			if (f.kind === 'models') {
+				const doc = JSON.parse(await blob.text());
+				models = Array.isArray(doc) ? doc : (doc.models ?? []);
+			} else files.push(new File([blob], f.path.split('/').pop()!));
+		}
+		this.app.mode = m.dynamics ? 'dynamics' : 'steady';
+		if (this.#optionsBeforeExample) {
+			this.options = this.#optionsBeforeExample;
+			this.#optionsBeforeExample = null;
+		}
+		if (m.options && Object.keys(m.options).length) {
+			this.#optionsBeforeExample = this.options;
+			this.options = { ...this.options, ...m.options };
+			this.modes = null;
+		}
+		this.#exampleLabel = this.exampleName(m);
+		this.#exampleModels = models.length ? models : null;
+		try {
+			await this.ingest(files);
+		} finally {
+			this.#exampleLabel = null;
+			this.#exampleModels = null;
+		}
+	}
+
+	// @block Events of the next run
+	// Adding, changing and removing events, the validated scenarios, the
+	// options, and the checks that name an event the engine would refuse.
 
 	add(e: DynEvent): string | null {
 		if (this.events.length >= MAX_EVENTS) return `at most ${MAX_EVENTS} events`;
@@ -444,7 +695,8 @@ export class DynamicsController {
 		void this.refresh();
 	}
 
-	/** Errors per event id. */
+	/** Errors per event id.
+	 * @block Check the events */
 	get eventErrors(): Map<string, string> {
 		const out = new Map<string, string>();
 		const inspection = this.active?.inspection;
@@ -492,9 +744,14 @@ export class DynamicsController {
 		});
 	}
 
-	// ---- runs ----
+	// @block Runs
+	// A run in the RMS worker, its record (run, screening, notes) and the
+	// last runs kept for comparison and playback.
 
-	async run(opts: { agent?: boolean } = {}): Promise<DynRunRecord | null> {
+	/** Run the picked events, or (`replay`) given engine events. The relays
+	 * of the case act when its protection layer is on. */
+	async run(opts: { agent?: boolean; replay?: DynReplay } = {}): Promise<DynRunRecord | null> {
+		const replay = opts.replay ?? null;
 		const local = this.app.activeLocal;
 		const a = this.active;
 		if (!local || !a || a.status !== 'ready') {
@@ -509,23 +766,24 @@ export class DynamicsController {
 			this.error = 'Modes running';
 			return null;
 		}
-		const errs = this.eventErrors;
+		const errs = replay ? new Map<string, string>() : this.eventErrors;
 		if (errs.size) {
 			this.error = [...errs.values()][0];
 			return null;
 		}
 		this.error = null;
 		this.running = true;
-		this.progress = { t: 0, tEnd: this.tEnd };
+		this.progress = { t: 0, tEnd: replay ? replay.tEnd : this.tEnd };
 		this.player.pause();
 		const abort = new AbortController();
 		this.#abort = abort;
 		const started = performance.now();
-		const events = this.events.map((e) => ({ ...e }));
+		const events: DynEvent[] = replay ? [] : this.events.map((e) => ({ ...e }));
 		const options = { ...this.options };
 		const dt = this.dt;
-		const tEnd = this.tEnd;
-		const badge = this.badge;
+		const tEnd = replay ? replay.tEnd : this.tEnd;
+		const badge = replay ? null : this.badge;
+		const protection = replay ? replay.protection : this.protection.schemeFor(local.id);
 		const useValidation = !!badge && a.demo;
 		const record: DynRunRecord = {
 			id: ++this.#seq,
@@ -540,7 +798,9 @@ export class DynamicsController {
 			network: useValidation ? 'validation' : 'case',
 			wallMs: 0,
 			agent: !!opts.agent,
-			experimental: a.synthetic
+			experimental: a.synthetic,
+			...(replay ? { replay: { label: replay.label, events: replay.events } } : {}),
+			...(protection ? { protection } : {})
 		};
 		try {
 			void this.#loadCtors();
@@ -549,7 +809,13 @@ export class DynamicsController {
 			record.heldUnits = c.inspection.held_units ?? [];
 			record.branchKeys = c.inspection.branches;
 			record.run = await c.run(
-				{ events: allRmsEvents(events), t_end: tEnd, dt },
+				{
+					events: replay ? replay.events : allRmsEvents(events),
+					t_end: tEnd,
+					dt,
+					...(replay?.outputStep ? { output_step: replay.outputStep } : {}),
+					...(protection ? { protection } : {})
+				},
 				{
 					signal: abort.signal,
 					onProgress: (p) => {
@@ -574,6 +840,10 @@ export class DynamicsController {
 		record.wallMs = performance.now() - started;
 		this.runs = [record, ...this.runs].slice(0, HISTORY);
 		this.select(record.id);
+		if (replay?.seek !== undefined && record.run) {
+			this.player.pause();
+			this.player.seek(Math.min(replay.seek, record.run.time[record.run.time.length - 1]));
+		}
 		this.onRun?.(record);
 		return record;
 	}
@@ -585,6 +855,8 @@ export class DynamicsController {
 	/** Show run `id`: load the player and start playback. */
 	select(id: number): void {
 		this.currentRunId = id;
+		// A static protection study gives way to the run.
+		this.protection.study = null;
 		const r = this.current;
 		if (!r?.run) return;
 		const times = markers(r.events, this.f0).map((m) => m.t);
@@ -602,27 +874,33 @@ export class DynamicsController {
 
 	async #loadCtors(): Promise<void> {
 		if (this.layerCtors) return;
-		const { ScatterplotLayer, PathLayer } = await import('@deck.gl/layers');
+		const { ScatterplotLayer, PathLayer, TextLayer } = await import('@deck.gl/layers');
+		this.#textLayer = TextLayer;
 		this.layerCtors = { ScatterplotLayer, PathLayer };
 	}
 
-	// ---- map ----
+	// @block Map
+	// What the map shows of a run or the live view: the layers of the
+	// current frame and the tooltips of buses, branches and units.
 
 	/** The run the map draws: the selected run of the active case, else (in
 	 * Dynamics mode, before a run) that case at rest. */
 	readonly #shown = $derived.by(() => {
 		const local = this.app.activeLocal;
 		if (!local?.view) return null;
+		if (this.app.mode === 'dynamics' && this.live.run && this.live.localId === local.id)
+			return { record: null, run: this.live.run, local, live: true };
 		const r = this.current;
-		if (r?.run && r.localId === local.id) return { record: r, run: r.run, local };
+		if (r?.run && r.localId === local.id) return { record: r, run: r.run, local, live: false };
 		const a = this.attachments[local.id];
-		if (this.app.mode === 'dynamics' && a?.rest) return { record: null, run: a.rest, local };
+		if (this.app.mode === 'dynamics' && a?.rest)
+			return { record: null, run: a.rest, local, live: false };
 		return null;
 	});
 
 	/** The map shows the case at rest, before any run of it. */
 	get atRest(): boolean {
-		return !!this.#shown && !this.#shown.record;
+		return !!this.#shown && !this.#shown.record && !this.#shown.live;
 	}
 
 	readonly frame: DynamicsFrame | null = $derived.by(() => {
@@ -650,7 +928,8 @@ export class DynamicsController {
 					e.machineId.trim() === '1' ? String(e.bus) : `${e.bus}#${e.machineId.trim()}`,
 					e.at
 				);
-		return f.update(r ? this.player.t : 0, this.theme, tripped);
+		const t = this.#shown?.live ? f.run.time[f.run.time.length - 1] : r ? this.player.t : 0;
+		return f.update(t, this.theme, tripped);
 	});
 
 	readonly mapLayers: Layer[] = $derived.by(() => {
@@ -660,9 +939,40 @@ export class DynamicsController {
 		if (!f || !ctors || !s || this.app.mode !== 'dynamics') return [];
 		const hover = this.app.dynamicsHover;
 		const hoverBus = hover ? Number(hover.key.split('#')[0]) : null;
-		return f.layers(ctors, s.t, this.#shown?.record?.events ?? [], hoverBus, this.theme, (bus) =>
-			this.onBusClick?.(bus)
+		const layers = f.layers(
+			ctors,
+			s.t,
+			this.#shown?.record?.events ?? [],
+			hoverBus,
+			this.theme,
+			(bus) => this.onBusClick?.(bus)
 		);
+		// Experimental: the relays, their zones and what they switched.
+		const local = this.app.activeLocal;
+		const prot = this.protection.on;
+		const view = prot ? this.protection.view : null;
+		if (prot && view && local?.view)
+			layers.push(
+				...protectionLayers(
+					prot,
+					view,
+					this.protection.selectedRelay,
+					local.view.buses,
+					local.view.branches,
+					ctors,
+					(id) => {
+						this.protection.selectedRelay = this.protection.selectedRelay === id ? null : id;
+					}
+				)
+			);
+		// Experimental: a clickable chip per unit opens its editor.
+		if (this.app.preferences.experimental && this.#textLayer && local?.view && this.catalog.units.length)
+			layers.push(
+				unitGlyphLayer(this.#textLayer, this.catalog.units, local.view.buses, this.theme, (u) => {
+					this.inspectUnit = { caseId: local.id, key: catalogKey(u) };
+				})
+			);
+		return layers;
 	});
 
 	tooltip = (info: PickingInfo): { html: string } | null => {
@@ -671,9 +981,19 @@ export class DynamicsController {
 		const esc = (x: string) => x.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 		if (info.layer?.id === 'dyn-bus-v' && info.index >= 0) {
 			const v = f.vNow[info.index];
-			const when = this.atRest ? 'Before any event' : `Time ${this.player.t.toFixed(3)} s`;
+			const when = this.atRest ? 'Before any event' : `Time ${(this.summary?.t ?? this.player.t).toFixed(3)} s`;
 			return {
 				html: `<b>Bus ${f.busIds[info.index]}</b><br>Voltage ${v.toFixed(4)} pu<br>${when}`
+			};
+		}
+		if (info.layer?.id === RELAY_LAYER && info.object) {
+			const m = info.object as { id: string; state: string };
+			return { html: `<b>Relay ${esc(m.id)}</b><br>${esc(m.state)}<br>click to draw its zones` };
+		}
+		if (info.layer?.id === 'dyn-units' && info.object) {
+			const u = (info.object as { unit: import('@tellegen/engine').DyrGeneratorView }).unit;
+			return {
+				html: `<b>Unit ${u.bus} '${esc(u.machine_id.trim())}'</b><br>${esc(unitSummary(u))}<br>click to edit its models`
 			};
 		}
 		if (info.layer?.id === 'dyn-halos' && info.index >= 0) {
@@ -698,7 +1018,24 @@ export class DynamicsController {
 		return null;
 	};
 
-	// ---- experimental ----
+	// @block Experimental tools
+	// Behind Settings, Experimental features: small-signal modes, frequency
+	// responses and the export of a run.
+
+	async startLive() {
+		const a = this.active;
+		const l = this.app.activeLocal;
+		if (!a?.inspection || !l?.studyInputJson || this.running || !this.app.preferences.experimental) return;
+		this.live.open = true;
+		await this.live.start(l.id, {
+			moduleJson: l.studyInputJson,
+			dynText: this.dynText(a),
+			inspection: a.inspection,
+			loadModel: this.options.load_model ?? 'power_flow',
+			options: this.options,
+			protection: this.protection.schemeFor(l.id)
+		});
+	}
 
 	async computeModes(): Promise<void> {
 		const local = this.app.activeLocal;
@@ -728,6 +1065,16 @@ export class DynamicsController {
 		this.#modesAbort?.abort();
 	}
 
+	/** A small-signal analysis of the active case's prepared case (the
+	 * frequency responses of `request.bode`). */
+	async linearAnalysis(request: RmsLinearRequest): Promise<RmsLinearResult> {
+		const local = this.app.activeLocal;
+		if (!local || !this.active) throw new Error('no dynamic data attached');
+		if (this.running) throw new Error('A run is in progress.');
+		const c = await this.#case(local, this.#useValidation(local.id));
+		return c.linear(request);
+	}
+
 	/** Dynamic states of the active case's machines and their controls: the
 	 * size of a dense small-signal analysis, before network and plant states. */
 	get dynamicStates(): number {
@@ -748,7 +1095,8 @@ export class DynamicsController {
 					dt: r.dt,
 					output_step: r.run?.outputStep ?? 0.01,
 					load_model: r.options.load_model ?? 'power_flow',
-					events: allRmsEvents(r.events)
+					events: r.replay?.events ?? allRmsEvents(r.events),
+					...(r.protection ? { protection: r.protection } : {})
 				},
 				criteria: r.run?.screening.criteria ?? null
 			},

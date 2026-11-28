@@ -12,6 +12,8 @@
 //!
 //! Templates reproduce the compiled PSS/E models (`template`), so a user
 //! starts from a validated model and changes it.
+//!
+//! @block Controllers as block diagrams
 
 use std::collections::HashMap;
 
@@ -34,8 +36,9 @@ impl Slot {
     #[must_use]
     pub fn ports(self) -> &'static [&'static str] {
         match self {
-            // Terminal voltage, stabilizer signal, field current, voltage reference.
-            Self::Exciter => &["vt", "vs", "xad_ifd", "v_ref"],
+            // Terminal voltage, stabilizer signal, field current, voltage reference,
+            // and (experimental) active and reactive power on the machine base.
+            Self::Exciter => &["vt", "vs", "xad_ifd", "v_ref", "p", "q"],
             // Speed and power reference (the output is the mechanical torque).
             Self::Governor => &["omega", "p_ref"],
             // Speed, electrical power (system base), terminal voltage,
@@ -71,6 +74,7 @@ fn is_zero(v: &f64) -> bool {
 
 /// One block. Time constants sit in the mass matrix; zero makes the state
 /// algebraic.
+// @block Block types
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Block {
@@ -366,16 +370,29 @@ impl Block {
     }
 
     /// Steady-state output and states for input `u` (initial guess only;
-    /// an integrator's state is unknown and starts at its current value).
-    /// Limits are left out: the guess must move with the reference so the
-    /// secant search finds it; Newton then solves the limited model.
-    fn steady(&self, u: &[f64], port: f64, x: &mut [f64]) -> f64 {
+    /// an integrator's state is unknown and starts at its current value),
+    /// with the limits opened as far as `open` says ([`Opening`]). A
+    /// limited lag's limits are always left out: its state rests past them
+    /// as the unlimited lag's would ([`CompiledGraph::rest_at`]).
+    fn steady(&self, u: &[f64], port: f64, x: &mut [f64], open: Opening) -> f64 {
         match self {
             Self::Lag { k, .. } | Self::LagLimited { k, .. } => {
                 x[0] = k * u[0];
                 x[0]
             }
-            Self::Clamp { .. } | Self::ClampVar | Self::Gate { .. } => u[0],
+            Self::Clamp { .. } | Self::ClampVar | Self::Gate { .. } => {
+                if open.clamp == 1.0 {
+                    u[0]
+                } else {
+                    let c = self.eval(u, port, x, &mut [0.0; 2]);
+                    c + open.clamp * (u[0] - c)
+                }
+            }
+            Self::Max | Self::Min { .. } if open.select != 0.0 => {
+                let c = self.eval(u, port, x, &mut [0.0; 2]);
+                let mean = u.iter().sum::<f64>() / u.len() as f64;
+                c + open.select * (mean - c)
+            }
             Self::LeadLag { k, t1, t2 } => {
                 let r = if *t2 < f64::EPSILON { 0.0 } else { t1 / t2 };
                 x[0] = k * (1.0 - r) * u[0];
@@ -390,7 +407,15 @@ impl Block {
                 0.0
             }
             Self::Integrator { .. } => x[0],
-            Self::PiLimited { ki, .. } => ki * x[0],
+            Self::PiLimited { ki, min, max, .. } => {
+                let y = ki * x[0];
+                if open.clamp == 1.0 {
+                    y
+                } else {
+                    let c = y.clamp(*min, *max);
+                    c + open.clamp * (y - c)
+                }
+            }
             Self::Lag2 { k, .. } => {
                 x[0] = 0.0;
                 x[1] = k * u[0];
@@ -404,6 +429,32 @@ impl Block {
             _ => self.eval(u, port, x, &mut [0.0; 2]),
         }
     }
+}
+
+/// How far the steady state of a graph opens its limits: each clamp's
+/// output (clamps, gates, a PI's output limit) is `c + clamp (u − c)` with
+/// `c` the clamped value and `u` the input, each selection's (maximum,
+/// minimum) `c + select (m − c)` with `m` the mean of its inputs. `(0, 0)`
+/// is the graph as it is; a clamp at 1 is left out, a selection at 1 is
+/// the mean. Between them the steady map is continuous in both and, where
+/// a limit holds, still depends on what it limits.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Opening {
+    clamp: f64,
+    select: f64,
+}
+
+impl Opening {
+    /// Every limit as it is.
+    const EXACT: Self = Self {
+        clamp: 0.0,
+        select: 0.0,
+    };
+    /// The clamps left out, the selections as they are.
+    const CLAMPS_OPEN: Self = Self {
+        clamp: 1.0,
+        select: 0.0,
+    };
 }
 
 /// One node: an id, a block, its input node ids (in the block's order).
@@ -429,6 +480,7 @@ pub struct GraphNode {
 }
 
 /// A controller as a block diagram.
+// @block Block graph
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BlockGraph {
     pub slot: Slot,
@@ -441,6 +493,7 @@ pub struct BlockGraph {
 }
 
 /// A graph checked and ordered for evaluation.
+// @block Compiled graph
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledGraph {
     pub graph: BlockGraph,
@@ -463,6 +516,10 @@ pub(crate) struct CompiledGraph {
     terms: Vec<(f64, u32)>,
     /// The input nodes of the tape's products, minima and maxima.
     args: Vec<u32>,
+    /// Experimental: per state, the frozen mode of a non-windup limited lag
+    /// (held limits, see [`super::models::LimitMode`]), each carrying whether the
+    /// simulation holds its limits ([`Self::hold_limits`]).
+    modes: Vec<super::models::LimitMode>,
 }
 
 /// Graphs up to this many nodes evaluate on the stack.
@@ -755,13 +812,18 @@ impl CompiledGraph {
             tape: Vec::new(),
             terms: Vec::new(),
             args: Vec::new(),
+            modes: Vec::new(),
         };
+        compiled.modes = (0..compiled.n_states)
+            .map(|_| super::models::LimitMode::default())
+            .collect();
         compiled.compile()?;
         Ok(compiled)
     }
 
     /// Build the operation list ([`Op`]) from the blocks, their wiring and
     /// the evaluation order.
+    // @block Compile: order and states
     fn compile(&mut self) -> Result<(), String> {
         let at = |i: usize| u32::try_from(i).map_err(|_| "the graph is too large".to_owned());
         let n = self.blocks.len();
@@ -1031,6 +1093,72 @@ impl CompiledGraph {
         &x[self.offset[i]..self.offset[i] + self.blocks[i].n_states()]
     }
 
+    /// Experimental: with held limits, after a step from `from` to `x`, set the
+    /// state of each limited lag with a time constant back where its limits stop it.
+    /// A lag whose output is its clamped state goes back onto that clamp (as
+    /// [`super::models::Avr::project_limits`]). A lag whose output is the state
+    /// itself (`clamp_output: false`) has no clamp to fall back on, but its
+    /// non-windup limit lets the state neither cross a limit from within nor move
+    /// further out from beyond one, so a state a free step carried past a limit goes
+    /// back onto it, and one that started beyond goes back to where it started. The
+    /// mode that then binds holds it there. Returns whether a state moved.
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> bool {
+        let mut moved = false;
+        for op in &self.tape {
+            if let Op::StateClamped { x: s, min, max, .. } = *op {
+                let s = s as usize;
+                if self.mass[s] >= f64::EPSILON && x[s].is_finite() {
+                    let c = x[s].clamp(min, max);
+                    moved |= c != x[s];
+                    x[s] = c;
+                }
+            }
+        }
+        for (i, block) in self.blocks.iter().enumerate() {
+            if let Block::LagLimited {
+                min,
+                max,
+                clamp_output: false,
+                ..
+            } = *block
+            {
+                let s = self.offset[i];
+                if self.mass[s] >= f64::EPSILON && x[s].is_finite() && from[s].is_finite() {
+                    let c = x[s].clamp(min.min(from[s]), max.max(from[s]));
+                    moved |= c != x[s];
+                    x[s] = c;
+                }
+            }
+        }
+        moved
+    }
+
+    /// Hold the non-windup limits of the limited lags during a step or not
+    /// ([`super::models::held_limits`]).
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        for m in &mut self.modes {
+            m.hold(on);
+        }
+    }
+
+    /// Experimental: update the frozen modes of the non-windup limited lags after a
+    /// taken step; returns how many switched.
+    // @block Held limits of a graph
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        let mut n = 0;
+        for op in &self.tape {
+            if let Op::LagLimitedRate {
+                x: s, t, min, max, ..
+            } = *op
+            {
+                if t >= f64::EPSILON {
+                    n += usize::from(self.modes[s as usize].update(min, max));
+                }
+            }
+        }
+        n
+    }
+
     /// Slot output and state derivatives for the port values `ports`.
     pub(crate) fn eval(&self, x: &[f64], ports: &[f64], f: &mut [f64]) -> f64 {
         let n = self.blocks.len();
@@ -1062,6 +1190,7 @@ impl CompiledGraph {
 
     /// Every node's output into `y` (one per node) and the state
     /// derivatives into `f`: the operation list, once through.
+    // @block Evaluate the graph
     fn run(&self, x: &[f64], ports: &[f64], f: &mut [f64], y: &mut [f64]) {
         let (terms, args) = (self.terms.as_slice(), self.args.as_slice());
         let span = |first: u32, len: u32| first as usize..(first + len) as usize;
@@ -1178,8 +1307,22 @@ impl CompiledGraph {
                     min,
                     max,
                 } => {
-                    f[s as usize] =
-                        low_pass_nonwindup_mm(y[a as usize], x[s as usize], k, t, min, max).1;
+                    let lim = &self.modes[s as usize];
+                    f[s as usize] = if lim.held() && t >= f64::EPSILON {
+                        // Experimental: the limit in the mode of the step's start.
+                        let (u, xs) = (y[a as usize], x[s as usize]);
+                        let rate = k * u - xs;
+                        lim.record(xs, rate);
+                        match lim.mode() {
+                            super::models::LimitMode::FREE => rate,
+                            super::models::LimitMode::AT_MAX | super::models::LimitMode::AT_MIN => {
+                                0.0
+                            }
+                            _ => low_pass_nonwindup_mm(u, xs, k, t, min, max).1,
+                        }
+                    } else {
+                        low_pass_nonwindup_mm(y[a as usize], x[s as usize], k, t, min, max).1
+                    };
                 }
                 Op::IntegratorRate { a, x: s, k } => f[s as usize] = k * y[a as usize],
                 Op::Lag2Rate { a, x: s, k, t1 } => {
@@ -1232,10 +1375,11 @@ impl CompiledGraph {
     }
 
     /// Steady-state states and output for the port values (initial guess):
-    /// the blocks at rest, swept until the loop settles. Integrating states
-    /// (integrators, PI) keep the values in `x`. Also returns each node's
-    /// first input, which an integrating block needs at zero.
-    fn steady(&self, ports: &[f64], x: &mut [f64]) -> (f64, Vec<f64>) {
+    /// the blocks at rest with their limits opened as `open` says, swept
+    /// until the loop settles. Integrating states (integrators, PI) keep the
+    /// values in `x`. Also returns each node's first input, which an
+    /// integrating block needs at zero.
+    fn steady(&self, ports: &[f64], x: &mut [f64], open: Opening) -> (f64, Vec<f64>) {
         let n = self.blocks.len();
         let mut y = vec![0.0; n];
         let mut first = vec![0.0; n];
@@ -1251,7 +1395,7 @@ impl CompiledGraph {
                 let port = ports.get(self.port[i]).copied().unwrap_or(0.0);
                 let o = self.offset[i];
                 let nk = self.blocks[i].n_states();
-                let v = self.blocks[i].steady(&u[..k], port, &mut x[o..o + nk]);
+                let v = self.blocks[i].steady(&u[..k], port, &mut x[o..o + nk], open);
                 if v.is_finite() {
                     change = change.max((v - y[i]).abs());
                 }
@@ -1266,10 +1410,21 @@ impl CompiledGraph {
 
     /// Initial states and reference. The unknowns are the reference (if the
     /// slot has one) and the integrating states; at rest the output equals
-    /// `target` and every integrating block's input is zero. Solved by Newton
-    /// on the steady-state map (limits left out); the device's own Newton
-    /// then solves the limited model from here. `ports` holds the operating
-    /// point; its reference entry is replaced.
+    /// `target` and every integrating block's input is zero. `ports` holds
+    /// the operating point; its reference entry is replaced.
+    ///
+    /// Solved by Newton on the steady-state map, first with the clamps left
+    /// out, so the output moves with the reference wherever it starts. Where
+    /// that rest point does not hold with the limits in place (a clamp, a
+    /// floor or a dead zone acts at rest: a limiter's lead-lag below its
+    /// zero floor, a dead-zone integrator already past its limit), the
+    /// limits are closed step by step from there ([`Opening`]), the clamps
+    /// alone first and then the selections with them, each step's Newton
+    /// starting from the last; the rest point with every limit in place
+    /// replaces the first one if it is found. A limited lag's state may
+    /// rest past its limits and keeps them open throughout. The device's
+    /// own Newton then solves the limited model from here.
+    // @block Steady state of a graph
     pub(crate) fn initial_guess(&self, ports: &[f64], target: f64) -> (Vec<f64>, f64) {
         let r = self.graph.slot.reference_port();
         let integ: Vec<(usize, usize)> = (0..self.blocks.len())
@@ -1285,10 +1440,11 @@ impl CompiledGraph {
         let nz = shift + integ.len();
         let mut x = vec![0.0; self.n_states];
         if nz == 0 {
-            self.steady(ports, &mut x);
+            // Nothing to solve for: the blocks at rest with their limits.
+            self.steady(ports, &mut x, Opening::EXACT);
             return (x, 0.0);
         }
-        let residual = |z: &[f64], x: &mut Vec<f64>| -> Vec<f64> {
+        let residual = |z: &[f64], x: &mut Vec<f64>, open: Opening| -> Vec<f64> {
             let mut p = ports.to_vec();
             x.iter_mut().for_each(|v| *v = 0.0);
             if let Some(r) = r {
@@ -1297,7 +1453,7 @@ impl CompiledGraph {
             for (j, &(_, o)) in integ.iter().enumerate() {
                 x[o] = z[shift + j];
             }
-            let (out, first) = self.steady(&p, x);
+            let (out, first) = self.steady(&p, x, open);
             let mut g = Vec::with_capacity(nz);
             if r.is_some() {
                 g.push(out - target);
@@ -1305,12 +1461,60 @@ impl CompiledGraph {
             g.extend(integ.iter().map(|&(i, _)| first[i]));
             g
         };
+        let norm = |g: &[f64]| g.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
+        // Damped Newton on the steady map opened by `open`, from `z`.
+        let solve = |mut z: Vec<f64>, x: &mut Vec<f64>, open: Opening| -> Vec<f64> {
+            let mut g = residual(&z, x, open);
+            for _ in 0..50 {
+                let g0 = norm(&g);
+                if super::not_gt(g0, 1e-12) {
+                    break;
+                }
+                // Forward-difference Jacobian and a damped Newton step.
+                let mut jac = vec![0.0; nz * nz];
+                for c in 0..nz {
+                    let h = 1e-7 * z[c].abs().max(1.0);
+                    let keep = z[c];
+                    z[c] = keep + h;
+                    let g1 = residual(&z, x, open);
+                    z[c] = keep;
+                    for row in 0..nz {
+                        jac[row * nz + c] = (g1[row] - g[row]) / h;
+                    }
+                }
+                // A singular map (an output that does not depend on the
+                // reference, as GAST at its load limit) takes the regularized
+                // least-squares step, which leaves such an unknown where it is.
+                let Some(dz) = solve_small(jac.clone(), g.iter().map(|v| -v).collect(), nz)
+                    .or_else(|| least_squares_step(&jac, &g, nz))
+                else {
+                    break;
+                };
+                let mut step = 1.0;
+                let mut accepted = false;
+                for _ in 0..12 {
+                    let trial: Vec<f64> = z.iter().zip(&dz).map(|(a, d)| a + step * d).collect();
+                    let gt = residual(&trial, x, open);
+                    if norm(&gt) < g0 {
+                        z = trial;
+                        g = gt;
+                        accepted = true;
+                        break;
+                    }
+                    step *= 0.5;
+                }
+                if !accepted {
+                    break;
+                }
+            }
+            z
+        };
         let default = if target.is_finite() && target != 0.0 {
             target
         } else {
             1.0
         };
-        let mut z: Vec<f64> = r
+        let z0: Vec<f64> = r
             .map(|r| ports[r])
             .into_iter()
             .chain(integ.iter().map(|&(i, _)| {
@@ -1319,51 +1523,27 @@ impl CompiledGraph {
                     .map_or(default, |[a, b]| a * target + b)
             }))
             .collect();
-        let norm = |g: &[f64]| g.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
-        let mut g = residual(&z, &mut x);
-        for _ in 0..50 {
-            let g0 = norm(&g);
-            if super::not_gt(g0, 1e-12) {
-                break;
-            }
-            // Forward-difference Jacobian and a damped Newton step.
-            let mut jac = vec![0.0; nz * nz];
-            for c in 0..nz {
-                let h = 1e-7 * z[c].abs().max(1.0);
-                let keep = z[c];
-                z[c] = keep + h;
-                let g1 = residual(&z, &mut x);
-                z[c] = keep;
-                for row in 0..nz {
-                    jac[row * nz + c] = (g1[row] - g[row]) / h;
+        let z = solve(z0, &mut x, Opening::CLAMPS_OPEN);
+        let at_rest = |g: &[f64], tol: f64| g.iter().all(|v| v.is_finite()) && norm(g) <= tol;
+        if !at_rest(&residual(&z, &mut x, Opening::EXACT), 1e-12) {
+            // A limit acts at rest: close the limits step by step.
+            const CLOSING: [f64; 11] =
+                [1.0, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01, 1e-3, 1e-4, 1e-5, 0.0];
+            for selections in [false, true] {
+                let mut zc = z.clone();
+                for a in CLOSING {
+                    let open = Opening {
+                        clamp: a,
+                        select: if selections { a } else { 0.0 },
+                    };
+                    zc = solve(zc, &mut x, open);
                 }
-            }
-            // A singular map (an output that does not depend on the
-            // reference, as GAST at its load limit) takes the regularized
-            // least-squares step, which leaves such an unknown where it is.
-            let Some(dz) = solve_small(jac.clone(), g.iter().map(|v| -v).collect(), nz)
-                .or_else(|| least_squares_step(&jac, &g, nz))
-            else {
-                break;
-            };
-            let mut step = 1.0;
-            let mut accepted = false;
-            for _ in 0..12 {
-                let trial: Vec<f64> = z.iter().zip(&dz).map(|(a, d)| a + step * d).collect();
-                let gt = residual(&trial, &mut x);
-                if norm(&gt) < g0 {
-                    z = trial;
-                    g = gt;
-                    accepted = true;
-                    break;
+                if at_rest(&residual(&zc, &mut x, Opening::EXACT), 1e-9) {
+                    return (x, if r.is_some() { zc[0] } else { 0.0 });
                 }
-                step *= 0.5;
-            }
-            if !accepted {
-                break;
             }
         }
-        residual(&z, &mut x);
+        residual(&z, &mut x, Opening::CLAMPS_OPEN);
         (x, if r.is_some() { z[0] } else { 0.0 })
     }
 }
@@ -1979,6 +2159,13 @@ pub fn template_json(dyr_text: &str, line: usize) -> Result<String, String> {
         .iter()
         .find(|r| r.line() == line)
         .ok_or_else(|| format!("no record starts on line {line}"))?;
+    // Experimental: ESST1A, ESAC6A, PSS2B, OELIT, UELPQ.
+    let name = rec.model_name().trim().to_ascii_uppercase();
+    if super::ext_models::ext_role(&name).is_some() {
+        let p = super::ext_models::numbers(&name, rec.parameters())?;
+        let graph = super::ext_models::record_template(&name, &p)?;
+        return serde_json::to_string(&graph).map_err(|e| e.to_string());
+    }
     let model = powerio::typed_model(rec).map_err(|e| e.to_string())?;
     let graph =
         template(&model).ok_or_else(|| format!("{} has no block template yet", model.name()))?;
@@ -2332,5 +2519,297 @@ mod tests {
         assert!((f[0] - (2.0 * 0.7 - 0.3)).abs() < 1e-15);
         let (x, r) = c.initial_guess(&[1.0, 0.0, 0.0, 1.0], 1.6);
         assert!((r - 0.8).abs() < 1e-10 && (x[0] - 1.6).abs() < 1e-10);
+    }
+
+    /// An exciter whose feedback rests below its clamp's zero floor next to
+    /// the lower limit of the regulator: at rest (`Efd = 2`) the feedback
+    /// `2 (Efd − 2.05)` is −0.1, held at 0, so the regulator's input is
+    /// `50 (V_ref − Vt) = 2` within `[1.95, 3]` and `V_ref = 1.04`. With the
+    /// floor left out the regulator's input would rest at 1.9, below its
+    /// limit, where the field voltage could not rest at 2.
+    #[test]
+    fn steady_state_respects_a_clamp_floor_next_to_a_limit() {
+        let graph = BlockGraph {
+            slot: Slot::Exciter,
+            name: String::new(),
+            nodes: vec![
+                input("vt", "vt"),
+                input("v_ref", "v_ref"),
+                node(
+                    "e",
+                    Block::Sum {
+                        signs: vec![1.0, -1.0],
+                    },
+                    &["v_ref", "vt"],
+                ),
+                node("a", Block::Gain { k: 50.0 }, &["e"]),
+                node("lim", Block::Const { value: 2.05 }, &[]),
+                node(
+                    "over",
+                    Block::Sum {
+                        signs: vec![1.0, -1.0],
+                    },
+                    &["Efd", "lim"],
+                ),
+                node(
+                    "fb_ll",
+                    Block::LeadLag {
+                        k: 2.0,
+                        t1: 0.1,
+                        t2: 0.2,
+                    },
+                    &["over"],
+                ),
+                node("fb", Block::Clamp { min: 0.0, max: 1.0 }, &["fb_ll"]),
+                node(
+                    "r_in",
+                    Block::Sum {
+                        signs: vec![1.0, -1.0],
+                    },
+                    &["a", "fb"],
+                ),
+                node(
+                    "r",
+                    Block::Clamp {
+                        min: 1.95,
+                        max: 3.0,
+                    },
+                    &["r_in"],
+                ),
+                node(
+                    "err",
+                    Block::Sum {
+                        signs: vec![1.0, -1.0],
+                    },
+                    &["r", "Efd"],
+                ),
+                node("Efd", Block::Integrator { k: 1.0 }, &["err"]),
+            ],
+            output: "Efd".into(),
+        };
+        let c = CompiledGraph::new(&graph).unwrap();
+        let ports = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let (x, v_ref) = c.initial_guess(&ports, 2.0);
+        assert!((v_ref - 1.04).abs() < 1e-12, "V_ref {v_ref}");
+        let mut p = ports;
+        p[3] = v_ref;
+        let mut f = vec![0.0; c.n_states()];
+        let efd = c.eval(&x, &p, &mut f);
+        assert!((efd - 2.0).abs() < 1e-12, "Efd {efd}");
+        assert!(f.iter().all(|v| v.abs() < 1e-12), "{f:?}");
+    }
+
+    /// A stabilizer whose input clamp holds at rest (power 0.8 against a
+    /// limit of 0.5): its washout rests at the clamped input, so every
+    /// derivative is zero at the guess.
+    #[test]
+    fn steady_state_of_a_stabilizer_holds_its_input_clamp() {
+        let graph = BlockGraph {
+            slot: Slot::Stabilizer,
+            name: String::new(),
+            nodes: vec![
+                input("pe", "pe"),
+                node(
+                    "u",
+                    Block::Clamp {
+                        min: -0.5,
+                        max: 0.5,
+                    },
+                    &["pe"],
+                ),
+                node("w", Block::Washout { k: 2.0, t: 2.0 }, &["u"]),
+                node("y", Block::Lag { k: 1.0, t: 0.05 }, &["w"]),
+            ],
+            output: "y".into(),
+        };
+        let c = CompiledGraph::new(&graph).unwrap();
+        let ports = [1.0, 0.8, 1.0, 0.8];
+        let (x, _) = c.initial_guess(&ports, 0.0);
+        let mut f = vec![0.0; c.n_states()];
+        let y = c.eval(&x, &ports, &mut f);
+        assert_eq!(y, 0.0);
+        assert!(f.iter().all(|v| v.abs() < 1e-15), "{f:?}");
+    }
+    /// A held limit's mode before its first update.
+    const UNSET: u8 = 255;
+
+    /// Three limited lags on one input of `slot` (from its port `port`),
+    /// within `[0, 1]`: `a` with a time constant and its output the clamped
+    /// state, `b` without a time constant (algebraic), `c` with a time
+    /// constant and its output the state itself.
+    fn limited_lags(slot: Slot, port: &str) -> CompiledGraph {
+        let lag = |t: f64, clamp_output: bool| Block::LagLimited {
+            k: 1.0,
+            t,
+            min: 0.0,
+            max: 1.0,
+            clamp_output,
+        };
+        CompiledGraph::new(&BlockGraph {
+            slot,
+            name: "limited lags".into(),
+            nodes: vec![
+                input("u", port),
+                node("a", lag(0.5, true), &["u"]),
+                node("b", lag(0.0, true), &["u"]),
+                node("c", lag(0.5, false), &["u"]),
+                node(
+                    "y",
+                    Block::Sum {
+                        signs: vec![1.0; 3],
+                    },
+                    &["a", "b", "c"],
+                ),
+            ],
+            output: "y".into(),
+        })
+        .unwrap()
+    }
+
+    /// After a step, a graph sets the state of each limited lag with a time
+    /// constant whose output is its clamped state back onto that clamp (as
+    /// [`super::super::models::Avr::project_limits`]); an algebraic lag is
+    /// left alone, and so is a lag whose output is the state itself while it
+    /// stays on the side of its limit it started from or does not move further
+    /// out. The clamp is the one set at rest (widened to a state resting past
+    /// its limit). The exciter, governor and stabilizer graphs do the same.
+    #[test]
+    fn project_limits_puts_clamped_lags_back_on_their_clamp() {
+        let c = limited_lags(Slot::Exciter, "v_ref");
+        assert_eq!(c.state_names(), ["a", "b", "c"]);
+        let mut x = [1.3, 1.3, 1.3];
+        assert!(c.project_limits(&x.clone(), &mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+        let mut x = [-0.2, -0.2, -0.2];
+        assert!(c.project_limits(&x.clone(), &mut x));
+        assert_eq!(x, [0.0, -0.2, -0.2]);
+        let mut x = [0.5, 2.0, 2.0];
+        assert!(!c.project_limits(&x.clone(), &mut x));
+        assert_eq!(x, [0.5, 2.0, 2.0]);
+        let mut x = [f64::NAN, 0.0, 0.0];
+        assert!(!c.project_limits(&x.clone(), &mut x));
+        // At rest past its limit: the clamp widened to the state.
+        let mut rest = c.clone();
+        rest.rest_at(&[1.2, 0.0, 0.0], 0.0);
+        let mut x = [1.2, 0.0, 0.0];
+        assert!(!rest.project_limits(&x.clone(), &mut x));
+        let mut x = [1.3, 0.0, 0.0];
+        assert!(rest.project_limits(&x.clone(), &mut x));
+        assert_eq!(x[0], 1.2);
+
+        use super::super::models::{Avr, Governor, Stabilizer};
+        // A step from within the limits that carries the lags past them: the
+        // lag whose output is its state goes back onto the limit too (state c).
+        let from = [0.9, 0.9, 0.9];
+        let mut x = [1.3, 1.3, 1.3];
+        assert!(c.project_limits(&from, &mut x));
+        assert_eq!(x, [1.0, 1.3, 1.0]);
+        let mut x = [-0.2, -0.2, -0.2];
+        assert!(c.project_limits(&[0.1; 3], &mut x));
+        assert_eq!(x, [0.0, -0.2, 0.0]);
+        // Within the limits it is left alone.
+        let mut x = [0.95, 0.95, 0.95];
+        assert!(!c.project_limits(&from, &mut x));
+        assert_eq!(x, [0.95, 0.95, 0.95]);
+        // Beyond a limit at the step's start (at rest past it): it may come
+        // back towards the limit, but not move further out.
+        let mut x = [1.0, 0.0, 1.15];
+        assert!(!c.project_limits(&[1.0, 0.0, 1.2], &mut x));
+        assert_eq!(x[2], 1.15);
+        let mut x = [1.0, 0.0, 1.25];
+        assert!(c.project_limits(&[1.0, 0.0, 1.2], &mut x));
+        assert_eq!(x[2], 1.2);
+        let mut x = [0.0, 0.0, -0.3];
+        assert!(c.project_limits(&[0.0, 0.0, -0.25], &mut x));
+        assert_eq!(x[2], -0.25);
+        let mut x = [0.5, 0.0, 1.3];
+        assert!(!c.project_limits(&[0.5, 0.0, f64::NAN], &mut x));
+        // The exciter, governor and stabilizer graphs alike.
+        for slot in [
+            Avr::Graph(Box::new(c.clone())).project_limits(&from, &mut [1.3; 3]),
+            Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")))
+                .project_limits(&from, &mut [0.9, 0.9, 1.3]),
+            Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")))
+                .project_limits(&from, &mut [0.9, 0.9, 1.3]),
+        ] {
+            assert!(slot);
+        }
+
+        let mut x = [1.3, 1.3, 1.3];
+        assert!(Avr::Graph(Box::new(c)).project_limits(&x.clone(), &mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+        let mut x = [1.3, 1.3, 1.3];
+        let gov = Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")));
+        assert!(gov.project_limits(&x.clone(), &mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+        let mut x = [1.3, 1.3, 1.3];
+        let pss = Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")));
+        assert!(pss.project_limits(&x.clone(), &mut x));
+        assert_eq!(x, [1.0, 1.3, 1.3]);
+    }
+
+    /// A graph updates the held-limit mode of each limited lag with a time
+    /// constant (clamped output or not) from its last evaluation and counts
+    /// the switches (binding from unset is none); an algebraic lag's mode
+    /// stays unset. The exciter, governor and stabilizer graphs count the
+    /// same.
+    #[test]
+    fn update_limit_modes_counts_switches_of_lags_with_a_time_constant() {
+        use super::super::models::{Avr, Governor, LimitMode, Stabilizer};
+        let c = limited_lags(Slot::Exciter, "v_ref");
+        assert_eq!(c.update_limit_modes(), 0, "nothing recorded");
+        for m in &c.modes {
+            m.record(1.0, 0.5);
+        }
+        assert_eq!(c.update_limit_modes(), 0);
+        let modes = |c: &CompiledGraph| c.modes.iter().map(LimitMode::mode).collect::<Vec<_>>();
+        assert_eq!(modes(&c), [LimitMode::AT_MAX, UNSET, LimitMode::AT_MAX]);
+        for m in &c.modes {
+            m.record(1.0, -0.5);
+        }
+        assert_eq!(c.update_limit_modes(), 2);
+        assert_eq!(modes(&c), [LimitMode::FREE, UNSET, LimitMode::FREE]);
+
+        for m in &c.modes {
+            m.record(0.0, -0.5);
+        }
+        let avr = Avr::Graph(Box::new(c.clone()));
+        assert_eq!(avr.update_limit_modes(), 2);
+        let gov = Governor::Graph(Box::new(limited_lags(Slot::Governor, "p_ref")));
+        let pss = Stabilizer::Graph(Box::new(limited_lags(Slot::Stabilizer, "omega")));
+        let (Governor::Graph(g), Stabilizer::Graph(p)) = (&gov, &pss) else {
+            unreachable!()
+        };
+        let record = |y: f64, rate: f64| {
+            for m in g.modes.iter().chain(&p.modes) {
+                m.record(y, rate);
+            }
+        };
+        record(0.0, -0.5);
+        assert_eq!(gov.update_limit_modes(), 0);
+        assert_eq!(pss.update_limit_modes(), 0);
+        record(0.0, 0.5);
+        assert_eq!(gov.update_limit_modes(), 2);
+        assert_eq!(pss.update_limit_modes(), 2);
+    }
+
+    /// Before the first update every limited lag's mode is unset and the
+    /// graph evaluates as without held limits (the non-windup lag holds a
+    /// state at a limit only while the input pushes it further), whether or
+    /// not the limits are held in this process.
+    #[test]
+    fn unset_limit_modes_evaluate_as_without_freezing() {
+        let c = limited_lags(Slot::Exciter, "v_ref");
+        let mut f = [0.0; 3];
+        for (x, u, expected) in [
+            ([0.5, 0.5, 0.5], 2.0, [1.5, 0.5, 1.5]),
+            ([1.0, 1.0, 1.0], 2.0, [0.0, 0.0, 0.0]),
+            ([1.0, 1.0, 1.0], 0.4, [-0.6, -0.6, -0.6]),
+            ([0.0, 0.0, 0.0], -1.0, [0.0, 0.0, 0.0]),
+        ] {
+            c.eval(&x, &[1.0, 0.0, 0.0, u], &mut f);
+            assert_eq!(f, expected, "x {x:?}, u {u}");
+        }
+        assert!(c.modes.iter().all(|m| m.mode() == UNSET));
     }
 }

@@ -7,6 +7,8 @@
 //! `[Vr(1..n); Vi(1..n); device states]`, the bus rows are the algebraic
 //! current balance `Σ I_injected − Y V = 0` in system per unit, and each
 //! generator adds its stator current to its bus rows.
+//!
+//! @block Differential-algebraic system
 
 use std::collections::HashMap;
 
@@ -22,6 +24,7 @@ use crate::model::AcNetwork;
 pub(crate) type C64 = Complex<f64>;
 
 /// One synchronous generator with its controls.
+// @block Generating unit
 #[derive(Clone, Debug)]
 pub(crate) struct GenDevice {
     pub bus_number: usize,
@@ -38,10 +41,17 @@ pub(crate) struct GenDevice {
     pub pss: Stabilizer,
     pub v_ref: f64,
     pub p_ref: f64,
+    /// Experimental: external signal at the summing point, added to the
+    /// stabilizer output (`InputSignal::Vs`).
+    pub vs_ext: f64,
     /// First global state index.
     pub offset: usize,
     /// States frozen by a generator trip.
     pub tripped: Option<Vec<f64>>,
+    /// Experimental: under-excitation limiter `[q_lim, gain]`, see [`set_uel`].
+    pub uel: Option<[f64; 2]>,
+    /// Experimental: load compensator of the AVR input `[rc, xc]`, see [`set_vcomp`].
+    pub vcomp: Option<[f64; 3]>,
 }
 
 /// What a generator evaluation reports besides its derivatives.
@@ -62,6 +72,12 @@ impl GenDevice {
             + self.avr.n_states()
             + self.gov.n_states()
             + self.pss.n_states()
+            + self.lag_states()
+    }
+
+    /// Experimental: the compensator's lag state (one with a time constant, else none).
+    pub(crate) fn lag_states(&self) -> usize {
+        usize::from(self.vcomp.is_some_and(|c| c[2] > 0.0))
     }
 
     /// Local offsets of `(machine, shaft, avr, governor, stabilizer)`.
@@ -82,6 +98,9 @@ impl GenDevice {
         names.extend(self.avr.state_names().iter().map(|s| (*s).to_owned()));
         names.extend(self.gov.state_names().iter().map(|s| (*s).to_owned()));
         names.extend(self.pss.state_names().iter().map(|s| (*s).to_owned()));
+        if self.lag_states() > 0 {
+            names.push("vcomp_lag".into());
+        }
         names
     }
 
@@ -95,7 +114,8 @@ impl GenDevice {
         let [_, _, a, g, p] = self.layout();
         self.avr.mass(&mut m[a..g]);
         self.gov.mass(&mut m[g..p]);
-        self.pss.mass(&mut m[p..]);
+        let pe = p + self.pss.n_states();
+        self.pss.mass(&mut m[p..pe]);
         if self.tripped.is_some() {
             // A frozen state is algebraic: `0 = x_trip − x`.
             m.iter_mut().for_each(|v| *v = 0.0);
@@ -131,9 +151,19 @@ impl GenDevice {
         let vt = mag(vr, vi);
         let pe = alg.te * self.scale;
         let mut scratch = vec![0.0; n];
-        let vs = self
-            .pss
-            .eval(&x[p..n], omega, pe, vt, self.scale, &mut scratch[p..n]);
+        let (ir, ii) = super::models::dq_ri(x[s], alg.id, alg.iq);
+        let vs = self.summing_point(
+            self.pss.eval(
+                &x[p..p + self.pss.n_states()],
+                omega,
+                pe,
+                vt,
+                self.scale,
+                &mut scratch[p..p + self.pss.n_states()],
+            ),
+            vt,
+            vi * ir - vr * ii,
+        );
         let mut out = Vec::new();
         let mut push = |slot: &str, gr: &super::graph::CompiledGraph, xs: &[f64], ports: &[f64]| {
             for (id, v) in gr.node_ids().zip(gr.signals(xs, ports)) {
@@ -141,7 +171,26 @@ impl GenDevice {
             }
         };
         if let Avr::Graph(gr) = &self.avr {
-            push("exciter", gr, &x[a..g], &[vt, vs, alg.xad_ifd, self.v_ref]);
+            push(
+                "exciter",
+                gr,
+                &x[a..g],
+                &[
+                    avr_vt(
+                        self.vcomp,
+                        vr,
+                        vi,
+                        ir,
+                        ii,
+                        if self.lag_states() > 0 { x[n - 1] } else { 0.0 },
+                    ),
+                    vs,
+                    alg.xad_ifd,
+                    self.v_ref,
+                    vr * ir + vi * ii,
+                    vi * ir - vr * ii,
+                ],
+            );
         }
         if let Governor::Graph(gr) = &self.gov {
             push("governor", gr, &x[g..p], &[omega, self.p_ref]);
@@ -150,11 +199,27 @@ impl GenDevice {
             push(
                 "stabilizer",
                 gr,
-                &x[p..n],
+                &x[p..p + self.pss.n_states()],
                 &[omega, pe, vt, pe / self.scale],
             );
         }
         out
+    }
+
+    /// The signal at the regulator's summing point: the stabilizer output
+    /// `vs_pss`, the external signal and, experimental, the under-excitation
+    /// limiter of the summing-point type (IEEE Std 421.5, UEL1/UEL2 reduced
+    /// to its proportional path) at the terminal voltage `vt` and the
+    /// reactive power `q` (machine base). The limit is `-q_lim Vt^2`;
+    /// absorption beyond it raises the voltage error by `gain` times the
+    /// excess. The initialization sets the voltage reference against this
+    /// whole signal, so a unit already beyond its limit starts at rest.
+    pub(crate) fn summing_point(&self, vs_pss: f64, vt: f64, q: f64) -> f64 {
+        let vs = vs_pss + self.vs_ext;
+        match self.uel {
+            Some([q_lim, gain]) => vs + gain * (-q_lim * vt * vt - q).max(0.0),
+            None => vs,
+        }
     }
 
     /// Evaluate the device right-hand side `f` (local) and its outputs.
@@ -183,20 +248,40 @@ impl GenDevice {
         let (fs, rest) = rest.split_at_mut(2);
         let (fa, rest) = rest.split_at_mut(g - a);
         let (fg, fp) = rest.split_at_mut(p - g);
-        let vs = self
-            .pss
-            .eval(&x[p..n], omega, alg.te * self.scale, vt, self.scale, fp);
+        let (fp, fc) = fp.split_at_mut(self.pss.n_states());
+        let vs_pss = self.pss.eval(
+            &x[p..p + self.pss.n_states()],
+            omega,
+            alg.te * self.scale,
+            vt,
+            self.scale,
+            fp,
+        );
         let (ir, ii) = dq_ri_sc(sc, alg.id, alg.iq);
+        let vs = self.summing_point(vs_pss, vt, vi * ir - vr * ii);
         let vf = self.avr.eval(
             &x[a..g],
             super::models::AvrIn {
-                vt,
+                vt: avr_vt(
+                    self.vcomp,
+                    vr,
+                    vi,
+                    ir,
+                    ii,
+                    if self.lag_states() > 0 { x[n - 1] } else { 0.0 },
+                ),
                 vs,
                 xad_ifd: alg.xad_ifd,
                 v_ref: self.v_ref,
+                p: vr * ir + vi * ii,
+                q: vi * ir - vr * ii,
             },
             fa,
         );
+        if let (Some([_, _, t]), 1) = (self.vcomp, self.lag_states()) {
+            // the compensator's lag of the reactive current (machine base)
+            fc[0] = ((vi * ir - vr * ii) / vt.max(1e-3) - x[n - 1]) / t;
+        }
         let tm = self.gov.eval(&x[g..p], omega, self.p_ref, fg);
         self.machine.ode(&x[m..s], &alg, vf, fm);
         let (fd, fw) = self.shaft.ode(omega, omega_sys, alg.te, tm, self.f0);
@@ -214,6 +299,7 @@ impl GenDevice {
 
 /// A Thevenin source `E` behind `Z`, as a Norton equivalent: `y` enters the
 /// admittance matrix and `y E` is a constant injection.
+// @block Thevenin source
 #[derive(Clone, Debug)]
 pub(crate) struct Source {
     pub bus_number: usize,
@@ -237,6 +323,7 @@ pub(crate) struct Source {
 /// current (`γ = 1`), constant power (`γ = 0`) and the other exponents are
 /// the nonlinear current `I = (P − jQ) V / |V|²` ([`Self::nonlinear_current`]),
 /// with their low-voltage behaviour set by [`LowVoltage`].
+// @block Static load
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BusLoad {
     pub v0: f64,
@@ -253,6 +340,9 @@ pub(crate) struct BusLoad {
     /// conversion, no load scaling, and no `pl`/`ql` channel.
     pub u_p: f64,
     pub u_q: f64,
+    /// Experimental (load recovery): the slowly following voltage the
+    /// constant-power part refers to; 0 = not started (the power flow voltage).
+    pub vf: f64,
 }
 
 /// A load part `s0 (V / v0)^gamma` with an exponent other than 0, 1 or 2.
@@ -282,6 +372,18 @@ pub(crate) enum LowVoltage {
     Floor,
 }
 
+/// Experimental: `TELLEGEN_PQBRAK_SMOOTH=<d>` (pu) rounds off the PQBRAK breakpoint
+/// over `Vb ± d` (see [`part_weight`]); unset or 0, the plain break.
+fn pqbrak_smooth() -> f64 {
+    static D: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *D.get_or_init(|| {
+        std::env::var("TELLEGEN_PQBRAK_SMOOTH")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0)
+    })
+}
+
 /// `w(V) = (u / v0)^γ / u²` and `(dw/dV) / V` for a part with exponent
 /// `gamma`: the part's current is `P0 w(V) V` (rotated by `−jQ0`). `u` is the
 /// magnitude the law is evaluated at ([`LowVoltage`]).
@@ -300,8 +402,18 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
             }
         }
         LowVoltage::Break(vb) => {
-            let vb = vb.min(v0);
-            if vm > vb {
+            // Experimental: a negative value is relative to the bus's
+            // power flow voltage (-0.95: the break at 95 % of it).
+            let vb = if vb < 0.0 { -vb * v0 } else { vb.min(v0) };
+            let d = pqbrak_smooth();
+            // Only where the start lies above the band, so every bus starts on its own law.
+            if d > 0.0 && v0 - vb >= d && (vm - vb).abs() < d {
+                // Experimental: `u = max(V, Vb)` rounded off over `Vb ± d` by a
+                // parabola, so `u` and its slope are continuous (the plain break flips the
+                // current's slope at `Vb`); `u` is at most `d / 4` above the plain one, at `Vb`.
+                let z = vm - vb + d;
+                (vb + z * z / (4.0 * d), z / (2.0 * d) / vm)
+            } else if vm > vb {
                 (vm, 1.0 / vm)
             } else {
                 (vb, 0.0)
@@ -324,6 +436,176 @@ fn part_weight(gamma: f64, vm: f64, v0: f64, lv: LowVoltage) -> (f64, f64) {
     (w, (slope / (v0 * u * u) - 2.0 * w / u) * du)
 }
 
+// @block Model switches
+// Experimental: model options a native caller sets before it builds a
+// system: load saturation, load recovery and the one-sided rise of load
+// reactive power, under-excitation limiters and AVR load compensators by bus,
+// the voltage exponent of plants' reactive set point, the GAST valve rate
+// limit, and HVDC links in AC emulation. Each is off unless set, and the
+// browser engine never sets them.
+
+// Experimental: saturation of the transformers behind a load above a knee voltage.
+// A load of active power P0 draws the extra reactive power `c P0 ((V - v_knee) / 0.1)^2` for
+// `V > v_knee` (pu of nominal). Off (c = 0) unless set.
+static LOAD_SAT_C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LOAD_SAT_VK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// Experimental: load recovery. The constant-power part of a load draws
+// `P (V / Vf)^alpha`, where `Vf` follows the bus voltage with the time constant `t`: in a fast
+// change the demand follows the voltage with the exponent `alpha`, and returns to its power
+// with `t` (tap changers, thermostats, converters). Off (alpha = 0) unless set.
+static LOAD_DYN_ALPHA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LOAD_DYN_T: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the load recovery (experimental). `alpha = 0` switches it off; with
+/// `alpha > 0` and `t <= 0` the demand follows the voltage with the exponent
+/// `alpha` and does not recover.
+pub fn set_load_recovery(alpha: f64, t: f64) {
+    LOAD_DYN_ALPHA.store(alpha.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    LOAD_DYN_T.store(t.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+// Experimental: under-excitation limiters by bus number, `[q_lim, gain]`: reactive power
+// absorption limit in pu of MBASE at 1 pu terminal voltage and the limiter gain (pu voltage error per pu
+// of reactive power beyond the limit).
+// Experimental: HVDC links in AC emulation, `(from bus, to bus, K in MW/degree, limit in MW)`
+// by bus number; see [`AcEmulation`].
+static HVDC_EMULATION: std::sync::RwLock<Vec<(usize, usize, f64, f64)>> =
+    std::sync::RwLock::new(Vec::new());
+
+/// Sets the HVDC links in AC emulation (experimental): `(from bus, to bus, K MW/degree,
+/// limit MW)`. Call before the system is built.
+pub fn set_hvdc_emulation(links: Vec<(usize, usize, f64, f64)>) {
+    *HVDC_EMULATION.write().expect("hvdc emulation lock") = links;
+}
+
+/// Experimental: the AC-emulation part of an HVDC link between two AC buses. The link's
+/// set point (its converters, as the case models them) is left as it is; on top, the link moves
+/// `dP = K (dtheta - dtheta0)` from `from` to `to`, `dtheta` the angle of `from` against `to` and
+/// `dtheta0` that angle at the start (so the start is unchanged), limited to `+-p_max`. As an AC line
+/// of reactance `1/K` would, for the active power. Lossless, no own dynamics (the converters'
+/// control is fast against electromechanical swings).
+// @block HVDC link in AC emulation
+#[derive(Clone, Debug)]
+pub(crate) struct AcEmulation {
+    pub from: usize,
+    pub to: usize,
+    /// pu power per radian.
+    pub k: f64,
+    pub p_max: f64,
+    pub dtheta0: f64,
+}
+
+impl AcEmulation {
+    /// The power moved from `from` to `to` (pu) at the given voltages.
+    pub(crate) fn power(&self, vr_f: f64, vi_f: f64, vr_t: f64, vi_t: f64) -> f64 {
+        let dtheta = (vi_f * vr_t - vr_f * vi_t).atan2(vr_f * vr_t + vi_f * vi_t);
+        (self.k * (dtheta - self.dtheta0)).clamp(-self.p_max, self.p_max)
+    }
+
+    /// The currents injected at `from` and `to` (real, imaginary), for active power only.
+    pub(crate) fn currents(&self, vr_f: f64, vi_f: f64, vr_t: f64, vi_t: f64) -> [f64; 4] {
+        let p = self.power(vr_f, vi_f, vr_t, vi_t);
+        let (mf, mt) = (
+            (vr_f * vr_f + vi_f * vi_f).max(1e-6),
+            (vr_t * vr_t + vi_t * vi_t).max(1e-6),
+        );
+        [-p * vr_f / mf, -p * vi_f / mf, p * vr_t / mt, p * vi_t / mt]
+    }
+}
+
+static UEL: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 2]>>> =
+    std::sync::RwLock::new(None);
+
+/// Sets the under-excitation limiters (experimental). Call before the system is built.
+pub fn set_uel(map: std::collections::HashMap<usize, [f64; 2]>) {
+    *UEL.write().expect("uel lock") = Some(map);
+}
+
+pub(crate) fn uel_of(bus_number: usize) -> Option<[f64; 2]> {
+    UEL.read()
+        .expect("uel lock")
+        .as_ref()
+        .and_then(|m| m.get(&bus_number).copied())
+}
+
+// Experimental: load compensators of the AVR input by bus number, `[rc, xc]` in pu of MBASE
+// (IEEE Std 421.5, Vc = |Vt + (Rc + j Xc) It|): positive values give reactive droop.
+static VCOMP: std::sync::RwLock<Option<std::collections::HashMap<usize, [f64; 3]>>> =
+    std::sync::RwLock::new(None);
+
+/// Sets the AVR load compensators (experimental). Call before the system is built.
+pub fn set_vcomp(map: std::collections::HashMap<usize, [f64; 3]>) {
+    *VCOMP.write().expect("vcomp lock") = Some(map);
+}
+
+pub(crate) fn vcomp_of(bus_number: usize) -> Option<[f64; 3]> {
+    VCOMP
+        .read()
+        .expect("vcomp lock")
+        .as_ref()
+        .and_then(|m| m.get(&bus_number).copied())
+}
+
+/// The voltage the regulator sees: the terminal voltage, or the compensated one.
+pub(crate) fn avr_vt(vcomp: Option<[f64; 3]>, vr: f64, vi: f64, ir: f64, ii: f64, z: f64) -> f64 {
+    match vcomp {
+        // with a time constant: the droop through the lag state z (reactive current, Q / Vt)
+        Some([rc, xc, t]) if t > 0.0 => mag(vr + rc * ir, vi + rc * ii) + xc * z,
+        Some([rc, xc, _]) => mag(vr + rc * ir - xc * ii, vi + rc * ii + xc * ir),
+        None => mag(vr, vi),
+    }
+}
+
+// Experimental: reactive power of a load above its own power flow voltage `v0`:
+// the extra `c P0 ((V - v0) / 0.1)^2` for `V > v0`. With a mild law below, this gives the steep
+// rise seen for rising voltage without the load supporting the voltage in a dip.
+static LOAD_RISE_C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the one-sided rise of the loads' reactive power (experimental).
+pub fn set_load_rise(c: f64) {
+    LOAD_RISE_C.store(c.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+// Experimental: voltage exponent of the reactive power set point of renewable plants in
+// reactive power control, by bus number: Q_ref (V / V0)^n with the start voltage V0.
+static PLANT_QV: std::sync::RwLock<Option<std::collections::HashMap<usize, f64>>> =
+    std::sync::RwLock::new(None);
+
+/// Sets the voltage exponent of the plants' reactive power set point (experimental). Call before the system is built.
+pub fn set_plant_q_exponent(map: std::collections::HashMap<usize, f64>) {
+    *PLANT_QV.write().expect("plant qv lock") = Some(map);
+}
+
+pub(crate) fn plant_qv_of(bus_number: usize) -> f64 {
+    PLANT_QV
+        .read()
+        .expect("plant qv lock")
+        .as_ref()
+        .and_then(|m| m.get(&bus_number).copied())
+        .unwrap_or(0.0)
+}
+
+// Experimental: opening and closing rate of the GAST fuel valve, pu of the turbine rating per
+// second; 0 leaves the plain lag of the model.
+static GAST_RATE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the rate limit of the GAST fuel valve (experimental). Call before the system is built.
+pub fn set_gast_rate(rate: f64) {
+    GAST_RATE.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn gast_rate() -> f64 {
+    f64::from_bits(GAST_RATE.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Sets the load saturation (experimental).
+pub fn set_load_saturation(c: f64, v_knee: f64) {
+    LOAD_SAT_C.store(c.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    LOAD_SAT_VK.store(v_knee.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+// @end
+
 impl BusLoad {
     /// Constant-impedance part as an admittance (enters `Y`).
     pub(crate) fn admittance(&self) -> C64 {
@@ -341,7 +623,14 @@ impl BusLoad {
             out[3] += q * dw;
         };
         if self.p_p != 0.0 || self.q_p != 0.0 {
-            add(self.p_p, self.q_p, part_weight(0.0, vm, self.v0, lv));
+            let alpha = f64::from_bits(LOAD_DYN_ALPHA.load(std::sync::atomic::Ordering::Relaxed));
+            if alpha > 0.0 {
+                let vf = if self.vf > 0.0 { self.vf } else { self.v0 };
+                add(self.p_p, 0.0, part_weight(alpha, vm, vf, lv));
+                add(0.0, self.q_p, part_weight(0.0, vm, self.v0, lv));
+            } else {
+                add(self.p_p, self.q_p, part_weight(0.0, vm, self.v0, lv));
+            }
         }
         if self.p_i != 0.0 || self.q_i != 0.0 {
             add(self.p_i, self.q_i, part_weight(1.0, vm, self.v0, lv));
@@ -360,6 +649,31 @@ impl BusLoad {
                 self.u_q,
                 part_weight(1.0, vm, self.v0, LowVoltage::Floor),
             );
+        }
+        let c = f64::from_bits(LOAD_SAT_C.load(std::sync::atomic::Ordering::Relaxed));
+        if c > 0.0 {
+            // never below the bus's own power flow voltage: no extra demand at the start
+            let vk =
+                f64::from_bits(LOAD_SAT_VK.load(std::sync::atomic::Ordering::Relaxed)).max(self.v0);
+            let p0 = self.p0();
+            if vm > vk && p0 > 0.0 {
+                let x = (vm - vk) / 0.1;
+                let q = c * p0 * x * x;
+                let dq = c * p0 * 2.0 * x / 0.1;
+                out[1] += q / (vm * vm);
+                out[3] += (dq / (vm * vm) - 2.0 * q / (vm * vm * vm)) / vm;
+            }
+        }
+        let c2 = f64::from_bits(LOAD_RISE_C.load(std::sync::atomic::Ordering::Relaxed));
+        if c2 > 0.0 {
+            let p0 = self.p0();
+            if vm > self.v0 && p0 > 0.0 {
+                let x = (vm - self.v0) / 0.1;
+                let q = c2 * p0 * x * x;
+                let dq = c2 * p0 * 2.0 * x / 0.1;
+                out[1] += q / (vm * vm);
+                out[3] += (dq / (vm * vm) - 2.0 * q / (vm * vm * vm)) / vm;
+            }
         }
         out
     }
@@ -497,6 +811,7 @@ fn soft_vm(vm: f64, v0: f64) -> f64 {
 
 /// A unit without a simulated model (an inverter chain), held as a
 /// constant-current injection `conj(s) V/|V| / v0` inside its bus's load.
+// @block Held unit
 #[derive(Clone, Debug)]
 pub(crate) struct HeldUnit {
     pub bus_number: usize,
@@ -548,9 +863,23 @@ impl HeldUnit {
     }
 }
 
+/// Series reactance of a bypassed series capacitor, system pu: a near short
+/// (0.25 Ω at 500 kV on 100 MVA, a percent of a typical bank).
+#[cfg(feature = "protection")]
+const BYPASS_X: f64 = 1e-4;
+#[cfg(not(feature = "protection"))]
+const BYPASS_X: f64 = 1.0;
+
 /// The assembled RMS system.
+// @block The system
 #[derive(Clone, Debug)]
 pub(crate) struct DynSystem {
+    /// Hold non-windup limits during a step ([`super::RmsOptions::freeze_limits`],
+    /// or `TELLEGEN_FREEZE`, see [`super::models::held_limits`]); set with
+    /// [`Self::hold_limits`], which passes it on to the units.
+    pub freeze_limits: bool,
+    /// Experimental: HVDC links in AC emulation ([`AcEmulation`]).
+    pub hvdc_emulation: Vec<AcEmulation>,
     pub n: usize,
     pub bus_numbers: Vec<usize>,
     /// Dense index of each bus number in `bus_numbers` ([`bus_index`]).
@@ -586,6 +915,10 @@ pub(crate) struct DynSystem {
     pub epoch: u64,
     /// Per branch, whether its `[from, to]` end breaker is open.
     pub end_open: Vec<[bool; 2]>,
+    /// Per branch, whether a series capacitor's protection bypasses it (its
+    /// MOV conducting during a fault): the branch is then a near short.
+    #[cfg(feature = "protection")]
+    pub bypassed: Vec<bool>,
     /// Per branch, a fault inside it.
     pub branch_faults: Vec<Option<BranchFault>>,
     pub held: Vec<HeldUnit>,
@@ -595,11 +928,44 @@ pub(crate) struct DynSystem {
     /// Factorize step matrices by blocks where possible
     /// ([`super::RmsOptions::factorize_by_blocks`]).
     pub factorize_by_blocks: bool,
+    /// [`super::RmsOptions::refactor_values`].
+    pub refactor_values: bool,
+    /// [`super::RmsOptions::keep_factorization`].
+    pub keep_factorization: bool,
+    /// [`super::RmsOptions::threads`].
+    pub threads: bool,
     /// The islands apart from the reference already named in the notes.
     pub noted_islands: Vec<Vec<usize>>,
 }
 
 impl DynSystem {
+    // @block Layout and matrices
+    // The state vector's names, the bus admittance matrix with every switched
+    // branch, fault, shunt and source, and the mass matrix.
+
+    /// Experimental: moves the reference voltage of every load towards its bus
+    /// voltage over `dt` (see `set_load_recovery`).
+    pub(crate) fn relax_loads(&mut self, x: &[f64], dt: f64) {
+        let alpha = f64::from_bits(LOAD_DYN_ALPHA.load(std::sync::atomic::Ordering::Relaxed));
+        let tc = f64::from_bits(LOAD_DYN_T.load(std::sync::atomic::Ordering::Relaxed));
+        if alpha <= 0.0 || tc <= 0.0 {
+            return;
+        }
+        let n = self.loads.len();
+        let a = (dt / tc).min(1.0);
+        for (b, l) in self.loads.iter_mut().enumerate() {
+            if l.p_p == 0.0 || b >= n || n + b >= x.len() {
+                continue;
+            }
+            let vm = (x[b] * x[b] + x[n + b] * x[n + b]).sqrt();
+            if l.vf <= 0.0 {
+                l.vf = l.v0;
+            }
+            if vm > 0.3 {
+                l.vf += a * (vm - l.vf);
+            }
+        }
+    }
     /// Names of every global state, `bus:quantity` for buses and
     /// `G<bus>[ 'id'].<state>` for devices.
     pub(crate) fn variable_names(&self) -> Vec<String> {
@@ -682,12 +1048,28 @@ impl DynSystem {
     /// or an inner fault carrying its terminal equivalent
     /// ([`Self::terminal_equivalent`]) in its series and charging columns.
     /// The tap and shift columns stay the branch's own.
+    /// Whether branch `e` (a series capacitor) is bypassed by its protection.
+    fn is_bypassed(&self, e: usize) -> bool {
+        #[cfg(feature = "protection")]
+        {
+            self.bypassed.get(e).copied().unwrap_or(false)
+        }
+        #[cfg(not(feature = "protection"))]
+        {
+            let _ = e;
+            false
+        }
+    }
+
     fn switched_branches(&self) -> AcBranchData {
         let mut br = self.ac.branches.clone();
         for e in 0..self.ac.m {
             let (series, y_fr, y_to) = if !self.closed[e] {
                 let zero = C64::new(0.0, 0.0);
                 (zero, zero, zero)
+            } else if self.is_bypassed(e) {
+                let zero = C64::new(0.0, 0.0);
+                (C64::new(0.0, -1.0 / BYPASS_X), zero, zero)
             } else if self.is_special(e) {
                 self.terminal_equivalent(e)
             } else {
@@ -719,21 +1101,117 @@ impl DynSystem {
         self.omega_ref.map_or(1.0, |i| x[i])
     }
 
-    /// `f(x)`, and the device outputs when `outs` is given.
+    /// Experimental: the configured HVDC links in AC emulation, with their start angle
+    /// from the initial state `x0` (so `f(x0)` is unchanged).
+    pub(crate) fn set_hvdc_emulation_start(&mut self, x0: &[f64]) {
+        let cfg = HVDC_EMULATION.read().expect("hvdc emulation lock").clone();
+        let index: std::collections::HashMap<usize, usize> = self
+            .bus_numbers
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| (b, i))
+            .collect();
+        let n = self.n;
+        self.hvdc_emulation = cfg
+            .iter()
+            .filter_map(|&(bf, bt, k_mw_deg, p_max_mw)| {
+                let (f, t) = (*index.get(&bf)?, *index.get(&bt)?);
+                let dtheta0 = (x0[n + f] * x0[t] - x0[f] * x0[n + t])
+                    .atan2(x0[f] * x0[t] + x0[n + f] * x0[n + t]);
+                Some(AcEmulation {
+                    from: f,
+                    to: t,
+                    k: k_mw_deg * 180.0 / std::f64::consts::PI / self.sbase,
+                    p_max: if p_max_mw > 0.0 {
+                        p_max_mw / self.sbase
+                    } else {
+                        f64::INFINITY
+                    },
+                    dtheta0,
+                })
+            })
+            .collect();
+    }
+
+    /// Hold the non-windup limits during a step or not, in this system only:
+    /// the setting goes into every unit's limiters, which the evaluations read
+    /// on whichever thread they run.
+    pub(crate) fn hold_limits(&mut self, on: bool) {
+        self.freeze_limits = on;
+        for d in &mut self.devices {
+            d.avr.hold_limits(on);
+            d.gov.hold_limits(on);
+            d.pss.hold_limits(on);
+        }
+    }
+
+    /// Experimental: after a taken step, the frozen limit modes from the last
+    /// evaluation (with held limits); returns how many switched.
+    pub(crate) fn update_limit_modes(&self) -> usize {
+        if !self.freeze_limits {
+            return 0;
+        }
+        self.devices
+            .iter()
+            .map(|d| {
+                d.avr.update_limit_modes() + d.gov.update_limit_modes() + d.pss.update_limit_modes()
+            })
+            .sum()
+    }
+
+    /// Experimental: with frozen limits, set the controller states a step from `from`
+    /// carried past their limits back onto them ([`super::models::Avr::project_limits`]);
+    /// returns how many units had a state moved.
+    pub(crate) fn project_limits(&self, from: &[f64], x: &mut [f64]) -> usize {
+        if !self.freeze_limits {
+            return 0;
+        }
+        self.devices
+            .iter()
+            .filter(|d| d.tripped.is_none())
+            .map(|d| {
+                let [_, _, a, g, p] = d.layout();
+                let o = d.offset;
+                let np = d.pss.n_states();
+                let (ra, rg, rp) = (o + a..o + g, o + g..o + p, o + p..o + p + np);
+                usize::from(d.avr.project_limits(&from[ra.clone()], &mut x[ra]))
+                    + usize::from(d.gov.project_limits(&from[rg.clone()], &mut x[rg]))
+                    + usize::from(d.pss.project_limits(&from[rp.clone()], &mut x[rp]))
+            })
+            .sum()
+    }
+
+    /// `f(x)`, and the device outputs when `outs` is given. Without outputs and with
+    /// regions (`TELLEGEN_REGIONS`) it is evaluated by regions (`Self::residual_by_regions`),
+    /// with the same result bit for bit.
+    // @block Residual f(x)
     pub(crate) fn residual(&self, x: &[f64], f: &mut [f64], mut outs: Option<&mut Vec<GenOut>>) {
+        if outs.is_none() {
+            if let Some(ri) = super::regions::region_index(self) {
+                self.residual_by_regions(x, f, &ri);
+                return;
+            }
+        }
         let n = self.n;
         f.iter_mut().for_each(|v| *v = 0.0);
         let (vr, rest) = x.split_at(n);
         let vi = &rest[..n];
+        // @block Network current balance
+        // The bus rows start as `−Y V`: the current the network draws.
         for &(r, c, y) in &self.ybus {
             f[r] -= y.re * vr[c] - y.im * vi[c];
             f[n + r] -= y.im * vr[c] + y.re * vi[c];
         }
+        // @block Thevenin sources
+        // Each source injects its Norton current.
         for s in &self.sources {
             let i = s.y * s.e;
             f[s.bus] += i.re;
             f[n + s.bus] += i.im;
         }
+        // @block Voltage-dependent loads
+        // The constant-power and constant-current parts draw their current at the
+        // bus voltage (the impedance part is in the admittance matrix).
         for (b, load) in self.loads.iter().enumerate() {
             if load.is_nonlinear() {
                 let (ir, ii) = load.nonlinear_current(vr[b], vi[b], self.low_voltage);
@@ -741,10 +1219,206 @@ impl DynSystem {
                 f[n + b] -= ii;
             }
         }
+        // @block HVDC links in AC emulation
+        // Each emulated link moves `K (Δθ − Δθ0)` (limited) from one end bus to the
+        // other ([`AcEmulation`]).
+        for e in &self.hvdc_emulation {
+            let c = e.currents(vr[e.from], vi[e.from], vr[e.to], vi[e.to]);
+            f[e.from] += c[0];
+            f[n + e.from] += c[1];
+            f[e.to] += c[2];
+            f[n + e.to] += c[3];
+        }
         let w_sys = self.omega_sys(x);
         if let Some(outs) = outs.as_deref_mut() {
             outs.clear();
         }
+        // @block Generating units
+        // Each unit evaluates its machine and controllers at its bus voltage and
+        // the frame speed, writes its state rows and adds its stator current to
+        // its bus.
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        if self.devices.len() >= PAR_MIN_UNITS
+            && self.threads
+            && super::spin_pool::SpinPool::global().threads() > 0
+        {
+            // Experimental: the units in chunks on the spin pool, each writing
+            // only its own state rows and output; the bus currents are added
+            // below in unit order, as serially.
+            let nd = self.devices.len();
+            let mut res = vec![GenOut::default(); nd];
+            let fp = SendPtr(f.as_mut_ptr());
+            let rp = SendPtr(res.as_mut_ptr().cast::<f64>());
+            let chunks = nd.div_ceil(PAR_CHUNK);
+            super::spin_pool::SpinPool::global().run(chunks, &|c| {
+                for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(nd) {
+                    let d = &self.devices[u];
+                    let k = d.n_states();
+                    // SAFETY: each unit writes its own state rows and its own
+                    // output slot, no two alike.
+                    let fs = unsafe { std::slice::from_raw_parts_mut(fp.get().add(d.offset), k) };
+                    let out = d.eval(&x[d.offset..d.offset + k], vr[d.bus], vi[d.bus], w_sys, fs);
+                    unsafe { *rp.get().cast::<GenOut>().add(u) = out };
+                }
+            });
+            for (d, out) in self.devices.iter().zip(res) {
+                f[d.bus] += out.ir;
+                f[n + d.bus] += out.ii;
+                if let Some(outs) = outs.as_deref_mut() {
+                    outs.push(out);
+                }
+            }
+        } else {
+            self.residual_units_serial(x, f, w_sys, outs);
+        }
+        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+        self.residual_units_serial(x, f, w_sys, outs);
+        // @block Simulated plants
+        // Each renewable plant's states and its current into its bus; a tripped
+        // plant's rows hold its states.
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        if self.held.len() >= PAR_MIN_UNITS
+            && self.threads
+            && super::spin_pool::SpinPool::global().threads() > 0
+        {
+            let nh = self.held.len();
+            let mut res: Vec<Option<C64>> = vec![None; nh];
+            let fp = SendPtr(f.as_mut_ptr());
+            let rp = SendPtr(res.as_mut_ptr().cast::<f64>());
+            let chunks = nh.div_ceil(PAR_CHUNK);
+            super::spin_pool::SpinPool::global().run(chunks, &|c| {
+                for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(nh) {
+                    let h = &self.held[u];
+                    let Some(p) = h.plant.as_ref() else { continue };
+                    let k = p.n_states();
+                    // SAFETY: as for the units above.
+                    let fs = unsafe { std::slice::from_raw_parts_mut(fp.get().add(h.offset), k) };
+                    let out = if h.tripped {
+                        fs.iter_mut().for_each(|v| *v = 0.0);
+                        None
+                    } else {
+                        Some(p.eval(&x[h.offset..h.offset + k], vr[h.bus], vi[h.bus], w_sys, fs))
+                    };
+                    unsafe { *rp.get().cast::<Option<C64>>().add(u) = out };
+                }
+            });
+            for (h, i) in self.held.iter().zip(res) {
+                if let Some(i) = i {
+                    f[h.bus] += i.re;
+                    f[n + h.bus] += i.im;
+                }
+            }
+            return;
+        }
+        self.residual_plants_serial(x, f, w_sys);
+    }
+
+    /// Experimental: `f(x)` by regions, each region one task. A region writes
+    /// only its buses' rows and its units' states, and adds to each bus in the
+    /// order of [`Self::residual`] (network, sources, loads, units, plants), so
+    /// `f` is bit for bit the serial one.
+    // @block Residual by regions
+    fn residual_by_regions(&self, x: &[f64], f: &mut [f64], ri: &super::regions::RegionIndex) {
+        use super::regions::Shared;
+        let n = self.n;
+        let w_sys = self.omega_sys(x);
+        let fp = Shared(f.as_mut_ptr());
+        let ybus = &self.ybus;
+        let t_call = crate::rms::clock::Instant::now();
+        super::regions::par_for(ri.nr, &|r| {
+            let t_task = crate::rms::clock::Instant::now();
+            let _rt = super::regions::RegionTimer(r, t_task);
+            // The region's bus rows are summed here, in the order of the serial
+            // residual, and written once at the end: buses of different regions
+            // share cache lines in `f`.
+            let (vr, vi) = (&x[..n], &x[n..2 * n]);
+            let buses = &ri.buses[r];
+            let mut acc = vec![0.0_f64; 2 * buses.len()];
+            for (l, &b) in buses.iter().enumerate() {
+                let (mut ar, mut ai) = (0.0_f64, 0.0_f64);
+                let lo = ybus.partition_point(|e| e.0 < b);
+                let mut k = lo;
+                while k < ybus.len() && ybus[k].0 == b {
+                    let (_, c, y) = ybus[k];
+                    ar -= y.re * vr[c] - y.im * vi[c];
+                    ai -= y.im * vr[c] + y.re * vi[c];
+                    k += 1;
+                }
+                acc[2 * l] = ar;
+                acc[2 * l + 1] = ai;
+            }
+            let li = |b: usize| 2 * ri.local[b] as usize;
+            for &k in &ri.sources[r] {
+                let s = &self.sources[k];
+                let i = s.y * s.e;
+                acc[li(s.bus)] += i.re;
+                acc[li(s.bus) + 1] += i.im;
+            }
+            for (l, &b) in buses.iter().enumerate() {
+                let load = &self.loads[b];
+                if load.is_nonlinear() {
+                    let (ir, ii) = load.nonlinear_current(vr[b], vi[b], self.low_voltage);
+                    acc[2 * l] -= ir;
+                    acc[2 * l + 1] -= ii;
+                }
+                for e in &self.hvdc_emulation {
+                    if e.from == b || e.to == b {
+                        let c = e.currents(vr[e.from], vi[e.from], vr[e.to], vi[e.to]);
+                        let k = if e.from == b { 0 } else { 2 };
+                        acc[2 * l] += c[k];
+                        acc[2 * l + 1] += c[k + 1];
+                    }
+                }
+            }
+            for &u in &ri.devices[r] {
+                let d = &self.devices[u];
+                let k = d.n_states();
+                // SAFETY: the unit's own state rows.
+                let fs = unsafe { fp.slice(d.offset, k) };
+                fs.fill(0.0);
+                let out = d.eval(&x[d.offset..d.offset + k], vr[d.bus], vi[d.bus], w_sys, fs);
+                acc[li(d.bus)] += out.ir;
+                acc[li(d.bus) + 1] += out.ii;
+            }
+            for &u in &ri.held[r] {
+                let h = &self.held[u];
+                let Some(p) = &h.plant else { continue };
+                let k = p.n_states();
+                // SAFETY: the plant's own state rows.
+                let fs = unsafe { fp.slice(h.offset, k) };
+                fs.fill(0.0);
+                if h.tripped {
+                    continue;
+                }
+                let i = p.eval(&x[h.offset..h.offset + k], vr[h.bus], vi[h.bus], w_sys, fs);
+                acc[li(h.bus)] += i.re;
+                acc[li(h.bus) + 1] += i.im;
+            }
+            for (l, &b) in buses.iter().enumerate() {
+                // SAFETY: this region's bus rows.
+                unsafe {
+                    *fp.at(b) = acc[2 * l];
+                    *fp.at(n + b) = acc[2 * l + 1];
+                }
+            }
+        });
+        super::regions::CALL_US.fetch_add(
+            t_call.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        super::regions::CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn residual_units_serial(
+        &self,
+        x: &[f64],
+        f: &mut [f64],
+        w_sys: f64,
+        mut outs: Option<&mut Vec<GenOut>>,
+    ) {
+        let n = self.n;
+        let (vr, rest) = x.split_at(n);
+        let vi = &rest[..n];
         for d in &self.devices {
             let k = d.n_states();
             let out = d.eval(
@@ -760,6 +1434,12 @@ impl DynSystem {
                 outs.push(out);
             }
         }
+    }
+
+    fn residual_plants_serial(&self, x: &[f64], f: &mut [f64], w_sys: f64) {
+        let n = self.n;
+        let (vr, rest) = x.split_at(n);
+        let vi = &rest[..n];
         for h in &self.held {
             let Some(p) = &h.plant else { continue };
             let k = p.n_states();
@@ -797,10 +1477,26 @@ impl DynSystem {
         u
     }
 
+    // @block Jacobian
+    // `∂f/∂x`: exact for the network and loads, forward differences for each
+    // unit's own block (and for HVDC links in AC emulation). The units' blocks
+    // are built in chunks on the spin pool and joined in unit order.
+
     /// `∂f/∂x` as triplets. The network and load parts are exact; device
     /// blocks are forward differences of their local functions with the
     /// scaled step of [`fd_step`].
     pub(crate) fn jacobian(&self, x: &[f64]) -> Vec<(usize, usize, f64)> {
+        self.jacobian_units(x).0
+    }
+
+    /// Experimental: [`Self::jacobian`], and where each unit's entries lie in it:
+    /// `(first state, start, end)` per device and per held plant with a model, in the order
+    /// they are built; the entries before the first unit's are the network's and the loads'.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn jacobian_units(
+        &self,
+        x: &[f64],
+    ) -> (Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>) {
         let n = self.n;
         let mut t: Vec<(usize, usize, f64)> = Vec::with_capacity(self.ybus.len() * 4 + self.nx * 8);
         for &(r, c, y) in &self.ybus {
@@ -819,23 +1515,99 @@ impl DynSystem {
             t.push((n + b, b, -j[1][0]));
             t.push((n + b, n + b, -j[1][1]));
         }
+        // Experimental: HVDC links in AC emulation, forward differences, every entry
+        // entered (zero or not) so the pattern stays.
+        for e in &self.hvdc_emulation {
+            let cols = [e.from, n + e.from, e.to, n + e.to];
+            let v = |xs: &[f64; 4]| e.currents(xs[0], xs[1], xs[2], xs[3]);
+            let v0 = [x[e.from], x[n + e.from], x[e.to], x[n + e.to]];
+            let c0 = v(&v0);
+            for (j, &col) in cols.iter().enumerate() {
+                let mut vp = v0;
+                let h = fd_step(vp[j]);
+                vp[j] += h;
+                let c1 = v(&vp);
+                for (i, &row) in cols.iter().enumerate() {
+                    t.push((row, col, (c1[i] - c0[i]) / h));
+                }
+            }
+        }
         let w_sys = self.omega_sys(x);
-        for d in &self.devices {
+        let dev_block = |d: &GenDevice, t: &mut Vec<(usize, usize, f64)>| {
             let eval = |xl: &[f64], vr: f64, vi: f64, w: f64, f: &mut [f64]| {
                 let o = d.eval(xl, vr, vi, w, f);
                 (o.ir, o.ii)
             };
-            self.unit_block(x, w_sys, d.offset, d.n_states(), d.bus, eval, &mut t);
-        }
-        for h in self.held.iter().filter(|h| !h.tripped) {
-            let Some(p) = &h.plant else { continue };
+            self.unit_block(x, w_sys, d.offset, d.n_states(), d.bus, eval, t);
+        };
+        let plant_block = |h: &HeldUnit, t: &mut Vec<(usize, usize, f64)>| {
+            if h.tripped {
+                return;
+            }
+            let Some(p) = &h.plant else { return };
             let eval = |xl: &[f64], vr: f64, vi: f64, w: f64, f: &mut [f64]| {
                 let i = p.eval(xl, vr, vi, w, f);
                 (i.re, i.im)
             };
-            self.unit_block(x, w_sys, h.offset, p.n_states(), h.bus, eval, &mut t);
+            self.unit_block(x, w_sys, h.offset, p.n_states(), h.bus, eval, t);
+        };
+        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+        if self.devices.len() + self.held.len() >= PAR_MIN_UNITS
+            && self.threads
+            && super::spin_pool::SpinPool::global().threads() > 0
+        {
+            // Experimental: the units' blocks in chunks on the spin pool,
+            // joined in unit order (the same triplets in the same order).
+            let nd = self.devices.len();
+            let total = nd + self.held.len();
+            let chunks = total.div_ceil(PAR_CHUNK);
+            #[allow(clippy::type_complexity)]
+            let parts: Vec<
+                std::sync::Mutex<(Vec<(usize, usize, f64)>, Vec<(usize, usize, usize)>)>,
+            > = (0..chunks)
+                .map(|_| std::sync::Mutex::new((Vec::new(), Vec::new())))
+                .collect();
+            super::spin_pool::SpinPool::global().run(chunks, &|c| {
+                let mut v = Vec::new();
+                let mut r = Vec::new();
+                for u in c * PAR_CHUNK..((c + 1) * PAR_CHUNK).min(total) {
+                    let s0 = v.len();
+                    if u < nd {
+                        dev_block(&self.devices[u], &mut v);
+                        r.push((self.devices[u].offset, s0, v.len()));
+                    } else {
+                        let h = &self.held[u - nd];
+                        plant_block(h, &mut v);
+                        if h.plant.is_some() {
+                            r.push((h.offset, s0, v.len()));
+                        }
+                    }
+                }
+                *parts[c].lock().expect("jacobian part") = (v, r);
+            });
+            let mut ranges = Vec::with_capacity(total);
+            for p in parts {
+                let (v, r) = p.into_inner().expect("jacobian part");
+                let base = t.len();
+                ranges.extend(r.into_iter().map(|(o, a, b)| (o, a + base, b + base)));
+                t.extend(v);
+            }
+            return (t, ranges);
         }
-        t
+        let mut ranges = Vec::with_capacity(self.devices.len() + self.held.len());
+        for d in &self.devices {
+            let s0 = t.len();
+            dev_block(d, &mut t);
+            ranges.push((d.offset, s0, t.len()));
+        }
+        for h in &self.held {
+            let s0 = t.len();
+            plant_block(h, &mut t);
+            if h.plant.is_some() {
+                ranges.push((h.offset, s0, t.len()));
+            }
+        }
+        (t, ranges)
     }
 
     /// Forward-difference block of one unit with `k` states at `off` on bus
@@ -908,6 +1680,10 @@ impl DynSystem {
         }
     }
 
+    // @block Branch flows
+    // The flows at both ends of every branch, open ends and inner faults
+    // included.
+
     /// The terminal flows of every branch at the state `x`, system base:
     /// PowerIO's `AcBranchData::calc_branch_flows` over the switched branch
     /// columns, so an open end carries no flow and a faulted branch the flow
@@ -973,6 +1749,10 @@ impl DynSystem {
         let series = -out[0][1];
         (series, out[0][0] - series, out[1][1] + out[1][0])
     }
+
+    // @block Islands
+    // Which buses hang together over closed branches, which islands have no
+    // unit left, and how a split network is named in messages.
 
     /// The electrical islands over branches closed at both ends, each its
     /// dense buses in ascending order, in order of each island's first bus:
@@ -1106,3 +1886,527 @@ pub(crate) fn fd_step(x: f64) -> f64 {
 /// functions summed in another order, depart from the compiled models by up
 /// to 7.5e-6 (`tests/rms_graph.rs`); with `1e-7` they agree to 1e-9.
 pub(crate) const FD_REL: f64 = 1e-7;
+
+/// Experimental: below this many units the residual and the Jacobian stay serial.
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+const PAR_MIN_UNITS: usize = 64;
+/// Experimental: units per task on the spin pool.
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+const PAR_CHUNK: usize = 48;
+
+/// A raw pointer that may cross threads: each thread writes a disjoint part.
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+#[derive(Clone, Copy)]
+struct SendPtr(*mut f64);
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+unsafe impl Send for SendPtr {}
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+unsafe impl Sync for SendPtr {}
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+impl SendPtr {
+    fn get(self) -> *mut f64 {
+        self.0
+    }
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use super::super::{LoadModel, RmsOptions, RmsSimulation};
+    use super::DynSystem;
+
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/smib.rs"
+    ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/wecc240.rs"
+    ));
+
+    /// The first line of `text` that starts with `head`.
+    fn line_of<'a>(text: &'a str, head: &str) -> &'a str {
+        text.lines()
+            .find(|l| l.starts_with(head))
+            .unwrap_or_else(|| panic!("no line {head:?}"))
+    }
+
+    /// Many single-machine cases of the shipped example on one infinite
+    /// bus: `count` units of each kind (a SMIB case id), each at its own bus
+    /// (from 1000 on) with its own two lines to bus 101, its records and
+    /// dispatch as in its SMIB case. The units barely see each other, so
+    /// the case starts at rest like its SMIB cases; it is there for its many
+    /// units. `None` without the shipped case data.
+    pub(in crate::rms) fn star(kinds: &[(&str, usize)]) -> Option<RmsSimulation> {
+        shipped_wecc240()?;
+        let cases = wecc240_smib_cases();
+        let case = |id: &str| {
+            cases
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap_or_else(|| panic!("no SMIB case {id}"))
+        };
+        let first = case(kinds[0].0);
+        let mut buses = String::new();
+        let mut gens = String::new();
+        let mut branches = String::new();
+        let mut dyr = format!("{}\n", line_of(&first.dyr, "    101 'GENCLS'"));
+        let mut num = 1000;
+        for &(id, count) in kinds {
+            let c = case(id);
+            for _ in 0..count {
+                let at = format!("{num:>6},");
+                buses.push_str(&line_of(&c.raw, "   102,'UNIT'").replacen("   102,", &at, 1));
+                buses.push('\n');
+                gens.push_str(&line_of(&c.raw, "   102,'1 '").replacen("   102,", &at, 1));
+                gens.push('\n');
+                for l in c.raw.lines().filter(|l| l.starts_with("   101,    102,")) {
+                    branches.push_str(&l.replacen("    102,", &format!("{num:>7},"), 1));
+                    branches.push('\n');
+                }
+                for rec in c.dyr.split('/').map(str::trim) {
+                    if let Some(rest) = rec.strip_prefix("102 ") {
+                        dyr.push_str(&format!("{num:>7} {rest} /\n"));
+                    }
+                }
+                num += 1;
+            }
+        }
+        let raw = format!(
+            "{}\n\n\n{}\n{buses} 0 /End of Bus data, Begin Load data\n 0 /End of Load data, Begin Fixed shunt data\n 0 /End of Fixed shunt data, Begin Generator data\n{}\n{gens} 0 /End of Generator data, Begin Branch data\n{branches}{SMIB_TAIL}",
+            first.raw.lines().next().unwrap(),
+            line_of(&first.raw, "   101,'INF BUS'"),
+            line_of(&first.raw, "   101,'1 '"),
+        );
+        let src = powerio::Source::from_memory("case.raw", raw.into_bytes()).unwrap();
+        let module = powerio::parse(src).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        let dyr = powerio::parse_dyr(&dyr).unwrap();
+        Some(
+            RmsSimulation::with_options(
+                net,
+                &dyr,
+                LoadModel::ConstantImpedance,
+                RmsOptions::default(),
+            )
+            .unwrap(),
+        )
+    }
+
+    /// The machines and renewable plants of the star tests: enough of both
+    /// for the units' and the plants' chunks on the spin pool.
+    pub(in crate::rms) const MIXED: [(&str, usize); 4] = [
+        ("smib_genrou_sexs_tgov1", 40),
+        ("smib_genrou_hygov_sexs", 40),
+        ("smib_regca1_reecb1_repca1", 70),
+        ("smib_genrou_gast_sexs", 40),
+    ];
+
+    /// `x` moved off its rest point by up to `rel` of each entry (and an
+    /// absolute `rel` on zeros), deterministically.
+    pub(in crate::rms) fn perturbed(x: &[f64], rel: f64) -> Vec<f64> {
+        let mut s = 0x2545_f491_4f6c_dd1d_u64;
+        x.iter()
+            .map(|&v| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                let u = (s >> 11) as f64 / (1u64 << 53) as f64 - 0.5;
+                v + rel * u * v.abs().max(1.0)
+            })
+            .collect()
+    }
+
+    fn bits(v: &[f64]) -> Vec<u64> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    fn jacobian_bits(t: &[(usize, usize, f64)]) -> Vec<(usize, usize, u64)> {
+        t.iter().map(|&(r, c, v)| (r, c, v.to_bits())).collect()
+    }
+
+    /// The system with the parallel parts on (the default) and off.
+    fn both(sim: &RmsSimulation) -> (DynSystem, DynSystem) {
+        let mut serial = sim.sys.clone();
+        serial.threads = false;
+        let mut pooled = sim.sys.clone();
+        pooled.threads = true;
+        (pooled, serial)
+    }
+
+    /// The units' and the plants' residual in chunks on the spin pool is the
+    /// serial one (`residual_units_serial`, `residual_plants_serial`) bit for
+    /// bit, with and without the units' outputs; so is the Jacobian built in
+    /// chunks (the same triplets in the same order, the same unit ranges).
+    #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+    #[test]
+    fn unit_chunks_give_the_serial_residual_and_jacobian() {
+        let Some(sim) = star(&MIXED) else { return };
+        let (pooled, serial) = both(&sim);
+        assert!(pooled.devices.len() >= super::PAR_MIN_UNITS);
+        assert!(pooled.held.iter().filter(|h| h.plant.is_some()).count() >= super::PAR_MIN_UNITS);
+        if super::super::spin_pool::SpinPool::global().threads() == 0 {
+            eprintln!("skipped: the spin pool has no threads (TELLEGEN_THREADS=0)");
+            return;
+        }
+        for x in [sim.x0.clone(), perturbed(&sim.x0, 1e-3)] {
+            let (mut fp, mut fs) = (vec![0.0; pooled.nx], vec![0.0; pooled.nx]);
+            pooled.residual(&x, &mut fp, None);
+            serial.residual(&x, &mut fs, None);
+            assert_eq!(bits(&fp), bits(&fs));
+            let (mut op, mut os) = (Vec::new(), Vec::new());
+            pooled.residual(&x, &mut fp, Some(&mut op));
+            serial.residual(&x, &mut fs, Some(&mut os));
+            assert_eq!(bits(&fp), bits(&fs));
+            assert_eq!(format!("{op:?}"), format!("{os:?}"));
+            let (jp, rp) = pooled.jacobian_units(&x);
+            let (js, rs) = serial.jacobian_units(&x);
+            assert_eq!(jacobian_bits(&jp), jacobian_bits(&js));
+            assert_eq!(rp, rs);
+            assert_eq!(rp.len(), pooled.state_units().len());
+        }
+    }
+
+    /// The region of each star bus in the region map of the region tests:
+    /// the units' buses in turn over four regions; bus 101 is not in the map
+    /// and so in region 0.
+    fn star_region(bus: usize) -> u16 {
+        if bus >= 1000 {
+            ((bus - 1000) % 4) as u16
+        } else {
+            0
+        }
+    }
+
+    /// The region index from `TELLEGEN_REGIONS` and the residual by regions
+    /// are checked in a child process of this test binary
+    /// (`regions_in_a_child_process`), since the map is read once per
+    /// process: the parent writes the map and runs the child with it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_residual_by_regions_is_the_serial_residual() {
+        if shipped_wecc240().is_none() {
+            return;
+        }
+        let path =
+            std::env::temp_dir().join(format!("tellegen-regions-unit-{}.json", std::process::id()));
+        let mut map: std::collections::BTreeMap<String, u16> = (1000..1000 + 190)
+            .map(|b| (b.to_string(), star_region(b)))
+            .collect();
+        // A bus the case does not have is ignored.
+        map.insert("99999".into(), 3);
+        std::fs::write(&path, serde_json::to_string(&map).unwrap()).unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "rms::system::tests::regions_in_a_child_process",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("TELLEGEN_REGIONS", &path)
+            .env("TELLEGEN_THREADS", "3")
+            .env_remove("TELLEGEN_NET_ONE")
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(&path);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "the child failed:\n{text}"
+        );
+        assert!(
+            text.contains("regions checked"),
+            "the child skipped:\n{text}"
+        );
+    }
+
+    /// Run by `the_residual_by_regions_is_the_serial_residual` with a region
+    /// map; without one it does nothing. `region_map` gives each bus its
+    /// region from the map; `regions::region_index` groups the buses, units,
+    /// plants and sources by region, each bus with its index in its region,
+    /// once per system shape, and gives none with the threads off; the
+    /// residual by regions writes every row and is the serial residual bit
+    /// for bit, also through `residual`, which takes it without outputs.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "run in a child process by the_residual_by_regions_is_the_serial_residual"]
+    fn regions_in_a_child_process() {
+        use std::sync::atomic::Ordering::Relaxed;
+        use std::sync::Arc;
+
+        use super::super::regions::{region_index, CALLS};
+        use super::super::schur::region_map;
+        if std::env::var_os("TELLEGEN_REGIONS").is_none() {
+            eprintln!("skipped: no region map (TELLEGEN_REGIONS)");
+            return;
+        }
+        let sim = star(&MIXED).expect("the shipped case data");
+        let sys = &sim.sys;
+        let want: Vec<u16> = sys.bus_numbers.iter().map(|&b| star_region(b)).collect();
+        assert_eq!(region_map(sys).expect("a region map"), want.as_slice());
+        let ri = region_index(sys).expect("a region index");
+        assert_eq!(ri.nr, 4);
+        let mut seen = vec![false; sys.n];
+        for (r, buses) in ri.buses.iter().enumerate() {
+            assert!(buses.windows(2).all(|w| w[0] < w[1]));
+            for (l, &b) in buses.iter().enumerate() {
+                assert_eq!(usize::from(want[b]), r);
+                assert_eq!(ri.local[b] as usize, l);
+                seen[b] = true;
+            }
+        }
+        assert!(seen.iter().all(|&s| s));
+        let grouped = |lists: &[Vec<usize>], len: usize, bus: &dyn Fn(usize) -> usize| {
+            let mut all: Vec<usize> = lists.iter().flatten().copied().collect();
+            all.sort_unstable();
+            assert_eq!(all, (0..len).collect::<Vec<_>>());
+            for (r, l) in lists.iter().enumerate() {
+                assert!(l.iter().all(|&k| usize::from(want[bus(k)]) == r));
+            }
+        };
+        grouped(&ri.devices, sys.devices.len(), &|k| sys.devices[k].bus);
+        grouped(&ri.held, sys.held.len(), &|k| sys.held[k].bus);
+        grouped(&ri.sources, sys.sources.len(), &|k| sys.sources[k].bus);
+        assert!(
+            Arc::ptr_eq(&ri, &region_index(sys).unwrap()),
+            "built again for the same system"
+        );
+        let mut serial = sys.clone();
+        serial.threads = false;
+        assert!(region_index(&serial).is_none());
+
+        for x in [sim.x0.clone(), perturbed(&sim.x0, 1e-3)] {
+            let mut direct = vec![f64::NAN; sys.nx];
+            sys.residual_by_regions(&x, &mut direct, &ri);
+            let calls = CALLS.load(Relaxed);
+            let mut by_regions = vec![f64::NAN; sys.nx];
+            sys.residual(&x, &mut by_regions, None);
+            assert!(
+                CALLS.load(Relaxed) > calls,
+                "the residual did not go by regions"
+            );
+            let mut with_outs = vec![0.0; sys.nx];
+            sys.residual(&x, &mut with_outs, Some(&mut Vec::new()));
+            let mut one = vec![0.0; sys.nx];
+            serial.residual(&x, &mut one, None);
+            assert!(one.iter().all(|v| v.is_finite()));
+            assert_eq!(bits(&direct), bits(&one));
+            assert_eq!(bits(&by_regions), bits(&one));
+            assert_eq!(bits(&with_outs), bits(&one));
+        }
+        println!("regions checked");
+    }
+}
+
+#[cfg(test)]
+mod model_switch_tests {
+    use super::{avr_vt, AcEmulation, C64};
+    use crate::rms::{LoadModel, RmsSimulation};
+
+    /// Two areas on 100 MVA: classical machines at 1 (slack) and 2 feed the
+    /// constant-impedance loads at 3 and 4, joined by the tie 3-4.
+    const TWO_AREAS_RAW: &str = "0,   100.00,  32, 0, 1, 60.00     / two areas
+
+
+1,'B1', 230.0000,3,   1,   1,   1,1.00000,   0.0000
+2,'B2', 230.0000,2,   1,   1,   1,1.00000,   0.0000
+3,'B3', 230.0000,1,   1,   1,   1,1.00000,   0.0000
+4,'B4', 230.0000,1,   1,   1,   1,1.00000,   0.0000
+ 0 /End of Bus data, Begin Load data
+3,'1 ',1,   1,   1, 250.000, 0.000, 0.000, 0.000, 0.000, 0.000,   1,1
+4,'1 ',1,   1,   1, 250.000, 0.000, 0.000, 0.000, 0.000, 0.000,   1,1
+ 0 /End of Load data, Begin Fixed shunt data
+ 0 /End of Fixed shunt data, Begin Generator data
+1,'1 ', 0.000, 0.000, 9999.000, -9999.000,1.00000, 0, 500.000, 0.00000E+0, 3.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+2,'1 ', 200.000, 0.000, 9999.000, -9999.000,1.00000, 0, 500.000, 0.00000E+0, 3.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1,  100.0, 9999.000, -9999.000,   1,1.0000
+ 0 /End of Generator data, Begin Branch data
+1, 3,'1 ', 0.00000E+0, 2.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+2, 4,'1 ', 0.00000E+0, 2.00000E-2, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+3, 4,'1 ', 0.00000E+0, 3.00000E-1, 0.00000, 9999.00, 9999.00, 9999.00, 0.00000, 0.00000, 0.00000, 0.00000,1,1, 0.00, 1,1.0000
+ 0 /End of Branch data, Begin Transformer data
+ 0 /End of Transformer data, Begin Area interchange data
+ 0 /End of Area interchange data, Begin Two-terminal dc line data
+ 0 /End of Two-terminal dc line data, Begin VSC dc line data
+ 0 /End of VSC dc line data, Begin Impedance correction table data
+ 0 /End of Impedance correction table data, Begin Multi-terminal dc line data
+ 0 /End of Multi-terminal dc line data, Begin Multi-section line data
+ 0 /End of Multi-section line data, Begin Zone data
+ 0 /End of Zone data, Begin Inter-area transfer data
+ 0 /End of Inter-area transfer data, Begin Owner data
+ 0 /End of Owner data, Begin FACTS device data
+ 0 /End of FACTS device data, Begin Switched shunt data
+ 0 /End of Switched shunt data, Begin GNE device data
+ 0 /End of GNE device data
+Q
+";
+
+    fn two_areas() -> RmsSimulation {
+        let src =
+            powerio::Source::from_memory("case.raw", TWO_AREAS_RAW.as_bytes().to_vec()).unwrap();
+        let module = powerio::parse(src).unwrap();
+        let powerio::PioValue::BalancedNetwork(net) = module.value() else {
+            panic!("not a balanced network")
+        };
+        let dyr = powerio::parse_dyr("1 'GENCLS' 1 4.0 0.0 /\n2 'GENCLS' 1 4.0 0.0 /\n").unwrap();
+        RmsSimulation::new(net, &dyr, LoadModel::ConstantImpedance).unwrap()
+    }
+
+    /// Without a compensator the regulator sees the terminal voltage; with
+    /// one and no time constant `|V + (Rc + j Xc) I|` (IEEE Std 421.5); with
+    /// a time constant `|V + Rc I| + Xc z`, `z` the lag state (the reactive
+    /// current, which it equals at rest).
+    #[test]
+    fn avr_vt_is_the_compensated_voltage() {
+        let (v, i) = (C64::new(1.02, 0.1), C64::new(0.6, -0.3));
+        assert_eq!(avr_vt(None, v.re, v.im, i.re, i.im, 0.7), v.norm());
+        let (rc, xc) = (0.01, 0.05);
+        let vc = (v + C64::new(rc, xc) * i).norm();
+        let now = avr_vt(Some([rc, xc, 0.0]), v.re, v.im, i.re, i.im, 0.7);
+        assert!((now - vc).abs() < 1e-15, "{now} against {vc}");
+        // A negative time constant is read as none.
+        let neg = avr_vt(Some([rc, xc, -1.0]), v.re, v.im, i.re, i.im, 0.7);
+        assert_eq!(neg, now);
+        let z = 0.4;
+        let lag = avr_vt(Some([rc, xc, 1.0]), v.re, v.im, i.re, i.im, z);
+        let expected = (v + rc * i).norm() + xc * z;
+        assert!((lag - expected).abs() < 1e-15, "{lag} against {expected}");
+        // At rest (z the reactive current Q / Vt) both forms give positive
+        // droop of the same first order: `Vt + Xc Q / Vt` for a pure Xc.
+        let q = (v * i.conj()).im;
+        let z0 = q / v.norm();
+        let a = avr_vt(Some([0.0, xc, 0.0]), v.re, v.im, i.re, i.im, 0.0);
+        let b = avr_vt(Some([0.0, xc, 1.0]), v.re, v.im, i.re, i.im, z0);
+        assert!(a > v.norm() && b > v.norm());
+        assert!((a - b).abs() < xc * xc * i.norm_sqr(), "{a} against {b}");
+    }
+
+    /// The link moves `K (Δθ − Δθ0)` from `from` to `to`: none at its start
+    /// angle, more as `from` leads, limited to `±p_max`; its currents carry
+    /// that active power and no reactive power (`V I*` is `−P` at `from`,
+    /// `+P` at `to`).
+    #[test]
+    fn ac_emulation_moves_active_power_with_the_angle() {
+        let e = AcEmulation {
+            from: 0,
+            to: 1,
+            k: 2.0,
+            p_max: 0.3,
+            dtheta0: 0.1,
+        };
+        let vt = C64::from_polar(0.98, -0.2);
+        let at = |d: f64| C64::from_polar(1.03, -0.2 + d);
+        assert!(e.power(at(0.1).re, at(0.1).im, vt.re, vt.im).abs() < 1e-14);
+        let p = e.power(at(0.15).re, at(0.15).im, vt.re, vt.im);
+        assert!((p - 2.0 * 0.05).abs() < 1e-13, "{p}");
+        let p = e.power(at(0.05).re, at(0.05).im, vt.re, vt.im);
+        assert!((p + 2.0 * 0.05).abs() < 1e-13, "{p}");
+        assert_eq!(e.power(at(1.0).re, at(1.0).im, vt.re, vt.im), 0.3);
+        assert_eq!(e.power(at(-1.0).re, at(-1.0).im, vt.re, vt.im), -0.3);
+        for d in [0.05, 0.12, 0.4, -0.6] {
+            let vf = at(d);
+            let p = e.power(vf.re, vf.im, vt.re, vt.im);
+            let c = e.currents(vf.re, vf.im, vt.re, vt.im);
+            let s_from = vf * C64::new(c[0], c[1]).conj();
+            let s_to = vt * C64::new(c[2], c[3]).conj();
+            assert!((s_from - C64::new(-p, 0.0)).norm() < 1e-14, "{s_from}");
+            assert!((s_to - C64::new(p, 0.0)).norm() < 1e-14, "{s_to}");
+        }
+        // The magnitude the currents divide by has a floor: finite at 0 V.
+        let c = e.currents(0.0, 0.0, vt.re, vt.im);
+        assert!(c.iter().all(|v| v.is_finite()));
+    }
+
+    /// The residual carries the link's currents at its two buses, and the
+    /// Jacobian its entries: with a link that carries power, the difference
+    /// to the system without it is `∂I/∂V` of the link at the four voltage
+    /// columns (checked against central differences); a link with `K = 0`
+    /// adds its 16 entries all the same (zero), so the pattern does not
+    /// change with `K`.
+    #[test]
+    fn ac_emulation_enters_the_residual_and_the_jacobian() {
+        let sim = two_areas();
+        let mut sys = sim.sys.clone();
+        let n = sys.n;
+        let (b3, b4) = (sys.dense_bus(3).unwrap(), sys.dense_bus(4).unwrap());
+        let angle = |x: &[f64]| {
+            (x[n + b3] * x[b4] - x[b3] * x[n + b4]).atan2(x[b3] * x[b4] + x[n + b3] * x[n + b4])
+        };
+        let dtheta0 = angle(&sim.x0);
+        // Bus 3 turned by 0.05 rad, so the link carries power.
+        let mut x = sim.x0.clone();
+        let v3 = C64::new(x[b3], x[n + b3]) * C64::from_polar(1.0, 0.05);
+        x[b3] = v3.re;
+        x[n + b3] = v3.im;
+        let link = AcEmulation {
+            from: b3,
+            to: b4,
+            k: 3.0,
+            p_max: f64::INFINITY,
+            dtheta0,
+        };
+        assert!(link.power(x[b3], x[n + b3], x[b4], x[n + b4]) > 0.1);
+        let mut f0 = vec![0.0; sys.nx];
+        sys.residual(&x, &mut f0, None);
+        let j0 = sys.jacobian(&x);
+        sys.hvdc_emulation = vec![link.clone()];
+        let mut f1 = vec![0.0; sys.nx];
+        sys.residual(&x, &mut f1, None);
+        let j1 = sys.jacobian(&x);
+        let rows = [b3, n + b3, b4, n + b4];
+        let c = link.currents(x[b3], x[n + b3], x[b4], x[n + b4]);
+        for (i, &r) in rows.iter().enumerate() {
+            assert!((f1[r] - f0[r] - c[i]).abs() < 1e-12, "row {r}");
+        }
+        for r in (0..sys.nx).filter(|r| !rows.contains(r)) {
+            assert_eq!(f1[r], f0[r], "row {r}");
+        }
+        assert_eq!(j1.len(), j0.len() + 16);
+        let diff = entry_difference(&j1, &j0);
+        let h = 1e-6;
+        for (j, &col) in rows.iter().enumerate() {
+            let (mut xp, mut xm) = (x.clone(), x.clone());
+            xp[col] += h;
+            xm[col] -= h;
+            let cp = link.currents(xp[b3], xp[n + b3], xp[b4], xp[n + b4]);
+            let cm = link.currents(xm[b3], xm[n + b3], xm[b4], xm[n + b4]);
+            for (i, &r) in rows.iter().enumerate() {
+                let expected = (cp[i] - cm[i]) / (2.0 * h);
+                let got = diff.get(&(r, col)).copied().unwrap_or(0.0);
+                assert!(
+                    (got - expected).abs() < 1e-5 * expected.abs().max(1.0),
+                    "∂f[{r}]/∂x[{col}]: {got} against {expected} (column {j})"
+                );
+            }
+        }
+        for (key, v) in &diff {
+            if !(rows.contains(&key.0) && rows.contains(&key.1)) {
+                assert!(v.abs() < 1e-12, "{key:?}: {v}");
+            }
+        }
+        sys.hvdc_emulation = vec![AcEmulation { k: 0.0, ..link }];
+        let jz = sys.jacobian(&x);
+        assert_eq!(jz.len(), j0.len() + 16);
+        let zero = entry_difference(&jz, &j0);
+        assert!(zero.values().all(|v| v.abs() < 1e-12), "{zero:?}");
+    }
+
+    /// `a − b` entry by entry, duplicates summed.
+    fn entry_difference(
+        a: &[(usize, usize, f64)],
+        b: &[(usize, usize, f64)],
+    ) -> std::collections::BTreeMap<(usize, usize), f64> {
+        let mut d = std::collections::BTreeMap::new();
+        for &(r, c, v) in a {
+            *d.entry((r, c)).or_default() += v;
+        }
+        for &(r, c, v) in b {
+            *d.entry((r, c)).or_default() -= v;
+        }
+        d
+    }
+}

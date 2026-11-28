@@ -3,7 +3,7 @@ import { AppState } from '../src/lib/state.svelte.js';
 import { DynamicsController, VALIDATION_NETWORK } from '../src/lib/dynamics/controller.svelte.js';
 import { AT_NOMINAL_HZ, haloColor, haloRadius } from '../src/lib/dynamics/layers.js';
 import { DYN_SPEED } from '../src/lib/colors.js';
-import { m4 } from '../src/lib/dynamics/decimate.js';
+import { m4 } from '../src/lib/charts/decimate.js';
 import { pinInto } from '../src/lib/dynamics/series.js';
 import { minSpanFor, tickLabel, ticks, yDomain } from '../src/lib/dynamics/axis.js';
 import { busFault, sinceEvent } from '../src/lib/dynamics/events.js';

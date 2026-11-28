@@ -1,6 +1,7 @@
 /** The words of a dynamics verdict: an icon and a word first (never colour
  * alone), then labelled numbers, pass or fail checks and a list of details.
- * Every number comes from the engine's screening of the run's own samples. Pure. */
+ * Every number comes from the engine's screening of the run's own samples. Pure.
+ * @block Verdict wording */
 
 import type { RmsScreening } from '@tellegen/engine';
 import type { Stat } from '../diagram/verdict.js';

@@ -22,11 +22,31 @@
 //! Supported models: machines `GENCLS`, `GENROU`, `GENROE`, `GENSAL`,
 //! `GENSAE`; exciters `SEXS`, `ESAC1A`, `EXST1`; governors `TGOV1`, `GAST`,
 //! `HYGOV`; stabilizer `IEEEST`; renewable plants `REGCA1` + `REECB1` +
-//! `REPCA1` ([`renewable`]). Each static load keeps the voltage law the AC
+//! `REPCA1` ([`renewable`]). With `rms-experimental`, exciters `ESST1A` and
+//! `ESAC6A`, stabilizer `PSS2B` and the excitation limiters `OELIT` and
+//! `UELPQ` run as block graphs (`ext_models`). Each static load keeps the voltage law the AC
 //! power flow solved it with (constant power, ZIP and exponential parts,
 //! [`LoadModel::PowerFlow`]), or the whole bus demand follows one law
 //! ([`LoadModel`]); constant-power and constant-current parts convert to
 //! constant admittance below a breakpoint ([`LowVoltageLoad`]).
+//!
+//! # Blocks
+//!
+//! The engine is built from the blocks below; `tellegen-blocks` draws them
+//! (`just blocks`, or `/docs/blocks/rms` on a running `tellegen-server`).
+//! A run goes through them in this order: **building the system** turns a
+//! case into the differential-algebraic system and its steady state, the
+//! **device models** give each unit its equations, the **numerical solver**
+//! steps the system in time, **running a simulation** applies events and
+//! records channels, and **analysing a run** screens the result or
+//! linearizes the system. **Editing a case** prepares the dynamic data
+//! before any of this.
+//!
+//! @block RMS dynamic simulation
+
+// @block NaN-safe comparisons
+// Checks that fail on NaN instead of passing it, used across the engine
+// wherever a value is compared with a tolerance or a limit.
 
 /// True unless `a > b`. A NaN on either side counts as not greater, so a
 /// check written with this fails on NaN instead of passing it.
@@ -46,41 +66,109 @@ pub(crate) fn not_le(a: f64, b: f64) -> bool {
         Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
     )
 }
+// @end
 
-#[cfg(feature = "rms-experimental")]
-pub mod auto;
-pub(crate) mod blocks;
-#[cfg(feature = "rms-experimental")]
-mod dyr_params;
-#[cfg(feature = "rms-experimental")]
-pub mod graph;
+mod api;
+
+// @block Building the system
+// From a case to the simulated system: the AC power flow, the devices
+// linked to their buses, the differential-algebraic system `M ẋ = f(x)`
+// over the bus voltages and device states, and its steady state, where all
+// derivatives vanish and every unit injects its power flow current.
 pub(crate) mod init;
-mod integrate;
-#[cfg(feature = "rms-experimental")]
-mod library;
-#[cfg(feature = "rms-experimental")]
-mod linear;
-#[cfg(feature = "rms-experimental")]
-mod live;
-pub(crate) mod models;
-#[cfg(feature = "rms-experimental")]
-pub mod presets;
-mod renewable;
-mod schur;
-pub mod screen;
 mod system;
 mod topology;
 
+// @block Device models
+// The equations of each unit: synchronous machines with their shaft,
+// exciter, governor and stabilizer, the WECC renewable plant, the control
+// blocks they share, and controllers drawn as block diagrams at run time,
+// among them the models PowerIO does not type, read from their records.
+pub(crate) mod blocks;
+#[cfg(feature = "rms-experimental")]
+pub mod graph;
+// Experimental: ESST1A, ESAC6A, PSS2B, OELIT, UELPQ as block graphs.
+#[cfg(feature = "rms-experimental")]
+pub(crate) mod ext_models;
+pub(crate) mod models;
+mod renewable;
+
+// @block Numerical solver
+// Time integration of `M ẋ = f(x)` by the implicit trapezoidal rule, each
+// step a Newton solve; the step matrix is factorized unit by unit (a Schur
+// complement onto the network) or as one sparse LU, which keeps the pivot
+// order of a pattern's first factorization and recomputes only the values.
+// With regions, the network matrix is factorized region by region around a
+// separator. The fine-grained parts of a step (the units' residual,
+// Jacobian, factorization and solves) run on a pool of spinning threads,
+// joined in the serial order, so the results do not depend on the threads.
+pub(crate) mod clock;
+mod integrate;
+pub(crate) mod regions;
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+pub(crate) mod spin_pool;
+pub use clock::set_clock;
+pub use regions::region_stats;
+#[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
+pub use spin_pool::{configure as configure_threads, Spawner};
+mod schur;
+
+// @block Running a simulation
+// What happens during a run besides integration: discrete events change the
+// network, the recorder samples channels, and a live session advances on
+// demand and takes events while it runs.
+mod events;
+#[cfg(feature = "rms-experimental")]
+mod live;
+#[cfg(feature = "protection")]
+mod protect;
+mod record;
+
+// @block Analysing a run
+// What is computed from a prepared system or a finished run: the screening
+// verdict (centre-of-inertia frequency, angles, voltages, islands) and the
+// small-signal analysis (modes, participation factors, frequency responses).
+#[cfg(feature = "rms-experimental")]
+mod linear;
+pub mod screen;
+
+// @block Editing a case
+// Dynamic data before a simulation: published unit data, a library of
+// typical models, rules that give every unit a model, and edits of single
+// DYR parameters.
+#[cfg(feature = "rms-experimental")]
+pub mod auto;
+#[cfg(feature = "rms-experimental")]
+mod dyr_params;
+#[cfg(feature = "rms-experimental")]
+mod library;
+#[cfg(feature = "rms-experimental")]
+pub mod presets;
+// @end
+
+pub use api::{
+    Checkpoint, InputSignal, LoadModel, LowVoltageLoad, PastPoint, RecordSpec, RmsEvent,
+    RmsGenerator, RmsInspection, RmsOptions, RmsRequest, RmsResult, RmsSeries, SolverState,
+};
 pub use screen::{Reason, RmsScreening, ScreeningCriteria, ScreeningVerdict, SwingTrend};
 pub use topology::{End, TopoBranch, TopoUnit, Topology, UnitKind};
 
-use std::collections::BTreeMap;
-
-use num_complex::Complex;
 use powerio::{BalancedNetwork, DynamicCase};
-use serde::{Deserialize, Serialize};
 
-use system::{DynSystem, GenOut, C64};
+use events::apply_event;
+use integrate::step_adaptive;
+use record::Recorder;
+use system::DynSystem;
+// Experimental: model switches, set by the caller before a run.
+pub use integrate::lu_stats;
+pub use system::set_gast_rate;
+pub use system::set_hvdc_emulation;
+pub use system::set_load_recovery;
+pub use system::set_load_rise;
+pub use system::set_load_saturation;
+pub use system::set_plant_q_exponent;
+pub use system::set_uel;
+pub use system::set_vcomp;
 
 #[cfg(feature = "rms-experimental")]
 pub use dyr_params::{
@@ -107,297 +195,10 @@ pub use live::{
     simulate_module_buffers, RmsBuffers, RmsChunk, RmsLive,
 };
 
-/// A controller reference a [`RmsEvent::SetReference`] sets (and a frequency
-/// response perturbs).
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InputSignal {
-    /// Exciter voltage reference (field voltage for a fixed exciter).
-    VRef,
-    /// Governor power reference (mechanical torque for a fixed governor).
-    PRef,
-}
-
-/// How static loads respond to voltage during the simulation.
-///
-/// The default keeps every load's own law: the constant-power part, the ZIP
-/// constant-current and constant-impedance parts and exponential loads, the
-/// same decomposition the AC power flow solves (each part `P0 (V / V0)^γ`
-/// with `P0` its power at the power flow voltage `V0`), so the loads draw
-/// exactly the power flow demand at `t = 0`. The other variants are a global
-/// override: the whole bus demand at `V0`, whatever its parts, follows one
-/// law (PSS/E `CONL` with 100 % of P and Q in one class).
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LoadModel {
-    /// Each load part keeps the voltage law of the static model.
-    #[default]
-    PowerFlow,
-    /// Constant admittance at the power flow voltage (PSS/E `CONL` 100% Z).
-    ConstantImpedance,
-    ConstantCurrent,
-    ConstantPower,
-}
-
-/// How the constant-power and constant-current load parts (and exponential
-/// parts with `γ < 2`) behave at low voltage.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum LowVoltageLoad {
-    /// PSS/E `PQBRAK`: below `v_break` (pu, absolute; 0.7 by default as in
-    /// PSS/E) each part draws the constant admittance of its power at the
-    /// breakpoint, `P(V) = P(V_b) (V / V_b)²`, continuous in value at `V_b`.
-    /// A bus whose power flow voltage `V0` is below `v_break` breaks at `V0`
-    /// instead, so it starts on its own law.
-    Break { v_break: f64 },
-    /// The stated law at every voltage down to 20 % of `V0`, below that a
-    /// smooth floor on the magnitude the parts divide by (as
-    /// PowerSimulationsDynamics.jl applies the law at every voltage; the
-    /// floor only keeps the current's direction defined at 0 V).
-    Exact,
-}
-
-impl Default for LowVoltageLoad {
-    fn default() -> Self {
-        Self::Break { v_break: 0.7 }
-    }
-}
-
-/// A discrete event at `time` seconds.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RmsEvent {
-    /// Open the branch `(from, to, circuit)`.
-    BranchTrip {
-        time: f64,
-        from: usize,
-        to: usize,
-        #[serde(default = "default_circuit")]
-        circuit: String,
-    },
-    /// Close the branch `(from, to, circuit)` again.
-    BranchClose {
-        time: f64,
-        from: usize,
-        to: usize,
-        #[serde(default = "default_circuit")]
-        circuit: String,
-    },
-    /// A balanced fault to ground through `r + jx` (system per unit).
-    BusFault {
-        time: f64,
-        bus: usize,
-        #[serde(default)]
-        r: f64,
-        #[serde(default = "default_fault_x")]
-        x: f64,
-    },
-    /// Remove the fault at `bus`.
-    ClearFault { time: f64, bus: usize },
-    /// Scale the load at `bus` (all components) by `scale`.
-    LoadChange { time: f64, bus: usize, scale: f64 },
-    /// Set a generator's exciter (`v_ref`) or governor (`p_ref`) reference.
-    SetReference {
-        time: f64,
-        bus: usize,
-        #[serde(default = "default_circuit")]
-        machine_id: String,
-        signal: InputSignal,
-        value: f64,
-    },
-    /// Disconnect a generator.
-    GeneratorTrip {
-        time: f64,
-        bus: usize,
-        #[serde(default = "default_circuit")]
-        machine_id: String,
-    },
-    /// A balanced fault inside branch `(from, to, circuit)` at `location`
-    /// (0 at `from`, 1 at `to`) of its series impedance, through `r + jx`.
-    /// A transient fault (`permanent: false`) dies out once both ends are
-    /// open, so an auto-reclose succeeds.
-    LineFault {
-        time: f64,
-        from: usize,
-        to: usize,
-        #[serde(default = "default_circuit")]
-        circuit: String,
-        location: f64,
-        #[serde(default)]
-        r: f64,
-        #[serde(default = "default_fault_x")]
-        x: f64,
-        #[serde(default = "default_true")]
-        permanent: bool,
-    },
-    /// Remove the fault inside a branch.
-    ClearLineFault {
-        time: f64,
-        from: usize,
-        to: usize,
-        #[serde(default = "default_circuit")]
-        circuit: String,
-    },
-    /// Open the breaker of branch `(from, to, circuit)` at bus `at` (one
-    /// end; the other stays connected).
-    BreakerOpen {
-        time: f64,
-        from: usize,
-        to: usize,
-        #[serde(default = "default_circuit")]
-        circuit: String,
-        at: usize,
-    },
-    /// Close that breaker again.
-    BreakerClose {
-        time: f64,
-        from: usize,
-        to: usize,
-        #[serde(default = "default_circuit")]
-        circuit: String,
-        at: usize,
-    },
-}
-
-fn default_circuit() -> String {
-    "1".into()
-}
-
-fn default_fault_x() -> f64 {
-    1e-4
-}
-
-impl RmsEvent {
-    pub fn time(&self) -> f64 {
-        match self {
-            Self::BranchTrip { time, .. }
-            | Self::BranchClose { time, .. }
-            | Self::BusFault { time, .. }
-            | Self::ClearFault { time, .. }
-            | Self::LoadChange { time, .. }
-            | Self::SetReference { time, .. }
-            | Self::GeneratorTrip { time, .. }
-            | Self::LineFault { time, .. }
-            | Self::ClearLineFault { time, .. }
-            | Self::BreakerOpen { time, .. }
-            | Self::BreakerClose { time, .. } => *time,
-        }
-    }
-}
-
-/// A simulation request.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RmsRequest {
-    /// End time in seconds.
-    #[serde(default = "default_t_end")]
-    pub t_end: f64,
-    /// Integration step in seconds.
-    #[serde(default = "default_dt")]
-    pub dt: f64,
-    /// Output sampling interval in seconds, a multiple of `dt`.
-    #[serde(default = "default_output_step")]
-    pub output_step: f64,
-    /// The load model: for [`simulate`] the one the simulation is built with
-    /// (default [`LoadModel::PowerFlow`]); for [`RmsSimulation::run`] it
-    /// must be the prepared simulation's or `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub load_model: Option<LoadModel>,
-    #[serde(default)]
-    pub events: Vec<RmsEvent>,
-    /// Compute the eigenvalues of the linearized system at the initial point
-    /// (dense, `O(n³)` in the differential states). Needs the
-    /// `rms-experimental` feature; without it the request is noted and
-    /// skipped.
-    #[serde(default)]
-    pub small_signal: bool,
-    /// What to record (default: every channel at every output step).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub record: Option<RecordSpec>,
-}
-
-fn default_t_end() -> f64 {
-    10.0
-}
-fn default_dt() -> f64 {
-    0.0025
-}
-fn default_output_step() -> f64 {
-    0.005
-}
-fn default_true() -> bool {
-    true
-}
-
-impl Default for RmsRequest {
-    fn default() -> Self {
-        Self {
-            t_end: default_t_end(),
-            dt: default_dt(),
-            output_step: default_output_step(),
-            load_model: None,
-            events: Vec::new(),
-            small_signal: false,
-            record: None,
-        }
-    }
-}
-
-/// One dynamic generator in the result.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RmsGenerator {
-    pub bus: usize,
-    pub machine_id: String,
-    /// `[machine, exciter, governor, stabilizer]` model names.
-    pub models: Vec<String>,
-    pub states: Vec<String>,
-    pub initial_states: Vec<f64>,
-    pub v_ref: f64,
-    pub p_ref: f64,
-    pub mbase: f64,
-    /// Inertia constant `H` on the machine base, s (the weight of the
-    /// machine in a centre of inertia is `H · MBASE`).
-    #[serde(default)]
-    pub h: f64,
-}
-
-/// The simulation result. Channels are keyed `quantity:bus` (`vm`, `va` in
-/// radians, `delta` in radians, `omega`, `efd`, `tm` on the machine base,
-/// `pe`, `qe` on the system base; `pl`, `ql` the power the loads of a bus
-/// draw, system base) and `quantity:from-to` for branch flows
-/// (`p_from`, `q_from`, `p_to`, `q_to`, system base), with `#id` appended for
-/// a machine or circuit id other than `1`.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RmsResult {
-    pub time: Vec<f64>,
-    pub channels: BTreeMap<String, Vec<f64>>,
-    pub buses: Vec<usize>,
-    pub base_mva: f64,
-    pub base_frequency: f64,
-    pub generators: Vec<RmsGenerator>,
-    /// Generators held as voltage sources behind `ZSORCE`.
-    pub sources: Vec<String>,
-    /// Eigenvalues `[re, im]` at the initial operating point (with
-    /// [`RmsRequest::small_signal`]; empty otherwise).
-    pub eigenvalues: Vec<[f64; 2]>,
-    pub events: Vec<String>,
-    pub notes: Vec<String>,
-    pub steps: usize,
-    pub newton_iterations: usize,
-    /// The channels of [`RecordSpec::frames`] at their own step.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frames: Option<RmsSeries>,
-    /// The full state at [`RecordSpec::checkpoint_step`] intervals (empty
-    /// without the `rms-experimental` feature, with a note).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub checkpoints: Vec<Checkpoint>,
-}
+// @block Prepared simulation
+// The engine's centre: a case assembled and initialized once, then run any
+// number of times with different events. It holds the system, its steady
+// state and the network elements events can name.
 
 /// A prepared simulation: the system assembled and initialized once, run any
 /// number of times with different events.
@@ -422,6 +223,11 @@ pub(crate) fn unit_key(bus: usize, id: &str) -> String {
 }
 
 impl RmsSimulation {
+    // @block Build once
+    // Every constructor ends in `assemble`: the system is built from the
+    // case and initialized from the AC power flow, and the steady state, the
+    // notes of the build and the topology are kept for every later run.
+
     /// Assemble and initialize.
     ///
     /// # Errors
@@ -518,10 +324,85 @@ impl RmsSimulation {
         })
     }
 
+    // @block Inspect without running
+    // What the prepared system shows before any run: its elements as the
+    // engine numbers them, the branch loading at the operating point, the
+    // generators with their models, the unit that turns the reference frame,
+    // the units held at their power flow output, and (with
+    // `rms-experimental`) the eigenvalues and the small-signal analysis.
+
     /// The elements of the simulated network, as the engine numbers them.
     #[must_use]
     pub fn topology(&self) -> &Topology {
         &self.topology
+    }
+
+    /// Run with protection relays: as [`Self::run`], with the relays of
+    /// `scheme` measuring the network at every step and their breakers
+    /// opening, reclosing and tripping units as they decide. The relay
+    /// channels (`z_r:`, `z_x:` and the like) join the result's channels.
+    ///
+    /// # Errors
+    /// As [`Self::run`], or when a relay does not bind to this network.
+    #[cfg(feature = "protection")]
+    pub fn run_with_protection(
+        &self,
+        request: &RmsRequest,
+        scheme: &crate::protection::ProtectionScheme,
+    ) -> Result<(RmsResult, crate::protection::ProtectionReport), String> {
+        self.run_with_protection_cancellable(request, scheme, &mut || false)
+    }
+
+    /// [`Self::run_with_protection`], polling `cancelled` between output
+    /// samples (a caller reports progress from it).
+    ///
+    /// # Errors
+    /// As [`Self::run_with_protection`], or when `cancelled` returns true.
+    #[cfg(feature = "protection")]
+    pub fn run_with_protection_cancellable(
+        &self,
+        request: &RmsRequest,
+        scheme: &crate::protection::ProtectionScheme,
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> Result<(RmsResult, crate::protection::ProtectionReport), String> {
+        // Series capacitor banks act without relays too.
+        if scheme.relays.is_empty() && scheme.series_capacitors.is_empty() {
+            return Ok((
+                self.run_cancellable(request, cancelled)?,
+                crate::protection::ProtectionReport::default(),
+            ));
+        }
+        let mut relays = crate::protection::ProtectionRuntime::bind(scheme, &self.topology, true)?;
+        let result = self.run_from(request, None, cancelled, Some(&mut relays))?;
+        Ok((result, relays.into_report()))
+    }
+
+    /// The relays of `scheme` at the operating point (the power flow): what
+    /// each measures and which functions pick up.
+    ///
+    /// # Errors
+    /// When a relay does not bind to this network.
+    #[cfg(feature = "protection")]
+    pub fn relays_at_operating_point(
+        &self,
+        scheme: &crate::protection::ProtectionScheme,
+    ) -> Result<crate::protection::statics::OperatingPoint, String> {
+        let mut r = crate::protection::ProtectionRuntime::bind(scheme, &self.topology, true)?;
+        let m = protect::RelayMeasure::new(&self.sys, &self.x0, 0.0);
+        r.evaluate(&m);
+        let topo = &self.topology;
+        let seen = r.seen(&m, |b, i| {
+            let kv = topo.base_kv.get(b).copied().unwrap_or(1.0).max(1e-9);
+            i.norm() * topo.sbase / (3f64.sqrt() * kv)
+        });
+        let pickups = r
+            .report()
+            .operations
+            .iter()
+            .filter(|o| o.kind == crate::protection::OperationKind::Pickup)
+            .cloned()
+            .collect();
+        Ok(crate::protection::statics::OperatingPoint { pickups, seen })
     }
 
     /// The apparent power at the more loaded end of every branch at the
@@ -720,13 +601,60 @@ impl RmsSimulation {
     #[cfg(feature = "rms-experimental")]
     pub fn linear_analysis(&self, request: &LinearRequest) -> Result<LinearResult, String> {
         let sys = self.linearized(models::REST_MARGIN);
-        let (states, modes) = linear::modes(&sys, &self.x0, request.participation_top)?;
+        // experimental: a system too large for the dense eigensolver still gets its frequency responses
+        let (states, modes) = if linear::check_eigen_size(&sys).is_ok() {
+            linear::modes(&sys, &self.x0, request.participation_top)?
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let bode = linear::bode(&sys, &self.x0, request)?;
         Ok(LinearResult {
             states,
             modes,
             bode,
         })
+    }
+
+    // @block Run
+    // A run integrates the prepared system over `[0, t_end]` with the
+    // request's events, from the start or from a checkpoint of an earlier
+    // run, and returns the recorded channels. The prepared system is never
+    // changed: each run works on its own copy.
+
+    /// Check a request against this simulation and return the integration
+    /// step: at most `dt`, dividing the output step evenly.
+    fn check_request(&self, request: &RmsRequest) -> Result<f64, String> {
+        if request.load_model.is_some_and(|m| m != self.load_model) {
+            return Err("the request's load model differs from the prepared simulation's".into());
+        }
+        if !(request.dt >= MIN_DT
+            && request.output_step >= request.dt
+            && request.output_step.is_finite()
+            && request.t_end > 0.0
+            && request.t_end.is_finite())
+        {
+            return Err(format!(
+                "need dt >= {MIN_DT} s, a finite output_step >= dt and a finite t_end > 0"
+            ));
+        }
+        // Bounded before the count is cast: a huge output step would
+        // saturate it and leave a step coarser than `dt`.
+        let substeps = substeps(request.output_step, request.dt);
+        if substeps > MAX_STEPS {
+            return Err(format!(
+                "output_step / dt = {:.3e} steps per output step exceeds the limit of {MAX_STEPS:e}; use a smaller output_step",
+                request.output_step / request.dt
+            ));
+        }
+        let h = request.output_step / substeps;
+        self.check_events(&request.events, request.t_end, 1e-9 * h)?;
+        if request.t_end / h > MAX_STEPS {
+            return Err(format!(
+                "t_end / dt = {:.3e} steps exceeds the limit of {MAX_STEPS:e}; use a larger dt or a shorter run",
+                request.t_end / h
+            ));
+        }
+        Ok(h)
     }
 
     /// Check every event before a run: a finite time in `[0, t_end − tol)`
@@ -780,7 +708,13 @@ impl RmsSimulation {
         request: &RmsRequest,
         cancelled: &mut dyn FnMut() -> bool,
     ) -> Result<RmsResult, String> {
-        self.run_from(request, None, cancelled)
+        self.run_from(
+            request,
+            None,
+            cancelled,
+            #[cfg(feature = "protection")]
+            None,
+        )
     }
 
     /// Run `request` from a checkpoint of an earlier run of the same
@@ -793,45 +727,36 @@ impl RmsSimulation {
     /// As [`Self::run`], or a checkpoint of another system.
     #[cfg(feature = "rms-experimental")]
     pub fn replay(&self, request: &RmsRequest, from: &Checkpoint) -> Result<RmsResult, String> {
-        self.run_from(request, Some(from), &mut || false)
+        self.run_from(
+            request,
+            Some(from),
+            &mut || false,
+            #[cfg(feature = "protection")]
+            None,
+        )
     }
 
+    /// A run from the start, or from a checkpoint of an earlier run of the
+    /// same request; `cancelled` is polled at every output sample.
+    // @block The run loop
     fn run_from(
         &self,
         request: &RmsRequest,
         start: Option<&Checkpoint>,
         cancelled: &mut dyn FnMut() -> bool,
+        #[cfg(feature = "protection")] mut relays: Option<
+            &mut crate::protection::ProtectionRuntime,
+        >,
     ) -> Result<RmsResult, String> {
-        if request.load_model.is_some_and(|m| m != self.load_model) {
-            return Err("the request's load model differs from the prepared simulation's".into());
-        }
-        if !(request.dt >= MIN_DT
-            && request.output_step >= request.dt
-            && request.output_step.is_finite()
-            && request.t_end > 0.0
-            && request.t_end.is_finite())
-        {
-            return Err(format!(
-                "need dt >= {MIN_DT} s, a finite output_step >= dt and a finite t_end > 0"
-            ));
-        }
-        // Bounded before the count is cast: a huge output step would
-        // saturate it and leave a step coarser than `dt`.
-        let substeps = substeps(request.output_step, request.dt);
-        if substeps > MAX_STEPS {
-            return Err(format!(
-                "output_step / dt = {:.3e} steps per output step exceeds the limit of {MAX_STEPS:e}; use a smaller output_step",
-                request.output_step / request.dt
-            ));
-        }
-        let h = request.output_step / substeps;
-        self.check_events(&request.events, request.t_end, 1e-9 * h)?;
-        if request.t_end / h > MAX_STEPS {
-            return Err(format!(
-                "t_end / dt = {:.3e} steps exceeds the limit of {MAX_STEPS:e}; use a larger dt or a shorter run",
-                request.t_end / h
-            ));
-        }
+        // @block Check the request
+        // The load model must be the prepared one, the steps positive and
+        // bounded, and every event must name an element the system has at
+        // its time. The integration step `h` divides the output step evenly.
+        let h = self.check_request(request)?;
+
+        // @block Start state
+        // A copy of the prepared system and its steady state, the output
+        // times, the events in time order, and a fresh integrator.
         let targets = output_times(request.t_end, request.output_step);
         let mut sys = self.sys.clone();
         let mut x = self.x0.clone();
@@ -845,6 +770,20 @@ impl RmsSimulation {
         #[cfg_attr(not(feature = "rms-experimental"), allow(unused_mut))]
         let mut k0 = 0usize;
         let mut stepper = integrate::Stepper::new();
+        #[cfg(feature = "protection")]
+        if let Some(r) = relays.as_deref_mut() {
+            r.set_threads(sys.threads);
+        }
+        // Experimental: with `TELLEGEN_REINIT_SKIP=1`, a re-solve on copies before the
+        // run learns whether the one with the device states free is singular, so the first event
+        // does not pay for finding out.
+        integrate::probe_reinit(&mut stepper, &sys, &x, &f);
+
+        // @block Resume from a checkpoint
+        // Replay only: the events before the checkpoint are applied to the
+        // network (not the state, which is the checkpoint's), and the
+        // integrator gets back the factorization and history it had there,
+        // so the samples that follow are the earlier run's.
         #[cfg(not(feature = "rms-experimental"))]
         let _ = start;
         #[cfg(feature = "rms-experimental")]
@@ -887,6 +826,10 @@ impl RmsSimulation {
             t = cp.t;
             k0 = targets.partition_point(|&tk| tk <= cp.t + tol);
         }
+
+        // @block Prepare recording
+        // The recorder takes the first sample at the start time; a run that
+        // asks for checkpoints keeps its first one there.
         #[cfg(feature = "rms-experimental")]
         let checkpoint_step = match (start, &request.record) {
             (None, Some(r)) if r.checkpoint_step > 0.0 => r.checkpoint_step,
@@ -908,36 +851,232 @@ impl RmsSimulation {
             });
             next_checkpoint = t + checkpoint_step;
         }
+        #[cfg(feature = "protection")]
+        if let Some(r) = relays.as_deref_mut() {
+            let m = protect::RelayMeasure::new(&sys, &x, t);
+            r.evaluate(&m);
+            r.channels(&m);
+        }
+        // The relays' evaluation of the state just reached, not yet run.
+        #[cfg(feature = "protection")]
+        let mut pending: Option<protect::Pending> = None;
         let mut applied: Vec<String> = Vec::new();
         let mut steps = 0usize;
         let mut iterations = 0usize;
         let mut euler_steps = 0usize;
-        for &t_target in &targets[k0..] {
+
+        // @block Time loop
+        // Output step by output step up to `t_end`: integrate to the next
+        // output time, stopping at every event on the way, then record.
+        // Experimental: with `TELLEGEN_PARTIAL=1` a run that cannot go on (a failed
+        // step, a network that cannot be re-solved) ends there and returns what it recorded up to
+        // the last output time, with the reason as a note, instead of an error.
+        let partial = std::env::var("TELLEGEN_PARTIAL").is_ok_and(|v| v == "1");
+        let mut stopped: Option<String> = None;
+        'time: for &t_target in &targets[k0..] {
+            // @block Step to the next output time
+            // Steps of at most `h`, cut short at the next event.
             if cancelled() {
                 return Err("cancelled".into());
             }
             while t < t_target - tol {
-                // Apply every event due now, then re-solve the algebraic part.
+                // @block Relays beside the step
+                // The relays' evaluation of the state at `t` runs beside the
+                // step from `t` when that acts exactly as running it first
+                // (`ProtectionRuntime::can_run_beside`: nothing due now, and
+                // nothing it can start falls due within the step); otherwise
+                // it runs first, and the step proceeds as below.
+                #[cfg(feature = "protection")]
+                let beside = {
+                    let mut t_next = (t + h).min(t_target);
+                    if next_event < events.len() {
+                        t_next = t_next.min(events[next_event].time());
+                    }
+                    let event_due =
+                        next_event < events.len() && events[next_event].time() <= t + tol;
+                    match (&pending, relays.as_deref()) {
+                        (Some(_), Some(r)) => {
+                            cfg!(not(all(
+                                target_arch = "wasm32",
+                                not(target_feature = "atomics")
+                            ))) && sys.threads
+                                && !event_due
+                                && r.can_run_beside(t, t_next, h)
+                        }
+                        _ => false,
+                    }
+                };
+                #[cfg(feature = "protection")]
+                if !beside {
+                    if let (Some(p), Some(r)) = (pending.take(), relays.as_deref_mut()) {
+                        let t0 = crate::rms::clock::Instant::now();
+                        p.run(r, &sys);
+                        integrate::time_add(0, t0);
+                        integrate::STATS[10].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                // @block Apply due events
+                // Every event due now changes the network; units left
+                // without a path to a source are switched off, the
+                // admittance and mass matrices are rebuilt, and the
+                // algebraic part (bus voltages, currents) is re-solved with
+                // the differential states held, so the next step starts from
+                // a consistent point. When that re-solve fails, the collapse is
+                // relieved level by level (`topology::relieve`) and it is tried
+                // again.
                 let mut changed = false;
                 while next_event < events.len() && events[next_event].time() <= t + tol {
                     applied.push(apply_event(&mut sys, &mut x, &events[next_event])?);
                     next_event += 1;
                     changed = true;
                 }
+                // Then the relays' breaker actions due now (none when the
+                // evaluation runs beside the step).
+                #[cfg(feature = "protection")]
+                if let Some(r) = relays.as_deref_mut().filter(|_| !beside) {
+                    let actions = r.take_due(t, &protect::RelayMeasure::new(&sys, &x, t));
+                    for a in &actions {
+                        applied.push(protect::apply_action(&mut sys, &x, a, t));
+                        changed = true;
+                    }
+                    r.applied();
+                }
                 if changed {
                     applied.extend(topology::extinguish(&mut sys, t));
                     sys.rebuild_ybus();
                     sys.rebuild_mass();
                     sys.residual(&x, &mut f, None);
-                    iterations += stepper
-                        .reinit(&sys, &mut x, &mut f)
-                        .map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))?;
+                    // Experimental: relief in a collapse, see `topology::relieve`.
+                    let x_keep = x.clone();
+                    let mut solved = stepper.reinit(&sys, &mut x, &mut f);
+                    for level in RELIEF_LEVELS {
+                        let Err(message) = &solved else { break };
+                        let hint = topology::hint_bus(message);
+                        x.clone_from(&x_keep);
+                        let notes = topology::relieve(&mut sys, &x, t, level, hint);
+                        if notes.is_empty() {
+                            continue;
+                        }
+                        applied.extend(notes);
+                        applied.extend(topology::extinguish(&mut sys, t));
+                        sys.rebuild_ybus();
+                        sys.rebuild_mass();
+                        sys.residual(&x, &mut f, None);
+                        solved = stepper.reinit(&sys, &mut x, &mut f);
+                    }
+                    match solved.map_err(|e| format!("re-solving the network at t = {t:.4} s: {e}"))
+                    {
+                        Ok(n) => iterations += n,
+                        Err(e) if partial => {
+                            stopped = Some(e);
+                            break 'time;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                    #[cfg(feature = "protection")]
+                    if let Some(r) = relays.as_deref_mut() {
+                        iterations += protect::settle_banks(
+                            r,
+                            &mut sys,
+                            &mut x,
+                            &mut f,
+                            &mut stepper,
+                            t,
+                            &mut applied,
+                        )?;
+                    }
                 }
+
+                // @block Integrate one step
+                // A trapezoidal step to the next output time or event, with
+                // the integrator's fallbacks (backward Euler, halved steps).
+                // A step that still fails is retried after the same reliefs as
+                // the re-solve; a failure then names the islands the network
+                // has split into. After the step, recovering loads follow their
+                // bus voltage (`DynSystem::relax_loads`).
                 let mut t_next = (t + h).min(t_target);
                 if next_event < events.len() {
                     t_next = t_next.min(events[next_event].time());
                 }
-                iterations += step_adaptive(
+                #[cfg(feature = "protection")]
+                if let Some(d) = relays.as_deref().and_then(|r| r.next_deadline()) {
+                    if d > t + tol {
+                        t_next = t_next.min(d);
+                    }
+                }
+                // Experimental: relief in a collapse, see `topology::relieve`.
+                let x_keep = x.clone();
+                #[cfg(feature = "protection")]
+                let mut stepped = match (beside, pending.take(), relays.as_deref_mut()) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    (true, Some(p), Some(r)) => {
+                        // Both only read the network: the relays measure
+                        // their own copy of the state at `t`.
+                        let sys = &sys;
+                        integrate::STATS[11].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        std::thread::scope(|s| {
+                            let relays_done = s.spawn(move || p.run(r, sys));
+                            let t0 = crate::rms::clock::Instant::now();
+                            let stepped = step_adaptive(
+                                sys,
+                                &mut x,
+                                &mut f,
+                                t_next - t,
+                                0,
+                                &mut euler_steps,
+                                &mut stepper,
+                            );
+                            integrate::time_add(3, t0);
+                            let t1 = crate::rms::clock::Instant::now();
+                            relays_done.join().expect("the relay evaluation panicked");
+                            integrate::time_add(1, t1);
+                            stepped
+                        })
+                    }
+                    // In the browser: the relays on the side pool's Web Worker.
+                    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+                    (true, Some(p), Some(r)) => {
+                        let sys = &sys;
+                        integrate::STATS[11].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let job = std::sync::Mutex::new(Some((p, r)));
+                        let side = |_: usize| {
+                            if let Some((p, r)) = job.lock().expect("relay job").take() {
+                                p.run(r, sys);
+                            }
+                        };
+                        spin_pool::SpinPool::side().beside(&side, || {
+                            let t0 = crate::rms::clock::Instant::now();
+                            let stepped = step_adaptive(
+                                sys,
+                                &mut x,
+                                &mut f,
+                                t_next - t,
+                                0,
+                                &mut euler_steps,
+                                &mut stepper,
+                            );
+                            integrate::time_add(3, t0);
+                            stepped
+                        })
+                    }
+                    (_, p, _) => {
+                        pending = p;
+                        let t0 = crate::rms::clock::Instant::now();
+                        let st = step_adaptive(
+                            &sys,
+                            &mut x,
+                            &mut f,
+                            t_next - t,
+                            0,
+                            &mut euler_steps,
+                            &mut stepper,
+                        );
+                        integrate::time_add(3, t0);
+                        st
+                    }
+                };
+                #[cfg(not(feature = "protection"))]
+                let mut stepped = step_adaptive(
                     &sys,
                     &mut x,
                     &mut f,
@@ -945,8 +1084,36 @@ impl RmsSimulation {
                     0,
                     &mut euler_steps,
                     &mut stepper,
-                )
-                .map_err(|e| {
+                );
+                for level in RELIEF_LEVELS {
+                    let Err(message) = &stepped else { break };
+                    let hint = topology::hint_bus(message);
+                    x.clone_from(&x_keep);
+                    let notes = topology::relieve(&mut sys, &x, t, level, hint);
+                    if notes.is_empty() {
+                        continue;
+                    }
+                    applied.extend(notes);
+                    applied.extend(topology::extinguish(&mut sys, t));
+                    sys.rebuild_ybus();
+                    sys.rebuild_mass();
+                    sys.residual(&x, &mut f, None);
+                    match stepper.reinit(&sys, &mut x, &mut f) {
+                        Err(e) => stepped = Err(e),
+                        Ok(_) => {
+                            stepped = step_adaptive(
+                                &sys,
+                                &mut x,
+                                &mut f,
+                                t_next - t,
+                                0,
+                                &mut euler_steps,
+                                &mut stepper,
+                            );
+                        }
+                    }
+                }
+                let stepped = stepped.map_err(|e| {
                     let islands: Vec<String> =
                         sys.detached_islands().into_iter().map(|(_, s)| s).collect();
                     if islands.is_empty() {
@@ -958,12 +1125,57 @@ impl RmsSimulation {
                             islands.join("; an island of ")
                         )
                     }
-                })?;
+                });
+                match stepped {
+                    Ok(n) => iterations += n,
+                    Err(e) if partial => {
+                        stopped = Some(e);
+                        break 'time;
+                    }
+                    Err(e) => return Err(e),
+                }
                 steps += 1;
+                sys.relax_loads(&x, t_next - t);
                 t = t_next;
+                #[cfg(feature = "protection")]
+                if let Some(r) = relays.as_deref_mut() {
+                    let _tb = integrate::Timer(2, crate::rms::clock::Instant::now());
+                    iterations += protect::settle_banks(
+                        r,
+                        &mut sys,
+                        &mut x,
+                        &mut f,
+                        &mut stepper,
+                        t,
+                        &mut applied,
+                    )?;
+                    // Evaluated at the next step: beside it, or first.
+                    pending = Some(protect::Pending::new(t, &x));
+                }
             }
+
+            // @block Record a sample
+            // The selected channels at the output time.
             t = t_target;
             rec.record(&sys, t, &x);
+            #[cfg(feature = "protection")]
+            if let Some(r) = relays.as_deref_mut() {
+                // The relay channels of this output sample, recorded after
+                // the evaluation of the same state.
+                match pending.as_mut().filter(|p| p.channels.is_none()) {
+                    Some(p) => p.channels = Some(t),
+                    None => {
+                        if let Some(p) = pending.take() {
+                            p.run(r, &sys);
+                        }
+                        r.channels(&protect::RelayMeasure::new(&sys, &x, t));
+                    }
+                }
+            }
+
+            // @block Take a checkpoint
+            // At the requested interval: the full state, the integrator's
+            // factorization and its history, enough to replay from here.
             #[cfg(feature = "rms-experimental")]
             if checkpoint_step > 0.0 && t >= next_checkpoint - tol {
                 let solver = stepper
@@ -983,9 +1195,24 @@ impl RmsSimulation {
                 next_checkpoint = t + checkpoint_step;
             }
         }
+        #[cfg(feature = "protection")]
+        if let Some(r) = relays {
+            if let Some(p) = pending.take() {
+                p.run(r, &sys);
+            }
+            r.take_channels(&mut rec.channels);
+        }
+
+        // @block Assemble the result
+        // The recorded channels with what describes them: buses, bases,
+        // generators and sources, the events as applied, the notes of the
+        // build and the run, and the eigenvalues when asked for.
         let (time, channels, frames) = rec.take();
         #[cfg_attr(feature = "rms-experimental", allow(unused_mut))]
         let mut run_notes: Vec<String> = Vec::new();
+        if let Some(e) = stopped {
+            run_notes.push(format!("stopped early (TELLEGEN_PARTIAL): {e}"));
+        }
         #[cfg(feature = "rms-experimental")]
         let eigenvalues = if request.small_signal && start.is_none() {
             self.eigenvalues().unwrap_or_else(|e| {
@@ -1051,233 +1278,14 @@ impl RmsSimulation {
     }
 }
 
-/// Take a trapezoidal step in place; on Newton failure fall back to an
-/// L-stable backward-Euler step (which damps the chatter of limiters and
-/// rectifiers that switch inside the step), then halve the step. On an error
-/// `x` and `f` are unchanged.
-fn step_adaptive(
-    sys: &DynSystem,
-    x: &mut Vec<f64>,
-    f: &mut Vec<f64>,
-    h: f64,
-    depth: usize,
-    euler_steps: &mut usize,
-    stepper: &mut integrate::Stepper,
-) -> Result<usize, String> {
-    match stepper.step(sys, x, f, h, 0.5) {
-        Ok(ok) => Ok(ok),
-        Err(trap) => {
-            if let Ok(ok) = stepper.step(sys, x, f, h, 1.0) {
-                *euler_steps += 1;
-                return Ok(ok);
-            }
-            if depth >= 10 {
-                return Err(trap);
-            }
-            let start = (x.clone(), f.clone());
-            let halves = step_adaptive(sys, x, f, 0.5 * h, depth + 1, euler_steps, stepper)
-                .and_then(|i1| {
-                    step_adaptive(sys, x, f, 0.5 * h, depth + 1, euler_steps, stepper)
-                        .map(|i2| i1 + i2)
-                });
-            if halves.is_err() {
-                (*x, *f) = start;
-                stepper.forget();
-            }
-            halves
-        }
-    }
-}
+// @block Step and output times
+// How a run divides time: the output samples up to `t_end`, the
+// integration steps per output step, and the bounds on both.
 
-fn find_branch(sys: &DynSystem, from: usize, to: usize, circuit: &str) -> Result<usize, String> {
-    sys.branch_keys
-        .iter()
-        .position(|(f, t, c)| {
-            ((*f == from && *t == to) || (*f == to && *t == from)) && c.trim() == circuit.trim()
-        })
-        .ok_or_else(|| format!("no branch {from}-{to} circuit {circuit}"))
-}
-
-fn apply_event(sys: &mut DynSystem, x: &mut [f64], event: &RmsEvent) -> Result<String, String> {
-    let bus = |sys: &DynSystem, b: usize| sys.dense_bus(b).ok_or_else(|| format!("no bus {b}"));
-    Ok(match event {
-        RmsEvent::BranchTrip {
-            time,
-            from,
-            to,
-            circuit,
-        } => {
-            let e = find_branch(sys, *from, *to, circuit)?;
-            sys.closed[e] = false;
-            format!("t = {time} s: branch {from}-{to} circuit {circuit} opened")
-        }
-        RmsEvent::BranchClose {
-            time,
-            from,
-            to,
-            circuit,
-        } => {
-            let e = find_branch(sys, *from, *to, circuit)?;
-            sys.closed[e] = true;
-            format!("t = {time} s: branch {from}-{to} circuit {circuit} closed")
-        }
-        RmsEvent::BusFault {
-            time,
-            bus: b,
-            r,
-            x: xf,
-        } => {
-            let k = bus(sys, *b)?;
-            sys.fault_y[k] = fault_admittance(*r, *xf)?;
-            format!("t = {time} s: fault at bus {b} through {r} + j{xf} pu")
-        }
-        RmsEvent::ClearFault { time, bus: b } => {
-            let k = bus(sys, *b)?;
-            sys.fault_y[k] = C64::new(0.0, 0.0);
-            format!("t = {time} s: fault at bus {b} cleared")
-        }
-        RmsEvent::LoadChange {
-            time,
-            bus: b,
-            scale,
-        } => {
-            let k = bus(sys, *b)?;
-            if !(scale.is_finite() && *scale >= 0.0) {
-                return Err(format!(
-                    "load scale {scale} is not a finite number >= 0 (a negative scale turns loads into sources)"
-                ));
-            }
-            sys.loads[k].scale(*scale, *scale);
-            format!("t = {time} s: load at bus {b} scaled by {scale}")
-        }
-        RmsEvent::SetReference {
-            time,
-            bus: b,
-            machine_id,
-            signal,
-            value,
-        } => {
-            if !value.is_finite() {
-                return Err(format!("reference value {value} is not finite"));
-            }
-            let d = sys
-                .devices
-                .iter_mut()
-                .find(|d| d.bus_number == *b && d.machine_id == machine_id.trim())
-                .ok_or_else(|| format!("no dynamic generator {b} '{machine_id}'"))?;
-            let name = match signal {
-                InputSignal::VRef => {
-                    d.v_ref = *value;
-                    "V_ref"
-                }
-                InputSignal::PRef => {
-                    d.p_ref = *value;
-                    "P_ref"
-                }
-            };
-            format!("t = {time} s: generator {b} '{machine_id}' {name} = {value}")
-        }
-        RmsEvent::GeneratorTrip {
-            time,
-            bus: b,
-            machine_id,
-        } => {
-            if let Some(d) = sys
-                .devices
-                .iter_mut()
-                .find(|d| d.bus_number == *b && d.machine_id == machine_id.trim())
-            {
-                d.tripped = Some(x[d.offset..d.offset + d.n_states()].to_vec());
-            } else if let Some(s) = sys
-                .sources
-                .iter_mut()
-                .find(|s| s.bus_number == *b && s.machine_id == machine_id.trim())
-            {
-                s.y = C64::new(0.0, 0.0);
-                s.e = C64::new(0.0, 0.0);
-            } else if let Some(k) = sys
-                .held
-                .iter()
-                .position(|u| u.bus_number == *b && u.machine_id == machine_id.trim())
-            {
-                topology::trip_held(sys, k);
-            } else {
-                return Err(format!("no generator {b} '{machine_id}'"));
-            }
-            format!("t = {time} s: generator {b} '{machine_id}' tripped")
-        }
-        RmsEvent::LineFault {
-            time,
-            from,
-            to,
-            circuit,
-            location,
-            r,
-            x: xf,
-            permanent,
-        } => {
-            let e = find_branch(sys, *from, *to, circuit)?;
-            if !(0.0..=1.0).contains(location) {
-                return Err(format!("fault location {location} must lie in [0, 1]"));
-            }
-            // Measured from the branch's own from end.
-            let alpha = if sys.branch_keys[e].0 == *from {
-                *location
-            } else {
-                1.0 - location
-            };
-            sys.branch_faults[e] = Some(system::BranchFault {
-                alpha,
-                y: fault_admittance(*r, *xf)?,
-                permanent: *permanent,
-            });
-            format!(
-                "t = {time} s: {} fault at {:.0} % of {from}-{to} circuit {circuit} through {r} + j{xf} pu",
-                if *permanent { "permanent" } else { "transient" },
-                location * 100.0
-            )
-        }
-        RmsEvent::ClearLineFault {
-            time,
-            from,
-            to,
-            circuit,
-        } => {
-            let e = find_branch(sys, *from, *to, circuit)?;
-            sys.branch_faults[e] = None;
-            format!("t = {time} s: fault inside {from}-{to} circuit {circuit} cleared")
-        }
-        RmsEvent::BreakerOpen {
-            time,
-            from,
-            to,
-            circuit,
-            at,
-        }
-        | RmsEvent::BreakerClose {
-            time,
-            from,
-            to,
-            circuit,
-            at,
-        } => {
-            let e = find_branch(sys, *from, *to, circuit)?;
-            let k = if sys.branch_keys[e].0 == *at {
-                0
-            } else if sys.branch_keys[e].1 == *at {
-                1
-            } else {
-                return Err(format!("bus {at} is not an end of {from}-{to}"));
-            };
-            let open = matches!(event, RmsEvent::BreakerOpen { .. });
-            sys.end_open[e][k] = open;
-            format!(
-                "t = {time} s: breaker of {from}-{to} circuit {circuit} at bus {at} {}",
-                if open { "opened" } else { "closed" }
-            )
-        }
-    })
-}
+/// Experimental: the order of the collapse reliefs tried at one instant
+/// (see `topology::relieve`): small islands, then the named bus (each failure
+/// names a new one), then its neighbours, then everything below 0.3 pu.
+const RELIEF_LEVELS: [usize; 12] = [0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3];
 
 /// The smallest integration step a run takes, s.
 const MIN_DT: f64 = 1e-6;
@@ -1304,655 +1312,10 @@ fn substeps(output_step: f64, dt: f64) -> f64 {
     (output_step / dt * (1.0 - 1e-9)).ceil().max(1.0)
 }
 
-/// The admittance of a fault through `r + jx`; a fault needs a finite,
-/// nonzero impedance.
-fn fault_admittance(r: f64, x: f64) -> Result<C64, String> {
-    let z = C64::new(r, x);
-    if r < 0.0 || x < 0.0 {
-        return Err(format!(
-            "a fault impedance needs r >= 0 and x >= 0, not {r} + j{x} (a negative part makes the fault a source)"
-        ));
-    }
-    if !(z.norm() > 0.0 && z.norm().is_finite()) {
-        return Err(format!(
-            "a fault needs a finite, nonzero impedance r + jx, not {r} + j{x} (use a small reactance for a bolted fault)"
-        ));
-    }
-    Ok(C64::new(1.0, 0.0) / z)
-}
-
-/// Choices of one prepared simulation, fixed when it is built. The defaults
-/// are tellegen's own; the others exist to compare with another tool or
-/// method, and affect only the simulation they are given to.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RmsOptions {
-    /// Simulate renewable plants (`REGCA1` + `REECB1` + `REPCA1`), the
-    /// default, or hold them at their power flow output as constant currents.
-    pub renewable_plants: bool,
-    /// Use PowerSimulationsDynamics.jl 0.16.2's low-voltage active current
-    /// gain for renewable plants (negative between its two points,
-    /// `get_LV_current_gain`) instead of the PSS/E one.
-    pub psid_lv_gain: bool,
-    /// Apply a renewable plant's converter ramp limits (`REGCA1` `Rrpwr`,
-    /// `Iqrmax`, `Iqrmin`) to the `Tg` lag's error as
-    /// PowerSimulationsDynamics.jl 0.16.2 does (an effective rate
-    /// `Rrpwr/Tg`) instead of to the currents' rate in pu/s (PSS/E).
-    pub psid_converter_ramp: bool,
-    /// Evaluate the quadratic saturation of machines and `ESAC1A` below its
-    /// knee `A` as PowerSimulationsDynamics.jl 0.16.2 does (the formula
-    /// `B (x − A)² / x`, which rises again below `A`) instead of PSS/E's
-    /// `Se = 0` there.
-    pub psid_saturation: bool,
-    /// Factorize the step matrices by blocks where every unit allows it, the
-    /// default, or always as one sparse LU over all unknowns.
-    pub factorize_by_blocks: bool,
-    /// Low-voltage behaviour of the constant-power and constant-current load
-    /// parts: PSS/E's `PQBRAK` conversion at 0.7 pu by default, or the exact
-    /// law (PowerSimulationsDynamics.jl).
-    pub low_voltage_load: LowVoltageLoad,
-    /// Initialize from the AC power flow with the generators' reactive
-    /// limits enforced (PV→PQ switching), the default and the same solve as
-    /// the static study, or with every generator at its voltage setpoint
-    /// whatever reactive power that takes (PowerSimulationsDynamics.jl, and
-    /// PSS/E from a case solved without limits). Either way the result's
-    /// notes name every unit whose solved reactive power and setpoint
-    /// disagree, and by how much.
-    pub reactive_limits: bool,
-}
-
-impl Default for RmsOptions {
-    fn default() -> Self {
-        Self {
-            renewable_plants: true,
-            psid_lv_gain: false,
-            psid_converter_ramp: false,
-            psid_saturation: false,
-            factorize_by_blocks: true,
-            low_voltage_load: LowVoltageLoad::default(),
-            reactive_limits: true,
-        }
-    }
-}
-
-/// What a run records. Without one ([`RmsRequest::record`] `None`) every
-/// channel is recorded at every output step.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct RecordSpec {
-    /// Channels recorded at every output step: exact keys (`omega:2178`) or
-    /// prefixes ending in `:` (`omega:` for every unit's speed). Empty: every
-    /// channel.
-    #[serde(default)]
-    pub channels: Vec<String>,
-    /// Channels recorded besides every `frame_step` seconds, in
-    /// [`RmsResult::frames`] (the map's bus voltages and angles).
-    #[serde(default)]
-    pub frames: Vec<String>,
-    #[serde(default)]
-    pub frame_step: f64,
-    /// The full state every `checkpoint_step` seconds (0: none), in
-    /// [`RmsResult::checkpoints`]: any channel can be replayed from them
-    /// (`RmsSimulation::replay`). Checkpoints need the `rms-experimental`
-    /// feature; without it a request for them is noted and none are taken.
-    /// The field is there under every feature, so the features stay
-    /// additive.
-    #[serde(default)]
-    pub checkpoint_step: f64,
-}
-
-impl RecordSpec {
-    /// The channels a display of a run needs: every bus voltage magnitude
-    /// and angle, every machine's speed, rotor angle and electrical power,
-    /// and every bus's load (what [`screen`] and an app's map and traces
-    /// read), at every output step.
-    #[must_use]
-    pub fn display() -> Self {
-        Self {
-            channels: ["vm:", "va:", "omega:", "delta:", "pe:", "pl:", "ql:"]
-                .map(str::to_owned)
-                .to_vec(),
-            ..Self::default()
-        }
-    }
-
-    fn matches(patterns: &[String], key: &str) -> bool {
-        patterns
-            .iter()
-            .any(|p| key == p || (p.ends_with(':') && key.starts_with(p.as_str())))
-    }
-}
-
-/// Channels sampled at their own step (the map frames of a run).
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct RmsSeries {
-    pub time: Vec<f64>,
-    pub channels: BTreeMap<String, Vec<f64>>,
-}
-
-/// The full state at `t` (differential and algebraic, in the engine's order)
-/// and the integrator's reusable factorization there, so a replay from it
-/// continues the run sample for sample.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Checkpoint {
-    pub t: f64,
-    pub x: Vec<f64>,
-    /// The cached Jacobian factorization: the iterate it was taken at, its
-    /// step and method (none when the next step factorizes afresh).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub solver: Option<SolverState>,
-    /// The points the integrator's predictor extrapolates from, newest
-    /// first (none right after an event).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub past: Vec<PastPoint>,
-}
-
-/// A point of the run before a checkpoint: the full state and the step that
-/// led away from it.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PastPoint {
-    pub h: f64,
-    pub x: Vec<f64>,
-}
-
-/// What rebuilds an integrator factorization exactly.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SolverState {
-    pub at: Vec<f64>,
-    pub h: f64,
-    pub theta: f64,
-}
-
-/// Where a channel's value comes from.
-#[derive(Clone, Copy, Debug)]
-enum Source {
-    Vm(usize),
-    Va(usize),
-    Delta(usize),
-    Omega(usize),
-    Efd(usize),
-    Tm(usize),
-    Vs(usize),
-    Pe(usize),
-    Qe(usize),
-    /// Device, index into its graph signals.
-    Sig(usize, usize),
-    /// Held unit (constant current or simulated plant): active, reactive
-    /// power out, system base.
-    HeldPe(usize),
-    HeldQe(usize),
-    /// Simulated plant, local state index.
-    PlantState(usize, usize),
-    /// Power drawn by the loads of a bus (not its held units), system base.
-    Pl(usize),
-    Ql(usize),
-    PFrom(usize),
-    QFrom(usize),
-    PTo(usize),
-    QTo(usize),
-}
-
-/// One recorded set of channels: indices into the catalog, its step and the
-/// samples (sample-major).
-struct Group {
-    sel: Vec<usize>,
-    /// Record every `step` seconds; 0: at every output sample.
-    step: f64,
-    next: f64,
-    time: Vec<f64>,
-    values: Vec<f64>,
-    /// Which inputs the selection needs.
-    outs: bool,
-    sig: bool,
-}
-
-struct Recorder {
-    /// Further channels recorded at every output sample (aligned with the
-    /// main group).
-    channels: BTreeMap<String, Vec<f64>>,
-    gen_keys: Vec<String>,
-    branch_keys: Vec<String>,
-    outs: Vec<GenOut>,
-    spec: Option<RecordSpec>,
-    /// Every channel, built at the first sample (graph signal names need
-    /// the state): its key and source.
-    catalog: Vec<(String, Source)>,
-    /// Counts the catalogs built: the channels of the groups keep their
-    /// order while it stays ([`RmsLive::advance_columns`]).
-    layout: u32,
-    main: Group,
-    frames: Option<Group>,
-}
-
-impl Recorder {
-    fn new(sys: &DynSystem, spec: Option<RecordSpec>) -> Self {
-        let gen_keys = sys
-            .devices
-            .iter()
-            .map(|d| {
-                if d.machine_id == "1" {
-                    d.bus_number.to_string()
-                } else {
-                    format!("{}#{}", d.bus_number, d.machine_id)
-                }
-            })
-            .collect();
-        // Lines and transformers keep separate PSS/E circuit-id spaces, so a
-        // line and a transformer between the same buses can share `from-to`;
-        // a repeated key takes the branch index, so every channel is one series.
-        let mut seen = std::collections::BTreeSet::new();
-        let branch_keys = sys
-            .branch_keys
-            .iter()
-            .enumerate()
-            .map(|(e, (f, t, c))| {
-                let key = if c.trim() == "1" {
-                    format!("{f}-{t}")
-                } else {
-                    format!("{f}-{t}#{}", c.trim())
-                };
-                if seen.insert(key.clone()) {
-                    key
-                } else {
-                    format!("{key}@{e}")
-                }
-            })
-            .collect();
-        let group = |step: f64| Group {
-            sel: Vec::new(),
-            step,
-            next: 0.0,
-            time: Vec::new(),
-            values: Vec::new(),
-            outs: false,
-            sig: false,
-        };
-        let frames = spec
-            .as_ref()
-            .filter(|s| !s.frames.is_empty() && s.frame_step > 0.0)
-            .map(|s| group(s.frame_step));
-        Self {
-            channels: BTreeMap::new(),
-            gen_keys,
-            branch_keys,
-            outs: Vec::new(),
-            spec,
-            catalog: Vec::new(),
-            layout: 0,
-            main: group(0.0),
-            frames,
-        }
-    }
-
-    /// The catalog of every channel and the groups' selections.
-    fn build_catalog(&mut self, sys: &DynSystem, x: &[f64]) {
-        let n = sys.n;
-        let mut cat: Vec<(String, Source)> = Vec::new();
-        for (b, &number) in sys.bus_numbers.iter().enumerate() {
-            cat.push((format!("vm:{number}"), Source::Vm(b)));
-            cat.push((format!("va:{number}"), Source::Va(b)));
-        }
-        for (k, d) in sys.devices.iter().enumerate() {
-            let key = &self.gen_keys[k];
-            cat.push((format!("delta:{key}"), Source::Delta(k)));
-            cat.push((format!("omega:{key}"), Source::Omega(k)));
-            if !matches!(d.machine, models::Machine::Classic { .. }) {
-                cat.push((format!("efd:{key}"), Source::Efd(k)));
-            }
-            cat.push((format!("tm:{key}"), Source::Tm(k)));
-            if !matches!(d.pss, models::Stabilizer::None) {
-                cat.push((format!("vs:{key}"), Source::Vs(k)));
-            }
-            cat.push((format!("pe:{key}"), Source::Pe(k)));
-            cat.push((format!("qe:{key}"), Source::Qe(k)));
-            let (vr, vi) = (x[d.bus], x[n + d.bus]);
-            for (j, (name, _)) in d
-                .graph_signals(&x[d.offset..d.offset + d.n_states()], vr, vi)
-                .into_iter()
-                .enumerate()
-            {
-                cat.push((format!("sig:{name}:{key}"), Source::Sig(k, j)));
-            }
-        }
-        for (k, h) in sys.held.iter().enumerate() {
-            let key = if h.machine_id == "1" {
-                h.bus_number.to_string()
-            } else {
-                format!("{}#{}", h.bus_number, h.machine_id)
-            };
-            cat.push((format!("pe:{key}"), Source::HeldPe(k)));
-            cat.push((format!("qe:{key}"), Source::HeldQe(k)));
-            if let Some(p) = &h.plant {
-                for (j, name) in p.state_names().into_iter().enumerate() {
-                    cat.push((format!("inv.{name}:{key}"), Source::PlantState(k, j)));
-                }
-            }
-        }
-        for (b, &number) in sys.bus_numbers.iter().enumerate() {
-            if sys.loads[b].has_load() {
-                cat.push((format!("pl:{number}"), Source::Pl(b)));
-                cat.push((format!("ql:{number}"), Source::Ql(b)));
-            }
-        }
-        for e in 0..sys.ac.m {
-            let key = &self.branch_keys[e];
-            cat.push((format!("p_from:{key}"), Source::PFrom(e)));
-            cat.push((format!("q_from:{key}"), Source::QFrom(e)));
-            cat.push((format!("p_to:{key}"), Source::PTo(e)));
-            cat.push((format!("q_to:{key}"), Source::QTo(e)));
-        }
-        let select = |patterns: Option<&[String]>| -> Vec<usize> {
-            match patterns {
-                Some(p) if !p.is_empty() => (0..cat.len())
-                    .filter(|&i| RecordSpec::matches(p, &cat[i].0))
-                    .collect(),
-                _ => (0..cat.len()).collect(),
-            }
-        };
-        let needs = |sel: &[usize]| {
-            let outs = sel.iter().any(|&i| {
-                matches!(
-                    cat[i].1,
-                    Source::Efd(_) | Source::Tm(_) | Source::Vs(_) | Source::Pe(_) | Source::Qe(_)
-                )
-            });
-            let sig = sel.iter().any(|&i| matches!(cat[i].1, Source::Sig(..)));
-            (outs, sig)
-        };
-        self.main.sel = select(self.spec.as_ref().map(|s| s.channels.as_slice()));
-        (self.main.outs, self.main.sig) = needs(&self.main.sel);
-        if let (Some(g), Some(s)) = (self.frames.as_mut(), self.spec.as_ref()) {
-            g.sel = select(Some(s.frames.as_slice()));
-            (g.outs, g.sig) = needs(&g.sel);
-        }
-        self.catalog = cat;
-        self.layout += 1;
-    }
-
-    /// Change what is recorded from the next sample on (a live session's
-    /// watch set). Samples recorded so far stay in their groups.
-    #[cfg(feature = "rms-experimental")]
-    fn set_spec(&mut self, spec: Option<RecordSpec>) {
-        let step = spec
-            .as_ref()
-            .filter(|s| !s.frames.is_empty() && s.frame_step > 0.0)
-            .map(|s| s.frame_step);
-        self.spec = spec;
-        match (step, self.frames.as_mut()) {
-            (Some(st), Some(g)) => g.step = st,
-            (Some(st), None) => {
-                self.frames = Some(Group {
-                    sel: Vec::new(),
-                    step: st,
-                    next: 0.0,
-                    time: Vec::new(),
-                    values: Vec::new(),
-                    outs: false,
-                    sig: false,
-                });
-            }
-            (None, _) => self.frames = None,
-        }
-        // Rebuilt at the next sample, with the new selection; a group whose
-        // selection changes starts its samples over.
-        self.catalog.clear();
-        self.main.time.clear();
-        self.main.values.clear();
-        if let Some(g) = &mut self.frames {
-            g.time.clear();
-            g.values.clear();
-        }
-    }
-
-    /// Move out the samples recorded so far: the main channels and the
-    /// frames.
-    fn take(&mut self) -> (Vec<f64>, BTreeMap<String, Vec<f64>>, Option<RmsSeries>) {
-        let mut channels = std::mem::take(&mut self.channels);
-        let time = std::mem::take(&mut self.main.time);
-        let values = std::mem::take(&mut self.main.values);
-        if !time.is_empty() {
-            Self::unpack(
-                &self.catalog,
-                &self.main.sel,
-                &values,
-                time.len(),
-                &mut channels,
-            );
-        }
-        // No frame in this span: no frame series (a live chunk between frames).
-        let frames = self.frames.as_mut().and_then(|g| {
-            let t = std::mem::take(&mut g.time);
-            let v = std::mem::take(&mut g.values);
-            if t.is_empty() {
-                return None;
-            }
-            let mut ch = BTreeMap::new();
-            Self::unpack(&self.catalog, &g.sel, &v, t.len(), &mut ch);
-            Some(RmsSeries {
-                time: t,
-                channels: ch,
-            })
-        });
-        (time, channels, frames)
-    }
-
-    /// Move out the samples recorded so far as they were recorded: per
-    /// group its times and its values, sample after sample in the order of
-    /// [`Self::keys`] (nothing is copied per channel).
-    #[cfg(feature = "rms-experimental")]
-    fn take_columns(&mut self) -> [(Vec<f64>, Vec<f64>); 2] {
-        let main = (
-            std::mem::take(&mut self.main.time),
-            std::mem::take(&mut self.main.values),
-        );
-        let frames = self.frames.as_mut().map_or_else(Default::default, |g| {
-            (std::mem::take(&mut g.time), std::mem::take(&mut g.values))
-        });
-        [main, frames]
-    }
-
-    /// The channel keys of the main group and of the frames, in the order
-    /// of their values.
-    #[cfg(feature = "rms-experimental")]
-    fn keys(&self) -> [Vec<&str>; 2] {
-        let of = |sel: &[usize]| sel.iter().map(|&i| self.catalog[i].0.as_str()).collect();
-        [
-            of(&self.main.sel),
-            self.frames.as_ref().map_or_else(Vec::new, |g| of(&g.sel)),
-        ]
-    }
-
-    fn unpack(
-        catalog: &[(String, Source)],
-        sel: &[usize],
-        values: &[f64],
-        samples: usize,
-        out: &mut BTreeMap<String, Vec<f64>>,
-    ) {
-        let w = sel.len();
-        for (j, &i) in sel.iter().enumerate() {
-            let series: Vec<f64> = (0..samples).map(|s| values[s * w + j]).collect();
-            out.insert(catalog[i].0.clone(), series);
-        }
-    }
-
-    /// One value of every channel at state `x` (the live session's snapshot
-    /// for on-demand channels).
-    #[cfg(feature = "rms-experimental")]
-    fn snapshot(
-        &mut self,
-        sys: &DynSystem,
-        x: &[f64],
-        patterns: &[String],
-    ) -> BTreeMap<String, f64> {
-        if self.catalog.is_empty() {
-            self.build_catalog(sys, x);
-        }
-        let sel: Vec<usize> = (0..self.catalog.len())
-            .filter(|&i| patterns.is_empty() || RecordSpec::matches(patterns, &self.catalog[i].0))
-            .collect();
-        let outs = sel.iter().any(|&i| {
-            matches!(
-                self.catalog[i].1,
-                Source::Efd(_) | Source::Tm(_) | Source::Vs(_) | Source::Pe(_) | Source::Qe(_)
-            )
-        });
-        let sig = sel
-            .iter()
-            .any(|&i| matches!(self.catalog[i].1, Source::Sig(..)));
-        let mut vals = Vec::with_capacity(sel.len());
-        self.eval(sys, x, &sel, outs, sig, &mut vals);
-        sel.iter()
-            .zip(vals)
-            .map(|(&i, v)| (self.catalog[i].0.clone(), v))
-            .collect()
-    }
-
-    /// Append the values of `sel` at state `x` to `out`.
-    fn eval(
-        &mut self,
-        sys: &DynSystem,
-        x: &[f64],
-        sel: &[usize],
-        outs: bool,
-        sig: bool,
-        out: &mut Vec<f64>,
-    ) {
-        let n = sys.n;
-        if outs {
-            let mut f = vec![0.0; sys.nx];
-            let mut o = std::mem::take(&mut self.outs);
-            sys.residual(x, &mut f, Some(&mut o));
-            self.outs = o;
-        }
-        let _ = sig;
-        let mut sigs: Vec<Option<Vec<f64>>> = Vec::new();
-        if sel
-            .iter()
-            .any(|&i| matches!(self.catalog[i].1, Source::Sig(..)))
-        {
-            sigs = vec![None; sys.devices.len()];
-        }
-        // Every branch's flows at once, PowerIO's, when a flow is recorded.
-        let mut flows: Option<powerio_matrix::AcBranchFlows> = None;
-        for &i in sel {
-            let v = match self.catalog[i].1 {
-                Source::Vm(b) => Complex::new(x[b], x[n + b]).norm(),
-                Source::Va(b) => Complex::new(x[b], x[n + b]).arg(),
-                Source::Delta(k) => {
-                    let d = &sys.devices[k];
-                    let [_, s, ..] = d.layout();
-                    x[d.offset + s]
-                }
-                Source::Omega(k) => {
-                    let d = &sys.devices[k];
-                    let [_, s, ..] = d.layout();
-                    x[d.offset + s + 1]
-                }
-                Source::Efd(k) => self.outs[k].vf,
-                Source::Tm(k) => self.outs[k].tm,
-                Source::Vs(k) => self.outs[k].vs,
-                Source::Pe(k) => {
-                    let d = &sys.devices[k];
-                    let o = &self.outs[k];
-                    x[d.bus] * o.ir + x[n + d.bus] * o.ii
-                }
-                Source::Qe(k) => {
-                    let d = &sys.devices[k];
-                    let o = &self.outs[k];
-                    x[n + d.bus] * o.ir - x[d.bus] * o.ii
-                }
-                Source::Sig(k, j) => {
-                    let s = sigs[k].get_or_insert_with(|| {
-                        let d = &sys.devices[k];
-                        d.graph_signals(
-                            &x[d.offset..d.offset + d.n_states()],
-                            x[d.bus],
-                            x[n + d.bus],
-                        )
-                        .into_iter()
-                        .map(|(_, v)| v)
-                        .collect()
-                    });
-                    s.get(j).copied().unwrap_or(f64::NAN)
-                }
-                Source::HeldPe(k) | Source::HeldQe(k) => {
-                    let h = &sys.held[k];
-                    let v = Complex::new(x[h.bus], x[n + h.bus]);
-                    let s = v * h.current_at(x, v).conj();
-                    if matches!(self.catalog[i].1, Source::HeldPe(_)) {
-                        s.re
-                    } else {
-                        s.im
-                    }
-                }
-                Source::PlantState(k, j) => x[sys.held[k].offset + j],
-                Source::Pl(b) => {
-                    sys.loads[b]
-                        .power(Complex::new(x[b], x[n + b]), sys.low_voltage)
-                        .re
-                }
-                Source::Ql(b) => {
-                    sys.loads[b]
-                        .power(Complex::new(x[b], x[n + b]), sys.low_voltage)
-                        .im
-                }
-                Source::PFrom(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).pf[e],
-                Source::QFrom(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).qf[e],
-                Source::PTo(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).pt[e],
-                Source::QTo(e) => flows.get_or_insert_with(|| sys.branch_flows(x)).qt[e],
-            };
-            out.push(v);
-        }
-    }
-
-    fn record(&mut self, sys: &DynSystem, t: f64, x: &[f64]) {
-        if self.catalog.is_empty() {
-            self.build_catalog(sys, x);
-        }
-        let mut main = std::mem::replace(
-            &mut self.main,
-            Group {
-                sel: Vec::new(),
-                step: 0.0,
-                next: 0.0,
-                time: Vec::new(),
-                values: Vec::new(),
-                outs: false,
-                sig: false,
-            },
-        );
-        let mut frames = self.frames.take();
-        let frame_due = frames.as_ref().is_some_and(|g| t >= g.next - 1e-9);
-        let outs = main.outs || (frame_due && frames.as_ref().is_some_and(|g| g.outs));
-        let sig = main.sig || (frame_due && frames.as_ref().is_some_and(|g| g.sig));
-        // Device outputs once for both groups.
-        if outs {
-            let mut f = vec![0.0; sys.nx];
-            let mut o = std::mem::take(&mut self.outs);
-            sys.residual(x, &mut f, Some(&mut o));
-            self.outs = o;
-        }
-        main.time.push(t);
-        let sel = std::mem::take(&mut main.sel);
-        self.eval(sys, x, &sel, false, sig && main.sig, &mut main.values);
-        main.sel = sel;
-        if let Some(g) = frames.as_mut().filter(|_| frame_due) {
-            g.time.push(t);
-            let sel = std::mem::take(&mut g.sel);
-            self.eval(sys, x, &sel, false, g.sig, &mut g.values);
-            g.sel = sel;
-            g.next = t + g.step;
-        }
-        self.main = main;
-        self.frames = frames;
-    }
-}
+// @block Entry points
+// The one-call ways in: parse a case and its dynamic data, prepare the
+// simulation, and inspect it or run a JSON request on it. The wasm and
+// Python adapters call these.
 
 /// Parse a PSS/E-style case and its DYR text, then simulate.
 ///
@@ -2017,45 +1380,6 @@ pub(crate) fn read_dynamics(text: &str) -> Result<(DynamicCase, Vec<ModelOverrid
     let input = DynamicInput::from_text(text)?;
     let dynamics = powerio::parse_dyr(&input.dyr).map_err(|e| format!("DYR: {e}"))?;
     Ok((dynamics, input.models))
-}
-
-/// What a case's dynamic data resolves to, for a UI to show before a run.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RmsInspection {
-    pub buses: Vec<usize>,
-    pub base_mva: f64,
-    pub base_frequency: f64,
-    pub generators: Vec<RmsGenerator>,
-    pub sources: Vec<String>,
-    /// `(from, to, circuit)` of every in-service branch.
-    pub branches: Vec<(usize, usize, String)>,
-    /// Buses carrying load.
-    pub load_buses: Vec<usize>,
-    pub dyr_records: usize,
-    pub eigenvalues: Vec<[f64; 2]>,
-    pub notes: Vec<String>,
-    pub supported_models: Vec<String>,
-    /// `‖f(x0)‖∞` at the initial point ([`RmsSimulation::initial_residual`]).
-    #[serde(default)]
-    pub initial_residual: f64,
-    /// The unit whose speed turns the angle reference frame
-    /// ([`RmsSimulation::reference_unit`]).
-    #[serde(default)]
-    pub reference_unit: Option<String>,
-    /// Units held at their power flow output, not simulated
-    /// ([`RmsSimulation::held_units`]).
-    #[serde(default)]
-    pub held_units: Vec<String>,
-    /// Simulated renewable plants (`REGCA1` + `REECB1` + `REPCA1`), keyed
-    /// `bus` or `bus#id`.
-    #[serde(default)]
-    pub plants: Vec<String>,
-    /// The options the simulation was prepared with.
-    #[serde(default)]
-    pub options: RmsOptions,
-    #[serde(default)]
-    pub load_model: LoadModel,
 }
 
 pub(crate) fn network_from_module_json(module_json: &str) -> Result<BalancedNetwork, String> {

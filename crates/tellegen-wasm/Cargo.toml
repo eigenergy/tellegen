@@ -57,6 +57,10 @@ rms = ["sensitivity", "tellegen/rms"]
 # The experimental RMS tools: small-signal modes, default dynamics, DYR
 # parameters. The app shows them behind its experimental switch.
 rms-experimental = ["rms", "tellegen/rms-experimental"]
+# Protection relays: settings by rule with their audit, the standard tests
+# (run in RMS), static fault studies, and relays acting in RMS runs and live
+# sessions.
+protection = ["rms", "tellegen/protection"]
 
 [[test]]
 name = "rms_buffers"

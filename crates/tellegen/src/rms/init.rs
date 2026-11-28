@@ -9,6 +9,8 @@
 //! steady state as PowerSimulationsDynamics.jl (`src/initialization/*`): each
 //! generator is solved for its states and references such that all
 //! derivatives vanish and it injects exactly its power flow current.
+//!
+//! @block Build and initialize
 
 use powerio::electrical::{calc_impedance_rebase, RebaseOrder};
 use powerio::{BalancedNetwork, DynamicCase, MachineDynamics};
@@ -37,6 +39,7 @@ pub(crate) struct InitReport {
 }
 
 /// Build the system and its initial state.
+// @block Build the system from a case
 pub(crate) fn build(
     network: &BalancedNetwork,
     dynamics: &DynamicCase,
@@ -44,10 +47,15 @@ pub(crate) fn build(
     load_model: LoadModel,
     options: super::RmsOptions,
 ) -> Result<(DynSystem, Vec<f64>, InitReport), String> {
+    // @block Solve the power flow
+    // The AC power flow the dynamics start from, with the low-voltage load
+    // behaviour checked first; notes record voltage-dependent loads and
+    // remote regulation, and a power flow that does not converge stops here.
     let mut report = InitReport::default();
     let low_voltage = match options.low_voltage_load {
         LowVoltageLoad::Break { v_break } => {
-            if !(v_break.is_finite() && v_break > 0.0) {
+            // Experimental: a negative value is relative to each bus's power flow voltage
+            if !(v_break.is_finite() && v_break != 0.0) {
                 return Err(format!(
                     "the load breakpoint v_break must be a positive voltage, not {v_break}"
                 ));
@@ -86,6 +94,9 @@ pub(crate) fn build(
             pf.residual
         ));
     }
+    // @block Network data
+    // Bus numbering, bases, the solved bus voltages and the branch keys that
+    // events and flows name.
     let n = ac.n;
     let sbase = network.base_mva();
     let f0 = network.base_frequency();
@@ -112,6 +123,11 @@ pub(crate) fn build(
             )
         })
         .collect();
+
+    // @block Loads at the operating point
+    // Each bus load at the power flow voltage, split into constant power,
+    // current and impedance parts (or one law for the whole bus demand), so
+    // the loads draw exactly the power flow demand at `t = 0`.
 
     // Loads at the power flow voltage.
     let (pd, qd) = ac.demand_at(&pf.vm);
@@ -160,6 +176,11 @@ pub(crate) fn build(
         }
     }
 
+    // @block Link the dynamic data
+    // Each DYR record is matched to its unit (bus and machine id). Records
+    // without a typed view, out-of-service units and unsupported models are
+    // counted and named in the notes.
+
     // Generator dispatch from the power flow: the bus generation is the net
     // injection plus the bus demand, shared among the bus's generators.
     let linking = powerio::link_machines(network, dynamics);
@@ -184,9 +205,15 @@ pub(crate) fn build(
         ));
     }
     let plant_model = |m: &str| matches!(m, "REGCA1" | "REECB1" | "REPCA1");
+    // Experimental: models read from their records as block graphs.
+    #[cfg(feature = "rms-experimental")]
+    let ext_model = |m: &str| super::ext_models::ext_role(m).is_some();
+    #[cfg(not(feature = "rms-experimental"))]
+    let ext_model = |_: &str| false;
     for (model, count) in untyped
         .iter()
         .filter(|(m, _)| !(options.renewable_plants && plant_model(m)))
+        .filter(|(m, _)| !ext_model(m))
     {
         report.notes.push(format!(
             "dyr: {count} {model} record(s) have no model in tellegen and are not simulated"
@@ -212,6 +239,10 @@ pub(crate) fn build(
                 .push(model_name.as_str());
         }
     }
+    // @block Find renewable plants
+    // Units with a complete REGCA1 + REECB1 + REPCA1 chain are simulated as
+    // plants; other inverter records leave the unit at its power flow output.
+
     // Renewable plants: REGCA1 + REECB1 + REPCA1 of one unit, simulated
     // ([`super::renewable`]); a unit with other inverter records, or with a
     // record that does not parse, keeps its power flow output. A later record
@@ -234,6 +265,10 @@ pub(crate) fn build(
     let mut dynamic_plants = 0usize;
     let simulate_plants = options.renewable_plants;
     let mut static_units = 0usize;
+    // @block Dispatch per unit
+    // The power each unit carries at the operating point: a bus's generation
+    // (net injection plus demand) shared among its units by their scheduled
+    // output.
     let mut at_bus: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut entries: Vec<(&MachineDynamics, usize)> = Vec::new();
     for m in &linking.machines {
@@ -349,6 +384,11 @@ pub(crate) fn build(
         }
     }
 
+    // @block Initialize each unit
+    // Every linked unit becomes what its data allows: a simulated machine with
+    // its controllers (solved for the states and references that make all
+    // derivatives vanish at its power flow current), a renewable plant, a
+    // Thevenin source, or a held constant-current injection.
     let mut devices: Vec<GenDevice> = Vec::new();
     let mut device_x0: Vec<Vec<f64>> = Vec::new();
     let mut sources: Vec<Source> = Vec::new();
@@ -392,6 +432,7 @@ pub(crate) fn build(
                             v_ref0: 1.0,
                             q_ref_converter: 0.0,
                             omega_ref: 1.0,
+                            q_vexp: super::system::plant_qv_of(m.bus.0),
                         };
                         let (x, notes) = p.initialize(s, v[b])?;
                         Ok((p, x, notes))
@@ -534,6 +575,33 @@ pub(crate) fn build(
                     })
                     .transpose()
             };
+            // Experimental: ESST1A / ESAC6A / PSS2B / OELIT / UELPQ
+            // records of the unit, as block graphs; a graph override still wins.
+            let ext = super::ext_models::unit_records(dynamics, m.bus.0, &m.machine_id)
+                .map_err(&unit_err)?;
+            let (avr, pss) = if ext.is_empty() {
+                (avr, pss)
+            } else {
+                let compile = |g: super::graph::BlockGraph| {
+                    CompiledGraph::new(&g).map(Box::new).map_err(|e| {
+                        format!("generator {}-{} {}: {e}", m.bus, m.machine_id, g.name)
+                    })
+                };
+                let avr = match super::ext_models::exciter_graph(
+                    &ext,
+                    m.exciter.as_ref().map(|l| &l.model),
+                )
+                .map_err(&unit_err)?
+                {
+                    Some(g) => Avr::Graph(compile(g)?),
+                    None => avr,
+                };
+                let pss = match super::ext_models::stabilizer_graph(&ext).map_err(&unit_err)? {
+                    Some(g) => Stabilizer::Graph(compile(g)?),
+                    None => pss,
+                };
+                (avr, pss)
+            };
             let avr = graph(Slot::Exciter)?.map_or(avr, Avr::Graph);
             let gov = graph(Slot::Governor)?.map_or(gov, Governor::Graph);
             let pss = graph(Slot::Stabilizer)?.map_or(pss, Stabilizer::Graph);
@@ -552,8 +620,11 @@ pub(crate) fn build(
             pss,
             v_ref: 1.0,
             p_ref: 1.0,
+            vs_ext: 0.0,
             offset: nx,
             tripped: None,
+            uel: super::system::uel_of(m.bus.0),
+            vcomp: super::system::vcomp_of(m.bus.0),
         };
         nx += dev.n_states();
         let (x0, notes) = init_device(&mut dev, v[b], i_sys)?;
@@ -576,6 +647,10 @@ pub(crate) fn build(
             "{dynamic_plants} renewable plant(s) simulated as REGCA1 + REECB1 + REPCA1"
         ));
     }
+    // @block Reference frame
+    // The network turns at the speed of a dynamic machine at the slack bus;
+    // with none there, at the constant synchronous speed.
+
     // Reference frame: the speed of a dynamic machine at the slack bus, else
     // the constant synchronous frame.
     let omega_ref = ac.slacks.first().and_then(|&slack| {
@@ -589,6 +664,9 @@ pub(crate) fn build(
         }
     });
 
+    // @block Assemble the system
+    // The `DynSystem` from its parts, with the bus admittance and mass
+    // matrices built once (events rebuild them).
     let m_branches = ac.m;
     let branches = ac.branches.clone();
     let mut sys = DynSystem {
@@ -611,15 +689,27 @@ pub(crate) fn build(
         omega_ref,
         epoch: 0,
         end_open: vec![[false; 2]; m_branches],
+        #[cfg(feature = "protection")]
+        bypassed: vec![false; m_branches],
         branch_faults: vec![None; m_branches],
         held,
         low_voltage,
         factorize_by_blocks: options.factorize_by_blocks,
+        refactor_values: options.refactor_values,
+        keep_factorization: options.keep_factorization,
+        threads: options.threads,
         noted_islands: Vec::new(),
+        hvdc_emulation: Vec::new(),
+        freeze_limits: false,
     };
+    sys.hold_limits(super::models::held_limits(options.freeze_limits));
     sys.rebuild_ybus();
     sys.rebuild_mass();
 
+    // @block The steady state
+    // The initial state: bus voltages from the power flow, then each device's
+    // and held unit's own initial states. The residual `f(x0)` must vanish;
+    // a case that does not rest at `t = 0` is refused with its residual.
     let mut x0 = vec![0.0; nx];
     for b in 0..n {
         x0[b] = v[b].re;
@@ -631,6 +721,7 @@ pub(crate) fn build(
     for (off, xh) in &held_x0 {
         x0[*off..*off + xh.len()].copy_from_slice(xh);
     }
+    sys.set_hvdc_emulation_start(&x0);
     let mut f = vec![0.0; nx];
     sys.residual(&x0, &mut f, None);
     report.steady_residual = f.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
@@ -658,6 +749,7 @@ pub(crate) fn build(
 /// constant power) and notes naming every generator bus whose solution and
 /// setpoint disagree: a bus released at a reactive limit (its voltage off the
 /// setpoint), or, without limits, a bus whose reactive generation exceeds them.
+// @block Operating point (AC power flow)
 pub(crate) fn power_flow(
     network: &BalancedNetwork,
     reactive_limits: bool,
@@ -674,8 +766,21 @@ pub(crate) fn power_flow(
     hold_remote_regulators(network, &mut ac);
     let (qmin, qmax) = (ac.qmin.clone(), ac.qmax.clone());
     if !reactive_limits {
-        ac.qmin.iter_mut().for_each(|q| *q = f64::NEG_INFINITY);
-        ac.qmax.iter_mut().for_each(|q| *q = f64::INFINITY);
+        // A bus whose generators all have a fixed reactive power (Qmin = Qmax)
+        // is no voltage-controlled bus: it keeps its limits and so its
+        // reactive power; every other generator holds its setpoint.
+        let mut fixed = vec![true; ac.bus_ids.len()];
+        for g in 0..ac.k {
+            if (qmax[g] - qmin[g]).abs() > 1e-9 {
+                fixed[ac.gen_bus[g]] = false;
+            }
+        }
+        for g in 0..ac.k {
+            if !fixed[ac.gen_bus[g]] {
+                ac.qmin[g] = f64::NEG_INFINITY;
+                ac.qmax[g] = f64::INFINITY;
+            }
+        }
     }
     let pf = ac_pf_with_start(&AcPolar, &ac, AcStart::Case)?;
     let terms = ac.load_terms.len();
@@ -820,6 +925,7 @@ fn inf_norm(r: &[f64]) -> f64 {
 }
 
 /// Dense Newton with a forward-difference Jacobian on a small square system.
+// @block Small Newton solver
 pub(crate) fn newton(
     mut u: Vec<f64>,
     mut g: impl FnMut(&[f64], &mut [f64]),
@@ -895,6 +1001,7 @@ pub(crate) fn newton(
 /// steady states are solved with their limits removed and then checked
 /// against them: one that leaves no steady state fails naming the limit and
 /// the value the dispatch needs.
+// @block Initialize one unit
 pub(crate) fn init_device(
     dev: &mut GenDevice,
     v: C64,
@@ -1009,11 +1116,11 @@ pub(crate) fn init_device(
             },
             &name,
         )?;
-        x[p..].copy_from_slice(&xp);
+        x[p..p + xp.len()].copy_from_slice(&xp);
     }
     let mut scratch = vec![0.0; dev.pss.n_states()];
     let vs0 = dev.pss.eval(
-        &x[p..],
+        &x[p..p + dev.pss.n_states()],
         1.0,
         alg.te * dev.scale,
         vt,
@@ -1026,11 +1133,21 @@ pub(crate) fn init_device(
         Avr::Fixed => dev.v_ref = vf0,
         avr => {
             let na = avr.n_states();
+            let s_m = v * i_m.conj();
+            // the compensator's lag at rest: its state is the reactive current of the start
+            let z0 = s_m.im / vt.max(1e-3);
+            if dev.lag_states() > 0 {
+                x[k - 1] = z0;
+            }
             let input = super::models::AvrIn {
-                vt,
-                vs: vs0,
+                vt: super::system::avr_vt(dev.vcomp, v.re, v.im, i_m.re, i_m.im, z0),
+                // the whole summing-point signal at the start, the stabilizer's
+                // and the limiter's, so the reference takes it up
+                vs: dev.summing_point(vs0, vt, s_m.im),
                 xad_ifd: alg.xad_ifd,
                 v_ref: vt,
+                p: s_m.re,
+                q: s_m.im,
             };
             let guess = avr_start(avr, input, vf0);
             let limited = avr;
@@ -1126,7 +1243,7 @@ pub(crate) fn avr_start(avr: &Avr, u: super::models::AvrIn, vf: f64) -> Vec<f64>
     let (vt, vs, xad_ifd) = (u.vt, u.vs, u.xad_ifd);
     #[cfg(feature = "rms-experimental")]
     if let Avr::Graph(g) = avr {
-        let (mut x, v_ref) = g.initial_guess(&[vt, vs, xad_ifd, vt], vf);
+        let (mut x, v_ref) = g.initial_guess(&[vt, vs, xad_ifd, vt, u.p, u.q], vf);
         x.push(v_ref);
         return x;
     }
@@ -1406,8 +1523,11 @@ mod tests {
             pss: Stabilizer::None,
             v_ref: 1.0,
             p_ref: 1.0,
+            vs_ext: 0.0,
             offset: 0,
             tripped: None,
+            uel: crate::rms::system::uel_of(102),
+            vcomp: None,
         };
         let v = C64::new(1.0, 0.0);
         let i = (C64::new(0.8, 0.3) / v).conj();
@@ -1553,8 +1673,11 @@ mod tests {
                 pss: Stabilizer::None,
                 v_ref: 1.0,
                 p_ref: 1.0,
+                vs_ext: 0.0,
                 offset: 0,
                 tripped: None,
+                uel: crate::rms::system::uel_of(102),
+                vcomp: None,
             };
             let v = C64::new(1.0, 0.0);
             let i = (C64::new(0.8, 0.3) / v).conj();

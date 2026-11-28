@@ -307,12 +307,10 @@ export class CaseImportActions {
 					continue;
 				}
 				const id = `local-${++this.host.localSeq}`;
-				// The bundled demo's RAW header is a sentence cut off at its
-				// field width, not a name.
-				const label =
-					this.host.dynamics.attachingDemo && format === 'raw'
-						? DEMO_LABEL
-						: caseLabel(summary.name, file.name);
+				// The bundled demo and library models are named by their
+				// catalog, not by the file header (a RAW header is often a
+				// sentence cut off at its field width).
+				const label = this.host.dynamics.exampleLabel ?? caseLabel(summary.name, file.name);
 				this.deps.logImport(file.name, summary, module_json, label === DEMO_LABEL);
 				const local = new LocalCase({
 					id,
