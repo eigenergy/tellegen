@@ -7,6 +7,9 @@
 	 * unit popup on the map and diagram, and full screen.
 	 * @block Block-diagram canvas */
 	import { checkGraph, GRAPH_PORTS, type BlockGraph, type GraphBlock, type GraphNode } from '@tellegen/engine';
+	import { BLOCK_PARAMS } from '../../dynamics/block-params.js';
+	import { numberError } from '../../dynamics/live-logic.js';
+	import ParameterField from './ParameterField.svelte';
 
 	let {
 		graph = $bindable(),
@@ -551,26 +554,18 @@
 	function numberField(n: GraphNode, key: string): number {
 		return (n as unknown as Record<string, number>)[key];
 	}
-	function setNumber(n: GraphNode, key: string, text: string) {
-		const v = Number(text);
-		if (text.trim() !== '' && Number.isFinite(v)) (n as unknown as Record<string, number>)[key] = v;
+	// What is typed into the selected block's fields, by `id:key`: a text
+	// that is not a value stays in its field, with the reason, and the block
+	// keeps its last value.
+	let typed = $state<Record<string, string>>({});
+	$effect(() => {
+		void selected;
+		typed = {};
+	});
+	function setNumber(n: GraphNode, key: string, text: string, min?: number) {
+		typed = { ...typed, [`${n.id}:${key}`]: text };
+		if (!numberError(text, min)) (n as unknown as Record<string, number>)[key] = Number(text);
 	}
-	const PARAMS: Partial<Record<BlockType, string[]>> = {
-		const: ['value'],
-		gain: ['k'],
-		integrator: ['k'],
-		clamp: ['min', 'max'],
-		gate: ['lo', 'hi'],
-		lag: ['k', 't'],
-		washout: ['k', 't'],
-		lag_limited: ['k', 't', 'min', 'max'],
-		lead_lag: ['k', 't1', 't2'],
-		pi_limited: ['kp', 'ki', 'min', 'max'],
-		lag2: ['k', 't1', 't2'],
-		lead_lag2: ['t1', 't2', 't3', 't4'],
-		sat_quadratic: ['a', 'b'],
-		min: ['tie']
-	};
 
 	// Wiring: click an output port, then an input port.
 	let pending = $state<string | null>(null);
@@ -823,12 +818,18 @@
 					</select>
 				</label>
 			{/if}
-			{#each PARAMS[sel.type] ?? [] as key (key)}
-				<label
-					>{key}
-					<input class="mono" value={numberField(sel, key)} oninput={(e) => setNumber(sel, key, e.currentTarget.value)} /></label
-				>
-			{/each}
+			<div class="params">
+				{#each BLOCK_PARAMS[sel.type] ?? [] as p (p.key)}
+					<ParameterField
+						name={p.label}
+						unit={p.unit}
+						description={p.description}
+						min={p.min}
+						text={typed[`${sel.id}:${p.key}`] ?? String(numberField(sel, p.key))}
+						oninput={(t) => setNumber(sel, p.key, t, p.min)}
+					/>
+				{/each}
+			</div>
 			{#if sel.type === 'lag_limited'}
 				<label class="check"
 					><input type="checkbox" checked={sel.clamp_output !== false} onchange={(e) => (sel.clamp_output = e.currentTarget.checked)} />
@@ -938,6 +939,10 @@
 		flex-direction: column;
 		gap: 2px;
 		color: var(--text-secondary);
+	}
+	.params {
+		display: grid;
+		gap: 3px;
 	}
 	.form label.check {
 		flex-direction: row;

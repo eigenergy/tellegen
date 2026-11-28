@@ -7,7 +7,7 @@
 	 * again; the engine refuses what does not initialize. Used in the Models
 	 * tab and in the popup a unit's glyph on the map opens.
 	 * @block Unit editor */
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import {
 		applyUnitPreset,
 		editDyr,
@@ -16,23 +16,24 @@
 		rmsDynamize,
 		setUnitModel,
 		type BlockGraph,
+		type DyrGeneratorView,
 		type GraphSlot,
 		type InverterPart,
 		type ModelOverride,
 		type ModelRole
 	} from '@tellegen/engine';
-	import { getAppState, getController } from '../../context.svelte.js';
+	import { getController } from '../../context.svelte.js';
+	import type { EditOrigin } from '../../dynamics/controller.svelte.js';
 	import { parseDrafts, recordsSignature } from '../../dynamics/live-logic.js';
 	import { unitKey as keyOf, unitKind, type UnitKind } from '../../dynamics/units.svelte.js';
 	import ControllerGraphEditor from './ControllerGraphEditor.svelte';
+	import ParameterField from './ParameterField.svelte';
 
 	let { unitKey }: { unitKey: string } = $props();
 
-	const app = getAppState();
 	const dyn = getController().dynamics;
 	const catalog = dyn.catalog;
 	const att = $derived(dyn.active);
-	const local = $derived(app.activeLocal);
 	const unit = $derived(catalog.find(unitKey));
 	const ROLES = ['machine', 'exciter', 'governor', 'stabilizer'] as const;
 	/** What the unit is now, shown above any change. */
@@ -56,12 +57,21 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let note = $state<string | null>(null);
-	async function act(what: string, f: () => Promise<void>) {
+	/** What an edit is bound to: the case data it starts from and the unit
+	 * it changes, both taken before the first `await`, so a reply that comes
+	 * back after the user moved to another case or unit cannot land there. */
+	interface EditScope {
+		origin: EditOrigin;
+		unit: DyrGeneratorView;
+	}
+	async function act(what: string, f: (s: EditScope) => Promise<void>) {
+		const u = unit;
+		if (!u) return;
 		busy = true;
 		error = null;
 		note = null;
 		try {
-			await f();
+			await f({ origin: dyn.editOrigin(), unit: u });
 			note = `${what}: initialized.`;
 		} catch (e) {
 			error = (e as Error).message;
@@ -69,7 +79,12 @@
 			busy = false;
 		}
 	}
-	const text = () => att?.text ?? '';
+	/** The controller graphs of `s`'s case without those of its unit (or
+	 * only without the one in `slot`). */
+	const withoutUnit = (s: EditScope, slot?: GraphSlot) =>
+		s.origin.models.filter(
+			(m) => !(keyOf(m) === keyOf(s.unit) && (slot === undefined || m.graph.slot === slot))
+		);
 	// The machine + controls a "Replace with" / "Add" writes. A machine unit
 	// starts from its own models (a model the library does not offer keeps the
 	// default); an inverter or static unit starts from the default set.
@@ -87,34 +102,34 @@
 	}
 	let pick = $state({ ...DEFAULT_PICK });
 	const makeDynamic = (machine: string) =>
-		act(machine === 'REGCA1' ? 'Inverter' : 'Machine and controls', async () => {
-			if (!unit || !local?.studyInputJson) return;
-			const t = await rmsDynamize(local.studyInputJson, text(), {
-				units: [[unit.bus, unit.machine_id]],
+		act(machine === 'REGCA1' ? 'Inverter' : 'Machine and controls', async (s) => {
+			if (!s.origin.network) throw new Error('the case has no network to simulate');
+			const t = await rmsDynamize(s.origin.network, s.origin.text, {
+				units: [[s.unit.bus, s.unit.machine_id]],
 				machine,
 				exciter: machine === 'REGCA1' ? null : pick.exciter || null,
 				governor: machine === 'REGCA1' ? null : pick.governor || null,
 				stabilizer: machine === 'REGCA1' ? null : pick.stabilizer || null,
 				replace: true
 			});
-			await dyn.editDynamics(t, withoutUnit());
+			await dyn.editDynamics(s.origin, t, withoutUnit(s));
 		});
 	const makeStatic = () =>
-		act('Static unit', async () => {
-			if (!unit) return;
-			let t = await setUnitModel(text(), unit.bus, unit.machine_id, 'machine', null);
-			t = await setUnitModel(t, unit.bus, unit.machine_id, 'inverter', null);
-			await dyn.editDynamics(t, withoutUnit());
+		act('Static unit', async (s) => {
+			const { bus, machine_id } = s.unit;
+			let t = await setUnitModel(s.origin.text, bus, machine_id, 'machine', null);
+			t = await setUnitModel(t, bus, machine_id, 'inverter', null);
+			await dyn.editDynamics(s.origin, t, withoutUnit(s));
 		});
 	const setModel = (role: ModelRole, model: string) =>
-		act(`${PART_LABEL[role as InverterPart] ?? role} ${model || 'removed'}`, async () => {
-			if (!unit) return;
+		act(`${PART_LABEL[role as InverterPart] ?? role} ${model || 'removed'}`, async (s) => {
 			// A controller graph belongs to a machine's control slot; the parts of
 			// an inverter carry none.
 			const slot = (['exciter', 'governor', 'stabilizer'] as string[]).includes(role);
 			await dyn.editDynamics(
-				await setUnitModel(text(), unit.bus, unit.machine_id, role, model || null),
-				slot ? withoutSlot(role as GraphSlot) : undefined
+				s.origin,
+				await setUnitModel(s.origin.text, s.unit.bus, s.unit.machine_id, role, model || null),
+				slot ? withoutUnit(s, role as GraphSlot) : undefined
 			);
 		});
 
@@ -131,11 +146,12 @@
 	const paramRecords = $derived(unit ? [...unit.records, ...inverterRecords] : []);
 	let presetId = $state('');
 	const applyPreset = () =>
-		act('Published unit', async () => {
-			if (!unit || !presetId) return;
+		act('Published unit', async (s) => {
+			if (!presetId) return;
 			await dyn.editDynamics(
-				await applyUnitPreset(text(), unit.bus, unit.machine_id, presetId),
-				withoutUnit()
+				s.origin,
+				await applyUnitPreset(s.origin.text, s.unit.bus, s.unit.machine_id, presetId),
+				withoutUnit(s)
 			);
 		});
 
@@ -159,16 +175,30 @@
 		pick = untrack(startPick);
 	});
 	const draftCount = $derived(Object.keys(draft).length);
-	const applyParams = () =>
-		act('Parameters', async () => {
-			if (!unit) return;
+	/** The field typed into last: focus goes back to it once the edit is
+	 * applied (the Apply button leaves with the drafts). */
+	let lastField: string | null = null;
+	let root = $state<HTMLElement | null>(null);
+	const applyParams = () => {
+		// Taken now: the Apply button leaves when the edit lands (the drafts
+		// clear with the records they were typed against), focus with it.
+		const focused = !!root?.contains(document.activeElement);
+		return act('Parameters', async (s) => {
 			// Blank or non-numeric input is refused with the parameter named;
 			// the drafts stay for correction.
 			const { edits, errors } = parseDrafts(draft, paramRecords);
 			if (errors.length) throw new Error(errors.join('; '));
-			if (edits.length) await dyn.editDynamics(await editDyr(text(), edits));
+			if (edits.length) await dyn.editDynamics(s.origin, await editDyr(s.origin.text, edits));
+			// Drafts typed for another unit meanwhile stay.
+			if (keyOf(s.unit) !== unitKey) return;
 			draft = {};
+			const field = lastField;
+			if (field && focused) {
+				await tick();
+				root?.querySelector<HTMLInputElement>(`[data-param="${field}"]`)?.focus();
+			}
 		});
+	};
 
 	// ----- controller block diagrams -----
 	const models = $derived<ModelOverride[]>(att?.models ?? []);
@@ -176,9 +206,6 @@
 		unit
 			? (models.find((m) => keyOf(m) === keyOf(unit) && m.graph.slot === slot) ?? null)
 			: null;
-	const withoutSlot = (slot: GraphSlot) =>
-		models.filter((m) => !(unit && keyOf(m) === keyOf(unit) && m.graph.slot === slot));
-	const withoutUnit = () => models.filter((m) => !(unit && keyOf(m) === keyOf(unit)));
 	let editing = $state<{ slot: GraphSlot; graph: BlockGraph; inUse: boolean } | null>(null);
 	async function openSlot(slot: GraphSlot) {
 		if (!unit) return;
@@ -190,8 +217,11 @@
 		}
 		const rec = unit.records.find((r) => r.role === slot);
 		if (rec) {
+			const key = unitKey;
 			try {
-				editing = { slot, graph: await modelTemplate(text(), rec.line), inUse: false };
+				const graph = await modelTemplate(att?.text ?? '', rec.line);
+				// Another unit picked meanwhile: its editor does not open this one.
+				if (key === unitKey) editing = { slot, graph, inUse: false };
 			} catch (e) {
 				error = (e as Error).message;
 			}
@@ -233,7 +263,7 @@
 </script>
 
 {#if unit}
-	<div class="unit dyn-form" aria-label={`Unit ${unit.bus} '${unit.machine_id.trim()}'`}>
+	<div class="unit dyn-form" role="group" bind:this={root} aria-label={`Unit ${unit.bus} '${unit.machine_id.trim()}'`}>
 		<h4>
 			Unit {unit.bus} '{unit.machine_id.trim()}'
 			<span class="meta">{unit.mbase.toFixed(0)} MVA · P {unit.pg.toFixed(1)} MW</span>
@@ -413,18 +443,18 @@
 						<div class="params">
 							{#each r.parameters as p, i (i)}
 								{@const k = `${r.line}:${i}`}
-								<label class:changed={k in draft && draft[k].trim() !== p.text} title={p.description ?? ''}
-									><span class="pname"
-										>{p.name}{#if p.unit}<span class="unit-of">{p.unit}</span>{/if}</span
-									>
-									<input
-										class="mono"
-										inputmode="decimal"
-										spellcheck="false"
-										value={draft[k] ?? p.text}
-										oninput={(e) => (draft = { ...draft, [k]: e.currentTarget.value })}
-									/></label
-								>
+								<ParameterField
+									name={p.name}
+									unit={p.unit ?? ''}
+									description={p.description ?? ''}
+									text={draft[k] ?? p.text}
+									changed={k in draft && draft[k].trim() !== p.text}
+									key={k}
+									oninput={(t) => {
+										draft = { ...draft, [k]: t };
+										lastField = k;
+									}}
+								/>
 							{/each}
 						</div>
 					</details>
@@ -433,7 +463,9 @@
 					<div class="row apply">
 						<span class="meta grow">{draftCount} edited</span>
 						<button class="ghost" onclick={() => (draft = {})}>Discard</button>
-						<button class="primary" disabled={busy} onclick={applyParams}
+						<!-- Not `disabled` while busy: a disabled button drops the
+						     keyboard focus. -->
+						<button class="primary" aria-disabled={busy} onclick={() => !busy && applyParams()}
 							>{busy ? 'Initializing…' : `Apply ${draftCount} change${draftCount === 1 ? '' : 's'}`}</button
 						>
 					</div>
@@ -460,17 +492,21 @@
 		{values}
 		onapply={async (g) => {
 			if (!unit || !editing) return;
-			await dyn.editDynamics(text(), [
-				...withoutSlot(editing.slot),
-				{ bus: unit.bus, machine_id: unit.machine_id.trim(), graph: g }
+			const s = { origin: dyn.editOrigin(), unit };
+			const slot = editing.slot;
+			await dyn.editDynamics(s.origin, s.origin.text, [
+				...withoutUnit(s, slot),
+				{ bus: s.unit.bus, machine_id: s.unit.machine_id.trim(), graph: g }
 			]);
-			editing = { ...editing, graph: g, inUse: true };
+			if (editing?.slot === slot && keyOf(s.unit) === unitKey)
+				editing = { ...editing, graph: g, inUse: true };
 		}}
 		onrevert={editing.inUse
 			? async () => {
-					if (!editing) return;
-					await dyn.editDynamics(text(), withoutSlot(editing.slot));
-					editing = null;
+					if (!unit || !editing) return;
+					const s = { origin: dyn.editOrigin(), unit };
+					await dyn.editDynamics(s.origin, s.origin.text, withoutUnit(s, editing.slot));
+					if (keyOf(s.unit) === unitKey) editing = null;
 				}
 			: undefined}
 		onclose={() => (editing = null)}
@@ -670,36 +706,6 @@
 		gap: 3px 12px;
 		padding: 2px 0 8px 16px;
 		font-size: var(--fs-control);
-	}
-	.params label {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 9ch;
-		align-items: center;
-		gap: 6px;
-	}
-	.pname {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		color: var(--text-secondary);
-	}
-	.unit-of {
-		margin-left: 3px;
-		color: var(--text-tertiary);
-		font-size: var(--fs-meta);
-	}
-	.params input {
-		width: 100%;
-		min-height: 22px;
-		padding: 1px 5px;
-		text-align: right;
-	}
-	.params label.changed .pname {
-		color: var(--text-accent);
-	}
-	.params label.changed input {
-		border-color: var(--accent);
-		background: var(--accent-soft);
 	}
 	.apply {
 		position: sticky;

@@ -98,6 +98,33 @@ export interface DynAttachment {
 	 * the first run. */
 	rest: RmsRun | null;
 	openMs: number | null;
+	/** Increases with every attach, so an edit computed from older data
+	 * can tell that the data moved on while it ran. */
+	revision: number;
+}
+
+/** What an edit of the dynamic data starts from, taken before it awaits
+ * the worker: the local case, the attachment revision and the network it
+ * read. {@link DynamicsController.editDynamics} applies the result only
+ * while all three still hold.
+ * @block Edit origin */
+export interface EditOrigin {
+	localId: string;
+	revision: number;
+	/** The network JSON the edit read (`studyInputJson`). */
+	network: string | null;
+	/** The DYR text and controller graphs the edit starts from. */
+	text: string;
+	models: ModelOverride[];
+}
+
+/** An edit whose case changed (another case active, the data or the
+ * network replaced) while the worker computed it; nothing was applied. */
+export class StaleEditError extends Error {
+	constructor(label: string) {
+		super(`${label} changed while the edit was computed; nothing was applied. Try again.`);
+		this.name = 'StaleEditError';
+	}
 }
 
 /** One finished (or failed) run. */
@@ -196,6 +223,7 @@ export class DynamicsController {
 	#validationModule: Promise<string> | null = null;
 	#abort: AbortController | null = null;
 	#seq = 0;
+	#revision = 0;
 
 	constructor(
 		private readonly app: AppState,
@@ -250,6 +278,7 @@ export class DynamicsController {
 		models: ModelOverride[] = this.#exampleModels ?? []
 	): Promise<void> {
 		if (!local.studyInputJson) throw new Error(`${local.label} has no network to simulate`);
+		const revision = ++this.#revision;
 		this.#free(local.id);
 		this.#described.delete(local.id);
 		this.#set(local.id, {
@@ -268,22 +297,27 @@ export class DynamicsController {
 			flat: null,
 			flatError: null,
 			rest: null,
-			openMs: null
+			openMs: null,
+			revision
 		});
 		this.modes = null;
 		const started = performance.now();
 		const validation = this.#useValidation(local.id);
+		// A later attach of the same case owns what follows.
+		const current = () => this.attachments[local.id]?.revision === revision;
 		try {
 			const c = await this.#case(local, validation);
+			if (!current()) return;
 			this.#patch(local.id, {
 				status: 'ready',
 				openMs: performance.now() - started
 			});
 			await this.#describe(local.id, validation, c);
 		} catch (e) {
-			this.#patch(local.id, { status: 'failed', error: (e as Error).message });
+			if (current()) this.#patch(local.id, { status: 'failed', error: (e as Error).message });
 			return;
 		}
+		if (!current()) return;
 		// The options or the scenario may have changed while it opened.
 		await this.refresh();
 	}
@@ -383,14 +417,40 @@ export class DynamicsController {
 		return dynamicInput(a.text, a.models);
 	}
 
-	/** Replace the active case's dynamic data (edited parameters or models,
-	 * controller graphs) and prepare it again; the live view ends.
-	 * @block Edit the dynamic data */
-	async editDynamics(text: string, models?: ModelOverride[]): Promise<void> {
+	/** Where an edit of the active case's dynamic data starts. Take it
+	 * before the first `await` of the edit and pass it to
+	 * {@link editDynamics}. */
+	editOrigin(): EditOrigin {
 		const local = this.app.activeLocal;
 		const a = this.active;
 		if (!local || !a) throw new Error('no dynamic data attached');
-		this.live.stop();
+		return {
+			localId: local.id,
+			revision: a.revision,
+			network: local.studyInputJson ?? null,
+			text: a.text,
+			models: a.models
+		};
+	}
+
+	/** Replace the dynamic data of the case `origin` names (edited
+	 * parameters or models, controller graphs) and prepare it again; that
+	 * case's live view ends. Refused with {@link StaleEditError}, changing
+	 * nothing, when the case was closed, its data attached again or its
+	 * network changed since `origin` was taken: the edit was computed from
+	 * data that is no longer there. Which case is active does not matter.
+	 * @block Edit the dynamic data */
+	async editDynamics(origin: EditOrigin, text: string, models?: ModelOverride[]): Promise<void> {
+		const local = this.app.localCases.find((c) => c.id === origin.localId);
+		const a = this.attachments[origin.localId];
+		if (
+			!local ||
+			!a ||
+			a.revision !== origin.revision ||
+			(local.studyInputJson ?? null) !== origin.network
+		)
+			throw new StaleEditError(local?.label ?? 'The case');
+		if (this.live.localId === local.id) this.live.stop();
 		await this.attach(local, a.fileName, text, a.demo, a.synthetic, models ?? a.models);
 		const now = this.attachments[local.id];
 		if (now?.status === 'failed') throw new Error(now.error ?? 'the case does not initialize');

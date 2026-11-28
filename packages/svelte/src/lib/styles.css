@@ -818,7 +818,8 @@
 .dyn-form :where(button.primary):hover:not(:disabled) {
 	filter: brightness(1.08);
 }
-.dyn-form :where(button):disabled {
+.dyn-form :where(button):disabled,
+.dyn-form :where(button[aria-disabled='true']) {
 	cursor: default;
 	opacity: 0.55;
 }

@@ -15,6 +15,18 @@ export function paceTarget(expected: number, wall: number, speed: number, t: num
 
 const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
+/** Why `text` is not a parameter value, or `null` when it is one: a
+ * number (`1.5`, `-.2`, `3e-2`) and at least `min` when given. The unit
+ * editor and the block-diagram editor check what is typed with it.
+ * @block Parameter value check */
+export function numberError(text: string, min?: number): string | null {
+	const t = text.trim();
+	if (!t) return 'enter a number';
+	if (!NUMBER.test(t) || !Number.isFinite(Number(t))) return `"${t}" is not a number`;
+	if (min !== undefined && Number(t) < min) return `must be at least ${min}`;
+	return null;
+}
+
 export interface DraftRecord {
 	line: number;
 	model: string;
@@ -39,8 +51,8 @@ export function parseDrafts(
 		if (!rec || !p) continue;
 		const t = raw.trim();
 		if (t === p.text) continue;
-		if (!t) errors.push(`${rec.model} ${p.name}: enter a number`);
-		else if (!NUMBER.test(t) || !Number.isFinite(Number(t))) errors.push(`${rec.model} ${p.name}: "${t}" is not a number`);
+		const error = numberError(t);
+		if (error) errors.push(`${rec.model} ${p.name}: ${error}`);
 		else edits.push({ line, index, value: Number(t) });
 	}
 	return { edits, errors };

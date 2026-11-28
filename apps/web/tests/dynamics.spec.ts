@@ -275,3 +275,68 @@ test('live controls use the Dynamics panel and recorded traces survive a pause',
 	await expect(plots).toHaveCount(0);
 	await expect(panel.getByRole('button', { name: 'Start live simulation' })).toBeEnabled();
 });
+
+/** Press Tab (or Shift+Tab) until `reached` holds for the focused element,
+ * at most `max` times. */
+async function tabUntil(
+	page: import('@playwright/test').Page,
+	reached: () => boolean,
+	{ back = false, max = 120 } = {}
+) {
+	for (let i = 0; i < max; i++) {
+		if (await page.evaluate(reached)) return;
+		await page.keyboard.press(back ? 'Shift+Tab' : 'Tab');
+	}
+	throw new Error(`focus did not get there in ${max} presses`);
+}
+
+test('the keyboard reaches a second machine, changes a parameter and returns to it', async ({
+	page
+}) => {
+	const panel = await openDemo(page);
+	await panel.getByRole('tab', { name: 'Models' }).click();
+	const models = panel.getByTestId('dyn-models');
+	// Bus 1131 has two machines, C and G; G is the second.
+	await models.getByRole('searchbox', { name: 'Filter units' }).focus();
+	await page.keyboard.type('1131');
+	const second = models.getByRole('button', { name: /^1131 'G'/ });
+	await expect(second).toBeVisible();
+	await tabUntil(page, () => /^\s*1131 'G'/.test(document.activeElement?.textContent ?? ''));
+	await page.keyboard.press('Enter');
+	await expect(second).toHaveAttribute('aria-pressed', 'true');
+	const editor = models.getByRole('group', { name: "Unit 1131 'G'" });
+	await expect(editor).toBeVisible();
+
+	// Into its exciter's parameters, K from 100 to 120.
+	await tabUntil(page, () => {
+		const e = document.activeElement;
+		return e?.tagName === 'SUMMARY' && /SEXS/.test(e.textContent ?? '');
+	});
+	await page.keyboard.press('Enter');
+	await tabUntil(
+		page,
+		() =>
+			document.activeElement?.closest('label')?.querySelector('.pname')?.firstChild?.textContent ===
+			'K'
+	);
+	await expect(page.locator(':focus')).toHaveValue(/^100(\.0*)?$/);
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('120');
+	await tabUntil(page, () =>
+		/^Apply 1 change$/.test(document.activeElement?.textContent?.trim() ?? '')
+	);
+	await page.keyboard.press('Enter');
+	await expect(editor.getByRole('status')).toHaveText('Parameters: initialized.', {
+		timeout: 60_000
+	});
+
+	// Focus is back on the field it changed, which shows the new value …
+	await expect(page.locator(':focus')).toHaveAttribute('data-param', /^\d+:\d+$/);
+	await expect(page.locator(':focus')).toHaveValue(/^120(\.0*)?$/);
+	// … and the same machine is a few Shift+Tabs away, still the one open.
+	await tabUntil(page, () => /^\s*1131 'G'/.test(document.activeElement?.textContent ?? ''), {
+		back: true
+	});
+	await expect(page.locator(':focus')).toHaveAttribute('aria-pressed', 'true');
+	await expect(editor).toBeVisible();
+});

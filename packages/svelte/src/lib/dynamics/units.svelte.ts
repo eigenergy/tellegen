@@ -39,6 +39,11 @@ export class UnitCatalog {
 	#input: { id: string; moduleJson: string; dyrText: string } | null = null;
 	#static = false;
 
+	/** The local case whose units these are (`null`: none loaded). */
+	get caseId(): string | null {
+		return this.#input?.id ?? null;
+	}
+
 	/** Load the units of `moduleJson` with `dyrText` (once per input). */
 	sync(id: string | null, moduleJson: string | null | undefined, dyrText: string | null): void {
 		if (!id || !moduleJson || dyrText === null) {
@@ -53,7 +58,10 @@ export class UnitCatalog {
 		if (id === previous?.id && moduleJson === previous.moduleJson && dyrText === previous.dyrText) return;
 		const input = { id, moduleJson, dyrText };
 		this.#input = input;
-		this.units = [];
+		// An edit of the same case keeps its units on screen until the new
+		// ones arrive: the list and the open editor stay, and so does the
+		// keyboard focus in them. Another case starts empty.
+		if (id !== previous?.id) this.units = [];
 		this.error = null;
 		dyrParameters(moduleJson, dyrText).then(
 			(u) => {

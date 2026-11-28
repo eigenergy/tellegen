@@ -175,6 +175,10 @@
 
 	$effect(() => {
 		const a = dyn.active;
+		// While the case opens again (an edit applied), the catalog keeps the
+		// units it has, so the unit list and the editor stay with the focus in
+		// them; it loads the new ones once the case is ready.
+		if (a?.status === 'opening' && dyn.catalog.caseId === app.activeLocal?.id) return;
 		const on = app.preferences.experimental && !!dyn.support?.experimental && a?.status === 'ready';
 		dyn.catalog.sync(
 			on && a ? app.activeLocal?.id ?? null : null,
